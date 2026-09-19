@@ -9,7 +9,7 @@ use super::*;
 #[test]
 fn endpoint_is_derived_from_the_declared_provider() {
     let anthropic =
-        Endpoint::from_credentials(Provider::Anthropic, "sk-ant-xyz".into(), None).unwrap();
+        Endpoint::from_credentials(Provider::Anthropic, "sk-ant-xyz".into(), None, None).unwrap();
     assert_eq!(
         anthropic.url.as_deref(),
         Some("https://api.anthropic.com/v1/messages")
@@ -17,7 +17,8 @@ fn endpoint_is_derived_from_the_declared_provider() {
     assert_eq!(anthropic.auth_header, "x-api-key");
     assert_eq!(anthropic.auth_value, "sk-ant-xyz");
     let openrouter =
-        Endpoint::from_credentials(Provider::OpenRouter, "sk-or-v1-abc".into(), None).unwrap();
+        Endpoint::from_credentials(Provider::OpenRouter, "sk-or-v1-abc".into(), None, None)
+            .unwrap();
     assert_eq!(
         openrouter.url.as_deref(),
         Some("https://openrouter.ai/api/v1/messages")
@@ -25,23 +26,29 @@ fn endpoint_is_derived_from_the_declared_provider() {
     assert_eq!(openrouter.auth_header, "authorization");
     assert_eq!(openrouter.auth_value, "Bearer sk-or-v1-abc");
     // Base64 padding rides through verbatim.
-    let padded = Endpoint::from_credentials(Provider::Anthropic, "abc==".into(), None).unwrap();
+    let padded =
+        Endpoint::from_credentials(Provider::Anthropic, "abc==".into(), None, None).unwrap();
     assert_eq!(padded.auth_value, "abc==");
 }
 
 /// The Codex backend needs its account id and is the only provider that takes one.
 #[test]
 fn codex_credentials_carry_the_account_header() {
-    let codex =
-        Endpoint::from_credentials(Provider::OpenAICodex, "tok".into(), Some("acct".into()))
-            .unwrap();
+    let codex = Endpoint::from_credentials(
+        Provider::OpenAICodex,
+        "tok".into(),
+        Some("acct".into()),
+        None,
+    )
+    .unwrap();
     assert_eq!(
         codex.extra_headers,
         vec![("ChatGPT-Account-ID".to_string(), "acct".to_string())]
     );
-    assert!(Endpoint::from_credentials(Provider::OpenAICodex, "tok".into(), None).is_err());
+    assert!(Endpoint::from_credentials(Provider::OpenAICodex, "tok".into(), None, None).is_err());
     assert!(
-        Endpoint::from_credentials(Provider::OpenAI, "tok".into(), Some("acct".into())).is_err()
+        Endpoint::from_credentials(Provider::OpenAI, "tok".into(), Some("acct".into()), None)
+            .is_err()
     );
 }
 
@@ -68,6 +75,7 @@ fn endpoint_debug_redacts_credentials() {
         Provider::OpenAICodex,
         "tok-secret".into(),
         Some("acct".into()),
+        None,
     )
     .unwrap();
     let debug = format!("{codex:?}");
@@ -137,7 +145,8 @@ fn session_key_truncates_a_multibyte_name_without_panicking() {
 /// pin two unrelated prefixes to one route.
 #[test]
 fn spotter_endpoint_takes_a_distinct_key_that_still_fits_the_cap() {
-    let mut e = Endpoint::from_credentials(Provider::Anthropic, "sk-ant-xyz".into(), None).unwrap();
+    let mut e =
+        Endpoint::from_credentials(Provider::Anthropic, "sk-ant-xyz".into(), None, None).unwrap();
     let long = "x".repeat(400);
     e.session_id = Some(sticky_session_id(
         &std::path::PathBuf::from(".efference").join(&long),
@@ -151,7 +160,8 @@ fn spotter_endpoint_takes_a_distinct_key_that_still_fits_the_cap() {
 /// either, rather than a bare suffix.
 #[test]
 fn spotter_endpoint_without_a_key_stays_keyless() {
-    let e = Endpoint::from_credentials(Provider::Anthropic, "sk-ant-xyz".into(), None).unwrap();
+    let e =
+        Endpoint::from_credentials(Provider::Anthropic, "sk-ant-xyz".into(), None, None).unwrap();
     assert_eq!(e.session_id, None);
     assert_eq!(e.for_spotter().session_id, None);
 }
@@ -192,8 +202,8 @@ fn only_openrouter_carries_the_sticky_key() {
 /// (docs/redaction-fork.md, docs/transport.md).
 #[test]
 fn triage_endpoint_takes_a_distinct_key_under_the_cap() {
-    let mut e =
-        Endpoint::from_credentials(Provider::OpenRouter, "sk-or-v1-abc".into(), None).unwrap();
+    let mut e = Endpoint::from_credentials(Provider::OpenRouter, "sk-or-v1-abc".into(), None, None)
+        .unwrap();
     assert_eq!(e.for_triage().session_id, None);
     let long = "x".repeat(400);
     e.session_id = Some(sticky_session_id(
@@ -278,6 +288,7 @@ async fn an_expired_credential_is_re_read_and_the_attempt_retried() {
         ),
         session_id: None,
         extra_headers: Vec::new(),
+        base: None,
     };
     let client = Client::new(endpoint, "m", "sys", None);
     let completion = client

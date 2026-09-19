@@ -445,9 +445,9 @@ pub(crate) async fn peek(
             )
             .await?;
             eprintln!(
-                "triage: {} · context {} tokens · thinking {} · tool choice {} · reference: {agent_model}'s own verdicts",
+                "triage: {} · context {} · thinking {} · tool choice {} · reference: {agent_model}'s own verdicts",
                 t.model,
-                caps.context_length,
+                efference::boot::describe_window(caps.context_length),
                 match (&t.effort, t.thinking) {
                     (Some(effort), _) => format!("on, effort {effort}"),
                     (None, true) => "on".into(),

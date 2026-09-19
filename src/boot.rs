@@ -244,14 +244,15 @@ async fn prepare_minting(
     };
     // A model that refuses the parameter fails here rather than on the first
     // request, where the rejection would read as a transport error.
+    // (`describe_window` is defined below.)
     if temperature.is_some() && !capabilities.accepts_temperature {
         return Err(
             format!("--temperature: {model} does not accept a sampling temperature").into(),
         );
     }
     eprintln!(
-        "model: {model} · context {} tokens{}",
-        capabilities.context_length,
+        "model: {model} · context {}{}",
+        describe_window(capabilities.context_length),
         capabilities
             .max_output_tokens
             .map(|m| format!(" · max output {m}"))
@@ -650,11 +651,11 @@ async fn prepare_minting(
             .await
             .map_err(|error| format!("triage model: {error}"))?;
             eprintln!(
-                "triage: {}/{} ({}) · context {} tokens · thinking {} · tool choice {}",
+                "triage: {}/{} ({}) · context {} · thinking {} · tool choice {}",
                 selection.connection,
                 selection.model,
                 selection.provider,
-                caps.context_length,
+                describe_window(caps.context_length),
                 match (&triage.effort, triage.thinking) {
                     (Some(effort), _) => format!("on, effort {effort}"),
                     (None, true) => "on".into(),
@@ -778,6 +779,18 @@ fn resolve_env_values(
         .into_iter()
         .map(|v| (v.name, v.value))
         .collect())
+}
+
+/// The context window for a boot line: the token count, or a statement that the
+/// capability source reported none (docs/transport.md). Said rather than omitted,
+/// because an unreported window turns off the occupancy meter and the pre-emptive
+/// output fit, and the boot line is where that becomes visible instead of
+/// surprising.
+pub fn describe_window(window: Option<u64>) -> String {
+    match window {
+        Some(tokens) => format!("{tokens} tokens"),
+        None => "window not reported".to_string(),
+    }
 }
 
 #[cfg(test)]

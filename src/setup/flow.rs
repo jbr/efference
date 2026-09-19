@@ -320,7 +320,7 @@ async fn choose_spotter<P: Prompter, Q: Probe>(
         let spotter = prompter
             .text(
                 "Model for the spotter",
-                Some(card.provider.default_spotter_model()),
+                card.provider.default_spotter_model(),
             )?
             .trim()
             .to_string();
@@ -352,13 +352,13 @@ async fn check_model<P: Prompter, Q: Probe>(
                 .max_output_tokens
                 .map(|tokens| format!(", {} output", tokens_short(tokens)))
                 .unwrap_or_default();
-            prompter.say(
-                Tone::Good,
-                &format!(
-                    "{model}: {} context{output}.",
-                    tokens_short(report.context_length)
-                ),
-            );
+            // An endpoint that reports no window is accepted and said so: the
+            // model answered the check, which is what this step asks.
+            let context = report
+                .context_length
+                .map(|tokens| format!("{} context", tokens_short(tokens)))
+                .unwrap_or_else(|| "context window not reported".to_string());
+            prompter.say(Tone::Good, &format!("{model}: {context}{output}."));
             Ok(true)
         }
         Err(error) => {

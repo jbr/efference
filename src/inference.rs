@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 use serde::Deserialize;
 
-use crate::api::{AuthValue, Endpoint, Error, Provider, Reload};
+use crate::api::{AuthValue, Endpoint, Error, Provider, Reload, WireDialect};
 use crate::distill::TriageModel;
 use crate::env_table::EnvSnapshot;
 use crate::secrets::Secrets;
@@ -91,10 +91,25 @@ struct Defaults {
 }
 
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(deny_unknown_fields, rename_all = "kebab-case")]
 struct ConnectionConfig {
-    provider: String,
+    /// A provider this crate knows by name. Mutually exclusive with [`Self::dialect`]:
+    /// naming a provider and describing one are two ways of saying the same thing
+    /// ([`resolve_declaration`]).
+    #[serde(default)]
+    provider: Option<String>,
     auth: AuthConfig,
+    /// The wire dialect — `"messages"` or `"responses"` — which describes an
+    /// endpoint this crate knows no name for (docs/transport.md). Mutually
+    /// exclusive with [`Self::provider`], whose every value derives its own
+    /// dialect, so a second spelling of it could only disagree.
+    #[serde(default)]
+    dialect: Option<String>,
+    /// The endpoint's base URL — the path the dialect's route hangs off, as in
+    /// `https://api.example.com/v1`. Required beside a `dialect` and refused
+    /// beside a `provider`, which owns its URLs.
+    #[serde(default)]
+    base_url: Option<String>,
     /// Kept in the catalog with its credential source intact, never a
     /// candidate for a session (docs/operating.md). `load_credential` is not
     /// even called: the connection's credential is unconditionally
@@ -288,11 +303,19 @@ impl InferenceRegistry {
         let mut disabled_names = BTreeSet::new();
         for (name, config) in config.connections {
             validate_connection_name(&name)?;
-            let provider = Provider::from_name(&config.provider)?;
+            let (provider, base) = resolve_declaration(&name, &config)?;
             let credential = if config.disabled {
                 Err(format!("connection {name:?} is disabled"))
             } else {
-                load_credential(&name, provider, config.auth, host_cwd, &host_env, secrets)
+                load_credential(
+                    &name,
+                    provider,
+                    base,
+                    config.auth,
+                    host_cwd,
+                    &host_env,
+                    secrets,
+                )
             };
             if config.disabled {
                 disabled_names.insert(name.clone());
@@ -492,9 +515,69 @@ fn role_secret_values(role: &ResolvedRole) -> Vec<(String, String)> {
     role.secret_values.clone()
 }
 
+/// The provider a connection declares, plus the base URL that goes with it.
+///
+/// A connection either **names** a provider this crate knows or **describes** one
+/// it does not, and the two spellings are exclusive: a named provider derives its
+/// own dialect and owns its URLs, so a `dialect` beside it could only agree
+/// redundantly or disagree. There is no third spelling naming the describing case
+/// — a `provider = "custom"` line would carry nothing the `dialect` and `base-url`
+/// beside it do not already say (docs/transport.md).
+///
+/// Both halves of the describing case are required, because neither has a default
+/// that would be safe to invent, and requiring them here keeps a half-declared
+/// connection from loading at all rather than failing later at a request.
+fn resolve_declaration(
+    name: &str,
+    config: &ConnectionConfig,
+) -> Result<(Provider, Option<String>), String> {
+    let dialect = match (config.provider.as_deref(), config.dialect.as_deref()) {
+        (Some(provider), Some(_)) => {
+            let provider = Provider::from_name(provider).map_err(|error| error.to_string())?;
+            return Err(format!(
+                "connection {name:?}: {provider} derives its own dialect — drop the \
+                 `dialect` line, or drop `provider` to describe an endpoint this \
+                 build knows no name for (docs/transport.md)"
+            ));
+        }
+        (Some(provider), None) => {
+            let provider = Provider::from_name(provider).map_err(|error| error.to_string())?;
+            if config.base_url.is_some() {
+                return Err(format!(
+                    "connection {name:?}: {provider} has its own URLs and takes no base-url"
+                ));
+            }
+            return Ok((provider, None));
+        }
+        (None, Some(dialect)) => dialect,
+        (None, None) => {
+            return Err(format!(
+                "connection {name:?}: name a `provider`, or give a `dialect` \
+                 (`messages` or `responses`) and a `base-url` to describe an endpoint \
+                 this build knows no name for (docs/transport.md)"
+            ));
+        }
+    };
+    let dialect =
+        WireDialect::from_name(dialect).map_err(|error| format!("connection {name:?}: {error}"))?;
+    let base = config.base_url.clone().ok_or_else(|| {
+        format!(
+            "connection {name:?}: a `dialect` needs a `base-url` beside it, \
+             such as https://api.example.com/v1"
+        )
+    })?;
+    if !base.starts_with("https://") && !base.starts_with("http://") {
+        return Err(format!(
+            "connection {name:?}: base-url {base:?} is not an http(s) URL"
+        ));
+    }
+    Ok((Provider::Custom(dialect), Some(base)))
+}
+
 fn load_credential(
     name: &str,
     provider: Provider,
+    base: Option<String>,
     auth: AuthConfig,
     host_cwd: &Path,
     host_env: &EnvSnapshot,
@@ -587,7 +670,7 @@ fn load_credential(
             (token, Some(account), "Codex cache".to_string(), reload)
         }
     };
-    let mut endpoint = Endpoint::from_credentials(provider, token.clone(), account)
+    let mut endpoint = Endpoint::from_credentials(provider, token.clone(), account, base)
         .map_err(|error| error.to_string())?;
     if let Some(reload) = reload {
         endpoint.auth_value = AuthValue::reloadable(provider.auth_header_value(&token), reload);

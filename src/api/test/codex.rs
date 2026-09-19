@@ -50,6 +50,7 @@ async fn codex_turn_routing_token_is_replayed_within_a_turn_and_dropped_at_the_n
         auth_value: "Bearer k".into(),
         session_id: None,
         extra_headers: Vec::new(),
+        base: None,
     };
     let client = Client::new(endpoint, "gpt-5.6-sol", "sys", None);
     assert_eq!(client.turn_routing_token(), None);
@@ -113,6 +114,7 @@ fn a_client_without_turn_routing_holds_no_token() {
         auth_value: "Bearer k".into(),
         session_id: None,
         extra_headers: Vec::new(),
+        base: None,
     };
     let client = Client::new(endpoint, "gpt-5.6-luna", "sys", None).without_turn_routing();
     client.begin_turn();
@@ -179,6 +181,7 @@ async fn codex_plan_windows_are_read_off_every_response_and_retained_when_absent
         auth_value: "Bearer k".into(),
         session_id: None,
         extra_headers: Vec::new(),
+        base: None,
     };
     let client = Client::new(endpoint, "gpt-5.6-sol", "sys", None);
     let plan = client.plan_state();
@@ -270,6 +273,7 @@ async fn plan_windows_are_ignored_off_the_codex_backend() {
         auth_value: "Bearer k".into(),
         session_id: None,
         extra_headers: Vec::new(),
+        base: None,
     };
     let client = Client::new(endpoint, "m", "sys", None);
     let _ = client.complete(&[], &[], ToolChoice::auto(), |_| {}).await;
@@ -312,6 +316,7 @@ async fn a_codex_request_carries_its_headers_and_no_anthropic_version() {
         auth_value: "Bearer tok".into(),
         session_id: None,
         extra_headers: vec![("ChatGPT-Account-ID".into(), "acct-1".into())],
+        base: None,
     };
     let client = Client::new(endpoint, "gpt-5.6-luna", "sys", None);
     client

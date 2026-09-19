@@ -190,7 +190,7 @@ impl Probe for Table {
     async fn check_model(&self, _: Provider, _: &str, model: &str) -> Result<ModelReport, String> {
         if self.known_models.iter().any(|known| known == model) {
             Ok(ModelReport {
-                context_length: 200_000,
+                context_length: Some(200_000),
                 max_output_tokens: Some(64_000),
             })
         } else {

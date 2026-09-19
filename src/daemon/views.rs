@@ -115,11 +115,13 @@ impl Session {
         // `last_usage`: the side channels each carry their own, much smaller
         // prefix, so folding them here makes occupancy fall mid-turn and correct
         // itself afterwards. `used` is null until the first *turn*; `context` is
-        // null entirely when no capabilities were fetched (tests, offline verbs).
+        // null entirely when no capabilities were fetched (tests, offline verbs),
+        // and `limit` null on its own when they were fetched from a source that
+        // reported no window (a custom endpoint, docs/transport.md).
         let reserved = self.reserved_output().unwrap_or(0);
         let context = self.capabilities.lock().unwrap().as_ref().map(|caps| {
             serde_json::json!({
-                "limit": caps.context_length.saturating_sub(reserved),
+                "limit": caps.context_length.map(|w| w.saturating_sub(reserved)),
                 "used": metrics.last_turn_usage.as_ref().map(Usage::prompt_tokens),
             })
         });

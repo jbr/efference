@@ -8,13 +8,14 @@ use super::*;
 /// policy: it rejects `prompt_cache_breakpoint`, so the arm reports implicit.
 #[tokio::test]
 async fn codex_backend_capabilities_report_implicit_caching() {
-    let codex = Endpoint::from_credentials(Provider::OpenAICodex, "tok".into(), Some("a".into()))
-        .unwrap()
-        .fetch_capabilities("gpt-5.6-luna", &[])
-        .await
-        .unwrap();
+    let codex =
+        Endpoint::from_credentials(Provider::OpenAICodex, "tok".into(), Some("a".into()), None)
+            .unwrap()
+            .fetch_capabilities("gpt-5.6-luna", &[])
+            .await
+            .unwrap();
     assert_eq!(codex.prompt_cache, PromptCachePolicy::Implicit);
-    let platform = Endpoint::from_credentials(Provider::OpenAI, "tok".into(), None)
+    let platform = Endpoint::from_credentials(Provider::OpenAI, "tok".into(), None, None)
         .unwrap()
         .fetch_capabilities("gpt-5.6-luna", &[])
         .await
@@ -36,8 +37,10 @@ fn anthropic_capabilities_parse_models_api_shape() {
         "max_tokens": 64000,
         "capabilities": {"image_input": {"supported": true}}
     }"#;
-    let caps = Provider::Anthropic.parse_capabilities(body, &[]).unwrap();
-    assert_eq!(caps.context_length, 200000);
+    let caps = Provider::Anthropic
+        .parse_capabilities(body, "m", &[])
+        .unwrap();
+    assert_eq!(caps.context_length, Some(200000));
     assert_eq!(caps.max_output_tokens, Some(64000));
 }
 
@@ -46,7 +49,7 @@ fn anthropic_capabilities_parse_models_api_shape() {
 #[test]
 fn anthropic_capabilities_missing_context_is_an_error() {
     let err = Provider::Anthropic
-        .parse_capabilities(r#"{"id": "m", "display_name": "M"}"#, &[])
+        .parse_capabilities(r#"{"id": "m", "display_name": "M"}"#, "m", &[])
         .unwrap_err()
         .to_string();
     assert!(err.contains("max_input_tokens"), "{err}");
@@ -75,8 +78,10 @@ fn openrouter_capabilities_aggregate_ceilings_in_opposite_directions() {
             ]
         }
     }"#;
-    let caps = Provider::OpenRouter.parse_capabilities(body, &[]).unwrap();
-    assert_eq!(caps.context_length, 200000);
+    let caps = Provider::OpenRouter
+        .parse_capabilities(body, "m", &[])
+        .unwrap();
+    assert_eq!(caps.context_length, Some(200000));
     assert_eq!(caps.max_output_tokens, Some(48000));
     // No endpoint above lists `supported_parameters` at all → not granted.
     assert!(!caps.supports_reasoning);
@@ -108,7 +113,7 @@ fn openrouter_output_cap_skips_endpoints_below_the_floor() {
     };
     let cap = |caps: &[Option<u64>]| {
         Provider::OpenRouter
-            .parse_capabilities(&body(caps), &[])
+            .parse_capabilities(&body(caps), "m", &[])
             .unwrap()
             .max_output_tokens
     };
@@ -136,7 +141,7 @@ fn openrouter_reasoning_capability_requires_every_endpoint() {
     ]}}"#;
     assert!(
         Provider::OpenRouter
-            .parse_capabilities(all, &[])
+            .parse_capabilities(all, "m", &[])
             .unwrap()
             .supports_reasoning
     );
@@ -146,7 +151,7 @@ fn openrouter_reasoning_capability_requires_every_endpoint() {
     ]}}"#;
     assert!(
         !Provider::OpenRouter
-            .parse_capabilities(mixed, &[])
+            .parse_capabilities(mixed, "m", &[])
             .unwrap()
             .supports_reasoning
     );
@@ -157,7 +162,7 @@ fn openrouter_reasoning_capability_requires_every_endpoint() {
 #[test]
 fn openrouter_capabilities_no_endpoints_is_an_error() {
     let err = Provider::OpenRouter
-        .parse_capabilities(r#"{"data": {"endpoints": []}}"#, &[])
+        .parse_capabilities(r#"{"data": {"endpoints": []}}"#, "m", &[])
         .unwrap_err()
         .to_string();
     assert!(err.contains("context_length"), "{err}");
@@ -192,12 +197,12 @@ fn generation_cost_parses_total_cost() {
 #[test]
 fn openrouter_capabilities_url_requires_author_slug() {
     let err = Provider::OpenRouter
-        .capabilities_url("claude-haiku-4-5")
+        .capabilities_url(None, "claude-haiku-4-5")
         .unwrap_err()
         .to_string();
     assert!(err.contains("author/slug"), "{err}");
     let url = Provider::OpenRouter
-        .capabilities_url("anthropic/claude-haiku-4.5")
+        .capabilities_url(None, "anthropic/claude-haiku-4.5")
         .unwrap();
     assert_eq!(
         url,
@@ -228,20 +233,20 @@ fn upstream_pin_narrows_the_capability_aggregation() {
     }"#;
     let caps = |upstream: &[String]| {
         Provider::OpenRouter
-            .parse_capabilities(body, upstream)
+            .parse_capabilities(body, "m", upstream)
             .unwrap()
     };
     let unpinned = caps(&[]);
-    assert_eq!(unpinned.context_length, 1_000_000);
+    assert_eq!(unpinned.context_length, Some(1_000_000));
     // 8_000 is below `OUTPUT_FLOOR`, so the unpinned min skips it.
     assert_eq!(unpinned.max_output_tokens, Some(64_000));
 
     let pinned = caps(&["google-ai-studio".to_string()]);
-    assert_eq!(pinned.context_length, 200_000);
+    assert_eq!(pinned.context_length, Some(200_000));
     assert_eq!(pinned.max_output_tokens, Some(64_000));
 
     let unknown = caps(&["not-an-endpoint".to_string()]);
-    assert_eq!(unknown.context_length, 1_000_000);
+    assert_eq!(unknown.context_length, Some(1_000_000));
 }
 
 /// The keepalive gate (docs/transport.md): a `max_tokens: 0` ping is only free
@@ -254,7 +259,11 @@ fn upstream_pin_narrows_the_capability_aggregation() {
 fn prompt_caching_is_read_off_the_endpoint_metadata() {
     let caps = |endpoints: &str| {
         Provider::OpenRouter
-            .parse_capabilities(&format!(r#"{{"data": {{"endpoints": {endpoints}}}}}"#), &[])
+            .parse_capabilities(
+                &format!(r#"{{"data": {{"endpoints": {endpoints}}}}}"#),
+                "m",
+                &[],
+            )
             .unwrap()
     };
     assert_eq!(
@@ -281,7 +290,7 @@ fn prompt_caching_is_read_off_the_endpoint_metadata() {
     // Anthropic's own API is the explicit-cache case and never has to be asked.
     assert_eq!(
         Provider::Anthropic
-            .parse_capabilities(r#"{"max_input_tokens": 200000}"#, &[])
+            .parse_capabilities(r#"{"max_input_tokens": 200000}"#, "m", &[])
             .unwrap()
             .prompt_cache,
         PromptCachePolicy::Explicit,
@@ -296,7 +305,7 @@ fn prompt_caching_is_read_off_the_endpoint_metadata() {
 fn openai_gpt_5_6_capability_profiles_are_exact() {
     for model in ["gpt-5.6", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"] {
         let caps = super::provider::openai_model_capabilities(Provider::OpenAI, model).unwrap();
-        assert_eq!(caps.context_length, 1_050_000, "{model}");
+        assert_eq!(caps.context_length, Some(1_050_000), "{model}");
         assert_eq!(caps.max_output_tokens, Some(128_000), "{model}");
         assert!(caps.supports_reasoning, "{model}");
         assert!(caps.supports_image_input, "{model}");
@@ -314,7 +323,7 @@ fn openai_gpt_5_6_capability_profiles_are_exact() {
     // temperature (docs/transport.md).
     let astra =
         super::provider::openai_model_capabilities(Provider::OpenAI, "gpt-6-astra").unwrap();
-    assert_eq!(astra.context_length, 1_050_000);
+    assert_eq!(astra.context_length, Some(1_050_000));
     assert_eq!(astra.max_output_tokens, Some(128_000));
     assert!(astra.supports_reasoning && astra.supports_image_input);
     assert!(!astra.accepts_temperature);
@@ -331,18 +340,27 @@ fn openai_gpt_5_6_capability_profiles_are_exact() {
     assert!(error.contains("gpt-6-astra"), "{error}");
 
     // The spotter default follows the catalog (docs/permissions.md).
-    assert_eq!(Provider::OpenAI.default_spotter_model(), "gpt-5.6-luna");
+    assert_eq!(
+        Provider::OpenAI.default_spotter_model(),
+        Some("gpt-5.6-luna")
+    );
     assert_eq!(
         Provider::OpenAICodex.default_spotter_model(),
-        "gpt-5.6-luna"
+        Some("gpt-5.6-luna")
     );
     assert_eq!(
         Provider::Anthropic.default_spotter_model(),
-        "claude-haiku-4-5"
+        Some("claude-haiku-4-5")
     );
     assert_eq!(
         Provider::OpenRouter.default_spotter_model(),
-        "anthropic/claude-haiku-4-5"
+        Some("anthropic/claude-haiku-4-5")
+    );
+    // A custom endpoint publishes no catalog to pick from, so resolution asks for
+    // `[defaults].spotter` rather than guessing a slug.
+    assert_eq!(
+        Provider::Custom(WireDialect::Messages).default_spotter_model(),
+        None
     );
 
     let error = super::provider::openai_model_capabilities(Provider::OpenAI, "gpt-5.7-luna")
@@ -359,7 +377,7 @@ fn codex_spark_capability_profile_is_provider_specific() {
     let spark =
         super::provider::openai_model_capabilities(Provider::OpenAICodex, "gpt-5.3-codex-spark")
             .unwrap();
-    assert_eq!(spark.context_length, 128_000);
+    assert_eq!(spark.context_length, Some(128_000));
     assert_eq!(spark.max_output_tokens, None);
     assert!(spark.supports_reasoning);
     assert!(!spark.supports_image_input);
@@ -395,6 +413,7 @@ fn image_input_is_read_per_provider_with_opposite_defaults() {
                     r#"{{"data": {{"architecture": {{"input_modalities": {modalities}}},
                        "endpoints": [{{"context_length": 1}}]}}}}"#
                 ),
+                "m",
                 &[],
             )
             .unwrap()
@@ -404,7 +423,11 @@ fn image_input_is_read_per_provider_with_opposite_defaults() {
     assert!(!openrouter(r#"["text"]"#));
     assert!(
         !Provider::OpenRouter
-            .parse_capabilities(r#"{"data": {"endpoints": [{"context_length": 1}]}}"#, &[])
+            .parse_capabilities(
+                r#"{"data": {"endpoints": [{"context_length": 1}]}}"#,
+                "m",
+                &[]
+            )
             .unwrap()
             .supports_image_input,
         "no architecture at all reads as text-only"
@@ -412,7 +435,7 @@ fn image_input_is_read_per_provider_with_opposite_defaults() {
 
     let anthropic = |body: &str| {
         Provider::Anthropic
-            .parse_capabilities(body, &[])
+            .parse_capabilities(body, "m", &[])
             .unwrap()
             .supports_image_input
     };

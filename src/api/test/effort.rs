@@ -15,7 +15,9 @@ fn anthropic_declares_no_effort_levels() {
         "max_input_tokens": 200000,
         "max_tokens": 64000
     }"#;
-    let caps = Provider::Anthropic.parse_capabilities(body, &[]).unwrap();
+    let caps = Provider::Anthropic
+        .parse_capabilities(body, "m", &[])
+        .unwrap();
     assert_eq!(caps.supported_efforts, None);
     assert_eq!(caps.default_effort, None);
     assert_eq!(
@@ -274,7 +276,7 @@ fn caps_with_effort_levels(
     default: Option<&str>,
 ) -> crate::api::ModelCapabilities {
     crate::api::ModelCapabilities {
-        context_length: 200_000,
+        context_length: Some(200_000),
         max_output_tokens: None,
         supports_reasoning: true,
         accepts_temperature: true,
@@ -384,6 +386,7 @@ async fn only_the_shared_turn_envelope_carries_the_effort() {
             auth_value: "k".into(),
             session_id: None,
             extra_headers: Vec::new(),
+            base: None,
         };
         let client = Client::new(endpoint, "claude-opus-5", "sys", None)
             .with_effort(effort.map(String::from));
@@ -454,9 +457,10 @@ fn thinking_off_switch_disables_claude_and_optional_foreign_and_omits_mandatory(
 fn thinking_off_reaches_a_foreign_openrouter_model_as_reasoning_disabled() {
     use super::thinking::Thinking;
     let openrouter =
-        Endpoint::from_credentials(Provider::OpenRouter, "sk-or-v1-abc".into(), None).unwrap();
+        Endpoint::from_credentials(Provider::OpenRouter, "sk-or-v1-abc".into(), None, None)
+            .unwrap();
     let anthropic =
-        Endpoint::from_credentials(Provider::Anthropic, "sk-ant-xyz".into(), None).unwrap();
+        Endpoint::from_credentials(Provider::Anthropic, "sk-ant-xyz".into(), None, None).unwrap();
     let auto = ToolChoice::auto();
     let field = |client: &Client| {
         let thinking = Thinking::for_request(client.model(), &auto, false, client.thinking_off);

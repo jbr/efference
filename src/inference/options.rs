@@ -344,14 +344,31 @@ impl InferenceRegistry {
                 // unresolvable for a reason main's issue already states, so this
                 // adds no second issue for one mistake.
                 None => match main.value.as_ref() {
-                    Some(main) => Effective::resolved(
-                        ModelSelection {
-                            connection: main.connection.clone(),
-                            provider: main.provider,
-                            model: main.provider.default_spotter_model().to_string(),
-                        },
-                        SelectionSource::MainProvider,
-                    ),
+                    // A custom endpoint has no cheap band to borrow: its catalog is
+                    // whatever the operator pointed at, so the spotter has to be
+                    // named rather than guessed (`Provider::default_spotter_model`).
+                    Some(main) => match main.provider.default_spotter_model() {
+                        Some(model) => Effective::resolved(
+                            ModelSelection {
+                                connection: main.connection.clone(),
+                                provider: main.provider,
+                                model: model.to_string(),
+                            },
+                            SelectionSource::MainProvider,
+                        ),
+                        None => {
+                            issues.push(Issue::new(
+                                "spotter_model",
+                                IssueCode::Required,
+                                format!(
+                                    "{} publishes no model catalog to pick a default spotter \
+                                     from — name one in [defaults].spotter",
+                                    main.provider
+                                ),
+                            ));
+                            Effective::failed()
+                        }
+                    },
                     None => Effective::failed(),
                 },
             },

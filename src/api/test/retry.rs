@@ -233,6 +233,7 @@ async fn a_terminal_429_body_is_answered_once() {
             auth_value: "Bearer k".into(),
             session_id: None,
             extra_headers: Vec::new(),
+            base: None,
         };
         let client = Client::new(endpoint, "gpt-5.6-sol", "sys", None);
         let outcome = client.complete(&[], &[], ToolChoice::auto(), |_| {}).await;
@@ -291,6 +292,7 @@ async fn a_400_open_returns_its_body_once_and_queues_the_attempt() {
         auth_value: "Bearer k".into(),
         session_id: None,
         extra_headers: Vec::new(),
+        base: None,
     };
     let client = Client::new(endpoint, "gpt-5.6-luna", "sys", None);
     let error = client
@@ -353,6 +355,7 @@ async fn a_503_open_is_retried_and_the_attempt_is_queued() {
         auth_value: "Bearer k".into(),
         session_id: None,
         extra_headers: Vec::new(),
+        base: None,
     };
     let client = Client::new(endpoint, "gpt-5.6-luna", "sys", None);
     let completion = client

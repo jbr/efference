@@ -203,6 +203,7 @@ fn own_peek_sends_its_own_client_and_only_the_peek_tools() {
         crate::api::Provider::Anthropic,
         "sk-ant-xyz".into(),
         None,
+        None,
     )
     .unwrap();
     let agent = Client::new(endpoint.clone(), "big", "sys", None);
@@ -241,6 +242,7 @@ fn the_idle_triage_rides_the_agent_lineage_whatever_the_triage_model() {
     let endpoint = crate::api::Endpoint::from_credentials(
         crate::api::Provider::Anthropic,
         "sk-ant-xyz".into(),
+        None,
         None,
     )
     .unwrap();

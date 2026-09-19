@@ -251,7 +251,7 @@ fn state_reports_context_occupancy_against_the_boot_limit() {
     assert!(v["usage"]["context"].is_null());
 
     shared.set_capabilities(crate::api::ModelCapabilities {
-        context_length: 200_000,
+        context_length: Some(200_000),
         max_output_tokens: Some(64_000),
         supports_reasoning: false,
         accepts_temperature: true,
@@ -305,7 +305,7 @@ fn state_reports_context_occupancy_against_the_boot_limit() {
 fn context_occupancy_ignores_side_channel_requests() {
     let (shared, _turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
     shared.set_capabilities(crate::api::ModelCapabilities {
-        context_length: 200_000,
+        context_length: Some(200_000),
         max_output_tokens: Some(64_000),
         supports_reasoning: false,
         accepts_temperature: true,
@@ -379,6 +379,7 @@ fn state_reports_session_cost_only_when_armed() {
         auth_value: "Bearer sk-or-test".into(),
         session_id: None,
         extra_headers: Vec::new(),
+        base: None,
     });
     let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
     assert_eq!(

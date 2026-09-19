@@ -516,3 +516,95 @@ auth = { kind = "oauth" }
     assert_eq!(unavailable.len(), 1);
     assert!(unavailable[0].1.contains("no issuer"), "{unavailable:?}");
 }
+
+/// An endpoint this build knows no name for is a dialect plus a base URL. Both are
+/// required, because neither has a default that would be safe to invent, and a
+/// half-declared connection must not load and fail later at a request.
+#[test]
+fn a_described_connection_needs_a_dialect_and_a_base_url() {
+    let declare = |body: &str| {
+        let config = InferenceConfig::from_toml(&format!(
+            r#"
+[connections.meta]
+auth = {{ kind = "env", key = "META_KEY" }}
+{body}
+"#
+        ))
+        .unwrap();
+        InferenceRegistry::from_config(
+            config,
+            Path::new("/host"),
+            environment(&[("META_KEY", "k")]),
+            &Arc::new(Secrets::in_memory()),
+        )
+        .map(|registry| registry.inventory())
+        .map_err(|error| error.to_string())
+    };
+
+    let inventory = declare(
+        r#"dialect = "messages"
+base-url = "https://api.example.com/v1""#,
+    )
+    .unwrap();
+    assert_eq!(inventory.len(), 1);
+    assert_eq!(
+        inventory[0].provider,
+        Provider::Custom(WireDialect::Messages)
+    );
+    assert!(inventory[0].available);
+
+    // Neither spelling: the message names both ways out rather than only the one
+    // the reader happened to be closer to.
+    let neither = declare("").unwrap_err();
+    assert!(neither.contains("name a `provider`"), "{neither}");
+    assert!(neither.contains("dialect"), "{neither}");
+
+    let no_base = declare(r#"dialect = "responses""#).unwrap_err();
+    assert!(no_base.contains("needs a `base-url`"), "{no_base}");
+
+    let bad_dialect = declare(
+        r#"dialect = "completions"
+base-url = "https://api.example.com/v1""#,
+    )
+    .unwrap_err();
+    assert!(bad_dialect.contains("completions"), "{bad_dialect}");
+
+    // A base URL that is not a URL fails at load rather than at the first
+    // request, where a relative path would read as a transport error.
+    let bad_base = declare(
+        r#"dialect = "messages"
+base-url = "api.example.com/v1""#,
+    )
+    .unwrap_err();
+    assert!(bad_base.contains("not an http(s) URL"), "{bad_base}");
+}
+
+/// Naming a provider and describing one are exclusive. A named provider derives
+/// its own dialect and owns its URLs, so either key beside it would appear to say
+/// something and not.
+#[test]
+fn naming_a_provider_and_describing_one_are_exclusive() {
+    let declare = |body: &str| {
+        let config = InferenceConfig::from_toml(&format!(
+            r#"
+[connections.direct]
+provider = "anthropic"
+auth = {{ kind = "env", key = "K" }}
+{body}
+"#
+        ))
+        .unwrap();
+        InferenceRegistry::from_config(
+            config,
+            Path::new("/host"),
+            environment(&[("K", "k")]),
+            &Arc::new(Secrets::in_memory()),
+        )
+        .map(|_| String::new())
+        .unwrap_or_else(|error| error.to_string())
+    };
+    let dialect = declare(r#"dialect = "messages""#);
+    assert!(dialect.contains("derives its own dialect"), "{dialect}");
+    let base = declare(r#"base-url = "https://api.example.com/v1""#);
+    assert!(base.contains("takes no base-url"), "{base}");
+}

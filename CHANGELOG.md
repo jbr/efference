@@ -8,6 +8,10 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- **A custom inference provider** (docs/transport.md): a connection giving a `dialect` and a
+  `base-url` instead of naming a provider, so an endpoint speaking Messages or Responses works
+  without a new enum variant. Capabilities come from an opportunistic, field-by-field parse of the endpoint's
+  model listing, and an unreported capability takes the arm that asserts least.
 - **The decision spotter** (docs/permissions.md): a second implementation of the permission
   rung against a decision model, which answers fixed boolean questions with calibrated
   probabilities instead of writing a stance. Orthogonal axes folded to a `Stance` in code,

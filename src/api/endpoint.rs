@@ -51,6 +51,14 @@ pub struct Endpoint {
     /// Provider-specific identity headers beyond auth — the Codex backend's
     /// `ChatGPT-Account-ID`. Empty for every other provider.
     pub extra_headers: Vec<(String, String)>,
+    /// The configured base URL, present only for [`Provider::Custom`] and `None`
+    /// for every named provider, which owns its own URLs (docs/transport.md).
+    ///
+    /// Kept beside [`Self::url`] rather than derived back out of it because the
+    /// metadata and credential-check routes are siblings of the turn route, not
+    /// suffixes of it: trimming a path segment off a URL to rebuild them would
+    /// guess at a structure the operator supplied whole.
+    pub base: Option<String>,
 }
 
 impl std::fmt::Debug for Endpoint {
@@ -59,6 +67,7 @@ impl std::fmt::Debug for Endpoint {
             .field("provider", &self.provider)
             .field("url", &self.url)
             .field("auth_header", &self.auth_header)
+            .field("base", &self.base)
             .field("auth_value", &"[redacted]")
             .field("session_id", &self.session_id)
             .field("extra_headers", &"[redacted]")
@@ -189,21 +198,32 @@ fn truncate_on_char_boundary(s: &str, max: usize) -> &str {
 }
 
 impl Endpoint {
-    /// Construct an endpoint from credentials the host resolved. The endpoint
-    /// remains provider-derived: callers supply neither a URL nor an auth-header
-    /// shape.
+    /// Construct an endpoint from credentials the host resolved. Every route and
+    /// header shape stays provider-derived; `base` is the one input a caller
+    /// supplies, and only a [`Provider::Custom`] connection has one to give.
     pub fn from_credentials(
         provider: Provider,
         token: String,
         account_id: Option<String>,
+        base: Option<String>,
     ) -> Result<Self, Error> {
+        match (provider, &base) {
+            (Provider::Custom(_), None) => {
+                return Err("a custom connection needs a base URL".into());
+            }
+            (provider, Some(_)) if !matches!(provider, Provider::Custom(_)) => {
+                return Err(format!("{provider} has its own URLs and takes no base URL").into());
+            }
+            _ => {}
+        }
         let mut endpoint = Self {
             provider,
-            url: provider.messages_url().map(str::to_string),
+            url: provider.messages_url(base.as_deref()),
             auth_header: provider.auth_header().to_string(),
             auth_value: AuthValue::from(provider.auth_header_value(&token)),
             session_id: None,
             extra_headers: Vec::new(),
+            base,
         };
         match (provider, account_id) {
             (Provider::OpenAICodex, Some(account)) => endpoint

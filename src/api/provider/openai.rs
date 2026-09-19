@@ -36,7 +36,7 @@ fn efforts(list: &[&str]) -> Option<Vec<String>> {
 pub fn model_capabilities(provider: Provider, model: &str) -> Result<ModelCapabilities, Error> {
     match model {
         "gpt-5.6" | "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-5.6-luna" => Ok(ModelCapabilities {
-            context_length: 1_050_000,
+            context_length: Some(1_050_000),
             max_output_tokens: Some(128_000),
             supports_reasoning: true,
             supports_image_input: true,
@@ -54,7 +54,7 @@ pub fn model_capabilities(provider: Provider, model: &str) -> Result<ModelCapabi
         // 128k context window; the Codex docs use medium effort in configured
         // agent examples. The backend owns its separate quota bucket.
         "gpt-5.3-codex-spark" if provider == Provider::OpenAICodex => Ok(ModelCapabilities {
-            context_length: 128_000,
+            context_length: Some(128_000),
             max_output_tokens: None,
             supports_reasoning: true,
             supports_image_input: false,
@@ -72,7 +72,7 @@ pub fn model_capabilities(provider: Provider, model: &str) -> Result<ModelCapabi
         // image input, efforts low–max) and the Astra guide: no `none` effort,
         // and `temperature` must be omitted. The page names no default effort.
         "gpt-6-astra" => Ok(ModelCapabilities {
-            context_length: 1_050_000,
+            context_length: Some(1_050_000),
             max_output_tokens: Some(128_000),
             supports_reasoning: true,
             supports_image_input: true,

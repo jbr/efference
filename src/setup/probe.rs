@@ -22,7 +22,7 @@ pub struct KeyReport {
 /// What a live model check learned.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ModelReport {
-    pub context_length: u64,
+    pub context_length: Option<u64>,
     pub max_output_tokens: Option<u64>,
 }
 
@@ -105,7 +105,9 @@ impl LiveProbe {
     }
 
     fn endpoint(provider: Provider, key: &str) -> Result<Endpoint, String> {
-        Endpoint::from_credentials(provider, key.to_string(), None)
+        // The setup probe checks named providers only; a custom connection's base
+        // URL arrives with the connection, not with a provider card.
+        Endpoint::from_credentials(provider, key.to_string(), None, None)
             .map_err(|error| error.to_string())
     }
 }

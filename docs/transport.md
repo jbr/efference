@@ -795,12 +795,105 @@ Messages for Anthropic and OpenRouter, Responses for OpenAI — so the log, the
 semantic fold, and the cache-frontier model are provider-independent. What varies
 between providers is the **dialect**, **where** the POST goes, **how** it
 authenticates, and **which metadata source** answers questions about the selected
-model. All derive from one declared identity: `api::Provider`, a closed enum
-(`anthropic`, `openrouter`, `openai`, `openai-codex`, `typesafe`) grown in code as
-providers are added. Identity is an input, never inferred from URL shape (sniffing
-fails for proxies and custom URLs). `api::Endpoint` carries the derived `url` +
-`auth_header` + `auth_value` alongside the provider; its `Debug` redacts the
-credential and extra headers.
+model. All derive from one declared identity: `api::Provider`, an enum
+(`anthropic`, `openrouter`, `openai`, `openai-codex`, `typesafe`, and `custom`)
+grown in code as providers are added. Identity is an input, never inferred from URL
+shape (sniffing fails for proxies and custom URLs). `api::Endpoint` carries the
+derived `url` + `auth_header` + `auth_value` alongside the provider; its `Debug`
+redacts the credential and extra headers.
+
+### A provider the operator declares (`Provider::Custom`)
+
+`Provider::Custom(WireDialect)` is an endpoint that speaks a dialect this crate
+already has an encoder and an assembler for, at a URL this enum does not know.
+
+A connection either **names** a provider or **describes** one, and the two spellings
+are exclusive — exactly one is required. There is deliberately no third spelling
+naming the describing case: a `provider = "custom"` line would carry nothing the
+`dialect` and `base-url` beside it do not already say, and `dialect` is the
+discriminator on its own.
+
+```toml
+[connections.meta]
+dialect = "messages"                      # or "responses"
+base-url = "https://api.meta.ai/v1"
+auth = { kind = "env", key = "META_API_KEY" }
+```
+
+Both halves are required together, because neither has a default that would be safe
+to invent; `dialect` or `base-url` beside a named `provider` is an error, since that
+provider derives its own dialect and owns its URLs, so either key could only agree
+redundantly or disagree.
+
+The dialect is the variant's payload because it is the one fact no default can
+supply. Everything else is either owned data on `Endpoint` — the turn URL, the auth
+header, the base (kept beside the URL rather than derived back out of it, since the
+metadata and credential-check routes are the turn route's *siblings*, not its
+suffixes) — or derived from the dialect: `{base}/messages` or `{base}/responses`
+for turns, `{base}/models` for both the capability lookup and the credential check,
+and a trailing slash on the base is optional.
+
+**Every per-provider quirk takes its conservative arm, derived from the dialect
+rather than inherited from a named provider that speaks the same one.** A sticky
+session header, a turn-routing header, attribution headers, `prompt_cache_key`, an
+image-placement or breakpoint-placement workaround: each is a fact about one
+vendor's deployment, so copying a named provider's set onto an arbitrary endpoint
+would send it another vendor's workarounds, and an unrecognized header may be
+rejected rather than ignored. So a custom endpoint is sent `authorization: Bearer`
+and nothing else beyond the dialect's own headers; `prompt_cache_key` rides only on
+Responses, where it is a documented field, because an unrecognized top-level key is
+a 400 on Messages. Temperature maps to 0..1, the range both scales accept.
+
+Two consequences of not knowing the catalog. `Provider::default_spotter_model` is
+`None`, so resolution asks for `[defaults].spotter` with an issue rather than
+guessing a slug that would fail at the metadata lookup. And effort levels are not
+validated (`validates_effort_levels` is false): no listing observed declares them,
+and `ModelCapabilities::check_effort` refuses every level when none are declared, so
+validating here would make `effort` unusable rather than merely unverified.
+
+`GET /state` and the boot line report the provider as `custom-messages` or
+`custom-responses` — the bare word would not say what the session speaks.
+
+#### Capabilities from a model listing (`src/api/provider/listing.rs`)
+
+A named provider has a capability source whose shape this crate knows. A custom
+endpoint has only what `GET {base}/models` returns, and that ranges from the bare
+OpenAI object — `id`, `object`, `created`, `owned_by` — to a listing carrying the
+window, the output cap, modalities, cache pricing, and the accepted sampling
+parameters. Measured against two real endpoints, one sits at each extreme.
+
+So the parse is **opportunistic and field-by-field**: each capability is read if a
+spelling for it is present and left unknown otherwise, and a listing that answers
+nothing is a valid answer. The spellings are the ones observed on real endpoints
+rather than an invented superset, and where two endpoints spell one capability
+differently both are read — `context_length` or `max_input_tokens` for the window;
+`max_output_length`, `max_output_tokens`, `max_completion_tokens`, or `max_tokens`
+for the cap; `input_modalities` flat or nested under `architecture`;
+`input_cache_read(s)`/`input_cache_write(s)` pricing, where a read price means a
+cache exists and a **nonzero write price** means the caller chooses what is written.
+
+The parse is **not keyed off the dialect**: a listing's shape and the dialect an
+endpoint serves turns in are independent axes. One endpoint serves a bare
+OpenAI-shaped listing in front of both dialects; another serves a capability-rich
+listing in front of a dialect this crate does not speak at all.
+
+A model the listing does not name reads as `ModelCapabilities::unknown` rather than
+an error. A listing can be paginated and can omit an alias the endpoint still
+serves, so it is in no case a statement about what the endpoint will accept, and
+refusing to boot over one would turn a non-authoritative document into an
+authorization check. Every unknown then takes the arm that asserts least: no image
+input (sending bytes a model cannot read spends the upload and reports success),
+`PromptCachePolicy::None` (which disarms the keepalive), temperature accepted (the
+value passes through to the endpoint's own validation), and no reasoning
+requirement — which is why that field is three-state rather than a `bool`.
+
+`ModelCapabilities::context_length` is therefore `Option<u64>`. The consumers
+already tolerate its absence — `Client` and `api/reservation.rs` take an `Option`,
+and `GET /state` reports a null `context.limit` — so what an unknown window costs is
+the occupancy meter and the pre-emptive output fit, not the session. The provider's
+own refusal remains, and the halving retry answers it. The boot line says
+`window not reported` rather than omitting the field, so the assumption is visible
+instead of surprising.
 
 ### A provider that serves no turns
 

@@ -10,6 +10,7 @@
 
 use super::*;
 
+mod listing;
 mod openai;
 
 pub use openai::model_capabilities as openai_model_capabilities;
@@ -56,6 +57,22 @@ impl WireDialect {
             .find(|c| !(c.is_ascii_alphanumeric() || *c == '_' || *c == '-'))
             .map(|c| format!("contains {c:?}; the {self} dialect allows only [a-zA-Z0-9_-]"))
     }
+
+    /// Parse a configured dialect name, for `provider = "custom"`
+    /// (docs/transport.md). The vocabulary is closed: a dialect is an encoder and
+    /// an assembler in this crate, so an unrecognized name has nothing to select.
+    pub fn from_name(value: &str) -> Result<Self, Error> {
+        match value.trim() {
+            "messages" => Ok(Self::Messages),
+            "responses" => Ok(Self::Responses),
+            other => Err(format!(
+                "dialect {other:?} not recognized: valid values are `messages` \
+                 (Anthropic Messages) and `responses` (OpenAI Responses) \
+                 (docs/transport.md)"
+            )
+            .into()),
+        }
+    }
 }
 
 impl std::fmt::Display for WireDialect {
@@ -71,29 +88,26 @@ impl std::fmt::Display for WireDialect {
 /// messages URL, its auth header shape, and its model-metadata endpoint — the
 /// operator declares one word and everything else is derived.
 ///
-/// Serializes as its lowercase name, for state and boot reports; a request
-/// body never carries it (the dialect encoder is what a provider selects).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+/// Serializes as its lowercase name ([`Provider::name`]), for state and boot
+/// reports; a request body never carries it (the dialect encoder is what a
+/// provider selects).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Provider {
     /// Anthropic's own API: `x-api-key` auth, metadata at `GET /v1/models/{model}`.
-    #[serde(rename = "anthropic")]
     Anthropic,
     /// OpenRouter's Anthropic-Messages skin (`/api/v1/messages`): `authorization:
     /// Bearer` auth, metadata at `GET /api/v1/models/{author}/{slug}/endpoints`
     /// (ceilings) plus `GET /api/v1/model/{author}/{slug}` (effort levels).
-    #[serde(rename = "openrouter")]
     OpenRouter,
     /// OpenAI's Responses API (`/v1/responses`): `authorization: Bearer` auth,
     /// capabilities from the compiled catalog in `provider/openai.rs` because
     /// the Models endpoint reports none of the limits the boot path consumes.
-    #[serde(rename = "openai")]
     OpenAI,
     /// The Codex backend (`chatgpt.com/backend-api/codex/responses`): the same
     /// Responses wire, billed to a ChatGPT/Codex subscription instead of the
     /// platform balance. Auth is the OAuth access token Codex CLI caches in
     /// `~/.codex/auth.json` plus its `ChatGPT-Account-ID`; the request shape
     /// mirrors what Codex CLI sends ([`ResponsesProfile::Codex`]).
-    #[serde(rename = "openai-codex")]
     OpenAICodex,
     /// TypeSafe's System One API (`/v1/systemone`): `authorization: Bearer`
     /// auth, and **no inference dialect at all**. It serves decision models —
@@ -101,8 +115,27 @@ pub enum Provider {
     /// — so it can back the spotter rung (docs/permissions.md) and nothing else.
     /// [`Self::inference_dialect`] returns `None` for it, and resolution refuses
     /// it for the main and triage roles before anything downstream could ask.
-    #[serde(rename = "typesafe")]
     TypeSafe,
+    /// An endpoint the operator declared rather than one this enum knows: a wire
+    /// dialect plus a base URL from `[connections.<name>]`
+    /// (docs/transport.md). The dialect is the payload because it is the one fact
+    /// no default can supply — everything else a custom connection needs is either
+    /// owned data on [`Endpoint`] (the URL, the auth header, extra headers) or
+    /// derived from the dialect here.
+    ///
+    /// Every per-provider quirk takes its conservative arm for this variant, and
+    /// derives from the dialect rather than being inherited from a named provider
+    /// that happens to speak the same one. Those values — a sticky-routing header,
+    /// an attribution header, a cache-key field, a placement workaround — are
+    /// facts about one vendor's deployment, so copying OpenRouter's set onto an
+    /// arbitrary endpoint would send it another vendor's workarounds.
+    Custom(WireDialect),
+}
+
+impl Serialize for Provider {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.name())
+    }
 }
 
 /// Which Responses request shape a provider takes (docs/transport.md). The
@@ -128,6 +161,10 @@ impl Provider {
     /// affirmatively declares the levels. Anthropic: no — its metadata names
     /// no levels, and the provider's own 400 on the first turn is the
     /// feedback for a misspelled one.
+    /// A custom endpoint is excluded: a listing declares no effort
+    /// levels, and `ModelCapabilities::check_effort` refuses every configured
+    /// level when none are declared — so validating here would make `effort`
+    /// unusable on a custom connection rather than unverified on one.
     pub fn validates_effort_levels(&self) -> bool {
         matches!(self, Self::OpenRouter | Self::OpenAI | Self::OpenAICodex)
     }
@@ -144,6 +181,7 @@ impl Provider {
         match self {
             Self::Anthropic | Self::OpenRouter => Some(WireDialect::Messages),
             Self::OpenAI | Self::OpenAICodex => Some(WireDialect::Responses),
+            Self::Custom(dialect) => Some(*dialect),
             Self::TypeSafe => None,
         }
     }
@@ -159,9 +197,11 @@ impl Provider {
     pub fn responses_profile(&self) -> ResponsesProfile {
         match self {
             Self::OpenAICodex => ResponsesProfile::Codex,
-            Self::Anthropic | Self::OpenRouter | Self::OpenAI | Self::TypeSafe => {
-                ResponsesProfile::Platform
-            }
+            Self::Anthropic
+            | Self::OpenRouter
+            | Self::OpenAI
+            | Self::TypeSafe
+            | Self::Custom(_) => ResponsesProfile::Platform,
         }
     }
 
@@ -175,17 +215,22 @@ impl Provider {
     /// serves, since the spotter shares the endpoint and a Haiku id is meaningless
     /// on OpenAI. An explicit `--spotter-model` replaces it and still passes the
     /// provider's capability check.
-    pub fn default_spotter_model(&self) -> &'static str {
+    /// `None` for a custom endpoint: the cheap band of an arbitrary catalog is
+    /// not knowable, and guessing a slug would fail at the metadata lookup with a
+    /// message about a model nobody chose. Resolution asks for `[defaults].spotter`
+    /// instead (`inference/options.rs`).
+    pub fn default_spotter_model(&self) -> Option<&'static str> {
         match self {
-            Self::Anthropic => "claude-haiku-4-5",
+            Self::Anthropic => Some("claude-haiku-4-5"),
             // OpenRouter ids carry the author: the bare id fails its metadata
             // route before the first request.
-            Self::OpenRouter => "anthropic/claude-haiku-4-5",
-            Self::OpenAI | Self::OpenAICodex => openai::CHEAPEST_MODEL,
+            Self::OpenRouter => Some("anthropic/claude-haiku-4-5"),
+            Self::OpenAI | Self::OpenAICodex => Some(openai::CHEAPEST_MODEL),
             // The one model family this provider serves. The floating alias
             // rather than a dated slug: TypeSafe publishes `jev-latest` as the
             // entry point and the API takes it directly.
-            Self::TypeSafe => "jev-latest",
+            Self::TypeSafe => Some("jev-latest"),
+            Self::Custom(_) => None,
         }
     }
 
@@ -228,6 +273,13 @@ impl Provider {
                 crate::project::ImagePlacement::AfterInterposedTurn
             }
             Self::OpenRouter => crate::project::ImagePlacement::FollowingUserBlock,
+            // The portable shape on Messages: an unknown endpoint may be a bridge
+            // to an upstream that drops `tool_result` images, and a following user
+            // block survives that translation. Responses has one shape.
+            Self::Custom(WireDialect::Messages) => {
+                crate::project::ImagePlacement::FollowingUserBlock
+            }
+            Self::Custom(WireDialect::Responses) => crate::project::ImagePlacement::InToolResult,
             // Projection placement is read while encoding a turn, and a provider
             // with no inference dialect never has one encoded for it. The arm
             // exists because the match is exhaustive, not because the value means
@@ -252,6 +304,14 @@ impl Provider {
                 crate::project::BreakpointPlacement::TrailingBlock
             }
             Self::OpenRouter => crate::project::BreakpointPlacement::LastTextBlock,
+            // A text carrier is the marker placement that survives translation to
+            // an OpenAI-ish upstream, which an unknown Messages endpoint may be.
+            Self::Custom(WireDialect::Messages) => {
+                crate::project::BreakpointPlacement::LastTextBlock
+            }
+            Self::Custom(WireDialect::Responses) => {
+                crate::project::BreakpointPlacement::TrailingBlock
+            }
             // Unreachable for the same reason as `image_placement`'s arm: nothing
             // projects a turn for a provider that serves none.
             Self::TypeSafe => crate::project::BreakpointPlacement::TrailingBlock,
@@ -267,6 +327,13 @@ impl Provider {
             Self::OpenAI => "openai",
             Self::OpenAICodex => "openai-codex",
             Self::TypeSafe => "typesafe",
+            // Configuration spells this one as two keys — `provider = "custom"`
+            // plus `dialect` — so unlike the others this is a display name rather
+            // than a literal config value. The dialect is folded in because the
+            // bare word says nothing about what the session will speak, and this
+            // is what `GET /state` and the boot line report.
+            Self::Custom(WireDialect::Messages) => "custom-messages",
+            Self::Custom(WireDialect::Responses) => "custom-responses",
         }
     }
     /// Map the session's 0–100 integer temperature to this provider's native
@@ -281,6 +348,11 @@ impl Provider {
         match self {
             Self::Anthropic => v,
             Self::OpenRouter | Self::OpenAI | Self::OpenAICodex | Self::TypeSafe => v * 2.0,
+            // The 0..1 range is the subset both scales accept, so a custom
+            // endpoint on either dialect cannot be sent an out-of-range value.
+            // An endpoint that wanted the wider range reads the whole scale as
+            // half-strength, which is a dull knob rather than a 400.
+            Self::Custom(_) => v,
         }
     }
 
@@ -289,13 +361,23 @@ impl Provider {
     /// provider has a route ([`Self::decisions_url`]) but not this one, and the
     /// two are not interchangeable — posting a turn body to the decisions route
     /// is a 422, not a degraded answer.
-    pub(super) fn messages_url(&self) -> Option<&'static str> {
+    ///
+    /// `base` is the configured base URL, present only for [`Self::Custom`]; the
+    /// named providers own their URLs and ignore it.
+    pub(super) fn messages_url(&self, base: Option<&str>) -> Option<String> {
         match self {
-            Self::Anthropic => Some("https://api.anthropic.com/v1/messages"),
-            Self::OpenRouter => Some("https://openrouter.ai/api/v1/messages"),
-            Self::OpenAI => Some("https://api.openai.com/v1/responses"),
-            Self::OpenAICodex => Some("https://chatgpt.com/backend-api/codex/responses"),
+            Self::Anthropic => Some("https://api.anthropic.com/v1/messages".to_string()),
+            Self::OpenRouter => Some("https://openrouter.ai/api/v1/messages".to_string()),
+            Self::OpenAI => Some("https://api.openai.com/v1/responses".to_string()),
+            Self::OpenAICodex => {
+                Some("https://chatgpt.com/backend-api/codex/responses".to_string())
+            }
             Self::TypeSafe => None,
+            // The dialect picks the path: these two are the conventional routes,
+            // and an endpoint that serves the dialect on a different path is a
+            // base URL that includes it.
+            Self::Custom(WireDialect::Messages) => Some(join(base?, "messages")),
+            Self::Custom(WireDialect::Responses) => Some(join(base?, "responses")),
         }
     }
 
@@ -312,6 +394,9 @@ impl Provider {
             // how this rung was reachable before first-party access existed.
             Self::OpenRouter => Some("https://openrouter.ai/api/alpha/decisions"),
             Self::Anthropic | Self::OpenAI | Self::OpenAICodex => None,
+            // A decisions route is a distinct API, not a dialect, so a custom
+            // endpoint declaring a turn dialect has said nothing about serving one.
+            Self::Custom(_) => None,
         }
     }
 
@@ -327,7 +412,13 @@ impl Provider {
     pub(super) fn auth_header(&self) -> &'static str {
         match self {
             Self::Anthropic => "x-api-key",
-            Self::OpenRouter | Self::OpenAI | Self::OpenAICodex | Self::TypeSafe => "authorization",
+            Self::OpenRouter
+            | Self::OpenAI
+            | Self::OpenAICodex
+            | Self::TypeSafe
+            // `x-api-key` is Anthropic's own spelling, not a dialect's: the
+            // Anthropic-shaped endpoints seen elsewhere read `authorization`.
+            | Self::Custom(_) => "authorization",
         }
     }
 
@@ -350,7 +441,10 @@ impl Provider {
     /// `thread-id` sets no key on its own and is not sent.
     pub(super) fn session_header(&self) -> Option<&'static str> {
         match self {
-            Self::Anthropic | Self::OpenAI | Self::TypeSafe => None,
+            // Sticky routing is a fact about a specific multi-upstream
+            // deployment. An unrecognized header may be rejected rather than
+            // ignored, so a custom endpoint is sent none.
+            Self::Anthropic | Self::OpenAI | Self::TypeSafe | Self::Custom(_) => None,
             Self::OpenAICodex => Some("session-id"),
             Self::OpenRouter => Some("x-session-id"),
         }
@@ -364,7 +458,11 @@ impl Provider {
     pub(super) fn turn_routing_header(&self) -> Option<&'static str> {
         match self {
             Self::OpenAICodex => Some("x-codex-turn-state"),
-            Self::Anthropic | Self::OpenAI | Self::OpenRouter | Self::TypeSafe => None,
+            Self::Anthropic
+            | Self::OpenAI
+            | Self::OpenRouter
+            | Self::TypeSafe
+            | Self::Custom(_) => None,
         }
     }
 
@@ -379,7 +477,11 @@ impl Provider {
     pub(super) fn routing_hint_header(&self) -> Option<&'static str> {
         match self {
             Self::OpenAICodex => Some("x-codex-routing-hint"),
-            Self::Anthropic | Self::OpenAI | Self::OpenRouter | Self::TypeSafe => None,
+            Self::Anthropic
+            | Self::OpenAI
+            | Self::OpenRouter
+            | Self::TypeSafe
+            | Self::Custom(_) => None,
         }
     }
 
@@ -399,7 +501,10 @@ impl Provider {
     /// server or to Anthropic would assert a referring page that does not exist.
     pub(super) fn attribution(&self) -> &'static [(&'static str, &'static str)] {
         match self {
-            Self::Anthropic | Self::OpenAI | Self::TypeSafe => &[],
+            // Attribution is a per-marketplace concept, and `Referer` asserts a
+            // referring page to an endpoint that may act on it (see above), so a
+            // custom endpoint is told nothing about the caller.
+            Self::Anthropic | Self::OpenAI | Self::TypeSafe | Self::Custom(_) => &[],
             // Codex CLI names itself with this header; the backend may key on it.
             Self::OpenAICodex => &[("originator", "efference")],
             Self::OpenRouter => &[
@@ -432,6 +537,10 @@ impl Provider {
         match self {
             Self::Anthropic | Self::TypeSafe => false,
             Self::OpenRouter | Self::OpenAI | Self::OpenAICodex => true,
+            // The field is an OpenAI-dialect one, and an unrecognized top-level key
+            // is a 400 on Messages — the same reason this is gated for Anthropic.
+            Self::Custom(WireDialect::Messages) => false,
+            Self::Custom(WireDialect::Responses) => true,
         }
     }
 
@@ -441,7 +550,11 @@ impl Provider {
     fn auth_prefix(&self) -> &'static str {
         match self {
             Self::Anthropic => "",
-            Self::OpenRouter | Self::OpenAI | Self::OpenAICodex | Self::TypeSafe => "Bearer ",
+            Self::OpenRouter
+            | Self::OpenAI
+            | Self::OpenAICodex
+            | Self::TypeSafe
+            | Self::Custom(_) => "Bearer ",
         }
     }
 
@@ -459,9 +572,21 @@ impl Provider {
     /// as two path segments; a slash-less id can't be queried and errors here,
     /// before any request. Effort levels are *not* on this route for
     /// OpenRouter — they come from [`Provider::effort_levels_url`].
-    pub(super) fn capabilities_url(&self, model: &str) -> Result<String, Error> {
+    pub(super) fn capabilities_url(
+        &self,
+        base: Option<&str>,
+        model: &str,
+    ) -> Result<String, Error> {
         match self {
             Self::Anthropic => Ok(format!("https://api.anthropic.com/v1/models/{model}")),
+            // The listing, not a per-model route: where a custom endpoint discloses
+            // capabilities at all it does so there, and the same response answers
+            // the credential check and the model menu (`provider/listing.rs`). The
+            // model is found within it rather than addressed by URL.
+            Self::Custom(_) => Ok(join(
+                base.ok_or_else(|| -> Error { "a custom connection has no base URL".into() })?,
+                "models",
+            )),
             Self::OpenRouter => {
                 let (author, slug) = openrouter_slug(model)?;
                 Ok(format!(
@@ -486,13 +611,17 @@ impl Provider {
     /// both require the key, and OpenRouter's key-info route describes the key
     /// itself. The Codex backend has no cheap authenticated read and answers
     /// `None`.
-    pub(super) fn key_check_url(&self) -> Option<&'static str> {
+    pub(super) fn key_check_url(&self, base: Option<&str>) -> Option<String> {
         match self {
-            Self::Anthropic => Some("https://api.anthropic.com/v1/models?limit=1"),
-            Self::OpenRouter => Some("https://openrouter.ai/api/v1/key"),
-            Self::OpenAI => Some("https://api.openai.com/v1/models"),
-            Self::TypeSafe => Some("https://api.typesafe.ai/v1/models"),
+            Self::Anthropic => Some("https://api.anthropic.com/v1/models?limit=1".to_string()),
+            Self::OpenRouter => Some("https://openrouter.ai/api/v1/key".to_string()),
+            Self::OpenAI => Some("https://api.openai.com/v1/models".to_string()),
+            Self::TypeSafe => Some("https://api.typesafe.ai/v1/models".to_string()),
             Self::OpenAICodex => None,
+            // Both dialects converge on this route, and an endpoint serving
+            // neither a listing nor a key check is one whose credential is first
+            // tested by a turn.
+            Self::Custom(_) => Some(join(base?, "models")),
         }
     }
 
@@ -506,7 +635,13 @@ impl Provider {
     /// passes through to the provider's own validation.
     pub(super) fn effort_levels_url(&self, model: &str) -> Result<Option<String>, Error> {
         match self {
-            Self::Anthropic | Self::OpenAI | Self::OpenAICodex | Self::TypeSafe => Ok(None),
+            Self::Anthropic
+            | Self::OpenAI
+            | Self::OpenAICodex
+            | Self::TypeSafe
+            // A listing carries no effort levels, and there is no second route to
+            // ask at an endpoint this crate did not choose.
+            | Self::Custom(_) => Ok(None),
             Self::OpenRouter => {
                 let (author, slug) = openrouter_slug(model)?;
                 Ok(Some(format!(
@@ -528,9 +663,13 @@ impl Provider {
     pub(super) fn parse_capabilities(
         &self,
         body: &str,
+        model: &str,
         upstream: &[String],
     ) -> Result<ModelCapabilities, Error> {
         match self {
+            // Opportunistic and field-by-field, because the listing's shape is
+            // whatever the endpoint returns (`provider/listing.rs`).
+            Self::Custom(_) => listing::capabilities_for(body, model),
             Self::OpenAI | Self::OpenAICodex => {
                 Err("OpenAI capabilities come from the compiled catalog".into())
             }
@@ -562,7 +701,7 @@ impl Provider {
                     "Anthropic model metadata carried no max_input_tokens".into()
                 })?;
                 Ok(ModelCapabilities {
-                    context_length,
+                    context_length: Some(context_length),
                     max_output_tokens: model.max_tokens,
                     // Claude thinking is governed by the tier allowlist
                     // (`api::thinking`), not this bit — `supports_reasoning`
@@ -722,7 +861,7 @@ impl Provider {
                 let prompt_cache =
                     PromptCachePolicy::from_support(has_explicit_cache, has_implicit_cache);
                 Ok(ModelCapabilities {
-                    context_length,
+                    context_length: Some(context_length),
                     max_output_tokens,
                     supports_reasoning,
                     // Model-level, not per-endpoint: one slug has one modality
@@ -760,6 +899,9 @@ impl Provider {
     /// live metadata but unused — no consumer yet.
     pub(super) fn parse_model_entry(&self, body: &str) -> Result<EffortLevels, Error> {
         match self {
+            // Unreachable: `effort_levels_url` answers `None`, so nothing fetches a
+            // model entry to parse. The arm exists because the match is exhaustive.
+            Self::Custom(_) => Err("a custom endpoint publishes no model entry".into()),
             Self::Anthropic => Err("Anthropic metadata names no effort levels".into()),
             Self::OpenAI | Self::OpenAICodex => {
                 Err("OpenAI effort levels come from the compiled catalog".into())
@@ -832,6 +974,14 @@ pub(super) struct EffortLevels {
     pub mandatory: bool,
 }
 
+/// A configured base URL joined to one of a dialect's conventional path
+/// segments. The base's trailing slash is optional — both spellings of the same
+/// endpoint are what an operator will paste — so exactly one separator is
+/// produced either way.
+fn join(base: &str, segment: &str) -> String {
+    format!("{}/{segment}", base.trim_end_matches('/'))
+}
+
 /// The smallest per-turn output budget worth routing to (docs/transport.md).
 /// OpenRouter's `max_completion_tokens` aggregates by **min** across the
 /// endpoints serving a model, and the min is sent as `max_tokens`; an endpoint
@@ -897,12 +1047,20 @@ impl PromptCachePolicy {
 /// provider's source.
 #[derive(Debug, Clone, Serialize)]
 pub struct ModelCapabilities {
-    /// Maximum prompt tokens the model accepts. Anthropic `max_input_tokens`;
+    /// Maximum prompt tokens the model accepts, or `None` where the source
+    /// declares none — a custom endpoint whose listing carries no window
+    /// (`provider/listing.rs`). Unknown is not a number to guess: the consumers
+    /// already tolerate its absence, since `Client` and `api/reservation.rs` take
+    /// an `Option` and `GET /state` reports a null context. What is lost is the
+    /// occupancy meter and the pre-emptive fit; what remains is the provider's own
+    /// refusal, which the halving retry answers.
+    ///
+    /// Anthropic `max_input_tokens`;
     /// OpenRouter: the **max** `context_length` across the endpoints currently
     /// serving the model — routing filters to endpoints that fit the request,
     /// so a wide prompt narrows the routable set rather than failing
     /// (docs/transport.md).
-    pub context_length: u64,
+    pub context_length: Option<u64>,
     /// Maximum response tokens, where the provider reports one. OpenRouter:
     /// the **min** `max_completion_tokens` across serving endpoints — unlike
     /// `context_length` this value reaches the wire — as the cap each request's
@@ -971,6 +1129,27 @@ pub struct ModelCapabilities {
 }
 
 impl ModelCapabilities {
+    /// What a source that declares nothing reports: every capability at the arm
+    /// that asserts least (docs/transport.md). The base a listing parse fills in
+    /// field by field, and the whole answer for a model a listing does not name.
+    ///
+    /// Not a stand-in for a lookup that should have happened — a named provider's
+    /// metadata fetch stays required, and failing it is still fatal at boot. This
+    /// is the honest answer where there is no source to fail.
+    pub fn unknown() -> Self {
+        Self {
+            context_length: None,
+            max_output_tokens: None,
+            supports_reasoning: false,
+            supports_image_input: false,
+            accepts_temperature: true,
+            prompt_cache: PromptCachePolicy::None,
+            supported_efforts: None,
+            default_effort: None,
+            reasoning_mandatory: None,
+        }
+    }
+
     /// The boot check for a configured effort level (docs/transport.md),
     /// called for providers that validate (`Provider::validates_effort_levels`
     /// — OpenRouter). A model whose entry lists levels accepts only those:
@@ -1041,14 +1220,16 @@ impl Endpoint {
             }
             return Ok(capabilities);
         }
-        let url = self.provider.capabilities_url(model)?;
+        let url = self
+            .provider
+            .capabilities_url(self.base.as_deref(), model)?;
         let body = self.authed_get(&url).await?;
-        let mut capabilities =
-            self.provider
-                .parse_capabilities(&body, upstream)
-                .map_err(|e| -> Error {
-                    format!("could not parse model metadata from {url}: {e}").into()
-                })?;
+        let mut capabilities = self
+            .provider
+            .parse_capabilities(&body, model, upstream)
+            .map_err(|e| -> Error {
+                format!("could not parse model metadata from {url}: {e}").into()
+            })?;
         if let Some(effort_url) = self.provider.effort_levels_url(model)? {
             let effort_body = self.authed_get(&effort_url).await?;
             let efforts = self
@@ -1081,6 +1262,9 @@ impl Endpoint {
             Provider::OpenAI | Provider::OpenAICodex => {
                 return Err("openai exposes no per-generation cost endpoint".into());
             }
+            Provider::Custom(_) => {
+                return Err("a custom endpoint exposes no per-generation cost endpoint".into());
+            }
             Provider::TypeSafe => {
                 return Err("typesafe exposes no per-generation cost endpoint".into());
             }
@@ -1101,8 +1285,8 @@ impl Endpoint {
     /// returned text is the route's body for the caller to describe (OpenRouter's
     /// key label, for one).
     pub async fn check_key(&self) -> Result<Option<String>, Error> {
-        match self.provider.key_check_url() {
-            Some(url) => self.authed_get(url).await.map(Some),
+        match self.provider.key_check_url(self.base.as_deref()) {
+            Some(url) => self.authed_get(&url).await.map(Some),
             None => Ok(None),
         }
     }

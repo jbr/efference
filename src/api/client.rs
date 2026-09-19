@@ -608,8 +608,8 @@ impl Client {
     /// Set the model's context window (`ModelCapabilities::context_length`), so
     /// each request's `max_tokens` is shrunk to what the window spares after
     /// the prompt (`api/reservation.rs`). Unset, the cap is sent as is.
-    pub fn with_context_window(mut self, context_length: u64) -> Self {
-        self.context_length = Some(context_length);
+    pub fn with_context_window(mut self, context_length: Option<u64>) -> Self {
+        self.context_length = context_length;
         self
     }
 

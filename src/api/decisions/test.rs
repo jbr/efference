@@ -70,7 +70,7 @@ fn usage_maps_with_zero_cache_counts() {
 fn the_session_id_rides_only_where_it_is_documented() {
     let body = |provider: Provider| {
         let mut endpoint =
-            Endpoint::from_credentials(provider, "k".into(), None).expect("credentials");
+            Endpoint::from_credentials(provider, "k".into(), None, None).expect("credentials");
         endpoint.session_id = Some("sess-1".into());
         serde_json::to_value(DecisionsRequest {
             model: "jev-latest",
@@ -108,7 +108,7 @@ fn the_first_party_response_shape_parses() {
 /// body at its messages URL.
 #[tokio::test]
 async fn a_provider_without_the_route_refuses() {
-    let endpoint = Endpoint::from_credentials(Provider::Anthropic, "k".into(), None)
+    let endpoint = Endpoint::from_credentials(Provider::Anthropic, "k".into(), None, None)
         .expect("anthropic credentials");
     let error = endpoint
         .decide("typesafe/jev-1.13", &Value::Null, &BTreeMap::new())

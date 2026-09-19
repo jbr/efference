@@ -40,6 +40,7 @@ pub(super) fn boot(cwd: &Path) -> SessionBoot<StaticSpotter> {
         auth_value: "k".into(),
         session_id: None,
         extra_headers: Vec::new(),
+        base: None,
     };
     SessionBoot {
         client: Client::new(endpoint, "m", "sys", None),
@@ -54,7 +55,7 @@ pub(super) fn boot(cwd: &Path) -> SessionBoot<StaticSpotter> {
         role: LoadedConfig::default(),
         autonomous: false,
         capabilities: ModelCapabilities {
-            context_length: 200_000,
+            context_length: Some(200_000),
             max_output_tokens: None,
             supports_reasoning: false,
             accepts_temperature: true,
