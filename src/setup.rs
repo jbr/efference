@@ -16,7 +16,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::api::Provider;
+use crate::api::{Provider, WireDialect};
 
 mod flow;
 mod manage;
@@ -25,7 +25,7 @@ mod render;
 pub mod terminal;
 
 pub use flow::run;
-pub use probe::{ChatGptLogin, KeyReport, LiveProbe, ModelListing, ModelReport, Probe};
+pub use probe::{ChatGptLogin, KeyReport, LiveProbe, ModelListing, ModelReport, Probe, Target};
 pub use render::{render, write};
 
 /// The person declined to continue: Esc or Ctrl-C at any prompt. Nothing has
@@ -124,6 +124,9 @@ pub enum AuthSource {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConnectionDraft {
     pub provider: Provider,
+    /// The base URL for a described endpoint (`Provider::Custom`), `None` for a
+    /// named provider that owns its URLs (docs/transport.md).
+    pub base_url: Option<String>,
     pub auth: AuthSource,
     /// The provider-native id sessions on this connection run by default.
     pub model: String,
@@ -295,7 +298,12 @@ impl ExistingAuth {
 /// management list and its edits.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExistingConnection {
+    /// The provider name, or the `custom-<dialect>` name a described endpoint
+    /// reports ([`crate::api::Provider::name`]) — so a row in the management list
+    /// says what it speaks either way.
     pub provider: String,
+    /// The base URL a described endpoint carries, `None` for a named provider.
+    pub base_url: Option<String>,
     pub auth: ExistingAuth,
     pub disabled: bool,
 }
@@ -334,12 +342,30 @@ impl Existing {
                 let connection = item
                     .as_table_like()
                     .ok_or_else(|| where_("is not a table"))?;
-                let provider = connection
-                    .get("provider")
-                    .ok_or_else(|| where_("has no `provider`"))?
-                    .as_str()
-                    .ok_or_else(|| where_("has a non-string `provider`"))?
-                    .to_string();
+                let string = |key: &str| -> Result<Option<String>, String> {
+                    match connection.get(key) {
+                        None => Ok(None),
+                        Some(value) => Ok(Some(
+                            value
+                                .as_str()
+                                .ok_or_else(|| where_(&format!("has a non-string `{key}`")))?
+                                .to_string(),
+                        )),
+                    }
+                };
+                // A connection either names a provider or describes one with a
+                // dialect and a base URL (docs/transport.md). Both spellings are
+                // listed, so a described endpoint is as repairable as a named one.
+                let base_url = string("base-url")?;
+                let provider = match (string("provider")?, string("dialect")?) {
+                    (Some(provider), _) => provider,
+                    (None, Some(dialect)) => crate::api::WireDialect::from_name(&dialect)
+                        .map(|dialect| Provider::Custom(dialect).name().to_string())
+                        .map_err(|error| where_(&error.to_string()))?,
+                    (None, None) => {
+                        return Err(where_("has neither a `provider` nor a `dialect`"));
+                    }
+                };
                 let disabled = match connection.get("disabled") {
                     None => false,
                     Some(value) => value
@@ -356,6 +382,7 @@ impl Existing {
                     name.to_string(),
                     ExistingConnection {
                         provider,
+                        base_url,
                         auth,
                         disabled,
                     },
@@ -450,7 +477,10 @@ fn parse_auth(item: &toml_edit::Item) -> Result<ExistingAuth, String> {
 /// its key conventionally lives in, and a starting model when nothing live can
 /// be listed.
 pub(crate) struct ProviderCard {
-    pub(crate) provider: Provider,
+    /// `None` is the card for an endpoint this build knows no name for: the
+    /// dialect and base URL are asked for instead, and the provider is built from
+    /// the answers (docs/transport.md).
+    pub(crate) provider: Option<Provider>,
     pub(crate) label: &'static str,
     pub(crate) detail: &'static str,
     /// The conventional variable name, `None` for a provider whose credential is
@@ -461,34 +491,44 @@ pub(crate) struct ProviderCard {
     pub(crate) model_hint: &'static str,
 }
 
-pub(crate) const PROVIDERS: [ProviderCard; 4] = [
+pub(crate) const PROVIDERS: [ProviderCard; 5] = [
     ProviderCard {
-        provider: Provider::Anthropic,
+        provider: Some(Provider::Anthropic),
         label: "Anthropic",
         detail: "an API key for api.anthropic.com",
         env_key: Some("ANTHROPIC_API_KEY"),
         model_hint: "claude-sonnet-4-5",
     },
     ProviderCard {
-        provider: Provider::OpenRouter,
+        provider: Some(Provider::OpenRouter),
         label: "OpenRouter",
         detail: "one key, many models",
         env_key: Some("OPENROUTER_API_KEY"),
         model_hint: "anthropic/claude-sonnet-4-5",
     },
     ProviderCard {
-        provider: Provider::OpenAI,
+        provider: Some(Provider::OpenAI),
         label: "OpenAI",
         detail: "an API key for the platform API",
         env_key: Some("OPENAI_API_KEY"),
         model_hint: "gpt-5.6",
     },
     ProviderCard {
-        provider: Provider::OpenAICodex,
+        provider: Some(Provider::OpenAICodex),
         label: "ChatGPT subscription",
         detail: "your Plus or Pro plan",
         env_key: None,
         model_hint: "gpt-5.6",
+    },
+    ProviderCard {
+        provider: None,
+        label: "Something else",
+        detail: "an endpoint speaking Anthropic Messages or OpenAI Responses",
+        // A described endpoint has no conventional variable name; the flow
+        // suggests one from the connection's own name instead.
+        env_key: None,
+        // Nothing to prefill: the catalog is whatever the endpoint serves.
+        model_hint: "",
     },
 ];
 

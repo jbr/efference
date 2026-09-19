@@ -61,7 +61,16 @@ pub fn render(existing_text: &str, draft: &Draft) -> Result<String, String> {
         .ok_or("[connections] is not a table")?;
     for (name, connection) in &draft.connections {
         let mut table = Table::new();
-        table["provider"] = value(connection.provider.name());
+        // A described endpoint is written as what it is — a dialect and a base
+        // URL — never as a `provider` line naming a variant that is not a
+        // provider name (docs/transport.md).
+        match (connection.provider, &connection.base_url) {
+            (Provider::Custom(dialect), Some(base)) => {
+                table["dialect"] = value(dialect.config_name());
+                table["base-url"] = value(base.as_str());
+            }
+            _ => table["provider"] = value(connection.provider.name()),
+        }
         table["auth"] = value(auth_inline_table(&connection.auth));
         if connection.disabled {
             table["disabled"] = value(true);

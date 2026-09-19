@@ -203,7 +203,17 @@ auth = { kind = "vault" }
     for (toml, expected) in [
         (
             "[connections.a]\nauth = { kind = \"codex-cache\" }\n",
-            "no `provider`",
+            "neither a `provider` nor a `dialect`",
+        ),
+        // A described endpoint is as repairable as a named one, so an unreadable
+        // dialect says so rather than dropping the row from the list.
+        (
+            "[connections.a]\ndialect = \"completions\"\nbase-url = \"https://x/v1\"\nauth = { kind = \"env\", key = \"K\" }\n",
+            "completions",
+        ),
+        (
+            "[connections.a]\ndialect = 7\nauth = { kind = \"env\", key = \"K\" }\n",
+            "non-string `dialect`",
         ),
         ("[connections.a]\nprovider = \"anthropic\"\n", "no `auth`"),
         (

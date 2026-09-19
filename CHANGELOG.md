@@ -12,6 +12,9 @@ behind a change, see [`journal/`](journal/).
   `base-url` instead of naming a provider, so an endpoint speaking Messages or Responses works
   without a new enum variant. Capabilities come from an opportunistic, field-by-field parse of the endpoint's
   model listing, and an unreported capability takes the arm that asserts least.
+- **`efference setup` configures an endpoint it knows no name for** (docs/operating.md): a
+  "Something else" card asking the dialect and base URL, with the connection name suggested from
+  the endpoint's host and the credential variable from the connection.
 - **A recoverable output-cap guess** (docs/transport.md): a model whose capability source reports
   no output cap gets 65536 rather than the client's small default, and a provider that refuses a
   reservation has its stated ceiling read out of the refusal, applied, and remembered for the

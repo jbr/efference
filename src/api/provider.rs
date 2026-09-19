@@ -58,7 +58,16 @@ impl WireDialect {
             .map(|c| format!("contains {c:?}; the {self} dialect allows only [a-zA-Z0-9_-]"))
     }
 
-    /// Parse a configured dialect name, for `provider = "custom"`
+    /// The name configuration spells this dialect with — the inverse of
+    /// [`Self::from_name`], for writing a connection back out.
+    pub fn config_name(self) -> &'static str {
+        match self {
+            Self::Messages => "messages",
+            Self::Responses => "responses",
+        }
+    }
+
+    /// Parse a configured dialect name, for a described endpoint
     /// (docs/transport.md). The vocabulary is closed: a dialect is an encoder and
     /// an assembler in this crate, so an unrecognized name has nothing to select.
     pub fn from_name(value: &str) -> Result<Self, Error> {
@@ -1296,6 +1305,20 @@ impl Endpoint {
     /// offer as a menu; the other providers answer an empty list and the caller
     /// asks for an id instead.
     pub async fn list_models(&self) -> Result<Vec<(String, String)>, Error> {
+        // A described endpoint's listing is the same route the credential check
+        // and the capability lookup use, so one shape reads all three
+        // (`provider/listing.rs`). Ids only: no listing carries a display name.
+        if let Provider::Custom(_) = self.provider {
+            let url = self
+                .provider
+                .capabilities_url(self.base.as_deref(), "")
+                .map_err(|e| -> Error { e })?;
+            let body = self.authed_get(&url).await?;
+            return Ok(listing::model_ids(&body)?
+                .into_iter()
+                .map(|id| (id.clone(), id))
+                .collect());
+        }
         if self.provider != Provider::Anthropic {
             return Ok(Vec::new());
         }

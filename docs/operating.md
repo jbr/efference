@@ -201,6 +201,19 @@ Anthropic offers its model listing as a menu, and a chosen model is described
 from the same metadata boot reads. A rejected key or an unknown model
 is said and can be kept.
 
+**An endpoint with no name in this build.** The provider menu's last entry is
+"Something else", for an endpoint speaking a dialect efference already has an
+encoder for at a URL the provider enum does not know
+([transport.md](transport.md)). It asks the dialect — Anthropic Messages or OpenAI
+Responses — then the base URL, and refuses a base URL that is not one at the
+prompt rather than at host launch. Both are asked *before* the name, because the
+endpoint's host is a better name suggestion than anything the flow could derive
+otherwise: `https://api.meta.ai/v1` suggests the connection `meta`, which in turn
+suggests `META_API_KEY` for the environment variable, so the two questions with no
+conventional answer arrive prefilled anyway. The connection is written as the two
+keys it is — `dialect` and `base-url` — never as a `provider` line naming
+something that is not a provider name.
+
 The subscription's two ways are asked as one question, since both spend the same
 Plus or Pro plan: piggyback on Codex's cached login (`kind = "codex-cache"`,
 which needs Codex run often enough to keep the token fresh), or log in here

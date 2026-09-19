@@ -160,7 +160,7 @@ impl Probe for Table {
         Ok(login)
     }
 
-    async fn check_key(&self, _: Provider, key: &str) -> Result<Option<KeyReport>, String> {
+    async fn check_key(&self, _: &Target, key: &str) -> Result<Option<KeyReport>, String> {
         self.seen_keys.borrow_mut().push(key.to_string());
         if self.accepted_keys.iter().any(|accepted| accepted == key) {
             Ok(Some(KeyReport {
@@ -171,8 +171,20 @@ impl Probe for Table {
         }
     }
 
-    async fn list_models(&self, provider: Provider, _: &str) -> Result<Vec<ModelListing>, String> {
-        if provider != Provider::Anthropic {
+    async fn list_models(&self, target: &Target, _: &str) -> Result<Vec<ModelListing>, String> {
+        // A described endpoint's listing stands in for the real one: ids only, as
+        // no listing carries a display name.
+        if let Provider::Custom(_) = target.provider {
+            return Ok(self
+                .known_models
+                .iter()
+                .map(|id| ModelListing {
+                    id: id.clone(),
+                    display_name: id.clone(),
+                })
+                .collect());
+        }
+        if target.provider != Provider::Anthropic {
             return Ok(Vec::new());
         }
         Ok(vec![
@@ -187,7 +199,7 @@ impl Probe for Table {
         ])
     }
 
-    async fn check_model(&self, _: Provider, _: &str, model: &str) -> Result<ModelReport, String> {
+    async fn check_model(&self, _: &Target, _: &str, model: &str) -> Result<ModelReport, String> {
         if self.known_models.iter().any(|known| known == model) {
             Ok(ModelReport {
                 context_length: Some(200_000),
@@ -219,6 +231,7 @@ async fn run_script(
     (draft, script)
 }
 
+mod described;
 mod file;
 mod keys;
 mod manage;

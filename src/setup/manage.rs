@@ -97,6 +97,7 @@ async fn add_another<P: Prompter, Q: Probe>(
             name.clone(),
             ExistingConnection {
                 provider: connection.provider.name().to_string(),
+                base_url: connection.base_url.clone(),
                 auth: credential::to_existing_auth(&connection.auth),
                 disabled: false,
             },

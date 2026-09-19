@@ -44,6 +44,36 @@ pub struct ModelListing {
     pub display_name: String,
 }
 
+/// What a probe asks about: the provider, plus the base URL a described endpoint
+/// carries and a named one does not (docs/transport.md).
+///
+/// One value rather than a second parameter on each method, so adding what a
+/// connection knows about itself is one struct field instead of an edit at every
+/// call site and in both implementations.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Target {
+    pub provider: Provider,
+    pub base: Option<String>,
+}
+
+impl Target {
+    /// A provider this build knows by name, which owns its own URLs.
+    pub fn named(provider: Provider) -> Self {
+        Self {
+            provider,
+            base: None,
+        }
+    }
+
+    /// An endpoint described by dialect and base URL.
+    pub fn described(dialect: crate::api::WireDialect, base: impl Into<String>) -> Self {
+        Self {
+            provider: Provider::Custom(dialect),
+            base: Some(base.into()),
+        }
+    }
+}
+
 /// The lookups setup makes. Every network method takes the credential by
 /// value for the call and keeps nothing. In-crate callers only, so the
 /// futures carry no `Send` bound.
@@ -72,15 +102,14 @@ pub trait Probe {
     fn delete_secret(&self, name: &str) -> Result<(), String>;
     /// Whether the provider accepts `key`. `Ok(None)` when the provider has no
     /// route to ask.
-    async fn check_key(&self, provider: Provider, key: &str) -> Result<Option<KeyReport>, String>;
-    /// The models `key` can see on `provider`, for a menu; empty when the
-    /// provider has no short listing to offer.
-    async fn list_models(&self, provider: Provider, key: &str)
-    -> Result<Vec<ModelListing>, String>;
-    /// The provider's metadata for `model`, as the boot path would read it.
+    async fn check_key(&self, target: &Target, key: &str) -> Result<Option<KeyReport>, String>;
+    /// The models `key` can see there, for a menu; empty when the endpoint has no
+    /// short listing to offer.
+    async fn list_models(&self, target: &Target, key: &str) -> Result<Vec<ModelListing>, String>;
+    /// The metadata for `model`, as the boot path would read it.
     async fn check_model(
         &self,
-        provider: Provider,
+        target: &Target,
         key: &str,
         model: &str,
     ) -> Result<ModelReport, String>;
@@ -104,10 +133,8 @@ impl LiveProbe {
         })
     }
 
-    fn endpoint(provider: Provider, key: &str) -> Result<Endpoint, String> {
-        // The setup probe checks named providers only; a custom connection's base
-        // URL arrives with the connection, not with a provider card.
-        Endpoint::from_credentials(provider, key.to_string(), None, None)
+    fn endpoint(target: &Target, key: &str) -> Result<Endpoint, String> {
+        Endpoint::from_credentials(target.provider, key.to_string(), None, target.base.clone())
             .map_err(|error| error.to_string())
     }
 }
@@ -161,8 +188,8 @@ impl Probe for LiveProbe {
         })
     }
 
-    async fn check_key(&self, provider: Provider, key: &str) -> Result<Option<KeyReport>, String> {
-        let body = Self::endpoint(provider, key)?
+    async fn check_key(&self, target: &Target, key: &str) -> Result<Option<KeyReport>, String> {
+        let body = Self::endpoint(target, key)?
             .check_key()
             .await
             .map_err(|error| error.to_string())?;
@@ -171,12 +198,8 @@ impl Probe for LiveProbe {
         }))
     }
 
-    async fn list_models(
-        &self,
-        provider: Provider,
-        key: &str,
-    ) -> Result<Vec<ModelListing>, String> {
-        let models = Self::endpoint(provider, key)?
+    async fn list_models(&self, target: &Target, key: &str) -> Result<Vec<ModelListing>, String> {
+        let models = Self::endpoint(target, key)?
             .list_models()
             .await
             .map_err(|error| error.to_string())?;
@@ -188,11 +211,11 @@ impl Probe for LiveProbe {
 
     async fn check_model(
         &self,
-        provider: Provider,
+        target: &Target,
         key: &str,
         model: &str,
     ) -> Result<ModelReport, String> {
-        let capabilities = Self::endpoint(provider, key)?
+        let capabilities = Self::endpoint(target, key)?
             .fetch_capabilities(model, &[])
             .await
             .map_err(|error| error.to_string())?;

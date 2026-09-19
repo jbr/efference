@@ -207,7 +207,15 @@ async fn update_credential<P: Prompter, Q: Probe>(
     name: &str,
     connection: &ExistingConnection,
 ) -> Result<(), Cancelled> {
-    let Some(provider) = Provider::from_name(&connection.provider).ok() else {
+    // A described endpoint reports `custom-<dialect>`, which `from_name` does not
+    // take: its provider is rebuilt from the dialect half.
+    let resolved = match connection.provider.strip_prefix("custom-") {
+        Some(dialect) => crate::api::WireDialect::from_name(dialect)
+            .ok()
+            .map(Provider::Custom),
+        None => Provider::from_name(&connection.provider).ok(),
+    };
+    let Some(provider) = resolved else {
         prompter.say(
             Tone::Bad,
             &format!(
@@ -219,11 +227,24 @@ async fn update_credential<P: Prompter, Q: Probe>(
     };
     let default_key = PROVIDERS
         .iter()
-        .find(|card| card.provider == provider)
+        .find(|card| card.provider == Some(provider))
         .and_then(|card| card.env_key)
         .unwrap_or("API_KEY");
     let (auth, _) =
-        crate::setup::flow::api_key_source(prompter, probe, provider, name, default_key).await?;
+        // The management flow edits a credential on a connection that already
+        // exists, and a described endpoint's base URL is not re-asked here: the
+        // check runs against the connection as configured.
+        crate::setup::flow::api_key_source(
+            prompter,
+            probe,
+            &Target {
+                provider,
+                base: connection.base_url.clone(),
+            },
+            name,
+            default_key,
+        )
+        .await?;
     draft.record(Change::SetAuth {
         name: name.to_string(),
         auth: auth.clone(),

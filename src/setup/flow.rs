@@ -76,17 +76,41 @@ async fn one_connection<P: Prompter, Q: Probe>(
         .map(|card| Choice::new(card.label).detail(card.detail))
         .collect();
     let card = &PROVIDERS[prompter.select("Which provider?", &cards)?];
-    let provider = card.provider;
+    // A described endpoint answers what a named provider derives: the dialect it
+    // speaks and where it lives (docs/transport.md). Asked before the name,
+    // because the host makes a better name suggestion than the word "custom".
+    let described = match card.provider {
+        Some(_) => None,
+        None => Some(describe_endpoint(prompter)?),
+    };
+    let (provider, base_url) = match (&card.provider, &described) {
+        (Some(provider), _) => (*provider, None),
+        (None, Some((dialect, base))) => (Provider::Custom(*dialect), Some(base.clone())),
+        (None, None) => unreachable!("a card without a provider is asked to describe one"),
+    };
+    let target = match &base_url {
+        Some(base) => Target {
+            provider,
+            base: Some(base.clone()),
+        },
+        None => Target::named(provider),
+    };
 
     let taken = |name: &str| {
         existing.connections.contains_key(name)
             || draft.connections.iter().any(|(taken, _)| taken == name)
     };
+    // `custom-messages` is a poor connection name; the endpoint's host is what
+    // the operator already calls this thing.
+    let stem = base_url
+        .as_deref()
+        .and_then(host_stem)
+        .unwrap_or_else(|| provider.name().to_string());
     let name = loop {
-        let mut suggestion = provider.name().to_string();
+        let mut suggestion = stem.clone();
         let mut n = 2;
         while taken(&suggestion) {
-            suggestion = format!("{}-{n}", provider.name());
+            suggestion = format!("{stem}-{n}");
             n += 1;
         }
         let name = prompter
@@ -107,23 +131,107 @@ async fn one_connection<P: Prompter, Q: Probe>(
         break name;
     };
 
-    let (auth, key) = match card.env_key {
-        Some(default_key) => api_key_source(prompter, probe, provider, &name, default_key).await?,
-        None => (chatgpt_source(prompter, probe, &name).await?, None),
+    let (auth, key) = match (card.env_key, card.provider) {
+        (Some(default_key), _) => {
+            api_key_source(prompter, probe, &target, &name, default_key).await?
+        }
+        // A described endpoint takes a key like any other; the variable name is
+        // suggested from the connection rather than from a convention that does
+        // not exist for it.
+        (None, None) => {
+            let suggested = default_env_key(&name);
+            api_key_source(prompter, probe, &target, &name, &suggested).await?
+        }
+        (None, Some(_)) => (chatgpt_source(prompter, probe, &name).await?, None),
     };
 
-    let model = choose_model(prompter, probe, card, key.as_deref()).await?;
-    let spotter = choose_spotter(prompter, probe, card, key.as_deref()).await?;
+    let model = choose_model(prompter, probe, card, &target, key.as_deref()).await?;
+    let spotter = choose_spotter(prompter, probe, card, &target, key.as_deref()).await?;
     Ok((
         name,
         ConnectionDraft {
             provider,
+            base_url,
             auth,
             model,
             spotter,
             disabled: false,
         },
     ))
+}
+
+/// The dialect and base URL for an endpoint this build knows no name for. The
+/// dialect first: it is the choice that decides what the endpoint has to be,
+/// and a person who cannot answer it has nothing to type in the URL either.
+fn describe_endpoint<P: Prompter>(prompter: &mut P) -> Result<(WireDialect, String), Cancelled> {
+    let dialects = [
+        Choice::new("Anthropic Messages").detail("POST <base>/messages, as Anthropic's API"),
+        Choice::new("OpenAI Responses").detail("POST <base>/responses, as OpenAI's API"),
+    ];
+    let dialect = match prompter.select("Which API does it speak?", &dialects)? {
+        0 => WireDialect::Messages,
+        _ => WireDialect::Responses,
+    };
+    let base = loop {
+        let base = prompter
+            .text("Base URL", Some("https://api.example.com/v1"))?
+            .trim()
+            .trim_end_matches('/')
+            .to_string();
+        if base.starts_with("https://") || base.starts_with("http://") {
+            break base;
+        }
+        prompter.say(
+            Tone::Bad,
+            "A base URL starts with https:// and ends where the route begins, \
+             as in https://api.example.com/v1.",
+        );
+    };
+    Ok((dialect, base))
+}
+
+/// The host's own name, for suggesting a connection name: `api.meta.ai/v1` reads
+/// as `meta`. `None` when nothing recognizable can be pulled out, which leaves
+/// the provider's name as the suggestion.
+fn host_stem(base: &str) -> Option<String> {
+    let host = base
+        .split_once("://")?
+        .1
+        .split(['/', ':'])
+        .next()?
+        .to_ascii_lowercase();
+    let labels: Vec<&str> = host
+        .split('.')
+        .filter(|label| !label.is_empty() && *label != "www" && *label != "api")
+        .collect();
+    // The label before the public suffix, which is the name people use. A
+    // two-label host (`meta.ai`) leaves the first; a longer one drops the tail.
+    let stem = if labels.len() > 1 {
+        labels[labels.len() - 2]
+    } else {
+        labels.first().copied()?
+    };
+    let stem: String = stem
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '-')
+        .collect();
+    (!stem.is_empty()).then_some(stem)
+}
+
+/// The environment variable to suggest for a described endpoint's key, from the
+/// connection's name: `meta` reads as `META_API_KEY`.
+fn default_env_key(connection: &str) -> String {
+    let stem: String = connection
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() {
+                c.to_ascii_uppercase()
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    format!("{stem}_API_KEY")
 }
 
 /// Where an API key comes from, and the key itself when one is on hand for the
@@ -133,7 +241,7 @@ async fn one_connection<P: Prompter, Q: Probe>(
 pub(super) async fn api_key_source<P: Prompter, Q: Probe>(
     prompter: &mut P,
     probe: &Q,
-    provider: Provider,
+    target: &Target,
     connection: &str,
     default_key: &str,
 ) -> Result<(AuthSource, Option<String>), Cancelled> {
@@ -148,7 +256,7 @@ pub(super) async fn api_key_source<P: Prompter, Q: Probe>(
         keep,
     ];
     if prompter.select("Where will the API key come from?", &choices)? == 1 {
-        return keychain_source(prompter, probe, provider, connection).await;
+        return keychain_source(prompter, probe, target, connection).await;
     }
     let variable = loop {
         let variable = prompter
@@ -187,7 +295,7 @@ pub(super) async fn api_key_source<P: Prompter, Q: Probe>(
         }
     };
     let key = match key {
-        Some(key) => check_key(prompter, probe, provider, key).await?,
+        Some(key) => check_key(prompter, probe, target, key).await?,
         None => None,
     };
     Ok((AuthSource::Env { key: variable }, key))
@@ -199,7 +307,7 @@ pub(super) async fn api_key_source<P: Prompter, Q: Probe>(
 async fn keychain_source<P: Prompter, Q: Probe>(
     prompter: &mut P,
     probe: &Q,
-    provider: Provider,
+    target: &Target,
     connection: &str,
 ) -> Result<(AuthSource, Option<String>), Cancelled> {
     let pasted = loop {
@@ -211,7 +319,7 @@ async fn keychain_source<P: Prompter, Q: Probe>(
         }
         break pasted;
     };
-    let checked = check_key(prompter, probe, provider, pasted.clone()).await?;
+    let checked = check_key(prompter, probe, target, pasted.clone()).await?;
     let name = crate::secrets::inference_name(connection);
     match probe.store_secret(&name, &pasted) {
         Ok(()) => prompter.say(Tone::Good, &format!("Kept as `{name}`.")),
@@ -229,10 +337,10 @@ async fn keychain_source<P: Prompter, Q: Probe>(
 async fn check_key<P: Prompter, Q: Probe>(
     prompter: &mut P,
     probe: &Q,
-    provider: Provider,
+    target: &Target,
     key: String,
 ) -> Result<Option<String>, Cancelled> {
-    match probe.check_key(provider, &key).await {
+    match probe.check_key(target, &key).await {
         Ok(Some(report)) => {
             let label = report
                 .label
@@ -240,7 +348,7 @@ async fn check_key<P: Prompter, Q: Probe>(
                 .unwrap_or_default();
             prompter.say(
                 Tone::Good,
-                &format!("{} accepted the key{label}.", provider),
+                &format!("{} accepted the key{label}.", target.provider),
             );
             Ok(Some(key))
         }
@@ -248,7 +356,7 @@ async fn check_key<P: Prompter, Q: Probe>(
         Err(error) => {
             prompter.say(
                 Tone::Bad,
-                &format!("{provider} rejected the key: {}", describe(&error)),
+                &format!("{} rejected the key: {}", target.provider, describe(&error)),
             );
             if !prompter.confirm("Record this connection anyway?", false)? {
                 return Err(Cancelled);
@@ -265,13 +373,11 @@ async fn choose_model<P: Prompter, Q: Probe>(
     prompter: &mut P,
     probe: &Q,
     card: &ProviderCard,
+    target: &Target,
     key: Option<&str>,
 ) -> Result<String, Cancelled> {
     let listing = match key {
-        Some(key) => probe
-            .list_models(card.provider, key)
-            .await
-            .unwrap_or_default(),
+        Some(key) => probe.list_models(target, key).await.unwrap_or_default(),
         None => Vec::new(),
     };
     loop {
@@ -299,7 +405,7 @@ async fn choose_model<P: Prompter, Q: Probe>(
             prompter.say(Tone::Bad, "A model id is required.");
             continue;
         }
-        if check_model(prompter, probe, card.provider, key, &model).await? {
+        if check_model(prompter, probe, target, key, &model).await? {
             return Ok(model);
         }
     }
@@ -309,6 +415,7 @@ async fn choose_spotter<P: Prompter, Q: Probe>(
     prompter: &mut P,
     probe: &Q,
     card: &ProviderCard,
+    target: &Target,
     key: Option<&str>,
 ) -> Result<String, Cancelled> {
     prompter.say(
@@ -320,7 +427,9 @@ async fn choose_spotter<P: Prompter, Q: Probe>(
         let spotter = prompter
             .text(
                 "Model for the spotter",
-                card.provider.default_spotter_model(),
+                card.provider
+                    .as_ref()
+                    .and_then(Provider::default_spotter_model),
             )?
             .trim()
             .to_string();
@@ -328,7 +437,7 @@ async fn choose_spotter<P: Prompter, Q: Probe>(
             prompter.say(Tone::Bad, "A model id is required.");
             continue;
         }
-        if check_model(prompter, probe, card.provider, key, &spotter).await? {
+        if check_model(prompter, probe, target, key, &spotter).await? {
             return Ok(spotter);
         }
     }
@@ -339,14 +448,14 @@ async fn choose_spotter<P: Prompter, Q: Probe>(
 async fn check_model<P: Prompter, Q: Probe>(
     prompter: &mut P,
     probe: &Q,
-    provider: Provider,
+    target: &Target,
     key: Option<&str>,
     model: &str,
 ) -> Result<bool, Cancelled> {
     let Some(key) = key else {
         return Ok(true);
     };
-    match probe.check_model(provider, key, model).await {
+    match probe.check_model(target, key, model).await {
         Ok(report) => {
             let output = report
                 .max_output_tokens
@@ -364,7 +473,11 @@ async fn check_model<P: Prompter, Q: Probe>(
         Err(error) => {
             prompter.say(
                 Tone::Bad,
-                &format!("{provider} does not know {model}: {}", describe(&error)),
+                &format!(
+                    "{} does not know {model}: {}",
+                    target.provider,
+                    describe(&error)
+                ),
             );
             prompter.confirm("Keep it anyway?", false)
         }

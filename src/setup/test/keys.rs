@@ -249,7 +249,7 @@ fn keychain_is_shown_unavailable_without_a_store() {
     let result = runtime.block_on(super::flow::api_key_source(
         &mut capture,
         &probe,
-        Provider::Anthropic,
+        &Target::named(Provider::Anthropic),
         "anthropic",
         "ANTHROPIC_API_KEY",
     ));

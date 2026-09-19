@@ -165,3 +165,21 @@ pub(super) fn capabilities_for(body: &str, model: &str) -> Result<ModelCapabilit
         .map(Entry::capabilities)
         .unwrap_or_else(ModelCapabilities::unknown))
 }
+
+/// Every model id a listing names, in the order the endpoint gave them — the
+/// suggestions a client offers beside the native-id input, never a domain of
+/// legal models. An id absent here is still sent to creation normally.
+pub(super) fn model_ids(body: &str) -> Result<Vec<String>, Error> {
+    #[derive(Deserialize)]
+    struct Listing {
+        #[serde(default)]
+        data: Vec<Id>,
+    }
+    #[derive(Deserialize)]
+    struct Id {
+        id: String,
+    }
+    let listing: Listing = serde_json::from_str(body)
+        .map_err(|e| -> Error { format!("model listing is not a model listing: {e}").into() })?;
+    Ok(listing.data.into_iter().map(|entry| entry.id).collect())
+}
