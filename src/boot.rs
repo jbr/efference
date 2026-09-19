@@ -16,7 +16,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::api::{Client, Error};
+use crate::api::{Client, Error, UNKNOWN_OUTPUT_CAP};
 use crate::daemon::SessionBoot;
 use crate::distill::ForkPeek;
 use crate::persist::Log;
@@ -253,10 +253,12 @@ async fn prepare_minting(
     eprintln!(
         "model: {model} · context {}{}",
         describe_window(capabilities.context_length),
-        capabilities
-            .max_output_tokens
-            .map(|m| format!(" · max output {m}"))
-            .unwrap_or_default()
+        match capabilities.max_output_tokens {
+            Some(cap) => format!(" · max output {cap}"),
+            // Said as an assumption rather than printed as a fact, so an
+            // unreported cap is visible here instead of surprising later.
+            None => format!(" · max output {UNKNOWN_OUTPUT_CAP} assumed (none reported)"),
+        }
     );
 
     // The session's effort level (docs/transport.md): the flag if given, else the
@@ -568,9 +570,12 @@ async fn prepare_minting(
     // The output budget follows the model's reported cap (a reasoning model's
     // thinking bills against it; the 4096 default starves a long think). No
     // report → the default stands.
-    if let Some(cap) = capabilities.max_output_tokens {
-        client = client.with_max_output(cap);
-    }
+    // An unreported cap still needs a number, because Messages requires
+    // `max_tokens` (`UNKNOWN_OUTPUT_CAP`, docs/transport.md). Erring high is
+    // deliberate and is made safe by the retry that reads the ceiling out of the
+    // provider's refusal — the `Client`'s own small default would quietly cost a
+    // mandatory-reasoning model its entire response.
+    client = client.with_max_output(capabilities.max_output_tokens.unwrap_or(UNKNOWN_OUTPUT_CAP));
     // The window the cap is reserved against: each request sends the cap
     // shrunk to what the window spares after the prompt (`api/reservation.rs`).
     client = client.with_context_window(capabilities.context_length);

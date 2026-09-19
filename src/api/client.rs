@@ -766,18 +766,43 @@ impl Client {
                     // the reservation and go again — once per halving, down to
                     // the floor. Any other open failure stays terminal.
                     let overran = status == Some(Status::BadRequest) && is_window_overflow(&detail);
+                    // The other reservation 400: the cap itself is above what the
+                    // model accepts, which is what an *unreported* cap
+                    // (`UNKNOWN_OUTPUT_CAP`) risks. Where the provider names its
+                    // ceiling the retry goes straight there; where it does not,
+                    // the same halving applies.
+                    let rejected = (status == Some(Status::BadRequest) && !overran)
+                        .then(|| output_cap_rejection(&detail))
+                        .flatten();
                     // A statement rather than a condition, so the reservation
                     // guard is released here: the `continue` below re-enters the
                     // request path, which reads the reservation again.
-                    let halved = overran
-                        .then(|| self.reservation.lock().unwrap().halve())
-                        .flatten();
-                    if let Some(halved) = halved {
-                        log::warn!(
-                            "prompt plus max_tokens {max_tokens} overran the window; \
-                             retrying with max_tokens {halved}"
-                        );
-                        max_tokens = u32::try_from(halved).unwrap_or(u32::MAX);
+                    let retry = match rejected {
+                        Some(OutputCapRejection::Max(stated)) => {
+                            let mut reservation = self.reservation.lock().unwrap();
+                            reservation.clamp_to(stated).or_else(|| reservation.halve())
+                        }
+                        Some(OutputCapRejection::Unstated) => {
+                            self.reservation.lock().unwrap().halve()
+                        }
+                        None => overran
+                            .then(|| self.reservation.lock().unwrap().halve())
+                            .flatten(),
+                    };
+                    if let Some(retry) = retry {
+                        if overran {
+                            log::warn!(
+                                "prompt plus max_tokens {max_tokens} overran the window; \
+                                 retrying with max_tokens {retry}"
+                            );
+                        } else {
+                            log::warn!(
+                                "{} refused max_tokens {max_tokens}; retrying with \
+                                 max_tokens {retry}",
+                                self.endpoint.provider
+                            );
+                        }
+                        max_tokens = u32::try_from(retry).unwrap_or(u32::MAX);
                         continue;
                     }
                     // The credential aged out under a running host

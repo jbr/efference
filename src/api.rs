@@ -389,7 +389,10 @@ pub use render::{
     render_messages_pretty, render_messages_yaml, render_request_pretty, render_request_yaml,
     render_responses_request_pretty,
 };
-pub use reservation::{Reservation, ReservationState, is_window_overflow, reservation_state};
+pub use reservation::{
+    OutputCapRejection, Reservation, ReservationState, UNKNOWN_OUTPUT_CAP, is_window_overflow,
+    output_cap_rejection, reservation_state,
+};
 pub use responses::encode_responses;
 pub use thinking::{ToolChoice, auto_turns_disable_thinking, check_effort_thinking};
 

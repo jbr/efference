@@ -887,6 +887,42 @@ input (sending bytes a model cannot read spends the upload and reports success),
 value passes through to the endpoint's own validation), and no reasoning
 requirement — which is why that field is three-state rather than a `bool`.
 
+#### An unreported output cap
+
+`max_tokens` is **required** on Messages, so an unreported cap cannot be answered by
+omitting the field, and an asymmetry between the dialects would cost more than one
+rule. `UNKNOWN_OUTPUT_CAP` (65536, `api/reservation.rs`) is what boot sends instead,
+stated on the boot line as an assumption — `max output 65536 assumed (none
+reported)` — rather than printed as a fact.
+
+The number is chosen by how many models **accept** it, not by how many declare it.
+Across the 327 non-variant models OpenRouter reports a cap for, 61% sit at or above
+65536 against 38% for 128000 — the single most common value, but a popular ceiling
+rather than a popular floor. It is also the median and the minimum across the models
+this project runs, so in practice it is refused by none of them.
+
+Erring low is the worse direction, and only down to a cliff. A cap too low for a
+mandatory-reasoning model spends the whole budget on thinking and returns
+`content: []` with `stop_reason: max_tokens` — an empty turn, not a short one,
+reading as a broken model. Above that cliff the asymmetry flattens: a cap set too
+high costs one refused request and gains nothing, since a turn wanting more than
+65536 output tokens is not a case this harness has.
+
+That refusal is recoverable. `reservation::output_cap_rejection` classifies the
+*other* reservation 400 — the cap itself above what the model accepts, as distinct
+from the prompt-plus-reservation overflow `is_window_overflow` matches. The two are
+told apart by the window: every overflow phrasing names the *context*, and a cap
+rejection names only the output parameter and its ceiling. Where the provider states
+that ceiling — after a comparison (`max_tokens: N > M`), as a bound (`a value <= M`),
+or as a phrase (`at most M`) — the retry goes straight to it rather than searching;
+where it states none, the same halving applies, so a fixable 400 is never terminal.
+
+A stated ceiling is then **remembered for the session** (`Reservation::learned_cap`).
+Without that the correction would last exactly one request, since `compute` reads the
+client's configured cap fresh each time and the next turn would send the refused
+number again. A wrong guess would cost a wasted round trip *per turn* rather than
+once, which is what makes guessing affordable at all.
+
 `ModelCapabilities::context_length` is therefore `Option<u64>`. The consumers
 already tolerate its absence — `Client` and `api/reservation.rs` take an `Option`,
 and `GET /state` reports a null `context.limit` — so what an unknown window costs is
