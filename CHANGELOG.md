@@ -8,6 +8,14 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- **Stopping-behaviour eval tasks** (eval/harness/README.md): `tcp-cache-falsified`,
+  `-hedged`, and `-ambiguous` break a brief in three different ways — an instruction
+  that is false, an expectation that is false, a fact that is missing — so the exercise
+  can measure when an agent should stop, which a fully specified brief never could.
+- **`tcp-cache-checkin` and the approving operator** (eval/harness/README.md): the
+  other direction — an interaction protocol that reproduces barren stopping, since the
+  pattern is co-produced by an operator who rewards every check-in and cannot be
+  elicited by a task alone.
 - **`efference dev stops`** (docs/operating.md): fold a session's turn endings — or the
   whole corpus's — into what each one bought, by what the next turn carried. A *barren*
   ending asked nothing and was answered with nothing; a run of them is what a stalled
