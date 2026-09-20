@@ -33,7 +33,12 @@ pub async fn run<P: Prompter, Q: Probe>(
         );
         let mut draft = Draft::default();
         add_connections(prompter, probe, existing, &mut draft).await?;
-        draft.default_connection = choose_default(prompter, existing, &draft)?;
+        // Adding a connection says nothing about which model sessions default
+        // to; that is a separate concern with its own editor, visited once here
+        // so a first run does not end with a file no session can use
+        // (docs/operating.md).
+        let added = draft.added_connections();
+        super::defaults::first_run(prompter, probe, &added, &mut draft).await?;
         Ok(draft)
     } else {
         super::manage::run(prompter, probe, existing).await
@@ -52,10 +57,7 @@ pub(super) async fn add_connections<P: Prompter, Q: Probe>(
         let (name, connection) = one_connection(prompter, probe, existing, draft).await?;
         prompter.say(
             Tone::Good,
-            &format!(
-                "{name}: sessions select it as {name}/{} (spotter {name}/{}).",
-                connection.model, connection.spotter
-            ),
+            &format!("{name}: sessions select a model on it as {name}/<model>."),
         );
         draft.connections.push((name, connection));
         if !prompter.confirm("Add another connection?", false)? {
@@ -131,7 +133,10 @@ async fn one_connection<P: Prompter, Q: Probe>(
         break name;
     };
 
-    let (auth, key) = match (card.env_key, card.provider) {
+    // The key the checks used is dropped here: adding a connection asks for no
+    // model, so nothing downstream needs it, and setup keeps no credential past
+    // the check it was given for.
+    let (auth, _) = match (card.env_key, card.provider) {
         (Some(default_key), _) => {
             api_key_source(prompter, probe, &target, &name, default_key).await?
         }
@@ -145,16 +150,12 @@ async fn one_connection<P: Prompter, Q: Probe>(
         (None, Some(_)) => (chatgpt_source(prompter, probe, &name).await?, None),
     };
 
-    let model = choose_model(prompter, probe, card, &target, key.as_deref()).await?;
-    let spotter = choose_spotter(prompter, probe, card, &target, key.as_deref()).await?;
     Ok((
         name,
         ConnectionDraft {
             provider,
             base_url,
             auth,
-            model,
-            spotter,
             disabled: false,
         },
     ))
@@ -295,7 +296,7 @@ pub(super) async fn api_key_source<P: Prompter, Q: Probe>(
         }
     };
     let key = match key {
-        Some(key) => check_key(prompter, probe, target, key).await?,
+        Some(key) => check_key(prompter, probe, connection, target, key).await?,
         None => None,
     };
     Ok((AuthSource::Env { key: variable }, key))
@@ -319,7 +320,7 @@ async fn keychain_source<P: Prompter, Q: Probe>(
         }
         break pasted;
     };
-    let checked = check_key(prompter, probe, target, pasted.clone()).await?;
+    let checked = check_key(prompter, probe, connection, target, pasted.clone()).await?;
     let name = crate::secrets::inference_name(connection);
     match probe.store_secret(&name, &pasted) {
         Ok(()) => prompter.say(Tone::Good, &format!("Kept as `{name}`.")),
@@ -337,6 +338,7 @@ async fn keychain_source<P: Prompter, Q: Probe>(
 async fn check_key<P: Prompter, Q: Probe>(
     prompter: &mut P,
     probe: &Q,
+    who: &str,
     target: &Target,
     key: String,
 ) -> Result<Option<String>, Cancelled> {
@@ -346,17 +348,14 @@ async fn check_key<P: Prompter, Q: Probe>(
                 .label
                 .map(|label| format!(" ({label})"))
                 .unwrap_or_default();
-            prompter.say(
-                Tone::Good,
-                &format!("{} accepted the key{label}.", target.provider),
-            );
+            prompter.say(Tone::Good, &format!("{who} accepted the key{label}."));
             Ok(Some(key))
         }
         Ok(None) => Ok(Some(key)),
         Err(error) => {
             prompter.say(
                 Tone::Bad,
-                &format!("{} rejected the key: {}", target.provider, describe(&error)),
+                &format!("{who} rejected the key: {}", describe(&error)),
             );
             if !prompter.confirm("Record this connection anyway?", false)? {
                 return Err(Cancelled);
@@ -366,14 +365,19 @@ async fn check_key<P: Prompter, Q: Probe>(
     }
 }
 
-/// The main model: from a live listing when the provider offers one and a key
-/// is on hand, else typed with the card's hint prefilled. A checked model is
-/// described; an unchecked one is taken as written.
-async fn choose_model<P: Prompter, Q: Probe>(
+/// Pick a model on `target`: a live listing when the endpoint offers one and a
+/// key is on hand, else typed with `hint` prefilled. A checked model is
+/// described; an unchecked one is taken as written. `question` is what the model
+/// is *for*, so the same picker serves each default role.
+///
+/// A listing entry whose display name is its own id — every described endpoint's,
+/// since no listing carries display names — is shown once rather than twice.
+pub(super) async fn choose_model<P: Prompter, Q: Probe>(
     prompter: &mut P,
     probe: &Q,
-    card: &ProviderCard,
+    question: &str,
     target: &Target,
+    hint: Option<&str>,
     key: Option<&str>,
 ) -> Result<String, Cancelled> {
     let listing = match key {
@@ -382,23 +386,24 @@ async fn choose_model<P: Prompter, Q: Probe>(
     };
     loop {
         let model = if listing.is_empty() {
-            prompter
-                .text("Model for the agent", Some(card.model_hint))?
-                .trim()
-                .to_string()
+            prompter.text(question, hint)?.trim().to_string()
         } else {
             let mut choices: Vec<Choice> = listing
                 .iter()
-                .map(|entry| Choice::new(&entry.id).detail(&entry.display_name))
+                .map(|entry| {
+                    let choice = Choice::new(&entry.id);
+                    if entry.display_name == entry.id {
+                        choice
+                    } else {
+                        choice.detail(&entry.display_name)
+                    }
+                })
                 .collect();
             choices.push(Choice::new("Type a model id"));
-            let picked = prompter.select("Model for the agent", &choices)?;
+            let picked = prompter.select(question, &choices)?;
             match listing.get(picked) {
                 Some(entry) => entry.id.clone(),
-                None => prompter
-                    .text("Model id", Some(card.model_hint))?
-                    .trim()
-                    .to_string(),
+                None => prompter.text("Model id", hint)?.trim().to_string(),
             }
         };
         if model.is_empty() {
@@ -411,41 +416,9 @@ async fn choose_model<P: Prompter, Q: Probe>(
     }
 }
 
-async fn choose_spotter<P: Prompter, Q: Probe>(
-    prompter: &mut P,
-    probe: &Q,
-    card: &ProviderCard,
-    target: &Target,
-    key: Option<&str>,
-) -> Result<String, Cancelled> {
-    prompter.say(
-        Tone::Plain,
-        "The spotter reviews tool calls the permission rules did not clear. It is \
-         volume work, so a cheap model suits it.",
-    );
-    loop {
-        let spotter = prompter
-            .text(
-                "Model for the spotter",
-                card.provider
-                    .as_ref()
-                    .and_then(Provider::default_spotter_model),
-            )?
-            .trim()
-            .to_string();
-        if spotter.is_empty() {
-            prompter.say(Tone::Bad, "A model id is required.");
-            continue;
-        }
-        if check_model(prompter, probe, target, key, &spotter).await? {
-            return Ok(spotter);
-        }
-    }
-}
-
 /// `Ok(true)` to keep `model`: it checked out, could not be checked, or the
 /// person kept it after a failed check. `Ok(false)` to ask again.
-async fn check_model<P: Prompter, Q: Probe>(
+pub(super) async fn check_model<P: Prompter, Q: Probe>(
     prompter: &mut P,
     probe: &Q,
     target: &Target,
@@ -482,32 +455,6 @@ async fn check_model<P: Prompter, Q: Probe>(
             prompter.confirm("Keep it anyway?", false)
         }
     }
-}
-
-/// Which connection `[defaults]` points at. One new connection on an empty file
-/// needs no question. An existing default is kept unless the person says
-/// otherwise; several candidates are a menu.
-pub(super) fn choose_default<P: Prompter>(
-    prompter: &mut P,
-    existing: &Existing,
-    draft: &Draft,
-) -> Result<Option<String>, Cancelled> {
-    if let Some(current) = &existing.default_model {
-        let question = format!("Sessions currently default to {current}. Change that?");
-        if !prompter.confirm(&question, false)? {
-            return Ok(None);
-        }
-    }
-    if draft.connections.len() == 1 {
-        return Ok(Some(draft.connections[0].0.clone()));
-    }
-    let choices: Vec<Choice> = draft
-        .connections
-        .iter()
-        .map(|(name, connection)| Choice::new(name).detail(&connection.model))
-        .collect();
-    let picked = prompter.select("Which connection should sessions use by default?", &choices)?;
-    Ok(Some(draft.connections[picked].0.clone()))
 }
 
 /// `200k`, `1.05M`: enough precision to recognize a model by, no more.

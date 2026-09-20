@@ -19,9 +19,14 @@ async fn first_run_with_key_in_environment() {
             Answer::Type(""),
             Answer::Pick("An environment variable"),
             Answer::Type(""),
-            Answer::Pick("claude-sonnet-4-5"),
-            Answer::Type(""),
             Answer::No,
+            // The defaults editor, visited once on the way out.
+            Answer::Yes,
+            Answer::Pick("Choose a model"),
+            Answer::Pick("claude-sonnet-4-5"),
+            Answer::Pick("Choose a model"),
+            Answer::Pick("claude-haiku-4-5"),
+            Answer::Pick("Leave unset"),
         ],
         &probe,
         "",
@@ -37,7 +42,14 @@ async fn first_run_with_key_in_environment() {
             .iter()
             .any(|line| line.starts_with("secret:"))
     );
-    assert_eq!(draft.default_connection.as_deref(), Some("anthropic"));
+    assert!(
+        draft
+            .decided_default(DefaultRole::Model)
+            .flatten()
+            .is_some_and(|model| model.starts_with("anthropic/")),
+        "{:?}",
+        draft.decided_default(DefaultRole::Model)
+    );
     assert_eq!(
         render("", &draft).unwrap(),
         r#"# efference host configuration, written by `efference setup`.
@@ -76,8 +88,7 @@ async fn pasted_key_is_checked_and_not_recorded() {
             Answer::Type("MY_ROUTER_KEY"),
             Answer::Yes,
             Answer::Secret("sk-or-pasted"),
-            Answer::Type(""),
-            Answer::Type(""),
+            Answer::No,
             Answer::No,
         ],
         &probe,
@@ -91,7 +102,10 @@ async fn pasted_key_is_checked_and_not_recorded() {
     assert!(!text.contains("sk-or-pasted"));
     assert!(text.contains(r#"[connections.router]"#));
     assert!(text.contains(r#"auth = { kind = "env", key = "MY_ROUTER_KEY" }"#));
-    assert!(text.contains(r#"model = "router/anthropic/claude-sonnet-4-5""#));
+    // A key pasted for the check alone is not retained, so it is not there to
+    // list models with either: the defaults visit was declined and nothing was
+    // written for it.
+    assert!(!text.contains("\n[defaults]\n"), "{text}");
 }
 
 /// A rejected key is said, and declining to keep the connection cancels.
@@ -117,10 +131,11 @@ async fn rejected_key_can_cancel() {
     assert!(script.said("rejected the key: 401: bad key"));
 }
 
-/// Keeping a connection past a rejected key means no live checks after it:
-/// the model is taken as typed.
+/// A model the endpoint does not know is said and can be kept. Adding a
+/// connection asks for no model, so this is the defaults editor's question, and
+/// a typed id that fails its check is still the operator's to keep.
 #[tokio::test]
-async fn rejected_key_kept_skips_model_checks() {
+async fn an_unknown_model_is_said_and_can_be_kept() {
     let probe = Table {
         env: BTreeMap::from([("OPENAI_API_KEY".to_string(), "sk-wrong".to_string())]),
         ..Default::default()
@@ -131,19 +146,26 @@ async fn rejected_key_kept_skips_model_checks() {
             Answer::Type(""),
             Answer::Pick("An environment variable"),
             Answer::Type(""),
+            // The key is rejected and the connection kept anyway.
             Answer::Yes,
-            Answer::Type("gpt-5.6"),
-            Answer::Type(""),
             Answer::No,
+            Answer::Yes,
+            Answer::Pick("Choose a model"),
+            Answer::Type("gpt-5.6"),
+            Answer::Yes,
+            Answer::Pick("Leave unset"),
+            Answer::Pick("Leave unset"),
         ],
         &probe,
         "",
     )
     .await;
     let draft = draft.unwrap();
-    assert_eq!(draft.connections[0].1.model, "gpt-5.6");
-    assert_eq!(draft.connections[0].1.spotter, "gpt-5.6-luna");
-    assert!(!script.said("does not know"));
+    assert!(script.said("does not know gpt-5.6"));
+    assert_eq!(
+        draft.decided_default(DefaultRole::Model),
+        Some(Some("openai/gpt-5.6"))
+    );
 }
 
 /// The paste path: the key is checked, kept under `inference:<connection>`,
@@ -162,9 +184,13 @@ async fn a_pasted_key_is_kept_in_the_store_and_the_file_names_only_the_kind() {
             Answer::Type("work"),
             Answer::Pick("Paste it now, kept in the OS keychain"),
             Answer::Secret("sk-pasted"),
-            Answer::Pick("claude-sonnet-4-5"),
-            Answer::Type(""),
             Answer::No,
+            // The stored key drives the defaults editor's menu too.
+            Answer::Yes,
+            Answer::Pick("Choose a model"),
+            Answer::Pick("claude-sonnet-4-5"),
+            Answer::Pick("Leave unset"),
+            Answer::Pick("Leave unset"),
         ],
         &probe,
         "",

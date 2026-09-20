@@ -18,6 +18,7 @@ use std::collections::BTreeMap;
 
 use crate::api::{Provider, WireDialect};
 
+mod defaults;
 mod flow;
 mod manage;
 mod probe;
@@ -128,10 +129,6 @@ pub struct ConnectionDraft {
     /// named provider that owns its URLs (docs/transport.md).
     pub base_url: Option<String>,
     pub auth: AuthSource,
-    /// The provider-native id sessions on this connection run by default.
-    pub model: String,
-    /// The provider-native id for the spotter rung.
-    pub spotter: String,
     /// `disabled = true` on the appended table. A connection can be disabled in
     /// the management flow before the run that adds it has written anything.
     pub disabled: bool,
@@ -143,10 +140,6 @@ pub struct Draft {
     /// New connections by name, in the order they were added. A name already in
     /// the existing file is refused at the prompt, so this never overwrites one.
     pub connections: Vec<(String, ConnectionDraft)>,
-    /// The connection name `[defaults]` should point at, when setup is choosing
-    /// them: absent when the existing file already has a default model and the
-    /// person kept it.
-    pub default_connection: Option<String>,
     /// Mutations to connections that already exist, in the order decided
     /// (`src/setup/manage.rs`). Empty on the first-run add path. Queued through
     /// [`Draft::record`], which is what keeps every entry naming a connection
@@ -155,6 +148,31 @@ pub struct Draft {
 }
 
 impl Draft {
+    /// The connections this run added, in the shape the rest of setup reads an
+    /// existing file's in — so the defaults editor offers a connection decided
+    /// moments ago exactly as it offers one the file already had.
+    pub fn added_connections(&self) -> BTreeMap<String, ExistingConnection> {
+        self.connections
+            .iter()
+            .map(|(name, connection)| {
+                (
+                    name.clone(),
+                    ExistingConnection {
+                        provider: connection.provider.name().to_string(),
+                        base_url: connection.base_url.clone(),
+                        auth: match &connection.auth {
+                            AuthSource::Env { key } => ExistingAuth::Env { key: key.clone() },
+                            AuthSource::CodexCache => ExistingAuth::CodexCache,
+                            AuthSource::Keychain => ExistingAuth::Keychain { name: None },
+                            AuthSource::Oauth => ExistingAuth::Oauth { name: None },
+                        },
+                        disabled: connection.disabled,
+                    },
+                )
+            })
+            .collect()
+    }
+
     /// Record one management decision (docs/operating.md).
     ///
     /// A decision about a connection this same run added is not an edit to the
@@ -174,9 +192,7 @@ impl Draft {
         match change {
             Change::Rename { from, to } => {
                 self.connections[index].0 = to.clone();
-                if self.default_connection.as_deref() == Some(from.as_str()) {
-                    self.default_connection = Some(to);
-                }
+                self.requalify_defaults(&from, Some(&to));
             }
             Change::SetAuth { auth, .. } => self.connections[index].1.auth = auth,
             Change::SetDisabled { disabled, .. } => {
@@ -184,11 +200,48 @@ impl Draft {
             }
             Change::Delete { name } => {
                 self.connections.remove(index);
-                if self.default_connection.as_deref() == Some(name.as_str()) {
-                    self.default_connection = None;
-                }
+                self.requalify_defaults(&name, None);
             }
             Change::SetDefaultRole { .. } => unreachable!("no connection target"),
+        }
+    }
+}
+
+impl Draft {
+    /// What this run decided `[defaults].<role>` should be: the last decision
+    /// recorded for it, or `None` where the run left the role alone. `Some(None)`
+    /// is a role this run *cleared*, which is not the same as one it never
+    /// touched.
+    pub fn decided_default(&self, role: DefaultRole) -> Option<Option<&str>> {
+        self.edits.iter().rev().find_map(|edit| match edit {
+            Change::SetDefaultRole {
+                role: decided,
+                value,
+            } if *decided == role => Some(value.as_deref()),
+            _ => None,
+        })
+    }
+
+    /// Follow a pending connection's rename or deletion through any `[defaults]`
+    /// already decided this run, whose values are qualified `<connection>/<model>`
+    /// strings.
+    ///
+    /// Needed because both halves can be decided in one run, in either order: a
+    /// default set on a connection added moments ago, and then that connection
+    /// renamed. `render` applies the edits as written, so a stale qualification
+    /// would name a table the file will not have.
+    fn requalify_defaults(&mut self, from: &str, to: Option<&str>) {
+        for edit in &mut self.edits {
+            let Change::SetDefaultRole { value, .. } = edit else {
+                continue;
+            };
+            let Some(model) = value
+                .as_deref()
+                .and_then(|qualified| qualified.strip_prefix(&format!("{from}/")))
+            else {
+                continue;
+            };
+            *value = to.map(|to| format!("{to}/{model}"));
         }
     }
 }
@@ -486,9 +539,6 @@ pub(crate) struct ProviderCard {
     /// The conventional variable name, `None` for a provider whose credential is
     /// not an API key.
     pub(crate) env_key: Option<&'static str>,
-    /// The main-model id to prefill when no live listing is available. The
-    /// spotter prefill is `Provider::default_spotter_model`.
-    pub(crate) model_hint: &'static str,
 }
 
 pub(crate) const PROVIDERS: [ProviderCard; 5] = [
@@ -497,28 +547,24 @@ pub(crate) const PROVIDERS: [ProviderCard; 5] = [
         label: "Anthropic",
         detail: "an API key for api.anthropic.com",
         env_key: Some("ANTHROPIC_API_KEY"),
-        model_hint: "claude-sonnet-4-5",
     },
     ProviderCard {
         provider: Some(Provider::OpenRouter),
         label: "OpenRouter",
         detail: "one key, many models",
         env_key: Some("OPENROUTER_API_KEY"),
-        model_hint: "anthropic/claude-sonnet-4-5",
     },
     ProviderCard {
         provider: Some(Provider::OpenAI),
         label: "OpenAI",
         detail: "an API key for the platform API",
         env_key: Some("OPENAI_API_KEY"),
-        model_hint: "gpt-5.6",
     },
     ProviderCard {
         provider: Some(Provider::OpenAICodex),
         label: "ChatGPT subscription",
         detail: "your Plus or Pro plan",
         env_key: None,
-        model_hint: "gpt-5.6",
     },
     ProviderCard {
         provider: None,
@@ -527,8 +573,6 @@ pub(crate) const PROVIDERS: [ProviderCard; 5] = [
         // A described endpoint has no conventional variable name; the flow
         // suggests one from the connection's own name instead.
         env_key: None,
-        // Nothing to prefill: the catalog is whatever the endpoint serves.
-        model_hint: "",
     },
 ];
 

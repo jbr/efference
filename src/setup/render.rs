@@ -36,21 +36,6 @@ pub fn render(existing_text: &str, draft: &Draft) -> Result<String, String> {
     {
         doc.remove("defaults");
     }
-    if let Some(name) = &draft.default_connection {
-        let (_, connection) = draft
-            .connections
-            .iter()
-            .find(|(candidate, _)| candidate == name)
-            .ok_or_else(|| format!("default connection {name:?} is not in the draft"))?;
-        if doc.get("defaults").is_none() {
-            // A new [defaults] reads first; an existing one stays where it was.
-            let mut defaults = Table::new();
-            defaults.set_position(Some(0));
-            doc.insert("defaults", Item::Table(defaults));
-        }
-        doc["defaults"]["model"] = value(format!("{name}/{}", connection.model));
-        doc["defaults"]["spotter"] = value(format!("{name}/{}", connection.spotter));
-    }
     if doc.get("connections").is_none() {
         let mut connections = Table::new();
         connections.set_implicit(true);

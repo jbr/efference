@@ -60,23 +60,91 @@ pub async fn run<P: Prompter, Q: Probe>(
     let mut working = Working::from(existing);
     let mut draft = Draft::default();
     loop {
+        // Two concerns, two entries: which endpoints are configured, and which
+        // model each role runs. Folding the second into the first is what made
+        // it a question asked once per connection and answered at most once
+        // (docs/operating.md).
+        let choices = vec![
+            Choice::new("Connections").detail(summarize_connections(&working)),
+            Choice::new("Default models").detail(summarize_defaults(&working)),
+            Choice::new("Done"),
+        ];
+        match prompter.select("Setup", &choices)? {
+            0 => connection_list(prompter, probe, &mut working, &mut draft).await?,
+            1 => {
+                let current = defaults::Current {
+                    model: working.default_model.clone(),
+                    spotter: working.default_spotter.clone(),
+                    triage: working.default_triage.clone(),
+                };
+                defaults::edit(prompter, probe, &working.connections, &mut draft, &current).await?;
+                // The working copy follows the draft so the summary above, and a
+                // second visit, both read what this run already decided.
+                for role in DefaultRole::ALL {
+                    if let Some(decided) = draft.decided_default(role) {
+                        *working.default_role_mut(role) = decided.map(str::to_string);
+                    }
+                }
+            }
+            _ => return Ok(draft),
+        }
+    }
+}
+
+/// How many connections there are and how many are ready, for the top level.
+fn summarize_connections(working: &Working) -> String {
+    let total = working.connections.len();
+    let disabled = working
+        .connections
+        .values()
+        .filter(|connection| connection.disabled)
+        .count();
+    match (total, disabled) {
+        (0, _) => "none configured".to_string(),
+        (1, 0) => "1 configured".to_string(),
+        (n, 0) => format!("{n} configured"),
+        (n, d) => format!("{n} configured, {d} disabled"),
+    }
+}
+
+/// What the roles point at, for the top level. The main model is the one a
+/// session cannot start without, so an unset one is said rather than omitted.
+fn summarize_defaults(working: &Working) -> String {
+    match &working.default_model {
+        None => "none set — sessions must name <connection>/<model>".to_string(),
+        Some(model) => match &working.default_spotter {
+            Some(spotter) => format!("{model}, spotter {spotter}"),
+            None => model.clone(),
+        },
+    }
+}
+
+/// The connection rows, with edit / disable / delete on a picked one and "add
+/// another" folding back into the add path.
+async fn connection_list<P: Prompter, Q: Probe>(
+    prompter: &mut P,
+    probe: &Q,
+    working: &mut Working,
+    draft: &mut Draft,
+) -> Result<(), Cancelled> {
+    loop {
         let names: Vec<String> = working.connections.keys().cloned().collect();
         let mut choices: Vec<Choice> = names
             .iter()
-            .map(|name| row_choice(&working, probe, name))
+            .map(|name| row_choice(working, probe, name))
             .collect();
         choices.push(Choice::new("Add another connection"));
-        choices.push(Choice::new("Done"));
+        choices.push(Choice::new("Back"));
         let picked = prompter.select("Connections", &choices)?;
         if picked == choices.len() - 1 {
-            return Ok(draft);
+            return Ok(());
         }
         if picked == choices.len() - 2 {
-            add_another(prompter, probe, &mut working, &mut draft).await?;
+            add_another(prompter, probe, working, draft).await?;
             continue;
         }
         let name = names[picked].clone();
-        act_on_connection(prompter, probe, &mut working, &mut draft, &name).await?;
+        act_on_connection(prompter, probe, working, draft, &name).await?;
     }
 }
 
@@ -102,13 +170,6 @@ async fn add_another<P: Prompter, Q: Probe>(
                 disabled: false,
             },
         );
-    }
-    if let Some(name) = flow::choose_default(prompter, &working.as_existing(), draft)? {
-        draft.default_connection = Some(name.clone());
-        if let Some((_, connection)) = draft.connections.iter().find(|(n, _)| n == &name) {
-            working.default_model = Some(format!("{name}/{}", connection.model));
-            working.default_spotter = Some(format!("{name}/{}", connection.spotter));
-        }
     }
     Ok(())
 }

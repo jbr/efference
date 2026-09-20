@@ -21,15 +21,14 @@ auth = { kind = "env", key = "ANTHROPIC_API_KEY" }
     };
     let (draft, script) = run_script(
         vec![
+            Answer::Pick("Connections"),
             Answer::Pick("Add another connection"),
             Answer::Pick("ChatGPT subscription"),
             Answer::Type("anthropic"),
             Answer::Type("codex"),
             Answer::Pick("Piggyback on Codex's login"),
-            Answer::Type(""),
-            Answer::Type(""),
             Answer::No,
-            Answer::No,
+            Answer::Pick("Back"),
             Answer::Pick("Done"),
         ],
         &probe,
@@ -40,7 +39,7 @@ auth = { kind = "env", key = "ANTHROPIC_API_KEY" }
     assert!(script.said("select: Connections"));
     assert!(script.said("\"anthropic\" is already a connection"));
     assert!(script.said("Found a Codex login for account acct_1"));
-    assert_eq!(draft.default_connection, None);
+    assert_eq!(draft.decided_default(DefaultRole::Model), None);
     assert_eq!(
         render(existing, &draft).unwrap(),
         r#"# my notes
@@ -72,27 +71,39 @@ async fn two_connections_choose_a_default() {
             Answer::Type(""),
             Answer::Pick("An environment variable"),
             Answer::Type(""),
+            // The variable is unset; decline the paste-for-the-check offer.
             Answer::No,
-            Answer::Type(""),
-            Answer::Type(""),
             Answer::Yes,
             Answer::Pick("ChatGPT subscription"),
             Answer::Type(""),
             Answer::Pick("Piggyback on Codex's login"),
-            Answer::Type(""),
-            Answer::Type(""),
             Answer::No,
+            // Two connections, so the defaults editor asks which one.
+            Answer::Yes,
+            Answer::Pick("Choose a model"),
             Answer::Pick("openai-codex"),
+            Answer::Type("gpt-5.6"),
+            Answer::Pick("Leave unset"),
+            Answer::Pick("Leave unset"),
         ],
         &probe,
         "",
     )
     .await;
     let draft = draft.unwrap();
-    assert_eq!(draft.default_connection.as_deref(), Some("openai-codex"));
+    assert!(
+        draft
+            .decided_default(DefaultRole::Model)
+            .flatten()
+            .is_some_and(|model| model.starts_with("openai-codex/")),
+        "{:?}",
+        draft.decided_default(DefaultRole::Model)
+    );
     let text = render("", &draft).unwrap();
     assert!(text.contains("model = \"openai-codex/gpt-5.6\""));
-    assert!(text.contains("spotter = \"openai-codex/gpt-5.6-luna\""));
+    // The spotter was left unset, so no key is written for it — a role the
+    // editor skipped is absent, not defaulted.
+    assert!(!text.contains("spotter ="), "{text}");
     assert!(text.contains("[connections.anthropic]"));
     assert!(text.contains("[connections.openai-codex]"));
 }
@@ -108,15 +119,15 @@ auth = { kind = "env", key = "A" }
     let probe = Table::default();
     let (draft, _) = run_script(
         vec![
+            Answer::Pick("Connections"),
             Answer::Pick("Add another connection"),
             Answer::Pick("Anthropic"),
             Answer::Type(""),
             Answer::Pick("An environment variable"),
             Answer::Type("ANTHROPIC_PERSONAL_KEY"),
             Answer::No,
-            Answer::Type(""),
-            Answer::Type(""),
             Answer::No,
+            Answer::Pick("Back"),
             Answer::Pick("Done"),
         ],
         &probe,
@@ -125,13 +136,12 @@ auth = { kind = "env", key = "A" }
     .await;
     let draft = draft.unwrap();
     assert_eq!(draft.connections[0].0, "anthropic-2");
-    // No standing default, so the new connection becomes it.
-    assert_eq!(draft.default_connection.as_deref(), Some("anthropic-2"));
+    // Adding a connection says nothing about defaults: the standing one is left
+    // exactly as it was, and the new connection does not become it.
+    assert_eq!(draft.decided_default(DefaultRole::Model), None);
     let text = render(existing, &draft).unwrap();
-    assert!(
-        text.starts_with("[defaults]\nmodel = \"anthropic-2/claude-sonnet-4-5\""),
-        "{text}"
-    );
+    assert!(text.contains("[connections.anthropic-2]"), "{text}");
+    assert!(!text.contains("[defaults]"), "{text}");
 }
 
 /// Backing out at any prompt is `Cancelled`, with the draft discarded.

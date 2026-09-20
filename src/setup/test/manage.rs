@@ -8,11 +8,20 @@ use super::*;
 /// parse — never a network call (backlog/setup-edits-connections.md).
 #[test]
 fn management_list_states_readiness_locally() {
-    struct Capture(Vec<Choice>);
+    /// Passes the top-level menu into Connections, then captures that list.
+    #[derive(Default)]
+    struct Capture {
+        rows: Vec<Choice>,
+        seen: usize,
+    }
     impl Prompter for Capture {
         fn say(&mut self, _: Tone, _: &str) {}
         fn select(&mut self, _: &str, choices: &[Choice]) -> Result<usize, Cancelled> {
-            self.0 = choices.to_vec();
+            self.seen += 1;
+            if self.seen == 1 {
+                return Ok(0);
+            }
+            self.rows = choices.to_vec();
             Err(Cancelled)
         }
         fn text(&mut self, _: &str, _: Option<&str>) -> Result<String, Cancelled> {
@@ -56,17 +65,17 @@ auth = { kind = "oauth" }
 "#,
     )
     .unwrap();
-    let mut capture = Capture(Vec::new());
+    let mut capture = Capture::default();
     let runtime = tokio::runtime::Builder::new_current_thread()
         .build()
         .unwrap();
     let _ = runtime.block_on(run(&mut capture, &probe, &existing));
     let find = |name: &str| {
         capture
-            .0
+            .rows
             .iter()
             .find(|choice| choice.label.starts_with(name))
-            .unwrap_or_else(|| panic!("no row for {name:?} among {:?}", capture.0))
+            .unwrap_or_else(|| panic!("no row for {name:?} among {:?}", capture.rows))
     };
     assert_eq!(find("env-ready").detail.as_deref(), Some("env · SET_KEY"));
     assert_eq!(
@@ -107,9 +116,11 @@ auth = { kind = "oauth" }
 "#;
     let (draft, script) = run_script(
         vec![
+            Answer::Pick("Connections"),
             Answer::Pick("work (openai-codex)"),
             Answer::Pick("Edit"),
             Answer::Pick("Re-authorize"),
+            Answer::Pick("Back"),
             Answer::Pick("Done"),
         ],
         &probe,
@@ -140,10 +151,12 @@ auth = { kind = "keychain" }
 "#;
     let (draft, _) = run_script(
         vec![
+            Answer::Pick("Connections"),
             Answer::Pick("work (anthropic)"),
             Answer::Pick("Edit"),
             Answer::Pick("Rename"),
             Answer::Type("job"),
+            Answer::Pick("Back"),
             Answer::Pick("Done"),
         ],
         &probe,
@@ -189,12 +202,14 @@ auth = { kind = "env", key = "BACKUP_KEY" }
 "#;
     let (draft, script) = run_script(
         vec![
+            Answer::Pick("Connections"),
             Answer::Pick("primary (anthropic)"),
             Answer::Pick("Disable"),
             Answer::Yes,
             Answer::Pick("backup"),
             Answer::Type("claude-fresh"),
             Answer::No,
+            Answer::Pick("Back"),
             Answer::Pick("Done"),
         ],
         &probe,
@@ -229,10 +244,12 @@ auth = { kind = "keychain" }
 "#;
     let (draft, _) = run_script(
         vec![
+            Answer::Pick("Connections"),
             Answer::Pick("work (anthropic)"),
             Answer::Pick("Delete"),
             Answer::Yes,
             Answer::No,
+            Answer::Pick("Back"),
             Answer::Pick("Done"),
         ],
         &probe,
@@ -273,6 +290,7 @@ fn moving_an_env_value_refuses_a_scheme_reference() {
         fn say(&mut self, _: Tone, _: &str) {}
         fn select(&mut self, question: &str, choices: &[Choice]) -> Result<usize, Cancelled> {
             match question {
+                "Setup" => Ok(0),
                 "Connections" => Ok(choices
                     .iter()
                     .position(|choice| choice.label.starts_with("work"))
@@ -344,9 +362,11 @@ auth = { kind = "env", key = "PLAIN_KEY" }
 "#;
     let (draft, _) = run_script(
         vec![
+            Answer::Pick("Connections"),
             Answer::Pick("work (anthropic)"),
             Answer::Pick("Edit"),
             Answer::Pick("Move the key into the keychain"),
+            Answer::Pick("Back"),
             Answer::Pick("Done"),
         ],
         &probe,
@@ -393,11 +413,13 @@ auth = { kind = "keychain" }
 "#;
     let (draft, script) = run_script(
         vec![
+            Answer::Pick("Connections"),
             Answer::Pick("work (anthropic)"),
             Answer::Pick("Edit"),
             Answer::Pick("Reveal the key and switch to an environment variable"),
             Answer::Type("WORK_KEY"),
             Answer::Yes,
+            Answer::Pick("Back"),
             Answer::Pick("Done"),
         ],
         &probe,
@@ -452,17 +474,17 @@ auth = { kind = "env", key = "ANTHROPIC_API_KEY" }
 "#;
     let (draft, _script) = run_script(
         vec![
+            Answer::Pick("Connections"),
             Answer::Pick("Add another connection"),
             Answer::Pick("ChatGPT subscription"),
             Answer::Type("openai-codex"),
             Answer::Pick("Log in here"),
-            Answer::Type(""),
-            Answer::Type(""),
             Answer::No,
             Answer::Pick("openai-codex (openai-codex)"),
             Answer::Pick("Edit"),
             Answer::Pick("Rename"),
             Answer::Type("codex"),
+            Answer::Pick("Back"),
             Answer::Pick("Done"),
         ],
         &probe,
@@ -500,17 +522,16 @@ auth = { kind = "env", key = "ANTHROPIC_API_KEY" }
 "#;
     let (draft, _script) = run_script(
         vec![
+            Answer::Pick("Connections"),
             Answer::Pick("Add another connection"),
             Answer::Pick("ChatGPT subscription"),
             Answer::Type("codex"),
             Answer::Pick("Piggyback on Codex's login"),
-            Answer::Type(""),
-            Answer::Type(""),
-            Answer::No,
             Answer::No,
             Answer::Pick("codex (openai-codex)"),
             Answer::Pick("Delete"),
             Answer::Yes,
+            Answer::Pick("Back"),
             Answer::Pick("Done"),
         ],
         &probe,
@@ -551,6 +572,7 @@ auth = { kind = "codex-cache" }
 "#;
     let (draft, _script) = run_script(
         vec![
+            Answer::Pick("Connections"),
             Answer::Pick("codex (openai-codex)"),
             Answer::Pick("Delete"),
             Answer::Yes,
@@ -558,14 +580,12 @@ auth = { kind = "codex-cache" }
             Answer::Pick("ChatGPT subscription"),
             Answer::Type("openai-codex"),
             Answer::Pick("Log in here"),
-            Answer::Type(""),
-            Answer::Type(""),
-            Answer::No,
             Answer::No,
             Answer::Pick("openai-codex (openai-codex)"),
             Answer::Pick("Edit"),
             Answer::Pick("Rename"),
             Answer::Type("codex"),
+            Answer::Pick("Back"),
             Answer::Pick("Done"),
         ],
         &probe,

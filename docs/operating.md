@@ -186,9 +186,12 @@ The boot report and the sidebar's SESSION section name each role by connection.
 with no `~/.efference/config.toml` runs it; with one, it says what to run next.
 Setup is a sequence of inline terminal prompts, not a full-screen view, and it
 needs no host and no model: it is the one path that has to work before any
-inference is configured. Per connection it asks the provider, a name, where the
-credential comes from, the agent model, and the spotter model, then whether to
-add another, and which connection sessions default to when there is a choice.
+inference is configured. Per connection it asks the provider, a name, and where
+the credential comes from — and stops there. **Adding a connection asks nothing
+about models.** Which endpoints are configured and which model each role runs are
+separate questions, and folding the second into the first asked it once per
+connection while answering it at most once. Defaults have their own editor,
+visited once at the end of a first run.
 The credential source is an environment variable (prefilled with the provider's
 conventional name), a key pasted now and kept in the OS credential store as
 `inference:<name>` ([secrets.md](secrets.md); the file then records only
@@ -214,6 +217,29 @@ conventional answer arrive prefilled anyway. The connection is written as the tw
 keys it is — `dialect` and `base-url` — never as a `provider` line naming
 something that is not a provider name.
 
+**Defaults: which model each role runs** (`src/setup/defaults.rs`). `[defaults]`
+has three roles — `model`, `spotter`, `triage` — and the editor walks them in the
+order they matter, saying what each is for rather than leaving the key name to
+explain itself. A role is set by picking a connection and then a model on it,
+which is where a listing belongs: the connection selects the endpoint to ask, and
+the credential is read from the connection's own source (an environment variable
+set in this shell, or an item the store already holds) rather than prompted for
+again. Where setup cannot read one, the model is typed and taken as written.
+
+Each role leads with what it already is, so the cheapest answer is Enter. Leaving
+the main model unset says what that costs — sessions must then name
+`<connection>/<model>` themselves — because that is the one role a session cannot
+start without; an unset spotter falls back to the provider's cheap band and an
+unset triage shares the main client, so those are working configurations rather
+than gaps. Declining the whole visit is a complete answer and writes no
+`[defaults]` at all: `src/inference.rs` treats the table as optional, and an
+omitted or unqualified model is an error naming the key to add.
+
+**Managing what is already there** opens on a top level of two entries —
+Connections and Default models — each summarizing itself, because they are two
+concerns and a list that mixed them is what made the model questions land on every
+connection. Picking Connections gives the row list below.
+
 The subscription's two ways are asked as one question, since both spend the same
 Plus or Pro plan: piggyback on Codex's cached login (`kind = "codex-cache"`,
 which needs Codex run often enough to keep the token fresh), or log in here
@@ -230,8 +256,9 @@ file keeps its entries, comments, and standing `[defaults]`, and a name already
 in it is refused at the prompt. Esc or Ctrl-C at any prompt cancels with nothing
 written. `--config <path>` writes elsewhere.
 
-**Managing what is already there** (`src/setup/manage.rs`). With a config file,
-setup opens on the connections in it rather than on the provider menu — one row
+**The connection rows** (`src/setup/manage.rs`). With a config file,
+setup opens on the top level rather than on the provider menu, and its
+Connections entry lists what the file has — one row
 per connection with its name, provider, and a readiness note read locally
 (the variable is set, the stored item or login is there, the Codex token's `exp`
 has not passed; nothing is asked of a provider, since the list is drawn on every
