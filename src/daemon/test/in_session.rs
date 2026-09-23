@@ -56,11 +56,7 @@ impl Fixture {
 
     fn control(&self, caller: &str) -> Control {
         Control::new(
-            Executor::host(
-                tokio::runtime::Handle::current(),
-                Arc::clone(&self.host),
-                caller.to_string(),
-            ),
+            Executor::host(Arc::clone(&self.host), caller.to_string()),
             false,
         )
     }
@@ -70,11 +66,12 @@ impl Fixture {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn self_target_is_refused() {
     let fixture = Fixture::new();
-    let mut control = fixture.control("parent");
+    let control = fixture.control("parent");
     let err = Interrupt {
         session: Some("parent".into()),
     }
-    .execute(&mut control, &RequestContext::default())
+    .execute(control.clone(), RequestContext::default())
+    .await
     .unwrap_err()
     .to_string();
     assert!(err.contains("cannot target itself"), "{err}");
@@ -83,7 +80,8 @@ async fn self_target_is_refused() {
     // refuses rather than silently reading the caller's own state.
     // `StateResult` has no `Debug`, so take the error rather than `unwrap_err`.
     let err = State { session: None }
-        .execute(&mut control, &RequestContext::default())
+        .execute(control.clone(), RequestContext::default())
+        .await
         .err()
         .expect("a self-target is refused")
         .to_string();
@@ -97,7 +95,7 @@ async fn self_target_is_refused() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_non_descendant_mutation_is_refused_but_a_notify_reaches_it() {
     let fixture = Fixture::new();
-    let mut control = fixture.control("parent");
+    let control = fixture.control("parent");
     let err = Turn {
         text: vec!["steer".into()],
         wait: false,
@@ -105,7 +103,8 @@ async fn a_non_descendant_mutation_is_refused_but_a_notify_reaches_it() {
         source: None,
         session: Some("peer".into()),
     }
-    .execute(&mut control, &RequestContext::default())
+    .execute(control.clone(), RequestContext::default())
+    .await
     .unwrap_err()
     .to_string();
     assert!(err.contains("not an ancestor"), "{err}");
@@ -117,7 +116,8 @@ async fn a_non_descendant_mutation_is_refused_but_a_notify_reaches_it() {
         replaces: None,
         session: Some("peer".into()),
     }
-    .execute(&mut control, &RequestContext::default())
+    .execute(control.clone(), RequestContext::default())
+    .await
     .expect("notify reaches anything in the project");
 
     fixture.host.swansong().shut_down().await;
@@ -128,7 +128,7 @@ async fn a_non_descendant_mutation_is_refused_but_a_notify_reaches_it() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_descendant_turn_lands_with_the_session_source() {
     let fixture = Fixture::new();
-    let mut control = fixture.control("parent");
+    let control = fixture.control("parent");
     Turn {
         text: vec!["do the thing".into()],
         wait: false,
@@ -136,7 +136,8 @@ async fn a_descendant_turn_lands_with_the_session_source() {
         source: None,
         session: Some("child".into()),
     }
-    .execute(&mut control, &RequestContext::default())
+    .execute(control.clone(), RequestContext::default())
+    .await
     .expect("a descendant is a valid target");
 
     let child = fixture.host.session("child").unwrap();
@@ -164,11 +165,12 @@ async fn a_descendant_turn_lands_with_the_session_source() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_session_in_another_project_is_not_found() {
     let fixture = Fixture::new();
-    let mut control = fixture.control("parent");
+    let control = fixture.control("parent");
     let err = State {
         session: Some("stranger".into()),
     }
-    .execute(&mut control, &RequestContext::default())
+    .execute(control.clone(), RequestContext::default())
+    .await
     .err()
     .expect("a session in another project is not found")
     .to_string();
@@ -177,7 +179,8 @@ async fn a_session_in_another_project_is_not_found() {
     assert!(!err.contains("ancestor"), "not a permission refusal: {err}");
 
     let listing = Sessions {}
-        .execute(&mut control, &RequestContext::default())
+        .execute(control.clone(), RequestContext::default())
+        .await
         .expect("the project lists")
         .to_text();
     for id in ["parent", "peer", "child", "\"created_by\": \"parent\""] {
@@ -355,7 +358,7 @@ async fn a_bound_approve_without_a_call_id_is_refused() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_create_outside_the_project_is_refused() {
     let fixture = Fixture::new();
-    let mut control = fixture.control("parent");
+    let control = fixture.control("parent");
     let create = |cwd: &str| Create {
         cwd: Some(cwd.into()),
         name: Some("offshoot".into()),
@@ -369,7 +372,8 @@ async fn a_create_outside_the_project_is_refused() {
         detached: false,
     };
     let err = create("../b")
-        .execute(&mut control, &RequestContext::default())
+        .execute(control.clone(), RequestContext::default())
+        .await
         .err()
         .expect("another project's cwd is refused")
         .to_string();
@@ -384,7 +388,8 @@ async fn a_create_outside_the_project_is_refused() {
     );
 
     let err = create("./sub/..")
-        .execute(&mut control, &RequestContext::default())
+        .execute(control.clone(), RequestContext::default())
+        .await
         .err()
         .expect("the empty registry refuses the model")
         .to_string();

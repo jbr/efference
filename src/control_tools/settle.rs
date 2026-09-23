@@ -44,11 +44,13 @@ impl ToolMeta for Settle {
 impl Tool<Control> for Settle {
     type Output = StateResult;
 
-    fn execute(self, control: &mut Control, _context: &RequestContext) -> Result<StateResult> {
-        match &mut control.executor {
+    async fn execute(self, control: Control, _context: RequestContext) -> Result<StateResult> {
+        match &control.executor {
             Executor::Client(state) => {
-                let client = state.client(self.session.as_deref())?;
-                state.settle_within(&client, self.timeout_s, client.settle())
+                let client = state.client(self.session.as_deref()).await?;
+                state
+                    .settle_within(&client, self.timeout_s, client.settle())
+                    .await
             }
             // Hidden from the in-session mount: a session has an inbox to be
             // woken through, not a blocking wait (docs/tools.md).

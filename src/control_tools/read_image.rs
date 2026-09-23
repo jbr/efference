@@ -54,12 +54,12 @@ impl ToolMeta for Image {
 impl Tool<Control> for Image {
     type Output = ImageResult;
 
-    fn execute(self, control: &mut Control, _context: &RequestContext) -> Result<ImageResult> {
+    async fn execute(self, control: Control, _context: RequestContext) -> Result<ImageResult> {
         let cli = control.is_cli();
-        let bytes = match &mut control.executor {
+        let bytes = match &control.executor {
             Executor::Client(state) => {
-                let client = state.client(self.session.as_deref())?;
-                state.block_on(client.log_image(self.seq, self.idx))?
+                let client = state.client(self.session.as_deref()).await?;
+                client.log_image(self.seq, self.idx).await?
             }
             Executor::Host(state) => {
                 let session = state.resolve(self.session.as_deref())?;

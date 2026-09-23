@@ -50,11 +50,11 @@ impl ToolOutput for SessionsResult {
 impl Tool<Control> for Sessions {
     type Output = SessionsResult;
 
-    fn execute(self, control: &mut Control, _context: &RequestContext) -> Result<SessionsResult> {
-        match &mut control.executor {
+    async fn execute(self, control: Control, _context: RequestContext) -> Result<SessionsResult> {
+        match &control.executor {
             Executor::Client(state) => {
                 let host = state.host_client()?;
-                let sessions = state.block_on(host.sessions())?;
+                let sessions = host.sessions().await?;
                 Ok(SessionsResult { sessions })
             }
             // The listing is project-scoped: sessions sharing the caller's

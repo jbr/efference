@@ -1377,15 +1377,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "dirs"
-version = "7.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8d57d423b3c82e89b9a24ca3091fee61f456a26edbd28d26c65906f4bc1dcd8f"
-dependencies = [
- "dirs-sys",
-]
-
-[[package]]
 name = "dirs-sys"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1462,6 +1453,7 @@ dependencies = [
  "anyhow",
  "apple-native-keyring-store",
  "arboard",
+ "async-compat",
  "base64 0.23.1",
  "brush-parser",
  "clap",
@@ -1860,11 +1852,10 @@ name = "fs-mcp"
 version = "0.1.2"
 dependencies = [
  "anyhow",
+ "async-compat",
  "clap",
- "dirs 7.0.0",
  "env_logger",
  "fastrand",
- "fieldwork",
  "globset",
  "grep",
  "ignore",
@@ -1878,6 +1869,7 @@ dependencies = [
  "size",
  "tempfile",
  "timeago",
+ "tokio",
 ]
 
 [[package]]
@@ -2980,20 +2972,17 @@ dependencies = [
 [[package]]
 name = "mcplease"
 version = "0.4.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ac6b4fdeb3dfcd998219a3f9cc95b0d11f0ae203a89f5e6912921ed7f25a3ec0"
 dependencies = [
  "anyhow",
+ "async-channel",
  "clap",
- "dirs 6.0.0",
- "env_logger",
  "fieldwork",
+ "futures-lite",
  "log",
- "notify",
  "schemars",
  "serde",
  "serde_json",
- "shellexpand",
+ "swansong",
 ]
 
 [[package]]
@@ -4696,10 +4685,11 @@ name = "semantic-edit-mcp"
 version = "0.3.0"
 dependencies = [
  "anyhow",
+ "async-compat",
  "clap",
  "diffy",
- "dirs 7.0.0",
  "enum-map",
+ "env_logger",
  "fieldwork",
  "log",
  "mcplease",
@@ -4710,6 +4700,7 @@ dependencies = [
  "shellexpand",
  "strum",
  "taplo",
+ "tokio",
  "tree-sitter",
  "tree-sitter-javascript",
  "tree-sitter-json",
@@ -4860,7 +4851,7 @@ version = "3.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32824fab5e16e6c4d86dc1ba84489390419a39f97699852b66480bb87d297ed8"
 dependencies = [
- "dirs 6.0.0",
+ "dirs",
 ]
 
 [[package]]

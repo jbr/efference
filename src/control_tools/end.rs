@@ -36,17 +36,17 @@ impl ToolMeta for End {
 impl Tool<Control> for End {
     type Output = String;
 
-    fn execute(self, control: &mut Control, _context: &RequestContext) -> Result<String> {
-        match &mut control.executor {
+    async fn execute(self, control: Control, _context: RequestContext) -> Result<String> {
+        match &control.executor {
             Executor::Client(state) => {
                 let host = state.host_client()?;
-                state.block_on(host.end_session(&self.session))?;
+                host.end_session(&self.session).await?;
                 Ok(format!("ended {}", self.session))
             }
             Executor::Host(state) => {
                 // Ending is mutating: the target must be a descendant.
                 state.resolve_mutating(Some(&self.session))?;
-                state.end(&self.session)?;
+                state.end(&self.session).await?;
                 Ok(format!("ended {}", self.session))
             }
         }

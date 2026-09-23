@@ -462,7 +462,7 @@ async fn prepare_minting(
     // caller. Mounted before the first projection so `tools[]` is fixed from
     // turn one.
     if let Some(host) = host {
-        toolbox.mount_sessions(host, session_id.clone(), tokio::runtime::Handle::current());
+        toolbox.mount_sessions(host, session_id.clone());
     }
     // Credentials live in the user's secret store (docs/secrets.md): an
     // authorization belongs to the operator and the server, not to one session.

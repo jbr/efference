@@ -15,6 +15,8 @@ semantic-edit-mcp = { path = "../semantic-edit-mcp" }
 # what lets `efference control <tool>` and `efference mcp` be one definition
 # (docs/operating.md).
 mcplease = { version = "0.4.2", features = ["client", "cli"], default-features = false }
+# `efference mcp` drives mcplease's stdio transport over tokio's stdio.
+async-compat = "0.2"
 # JSON Schema derive for the control tools' arguments — what an MCP client reads
 # out of `tools/list`. Same major as mcplease's own, so there is one schemars.
 schemars = "1.2.2"
@@ -221,3 +223,7 @@ syntect = { version = "5.3", default-features = false, features = [
   "dump-create",
   "regex-onig",
 ] }
+
+# Proving out the async mcplease before it is released.
+[patch.crates-io]
+mcplease = { path = "../mcplease" }

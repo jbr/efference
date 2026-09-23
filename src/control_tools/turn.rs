@@ -63,25 +63,27 @@ impl ToolMeta for Turn {
 impl Tool<Control> for Turn {
     type Output = String;
 
-    fn execute(self, control: &mut Control, context: &RequestContext) -> Result<String> {
-        match &mut control.executor {
+    async fn execute(self, control: Control, context: RequestContext) -> Result<String> {
+        match &control.executor {
             Executor::Client(state) => {
-                let client = state.client(self.session.as_deref())?;
+                let client = state.client(self.session.as_deref()).await?;
                 let text = self.text.join(" ");
                 // An explicit `--source` wins; otherwise a call over MCP names the
                 // mounting harness from the clientInfo it sent (docs/control-api.md). The
                 // command line's RequestContext is empty, so `efference control turn`
                 // submits as the operator unless told otherwise.
-                let source = turn_source(self.source, context);
+                let source = turn_source(self.source, &context);
                 if !self.wait {
-                    state.block_on(client.turn_sourced(&text, source.as_deref()))?;
+                    client.turn_sourced(&text, source.as_deref()).await?;
                     return Ok("accepted".into());
                 }
-                let settled = state.settle_within(
-                    &client,
-                    self.timeout_s,
-                    client.turn_wait_sourced(&text, source.as_deref()),
-                )?;
+                let settled = state
+                    .settle_within(
+                        &client,
+                        self.timeout_s,
+                        client.turn_wait_sourced(&text, source.as_deref()),
+                    )
+                    .await?;
                 Ok(settled.to_text())
             }
             Executor::Host(state) => {
@@ -118,8 +120,7 @@ impl Tool<Control> for Turn {
 fn turn_source(explicit: Option<String>, context: &RequestContext) -> Option<String> {
     explicit.or_else(|| {
         context
-            .client_info
-            .as_ref()
+            .client_info()
             .map(|info| format!("mcp[{}]", info.name))
     })
 }

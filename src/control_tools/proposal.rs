@@ -55,15 +55,19 @@ impl ToolMeta for Proposal {
 impl Tool<Control> for Proposal {
     type Output = String;
 
-    fn execute(self, control: &mut Control, _context: &RequestContext) -> Result<String> {
-        let verb = if self.cancel { "cancelled" } else { "committed" };
-        match &mut control.executor {
+    async fn execute(self, control: Control, _context: RequestContext) -> Result<String> {
+        let verb = if self.cancel {
+            "cancelled"
+        } else {
+            "committed"
+        };
+        match &control.executor {
             Executor::Client(state) => {
-                let client = state.client(self.session.as_deref())?;
+                let client = state.client(self.session.as_deref()).await?;
                 if self.cancel {
-                    state.block_on(client.cancel_proposal(self.seq, &self.note))?;
+                    client.cancel_proposal(self.seq, &self.note).await?;
                 } else {
-                    state.block_on(client.commit_proposal(self.seq, &self.note))?;
+                    client.commit_proposal(self.seq, &self.note).await?;
                 }
                 Ok(format!("{verb} {}", self.seq))
             }

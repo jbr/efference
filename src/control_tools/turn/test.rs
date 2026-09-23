@@ -6,10 +6,11 @@ use mcplease::types::Implementation;
 /// caller name (the command line) means the operator.
 #[test]
 fn source_comes_from_client_info_unless_explicit() {
-    let context = RequestContext {
-        client_info: Some(Implementation::new("claude-code", "1.0")),
-        ..RequestContext::default()
-    };
+    let context = RequestContext::from_params(Some(&serde_json::json!({
+        "_meta": {
+            mcplease::types::meta_keys::CLIENT_INFO: Implementation::new("claude-code", "1.0"),
+        }
+    })));
     assert_eq!(
         turn_source(None, &context).as_deref(),
         Some("mcp[claude-code]")

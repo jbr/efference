@@ -41,14 +41,15 @@ impl ToolMeta for Entries {
 impl Tool<Control> for Entries {
     type Output = EntriesResult;
 
-    fn execute(self, control: &mut Control, _context: &RequestContext) -> Result<EntriesResult> {
-        match &mut control.executor {
+    async fn execute(self, control: Control, _context: RequestContext) -> Result<EntriesResult> {
+        match &control.executor {
             Executor::Client(state) => {
-                let client = state.client(self.session.as_deref())?;
+                let client = state.client(self.session.as_deref()).await?;
                 let mut entries = Vec::with_capacity(self.seqs.len());
                 for seq in self.seqs {
-                    let body = state
-                        .block_on(client.log_entry(seq))
+                    let body = client
+                        .log_entry(seq)
+                        .await
                         .with_context(|| format!("entry {seq}"))?;
                     entries.push(serde_json::from_str(&body)?);
                 }

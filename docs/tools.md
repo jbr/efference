@@ -196,8 +196,8 @@ per-tool param structs' `execute`, so the enum is the smallest integration
 surface.
 
 Each crate gets one additive `lib.rs` (the binary and tests are untouched,
-fully reversible) that exposes its modules, `Tools` enum, state struct, and an
-`embedded(cwd)` constructor.
+fully reversible) that exposes its modules, `Tools` enum, and state struct, whose
+`new(root)` constructor takes the session's cwd.
 
 This section is about efference *consuming* MCP servers. It also serves one: the
 session-control verbs are written as mcplease tools and mounted three times, as
@@ -472,14 +472,19 @@ Deferred tool discovery is the case where the reasoning inverts, because a
 deferred call is not on the wire and so is never constrained-decoded; validating
 against the fetched schema is part of that design (`backlog/deferred-tool-discovery.md`).
 
-### Shared-store side effect: resolved with `embedded`
+### Working directory: a root per mount
 
-The crates' default `new` persists to a shared on-disk store
-(`~/.ai-tools/...`) that other servers read; mounting with the default
-constructor would clobber it. `embedded(cwd)` instead builds the session store
-in memory (`SessionStore::new(None)` — no disk, no file-watcher) and seeds the
-working directory, so embedding touches no shared state and makes end-to-end
-tests hermetic.
+MCP `2026-07-28` has no sessions, so neither crate keeps a working directory a call
+could change: a path is absolute or relative to the root the state was built with.
+efference builds each server's state with the session's cwd, so every session gets
+its own, and nothing is shared on disk — end-to-end tests are hermetic for the same
+reason. semantic-edit-mcp's undo history and teaching progress live in that state
+too, so they are per session as well; its `undo_edit` and `retarget_edit` name the
+file the edit was made to.
+
+Dispatch is async: the state is cloned into each call, and both crates run their
+synchronous tool bodies on tokio's blocking pool, which is why they need a tokio
+host.
 
 ## Connected providers: user-declared MCP servers
 
@@ -648,13 +653,10 @@ One known gap: the offline `wire` dev view does not mount connected providers
 
 ### Duplicate tool name rejection: filter and guard
 
-Both servers expose `set_working_directory`. Advertising it would put a
-duplicate name on the wire — the API rejects duplicate tool names with a 400.
-`set_working_directory` is therefore listed in the `hidden` filter passed to
-`McpServer::from_state` for both servers; efference seeds the working directory
-itself at mount time. Additionally, fs-mcp's `move` and `delete` are filtered:
-they earn nothing over `bash`'s `mv`/`rm` and are not worth the tool-doc
-tokens.
+The API rejects duplicate tool names with a 400, so the mounted set must be
+unique. fs-mcp's `move` and `delete` are listed in the `hidden` filter passed to
+`McpServer::from_state`: they earn nothing over `bash`'s `mv`/`rm` and are not
+worth the tool-doc tokens.
 
 A `mounted_toolbox_advertises_unique_tool_names` test in `src/tools.rs` guards
 against future collisions as new servers or tools are added.

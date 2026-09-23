@@ -39,11 +39,11 @@ impl ToolMeta for Dismiss {
 impl Tool<Control> for Dismiss {
     type Output = String;
 
-    fn execute(self, control: &mut Control, _context: &RequestContext) -> Result<String> {
-        match &mut control.executor {
+    async fn execute(self, control: Control, _context: RequestContext) -> Result<String> {
+        match &control.executor {
             Executor::Client(state) => {
-                let client = state.client(self.session.as_deref())?;
-                state.block_on(client.dismiss_notification(self.id))?;
+                let client = state.client(self.session.as_deref()).await?;
+                client.dismiss_notification(self.id).await?;
                 Ok(format!("dismissed {}", self.id))
             }
             Executor::Host(state) => {

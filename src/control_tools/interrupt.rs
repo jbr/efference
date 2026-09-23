@@ -40,11 +40,11 @@ impl ToolMeta for Interrupt {
 impl Tool<Control> for Interrupt {
     type Output = String;
 
-    fn execute(self, control: &mut Control, _context: &RequestContext) -> Result<String> {
-        match &mut control.executor {
+    async fn execute(self, control: Control, _context: RequestContext) -> Result<String> {
+        match &control.executor {
             Executor::Client(state) => {
-                let client = state.client(self.session.as_deref())?;
-                state.block_on(client.interrupt())?;
+                let client = state.client(self.session.as_deref()).await?;
+                client.interrupt().await?;
                 Ok("interrupted".into())
             }
             Executor::Host(state) => {

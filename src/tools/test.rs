@@ -257,7 +257,7 @@ fn the_logged_call_keeps_its_intent() {
 }
 
 fn fs_server(cwd: PathBuf) -> McpServer<FsTools, fs_mcp::Tools> {
-    McpServer::from_state(FsTools::embedded(cwd).unwrap(), &["set_working_directory"])
+    McpServer::from_state(FsTools::new(cwd), &[])
 }
 
 /// fs-mcp's schemas translate to the Anthropic `tools[]` shape. Uses
@@ -280,10 +280,9 @@ fn fs_schemas_translate_to_anthropic_tool_defs() {
 }
 
 /// End-to-end execute path: read and list real files through the fs server.
-/// Hermetic — `FsTools::embedded` uses an **in-memory** session store, so this
-/// never touches the shared `~/.ai-tools` store; only the temp file is on disk.
-#[test]
-fn fs_read_and_list_roundtrip() {
+/// Hermetic — `FsTools` keeps no store of its own; only the temp file is on disk.
+#[tokio::test]
+async fn fs_read_and_list_roundtrip() {
     let dir = std::env::temp_dir().join(format!("eff-fsrt-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
@@ -292,7 +291,9 @@ fn fs_read_and_list_roundtrip() {
     let server = fs_server(dir.clone());
 
     // `read` resolves the relative path against the seeded session cwd.
-    let read = server.run_call("read", &json!({ "paths": ["hello.txt"] }));
+    let read = server
+        .run_call("read", &json!({ "paths": ["hello.txt"] }))
+        .await;
     assert!(!read.is_error, "read errored: {:?}", read.content);
     assert!(
         read.content.contains("fs-mcp lives"),
@@ -301,12 +302,12 @@ fn fs_read_and_list_roundtrip() {
     );
 
     // `list` finds the file in the seeded directory.
-    let list = server.run_call("list", &json!({ "path": "." }));
+    let list = server.run_call("list", &json!({ "path": "." })).await;
     assert!(!list.is_error, "list errored: {:?}", list.content);
     assert!(list.content.contains("hello.txt"), "got {:?}", list.content);
 
     // An unknown tool name routed here is a clean error, not a panic.
-    let bad = server.run_call("read", &json!({ "wrong": true }));
+    let bad = server.run_call("read", &json!({ "wrong": true })).await;
     assert!(bad.is_error, "bad input should error: {:?}", bad.content);
 
     std::fs::remove_dir_all(&dir).unwrap();
@@ -318,18 +319,20 @@ fn fs_read_and_list_roundtrip() {
 /// distillation keeping only the first line sharpened that — and the body still
 /// carries the retry token, which is the only way to confirm the same bytes without
 /// re-sending them.
-#[test]
-fn a_refused_write_is_an_error_result_with_its_body_intact() {
+#[tokio::test]
+async fn a_refused_write_is_an_error_result_with_its_body_intact() {
     let dir = std::env::temp_dir().join(format!("eff-refuse-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(dir.join("taken.txt"), "already here").unwrap();
 
     let server = fs_server(dir.clone());
-    let refused = server.run_call(
-        "write",
-        &json!({ "path": "taken.txt", "contents": "new body" }),
-    );
+    let refused = server
+        .run_call(
+            "write",
+            &json!({ "path": "taken.txt", "contents": "new body" }),
+        )
+        .await;
     assert!(refused.is_error, "got {:?}", refused.content);
     assert!(
         refused.content.contains("already exists"),
@@ -348,7 +351,9 @@ fn a_refused_write_is_an_error_result_with_its_body_intact() {
 
     // The zero-match case is the other side of the line: a search that found
     // nothing answered the question it was asked, so it stays a success.
-    let empty = server.run_call("search", &json!({ "pattern": "no-such-string-here" }));
+    let empty = server
+        .run_call("search", &json!({ "pattern": "no-such-string-here" }))
+        .await;
     assert!(!empty.is_error, "got {:?}", empty.content);
     assert!(
         empty.content.contains("No matches found"),
@@ -362,27 +367,27 @@ fn a_refused_write_is_an_error_result_with_its_body_intact() {
 /// A rejected edit is an error result too, and the rejection report — the diff and
 /// the syntax errors that explain what blocked it — is the error's body
 /// (docs/tools.md).
-#[test]
-fn a_rejected_edit_is_an_error_result_with_its_report_intact() {
+#[tokio::test]
+async fn a_rejected_edit_is_an_error_result_with_its_report_intact() {
     let dir = std::env::temp_dir().join(format!("eff-reject-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     let source = "fn main() {\n    println!(\"hi\");\n}\n";
     std::fs::write(dir.join("main.rs"), source).unwrap();
 
-    let server: McpServer<SemanticEditTools, semantic_edit_mcp::Tools> = McpServer::from_state(
-        SemanticEditTools::embedded(dir.clone()).unwrap(),
-        &["set_working_directory"],
-    );
-    let rejected = server.run_call(
-        "edit",
-        &json!({
-            "file_path": "main.rs",
-            "operation": "replace",
-            "anchor": "nothing in this file matches this anchor",
-            "content": "fn other() {}",
-        }),
-    );
+    let server: McpServer<SemanticEditTools, semantic_edit_mcp::Tools> =
+        McpServer::from_state(SemanticEditTools::new(dir.clone()).unwrap(), &[]);
+    let rejected = server
+        .run_call(
+            "edit",
+            &json!({
+                "file_path": "main.rs",
+                "operation": "replace",
+                "anchor": "nothing in this file matches this anchor",
+                "content": "fn other() {}",
+            }),
+        )
+        .await;
     assert!(rejected.is_error, "got {:?}", rejected.content);
     assert!(
         !rejected.content.is_empty() && !rejected.content.contains("Applied"),
@@ -401,16 +406,14 @@ fn a_rejected_edit_is_an_error_result_with_its_report_intact() {
 /// schemas translate, an embedded instance (in-memory stores + tree-sitter
 /// language registry) advertises the edit tools, and bad input is a clean
 /// error. Hermetic — no shared store, no real edit performed.
-#[test]
-fn semantic_edit_server_advertises_its_edit_tools() {
+#[tokio::test]
+async fn semantic_edit_server_advertises_its_edit_tools() {
     let dir = std::env::temp_dir().join(format!("eff-se-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
 
-    let server: McpServer<SemanticEditTools, semantic_edit_mcp::Tools> = McpServer::from_state(
-        SemanticEditTools::embedded(dir.clone()).unwrap(),
-        &["set_working_directory"],
-    );
+    let server: McpServer<SemanticEditTools, semantic_edit_mcp::Tools> =
+        McpServer::from_state(SemanticEditTools::new(dir.clone()).unwrap(), &[]);
 
     for expected in ["edit", "retarget_edit", "undo_edit"] {
         assert!(
@@ -419,7 +422,7 @@ fn semantic_edit_server_advertises_its_edit_tools() {
             server.schemas.iter().map(|s| &s.name).collect::<Vec<_>>()
         );
     }
-    let bad = server.run_call("edit", &json!({ "nonsense": true }));
+    let bad = server.run_call("edit", &json!({ "nonsense": true })).await;
     assert!(bad.is_error, "bad input should error: {:?}", bad.content);
 
     std::fs::remove_dir_all(&dir).unwrap();
@@ -600,7 +603,7 @@ async fn the_sessions_provider_mounts_namespaced_and_hides_settle() {
     // `Host::new` already returns an `Arc<Host>`.
     let host = crate::daemon::Host::new(crate::inference::InferenceRegistry::empty());
     let mut toolbox = Toolbox::bash_and_mcps(dir.clone(), None).unwrap();
-    toolbox.mount_sessions(host, "caller".into(), tokio::runtime::Handle::current());
+    toolbox.mount_sessions(host, "caller".into());
 
     let mut names = toolbox.names();
     for expected in [

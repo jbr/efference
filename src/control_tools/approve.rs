@@ -66,13 +66,13 @@ impl ToolMeta for Approve {
 impl Tool<Control> for Approve {
     type Output = String;
 
-    fn execute(self, control: &mut Control, _context: &RequestContext) -> Result<String> {
-        match &mut control.executor {
+    async fn execute(self, control: Control, _context: RequestContext) -> Result<String> {
+        match &control.executor {
             Executor::Client(state) => {
-                let client = state.client(self.session.as_deref())?;
+                let client = state.client(self.session.as_deref()).await?;
                 let call_id = match self.call_id {
                     Some(id) => id,
-                    None => state.block_on(super::pending_call_id(&client))?,
+                    None => super::pending_call_id(&client).await?,
                 };
                 let decision = match (self.abort, self.redirect) {
                     (true, _) => Approval::Abort,
@@ -80,14 +80,16 @@ impl Tool<Control> for Approve {
                     (false, None) => Approval::Approve,
                 };
                 if !self.wait {
-                    state.block_on(client.approve(&call_id, &decision))?;
+                    client.approve(&call_id, &decision).await?;
                     return Ok(format!("resolved {call_id}"));
                 }
-                let settled = state.settle_within(
-                    &client,
-                    self.timeout_s,
-                    client.approve_wait(&call_id, &decision),
-                )?;
+                let settled = state
+                    .settle_within(
+                        &client,
+                        self.timeout_s,
+                        client.approve_wait(&call_id, &decision),
+                    )
+                    .await?;
                 Ok(settled.to_text())
             }
             Executor::Host(state) => {

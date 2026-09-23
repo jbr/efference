@@ -43,18 +43,16 @@ impl ToolMeta for Background {
 impl Tool<Control> for Background {
     type Output = String;
 
-    fn execute(self, control: &mut Control, _context: &RequestContext) -> Result<String> {
-        match &mut control.executor {
+    async fn execute(self, control: Control, _context: RequestContext) -> Result<String> {
+        match &control.executor {
             Executor::Client(state) => {
-                let client = state.client(self.session.as_deref())?;
-                Ok(
-                    match state.block_on(client.background(self.note.as_deref()))? {
-                        Some(id) => format!(
-                            "requested backgrounding p#{id} (lands only while it is still running)"
-                        ),
-                        None => "no foreground tool running; nothing to background".into(),
-                    },
-                )
+                let client = state.client(self.session.as_deref()).await?;
+                Ok(match client.background(self.note.as_deref()).await? {
+                    Some(id) => format!(
+                        "requested backgrounding p#{id} (lands only while it is still running)"
+                    ),
+                    None => "no foreground tool running; nothing to background".into(),
+                })
             }
             Executor::Host(state) => {
                 let session = state.resolve_mutating(self.session.as_deref())?;

@@ -50,11 +50,7 @@ impl Fixture {
 
     fn control(&self, caller: &str) -> Control {
         Control::new(
-            Executor::host(
-                tokio::runtime::Handle::current(),
-                Arc::clone(&self.host),
-                caller.to_string(),
-            ),
+            Executor::host(Arc::clone(&self.host), caller.to_string()),
             false,
         )
     }
@@ -196,12 +192,13 @@ async fn a_level_change_reroutes_a_pending_gate() {
     .await;
 
     // The dial moves toward the creator with the call still held.
-    let mut operator = fixture.control("root");
+    let operator = fixture.control("root");
     ReviewLevelTool {
         level: "upstream".into(),
         session: Some("child".into()),
     }
-    .execute(&mut operator, &RequestContext::default())
+    .execute(operator.clone(), RequestContext::default())
+    .await
     .unwrap();
 
     wait_until("the held call was re-routed to the creator", || {
@@ -220,7 +217,8 @@ async fn a_level_change_reroutes_a_pending_gate() {
         level: "spotter_human".into(),
         session: Some("child".into()),
     }
-    .execute(&mut operator, &RequestContext::default())
+    .execute(operator.clone(), RequestContext::default())
+    .await
     .unwrap();
     assert!(child.pending_gate().is_some());
     assert_eq!(child.resolved_review_level(), ReviewLevel::SpotterHuman);
@@ -242,7 +240,7 @@ async fn the_reviewer_resolves_the_routed_gate_through_approve() {
     })
     .await;
 
-    let mut reviewer = fixture.control("root");
+    let reviewer = fixture.control("root");
     crate::control_tools::Approve {
         call_id: Some("toolu_leaf".into()),
         abort: false,
@@ -251,7 +249,8 @@ async fn the_reviewer_resolves_the_routed_gate_through_approve() {
         timeout_s: None,
         session: Some("child".into()),
     }
-    .execute(&mut reviewer, &RequestContext::default())
+    .execute(reviewer.clone(), RequestContext::default())
+    .await
     .expect("the creator is an ancestor, so the mutating verb reaches the child");
 
     assert!(matches!(gate.await, Ok(Approval::Approve)));

@@ -38,11 +38,11 @@ impl ToolMeta for State {
 impl Tool<Control> for State {
     type Output = StateResult;
 
-    fn execute(self, control: &mut Control, _context: &RequestContext) -> Result<StateResult> {
-        match &mut control.executor {
+    async fn execute(self, control: Control, _context: RequestContext) -> Result<StateResult> {
+        match &control.executor {
             Executor::Client(state) => {
-                let client = state.client(self.session.as_deref())?;
-                StateResult::plain(&state.block_on(client.state())?)
+                let client = state.client(self.session.as_deref()).await?;
+                StateResult::plain(&client.state().await?)
             }
             Executor::Host(state) => {
                 let session = state.resolve(self.session.as_deref())?;

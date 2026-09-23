@@ -50,7 +50,7 @@ impl ToolMeta for Pace {
 impl Tool<Control> for Pace {
     type Output = String;
 
-    fn execute(self, control: &mut Control, _context: &RequestContext) -> Result<String> {
+    async fn execute(self, control: Control, _context: RequestContext) -> Result<String> {
         // `hold`/`resume` move the held overlay; absent both, only the speed dial (if
         // given) moves. The clap path already rejects `--hold --resume`.
         let held = match (self.hold, self.resume) {
@@ -58,10 +58,10 @@ impl Tool<Control> for Pace {
             (_, true) => Some(false),
             _ => None,
         };
-        match &mut control.executor {
+        match &control.executor {
             Executor::Client(state) => {
-                let client = state.client(self.session.as_deref())?;
-                let (speed, held) = state.block_on(client.pace(self.speed_ms, held))?;
+                let client = state.client(self.session.as_deref()).await?;
+                let (speed, held) = client.pace(self.speed_ms, held).await?;
                 Ok(format!(
                     "pace: speed {speed}ms, {}",
                     if held { "HELD" } else { "running" }

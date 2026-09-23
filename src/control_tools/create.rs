@@ -95,8 +95,8 @@ impl ToolOutput for CreatedResult {
 impl Tool<Control> for Create {
     type Output = CreatedResult;
 
-    fn execute(self, control: &mut Control, _context: &RequestContext) -> Result<CreatedResult> {
-        match &mut control.executor {
+    async fn execute(self, control: Control, _context: RequestContext) -> Result<CreatedResult> {
+        match &control.executor {
             Executor::Client(state) => {
                 let here = std::env::current_dir().context("reading the working directory")?;
                 let cwd = match self.cwd {
@@ -128,7 +128,7 @@ impl Tool<Control> for Create {
                     env,
                 };
                 let host = state.host_client()?;
-                let id = state.block_on(host.create_session(&request))?;
+                let id = host.create_session(&request).await?;
                 Ok(CreatedResult { id })
             }
             Executor::Host(state) => {
@@ -182,7 +182,7 @@ impl Tool<Control> for Create {
                 // The child records the caller as its creator, which is what
                 // makes it a descendant for later mutating calls — and
                 // subscribes the caller to the child's status (docs/tools.md).
-                let id = state.create(request)?;
+                let id = state.create(request).await?;
                 Ok(CreatedResult { id })
             }
         }

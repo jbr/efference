@@ -40,11 +40,11 @@ impl ToolMeta for Title {
 impl Tool<Control> for Title {
     type Output = String;
 
-    fn execute(self, control: &mut Control, _context: &RequestContext) -> Result<String> {
-        match &mut control.executor {
+    async fn execute(self, control: Control, _context: RequestContext) -> Result<String> {
+        match &control.executor {
             Executor::Client(state) => {
-                let client = state.client(self.session.as_deref())?;
-                let identity = state.block_on(client.set_title(&self.title))?;
+                let client = state.client(self.session.as_deref()).await?;
+                let identity = client.set_title(&self.title).await?;
                 Ok(format!(
                     "{}: {}",
                     identity["id"].as_str().unwrap_or("session"),

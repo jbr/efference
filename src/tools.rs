@@ -271,15 +271,13 @@ impl Provider {
     ) -> Outcome {
         match self {
             Provider::Bash(b) => b.run(&call.input, abort, on_spawn, on_output).await,
-            // Synchronous and fast — no await, so these ignore `abort`, spawn no
-            // process, and stream nothing; their result lands whole as one
-            // committed entry.
-            Provider::Fs(s) => s.run_call(&call.name, &call.input).into(),
-            Provider::SemanticEdit(s) => s.run_call(&call.name, &call.input).into(),
-            // Synchronous dispatch, like the other embedded servers. `create`
-            // and `end` await real work inside it, driven on the host's runtime
-            // rather than this loop's (docs/tools.md).
-            Provider::Sessions(s) => s.run_call(&call.name, &call.input).into(),
+            // Fast, so these ignore `abort`, spawn no process, and stream
+            // nothing; their result lands whole as one committed entry. fs and
+            // semantic-edit run their bodies on tokio's blocking pool.
+            Provider::Fs(s) => s.run_call(&call.name, &call.input).await.into(),
+            Provider::SemanticEdit(s) => s.run_call(&call.name, &call.input).await.into(),
+            // `create` and `end` await real work on this runtime (docs/tools.md).
+            Provider::Sessions(s) => s.run_call(&call.name, &call.input).await.into(),
             Provider::ReadImage(r) => r.run(&call.input).into(),
             // Async over a wire, but no OS process of the *call's* own and no
             // live stream: the result lands whole. Races `abort` internally
@@ -290,12 +288,13 @@ impl Provider {
 }
 
 /// An in-process MCP server (docs/tools.md) adapted to the toolbox, generic over the
-/// server's session `State` and its generated `mcplease` `ToolEnum` dispatcher.
-/// Holds the state behind a `Mutex` — `mcplease`'s `Dispatch::call` is synchronous
-/// (`&mut state`), so the lock never spans an `.await` — plus the precomputed Anthropic tool definitions and the names it
-/// answers for. fs-mcp and semantic-edit-mcp are two instantiations.
+/// server's `State` and its generated `mcplease` `ToolEnum` dispatcher. Holds the
+/// state — a bundle of shared handles, cloned into each call, which is what
+/// `mcplease`'s `Dispatch::call` takes — plus the precomputed Anthropic tool
+/// definitions and the names it answers for. fs-mcp and semantic-edit-mcp are two
+/// instantiations.
 pub struct McpServer<State, ToolEnum> {
-    state: std::sync::Mutex<State>,
+    state: State,
     definitions: Vec<Value>,
     /// The mounted tool table, aligned with `definitions`. Kept whole (not just
     /// the names) because `anthropic_def` drops what the wire has no slot for —
@@ -312,6 +311,7 @@ impl<State, ToolEnum> McpServer<State, ToolEnum>
 where
     // `Dispatch<State>`'s supertrait gives `DeserializeOwned`, so `from_value` works.
     ToolEnum: AsToolsList + Dispatch<State>,
+    State: Clone + Send + Sync + 'static,
 {
     /// Adapt an already-constructed server state, advertising every tool the
     /// generated enum exposes **except** those named in `hidden` — the curation
@@ -348,7 +348,7 @@ where
             })
             .collect();
         Self {
-            state: std::sync::Mutex::new(state),
+            state,
             definitions,
             schemas,
             namespace: namespace.map(str::to_string),
@@ -386,7 +386,7 @@ where
     /// embedded tool that grows a structured or multimodal result reads the
     /// same way as a remote one. Any failure (bad input, tool error) becomes an
     /// `is_error` result so the `tool_use` still gets its pair.
-    fn run_call(&self, name: &str, input: &Value) -> RawResult {
+    async fn run_call(&self, name: &str, input: &Value) -> RawResult {
         let Some(bare) = self.bare_name(name) else {
             return RawResult::error(format!("unknown tool: {name}"));
         };
@@ -397,7 +397,7 @@ where
                 return RawResult::error(format!("invalid input for {name}: {e}"));
             }
         };
-        match tool.call(&mut self.state.lock().unwrap(), &request_context()) {
+        match tool.call(self.state.clone(), request_context()).await {
             Ok(result) => crate::mcp::render_result(result),
             Err(e) => RawResult::error(e.to_string()),
         }
@@ -406,18 +406,18 @@ where
 
 /// What an embedded server learns about its caller. Over a wire this rides in
 /// each request's `_meta` (protocol revision 2026-07-28); in-process there is
-/// no wire, so the same context is handed to `call` directly. efference
-/// declares no optional client capabilities — notably not elicitation, so a
-/// tool must not ask for more input mid-call.
+/// no wire, so the same `_meta` is read here and handed to `call` directly.
+/// efference declares no optional client capabilities — notably not
+/// elicitation, so a tool must not ask for more input mid-call.
 fn request_context() -> RequestContext {
-    RequestContext {
-        protocol_version: Some(mcplease::types::LATEST_PROTOCOL_VERSION.to_string()),
-        client_info: Some(mcplease::types::Implementation::new(
-            "efference",
-            env!("CARGO_PKG_VERSION"),
-        )),
-        client_capabilities: Default::default(),
-    }
+    use mcplease::types::{Implementation, LATEST_PROTOCOL_VERSION, meta_keys};
+    RequestContext::from_params(Some(&json!({
+        "_meta": {
+            meta_keys::PROTOCOL_VERSION: LATEST_PROTOCOL_VERSION,
+            meta_keys::CLIENT_INFO: Implementation::new("efference", env!("CARGO_PKG_VERSION")),
+            meta_keys::CLIENT_CAPABILITIES: {},
+        }
+    })))
 }
 
 /// What the spotter is handed about a structured tool before it judges a call
@@ -599,13 +599,11 @@ pub fn unknown_tool_message(name: &str, available: &[String]) -> String {
 impl McpServer<crate::control_tools::Control, crate::control_tools::Tools> {
     /// Resolve a `sessions__approve` call to the leaf action its target holds
     /// (docs/permissions.md), through the sessions provider's in-process host.
-    /// The lock is synchronous — no `.await` — like every embedded
-    /// dispatch (docs/tools.md).
     fn resolve_bound_action(
         &self,
         call: &ToolCall,
     ) -> anyhow::Result<crate::control_tools::BoundAction> {
-        self.state.lock().unwrap().resolve_bound_action(call)
+        self.state.resolve_bound_action(call)
     }
 }
 
@@ -699,21 +697,20 @@ impl Toolbox {
             }),
             Provider::ReadImage(ReadImage { cwd: cwd.clone() }),
             // fs-mcp curated down to the tools whose structured, fork-friendly
-            // output genuinely beats the shell. `set_working_directory` is managed
-            // by efference (the cwd is seeded). `move`/`delete` are dropped: they
+            // output genuinely beats the shell, rooted at the session's cwd.
+            // `move`/`delete` are dropped: they
             // earn nothing over bash's `mv`/`rm` — even Haiku reaches for those —
             // so they aren't worth the tool-doc tokens (docs/tools.md taxonomy).
             // `list` survives because it is gitignore-aware (skips `target/`,
             // `.git/`), which `ls`/`find` are not.
             Provider::Fs(Box::new(McpServer::from_state(
-                FsTools::embedded(cwd.clone())?,
-                &["set_working_directory", "move", "delete"],
+                FsTools::new(cwd.clone()),
+                &["move", "delete"],
             ))),
-            // semantic-edit-mcp: only `set_working_directory` is hidden (both
-            // servers expose it, and a duplicate name on the wire is a 400).
+            // semantic-edit-mcp, whole, rooted at the session's cwd.
             Provider::SemanticEdit(Box::new(McpServer::from_state(
-                SemanticEditTools::embedded(cwd)?,
-                &["set_working_directory"],
+                SemanticEditTools::new(cwd)?,
+                &[],
             ))),
         ]))
     }
@@ -740,17 +737,11 @@ impl Toolbox {
 
     /// Mount the session-control provider (docs/tools.md): the session reaches
     /// its project's other sessions through `host`, in-process, under the
-    /// `sessions__<verb>` wire names. `caller` is the session's own id;
-    /// `runtime` drives the two verbs that await real work (`create`, `end`).
+    /// `sessions__<verb>` wire names. `caller` is the session's own id.
     /// `settle` is hidden from the mounted set, like fs's `delete`.
-    pub fn mount_sessions(
-        &mut self,
-        host: std::sync::Arc<crate::daemon::Host>,
-        caller: String,
-        runtime: tokio::runtime::Handle,
-    ) {
+    pub fn mount_sessions(&mut self, host: std::sync::Arc<crate::daemon::Host>, caller: String) {
         let state = crate::control_tools::Control::new(
-            crate::control_tools::Executor::host(runtime, host, caller),
+            crate::control_tools::Executor::host(host, caller),
             false,
         );
         self.providers.push(Provider::Sessions(Box::new(

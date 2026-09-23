@@ -37,8 +37,8 @@ impl ToolMeta for Subscribe {
 impl Tool<Control> for Subscribe {
     type Output = String;
 
-    fn execute(self, control: &mut Control, _context: &RequestContext) -> Result<String> {
-        match &mut control.executor {
+    async fn execute(self, control: Control, _context: RequestContext) -> Result<String> {
+        match &control.executor {
             Executor::Client(_) => Err(no_inbox()),
             Executor::Host(state) => {
                 // Observation, not mutation: anything in the caller's project.

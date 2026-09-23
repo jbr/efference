@@ -10,22 +10,20 @@
 //! - the `tools/list` + `tools/call` dispatch, served over stdin/stdout by
 //!   `efference mcp` so another harness can supervise a session by tool call.
 //!
-//! `mcplease::run` is not used: it owns argv parsing and logger init, and efference
-//! has both already.
+//! The binary drives `mcplease::calls` itself for the second: argv parsing, the
+//! logger, and the runtime are already efference's.
 //!
 //! One module name dodges a dependency of the same name (`use image::Image` would be
 //! ambiguous against the `image` crate): the `image` tool lives in `read_image.rs`.
 //! The advertised tool name is unaffected.
 //!
-//! `Tool::execute` is synchronous and the client executor is async, so the
-//! [`Executor::Client`] variant carries the [`Handle`] to the runtime `main` is
-//! already on and each tool blocks on its one call. Both entry points therefore run
-//! dispatch on a blocking thread (`tokio::task::spawn_blocking`), never on a runtime
-//! worker.
+//! `Tool::execute` is async, so each tool awaits its one call on whatever runtime
+//! drives it: the binary's for the command line and `efference mcp`, the host's
+//! for a session's own toolbox.
 
 use std::future::Future;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use crate::client::Client;
@@ -36,7 +34,6 @@ use mcplease::traits::ToolOutput;
 use mcplease::types::ContentBlock;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tokio::runtime::Handle;
 
 mcplease::tools!(
     Control,
@@ -129,6 +126,8 @@ pub struct BoundAction {
 }
 
 /// The tool state: an executor and the presentation requested by its mount.
+/// Cloned into every call, which may run alongside others.
+#[derive(Clone)]
 pub struct Control {
     executor: Executor,
     /// Whether this dispatch came from the command line rather than from an MCP
@@ -148,10 +147,9 @@ impl Control {
     /// control router through on an in-memory transport. The host is a path
     /// nothing listens on.
     #[cfg(test)]
-    fn with_client(runtime: Handle, default_client: Client, cli: bool) -> Self {
+    fn with_client(default_client: Client, cli: bool) -> Self {
         Self::new(
             Executor::client(
-                runtime,
                 PathBuf::from(".efference/host.sock"),
                 Fallback::Client(default_client),
             ),
@@ -182,9 +180,7 @@ impl Control {
 /// `Host` executor and calls the host directly. Each tool explicitly selects
 /// its executor in its `execute` implementation.
 ///
-/// The client variant is much the larger (it carries the runtime handle, socket,
-/// and fallback client); like [`Fallback`], the enum stays unboxed.
-#[allow(clippy::large_enum_variant)]
+#[derive(Clone)]
 pub enum Executor {
     Client(ClientExecutor),
     Host(HostExecutor),
@@ -192,11 +188,10 @@ pub enum Executor {
 
 impl Executor {
     /// Bind the HTTP executor to a host socket and fallback session selection.
-    pub fn client(runtime: Handle, host: PathBuf, fallback: Fallback) -> Self {
+    pub fn client(host: PathBuf, fallback: Fallback) -> Self {
         Self::Client(ClientExecutor {
-            runtime,
             host,
-            fallback,
+            fallback: Arc::new(Mutex::new(fallback)),
         })
     }
 
@@ -204,9 +199,8 @@ impl Executor {
     /// sessions through the host it already lives in (docs/tools.md). The host
     /// is held weakly — the host owns every session and a session's toolbox
     /// holds this executor, so a strong reference would be a cycle.
-    pub fn host(runtime: Handle, host: Arc<crate::daemon::Host>, caller: String) -> Self {
+    pub fn host(host: Arc<crate::daemon::Host>, caller: String) -> Self {
         Self::Host(HostExecutor {
-            runtime,
             host: Arc::downgrade(&host),
             caller,
         })
@@ -221,10 +215,8 @@ impl Executor {
 /// 1. the target is never the caller, and
 /// 2. a mutating verb reaches only sessions in the caller's descendant chain
 ///    (via `created_by`), so a session cannot resolve its own gate or steer a peer.
+#[derive(Clone)]
 pub struct HostExecutor {
-    /// A handle to the host's runtime, for the two verbs that await real work
-    /// (`create` boots a session; `end` waits for its teardown).
-    runtime: Handle,
     /// The host, held weakly (see [`Executor::host`]).
     host: std::sync::Weak<crate::daemon::Host>,
     /// The calling session's id — the executor's identity.
@@ -409,39 +401,11 @@ impl HostExecutor {
         }
     }
 
-    /// Run one async host call to completion from the synchronous tool
-    /// dispatch. The loop runs on the host's multi-thread runtime
-    /// (docs/control-channel.md), so dispatch is on one of its workers:
-    /// `block_in_place` hands that worker's queue to another thread and lets
-    /// this one wait, and the future is driven by the rest of the runtime.
-    /// Outside a multi-thread runtime — a current-thread test — the future
-    /// runs on a scratch thread against the host runtime instead, since
-    /// `block_in_place` would panic there.
-    fn block_on<F, T>(&self, future: F) -> Result<T>
-    where
-        F: std::future::Future<Output = T> + Send + 'static,
-        T: Send + 'static,
-    {
-        let runtime = self.runtime.clone();
-        let multi_thread = tokio::runtime::Handle::try_current()
-            .is_ok_and(|h| h.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread);
-        if multi_thread {
-            return Ok(tokio::task::block_in_place(|| runtime.block_on(future)));
-        }
-        let (tx, rx) = std::sync::mpsc::channel();
-        std::thread::spawn(move || {
-            let _ = tx.send(runtime.block_on(future));
-        });
-        rx.recv()
-            .map_err(|_| anyhow!("the host call ended without a result"))
-    }
-
     /// `create` in-session: the child records the caller as its creator
     /// (docs/tools.md).
-    fn create(&self, body: crate::daemon::CreateSession) -> Result<String> {
+    async fn create(&self, body: crate::daemon::CreateSession) -> Result<String> {
         let host = self.host()?;
-        let caller = self.caller.clone();
-        let created = self.block_on(async move { host.create(body, Some(caller)).await })?;
+        let created = host.create(body, Some(self.caller.clone())).await;
         created.map_err(|reason| anyhow!("{reason}"))
     }
 
@@ -457,14 +421,11 @@ impl HostExecutor {
     }
 
     /// `end` in-session: wait for the target's teardown.
-    fn end(&self, target: &str) -> Result<()> {
-        let host = self.host()?;
-        let id = target.to_string();
-        self.block_on(async move {
-            if let Some(done) = host.end(&id) {
-                done.await;
-            }
-        })
+    async fn end(&self, target: &str) -> Result<()> {
+        if let Some(done) = self.host()?.end(target) {
+            done.await;
+        }
+        Ok(())
     }
 
     /// The caller's project: every session sharing its storage base.
@@ -494,14 +455,17 @@ fn same_dir(a: &std::path::Path, b: &std::path::Path) -> bool {
 }
 
 /// The HTTP-over-control-channel executor used by the CLI and MCP mounts.
+#[derive(Clone)]
 pub struct ClientExecutor {
-    runtime: Handle,
     host: PathBuf,
-    fallback: Fallback,
+    /// Shared by every clone, so a fallback resolved by one call is kept for the
+    /// rest.
+    fallback: Arc<Mutex<Fallback>>,
 }
 
 /// Which session a client executor drives when a call names no `session`.
 #[allow(clippy::large_enum_variant)]
+#[derive(Clone)]
 pub enum Fallback {
     /// One already reached: a resolved `--name`/`--socket`, or a test's in-memory
     /// transport.
@@ -523,21 +487,28 @@ impl ClientExecutor {
     /// lists, or one with its own live socket under `.efference/` — else the
     /// fallback. Without a fallback, a call that names no session is an error that
     /// says what the host holds.
-    fn client(&mut self, session: Option<&str>) -> Result<Client> {
+    async fn client(&self, session: Option<&str>) -> Result<Client> {
         if let Some(name) = session {
-            return self.resolve(Some(name), None);
+            return self.resolve(Some(name), None).await;
         }
-        match &self.fallback {
-            Fallback::Client(client) => Ok(client.clone()),
+        // Cloned out rather than held: resolving awaits, and the lock is sync.
+        // Two calls racing to resolve both reach the same answer.
+        let fallback = self
+            .fallback
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
+        match fallback {
+            Fallback::Client(client) => Ok(client),
             Fallback::Resolve { name, socket } => {
-                let (name, socket) = (name.clone(), socket.clone());
-                let client = self.resolve(name.as_deref(), socket)?;
-                self.fallback = Fallback::Client(client.clone());
+                let client = self.resolve(name.as_deref(), socket).await?;
+                *self.fallback.lock().unwrap_or_else(|e| e.into_inner()) =
+                    Fallback::Client(client.clone());
                 Ok(client)
             }
             Fallback::None => {
                 let held = match self.host_client() {
-                    Ok(host) => match self.block_on(host.list_sessions()) {
+                    Ok(host) => match host.list_sessions().await {
                         Ok(ids) if ids.is_empty() => {
                             "the host holds no sessions; `create` one".to_string()
                         }
@@ -553,7 +524,7 @@ impl ClientExecutor {
         }
     }
 
-    fn resolve(&self, name: Option<&str>, socket: Option<PathBuf>) -> Result<Client> {
+    async fn resolve(&self, name: Option<&str>, socket: Option<PathBuf>) -> Result<Client> {
         if let Some(socket) = socket {
             return Ok(Client::new(socket));
         }
@@ -562,7 +533,9 @@ impl ClientExecutor {
         // (docs/control-channel.md). A listing without a cwd is kept.
         let hosted: Vec<String> = if Self::is_live(&self.host) {
             let here = std::env::current_dir()?;
-            self.block_on(Client::new(&self.host).sessions())?
+            Client::new(&self.host)
+                .sessions()
+                .await?
                 .into_iter()
                 .filter(|listing| {
                     listing
@@ -652,13 +625,8 @@ impl ClientExecutor {
         Ok(Client::new(&self.host))
     }
 
-    /// Block the calling thread on one client call.
-    fn block_on<F: Future>(&self, future: F) -> F::Output {
-        self.runtime.block_on(future)
-    }
-
     /// Await a wait that answers with a `/state` body, bounded by `timeout_s`.
-    fn settle_within<F>(
+    async fn settle_within<F>(
         &self,
         client: &Client,
         timeout_s: Option<u64>,
@@ -667,15 +635,13 @@ impl ClientExecutor {
     where
         F: Future<Output = Result<String>>,
     {
-        self.block_on(async {
-            let Some(seconds) = timeout_s else {
-                return StateResult::settled(&wait.await?);
-            };
-            match tokio::time::timeout(Duration::from_secs(seconds), wait).await {
-                Ok(body) => StateResult::settled(&body?),
-                Err(_) => StateResult::unsettled(&client.state().await?),
-            }
-        })
+        let Some(seconds) = timeout_s else {
+            return StateResult::settled(&wait.await?);
+        };
+        match tokio::time::timeout(Duration::from_secs(seconds), wait).await {
+            Ok(body) => StateResult::settled(&body?),
+            Err(_) => StateResult::unsettled(&client.state().await?),
+        }
     }
 }
 

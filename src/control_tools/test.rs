@@ -30,7 +30,6 @@ async fn test_state_over(cli: bool, log: Log) -> Control {
     );
     let context = trillium_testing::init(&mut handler).await;
     Control::with_client(
-        Handle::current(),
         Client::with_connector(
             trillium_testing::ServerConnector::new(handler).with_context(context),
         ),
@@ -39,15 +38,11 @@ async fn test_state_over(cli: bool, log: Log) -> Control {
 }
 
 /// One `tools/call` end to end: the JSON-RPC a mounted harness sends, through
-/// mcplease's dispatch, through the synchronous `execute`, through a real
-/// `GET /state`, and back out as both content halves.
-///
-/// Dispatch is synchronous and blocks on the runtime, so it runs on a blocking
-/// thread — the same shape `run_cli`/`run_stdio` use, and the reason a tool may never
-/// be called from a runtime worker.
-#[tokio::test(flavor = "multi_thread")]
+/// mcplease's dispatch, through `execute`, through a real `GET /state`, and back
+/// out as both content halves.
+#[tokio::test]
 async fn tools_call_state_reaches_the_daemon() {
-    let mut state = test_state(false).await;
+    let state = test_state(false).await;
     let request: JsonRpcRequest = serde_json::from_value(serde_json::json!({
         "jsonrpc": "2.0",
         "id": 1,
@@ -57,11 +52,10 @@ async fn tools_call_state_reaches_the_daemon() {
     .unwrap();
     let config = mcplease::ServerConfig::new(mcplease::server_info!());
 
-    let response = tokio::task::spawn_blocking(move || {
-        mcplease::handle_request::<Tools, Control>(request, &mut state, &config)
-    })
-    .await
-    .unwrap();
+    let context = RequestContext::from_request(&request);
+    let response = mcplease::handle_request::<Tools, Control>(request, state, context, &config)
+        .await
+        .expect("nothing here cancels");
 
     let JsonRpcResponse { result, error, .. } = response;
     assert!(error.is_none(), "{error:?}");
@@ -93,7 +87,7 @@ async fn tools_call_state_reaches_the_daemon() {
 /// `transcript` and `entries` over the same router: a turn submitted through the
 /// client shows up as one `user` line carrying its seq, and that seq fetches the
 /// whole entry.
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test]
 async fn transcript_lines_carry_the_seq_that_entries_resolves() {
     let mut log = Log::in_memory();
     log.append(
@@ -103,21 +97,16 @@ async fn transcript_lines_carry_the_seq_that_entries_resolves() {
         )]),
     )
     .unwrap();
-    let mut state = test_state_over(false, log).await;
+    let state = test_state_over(false, log).await;
 
-    let text = tokio::task::spawn_blocking(move || {
-        let text = Transcript {
-            since: None,
-            tail: None,
-            session: None,
-        }
-        .execute(&mut state, &RequestContext::default())
-        .unwrap();
-        (state, text)
-    })
+    let text = Transcript {
+        since: None,
+        tail: None,
+        session: None,
+    }
+    .execute(state.clone(), RequestContext::default())
     .await
     .unwrap();
-    let (mut state, text) = text;
     let line = text
         .lines()
         .find(|l| l.contains("hello transcript"))
@@ -125,14 +114,11 @@ async fn transcript_lines_carry_the_seq_that_entries_resolves() {
     assert!(line.contains(" user "), "{line}");
     let seq: u64 = line.split_whitespace().next().unwrap().parse().unwrap();
 
-    let fetched = tokio::task::spawn_blocking(move || {
-        Entries {
-            seqs: vec![seq],
-            session: None,
-        }
-        .execute(&mut state, &RequestContext::default())
-        .unwrap()
-    })
+    let fetched = Entries {
+        seqs: vec![seq],
+        session: None,
+    }
+    .execute(state, RequestContext::default())
     .await
     .unwrap();
     let entry = &fetched.entries[0];
@@ -160,7 +146,7 @@ fn proposed_edit(command: &str) -> crate::log::Payload {
 /// Unlike [`test_state_over`], the proposals here are filed with `Session::append`
 /// *after* construction — the pending-proposals queue is populated by the live
 /// append path, not folded from a log a `Session` is merely opened over.
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test]
 async fn proposal_commits_and_cancels_through_the_client_executor() {
     let (shared, _turns) =
         crate::daemon::Session::new(std::env::current_dir().unwrap(), Log::in_memory());
@@ -181,50 +167,37 @@ async fn proposal_commits_and_cancels_through_the_client_executor() {
         ),
     );
     let context = trillium_testing::init(&mut handler).await;
-    let mut state = Control::with_client(
-        Handle::current(),
+    let state = Control::with_client(
         Client::with_connector(
             trillium_testing::ServerConnector::new(handler).with_context(context),
         ),
         false,
     );
 
-    let (mut state, result) = tokio::task::spawn_blocking(move || {
-        let result = Proposal {
-            seq: commit_seq,
-            cancel: false,
-            note: "looks safe".into(),
-            session: None,
-        }
-        .execute(&mut state, &RequestContext::default());
-        (state, result)
-    })
-    .await
-    .unwrap();
+    let result = Proposal {
+        seq: commit_seq,
+        cancel: false,
+        note: "looks safe".into(),
+        session: None,
+    }
+    .execute(state.clone(), RequestContext::default())
+    .await;
     assert_eq!(result.unwrap(), format!("committed {commit_seq}"));
 
-    let (mut state, result) = tokio::task::spawn_blocking(move || {
-        let result = Proposal {
-            seq: cancel_seq,
-            cancel: true,
-            note: "not now".into(),
-            session: None,
-        }
-        .execute(&mut state, &RequestContext::default());
-        (state, result)
-    })
-    .await
-    .unwrap();
+    let result = Proposal {
+        seq: cancel_seq,
+        cancel: true,
+        note: "not now".into(),
+        session: None,
+    }
+    .execute(state.clone(), RequestContext::default())
+    .await;
     assert_eq!(result.unwrap(), format!("cancelled {cancel_seq}"));
 
-    let (mut state, remaining) = tokio::task::spawn_blocking(move || {
-        let result = State { session: None }
-            .execute(&mut state, &RequestContext::default())
-            .unwrap();
-        (state, result)
-    })
-    .await
-    .unwrap();
+    let remaining = State { session: None }
+        .execute(state.clone(), RequestContext::default())
+        .await
+        .unwrap();
     let proposals = remaining.state.get("proposals").cloned();
     assert_eq!(
         proposals,
@@ -233,17 +206,14 @@ async fn proposal_commits_and_cancels_through_the_client_executor() {
         remaining.state
     );
 
-    let err = tokio::task::spawn_blocking(move || {
-        Proposal {
-            seq: 999,
-            cancel: false,
-            note: "?".into(),
-            session: None,
-        }
-        .execute(&mut state, &RequestContext::default())
-    })
+    let err = Proposal {
+        seq: 999,
+        cancel: false,
+        note: "?".into(),
+        session: None,
+    }
+    .execute(state, RequestContext::default())
     .await
-    .unwrap()
     .unwrap_err();
     assert!(err.to_string().contains("999"), "{err}");
 }
@@ -338,23 +308,20 @@ fn tools_list_is_ordered_and_annotated() {
 /// session is an error naming the argument, not a discovery of whatever is live:
 /// the mount's session selection is explicit per call (docs/operating.md). The
 /// host path here has no listener, so the error also says the host is not up.
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test]
 async fn an_unbound_mount_requires_session() {
     let executor = Executor::client(
-        Handle::current(),
         std::path::PathBuf::from("/nonexistent/efference/host.sock"),
         Fallback::None,
     );
-    let mut state = Control::new(executor, false);
-    let err = tokio::task::spawn_blocking(move || match &mut state.executor {
-        Executor::Client(executor) => match executor.client(None) {
+    let state = Control::new(executor, false);
+    let err = match &state.executor {
+        Executor::Client(executor) => match executor.client(None).await {
             Ok(_) => panic!("an unbound mount resolved a session"),
             Err(e) => e.to_string(),
         },
         Executor::Host(_) => panic!("this test bound the HTTP executor"),
-    })
-    .await
-    .unwrap();
+    };
     assert!(err.contains("pass `session`"), "{err}");
     assert!(err.contains("no host at"), "{err}");
 }

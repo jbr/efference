@@ -52,11 +52,7 @@ impl Fixture {
 
     fn control(&self, caller: &str) -> Control {
         Control::new(
-            Executor::host(
-                tokio::runtime::Handle::current(),
-                Arc::clone(&self.host),
-                caller.to_string(),
-            ),
+            Executor::host(Arc::clone(&self.host), caller.to_string()),
             false,
         )
     }
@@ -96,11 +92,12 @@ async fn a_creator_is_subscribed_with_wake_and_a_peer_without() {
     assert!(fixture.session("parent").has_subscriptions());
     assert!(!fixture.session("peer").has_subscriptions());
 
-    let mut peer = fixture.control("peer");
+    let peer = fixture.control("peer");
     Subscribe {
         session: "child".into(),
     }
-    .execute(&mut peer, &RequestContext::default())
+    .execute(peer.clone(), RequestContext::default())
+    .await
     .expect("a peer may observe");
     assert_eq!(
         subscribers("child"),
@@ -109,11 +106,12 @@ async fn a_creator_is_subscribed_with_wake_and_a_peer_without() {
     assert!(fixture.session("peer").has_subscriptions());
 
     // An explicit `subscribe` never lowers a creator's `wake`.
-    let mut parent = fixture.control("parent");
+    let parent = fixture.control("parent");
     Subscribe {
         session: "child".into(),
     }
-    .execute(&mut parent, &RequestContext::default())
+    .execute(parent.clone(), RequestContext::default())
+    .await
     .unwrap();
     assert_eq!(
         subscribers("child"),
@@ -123,7 +121,8 @@ async fn a_creator_is_subscribed_with_wake_and_a_peer_without() {
     let err = Subscribe {
         session: "peer".into(),
     }
-    .execute(&mut peer, &RequestContext::default())
+    .execute(peer.clone(), RequestContext::default())
+    .await
     .unwrap_err()
     .to_string();
     assert!(err.contains("cannot target itself"), "{err}");
@@ -131,14 +130,16 @@ async fn a_creator_is_subscribed_with_wake_and_a_peer_without() {
     let said = Unsubscribe {
         session: "child".into(),
     }
-    .execute(&mut peer, &RequestContext::default())
+    .execute(peer.clone(), RequestContext::default())
+    .await
     .unwrap();
     assert_eq!(said, "unsubscribed from child");
     assert!(!fixture.session("peer").has_subscriptions());
     let said = Unsubscribe {
         session: "child".into(),
     }
-    .execute(&mut peer, &RequestContext::default())
+    .execute(peer.clone(), RequestContext::default())
+    .await
     .unwrap();
     assert_eq!(said, "you were not subscribed to child");
 

@@ -365,7 +365,7 @@ async fn a_stateless_server_is_mounted_without_a_handshake() {
             // request's `_meta` instead of a handshake; a server on it is
             // entitled to read one.
             let context = mcplease::types::RequestContext::from_params(request.params.as_ref());
-            let caller = context.client_info.expect("clientInfo in _meta");
+            let caller = context.client_info().expect("clientInfo in _meta");
             vec![JsonRpcMessage::Response(JsonRpcResponse::success(
                 request.id.clone(),
                 serde_json::to_value(CallToolResult::text(format!("called by {}", caller.name)))

@@ -54,17 +54,14 @@ impl ToolMeta for Notify {
 impl Tool<Control> for Notify {
     type Output = String;
 
-    fn execute(self, control: &mut Control, _context: &RequestContext) -> Result<String> {
-        match &mut control.executor {
+    async fn execute(self, control: Control, _context: RequestContext) -> Result<String> {
+        match &control.executor {
             Executor::Client(state) => {
-                let client = state.client(self.session.as_deref())?;
+                let client = state.client(self.session.as_deref()).await?;
                 let body = self.body.join(" ");
-                let id = state.block_on(client.notify(
-                    &self.source,
-                    &body,
-                    self.slot.as_deref(),
-                    self.replaces,
-                ))?;
+                let id = client
+                    .notify(&self.source, &body, self.slot.as_deref(), self.replaces)
+                    .await?;
                 Ok(format!("notified (id {id})"))
             }
             Executor::Host(state) => {

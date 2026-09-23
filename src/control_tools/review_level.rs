@@ -44,11 +44,11 @@ impl ToolMeta for ReviewLevel {
 impl Tool<Control> for ReviewLevel {
     type Output = String;
 
-    fn execute(self, control: &mut Control, _context: &RequestContext) -> Result<String> {
-        match &mut control.executor {
+    async fn execute(self, control: Control, _context: RequestContext) -> Result<String> {
+        match &control.executor {
             Executor::Client(state) => {
-                let client = state.client(self.session.as_deref())?;
-                let set = state.block_on(client.review_level(&self.level))?;
+                let client = state.client(self.session.as_deref()).await?;
+                let set = client.review_level(&self.level).await?;
                 Ok(format!("review level: {set}"))
             }
             Executor::Host(state) => {

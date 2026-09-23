@@ -403,7 +403,10 @@ impl Session {
                 Reaction::Reply(response) => {
                     exchange.reply(&JsonRpcMessage::Response(response)).await?;
                 }
-                Reaction::Ignore => {}
+                // Progress and subscription traffic: efference sends no
+                // progress token and opens no subscription, so any that arrives
+                // is unsolicited.
+                _ => {}
             }
         }
     }
