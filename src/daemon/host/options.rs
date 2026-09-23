@@ -224,7 +224,7 @@ fn session_options_response(host: &Host, decoded: DecodedOptions) -> String {
     // A field the decoder rejected never reached resolution, which would report
     // it as an ordinary omission. Blank it, so every issue's field reads the same.
     for issue in &issues {
-        resolved.invalidate(issue.field);
+        resolved.invalidate(&issue.field);
     }
     issues.append(&mut resolved.issues);
     resolved.issues = issues;

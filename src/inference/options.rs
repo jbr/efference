@@ -51,7 +51,7 @@ pub struct SessionOptions {
 /// The precedence branch that supplied an effective value. Closed, because a
 /// client renders each branch differently: an inherited value is editable in
 /// place, a requested one is the edit.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SelectionSource {
     /// The request named it.
@@ -71,7 +71,7 @@ pub enum SelectionSource {
 /// One effective field: the value that would be used, and where it came from.
 /// `source: null` marks a field whose resolution *failed* — the paired issue says
 /// why. A `value: null` with a source present is an ordinary omission.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Effective<T> {
     pub value: Option<T>,
     pub source: Option<SelectionSource>,
@@ -108,7 +108,7 @@ impl<T> Effective<T> {
 
 /// The effective triage client, flattened so it reads like the other role
 /// selections rather than echoing the request's tagged spelling.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "mode", rename_all = "snake_case")]
 pub enum EffectiveTriage {
     /// The fork peek runs on the main client.
@@ -118,16 +118,20 @@ pub enum EffectiveTriage {
         selection: ModelSelection,
         thinking: bool,
         auto_choice: bool,
-        #[serde(skip_serializing_if = "Option::is_none")]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         effort: Option<String>,
     },
 }
 
 /// Why a field could not be used as given. `field` names the request field, so a
 /// client can attach the message to the control the operator is editing.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+///
+/// `field` is a `Cow` rather than a `&'static str` because the type crosses the
+/// wire in both directions: the host builds every issue from a literal, and a
+/// control client decodes the same type back (docs/control-api.md).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Issue {
-    pub field: &'static str,
+    pub field: std::borrow::Cow<'static, str>,
     pub code: IssueCode,
     pub message: String,
     /// Why, in terms only a local caller should see — a credential loader's own
@@ -142,7 +146,7 @@ pub struct Issue {
 impl Issue {
     pub fn new(field: &'static str, code: IssueCode, message: impl Into<String>) -> Self {
         Self {
-            field,
+            field: field.into(),
             code,
             message: message.into(),
             detail: None,
@@ -157,7 +161,7 @@ impl Issue {
 
 /// The closed issue vocabulary. A client may render an unknown code by its
 /// `message` alone, but every code here is one it can special-case.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum IssueCode {
     /// The field is needed and absent.
@@ -179,13 +183,13 @@ pub enum IssueCode {
 /// Every effective field plus the issues that would stop creation. Preview
 /// serializes this; creation refuses a non-empty `issues` and then resolves
 /// credentials for the same selections.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ResolvedOptions {
     pub effective: EffectiveOptions,
     pub issues: Vec<Issue>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EffectiveOptions {
     pub main: Effective<ModelSelection>,
     pub spotter: Effective<ModelSelection>,

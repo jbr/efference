@@ -101,8 +101,11 @@ async fn query_sessions_previews_a_proposed_session_without_creating_one() {
         .session_options(&SessionOptionsRequest::new(roots.0.join("one")))
         .await
         .expect("preview a proposed session");
+    // Asserted through a re-encode: `preview` is the typed `ResolvedOptions` the
+    // client decoded, so matching the wire again proves both the host's encoding
+    // and that the client's decode of it loses nothing.
     assert_eq!(
-        preview,
+        serde_json::to_value(&preview).unwrap(),
         serde_json::json!({
             "effective": {
                 "main": {
@@ -248,15 +251,21 @@ disabled = true
         .await
         .expect("read inference inventory");
     assert_eq!(
-        inventory,
-        serde_json::json!({
-            "connections": [
-                {"name": "also", "provider": "openai", "available": false},
-                {"name": "test", "provider": "anthropic", "available": true},
-            ]
-        })
+        serde_json::to_value(&inventory).unwrap(),
+        serde_json::json!([
+            {"name": "also", "provider": "openai", "available": false},
+            {"name": "test", "provider": "anthropic", "available": true},
+        ])
     );
-    assert!(!inventory.to_string().contains("test-secret"));
+    // The row type carries three plain fields, so a credential could only reach a
+    // client by being added to it — which the structural assertion above would
+    // fail to compile against. This scans the encoding anyway, because the
+    // property is about bytes leaving the host.
+    assert!(
+        !serde_json::to_string(&inventory)
+            .unwrap()
+            .contains("test-secret")
+    );
     host.swansong().shut_down().await;
 }
 

@@ -50,7 +50,7 @@ fn codes(resolved: &ResolvedOptions) -> Vec<(&str, IssueCode)> {
     resolved
         .issues
         .iter()
-        .map(|issue| (issue.field, issue.code))
+        .map(|issue| (issue.field.as_ref(), issue.code))
         .collect()
 }
 
@@ -628,4 +628,58 @@ fn a_decision_connection_backs_the_spotter() {
             .map(|s| s.model.as_str()),
         Some("jev-latest")
     );
+}
+
+/// A control client decodes the host's own types rather than a parallel copy of
+/// them (docs/control-api.md), so what `QUERY /sessions` writes has to read back
+/// as what it was. The bytes here are a live host's answer.
+#[test]
+fn a_hosts_preview_reads_back_as_what_it_wrote() {
+    let wire = r#"{
+        "effective": {
+            "main": {"value": {"connection": "openrouter", "provider": "openrouter",
+                               "model": "z-ai/glm-5.3-flash"}, "source": "user_default"},
+            "spotter": {"value": {"connection": "typesafe", "provider": "typesafe",
+                                  "model": "jev-latest"}, "source": "user_default"},
+            "triage": {"value": {"mode": "shared"}, "source": "shared_main"},
+            "effort": {"value": null, "source": "provider_default"},
+            "temperature": {"value": null, "source": "provider_default"}
+        },
+        "issues": []
+    }"#;
+    let decoded: ResolvedOptions = serde_json::from_str(wire).expect("decode a preview");
+    assert_eq!(
+        serde_json::to_value(&decoded).unwrap(),
+        serde_json::from_str::<serde_json::Value>(wire).unwrap()
+    );
+    assert_eq!(
+        decoded.effective.triage.value,
+        Some(crate::inference::EffectiveTriage::Shared)
+    );
+}
+
+/// `Provider` writes a display name wider than its configuration vocabulary: a
+/// custom endpoint spells two config keys and serializes as one word
+/// (docs/transport.md). Decoding has to accept what encoding produces, or a
+/// client reading `GET /inference` from a host with a custom connection fails on
+/// the whole response.
+#[test]
+fn every_provider_display_name_decodes_back() {
+    use crate::api::{Provider, WireDialect};
+    for provider in [
+        Provider::Anthropic,
+        Provider::OpenRouter,
+        Provider::OpenAI,
+        Provider::OpenAICodex,
+        Provider::TypeSafe,
+        Provider::Custom(WireDialect::Messages),
+        Provider::Custom(WireDialect::Responses),
+    ] {
+        let encoded = serde_json::to_string(&provider).unwrap();
+        assert_eq!(
+            serde_json::from_str::<Provider>(&encoded).unwrap(),
+            provider,
+            "{encoded} did not read back"
+        );
+    }
 }

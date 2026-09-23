@@ -145,7 +145,7 @@ enum AuthConfig {
 }
 
 /// A selected connection plus the provider-native model ID sent upstream.
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ModelSelection {
     pub connection: String,
     pub provider: Provider,
@@ -174,7 +174,7 @@ pub struct TriageIdentity {
 
 /// One connection a host can disclose to an inference-options client. It reports
 /// configuration status only; it never carries an endpoint or credential source.
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ConnectionInventory {
     pub name: String,
     pub provider: Provider,

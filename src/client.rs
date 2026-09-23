@@ -19,6 +19,7 @@ use trillium_tokio::UnixClientConfig;
 
 use crate::daemon::{CreateSession, SessionOptionsRequest};
 use crate::frontend::Approval;
+use crate::inference::{ConnectionInventory, ResolvedOptions};
 
 /// A client bound to one daemon control socket. Cheap to [`Clone`] (the inner
 /// trillium client is `Arc`-backed) so a client can hand a copy to a
@@ -458,7 +459,7 @@ impl Client {
     pub async fn session_options(
         &self,
         request: &SessionOptionsRequest,
-    ) -> Result<serde_json::Value> {
+    ) -> Result<ResolvedOptions> {
         let body = serde_json::to_string(request).context("encoding the session options")?;
         let path = "/sessions";
         let conn = self
@@ -474,10 +475,16 @@ impl Client {
 
     /// The host's configured inference connections (`GET /inference`). This is a
     /// listener route, so it always addresses the socket root.
-    pub async fn inference_inventory(&self) -> Result<serde_json::Value> {
+    pub async fn inference_inventory(&self) -> Result<Vec<ConnectionInventory>> {
+        #[derive(serde::Deserialize)]
+        struct Inventory {
+            connections: Vec<ConnectionInventory>,
+        }
         let path = "/inference";
         let body = self.get_unversioned(path).await?;
-        serde_json::from_str(&body).with_context(|| format!("decoding GET {path}"))
+        let inventory: Inventory =
+            serde_json::from_str(&body).with_context(|| format!("decoding GET {path}"))?;
+        Ok(inventory.connections)
     }
 
     /// The sessions a host holds (`GET /sessions`, docs/control-api.md), sorted

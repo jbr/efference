@@ -147,6 +147,23 @@ impl Serialize for Provider {
     }
 }
 
+/// Read back what [`Serialize`] wrote, so a control client decodes the host's
+/// own types instead of carrying a parallel copy of them. The accepted
+/// vocabulary is [`Provider::name`]'s output, which is wider than
+/// [`Provider::from_name`]'s: `custom-messages` and `custom-responses` are
+/// display names the wire emits and configuration never spells, so the config
+/// parser stays closed to them while the wire round-trips.
+impl<'de> Deserialize<'de> for Provider {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let name = String::deserialize(deserializer)?;
+        match name.as_str() {
+            "custom-messages" => Ok(Self::Custom(WireDialect::Messages)),
+            "custom-responses" => Ok(Self::Custom(WireDialect::Responses)),
+            _ => Self::from_name(&name).map_err(serde::de::Error::custom),
+        }
+    }
+}
+
 /// Which Responses request shape a provider takes (docs/transport.md). The
 /// platform endpoint documents the full parameter set; the Codex backend is
 /// undocumented, so that arm sends only what Codex CLI itself sends.
