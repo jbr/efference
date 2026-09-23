@@ -1,45 +1,93 @@
-//! Inline viewport lifecycle for the fixed-data experiment (docs/tui.md).
+//! Inline viewport lifecycle for the form (docs/tui.md).
+//!
+//! Below the shell prompt rather than in the alternate screen, because this runs
+//! *before* a session exists: there is no transcript for a modal to sit over,
+//! and leaving the form's rows in scrollback is how `efference setup`'s prompts
+//! behave. The viewport is sized to the tallest page the form can reach
+//! ([`Form::viewport_height`]) — ratatui fixes an inline viewport's height at
+//! creation.
+//!
+//! Two entry points share that lifecycle. [`run_hosted`] is the real one: the
+//! picker's "create a new session" (`bin/efference/picker.rs`), wired to a host
+//! through the same dispatcher the full-screen client uses. [`run`] is
+//! `efference dev session-form`, which draws the same [`Form`] with no socket
+//! behind it so the layout and key transitions can be walked offline.
 
-use super::{Action, Form, HEIGHT, render::Styles};
-use crate::tui::{DEFAULT_THEME, render_context::RenderContext, theme::InteractiveTheme};
+use super::{Action, Form, NewSessionContext, render::Styles};
+use crate::client::Client;
+use crate::tui::{HostCmd, TuiEvent, render_context::RenderContext, theme::InteractiveTheme};
 use crossterm::{
     cursor::{MoveToColumn, Show},
     event::{self, DisableBracketedPaste, EnableBracketedPaste, Event},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode},
 };
-use ratatui::{Terminal, TerminalOptions, Viewport, backend::CrosstermBackend};
+use ratatui::{Terminal, TerminalOptions, backend::CrosstermBackend};
 use std::io::{self, IsTerminal, stdout};
+use std::time::Duration;
 
-/// Draw below the shell prompt without entering the alternate screen. The
-/// fixture never contacts a host; accepting prints the draft for inspection.
-pub fn run() -> io::Result<()> {
-    if !io::stdin().is_terminal() || !stdout().is_terminal() {
-        return Err(io::Error::other(
-            "the form prototype needs an interactive terminal",
-        ));
-    }
-    let context = RenderContext::new()
-        .with_theme_name(DEFAULT_THEME)
-        .map_err(io::Error::other)?;
-    let theme = InteractiveTheme::from_render_context(&context);
-    let styles = Styles::from(&theme);
-    let _raw = Raw::enter()?;
-    let mut terminal = Terminal::with_options(
-        CrosstermBackend::new(stdout()),
-        TerminalOptions {
-            viewport: Viewport::Inline(HEIGHT),
-        },
-    )?;
-    let mut form = Form::default();
-    let mut origin = ratatui::layout::Position::ORIGIN;
-    let result = (|| {
+/// How long the loop waits for a keypress before looking at the host's replies.
+/// Short enough that a landed preview repaints without a keystroke to prompt it.
+const TICK: Duration = Duration::from_millis(80);
+
+/// Create a session through the form, returning the new session's id — or
+/// `None` if the operator cancelled without creating one.
+///
+/// The connection inventory and the working root are read *before* the terminal
+/// is taken over, because the viewport's height depends on how many connections
+/// there are and an inline viewport cannot be resized afterwards. Everything
+/// after that goes through the same [`host_dispatch`](crate::tui::host_dispatch)
+/// task the full-screen client uses, so preview and creation cannot drift
+/// between the two surfaces.
+pub async fn run_hosted(client: Client, theme: Option<String>) -> anyhow::Result<Option<String>> {
+    require_terminal()?;
+    let styles = styles(theme)?;
+    let cwd = std::env::current_dir()?;
+    let context = crate::tui::host_dispatch::new_session_context(&client, &cwd)
+        .await
+        .map_err(anyhow::Error::msg)?;
+    let (events, replies) = crossbeam_channel::unbounded();
+    let (commands, command_rx) = tokio::sync::mpsc::unbounded_channel();
+    let dispatcher = tokio::spawn(crate::tui::host_dispatch::serve(client, command_rx, events));
+    let created =
+        tokio::task::spawn_blocking(move || drive(Form::new(context), styles, replies, commands))
+            .await??;
+    dispatcher.abort();
+    Ok(created)
+}
+
+/// The blocking half: draw, read a key, and fold in whatever the host answered.
+/// Returns the created session's id, or `None` for a cancel.
+fn drive(
+    mut form: Form,
+    styles: Styles,
+    replies: crossbeam_channel::Receiver<TuiEvent>,
+    commands: tokio::sync::mpsc::UnboundedSender<HostCmd>,
+) -> io::Result<Option<String>> {
+    let mut viewport = Inline::open(&form)?;
+    // Resolve the untouched draft, so the form opens showing the defaults a
+    // session would actually get rather than blanks.
+    dispatch(&commands, form.initial_preview());
+    let outcome = (|| {
         loop {
-            terminal.draw(|frame| {
-                let area = frame.area();
-                origin = area.as_position();
-                form.render(frame.buffer_mut(), area, styles);
-            })?;
+            viewport.draw(&form, styles)?;
+            // A reply that lands between keystrokes still has to repaint, so the
+            // key read is a poll rather than a block.
+            while let Ok(reply) = replies.try_recv() {
+                match reply {
+                    TuiEvent::Preview(resolved) => {
+                        dispatch(&commands, form.preview_returned(resolved));
+                    }
+                    TuiEvent::Created(Ok(id)) => return Ok(Some(id)),
+                    TuiEvent::Created(Err(error)) => form.creation_failed(error),
+                    // The context was read before the loop started, and nothing
+                    // here subscribes to a session's stream.
+                    _ => {}
+                }
+            }
+            if !event::poll(TICK)? {
+                continue;
+            }
             let action = match event::read()? {
                 Event::Key(key) => form.handle(key),
                 Event::Paste(text) => {
@@ -48,30 +96,131 @@ pub fn run() -> io::Result<()> {
                 }
                 _ => Action::Continue,
             };
-            if action != Action::Continue {
-                break Ok::<_, io::Error>(action);
+            if matches!(action, Action::Cancel) {
+                return Ok(None);
+            }
+            dispatch(&commands, action);
+        }
+    })();
+    viewport.close()?;
+    outcome
+}
+
+/// Turn what a keypress asked for into a host command. The form issues no
+/// requests itself (`session_form.rs`).
+fn dispatch(commands: &tokio::sync::mpsc::UnboundedSender<HostCmd>, action: Action) {
+    let _ = match action {
+        Action::Preview(options) => commands.send(HostCmd::Preview(options)),
+        Action::Create(options) => commands.send(HostCmd::Create(options)),
+        Action::Continue | Action::Cancel => Ok(()),
+    };
+}
+
+/// Draw below the shell prompt with no host behind it: the layout and the key
+/// transitions, without a socket. Accepting prints the draft for inspection.
+pub fn run() -> io::Result<()> {
+    require_terminal()?;
+    let styles = styles(None).map_err(io::Error::other)?;
+    // No host to read a context from, so the root is this process's — the same
+    // one a wired container would send — and the connection list is empty.
+    let mut form = Form::new(NewSessionContext {
+        cwd: std::env::current_dir().unwrap_or_default(),
+        connections: Vec::new(),
+    });
+    let mut viewport = Inline::open(&form)?;
+    let outcome = (|| {
+        loop {
+            viewport.draw(&form, styles)?;
+            let action = match event::read()? {
+                Event::Key(key) => form.handle(key),
+                Event::Paste(text) => {
+                    form.paste(&text);
+                    Action::Continue
+                }
+                _ => Action::Continue,
+            };
+            match action {
+                Action::Continue => {}
+                // Nothing will answer a preview here, which the form states
+                // rather than leaving the fields looking merely unset.
+                Action::Preview(_) => {}
+                other => break Ok::<_, io::Error>(other),
             }
         }
     })();
-    // Inline clear erases only from the viewport's origin down, not scrollback.
-    let cleared = terminal
-        .clear()
-        .and_then(|()| terminal.set_cursor_position(origin));
-    drop(terminal);
-    drop(_raw);
-    let action = result?;
-    cleared?;
-    match action {
-        Action::Start(draft) => println!("Prototype accepted (no session created): {draft:?}"),
-        _ => println!("Prototype cancelled."),
+    viewport.close()?;
+    match outcome? {
+        Action::Create(options) => {
+            println!("Accepted (no host attached, so nothing was created): {options:?}")
+        }
+        _ => println!("Cancelled."),
     }
     Ok(())
+}
+
+fn require_terminal() -> io::Result<()> {
+    match io::stdin().is_terminal() && stdout().is_terminal() {
+        true => Ok(()),
+        false => Err(io::Error::other("the form needs an interactive terminal")),
+    }
+}
+
+fn styles(theme: Option<String>) -> anyhow::Result<Styles> {
+    let context = RenderContext::new().with_theme_name(&crate::tui::run::resolve_theme(theme)?)?;
+    Ok(Styles::from(&InteractiveTheme::from_render_context(
+        &context,
+    )))
+}
+
+/// Raw mode, the inline terminal, and the cursor restoration that has to happen
+/// however the loop ends. Held by both entry points so neither can forget half
+/// of it.
+struct Inline {
+    terminal: Terminal<CrosstermBackend<io::Stdout>>,
+    origin: ratatui::layout::Position,
+    _raw: Raw,
+}
+
+impl Inline {
+    fn open(form: &Form) -> io::Result<Self> {
+        let _raw = Raw::enter()?;
+        let terminal = Terminal::with_options(
+            CrosstermBackend::new(stdout()),
+            TerminalOptions {
+                viewport: ratatui::Viewport::Inline(form.viewport_height()),
+            },
+        )?;
+        Ok(Self {
+            terminal,
+            origin: ratatui::layout::Position::ORIGIN,
+            _raw,
+        })
+    }
+
+    fn draw(&mut self, form: &Form, styles: Styles) -> io::Result<()> {
+        self.terminal.draw(|frame| {
+            let area = frame.area();
+            self.origin = area.as_position();
+            form.render(frame.buffer_mut(), area, styles);
+        })?;
+        Ok(())
+    }
+
+    /// Inline clear erases only from the viewport's origin down, not scrollback,
+    /// so the form leaves the shell exactly as it found it.
+    fn close(mut self) -> io::Result<()> {
+        self.terminal.clear()?;
+        self.terminal.set_cursor_position(self.origin)
+    }
 }
 
 impl From<&InteractiveTheme> for Styles {
     fn from(theme: &InteractiveTheme) -> Self {
         Self {
-            text: theme.help_bg_style,
+            // Unstyled, so the terminal's own background shows through inline.
+            // The embedded modal paints its surface with a `Block` underneath
+            // this, which `Style::default()` patches nothing over.
+            text: ratatui::style::Style::default(),
             title: theme.help_title_style,
             hint: theme.status_hint_style,
             selected: theme.breadcrumb_style,

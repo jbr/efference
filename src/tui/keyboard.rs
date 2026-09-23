@@ -6,7 +6,7 @@ use crossterm::{
 };
 use ratatui::{Terminal, prelude::Backend};
 
-use super::{InteractiveState, UiMode};
+use super::{HostCmd, InteractiveState, UiMode};
 use crate::tui::composer::ComposerAction;
 use crate::tui::render_context::RenderContext;
 
@@ -55,7 +55,6 @@ impl<'a> InteractiveState<'a> {
         terminal: &mut Terminal<impl Backend + Write>,
     ) -> bool {
         // The nested form owns Esc and Ctrl-C: neither reaches the attached loop.
-        #[cfg(feature = "dev")]
         if let UiMode::Sessions(menu) = &mut self.ui_mode
             && let Some(form) = &mut menu.form
         {
@@ -63,10 +62,12 @@ impl<'a> InteractiveState<'a> {
             match form.handle(key) {
                 Action::Continue => {}
                 Action::Cancel => menu.form = None,
-                Action::Start(_) => form.creation_failed(
-                    "Demo creation error · no request sent; edits kept. Esc returns to Sessions."
-                        .into(),
-                ),
+                Action::Preview(options) => {
+                    let _ = self.host_tx.send(HostCmd::Preview(options));
+                }
+                Action::Create(options) => {
+                    let _ = self.host_tx.send(HostCmd::Create(options));
+                }
             }
             return false;
         }

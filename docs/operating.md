@@ -150,8 +150,10 @@ A bare `efference tui` — no `--new`, no `--name`, no `--socket` — asks first
 (`src/bin/efference/picker.rs`): an inline prompt in the same style as `efference setup`,
 listing the live hosts' sessions whose cwd is this directory, each with the title the
 triage model keeps for it ([session-title.md](session-title.md)), and one last entry that
-creates a session here. Picking a row is the attach above; picking the last entry is
-`tui --new` with this directory and no session flags. The prompt appears even when one
+creates a session here. Picking a row is the attach above; picking the last entry opens the
+new-session form ([tui.md](tui.md)) inline where the prompt just was, and attaches to what
+it creates. `tui --new` stays the non-interactive path: it creates from the flags and the
+host's defaults without asking. The prompt appears even when one
 session is the only row, so the other entries stay visible; the cursor starts on the first
 row, so attaching to it is one Enter. Sessions the same hosts hold in other directories are
 counted in a line above the menu rather than listed — attaching from here to a session

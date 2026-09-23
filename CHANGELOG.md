@@ -8,6 +8,11 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- **A new-session form** (docs/tui.md): bare `efference tui`'s "create a new session" opens it
+  inline where the picker just was, and `n` in an attached session's Sessions overlay opens it as
+  a modal. Each field shows the value a session would get and the precedence branch that supplied
+  it, recomputed against `QUERY /sessions` after every committed edit; creating attaches to the new
+  session, and a refusal keeps the draft. `efference tui --new` stays non-interactive.
 - **A custom inference provider** (docs/transport.md): a connection giving a `dialect` and a
   `base-url` instead of naming a provider, so an endpoint speaking Messages or Responses works
   without a new enum variant. Capabilities come from an opportunistic, field-by-field parse of the endpoint's

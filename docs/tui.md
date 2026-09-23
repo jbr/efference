@@ -412,27 +412,91 @@ The IR keeps ferritin's `Cow<'a>` borrowing, used as `Document<'static>` over ow
 
 Remaining polish — the box→`│` connector refinement for result bodies, bring-to-foreground on a process row (no daemon transition exists to drive it), the narrow-mode scrimmed drawer, the at-rest unit boundary, and refreshing the help-screen keymap text — is tracked in the backlog.
 
-## New-session form experiment
+## New-session form
 
-With the `dev` feature, `efference dev session-form` renders a fixed-data form in a
-ratatui inline viewport on the normal terminal screen. `efference dev session-form
---embedded` opens the offline gallery's Sessions panel; `n` opens the same form.
-Neither entry point reads inference configuration, contacts a host, or creates a
-session. Normal startup and the live Sessions panel are unchanged.
+One form creates sessions from two places (docs/control-api.md):
 
-`session_form.rs` owns the draft, focus, nested connection/model picker, text
-editors, and back/cancel transitions. `session_form/render.rs` renders that state
-into a supplied rectangle with supplied styles. `session_form/inline.rs` owns raw
-mode and the inline viewport; `sessions.rs`, `keyboard.rs`, and `render_sessions.rs`
-contain the embedded integration. The embedded form receives Escape and Ctrl-C
-before the session's handlers and blocks mouse events from reaching the transcript.
-Cancelling returns to Sessions without touching the attached loop. The fixtures
-are not a provider catalog or a capability-validation policy.
+- **Before a session exists** — the bare-`efference tui` picker's "create a new session"
+  (docs/operating.md) opens it in an inline viewport, where the picker's own prompt just
+  was, and the client attaches to what it creates. `efference tui --new` is unchanged and
+  stays the non-interactive path.
+- **From inside an attached session** — `n` in the Sessions overlay opens it as a modal.
 
-Enter initially returns the unchanged draft. Inline acceptance prints it; embedded
-acceptance simulates a creation error and leaves the edits in place. Model fields
-select a sample connection, then a filtered model list or a free-form native ID.
-`r` on a field removes its override. Escape backs out of an editor or picker before
-cancelling the form. The shared tests cover those transitions, rendering at nonzero
-origins and small sizes, and the embedded layout; live inline checks use a PTY
-because buffer tests cannot establish terminal restoration or scrollback behavior.
+The embedded one does not open on the keypress: `n` sends `HostCmd::NewSession`, and the
+reply — the working root a session would be created in, plus `GET /inference`'s connection
+rows — is what opens it. The inline one reads the same context *before* taking over the
+terminal, because ratatui fixes an inline viewport's height at creation and the height
+depends on how many connections there are. Either way the form never displays a root or a
+connection list the creation would not actually use.
+
+Both talk to the host through `host_dispatch.rs`, a task holding a client re-based at the
+socket root. It is a module rather than a closure inside the full-screen loop precisely
+because the inline container has no `ui_loop` and still has to preview and create, and one
+dispatcher is what keeps the two surfaces from drifting.
+
+Three host-owned inputs meet in the form and nowhere else: the connection inventory, the
+effective draft `QUERY /sessions` recomputes, and the creation it finally posts.
+`session_form.rs` holds the operator's raw overrides and the host's latest answer about
+them side by side. The answer never replaces the draft — folding resolved values back in
+would turn every inherited default into an explicit override on the first preview — and
+creation sends the overrides, not the resolved values.
+
+Every field renders its value and the precedence branch that supplied it, because an
+inherited default and an explicit override display the same string otherwise. A field the
+host flagged is a third case with neither a value nor a source, and its message replaces
+the source column. `Start session` is refused while the host has not answered, or has
+answered with issues: posting a creation the host is known to reject spends a round trip
+to learn what is already on screen.
+
+Preview is recomputed on *committed* edits — leaving a picker, accepting an editor, `r`
+resetting a field — never per keystroke, so the request rate follows selections and no
+debounce timer is needed. A reply that arrives after the draft moved on is dropped and the
+current draft re-sent. Opening resolves the untouched draft, so the form shows the defaults
+a session would actually get rather than blanks.
+
+The working root and the environment are the invoking client's, captured on the tokio side
+in `host_dispatch.rs` and never sent to the UI thread (docs/env.md). The root is displayed, not
+edited: editing it would send an environment captured somewhere else. A configurable way to
+capture an environment at a given directory, and the `efference tui --new` entry point, are
+in backlog/new-session-form.md.
+
+Model suggestions come from the compiled provider catalog (`Provider::suggested_models`),
+so today only the OpenAI arms offer a list. A provider with no compiled catalog opens the
+native-ID editor directly rather than presenting an empty menu as a failure, and that
+editor sits past the last suggestion everywhere else — the list is additive, never the
+model domain. The host discovery service that replaces it is
+backlog/session-model-discovery.md.
+
+Creating switches to the new session, the same one-cursor-per-handshake switch `⏎`
+performs. A refused creation keeps the form open with its edits and the host's reason,
+because nothing was minted to reconcile with.
+
+The appearance is `efference setup`'s picker idiom (`setup/terminal.rs`): a `?`-marked
+question naming the working root, a `❯` cursor colouring the selected row rather than a
+highlight bar across it, columns as wide as their widest entry, a dim trailing column, and
+a dim `·`-separated key hint. The two are different rendering stacks — the picker writes
+crossterm directly, the form is ratatui — so what they share is the vocabulary, kept
+aligned deliberately because a bare `efference tui` shows them back to back. What does
+differ between the form's own containers is the surface: inline paints nothing and the
+terminal's background shows through, while the embedded modal paints and borders because a
+transcript is underneath it.
+
+An inline viewport's height is fixed at creation — ratatui's `resize` reads its argument as
+the *terminal* size for `Viewport::Inline` — so the form reports the tallest page it can
+reach (`viewport_height`), bounded by the connections this host actually offers rather than
+a constant picked for the worst case. Rows pack to the top so the slack falls below the key
+hint rather than between the fields and it.
+
+`session_form.rs` owns the draft, focus, and page transitions; `draft.rs` is the override
+state and its conversion to the request; `pages.rs` is where each picker and editor commits;
+`render.rs` renders into a supplied rectangle with supplied styles; `inline.rs` owns raw
+mode and the inline viewport for both the wired and the offline entry points.
+`sessions.rs`, `keyboard.rs`, and `render_sessions.rs` are the embedded integration. The form receives Escape and Ctrl-C before the session's handlers and
+blocks mouse events from reaching the transcript; cancelling returns to Sessions without
+touching the attached loop.
+
+With the `dev` feature, `efference dev session-form` draws the same form in an inline
+viewport with no host behind it; `--embedded` opens it inside the offline gallery. Neither
+contacts a host, and the form says so — "no host is resolving this draft" is a different
+state from a preview in flight, and an all-`—` column means the first one when nothing was
+ever sent.

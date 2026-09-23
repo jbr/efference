@@ -220,15 +220,16 @@ pub(crate) async fn run(
             // The first live candidate, which is the host `tui --new` creates
             // on (docs/control-channel.md).
             let host = listings[0].0.clone();
-            tui_new(
-                host,
-                None,
-                SessionFlags::default(),
-                theme,
-                images,
-                frame_cost,
-            )
-            .await
+            // The picker answered "what are you doing"; the form is the rest of
+            // that question, so it runs inline where the picker just was rather
+            // than creating from bare defaults (docs/tui.md). `tui --new` is the
+            // non-interactive path and is unchanged.
+            let client = ControlClient::new(&host);
+            let Some(id) = efference::tui::session_form::run_hosted(client, theme.clone()).await?
+            else {
+                return Ok(());
+            };
+            tui(ClientTarget::hosted(host, &id), theme, images, frame_cost).await
         }
     }
 }

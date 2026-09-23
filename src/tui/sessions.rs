@@ -20,9 +20,8 @@ use crate::client::SessionSummary;
 /// The switcher's state while it is open.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct SessionMenu {
-    #[cfg(feature = "dev")]
-    pub prototype: bool,
-    #[cfg(feature = "dev")]
+    /// The new-session form, while it is open over the listing (docs/tui.md).
+    /// It owns every key it is given, including Escape and Ctrl-C.
     pub(super) form: Option<Box<super::session_form::Form>>,
     /// The listing as the host last answered it, sorted by id. Empty while the
     /// first read is out.
@@ -127,6 +126,79 @@ impl InteractiveState<'_> {
         }
     }
 
+    /// The form's opening read landed: open it over the listing, or say why it
+    /// could not be opened. Ignored when the switcher has been closed since `n`
+    /// was pressed — the form is overlay state and has nowhere else to live.
+    pub(super) fn open_new_session_form(
+        &mut self,
+        context: Result<super::session_form::NewSessionContext, String>,
+    ) {
+        let UiMode::Sessions(menu) = &mut self.ui_mode else {
+            return;
+        };
+        match context {
+            Ok(context) => {
+                let mut form = Box::new(super::session_form::Form::new(context));
+                menu.note = None;
+                // Resolve the empty draft before the operator touches anything:
+                // the defaults are most of what the form shows, and they are the
+                // host's answer rather than something the client can assume
+                // (docs/control-api.md).
+                if let super::session_form::Action::Preview(options) = form.initial_preview() {
+                    let _ = self.host_tx.send(HostCmd::Preview(options));
+                }
+                menu.form = Some(form);
+            }
+            Err(error) => menu.note = Some(error),
+        }
+    }
+
+    /// A preview answered. Dropped when no form is open: a reply that outlived
+    /// its form describes a draft nobody can see.
+    pub(super) fn apply_preview(
+        &mut self,
+        resolved: Result<crate::inference::ResolvedOptions, String>,
+    ) {
+        let UiMode::Sessions(menu) = &mut self.ui_mode else {
+            return;
+        };
+        let Some(form) = &mut menu.form else {
+            return;
+        };
+        // A superseded reply asks for the current draft to be resolved instead.
+        if let super::session_form::Action::Preview(options) = form.preview_returned(resolved) {
+            let _ = self.host_tx.send(HostCmd::Preview(options));
+        }
+    }
+
+    /// Creation answered. On success the TUI leaves this session's stream for the
+    /// new one, which is the same one-cursor-per-handshake switch `⏎` performs —
+    /// the session was created in this client's own working root, so that is
+    /// where its attachment store lives (docs/inbox.md).
+    pub(super) fn apply_created(&mut self, created: Result<String, String>) -> bool {
+        let UiMode::Sessions(menu) = &mut self.ui_mode else {
+            return false;
+        };
+        match created {
+            Ok(id) => {
+                let cwd = menu
+                    .form
+                    .as_ref()
+                    .map(|form| form.cwd().display().to_string());
+                self.switch_to = Some(Exit::Switch { id, cwd });
+                true
+            }
+            Err(error) => {
+                if let Some(form) = &mut menu.form {
+                    form.creation_failed(error);
+                } else {
+                    menu.note = Some(error);
+                }
+                false
+            }
+        }
+    }
+
     /// The switcher's keys. Returns whether the UI loop should end — which a
     /// switch does, with [`switch_to`](Self::switch_to) naming where to go next.
     pub(super) fn handle_sessions_key(&mut self, key: crossterm::event::KeyEvent) -> bool {
@@ -134,9 +206,12 @@ impl InteractiveState<'_> {
         let UiMode::Sessions(menu) = &mut self.ui_mode else {
             return false;
         };
-        #[cfg(feature = "dev")]
-        if menu.prototype && key.code == KeyCode::Char('n') {
-            menu.form = Some(Box::default());
+        // `n` opens the new-session form. It paints immediately against an empty
+        // context and a note; the working root and the connection inventory land
+        // as a [`TuiEvent::NewSession`].
+        if key.code == KeyCode::Char('n') {
+            menu.note = Some("reading the host's connections…".into());
+            let _ = self.host_tx.send(HostCmd::NewSession);
             return false;
         }
         // While a confirm is up it owns every key: `y` (or ⏎) goes through and

@@ -176,6 +176,13 @@ impl Screenplay<'_> {
         self
     }
 
+    /// Whether folding this event in ended the UI loop — the sibling of
+    /// [`key_quits`](Self::key_quits) for the events that can end it, as a
+    /// creation does by switching to the session it just made.
+    pub(crate) fn event_quits(&mut self, event: TuiEvent) -> bool {
+        self.state.handle_event(event)
+    }
+
     /// Whether the hard rung of graduated Esc fired a `POST /loop/interrupt` since the last check
     /// (docs/tui.md) — drains the interrupt channel the UI would have
     /// sent on.

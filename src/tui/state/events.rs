@@ -217,13 +217,26 @@ impl<'a> InteractiveState<'a> {
             }
             #[cfg(feature = "dev")]
             TuiEvent::SessionFormPrototype => {
+                // The offline gallery has no host to read a context from, so the
+                // form opens against an empty one — the same state the inline
+                // `efference dev session-form` container draws (docs/tui.md).
                 self.ui_mode = super::UiMode::Sessions(crate::tui::sessions::SessionMenu {
-                    prototype: true,
-                    note: Some("Offline gallery · n opens the new-session prototype".into()),
+                    form: Some(Box::new(crate::tui::session_form::Form::new(
+                        crate::tui::session_form::NewSessionContext::default(),
+                    ))),
                     ..Default::default()
                 });
                 self.dirty = true;
             }
+            TuiEvent::NewSession(context) => {
+                self.open_new_session_form(context);
+                self.dirty = true;
+            }
+            TuiEvent::Preview(resolved) => {
+                self.apply_preview(resolved);
+                self.dirty = true;
+            }
+            TuiEvent::Created(created) => return self.apply_created(created),
             TuiEvent::Disconnected => return true,
         }
         false

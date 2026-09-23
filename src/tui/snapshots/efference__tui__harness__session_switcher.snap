@@ -19,7 +19,7 @@ expression: self.render()
 11 │                  │                                                    │                  │
 12 │                  │                                                    │                  │
 13 │                  │                                                    │                  │
-14 │                  │ ↑/↓:move  ⏎:switch  e:end  ⎋:close                 │                  │
+14 │                  │ ↑/↓:move  ⏎:switch  n:new  e:end  ⎋:close          │                  │
 15 │                  └────────────────────────────────────────────────────┘                  │
 16 │                                                  │                                       │
 17 │   pace fast     sessions s     theme t           │                                       │

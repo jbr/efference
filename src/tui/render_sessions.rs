@@ -21,10 +21,12 @@ impl InteractiveState<'_> {
         // with it — the same rule the theme picker follows.
         self.render_cache.actions.clear();
 
-        #[cfg(feature = "dev")]
+        // The form replaces the listing rather than sitting beside it: it owns
+        // every key while it is open, so showing the rows it cannot act on
+        // would only advertise keys that no longer do anything.
         if let Some(form) = &menu.form {
             let width = area.width.min(92);
-            let height = area.height.min(super::session_form::HEIGHT + 2);
+            let height = area.height.min(form.viewport_height() + 2);
             let modal = Rect::new(
                 area.x + (area.width - width) / 2,
                 area.y + (area.height - height) / 2,
@@ -83,9 +85,7 @@ impl InteractiveState<'_> {
         let note = menu.note.clone().unwrap_or_default();
         let legend = match menu.confirming {
             Some(_) => " y:end  any other key:cancel ",
-            #[cfg(feature = "dev")]
-            None if menu.prototype => " n:new (prototype)  ⎋:close ",
-            None => " ↑/↓:move  ⏎:switch  e:end  ⎋:close ",
+            None => " ↑/↓:move  ⏎:switch  n:new  e:end  ⎋:close ",
         };
         write_row(buf, modal, 3, &note, self.theme.status_hint_style);
         write_row(buf, modal, 2, legend, self.theme.status_hint_style);

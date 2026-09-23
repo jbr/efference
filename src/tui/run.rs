@@ -77,7 +77,7 @@ async fn attach(
         interrupt: mut interrupt_rx,
         sidebar: mut sidebar_rx,
         images: mut images_rx,
-        host: mut host_rx,
+        host: host_rx,
     } = receivers;
 
     // The bridge feeds the UI thread everything — log entries, live deltas, and the
@@ -215,30 +215,14 @@ async fn attach(
         }
     });
 
-    // Host verbs (`sessions.rs`): the listing and the end, addressed to the
-    // host rather than to this session — so they run against a client re-based
-    // at the socket root, where those routes live under either binding. An end
-    // is followed by a re-read, and the host answers a `DELETE` only once
-    // teardown has run, so the listing that comes back is the finished state.
-    let host_client = client.clone().with_prefix("");
-    let host_events = tx.clone();
-    let host_dispatcher = tokio::spawn(async move {
-        while let Some(cmd) = host_rx.recv().await {
-            if let HostCmd::End(id) = &cmd
-                && let Err(e) = host_client.end_session(id).await
-            {
-                let _ = host_events.send(TuiEvent::Sessions(Err(format!("ending {id}: {e}"))));
-                continue;
-            }
-            let listing = host_client
-                .sessions()
-                .await
-                .map_err(|e| format!("listing the host's sessions: {e}"));
-            if host_events.send(TuiEvent::Sessions(listing)).is_err() {
-                break; // UI thread gone.
-            }
-        }
-    });
+    // Host verbs (`host_dispatch.rs`): the routes addressed to the host rather
+    // than to this session, so they run against a client re-based at the socket
+    // root, where those routes live under either binding.
+    let host_dispatcher = tokio::spawn(super::host_dispatch::serve(
+        client.clone().with_prefix(""),
+        host_rx,
+        tx.clone(),
+    ));
 
     // The crossterm UI loop is blocking — run it off the async runtime.
     let ui = tokio::task::spawn_blocking(move || {

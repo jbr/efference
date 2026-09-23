@@ -30,6 +30,8 @@ pub(crate) mod gallery;
 pub(crate) mod grid;
 #[cfg(test)]
 pub(crate) mod harness;
+#[cfg(feature = "dev")]
+mod host_dispatch;
 pub(crate) mod image;
 pub(crate) mod keyboard;
 pub(crate) mod markdown;
@@ -51,7 +53,6 @@ pub(crate) mod render_status_bar;
 pub(crate) mod render_table;
 pub(crate) mod render_theme_picker;
 pub(crate) mod senders;
-#[cfg(feature = "dev")]
 pub mod session_form;
 pub(crate) mod sessions;
 pub(crate) mod sidebar;
@@ -170,9 +171,17 @@ pub(crate) enum TuiEvent {
     Sessions(Result<Vec<crate::client::SessionSummary>, String>),
     /// The event source closed (daemon gone) → the UI should exit.
     Disconnected,
-    /// Open the offline fixed-data form experiment (docs/tui.md).
+    /// Open the offline form experiment against an empty context (docs/tui.md).
     #[cfg(feature = "dev")]
     SessionFormPrototype,
+    /// The new-session form's opening read: where a session would be created and
+    /// the connections available for it, or why neither could be read.
+    NewSession(Result<session_form::NewSessionContext, String>),
+    /// `QUERY /sessions` answered about the form's draft (docs/control-api.md).
+    Preview(Result<crate::inference::ResolvedOptions, String>),
+    /// `POST /sessions` answered: the new session's id, or why nothing was
+    /// minted. On success the TUI leaves this session's stream for that one.
+    Created(Result<String, String>),
 }
 
 /// A verb the switcher issues against the *host* rather than the attached
@@ -186,6 +195,17 @@ pub(crate) enum HostCmd {
     /// `DELETE /sessions/:id` — end a session and re-read the listing. The host
     /// answers once teardown has run, so the re-read shows the finished state.
     End(String),
+    /// `GET /inference` — the connection inventory, as the new-session form
+    /// opens. Answered with the working root the dispatcher would create in, so
+    /// the form displays exactly what creation will send (docs/tui.md).
+    NewSession,
+    /// `QUERY /sessions` — resolve the form's current draft. Answered with the
+    /// effective selections and the issues that would stop creation.
+    Preview(crate::inference::SessionOptions),
+    /// `POST /sessions` — create from the form's draft. The selections travel;
+    /// the working root and the environment are the dispatcher's, and never
+    /// enter the UI thread (docs/env.md).
+    Create(crate::inference::SessionOptions),
 }
 
 /// Why the UI loop returned (docs/tui.md). Detaching leaves the session running

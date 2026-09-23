@@ -260,6 +260,26 @@ impl Provider {
         }
     }
 
+    /// Model ids to offer as suggestions when an operator is choosing one
+    /// (docs/tui.md). **Additive and non-exhaustive**: an empty slice means this
+    /// build has no compiled catalog for the provider, not that the provider
+    /// serves no models, so every caller keeps a free-form native-id path beside
+    /// the list and sends an id absent from it unchanged.
+    ///
+    /// This reads the same compiled table the capability lookup uses, so it is
+    /// only as current as the build. The host discovery service that asks the
+    /// provider — and covers the providers answering `&[]` here — is
+    /// backlog/session-model-discovery.md.
+    pub fn suggested_models(&self) -> &'static [&'static str] {
+        match self {
+            Self::OpenAI | Self::OpenAICodex => openai::KNOWN_MODELS,
+            // Anthropic and OpenRouter resolve capabilities by fetching metadata
+            // per model, so this build compiles no list to suggest from; a
+            // custom endpoint's catalog is whatever the operator pointed at.
+            Self::Anthropic | Self::OpenRouter | Self::TypeSafe | Self::Custom(_) => &[],
+        }
+    }
+
     /// Parse a configured provider name. The vocabulary is closed because a provider
     /// selects the endpoint, auth shape, metadata lookup, and wire dialect together.
     pub fn from_name(value: &str) -> Result<Self, Error> {

@@ -11,23 +11,23 @@ expression: self.render()
  3 │                                                            │                                       │
  4 │                                                            │                                       │
  5 │                                                            │                                       │
- 6 │    ┌──────────────────────────────────────────────────────────────────────────────────────────┐    │
- 7 │    │New session                                                                               │    │
- 8 │    │Sample project · ~/code/example                                                           │    │
- 9 │    │▸ Start session                                                                           │    │
-10 │    │  Main model       work/claude-sonnet-4-5  [default]                                      │    │
-11 │    │    Effort         high  [project default]                                                │    │
-12 │    │    Temperature    provider default                                                       │    │
-13 │    │  Spotter model    work/claude-haiku-4-5  [default]                                       │    │
-14 │    │  Triage model     Share main client  [default]                                           │    │
-15 │    │                                                                                          │    │
-16 │    │                                                                                          │    │
+ 6 │                                                            │                                       │
+ 7 │                                                            │                                       │
+ 8 │                                                            │                                       │
+ 9 │    ┌──────────────────────────────────────────────────────────────────────────────────────────┐    │
+10 │    │? new session in /code/example                                                            │    │
+11 │    │❯ start session                                                                           │    │
+12 │    │  main model     work/claude-sonnet-4-5  your default                                     │    │
+13 │    │  effort         —                       provider default                                 │    │
+14 │    │  temperature    —                       provider default                                 │    │
+15 │    │  spotter model  work/claude-haiku-4-5   main's provider                                  │    │
+16 │    │  triage model   the main client         nothing configured                               │    │
 17 │    │                                                                                          │    │
-18 │    │                                                                                          │    │
-19 │    │Prototype · sample data only · no session will be created                                 │    │
-20 │    │↑↓ move  Enter select  r reset  Esc cancel                                                │    │
-21 │    │                                                                                          │    │
-22 │    └──────────────────────────────────────────────────────────────────────────────────────────┘    │
+18 │    │  ↑↓ move · enter picks · r resets · esc cancels                                          │    │
+19 │    │                                                                                          │    │
+20 │    └──────────────────────────────────────────────────────────────────────────────────────────┘    │
+21 │                                                            │                                       │
+22 │                                                            │                                       │
 23 │                                                            │                                       │
 24 │                                                            │                                       │
 25 │                                                            │                                       │
