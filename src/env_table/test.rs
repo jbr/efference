@@ -533,6 +533,7 @@ fn every_text_bearing_payload_path_is_masked() {
     let mut preamble = Payload::Preamble {
         system: leak(),
         context: crate::context::Resolved::default(),
+        inference: None,
     };
     masker.mask_payload(&mut preamble);
     let Payload::Preamble { system, .. } = &preamble else {

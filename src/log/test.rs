@@ -29,6 +29,53 @@ fn log_entry_source_is_optional_and_round_trips() {
 }
 
 #[test]
+fn recorded_inference_comes_from_the_latest_boot_preamble() {
+    let entry = |seq, inference: Option<LoggedInference>| LogEntry {
+        seq,
+        turn: 0,
+        at: Timestamp::now(),
+        submission_id: None,
+        source: None,
+        payload: Payload::Preamble {
+            system: "sys".into(),
+            context: Default::default(),
+            inference,
+        },
+    };
+    let first = LoggedInference::new("first", crate::api::Provider::Anthropic, "claude");
+    let second = LoggedInference::new("second", crate::api::Provider::OpenRouter, "google/gemini");
+    let entries = vec![
+        entry(0, Some(first.clone())),
+        entry(1, Some(second.clone())),
+    ];
+    assert_eq!(recorded_inference(&entries), Some(&second));
+
+    // A later boot can predate identity metadata. Its missing value is authoritative;
+    // the older identity must not be resurrected.
+    let latest_without_identity = vec![entry(0, Some(first)), entry(1, None)];
+    assert_eq!(recorded_inference(&latest_without_identity), None);
+
+    let legacy = vec![entry(0, None)];
+    assert_eq!(recorded_inference(&legacy), None);
+}
+
+#[test]
+fn logged_inference_has_a_stable_json_shape() {
+    let identity = LoggedInference::new(
+        "router",
+        crate::api::Provider::OpenRouter,
+        "google/gemini-3.7-flash",
+    );
+    let json = serde_json::to_string(&identity).unwrap();
+    assert_eq!(
+        json,
+        r#"{"connection":"router","provider":"openrouter","model":"google/gemini-3.7-flash"}"#
+    );
+    let back: LoggedInference = serde_json::from_str(&json).unwrap();
+    assert_eq!(back, identity);
+}
+
+#[test]
 fn latest_title_empty_log_returns_none() {
     let entries: Vec<LogEntry> = vec![];
     assert!(latest_title(&entries).is_none());

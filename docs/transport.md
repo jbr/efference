@@ -632,9 +632,11 @@ provider and silent loss when a recorded session is rendered or continued under 
 other: the model would see a history with its own replies missing. So
 `project::check_dialect` runs before either encoder — in `Client::complete` and in
 `efference dev wire` — and refuses a turn list whose assistant turns were recorded in a
-different dialect, or in both. A list with no assistant turn yet belongs to no dialect
-and encodes on either; `dev wire` with no provider declared renders in the recorded
-dialect. A provider or model change within one dialect passes this check.
+different dialect, or in both. A session's main provider and model are fixed at
+creation and recorded in its boot Preamble; an offline reader checks that recorded
+provider against the assistant turns before rendering. A list with no assistant turn
+belongs to no dialect and encodes on either. A same-dialect provider or model
+selected for a replay is a separate rendering choice, not a live session change.
 
 **Request** (`api/responses.rs`, `ResponsesRequest`; field order pinned by
 `responses_envelope_matches_expected_wire_bytes`). `input[]` is the encoded turn
@@ -1012,12 +1014,21 @@ roles resolve before a session directory exists; a main/triage pair on different
 dialects is refused there, naming both. Each role gets its own clone of the
 connection's endpoint with its own sticky key, so two sessions on one connection
 share a credential, not a client. The native id alone is what a request carries;
-the connection name appears only in boot output and `session_identity`.
+the connection name appears in boot output, `session_identity`, and the
+boot log metadata. The main role's connection, provider, and native model are
+written once to the session's boot Preamble as unprojected log metadata in the
+log-owned identity shape, so an offline reader does not have to infer the
+session's provider from current config or usage telemetry.
 
-The dev verbs that dial a provider without a host (`dev wire`, `dev peek`, `dev
-spotter`, `dev spotter-eval`) load the same file from their own environment and
-resolve their `--model` through it; nothing reads a provider from environment
-variables.
+The dev verbs that dial a provider without a host (`dev peek`, `dev spotter`,
+`dev spotter-eval`) load the same file from their own environment and resolve
+their `--model` through it. `dev wire` has no model override: it reads the
+connection, provider, and native model from the log's boot Preamble, derives
+placement from that identity, and uses the recorded dialect and model for both
+the full envelope and `--messages`. It never resolves an inference endpoint. A
+log without an identity uses its recorded dialect and default placements, with
+a note; only a legacy full envelope may load the current role config to rebuild
+a missing system snapshot. Nothing reads a provider from environment variables.
 
 **OpenAI capabilities** come from a compiled catalog (`api/provider/openai.rs`)
 rather than a metadata GET: the Models endpoint reports none of the limits the
@@ -1218,7 +1229,8 @@ sidebar renders it as the `ctx 7% · 14k/200k` line leading STATS.
 
 **Cache-read telemetry.** The same `/state` topic carries `usage.cold_streak`:
 consecutive main-loop requests that read nothing from the prompt cache and had
-no reason not to (not session boot, not a model change, not idle past the TTL).
+no reason not to (not session boot, not a cross-model replay, not idle past the
+TTL).
 It is the live end of the empirical prefix oracle — the byte pins prove the
 harness emits what it emitted yesterday, and only a read rate proves the
 provider still matches it. The classifier, the threshold and the corpus it came

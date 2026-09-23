@@ -342,7 +342,9 @@ impl Masker {
                     ConfigChange::Scope { text } => self.mask_in_place(text),
                 }
             }
-            Payload::Preamble { system, context } => {
+            Payload::Preamble {
+                system, context, ..
+            } => {
                 self.mask_in_place(system);
                 self.mask_context(context);
             }

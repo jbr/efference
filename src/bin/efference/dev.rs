@@ -177,19 +177,20 @@ pub(crate) enum DevCommand {
     /// Point it at a session JSONL log and print the wire request — the deterministic projection
     /// the assistant actually sees. Reconstructs the full envelope (`system` +
     /// `tools` + `messages`) exactly as a real turn POSTs it: `project(log)` with
-    /// the trailing cache breakpoint placed and `tool_choice: auto`. The `system`
-    /// block and `tools[]` aren't stored in the log, so they're rebuilt from the
-    /// current code and cwd — flagged on stderr, since the recorded session may
-    /// have run elsewhere.
+    /// the trailing cache breakpoint placed and `tool_choice: auto`. The recorded
+    /// boot identity supplies the historical model, provider, and placement; the
+    /// `tools[]` block isn't stored in the log, so it is rebuilt from the current
+    /// code and cwd — flagged on stderr, since the recorded session may have run
+    /// elsewhere.
     Wire {
         /// Path to a session JSONL log (e.g. `.efference/session-<millis>.jsonl`).
         path: PathBuf,
         /// Print only the projected `messages` array — `project(log)` with the
         /// trailing cache breakpoint placed — skipping the `system`/`tools[]`
         /// envelope entirely. A lean, config-independent view of what the model
-        /// actually sees: unlike the full envelope, this needs no config, model
-        /// id, or rebuilt tool list, so it works even when a session's config
-        /// won't parse. Composes with `--format`.
+        /// actually sees: it uses the provider/model identity recorded at boot,
+        /// so it works even when a session's current config won't parse. Composes
+        /// with `--format`.
         #[arg(long)]
         messages: bool,
         /// Rendering: `json` (true-to-bytes, pipeable to `jq`) or `yaml` (a lossy,
@@ -197,10 +198,7 @@ pub(crate) enum DevCommand {
         /// readability — not parseable back).
         #[arg(long, value_enum, default_value = "json")]
         format: WireFormat,
-        /// Model to stamp into the envelope, selected like `--model` at creation.
-        /// Only cosmetic here (the request isn't sent).
-        #[arg(long, default_value = "claude-haiku-4-5")]
-        model: String,
+
         /// Config file to fold into the reconstructed preamble, same resolution as
         /// boot (defaults to probing `efference.toml`). The config file isn't recorded
         /// in the log, so — like `system`/`tools[]` — it's rebuilt from the current
@@ -412,9 +410,12 @@ pub(crate) async fn run<F: Future<Output = Result<ClientTarget, CliError>>>(
             path,
             messages,
             format,
-            model,
             config,
-        } => wire(path, messages, format, &model, config).await,
+        } => {
+            let rendered = wire(path, messages, format, config).await?;
+            println!("{rendered}");
+            Ok(())
+        }
         DevCommand::Peek {
             path,
             seq,
@@ -566,58 +567,88 @@ pub(crate) fn parse_path_grant(spec: &str) -> (String, efference::config::Perms)
     }
 }
 
-/// Reconstruct and print the wire request for a recorded session JSONL — the
-/// deterministic projection the assistant sees (docs/README.md, docs/log-and-projection.md). No daemon, no
-/// socket, no network: load the log, fold it to `messages`, place the trailing
-/// cache breakpoint, and rebuild the `system`/`tools` envelope exactly as a real
-/// turn would (`tool_choice: auto`, docs/transport.md). `system` and `tools[]` are not in
-/// the log; they're rebuilt from the current code + cwd, so the note on stderr
-/// warns when the session may have run in a different environment.
+type WireResult = Result<String, Box<dyn std::error::Error + Send + Sync>>;
+
+/// The model used only for a legacy log with no boot identity. New logs carry
+/// their native model in the Preamble; this keeps the old view renderable until
+/// those logs are replaced.
+const LEGACY_WIRE_MODEL: &str = "claude-haiku-4-5";
+
+fn wire_placements(
+    identity: Option<&efference::log::LoggedInference>,
+) -> (
+    efference::project::ImagePlacement,
+    efference::project::BreakpointPlacement,
+) {
+    identity
+        .map(|selection| {
+            (
+                selection.provider.image_placement(&selection.model),
+                selection.provider.breakpoint_placement(),
+            )
+        })
+        .unwrap_or_default()
+}
+
+fn wire_model(identity: Option<&efference::log::LoggedInference>) -> String {
+    identity
+        .map(|selection| selection.model.clone())
+        .unwrap_or_else(|| LEGACY_WIRE_MODEL.to_string())
+}
+
+/// Reconstruct the wire request for a recorded session JSONL — the
+/// deterministic projection the assistant sees (docs/README.md,
+/// docs/log-and-projection.md). No daemon, no socket, no network: load the log,
+/// fold it to `messages`, place the trailing cache breakpoint, and render the
+/// envelope a real turn would send (`tool_choice: auto`, docs/transport.md).
+/// The recorded identity supplies the historical model, provider, and placement;
+/// the recorded `system` is read back, while the current code and cwd rebuild
+/// `tools[]` and the other envelope values. Notes on stderr flag the parts that
+/// may differ from the session's environment.
 pub(crate) async fn wire(
     path: PathBuf,
     messages_only: bool,
     format: WireFormat,
-    model: &str,
     config: Option<PathBuf>,
-) -> CliResult {
+) -> WireResult {
     let entries = efference::persist::load(&path)?;
-    // The provider behind `--model`, when the host config resolves it; with none,
-    // the view's own defaults.
-    let (model, provider) = match crate::inference::main_endpoint(model) {
-        Ok((model, endpoint)) => (model, Some(endpoint.provider)),
-        Err(_) => (model.to_string(), None),
-    };
-    let model = model.as_str();
-    let placement = provider
-        .map(|p| p.image_placement(model))
-        .unwrap_or_default();
     // The same turns a live request encodes, trailing breakpoint included; the
     // dialect decides the wire they render on (docs/transport.md).
     let mut turns = efference::project::project_semantic(&entries);
-    // The dialect the log was recorded in; with no provider declared it is the view's
-    // dialect, and with one declared the two must agree — the other encoder would
-    // drop every assistant turn (docs/transport.md).
     let recorded = efference::project::recorded_dialect(&turns)?;
-    let dialect = provider
-        .and_then(|p| p.inference_dialect())
-        .or(recorded)
-        .unwrap_or(efference::api::WireDialect::Messages);
-    efference::project::check_dialect(&turns, dialect)?;
-    turns.push(efference::project::WireTurn::Breakpoint);
-    let messages = efference::project::encode_messages(
-        &turns,
-        placement,
-        provider
-            .map(|p| p.breakpoint_placement())
-            .unwrap_or_default(),
-    );
+    // The fixed identity is recorded once at boot. Placement is derived here, at
+    // read time, rather than stored as a second copy that could drift from the
+    // provider rules (docs/log-and-projection.md).
+    let identity = efference::log::recorded_inference(&entries).cloned();
+    let recorded_provider = identity.as_ref().map(|selection| selection.provider);
+    let (placement, breakpoint) = wire_placements(identity.as_ref());
+    if identity.is_none() {
+        eprintln!(
+            "note: this log has no recorded inference identity; using the default image and \
+             cache-breakpoint placement."
+        );
+    }
     // Responses caching is model-specific; the offline view assumes the explicit
     // policy every model in the compiled catalog reports.
     let cache = efference::api::PromptCachePolicy::Explicit;
 
-    // `--messages` prints just the projected array and returns before touching
-    // config/system/tools at all — a lean, config-independent view of what the
-    // model sees, so it still works when a session's config won't parse.
+    // Check the recorded provider once, before either rendering path. A legacy log
+    // has already been checked by `recorded_dialect`; with an identity, this is the
+    // only provider whose dialect the offline view accepts.
+    if let Some(provider) = recorded_provider
+        && let Some(dialect) = provider.inference_dialect()
+    {
+        efference::project::check_dialect(&turns, dialect)?;
+    }
+    let dialect = recorded_provider
+        .and_then(|provider| provider.inference_dialect())
+        .or(recorded)
+        .unwrap_or(efference::api::WireDialect::Messages);
+    turns.push(efference::project::WireTurn::Breakpoint);
+    let messages = efference::project::encode_messages(&turns, placement, breakpoint);
+
+    // `--messages` returns the projected array before touching config, system, or
+    // tools. Both the lean and full views use the log's dialect and placements.
     if messages_only {
         eprintln!(
             "note: {} log entries → {} wire messages.",
@@ -631,10 +662,10 @@ pub(crate) async fn wire(
             (_, WireFormat::Json) => efference::api::render_messages_pretty(&messages)?,
             (_, WireFormat::Yaml) => efference::api::render_messages_yaml(&messages)?,
         };
-        println!("{rendered}");
-        return Ok(());
+        return Ok(rendered);
     }
 
+    let model = wire_model(identity.as_ref());
     // The `system` a session sent is recorded in the log as the boot preamble snapshot
     // (docs/context.md) — prefer it (the last one wins on a multi-boot log) so
     // the view shows exactly what the model saw, not a re-resolve of files that may have
@@ -697,7 +728,7 @@ pub(crate) async fn wire(
         // one carried. Sessions logged since the boot-preamble snapshot read
         // back the recorded `system` instead and are unaffected.
         efference::env::system_prompt(
-            model,
+            &model,
             &session_id,
             None,
             context_block.as_deref(),
@@ -718,18 +749,17 @@ pub(crate) async fn wire(
     let rendered = match (dialect, format) {
         (efference::api::WireDialect::Responses, _) => {
             efference::api::render_responses_request_pretty(
-                model, &system, &tools, choice, &turns, cache,
+                &model, &system, &tools, choice, &turns, cache,
             )?
         }
         (_, WireFormat::Json) => {
-            efference::api::render_request_pretty(model, &system, &tools, choice, &messages)?
+            efference::api::render_request_pretty(&model, &system, &tools, choice, &messages)?
         }
         (_, WireFormat::Yaml) => {
-            efference::api::render_request_yaml(model, &system, &tools, choice, &messages)?
+            efference::api::render_request_yaml(&model, &system, &tools, choice, &messages)?
         }
     };
-    println!("{rendered}");
-    Ok(())
+    Ok(rendered)
 }
 
 /// Launch the TUI on the fixed element gallery — no daemon, no socket. With

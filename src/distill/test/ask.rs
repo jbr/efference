@@ -53,6 +53,7 @@ fn preamble_with(items: Vec<Item>) -> LogEntry {
                     items,
                 }],
             },
+            inference: None,
         },
     )
 }

@@ -435,8 +435,8 @@ pub(crate) struct SessionFlags {
     /// a pinned session either gets one of these or fails rather than
     /// silently rerouting.
     ///
-    /// Distinct from the anthropic-vs-openrouter choice, which is the
-    /// `EFFERENCE_PROVIDER` env var. Ignored on Anthropic, which has no such
+    /// Distinct from the connection's declared provider, which is selected
+    /// by session configuration. Ignored on Anthropic, which has no such
     /// choice. Applies to the agent's own requests (turns and fork peeks),
     /// not the spotter: slugs are per-model and the spotter runs a different
     /// one. Endpoints behind one model slug differ in uptime and latency

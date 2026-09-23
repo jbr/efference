@@ -194,7 +194,16 @@ async fn prepare_minting(
     assert!(cwd.is_absolute(), "session cwd must be absolute");
     assert!(session_dir.is_absolute(), "session dir must be absolute");
     let (main_selection, mut endpoint) = inference.main();
+    // The main role is fixed for the session's life. Keep its structured identity
+    // for the boot record; offline readers must not recover it from prose or usage
+    // telemetry (docs/log-and-projection.md).
+    let recorded_inference = crate::log::LoggedInference::new(
+        main_selection.connection.clone(),
+        main_selection.provider,
+        main_selection.model.clone(),
+    );
     let model = main_selection.model.as_str();
+
     // The origin config is read here — before the session dir is minted — because
     // its `[env]` table may supply the harness's own credential as a reference
     // (docs/env.md), and because a malformed template or an unresolvable
@@ -541,6 +550,7 @@ async fn prepare_minting(
         crate::log::Payload::Preamble {
             system: system.clone(),
             context: resolved,
+            inference: Some(recorded_inference),
         },
     )?;
 

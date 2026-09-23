@@ -8,9 +8,8 @@ use crate::test::write_fixture_log;
 
 /// `wire --messages` is the point of this flag: a lean, config-independent
 /// view of `project(log)` that works even when the session's config won't
-/// parse. Exercise both halves — the full envelope path *does* fail on a
-/// malformed config, while `--messages` skips config loading entirely and
-/// succeeds regardless (docs: the flag's purpose is exactly this).
+/// parse. The full envelope still needs the role config when a legacy log has
+/// no recorded preamble, so exercise both halves against a malformed file.
 #[tokio::test]
 async fn wire_messages_skips_the_unparseable_config() {
     let log_path =
@@ -24,34 +23,263 @@ async fn wire_messages_skips_the_unparseable_config() {
     ));
     std::fs::write(&bad_config, "this is not valid toml [[[").unwrap();
 
-    // Without `--messages`, the full envelope rebuild loads the config and
-    // fails loudly on the malformed file.
+    // This fixture predates the boot-preamble snapshot, so the full envelope
+    // rebuild loads the role config and fails with the specific load error.
     let full = wire(
         log_path.clone(),
         false,
         WireFormat::Json,
-        "claude-haiku-4-5",
         Some(bad_config.clone()),
     )
     .await;
-    assert!(
-        full.is_err(),
-        "expected the full envelope to reject the bad config"
-    );
+    let error = full.expect_err("expected the full envelope to reject the bad config");
+    assert_eq!(error.to_string(), "could not load role config");
 
-    // With `--messages`, config is never touched, so the same bad config
-    // doesn't matter — it prints just the projected messages array.
+    // The lean path never loads the config, so the same malformed file does not
+    // matter; it returns the projected messages array.
     let lean = wire(
         log_path.clone(),
         true,
         WireFormat::Json,
-        "claude-haiku-4-5",
         Some(bad_config.clone()),
     )
     .await;
     assert!(
         lean.is_ok(),
         "expected --messages to succeed despite the bad config: {lean:?}"
+    );
+
+    let _ = std::fs::remove_file(&log_path);
+    let _ = std::fs::remove_file(&bad_config);
+}
+
+/// The full envelope's model field comes from the boot record, never from an
+/// ambient provider selection.
+#[test]
+fn wire_model_prefers_the_recorded_native_model() {
+    let identity = efference::log::LoggedInference::new(
+        "router",
+        efference::api::Provider::OpenRouter,
+        "google/gemini-3.7-flash",
+    );
+    assert_eq!(wire_model(Some(&identity)), "google/gemini-3.7-flash");
+    assert_eq!(wire_model(None), LEGACY_WIRE_MODEL);
+}
+
+/// Recorded identity owns the wire's provider-conditional shapes. Replacing it
+/// with the default placement (or deriving the Gemini arm from a different model)
+/// would silently change an image-bearing OpenRouter replay.
+#[test]
+fn wire_placements_follow_the_recorded_provider_and_model() {
+    let identity = efference::log::LoggedInference::new(
+        "router",
+        efference::api::Provider::OpenRouter,
+        "google/gemini-3.7-flash",
+    );
+    assert_eq!(
+        wire_placements(Some(&identity)),
+        (
+            efference::project::ImagePlacement::AfterInterposedTurn,
+            efference::project::BreakpointPlacement::LastTextBlock,
+        )
+    );
+    assert_eq!(
+        wire_placements(None),
+        (
+            efference::project::ImagePlacement::default(),
+            efference::project::BreakpointPlacement::default(),
+        )
+    );
+}
+
+#[tokio::test]
+async fn wire_rejects_a_recorded_provider_dialect_conflict() {
+    let log_path = std::env::temp_dir().join(format!(
+        "efference-wire-identity-conflict-{}.jsonl",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&log_path);
+    let identity = efference::log::LoggedInference::new(
+        "anthropic",
+        efference::api::Provider::Anthropic,
+        "claude",
+    );
+    let mut log = efference::persist::Log::create(&log_path).unwrap();
+    log.append(
+        0,
+        efference::log::Payload::Preamble {
+            system: "sys".into(),
+            context: Default::default(),
+            inference: Some(identity),
+        },
+    )
+    .unwrap();
+    log.append(
+        1,
+        efference::log::Payload::Assistant {
+            output: efference::log::AssistantOutput::Responses(vec![]),
+            upstream_failure: None,
+        },
+    )
+    .unwrap();
+    drop(log);
+
+    for messages_only in [true, false] {
+        let error = wire(log_path.clone(), messages_only, WireFormat::Json, None)
+            .await
+            .expect_err("the recorded provider must be dialect-checked");
+        let text = error.to_string();
+        assert!(text.contains("recorded in the Responses dialect"), "{text}");
+        assert!(text.contains("speaks Messages"), "{text}");
+    }
+
+    let _ = std::fs::remove_file(&log_path);
+}
+
+fn write_openrouter_image_log(path: &std::path::Path) {
+    use efference::log::{
+        AssistantOutput, ContentBlock, Payload, RawResult, ResultImage, ToolCall, WireState,
+    };
+
+    let identity = efference::log::LoggedInference::new(
+        "router",
+        efference::api::Provider::OpenRouter,
+        "google/gemini-3.7-flash",
+    );
+    let mut log = efference::persist::Log::create(path).unwrap();
+    log.append(
+        0,
+        Payload::Preamble {
+            system: "sys".into(),
+            context: Default::default(),
+            inference: Some(identity),
+        },
+    )
+    .unwrap();
+    log.append(
+        1,
+        Payload::User(vec![ContentBlock::Text("look at the image".into())]),
+    )
+    .unwrap();
+    log.append(
+        2,
+        Payload::Assistant {
+            output: AssistantOutput::from_legacy_messages(
+                vec![],
+                vec![ContentBlock::Text("let me check".into())],
+                vec![ToolCall::new(
+                    "read_image",
+                    "toolu_img",
+                    serde_json::json!({ "path": "image.png" }),
+                )],
+            ),
+            upstream_failure: None,
+        },
+    )
+    .unwrap();
+    log.append(
+        3,
+        Payload::tool_result(
+            "toolu_img",
+            RawResult::text("1456×819 image/webp, 1560 visual tokens").with_images(vec![
+                ResultImage {
+                    media_type: "image/webp".into(),
+                    data: "UklGRg==".into(),
+                    width: 1456,
+                    height: 819,
+                },
+            ]),
+            WireState::Raw,
+        ),
+    )
+    .unwrap();
+}
+
+/// The lean command path must apply the recorded OpenRouter/Gemini placements,
+/// not merely expose them through a helper: the output carries the interposed
+/// assistant turn and puts the breakpoint on its text block.
+#[tokio::test]
+async fn wire_messages_renders_recorded_openrouter_placements_end_to_end() {
+    let log_path = std::env::temp_dir().join(format!(
+        "efference-wire-openrouter-placement-{}.jsonl",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&log_path);
+    write_openrouter_image_log(&log_path);
+
+    let rendered = wire(log_path.clone(), true, WireFormat::Json, None)
+        .await
+        .expect("the recorded OpenRouter fixture should render");
+    let messages: serde_json::Value = serde_json::from_str(&rendered).unwrap();
+    let messages = messages.as_array().expect("messages is an array");
+    assert_eq!(
+        messages.len(),
+        5,
+        "the image has an interposed turn: {rendered}"
+    );
+    assert_eq!(messages[2]["role"], "user");
+    assert_eq!(messages[3]["role"], "assistant");
+    assert!(
+        messages[3]["content"][0]["text"]
+            .as_str()
+            .is_some_and(|text| text.contains("receiving the image from [3]")),
+        "AfterInterposedTurn text is missing: {rendered}"
+    );
+    assert_eq!(
+        messages[3]["content"][0]["cache_control"]["type"].as_str(),
+        Some("ephemeral"),
+        "LastTextBlock must mark the interposed text: {rendered}"
+    );
+    assert!(
+        messages[2]["content"][0].get("cache_control").is_none(),
+        "the tool result must remain behind the text breakpoint: {rendered}"
+    );
+    assert_eq!(messages[4]["content"][0]["type"], "image");
+
+    let _ = std::fs::remove_file(&log_path);
+}
+
+/// An identity-bearing full envelope is reconstructed from the log even when
+/// the supplied config is malformed; only a legacy pre-preamble log needs the
+/// current role config to rebuild its system prompt.
+#[tokio::test]
+async fn wire_full_uses_recorded_identity_without_loading_config() {
+    let log_path = std::env::temp_dir().join(format!(
+        "efference-wire-full-identity-{}.jsonl",
+        std::process::id()
+    ));
+    let bad_config = std::env::temp_dir().join(format!(
+        "efference-wire-full-bad-config-{}.toml",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&log_path);
+    write_openrouter_image_log(&log_path);
+    std::fs::write(&bad_config, "this is not valid toml [[[").unwrap();
+
+    let rendered = wire(
+        log_path.clone(),
+        false,
+        WireFormat::Json,
+        Some(bad_config.clone()),
+    )
+    .await
+    .expect("the recorded preamble should avoid config loading");
+    let request: serde_json::Value = serde_json::from_str(&rendered).unwrap();
+    assert_eq!(request["model"].as_str(), Some("google/gemini-3.7-flash"));
+    assert_eq!(request["system"].as_str(), Some("sys"));
+    let messages = request["messages"]
+        .as_array()
+        .expect("messages is an array");
+    assert!(
+        messages[3]["content"][0]["text"]
+            .as_str()
+            .is_some_and(|text| text.contains("receiving the image from [3]")),
+        "the full envelope must retain the recorded OpenRouter placement: {request}"
+    );
+    assert_eq!(
+        messages[3]["content"][0]["cache_control"]["type"].as_str(),
+        Some("ephemeral"),
+        "the full envelope must retain the recorded text breakpoint: {request}"
     );
 
     let _ = std::fs::remove_file(&log_path);

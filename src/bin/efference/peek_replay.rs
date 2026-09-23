@@ -314,8 +314,9 @@ pub(crate) async fn peek(
     let entries = efference::persist::load(&path)?;
     // Replays use the selected connection's projection-shaping choices — image
     // placement and cache-breakpoint placement — matching what a live session on
-    // that provider projects; a dry run with no usable config falls back to the
-    // defaults (docs/log-and-projection.md).
+    // that provider projects. If the current config cannot resolve the selection,
+    // the boot identity supplies the historical shapes; a legacy log falls back to
+    // the defaults (docs/log-and-projection.md).
     let inference = crate::inference::resolve(
         Some(model),
         None,
@@ -328,9 +329,18 @@ pub(crate) async fn peek(
             )
         }),
     );
-    let provider = inference.as_ref().ok().map(|i| i.main().1.provider);
+    let recorded_identity = efference::log::recorded_inference(&entries);
+    let (provider, placement_model) = match inference.as_ref() {
+        Ok(inference) => (Some(inference.main().1.provider), model),
+        Err(_) => (
+            recorded_identity.map(|identity| identity.provider),
+            recorded_identity
+                .map(|identity| identity.model.as_str())
+                .unwrap_or(model),
+        ),
+    };
     let placement = provider
-        .map(|p| p.image_placement(model))
+        .map(|p| p.image_placement(placement_model))
         .unwrap_or_default();
     let breakpoint = provider
         .map(|p| p.breakpoint_placement())
@@ -362,7 +372,9 @@ pub(crate) async fn peek(
         .iter()
         .rev()
         .find_map(|e| match &e.payload {
-            Payload::Preamble { system, context } => Some((system.clone(), context.render())),
+            Payload::Preamble {
+                system, context, ..
+            } => Some((system.clone(), context.render())),
             _ => None,
         })
         .ok_or("log predates the boot-preamble snapshot; no recorded system prompt to replay")?;
@@ -428,7 +440,10 @@ pub(crate) async fn peek(
     // constructor boot uses, the same system prompt over the recorded context
     // block, the session's own model named as the agent. The shared peek replays on
     // the agent client, whose model is `--model`.
-    let agent_model = session_model(&system).unwrap_or_else(|| model.to_string());
+    let agent_model = recorded_identity
+        .map(|identity| identity.model.clone())
+        .or_else(|| session_model(&system))
+        .unwrap_or_else(|| model.to_string());
     let (peek, model) = match inference.triage() {
         Some((_, mut triage_endpoint, t)) => {
             triage_endpoint.session_id = endpoint.session_id.clone();

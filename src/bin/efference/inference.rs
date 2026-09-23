@@ -22,13 +22,6 @@ pub(crate) fn resolve(
     registry()?.resolve(model, spotter, triage)
 }
 
-/// The main role's native model and endpoint for a `--model` selection.
-pub(crate) fn main_endpoint(model: &str) -> Result<(String, Endpoint), Error> {
-    let selected = resolve(Some(model), None, None)?;
-    let (selection, endpoint) = selected.main();
-    Ok((selection.model.clone(), endpoint))
-}
-
 /// The spotter role's native model and endpoint: the named selection, or the
 /// configured default.
 pub(crate) fn spotter_endpoint(model: Option<&str>) -> Result<(String, Endpoint), Error> {

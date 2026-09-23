@@ -173,6 +173,35 @@ fn distilled_log(keep: Keep, note: Option<&str>) -> Vec<LogEntry> {
     log
 }
 
+/// The boot identity is metadata, not wire content. A projection change that
+/// starts emitting it or changing the messages for it must fail here first.
+#[test]
+fn boot_inference_identity_does_not_project() {
+    let identity = crate::log::LoggedInference::new(
+        "router",
+        crate::api::Provider::OpenRouter,
+        "google/gemini-3.7-flash",
+    );
+    let mut with_identity = sample_log();
+    with_identity.insert(
+        0,
+        entry(
+            0,
+            0,
+            Payload::Preamble {
+                system: "sys".into(),
+                context: Default::default(),
+                inference: Some(identity),
+            },
+        ),
+    );
+    assert_eq!(
+        serde_json::to_string(&project(&with_identity)).unwrap(),
+        serde_json::to_string(&project(&sample_log())).unwrap(),
+        "boot inference identity is metadata, not wire content"
+    );
+}
+
 /// Pins the exact wire bytes of a **distilled** tool result — the shape most
 /// results take once their gate has run, and the one the other pins miss: the
 /// shared fixture's only result is `WireState::Raw`, so a render change to the
@@ -599,6 +628,7 @@ fn preamble_snapshot_projects_to_nothing() {
         Payload::Preamble {
             system: "You are an agent.\n\n<CLAUDE>\nthe whole repo map\n</CLAUDE>".into(),
             context: Default::default(),
+            inference: None,
         },
     ));
     let with = serde_json::to_string(&project(&with)).unwrap();

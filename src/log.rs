@@ -241,6 +241,13 @@ pub enum Payload {
         system: String,
         #[serde(default)]
         context: crate::context::Resolved,
+        /// The fixed main inference identity chosen when this session booted:
+        /// connection, provider, and provider-native model id. It is log metadata
+        /// only — an offline reader uses it to derive the historical dialect and
+        /// projection placements, while `project` emits nothing for it
+        /// (docs/log-and-projection.md). `None` on pre-identity logs.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        inference: Option<LoggedInference>,
     },
     /// The session's title — one line saying what the session is for
     /// (docs/session-title.md). Written by the title peek after a trajectory ends,
@@ -270,6 +277,34 @@ pub enum TitleAuthor {
     Operator,
 }
 
+/// The inference identity persisted in a boot [`Payload::Preamble`].
+///
+/// This is deliberately a log-owned shape rather than the control/configuration
+/// selection type. Boot copies the three facts offline readers need into this
+/// record, so a rename in the live configuration model does not change how an
+/// existing log deserializes (docs/log-and-projection.md).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LoggedInference {
+    pub connection: String,
+    pub provider: crate::api::Provider,
+    pub model: String,
+}
+
+impl LoggedInference {
+    /// Construct the persisted identity from the three values recorded at boot.
+    pub fn new(
+        connection: impl Into<String>,
+        provider: crate::api::Provider,
+        model: impl Into<String>,
+    ) -> Self {
+        Self {
+            connection: connection.into(),
+            provider,
+            model: model.into(),
+        }
+    }
+}
+
 /// The current title: the text of the last [`Payload::Title`] in `entries`, or
 /// `None` before any was written (docs/session-title.md).
 pub fn latest_title(entries: &[LogEntry]) -> Option<&str> {
@@ -277,6 +312,21 @@ pub fn latest_title(entries: &[LogEntry]) -> Option<&str> {
         Payload::Title(t) => Some(t.text.as_str()),
         _ => None,
     })
+}
+
+/// The inference identity recorded by the latest boot [`Payload::Preamble`], or
+/// `None` for a log written before that metadata existed. The latest preamble is
+/// the boot record for a multi-boot log; an older identity is not resurrected when
+/// the latest preamble has none (docs/log-and-projection.md).
+pub fn recorded_inference(entries: &[LogEntry]) -> Option<&LoggedInference> {
+    entries
+        .iter()
+        .rev()
+        .find_map(|entry| match &entry.payload {
+            Payload::Preamble { inference, .. } => Some(inference.as_ref()),
+            _ => None,
+        })
+        .flatten()
 }
 
 impl Payload {

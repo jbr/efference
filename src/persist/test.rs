@@ -71,15 +71,26 @@ fn preamble_snapshots_the_structured_context_listing() {
             }],
         }],
     };
+    let inference = crate::log::LoggedInference::new(
+        "recorded",
+        crate::api::Provider::OpenRouter,
+        "google/gemini-3.7-flash",
+    );
     let line = serde_json::to_string(&Payload::Preamble {
         system: "sys".into(),
         context: listing.clone(),
+        inference: Some(inference.clone()),
     })
     .unwrap();
 
     match serde_json::from_str::<Payload>(&line).unwrap() {
-        Payload::Preamble { system, context } => {
+        Payload::Preamble {
+            system,
+            context,
+            inference: recorded,
+        } => {
             assert_eq!(system, "sys");
+            assert_eq!(recorded.as_ref(), Some(&inference));
             assert_eq!(
                 context, listing,
                 "structured listing must survive the round-trip"
@@ -96,9 +107,14 @@ fn preamble_snapshots_the_structured_context_listing() {
 fn legacy_preamble_without_context_reads_back_empty() {
     let legacy = r#"{"Preamble":{"system":"you are an agent"}}"#;
     match serde_json::from_str::<Payload>(legacy).unwrap() {
-        Payload::Preamble { system, context } => {
+        Payload::Preamble {
+            system,
+            context,
+            inference,
+        } => {
             assert_eq!(system, "you are an agent");
             assert_eq!(context, crate::context::Resolved::default());
+            assert!(inference.is_none());
         }
         other => panic!("expected a Preamble, got {other:?}"),
     }

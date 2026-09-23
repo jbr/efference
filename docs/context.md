@@ -279,6 +279,9 @@ unknown fields, so a renamed key fails there), every tool name a document declar
   also carries the **structured** `Resolved` listing (the `Section`/`Item` tree) beside the
   flat string — additive, so the byte-exact string stays the wire truth while the structure
   survives as a fold for the surfacing rider ([redaction-fork.md](redaction-fork.md)).
+  The same boot entry carries the session's fixed connection/provider/native-model
+  identity as unprojected metadata; offline readers derive wire placement from it
+  rather than from the current config.
 - **Fail closed, loudly.** A named file that can't be read, or an unterminated
   frontmatter block, fails startup — silently booting without configured context would be
   the model running with knowledge it was told it had.

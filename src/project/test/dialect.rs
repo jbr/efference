@@ -36,8 +36,10 @@ fn a_session_without_a_reply_passes_on_either_dialect() {
     assert_eq!(recorded_dialect(&[]), Ok(None));
 }
 
-/// Once a reply is recorded, only its own dialect may encode the list; a provider or
-/// model change within that dialect is not this guard's concern.
+/// Once a reply is recorded, only its own dialect may encode the list. The guard is
+/// about dialect, not the model slug: a recorded session keeps one provider/model
+/// identity, while an offline reader may render it under another provider that
+/// speaks the same dialect (docs/transport.md).
 #[test]
 fn a_recorded_dialect_admits_only_itself() {
     let turns = vec![WireTurn::text("hello"), messages_turn()];

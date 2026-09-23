@@ -48,7 +48,7 @@ enum Payload {
     ToolTelemetry(ToolTelemetry),  // what one call cost and how it came out (see tools.md)
     ProcessEvent(ProcessEvent),    // a background process's mint or exit (see supervisor.md)
     ConfigEdit(ConfigEdit),  // one durable policy change — folded by the classifier (see permissions.md)
-    Preamble { system: String },  // the boot preamble snapshot — replay/audit only (see context.md)
+    Preamble { system: String, context: Resolved, inference: Option<LoggedInference> },  // boot record — replay/audit only (see context.md)
     Title(Title),      // the session's one-line title — presentation only, never projected (see session-title.md)
     // Anticipated, not yet built: a frozen cache-breakpoint boundary (`Commit`)
     // for compaction. Kept here as a forward marker — types land ahead of the
@@ -122,10 +122,17 @@ this session's requests carry it. It exists because the `[context]` preamble
 builder ([context.md](context.md)) folds file *contents* into the system
 prompt, and those files drift on disk between boots — so the preamble is no
 longer reconstructable from `config + current files`, and faithful replay
-requires storing it. It projects to nothing (the system prompt rides the
-request's `system` field, never `messages`), so appending it cannot perturb
-the projected wire; the `wire` dev view reads it back instead of re-resolving
-files from disk.
+requires storing it. It also carries the session's fixed main inference
+identity as the log-owned `LoggedInference` shape: connection, provider, and
+provider-native model id, the same values reported by
+`session_identity.inference.main`. The log type is deliberately separate from the
+live configuration selection; boot copies these fields into it once. The identity
+is metadata, not prompt text or a derived placement, and `project` emits nothing
+for it. Offline readers derive the dialect and provider-conditional placements
+from that identity at read time. `dev wire`, including `--messages`, uses this
+record without consulting inference configuration. A log predating it uses the
+recorded dialect and default placements, with a note. The `system` field itself
+is still read back rather than re-resolved from files on disk.
 
 ### `WireState` / `Keep`
 
@@ -351,8 +358,11 @@ the expected-bytes pin deliberately.
 
 `place_trailing_cache_breakpoint` (`src/project/wire.rs`) marks exactly one block
 per request, walking back from the wire tail. **Which** block it may mark is
-`BreakpointPlacement`, derived once at boot from the declared provider
-(`Provider::breakpoint_placement`) and fixed for the session:
+`BreakpointPlacement`, derived from the session's provider (`Provider::breakpoint_placement`)
+and fixed for the live session. A recorded log carries the provider identity,
+not the derived placement, so an offline reader derives this choice at read
+time; a legacy log without that identity uses the default placement and says
+so:
 
 - `TrailingBlock` (**Anthropic**) — the last block, whatever its type.
   `cache_control` is legal on any block on the native API, so the marker sits at
@@ -376,12 +386,13 @@ a bare-string `function_call_output` is lifted to its parts form to carry it —
 the physical marker can sit earlier than the logical frontier. Under any other
 policy the encoder places nothing and the provider's implicit breakpoint governs.
 
-The placements are the same seam `ImagePlacement` uses, and for the same
-reason: a projection-shaping choice that varies by provider has to be *fixed at
-boot* rather than re-derived, or a session's cached prefix could move under it.
-The consequence for the byte pins is that the pinned bytes are pinned **per
-placement** — `project/test/cache.rs` covers the arms and asserts the marker
-count stays one for each. On the Responses wire the fork peek's frontier has its own
+The placements are the same seam `ImagePlacement` uses. A live session fixes
+both choices at boot so its cached prefix cannot move under it; an offline
+reader re-derives them from the recorded provider and model, so a log rendered
+under a different current config still has the historical shape. The log does
+not store either derived value. The consequence for the byte pins is that the
+pinned bytes are pinned **per placement** — `project/test/cache.rs` covers the
+arms and asserts the marker count stays one for each. On the Responses wire the fork peek's frontier has its own
 pin (`distill/test.rs`): the peek's one marker sits on the last carrier before the
 fork-local tail and never in it, and the next canonical request repeats the pre-fork
 items content for content, marks its own tail, and carries the distillate rather
@@ -402,8 +413,11 @@ Every upstream request appends one JSONL line to the session dir's `usage.jsonl`
 a wall-clock stamp, the request's origin (`turn` / `peek` / `triage` / `spot` /
 `keepalive` / `aborted_attempt`), the upstream response id (Anthropic `msg_…`; an
 OpenRouter-fronted request's generation id), the model the response named for
-itself (per line, not per file — the session's model can change, so only a
-per-request record attributes every entry), and the four token counts.
+itself, and the four token counts. The main model and provider are fixed when
+a session is created, but usage remains per request: an upstream may report a
+model alias or a response may be retried, so the per-line value is the
+accounting record. The canonical log carries the boot identity separately;
+`dev wire` does not read this telemetry file.
 Implemented in `src/daemon/metrics.rs` (`record_request` / `record_keepalive`),
 fed by `Completion::request_usage`. Transport-only and **never** the canonical
 log — usage must stay out of the projection. The in-memory `Metrics` fold
@@ -431,9 +445,10 @@ the streak while still treating it as a touch on the prefix (below).
 `cache_read` on those lines is the empirical end of the byte pins. A main-loop
 request that reads nothing from the cache is **cold**, and three conditions
 explain a cold read without implicating the prefix: the session's first request
-(nothing was written yet), a model change (a different model shares no prefix),
-and a gap past the five-minute TTL with nothing touching the prefix (evicted, not
-moved). Anything else is one observation of the prefix having moved.
+(nothing was written yet), rendering or replaying under a different model (a
+different model shares no prefix), and a gap past the five-minute TTL with
+nothing touching the prefix (evicted, not moved). Anything else is one
+observation of the prefix having moved.
 
 One observation is noise — a retry, an eviction the TTL heuristic misses — so the
 signal is the **run**. `ColdStreak` (`src/daemon/metrics.rs`) folds each recorded

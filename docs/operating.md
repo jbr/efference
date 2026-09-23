@@ -332,7 +332,7 @@ auth = { kind = "oauth" }         # the store's oauth:chatgpt grant
 A fourth read is offline, about spend rather than content, and a developer's instrument
 rather than an operator's: **`efference dev cache`** folds a
 session's `usage.jsonl` into a prompt-cache read rate per request origin, separating the
-cold reads that explain themselves (session boot, a model change, an idle gap past the
+cold reads that explain themselves (session boot, a cross-model replay, an idle gap past the
 cache TTL) from the ones that do not, and reporting the longest run of the latter. With no
 argument it reads the most recently written session; `--all` sweeps the corpus, which is
 where a rate is worth comparing against. It needs no daemon and no network.
@@ -574,7 +574,9 @@ Beyond turns, calls, and results, the log carries the decisions:
 - **`Mark`** — today only a consolidation boundary, written by the `consolidate` tool. There
   is no operator verb that writes a mark; salience annotations are the agent's own.
 - **`Preamble`** — the exact system prompt this session booted with, snapshotted, because it
-  folds in file contents that drift on disk and is otherwise unreconstructable.
+  folds in file contents that drift on disk and is otherwise unreconstructable, plus the
+  fixed main connection/provider/native-model identity as unprojected metadata for offline
+  readers.
 
 Fast-path clears are deliberately unlogged: the log records the decisions someone made, not
 the ones nobody had to.

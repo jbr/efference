@@ -93,6 +93,7 @@ fn surfaced_context_item_projects_at_triage_position() {
             Payload::Preamble {
                 system: "sys".into(),
                 context: listing,
+                inference: None,
             },
         ),
         entry(
