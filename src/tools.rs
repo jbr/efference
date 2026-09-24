@@ -28,7 +28,7 @@ use serde_json::{Value, json};
 
 use crate::bash::{self, Bash, Outcome};
 use crate::frontend::Interrupt;
-use crate::log::{RawResult, ToolCall};
+use crate::log::{Notification, RawResult, ToolCall};
 use read_image::ReadImage;
 
 /// The property the harness adds to every mounted tool's input schema
@@ -259,15 +259,18 @@ impl Provider {
     /// can't be interrupted ignore it. `on_spawn` fires with the child's pid when
     /// the backend spawns an OS process (only bash does — the daemon registers it
     /// in the supervisor's process namespace, docs/supervisor.md). `on_output` is
-    /// the live-stream sink (docs/README.md) — only the long-running, interruptible
-    /// bash tool streams; the MCP tools are synchronous and resolve whole as
-    /// [`Outcome::Done`].
+    /// the live-stream sink (docs/README.md): the long-running, interruptible
+    /// bash tool streams its output and a connected server streams its progress
+    /// ticks; the rest resolve whole as [`Outcome::Done`]. `on_notify` is the
+    /// inbox handle (docs/inbox.md) — a connected server's
+    /// `notifications/message` lines are enqueued through it.
     async fn run(
         &self,
         call: &ToolCall,
         abort: impl Future<Output = Interrupt> + Send,
         on_spawn: impl FnOnce(Option<u32>) + Send,
         on_output: impl FnMut(&[u8]) + Send,
+        on_notify: impl FnMut(Notification) + Send,
     ) -> Outcome {
         match self {
             Provider::Bash(b) => b.run(&call.input, abort, on_spawn, on_output).await,
@@ -279,10 +282,12 @@ impl Provider {
             // `create` and `end` await real work on this runtime (docs/tools.md).
             Provider::Sessions(s) => s.run_call(&call.name, &call.input).await.into(),
             Provider::ReadImage(r) => r.run(&call.input).into(),
-            // Async over a wire, but no OS process of the *call's* own and no
-            // live stream: the result lands whole. Races `abort` internally
-            // (Kill abandons the call; Detach is bash-only and keeps waiting).
-            Provider::Connected(c) => c.run(call, abort).await,
+            // Async over a wire, but no OS process of the *call's* own: the
+            // server's progress ticks stream as live output and its messages
+            // reach the inbox, while the result itself lands whole. Races
+            // `abort` internally (Kill abandons the call and cancels it on the
+            // wire; Detach is bash-only and keeps waiting).
+            Provider::Connected(c) => c.run(call, abort, on_output, on_notify).await,
         }
     }
 }
@@ -865,6 +870,7 @@ impl Toolbox {
         abort: impl Future<Output = Interrupt> + Send,
         on_spawn: impl FnOnce(Option<u32>) + Send,
         on_output: impl FnMut(&[u8]) + Send,
+        on_notify: impl FnMut(Notification) + Send,
     ) -> Outcome {
         // A model that reports no image input is told so *before* the read
         // (docs/tools.md): `read_image` exists only to produce an image, so it
@@ -876,7 +882,9 @@ impl Toolbox {
         let outcome = match self.providers.iter().find(|p| p.handles(&call.name)) {
             Some(provider) => {
                 let call = provider.without_intent(call);
-                provider.run(&call, abort, on_spawn, on_output).await
+                provider
+                    .run(&call, abort, on_spawn, on_output, on_notify)
+                    .await
             }
             None => RawResult::error(self.unknown_tool_message(&call.name)).into(),
         };

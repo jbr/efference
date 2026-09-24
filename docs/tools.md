@@ -569,7 +569,8 @@ capabilities) that revision `2026-07-28` requires, and that a server on any
 revision reconstructs as its `RequestContext` — and classifies each arriving
 message as a `Reaction`: a result to correlate by id, a reply to send (`ping`
 answered, everything else refused as method-not-found, since efference declares
-no client capabilities), or nothing. `mcplease::client::Negotiation` runs the
+no client capabilities), a progress tick or a server message to route (below),
+or nothing. `mcplease::client::Negotiation` runs the
 `server/discover` probe `2026-07-28` introduced and falls back to the stateful
 `initialize` handshake when a server answers that it has no such method —
 which is what deployed servers do today. Neither type performs I/O.
@@ -582,6 +583,24 @@ whatever the server answered with, one JSON body or a stream of SSE events, as
 a source of frames). Requests are strictly serialized — the loop issues one
 tool call at a time — so there is no demux task. Mounting is negotiation, then
 a paginated `tools/list`.
+
+The scope is every valid server-side interaction around a tool call (resources
+aside). A `tools/call` opts in to progress (`_meta.progressToken`, the
+request's own id) and each `notifications/progress` tick renders one line on
+the call's live-output sink — pre-commit, never projected: progress is
+liveness about a call running now, and the only reader it can serve is a
+watcher. A `notifications/message` line becomes an inbox notification (source
+the server, slot `mcp:<server>`, [inbox.md](inbox.md)) at every level; the
+channel's noise level is unmeasured, and level-gating is the revision if a
+chatty server proves noisy. An operator interrupt sends
+`notifications/cancelled` for the abandoned call — on a single-channel
+transport, where over streamable HTTP the dropped response stream is itself
+the signal — and a response that still arrives is skipped by id. Everything
+else stands as above: `ping` answered, undeclared capabilities refused
+method-not-found, `tools/list_changed` noted and left alone (the table is a
+mount snapshot). A server's chatter before it is mounted is dropped to the
+debug log: negotiation and discovery run quiet, with no call to annotate and
+no sinks that early.
 
 Unlike the embedded path, the tool table is **discovered at runtime**, which
 creates a cache hazard the embedded path never had (the server can change its

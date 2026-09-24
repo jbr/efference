@@ -297,6 +297,17 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
                                 chunk: String::from_utf8_lossy(chunk).into_owned(),
                             });
                         },
+                        // A connected server's async speech (docs/inbox.md):
+                        // the same enqueue every other notification source
+                        // uses, superseding on the server's slot.
+                        |notification| {
+                            shared.notify(
+                                notification.source,
+                                notification.body,
+                                notification.slot,
+                                None,
+                            );
+                        },
                     )
                     .await;
                 match outcome {

@@ -63,6 +63,7 @@ async fn sessions_resolve_policy_config_references_and_children_in_their_own_roo
                 std::future::pending(),
                 |_| {},
                 |_| {},
+                |_| {},
             )
             .await;
         let crate::bash::Outcome::Done(result) = foreground else {
@@ -187,6 +188,7 @@ async fn sessions_use_their_own_environment_for_bash_and_context() {
             .run(
                 &ToolCall::new("bash", "env-root", serde_json::json!({"command": command})),
                 std::future::pending(),
+                |_| {},
                 |_| {},
                 |_| {},
             )

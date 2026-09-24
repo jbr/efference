@@ -23,6 +23,13 @@ This verb is also the inter-agent channel. One agent `POST /notifications`s anot
 control socket; the receiving agent sees the notification at its next triage gate exactly
 as it would any other ambient event.
 
+A connected MCP server is another in-process producer: each of its
+`notifications/message` lines is enqueued through the same path, with the
+server name as `source` and `mcp:<server>` as `slot`, so a burst supersedes
+itself instead of piling up ([tools.md](tools.md) "the client protocol"). Its
+progress ticks do not come here — they are live output on the running call,
+and by a gate they describe the past.
+
 `GET /state` surfaces the pending (not-yet-shown) inbox alongside other control state.
 `DELETE /notifications/:id` clears a pending notification out-of-band, before it
 is ever shown — it is archived in the ephemeral queue and never reaches the log.

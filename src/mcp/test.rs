@@ -139,10 +139,47 @@ fn call(name: &str, input: Value) -> ToolCall {
 }
 
 async fn run(provider: &ConnectedProvider, tool_call: &ToolCall) -> crate::log::RawResult {
-    match provider.run(tool_call, std::future::pending()).await {
+    run_capturing(provider, tool_call, std::future::pending())
+        .await
+        .0
+}
+
+/// Run a call and hand back everything the server's traffic reached: the
+/// result, the live-output lines, and the inbox notifications.
+async fn run_capturing(
+    provider: &ConnectedProvider,
+    tool_call: &ToolCall,
+    abort: impl Future<Output = Interrupt> + Send,
+) -> (
+    crate::log::RawResult,
+    Vec<String>,
+    Vec<crate::log::Notification>,
+) {
+    let output = Arc::new(Mutex::new(Vec::new()));
+    let notifications = Arc::new(Mutex::new(Vec::new()));
+    let (seen_output, seen_notifications) = (Arc::clone(&output), Arc::clone(&notifications));
+    let outcome = provider
+        .run(
+            tool_call,
+            abort,
+            move |chunk: &[u8]| {
+                seen_output
+                    .lock()
+                    .unwrap()
+                    .push(String::from_utf8_lossy(chunk).into_owned())
+            },
+            move |notification| seen_notifications.lock().unwrap().push(notification),
+        )
+        .await;
+    let result = match outcome {
         Outcome::Done(result) => result,
         Outcome::Detached(_) => panic!("a connected call never detaches"),
-    }
+    };
+    (
+        result,
+        output.lock().unwrap().clone(),
+        notifications.lock().unwrap().clone(),
+    )
 }
 
 #[tokio::test]
@@ -639,4 +676,178 @@ fn an_unmounted_section_names_each_server_and_why() {
     // The instruction that converts a wrong answer into a useful one.
     assert!(section.contains("configured but"), "{section}");
     assert!(section.contains("do not answer as though"), "{section}");
+}
+
+#[tokio::test]
+async fn progress_ticks_stream_as_live_output_and_stay_out_of_the_result() {
+    let script: Box<Script> = Box::new(|request: &JsonRpcRequest| match request.method.as_str() {
+        "server/discover" => declines_discovery(request),
+        "initialize" => vec![JsonRpcMessage::Response(JsonRpcResponse::success(
+            request.id.clone(),
+            initialize_result("2025-06-18"),
+        ))],
+        "tools/list" => vec![JsonRpcMessage::Response(JsonRpcResponse::success(
+            request.id.clone(),
+            json!({ "tools": [] }),
+        ))],
+        "tools/call" => {
+            let tick = |params: Value| {
+                JsonRpcMessage::Notification(mcplease::types::JsonRpcNotification::new(
+                    "notifications/progress",
+                    Some(params),
+                ))
+            };
+            vec![
+                tick(json!({
+                    "progressToken": request.id.clone(),
+                    "progress": 12,
+                    "total": 40,
+                    "message": "still indexing"
+                })),
+                tick(json!({ "progressToken": request.id.clone(), "progress": 30 })),
+                JsonRpcMessage::Response(JsonRpcResponse::success(
+                    request.id.clone(),
+                    serde_json::to_value(CallToolResult::text("done")).unwrap(),
+                )),
+            ]
+        }
+        other => panic!("unexpected method {other}"),
+    });
+    let (transport, _) = loopback(script);
+    let provider = ConnectedProvider::mount_transport("fake", transport)
+        .await
+        .unwrap();
+    let (result, output, notifications) = run_capturing(
+        &provider,
+        &call("fake__zeta", json!({})),
+        std::future::pending(),
+    )
+    .await;
+
+    assert!(!result.is_error, "{}", result.content);
+    // The result is the tool's answer alone; the ticks are pre-commit live
+    // output (docs/tools.md "the client protocol").
+    assert_eq!(result.content, "done");
+    assert_eq!(
+        output,
+        vec![
+            "[progress 12/40] still indexing\n".to_string(),
+            "[progress 30]\n".to_string()
+        ]
+    );
+    assert!(notifications.is_empty());
+}
+
+#[tokio::test]
+async fn server_messages_are_enqueued_on_the_servers_slot() {
+    let script: Box<Script> = Box::new(|request: &JsonRpcRequest| match request.method.as_str() {
+        "server/discover" => declines_discovery(request),
+        "initialize" => vec![JsonRpcMessage::Response(JsonRpcResponse::success(
+            request.id.clone(),
+            initialize_result("2025-06-18"),
+        ))],
+        "tools/list" => vec![JsonRpcMessage::Response(JsonRpcResponse::success(
+            request.id.clone(),
+            json!({ "tools": [] }),
+        ))],
+        "tools/call" => vec![
+            JsonRpcMessage::Notification(mcplease::types::JsonRpcNotification::new(
+                "notifications/message",
+                Some(json!({ "level": "warning", "logger": "indexer", "data": "ccls is slow" })),
+            )),
+            JsonRpcMessage::Response(JsonRpcResponse::success(
+                request.id.clone(),
+                serde_json::to_value(CallToolResult::text("done")).unwrap(),
+            )),
+        ],
+        other => panic!("unexpected method {other}"),
+    });
+    let (transport, _) = loopback(script);
+    let provider = ConnectedProvider::mount_transport("fake", transport)
+        .await
+        .unwrap();
+    let (result, output, notifications) = run_capturing(
+        &provider,
+        &call("fake__zeta", json!({})),
+        std::future::pending(),
+    )
+    .await;
+
+    assert!(!result.is_error, "{}", result.content);
+    assert!(output.is_empty());
+    assert_eq!(notifications.len(), 1);
+    let message = &notifications[0];
+    assert_eq!(message.source, "fake");
+    assert_eq!(message.body, "[warning] indexer: ccls is slow");
+    assert_eq!(message.slot.as_deref(), Some("mcp:fake"));
+}
+
+#[tokio::test]
+async fn an_abandoned_call_is_cancelled_on_the_wire() {
+    let call_id = Arc::new(Mutex::new(None::<RequestId>));
+    let record = Arc::clone(&call_id);
+    let script: Box<Script> =
+        Box::new(
+            move |request: &JsonRpcRequest| match request.method.as_str() {
+                "server/discover" => declines_discovery(request),
+                "initialize" => vec![JsonRpcMessage::Response(JsonRpcResponse::success(
+                    request.id.clone(),
+                    initialize_result("2025-06-18"),
+                ))],
+                "tools/list" => vec![JsonRpcMessage::Response(JsonRpcResponse::success(
+                    request.id.clone(),
+                    json!({ "tools": [] }),
+                ))],
+                // A call that never answers: the operator gives up on it.
+                "tools/call" => {
+                    *record.lock().unwrap() = Some(request.id.clone());
+                    vec![]
+                }
+                other => panic!("unexpected method {other}"),
+            },
+        );
+    let (transport, inbox) = loopback(script);
+    let provider = ConnectedProvider::mount_transport("fake", transport)
+        .await
+        .unwrap();
+    // Resolved well after the request has gone out (its first poll sends it),
+    // so the cancellation is about a call the server has actually seen.
+    let abort = async {
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        Interrupt::Kill
+    };
+    let (result, _, _) = run_capturing(&provider, &call("fake__zeta", json!({})), abort).await;
+
+    assert!(result.is_error, "{}", result.content);
+    assert!(
+        result.content.contains("cancelled by the operator"),
+        "got {:?}",
+        result.content
+    );
+    let expect = match call_id.lock().unwrap().clone().unwrap() {
+        RequestId::Integer(n) => n,
+        other => panic!("expected an integer id, got {other:?}"),
+    };
+    // The server is told which request to stop. Its reader task records the
+    // notification asynchronously, so wait for it.
+    let mut cancelled = false;
+    for _ in 0..200 {
+        cancelled = inbox.lock().unwrap().iter().any(|message| {
+            matches!(
+                message,
+                JsonRpcMessage::Notification(n)
+                    if n.method == "notifications/cancelled"
+                        && n.params
+                            .as_ref()
+                            .and_then(|params| params.get("requestId"))
+                            .and_then(Value::as_i64)
+                            == Some(expect)
+            )
+        });
+        if cancelled {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+    }
+    assert!(cancelled, "no cancellation named the abandoned call");
 }

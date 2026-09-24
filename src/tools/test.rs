@@ -63,6 +63,7 @@ async fn routes_a_bash_call_to_the_bash_backend() {
             pending(),
             |_| {},
             |_| {},
+            |_| {},
         )
         .await,
     );
@@ -82,6 +83,7 @@ async fn unknown_tool_is_an_error_result_not_a_panic() {
         box_.run(
             &call("nope", json!({})),
             ready(Interrupt::Kill),
+            |_| {},
             |_| {},
             |_| {},
         )
@@ -119,6 +121,7 @@ async fn an_unknown_name_is_pointed_at_bash() {
             .run(
                 &call("ferritin", json!({})),
                 ready(Interrupt::Kill),
+                |_| {},
                 |_| {},
                 |_| {},
             )
@@ -228,6 +231,7 @@ async fn intent_is_stripped_before_the_tool_runs() {
                 json!({"command": "echo ran", INTENT: "prove the strip"}),
             ),
             pending(),
+            |_| {},
             |_| {},
             |_| {},
         )
@@ -485,6 +489,7 @@ async fn read_image_refuses_when_the_model_takes_no_images() {
             // the failure this test is about.
             &call(read_image::NAME, json!({"path": "nope.png"})),
             pending(),
+            |_| {},
             |_| {},
             |_| {},
         )

@@ -52,12 +52,15 @@ use tokio::sync::Mutex;
 use crate::bash::Outcome;
 use crate::config::McpTransport;
 use crate::frontend::Interrupt;
-use crate::log::{RawResult, ToolCall};
+use crate::log::{Notification, RawResult, ToolCall};
 use crate::tools::anthropic_def;
 
 pub mod auth;
+mod events;
 mod http;
 mod stdio;
+
+use events::{ServerEvent, route_event, token_matches};
 
 #[cfg(test)]
 mod test;
@@ -289,41 +292,90 @@ impl ConnectedProvider {
     }
 
     /// Run one call. Races the operator's interrupt: `Kill` abandons the call
-    /// and pairs the `tool_use` with an error result (a stale response
-    /// arriving later is skipped by id); `Detach` is bash-only and keeps
-    /// waiting.
+    /// and pairs the `tool_use` with an error result (the server is told to
+    /// stop work, and a stale response arriving later is skipped by id);
+    /// `Detach` is bash-only and keeps waiting. While the call runs,
+    /// server-initiated traffic is routed out through the two sinks
+    /// (docs/tools.md "the client protocol"): progress ticks as live output,
+    /// `notifications/message` lines as inbox notifications.
     pub async fn run(
         &self,
         call: &ToolCall,
         abort: impl Future<Output = Interrupt> + Send,
+        on_output: impl FnMut(&[u8]) + Send,
+        on_notify: impl FnMut(Notification) + Send,
     ) -> Outcome {
-        let mut call_future = std::pin::pin!(self.call(&call.name, &call.input));
-        let abort = std::pin::pin!(abort);
-        tokio::select! {
-            result = &mut call_future => result.into(),
-            interrupt = abort => match interrupt {
-                Interrupt::Kill => RawResult::error(format!(
-                    "`{}` call cancelled by the operator",
-                    call.name
-                ))
-                .into(),
-                Interrupt::Detach => call_future.await.into(),
-            },
-        }
+        self.call(&call.name, &call.input, abort, on_output, on_notify)
+            .await
+            .into()
     }
 
     /// `tools/call` over the transport. Any failure — transport, protocol
-    /// error, unparseable result — lands as an `is_error` result so the
-    /// `tool_use` always gets its pair (never an orphan).
-    async fn call(&self, wire_name: &str, input: &Value) -> RawResult {
+    /// error, unparseable result, the operator abandoning the call — lands as
+    /// an `is_error` result so the `tool_use` always gets its pair (never an
+    /// orphan).
+    async fn call(
+        &self,
+        wire_name: &str,
+        input: &Value,
+        abort: impl Future<Output = Interrupt> + Send,
+        on_output: impl FnMut(&[u8]) + Send,
+        on_notify: impl FnMut(Notification) + Send,
+    ) -> RawResult {
         let prefix = format!("{}{NAMESPACE_SEPARATOR}", self.name);
         let tool = wire_name.strip_prefix(&prefix).unwrap_or(wire_name);
         let mut session = self.session.lock().await;
-        let request = session.protocol.tools_call(tool, input);
+        let request = session.protocol.tools_call_with_progress(tool, input);
+        let request_id = request.id.clone();
+        let name = self.name.clone();
+        let mut on_output = on_output;
+        let mut on_notify = on_notify;
+        let mut on_event = move |event: ServerEvent| {
+            route_event(&name, event, &mut on_output, &mut on_notify);
+        };
+        // The abort race lives here rather than in `run` because the Kill
+        // path has to speak to the server over this same session: the inner
+        // scope drops the in-flight future — releasing its borrow of the
+        // session — before the cancellation is sent.
+        let outcome = {
+            let mut trip = std::pin::pin!(session.round_trip(request, &mut on_event));
+            tokio::select! {
+                result = &mut trip => Some(result),
+                interrupt = abort => match interrupt {
+                    // Abandoned; the error result below pairs the `tool_use`.
+                    Interrupt::Kill => None,
+                    // Detach is bash-only and keeps waiting.
+                    Interrupt::Detach => Some(trip.await),
+                },
+            }
+        };
+        let result = match outcome {
+            Some(result) => result,
+            None => {
+                // Tell the server to stop work on the abandoned call. On a
+                // single-channel transport this is the only way it can tell
+                // an abandoned call from a slow one; over streamable HTTP the
+                // dropped response stream is itself the signal (mcplease's
+                // `cancel` documents the split).
+                if session.transport.cancellation_is_notification() {
+                    let cancellation = session
+                        .protocol
+                        .cancel(&request_id, Some("cancelled by the operator"));
+                    if let Err(e) = session
+                        .transport
+                        .notify(&JsonRpcMessage::Notification(cancellation))
+                        .await
+                    {
+                        log::debug!("could not send cancellation: {e}");
+                    }
+                }
+                return RawResult::error(format!("`{wire_name}` call cancelled by the operator"));
+            }
+        };
         // Two failure layers flatten to one: the connection or framing giving
         // out, and the server answering with a protocol error. Both are the
         // call failing, and both must land as a paired result.
-        let result = match session.round_trip(request).await {
+        let result = match result {
             Ok(Ok(result)) => Ok(result),
             Ok(Err(protocol)) => Err(anyhow::Error::new(protocol)),
             Err(transport) => Err(transport),
@@ -381,10 +433,15 @@ impl Session {
 
     /// Send one request and read frames until its response arrives. `Ok(Err)`
     /// is the server answering with a protocol error; `Err` is the connection
-    /// or the framing failing.
+    /// or the framing failing. Server-initiated traffic arriving in the
+    /// meantime is classified and handed to `on_event` (a call's live-output
+    /// and inbox sinks); negotiation and discovery pass a sink that drops it —
+    /// a server's chatter before it is mounted is not tool-call scope, and
+    /// there are no sinks that early.
     async fn round_trip(
         &mut self,
         request: JsonRpcRequest,
+        mut on_event: impl FnMut(ServerEvent) + Send,
     ) -> anyhow::Result<Result<Value, JsonRpcError>> {
         let id = request.id.clone();
         let mut exchange = self
@@ -403,9 +460,41 @@ impl Session {
                 Reaction::Reply(response) => {
                     exchange.reply(&JsonRpcMessage::Response(response)).await?;
                 }
-                // Progress and subscription traffic: efference sends no
-                // progress token and opens no subscription, so any that arrives
-                // is unsolicited.
+                // Liveness for the call in flight (docs/tools.md "the client
+                // protocol"). The token is the request's own id; a tick
+                // carrying an abandoned call's token is dropped rather than
+                // rendered under this one.
+                Reaction::Progress {
+                    token,
+                    progress,
+                    total,
+                    message,
+                } => {
+                    if token_matches(&id, &token) {
+                        on_event(ServerEvent::Progress {
+                            progress,
+                            total,
+                            message,
+                        });
+                    }
+                }
+                // A log line the server sent for its client's logging UI —
+                // the same async speech the inbox carries for any other tool
+                // (docs/inbox.md).
+                Reaction::Message {
+                    level,
+                    logger,
+                    data,
+                } => {
+                    on_event(ServerEvent::Message {
+                        level,
+                        logger,
+                        data,
+                    });
+                }
+                // Subscription teardown and anything a later protocol
+                // revision adds: efference opens no subscription, so there is
+                // nothing to do but leave it unheard.
                 _ => {}
             }
         }
@@ -417,7 +506,7 @@ impl Session {
     async fn negotiate(&mut self) -> anyhow::Result<()> {
         let (mut negotiation, mut request) = Negotiation::start(&mut self.protocol);
         let negotiated = loop {
-            let result = self.round_trip(request).await?;
+            let result = self.round_trip(request, |_| {}).await?;
             match negotiation.on_result(&mut self.protocol, result)? {
                 Step::Send(next) => request = next,
                 Step::Done(negotiated) => break *negotiated,
@@ -450,7 +539,7 @@ impl Session {
         let mut cursor: Option<String> = None;
         loop {
             let request = self.protocol.tools_list(cursor.as_deref());
-            let result = self.round_trip(request).await??;
+            let result = self.round_trip(request, |_| {}).await??;
             let page: ListToolsResult = serde_json::from_value(result)
                 .map_err(|e| anyhow::anyhow!("unparseable tools/list result: {e}"))?;
             tools.extend(page.tools);
@@ -498,6 +587,19 @@ impl Transport {
             Transport::Http(t) => t.notify(message).await,
             #[cfg(test)]
             Transport::Loopback(t) => t.send(message).await,
+        }
+    }
+
+    /// Whether an abandoned call must be cancelled by notification: on a
+    /// single-channel transport the server cannot tell an abandoned call from
+    /// a slow one, while over streamable HTTP the dropped response stream is
+    /// itself the signal (mcplease's `cancel` documents the split).
+    fn cancellation_is_notification(&self) -> bool {
+        match self {
+            Transport::Stdio(_) => true,
+            Transport::Http(_) => false,
+            #[cfg(test)]
+            Transport::Loopback(_) => true,
         }
     }
 

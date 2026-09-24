@@ -8,6 +8,10 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- **MCP tool-call traffic** (docs/tools.md): a mounted server's
+  `notifications/progress` ticks stream as live output, its
+  `notifications/message` lines arrive as inbox notifications on its slot, and
+  killing a call sends `notifications/cancelled`.
 - **A new-session form** (docs/tui.md): bare `efference tui`'s "create a new session" opens it
   inline where the picker just was, and `n` in an attached session's Sessions overlay opens it as
   a modal. Each field shows the value a session would get and the precedence branch that supplied
