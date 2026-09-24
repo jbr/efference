@@ -141,10 +141,9 @@ async fn wait_until(what: &str, mut ready: impl FnMut() -> bool) {
 
 /// **An interrupt during the peek ends the turn there.** The press ends the peek's
 /// read and withholds its verdict; the loop then consumes the latch after the
-/// gate and goes idle without another request. Left set, the latch rode into the
-/// next completion and stopped its first call as "aborted by user" — observed
-/// when an operator interrupted a hung peek and the model's answer to their
-/// follow-up was the call that died.
+/// gate and goes idle without another request. Left set, the latch rides into the
+/// next completion and stops its first call as "aborted by user" — the model's
+/// answer to whatever the operator queued to explain the press.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn an_interrupt_during_the_peek_ends_the_turn_at_the_gate() {
     use std::hash::{BuildHasher, Hasher, RandomState};
