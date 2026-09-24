@@ -1220,11 +1220,15 @@ client and so the one calibration; the keepalive's `max_tokens: 0` ping and
 the spotter's own client (no window set) are outside it.
 
 `GET /state` surfaces the window as `usage.context = {limit, used}`, where
-`limit` is `context_length` less what the last request reserved — the wall the
-prompt actually hits, the full window before any request — and
-`used` is the last request's total prompt tokens (`input_tokens` +
-`cache_read_input_tokens` + `cache_creation_input_tokens` — `input_tokens`
-alone is only the uncached remainder; null until the first request). The TUI
+`limit` is `context_length` itself and `used` is the last request's total
+prompt tokens (`input_tokens` + `cache_read_input_tokens` +
+`cache_creation_input_tokens` — `input_tokens` alone is only the uncached
+remainder; null until the first request). `limit` is deliberately not reduced
+by the output reservation: that reservation shrinks as the prompt grows, so
+subtracting it would move the reported ceiling through the session and read as
+a wall the prompt never reaches. The prompt stops fitting
+`MARGIN + RESERVATION_MIN` short of the window (`api/reservation.rs`), so
+occupancy approaches 100% rather than reaching it at the stall. The TUI
 sidebar renders it as the `ctx 7% · 14k/200k` line leading STATS.
 
 **Cache-read telemetry.** The same `/state` topic carries `usage.cold_streak`:

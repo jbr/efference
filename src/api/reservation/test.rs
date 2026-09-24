@@ -134,10 +134,12 @@ fn a_stated_ceiling_converges_in_one_retry() {
     let mut r = Reservation::default();
     r.compute(UNKNOWN_OUTPUT_CAP, None, 0);
     assert_eq!(r.clamp_to(8192), Some(8192));
-    assert_eq!(r.last_sent(), Some(8192));
 
-    // Not a reduction, so the rejection was about something else and the caller
-    // falls back to halving rather than retrying the same number forever.
+    // Not a reduction (the clamp is remembered — the next line reads
+    // `last_sent` through `clamp_to`), so the rejection was about something
+    // else and the caller falls back to halving rather than retrying the same
+    // number forever.
+
     assert_eq!(r.clamp_to(8192), None);
     assert_eq!(r.clamp_to(99_999), None);
 

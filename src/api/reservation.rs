@@ -62,9 +62,9 @@ struct Calibration {
 }
 
 /// The reservation's shared state: the calibration the client writes after
-/// each response, and the reservation it last sent — what `GET /state`
-/// subtracts from the window to report the limit the session will actually
-/// hit (docs/transport.md).
+/// each response, and the reservation it last sent — the number the two 400
+/// retries work from, [`Self::clamp_to`] comparing against it and [`Self::halve`]
+/// halving it (docs/transport.md).
 #[derive(Debug, Default)]
 pub struct Reservation {
     calibration: Option<Calibration>,
@@ -161,11 +161,6 @@ impl Reservation {
         let halved = (last / 2).max(RESERVATION_MIN);
         self.last_sent = Some(halved);
         Some(halved)
-    }
-
-    /// The reservation most recently sent, if any request has gone out.
-    pub fn last_sent(&self) -> Option<u64> {
-        self.last_sent
     }
 }
 

@@ -284,16 +284,26 @@ fn state_reports_context_occupancy_against_the_boot_limit() {
     assert_eq!(v["usage"]["context"]["limit"], 200_000);
     assert_eq!(v["usage"]["context"]["used"], 6 + 165 + 9407);
 
-    // Once a request has reserved output (`api/reservation.rs`), the limit is
-    // the window less that reservation: the wall the prompt actually hits.
-    let reservation = crate::api::reservation_state();
-    reservation
-        .lock()
-        .unwrap()
-        .compute(64_000, Some(200_000), 40_000);
-    shared.set_reservation(reservation);
+    // The ceiling is the window itself and does not move as the prompt grows:
+    // near capacity the output reservation shrinks toward its floor
+    // (`api/reservation.rs`), so a limit computed from that reservation would
+    // rise with the prompt and read as a ceiling the session never hits.
+    shared.record_request(
+        RequestOrigin::Turn,
+        RequestUsage {
+            id: None,
+            model: None,
+            usage: Usage {
+                input_tokens: 196_000,
+                output_tokens: 12,
+                cache_creation_input_tokens: 0,
+                cache_read_input_tokens: 0,
+            },
+        },
+    );
     let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
-    assert_eq!(v["usage"]["context"]["limit"], 200_000 - 64_000);
+    assert_eq!(v["usage"]["context"]["limit"], 200_000);
+    assert_eq!(v["usage"]["context"]["used"], 196_000);
 }
 
 /// **A side-channel request must not move reported occupancy.** The fork peek,

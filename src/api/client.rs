@@ -613,12 +613,6 @@ impl Client {
         self
     }
 
-    /// Clone the reservation cell the daemon reads for `GET /state`'s context
-    /// limit (docs/transport.md).
-    pub fn reservation(&self) -> ReservationState {
-        Arc::clone(&self.reservation)
-    }
-
     /// The `max_tokens` for a request whose variable parts serialize to
     /// `body_bytes` bytes (`api/reservation.rs`).
     fn reserve(&self, body_bytes: usize) -> u32 {

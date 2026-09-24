@@ -104,9 +104,6 @@ impl SessionRuntime {
         // The boot-fetched model capabilities (docs/transport.md) — the caller already
         // treated a failed lookup as fatal, so by here the value always exists.
         session.set_capabilities(capabilities);
-        // The client's output reservation (`api/reservation.rs`): the context limit
-        // `GET /state` reports is the window less what the last request reserved.
-        session.set_reservation(client.reservation());
         // What this session is, for a client that has to name it on screen
         // (docs/control-api.md): the resolved model and the working directory, both
         // fixed by the time the caller gets here.

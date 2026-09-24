@@ -386,6 +386,9 @@ export interface Usage {
   last: TokenCounts | null;
   cumulative: TokenCounts;
   last_request_at: number | null;
+  // Context-window occupancy (docs/transport.md): `limit` is the window itself —
+  // not reduced by the output reservation — and `used` the last request's
+  // prompt tokens, null until the first request.
   context: { limit: number; used: number | null } | null;
   cost: { usd: number; unpriced: number } | null;
   // The Codex backend's subscription windows as of the last response that named
