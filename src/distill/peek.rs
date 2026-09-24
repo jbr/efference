@@ -138,8 +138,8 @@ pub(super) async fn peek_completion(
         };
         if completion.operator_abort() {
             // The operator interrupted during the peek (docs/control-channel.md):
-            // the verdict is withheld, and the latch the press set stops the turn
-            // at the next juncture.
+            // the verdict is withheld, and the latch the press set is left for
+            // the loop, which consumes it after the gate and ends the turn.
             record
                 .retries
                 .push(format!("peek ended by the operator: {why}"));

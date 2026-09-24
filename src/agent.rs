@@ -903,6 +903,16 @@ pub async fn run<F: Frontend, S: Spotter>(
                 turn += 1;
                 shared.append(turn, Payload::User(vec![ContentBlock::Text(message)]))?;
             }
+            // The juncture after the gate (docs/control-channel.md): an interrupt
+            // pressed during the peek ended it with the latch still set. Consumed
+            // here, the turn ends with the results logged under a failed verdict;
+            // left set, the next completion's first call would take it, after a
+            // paid request and after any turn the operator queued to explain the
+            // press had already been drained into that request.
+            if shared.take_interrupt() {
+                eprintln!("[turn ended by the operator's interrupt]");
+                break;
+            }
         }
     }
 

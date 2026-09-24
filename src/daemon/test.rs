@@ -135,6 +135,7 @@ mod continuation;
 mod events;
 mod http;
 mod in_session;
+mod interrupt;
 mod keepalive;
 mod log_reads;
 mod metrics;
