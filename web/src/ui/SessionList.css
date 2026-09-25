@@ -1,0 +1,454 @@
+/* The session overview (docs/web-client.md): workspaces of equal-height
+   cards. Status is words, not indicators, and only when a session needs the
+   operator: working is the unlabeled default. Colors carry the meanings they
+   already have in the session view — a gate is --accent (the gate block's
+   border), a stall is --warn (.stalled) — and "is waiting for you" is set in
+   the brightest neutral. */
+
+.overview {
+  --attention: var(--fg-faint);
+}
+
+.attention-blocked {
+  --attention: var(--accent);
+}
+
+.attention-blocked.status-stalled {
+  --attention: var(--warn);
+}
+
+.overview-body {
+  width: 100%;
+  max-width: 84rem;
+  margin: 0 auto;
+  --gutter: 1.25rem;
+  padding: 1rem var(--gutter) 3rem;
+  box-sizing: border-box;
+}
+
+.overview-error {
+  color: var(--warn);
+  font-size: 0.85em;
+}
+
+.overview-empty {
+  margin-top: 20vh;
+  text-align: center;
+}
+
+.overview-empty-title {
+  font-family: var(--font-prose);
+  font-size: 1.6rem;
+  color: var(--fg-bright);
+  margin: 0 0 0.25rem;
+}
+
+/* ---- workspaces ---- */
+
+/* Docked: the bar material and a hairline, only while content is passing
+   beneath it (useStuckHeadings). Full-bleed across the body's padding so the
+   material has no hard side edges. */
+.workspace-head[data-stuck] {
+  border-bottom-color: var(--border);
+}
+
+/* A sticky heading is held inside its section's content box, its own margin
+   included, so every gap around it lives in the card grid's padding instead:
+   the next heading then meets the docked one exactly as the section runs out,
+   and pushes it off with no gap between one leaving and the other docking.
+   --top-bar-height is measured (SessionList.tsx) and includes the safe-area
+   inset the bar pads itself with. The bar stacks above the headings, so a
+   heading being pushed off slides under it. */
+/* The bar material: translucent and blurred, so content scrolling beneath
+   shows through the same way under the top bar and under a docked heading. */
+.overview .top-bar,
+.workspace-head[data-stuck] {
+  background: color-mix(in srgb, var(--bg-page) 78%, transparent);
+  -webkit-backdrop-filter: blur(14px) saturate(1.4);
+  backdrop-filter: blur(14px) saturate(1.4);
+}
+
+.overview .top-bar {
+  z-index: 3;
+  transition: border-color 150ms;
+}
+
+/* A docked heading carries the hairline, so the bar and it read as one
+   surface rather than two stacked strips. */
+.overview:has(.workspace-head[data-stuck]) .top-bar {
+  border-bottom-color: transparent;
+}
+
+.workspace-head {
+  position: sticky;
+  top: var(--top-bar-height, 0px);
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0 calc(-1 * var(--gutter));
+  padding: 0.4rem var(--gutter);
+  background: var(--bg-page);
+  border-bottom: 1px solid transparent;
+  transition:
+    background-color 150ms,
+    border-color 150ms;
+}
+
+.workspace-path {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font: inherit;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The parent path is small and faint; the last component, the part the
+   operator recognizes the workspace by, carries the heading. */
+.workspace-parent {
+  font-size: 0.75rem;
+  color: var(--fg-faint);
+}
+
+.workspace-name {
+  font-size: 1rem;
+  font-weight: 500;
+  color: var(--fg-bright);
+}
+
+/* Quiet, because it repeats on every workspace. */
+.workspace-new {
+  flex: none;
+  width: 1.6rem;
+  height: 1.6rem;
+  padding: 0;
+  font-size: 1rem;
+  line-height: 1;
+  border-color: transparent;
+  background: none;
+  color: var(--fg-dim);
+}
+
+.workspace-new:hover:not(:disabled) {
+  border-color: var(--border-control);
+  background: var(--bg-raised);
+}
+
+.workspace-new:disabled {
+  color: var(--fg-faint);
+}
+
+.card-grid {
+  padding: 0.75rem 0 2rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(18rem, 100%), 1fr));
+  gap: 0.9rem;
+}
+
+/* ---- the card ---- */
+
+/* Two voices, three sizes. Prose — the title, the status predicate, the
+   activity line — is set in the serif; identifiers — the id, the facts, a
+   command, usage — in mono. Spacing is on a 0.25rem step. */
+.card {
+  --card-meta: 0.75rem;
+  --card-body: 0.95rem;
+  --card-title: 1.25rem;
+  position: relative;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 17rem;
+  box-sizing: border-box;
+  padding: 1rem 1.1rem;
+  line-height: 1.6;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-surface);
+  font-size: var(--card-meta);
+  transition:
+    border-color 120ms,
+    box-shadow 120ms,
+    transform 120ms;
+}
+
+.card:hover {
+  border-color: var(--border-strong);
+  box-shadow: 0 2px 10px rgb(0 0 0 / 0.06);
+}
+
+.card:active {
+  transform: scale(0.995);
+}
+
+.card.attention-blocked {
+  border-color: color-mix(in srgb, var(--attention) 55%, var(--border));
+  background: color-mix(in srgb, var(--attention) 4%, var(--bg-surface));
+}
+
+.card.ending {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.card-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 1.5rem;
+  color: var(--fg-dim);
+}
+
+.card-head .spacer {
+  flex: 1;
+}
+
+.card-status {
+  font-family: var(--font-prose);
+  font-size: var(--card-body);
+  font-style: italic;
+  color: var(--attention);
+}
+
+.card.attention-your_turn .card-status {
+  color: var(--fg-bright);
+}
+
+/* One sentence: the id as its subject, the status as its predicate. */
+.card-status-line {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.card-title {
+  flex: none;
+  margin: 0.75rem 0 0.5rem;
+  font-family: var(--font-prose);
+  font-size: var(--card-title);
+  font-weight: 500;
+  line-height: 1.25;
+  color: var(--fg-bright);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.card-title-new {
+  font-style: italic;
+  color: var(--fg-dim);
+}
+
+.card-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* The title's link covers the card, so the whole card opens the session. */
+.card-link::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+
+.card-link:focus-visible {
+  outline: none;
+}
+
+.card:has(.card-link:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.card-activity {
+  margin: 0 0 1rem;
+  font-family: var(--font-prose);
+  font-size: var(--card-body);
+  line-height: 1.45;
+  color: var(--fg-muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* A gate's ask is an identifier and a command, so it is in the mono voice. */
+.card-activity-gate {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-family: var(--font-mono);
+  font-size: var(--card-meta);
+  line-height: 1.6;
+}
+
+.card-activity-gate code {
+  display: block;
+  padding: 0.25rem 0.5rem;
+  border-radius: 5px;
+  background: var(--bg-inset);
+  color: var(--fg-bright);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.card-activity-tool {
+  color: var(--fg-dim);
+}
+
+.card-activity-stall {
+  color: var(--fg);
+}
+
+.card-meta {
+  flex: none;
+  margin-top: auto;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  color: var(--fg-faint);
+}
+
+.card-line {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.card-line > * {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.card-id {
+  color: var(--fg-dim);
+}
+
+/* The bag of identifiers as key: value rows — models, then relations. */
+.card-facts {
+  display: grid;
+  grid-template-columns: 10ch minmax(0, 1fr);
+  column-gap: 0.75rem;
+  margin: 0;
+}
+
+.card-facts dt {
+  color: var(--fg-faint);
+}
+
+.card-facts dd {
+  margin: 0;
+  color: var(--fg-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Controls that sit above the stretched link. */
+.card-relation a,
+.card-menu {
+  position: relative;
+  z-index: 1;
+}
+
+.card-relation a {
+  color: var(--fg-dim);
+  text-decoration: underline;
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 2px;
+}
+
+.card-relation a:hover {
+  color: var(--fg-bright);
+}
+
+.card-context {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.card-context .meter {
+  width: 3rem;
+}
+
+/* ---- the card menu ---- */
+
+.card-menu-button {
+  font: inherit;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0.1rem 0.35rem;
+  border: none;
+  border-radius: 5px;
+  background: none;
+  color: var(--fg-dim);
+  cursor: pointer;
+}
+
+.card-menu-button:hover,
+.card-menu-button[aria-expanded="true"] {
+  background: var(--bg-chip);
+  color: var(--fg-bright);
+}
+
+.card-menu-list {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 2;
+  min-width: 11rem;
+  max-width: 16rem;
+  padding: 0.3rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--bg-raised);
+  box-shadow: 0 6px 24px rgb(0 0 0 / 0.14);
+  display: flex;
+  flex-direction: column;
+}
+
+.card-menu-list button {
+  font: inherit;
+  text-align: left;
+  padding: 0.4rem 0.55rem;
+  border: none;
+  border-radius: 5px;
+  background: none;
+  color: var(--fg);
+  cursor: pointer;
+}
+
+.card-menu-list button:hover {
+  background: var(--bg-chip);
+}
+
+.card-menu-list button.danger {
+  color: var(--diff-del);
+}
+
+.card-menu-warning {
+  margin: 0.3rem 0.55rem 0.4rem;
+  color: var(--fg-muted);
+  white-space: normal;
+}
+
+@media (max-width: 700px) {
+  .overview-body {
+    --gutter: 0.75rem;
+  }
+
+  .card {
+    min-height: 11rem;
+  }
+}

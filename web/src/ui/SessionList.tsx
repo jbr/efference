@@ -1,23 +1,101 @@
-// The host's root: the live sessions, each a link into its own view
-// (docs/web-client.md).
+// The host's root: an overview of every live session, grouped by working
+// directory into workspaces, one card each (docs/web-client.md).
 //
-// The list is a subscription, not a snapshot: `api/sessions.ts` holds the
-// listing stream open, so a session created or ended anywhere appears or
-// disappears here on its own. The rows carry what the listing carries — id,
-// title, status, and the background processes a session holds — which is what
-// lets a row say what it is doing without one `GET /sessions/<id>/v1/state` per
-// session on every load.
-//
-// Each row is an `<a href>`: entering a session changes the control base, which
-// is a navigation and not client-side state. Ending is the one thing here that
-// is not a navigation, so it is a button, and a destructive one: it confirms in
-// place when the row has something to lose.
+// The listing is a subscription (`api/sessions.ts`), so a session created or
+// ended anywhere appears or leaves on its own. Each card's richer state — the
+// gate's ask, usage, models, the latest intent and reply — comes from that
+// session's own state topics and log tail, one connection per card, until the
+// host serves an overview stream (backlog/host-overview-stream.md).
 
-import { useEffect, useState } from "react";
-import { sessionHref } from "../api/base.ts";
-import { openSessions } from "../api/sessions.ts";
+import { type RefObject, useEffect, useMemo, useRef, useState } from "react";
+import { openSessionCard, openSessions } from "../api/sessions.ts";
 import { endSession, type SessionEntry } from "../api/http.ts";
+import type { StateSnapshot } from "../api/types.ts";
+import { cardModel, foldRecent, type Recent, workspaces } from "./overview.ts";
+import { SessionCard } from "./SessionCard.tsx";
 import { endWarning } from "./sessionRow.ts";
+import "./SessionList.css";
+
+interface Feed {
+  state: StateSnapshot;
+  recent: Recent;
+}
+
+/** Each listed session's state and recent log, followed while it is listed. */
+function useSessionFeeds(sessions: SessionEntry[]): Map<string, Feed> {
+  const [feeds, setFeeds] = useState(() => new Map<string, Feed>());
+  const ids = sessions.map((session) => session.id).join("\n");
+  useEffect(() => {
+    const handles = ids
+      .split("\n")
+      .filter((id) => id !== "")
+      .map((id) =>
+        openSessionCard(id, ({ state, entries }) =>
+          setFeeds((prev) => {
+            const recent = entries.reduce(
+              foldRecent,
+              prev.get(id)?.recent ?? {},
+            );
+            return new Map(prev).set(id, { state, recent });
+          }),
+        ),
+      );
+    return () => handles.forEach((handle) => handle.close());
+  }, [ids]);
+  return feeds;
+}
+
+/** The top bar's rendered height as `--top-bar-height` on the page, for the
+ * workspace headings to dock beneath. Measured rather than assumed: the bar's
+ * height moves with the safe-area inset and the wordmark's font. */
+function useTopBarHeight() {
+  const page = useRef<HTMLDivElement>(null);
+  const bar = useRef<HTMLElement>(null);
+  const [height, setHeight] = useState(0);
+  useEffect(() => {
+    if (!page.current || !bar.current) return;
+    const target = page.current;
+    const observer = new ResizeObserver(([entry]) => {
+      const next = entry.borderBoxSize[0]?.blockSize ?? 0;
+      target.style.setProperty("--top-bar-height", `${next}px`);
+      setHeight(next);
+    });
+    observer.observe(bar.current);
+    return () => observer.disconnect();
+  }, []);
+  return { page, bar, height };
+}
+
+/** Mark each docked workspace heading `data-stuck`, so it takes on the bar
+ * material only while content scrolls beneath it. An observer rather than a
+ * `scroll-state` container query, which Safari does not support: the root is
+ * inset one pixel below the bar, so a docked heading is exactly the one cut
+ * off at the top of that root. `key` re-observes when the headings change. */
+function useStuckHeadings(
+  page: RefObject<HTMLDivElement | null>,
+  barHeight: number,
+  key: string,
+) {
+  useEffect(() => {
+    if (!page.current || barHeight === 0) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          const stuck =
+            entry.isIntersecting &&
+            entry.intersectionRatio < 1 &&
+            entry.boundingClientRect.top < barHeight + 2;
+          entry.target.toggleAttribute("data-stuck", stuck);
+        }
+      },
+      { rootMargin: `-${barHeight + 1}px 0px 0px 0px`, threshold: [0, 1] },
+    );
+    page.current
+      .querySelectorAll(".workspace-head")
+      .forEach((heading) => observer.observe(heading));
+    return () => observer.disconnect();
+  }, [page, barHeight, key]);
+}
 
 export function SessionList({
   sessions: initial,
@@ -25,13 +103,10 @@ export function SessionList({
   sessions: SessionEntry[];
 }) {
   const [sessions, setSessions] = useState(initial);
-  // The id whose end is waiting to be confirmed, and the id being ended. Both
-  // are held here rather than per row so a second row's button cancels the
-  // first's confirm rather than leaving two open. A confirm whose row has left
-  // the listing simply stops matching any row, so it needs no cleanup.
-  const [confirming, setConfirming] = useState<string | null>(null);
   const [ending, setEnding] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const feeds = useSessionFeeds(sessions);
+  const { page, bar, height: barHeight } = useTopBarHeight();
 
   useEffect(() => {
     const handle = openSessions(
@@ -39,100 +114,94 @@ export function SessionList({
         setSessions(live);
         setError(null);
       },
-      () => setError("lost the connection to the host — retrying"),
+      () => setError("Lost the connection to the host — retrying"),
     );
     return () => handle.close();
   }, []);
 
+  const groups = useMemo(() => {
+    const cards = sessions.map((entry) => {
+      const feed = feeds.get(entry.id);
+      return cardModel(entry, sessions, feed?.state ?? null, feed?.recent);
+    });
+    return workspaces(cards);
+  }, [sessions, feeds]);
+
+  useStuckHeadings(
+    page,
+    barHeight,
+    groups.map((group) => group.cwd).join("\n"),
+  );
+
   async function end(id: string) {
-    setConfirming(null);
     setEnding(id);
     try {
       await endSession(id);
-      // The row leaves on the next frame of the listing stream; the host
+      // The card leaves on the next frame of the listing stream; the host
       // answers only once teardown has run, so that frame is already out.
     } catch (failure) {
-      setError(`ending ${id}: ${String(failure)}`);
+      setError(`Ending ${id}: ${String(failure)}`);
     } finally {
       setEnding(null);
     }
   }
 
   return (
-    <div className="app">
-      <header className="top-bar">
+    <div className="app overview" ref={page}>
+      <header className="top-bar" ref={bar}>
         <div className="top-bar-inner">
           <span className="wordmark">efference</span>
-          <span className="dim">sessions</span>
           <span className="spacer" />
+          <button className="primary" disabled title="Not built yet">
+            New session
+          </button>
         </div>
       </header>
-      <div className="col session-list">
-        {error !== null && <p className="dim">{error}</p>}
-        {sessions.length === 0 ? (
+      <main className="overview-body">
+        {error !== null && <p className="overview-error">{error}</p>}
+        {groups.length === 0 ? (
           // Liveness, not existence: a dead session's log stays on disk and
           // readable by the offline verbs, and is not listed here.
-          <p className="dim">
-            no live sessions in this directory — start one with{" "}
-            <code>efference serve</code>
-          </p>
+          <div className="overview-empty">
+            <p className="overview-empty-title">No active sessions</p>
+            <p className="dim">
+              Start one with <code>efference tui</code>
+            </p>
+          </div>
         ) : (
-          <ul>
-            {sessions.map((session) => {
-              const warning = endWarning(session);
-              return (
-                <li key={session.id}>
-                  <a href={sessionHref(session.id)}>
-                    <span className="session-list-id">{session.id}</span>
-                    <span className="session-list-status dim">
-                      {session.status}
-                      {session.processes > 0 && ` · ${session.processes} bg`}
-                    </span>
-                    {session.title !== undefined && (
-                      <span className="session-list-title dim">
-                        {session.title}
-                      </span>
+          groups.map((group) => (
+            <section className="workspace" key={group.cwd}>
+              <header className="workspace-head">
+                <h2 className="workspace-path" title={group.cwd}>
+                  <span className="workspace-parent">{group.parent}</span>
+                  <span className="workspace-name">{group.name}</span>
+                </h2>
+                <button
+                  className="workspace-new"
+                  disabled
+                  aria-label={`New session in ${group.parent}${group.name}`}
+                  title="Not built yet"
+                >
+                  +
+                </button>
+              </header>
+              <div className="card-grid">
+                {group.cards.map((card) => (
+                  <SessionCard
+                    key={card.id}
+                    card={card}
+                    warning={endWarning(
+                      sessions.find((s) => s.id === card.id)!,
                     )}
-                  </a>
-                  {confirming === session.id ? (
-                    <span className="session-list-confirm">
-                      <span className="dim">
-                        {warning === null
-                          ? `end ${session.id}?`
-                          : `${session.id} ${warning}. end it anyway?`}
-                      </span>
-                      <button
-                        className="linkish"
-                        onClick={() => void end(session.id)}
-                      >
-                        end
-                      </button>
-                      <button
-                        className="linkish"
-                        onClick={() => setConfirming(null)}
-                      >
-                        cancel
-                      </button>
-                    </span>
-                  ) : (
-                    <button
-                      className="linkish session-list-end"
-                      disabled={ending === session.id}
-                      onClick={() =>
-                        warning === null
-                          ? void end(session.id)
-                          : setConfirming(session.id)
-                      }
-                    >
-                      {ending === session.id ? "ending…" : "end"}
-                    </button>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
+                    ending={ending === card.id}
+                    onEnd={() => void end(card.id)}
+                  />
+                ))}
+              </div>
+            </section>
+          ))
         )}
-      </div>
+      </main>
     </div>
   );
 }

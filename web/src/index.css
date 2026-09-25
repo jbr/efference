@@ -122,6 +122,14 @@ button.primary {
   box-shadow: 0 0 14px var(--accent-glow);
 }
 
+/* Disabled keeps the primary's own colors and fades the whole control; the
+   generic disabled ink is unreadable on the primary's fill. */
+button.primary:disabled {
+  color: var(--btn-primary-fg);
+  box-shadow: none;
+  opacity: 0.45;
+}
+
 select {
   font: inherit;
   font-size: 0.8em;
@@ -157,6 +165,11 @@ input[type="checkbox"] {
 .top-bar {
   position: sticky;
   top: 0;
+  /* viewport-fit=cover draws the page under the status bar and beside the
+     notch; the bar pads itself clear of both. */
+  padding-top: env(safe-area-inset-top);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
   z-index: 1;
   background: var(--bg-page);
   border-bottom: 1px solid var(--border-subtle);
@@ -186,66 +199,6 @@ input[type="checkbox"] {
 
 .to-list:hover {
   color: var(--fg);
-}
-
-/* The host's root: one row per live session, each a link into its own view,
-   with the status the listing carries and the end verb beside it. */
-.session-list ul {
-  list-style: none;
-  margin: 1.5rem 0;
-  padding: 0;
-}
-
-.session-list li {
-  border-bottom: 1px solid var(--border-subtle);
-  display: flex;
-  gap: 1rem;
-  align-items: baseline;
-}
-
-/* The link takes the row; the end verb and its confirm sit at the far end. */
-.session-list li > a {
-  flex: 1;
-  min-width: 0;
-}
-
-.session-list-status {
-  white-space: nowrap;
-}
-
-.session-list-confirm {
-  display: flex;
-  gap: 0.6rem;
-  align-items: baseline;
-  white-space: nowrap;
-}
-
-.session-list a {
-  display: block;
-  padding: 0.7rem 0.2rem;
-  color: var(--fg-bright);
-  text-decoration: none;
-}
-
-.session-list a:hover {
-  background: var(--bg-raised);
-}
-
-/* A row is the id, then its title once one is written (docs/session-title.md). */
-.session-list a {
-  display: flex;
-  gap: 1rem;
-  align-items: baseline;
-}
-
-.session-list-id {
-  white-space: nowrap;
-}
-
-.session-list-title {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .wordmark {

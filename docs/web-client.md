@@ -159,32 +159,77 @@ listing, so a missed frame is repaired by the next and a reconnect is a fresh
 subscription rather than a resume handshake. The probe's answer seeds the first
 render; nothing above the list re-resolves after that.
 
-**A row carries what the listing carries**: the id, the title
-([session-title.md](session-title.md)), the one-word status, and the count of
-background processes the session holds. Model, cost, and per-call chips stay off the
-row — those would be one `GET /sessions/<id>/v1/state` per session on every load,
-acceptable at three sessions and the wrong shape at thirty. Status and process count
-are the two the *host* can answer for every row at once, which is why they are the
-two the listing grew.
+**The root is an overview, grouped into workspaces** (`ui/overview.ts` is the model,
+`ui/SessionCard.tsx` a card, `ui/SessionList.tsx` the page). Sessions group by working
+directory, one card each, in a stable order — workspaces by path, cards in listing
+order — so a card stays where the operator last saw it and urgency is carried by the
+card rather than by moving it. A workspace heading sets the path's last component as
+the name and the parent small and faint (`~/code/` **efference**), because the name is
+what the operator recognizes it by and the parent is what tells `~/code/api` from
+`~/work/api`. Headings are sticky section headers: each docks under the top bar while
+its workspace is on screen and is pushed off by the next. A sticky element is held
+inside its section's content box, its own margin included, so all spacing around a
+heading lives in the card grid's padding — margin anywhere else opens a gap between one
+heading leaving and the next docking. The bar's height is measured into
+`--top-bar-height` rather than assumed. While content passes beneath a docked heading
+it takes the bar material — translucent, blurred, a hairline — and the bar drops its
+own hairline so the two read as one surface; the bar on this page is always that
+material. "Docked" is an `IntersectionObserver` (`useStuckHeadings`) because Safari has
+no `scroll-state` container query.
 
-**Ending is the one thing here that is not a navigation**, so it is a button rather
-than a link, and a destructive one. `DELETE /sessions/:id` reaps the session's
+**A card says where the operator's attention stands, in words.** `attention` is one of
+`blocked` (gated or stalled: nothing moves until someone acts), `your_turn` (idle after
+a turn — waiting on a reply or an end, not "less important"), `working`, and `new`
+(never made a request and has no title). The top line is one sentence with the id as
+its subject — `amber-lattice needs approval`, `hollow-birch is waiting for you`,
+`tidal-cipher has stalled` — and working and new say nothing, working being the
+default. There are no status dots. Colors keep the meanings the session view gives
+them: a gate is `--accent` (and tints the card), a stall `--warn`.
+
+Two voices, three sizes: prose — the title, the status predicate, the activity line —
+in the serif; identifiers — id, models, a command, usage — in mono. The title is the
+session's ([session-title.md](session-title.md)); a session with turns and no title
+yet reads *Untitled*, because titles are written after the first turn rather than with
+it, and only a session that has never made a request reads *Ready to get started*.
+The activity line is, in order: the gate's tool and command, the stall's message, the
+running call's `intent`, or the first paragraph of the last reply as plain text. The
+footer is `key: value` facts — model, spotter, triage only when it differs from main,
+supervisor, supervises, running processes — then the context meter and cost.
+
+**Supervision is a relation between peers, not nesting.** A session another created
+gets its own card like any other, naming its supervisor as a link, and the
+supervisor's card lists what it supervises. Working with a subagent is no further away
+than working with the session that created it.
+
+**Each card follows its session on one connection** (`openSessionCard`): a cold
+`GET /log?tail=12`, then `/v1/events` from just past it carrying the log and the card's
+state topics (`gate`, `stall`, `running`, `usage`, `session_identity`,
+`upstream_retry`), with `presence=off` — glancing at the overview is not watching a
+session, so it must not suppress that session's push ([web-push.md](web-push.md)).
+`foldRecent` reads the latest intent and reply off the log; a user entry retires the
+reply it answers, and a record-only assistant entry says nothing. That is N
+connections and the whole log for a card that reads two fields, accepted while
+whether the intent line earns its place is learned (`backlog/host-overview-stream.md`).
+
+**Ending is the one thing here that is not a navigation**, so it sits behind the card's
+menu rather than beside the title. `DELETE /sessions/:id` reaps the session's
 background processes and removes its scratch, and the host answers only once that
-teardown has run — so the row leaves on the next frame of the listing stream, which
-is already out by the time the call returns. The confirm rule is `ui/sessionRow.ts`,
-the same rule the TUI's switcher applies ([tui.md](tui.md)): a session that is doing
-something, or that holds processes an end would reap, confirms in place naming which;
-an idle session with nothing running ends on the first click. Creating a session from
-here is refused at the network listener on purpose
-(`backlog/web-remote-creation.md`), so the list ends sessions and does not start
-them.
+teardown has run — so the card leaves on the next frame of the listing stream, which is
+already out by the time the call returns. The confirm rule is `ui/sessionRow.ts`, the
+same rule the TUI's switcher applies ([tui.md](tui.md)): a session that is doing
+something, or that holds processes an end would reap, confirms in the menu naming
+which; an idle session with nothing running ends on the first click. The top bar's
+"New session" and each workspace's `+` are placed but disabled: creating from here is
+refused at the network listener (`backlog/web-remote-creation.md`) and the web form is
+unbuilt (`backlog/new-session-form.md`).
 
-**Entering a session is a navigation, not client-side state.** A row is an `<a href>`
+**Entering a session is a navigation, not client-side state.** A card's title is an `<a href>`
 to `/sessions/<id>/`, and the back affordance in the top bar is a link to `/`, shown
 only when the base is non-empty. The base changes with the URL, so a client-side
 transition would have to rebuild every fetch, the stream, and the fold against a
-different endpoint — which is a page load with extra steps. The one client route
-besides `/` is `/tree`, and it is `/sessions/<id>/tree` under a host: the same route
+different endpoint — which is a page load with extra steps. A card is an article whose title link is stretched over it, so the whole card opens
+the session while the supervisor links and the menu stay separately clickable. The one
+client route besides `/` is `/tree`, and it is `/sessions/<id>/tree` under a host: the same route
 with the base in front of it, which is why the route is read with the base removed.
 
 `ui/App.tsx` is only this choice — list, login, or session. The session view is
@@ -858,6 +903,9 @@ wrongly shortened path would name a directory that does not exist, so anything
 unrecognized shows verbatim (the full path is the element's title either way).
 Both shrink with an ellipsis rather than pushing the meter off the bar, and on
 the phone breakpoint the directory drops while the model name stays.
+The page is `viewport-fit=cover`, which draws it under the status bar and beside
+the notch, so the bar pads itself by the `safe-area-inset-*` values; sticky
+elements below it dock at its measured height rather than a constant.
 
 ## The composer area
 

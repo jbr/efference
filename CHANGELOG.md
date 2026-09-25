@@ -8,6 +8,10 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- **The web root is a session overview** (docs/web-client.md): sessions grouped into
+  workspaces by working directory under sticky headings, one card each saying in words
+  whether it needs approval, has stalled, or is waiting for you, with its latest intent or
+  reply, models, supervision links, and context use.
 - **MCP tool-call traffic** (docs/tools.md): a mounted server's
   `notifications/progress` ticks stream as live output, its
   `notifications/message` lines arrive as inbox notifications on its slot, and

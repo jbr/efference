@@ -35,18 +35,19 @@ test("only a session with something to lose is confirmed", () => {
   );
 });
 
-test("a row links into the session and carries its status and an end verb", () => {
+test("a card links into the session and carries its status", () => {
   const markup = renderToStaticMarkup(
-    <SessionList sessions={[row({ status: "running", processes: 2 })]} />,
+    <SessionList
+      sessions={[row({ status: "running", processes: 2, cwd: "/Users/x/p" })]}
+    />,
   );
   expect(markup).toContain('href="/sessions/alpha/"');
-  expect(markup).toContain("running");
-  expect(markup).toContain("2 bg");
-  expect(markup).toContain(">end<");
+  expect(markup).toContain("attention-working");
+  expect(markup).toContain("2 running");
+  expect(markup).toContain("~/p");
 });
 
-test("an empty listing says so rather than showing an empty table", () => {
+test("an empty listing says so rather than showing an empty grid", () => {
   const markup = renderToStaticMarkup(<SessionList sessions={[]} />);
-  expect(markup).toContain("no live sessions");
-  expect(markup).not.toContain(">end<");
+  expect(markup).toContain("No active sessions");
 });
