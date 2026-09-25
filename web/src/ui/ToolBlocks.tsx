@@ -87,7 +87,9 @@ function CallBodies({
         return (
           <div key={body.key ?? i} className="call-body">
             {body.key !== null && <dt>{body.key}</dt>}
-            <dd>
+            {/* bash's own multi-line command: it carries the prompt the
+                head would have. */}
+            <dd className={body.key === null ? "shell-command" : undefined}>
               {body.lang === null ? (
                 <div className="call-body-text">{text}</div>
               ) : (

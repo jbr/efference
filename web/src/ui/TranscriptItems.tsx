@@ -162,8 +162,14 @@ function ActionHead({ node }: { node: CallNode }) {
     return call ? callView(call.name, call.input) : null;
   }, [node]);
   if (view === null) return <span className="t-tool">{node.name}</span>;
+  // A multi-line command reads as its first line: the row is one glance.
+  const firstLine =
+    view.shell !== null && view.bodies[0] !== undefined
+      ? `${view.bodies[0].text.split("\n")[0]} …`
+      : null;
   const target =
     view.target ??
+    firstLine ??
     view.args
       // What it acted on is its string arguments; flags and counts are how.
       ?.flatMap((arg) =>
@@ -184,10 +190,16 @@ function ActionHead({ node }: { node: CallNode }) {
           <InlineMarkdown>{view.intent}</InlineMarkdown>
         </span>
       )}
-      <span className="t-tool">
-        {view.server !== null && `${view.server}.`}
-        {view.tool}
-      </span>
+      {/* A shell command reads after its prompt, as a full call's does,
+          not after the tool's name. */}
+      {view.shell !== null ? (
+        <span className="t-tool t-prompt">›</span>
+      ) : (
+        <span className="t-tool">
+          {view.server !== null && `${view.server}.`}
+          {view.tool}
+        </span>
+      )}
       <span className="t-target">{target}</span>
     </>
   );

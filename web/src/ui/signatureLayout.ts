@@ -19,7 +19,7 @@ import type { CallView, SigArg } from "./signature.ts";
 
 /** One run of text in the signature, with the role that colors it. */
 export interface SigToken {
-  kind: "server" | "tool" | "sep" | "key" | "value" | "target";
+  kind: "server" | "tool" | "sep" | "key" | "value" | "target" | "tag";
   text: string;
   /** Set on the value of a top-level scalar argument — the only thing a chip
    * can attach to. */
@@ -34,6 +34,8 @@ export interface SigRow {
 
 export interface SigLayout {
   rows: SigRow[];
+  /** A shell command: the head reads as a prompt, not a call (CallHead). */
+  shell: boolean;
   /** True when the signature broke across rows. */
   broken: boolean;
   /** The arguments too long to sit in the signature at this width. They are
@@ -100,12 +102,26 @@ function argTokens(arg: SigArg): SigToken[] {
     : [{ kind: "key", text: arg.label }, { kind: "sep", text: ": " }, value];
 }
 
+/** How a shell command runs, when it is not the default of blocking until it
+ * exits: backgrounded from the start, or backgrounded if it outlasts the
+ * seconds it named. */
+function shellTags(shell: NonNullable<CallView["shell"]>): string[] {
+  if (shell.background) return ["background"];
+  if (shell.backgroundAfter !== null)
+    return [`background after ${shell.backgroundAfter}s`];
+  return [];
+}
+
 /** The signature on one line of text, for surfaces with no room for spans
  * (the gate cue). */
 export function flatSignature(view: CallView): string {
   const name = view.server === null ? view.tool : `${view.server}.${view.tool}`;
-  if (view.args === null)
-    return view.target === null ? name : `${name} · ${view.target}`;
+  if (view.shell !== null) {
+    const command =
+      view.target ?? `${view.bodies[0]?.text.split("\n")[0] ?? ""} …`;
+    return `› ${command}`;
+  }
+  if (view.args === null) return name;
   return `${name}(${view.args.map(flatArg).join(", ")})`;
 }
 
@@ -121,18 +137,31 @@ export function layoutSignature(
   chipExtra: (arg: SigArg) => number = () => 0,
 ): SigLayout {
   const name = nameTokens(view);
-  if (view.args === null) {
+  if (view.shell !== null) {
     // bash: the command is verbatim and wraps as text; there is nothing to
-    // break it at that would read better than its own spaces.
-    const tokens: SigToken[] =
-      view.target === null
-        ? name
-        : [
-            ...name,
-            { kind: "sep", text: " · " },
-            { kind: "target", text: view.target },
-          ];
-    return { rows: [{ indent: 0, tokens }], broken: false, pulled: [] };
+    // break it at that would read better than its own spaces. A multi-line
+    // command is a body below, so the head holds only its tags, if any.
+    const tokens: SigToken[] = [
+      ...(view.target === null
+        ? []
+        : [{ kind: "target" as const, text: view.target }]),
+      ...shellTags(view.shell).map((text) => ({ kind: "tag" as const, text })),
+    ];
+    return {
+      rows: tokens.length === 0 ? [] : [{ indent: 0, tokens }],
+      shell: true,
+      broken: false,
+      pulled: [],
+    };
+  }
+  if (view.args === null) {
+    // The bare name: a call whose input has not started arriving.
+    return {
+      rows: [{ indent: 0, tokens: name }],
+      shell: false,
+      broken: false,
+      pulled: [],
+    };
   }
 
   const argWidth = (arg: SigArg) => width(flatArg(arg)) + chipExtra(arg);
@@ -161,7 +190,12 @@ export function layoutSignature(
       tokens.push(...argTokens(arg));
     });
     tokens.push({ kind: "sep", text: ")" });
-    return { rows: [{ indent: 0, tokens }], broken: false, pulled };
+    return {
+      rows: [{ indent: 0, tokens }],
+      shell: false,
+      broken: false,
+      pulled,
+    };
   }
 
   const rows: SigRow[] = [
@@ -179,7 +213,7 @@ export function layoutSignature(
     );
   });
   rows.push({ indent: 0, tokens: [{ kind: "sep", text: ")" }] });
-  return { rows, broken: true, pulled };
+  return { rows, shell: false, broken: true, pulled };
 }
 
 /** One argument of a broken signature: a row when it fits at its indent (or

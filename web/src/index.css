@@ -499,6 +499,36 @@ input[type="checkbox"] {
   white-space: pre-wrap;
 }
 
+/* A shell command — the head's single line, or a multi-line command's block —
+   reads after a prompt rather than the tool's name. The prompt hangs in the
+   margin, so the command's text lines up with the intent above it. */
+.shell-command {
+  position: relative;
+}
+
+.shell-command::before {
+  content: "›";
+  position: absolute;
+  left: -1.5ch;
+  top: 0;
+  color: var(--accent);
+  text-shadow: 0 0 9px var(--accent-glow);
+}
+
+/* How a command runs when it is not the default of blocking until it exits:
+   a tag after the command, in the interface voice, so it is never read as
+   part of what was run. */
+.call-tag {
+  margin-left: 0.6em;
+  padding: 0 0.5em;
+  border: 1px solid var(--border-control);
+  border-radius: 999px;
+  font-family: var(--font-ui);
+  font-size: 0.85em;
+  color: var(--fg-dim);
+  white-space: nowrap;
+}
+
 /* The arguments that are content (ui/ToolBlocks.tsx CallBodies): each a
    block under its key, below the signature it was taken out of. */
 .call-bodies {

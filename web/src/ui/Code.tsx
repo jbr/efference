@@ -45,6 +45,24 @@ export function Code({ text, lang }: { text: string; lang: string | null }) {
   return <CodeBody text={text} lang={lang} lines={lines} />;
 }
 
+/** Highlighted code inside a line of text — a shell command in a call's
+ * signature. A span, so it flows and wraps with the text around it; the
+ * caller's `white-space` decides how its own spaces and breaks render. */
+export function InlineCode({ text, lang }: { text: string; lang: string }) {
+  const highlight = useHighlight();
+  const lines = useMemo(
+    () => (highlight ? highlight(text, lang) : null),
+    [highlight, text, lang],
+  );
+  if (lines === null) return <>{text}</>;
+  return lines.map((tokens, i) => (
+    <Fragment key={i}>
+      {i > 0 && "\n"}
+      <Line tokens={tokens} />
+    </Fragment>
+  ));
+}
+
 /** [`Code`] for a value still arriving: the text grows at the end on every
  * delta, so the memo above would re-tokenize the whole buffer per chunk —
  * O(n²) over a large file write. The streaming tokenizer keeps the finished

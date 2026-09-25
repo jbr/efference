@@ -8,9 +8,11 @@
 // text if a wide character made it run over.
 //
 // Kept apart from ToolBlocks.tsx so it imports nothing but React, the layout,
-// and the chip renderer it is handed: the markup is what the wrapping test
-// asserts on, and it renders without a highlighter or a media query.
+// the inline highlighter, and the chip renderer it is handed: the markup is
+// what the wrapping test asserts on, and it renders with no media query —
+// and, until the grammars load (never, under static rendering), no colors.
 
+import { InlineCode } from "./Code.tsx";
 import type { SigArg } from "./signature.ts";
 import type { SigLayout, SigToken } from "./signatureLayout.ts";
 
@@ -27,23 +29,28 @@ const CLASS: Record<SigToken["kind"], string> = {
   key: "call-arg-key",
   value: "call-arg-value",
   target: "call-target",
+  tag: "call-tag",
 };
 
 function Token({ token, chip }: { token: SigToken; chip?: ChipRenderer }) {
   return (
     <span className={CLASS[token.kind]}>
-      {token.arg !== undefined && chip !== undefined
-        ? chip(token.arg, token.text)
-        : token.text}
+      {token.kind === "target" ? (
+        <InlineCode text={token.text} lang="bash" />
+      ) : token.arg !== undefined && chip !== undefined ? (
+        chip(token.arg, token.text)
+      ) : (
+        token.text
+      )}
     </span>
   );
 }
 
 /** The signature's tokens: `ferritin.search(crate: "serde", query: "…")`, a
- * bare `bash · ls -la`, or — broken — a row per argument. The server segment
- * is dimmed rather than sized: built-in versus mounted-server is the
- * `open_world_hint` distinction, i.e. whether the call could have reached
- * outside the session. */
+ * shell command after its prompt, or — broken — a row per argument. The
+ * server segment is dimmed rather than sized: built-in versus mounted-server
+ * is the `open_world_hint` distinction, i.e. whether the call could have
+ * reached outside the session. */
 export function CallSignature({
   layout,
   chip,
@@ -52,7 +59,7 @@ export function CallSignature({
   chip?: ChipRenderer;
 }) {
   if (!layout.broken) {
-    return layout.rows[0].tokens.map((token, i) => (
+    return layout.rows[0]?.tokens.map((token, i) => (
       <Token key={i} token={token} chip={chip} />
     ));
   }
@@ -83,9 +90,21 @@ export function CallHead({
   chip?: ChipRenderer;
   measure?: (element: HTMLElement | null) => void;
 }) {
+  // A multi-line command with nothing to tag has no head: the command is the
+  // block below, prompt and all.
+  if (layout.rows.length === 0) return <div ref={measure} />;
+  const classes = [
+    "call-sig",
+    layout.broken && "broken",
+    // The prompt hangs off the command itself; a multi-line command's is on
+    // its block, and a head of tags alone carries none.
+    layout.shell &&
+      layout.rows[0].tokens.some((t) => t.kind === "target") &&
+      "shell-command",
+  ].filter(Boolean);
   return (
     <div className="call-head" ref={measure}>
-      <span className={layout.broken ? "call-sig broken" : "call-sig"}>
+      <span className={classes.join(" ")}>
         <span className="prompt">›</span>{" "}
         <CallSignature layout={layout} chip={chip} />
         {arriving === true && <span className="dim"> …</span>}

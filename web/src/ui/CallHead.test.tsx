@@ -20,7 +20,7 @@ test("a long single-line command flows inside the signature, not beside it", () 
   const markup = head("bash", { command });
   // One flex item holds prompt, name and command: as siblings they were
   // blockified by the flex container and the command took its own line.
-  const sig = markup.slice(markup.indexOf('class="call-sig"'));
+  const sig = markup.slice(markup.indexOf('class="call-sig shell-command"'));
   const end = sig.indexOf("</span></div>");
   expect(sig.slice(0, end)).toContain(command);
   // And the command is verbatim — `.call-target` is `white-space: pre-wrap`.
@@ -65,4 +65,16 @@ test("a broken signature is a row per line, indented in columns", () => {
   expect(markup).toContain('class="call-row" style="padding-left:2ch"');
   // A flat one is a single inline flow with no rows.
   expect(head("read", { paths: ["a.rs"] }, 80)).not.toContain("call-row");
+});
+
+test("a shell command reads after a prompt, not the tool's name", () => {
+  const markup = head("bash", { command: "ls -la" });
+  expect(markup).toContain('class="call-sig shell-command"');
+  expect(markup).not.toContain("call-tool");
+  // Backgrounding is a tag beside the command, never part of it.
+  expect(head("bash", { command: "cargo watch", background: true })).toContain(
+    '<span class="call-tag">background</span>',
+  );
+  // A multi-line command is its block; a head with nothing to tag is empty.
+  expect(head("bash", { command: "a\nb" })).toBe("<div></div>");
 });

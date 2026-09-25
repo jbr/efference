@@ -38,6 +38,11 @@
   flex: 0 1 auto;
   min-height: 0;
   overflow-y: auto;
+  /* A scroll container clips what hangs outside it: room for a shell
+     command's prompt (index.css .shell-command), taken back from the margin
+     so the text stays where the entry in the flow has it. */
+  padding-left: 1.5ch;
+  margin-left: -1.5ch;
 }
 
 /* The gate cue: the floating gate's collapsed form. */

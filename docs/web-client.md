@@ -583,9 +583,17 @@ Call bodies truncate on the same budget results do, at both widths
 (`ui/truncate.ts`: 12 lines at desktop, 4 on the phone) — which is what stopped
 a `write` from printing the whole file into the transcript.
 
-Two tools stay special. **`bash` renders its command bare** — quoting a shell line into
-`bash(command: "…")` reads worse than the line, and only a command containing a newline
-becomes a block. **The edit family emits no body**: the diff rendered below the head is
+Two tools stay special. **`bash` renders its command bare, after a prompt** — quoting a
+shell line into `bash(command: "…")` reads worse than the line, and the tool's name adds
+nothing a prompt does not say. The accent `›` hangs in the margin (`.shell-command`), so
+the command's text lines up with the intent above it; the two clipping containers a call
+can sit in (a capped item, the gate float's scrolling body) keep room for it. The command
+is highlighted inline; one containing a newline is a block instead, carrying the same
+prompt. How it runs, when that is not the default of blocking until it exits, is a tag
+after it — `background`, or `background after 240s` — in the interface voice, so it is
+never read as part of what was run; a shell `&` would have been, and the tool's own
+description warns the model that `&` in a command means something else. A brief row
+shows the prompt in place of the name too, and a multi-line command's first line. **The edit family emits no body**: the diff rendered below the head is
 the representation there, so a body would show the change twice; the inspector's args
 tab (`callArgs`, a separate computation) is where the whole input is asked for.
 
@@ -765,6 +773,17 @@ Three decisions:
   smaller. The literals carry the `v` (unicodeSets) flag, an ES2024 floor
   (Chrome 112, Safari 17, Firefox 116) the desktop browsers this targets
   clear.
+- **Except bash, which runs the full grammar on the regex engine.** The precompiled
+  bash grammar (shiki 4.4.3) anchors its argument rules on `\G` — "where the previous
+  match ended" — which the raw engine cannot express, so the precompile drops the
+  anchor and a command colors its first word and nothing after it. bash gets a second
+  core of its own, `@shikijs/langs/bash` on `createJavaScriptRegexEngine`, loaded
+  lazily: the transpiler lands in its own chunk (56 kB, 20 kB gzip), not the main one,
+  which imports only the `@shikijs/engine-javascript/raw` entry. That core is warmed
+  with one representative line before it is handed out: the regex engine compiles
+  each pattern on first use, and a line that outlasts shiki's per-line time limit comes
+  back with its tail as one uncolored token — memoized, so the first command rendered
+  would have stayed that way.
 - **Tokens, not HTML.** `codeToTokens` returns `{ content, color }[]` grouped by
   line, which the components render as spans. `codeToHtml` would return a markup
   string, and nothing on this page turns untrusted text into markup. The line

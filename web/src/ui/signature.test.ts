@@ -93,8 +93,12 @@ test("bash keeps its command bare — a shell line, not a quoted argument", () =
     tool: "bash",
     args: null,
     target: "ls -la",
+    shell: { background: false, backgroundAfter: null },
     bodies: [],
   });
+  expect(
+    callView("bash", { command: "make", background_after: 600 }).shell,
+  ).toEqual({ background: false, backgroundAfter: 600 });
   // Only a newline makes it a block.
   expect(callView("bash", { command: "a\nb" }).bodies).toEqual([
     { key: null, lang: "bash", text: "a\nb" },

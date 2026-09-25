@@ -106,5 +106,19 @@ test("bash's command is one row whatever the width — it wraps as text", () => 
   const command = "cargo test --workspace -- --nocapture projection::stable";
   const layout = at(20, "bash", { command });
   expect(layout.rows).toHaveLength(1);
-  expect(text(layout)).toBe(`bash · ${command}`);
+  expect(text(layout)).toBe(command);
+  expect(layout.shell).toBe(true);
+  // Backgrounding tags the command; backgrounded from the start says only that.
+  expect(text(at(80, "bash", { command: "make", background_after: 600 }))).toBe(
+    "makebackground after 600s",
+  );
+  expect(
+    text(
+      at(80, "bash", {
+        command: "cargo watch",
+        background: true,
+        background_after: 5,
+      }),
+    ),
+  ).toBe("cargo watchbackground");
 });

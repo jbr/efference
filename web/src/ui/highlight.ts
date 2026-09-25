@@ -21,6 +21,14 @@
 //   this page turns untrusted text into markup. The line grouping is also
 //   exactly the shape the numbered-gutter and diff views already use.
 //
+// - **bash is the exception, on the regex engine.** The precompiled bash
+//   grammar is broken (shiki 4.4.3): its rules anchor on `\G` — "where the
+//   previous match ended" — which the raw engine cannot express, so the
+//   precompile drops the anchor and every command colors its first word and
+//   nothing after it. The full grammar on the regex engine is correct, so bash
+//   gets a second core of its own, loaded lazily: the transpiler the raw
+//   engine avoids lands in that chunk, not the main one.
+//
 // Highlighting is best-effort: until the grammars finish loading, and
 // forever if they fail to, callers render the same plain text they did
 // before. Nothing here is on the path to *reading* a transcript.
@@ -30,7 +38,7 @@ import {
   type GrammarState,
   type HighlighterCore,
 } from "shiki/core";
-import { createJavaScriptRawEngine } from "shiki/engine/javascript";
+import { createJavaScriptRawEngine } from "@shikijs/engine-javascript/raw";
 import { useEffect, useMemo, useSyncExternalStore } from "react";
 import { CSS_VARIABLES_THEME, cssVariablesTheme } from "./shikiTheme.ts";
 
@@ -47,7 +55,6 @@ const LANGS = [
   import("@shikijs/langs-precompiled/javascript"),
   import("@shikijs/langs-precompiled/typescript"),
   import("@shikijs/langs-precompiled/python"),
-  import("@shikijs/langs-precompiled/bash"),
   import("@shikijs/langs-precompiled/yaml"),
   import("@shikijs/langs-precompiled/html"),
   import("@shikijs/langs-precompiled/css"),
@@ -58,8 +65,24 @@ export interface Token {
   color?: string;
 }
 
-let highlighter: HighlighterCore | null = null;
+/** The two cores: `main` for every language in [`LANGS`], `shell` for bash
+ * (see above). Replaced whole on each change, so it is one snapshot value
+ * for `useSyncExternalStore`. */
+interface Cores {
+  main: HighlighterCore | null;
+  shell: HighlighterCore | null;
+}
+
+let cores: Cores = { main: null, shell: null };
 let started = false;
+
+/** The core that tokenizes `lang`, if it is loaded there. */
+function coreFor(from: Cores, lang: string): HighlighterCore | null {
+  const core = lang === "bash" ? from.shell : from.main;
+  return core !== null && core.getLoadedLanguages().includes(lang)
+    ? core
+    : null;
+}
 const listeners = new Set<() => void>();
 
 function announce() {
@@ -75,12 +98,52 @@ function start() {
     engine: createJavaScriptRawEngine(),
   })
     .then((core) => {
-      highlighter = core;
+      cores = { ...cores, main: core };
       announce();
     })
     .catch(() => {
       // Stays null; every caller falls back to plain text.
     });
+  void createShellCore()
+    .then((core) => {
+      cores = { ...cores, shell: core };
+      announce();
+    })
+    .catch(() => {
+      // Stays null; bash falls back to plain text.
+    });
+}
+
+/** A line exercising the grammar's common rules — a builtin, an operator, a
+ * command, an option, quoted and unquoted arguments, a variable, a pipe, a
+ * redirect — tokenized once before the core is handed out. */
+const WARM_UP = 'cd "$HOME/x" && rg -n "a|b" src 2>&1 | head -20; echo $?';
+
+/** The bash core: the full grammar on the regex engine (see above). Dynamic
+ * imports, so the engine's transpiler and the grammar are a chunk of their
+ * own.
+ *
+ * The regex engine compiles each pattern on first use, and a line whose
+ * tokenizing outlasts shiki's per-line time limit comes back with its tail as
+ * one uncolored token — memoized, so the first command rendered would stay
+ * that way. Tokenizing a representative line here, with no limit, pays the
+ * compiling before any caller sees the core. */
+export async function createShellCore(): Promise<HighlighterCore> {
+  const [{ createJavaScriptRegexEngine }, bash] = await Promise.all([
+    import("@shikijs/engine-javascript"),
+    import("@shikijs/langs/bash"),
+  ]);
+  const core = await createHighlighterCore({
+    langs: [bash],
+    themes: [cssVariablesTheme],
+    engine: createJavaScriptRegexEngine(),
+  });
+  core.codeToTokensBase(WARM_UP, {
+    lang: "bash",
+    theme: CSS_VARIABLES_THEME,
+    tokenizeTimeLimit: 0,
+  });
+  return core;
 }
 
 function subscribe(listener: () => void) {
@@ -103,15 +166,17 @@ function subscribe(listener: () => void) {
 export function useHighlight():
   ((code: string, lang: string) => Token[][] | null) | null {
   useEffect(start, []);
-  const core = useSyncExternalStore(
+  const loaded = useSyncExternalStore(
     subscribe,
-    () => highlighter,
+    () => cores,
     () => null,
   );
   return useMemo(() => {
-    if (core === null) return null;
+    if (loaded === null || (loaded.main === null && loaded.shell === null))
+      return null;
     return (code: string, lang: string) => {
-      if (!core.getLoadedLanguages().includes(lang)) return null;
+      const core = coreFor(loaded, lang);
+      if (core === null) return null;
       try {
         return core.codeToTokens(code, { lang, theme: CSS_VARIABLES_THEME })
           .tokens;
@@ -119,7 +184,7 @@ export function useHighlight():
         return null;
       }
     };
-  }, [core]);
+  }, [loaded]);
 }
 
 /**
@@ -190,14 +255,15 @@ export function useStreamingTokens(
   lang: string | null,
 ): Token[][] | null {
   useEffect(start, []);
-  const core = useSyncExternalStore(
+  const loaded = useSyncExternalStore(
     subscribe,
-    () => highlighter,
+    () => cores,
     () => null,
   );
+  const core = loaded === null || lang === null ? null : coreFor(loaded, lang);
   const tokenizer = useMemo(
     () =>
-      core !== null && lang !== null && core.getLoadedLanguages().includes(lang)
+      core !== null && lang !== null
         ? new StreamingTokenizer(core, lang, CSS_VARIABLES_THEME)
         : null,
     [core, lang],

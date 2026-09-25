@@ -47,9 +47,13 @@ export interface CallView {
   /** The signature's arguments, positional first. Empty renders
    * `check_inbox()`; null means the call renders bare. */
   args: SigArg[] | null;
-  /** bash's single-line command, rendered after the name unquoted. Set only
-   * when `args` is null. */
+  /** bash's single-line command, rendered unquoted in place of the name and
+   * arguments. Set only when `args` is null. */
   target: string | null;
+  /** bash's way of running: whether the call asked to be backgrounded from
+   * the start, and the seconds after which it would move there on its own.
+   * Null for every other tool. */
+  shell: { background: boolean; backgroundAfter: number | null } | null;
   bodies: CallBody[];
 }
 
@@ -113,12 +117,13 @@ export function bodyOf(
  * `signatureLayout.ts`'s decision. A tool with no arguments renders
  * `check_inbox()`, with no block.
  *
- * Two cases stay special. `bash` renders its command bare: a shell command
- * quoted into `bash(command: "…")` reads worse than the command. The edit
- * family emits no bodies — the diff rendered below the head is the
- * representation there (docs/web-client.md), and a body would show the change
- * twice; the inspector's args tab (`callArgs`) is where the whole input is
- * asked for.
+ * Two cases stay special. `bash` renders its command bare, after a prompt
+ * rather than its name: a shell command quoted into `bash(command: "…")` reads
+ * worse than the command, and the prompt says "shell" without a word. Its
+ * backgrounding rides along as `shell`. The edit family emits no bodies —
+ * the diff rendered below the head is the representation there
+ * (docs/web-client.md), and a body would show the change twice; the
+ * inspector's args tab (`callArgs`) is where the whole input is asked for.
  */
 export function callView(name: string, input: unknown): CallView {
   const base = { intent: null as string | null, ...splitToolName(name) };
@@ -128,6 +133,7 @@ export function callView(name: string, input: unknown): CallView {
       ...base,
       args: [],
       target: null,
+      shell: null,
       bodies:
         input === undefined
           ? []
@@ -142,14 +148,22 @@ export function callView(name: string, input: unknown): CallView {
   if (name === "bash") {
     const command = str("command");
     if (command !== null) {
+      const shell = {
+        background: obj.background === true,
+        backgroundAfter:
+          typeof obj.background_after === "number"
+            ? obj.background_after
+            : null,
+      };
       return command.includes("\n")
         ? {
             ...base,
             args: null,
             target: null,
+            shell,
             bodies: [{ key: null, lang: "bash", text: command }],
           }
-        : { ...base, args: null, target: command, bodies: [] };
+        : { ...base, args: null, target: command, shell, bodies: [] };
     }
   }
 
@@ -179,5 +193,11 @@ export function callView(name: string, input: unknown): CallView {
       positional.push({ key, label: null, value });
     }
   }
-  return { ...base, args: [...positional, ...labelled], target: null, bodies };
+  return {
+    ...base,
+    args: [...positional, ...labelled],
+    target: null,
+    shell: null,
+    bodies,
+  };
 }

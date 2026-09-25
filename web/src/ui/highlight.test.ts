@@ -4,9 +4,9 @@
 // is implementation; this equality is the contract.
 
 import { createHighlighterCore } from "shiki/core";
-import { createJavaScriptRawEngine } from "shiki/engine/javascript";
+import { createJavaScriptRawEngine } from "@shikijs/engine-javascript/raw";
 import { beforeAll, describe, expect, it } from "vitest";
-import { StreamingTokenizer } from "./highlight.ts";
+import { createShellCore, StreamingTokenizer } from "./highlight.ts";
 import { CSS_VARIABLES_THEME, cssVariablesTheme } from "./shikiTheme.ts";
 
 const THEME = CSS_VARIABLES_THEME;
@@ -97,4 +97,18 @@ describe("StreamingTokenizer", () => {
       drawn(core.codeToTokensBase(other, { lang: "rust", theme: THEME })),
     );
   });
+});
+
+it("a shell command is colored past its first word", async () => {
+  // The precompiled grammar gave `cd` one color and the rest of the line
+  // another: its argument rules anchor on `\G`, which the raw engine cannot
+  // express. The bash core runs the full grammar on the regex engine.
+  const core = await createShellCore();
+  const [line] = core.codeToTokens('cd /tmp && rg -n "a|b" src | head -20', {
+    lang: "bash",
+    theme: CSS_VARIABLES_THEME,
+  }).tokens;
+  const colored = line.filter((t) => t.content.trim() !== "");
+  expect(colored.map((t) => t.content)).toContain('"a|b"');
+  expect(new Set(colored.map((t) => t.color)).size).toBeGreaterThan(2);
 });
