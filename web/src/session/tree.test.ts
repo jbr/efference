@@ -273,3 +273,17 @@ describe("the consolidation mark", () => {
     expect(mark?.kind === "leaf" && mark.replaces).toBe(1);
   });
 });
+
+describe("title and preamble entries", () => {
+  it("renders a title only when its text changes, and never the preamble", () => {
+    const title = (seq: number, text: string) =>
+      entry(seq, { Title: { text, author: "triage" } });
+    const nodes = buildTree([
+      entry(0, { Preamble: { system: "you are…", context: null } }),
+      title(1, "Probe the models endpoint"),
+      title(2, "Probe the models endpoint"),
+      title(3, "Build efference dev models"),
+    ]);
+    expect(nodes.map((n) => n.key)).toEqual(["1", "3"]);
+  });
+});

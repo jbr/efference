@@ -26,9 +26,25 @@
   font-display: swap;
 }
 
-/* Plex Mono ships static weights; the three faces below are the ones the
-   design uses. IBM Plex Sans is not self-hosted — --font-ui falls back to
-   system-ui, and nothing visible leans on the sans. */
+/* Plex ships static weights; the faces below are the ones the design uses.
+   Plex Sans is the interface voice (--font-ui): labels and controls, the
+   words of the chrome that are neither prose nor identifiers. */
+
+@font-face {
+  font-family: "IBM Plex Sans";
+  src: url("/fonts/plex-sans-regular.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "IBM Plex Sans";
+  src: url("/fonts/plex-sans-medium.woff2") format("woff2");
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+}
 
 @font-face {
   font-family: "IBM Plex Mono";

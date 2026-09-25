@@ -9,7 +9,7 @@
 
 // @vitest-environment jsdom
 
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Frame } from "../api/types.ts";
 import { record, SCRUB_EVENT } from "./record.ts";
 import { Store } from "./store.ts";
@@ -180,16 +180,17 @@ describe("the command bridge", () => {
   });
 });
 
-describe("the badge", () => {
-  it("names the mode and the position", () => {
+describe("the position log", () => {
+  it("names the mode and the position after each command, and draws nothing", () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
     const { tap, close, scrub } = installed();
-    const badge = () =>
-      document.querySelector("[data-scrub-badge]")?.textContent;
     for (const frame of arriving) tap.frame(frame);
-    expect(badge()).toBe("rec 5");
     scrub().seek(2);
-    expect(badge()).toBe("scrub 2/5");
+    expect(info).toHaveBeenLastCalledWith("[scrub] scrub 2/5");
+    scrub().resume();
+    expect(info).toHaveBeenLastCalledWith("[scrub] rec 5");
+    expect(document.querySelector("[data-scrub-badge]")).toBeNull();
     close();
-    expect(badge()).toBeUndefined();
+    info.mockRestore();
   });
 });

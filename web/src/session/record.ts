@@ -107,13 +107,16 @@ class Recorder implements FrameTap, ScrubHandle {
   private full = false;
   cursor = 0;
   following = true;
-  private readonly badge = new Badge();
 
   constructor(private readonly store: Store) {
     this.base = store.snapshot();
     window.__scrub = this;
     document.addEventListener(SCRUB_EVENT, this.onCommand);
-    this.badge.render(this);
+    console.info(
+      "[scrub] recording the stream: window.__scrub.hold() / resume() / " +
+        "step(n) / seek(n), or dispatch an `efference:scrub` event " +
+        "(session/record.ts). Each command logs the position it lands on.",
+    );
   }
 
   get length(): number {
@@ -127,18 +130,16 @@ class Recorder implements FrameTap, ScrubHandle {
     this.full = false;
     this.following = true;
     this.base = this.store.snapshot();
-    this.badge.render(this);
   }
 
   frame(frame: Frame): void {
     if (this.tape.length >= MAX_TAPE) {
+      if (!this.full) console.warn(`[scrub] ${this.describe()}`);
       this.full = true;
-      this.badge.render(this);
       return;
     }
     this.tape.push(frame);
     if (this.following) this.foldTo(this.tape.length);
-    else this.badge.render(this);
   }
 
   /**
@@ -174,27 +175,36 @@ class Recorder implements FrameTap, ScrubHandle {
     // next animation frame. While following, the coalescing is the point
     // (`store.ts`): the live path must not render per delta.
     if (!this.following) this.store.flush();
-    this.badge.render(this);
   }
 
   hold(): void {
     this.following = false;
-    this.badge.render(this);
+    this.announce();
   }
 
   resume(): void {
     this.following = true;
     this.foldTo(this.tape.length);
+    this.announce();
   }
 
   step(n = 1): void {
     this.following = false;
     this.foldTo(this.cursor + n);
+    this.announce();
   }
 
   seek(n: number): void {
     this.following = false;
     this.foldTo(n);
+    this.announce();
+  }
+
+  /** Name the position a command landed on. Two screenshots of the same
+   * render at different cursors are otherwise indistinguishable, so whoever
+   * drives the scrub reads the position here rather than off the page. */
+  private announce(): void {
+    console.info(`[scrub] ${this.describe()}`);
   }
 
   private onCommand = (event: Event): void => {
@@ -213,7 +223,6 @@ class Recorder implements FrameTap, ScrubHandle {
 
   close(): void {
     document.removeEventListener(SCRUB_EVENT, this.onCommand);
-    this.badge.remove();
     // Only if it is still this recorder's: StrictMode builds a second one before
     // the first one's cleanup lands, and an unconditional delete would take away
     // the live recorder's handle.
@@ -225,39 +234,5 @@ class Recorder implements FrameTap, ScrubHandle {
     return this.following
       ? `rec ${this.tape.length}${full}`
       : `scrub ${this.cursor}/${this.tape.length}${full}`;
-  }
-}
-
-/**
- * A fixed corner label naming the tape position. A screenshot of a mid-stream
- * state is unreadable without it: two screenshots of the same render at
- * different cursors are otherwise indistinguishable. Plain DOM rather than a
- * component, so nothing in `ui/` gains a dev-only branch.
- */
-class Badge {
-  private element: HTMLElement | null = null;
-
-  render(recorder: Recorder): void {
-    if (!this.element) {
-      // An HMR update to a session/ module builds a fresh Recorder (and
-      // Badge) while the old element is still in the DOM — remove any
-      // predecessor so badges don't stack. Top-left, over the wordmark:
-      // the bottom-right corner is where the phone layout's floating chips
-      // and status row live (jbr, 2026-08-22).
-      document.querySelector("[data-scrub-badge]")?.remove();
-      this.element = document.createElement("div");
-      this.element.dataset.scrubBadge = "";
-      this.element.style.cssText =
-        "position:fixed;left:8px;top:8px;z-index:99999;" +
-        "font:12px ui-monospace,monospace;padding:4px 8px;border-radius:4px;" +
-        "background:#000c;color:#fff;pointer-events:none;white-space:pre";
-      document.body.append(this.element);
-    }
-    this.element.textContent = recorder.describe();
-  }
-
-  remove(): void {
-    this.element?.remove();
-    this.element = null;
   }
 }

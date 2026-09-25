@@ -16,16 +16,16 @@ import {
 import { buildTree, type CallNode } from "../session/tree.ts";
 import { useSession } from "../session/useSession.ts";
 import { Composer } from "./Composer.tsx";
+import { Drawer } from "./Drawer.tsx";
+import { drawerAttention } from "./drawerAttention.ts";
 import { FileView } from "./FileView.tsx";
 import { GateSurface } from "./Gate.tsx";
 import { Inspector } from "./Inspector.tsx";
 import { JumpToLatest } from "./JumpToLatest.tsx";
 import { Login } from "./Login.tsx";
 import { useOverlayHistory } from "./overlayHistory.ts";
-import { Panel } from "./Panel.tsx";
 import { TopBar } from "./TopBar.tsx";
 import { Transcript } from "./Transcript.tsx";
-import { useNarrow } from "./useNarrow.ts";
 
 /** One request to show a file: what to show, which call asked (the anchor's
  * source), and a key that changes per request. */
@@ -52,15 +52,28 @@ export function SessionView() {
   // the node is re-found each render so a landing result or verdict shows
   // up in an open inspector.
   const nodes = useMemo(() => buildTree(session.entries), [session.entries]);
+  // The session drawer (ui/Drawer.tsx): open/shown/closing is the
+  // inspector's slide pattern — `drawerShown` keeps it mounted through the
+  // exit transition, with the same timeout fallback for a hidden tab.
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [drawerShown, setDrawerShown] = useState(false);
+  if (drawerOpen && !drawerShown) setDrawerShown(true);
+  const drawerClosing = !drawerOpen && drawerShown;
+  const drawerDone = useCallback(() => setDrawerShown(false), []);
+  useEffect(() => {
+    if (!drawerClosing) return;
+    const id = setTimeout(drawerDone, 350);
+    return () => clearTimeout(id);
+  }, [drawerClosing, drawerDone]);
   const [inspecting, setInspecting] = useState<CallId | null>(null);
   // Clicking the call being inspected closes the drawer: the call is a huge
   // central target where the ✕ is a distant corner one (Fitts), and a second
   // click on "show me this" reading as "stop showing me this" is the toggle
   // idiom. A different call switches without closing.
-  const onInspect = useCallback(
-    (id: CallId) => setInspecting((prev) => (prev === id ? null : id)),
-    [],
-  );
+  const onInspect = useCallback((id: CallId) => {
+    setDrawerOpen(false);
+    setInspecting((prev) => (prev === id ? null : id));
+  }, []);
   // The drawer's slide-out needs it mounted after `inspecting` clears —
   // React unmounts before CSS can animate — so `shown` holds the last call
   // id through the exit transition. `done` unmounts on `transitionend`, with
@@ -92,12 +105,6 @@ export function SessionView() {
   // like the inspector — `shownFile` holds the seed path through the exit
   // slide. Following moves the viewer's own path internally; this is only
   // where it starts.
-  // Narrow chrome quieting: on a phone every non-transcript pixel is
-  // clutter, so the dials and (empty) tab strip hide behind the status
-  // row's ⋯ until revealed. Ephemeral by design — a reveal is a moment,
-  // not a mode worth persisting.
-  const narrow = useNarrow();
-  const [chromeOpen, setChromeOpen] = useState(false);
   // What a recall handed back, for the composer to prepend (docs/web-client.md). The
   // counter is the trigger: recalling the same text twice must still splice twice, and
   // the composer owns its draft, so the splice has to be an event rather than a value.
@@ -158,11 +165,14 @@ export function SessionView() {
   // sheet also occupies, and it is always the later-opened of the two here
   // (its only entry points are a call's open ⤢ and the inspector footer).
   useOverlayHistory(
-    (inspecting !== null ? 1 : 0) + (viewingFile !== null ? 1 : 0),
+    (inspecting !== null ? 1 : 0) +
+      (viewingFile !== null ? 1 : 0) +
+      (drawerOpen ? 1 : 0),
     useCallback(() => {
       if (viewingFile !== null) setViewingFile(null);
+      else if (drawerOpen) setDrawerOpen(false);
       else setInspecting(null);
-    }, [viewingFile]),
+    }, [viewingFile, drawerOpen]),
   );
   const newestEdit = useMemo(
     () => lastEdit(session.entries),
@@ -174,19 +184,25 @@ export function SessionView() {
   }
 
   const gate = session.topics.gate;
-  const quiet = narrow && !chromeOpen;
+  const notifications = session.topics.notifications ?? [];
+  const proposals = session.topics.proposals ?? [];
+  const processes = session.topics.processes ?? [];
   return (
     <div className="app">
       <TopBar
         // Only under a host is there a list to go back to — at a session
         // daemon's root this view is the whole app (api/base.ts).
         listHref={apiBase() === "" ? null : "/"}
-        running={session.topics.running ?? false}
-        connection={session.connection}
         identity={session.topics.session_identity ?? null}
         usage={session.topics.usage ?? null}
         upstreamFailure={session.topics.upstream_failure ?? null}
         upstreamRetry={session.topics.upstream_retry ?? null}
+        drawerOpen={drawerOpen}
+        attention={drawerAttention(notifications, proposals, processes)}
+        onDrawer={() => {
+          setInspecting(null);
+          setDrawerOpen((open) => !open);
+        }}
       />
       {session.connection !== "live" && (
         <div className="banner">
@@ -252,26 +268,31 @@ export function SessionView() {
           />
         </div>
       )}
-      <div className="dock">
-        <Panel
-          processes={session.topics.processes ?? []}
-          notifications={session.topics.notifications ?? []}
+      {drawerShown && (
+        <Drawer
+          closing={drawerClosing}
+          onSlideOut={drawerDone}
+          onClose={() => setDrawerOpen(false)}
+          identity={session.topics.session_identity ?? null}
+          usage={session.topics.usage ?? null}
+          pace={session.topics.pace ?? null}
+          reviewLevel={session.topics.review_level ?? null}
           role={session.topics.role ?? null}
-          proposals={session.topics.proposals ?? []}
+          proposals={proposals}
+          processes={processes}
+          notifications={notifications}
           processOutput={session.streaming.processOutput}
           processLost={session.streaming.processLost}
-          quiet={quiet}
         />
+      )}
+      <div className="dock">
         <Composer
           submit={actions.submitTurn}
           recalled={recalled}
           pace={session.topics.pace ?? null}
-          reviewLevel={session.topics.review_level ?? null}
           running={session.topics.running ?? false}
           stall={session.topics.stall ?? null}
           gatePending={gate != null}
-          quiet={quiet}
-          onReveal={() => setChromeOpen((open) => !open)}
         />
       </div>
     </div>

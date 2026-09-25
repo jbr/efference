@@ -224,8 +224,8 @@ refused at the network listener (`backlog/web-remote-creation.md`) and the web f
 unbuilt (`backlog/new-session-form.md`).
 
 **Entering a session is a navigation, not client-side state.** A card's title is an `<a href>`
-to `/sessions/<id>/`, and the back affordance in the top bar is a link to `/`, shown
-only when the base is non-empty. The base changes with the URL, so a client-side
+to `/sessions/<id>/`, and the back affordance in the top bar is the wordmark, a link to
+`/` only when the base is non-empty. The base changes with the URL, so a client-side
 transition would have to rebuild every fetch, the stream, and the fold against a
 different endpoint — which is a page load with extra steps. A card is an article whose title link is stretched over it, so the whole card opens
 the session while the supervisor links and the menu stay separately clickable. The one
@@ -271,20 +271,14 @@ What narrow changes:
   enter/shift-enter advice, Enter inserts a newline instead of sending (a phone
   has no shift-enter, so intercepting Enter would make multi-line drafts
   impossible), and the send button sends.
-- Chrome rows tighten: the status bar wraps instead of clipping the dials off
-  the right edge, the usage meter narrows, the upstream chip ellipsizes, and
-  the gate's decision rows wrap so `allow prefix` stays on screen (verified
+- Chrome rows tighten: the context meter narrows, the title drops from the top
+  bar, the upstream chip ellipsizes, and the gate's decision rows wrap so `allow prefix` stays on screen (verified
   live: a `human_only` gate decided by tap from the simulator).
-- **The chrome quiets.** On a phone every non-transcript pixel is clutter, so
-  at rest the dock is one row — the status dot and turn state — with the
-  dials and the (empty) panel tab strip hidden behind the row's `⋯` toggle
-  (App state, ephemeral on purpose: a reveal is a moment, not a mode).
-  Signal always shows through: `interrupt` stays whenever the loop runs, a
-  held pace stays because a hidden hold reads as a hang, and the tab strip
-  reappears on its own whenever any tab carries a count or a pane is open.
+- **The drawer is a bottom sheet** (see "The drawer"), dismissed by dragging
+  its header down.
 
 **Overlays are history-backed** (`ui/overlayHistory.ts`, both form factors):
-each open overlay — inspector, file viewer — owns one history entry, so the
+each open overlay — inspector, file viewer, drawer — owns one history entry, so the
 back button and Safari's edge swipe (which *is* history-back) dismiss the
 overlay instead of leaving the app. Not a router: the overlays remain App
 state, and the hook *reconciles* — App reports how many overlays are open, the
@@ -371,7 +365,7 @@ different target.
 
 ```
 session
-├─ user text / thinking / agent text / mark / ambient / config-edit / preamble
+├─ user text / thinking / agent text / mark / ambient / config-edit / title change
 └─ batch                    the calls issued in one step
    └─ call                  one call, whole
       ├─ intent, args
@@ -799,10 +793,11 @@ Two behaviours over the render-whole transcript. **Follow-tail**
 (`ui/useFollowTail.ts`): the transcript scrolls the window, so "following"
 means the viewport sits at the document's bottom — new entries and streamed
 output keep it pinned there, scrolling up holds position, and a cold open
-lands at the tail rather than the top of the preamble. **The preamble
-collapses** to a native `<details>` line that expands on tap — presentation
-of one audit entry, not a fold affordance; render-whole for tool results
-stands (the positions above).
+lands at the tail rather than the top of the log. **The preamble is not
+rendered**: the system prompt is audit data rather than conversation, and a new
+session whose only entry it is reads as empty. **A title change** renders as
+one quiet line, `Title updated to …`, and only when the text changed — the log
+appends a title entry even when the peek kept the previous one.
 
 **Density toggles** (`ui/viewSettings.ts`, persisted like the theme): three
 switches hide thinking, clear spot verdicts, and ambient entries. Hiding is
@@ -859,12 +854,11 @@ an error is information.
 ## Chrome and the content column
 
 The page is full width; content sits in a centered `.col` (60rem). The chrome
-— the top bar, the connection banner, the dock's tab strip, composer band, and
-status bar — bleeds to the viewport edges, and each bar's affordances anchor
-to the window edges too: the wordmark and usage meter, the panel tabs, the
-turn state and loop dials (full width for parity across the bars,
-2026-08-20). Only content keeps the column: the transcript, the panel panes,
-the composer input. Chrome is also invisible to text selection (`user-select: none`
+— the top bar, the connection banner, the composer band, and the status bar —
+bleeds to the viewport edges, and each bar's affordances anchor to the window
+edges too: the wordmark and the drawer control, the turn state and the
+interrupt (full width for parity across the bars, 2026-08-20). Only content
+keeps the column: the transcript and the composer input. Chrome is also invisible to text selection (`user-select: none`
 across labels, bars, tabs, and controls) — only content selects: transcript
 text, commands, results. Inside the column, entry content carries a right
 inset balancing the label gutter's air, so text in a block does not run flush
@@ -872,60 +866,56 @@ against the column edge.
 
 ## The top bar
 
-`ui/TopBar.tsx`: sticky interface chrome — the serif wordmark, the session
-status dot (breathing while the loop runs), and the usage meter: context
-occupancy as numbers and a thin bar, plus the session cost. It also carries one
-warn-tinted chip left of the meter, fed by the two transport topics through
-`ui/upstream.ts` (a pure function of the pair, so the component holds no
-endpoint or clock logic). While `upstream_retry` is set the chip names the
-retry — `↻ stream aborted, retrying (2 of 12)`, with a `peek:` prefix for a
-fork peek's retry, and the upstream's `detail` text as the title; otherwise
-`upstream_failure` names the last non-success status, `upstream 429 ×3`, the
-count covering consecutive matching statuses and elided at one. Both topics
-are level-triggered and both clear on recovery (docs/transport.md), so the
-chip's absence is the all-clear rather than "nothing observed yet", and a
-stalling loop's cause is visible while it stalls. The chip renders no
-countdown — `next_attempt_at` is an absolute instant, and a remaining-wait
-readout would mean either a clock read in the render path or an interval
-driving a ticking value. Deliberately minimal otherwise — the mock's bar is a
-dumping ground of imagined status items, and additions happen one argued
-element at a time. Loop state is not restated here: the dot breathes, and
-the banner, the gate cue, and the composer's turn-state carry the rest.
-Beside the dot it names **what the session is** — the title, or the id until
-one is written ([session-title.md](session-title.md)), then the model and the
-working directory, from the `session_identity` topic
-([control-api.md](control-api.md)). Which model is answering is not derivable
-from the transcript, and it is what a reader needs when cheap and flagship
-models mix across sessions. The wire carries the cwd absolute; `ui/identity.ts`
-shortens it to `~/code/efference` by recognizing `/Users/<name>` and
-`/home/<name>` as whole components — a browser cannot read `$HOME`, and a
-wrongly shortened path would name a directory that does not exist, so anything
-unrecognized shows verbatim (the full path is the element's title either way).
-Both shrink with an ellipsis rather than pushing the meter off the bar, and on
-the phone breakpoint the directory drops while the model name stays.
+`ui/TopBar.tsx`: sticky interface chrome — the serif wordmark (under a host,
+also the link back to the session list), the session's title
+([session-title.md](session-title.md), the id until one is written), the
+context meter, and the **Session** control that opens the drawer. What the
+session is — models, directory, cost — and how it runs are the drawer's: the
+bar carried them on one line and could show none of them whole, and they are
+not what the reader is doing. The title is the one element that yields width,
+and on the phone breakpoint it is dropped: the start of a title says less than
+nothing, and the drawer shows it in full. The **context meter** is the bar,
+with `42.7k/1M` as a small caption under it so the numbers take no width of
+their own. The **Session** control carries a count when anything in the drawer
+asks for attention — pending notifications, policy proposals, running
+processes (`ui/drawerAttention.ts`).
+
+It also carries one warn-tinted chip left of the meter, fed by the two
+transport topics through `ui/upstream.ts` (a pure function of the pair, so the
+component holds no endpoint or clock logic). While `upstream_retry` is set the
+chip names the retry — `↻ stream aborted, retrying (2 of 12)`, with a `peek:`
+prefix for a fork peek's retry, and the upstream's `detail` text as the title;
+otherwise `upstream_failure` names the last non-success status,
+`upstream 429 ×3`, the count covering consecutive matching statuses and elided
+at one. Both topics are level-triggered and both clear on recovery
+(docs/transport.md), so the chip's absence is the all-clear rather than
+"nothing observed yet", and a stalling loop's cause is visible while it
+stalls. The chip renders no countdown — `next_attempt_at` is an absolute
+instant, and a remaining-wait readout would mean either a clock read in the
+render path or an interval driving a ticking value. Loop state is not restated
+in the bar: the banner, the gate cue, and the composer's turn-state carry it.
 The page is `viewport-fit=cover`, which draws it under the status bar and beside
 the notch, so the bar pads itself by the `safe-area-inset-*` values; sticky
 elements below it dock at its measured height rather than a constant.
 
 ## The composer area
 
-The loop dials live on the dock's status bar (`ui/Composer.tsx`): gates
-arrive at the composer, so its dock is where current state is controlled.
-Interrupt (`POST /v1/loop/interrupt`, enabled while `running`), hold/resume,
-the pace select, and the review-level select — one `PATCH /v1/loop` for the
-dials; the api layer's `patchLoop` translates to the wire's partial-`pace`
-shape. The status bar is the dock's **outermost row, below the composer at
-the window edge**, full-bleed with the turn state at the far left and the
-dials at the far right — chrome frames content, as in a native status bar
-(the row originally sat *above* the input, which put the interactive content
-at the window edge; reversed on use, 2026-08-20). The turn state is a
-breathing accent dot beside "your turn" in the serif when the loop is idle,
-a dim `running…` while it moves, and the daemon's own sentence in the warn
-color when the `stall` topic is set — a trajectory that gave up rather than
-finished ([transport.md](transport.md)), which the idle state alone cannot
-say; the upstream's words ride along as the hover title. The three-way choice
+The status bar (`ui/Composer.tsx`) is the dock's **outermost row, below the
+composer at the window edge**, full-bleed — chrome frames content, as in a
+native status bar (the row originally sat *above* the input, which put the
+interactive content at the window edge; reversed on use, 2026-08-20). It pads
+by `safe-area-inset-bottom`, so on a phone it clears the home indicator and the
+rounded corners. At the left the turn state; at the right only the controls
+that apply now: **interrupt** (`POST /v1/loop/interrupt`) while a turn runs,
+and **resume** while the loop is held, because a hidden hold reads as a hang.
+The other dials — review level, pace, hold — are the drawer's. The turn state is
+"your turn" in the serif when the loop is idle, a dim `running…` while it
+moves, and the daemon's own sentence in the warn color when the `stall` topic
+is set — a trajectory that gave up rather than finished
+([transport.md](transport.md)), which the idle state alone cannot say; the
+upstream's words ride along as the hover title. The three-way choice
 is `ui/turnState.ts`, a pure function of `running` and `stall`, so the
-component holds no branching of its own. The span between state and dials is
+component holds no branching of its own. The span between state and controls is
 reserved for the key-hint strip (binds are deferred to interactive
 suggestions; [backlog/web/README.md](../backlog/web/README.md)). The input
 carries no hint about mid-trajectory injection
@@ -955,11 +945,48 @@ The controls strip is gone; its last resident, the usage line, lives in the
 top bar. A non-`live` connection still shows as a full-width banner under
 the bar, not just a dimmed word.
 
-## The bottom panel
+## The drawer
 
-`ui/Panel.tsx`: tasks, inbox, policy — docked with the composer (`.dock`,
-one sticky footer), collapsed to its tab strip by default, the open tab
-persisted like the theme, counts riding the tabs.
+`ui/Drawer.tsx`: everything about a session that is not the conversation,
+behind the top bar's **Session** control, so the page itself is the transcript
+and the composer. A side sheet on a wide window; on the phone breakpoint a
+bottom sheet with a grabber, rounded top corners, and room for the home
+indicator. It closes with Done, a tap on the scrim, or history-back (it is an
+overlay to `ui/overlayHistory.ts` like the inspector), and it and the inspector
+exclude each other since both occupy the right edge. The slide is the
+inspector's: transform only, entry from `@starting-style`, exit via `.closing`
+with the unmount on `transitionend` and a timeout fallback.
+
+**The phone sheet drags.** Its header is the handle; the sheet follows the
+finger, stretching with resistance above its resting place. On release it
+takes the velocity of the last 80ms only — a drag that sped up and then stopped
+was not a flick — projects 180ms of that momentum, and closes if the projection
+lands past half the sheet's height; otherwise it springs back. That is the rule
+an iOS sheet follows; a quarter-height threshold with average speed closed on
+short quick drags and left no way to abandon one.
+
+The header is "Session details"; the title follows in full as a serif
+paragraph. Sections, each drawn only when it has content — "no processes" and
+"nothing pending" were placeholders a reader had to open to learn nothing
+from:
+
+- **inbox** and **tasks** first, because they are what asks for attention.
+- **the session** — model, spotter, triage (only when it differs from main),
+  directory, id, cost as `key value` facts; then the review level in words
+  ("The spotter decides", "The spotter, then you", "You review every call",
+  and "The supervising session" only while that is the value), the pause
+  between steps, and hold after the current step — one `PATCH /v1/loop`, which
+  the api layer's `patchLoop` translates to the wire's partial-`pace` shape.
+- **policy**.
+- **this device** — theme, density switches, notifications; app-wide rather
+  than per-session, here until the app has a settings home.
+
+Labels in the drawer are IBM Plex Sans (`--font-ui`), values mono, the title
+serif: the interface voice is being tried here before the rest of the chrome
+adopts it.
+
+The sections carried over from the bottom panel they replaced, in detail
+(`ui/Panel.tsx` holds them; `Drawer.tsx` arranges them):
 
 - **tasks** — one row per process (command, pid, elapsed ticked once a
   second, muted flag) beside a detail pane: the command line, the verbs —
@@ -984,9 +1011,6 @@ persisted like the theme, counts riding the tabs.
 - **inbox** — pending notifications with dismiss
   (`DELETE /v1/notifications/:id`); on an idle loop the inbox delivers
   immediately, so rows only exist while a tool is mid-run.
-- **interface** — the theme select and the transcript density switches,
-  buried on purpose: neither is an affordance used *during* a session, so
-  they do not merit constant display (moved out of the header, 2026-08-19).
 - **policy** — the perimeter from `role` (scope, commands, paths, tools)
   with pending proposals merged *in their committed sort position*,
   ⊕-flagged, each carrying commit and cancel (`PATCH /v1/proposals/:seq`).
@@ -998,8 +1022,8 @@ persisted like the theme, counts riding the tabs.
   that proposes a grant no longer blocks on a human at a terminal.
 
 The gate cue's bottom offset is measured from the dock's height with a
-`ResizeObserver` rather than guessed in CSS — the panel and the composer
-both change that height.
+`ResizeObserver` rather than guessed in CSS — the composer changes that
+height.
 
 ## The inspector
 
@@ -1469,9 +1493,10 @@ entirely, where slowing the stream only widens it.
 
 Driven by `window.__scrub` from devtools, and by a `efference:scrub` DOM
 CustomEvent — an extension's scripts run in an isolated world that shares the
-DOM and nothing else, so a global the page set is invisible to them. A fixed
-corner badge names the mode and position, without which two screenshots at
-different cursors are indistinguishable.
+DOM and nothing else, so a global the page set is invisible to them. Nothing is
+drawn on the page: installing the recorder prints the interface to the console,
+and each command logs the mode and position it landed on (`[scrub] scrub 137/412`),
+without which two screenshots at different cursors are indistinguishable.
 
 The tape is in memory and covers the current session: a reload starts a new one,
 and so does an HMR update to a `session/` module. Repeatability across reloads

@@ -10,8 +10,8 @@ reasoning):
   variable (opsz, wght), Production Type — `OFL-Newsreader.txt`
 - `plex-mono-regular.woff2` / `plex-mono-italic.woff2` /
   `plex-mono-medium.woff2` — IBM Plex Mono 400 / 400 italic / 500, IBM —
-  `OFL-IBMPlexMono.txt`
+  `OFL-IBMPlex.txt`
+- `plex-sans-regular.woff2` / `plex-sans-medium.woff2` — IBM Plex Sans
+  400 / 500, IBM — `OFL-IBMPlex.txt` (one license covers the Plex family)
 
-IBM Plex Sans is deliberately absent: `--font-ui` falls back to `system-ui`,
-and nothing visible leans on the sans. Adding a face means dropping the file
-here and declaring it in src/theme.css.
+Adding a face means dropping the file here and declaring it in src/theme.css.

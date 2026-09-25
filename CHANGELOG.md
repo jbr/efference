@@ -8,6 +8,10 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- **A session drawer in the web client** (docs/web-client.md): models, directory, cost, review
+  level, pause, hold, policy, tasks and inbox behind one top-bar control — a side sheet on desktop,
+  a draggable bottom sheet on a phone — so the page is the transcript and the composer; empty
+  sections are not drawn, and title changes read as one quiet line.
 - **The web root is a session overview** (docs/web-client.md): sessions grouped into
   workspaces by working directory under sticky headings, one card each saying in words
   whether it needs approval, has stalled, or is waiting for you, with its latest intent or

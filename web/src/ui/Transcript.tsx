@@ -192,16 +192,13 @@ function Leaf({ node }: { node: LeafNode }) {
       </Entry>
     );
   }
-  if ("Preamble" in p) {
-    // Collapsed by default: this is presentation of one audit entry — the
-    // wall of system prompt ahead of the first user turn — not a fold
-    // affordance; render-whole for tool results stands (docs/web-client.md).
+  if ("Title" in p) {
     return (
       <Entry label={null}>
-        <details className="dim">
-          <summary className="kind">preamble</summary>
-          <pre>{p.Preamble.system}</pre>
-        </details>
+        <p className="title-change">
+          Title updated to{" "}
+          <span className="title-change-text">{p.Title.text}</span>
+        </p>
       </Entry>
     );
   }

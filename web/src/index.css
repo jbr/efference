@@ -48,8 +48,6 @@ select,
 label,
 .top-bar,
 .banner,
-.panel-tabs,
-.panel-empty,
 .policy-section,
 .status-bar,
 .entry > .label,
@@ -189,55 +187,74 @@ input[type="checkbox"] {
   flex: 1;
 }
 
-/* Back to the host's session list — present only when a host served this page
-   (docs/web-client.md). Sized to the wordmark it sits beside, not to the body text. */
-.to-list {
-  color: var(--fg-dim);
-  text-decoration: none;
-  font-size: 1.2em;
-}
-
-.to-list:hover {
-  color: var(--fg);
-}
-
+/* The wordmark; under a host it is also the link back to the session list
+   (docs/web-client.md). */
 .wordmark {
   font-family: var(--font-prose);
   font-size: 1.6em;
   color: var(--fg-bright);
   letter-spacing: -0.01em;
+  text-decoration: none;
 }
 
-/* What the session is (docs/web-client.md "The top bar"): its title (or id
-   until one is written), the model answering, then its working directory.
-   Mono, because all are identifiers. Each shrinks with an ellipsis rather than
-   pushing the meter off the bar; the cwd yields first, since the model name is
-   the element the mixed-model case needs. */
-.session-id {
-  display: flex;
-  align-items: baseline;
-  gap: 0.5rem;
-  min-width: 0;
-}
-
+/* The session's title (docs/session-title.md): prose, so the serif, and the
+   one element of the bar that yields width — it ellipsizes before the meter
+   or the drawer control would move. */
 .session-name {
-  color: var(--fg-bright);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.session-model {
+  min-width: 0;
+  font-family: var(--font-prose);
+  font-size: 1.15em;
   color: var(--fg);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.session-cwd {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+/* The context meter: the bar is the reading; the numbers are a caption under
+   it, so they cost no width of their own. */
+.context-meter {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.2rem;
+  flex: none;
+}
+
+.context-meter .meter {
+  width: 5rem;
+}
+
+.context-caption {
+  font-size: 0.8em;
+  line-height: 1;
+  color: var(--fg-faint);
+  text-align: right;
+}
+
+/* The drawer control (ui/Drawer.tsx), with the count of what in the drawer
+   is asking for attention. */
+.drawer-toggle {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.drawer-toggle.open {
+  border-color: var(--border-strong);
+  background: var(--bg-chip);
+  color: var(--fg-bright);
+}
+
+.drawer-count {
+  min-width: 1.1rem;
+  padding: 0 0.3rem;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  font-size: 0.85em;
+  line-height: 1.3;
+  text-align: center;
 }
 
 /* The upstream diagnostic: a warn-tinted chip left of the usage meter. Tinted
@@ -250,10 +267,6 @@ input[type="checkbox"] {
   border-radius: 8px;
   padding: 0 0.4rem;
   white-space: nowrap;
-}
-
-.usage-strong {
-  color: var(--fg);
 }
 
 .meter {
@@ -329,6 +342,21 @@ input[type="checkbox"] {
 .entry.config > .content {
   color: var(--fg-muted);
   white-space: pre-wrap;
+}
+
+/* A title change (docs/session-title.md): a quiet line, since the top bar
+   already shows the title in force. */
+.title-change {
+  margin: 0;
+  font-size: 0.8em;
+  color: var(--fg-dim);
+}
+
+.title-change-text {
+  font-family: var(--font-prose);
+  font-style: italic;
+  font-size: 1.15em;
+  color: var(--fg-muted);
 }
 
 .ambient-source {
@@ -646,57 +674,7 @@ pre {
   padding-bottom: 0.6rem;
 }
 
-.panel {
-  background: var(--bg-surface);
-  border-top: 1px solid var(--border);
-}
-
-.panel-tabs {
-  border-bottom: 1px solid var(--border-subtle);
-}
-
-.panel-tabs-inner {
-  display: flex;
-  align-items: stretch;
-}
-
-.panel-tabs .spacer {
-  flex: 1;
-}
-
-.panel-tab {
-  font-size: 0.75em;
-  padding: 0.45rem 1rem;
-  border: none;
-  border-right: 1px solid var(--border-subtle);
-  background: none;
-  color: var(--fg-faint);
-  cursor: pointer;
-  display: flex;
-  gap: 0.5rem;
-  align-items: center;
-}
-
-.panel-tab.open {
-  color: var(--fg-bright);
-  background: var(--bg-page);
-}
-
-.panel-tab .chip {
-  font-size: 0.9em;
-  color: var(--fg-dim);
-  background: var(--bg-chip);
-  border-radius: 8px;
-  padding: 0 0.4rem;
-}
-
-.panel-empty {
-  padding: 0.8rem 1rem;
-  font-size: 0.85em;
-}
-
 .panel-body {
-  height: 11rem;
   overflow: hidden;
 }
 
@@ -801,8 +779,6 @@ pre {
 .panel-body.inbox,
 .panel-body.policy {
   overflow-y: auto;
-  padding: 0.5rem 0.9rem;
-  font-size: 0.85em;
 }
 
 .inbox-row {
@@ -814,20 +790,21 @@ pre {
 }
 
 .policy-row {
-  display: flex;
-  gap: 0.9rem;
+  display: grid;
+  grid-template-columns: 9ch minmax(0, 1fr) auto;
+  column-gap: 0.75rem;
   align-items: baseline;
-  padding: 0.15rem 0;
+  padding: 0.1rem 0;
 }
 
+/* The row's key, in the drawer's key: value vocabulary (.facts). */
 .policy-section {
-  flex: none;
-  width: 5.5rem;
-  text-align: right;
-  font-size: 0.8em;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--fg-faint);
+  font-family: var(--font-ui);
+  color: var(--fg-dim);
+}
+
+.policy-row > :not(.policy-section) {
+  overflow-wrap: anywhere;
 }
 
 /* A `watch`/`gate`/`deny` command carve-out: warn-tinted so it never reads
@@ -856,18 +833,17 @@ pre {
   align-items: center;
   font-size: 0.8em;
   padding: 0.25rem 0.9rem;
+  /* The row is the bottom edge of the window: clear the home indicator and
+     the rounded corners, as the top bar clears the status bar. */
+  padding-bottom: max(0.25rem, env(safe-area-inset-bottom));
+  padding-left: max(0.9rem, env(safe-area-inset-left));
+  padding-right: max(0.9rem, env(safe-area-inset-right));
   border-top: 1px solid var(--border-subtle);
   background: var(--bg-surface);
 }
 
 .status-bar .spacer {
   flex: 1;
-}
-
-.turn-state {
-  display: flex;
-  gap: 0.5rem;
-  align-items: center;
 }
 
 .dot {
@@ -1905,18 +1881,14 @@ select {
     gap: 0.5rem;
   }
 
-  .top-bar .usage {
-    white-space: nowrap;
-  }
-
-  /* Narrow: the model name stays, the directory goes — one identifier's worth
-     of bar is all there is beside the dot and the meter. */
-  .session-cwd {
-    display: none;
-  }
-
-  .meter {
+  .context-meter .meter {
     width: 3.5rem;
+  }
+
+  /* A phone has room for the start of a title and nothing more, and the
+     start alone says less than nothing; the drawer shows it whole. */
+  .session-name {
+    display: none;
   }
 
   .status-bar {

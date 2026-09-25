@@ -99,6 +99,7 @@ export function buildTree(entries: LogEntry[]): TranscriptNode[] {
   const nodes: TranscriptNode[] = [];
   const byCall = new Map<CallId, CallNode>();
   const seqs: Seq[] = [];
+  let title: string | null = null;
 
   for (const entry of entries) {
     const p = entry.payload;
@@ -193,6 +194,18 @@ export function buildTree(entries: LogEntry[]): TranscriptNode[] {
     // backgrounding result and the exit notification — and this is the durable
     // record behind them, read by `GET /processes/:id`, not a block to show.
     if ("ProcessEvent" in p) continue;
+
+    // The system prompt is audit data, not conversation: it is what the model
+    // was told before the operator said anything, and a new session whose only
+    // entry it is should read as empty rather than as a collapsed block.
+    if ("Preamble" in p) continue;
+
+    // A title entry is appended even when the peek kept the previous text
+    // (docs/session-title.md); only a change is something to read.
+    if ("Title" in p) {
+      if (p.Title.text === title) continue;
+      title = p.Title.text;
+    }
 
     nodes.push({ kind: "leaf", key: `${entry.seq}`, entry });
   }

@@ -13,30 +13,18 @@ import {
   interruptLoop,
   patchLoop,
 } from "../api/http.ts";
-import type { Pace, ReviewLevel, Stall } from "../api/types.ts";
+import type { Pace, Stall } from "../api/types.ts";
 import { turnState } from "./turnState.ts";
 import { useDockOffset } from "./float.ts";
 import { useNarrow } from "./useNarrow.ts";
-
-const PACES: [number, string][] = [
-  [0, "full"],
-  [2000, "2s"],
-  [10000, "10s"],
-  [30000, "30s"],
-];
-
-const LEVELS: ReviewLevel[] = ["autonomous", "spotter_human", "human_only"];
 
 export function Composer({
   submit: send,
   recalled,
   pace,
-  reviewLevel,
   running,
   stall,
   gatePending,
-  quiet,
-  onReveal,
 }: {
   submit: (text: string) => Promise<void>;
   /** Text a recall pulled back out of the daemon's queue, to prepend to the draft
@@ -44,7 +32,6 @@ export function Composer({
    * text twice is two events, not one value. */
   recalled: { text: string; nonce: number } | null;
   pace: Pace | null;
-  reviewLevel: ReviewLevel | null;
   running: boolean;
   /** The trajectory gave up rather than finished (docs/transport.md): the
    * turn-state readout says so, since `running: false` alone cannot. */
@@ -52,10 +39,6 @@ export function Composer({
   /** A gate float may own the above-dock slot; the compose chip yields to
    * it (the float carries its own steering input). */
   gatePending: boolean;
-  /** Narrow chrome quieting: dials hidden until the ⋯ reveal (App state,
-   * shared with the panel strip). */
-  quiet: boolean;
-  onReveal: () => void;
 }) {
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -114,7 +97,6 @@ export function Composer({
     }
   }
 
-  const speed = pace?.speed_ms ?? 0;
   const turn = turnState(running, stall);
   return (
     <>
@@ -175,94 +157,31 @@ export function Composer({
         </div>
       </form>
       {/* The status bar: the dock's outermost row, at the window edge below
-          the composer — chrome frames content, as in a native status bar.
-          Full-bleed: turn state at the far left, the loop dials at the far
-          right. */}
+          the composer. Turn state at the left; at the right only the controls
+          that apply now — interrupt while a turn runs, resume while held.
+          The rest of the loop's dials are the drawer's (ui/Drawer.tsx). */}
       <div className="status-bar">
-        <span className="turn-state">
-          <span className={running ? "dot breathing" : "dot"} />
-          <span
-            className={
-              turn.kind === "running"
-                ? "dim"
-                : turn.kind === "stalled"
-                  ? "stalled"
-                  : "your-turn"
-            }
-            title={turn.title}
-          >
-            {turn.text}
-          </span>
+        <span
+          className={
+            turn.kind === "running"
+              ? "turn-state dim"
+              : turn.kind === "stalled"
+                ? "turn-state stalled"
+                : "turn-state your-turn"
+          }
+          title={turn.title}
+        >
+          {turn.text}
         </span>
-        {/* Reserved: the key-hint strip lands here once binds exist. */}
         <span className="spacer" />
-        {/* Quiet chrome: on narrow the dials hide until ⋯ reveals them —
-            interrupt stays whenever it is usable (it is the control a phone
-            wants when a run goes wrong), held pace stays because a hidden
-            hold reads as a hang. */}
-        {(!quiet || running) && (
-          <button
-            type="button"
-            disabled={!running}
-            onClick={() => act(interruptLoop())}
-          >
+        {running && (
+          <button type="button" onClick={() => act(interruptLoop())}>
             interrupt
           </button>
         )}
-        {(!quiet || (pace?.held ?? false)) && (
-          <button
-            type="button"
-            onClick={() => act(patchLoop({ held: !(pace?.held ?? false) }))}
-          >
-            {pace?.held ? "resume" : "hold"}
-          </button>
-        )}
-        {!quiet && (
-          <label className="dim">
-            pace{" "}
-            <select
-              value={speed}
-              onChange={(e) =>
-                act(patchLoop({ speedMs: Number(e.target.value) }))
-              }
-            >
-              {!PACES.some(([ms]) => ms === speed) && (
-                <option value={speed}>{speed} ms</option>
-              )}
-              {PACES.map(([ms, label]) => (
-                <option key={ms} value={ms}>
-                  {label}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
-        {!quiet && (
-          <label className="dim">
-            review{" "}
-            <select
-              value={reviewLevel ?? ""}
-              onChange={(e) =>
-                act(patchLoop({ reviewLevel: e.target.value as ReviewLevel }))
-              }
-            >
-              {reviewLevel === null && <option value="" disabled hidden />}
-              {LEVELS.map((level) => (
-                <option key={level} value={level}>
-                  {level}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
-        {narrow && (
-          <button
-            type="button"
-            className="linkish"
-            title={quiet ? "show the dials and panel tabs" : "hide them again"}
-            onClick={onReveal}
-          >
-            {quiet ? "⋯" : "×"}
+        {(pace?.held ?? false) && (
+          <button type="button" onClick={() => act(patchLoop({ held: false }))}>
+            resume
           </button>
         )}
       </div>

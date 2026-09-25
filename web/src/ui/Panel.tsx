@@ -1,8 +1,7 @@
-// The bottom panel (docs/web-client.md): tasks, inbox, policy — the docked
-// home for what is neither transcript nor composer. Collapsed it is the tab
-// strip; a tab opens its pane. The tasks pane is the rendering surface for
-// background-process output, which previously folded into the store and
-// never rendered anywhere.
+// The drawer's sections (docs/web-client.md): tasks, inbox, policy, and the
+// interface settings — what is neither transcript nor composer. `Drawer.tsx`
+// arranges them. The tasks section is the rendering surface for
+// background-process output.
 
 import { useEffect, useRef, useState } from "react";
 import {
@@ -27,11 +26,6 @@ import {
   useViewSettings,
   type ViewSettings,
 } from "./viewSettings.ts";
-
-type Tab = "tasks" | "inbox" | "policy" | "interface";
-const TABS: Tab[] = ["tasks", "inbox", "policy", "interface"];
-
-const KEY = "panel";
 
 /** Re-render once a second while `active`, for the elapsed clocks. */
 function useTick(active: boolean) {
@@ -66,7 +60,7 @@ function Tail({ text }: { text: string }) {
   );
 }
 
-function Tasks({
+export function Tasks({
   processes,
   output,
   lost,
@@ -86,9 +80,8 @@ function Tasks({
     processes.find((p) => !p.background) ??
     processes.at(0) ??
     null;
-  if (shown === null) {
-    return <div className="panel-empty dim">no processes</div>;
-  }
+  // The drawer draws this section only when there are processes.
+  if (shown === null) return null;
   return (
     <div className="panel-body tasks">
       <div className="proc-list">
@@ -157,18 +150,13 @@ function Tasks({
   );
 }
 
-function Inbox({
+export function Inbox({
   notifications,
   act,
 }: {
   notifications: PendingNotification[];
   act: (call: Promise<unknown>) => void;
 }) {
-  if (notifications.length === 0) {
-    // On an idle loop the inbox delivers immediately; rows only exist while
-    // a tool is mid-run.
-    return <div className="panel-empty dim">nothing pending</div>;
-  }
   return (
     <div className="panel-body inbox">
       {notifications.map((n) => (
@@ -187,7 +175,7 @@ function Inbox({
   );
 }
 
-function Policy({
+export function Policy({
   role,
   proposals,
   act,
@@ -197,9 +185,7 @@ function Policy({
   act: (call: Promise<unknown>) => void;
 }) {
   const rows = policyRows(role, proposals);
-  if (rows.length === 0) {
-    return <div className="panel-empty dim">no role set</div>;
-  }
+  if (rows.length === 0) return null;
   return (
     <div className="panel-body policy">
       {rows.map((row, i) => {
@@ -376,7 +362,7 @@ const VIEW_LABELS: Record<keyof ViewSettings, string> = {
  * Buried here on purpose — none of these is an affordance used *during* a
  * session, so they do not merit constant display (jbr, 2026-08-19). Hiding
  * via the switches is display-only; the entries stay in the store. */
-function Interface() {
+export function Interface() {
   const settings = useViewSettings();
   const [choice, setChoice] = useState(themeChoice);
   return (
@@ -412,90 +398,6 @@ function Interface() {
       {/* Hidden entirely where the browser has no push at all — there is
           nothing to explain, and an obstacle notice implies a path forward. */}
       {"PushManager" in window && <Notifications />}
-    </div>
-  );
-}
-
-export function Panel({
-  processes,
-  notifications,
-  role,
-  proposals,
-  processOutput,
-  processLost,
-  quiet,
-}: {
-  processes: Process[];
-  notifications: PendingNotification[];
-  role: Role | null;
-  proposals: Proposal[];
-  processOutput: Record<number, string>;
-  processLost: Record<number, number>;
-  /** Narrow-viewport chrome quieting (docs/web-client.md "The phone
-   * breakpoint"): while true and nothing demands the strip — no open pane,
-   * no counts — the tab row hides entirely; the status row's ⋯ reveals it. */
-  quiet: boolean;
-}) {
-  const [open, setOpen] = useState<Tab | null>(
-    () => (localStorage.getItem(KEY) as Tab | null) || null,
-  );
-  const [error, setError] = useState<string | null>(null);
-  const act = (call: Promise<unknown>) =>
-    void call.then(() => setError(null)).catch((e) => setError(`${e}`));
-  const pick = (tab: Tab) => {
-    const next = open === tab ? null : tab;
-    setOpen(next);
-    if (next === null) localStorage.removeItem(KEY);
-    else localStorage.setItem(KEY, next);
-  };
-  const counts: Record<Tab, number> = {
-    tasks: processes.length,
-    inbox: notifications.length,
-    policy: proposals.length,
-    interface: 0,
-  };
-  const anyCount = TABS.some((tab) => counts[tab] > 0);
-  if (quiet && open === null && !anyCount) return null;
-  return (
-    <div className="panel">
-      {/* The tab strip bleeds full width like the rest of the chrome; the
-          tabs themselves sit in the content column. */}
-      <div className="panel-tabs">
-        <div className="panel-tabs-inner">
-          {TABS.map((tab) => (
-            <button
-              key={tab}
-              className={open === tab ? "panel-tab open" : "panel-tab"}
-              onClick={() => pick(tab)}
-            >
-              {tab}
-              {counts[tab] > 0 && <span className="chip">{counts[tab]}</span>}
-            </button>
-          ))}
-          <span className="spacer" />
-          {open !== null && (
-            <button className="panel-tab" onClick={() => pick(open)}>
-              collapse
-            </button>
-          )}
-        </div>
-      </div>
-      <div className="col">
-        {error && <div className="error">{error}</div>}
-        {open === "tasks" && (
-          <Tasks
-            processes={processes}
-            output={processOutput}
-            lost={processLost}
-            act={act}
-          />
-        )}
-        {open === "inbox" && <Inbox notifications={notifications} act={act} />}
-        {open === "policy" && (
-          <Policy role={role} proposals={proposals} act={act} />
-        )}
-        {open === "interface" && <Interface />}
-      </div>
     </div>
   );
 }

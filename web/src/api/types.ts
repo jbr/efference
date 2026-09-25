@@ -60,7 +60,15 @@ export type Payload =
   | { ConfigEdit: ConfigEdit }
   | { ToolTelemetry: ToolTelemetry }
   | { ProcessEvent: ProcessEvent }
-  | { Preamble: { system: string; context: unknown } };
+  | { Preamble: { system: string; context: unknown } }
+  | { Title: Title };
+
+/** One title decision (docs/session-title.md). Log metadata: appended even when
+ * the peek kept the previous text, so consecutive entries can repeat. */
+export interface Title {
+  text: string;
+  author: "triage" | "operator";
+}
 
 /** Why an assistant entry is record-only. Two serializations of the same fact
  * (src/log.rs): a bare string, and the object an entry with stream diagnostics
