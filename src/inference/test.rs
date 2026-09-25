@@ -102,6 +102,55 @@ auth = { kind = "env", key = "MISSING_KEY" }
     assert!(error.contains("MISSING_KEY"), "{error}");
 }
 
+/// One connection's endpoint, resolved the way that connection's roles are —
+/// and each way a name fails to yield one says what to do about it
+/// (docs/transport.md). This is what a caller with a single connection in hand
+/// reads, rather than inventing a role to resolve one.
+#[test]
+fn one_connection_resolves_to_its_endpoint_and_names_its_refusals() {
+    let registry = registry(
+        r#"
+[connections.ready]
+provider = "openai"
+auth = { kind = "env", key = "READY_KEY" }
+
+[connections.off]
+provider = "openrouter"
+auth = { kind = "env", key = "OFF_KEY" }
+disabled = true
+
+[connections.missing]
+provider = "anthropic"
+auth = { kind = "env", key = "MISSING_KEY" }
+"#,
+        environment(&[("READY_KEY", "ready-secret"), ("OFF_KEY", "off-secret")]),
+    );
+
+    let (provider, endpoint) = registry.endpoint("ready").unwrap();
+    assert_eq!(provider, Provider::OpenAI);
+    assert_eq!(
+        endpoint.url.as_deref(),
+        Some("https://api.openai.com/v1/responses")
+    );
+    assert_eq!(endpoint.auth_value.get(), "Bearer ready-secret");
+
+    // A name nobody configured lists the names that are, since the caller's
+    // next move is to pick one.
+    let unknown = registry.endpoint("nope").unwrap_err().to_string();
+    assert!(unknown.contains("nope"), "{unknown}");
+    assert!(
+        unknown.contains("missing, off, ready"),
+        "the configured names, sorted: {unknown}"
+    );
+
+    // A connection turned off in the configuration and one whose credential
+    // would not load are different facts, and each names its own remedy.
+    let disabled = registry.endpoint("off").unwrap_err().to_string();
+    assert!(disabled.contains("disabled"), "{disabled}");
+    let unusable = registry.endpoint("missing").unwrap_err().to_string();
+    assert!(unusable.contains("MISSING_KEY"), "{unusable}");
+}
+
 #[test]
 fn own_triage_rejects_a_foreign_dialect_before_boot() {
     let registry = registry(

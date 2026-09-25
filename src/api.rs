@@ -378,12 +378,13 @@ pub use diagnostics::{
     upstream_failure_state, upstream_retry_state,
 };
 pub(crate) use endpoint::codex_cached_credentials;
-pub use endpoint::{Endpoint, sticky_session_id};
+pub use endpoint::{Endpoint, ProbeResponse, sticky_session_id};
 pub use failure::FailureClass;
 pub use plan::{PlanLimit, PlanSnapshot, PlanState, PlanWindow, plan_state};
+#[cfg(test)]
+pub(crate) use provider::seed_codex_catalog;
 pub use provider::{
     ModelCapabilities, OUTPUT_FLOOR, PromptCachePolicy, Provider, ResponsesProfile, WireDialect,
-    openai_model_capabilities,
 };
 pub use render::{
     render_messages_pretty, render_messages_yaml, render_request_pretty, render_request_yaml,

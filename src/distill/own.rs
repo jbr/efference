@@ -48,9 +48,7 @@ impl ForkPeek {
                     endpoint.provider.name()
                 )
             })?;
-        if let Some(effort) = &triage.effort
-            && endpoint.provider.validates_effort_levels()
-        {
+        if let Some(effort) = &triage.effort {
             caps.check_effort(effort, &triage.model)?;
         }
         let mut client = Client::new(endpoint.for_triage(), &triage.model, system, None)

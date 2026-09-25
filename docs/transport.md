@@ -180,19 +180,25 @@ listing at boot and parsed into `ModelCapabilities::supported_efforts` /
 no declared levels). A level the metadata invents is validated against that
 list and sent as spelled, not rejected by a local list that cannot know it.
 
-**Boot validation, per provider** (`Provider::validates_effort_levels` →
-`ModelCapabilities::check_effort`, called from boot). OpenRouter refuses a
-configured level the metadata does not affirmatively declare, because it maps
-an unsupported level to the nearest supported one **silently** — a session
-could otherwise believe it set a knob that did nothing (observed 2026-08-29:
-`--effort max` on GLM 5.3 flash, whose `default_effort` was already `max`, so
-the flag was a no-op by coincidence). A model that declares no levels refuses
-every configured level: nothing was affirmed, so nothing is sent. Anthropic's
-metadata names no levels, so the check does not run there and a misspelled
-level is the provider's own 400 on the first turn. The boot line prints
-`effort: {level}` when one is set, and `effort: unset · provider default
-{default}` when the metadata names one, which answers what an unset knob will
-do without a probe.
+**Boot validation, per source** (`ModelCapabilities::validates_efforts` →
+`ModelCapabilities::check_effort`, called from boot). A level is checked only
+against a list the source names and whose values are the request's own. OpenRouter
+refuses a level outside a list its metadata names, because it maps an unsupported
+level to the nearest supported one **silently** — a session could otherwise believe
+it set a knob that did nothing (observed 2026-08-29: `--effort max` on GLM 5.3
+flash, whose `default_effort` was already `max`, so the flag was a no-op by
+coincidence). A model whose entry names no levels is not refused: 137 of 459
+OpenRouter models name none, `openai/o4-mini` among them, and o4-mini honors effort
+all the same (2,752 reasoning tokens at `low`, the 6,000-token cap at `high`,
+2026-09-25). Anthropic's metadata names no levels, and a Codex catalog entry names
+Codex CLI's modes rather than the request's values (above), so neither is checked,
+and a misspelled level is the provider's own 400 on the first turn.
+
+The boot line prints `effort: {level}` for a checked level, `effort: {level} ·
+unchecked, the model's metadata does not bound it` for one sent without a check —
+the case where a provider may drop it silently, which nothing else would show — and
+`effort: unset · provider default {default}` when the metadata names a default,
+which answers what an unset knob will do without a probe.
 
 **The one coupling between the axes**: the levels in `EFFORTS_REQUIRING_THINKING`
 (`xhigh`, `max`) require thinking enabled, and the pairing is a 400 from
@@ -780,15 +786,8 @@ spotter model must be one its connection's metadata source knows: with no
 `[defaults].spotter`, the main connection's cheap band applies
 (`Provider::default_spotter_model`, gpt-5.6-luna here, claude-haiku-4-5 on
 Anthropic and its `anthropic/` slug on OpenRouter), and an explicit `--spotter-model` passes its own provider's
-check. The catalog
-(`api/provider/openai.rs`) is exact per provider and model: GPT-5.6 and its
-sol/terra/luna variants, GPT-6 Astra, and the subscription-only, text-only
-GPT-5.3 Codex Spark. Spark has a 128,000-token context window and is refused on
-the platform provider; Astra takes no `none` effort and no `temperature` —
-`ModelCapabilities::accepts_temperature` is what makes an explicit
-`--temperature` against it fail at boot rather than on the first request. An
-unknown slug is refused with the list this build knows; slugs are never
-normalized, so `gpt-6.0-astra` is unknown.
+check. Model capabilities on this dialect come from the provider's catalog, not
+from the build (**OpenAI capabilities**, under Providers below).
 
 ## Providers
 
@@ -1030,12 +1029,65 @@ log without an identity uses its recorded dialect and default placements, with
 a note; only a legacy full envelope may load the current role config to rebuild
 a missing system snapshot. Nothing reads a provider from environment variables.
 
-**OpenAI capabilities** come from a compiled catalog (`api/provider/openai.rs`)
-rather than a metadata GET: the Models endpoint reports none of the limits the
-boot path consumes. Entries are exact and may be provider-specific:
-`gpt-5.3-codex-spark` resolves only on `openai-codex`, while the shared platform
-models resolve on either Responses endpoint. An unknown model fails boot rather
-than inheriting a family's limits.
+**OpenAI capabilities** come from the provider's own model catalog rather than
+from a table in this build (`api/provider/codex.rs`), so a model released after
+the build resolves the same as one released before it. Both arms read the
+subscription backend's catalog, cached per connection for five minutes and shared
+by a session's main role, its spotter, and any triage. An entry reports the
+context window the backend says the model works in, its reasoning levels and
+default, and its input modalities; a model the catalog does not name passes on the
+arm's baseline instead of failing boot, and the first turn is the test of whether
+the provider serves it.
+
+- **`openai-codex`** reads it as its own source: a catalog that cannot be read,
+  with nothing cached, fails the lookup.
+- **`openai`** reads it as a borrowed one. The platform Models endpoint (list and
+  per-model alike) reports `id`, `object`, `created`, and `owned_by` and none of
+  the limits a boot path consumes, while the catalog route answers a platform key.
+  So the platform key is also sent to `chatgpt.com`, and a failed read logs a
+  warning and boots on the baseline rather than refusing the session. The
+  catalog's windows are the subscription backend's, which may be smaller than the
+  platform's; the smaller figure costs an early compaction, where a larger one
+  would cost a 400.
+
+The catalog reports no output cap, no temperature acceptance, and no cache
+policy, and those are read as the arm's baseline asserts: a model that rejects
+`--temperature` is refused by the provider rather than by the harness, and an
+unreported cap is an unreported cap (the boot line says so). The cache policy
+is the one exception, because it is a property of the backend rather than of a
+model — the Codex backend rejects every explicit cache parameter on every model
+it serves, so that arm reports implicit, and the platform accepts explicit
+breakpoints, so that arm reports explicit. Effort levels are the one capability a boot path
+*checks*, and only where a source's list is the request's own list: a Codex
+catalog entry names what Codex CLI offers, which includes a delegation mode the
+Responses API rejects and omits values it accepts, so its levels are printed on
+the boot line and sent as configured, and the provider's 400 — which names every
+value it accepts — is the check (`ModelCapabilities::validates_efforts`, and
+**Boot validation, per source** above).
+
+**The listing route** (`Provider::models_url`, read by `Endpoint::probe`) is a
+GET whose status, `ETag`, and body survive to the caller whatever the status,
+carrying the identity a turn carries — auth, the provider's extra headers, its
+attribution, and `anthropic-version` where the dialect is Messages — because a
+catalog scoped to an account answers only to that account's headers, and a
+header added to an in-flight request is not part of the request that went out.
+`efference dev models {connection}` is its reader; on the Codex arm it is also
+the capability source above, and on the others it is a menu's source
+(backlog/session-model-discovery.md).
+
+The two OpenAI arms' catalogs are separate routes. `https://api.openai.com/v1/models`
+is the platform listing and answers a ChatGPT grant with 403 naming a missing
+`api.model.read` scope: the grant authenticates, and is not a platform key. The
+subscription backend serves its own catalog at
+`https://chatgpt.com/backend-api/codex/models`, the route Codex CLI reads; it
+answers a platform key as well as a grant (200, the same entries), and refuses an
+unauthenticated or malformed bearer with 401. That route requires a `client_version` query parameter, and each entry
+carries a `minimal_client_version` the backend filters on — so which models a
+client is shown follows the version it claims, and a version below every entry's
+minimum answers 200 with an empty catalog rather than an error. This build
+claims the newest generation rather than its own version, which is the whole
+list of models any client can see; the models gated highest are the ones released
+most recently.
 
 **Sticky routing (`x-session-id`).** OpenRouter routes a model slug to *some*
 upstream provider and keeps a conversation on one of them so the prompt cache

@@ -4,26 +4,6 @@
 
 use super::*;
 
-/// The Codex backend takes the catalog's limits but not its explicit cache
-/// policy: it rejects `prompt_cache_breakpoint`, so the arm reports implicit.
-#[tokio::test]
-async fn codex_backend_capabilities_report_implicit_caching() {
-    let codex =
-        Endpoint::from_credentials(Provider::OpenAICodex, "tok".into(), Some("a".into()), None)
-            .unwrap()
-            .fetch_capabilities("gpt-5.6-luna", &[])
-            .await
-            .unwrap();
-    assert_eq!(codex.prompt_cache, PromptCachePolicy::Implicit);
-    let platform = Endpoint::from_credentials(Provider::OpenAI, "tok".into(), None, None)
-        .unwrap()
-        .fetch_capabilities("gpt-5.6-luna", &[])
-        .await
-        .unwrap();
-    assert_eq!(platform.prompt_cache, PromptCachePolicy::Explicit);
-    assert_eq!(codex.context_length, platform.context_length);
-}
-
 /// The Anthropic Models API shape: `max_input_tokens` is the context window,
 /// `max_tokens` the output cap; unknown fields (`capabilities`, …) ignored.
 #[test]
@@ -297,49 +277,41 @@ fn prompt_caching_is_read_off_the_endpoint_metadata() {
     );
 }
 
-/// OpenAI's Models endpoint does not carry the fields boot consumes, so the
-/// current family is an exact compiled profile rather than a partial remote
-/// response. The alias is listed separately and unknown IDs do not inherit a
-/// family-shaped guess.
+/// The platform arm reads the subscription backend's catalog, which answers a
+/// platform key and reports what the platform's own Models API does not: the
+/// window, the reasoning levels, the modalities (docs/transport.md). The cache
+/// policy stays the platform's own — explicit, where the Codex arm's is
+/// implicit — because the catalog reports none. A model the catalog does not
+/// name boots on that baseline rather than failing.
+#[tokio::test]
+async fn the_platform_arm_reads_the_catalog_over_its_own_baseline() {
+    super::seed_codex_catalog(Provider::OpenAI, "");
+    let platform = Endpoint::from_credentials(Provider::OpenAI, "sk-test".into(), None, None)
+        .expect("a platform connection is well-formed");
+    let named = platform
+        .fetch_capabilities("gpt-5.6-luna", &[])
+        .await
+        .unwrap();
+    assert_eq!(named.context_length, Some(272_000));
+    assert_eq!(named.default_effort.as_deref(), Some("medium"));
+    assert!(named.supports_image_input);
+    assert_eq!(named.prompt_cache, PromptCachePolicy::Explicit);
+    assert!(!named.validates_efforts);
+
+    let unnamed = platform
+        .fetch_capabilities("gpt-9-luna", &[])
+        .await
+        .unwrap();
+    assert_eq!(unnamed.context_length, None);
+    assert_eq!(unnamed.prompt_cache, PromptCachePolicy::Explicit);
+}
+
+/// The spotter default each arm falls back to, for a connection that names none
+/// of its own (docs/permissions.md).
 #[test]
-fn openai_gpt_5_6_capability_profiles_are_exact() {
-    for model in ["gpt-5.6", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"] {
-        let caps = super::provider::openai_model_capabilities(Provider::OpenAI, model).unwrap();
-        assert_eq!(caps.context_length, Some(1_050_000), "{model}");
-        assert_eq!(caps.max_output_tokens, Some(128_000), "{model}");
-        assert!(caps.supports_reasoning, "{model}");
-        assert!(caps.supports_image_input, "{model}");
-        assert_eq!(caps.prompt_cache, PromptCachePolicy::Explicit, "{model}");
-        assert_eq!(caps.default_effort.as_deref(), Some("medium"), "{model}");
-        assert!(caps.accepts_temperature, "{model}");
-        assert_eq!(
-            caps.supported_efforts.as_deref(),
-            Some(&["none", "low", "medium", "high", "xhigh", "max"].map(String::from)[..]),
-            "{model}",
-        );
-    }
-
-    // GPT-6 Astra: the model page's window and output, no `none` effort, no
-    // temperature (docs/transport.md).
-    let astra =
-        super::provider::openai_model_capabilities(Provider::OpenAI, "gpt-6-astra").unwrap();
-    assert_eq!(astra.context_length, Some(1_050_000));
-    assert_eq!(astra.max_output_tokens, Some(128_000));
-    assert!(astra.supports_reasoning && astra.supports_image_input);
-    assert!(!astra.accepts_temperature);
-    assert_eq!(astra.default_effort, None);
-    assert_eq!(
-        astra.supported_efforts.as_deref(),
-        Some(&["low", "medium", "high", "xhigh", "max"].map(String::from)[..]),
-    );
-    // The harness does not normalize slugs: a `.0` the catalog never named is unknown,
-    // and the error lists what this build knows.
-    let error = super::provider::openai_model_capabilities(Provider::OpenAI, "gpt-6.0-astra")
-        .unwrap_err()
-        .to_string();
-    assert!(error.contains("gpt-6-astra"), "{error}");
-
-    // The spotter default follows the catalog (docs/permissions.md).
+fn each_arm_names_its_own_default_spotter() {
+    // One default per arm, not a catalog: the spotter shares the endpoint and
+    // wants the cheap band, and no source reports which model that is.
     assert_eq!(
         Provider::OpenAI.default_spotter_model(),
         Some("gpt-5.6-luna")
@@ -361,39 +333,6 @@ fn openai_gpt_5_6_capability_profiles_are_exact() {
     assert_eq!(
         Provider::Custom(WireDialect::Messages).default_spotter_model(),
         None
-    );
-
-    let error = super::provider::openai_model_capabilities(Provider::OpenAI, "gpt-5.7-luna")
-        .unwrap_err()
-        .to_string();
-    assert!(error.contains("no capability profile"), "{error}");
-    assert!(error.contains("gpt-5.7-luna"), "{error}");
-}
-
-/// Spark is a text-only Codex subscription model. It must not leak into the
-/// platform API catalog, where the same model id is unavailable.
-#[test]
-fn codex_spark_capability_profile_is_provider_specific() {
-    let spark =
-        super::provider::openai_model_capabilities(Provider::OpenAICodex, "gpt-5.3-codex-spark")
-            .unwrap();
-    assert_eq!(spark.context_length, Some(128_000));
-    assert_eq!(spark.max_output_tokens, None);
-    assert!(spark.supports_reasoning);
-    assert!(!spark.supports_image_input);
-    assert!(!spark.accepts_temperature);
-    assert_eq!(spark.default_effort.as_deref(), Some("medium"));
-    assert_eq!(
-        spark.supported_efforts.as_deref(),
-        Some(&["low", "medium", "high", "xhigh"].map(String::from)[..]),
-    );
-
-    let error = super::provider::openai_model_capabilities(Provider::OpenAI, "gpt-5.3-codex-spark")
-        .unwrap_err()
-        .to_string();
-    assert!(
-        error.contains("only on the openai-codex provider"),
-        "{error}"
     );
 }
 

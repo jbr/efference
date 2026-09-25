@@ -348,25 +348,37 @@ impl InferenceRegistry {
                 // unresolvable for a reason main's issue already states, so this
                 // adds no second issue for one mistake.
                 None => match main.value.as_ref() {
-                    // A custom endpoint has no cheap band to borrow: its catalog is
-                    // whatever the operator pointed at, so the spotter has to be
-                    // named rather than guessed (`Provider::default_spotter_model`).
-                    Some(main) => match main.provider.default_spotter_model() {
+                    // The main connection answers first, in its own configuration
+                    // (`spotter-model`), then the arm's built-in default. Both are
+                    // answers about a catalog this harness does not compile, so a
+                    // connection that names its own cheap model is the more
+                    // specific of the two.
+                    Some(main) => match self
+                        .connections
+                        .get(&main.connection)
+                        .and_then(|connection| connection.spotter_model.clone())
+                        .or_else(|| main.provider.default_spotter_model().map(str::to_string))
+                    {
                         Some(model) => Effective::resolved(
                             ModelSelection {
                                 connection: main.connection.clone(),
                                 provider: main.provider,
-                                model: model.to_string(),
+                                model,
                             },
                             SelectionSource::MainProvider,
                         ),
+                        // A custom endpoint has no cheap band to borrow and no
+                        // catalog to read one from: whatever the operator pointed
+                        // at is the whole domain, so the spotter has to be named
+                        // rather than guessed.
                         None => {
                             issues.push(Issue::new(
                                 "spotter_model",
                                 IssueCode::Required,
                                 format!(
                                     "{} publishes no model catalog to pick a default spotter \
-                                     from — name one in [defaults].spotter",
+                                     from — name one in [defaults].spotter or on the \
+                                     connection as `spotter-model`",
                                     main.provider
                                 ),
                             ));

@@ -460,12 +460,13 @@ edited: editing it would send an environment captured somewhere else. A configur
 capture an environment at a given directory, and the `efference tui --new` entry point, are
 in backlog/new-session-form.md.
 
-Model suggestions come from the compiled provider catalog (`Provider::suggested_models`),
-so today only the OpenAI arms offer a list. A provider with no compiled catalog opens the
-native-ID editor directly rather than presenting an empty menu as a failure, and that
-editor sits past the last suggestion everywhere else — the list is additive, never the
-model domain. The host discovery service that replaces it is
-backlog/session-model-discovery.md.
+Choosing a model opens the native-ID editor: this build compiles no catalog of suggestions, and a
+menu of ids the build knows would be the stale half of a problem the harness no longer has
+elsewhere — the Codex arm's capabilities come from the provider's own catalog
+(docs/transport.md), so a model it published after this build resolves as well as one it
+published before. What the form will offer instead is the host's own list per connection,
+which the discovery service builds from that same catalog
+(backlog/session-model-discovery.md).
 
 Creating switches to the new session, the same one-cursor-per-handshake switch `⏎`
 performs. A refused creation keeps the form open with its edits and the host's reason,

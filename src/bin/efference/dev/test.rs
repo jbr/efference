@@ -3,8 +3,36 @@
 //! feature-off build compiles no test that names a feature-off item.
 
 use super::*;
+use crate::dev_models::parse_listing;
 use crate::spot_report::{describe_call, spots_in};
 use crate::test::write_fixture_log;
+
+/// The two listing shapes in the wild are the OpenAI/Anthropic spelling and the
+/// Codex backend's, and a body that is neither is a shape question rather than
+/// a listing — so `dev models` shows the body instead of an empty menu, which
+/// only `None` here distinguishes from a listing that is genuinely empty
+/// (`{"models":[]}` parses to zero entries, and the verb prints that body).
+#[test]
+fn a_listing_is_read_in_either_spelling_and_unknown_shapes_are_refused() {
+    assert_eq!(
+        parse_listing(r#"{"data":[{"id":"gpt-5.6","display_name":"GPT-5.6"}]}"#),
+        Some(vec![("gpt-5.6".to_string(), "GPT-5.6".to_string())])
+    );
+    // The Codex backend keys each entry by slug, and an entry with no display
+    // name is labelled by its own id rather than dropped.
+    assert_eq!(
+        parse_listing(
+            r#"{"models":[{"slug":"gpt-6-sol","display_name":"GPT-6-Sol"},{"slug":"gpt-5.5"}]}"#
+        ),
+        Some(vec![
+            ("gpt-6-sol".to_string(), "GPT-6-Sol".to_string()),
+            ("gpt-5.5".to_string(), "gpt-5.5".to_string()),
+        ])
+    );
+    assert_eq!(parse_listing(r#"{"models":[]}"#), Some(vec![]));
+    assert_eq!(parse_listing(r#"{"error":{"message":"no"}}"#), None);
+    assert_eq!(parse_listing("not json"), None);
+}
 
 /// `wire --messages` is the point of this flag: a lean, config-independent
 /// view of `project(log)` that works even when the session's config won't

@@ -471,6 +471,14 @@ one-shot, **fresh-context** model call (the provider's cheap band by default, on
 acting session can't check its own folly because it shares its own trajectory; the spotter
 can, precisely because its context is built from scratch — *not* `project(log)`.
 
+Which model that is resolves in order: an explicit `--spotter-model`, then
+`[defaults].spotter`, then the connection's own `spotter-model`, then the arm's built-in
+default (`Provider::default_spotter_model`). The per-connection key sits below `[defaults]`
+because it answers about *one* account's cheap band, which an account-wide default cannot;
+the arm's fallback is last because it is a guess about a catalog the harness no longer
+compiles — one id, and a stale one now costs a pricier spotter rather than a refusal
+(docs/operating.md).
+
 ### Two rungs behind one trait
 
 `Spotter::assess` has two implementations, and which one a session mounts is decided once

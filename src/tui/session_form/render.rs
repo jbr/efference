@@ -93,18 +93,10 @@ impl Form {
     /// a constant picked for the worst imaginable case.
     pub(in crate::tui) fn viewport_height(&self) -> u16 {
         let connections = self.connections().len().max(1);
-        let suggestions = self
-            .connections()
-            .iter()
-            .map(|row| row.provider.suggested_models().len())
-            .max()
-            .unwrap_or(0);
         let rows = [
             FORM_ROWS,
             // Triage offers two leading choices; the others one.
             connections + 2,
-            // Every model list carries the native-ID escape hatch past its end.
-            suggestions + 1,
             EFFORTS.len(),
         ]
         .into_iter()
@@ -193,7 +185,6 @@ impl Form {
     fn keys(&self) -> &'static str {
         match self.page {
             Page::Form => "↑↓ move · enter picks · r resets · esc cancels",
-            Page::Models { .. } => "type to filter · ↑↓ move · enter picks · esc backs out",
             Page::Text { .. } | Page::Temperature { .. } => {
                 "type a value · enter accepts · esc backs out"
             }
@@ -277,28 +268,6 @@ impl Form {
                     }));
                 }
                 (format!("{} — connection", role.label()), rows, *selected)
-            }
-            Page::Models {
-                role,
-                connection,
-                query,
-                selected,
-            } => {
-                let mut rows: Vec<Row> = self
-                    .matching_models(*connection)
-                    .into_iter()
-                    .map(Row::plain)
-                    .collect();
-                rows.push(Row::plain("enter a model ID…"));
-                (
-                    format!(
-                        "{} on {} — model, filtering {query}▏",
-                        role.label(),
-                        self.connection_name(*connection)
-                    ),
-                    rows,
-                    *selected,
-                )
             }
             Page::Text {
                 role,

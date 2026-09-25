@@ -67,6 +67,23 @@ pub(crate) enum DevCommand {
         #[arg(long, conflicts_with = "session")]
         all: bool,
     },
+    /// What a configured connection's provider lists, read live with that
+    /// connection's credential (docs/transport.md). Resolves the connection as a
+    /// session would, GETs the listing route, and prints the status and entries
+    /// as they arrived — the other OpenAI arm's route beside it, so one run says
+    /// whether each answers the other's credential. Live API calls; no daemon,
+    /// no session.
+    Models {
+        /// The connection to read, by name from `~/.efference/config.toml`.
+        connection: String,
+        /// An extra route to read with the same credential, repeatable — a
+        /// listing URL the provider does not declare.
+        #[arg(long = "url")]
+        urls: Vec<String>,
+        /// Print whole bodies, including ones this build recognizes a shape for.
+        #[arg(long)]
+        raw: bool,
+    },
     /// Read a recorded session in the TUI, inert: the same transcript rendering as
     /// `tui`, over a session's `log.jsonl` instead of a live daemon. Nothing can be
     /// sent — no composer, no approvals, no loop verbs — and the log is read once,
@@ -393,6 +410,11 @@ pub(crate) async fn run<F: Future<Output = Result<ClientTarget, CliError>>>(
         DevCommand::Open { print, bearer } => open(client_target().await?, print, bearer).await,
         DevCommand::Cache { session, all } => cache_report::cache(session, name, all),
         DevCommand::Stops { session, all } => stop_report::stops_report(session, name, all),
+        DevCommand::Models {
+            connection,
+            urls,
+            raw,
+        } => dev_models::models(&connection, &urls, raw).await,
         DevCommand::View {
             session,
             theme,

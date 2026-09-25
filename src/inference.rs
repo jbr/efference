@@ -110,6 +110,16 @@ struct ConnectionConfig {
     /// beside a `provider`, which owns its URLs.
     #[serde(default)]
     base_url: Option<String>,
+    /// The model this connection's sessions use as their **spotter** when nothing
+    /// else names one (docs/permissions.md) — the cheap model beside the main
+    /// one. It answers for this connection alone, which is what a per-connection
+    /// answer is for: an account's cheap band is its own, and the arm's built-in
+    /// default is a guess about a catalog the harness does not compile.
+    ///
+    /// It is a fallback, not a selection: an explicit `--spotter-model` and
+    /// `[defaults].spotter` both come first (docs/operating.md).
+    #[serde(default)]
+    spotter_model: Option<String>,
     /// Kept in the catalog with its credential source intact, never a
     /// candidate for a session (docs/operating.md). `load_credential` is not
     /// even called: the connection's credential is unconditionally
@@ -191,6 +201,9 @@ pub struct InferenceRegistry {
 struct Connection {
     provider: Provider,
     credential: Result<Credential, String>,
+    /// The connection's own spotter answer, or `None` to leave the arm's default
+    /// in place (`ConnectionConfig::spotter_model`).
+    spotter_model: Option<String>,
     /// Turned off in the config rather than failing to load. Kept apart from
     /// the credential's `Err` because the two are different facts: this one the
     /// config declares about itself, and a host refuses to start over the other
@@ -327,6 +340,7 @@ impl InferenceRegistry {
                 Connection {
                     provider,
                     credential,
+                    spotter_model: config.spotter_model,
                     disabled: config.disabled,
                 },
             );
@@ -371,6 +385,40 @@ impl InferenceRegistry {
                 Some((name.as_str(), error.as_str()))
             })
             .collect()
+    }
+
+    /// The provider and a ready endpoint for one named connection, credential
+    /// attached — the same resolution a session's roles get, for a caller that
+    /// wants a single connection rather than a set of roles. The registry holds
+    /// credentials in process and never discloses them, so this hands out the
+    /// endpoint to use rather than the secret behind it.
+    ///
+    /// The three refusals are the three ways a configured connection is not
+    /// usable, each naming the remedy: no such name (the configured ones are
+    /// listed), turned off in the configuration, or a credential that failed to
+    /// load with the reason its source gave.
+    pub fn endpoint(&self, name: &str) -> Result<(Provider, Endpoint), Error> {
+        let connection = self.connections.get(name).ok_or_else(|| -> Error {
+            let configured = self
+                .connections
+                .keys()
+                .map(String::as_str)
+                .collect::<Vec<_>>()
+                .join(", ");
+            if configured.is_empty() {
+                format!("no connection named {name:?}: the configuration declares none").into()
+            } else {
+                format!("no connection named {name:?}: configured connections are {configured}")
+                    .into()
+            }
+        })?;
+        if connection.disabled {
+            return Err(format!("connection {name:?} is disabled in the configuration").into());
+        }
+        let credential = connection.credential.as_ref().map_err(|error| -> Error {
+            format!("connection {name:?} is unusable: {error}").into()
+        })?;
+        Ok((connection.provider, credential.endpoint.clone()))
     }
 
     /// The configured connection rows a host may disclose. `BTreeMap` iteration

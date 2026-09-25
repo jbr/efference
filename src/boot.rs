@@ -284,7 +284,6 @@ async fn prepare_minting(
     // Validate before the coupling check: the metadata's list is the level's
     // only defense, so an unsupported spelling is named first (docs/transport.md).
     if let Some(effort) = &effort
-        && endpoint.provider.validates_effort_levels()
         && let Err(why) = capabilities.check_effort(effort, model)
     {
         return Err(why.into());
@@ -296,7 +295,13 @@ async fn prepare_minting(
         return Err(why.into());
     }
     match (&effort, &capabilities.default_effort) {
-        (Some(effort), _) => eprintln!("effort: {effort}"),
+        (Some(effort), _) if capabilities.validates_efforts => eprintln!("effort: {effort}"),
+        // Sent without a check against the model's metadata, which may name no
+        // levels at all: the provider may honor it, refuse it, or drop it
+        // silently, and only the last one leaves no trace (docs/transport.md).
+        (Some(effort), _) => {
+            eprintln!("effort: {effort} · unchecked, the model's metadata does not bound it");
+        }
         (None, Some(default)) => {
             eprintln!("effort: unset · provider default {default}");
         }

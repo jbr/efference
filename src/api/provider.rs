@@ -4,16 +4,72 @@
 //! The provider is **declared** by a host connection's configuration, never
 //! inferred from a URL shape (sniffing fails for proxies and custom URLs). It is a closed enum,
 //! grown in code as providers are added — an externally-defined provider would
-//! have to supply everything a variant supplies (endpoint, auth shape,
-//! capability source, a known-models map), and that interface is deferred until
+//! have to supply everything a variant supplies (endpoint, auth shape, and
+//! capability source), and that interface is deferred until
 //! the in-code providers show what it must carry.
 
 use super::*;
 
+mod codex;
 mod listing;
-mod openai;
 
-pub use openai::model_capabilities as openai_model_capabilities;
+/// The spotter model a bare session uses on either OpenAI arm when the
+/// connection names none of its own (docs/permissions.md). A single default
+/// rather than a catalog: the spotter shares the endpoint and wants the cheap
+/// band, and the arm's catalog reports no cost to pick from.
+const OPENAI_DEFAULT_SPOTTER_MODEL: &str = "gpt-5.6-luna";
+
+/// A catalog naming the models the boot-path fixtures configure, in the shape
+/// the backend answered on 2026-09-24. Seeding it is how a test runs the boot
+/// path for a Codex connection without a provider (`codex::seed`).
+#[cfg(test)]
+pub(crate) const EXAMPLE_CODEX_CATALOG: &str = r#"{
+  "models": [
+    {
+      "slug": "gpt-5.6",
+      "display_name": "GPT-5.6",
+      "context_window": 272000,
+      "input_modalities": ["text", "image"],
+      "default_reasoning_level": "medium",
+      "supported_reasoning_levels": [
+        {"effort": "low"}, {"effort": "medium"}, {"effort": "high"}
+      ],
+      "visibility": "list",
+      "supported_in_api": true
+    },
+    {
+      "slug": "gpt-5.6-terra",
+      "display_name": "GPT-5.6-Terra",
+      "context_window": 272000,
+      "input_modalities": ["text", "image"],
+      "default_reasoning_level": "medium",
+      "supported_reasoning_levels": [
+        {"effort": "low"}, {"effort": "medium"}, {"effort": "high"}
+      ],
+      "visibility": "list",
+      "supported_in_api": true
+    },
+    {
+      "slug": "gpt-5.6-luna",
+      "display_name": "GPT-5.6-Luna",
+      "context_window": 272000,
+      "input_modalities": ["text", "image"],
+      "default_reasoning_level": "medium",
+      "supported_reasoning_levels": [
+        {"effort": "low"}, {"effort": "medium"}, {"effort": "high"}
+      ],
+      "visibility": "list",
+      "supported_in_api": true
+    }
+  ]
+}"#;
+
+/// Seed one connection's catalog from [`EXAMPLE_CODEX_CATALOG`]. Test-only, and
+/// named for the account so parallel tests do not share a cache entry.
+#[cfg(test)]
+pub(crate) fn seed_codex_catalog(provider: Provider, account: &str) {
+    codex::seed(provider, None, account, EXAMPLE_CODEX_CATALOG);
+}
 
 /// The request/response shape a provider speaks (docs/transport.md). Derived
 /// from the declared provider — there is no independent knob — so one session
@@ -180,21 +236,6 @@ impl std::fmt::Display for Provider {
 }
 
 impl Provider {
-    /// Whether a configured effort level is validated against the metadata's
-    /// declared levels at boot (docs/transport.md). OpenRouter: yes — the
-    /// breadth of models behind one slug and the silent nearest-mapping of an
-    /// unsupported level are the misconfiguration surface, and its metadata
-    /// affirmatively declares the levels. Anthropic: no — its metadata names
-    /// no levels, and the provider's own 400 on the first turn is the
-    /// feedback for a misspelled one.
-    /// A custom endpoint is excluded: a listing declares no effort
-    /// levels, and `ModelCapabilities::check_effort` refuses every configured
-    /// level when none are declared — so validating here would make `effort`
-    /// unusable on a custom connection rather than unverified on one.
-    pub fn validates_effort_levels(&self) -> bool {
-        matches!(self, Self::OpenRouter | Self::OpenAI | Self::OpenAICodex)
-    }
-
     /// The wire dialect this provider speaks a *turn* in (docs/transport.md), or
     /// `None` for a provider that serves no inference at all.
     ///
@@ -231,11 +272,6 @@ impl Provider {
         }
     }
 
-    /// Whether this provider's capabilities come from the compiled OpenAI catalog.
-    pub fn uses_openai_catalog(&self) -> bool {
-        matches!(self, Self::OpenAI | Self::OpenAICodex)
-    }
-
     /// The spotter model a bare `serve` uses on this provider
     /// (docs/permissions.md): the cheap band of whatever catalog the provider
     /// serves, since the spotter shares the endpoint and a Haiku id is meaningless
@@ -251,32 +287,12 @@ impl Provider {
             // OpenRouter ids carry the author: the bare id fails its metadata
             // route before the first request.
             Self::OpenRouter => Some("anthropic/claude-haiku-4-5"),
-            Self::OpenAI | Self::OpenAICodex => Some(openai::CHEAPEST_MODEL),
+            Self::OpenAI | Self::OpenAICodex => Some(OPENAI_DEFAULT_SPOTTER_MODEL),
             // The one model family this provider serves. The floating alias
             // rather than a dated slug: TypeSafe publishes `jev-latest` as the
             // entry point and the API takes it directly.
             Self::TypeSafe => Some("jev-latest"),
             Self::Custom(_) => None,
-        }
-    }
-
-    /// Model ids to offer as suggestions when an operator is choosing one
-    /// (docs/tui.md). **Additive and non-exhaustive**: an empty slice means this
-    /// build has no compiled catalog for the provider, not that the provider
-    /// serves no models, so every caller keeps a free-form native-id path beside
-    /// the list and sends an id absent from it unchanged.
-    ///
-    /// This reads the same compiled table the capability lookup uses, so it is
-    /// only as current as the build. The host discovery service that asks the
-    /// provider — and covers the providers answering `&[]` here — is
-    /// backlog/session-model-discovery.md.
-    pub fn suggested_models(&self) -> &'static [&'static str] {
-        match self {
-            Self::OpenAI | Self::OpenAICodex => openai::KNOWN_MODELS,
-            // Anthropic and OpenRouter resolve capabilities by fetching metadata
-            // per model, so this build compiles no list to suggest from; a
-            // custom endpoint's catalog is whatever the operator pointed at.
-            Self::Anthropic | Self::OpenRouter | Self::TypeSafe | Self::Custom(_) => &[],
         }
     }
 
@@ -652,6 +668,35 @@ impl Provider {
         }
     }
 
+    /// The route that lists the models this provider serves (docs/transport.md):
+    /// what a discovery menu offers, what `efference dev models` reads, and for
+    /// the Codex arm the source its capabilities come from.
+    ///
+    /// The Codex arm is the subscription backend's own listing, not the
+    /// platform's `/v1/models`: a ChatGPT grant authenticates against
+    /// `chatgpt.com/backend-api`, and the catalog that route serves carries the
+    /// per-model context window, reasoning levels, and input modalities the
+    /// platform listing omits (Codex CLI reads the same route). That route
+    /// requires a `client_version` and filters the catalog by it, so the claim
+    /// is part of the route rather than a parameter of it
+    /// ([`Self::models_url`], `api/provider/codex.rs`).
+    pub fn models_url(&self, base: Option<&str>) -> Option<String> {
+        Some(match self {
+            Self::Anthropic => "https://api.anthropic.com/v1/models?limit=100".to_string(),
+            Self::OpenRouter => "https://openrouter.ai/api/v1/models".to_string(),
+            Self::OpenAI => "https://api.openai.com/v1/models".to_string(),
+            Self::OpenAICodex => format!(
+                "https://chatgpt.com/backend-api/codex/models?client_version={}",
+                codex::CLAIMED_CLIENT_VERSION
+            ),
+            Self::TypeSafe => "https://api.typesafe.ai/v1/models".to_string(),
+            // A described endpoint's listing is the route its credential check
+            // and capability lookup already use, whatever dialect it speaks
+            // (`Provider::capabilities_url`).
+            Self::Custom(_) => join(base?, "models"),
+        })
+    }
+
     /// A GET that answers 2xx only to a valid credential, for `efference setup`'s
     /// live check (docs/operating.md): Anthropic's and OpenAI's model listings
     /// both require the key, and OpenRouter's key-info route describes the key
@@ -774,6 +819,7 @@ impl Provider {
                     // unvalidated; the provider's own 400 is the feedback.
                     supported_efforts: None,
                     default_effort: None,
+                    validates_efforts: false,
                     // Anthropic's metadata names no reasoning block. Claude's
                     // spelling is decided by the family rule in `api/thinking.rs`
                     // regardless, so this is `None` as a statement about the
@@ -926,9 +972,11 @@ impl Provider {
                     // come from the model entry, which `fetch_capabilities`
                     // fetches separately and merges in. Left `None` here so
                     // this parse stays an honest statement of what *this*
-                    // response said.
+                    // response said; the flag follows the merged levels, which
+                    // is where a source can affirm them.
                     supported_efforts: None,
                     default_effort: None,
+                    validates_efforts: false,
                     reasoning_mandatory: None,
                 })
             }
@@ -950,7 +998,7 @@ impl Provider {
             Self::Custom(_) => Err("a custom endpoint publishes no model entry".into()),
             Self::Anthropic => Err("Anthropic metadata names no effort levels".into()),
             Self::OpenAI | Self::OpenAICodex => {
-                Err("OpenAI effort levels come from the compiled catalog".into())
+                Err("OpenAI effort levels come from the model catalog".into())
             }
             Self::TypeSafe => Err("a decision model takes no effort level".into()),
             Self::OpenRouter => {
@@ -1158,6 +1206,22 @@ pub struct ModelCapabilities {
     /// effort is configured, which answers "what will the knob actually do"
     /// in one glance (docs/transport.md). Never sent. Anthropic: `None`.
     pub default_effort: Option<String>,
+    /// Whether a configured effort level is checked against `supported_efforts`
+    /// at all (docs/transport.md). True only where the source declares the same
+    /// values the request carries — which today is OpenRouter's model entry, and
+    /// only because it maps an unsupported level to the nearest supported one
+    /// silently, so a session could otherwise believe it set a knob that did
+    /// nothing.
+    ///
+    /// False where a source names levels that are not the request's values, or
+    /// names none. Anthropic's metadata names none, and the provider's own 400
+    /// on the first turn is the feedback for a misspelled one. A custom
+    /// endpoint's listing declares none. A Codex catalog entry lists what Codex
+    /// CLI offers — a set that includes a delegation mode the Responses API
+    /// rejects and omits values it accepts — so its levels are reported and not
+    /// enforced (`api/provider/codex.rs`). An unvalidated level passes through and
+    /// the provider answers, naming every value it accepts.
+    pub validates_efforts: bool,
     /// OpenRouter `reasoning.mandatory`: the model always reasons and refuses
     /// an explicit `thinking: disabled` (docs/transport.md). Decides how a
     /// client built `without_thinking` says so: explicit `disabled` for a model
@@ -1192,21 +1256,30 @@ impl ModelCapabilities {
             prompt_cache: PromptCachePolicy::None,
             supported_efforts: None,
             default_effort: None,
+            // Nothing declared the levels, so nothing is checked: see the field.
+            validates_efforts: false,
             reasoning_mandatory: None,
         }
     }
 
-    /// The boot check for a configured effort level (docs/transport.md),
-    /// called for providers that validate (`Provider::validates_effort_levels`
-    /// — OpenRouter). A model whose entry lists levels accepts only those:
-    /// OpenRouter maps an unsupported level to the nearest supported one
-    /// silently, so a session could otherwise believe it set a knob that did
-    /// nothing. A model that declares no levels — absent block, absent field,
-    /// or an empty list — refuses every configured level: nothing was
-    /// affirmed, so nothing is sent. The membership test is exact string
-    /// equality against the metadata's own spellings; the declared default,
-    /// when present, is named as the unset path in the message.
+    /// The boot check for a configured effort level (docs/transport.md), for a
+    /// source that declared the levels ([`Self::validates_efforts`]). A model
+    /// whose entry lists levels accepts only those: OpenRouter maps an
+    /// unsupported level to the nearest supported one silently, so a session
+    /// could otherwise believe it set a knob that did nothing. The membership
+    /// test is exact string equality against the metadata's own spellings; the
+    /// declared default, when present, is named as the unset path in the
+    /// message.
+    ///
+    /// Without declared levels there is nothing to check against, and the level
+    /// is left for the provider to accept or refuse. That is the honest reading
+    /// of a source that names none, and on the OpenAI arms it is also what keeps
+    /// a newly published model usable: its catalog entry may be missing while
+    /// the model is not.
     pub fn check_effort(&self, effort: &str, model: &str) -> Result<(), String> {
+        if !self.validates_efforts {
+            return Ok(());
+        }
         match &self.supported_efforts {
             Some(levels) if levels.iter().any(|level| level == effort) => Ok(()),
             Some(levels) => Err(format!(
@@ -1228,6 +1301,61 @@ impl ModelCapabilities {
 }
 
 impl Endpoint {
+    /// The route listing the models this endpoint's provider serves, for a
+    /// discovery menu and for `efference dev models` (docs/transport.md).
+    pub fn models_url(&self) -> Option<String> {
+        self.provider.models_url(self.base.as_deref())
+    }
+
+    /// An authenticated GET reported whole: the status, the `ETag` a catalog can
+    /// be revalidated against, and the body as the provider sent it. A non-2xx
+    /// answer is a result here rather than a failure — whether a response is
+    /// usable is the question a listing probe asks (`efference dev models`,
+    /// docs/transport.md).
+    ///
+    /// Carries the identity a turn carries, because a listing scoped to an
+    /// account answers only to it: the auth header, the provider's extra
+    /// headers, and its attribution. Nothing per-turn rides along — there is no
+    /// conversation to route or cache-key on a listing read.
+    pub async fn probe(&self, url: &str) -> Result<ProbeResponse, Error> {
+        let http = crate::http::client();
+        // Every header is set before the request is sent: a header added to an
+        // in-flight connection is not part of the request that went out.
+        let mut conn = http
+            .get(url)
+            .with_request_header(self.auth_header.clone(), self.auth_value.get());
+        if self.provider.inference_dialect() == Some(WireDialect::Messages) {
+            conn = conn.with_request_header("anthropic-version", ANTHROPIC_VERSION);
+        }
+        let conn = self
+            .endpoint_extra_headers()
+            .into_iter()
+            .fold(conn, |conn, (name, value)| {
+                conn.with_request_header(name, value)
+            });
+        let mut conn = conn
+            .await
+            .map_err(|e| -> Error { format!("GET {url} failed: {e}").into() })?;
+        let status = conn.status().map(|status| status as u16);
+        let etag = conn.response_headers().get_str("etag").map(str::to_string);
+        let body = conn.response_body().read_string().await?;
+        Ok(ProbeResponse { status, etag, body })
+    }
+
+    /// The provider's identity headers for a non-turn request: its extra
+    /// headers (the Codex account id) and its attribution, in the order a turn
+    /// sends them.
+    fn endpoint_extra_headers(&self) -> Vec<(String, String)> {
+        let mut headers: Vec<(String, String)> = self.extra_headers.clone();
+        headers.extend(
+            self.provider
+                .attribution()
+                .iter()
+                .map(|(name, value)| ((*name).to_string(), (*value).to_string())),
+        );
+        headers
+    }
+
     /// The required boot-time metadata lookup (docs/transport.md): GET the
     /// provider's model-metadata route(s) for `model` and parse them into
     /// [`ModelCapabilities`]. Authenticated with the same header as the
@@ -1250,21 +1378,17 @@ impl Endpoint {
         model: &str,
         upstream: &[String],
     ) -> Result<ModelCapabilities, Error> {
-        if self.provider.uses_openai_catalog() {
-            let mut capabilities = openai_model_capabilities(self.provider, model)?;
-            // The Codex backend rejects the whole gpt-5.6+ cache-control family —
-            // `prompt_cache_options` and `prompt_cache_retention` both answer 400
-            // "Unsupported parameter" on every model it serves, so this is the
-            // backend's surface rather than one model's. Explicit mode is therefore
-            // unreachable here, and would be worse than unreachable if half-applied:
-            // `mode: explicit` with no breakpoints disables caching outright. On this
-            // arm the provider places the breakpoints and the encoder emits no
-            // markers; the sticky key ([`Self::session_header`]) is what makes them
-            // land.
-            if self.provider == Provider::OpenAICodex {
-                capabilities.prompt_cache = PromptCachePolicy::Implicit;
+        // The two OpenAI arms resolve capabilities from the provider's own model
+        // catalog rather than from a table in this build, so a model released
+        // after the build is as usable as one released before it.
+        match self.provider {
+            Provider::OpenAICodex | Provider::OpenAI => {
+                return codex::capabilities(self, model).await;
             }
-            return Ok(capabilities);
+            Provider::Anthropic
+            | Provider::OpenRouter
+            | Provider::TypeSafe
+            | Provider::Custom(_) => {}
         }
         let url = self
             .provider
@@ -1284,6 +1408,14 @@ impl Endpoint {
                 .map_err(|e| -> Error {
                     format!("could not parse model metadata from {effort_url}: {e}").into()
                 })?;
+            // A list this route names is checked against: OpenRouter maps an
+            // unsupported level to the nearest supported one silently, so a
+            // session could otherwise believe it set a knob that did nothing.
+            // An absent list is not a refusal. `openai/o4-mini` names none and
+            // honors effort all the same (2,752 reasoning tokens at `low`, the
+            // 6,000 cap at `high`, 2026-09-25), so the level passes unchecked
+            // and the boot line says so.
+            capabilities.validates_efforts = efforts.supported.is_some();
             capabilities.supported_efforts = efforts.supported;
             capabilities.default_effort = efforts.default;
             capabilities.reasoning_mandatory = Some(efforts.mandatory);
@@ -1356,6 +1488,12 @@ impl Endpoint {
                 .map(|id| (id.clone(), id))
                 .collect());
         }
+        // The subscription backend's catalog, read through the same cache the
+        // capability path uses, minus the entries it hides from a menu
+        // (`api/provider/codex.rs`).
+        if self.provider == Provider::OpenAICodex {
+            return Ok(codex::catalog(self).await?.suggestions());
+        }
         if self.provider != Provider::Anthropic {
             return Ok(Vec::new());
         }
@@ -1380,21 +1518,19 @@ impl Endpoint {
             .collect())
     }
 
+    /// A GET that must answer 2xx: every metadata and credential read on the boot
+    /// path, where any other status is a failure to report. The transport is
+    /// [`Self::probe`]'s, so these reads carry the same identity a turn does.
     async fn authed_get(&self, url: &str) -> Result<String, Error> {
-        let http = crate::http::client();
-        let mut conn = http
-            .get(url)
-            .with_request_header(self.auth_header.clone(), self.auth_value.get())
-            .with_request_header("anthropic-version", ANTHROPIC_VERSION)
-            .await
-            .map_err(|e| -> Error { format!("GET {url} failed: {e}").into() })?;
-        let status = conn.status();
-        let body = conn.response_body().read_string().await?;
-        if !status.is_some_and(|s| s.is_success()) {
-            let status = status.map_or_else(|| "no status".to_string(), |s| s.to_string());
-            return Err(format!("GET {url} returned {status}: {body}").into());
+        let response = self.probe(url).await?;
+        match response.status {
+            Some(status) if (200..300).contains(&status) => Ok(response.body),
+            status => {
+                let status =
+                    status.map_or_else(|| "no status".to_string(), |status| status.to_string());
+                Err(format!("GET {url} returned {status}: {}", response.body).into())
+            }
         }
-        Ok(body)
     }
 }
 

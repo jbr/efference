@@ -131,12 +131,13 @@ impl Entry {
                     _ => PromptCachePolicy::Implicit,
                 },
             },
-            // Effort levels are validated only where a provider affirmatively
-            // declares them (`Provider::validates_effort_levels`), which excludes
-            // a custom endpoint, so leaving these unset does not refuse a
-            // configured level — it passes through unvalidated.
+            // Effort levels are validated only where a source affirmatively
+            // declares them (`ModelCapabilities::validates_efforts`), which
+            // excludes a custom endpoint, so leaving these unset does not
+            // refuse a configured level — it passes through unvalidated.
             supported_efforts: None,
             default_effort: None,
+            validates_efforts: false,
         }
     }
 }

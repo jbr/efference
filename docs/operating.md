@@ -228,6 +228,13 @@ the credential is read from the connection's own source (an environment variable
 set in this shell, or an item the store already holds) rather than prompted for
 again. Where setup cannot read one, the model is typed and taken as written.
 
+A connection may also answer one role for itself: `spotter-model` under
+`[connections.<name>]` names the cheap model that connection's sessions use when
+nothing else does. It resolves below an explicit `--spotter-model` and
+`[defaults].spotter`, and above the arm's built-in default — the order is in
+[permissions.md](permissions.md), and the reason a per-connection key exists at
+all is that a cheap band is an account's property, not a provider's.
+
 Each role leads with what it already is, so the cheapest answer is Enter. Leaving
 the main model unset says what that costs — sessions must then name
 `<connection>/<model>` themselves — because that is the one role a session cannot
@@ -323,6 +330,7 @@ auth = { kind = "keychain" }   # the store's inference:personal item
 [connections.codex]
 provider = "openai-codex"
 auth = { kind = "codex-cache" }   # the login Codex CLI keeps
+spotter-model = "gpt-6-luna"      # this account's cheap band, when it is not the arm's default
 
 [connections.chatgpt]
 provider = "openai-codex"
@@ -347,6 +355,18 @@ asked nothing and was told nothing, so the round trip bought a request and a cac
 write and no information. It takes the same session argument and `--all` sweep, and
 reports the longest run of barren endings, since a run is the shape a stalled session
 makes where a scattered few are ordinary. The classification is `log/stops.rs`.
+
+**`efference dev models {connection}`** reads a provider's answer to *which models
+do you serve*, over a connection named in `~/.efference/config.toml` and resolved
+the way a session's would be — the same file, the same credential, no daemon and
+no session. It prints each listing route's status, size, and `ETag`, and the
+entries where it recognizes the shape (`data[].id`, or the Codex backend's
+`models[].slug`). For the two OpenAI arms it reads both routes, so one run says
+whether each catalog answers the other's credential; `--url` adds any route, which
+is how the subscription backend's `client_version` gate is visible, and `--raw`
+prints bodies verbatim for piping. It reads the routes directly, never through the
+Codex arm's five-minute catalog cache, so its output is the provider's answer at
+the time of the run (docs/transport.md).
 
 **`efference check [path]`** is the other no-daemon verb, and it is about the template rather
 than a session: it parses `efference.toml` (or the path given), applies the soundness

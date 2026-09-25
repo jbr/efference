@@ -61,6 +61,20 @@ pub struct Endpoint {
     pub base: Option<String>,
 }
 
+/// One authenticated GET's whole answer, whatever its status
+/// ([`Endpoint::probe`], docs/transport.md). A listing probe reads a
+/// non-2xx response as evidence about the route, so the status, the
+/// revalidation tag, and the body as sent all survive to the caller.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProbeResponse {
+    /// The status line's code, or `None` when the response carried none.
+    pub status: Option<u16>,
+    /// The `ETag` header, when the provider sent one.
+    pub etag: Option<String>,
+    /// The response body, undecoded.
+    pub body: String,
+}
+
 impl std::fmt::Debug for Endpoint {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Endpoint")

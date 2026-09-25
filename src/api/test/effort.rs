@@ -256,17 +256,25 @@ fn check_effort_rejects_unnamed_levels() {
     assert!(!why.contains("default"), "{why}");
 }
 
-/// A model that declares no levels — absent block, absent field, or an empty
-/// list, all normalized to `None` — refuses every configured level: nothing
-/// was affirmed, so nothing is sent (docs/transport.md).
+/// A source that declared levels refuses a level outside them, and a source
+/// that declared none does not check at all: nothing affirmed a level to check
+/// against, so the configured one passes through for the provider to accept or
+/// refuse (docs/transport.md).
 #[test]
-fn check_effort_refuses_any_configured_level_without_a_declared_list() {
-    let caps = caps_with_effort_levels(None, Some("high"));
-    let why = caps
-        .check_effort("high", "openai/gpt-4.1-mini")
-        .unwrap_err();
-    assert!(why.contains("declares no supported effort levels"), "{why}");
-    assert!(why.contains("openai/gpt-4.1-mini"), "{why}");
+fn a_declared_list_bounds_the_level_and_an_undeclared_source_does_not() {
+    // Declared: the membership test is exact, and the refusal names the levels
+    // and the provider's default.
+    let caps = caps_with_effort_levels(Some(&["low", "high"]), Some("high"));
+    assert!(caps.check_effort("high", "m").is_ok());
+    let why = caps.check_effort("medium", "m").unwrap_err();
+    assert!(why.contains("not among the levels m reports"), "{why}");
+    assert!(why.contains("low, high"), "{why}");
+    assert!(why.contains("provider default: high"), "{why}");
+
+    // Undeclared: nothing is checked, whatever the configured level is.
+    let undeclared = caps_with_effort_levels(None, None);
+    assert!(undeclared.check_effort("ultra", "m").is_ok());
+    assert!(undeclared.check_effort("high", "m").is_ok());
 }
 
 /// Test fixture: a [`ModelCapabilities`] with the effort metadata set and the
@@ -284,6 +292,9 @@ fn caps_with_effort_levels(
         prompt_cache: PromptCachePolicy::Explicit,
         supported_efforts: levels.map(|l| l.iter().map(|s| s.to_string()).collect()),
         default_effort: default.map(String::from),
+        // A fixture that declares levels is a source that declared them, which
+        // is what makes the boot check apply.
+        validates_efforts: levels.is_some(),
         reasoning_mandatory: None,
     }
 }

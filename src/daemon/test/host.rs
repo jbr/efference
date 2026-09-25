@@ -541,6 +541,10 @@ auth = { kind = "env", key = "MESSAGES_KEY" }
         .into(),
     )
     .unwrap();
+    // The Codex connection's capabilities come from the provider's catalog, so
+    // the test seeds the cache that lookup reads: these sessions boot without a
+    // provider. Seeded under the account `auth.json` above names.
+    crate::api::seed_codex_catalog(crate::api::Provider::OpenAICodex, "acct-1");
     let registry = crate::inference::InferenceRegistry::load(
         &roots.0,
         host_env,
@@ -575,12 +579,31 @@ auth = { kind = "env", key = "MESSAGES_KEY" }
         .post("/sessions")
         .with_json_body(&serde_json::json!({
             "name": "b", "cwd": roots.0.join("two"), "env": caller_env,
-            "model": "platform/gpt-5.6",
+            "model": "codex/gpt-5.6",
             "spotter_model": "codex/gpt-5.6-luna",
-            "triage": {"mode": "separate", "model": "platform/gpt-5.6-luna"},
+            "triage": {"mode": "separate", "model": "codex/gpt-5.6-luna"},
         }))
         .await
         .assert_status(201);
+
+    // The platform arm reads the same catalog under its own cache key, seeded
+    // here so the creation makes no request; the key it holds stays out of the
+    // response.
+    crate::api::seed_codex_catalog(crate::api::Provider::OpenAI, "");
+    let platform = server
+        .post("/sessions")
+        .with_json_body(&serde_json::json!({
+            "name": "platform", "cwd": roots.0.join("two"), "env": caller_env,
+            "model": "platform/gpt-5.6",
+        }))
+        .await;
+    platform.assert_status(201);
+    assert!(
+        !platform
+            .body()
+            .to_string()
+            .contains("platform-canary-secret")
+    );
 
     let state_a = server.get("/sessions/a/v1/state").await;
     state_a.assert_status(200);
@@ -600,9 +623,9 @@ auth = { kind = "env", key = "MESSAGES_KEY" }
     assert_eq!(
         json(&body_b)["session_identity"]["inference"],
         serde_json::json!({
-            "main": {"connection": "platform", "provider": "openai", "model": "gpt-5.6"},
+            "main": {"connection": "codex", "provider": "openai-codex", "model": "gpt-5.6"},
             "spotter": {"connection": "codex", "provider": "openai-codex", "model": "gpt-5.6-luna"},
-            "triage": {"shared": false, "connection": "platform", "provider": "openai", "model": "gpt-5.6-luna"},
+            "triage": {"shared": false, "connection": "codex", "provider": "openai-codex", "model": "gpt-5.6-luna"},
         })
     );
 
@@ -661,12 +684,14 @@ auth = { kind = "env", key = "MESSAGES_KEY" }
         .unwrap()
         .append(1, user("token codex-canary-token"))
         .unwrap();
+    // Session b's roles are all on the codex connection, so the platform key is
+    // not among its secrets and a line naming one is *not* masked — masking is
+    // per session, over the credentials its own roles resolved. The probe names
+    // what b holds, and the haystack assertions above still hold every host
+    // secret out of both state bodies and both logs.
     host.session("b")
         .unwrap()
-        .append(
-            1,
-            user("token codex-canary-token and key platform-canary-secret"),
-        )
+        .append(1, user("token codex-canary-token and effort high"))
         .unwrap();
     let log_a = log("one", "a");
     let log_b = log("two", "b");
@@ -675,10 +700,7 @@ auth = { kind = "env", key = "MESSAGES_KEY" }
         "{log_a}"
     );
     assert!(
-        log_b.contains(
-            "token ⟦codex (Codex cache): elided by harness⟧ and key \
-             ⟦platform (PLATFORM_KEY): elided by harness⟧"
-        ),
+        log_b.contains("token ⟦codex (Codex cache): elided by harness⟧ and effort high"),
         "{log_b}"
     );
 

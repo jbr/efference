@@ -8,6 +8,25 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- **Model discovery for both OpenAI arms** (docs/transport.md): capabilities come from the
+  subscription backend's own catalog — context window, reasoning levels, input modalities —
+  cached per connection for five minutes, so a model published after this build resolves as
+  well as one published before it. An id the catalog does not name passes boot and the turn is
+  the test. The platform arm reads the same catalog with its API key, falling back to its
+  baseline when the catalog is unreachable.
+- **`spotter-model` per connection** (docs/operating.md): names the cheap model that
+  connection's sessions use when neither `--spotter-model` nor `[defaults].spotter` does.
+- **`efference dev models {connection}`** (docs/operating.md): reads a configured connection's
+  provider listing live with that connection's credential, and for the two OpenAI arms both
+  catalog routes, so what each credential can see is one run's output.
+
+### Changed
+- **The compiled OpenAI model catalog is gone** (docs/transport.md). A model id absent from
+  the build is no longer refused at boot; the two OpenAI arms read the provider instead.
+- **An effort level a model's metadata does not bound is sent, and the boot line says so**
+  (docs/transport.md): an OpenRouter model that names no levels no longer refuses one.
+- **The session form's model menu is gone for now** (docs/tui.md): every connection opens
+  the native-ID editor, pending the host's per-connection model route.
 - **Streaming flows into the committed transcript** (docs/web-client.md): a call keeps one
   layout from its first argument delta to its result, a running command's output streams into
   the call's result slot, and a long think stays in its box when it commits.

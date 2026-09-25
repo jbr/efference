@@ -56,12 +56,6 @@ enum Page {
         role: Role,
         selected: usize,
     },
-    Models {
-        role: Role,
-        connection: usize,
-        query: String,
-        selected: usize,
-    },
     Text {
         role: Role,
         connection: usize,
@@ -182,12 +176,6 @@ impl Form {
 
     fn paste(&mut self, text: &str) {
         let target = match &mut self.page {
-            Page::Models {
-                query, selected, ..
-            } => {
-                *selected = 0;
-                query
-            }
             Page::Text { value, .. } | Page::Temperature { value } => value,
             _ => return,
         };
@@ -212,10 +200,7 @@ impl Form {
         if key.code == KeyCode::Esc {
             self.page = match &self.page {
                 Page::Form => return Action::Cancel,
-                Page::Models {
-                    role, connection, ..
-                }
-                | Page::Text {
+                Page::Text {
                     role, connection, ..
                 } => Page::Connections {
                     role: *role,
@@ -245,26 +230,6 @@ impl Form {
                 }
                 match key.code {
                     KeyCode::Enter => self.choose_connection(role),
-                    _ => Action::Continue,
-                }
-            }
-            Page::Models { connection, .. } => {
-                if let Page::Models {
-                    query, selected, ..
-                } = &mut self.page
-                    && (typed.is_some() || key.code == KeyCode::Backspace)
-                {
-                    edit_text(query, typed, key.code);
-                    // The filter changed under the cursor, so the row it pointed
-                    // at is not the row it would select.
-                    *selected = 0;
-                }
-                let len = self.matching_models(connection).len() + 1;
-                if let Page::Models { selected, .. } = &mut self.page {
-                    move_selection(selected, len, key.code);
-                }
-                match key.code {
-                    KeyCode::Enter => self.choose_model(),
                     _ => Action::Continue,
                 }
             }

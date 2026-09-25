@@ -152,7 +152,8 @@ fn a_flagged_field_holds_creation_and_names_the_control() {
     press(&mut form, KeyCode::Enter);
     press(&mut form, KeyCode::Down);
     press(&mut form, KeyCode::Enter);
-    assert!(matches!(form.page, Page::Models { .. }));
+    assert!(matches!(form.page, Page::Text { .. }));
+    form.paste("gpt-5.6\n");
     press(&mut form, KeyCode::Enter);
     let resolved = form.resolved.as_ref().expect("a preview landed");
     assert_eq!(
@@ -271,18 +272,17 @@ fn a_superseded_preview_is_dropped_and_re_requested() {
 }
 
 #[test]
-fn model_filter_select_reset_and_back() {
+fn a_typed_model_id_is_accepted_and_reset_and_back() {
     let mut form = form();
-    // Main → `lab`, the available connection this build compiles suggestions
-    // for: second of `blank`, `lab`, `work`.
+    // Main → `lab`, the available connection: second of `blank`, `lab`, `work`.
     press(&mut form, KeyCode::Down);
     press(&mut form, KeyCode::Enter);
     for _ in 0..2 {
         press(&mut form, KeyCode::Down);
     }
     press(&mut form, KeyCode::Enter);
-    assert!(matches!(form.page, Page::Models { .. }));
-    for c in "luna".chars() {
+    assert!(matches!(form.page, Page::Text { .. }));
+    for c in "gpt-5.6-luna".chars() {
         press(&mut form, KeyCode::Char(c));
     }
     press(&mut form, KeyCode::Enter);
@@ -305,11 +305,11 @@ fn model_filter_select_reset_and_back() {
     assert_eq!(form.page, Page::Form);
 }
 
-/// A provider this build has no compiled catalog for opens the native-id editor
-/// rather than presenting an empty menu as a loading failure
+/// Every connection opens the native-id editor: this build compiles no catalog
+/// to suggest from, and the host's discovery route is what will offer a menu
 /// (backlog/session-model-discovery.md).
 #[test]
-fn a_provider_without_suggestions_opens_the_id_editor() {
+fn every_connection_opens_the_id_editor() {
     let mut form = form();
     press(&mut form, KeyCode::Down);
     press(&mut form, KeyCode::Enter);
@@ -343,14 +343,16 @@ fn temperature_validation_does_not_exit_editor() {
 #[test]
 fn failed_creation_preserves_every_edit() {
     let mut form = form();
-    // Main → `lab`, and its first suggestion.
+    // Main → `lab`, with a model id typed into the editor.
     press(&mut form, KeyCode::Down);
     press(&mut form, KeyCode::Enter);
     for _ in 0..2 {
         press(&mut form, KeyCode::Down);
     }
     press(&mut form, KeyCode::Enter);
+    form.paste("gpt-5.6\n");
     press(&mut form, KeyCode::Enter);
+    assert_eq!(form.page, Page::Form);
     let draft = form.draft.clone();
     press(&mut form, KeyCode::Up);
     let Action::Create(options) = key(&mut form, KeyCode::Enter) else {
@@ -374,8 +376,10 @@ fn paste_is_text_not_form_commands() {
     press(&mut form, KeyCode::Enter);
     press(&mut form, KeyCode::Down);
     press(&mut form, KeyCode::Enter);
-    form.paste("luna\n");
-    assert!(matches!(&form.page, Page::Models { query, .. } if query == "luna"));
+    form.paste("gpt-5.6-luna\n");
+    // The newline is not a keystroke: the pasted text lands in the editor and
+    // Enter is still the operator's to press.
+    assert!(matches!(&form.page, Page::Text { value, .. } if value == "gpt-5.6-luna"));
 }
 
 #[test]

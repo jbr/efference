@@ -159,6 +159,20 @@ fn the_dialect_picks_the_route_off_the_configured_base() {
     }
 }
 
+/// A custom endpoint's listing declares no effort levels, so a configured level
+/// passes through unvalidated rather than refused: nothing affirmed any level to
+/// check it against (docs/transport.md).
+#[test]
+fn a_custom_listing_leaves_a_configured_effort_unvalidated() {
+    let caps = caps(
+        r#"{"data":[{"id":"m","max_input_tokens":1000,"max_tokens":100}]}"#,
+        "m",
+    );
+    assert_eq!(caps.supported_efforts, None);
+    assert!(!caps.validates_efforts);
+    assert!(caps.check_effort("high", "m").is_ok());
+}
+
 /// Every vendor-specific header and body field is withheld from a custom
 /// endpoint. Each of these is a fact about one deployment, and an unrecognized
 /// header or top-level key may be rejected rather than ignored.
@@ -173,7 +187,6 @@ fn a_custom_endpoint_is_sent_no_vendor_specific_extras() {
         assert_eq!(provider.attribution(), &[]);
         assert!(!provider.reports_plan_windows());
         assert_eq!(provider.decisions_url(), None);
-        assert!(!provider.validates_effort_levels());
         assert!(provider.serves_inference());
         // 0..1 is the range both scales accept, so no value sent is out of range.
         assert_eq!(provider.map_temperature(100), 1.0);

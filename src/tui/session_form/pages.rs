@@ -34,59 +34,16 @@ impl Form {
             return self.preview();
         }
         let connection = selected - leading;
-        let Some(row) = self.connections().get(connection) else {
-            return Action::Continue;
-        };
-        // A provider this build has no compiled catalog for goes straight to the
-        // native-id editor rather than presenting an empty menu as a failure
-        // (backlog/session-model-discovery.md).
-        self.page = if row.provider.suggested_models().is_empty() {
-            Page::Text {
-                role,
-                connection,
-                value: String::new(),
-            }
-        } else {
-            Page::Models {
-                role,
-                connection,
-                query: String::new(),
-                selected: 0,
-            }
-        };
-        Action::Continue
-    }
-
-    pub(super) fn choose_model(&mut self) -> Action {
-        let Page::Models {
+        // Every connection opens the native-id editor: this build compiles no
+        // catalog to suggest from, and a menu of ids the build knows would be
+        // the stale half of the problem. The host's discovery route replaces it
+        // with the provider's own list (backlog/session-model-discovery.md).
+        self.page = Page::Text {
             role,
             connection,
-            query,
-            selected,
-        } = &self.page
-        else {
-            return Action::Continue;
+            value: String::new(),
         };
-        let (role, connection, selected) = (*role, *connection, *selected);
-        let query = query.clone();
-        match self.matching_models(connection).get(selected) {
-            Some(model) => {
-                let model = (*model).to_string();
-                self.set_role_model(role, connection, model);
-                self.page = Page::Form;
-                self.preview()
-            }
-            // Past the last suggestion is the native-id escape hatch, seeded with
-            // whatever was typed to filter.
-            None => {
-                self.page = Page::Text {
-                    role,
-                    connection,
-                    value: query,
-                };
-                Action::Continue
-            }
-        }
+        Action::Continue
     }
 
     pub(super) fn accept_model_text(&mut self) -> Action {
@@ -149,21 +106,5 @@ impl Form {
             model,
         };
         self.draft.set_role(role, Some(selection));
-    }
-
-    pub(super) fn matching_models(&self, connection: usize) -> Vec<&'static str> {
-        let Some(row) = self.connections().get(connection) else {
-            return Vec::new();
-        };
-        let query = match &self.page {
-            Page::Models { query, .. } => query.to_lowercase(),
-            _ => String::new(),
-        };
-        row.provider
-            .suggested_models()
-            .iter()
-            .copied()
-            .filter(|model| model.to_lowercase().contains(&query))
-            .collect()
     }
 }

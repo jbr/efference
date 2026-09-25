@@ -313,6 +313,133 @@ async fn an_expired_credential_is_re_read_and_the_attempt_retried() {
     );
 }
 
+/// A listing read is a question about a route, so its whole answer survives to
+/// the caller: a non-2xx comes back as a response with its status and body, not
+/// as an error (docs/transport.md). And it carries the identity a turn carries
+/// — a catalog scoped to an account answers only to that account's headers, and
+/// the `anthropic-version` the Models API requires is part of a turn's headers
+/// too, not an afterthought (an earlier draft set both after the request went
+/// out, and Anthropic answered 400 "header is required").
+#[tokio::test]
+async fn a_probe_reports_a_refusal_and_carries_the_turns_identity() {
+    use std::io::{Read, Write};
+
+    /// One request, one canned answer: the URL to read, and the request text the
+    /// server saw. `status` and `body` are assembled here so the declared
+    /// content-length cannot drift from the bytes.
+    fn serve(
+        status: &str,
+        etag: Option<&str>,
+        body: &'static str,
+    ) -> (String, std::thread::JoinHandle<String>) {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        // The head is assembled line by line: an ETag line that is present but
+        // empty is a header the server did not send.
+        let mut head = format!("HTTP/1.1 {status}\r\ncontent-type: application/json\r\n");
+        if let Some(etag) = etag {
+            head.push_str(&format!("etag: {etag}\r\n"));
+        }
+        head.push_str(&format!("content-length: {}\r\n\r\n", body.len()));
+        let response = format!("{head}{body}");
+        let server = std::thread::spawn(move || {
+            let (mut sock, _) = listener.accept().unwrap();
+            let mut buf = [0u8; 8192];
+            let read = sock.read(&mut buf).unwrap();
+            sock.write_all(response.as_bytes()).unwrap();
+            sock.flush().unwrap();
+            String::from_utf8_lossy(&buf[..read]).to_string()
+        });
+        (format!("http://{addr}/backend-api/codex/models"), server)
+    }
+
+    let refusal = r#"{"error":{"message":"Missing scopes: api.model.read"}}"#;
+    let (url, server) = serve("403 Forbidden", None, refusal);
+    let codex = Endpoint::from_credentials(
+        Provider::OpenAICodex,
+        "tok-secret".into(),
+        Some("acct-1".into()),
+        None,
+    )
+    .unwrap();
+    let response = codex.probe(&url).await.unwrap();
+    assert_eq!(response.status, Some(403));
+    assert!(
+        response.body.contains("api.model.read"),
+        "{}",
+        response.body
+    );
+    assert_eq!(response.etag, None);
+    // Header names reach the wire in their canonical spelling, so the lookups
+    // are case-insensitive rather than betting on how a name is capitalized.
+    let request = server.join().unwrap().to_lowercase();
+    assert!(
+        request.contains("authorization: bearer tok-secret"),
+        "{request}"
+    );
+    assert!(request.contains("chatgpt-account-id: acct-1"), "{request}");
+    assert!(request.contains("originator: efference"), "{request}");
+
+    let listing = r#"{"data":[{"id":"m"}]}"#;
+    let (url, server) = serve("200 OK", Some("W/\"abc\""), listing);
+    let anthropic =
+        Endpoint::from_credentials(Provider::Anthropic, "sk-ant-x".into(), None, None).unwrap();
+    let response = anthropic.probe(&url).await.unwrap();
+    assert_eq!(response.status, Some(200));
+    assert_eq!(response.etag.as_deref(), Some("W/\"abc\""));
+    assert_eq!(response.body, listing);
+    let request = server.join().unwrap().to_lowercase();
+    assert!(request.contains("x-api-key: sk-ant-x"), "{request}");
+    assert!(request.contains("anthropic-version:"), "{request}");
+    assert!(
+        !request.contains("originator:"),
+        "a provider with no attribution sends none: {request}"
+    );
+}
+
+/// Every provider names the route its own listing is read from, and the two
+/// OpenAI arms are the only ones whose credential and catalog do not travel
+/// together: the platform listing wants a platform key's `api.model.read`
+/// scope, and a ChatGPT grant answers the subscription backend's route instead
+/// (docs/transport.md).
+#[test]
+fn each_provider_names_its_own_listing_route() {
+    assert_eq!(
+        Provider::Anthropic.models_url(None).as_deref(),
+        Some("https://api.anthropic.com/v1/models?limit=100")
+    );
+    assert_eq!(
+        Provider::OpenRouter.models_url(None).as_deref(),
+        Some("https://openrouter.ai/api/v1/models")
+    );
+    assert_eq!(
+        Provider::OpenAI.models_url(None).as_deref(),
+        Some("https://api.openai.com/v1/models")
+    );
+    assert_eq!(
+        Provider::OpenAICodex
+            .models_url(None)
+            .as_deref()
+            .and_then(|url| url.split('?').next()),
+        Some("https://chatgpt.com/backend-api/codex/models"),
+        "the route, without the version claim this build adds to it"
+    );
+    // A described endpoint's listing hangs off the base the operator gave, the
+    // same route its credential check and capability lookup use.
+    assert_eq!(
+        Provider::Custom(WireDialect::Responses)
+            .models_url(Some("https://api.example.com/v1"))
+            .as_deref(),
+        Some("https://api.example.com/v1/models")
+    );
+    assert_eq!(
+        Provider::Custom(WireDialect::Responses).models_url(None),
+        None
+    );
+}
+
+/// A 401 that is *not* expiry keeps its terminal classification: re-reading a
+/// key the provider rejects as wrong produces the same rejection.
 /// A 401 that is *not* expiry keeps its terminal classification: re-reading a
 /// key the provider rejects as wrong produces the same rejection.
 #[test]

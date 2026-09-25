@@ -158,6 +158,8 @@ mod control;
 #[cfg(feature = "dev")]
 mod dev;
 #[cfg(feature = "dev")]
+mod dev_models;
+#[cfg(feature = "dev")]
 mod inference;
 
 #[cfg(feature = "dev")]

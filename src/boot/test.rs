@@ -77,24 +77,39 @@ fn scratch_dirs() -> std::collections::BTreeSet<PathBuf> {
         .collect()
 }
 
-/// A session request against the compiled OpenAI catalog: `fetch_capabilities`
-/// reads it in-process, so preparation runs to the end without a provider.
+/// A session request against the Codex arm, whose capabilities come from the
+/// provider's catalog: the test seeds the cache that lookup reads, so
+/// preparation runs to the end without a provider. Each request writes its own
+/// `auth.json` and seeds under its own account id, so tests running in parallel
+/// do not share a catalog entry.
 fn request(root: &Path, id: &str, effort: Option<&str>) -> SessionRequest {
+    let account = format!("acct-{id}");
+    let codex_home = root.join(format!("codex-home-{id}"));
+    std::fs::create_dir_all(&codex_home).unwrap();
+    std::fs::write(
+        codex_home.join("auth.json"),
+        serde_json::json!({
+            "tokens": {"access_token": "not-a-real-credential", "account_id": account}
+        })
+        .to_string(),
+    )
+    .unwrap();
+    crate::api::seed_codex_catalog(crate::api::Provider::OpenAICodex, &account);
     let config = crate::inference::InferenceConfig::from_toml(
         r#"
 [defaults]
 model = "oai/gpt-5.6"
 
 [connections.oai]
-provider = "openai"
-auth = { kind = "env", key = "EFFERENCE_BOOT_TEST_KEY" }
+provider = "openai-codex"
+auth = { kind = "codex-cache" }
 "#,
     )
     .unwrap();
     let host_env = crate::env_table::EnvSnapshot::new(
         [(
-            "EFFERENCE_BOOT_TEST_KEY".to_string(),
-            "not-a-real-credential".to_string(),
+            "CODEX_HOME".to_string(),
+            codex_home.to_string_lossy().into_owned(),
         )]
         .into_iter()
         .collect(),
@@ -133,6 +148,143 @@ auth = { kind = "env", key = "EFFERENCE_BOOT_TEST_KEY" }
     }
 }
 
+/// A listing served from a loopback listener, for a connection whose base URL a
+/// test names. The named providers own their routes, so a described endpoint is
+/// the only one a test can point at itself. Answers every request with the same
+/// body — a boot reads the listing once per role that resolves capabilities — and
+/// `stop` ends the thread.
+struct ListingEndpoint {
+    url: String,
+    stop: Box<dyn FnOnce() + Send>,
+}
+
+impl ListingEndpoint {
+    fn url(&self) -> &str {
+        &self.url
+    }
+
+    fn stop(self) {
+        (self.stop)();
+    }
+}
+
+fn listing_endpoint(body: &'static str) -> ListingEndpoint {
+    use std::io::{Read, Write};
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap().to_string();
+    let url = format!("http://{address}/v1");
+    // Non-blocking with a stop flag, so one client that hangs up mid-response
+    // cannot end the server for the next read — a refused boot closes its
+    // connection as soon as it has the answer, which is exactly the case here.
+    listener.set_nonblocking(true).unwrap();
+    let stopping = Arc::new(AtomicBool::new(false));
+    let flag = Arc::clone(&stopping);
+    let server = std::thread::spawn(move || {
+        while !flag.load(Ordering::Relaxed) {
+            match listener.accept() {
+                Ok((mut sock, _)) => {
+                    // Read the whole header block before answering: a socket
+                    // closed with request bytes still unread sends the client an
+                    // RST, which under load loses the response it was sent.
+                    let mut buf = Vec::new();
+                    let mut chunk = [0u8; 1024];
+                    while !buf.windows(4).any(|window| window == b"\r\n\r\n") {
+                        match sock.read(&mut chunk) {
+                            Ok(0) | Err(_) => break,
+                            Ok(read) => buf.extend_from_slice(&chunk[..read]),
+                        }
+                    }
+                    // `connection: close` because the socket is shut after this
+                    // one response: without it the client pools the connection,
+                    // and a later read that reuses it before the close is seen
+                    // gets a reset instead of an answer.
+                    let response = format!(
+                        "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\n\
+                         connection: close\r\ncontent-length: {}\r\n\r\n{body}",
+                        body.len()
+                    );
+                    let _ = sock.write_all(response.as_bytes());
+                    let _ = sock.flush();
+                    let _ = sock.shutdown(std::net::Shutdown::Both);
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    std::thread::sleep(std::time::Duration::from_millis(5));
+                }
+                Err(_) => break,
+            }
+        }
+    });
+    ListingEndpoint {
+        url,
+        stop: Box::new(move || {
+            stopping.store(true, Ordering::Relaxed);
+            let _ = server.join();
+        }),
+    }
+}
+
+/// A session request against a described endpoint at `base`, whose capabilities
+/// come from the listing `listing_endpoint` serves. The spotter is named in the
+/// configuration because a described endpoint publishes no catalog to pick a
+/// default from, which is a resolution failure before any capability read.
+fn request_for(base: &str, root: &Path, id: &str, temperature: Option<u8>) -> SessionRequest {
+    let config = crate::inference::InferenceConfig::from_toml(&format!(
+        r#"
+[defaults]
+model = "edge/m"
+spotter = "edge/m"
+
+[connections.edge]
+dialect = "responses"
+base-url = "{base}"
+auth = {{ kind = "env", key = "EFFERENCE_BOOT_TEST_KEY" }}
+"#
+    ))
+    .unwrap();
+    let host_env = crate::env_table::EnvSnapshot::new(
+        [(
+            "EFFERENCE_BOOT_TEST_KEY".to_string(),
+            "not-a-real-credential".to_string(),
+        )]
+        .into_iter()
+        .collect(),
+    )
+    .unwrap();
+    let inference = crate::inference::InferenceRegistry::from_config(
+        config,
+        Path::new("/host"),
+        host_env,
+        &std::sync::Arc::new(crate::secrets::Secrets::in_memory()),
+    )
+    .unwrap()
+    .resolve(None, None, None)
+    .unwrap();
+    SessionRequest {
+        cwd: root.to_path_buf(),
+        base_env: crate::env_table::EnvSnapshot::new(
+            ["HOME", "PATH"]
+                .into_iter()
+                .filter_map(|name| Some((name.to_string(), std::env::var(name).ok()?)))
+                .collect(),
+        )
+        .unwrap(),
+        session_dir: root.join(BASE_DIR).join(id),
+        config: None,
+        inference,
+        temperature,
+        effort: None,
+        upstream: Vec::new(),
+        autonomous: false,
+        reauth: Vec::new(),
+        keep_scratch: false,
+        host: None,
+        created_by: None,
+    }
+}
+
 /// The scratch dir a successful boot owns, removed here as the runtime's
 /// teardown would (docs/tools.md).
 fn drop_boot(boot: SessionBoot<MountedSpotter>) {
@@ -153,36 +305,59 @@ fn failure(result: Result<SessionBoot<MountedSpotter>, Error>, what: &str) -> Er
     }
 }
 
-/// An effort level the model's metadata does not declare is rejected before the
+/// A request whose model refuses a boot-time parameter is rejected before the
 /// session dir is minted, so the name stays free and the corrected retry takes it
 /// (docs/control-channel.md). The rejection and the retry are the sequence a
 /// creating client actually runs.
+///
+/// The refusal is a temperature on a model whose listing names accepted sampling
+/// parameters without it — the one parameter refusal a source can still make
+/// offline, now that the OpenAI arms report what the provider reports and validate
+/// no effort levels of their own (`api/provider/codex.rs`). The custom arm's
+/// listing is served by a local listener because the named providers' routes are
+/// their own.
 #[tokio::test]
-async fn a_rejected_effort_reserves_no_name() {
+async fn a_rejected_parameter_reserves_no_name() {
     let _serial = PREPARING.lock().await;
-    let root = Root::new("effort");
+    let root = Root::new("parameter");
     let dir = root.session_dir("file-nomination");
+    let endpoint = listing_endpoint(
+        r#"{"data":[{"id":"m","max_input_tokens":1000,"max_tokens":100,
+             "supported_parameters":["top_p"]}]}"#,
+    );
 
-    let error = failure(
-        prepare(request(root.path(), "file-nomination", Some("bogus"))).await,
-        "an undeclared effort level must fail preparation",
+    let refused = failure(
+        prepare(request_for(
+            endpoint.url(),
+            root.path(),
+            "file-nomination",
+            Some(50),
+        ))
+        .await,
+        "a refused parameter must fail preparation",
     );
     assert!(
-        error.to_string().contains("bogus"),
-        "names the level: {error}"
+        refused.to_string().contains("does not accept"),
+        "names the refusal: {refused}"
     );
     assert!(
         !dir.exists(),
-        "a rejected effort mints nothing: {}",
+        "a refused parameter mints nothing: {}",
         dir.display()
     );
 
-    let boot = prepare(request(root.path(), "file-nomination", Some("high")))
-        .await
-        .expect("the corrected retry mints the same name");
+    let boot = prepare(request_for(
+        endpoint.url(),
+        root.path(),
+        "file-nomination",
+        None,
+    ))
+    .await
+    .expect("the corrected retry mints the same name");
     assert!(dir.join(LOG_NAME).is_file(), "the retry opened its log");
     assert!(dir.join(CONFIG_NAME).is_file(), "and its config snapshot");
     drop_boot(boot);
+    endpoint.stop();
 }
 
 /// A failure after the mint rolls back what the attempt minted: the session dir
