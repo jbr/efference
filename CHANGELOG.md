@@ -8,6 +8,10 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- **Transcript detail by recency** (docs/web-client.md): the web transcript renders recent
+  items whole, the next stretch capped under a fade, and older calls as one-line rows titled
+  by their intent; batches flatten into single calls, the live thinking tail scrolls inside a
+  fixed-height box, and errors, gates, and running calls always render whole.
 - **A session drawer in the web client** (docs/web-client.md): models, directory, cost, review
   level, pause, hold, policy, tasks and inbox behind one top-bar control — a side sheet on desktop,
   a draggable bottom sheet on a phone — so the page is the transcript and the composer; empty

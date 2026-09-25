@@ -386,7 +386,8 @@ call still has a node for its result to attach to. Replay credentials
 `ui/` reads `output` directly.
 
 Two containers, `batch` and `call`; everything else is a leaf sibling at session
-level. A result, a verdict, and a call's telemetry are attached to the call they
+level. The batch is structure, not display: the transcript flattens it, so two
+calls issued in one generation read as two steps (see "Detail by recency"). A result, a verdict, and a call's telemetry are attached to the call they
 name rather than emitted where they fall in the log — that attachment is the
 point, and it is what makes a result *belong to* its call instead of merely
 following it.
@@ -440,7 +441,9 @@ a two-column row — a label gutter beside the content — and the design pass p
 a `you` label in that gutter beside the accent (2026-08-19, held lightly: it
 reads as cohesive with the labelled column, reversing the first slice's
 label-free user turn, and may reverse back after use). Non-voice entries keep
-their labels, because those genuinely need naming. The earlier failure mode —
+their labels, because those genuinely need naming — except calls and thinking,
+which carry their voice by type (a call's intent is its title; thinking is
+italic) and sit in the prose column without a label. The earlier failure mode —
 a noun *above* every block making every entry look alike — is what the gutter
 avoids: labels sit beside content, not between entries.
 
@@ -463,9 +466,53 @@ misunderstanding is visible before it becomes a wrong call, so reading it is one
 of the better moments to redirect — an argument about prominence, not just
 inclusion.
 
+The live thinking tail renders in a box of fixed height (about a dozen lines)
+pinned to its newest line: while a long think is the thing happening it is
+worth reading — whether a ten-minute pause is going somewhere — but it should
+scroll inside itself rather than push the page.
+
 The pre-commit tail renders flat rather than inside a batch: nothing there has
 committed, so its calls have no results to contain and no verdicts to carry, and
 the committed entry supersedes the whole set at once.
+
+## Detail by recency
+
+`ui/transcriptLevels.ts` holds the rules and `ui/TranscriptItems.tsx` draws
+them. The transcript is a run of items — a user turn, a paragraph run, a
+thinking block, one call — each given a level by its distance from the tail:
+the last 6 render **full**, the next 14 **trimmed**, and anything older
+**brief**. Recent work reads whole while it is the thing being followed; the
+page's length and DOM weight stay bounded as a session grows.
+
+- **A call**: full is the whole call; trimmed caps it at 20rem under a short,
+  steep fade with a centred "Show the whole result" set on the fade (shown only
+  when something is actually hidden), the distiller's note lifted out below the
+  cap; brief is one row — the intent as its title, the tool and what it acted
+  on (its string arguments) beneath, the note under that.
+- **Thinking**: trimmed is a three-line preview under the same fade; brief is a
+  "Thought · N words" pill. Thinking of 120 words or fewer is never folded —
+  the median block is about that size, and folding it costs a click and saves
+  nothing (backlog/web/thinking-autocollapse.md).
+- **Always whole, at any distance**: user turns and assistant prose; a call
+  still running or held at a gate; a failed call; a result withheld by a triage
+  failure; a call the spotter gated or watched. Errors, gates, and refusals
+  render at every density.
+
+Every fold opens to the whole on a tap, so this is folding by position rather
+than dropping: every entry still renders, as the positions require, and a gate
+decides a call, never a result, so no pending decision rests on a folded body.
+Levels are not yet anchored against the scroll: folding an item above the
+viewport while the reader is scrolled up moves the page — harmless while
+following the tail, and the open item in backlog/web/thinking-autocollapse.md.
+
+**A call's parts, top to bottom**: the intent as its title (upright serif,
+inline markdown), the signature under it at a smaller size, then what came
+back — the result header (interface text, in the sans), the body, and the note
+— indented as one section under the question. The `›` prompt and the `✧` note
+glyph are not drawn: they are wire vocabulary with no meaning to a reader here.
+Items are separated by space alone (3rem), with tight spacing inside one, so a
+call's parts group by proximity; the hover is a padded field over the whole
+item, note included.
 
 ## A call reads as a signature
 
@@ -1498,10 +1545,16 @@ drawn on the page: installing the recorder prints the interface to the console,
 and each command logs the mode and position it landed on (`[scrub] scrub 137/412`),
 without which two screenshots at different cursors are indistinguishable.
 
-The tape is in memory and covers the current session: a reload starts a new one,
-and so does an HMR update to a `session/` module. Repeatability across reloads
-would mean persisting the tape, or serving a recorded session through the
-daemon's own code — the latter being the only way the TUI gets it too
+A recording is saved to IndexedDB (`session/tapeStore.ts`) once it holds streamed
+output — a reload that only reconnects records a state snapshot, and saving those
+would push the recordings worth returning to out of the store. Each recording is
+its own record keyed by session and start time; a session keeps its newest five,
+so a reload starts a new recording rather than overwriting the last. IndexedDB
+rather than localStorage because a tape's base is the whole seeded session, tool
+results included. `tapes()` lists them; `restore()` replays the newest earlier one
+(or a named key) held at its end, and stops recording live frames until reload so
+a replay never mixes with the stream. Serving a recorded session through the
+daemon's own code remains the only way the TUI gets the same
 ([../backlog/session-replay.md](../backlog/session-replay.md)).
 
 The whole module sits behind `import.meta.env.DEV` in `useSession.ts`, which a

@@ -1,18 +1,14 @@
-// The transcript: the log projected into its hierarchy (`session/tree.ts`) and
-// rendered whole, plus the pre-commit streaming tail and the pending-turn
-// echoes. Structure lives in the projection; this file is the display half of
-// it (docs/web-client.md — parity of information, no folding; the density
-// toggles hide, they never drop).
+// The transcript: the log projected into its hierarchy (`session/tree.ts`),
+// rendered as items at a level of detail set by their distance from the tail
+// (`ui/TranscriptItems.tsx`, rules in `ui/transcriptLevels.ts`), plus the
+// pre-commit streaming tail and the pending-turn echoes. Nothing is dropped:
+// every folded item opens whole on a tap, and the density toggles hide, they
+// never drop (docs/web-client.md).
 
 import { memo, useMemo } from "react";
 import type { ConfigEdit, ContentBlock, Mark, Spot } from "../api/types.ts";
 import type { LiveBlock, PendingTurn, Streaming } from "../session/store.ts";
-import type {
-  BatchNode,
-  CallNode,
-  LeafNode,
-  TranscriptNode,
-} from "../session/tree.ts";
+import type { CallNode, LeafNode, TranscriptNode } from "../session/tree.ts";
 import { upstreamFailureWhy } from "../session/tree.ts";
 import { assistantView } from "../session/assistant.ts";
 import type { CallId } from "../api/types.ts";
@@ -20,6 +16,7 @@ import { Markdown } from "./Markdown.tsx";
 import { CallBlock, LiveCallBlock, ResultBlock } from "./ToolBlocks.tsx";
 import { useFollowTail } from "./useFollowTail.ts";
 import { useViewSettings } from "./viewSettings.ts";
+import { LiveThinking, TranscriptItems } from "./TranscriptItems.tsx";
 
 // Blank-line joined: these bodies render as markdown, and distinct wire
 // blocks are separate paragraphs — a single newline would soft-wrap the last
@@ -163,12 +160,10 @@ function Leaf({ node }: { node: LeafNode }) {
         </Entry>
       );
     }
+    // Thinking leaves are TranscriptItems' own (they fold by level); what
+    // reaches here is the step's prose.
     const view = assistantView(p.Assistant);
-    return node.key.endsWith(":thinking") ? (
-      <Entry label="thinking" as="thinking">
-        <Markdown>{text(view.thinking)}</Markdown>
-      </Entry>
-    ) : (
+    return (
       <Entry label={null}>
         <Markdown>{text(view.text)}</Markdown>
       </Entry>
@@ -275,42 +270,6 @@ const Call = memo(function Call({
   );
 });
 
-/** The calls of one step. A batch of one is still a batch structurally — the
- * node is what gives depth-based styling and per-batch state a home — but it
- * labels itself `tool call`: a batch of one flattens to a call semantically,
- * and `batch` appears only when there is a plurality to name. The header
- * states the count and nothing else: the mock's duration was invented, and
- * per-batch facts that arrive later (`inbox`, `retries`) belong on this row
- * when they get a surface. */
-function Batch({
-  node,
-  onInspect,
-  onOpenFile,
-}: {
-  node: BatchNode;
-  onInspect: (callId: CallId) => void;
-  onOpenFile: (path: string, callId: CallId) => void;
-}) {
-  const n = node.calls.length;
-  return (
-    <div className="batch">
-      <Entry label={n === 1 ? "tool call" : "batch"} as="batch-head">
-        {n === 1 ? null : `${n} calls`}
-      </Entry>
-      <Entry label={null}>
-        {node.calls.map((call) => (
-          <Call
-            key={call.key}
-            node={call}
-            onInspect={onInspect}
-            onOpenFile={onOpenFile}
-          />
-        ))}
-      </Entry>
-    </div>
-  );
-}
-
 /** Memoized on its node: a committed node's rendering is a function of that
  * node alone, so it must not re-render because something else streamed. The
  * transcript re-renders on every delta, and re-rendering a committed entry
@@ -322,13 +281,7 @@ function Batch({
 const MemoLeaf = memo(Leaf);
 
 function LiveBlockView({ block }: { block: LiveBlock }) {
-  if (block.kind === "thinking") {
-    return (
-      <Entry label="thinking…" as="thinking">
-        <Markdown>{block.text}</Markdown>
-      </Entry>
-    );
-  }
+  if (block.kind === "thinking") return <LiveThinking text={block.text} />;
   if (block.kind === "text") {
     return (
       <Entry label={null}>
@@ -440,26 +393,26 @@ export function Transcript({
 }) {
   useFollowTail();
   const { thinking, ambient } = useViewSettings();
-  const shown = nodes.filter(
-    (node) =>
-      node.kind !== "leaf" ||
-      ((thinking || !node.key.endsWith(":thinking")) &&
-        (ambient || !("Ambient" in node.entry.payload))),
+  const shown = useMemo(
+    () =>
+      ambient
+        ? nodes
+        : nodes.filter(
+            (node) =>
+              node.kind !== "leaf" || !("Ambient" in node.entry.payload),
+          ),
+    [nodes, ambient],
   );
   return (
     <div className="transcript col">
-      {shown.map((node) =>
-        node.kind === "batch" ? (
-          <Batch
-            key={node.key}
-            node={node}
-            onInspect={onInspect}
-            onOpenFile={onOpenFile}
-          />
-        ) : (
-          <MemoLeaf key={node.key} node={node} />
-        ),
-      )}
+      <TranscriptItems
+        nodes={shown}
+        thinking={thinking}
+        renderLeaf={(node) => <MemoLeaf node={node} />}
+        renderFullCall={(node) => (
+          <Call node={node} onInspect={onInspect} onOpenFile={onOpenFile} />
+        )}
+      />
       <StreamingTail streaming={streaming} />
       <PendingTurns pending={pending} onRecall={onRecall} />
     </div>

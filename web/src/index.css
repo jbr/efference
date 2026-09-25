@@ -332,12 +332,6 @@ input[type="checkbox"] {
   margin-top: 0.4rem;
 }
 
-.entry.thinking > .content .prose {
-  font-style: italic;
-  font-weight: 300;
-  color: var(--fg-dim);
-}
-
 .entry.ambient > .content,
 .entry.config > .content {
   color: var(--fg-muted);
@@ -363,42 +357,15 @@ input[type="checkbox"] {
   color: var(--fg);
 }
 
-/* The hierarchy (docs/web-client.md): session → batch → call. The batch is a
-   surface; depth below it is a connector down the call's left, so a call's
-   args, verdict and result read as one unit rather than three adjacent
-   blocks. */
-.batch {
-  background: var(--bg-surface);
-  border-top: 1px solid var(--border-subtle);
-  border-bottom: 1px solid var(--border-subtle);
-  padding: 1rem 0 1.2rem;
-  margin: 1.4rem 0;
-}
-
-.batch .entry {
-  margin: 0.5rem 0;
-}
-
-.entry.batch-head > .content {
-  font-size: 0.6875rem;
-  color: var(--fg-faint);
-  padding-top: 0.3rem;
-}
-
+/* A call (docs/web-client.md "Detail by recency"): its parts group by
+   proximity inside the item, not by a rule down its side. The whole call opens
+   the inspector; the item's hover field says so (Transcript.css). */
 .call {
-  border-left: 1px solid var(--border-strong);
-  padding-left: 1rem;
-  margin: 0.6rem 0;
+  margin: 0;
 }
 
-/* The whole call opens the inspector; the hover says so. */
 .call.clickable {
   cursor: pointer;
-}
-
-.call.clickable:hover {
-  border-left-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 4%, transparent);
 }
 
 /* The head is a plain block: it was a flex row while an affordance sat at the

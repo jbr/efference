@@ -89,3 +89,27 @@ export function Markdown({
     </div>
   );
 }
+
+/** The inline marks only — code, emphasis, links — for a one-line annotation
+ * (the distiller's note) that sits in running text rather than as a block.
+ * Block structure is unwrapped rather than rendered: a note is one run of
+ * text, and a stray `#` or list marker in it is not a heading or a list. The
+ * same safety defaults as [`Markdown`] hold. */
+const INLINE_ELEMENTS = ["p", "code", "em", "strong", "a", "del"];
+
+const inlineComponents: Components = {
+  p: ({ children }) => <>{children}</>,
+};
+
+export function InlineMarkdown({ children }: { children: string }) {
+  return (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
+      allowedElements={INLINE_ELEMENTS}
+      unwrapDisallowed
+      components={inlineComponents}
+    >
+      {children}
+    </ReactMarkdown>
+  );
+}

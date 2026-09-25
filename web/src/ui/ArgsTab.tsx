@@ -14,6 +14,7 @@
 
 import { useMemo, useState } from "react";
 import { Code } from "./Code.tsx";
+import { InlineMarkdown } from "./Markdown.tsx";
 import { callArgs, splitToolName, type ArgField } from "../render/parse.ts";
 import {
   argsAgainstSchema,
@@ -188,7 +189,11 @@ export function ArgsTab({
           server={server}
         />
       )}
-      {intent !== null && <div className="intent">{intent}</div>}
+      {intent !== null && (
+        <div className="intent">
+          <InlineMarkdown>{intent}</InlineMarkdown>
+        </div>
+      )}
       {sent.length > 0 ? (
         <dl className="arg-list">
           {sent.map((arg) => (

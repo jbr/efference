@@ -29,6 +29,7 @@ import {
 } from "../render/parse.ts";
 import { ArgValue } from "./chips.tsx";
 import { CallHead } from "./CallHead.tsx";
+import { InlineMarkdown } from "./Markdown.tsx";
 import { truncateBody, truncateText } from "./truncate.ts";
 import { useNarrow } from "./useNarrow.ts";
 import { useWholeResult } from "./wholeResult.ts";
@@ -64,7 +65,11 @@ export function CallBlock({
           <ArgValue call={call} arg={arg} onOpenFile={onOpenFile} />
         )}
       />
-      {view.intent !== null && <div className="intent">{view.intent}</div>}
+      {view.intent !== null && (
+        <div className="intent">
+          <InlineMarkdown>{view.intent}</InlineMarkdown>
+        </div>
+      )}
       {bodies.map((body, i) => (
         <div key={body.key ?? i} className="call-body">
           {body.key !== null && <div className="call-body-key">{body.key}</div>}
@@ -125,7 +130,11 @@ export function LiveCallBlock({
   return (
     <div className="block">
       <CallHead view={view} arriving />
-      {view.intent !== null && <div className="intent">{view.intent}</div>}
+      {view.intent !== null && (
+        <div className="intent">
+          <InlineMarkdown>{view.intent}</InlineMarkdown>
+        </div>
+      )}
       {view.bodies.map((body, i) => (
         <div key={body.key ?? i} className="call-body">
           {body.key !== null && <div className="call-body-key">{body.key}</div>}
@@ -265,7 +274,9 @@ export function ResultBlock({
         // its ⟢ (render/distill.ts).
         <div className="note">
           <span className="note-glyph">✧</span>
-          <span className="note-text">{view.note}</span>
+          <span className="note-text">
+            <InlineMarkdown>{view.note}</InlineMarkdown>
+          </span>
         </div>
       )}
       {/* The per-result raw <details> is gone: raw is the inspector's tab
