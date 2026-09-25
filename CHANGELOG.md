@@ -21,6 +21,10 @@ behind a change, see [`journal/`](journal/).
   catalog routes, so what each credential can see is one run's output.
 
 ### Changed
+- **The web gate decides inside the call it is about** (docs/web-client.md): the gated call
+  is marked as a whole, the spotter's reason stands unlabelled under it with Allow /
+  Decline…, and the floating panel is that entry lifted. Decided calls no longer show their
+  verdict, and the guessed "allow prefix" grant is gone until the host proposes one.
 - **The compiled OpenAI model catalog is gone** (docs/transport.md). A model id absent from
   the build is no longer refused at boot; the two OpenAI arms read the provider instead.
 - **An effort level a model's metadata does not bound is sent, and the boot line says so**

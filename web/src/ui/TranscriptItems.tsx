@@ -5,7 +5,7 @@
 // assistant prose always render whole, through the ordinary leaf renderer.
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import type { ContentBlock } from "../api/types.ts";
+import type { CallId, ContentBlock } from "../api/types.ts";
 import { assistantView } from "../session/assistant.ts";
 import type { CallNode, LeafNode, TranscriptNode } from "../session/tree.ts";
 import { callView, resultRender } from "../render/parse.ts";
@@ -251,13 +251,20 @@ function Capped({
 function CallItem({
   node,
   level,
+  gated,
   renderFull,
 }: {
   node: CallNode;
   level: Level;
+  /** Held at the approval gate: rendered whole whatever its level, marked,
+   * with the decision inside it (ui/Gate.tsx). */
+  gated: boolean;
   renderFull: (node: CallNode) => ReactNode;
 }) {
   const [open, setOpen] = useState(false);
+  if (gated) {
+    return <div className="t-entry t-call gated">{renderFull(node)}</div>;
+  }
   if (open || level === "full") {
     return <div className="t-entry t-call">{renderFull(node)}</div>;
   }
@@ -284,12 +291,15 @@ function CallItem({
 export function TranscriptItems({
   nodes,
   thinking,
+  gatedCall,
   renderLeaf,
   renderFullCall,
 }: {
   nodes: TranscriptNode[];
   /** The density switch: whether thinking shows at all. */
   thinking: boolean;
+  /** The call the approval gate holds, if any. */
+  gatedCall: CallId | null;
   renderLeaf: (node: LeafNode) => ReactNode;
   renderFullCall: (node: CallNode) => ReactNode;
 }) {
@@ -310,6 +320,7 @@ export function TranscriptItems({
               key={item.node.key}
               node={item.node}
               level={level}
+              gated={item.node.callId === gatedCall}
               renderFull={renderFullCall}
             />
           );

@@ -33,6 +33,16 @@
   background: var(--bg-raised);
 }
 
+/* A call held at the approval gate: the one entry waiting on the reader, so
+   it is marked as a whole — call, verdict, and the decision inside it
+   (ui/Gate.tsx) — rather than by the controls alone. An even border all the
+   way round: a one-side heavy border and rounded corners do not combine. */
+.t-entry.t-call.gated,
+.t-entry.t-call.gated:hover {
+  background: var(--gated-bg);
+  border: 1px solid var(--gated-border);
+}
+
 /* What came back — the header, the body, and the note — is one section,
    indented under the title and signature that say what was asked. */
 .transcript .call > .block:not(:first-child),

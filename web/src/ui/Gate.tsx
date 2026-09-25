@@ -1,41 +1,143 @@
-// The pending approval gate (docs/web-client.md). In the flow, the surface
-// is the affordance only — a gated call has no result entry, so it and its
-// spotter verdict are the transcript's last entries, directly above, and
-// re-rendering them here duplicated the whole call body. The floating panel
-// is the deliberate exception: it shows exactly while those entries are
-// scrolled out of view, so it carries the call (intent, full command) and
-// the verdict alongside the controls. The four resolutions are the decision
-// vocabulary of docs/permissions.md.
+// The pending approval gate (docs/web-client.md). In the flow, the decision
+// renders inside the gated call's own entry (Transcript.tsx's gate slot),
+// under the spotter's reason — the call it decides is the thing on screen,
+// not a panel after it. The floating panel is that entry lifted: it shows
+// exactly while the entry is scrolled out of view, so it carries the call
+// (intent, full command) and the reason alongside the controls. The
+// resolutions offered are approve, abort, and redirect from the decision
+// vocabulary of docs/permissions.md; a grant (`config_edit`) waits on the
+// host proposing one (docs/web-client.md).
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { Decision, Gate, Spot } from "../api/types.ts";
 import { callSignature, callView } from "../render/parse.ts";
 import { jumpToTail, useDockOffset } from "./float.ts";
 import { CallBlock } from "./ToolBlocks.tsx";
 import { SpotLine } from "./Transcript.tsx";
+import "./Gate.css";
 
-/** The tool input's `command` field when it has one. Tool-shape peeking, not
- * a /v1 envelope field. */
-const commandOf = (input: unknown): string | null =>
-  typeof input === "object" &&
-  input !== null &&
-  "command" in input &&
-  typeof (input as { command: unknown }).command === "string"
-    ? (input as { command: string }).command
-    : null;
+/** The redirect's text: a textarea that grows with what is typed, so the
+ * message is never cut off. Enter sends; shift-enter is a newline. */
+function SteerField({
+  value,
+  onChange,
+  onSubmit,
+}: {
+  value: string;
+  onChange: (text: string) => void;
+  onSubmit: () => void;
+}) {
+  const field = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => field.current?.focus(), []);
+  return (
+    <textarea
+      ref={field}
+      className="gate-field"
+      rows={1}
+      value={value}
+      placeholder="Tell the agent what to do instead"
+      onChange={(event) => onChange(event.target.value)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" && !event.shiftKey) {
+          event.preventDefault();
+          onSubmit();
+        }
+      }}
+    />
+  );
+}
 
-/** The allow-with-prefix prefill: the prefix the spotter's promotion probe
- * named (docs/permissions.md), so the operator ratifies the same candidate
- * the spotter answered for. Falls back to the call's whole command — a
- * full-command prefix allows exactly this command — when no probe rode the
- * call. */
-const prefillFor = (gate: Gate, spot: Spot | null): string =>
-  spot?.probed_prefix ?? commandOf(gate.input) ?? "";
+/** The decision: allow, or decline — which opens the redirect (decline and
+ * say what to do instead) and, less prominently, stopping the turn. */
+function GateControls({
+  busy,
+  steer,
+  setSteer,
+  approve,
+  abort,
+  redirect,
+}: {
+  busy: boolean;
+  steer: string;
+  setSteer: (text: string) => void;
+  approve: () => void;
+  abort: () => void;
+  redirect: () => void;
+}) {
+  const [declining, setDeclining] = useState(false);
+  return (
+    <div className="gate-controls">
+      <div className="gate-actions">
+        <button className="primary" disabled={busy} onClick={approve}>
+          Allow
+        </button>
+        <button
+          disabled={busy}
+          aria-expanded={declining}
+          onClick={() => setDeclining(!declining)}
+        >
+          Decline…
+        </button>
+      </div>
+      {declining && (
+        <div className="gate-decline">
+          <div className="gate-row">
+            <SteerField
+              value={steer}
+              onChange={setSteer}
+              onSubmit={() => steer.trim() && redirect()}
+            />
+            <button
+              className="primary"
+              disabled={busy || !steer.trim()}
+              onClick={redirect}
+            >
+              Send
+            </button>
+          </div>
+          <button className="gate-link" disabled={busy} onClick={abort}>
+            Or stop this turn entirely
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** The gated entry's horizontal box, so the floating panel sits exactly
+ * above where the entry is in the flow — the entry lifted, not a separate
+ * panel. Null until the entry is mounted; the float then centers (CSS). */
+function useEntryColumn(
+  slot: HTMLDivElement | null,
+): { left: number; width: number; transform: "none" } | null {
+  const [box, setBox] = useState<{ left: number; width: number } | null>(null);
+  useEffect(() => {
+    const entry = slot?.closest(".t-entry");
+    if (!(entry instanceof HTMLElement)) return;
+    const update = () => {
+      const rect = entry.getBoundingClientRect();
+      setBox({ left: rect.left, width: rect.width });
+    };
+    update();
+    // The entry's width follows the column; its left edge also moves when
+    // the viewport does, which a ResizeObserver on the entry alone misses.
+    const observer = new ResizeObserver(update);
+    observer.observe(entry);
+    window.addEventListener("resize", update);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", update);
+    };
+  }, [slot]);
+  return slot === null || box === null ? null : { ...box, transform: "none" };
+}
 
 export function GateSurface({
   gate,
   spot,
   covered,
+  slot,
   resolve,
 }: {
   gate: Gate;
@@ -44,11 +146,12 @@ export function GateSurface({
    * geometrically in view yet occluded, which the IntersectionObserver
    * cannot see — so treat it as away and float. */
   covered: boolean;
+  /** The gated call's own slot in the transcript (Transcript.tsx), when it is
+   * mounted: the decision renders there, inside the call it is about. */
+  slot: HTMLDivElement | null;
   resolve: (decision: Decision) => Promise<"applied" | "moved">;
 }) {
   const [steer, setSteer] = useState("");
-  const [prefix, setPrefix] = useState(() => prefillFor(gate, spot));
-  const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<{
     text: string;
@@ -66,8 +169,11 @@ export function GateSurface({
   // stands in for it. It never scrolls on its own — arriving at a decision
   // is the operator's move to make, not the page's.
   const [away, setAway] = useState(false);
-  const surface = useRef<HTMLDivElement>(null);
+  // State rather than a ref: the in-flow surface moves between the column
+  // and the call's slot, and the observer has to follow it.
+  const [surface, setSurface] = useState<HTMLDivElement | null>(null);
   const bottom = useDockOffset();
+  const lift = useEntryColumn(slot);
 
   // The pending call changed under this surface. Always reset the inputs — a
   // decision composed against the old call must not land on the new one. Say
@@ -76,17 +182,11 @@ export function GateSurface({
   // calls does this on every approval, and the daemon's diffing topic
   // publisher may never show the cleared state between). An unprompted
   // change means another session decided this call.
-  const [drafts, setDrafts] = useState(() => ({
-    call: gate.call_id,
-    prefill: prefillFor(gate, spot),
-  }));
-  if (drafts.call !== gate.call_id) {
-    const dirty = steer !== "" || note !== "" || prefix !== drafts.prefill;
-    const prefill = prefillFor(gate, spot);
-    setDrafts({ call: gate.call_id, prefill });
+  const [draftCall, setDraftCall] = useState(gate.call_id);
+  if (draftCall !== gate.call_id) {
+    const dirty = steer !== "";
+    setDraftCall(gate.call_id);
     setSteer("");
-    setPrefix(prefill);
-    setNote("");
     setResolvedHere(false);
     setFloatOpen(true);
     setNotice(
@@ -102,15 +202,14 @@ export function GateSurface({
   }
 
   useEffect(() => {
-    const el = surface.current;
-    if (el === null) return;
+    if (surface === null) return;
     const observer = new IntersectionObserver(
       ([entry]) => setAway(!entry.isIntersecting),
       { threshold: 0 },
     );
-    observer.observe(el);
+    observer.observe(surface);
     return () => observer.disconnect();
-  }, []);
+  }, [surface]);
 
   async function send(decision: Decision) {
     setBusy(true);
@@ -139,72 +238,35 @@ export function GateSurface({
       {notice && (
         <div className={notice.error ? "error" : "dim"}>{notice.text}</div>
       )}
-      <div className="controls">
-        <button
-          className="primary"
-          disabled={busy}
-          onClick={() => void send({ decision: "approve" })}
-        >
-          approve
-        </button>
-        <button
-          disabled={busy}
-          onClick={() => void send({ decision: "abort" })}
-        >
-          abort
-        </button>
-      </div>
-      <div className="controls">
-        <input
-          value={steer}
-          onChange={(e) => setSteer(e.target.value)}
-          placeholder="steering text — what to do instead"
-        />
-        <button
-          disabled={busy || !steer.trim()}
-          onClick={() =>
-            void send({ decision: "redirect", message: steer.trim() })
-          }
-        >
-          redirect
-        </button>
-      </div>
-      <div className="controls">
-        <input
-          value={prefix}
-          onChange={(e) => setPrefix(e.target.value)}
-          placeholder="command prefix to allow from now on"
-        />
-        <input
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-          placeholder="note (optional)"
-        />
-        <button
-          disabled={busy || !prefix.trim()}
-          onClick={() =>
-            void send({
-              decision: "config_edit",
-              change: { command: { command: prefix.trim() } },
-              note: note.trim() || undefined,
-            })
-          }
-        >
-          allow prefix
-        </button>
-      </div>
+      <GateControls
+        busy={busy}
+        steer={steer}
+        setSteer={setSteer}
+        approve={() => void send({ decision: "approve" })}
+        abort={() => void send({ decision: "abort" })}
+        redirect={() =>
+          void send({ decision: "redirect", message: steer.trim() })
+        }
+      />
     </>
   );
+  // The spotter's reason, as the gated call shows it — or, for a gate held
+  // with no `Spot` entry behind it (a window the stream's coherence rule
+  // closes, docs/control-api.md), the gate's own.
+  const reason =
+    spot !== null ? (
+      <SpotLine spot={spot} />
+    ) : (
+      gate.reason !== undefined && <p className="spot">{gate.reason}</p>
+    );
 
   const signature = callSignature(callView(gate.name, gate.input));
   return (
     <>
       {(away || covered) &&
         (floatOpen ? (
-          <div className="gate-float" style={{ bottom }}>
+          <div className="gate-float" style={{ bottom, ...lift }}>
             <div className="gate-float-head">
-              <span className="kind">⏸ awaiting approval</span>
-              <span className="spacer" />
               {/* Jumping to the tail while the viewer covers it would land
                   behind the viewer. */}
               {!covered && (
@@ -216,17 +278,19 @@ export function GateSurface({
                 collapse ✕
               </button>
             </div>
-            <div className="gate-float-body">
-              <CallBlock
-                call={{ id: gate.call_id, name: gate.name, input: gate.input }}
-              />
-              {spot !== null ? (
-                <SpotLine spot={spot} />
-              ) : (
-                gate.reason !== undefined && (
-                  <div className="dim">spotter: {gate.reason}</div>
-                )
-              )}
+            {/* The transcript's own call markup and classes, so the lifted
+                entry reads exactly as the one in the flow. */}
+            <div className="gate-float-body transcript">
+              <div className="call">
+                <CallBlock
+                  call={{
+                    id: gate.call_id,
+                    name: gate.name,
+                    input: gate.input,
+                  }}
+                />
+                {reason}
+              </div>
             </div>
             {controls()}
           </div>
@@ -239,18 +303,22 @@ export function GateSurface({
             ⏸ {signature} — awaiting approval
           </button>
         ))}
-      <div className="block gate" ref={surface}>
-        <div className="kind">⏸ awaiting approval</div>
-        {/* The spotter's verdict is its own `Spot` entry directly above, so
-            it is not restated here. This fallback covers a gate held with no
-            `Spot` entry behind it — a window the stream's coherence rule
-            closes (docs/control-api.md), so it is robustness, not a path
-            that normally renders. */}
-        {!spot && gate.reason && (
-          <div className="dim">spotter: {gate.reason}</div>
-        )}
-        {controls()}
-      </div>
+      {slot !== null ? (
+        createPortal(
+          <div ref={setSurface}>
+            {spot === null && reason}
+            {controls()}
+          </div>,
+          slot,
+        )
+      ) : (
+        // The gated call is not in the transcript yet — the same momentary
+        // window as the missing `Spot` above.
+        <div className="gate-inflow" ref={setSurface}>
+          {reason}
+          {controls()}
+        </div>
+      )}
     </>
   );
 }

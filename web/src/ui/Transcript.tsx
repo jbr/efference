@@ -61,21 +61,20 @@ function Entry({
   );
 }
 
-/** The spotter's account of a call: its own line inside the call, never part
- * of the call's content — a different rung's judgment *about* the call
- * (docs/tui.md). The stance leads, because that is the scannable part. A clear
- * verdict is the routine case and is not drawn at all; its reasoning is the
- * inspector's. Anything that gated or watched shows. Exported for the floating
- * gate panel (Gate.tsx), which restates the verdict while it is off-screen. */
+/** Why a call waiting at the gate was held: the spotter's reason, as its own
+ * line inside the call — a different rung's judgment *about* the call
+ * (docs/tui.md). It stands alone, without a label: the gated entry and its
+ * controls already say what is being asked. Only a waiting call draws it; once
+ * decided, the outcome is the call's result and the verdict is the
+ * inspector's. Exported for the floating gate panel (Gate.tsx), which
+ * restates it while the call is off-screen. */
 export function SpotLine({ spot }: { spot: Spot }) {
-  if (spot.stance === "clear" || spot.stance === "clear_always") return null;
-  return (
-    <div className="spot">
-      <span className="spot-label">spot · {spot.stance}</span>
-      <span className="spot-reason">{spot.reason}</span>
-    </div>
-  );
+  return <p className="spot">{sentence(spot.reason)}</p>;
 }
+
+/** The spotter writes its reason as a clause; standing alone it opens a
+ * sentence. */
+const sentence = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 
 /** One line per config change, in the change's own vocabulary rather than its
  * JSON. The committed state is the unmarked case; proposed and cancelled say
@@ -212,10 +211,14 @@ function Leaf({ node }: { node: LeafNode }) {
 const Call = memo(function Call({
   node,
   liveOutput,
+  gateSlot,
   onInspect,
   onOpenFile,
 }: {
   node: CallNode;
+  /** Set while this call is held at the approval gate: the element the gate
+   * surface renders its decision into (ui/Gate.tsx), under the verdict. */
+  gateSlot?: (element: HTMLDivElement | null) => void;
   /** The running command's output so far, while its result has not landed —
    * shown in the slot the result will take (ui/TranscriptItems.tsx LiveResult). */
   liveOutput?: string;
@@ -240,6 +243,7 @@ const Call = memo(function Call({
     if (window.getSelection()?.isCollapsed === false) return;
     const target = event.target as Element;
     if (target.closest("button, a, summary, input, select, textarea")) return;
+    if (target.closest(".gate-slot")) return;
     onInspect(node.callId);
   };
   // A resolved consolidate collapses to its header. Its input is the summary
@@ -255,14 +259,16 @@ const Call = memo(function Call({
           <span className="prompt">›</span>
           <span className="call-tool">consolidate</span>
         </div>
-        {node.spot !== null && <SpotLine spot={node.spot} />}
       </div>
     );
   }
   return (
     <div className="call clickable" onClick={open}>
       {call !== null && <CallBlock call={call} onOpenFile={onOpenFile} />}
-      {node.spot !== null && <SpotLine spot={node.spot} />}
+      {gateSlot !== undefined && node.spot !== null && (
+        <SpotLine spot={node.spot} />
+      )}
+      {gateSlot !== undefined && <div className="gate-slot" ref={gateSlot} />}
       {node.result === null && liveOutput !== undefined && (
         <LiveResult text={liveOutput} />
       )}
@@ -404,12 +410,18 @@ export function Transcript({
   nodes,
   streaming,
   pending,
+  gatedCall,
+  onGateSlot,
   onRecall,
   onInspect,
   onOpenFile,
 }: {
   /** The projected tree — built once in App, shared with the inspector. */
   nodes: TranscriptNode[];
+  /** The call the approval gate holds, if any, and where its slot element
+   * goes once mounted (ui/Gate.tsx). */
+  gatedCall: CallId | null;
+  onGateSlot: (element: HTMLDivElement | null) => void;
   streaming: Streaming;
   pending: PendingTurn[];
   onRecall: (id: string) => void;
@@ -442,11 +454,13 @@ export function Transcript({
       <TranscriptItems
         nodes={shown}
         thinking={thinking}
+        gatedCall={gatedCall}
         renderLeaf={(node) => <MemoLeaf node={node} />}
         renderFullCall={(node) => (
           <Call
             node={node}
             liveOutput={streaming.toolOutput[node.callId]}
+            gateSlot={node.callId === gatedCall ? onGateSlot : undefined}
             onInspect={onInspect}
             onOpenFile={onOpenFile}
           />

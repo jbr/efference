@@ -272,7 +272,7 @@ What narrow changes:
   has no shift-enter, so intercepting Enter would make multi-line drafts
   impossible), and the send button sends.
 - Chrome rows tighten: the context meter narrows, the title drops from the top
-  bar, the upstream chip ellipsizes, and the gate's decision rows wrap so `allow prefix` stays on screen (verified
+  bar, the upstream chip ellipsizes, and the gate's decision rows wrap so every decision stays on screen (verified
   live: a `human_only` gate decided by tap from the simulator).
 - **The drawer is a bottom sheet** (see "The drawer"), dismissed by dragging
   its header down.
@@ -848,9 +848,10 @@ appends a title entry even when the peek kept the previous one.
 
 **Density toggles** (`ui/viewSettings.ts`, persisted like the theme): two
 switches hide thinking and ambient entries. Hiding is display-only — the
-entries stay in the store and reappear on toggle. A clear spot verdict is not
-drawn at all (its reasoning is the inspector's); a verdict that gated or watched
-always renders.
+entries stay in the store and reappear on toggle. A spot verdict is drawn only on
+the call waiting at the gate, as the reason alone; on every decided call — clear,
+approved, or declined — the outcome is the call's result and the verdict is the
+inspector's.
 
 **The pending-turn echo.** A submitted turn the daemon accepted (a 202)
 renders immediately as a dimmed user turn marked "Queued · the agent reads it at
@@ -1391,31 +1392,38 @@ notifications" opt-in in the Interface tab — is [web-push.md](web-push.md).
 ## The gate surface
 
 The pending approval gate (`web/src/ui/Gate.tsx`) renders from the `gate` state
-topic, in the transcript flow above the composer rather than a modal, and is
-**the affordance only** there. The call it decides is already on screen: a gated call
-has no result entry, so that call and its `Spot` verdict are the transcript's
-last two entries, directly above. Reading order is therefore call → verdict →
-affordance, from entry order alone, as in the TUI ([tui.md](tui.md)). The
-surface rendered the call itself once, through `JSON.stringify` — which put a
-`write`'s file body on screen as one escaped line, and an `edit`'s `anchor` and
-`content` likewise, on the one surface where a human commits. Rendering it a
-second time through the cordon's `callView` would have been readable and still
-duplicated the whole body against the `CallBlock` above it; not rendering it is
-what removes both. The `gate.reason` fallback survives for a gate held with no
-`Spot` entry behind it — a window the stream's coherence rule closes
-([control-api.md](control-api.md)) — so it is robustness rather than a path that
-normally renders.
+topic, in the transcript flow rather than a modal, and **inside the gated call's own
+entry**. A gated call has no result entry, so the call is the transcript's last item;
+`Transcript` marks it (`gated`: rendered whole whatever its recency level, with the
+accent-tinted fill and an even accent border) and mounts an empty slot under the
+spotter's reason, into which the surface portals its controls. Reading order is call →
+reason → decision, all in one box: the decision is visibly *about* the call rather than a
+panel following it. The reason is the `Spot` verdict's text alone, with no stance label —
+the box and its controls already say what is being asked — and only the waiting call
+draws one: on a decided call the outcome is its result, and the verdict is the
+inspector's. The controls are **Allow** and **Decline…**, which opens the redirect
+(a growing field: decline and say what to do instead) and a quieter "stop this turn
+entirely" (abort). The surface once rendered the call itself, through `JSON.stringify` —
+which put a `write`'s file body on screen as one escaped line on the one surface where a
+human commits; placing the decision in the call's own entry is what removes that
+duplication. The `gate.reason` fallback survives for a gate held with no `Spot` entry
+behind it — a window the stream's coherence rule closes
+([control-api.md](control-api.md)) — as does an in-column fallback for the moment
+before the gated call is in the tree; both are robustness rather than paths that
+normally render.
 
 Because the affordance sits in the flow rather than pinned, it can be scrolled
-away from. While an `IntersectionObserver` reports the in-flow surface out of
+away from. While an `IntersectionObserver` reports the in-flow controls out of
 view — or the file viewer is open, which occludes the surface without moving
 it out of the observer's geometric view (the `covered` prop from `App`; the
 float renders above the viewer, its jump-to-call link dropped because the
 tail it would land on is behind the viewer) — a **floating gate panel** pins
 above the dock — and it is the one place
 the call renders a second time (via the same `CallBlock`/`SpotLine` the
-transcript uses: header, intent, full command, verdict), because the entries
-the in-flow surface leans on are exactly what is off-screen. The panel shares
+transcript uses, under the transcript's own classes: intent, full command,
+verdict), because the entries the in-flow surface leans on are exactly what is
+off-screen. It is drawn as the gated entry lifted: the entry's fill and
+border, at the entry's measured left edge and width, plus a shadow. The panel shares
 the in-flow surface's form state — one set of drafts, rendered in both places —
 so a decision composed in one survives into the other. It collapses, without
 resolving the gate, to a compact cue naming the call (it may be covering text
@@ -1429,14 +1437,13 @@ the viewport is near it, so an animated scroll toward the tail re-engages the
 follow partway down and is cancelled by the next render. Any future
 scroll-to-somewhere affordance meets the same constraint.
 
-All four decisions ride `PUT /v1/approvals/:call_id` (`Decision` in `api/types.ts`):
-approve, abort, redirect with steering text, and allow-with-prefix (a
-`config_edit` carrying a `command` change, plus an optional note). The prefix
-input prefills from the verdict's `probed_prefix` — the candidate the spotter's
-promotion question named ([permissions.md](permissions.md)), so the operator
-ratifies the same prefix the spotter answered for — falling back to the call's
-whole `command` field (allowing exactly this command) when no probe rode the
-call. A `409 gate_moved` is handled in
+The decisions ride `PUT /v1/approvals/:call_id` (`Decision` in `api/types.ts`):
+approve, abort, and redirect with steering text. The route also takes a
+`config_edit` grant, which the web client does not offer: a grant guessed from
+the call's input was a command prefix whatever the call gated on, so
+"always allow" waits for the host to propose the grant itself
+([../backlog/permissions/gate-grant-proposal.md](../backlog/permissions/gate-grant-proposal.md)).
+A `409 gate_moved` is handled in
 `session/actions.ts` by folding the response's corrective `detail` into the
 store as a synthetic state frame — no second round-trip; `resolveGate` returns
 `"moved"` rather than `"applied"` so the surface can say the decision did not

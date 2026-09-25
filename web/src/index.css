@@ -520,11 +520,12 @@ input[type="checkbox"] {
   margin-top: 0.5rem;
 }
 
+/* The reason a waiting call was held: what the reader is deciding on. */
 .spot {
-  display: flex;
-  gap: 0.7rem;
-  align-items: baseline;
   margin: 0.6rem 0;
+  font-family: var(--font-prose);
+  font-size: 1.05em;
+  color: var(--fg);
 }
 
 .spot-label {
@@ -706,6 +707,9 @@ pre {
   font-size: 0.8em;
   padding: 0.5rem 0.9rem;
   border: none;
+  /* A flush list row: square, so the picked row's one-side accent does not
+     meet the button's rounded corners. */
+  border-radius: 0;
   border-bottom: 1px solid var(--border-subtle);
   background: none;
   color: var(--fg-dim);
@@ -1054,83 +1058,6 @@ pre {
 
 .error {
   color: var(--diff-del);
-}
-
-.gate {
-  border-left: 2px solid var(--accent);
-  box-shadow: -3px 0 14px var(--accent-glow);
-  padding-left: 0.6rem;
-}
-
-/* The floating gate: the whole surface, pinned above the dock while the
-   in-flow affordance is scrolled out of view. Unlike the in-flow surface it
-   carries the call and verdict — the entries it normally leans on are
-   exactly what is off-screen. The bottom offset is measured from the dock's
-   height (Gate.tsx), because the panel and composer change it. */
-.gate-float {
-  position: fixed;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 1;
-  width: min(58rem, calc(100vw - 2rem));
-  max-height: 60vh;
-  display: flex;
-  flex-direction: column;
-  background: var(--bg-raised);
-  border: 1px solid var(--border-control);
-  border-left: 2px solid var(--accent);
-  border-radius: 6px;
-  padding: 0.5rem 0.9rem 0.7rem;
-  box-shadow:
-    0 6px 28px rgb(0 0 0 / 0.4),
-    -3px 0 14px var(--accent-glow);
-}
-
-.gate-float-head {
-  display: flex;
-  gap: 0.8rem;
-  align-items: baseline;
-}
-
-.gate-float-head .spacer {
-  flex: 1;
-}
-
-/* The call body scrolls; the head and controls stay reachable. */
-.gate-float-body {
-  min-height: 0;
-  overflow-y: auto;
-}
-
-/* The gate cue: the floating gate's collapsed form. */
-.gate-cue {
-  position: fixed;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 1;
-  max-width: min(44rem, calc(100vw - 2rem));
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  cursor: pointer;
-  border: 1px solid var(--border-control);
-  background: var(--bg-raised);
-  border-left: 2px solid var(--accent);
-  padding: 0.3rem 0.7rem;
-  box-shadow: 0 1px 6px rgb(0 0 0 / 0.3);
-}
-
-.controls {
-  display: flex;
-  gap: 0.4rem;
-  margin-top: 0.3rem;
-  align-items: center;
-}
-
-.controls input {
-  font: inherit;
-  flex: 1;
-  min-width: 0;
 }
 
 select {
@@ -1926,19 +1853,6 @@ select {
   /* Stack the jump chip above the compose chip when both float. */
   .jump-latest {
     transform: translateY(-2.5rem);
-  }
-
-  /* The gate's decision rows: inputs shrink and rows wrap instead of
-     clipping the trailing button off the viewport edge. */
-  .gate .controls,
-  .gate-float .controls {
-    flex-wrap: wrap;
-  }
-
-  .gate .controls input,
-  .gate-float .controls input {
-    min-width: 0;
-    flex: 1 1 8rem;
   }
 
   /* The chip can carry a long status, and a retry's lead line is longer still;

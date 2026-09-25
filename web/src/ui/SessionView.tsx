@@ -52,6 +52,9 @@ export function SessionView() {
   // the node is re-found each render so a landing result or verdict shows
   // up in an open inspector.
   const nodes = useMemo(() => buildTree(session.entries), [session.entries]);
+  // The gated call's slot in the transcript, where the gate's decision
+  // renders (ui/Gate.tsx); null until that call is on screen.
+  const [gateSlot, setGateSlot] = useState<HTMLDivElement | null>(null);
   // The session drawer (ui/Drawer.tsx): open/shown/closing is the
   // inspector's slide pattern — `drawerShown` keeps it mounted through the
   // exit transition, with the same timeout fallback for a hidden tab.
@@ -213,6 +216,8 @@ export function SessionView() {
         nodes={nodes}
         streaming={session.streaming}
         pending={session.pendingTurns}
+        gatedCall={gate?.call_id ?? null}
+        onGateSlot={setGateSlot}
         onRecall={onRecall}
         onInspect={onInspect}
         onOpenFile={onOpenFile}
@@ -264,6 +269,7 @@ export function SessionView() {
             gate={gate}
             spot={spotFor(session.entries, gate.call_id)}
             covered={shownFile !== null}
+            slot={gateSlot}
             resolve={(decision) => actions.resolveGate(gate.call_id, decision)}
           />
         </div>

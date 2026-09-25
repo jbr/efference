@@ -1,0 +1,145 @@
+/* The pending approval gate (ui/Gate.tsx, docs/web-client.md): the decision
+   inside the gated entry, the floating panel that is that entry lifted, and
+   the panel's collapsed cue. The interface voice (the sans) for the
+   decision's words. */
+
+/* The floating gate: the gated entry (Transcript.css .gated), lifted and
+   pinned above the dock while the one in the flow is scrolled out of view —
+   the same fill, border, radius, and padding, plus a shadow for the lift.
+   The bottom offset is measured from the dock's height (Gate.tsx), because
+   the panel and composer change it. */
+.gate-float {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1;
+  width: min(58rem, calc(100vw - 2rem));
+  max-height: 60vh;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  background: var(--gated-bg);
+  border: 1px solid var(--gated-border);
+  border-radius: 12px;
+  padding: 0.6rem 1.1rem 0.9rem;
+  box-shadow: 0 8px 32px rgb(0 0 0 / 0.3);
+}
+
+.gate-float-head {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.8rem;
+  font-size: 0.85em;
+}
+
+/* The call body scrolls; the head and controls stay reachable. `.transcript`
+   is on it for the call's typography; its flex growth is not wanted here. */
+.gate-float-body {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* The gate cue: the floating gate's collapsed form. */
+.gate-cue {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1;
+  max-width: min(44rem, calc(100vw - 2rem));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  border: 1px solid var(--gated-border);
+  background: var(--gated-bg);
+  padding: 0.3rem 0.7rem;
+  box-shadow: 0 1px 6px rgb(0 0 0 / 0.3);
+}
+
+/* The decision, under the reason it answers. */
+.gate-controls {
+  margin-top: 0.9rem;
+  font-family: var(--font-ui);
+  font-size: 0.9rem;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.6rem;
+}
+
+.gate-actions,
+.gate-row {
+  display: flex;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.gate-actions {
+  align-items: center;
+}
+
+.gate-row {
+  align-items: flex-start;
+}
+
+.gate-actions button,
+.gate-row button {
+  font-family: var(--font-ui);
+  font-size: 0.9rem;
+  padding: 0.4rem 1rem;
+  border-radius: 8px;
+}
+
+.gate-decline {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.gate-field {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+  font-family: var(--font-ui);
+  font-size: 0.95rem;
+  line-height: 1.4;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--border-control);
+  border-radius: 8px;
+  background: var(--bg-inset);
+  color: var(--fg-bright);
+  resize: none;
+  field-sizing: content;
+}
+
+.gate-link {
+  font: inherit;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--fg-dim);
+  text-decoration: underline;
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.gate-link:hover:not(:disabled) {
+  color: var(--fg-bright);
+}
+
+/* The fallback before the gated call is in the transcript: in the prose
+   column, where the call's content would be. */
+.gate-inflow {
+  margin: 0 2.5rem 2rem 7.3rem;
+}
+
+@media (max-width: 700px) {
+  .gate-inflow {
+    margin: 0 0 1.5rem;
+  }
+}
