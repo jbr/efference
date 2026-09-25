@@ -6,8 +6,9 @@
 import { afterEach, expect, test, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { ProcessRecord } from "../api/types.ts";
-import { callView } from "../render/parse.ts";
 import { CallHead } from "./CallHead.tsx";
+import { callView } from "./signature.ts";
+import { layoutSignature } from "./signatureLayout.ts";
 import { argChip, chipCommand } from "./chipTable.ts";
 import { ArgValue, ProcessChip } from "./chips.tsx";
 import { loadProcessRecord } from "./processRecord.ts";
@@ -142,29 +143,38 @@ test("a transport failure leaves the handle resolvable later", async () => {
   expect((await loadProcessRecord(79))?.id).toBe(79);
 });
 
-test("a path argument carries the file-view link, on the argument itself", () => {
-  const call = { id: "toolu_1", name: "write", input: { path: "src/api.rs" } };
-  const opened: [string, string][] = [];
-  const markup = renderToStaticMarkup(
+/** The transcript's head for a call, chips and all, at `columns`. */
+function head(
+  call: { id: string; name: string; input: unknown },
+  onOpenFile: (path: string, id: string) => unknown = () => undefined,
+  columns: number | null = null,
+) {
+  return renderToStaticMarkup(
     <CallHead
-      view={callView(call.name, call.input)}
-      chip={(arg) => (
+      layout={layoutSignature(callView(call.name, call.input), columns)}
+      chip={(arg, text) => (
         <ArgValue
           call={call}
           arg={arg}
-          onOpenFile={(path, id) => opened.push([path, id])}
+          text={text}
+          onOpenFile={(path, id) => void onOpenFile(path, id)}
         />
       )}
     />,
   );
+}
+
+test("a path argument carries the file-view link, on the argument itself", () => {
+  const call = { id: "toolu_1", name: "write", input: { path: "src/api.rs" } };
+  const opened: [string, string][] = [];
+  const markup = head(call, (path, id) => opened.push([path, id]));
   // Inside the signature — one inline flow, no trailing slot beside it.
   expect(markup).toContain('class="call-sig"');
   expect(markup).toContain("path-chip");
   expect(markup).toContain("view src/api.rs as it is now on disk");
   expect(markup).toContain("⤢");
-  expect(markup.indexOf("path-chip")).toBeGreaterThan(
-    markup.indexOf('class="call-arg-key"'),
-  );
+  // Positional: write's path reads without its key, and still chips.
+  expect(markup).not.toContain("call-arg-key");
   expect(opened).toEqual([]);
 });
 
@@ -174,32 +184,17 @@ test("a read's paths still carry no chip, so its signature is untouched", () => 
     name: "read",
     input: { paths: ["a.md", "b.rs"] },
   };
-  const markup = renderToStaticMarkup(
-    <CallHead
-      view={callView(call.name, call.input)}
-      chip={(arg) => (
-        <ArgValue call={call} arg={arg} onOpenFile={() => undefined} />
-      )}
-    />,
-  );
-  expect(markup).not.toContain("chip");
+  expect(head(call)).not.toContain("chip");
 });
 
-test("an elided argument is a shape, which no chip annotates", () => {
-  // `path` here is long enough to be elided to `72 chars`; a description of a
-  // value is not a value to link.
-  const path = `src/${"deep/".repeat(12)}file.rs`;
+test("an argument pulled out of the signature carries no chip", () => {
+  // Past three lines of a 40-column head, the path is content, not an
+  // argument — it renders below, and the signature has nothing to link.
+  const path = `src/${"deep/".repeat(30)}file.rs`;
   const call = { id: "toolu_3", name: "write", input: { path } };
-  const markup = renderToStaticMarkup(
-    <CallHead
-      view={callView(call.name, call.input)}
-      chip={(arg) => (
-        <ArgValue call={call} arg={arg} onOpenFile={() => undefined} />
-      )}
-    />,
-  );
-  expect(markup).toContain("call-arg-shape");
+  const markup = head(call, undefined, 40);
   expect(markup).not.toContain("chip");
+  expect(markup.replace(/<[^>]+>/g, "")).toContain("write()");
 });
 
 test("a chip's command is shortened to a recognizable head", () => {

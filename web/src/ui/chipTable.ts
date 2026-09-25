@@ -68,6 +68,16 @@ export function argChip(
  * process it was, never enough to become the line. */
 const COMMAND_BUDGET = 32;
 
+/** The columns a chip adds beyond the argument's own text, for the signature's
+ * width arithmetic (signatureLayout.ts): the path chip's ` ⤢`, or the process
+ * chip's `⟨p#… · command⟩` at its longest. An upper bound, so a chipped
+ * argument breaks early rather than overrunning. */
+export function chipExtra(tool: string, key: string, value: unknown): number {
+  const chip = argChip(tool, key, value);
+  if (chip === null) return 0;
+  return chip.kind === "path" ? 2 : COMMAND_BUDGET + 8;
+}
+
 export function chipCommand(command: string): string {
   const line = command.split("\n")[0].trim();
   return line.length > COMMAND_BUDGET

@@ -8,7 +8,8 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { CallId, ContentBlock } from "../api/types.ts";
 import { assistantView } from "../session/assistant.ts";
 import type { CallNode, LeafNode, TranscriptNode } from "../session/tree.ts";
-import { callView, resultRender } from "../render/parse.ts";
+import { resultRender } from "../render/parse.ts";
+import { callView } from "./signature.ts";
 import { InlineMarkdown, Markdown } from "./Markdown.tsx";
 import {
   flatten,
@@ -165,8 +166,13 @@ function ActionHead({ node }: { node: CallNode }) {
     view.target ??
     view.args
       // What it acted on is its string arguments; flags and counts are how.
-      ?.filter((arg) => arg.key !== "intent" && /^["[]/.test(arg.text))
-      .map((arg) => arg.text.replace(/^\[|\]$/g, "").replace(/"/g, ""))
+      ?.flatMap((arg) =>
+        typeof arg.value === "string"
+          ? [arg.value]
+          : Array.isArray(arg.value)
+            ? arg.value.filter((item) => typeof item === "string")
+            : [],
+      )
       .join(" · ") ??
     "";
   // The intent is the row's title, as it is a full call's; what the call

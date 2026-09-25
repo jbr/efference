@@ -9,7 +9,7 @@
 
 import type { SessionEntry } from "../api/http.ts";
 import type { LogEntry, StateSnapshot } from "../api/types.ts";
-import { callView } from "../render/parse.ts";
+import { callView } from "./signature.ts";
 import { viewOf } from "../session/assistant.ts";
 import { homeRelative } from "./identity.ts";
 

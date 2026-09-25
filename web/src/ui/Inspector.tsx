@@ -19,7 +19,9 @@ import { assistantView } from "../session/assistant.ts";
 import { ArgsTab } from "./ArgsTab.tsx";
 import { CallSignature } from "./CallHead.tsx";
 import { ResultBody } from "./ToolBlocks.tsx";
-import { callView, resultRender, wireLabel } from "../render/parse.ts";
+import { resultRender, wireLabel } from "../render/parse.ts";
+import { callView } from "./signature.ts";
+import { layoutSignature } from "./signatureLayout.ts";
 import { openablePaths } from "../session/touchedFiles.ts";
 import { useWholeResult } from "./wholeResult.ts";
 import { rustLines } from "../render/distill.ts";
@@ -371,7 +373,11 @@ export function Inspector({
       <div className="inspector-head">
         <span className="inspector-title">inspecting</span>
         <span className="call-head">
-          {view !== null && <CallSignature view={view} />}
+          {/* One line in the head, wrapping as text: the inspector's
+              body is where the arguments are read at length. */}
+          {view !== null && (
+            <CallSignature layout={layoutSignature(view, null)} />
+          )}
         </span>
         <span className="spacer" />
         <button className="linkish" onClick={onClose}>

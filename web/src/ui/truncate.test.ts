@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { callView } from "../render/parse.ts";
+import { callView } from "./signature.ts";
 import { truncateBody, truncateText, TRUNCATE_AT } from "./truncate.ts";
 
 const lines = (n: number) =>

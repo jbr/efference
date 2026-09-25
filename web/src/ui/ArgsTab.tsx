@@ -170,9 +170,10 @@ export function ArgsTab({
   intent: string | null;
 }) {
   const entry = useToolEntry(name);
-  // The tab's own view of the input, not the header's: `callView.body` is null
-  // for the edit family by design, which is why this tab used to claim the
-  // header said everything while `anchor` and `content` went unshown.
+  // The tab's own view of the input, not the header's: `callView`'s bodies
+  // are empty for the edit family by design, which is why this tab used to
+  // claim the header said everything while `anchor` and `content` went
+  // unshown.
   const fields = useMemo(() => callArgs(name, input), [name, input]);
   const { sent, absent } = useMemo(
     () => argsAgainstSchema(fields, entry === null ? null : entry.input_schema),

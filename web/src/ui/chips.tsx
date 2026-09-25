@@ -4,37 +4,33 @@
 // falls back to the argument's own text whenever there is nothing to add.
 
 import type { CallId, ProcessRecord, ToolCall } from "../api/types.ts";
-import type { SigArg } from "../render/parse.ts";
+import type { SigArg } from "./signature.ts";
 import { argChip, chipCommand } from "./chipTable.ts";
 import { useProcessRecord } from "./processRecord.ts";
 
 /** One argument's value, chipped when the table has an entry for it and plain
  * text otherwise — so a signature reads the same either way and a chip is only
- * ever an upgrade in place. */
+ * ever an upgrade in place. `text` is the value as the signature renders it. */
 export function ArgValue({
   call,
   arg,
+  text,
   onOpenFile,
 }: {
   call: ToolCall;
   arg: SigArg;
+  text: string;
   onOpenFile?: (path: string, callId: CallId) => void;
 }) {
-  // An elided argument renders as its *shape* (`505 lines`) — a description of
-  // the value, which no chip has anything to say about.
-  const input = call.input;
-  if (arg.elided || typeof input !== "object" || input === null)
-    return <>{arg.text}</>;
-  const value = (input as Record<string, unknown>)[arg.key];
-  const chip = argChip(call.name, arg.key, value);
-  if (chip === null) return <>{arg.text}</>;
+  const chip = argChip(call.name, arg.key, arg.value);
+  if (chip === null) return <>{text}</>;
   if (chip.kind === "process")
-    return <ResolvedProcessChip id={chip.id} text={arg.text} />;
-  if (onOpenFile === undefined) return <>{arg.text}</>;
+    return <ResolvedProcessChip id={chip.id} text={text} />;
+  if (onOpenFile === undefined) return <>{text}</>;
   return (
     <PathChip
       path={chip.path}
-      text={arg.text}
+      text={text}
       callId={call.id}
       onOpenFile={onOpenFile}
     />

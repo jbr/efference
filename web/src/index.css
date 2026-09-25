@@ -423,6 +423,13 @@ input[type="checkbox"] {
   overflow-wrap: break-word;
 }
 
+/* A broken signature (ui/signatureLayout.ts): a row per line, each indented
+   in `ch` by CallHead — the unit the layout counted in. A row that still runs
+   over (a wide character) wraps as text, under its own indent. */
+.call-row {
+  display: block;
+}
+
 .prompt {
   color: var(--accent);
   text-shadow: 0 0 9px var(--accent-glow);
@@ -450,13 +457,6 @@ input[type="checkbox"] {
 
 .call-arg-value {
   color: var(--code-path);
-}
-
-/* A shape standing in for a value shown below (`505 lines`) — a description of
-   the argument, not the argument. */
-.call-arg-shape {
-  color: var(--fg-faint);
-  font-style: italic;
 }
 
 /* An argument the chip table upgraded (chips.tsx). A chip sits inside the
@@ -499,10 +499,25 @@ input[type="checkbox"] {
   white-space: pre-wrap;
 }
 
-/* An elided argument's block, labelled with the key the signature named. */
-.call-body-key {
+/* The arguments that are content (ui/ToolBlocks.tsx CallBodies): each a
+   block under its key, below the signature it was taken out of. */
+.call-bodies {
+  margin: 0;
+}
+
+.call-bodies dt {
   color: var(--fg-faint);
   margin: 0.35rem 0 0.2rem;
+}
+
+.call-bodies dd {
+  margin: 0;
+}
+
+/* A content value with no language: verbatim, its own line breaks kept. */
+.call-body-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 /* A call's parts belong to it, so they sit tighter than session-level

@@ -21,6 +21,10 @@ behind a change, see [`journal/`](journal/).
   catalog routes, so what each credential can see is one run's output.
 
 ### Changed
+- **Web call signatures lay out at the column's width** (docs/web-client.md): a call fits
+  on one line or breaks Prettier-style, a built-in's primary argument reads positionally
+  (`read("a.rs", "b.rs")`), and only multi-line values (or ones past three lines at this
+  width) leave the signature, rendering below under their key.
 - **The web gate decides inside the call it is about** (docs/web-client.md): the gated call
   is marked as a whole, the spotter's reason stands unlabelled under it with Allow /
   Decline…, and the floating panel is that entry lifted. Decided calls no longer show their

@@ -5,11 +5,14 @@
 
 import { expect, test } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import { callView } from "../render/parse.ts";
 import { CallHead } from "./CallHead.tsx";
+import { callView } from "./signature.ts";
+import { layoutSignature } from "./signatureLayout.ts";
 
-const head = (name: string, input: unknown) =>
-  renderToStaticMarkup(<CallHead view={callView(name, input)} />);
+const head = (name: string, input: unknown, columns: number | null = null) =>
+  renderToStaticMarkup(
+    <CallHead layout={layoutSignature(callView(name, input), columns)} />,
+  );
 
 test("a long single-line command flows inside the signature, not beside it", () => {
   const command =
@@ -20,7 +23,6 @@ test("a long single-line command flows inside the signature, not beside it", () 
   const sig = markup.slice(markup.indexOf('class="call-sig"'));
   const end = sig.indexOf("</span></div>");
   expect(sig.slice(0, end)).toContain(command);
-  expect(markup).not.toContain('</span><span class="call-target"');
   // And the command is verbatim — `.call-target` is `white-space: pre-wrap`.
   expect(markup).toContain(`>${command}<`);
 });
@@ -37,15 +39,30 @@ test("the head holds the signature and nothing beside it", () => {
 
 test("the server segment is its own span, so it can be dimmed", () => {
   const markup = head("ferritin__get", { path: "serde::Deserialize" });
-  expect(markup).toContain('<span class="call-server">ferritin.</span>get');
+  expect(markup).toContain(
+    '<span class="call-server">ferritin.</span><span class="call-tool">get</span>',
+  );
   // A built-in carries no server span at all.
   expect(head("read", { paths: ["a.rs"] })).not.toContain("call-server");
 });
 
-test("an elided argument's shape is marked apart from a value", () => {
+test("a content argument is absent from the head, not a shape standing in", () => {
   const markup = head("write", { path: "a.rs", contents: "a\nb\nc" });
   expect(markup).toContain(
     '<span class="call-arg-value">&quot;a.rs&quot;</span>',
   );
-  expect(markup).toContain('<span class="call-arg-shape">3 lines</span>');
+  expect(markup).not.toContain("contents");
+});
+
+test("a broken signature is a row per line, indented in columns", () => {
+  const markup = head(
+    "read",
+    { paths: ["src/api/provider/listing.rs", "src/boot.rs"] },
+    30,
+  );
+  expect(markup).toContain('class="call-sig broken"');
+  // `ch` is the unit the layout counted in.
+  expect(markup).toContain('class="call-row" style="padding-left:2ch"');
+  // A flat one is a single inline flow with no rows.
+  expect(head("read", { paths: ["a.rs"] }, 80)).not.toContain("call-row");
 });

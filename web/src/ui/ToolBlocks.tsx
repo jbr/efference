@@ -1,7 +1,8 @@
 // Tool call and result blocks (docs/web-client.md): the display half over
-// the cordon's parse (`render/parse.ts`). A call renders as a pseudocode
-// signature (`CallHead.tsx`) with its intent below it and any argument too
-// big for the signature as a block; a result renders its tool-specific
+// the cordon's parse (`render/parse.ts`). A call renders as its intent, then
+// a pseudocode signature laid out at the column's width (`signature.ts`,
+// `signatureLayout.ts`, `CallHead.tsx`), then any argument that is content
+// rather than an argument as a block under its key; a result renders its tool-specific
 // view — colored diff lines, framing-stripped file content, numbered kept
 // lines — with the raw content one tap away whenever the body isn't
 // verbatim raw. `data-lang` on code bodies is the future highlighter's hook.
@@ -21,18 +22,85 @@ import {
   partialInput,
   streamingLang,
 } from "../render/partial.ts";
-import {
-  byteSize,
-  callView,
-  resultRender,
-  type ResultView,
-} from "../render/parse.ts";
+import { byteSize, resultRender, type ResultView } from "../render/parse.ts";
 import { ArgValue } from "./chips.tsx";
+import { chipExtra } from "./chipTable.ts";
 import { CallHead } from "./CallHead.tsx";
+import { useColumns } from "./columns.ts";
+import { bodyOf, callView, type CallBody, type CallView } from "./signature.ts";
+import { layoutSignature, type SigLayout } from "./signatureLayout.ts";
 import { InlineMarkdown } from "./Markdown.tsx";
 import { truncateBody, truncateText } from "./truncate.ts";
 import { useNarrow } from "./useNarrow.ts";
 import { useWholeResult } from "./wholeResult.ts";
+
+/** A call's signature laid out at the width of the head it renders in, and
+ * the bodies below it: the view's content arguments, then any argument too
+ * long to sit in the signature at this width. `tool` is the wire name the
+ * chip table is keyed by; null lays out with no chip allowance. */
+function useSignature(
+  view: CallView,
+  tool: string | null,
+): {
+  measure: (element: HTMLElement | null) => void;
+  layout: SigLayout;
+  bodies: CallBody[];
+} {
+  const [measure, columns] = useColumns();
+  const layout = useMemo(
+    () =>
+      layoutSignature(view, columns, (arg) =>
+        tool === null ? 0 : chipExtra(tool, arg.key, arg.value),
+      ),
+    [view, columns, tool],
+  );
+  const bodies = useMemo(
+    () => [
+      ...view.bodies,
+      ...layout.pulled.map((arg) => bodyOf(arg.key, arg.value, null)),
+    ],
+    [view, layout],
+  );
+  return { measure, layout, bodies };
+}
+
+/** The arguments that are content, each under its key: a file's contents
+ * highlighted in its language, anything else verbatim with its own line
+ * breaks. */
+function CallBodies({
+  bodies,
+  truncate,
+}: {
+  bodies: CallBody[];
+  /** The narrow flag when bodies truncate (a committed call); null renders
+   * them whole (one still streaming, which is short by construction). */
+  truncate: boolean | null;
+}) {
+  if (bodies.length === 0) return null;
+  return (
+    <dl className="call-bodies">
+      {bodies.map((body, i) => {
+        const { text, hidden } =
+          truncate === null
+            ? { text: body.text, hidden: 0 }
+            : truncateText(body.text, truncate);
+        return (
+          <div key={body.key ?? i} className="call-body">
+            {body.key !== null && <dt>{body.key}</dt>}
+            <dd>
+              {body.lang === null ? (
+                <div className="call-body-text">{text}</div>
+              ) : (
+                <Code text={text} lang={body.lang} />
+              )}
+              {hidden > 0 && <MoreLines hidden={hidden} />}
+            </dd>
+          </div>
+        );
+      })}
+    </dl>
+  );
+}
 
 export function CallBlock({
   call,
@@ -42,18 +110,11 @@ export function CallBlock({
   onOpenFile?: (path: string, callId: CallId) => void;
 }) {
   const view = useMemo(() => callView(call.name, call.input), [call]);
+  const { measure, layout, bodies } = useSignature(view, call.name);
+  // A call's content arguments (a write's contents, a long message) truncate
+  // on the same budget a result does, at both widths — the inspector's args
+  // tab holds the whole thing.
   const narrow = useNarrow();
-  // A call's elided argument (a write's contents, a nested envelope) truncates
-  // on the same budget a result does, at both widths — the signature already
-  // states its shape, and the inspector's args tab holds the whole thing.
-  const bodies = useMemo(
-    () =>
-      view.bodies.map((body) => ({
-        ...body,
-        ...truncateText(body.text, narrow),
-      })),
-    [view, narrow],
-  );
   return (
     <div className="block">
       {/* The intent is the call's title (docs/web-client.md "Detail by
@@ -67,18 +128,13 @@ export function CallBlock({
           text (chipTable.ts): the file link rides the path argument it opens,
           and a `p#<n>` resolves to the command it stood for. */}
       <CallHead
-        view={view}
-        chip={(arg) => (
-          <ArgValue call={call} arg={arg} onOpenFile={onOpenFile} />
+        layout={layout}
+        measure={measure}
+        chip={(arg, text) => (
+          <ArgValue call={call} arg={arg} text={text} onOpenFile={onOpenFile} />
         )}
       />
-      {bodies.map((body, i) => (
-        <div key={body.key ?? i} className="call-body">
-          {body.key !== null && <div className="call-body-key">{body.key}</div>}
-          <Code text={body.text} lang={body.lang} />
-          {body.hidden > 0 && <MoreLines hidden={body.hidden} />}
-        </div>
-      ))}
+      <CallBodies bodies={bodies} truncate={narrow} />
     </div>
   );
 }
@@ -115,19 +171,24 @@ export function LiveCallBlock({
   input: string;
 }) {
   const parsed = useMemo(() => partialInput(input), [input]);
-  if (parsed === null || !hasStructure(parsed)) {
+  const structured = parsed !== null && hasStructure(parsed);
+  // `args: null` renders the bare name while nothing structural has arrived:
+  // `write()` would claim there are no arguments.
+  const view = useMemo(
+    () =>
+      structured
+        ? callView(name, parsed.settled)
+        : { ...callView(name, undefined), args: null },
+    [name, parsed, structured],
+  );
+  const { measure, layout, bodies } = useSignature(view, null);
+  if (!structured) {
     return (
       <div className="block">
-        {/* `args: null` renders the bare name: nothing structural has
-            arrived, and `write()` would claim there are no arguments. */}
-        <CallHead
-          view={{ ...callView(name, undefined), args: null }}
-          arriving
-        />
+        <CallHead layout={layout} measure={measure} arriving />
       </div>
     );
   }
-  const view = callView(name, parsed.settled);
   const { arriving } = parsed;
   // The same layout the committed call has (CallBlock), so a call does not
   // change shape when it commits: the intent is the title — filling in as it
@@ -142,13 +203,8 @@ export function LiveCallBlock({
           <InlineMarkdown>{intent}</InlineMarkdown>
         </div>
       )}
-      <CallHead view={view} arriving />
-      {view.bodies.map((body, i) => (
-        <div key={body.key ?? i} className="call-body">
-          {body.key !== null && <div className="call-body-key">{body.key}</div>}
-          <Code text={body.text} lang={body.lang} />
-        </div>
-      ))}
+      <CallHead layout={layout} measure={measure} arriving />
+      <CallBodies bodies={bodies} truncate={null} />
       {arriving !== null &&
         arriving.key !== "intent" &&
         (arriving.text.includes("\n") ? (

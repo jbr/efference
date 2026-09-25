@@ -516,21 +516,23 @@ item, note included.
 
 ## A call reads as a signature
 
-Every call renders as pseudocode — `render/parse.ts`'s `callView` computes it,
-`ui/CallHead.tsx` renders it:
+Every call renders as pseudocode. `ui/signature.ts`'s `callView` decides what the
+arguments are, width-free; `ui/signatureLayout.ts` lays them out at the column's
+width; `ui/CallHead.tsx` renders the rows:
 
 ```
 ferritin.search(crate: "serde", query: "Deserialize")
 check_inbox()
-write(path: "src/main.rs", overwrite: true, contents: 505 lines)
+read("src/api.rs", "src/boot.rs", from_line: 3)
+write("src/main.rs", overwrite: true)
+  contents
+  ⋯ the file, highlighted in its language
 ```
 
-The form is **total and schema-free**, which is the point: MCP servers are
-user-mountable and their argument shapes are arbitrary, so a tool this client
-has never heard of must render as well as a built-in. Three rules carry it, and
-they replaced a per-tool table plus a pretty-printed JSON envelope for
-everything not in it — which is how `check_inbox` came to render as a code block
-containing `{}`.
+The form is **total**: MCP servers are user-mountable and their argument shapes are
+arbitrary, so a tool this client has never heard of renders as well as a built-in.
+It replaced a per-tool table plus a pretty-printed JSON envelope for everything not in
+it — which is how `check_inbox` came to render as a code block containing `{}`.
 
 - **The name is the dotted one.** `<server>.<tool>`, never the wire's
   `<server>__<tool>`: the dotted form is the only spelling an operator ever
@@ -541,56 +543,70 @@ containing `{}`.
   dimmed span of its own rather than a smaller one — built-in versus
   mounted-server is the `open_world_hint` distinction, i.e. whether the call
   could have reached outside the session, which is worth a standing visual.
-- **Inline versus body is one rule for all tools.** An argument sits in the
-  signature when it is scalar, single-line, and inside a 48-character budget —
-  strings quoted, every other scalar bare, a collection as compact JSON while
-  that fits. Otherwise it is elided *to its shape* there (`505 lines`,
-  `640 chars`, `[3 items]`, `{2 keys}`) and rendered as a block below, labelled
-  with its key. So "which argument is the body" is decided by what did not fit,
-  not by a per-tool table, and a third-party tool shaped like a file write needs
-  no special knowledge. Inline arguments sort ahead of elided ones (stable
-  within each group): they are the call's identity, and a 505-line shape between
-  two of them buries it.
+- **A multi-line value is content, not an argument.** A string with a line break
+  in it — a file's contents, a heredoc, a message — or a collection holding one
+  leaves the signature entirely and renders below it, under its key, as a
+  definition-list entry: highlighted when the call names a language or operates on
+  a path with a known extension, verbatim with its own line breaks otherwise. A
+  line break is the discriminator because an identifier never has one; in the
+  recorded corpus it separates a write's contents and an edit's anchor from every
+  path, pattern and flag with no length threshold at all.
+- **Every other argument sits in the signature,** strings quoted (the escapes keep
+  an embedded quote or comma unambiguous), other scalars bare, collections in the
+  signature's own `key: value` register. The one exception is width-relative: a
+  value longer than three whole lines at the current width is not something a
+  reader scans as an argument, so it too leaves the signature and renders below.
+- **A built-in's primary argument reads positionally.** A small table in
+  `signature.ts` names it — `read`'s paths (an array spreads, one argument per
+  item), `write`/`list`/`read_image`'s path, the edit family's `file_path`,
+  `search`'s pattern, a process tool's handle — so `read("a.rs")`, not
+  `read(paths: ["a.rs"])`. Positional arguments lead; the rest follow in the
+  model's emission order. The table is keyed by wire name, so a mounted server's
+  same-named tool keeps its labels: only a built-in's argument shapes are known.
 - **Empty is empty.** A no-argument call is `check_inbox()` — no block, no `{}`.
+
+**The layout is the pretty-printer's.** A call that fits on one line is one line; one
+that does not breaks after `(` with an argument per row, and an argument whose value
+is a collection that still does not fit breaks the same way inside it. A lone scalar
+argument stays hugged by its parentheses — breaking around it adds two rows and the
+value wraps as text either way. The signature is set in the monospace face, so a width
+is a count of characters and fitting is arithmetic: `ui/columns.ts` measures the head's
+column count (one shared `ResizeObserver`; a canvas `measureText` per font, forgotten
+when a web font loads), and the layout is a pure function of the view and that integer,
+memoized per call, recomputed only when the integer changes. Rows indent in `ch`, the
+unit the layout counted in. A chip's added width (the path chip's ` ⤢`, a process
+chip's resolved command) is budgeted as an upper bound, and a wide character counts
+as one column; either can overrun a row, which then wraps as text rather than clipping.
+Before the first measurement the signature renders flat.
 
 Call bodies truncate on the same budget results do, at both widths
 (`ui/truncate.ts`: 12 lines at desktop, 4 on the phone) — which is what stopped
 a `write` from printing the whole file into the transcript.
 
-Two tools stay special, and only two. **`bash` renders its command bare** —
-quoting a shell line into `bash(command: "…")` reads worse than the line, and
-only a command containing a newline becomes a block. **The edit family signs its
-arguments but emits no body**: the diff rendered below the head is the
-representation there, so a body would show the change twice; the inspector's
-args tab (`callArgs`, a separate computation) is where the whole input is asked
-for. The cases the signature *replaced* — `read`, `search`, `list`,
-`read_image`, `write` — were each an inline gloss the generic rule now produces.
+Two tools stay special. **`bash` renders its command bare** — quoting a shell line into
+`bash(command: "…")` reads worse than the line, and only a command containing a newline
+becomes a block. **The edit family emits no body**: the diff rendered below the head is
+the representation there, so a body would show the change twice; the inspector's args
+tab (`callArgs`, a separate computation) is where the whole input is asked for.
 
-**The TUI renders the same form** (`src/tui/projection/tools.rs`'s `call_view` /
-`call_spans`; [tui.md](tui.md)), so the two clients agree about how a call reads;
-this section is the shared statement of the shape, and the Rust does not restate
-the rules. Two things differ, both from the data rather than by choice: the TUI's
-arguments read in **sorted key order**, because a committed call's input is a
-`serde_json::Value` whose object keys sort for the wire's byte stability, where
-this client parses JSON and keeps the model's emission order; and the TUI does
-**not** truncate call bodies, because it truncates nothing — the budget below is
-the web's, matching what it does to results.
+**The TUI renders an older form of this** (`src/tui/projection/tools.rs`'s `call_view`:
+a 48-character inline budget, elided arguments as shapes like `505 lines`, no
+positional arguments, no width-aware layout). The two clients are not mirrors; the
+TUI takes this form up when it is worked on.
 
 Tool **descriptions** stay out of the transcript. They are static per tool, so
 in a run with 55 `ferritin.*` calls the same sentence would render 55 times,
 while the call's own model-authored `intent` — already a sibling line — says
 what *this* call was for. The inspector is where a description is paid for once.
 
-The head's markup carries the wrapping rule. It is a plain block holding one
-inline flow, `.call-sig`, whose children are ordinary inline spans and wrap as
-text at every width; `overflow-wrap: break-word` lives on that item, so a
-multi-path argument breaks between paths and only ever mid-token when one token
-is wider than the line. It was a flex row for as long as an affordance sat at
-the end of it, and flex items are blockified by the CSS Display spec — so a
-signature built of sibling spans wrapped as *whole boxes* onto their own lines,
-which is why a long single-line `bash` command used to read as a block. With the
-`open ⤢` slot absorbed into the argument it referred to (below) there is nothing
-to place at the end of the row, and the whole head is one sentence again.
+The head's markup carries the wrapping rule. A flat signature is one inline flow,
+`.call-sig`, whose tokens are ordinary inline spans and wrap as text; a broken one is a
+block per row. `overflow-wrap: break-word` lives on `.call-sig`, so an overrun breaks
+between tokens and only mid-token when one token is wider than the line. The head was a
+flex row for as long as an affordance sat at the end of it, and flex items are
+blockified by the CSS Display spec — so a signature built of sibling spans wrapped as
+*whole boxes* onto their own lines. A chip rides the argument it refers to (below), so
+there is nothing to place at the end of the row.
 
 `ui/CallHead.tsx` is kept apart from `ToolBlocks.tsx` so it imports nothing but
 React, the cordon, and the chip renderer it is handed: the markup is what the
@@ -1124,11 +1140,11 @@ a second implementation.
 
 The **args tab renders the call's whole input**, unconditionally — a separate
 computation (`render/parse.ts`'s `callArgs`) from the header's
-`callView.body`. Serving both surfaces from one value is what made the tab
+`callView`'s bodies. Serving both surfaces from one value is what made the tab
 say "no body — the header says it all" on every edit, which was false: the
 header shows `file_path · operation`, while `anchor` and `content` — the
 substance, a median 752 bytes of input across the corpus — went unshown.
-`callView.body` stays null for the diff family because the diff below the
+`callView`'s bodies stay empty for the diff family because the diff below the
 header *is* the representation there; the args tab asks a different question,
 which is what was asked for. Multi-line values render as highlighted code
 blocks — by the call's own `language` when it names one, else the extension

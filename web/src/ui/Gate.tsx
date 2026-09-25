@@ -11,7 +11,8 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { Decision, Gate, Spot } from "../api/types.ts";
-import { callSignature, callView } from "../render/parse.ts";
+import { callView } from "./signature.ts";
+import { flatSignature } from "./signatureLayout.ts";
 import { jumpToTail, useDockOffset } from "./float.ts";
 import { CallBlock } from "./ToolBlocks.tsx";
 import { SpotLine } from "./Transcript.tsx";
@@ -260,7 +261,7 @@ export function GateSurface({
       gate.reason !== undefined && <p className="spot">{gate.reason}</p>
     );
 
-  const signature = callSignature(callView(gate.name, gate.input));
+  const signature = flatSignature(callView(gate.name, gate.input));
   return (
     <>
       {(away || covered) &&
