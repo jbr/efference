@@ -8,6 +8,9 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- **Streaming flows into the committed transcript** (docs/web-client.md): a call keeps one
+  layout from its first argument delta to its result, a running command's output streams into
+  the call's result slot, and a long think stays in its box when it commits.
 - **Transcript detail by recency** (docs/web-client.md): the web transcript renders recent
   items whole, the next stretch capped under a fade, and older calls as one-line rows titled
   by their intent; batches flatten into single calls, the live thinking tail scrolls inside a

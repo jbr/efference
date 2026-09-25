@@ -846,13 +846,15 @@ session whose only entry it is reads as empty. **A title change** renders as
 one quiet line, `Title updated to …`, and only when the text changed — the log
 appends a title entry even when the peek kept the previous one.
 
-**Density toggles** (`ui/viewSettings.ts`, persisted like the theme): three
-switches hide thinking, clear spot verdicts, and ambient entries. Hiding is
-display-only — the entries stay in the store and reappear on toggle — and a
-verdict that gated or watched always renders; only the routine `clear` hides.
+**Density toggles** (`ui/viewSettings.ts`, persisted like the theme): two
+switches hide thinking and ambient entries. Hiding is display-only — the
+entries stay in the store and reappear on toggle. A clear spot verdict is not
+drawn at all (its reasoning is the inspector's); a verdict that gated or watched
+always renders.
 
 **The pending-turn echo.** A submitted turn the daemon accepted (a 202)
-renders immediately as a dimmed, `⋯ pending`-marked user turn after the live
+renders immediately as a dimmed user turn marked "Queued · the agent reads it at
+its next step", with a Recall link beside it, after the live
 tail, and flips to a committed turn when the matching `User` entry streams
 back — the operator's delivery signal, which matters most across a reconnect,
 when "did that land?" is otherwise unanswerable from the screen. The queue
@@ -877,12 +879,22 @@ composer owns its draft and recalling the same text twice is two events rather
 than one value. An empty answer is the lost race — the loop dequeued the turn
 first — and the draft is left alone.
 
-**The live-output peek.** A running tool's streamed output shows as the last
-10 lines, dimmed, under a `⋯ running · N lines` header — a glance at a live
-process, not a truncation: the whole output arrives, whole, when the call
-commits. The one exception to render-whole, carried from the TUI
-([tui.md](tui.md)). Background-process output is the bottom panel's surface,
-not the transcript's.
+**A running tool's output streams into its call's result slot** — where the
+triaged result will land — under a `running · N lines` header, in the pinned
+box (`PinnedBox`, `ui/TranscriptItems.tsx`): a fixed height holding the newest
+line, the top fading only while lines are scrolled out above. The triaged
+result replaces it when it commits. Output whose call has not committed yet
+still peeks as its own item below the tail. Tools that do not stream show
+nothing until triage finishes (backlog/web/result-before-triage.md).
+Background-process output is the drawer's tasks section.
+
+**Streaming flows into the committed state without a change of shape.** A call
+whose arguments are arriving is the same item a committed call is — the intent
+as its title (filling in as it streams, when it is the value in flight), the
+signature, the bodies — and before anything structural arrives it is its bare
+name. The live thinking tail is the pinned box; a long think that commits in the
+recent tier stays in that box, stopped at its last line, with only its header
+changing from "Thinking…" to "Thought · N words · show all".
 
 **The consolidation mark** renders as a boundary: a dashed rule with
 `⊙ consolidated through #N · M entries`, then the replacing summary as prose
@@ -1512,6 +1524,15 @@ which is the one place the anonymous shell sits inside a guarded prefix
 - `pnpm check` in `web/` — typecheck, lint, format check, vitest.
 - `pnpm dev` standalone also works: `web/vite.config.ts` proxies `/v1` and `/auth`
   to a daemon on `:7878`.
+
+### Finding what widens a phone layout — `web/src/overflowReport.ts`
+
+With `?overflow` on the URL (dev builds), a fixed panel lists the viewport's
+width, the document's scroll width, and the outermost elements whose right edge
+passes the viewport — readable off a simulator screenshot, where no inspector is
+attached. A column wider than the screen shows on iOS as enlarged text (text
+autosizing inflates an overflowing block), not only as a horizontal scroll, so
+"the text is huge" on a phone is a width bug first.
 
 ### Scrubbing the stream — `web/src/session/record.ts`
 

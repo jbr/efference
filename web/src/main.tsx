@@ -7,6 +7,12 @@ import "./index.css";
 
 initTheme();
 registerServiceWorker();
+if (
+  import.meta.env.DEV &&
+  new URLSearchParams(location.search).has("overflow")
+) {
+  void import("./overflowReport.ts").then((m) => m.installOverflowReport());
+}
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <App />

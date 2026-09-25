@@ -1,13 +1,11 @@
 // Transcript density (docs/web-client.md): what renders is a client choice,
-// persisted like the theme. Three switches, the design pass's props —
-// thinking, clear spot verdicts, ambient entries. Hiding is display-only:
+// persisted like the theme. Two switches — thinking and ambient entries. Hiding is display-only:
 // the entries stay in the store and reappear on toggle.
 
 import { useSyncExternalStore } from "react";
 
 export interface ViewSettings {
   thinking: boolean;
-  clearSpots: boolean;
   ambient: boolean;
 }
 
@@ -15,7 +13,6 @@ const KEY = "view";
 
 const DEFAULTS: ViewSettings = {
   thinking: true,
-  clearSpots: true,
   ambient: true,
 };
 

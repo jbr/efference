@@ -31,11 +31,52 @@ const joinText = (blocks: ContentBlock[]) =>
     )
     .join("\n\n");
 
-/** A thinking block at a level. Short blocks ignore the level. */
+/** A box of fixed height pinned to its newest line: a long body scrolls
+ * inside itself instead of pushing the page. The top fades only while lines
+ * are scrolled out above it; a body that never outgrows the box has nothing
+ * hidden and no fade. `pinned` is false once the body stops growing — the box
+ * then holds where the reader left it. The live thinking tail, a committed
+ * long think in the recent tier, and a running command's output are all this
+ * box, so an item that finishes streaming does not change shape. */
+export function PinnedBox({
+  children,
+  grows,
+  className,
+}: {
+  children: ReactNode;
+  /** Changes whenever the body grows; the box re-pins to the bottom. */
+  grows: unknown;
+  className?: string;
+}) {
+  const box = useRef<HTMLDivElement>(null);
+  const [clipped, setClipped] = useState(false);
+  useEffect(() => {
+    const element = box.current;
+    if (!element) return;
+    element.scrollTop = element.scrollHeight;
+    setClipped(element.scrollTop > 0);
+  }, [grows]);
+  return (
+    <div
+      ref={box}
+      className={["t-pinned", clipped && "clipped", className]
+        .filter(Boolean)
+        .join(" ")}
+      onScroll={(event) => setClipped(event.currentTarget.scrollTop > 0)}
+    >
+      {children}
+    </div>
+  );
+}
+
+/** A thinking block at a level. Short blocks ignore the level. A long one in
+ * the recent tier stays in the box it streamed in, stopped at its last line,
+ * so committing it moves nothing; older tiers preview it or fold it to a
+ * pill. */
 function Thinking({ text, level }: { text: string; level: Level }) {
   const [open, setOpen] = useState(false);
   const words = wordCount(text);
-  const effective = open || words <= THINKING_FLOOR ? "full" : level;
+  const effective = open || words <= THINKING_FLOOR ? "whole" : level;
   if (effective === "brief") {
     return (
       <button className="t-fold" onClick={() => setOpen(true)}>
@@ -56,6 +97,21 @@ function Thinking({ text, level }: { text: string; level: Level }) {
       </Capped>
     );
   }
+  if (effective === "full") {
+    return (
+      <>
+        <div className="t-box-head">
+          Thought · {words} words ·{" "}
+          <button className="t-box-open" onClick={() => setOpen(true)}>
+            show all
+          </button>
+        </div>
+        <PinnedBox grows={text} className="t-thinking">
+          <Markdown>{text}</Markdown>
+        </PinnedBox>
+      </>
+    );
+  }
   return (
     <div className="t-thinking">
       <Markdown>{text}</Markdown>
@@ -63,21 +119,31 @@ function Thinking({ text, level }: { text: string; level: Level }) {
   );
 }
 
-/** The live thinking tail: whole while short, then a box of fixed height
- * pinned to its newest line, so a long think scrolls inside itself instead
- * of pushing the page. */
+/** The live thinking tail, in the box it will stay in once committed. */
 export function LiveThinking({ text }: { text: string }) {
-  const box = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const element = box.current;
-    if (element) element.scrollTop = element.scrollHeight;
-  }, [text]);
   return (
     <div className="t-entry">
-      <div className="t-thinking-live-head">Thinking…</div>
-      <div ref={box} className="t-thinking t-thinking-live">
+      <div className="t-box-head">Thinking…</div>
+      <PinnedBox grows={text} className="t-thinking">
         <Markdown>{text}</Markdown>
+      </PinnedBox>
+    </div>
+  );
+}
+
+/** A running command's output, in its call's result slot: the tail in the
+ * same pinned box, under a header counting lines. The triaged result replaces
+ * it when it lands. */
+export function LiveResult({ text }: { text: string }) {
+  const lines = text.split("\n").length;
+  return (
+    <div className="block t-live-result">
+      <div className="kind result-head">
+        running · {lines} {lines === 1 ? "line" : "lines"}
       </div>
+      <PinnedBox grows={text} className="t-output">
+        <pre>{text}</pre>
+      </PinnedBox>
     </div>
   );
 }

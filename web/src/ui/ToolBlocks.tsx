@@ -56,6 +56,13 @@ export function CallBlock({
   );
   return (
     <div className="block">
+      {/* The intent is the call's title (docs/web-client.md "Detail by
+          recency"): what it was for, then what it was. */}
+      {view.intent !== null && (
+        <div className="intent">
+          <InlineMarkdown>{view.intent}</InlineMarkdown>
+        </div>
+      )}
       {/* The chip table decides which arguments render as more than their
           text (chipTable.ts): the file link rides the path argument it opens,
           and a `p#<n>` resolves to the command it stood for. */}
@@ -65,11 +72,6 @@ export function CallBlock({
           <ArgValue call={call} arg={arg} onOpenFile={onOpenFile} />
         )}
       />
-      {view.intent !== null && (
-        <div className="intent">
-          <InlineMarkdown>{view.intent}</InlineMarkdown>
-        </div>
-      )}
       {bodies.map((body, i) => (
         <div key={body.key ?? i} className="call-body">
           {body.key !== null && <div className="call-body-key">{body.key}</div>}
@@ -98,11 +100,12 @@ function MoreLines({ hidden }: { hidden: number }) {
  * (`render/partial.ts`, mirroring `src/tui/projection/nodes.rs`).
  *
  * The settled half goes through the same [`callView`] a committed call uses,
- * so the header fills in as bytes land rather than changing shape at commit.
+ * so the call fills in as bytes land rather than changing shape at commit.
  * The in-flight value never reaches it: what [`callView`] produces is an
  * identity claim (`write · src/api.rs`), and only a value whose closing quote
- * has arrived may back one. Before anything structural arrives, the raw
- * characters show — they claim nothing, which is what makes them safe.
+ * has arrived may back one — except the intent, which claims nothing about
+ * what the call touches and fills in as the title while it streams. Before
+ * anything structural arrives, the call is its bare name.
  */
 export function LiveCallBlock({
   name,
@@ -121,20 +124,25 @@ export function LiveCallBlock({
           view={{ ...callView(name, undefined), args: null }}
           arriving
         />
-        <pre className="dim">{input}</pre>
       </div>
     );
   }
   const view = callView(name, parsed.settled);
   const { arriving } = parsed;
+  // The same layout the committed call has (CallBlock), so a call does not
+  // change shape when it commits: the intent is the title — filling in as it
+  // streams, when it is the value in flight — then the signature, then the
+  // bodies.
+  const intent =
+    view.intent ?? (arriving?.key === "intent" ? arriving.text : null);
   return (
     <div className="block">
-      <CallHead view={view} arriving />
-      {view.intent !== null && (
+      {intent !== null && (
         <div className="intent">
-          <InlineMarkdown>{view.intent}</InlineMarkdown>
+          <InlineMarkdown>{intent}</InlineMarkdown>
         </div>
       )}
+      <CallHead view={view} arriving />
       {view.bodies.map((body, i) => (
         <div key={body.key ?? i} className="call-body">
           {body.key !== null && <div className="call-body-key">{body.key}</div>}
@@ -142,11 +150,8 @@ export function LiveCallBlock({
         </div>
       ))}
       {arriving !== null &&
+        arriving.key !== "intent" &&
         (arriving.text.includes("\n") ? (
-          // A string with newlines is the case worth rendering as a block —
-          // a file's contents, a heredoc — in the language of whatever
-          // settled path names it, which is why the path arriving first is
-          // what makes this worth doing.
           <StreamingCode
             text={arriving.text}
             lang={streamingLang(parsed.settled)}

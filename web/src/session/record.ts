@@ -88,7 +88,14 @@ export const SCRUB_EVENT = "efference:scrub";
 interface ScrubCommand {
   op: "hold" | "resume" | "step" | "seek" | "restore";
   n?: number;
+  /** For `restore`: which saved recording; the newest earlier one if absent. */
+  key?: string;
 }
+
+/** Recorders not yet closed, oldest first. A reload or an HMR update can
+ * leave two alive at once for a moment; the console handle is always the
+ * newest still open, so closing one never strands the other without it. */
+const open: Recorder[] = [];
 
 /**
  * Install the scrubber over `store`. The returned tap goes to [`connect`], which
@@ -126,6 +133,7 @@ class Recorder implements FrameTap, ScrubHandle {
 
   constructor(private readonly store: Store) {
     this.base = store.snapshot();
+    open.push(this);
     window.__scrub = this;
     document.addEventListener(SCRUB_EVENT, this.onCommand);
     console.info(
@@ -162,6 +170,9 @@ class Recorder implements FrameTap, ScrubHandle {
    * holds streamed output. */
   private scheduleSave(): void {
     if (!this.streamed || this.saveTimer !== null) return;
+    // Two recorders overlap across a reload; only the newest records to the
+    // store, or every recording is saved twice.
+    if (open.at(-1) !== this) return;
     this.saveTimer = setTimeout(() => {
       this.saveTimer = null;
       if (this.replaying || this.tape.length === 0) return;
@@ -284,7 +295,8 @@ class Recorder implements FrameTap, ScrubHandle {
   }
 
   private onCommand = (event: Event): void => {
-    const { op, n } = ((event as CustomEvent).detail ?? {}) as ScrubCommand;
+    const { op, n, key } = ((event as CustomEvent).detail ??
+      {}) as ScrubCommand;
     switch (op) {
       case "hold":
         return this.hold();
@@ -295,17 +307,20 @@ class Recorder implements FrameTap, ScrubHandle {
       case "seek":
         return this.seek(n ?? 0);
       case "restore":
-        return void this.restore();
+        return void this.restore(key);
     }
   };
 
   close(): void {
     if (this.saveTimer !== null) clearTimeout(this.saveTimer);
     document.removeEventListener(SCRUB_EVENT, this.onCommand);
-    // Only if it is still this recorder's: StrictMode builds a second one before
-    // the first one's cleanup lands, and an unconditional delete would take away
-    // the live recorder's handle.
-    if (window.__scrub === this) delete window.__scrub;
+    const at = open.indexOf(this);
+    if (at !== -1) open.splice(at, 1);
+    if (window.__scrub === this) {
+      const newest = open.at(-1);
+      if (newest) window.__scrub = newest;
+      else delete window.__scrub;
+    }
   }
 
   describe(): string {

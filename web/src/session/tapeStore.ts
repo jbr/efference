@@ -6,7 +6,9 @@
 // session, tool results included, which outgrows localStorage's ~5 MB. Each
 // recording is its own record, keyed by session and start time, and a
 // session keeps its newest KEEP — a reload starts a new recording rather than
-// overwriting the one worth going back to.
+// overwriting the one worth going back to — and keeps its largest LARGEST as
+// well, because a run of short recordings (a session driven turn by turn)
+// would otherwise push out the long one a design pass was stepping through.
 
 import type { Frame } from "../api/types.ts";
 import type { Session } from "./store.ts";
@@ -14,6 +16,7 @@ import type { Session } from "./store.ts";
 const DB = "efference-scrub";
 const STORE = "tapes";
 const KEEP = 5;
+const LARGEST = 3;
 
 export interface SavedTape {
   key: string;
@@ -72,11 +75,19 @@ export async function loadTape(key: string): Promise<SavedTape | undefined> {
   );
 }
 
-/** Save a tape, then prune the session to its newest KEEP. */
+/** Save a tape, then prune the session to its newest KEEP and its largest
+ * LARGEST. */
 export async function saveTape(tape: SavedTape): Promise<void> {
   const db = await open();
   await done(db.transaction(STORE, "readwrite").objectStore(STORE).put(tape));
   const saved = await listTapes(tape.session);
+  const keep = new Set([
+    ...saved.slice(0, KEEP).map((t) => t.key),
+    ...[...saved]
+      .sort((a, b) => b.frames - a.frames)
+      .slice(0, LARGEST)
+      .map((t) => t.key),
+  ]);
   const store = db.transaction(STORE, "readwrite").objectStore(STORE);
-  for (const old of saved.slice(KEEP)) store.delete(old.key);
+  for (const old of saved) if (!keep.has(old.key)) store.delete(old.key);
 }

@@ -41,6 +41,17 @@ body {
   padding-right: 1rem;
 }
 
+/* The transcript is a flex item of the column-direction .app, and its auto
+   margins turn off cross-axis stretch: its width fell back to its content's
+   min-content, so one unbreakable line widened the whole column past a phone's
+   screen — and iOS text autosizing then enlarged the overflowing text. It
+   takes the available width instead; the content column stays 60rem. */
+.transcript.col {
+  width: 100%;
+  max-width: calc(60rem + 2rem);
+  box-sizing: border-box;
+}
+
 /* Application chrome is invisible to text selection: labels, bars, tabs,
    controls. Only content — transcript text, commands, results — selects. */
 button,
@@ -187,6 +198,17 @@ input[type="checkbox"] {
   flex: 1;
 }
 
+/* iOS Safari zooms the page when a field under 16px takes focus, and stays
+   zoomed after — the whole layout then runs off the right edge. On a touch
+   screen every field is at least 16px, which is also a comfortable tap size. */
+@media (pointer: coarse) {
+  input,
+  textarea,
+  select {
+    font-size: max(16px, 1em);
+  }
+}
+
 /* The wordmark; under a host it is also the link back to the session list
    (docs/web-client.md). */
 .wordmark {
@@ -327,9 +349,30 @@ input[type="checkbox"] {
 }
 
 .pending-mark {
-  font-size: 0.6875rem;
-  color: var(--fg-faint);
-  margin-top: 0.4rem;
+  display: flex;
+  align-items: baseline;
+  gap: 0.9rem;
+  font-family: var(--font-ui);
+  font-size: 0.8rem;
+  color: var(--fg-dim);
+  margin-top: 0.5rem;
+}
+
+.pending-recall {
+  font: inherit;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--fg);
+  text-decoration: underline;
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.pending-recall:hover {
+  color: var(--fg-bright);
+  text-decoration-color: var(--fg-dim);
 }
 
 .entry.ambient > .content,

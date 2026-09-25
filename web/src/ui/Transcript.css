@@ -63,23 +63,6 @@
   font-weight: 400;
 }
 
-.t-thinking-live-head {
-  font-family: var(--font-ui);
-  font-size: 0.8em;
-  color: var(--fg-faint);
-  margin-bottom: 0.25rem;
-}
-
-/* The live tail scrolls inside itself once it outgrows about a dozen lines,
-   pinned to its newest line (LiveThinking). */
-.t-thinking-live {
-  max-height: 18em;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  padding-right: 0.5rem;
-  mask-image: linear-gradient(to bottom, transparent, #000 2.5em);
-}
-
 .t-fold {
   font-family: var(--font-ui);
   font-size: 0.8rem;
@@ -232,13 +215,7 @@
 /* A call's parts, top to bottom: what it was for (the intent, as the call's
    title), what it was (the signature, smaller), what came back. The prompt
    and note glyphs are wire vocabulary with no meaning to a reader here. */
-.transcript .call > .block:first-child {
-  display: flex;
-  flex-direction: column;
-}
-
 .transcript .call .intent {
-  order: -1;
   margin: 0 0 0.3rem;
   font-style: normal;
   font-size: 1.15em;
@@ -254,9 +231,61 @@
   display: none;
 }
 
+/* A call still arriving is the same item (Transcript.tsx LiveBlockView). */
+.transcript .t-call .prompt {
+  display: none;
+}
+
 /* The result's header is interface text about the result, not part of it. */
 .transcript .call .result-head {
   font-family: var(--font-ui);
   font-size: 0.75em;
   color: var(--fg-faint);
+}
+
+/* The pinned box (PinnedBox): a fixed height holding its newest line, the
+   top fading only while lines are scrolled out above. */
+.t-pinned {
+  max-height: 18em;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 0.5rem;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+.t-pinned.clipped {
+  mask-image: linear-gradient(to bottom, transparent, #000 2.5em);
+}
+
+.t-pinned.t-output {
+  max-height: 14em;
+}
+
+.t-pinned.t-output pre {
+  margin: 0;
+}
+
+/* The small line over a boxed body: what it is, and the way to all of it. */
+.t-box-head {
+  font-family: var(--font-ui);
+  font-size: 0.8em;
+  color: var(--fg-faint);
+  margin-bottom: 0.25rem;
+}
+
+.t-box-open {
+  font: inherit;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--fg-dim);
+  text-decoration: underline;
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.t-box-open:hover {
+  color: var(--fg-bright);
 }

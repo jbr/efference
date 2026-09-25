@@ -354,7 +354,6 @@ function Notifications() {
 
 const VIEW_LABELS: Record<keyof ViewSettings, string> = {
   thinking: "thinking",
-  clearSpots: "clear spots",
   ambient: "ambient",
 };
 

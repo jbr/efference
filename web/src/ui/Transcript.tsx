@@ -16,7 +16,11 @@ import { Markdown } from "./Markdown.tsx";
 import { CallBlock, LiveCallBlock, ResultBlock } from "./ToolBlocks.tsx";
 import { useFollowTail } from "./useFollowTail.ts";
 import { useViewSettings } from "./viewSettings.ts";
-import { LiveThinking, TranscriptItems } from "./TranscriptItems.tsx";
+import {
+  LiveResult,
+  LiveThinking,
+  TranscriptItems,
+} from "./TranscriptItems.tsx";
 
 // Blank-line joined: these bodies render as markdown, and distinct wire
 // blocks are separate paragraphs — a single newline would soft-wrap the last
@@ -59,14 +63,12 @@ function Entry({
 
 /** The spotter's account of a call: its own line inside the call, never part
  * of the call's content — a different rung's judgment *about* the call
- * (docs/tui.md). The stance leads, because that is the scannable part. A
- * clear verdict is the routine case, so it hides behind the density toggle;
- * anything that gated or watched always shows. Exported for the floating
+ * (docs/tui.md). The stance leads, because that is the scannable part. A clear
+ * verdict is the routine case and is not drawn at all; its reasoning is the
+ * inspector's. Anything that gated or watched shows. Exported for the floating
  * gate panel (Gate.tsx), which restates the verdict while it is off-screen. */
 export function SpotLine({ spot }: { spot: Spot }) {
-  const { clearSpots } = useViewSettings();
-  const clear = spot.stance === "clear" || spot.stance === "clear_always";
-  if (clear && !clearSpots) return null;
+  if (spot.stance === "clear" || spot.stance === "clear_always") return null;
   return (
     <div className="spot">
       <span className="spot-label">spot · {spot.stance}</span>
@@ -209,10 +211,14 @@ function Leaf({ node }: { node: LeafNode }) {
  * merely follow it. */
 const Call = memo(function Call({
   node,
+  liveOutput,
   onInspect,
   onOpenFile,
 }: {
   node: CallNode;
+  /** The running command's output so far, while its result has not landed —
+   * shown in the slot the result will take (ui/TranscriptItems.tsx LiveResult). */
+  liveOutput?: string;
   onInspect: (callId: CallId) => void;
   onOpenFile: (path: string, callId: CallId) => void;
 }) {
@@ -257,6 +263,9 @@ const Call = memo(function Call({
     <div className="call clickable" onClick={open}>
       {call !== null && <CallBlock call={call} onOpenFile={onOpenFile} />}
       {node.spot !== null && <SpotLine spot={node.spot} />}
+      {node.result === null && liveOutput !== undefined && (
+        <LiveResult text={liveOutput} />
+      )}
       {node.result !== null && result !== null && (
         <ResultBlock
           tool={node.name}
@@ -289,10 +298,14 @@ function LiveBlockView({ block }: { block: LiveBlock }) {
       </Entry>
     );
   }
+  // The same item a committed call is (TranscriptItems), so nothing moves
+  // when it commits.
   return (
-    <Entry label={null}>
-      <LiveCallBlock name={block.name ?? ""} input={block.text} />
-    </Entry>
+    <div className="t-entry t-call">
+      <div className="call">
+        <LiveCallBlock name={block.name ?? ""} input={block.text} />
+      </div>
+    </div>
   );
 }
 
@@ -324,9 +337,19 @@ function OutputPeek({ chunk }: { chunk: string }) {
  * It renders flat rather than inside a batch: nothing here has committed, so
  * the calls among them have no results to contain and no verdicts to carry.
  * The committed entry supersedes the whole set at once. */
-function StreamingTail({ streaming }: { streaming: Streaming }) {
+function StreamingTail({
+  streaming,
+  committed,
+}: {
+  streaming: Streaming;
+  /** Calls already in the tree: their output renders in their own result
+   * slot, so only output for a call not yet committed peeks here. */
+  committed: Set<CallId>;
+}) {
   const { thinking } = useViewSettings();
-  const liveOutput = Object.entries(streaming.toolOutput);
+  const liveOutput = Object.entries(streaming.toolOutput).filter(
+    ([callId]) => !committed.has(callId),
+  );
   return (
     <>
       {streaming.blocks
@@ -356,17 +379,19 @@ function PendingTurns({
       {pending.map((turn) => (
         <Entry key={`pending:${turn.id}`} label="you" as="user pending">
           <Markdown>{turn.text}</Markdown>
+          {/* A state, then the one thing to do about it — two pieces, not
+              one run of text. */}
           <div className="pending-mark">
-            ⋯ pending
+            <span>Queued · the agent reads it at its next step</span>
             {/* Recall is a suffix pop: this turn and every one queued after it
              * come back to the composer together (docs/web-client.md). */}
             <button
               type="button"
-              className="linkish"
-              title="pull this turn (and any queued after it) back into the composer"
+              className="pending-recall"
+              title="Pull this turn (and any queued after it) back into the composer"
               onClick={() => onRecall(turn.id)}
             >
-              recall
+              Recall
             </button>
           </div>
         </Entry>
@@ -403,6 +428,15 @@ export function Transcript({
           ),
     [nodes, ambient],
   );
+  const committed = useMemo(
+    () =>
+      new Set(
+        nodes.flatMap((node) =>
+          node.kind === "batch" ? node.calls.map((call) => call.callId) : [],
+        ),
+      ),
+    [nodes],
+  );
   return (
     <div className="transcript col">
       <TranscriptItems
@@ -410,10 +444,15 @@ export function Transcript({
         thinking={thinking}
         renderLeaf={(node) => <MemoLeaf node={node} />}
         renderFullCall={(node) => (
-          <Call node={node} onInspect={onInspect} onOpenFile={onOpenFile} />
+          <Call
+            node={node}
+            liveOutput={streaming.toolOutput[node.callId]}
+            onInspect={onInspect}
+            onOpenFile={onOpenFile}
+          />
         )}
       />
-      <StreamingTail streaming={streaming} />
+      <StreamingTail streaming={streaming} committed={committed} />
       <PendingTurns pending={pending} onRecall={onRecall} />
     </div>
   );
