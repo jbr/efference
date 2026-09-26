@@ -21,6 +21,8 @@ behind a change, see [`journal/`](journal/).
   catalog routes, so what each credential can see is one run's output.
 
 ### Changed
+- **The decisions route retries rate limits** (docs/transport.md): 429 and 5xx get three
+  attempts inside five seconds before the spotter's gate falls back to the human.
 - **Triage verdicts key multi-result gates by short labels** (docs/redaction-fork.md): the
   peek shows `r1`, `r2`, … and maps them back to calls, instead of asking the model to copy
   provider call ids verbatim — mistyped ids were withholding results the model had decided.

@@ -971,6 +971,13 @@ check). `Provider::decisions_takes_session_id` is where that difference lives, s
 the grouping key rides only where it is named. Attribution headers follow the same
 rule they already do — OpenRouter's, nobody else's.
 
+The route retries 429 and the 5xx family on a short budget — three attempts inside
+five seconds, a longer `Retry-After` not waited out. The inference client's budget
+is thirty seconds because a turn waiting on a model has nothing better to do; a gate
+has a fallback, the human, which an operator at the keyboard answers faster than a
+long backoff. The budget exists so a brief rate-limit burst does not turn every
+gated call in it into a human gate.
+
 Nothing on this route caches (the model's endpoint metadata reports
 `supports_implicit_caching: false` and there are no markers to send), so the
 byte-stability rule that governs the Messages prefix

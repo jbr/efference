@@ -22,8 +22,41 @@
 //! flat rate and output is free.
 
 use std::collections::BTreeMap;
+use std::time::Duration;
+
+use trillium::Status;
+use trillium_client_retry::RetryHandler;
 
 use super::*;
+
+/// How long a decisions request may spend retrying before the spotter gives up
+/// and the gate falls to the human (docs/permissions.md). Far shorter than the
+/// inference client's budget: a turn waiting on a model has nothing better to do,
+/// but a gate has a fallback that is always available and often faster — an
+/// operator at the keyboard answers a prompt in less time than a long backoff.
+/// The budget exists to absorb a brief rate-limit burst, which otherwise turns
+/// every gated call in it into a human gate.
+const DECIDE_MAX_ATTEMPTS: u32 = 3;
+const DECIDE_MAX_ELAPSED: Duration = Duration::from_secs(5);
+
+/// The decisions route's retry policy: the route's docs prescribe backoff on
+/// 429 and on server overload. The POST is replay-safe — a decision that did not
+/// answer billed nothing and changed nothing. A `Retry-After` longer than the
+/// whole budget is not waited out; the failure surfaces and the gate falls back.
+pub(super) fn decisions_retry() -> RetryHandler {
+    RetryHandler::default()
+        .with_all_methods()
+        .with_statuses([
+            Status::TooManyRequests,
+            Status::InternalServerError,
+            Status::BadGateway,
+            Status::ServiceUnavailable,
+            Status::GatewayTimeout,
+        ])
+        .with_max_attempts(DECIDE_MAX_ATTEMPTS)
+        .with_max_elapsed(DECIDE_MAX_ELAPSED)
+        .with_max_retry_after(DECIDE_MAX_ELAPSED)
+}
 
 /// One question in a decisions request. Boolean-only today because that is what
 /// the spotter asks (docs/permissions.md); the route also defines `choice` and
@@ -153,9 +186,9 @@ impl Endpoint {
     ///
     /// Unlike the streaming routes this is one request and one body, so there is
     /// no assembler and no partial: it either answers or errors. The caller's
-    /// error path is the spotter's fail-closed gate (docs/permissions.md), so no
-    /// retry handler is installed here — a second attempt at the human gate is
-    /// the human, which is the safe direction.
+    /// error path is the spotter's fail-closed gate (docs/permissions.md); a
+    /// short [`decisions_retry`] budget absorbs a rate-limit burst before that
+    /// path is taken.
     pub async fn decide(
         &self,
         model: &str,
@@ -180,7 +213,7 @@ impl Endpoint {
                 .then_some(self.session_id.as_deref())
                 .flatten(),
         })?;
-        let http = crate::http::client();
+        let http = crate::http::client().with_handler(decisions_retry());
         let conn = http
             .post(url)
             .with_request_header(self.auth_header.clone(), self.auth_value.get())

@@ -119,3 +119,60 @@ async fn a_provider_without_the_route_refuses() {
         "unexpected error: {error}"
     );
 }
+
+/// A rate-limit burst is absorbed by the retry budget rather than failing the
+/// spotter over to the human gate on the first 429 (docs/permissions.md).
+#[tokio::test]
+async fn a_rate_limited_decision_is_retried() {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicU32, Ordering},
+    };
+    let hits = Arc::new(AtomicU32::new(0));
+    let server = {
+        let hits = Arc::clone(&hits);
+        move |conn: trillium::Conn| {
+            let hits = Arc::clone(&hits);
+            async move {
+                match hits.fetch_add(1, Ordering::SeqCst) {
+                    0 => conn.with_status(Status::TooManyRequests).halt(),
+                    _ => conn.ok("{}"),
+                }
+            }
+        }
+    };
+    let client = trillium_client::Client::new(trillium_testing::ServerConnector::new(server))
+        .with_handler(decisions_retry());
+    let conn = client
+        .post("http://decisions.test/")
+        .with_body("{}")
+        .await
+        .expect("the retry succeeds");
+    assert_eq!(conn.status(), Some(Status::Ok));
+    assert_eq!(hits.load(Ordering::SeqCst), 2);
+}
+
+/// A `Retry-After` beyond the whole budget is not waited out: the gate's
+/// fallback is faster than the wait (docs/permissions.md).
+#[tokio::test]
+async fn a_long_retry_after_is_not_waited_out() {
+    let server = |conn: trillium::Conn| async move {
+        conn.with_status(Status::TooManyRequests)
+            .with_response_header("retry-after", "120")
+            .halt()
+    };
+    let client = trillium_client::Client::new(trillium_testing::ServerConnector::new(server))
+        .with_handler(decisions_retry());
+    let started = std::time::Instant::now();
+    let conn = client
+        .post("http://decisions.test/")
+        .with_body("{}")
+        .await
+        .expect("a response, not a transport error");
+    assert_eq!(conn.status(), Some(Status::TooManyRequests));
+    assert!(
+        started.elapsed() < DECIDE_MAX_ELAPSED,
+        "{:?}",
+        started.elapsed()
+    );
+}
