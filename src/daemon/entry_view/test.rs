@@ -28,12 +28,21 @@ fn result_with_images(images: Vec<ResultImage>) -> Payload {
 /// A field added to `LogEntry`/`RawResult` without updating `entry_view.rs` fails here.
 #[test]
 fn view_of_an_image_free_entry_is_the_derived_bytes() {
+    // Every optional `LogEntry` field set somewhere below: an unset one serializes
+    // to nothing on both paths, so a case without it cannot catch its omission.
+    let mut sourced = entry(
+        4,
+        Some("sub-4"),
+        Payload::User(vec![ContentBlock::Text("from a script".into())]),
+    );
+    sourced.source = Some("agent[abc]".into());
     let cases = [
         entry(
             0,
             None,
             Payload::User(vec![ContentBlock::Text("hi".into())]),
         ),
+        sourced,
         entry(
             1,
             Some("sub-1"),

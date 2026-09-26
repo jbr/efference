@@ -476,3 +476,39 @@ fn an_elided_result_names_the_elision_in_its_header() {
     );
     assert_eq!(header_of(&plain, EntryKind::ToolResult), "2 lines");
 }
+
+/// The kickoff is part of the session's opening, like the preamble: it is not
+/// drawn as a turn, so the agent's greeting is the first thing in the transcript
+/// (docs/context.md). Any other sourced turn still renders.
+#[test]
+fn the_kickoff_turn_is_not_drawn() {
+    let mut kickoff = entry(
+        0,
+        Payload::User(vec![ContentBlock::Text("greet them".into())]),
+    );
+    kickoff.source = Some(crate::frontend::KICKOFF_SOURCE.to_string());
+    let mut sourced = entry(
+        2,
+        Payload::User(vec![ContentBlock::Text("from web".into())]),
+    );
+    sourced.source = Some("web".to_string());
+    let log = vec![
+        kickoff,
+        entry(
+            1,
+            assistant(vec![ContentBlock::Text("Welcome".into())], vec![]),
+        ),
+        sourced,
+    ];
+    let doc = project(
+        &log,
+        &LiveTail::default(),
+        &ViewState::default(),
+        Gate::default(),
+        &[],
+    );
+    assert_eq!(
+        kinds(&doc),
+        vec![EntryKind::AssistantMessage, EntryKind::UserMessage]
+    );
+}

@@ -21,6 +21,11 @@
 use crate::control_tools::BoundAction;
 use crate::log::{ConfigChange, ToolCall};
 
+/// The `source` of the kickoff turn a `first-turn` config submits (docs/context.md).
+/// Reserved: the clients read it to leave the turn out of the transcript, since it
+/// belongs to the session's opening the way the preamble does, not to the operator.
+pub const KICKOFF_SOURCE: &str = "efference";
+
 /// A user turn as it arrived over the control channel: the text plus the
 /// submission id that names this `POST /v1/turns` in the 202 body and on the
 /// resulting `User` entry (docs/control-api.md). The id is adopted from the

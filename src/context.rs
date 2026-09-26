@@ -208,16 +208,16 @@ pub fn resolve_with_child_env(
             // *render* half of the pipeline and never touches the disk or the frontmatter
             // parser. The operator's label is the heading; their `description`, if they
             // wrote one, replaces the mount's own.
-            ContextSource::Builtin(_) => {
+            ContextSource::Builtin(value) => {
                 let heading = entry
                     .heading
                     .clone()
                     .expect("validate gives every builtin entry a heading");
-                let mut section = crate::guide::section(&heading);
-                if entry.description.is_some() {
-                    section.description = entry.description.clone();
-                }
-                sections.push(section);
+                sections.push(crate::guide::builtin_section(
+                    value,
+                    &heading,
+                    entry.description.clone(),
+                ));
                 continue;
             }
             ContextSource::Exec(command) => {

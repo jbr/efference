@@ -21,13 +21,14 @@
 // real boundary that is not nested on: it would put agent prose a level deeper
 // than the calls issued in the same breath, and the prose is often the answer.
 
-import type {
-  CallId,
-  LogEntry,
-  Seq,
-  Spot,
-  ToolTelemetry,
-  UpstreamFailureRecord,
+import {
+  KICKOFF_SOURCE,
+  type CallId,
+  type LogEntry,
+  type Seq,
+  type Spot,
+  type ToolTelemetry,
+  type UpstreamFailureRecord,
 } from "../api/types.ts";
 import { assistantView } from "./assistant.ts";
 
@@ -104,6 +105,10 @@ export function buildTree(entries: LogEntry[]): TranscriptNode[] {
   for (const entry of entries) {
     const p = entry.payload;
     seqs.push(entry.seq);
+
+    // The kickoff is part of the session's opening, like the preamble: not drawn
+    // as a turn, so the agent's greeting leads the transcript (docs/context.md).
+    if ("User" in p && entry.source === KICKOFF_SOURCE) continue;
 
     if ("Mark" in p) {
       // Tolerant of a mark kind this client does not know: it renders as a

@@ -13,6 +13,8 @@ pub(super) struct RawConfig {
     watch_for: Vec<String>,
     #[serde(rename = "trust-threshold", default)]
     trust_threshold: Option<f64>,
+    #[serde(rename = "first-turn", default)]
+    first_turn: Option<String>,
     /// `[commands]` table: each value is a [`CommandStance`] or the `bool` sugar
     /// ([`RawCommandValue`]).
     #[serde(default)]
@@ -212,6 +214,9 @@ impl RawPathValue {
 /// syntactically. Carried by [`LoadError::Validate`].
 #[derive(Debug)]
 pub enum ValidationError {
+    /// `first-turn = ""`: a kickoff with nothing in it. Omitting the key is how a
+    /// session starts on the operator's turn instead.
+    FirstTurnEmpty,
     /// A `[commands]` key that does not lex to a single simple command (it has operators,
     /// redirections, expansions, or an env-assignment prefix). The fast-path can only soundly
     /// prefix-match simple commands, so an un-lexable key fails the whole file — no silent skip.
@@ -258,6 +263,11 @@ impl std::fmt::Display for ValidationError {
                  redirections, expansions, or env-assignments) — the fast-path can only \
                  prefix-match simple commands"
             ),
+            ValidationError::FirstTurnEmpty => write!(
+                f,
+                "`first-turn` is empty — remove the key for a session that waits for the \
+                 operator's first message"
+            ),
             ValidationError::ContextDisabled(key) => write!(
                 f,
                 "context entry `{key}` is set to false; there is nothing to disable — remove the \
@@ -277,7 +287,9 @@ impl std::fmt::Display for ValidationError {
             ValidationError::ContextBuiltinUnknown(key, name) => write!(
                 f,
                 "context entry `{key}` names builtin `{name}`, which this binary does not ship \
-                 — the only builtin is `{}`",
+                 — the builtins are `{}` (every document, listed) and `{}/<slug>` (one \
+                 document, in full)",
+                crate::guide::BUILTIN,
                 crate::guide::BUILTIN
             ),
             ValidationError::ContextBarePathGrant(key, which) => write!(
@@ -355,10 +367,18 @@ pub(super) fn validate(raw: RawConfig) -> Result<Config, ValidationError> {
         let entry = validate_mcp_server(&name, server)?;
         mcp_servers.insert(name, entry);
     }
+    if raw
+        .first_turn
+        .as_deref()
+        .is_some_and(|text| text.trim().is_empty())
+    {
+        return Err(ValidationError::FirstTurnEmpty);
+    }
     Ok(Config {
         scope: raw.scope,
         watch_for: raw.watch_for,
         trust_threshold: raw.trust_threshold,
+        first_turn: raw.first_turn,
         commands,
         tools,
         paths,
@@ -493,7 +513,7 @@ pub(super) fn validate_context_entry(
                 {
                     return Err(ValidationError::ContextBuiltinConflict(key));
                 }
-                if builtin != crate::guide::BUILTIN {
+                if !crate::guide::is_builtin(&builtin) {
                     return Err(ValidationError::ContextBuiltinUnknown(key, builtin));
                 }
                 return Ok(ContextEntry {

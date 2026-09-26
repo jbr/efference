@@ -8,6 +8,10 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- **`first-turn`** (docs/context.md): a config key whose text the harness sends as the opening
+  turn of a session with an empty log, so the agent speaks first; neither client draws it. The
+  scaffold for a directory with no project config carries one, with `new-project` inlined.
+- **`builtin = "guide/<slug>"`** (docs/context.md): one guide document in full in the preamble.
 - **The setup hand-off** (docs/operating.md): after the wizard, and on a bare `efference` in a
   directory with no project config and no sessions, efference asks whether to set that
   directory up now, naming the model the conversation is billed on; yes starts the session.
@@ -146,6 +150,8 @@ behind a change, see [`journal/`](journal/).
 - **The idle triage runs on the agent's own lineage** (docs/redaction-fork.md): with a separate `--triage-model`, only the per-result peeks go to it; the wake decision an idle session makes on a notification sends the agent's client, tools, and thinking, reading the cache the keepalive holds warm.
 
 ### Fixed
+- **Live clients see a turn's `source`** (docs/control-api.md): the stream's entry view dropped
+  it, so the TUI's attribution of web, MCP, and agent turns only ever appeared offline.
 - **Setup's prompts and the session picker work under `op run`** (docs/operating.md): `op run`
   pipes stdout to mask secrets, and the prompts refused a non-terminal stdout; they now draw
   on `/dev/tty` when stdout is a pipe.

@@ -63,6 +63,11 @@ pub const CONFIG_SCAFFOLD: &str = "\
 #                                       #   (literal), SOME_KEY = \"op://Vault/Item/field\" (resolved at boot
 #                                       #   and always masked), or { cmd = \"...\" } for any other vault.
 
+# The kickoff: in a session that has said nothing yet, the harness sends this as the opening
+# turn, so the agent speaks first (docs/context.md). Like the preamble, it is not shown as a
+# turn; what you see is the reply. Delete the line for a session that waits for you.
+first-turn = \"This is the operator's first session in this directory, which has no efference.toml. Greet them, say briefly what you can see of the project, and offer to set it up.\"
+
 # The one command a session with no project config needs cleared: validating the template it
 # is about to write (docs/operating.md). Everything else goes through the spotter until granted.
 [commands]
@@ -76,6 +81,9 @@ pub const CONFIG_SCAFFOLD: &str = "\
 # else, including how to write this file. Delete the line to stop listing them; the
 # documents stay readable at their paths either way.
 EfferenceGuide = { builtin = \"guide\" }
+# The setup task itself, in full rather than as a stub, so the first turn starts with it in
+# hand. `guide/<slug>` inlines any one document.
+\"Setting up a project\" = { builtin = \"guide/new-project\" }
 ";
 
 /// What a session's creator supplies. Paths are absolute; nothing here is read

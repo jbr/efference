@@ -139,6 +139,11 @@ pub(crate) fn entry_nodes(
     };
     {
         match &entry.payload {
+            // The kickoff belongs to the session's opening, as the preamble does, so it
+            // is not drawn as a turn: the agent's reply is the first thing shown
+            // (docs/context.md).
+            Payload::User(_)
+                if entry.source.as_deref() == Some(crate::frontend::KICKOFF_SOURCE) => {}
             Payload::User(blocks) => {
                 // A sourced turn is attributed with the same `source:` address it
                 // carries on the wire (docs/control-api.md); the operator's turns

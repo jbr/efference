@@ -155,3 +155,47 @@ async fn one_runtime_stops_without_touching_its_sibling() {
     assert!(!roots.0.join("two/scratch").exists());
     two.finished().await.unwrap();
 }
+
+/// A `first-turn` config makes the harness submit the opening turn when the
+/// log has none, carrying the reserved kickoff source (docs/context.md).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_first_turn_is_submitted_into_an_empty_log() {
+    let roots = Roots::new();
+    let host = Swansong::new();
+    let mut boot = boot(&roots.0.join("one"));
+    boot.role.role.first_turn = Some("say hello".into());
+    let runtime = SessionRuntime::start(boot, &host);
+    let session = Arc::clone(runtime.session());
+    wait_until("the kickoff is recorded", || {
+        session.snapshot().iter().any(|entry| {
+            matches!(entry.payload, crate::log::Payload::User(_))
+                && entry.source.as_deref() == Some(crate::frontend::KICKOFF_SOURCE)
+        })
+    })
+    .await;
+    host.shut_down().await;
+    runtime.finished().await.unwrap();
+}
+
+/// A log that already holds a user turn has had its opening: no kickoff.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_first_turn_is_not_repeated_on_a_log_that_has_begun() {
+    let roots = Roots::new();
+    let host = Swansong::new();
+    let mut boot = boot(&roots.0.join("one"));
+    boot.role.role.first_turn = Some("say hello".into());
+    boot.log = Log::in_memory_with(vec![crate::log::LogEntry {
+        seq: 0,
+        turn: 1,
+        at: crate::log::Timestamp(0),
+        submission_id: None,
+        source: None,
+        payload: crate::log::Payload::User(vec![crate::log::ContentBlock::Text("earlier".into())]),
+    }]);
+    let runtime = SessionRuntime::start(boot, &host);
+    assert!(runtime.session().queued_turns().is_empty());
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    assert_eq!(runtime.session().snapshot().len(), 1, "nothing was added");
+    host.shut_down().await;
+    runtime.finished().await.unwrap();
+}

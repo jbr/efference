@@ -207,7 +207,8 @@ decoupled from inference.
   `mcp[<clientInfo.name>]`, or `agent[<id>]`. Recorded on the resulting `User`
   entry and rendered as a `source:` prefix line on its wire block
   (docs/log-and-projection.md); absent means the operator, whose turns render no
-  prefix.
+  prefix. `efference` is reserved for the harness's `first-turn` kickoff, which the
+  clients do not draw ([context.md](context.md)); a request claiming it is a 400.
 - `202 {"status":"accepted","submission_id":"<string>"}` — enqueued; watch
   `/events` (or `/state`) for the result. The echoed id is informational: any
   effect of a request — including the `User` entry carrying this id — may

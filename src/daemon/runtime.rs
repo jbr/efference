@@ -76,6 +76,8 @@ impl SessionRuntime {
         // The keepalive interval, read off the config before it moves into `Session`
         // (docs/transport.md).
         let ping_at = role.role.transport.keepalive_interval;
+        // The kickoff (docs/context.md), read before the config moves into `Session`.
+        let first_turn = role.role.first_turn.clone();
         let scratch = toolbox.scratch_dir().map(std::path::Path::to_path_buf);
         let (session, turns) = Session::full(crate::daemon::SessionParts {
             role,
@@ -87,6 +89,22 @@ impl SessionRuntime {
             env_policy,
             ..crate::daemon::SessionParts::new(paths.cwd().to_path_buf(), log)
         });
+        // The kickoff: with a `first-turn` and nothing yet said, the harness submits
+        // the opening turn so the agent speaks first. A resumed log already has its
+        // opening, so the check is on the log rather than on how the session began.
+        if let Some(text) = first_turn {
+            let fresh = !session
+                .snapshot()
+                .iter()
+                .any(|entry| matches!(entry.payload, crate::log::Payload::User(_)));
+            if fresh {
+                session.submit_turn(crate::frontend::SubmittedTurn {
+                    text,
+                    submission_id: crate::daemon::mint_submission_id(),
+                    source: Some(crate::frontend::KICKOFF_SOURCE.to_string()),
+                });
+            }
+        }
         // The project's storage base, for the in-session `sessions` mount's
         // listing and target scope (docs/tools.md).
         session.set_storage_base(paths.storage());

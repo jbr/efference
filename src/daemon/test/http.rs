@@ -102,6 +102,21 @@ async fn turn_source_reaches_the_queued_turn() {
     assert_eq!(queued.source, None);
 }
 
+/// The kickoff's source is the harness's alone: the clients leave a turn carrying
+/// it out of the transcript, so a client claiming it is refused (docs/context.md).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_kickoff_source_is_reserved() {
+    let (shared, mut turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let client = test_client(&shared).await;
+    let err = client
+        .turn_sourced("hidden", Some(crate::frontend::KICKOFF_SOURCE))
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("reserved"), "{err}");
+    assert!(turns_rx.try_recv().is_err(), "rejected turn never queued");
+}
+
 /// Recall over the wire (docs/control-api.md): `DELETE /turns/:submission_id` pops the suffix
 /// and answers with what it actually popped, the `queued` state topic reflects the remainder,
 /// and an id the loop already consumed pops nothing rather than erroring.

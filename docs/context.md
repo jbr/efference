@@ -251,9 +251,15 @@ without re-deciding what a leading `/` would have meant.
   are served later and stored on their `ToolResult`. Across a mid-session binary upgrade
   those can diverge, and the log honestly records what was served each time.
 
+**One document in full: `builtin = "guide/<slug>"`.** The same value with a slug renders
+that document's body inline, tagged with the operator's label the way an `exec` section is
+(`guide::builtin_section`). The scaffold uses it to carry `new-project` whole, so a setup
+session starts with the task in hand rather than behind a `read`. An unknown slug fails the
+file.
+
 **Listing is opt-in when a config exists, and the mount exists regardless.** An operator's
 config renders the group only if it names the entry. The scaffold written for a session
-with no project config *does* name it (`src/bin/efference/cli.rs`) — a visible, deletable
+with no project config *does* name it (`src/boot.rs`) — a visible, deletable
 line in the session's own file, the same way orientation is — because a config-less session
 whose only recovery path is "read how to write a config" needs that path listed. Deleting
 the line stops the listing; the documents stay readable at their paths either way.
@@ -264,6 +270,28 @@ fenced `toml` block in a document parses and validates as a real config (the sch
 unknown fields, so a renamed key fails there), every tool name a document declares is one
 `agent::tool_definitions` advertises and is actually mentioned in its prose, and every
 `efference://` link resolves to a document that exists.
+
+## The kickoff: `first-turn`
+
+`first-turn = "…"` makes the session's first turn the agent's. The API needs a user message
+before the model can speak, so the harness supplies one: when the runtime starts
+(`src/daemon/runtime.rs`) with a `first-turn` configured and no `User` entry in the log, it
+submits the text as a turn whose `source` is `efference` (`frontend::KICKOFF_SOURCE`). The
+check is on the log, not on how the session began, so a resumed session that has had its
+opening does not get a second one.
+
+The kickoff belongs to the session's opening the way the preamble does, so neither client
+draws it as a turn: the TUI projection and the web transcript tree skip a `User` entry with
+that source, and the agent's reply is the first thing shown. It is an ordinary entry
+otherwise — logged, projected with its `source:` line, visible to a log reader. Because a
+turn with that source is not drawn, it is reserved: `POST /turns` refuses a client-asserted
+`source: efference`, which would otherwise be a way to put a turn in front of the model that
+the operator never sees.
+
+The scaffold written for a session with no project config carries a `first-turn` line, so
+such a session is the setup profile: the agent greets the operator and offers to set the
+project up. The line is visible and deletable in the session's own config, like the
+orientation `exec` entry.
 
 ## Boot discipline: freeze, snapshot, fail closed
 

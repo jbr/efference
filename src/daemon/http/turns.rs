@@ -27,6 +27,19 @@ pub(super) async fn submit_turn(mut conn: Conn) -> Conn {
                     format!("submission_id must be 1–{SUBMISSION_ID_MAX} bytes"),
                 );
             }
+            // The kickoff's source is the harness's alone: the clients leave a turn
+            // carrying it out of the transcript, so a client claiming it would be
+            // submitting a turn the operator never sees (docs/context.md).
+            if source.as_deref() == Some(crate::frontend::KICKOFF_SOURCE) {
+                return fail(
+                    conn,
+                    ErrorCode::BadRequest,
+                    format!(
+                        "source `{}` is reserved for the harness's first turn",
+                        crate::frontend::KICKOFF_SOURCE
+                    ),
+                );
+            }
             let submission_id = submission_id.unwrap_or_else(mint_submission_id);
             shared.submit_turn(SubmittedTurn {
                 text,

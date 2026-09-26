@@ -9,6 +9,7 @@ than being silently ignored, and so does any entry the harness cannot read sound
 scope = "Work only inside this repo."          # what this session is for
 watch-for = ["network egress to non-registry hosts"]
 trust-threshold = 0.5
+first-turn = "Summarize what changed since the last session."
 tools = ["read", "write", "ferritin.*"]
 extends = ["base.toml"]
 ```
@@ -19,6 +20,10 @@ extends = ["base.toml"]
 - **`watch-for`** — hazards the spotter should look out for. Spotter-only; deliberately
   never shown to the session.
 - **`trust-threshold`** — parsed, reserved for the watch-window; nothing reads it yet.
+- **`first-turn`** — a user turn the harness sends when a session starts with nothing yet
+  said, so the agent speaks first. Like the preamble it opens the session rather than being
+  a turn: the clients do not draw it, and it arrives marked `source: efference`. Read once at
+  boot. Omit it for a session that waits for the operator.
 - **`tools`** — the structured tools a call may use without review. Matching is exact, with
   one glob: a terminal `.*` grants a whole namespace (`ferritin.*` for that server's tools,
   `efference.*` for every tool the harness itself ships). A star anywhere else fails the
@@ -95,8 +100,9 @@ EfferenceGuide = { builtin = "guide" }
 - An **`exec` entry**'s body is the command's stdout, run once at boot under `bash -c` in
   the session's directory and then frozen. `Date = { exec = "date" }` therefore honestly
   means "the date as of session boot". It runs with harness privileges and is not gated.
-- A **`builtin` entry** lists a set of documents compiled into the binary. The one name is
-  `"guide"` — the documents you are reading now.
+- A **`builtin` entry** names documents compiled into the binary — the ones you are
+  reading now. `"guide"` lists them all as stubs; `"guide/<slug>"` puts that one document's
+  whole body in the preamble under the entry's label (`{ builtin = "guide/new-project" }`).
 
 Whether a listed file's **whole body** or a **one-line stub** rides in the preamble is the
 file's own call, via YAML frontmatter: no frontmatter `description` means the body is

@@ -208,6 +208,13 @@ pub struct Config {
     /// `trust-threshold = 0.5`. Consumed by the watch-window rung.
     pub trust_threshold: Option<f64>,
 
+    /// The kickoff: a user turn the harness submits when a session starts with an
+    /// empty log, so the agent speaks first (docs/context.md). Part of the session's
+    /// opening like the preamble — the clients do not render it as a turn — and
+    /// read once at boot; editing it mid-session changes nothing. TOML:
+    /// `first-turn = "…"`.
+    pub first_turn: Option<String>,
+
     /// The bash prefix-allowlist as a **map** from command-prefix key to the [`CommandStance`]
     /// it carries (docs/permissions.md). `cargo` addresses the whole program, `git diff` only
     /// that sub-verb, and resolution is **longest-prefix-wins**, so a longer key carves its

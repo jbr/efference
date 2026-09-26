@@ -319,3 +319,26 @@ fn virtual_links(body: &str) -> Vec<String> {
         })
         .collect()
 }
+
+/// `guide/<slug>` rides one document in full under the operator's label, and an
+/// unknown slug fails the file rather than rendering nothing.
+#[test]
+fn a_builtin_slug_inlines_that_document() {
+    let config = crate::config::parse_text(
+        "[context]\n\"Setting up\" = { builtin = \"guide/new-project\" }\n",
+    );
+    let resolved = crate::context::resolve(&config.context, Path::new("/nonexistent"))
+        .expect("a builtin entry reads no files");
+    let rendered = resolved.render().expect("renders");
+    assert!(rendered.contains("<Setting up>"), "{rendered}");
+    assert!(
+        rendered.contains("## A starter template"),
+        "the body rides in full"
+    );
+    let err = crate::config::Config::from_toml(
+        "[context]\nX = { builtin = \"guide/no-such-document\" }\n",
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(err.contains("guide/<slug>"), "{err}");
+}

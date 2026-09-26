@@ -18,8 +18,16 @@ export interface LogEntry {
    * socket-submitted `User` entry (client-minted or daemon-minted), absent on
    * entries the loop originates itself (docs/control-api.md). */
   submission_id?: string;
+  /** Who submitted a `User` entry, when not the operator (docs/control-api.md):
+   * `web`, `mcp[<name>]`, `agent[<id>]`, or {@link KICKOFF_SOURCE}. */
+  source?: string | null;
   payload: Payload;
 }
+
+/** The source the harness's `first-turn` kickoff carries (src/frontend.rs). The
+ * turn belongs to the session's opening, like the preamble, so the transcript
+ * does not draw it (docs/context.md). */
+export const KICKOFF_SOURCE = "efference";
 
 export type Payload =
   | { User: ContentBlock[] }

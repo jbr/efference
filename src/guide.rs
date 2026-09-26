@@ -30,7 +30,21 @@ pub const SCHEME: &str = "efference://";
 pub const MOUNT: &str = "efference://guide/";
 
 /// The `[context]` value that lists this mount: `Label = { builtin = "guide" }`.
+/// `guide/<slug>` names one document, which rides in full rather than as a stub
+/// ([`inline`]).
 pub const BUILTIN: &str = "guide";
+
+/// Whether a `builtin = "…"` value names something this binary ships: the mount,
+/// or one of its documents by slug.
+pub fn is_builtin(value: &str) -> bool {
+    value == BUILTIN || inline_document(value).is_some()
+}
+
+/// The document a `guide/<slug>` builtin names.
+fn inline_document(value: &str) -> Option<&'static Document> {
+    let slug = value.strip_prefix(BUILTIN)?.strip_prefix('/')?;
+    DOCUMENTS.iter().find(|d| d.slug == slug)
+}
 
 /// The group heading used when the harness lists the guide itself — the config-less boot,
 /// where no operator wrote a label. An operator who lists the mount supplies their own.
@@ -133,6 +147,34 @@ pub fn section(heading: &str) -> crate::context::Section {
                 path: path(d.slug),
             })
             .collect(),
+    }
+}
+
+/// The `[context]` section a builtin value renders as under the operator's
+/// `heading`: the stub listing for the mount, or one document's full body for
+/// `guide/<slug>`, tagged with the heading the way an `exec` section is.
+pub fn builtin_section(
+    value: &str,
+    heading: &str,
+    description: Option<String>,
+) -> crate::context::Section {
+    match inline_document(value) {
+        Some(document) => crate::context::Section {
+            heading: None,
+            description,
+            items: vec![crate::context::Item::Inline {
+                name: heading.to_string(),
+                path: path(document.slug),
+                body: document.body.trim_end().to_string(),
+            }],
+        },
+        None => {
+            let mut section = section(heading);
+            if description.is_some() {
+                section.description = description;
+            }
+            section
+        }
     }
 }
 

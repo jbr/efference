@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { LogEntry, RawResult } from "../api/types.ts";
+import { KICKOFF_SOURCE, type LogEntry, type RawResult } from "../api/types.ts";
 import {
   buildTree,
   upstreamFailureWhy,
@@ -285,5 +285,21 @@ describe("title and preamble entries", () => {
       title(3, "Build efference dev models"),
     ]);
     expect(nodes.map((n) => n.key)).toEqual(["1", "3"]);
+  });
+});
+
+describe("the kickoff", () => {
+  // The harness's first-turn belongs to the session's opening, like the
+  // preamble, so the agent's greeting leads the transcript (docs/context.md).
+  it("is not drawn, while other sourced turns are", () => {
+    const nodes = buildTree([
+      {
+        ...entry(1, { User: [{ Text: "greet them" }] }),
+        source: KICKOFF_SOURCE,
+      },
+      assistant(2, { text: true }),
+      { ...entry(3, { User: [{ Text: "from mcp" }] }), source: "mcp[cc]" },
+    ]);
+    expect(nodes.map((n) => n.key)).toEqual(["2:text", "3"]);
   });
 });

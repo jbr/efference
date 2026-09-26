@@ -197,3 +197,16 @@ fn parses_the_transport_effort() {
     );
     assert_eq!(role.transport.effort.as_deref(), Some("extreme"));
 }
+
+/// `first-turn` is the kickoff's text (docs/context.md); empty is refused, since
+/// omitting the key is how a session waits for the operator instead.
+#[test]
+fn first_turn_parses_and_an_empty_one_is_refused() {
+    let role = parse_str(r#"first-turn = "Greet the operator.""#);
+    assert_eq!(role.first_turn.as_deref(), Some("Greet the operator."));
+    assert!(parse_str("").first_turn.is_none());
+    let err = crate::config::Config::from_toml(r#"first-turn = "  ""#)
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("`first-turn` is empty"), "{err}");
+}

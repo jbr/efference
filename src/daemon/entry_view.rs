@@ -86,13 +86,17 @@ impl<'a> EntryView<'a> {
 impl Serialize for EntryView<'_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let entry = self.entry;
-        let fields = 4 + usize::from(entry.submission_id.is_some());
+        let fields =
+            4 + usize::from(entry.submission_id.is_some()) + usize::from(entry.source.is_some());
         let mut s = serializer.serialize_struct("LogEntry", fields)?;
         s.serialize_field("seq", &entry.seq)?;
         s.serialize_field("turn", &entry.turn)?;
         s.serialize_field("at", &entry.at)?;
         if let Some(submission_id) = &entry.submission_id {
             s.serialize_field("submission_id", submission_id)?;
+        }
+        if let Some(source) = &entry.source {
+            s.serialize_field("source", source)?;
         }
         s.serialize_field("payload", &PayloadView(&entry.payload, self.elide_text))?;
         s.end()
