@@ -683,3 +683,71 @@ fn every_provider_display_name_decodes_back() {
         );
     }
 }
+
+/// With no spotter named anywhere, a connection that reaches jev supplies it ahead
+/// of the main provider's cheap band — first-party typesafe ahead of OpenRouter —
+/// while a main connection's own `spotter-model` still outranks both
+/// (docs/permissions.md).
+#[test]
+fn a_reachable_decision_model_is_the_default_spotter() {
+    let spotter = |toml: &str| {
+        registry(toml)
+            .resolve_options(&SessionOptions::default(), None)
+            .effective
+            .spotter
+    };
+    let main = r#"
+[defaults]
+model = "main/claude-sonnet-4-5"
+
+[connections.main]
+provider = "anthropic"
+auth = { kind = "env", key = "ANTHROPIC_KEY" }
+"#;
+
+    let routed = spotter(&format!(
+        r#"{main}
+[connections.router]
+provider = "openrouter"
+auth = {{ kind = "env", key = "ANTHROPIC_KEY" }}
+"#
+    ));
+    assert_eq!(routed.source, Some(SelectionSource::DecisionConnection));
+    let routed = routed.value.unwrap();
+    assert_eq!(
+        (routed.connection.as_str(), routed.model.as_str()),
+        ("router", "~typesafe/jev-latest")
+    );
+
+    let both = spotter(&format!(
+        r#"{main}
+[connections.a-router]
+provider = "openrouter"
+auth = {{ kind = "env", key = "ANTHROPIC_KEY" }}
+
+[connections.ts]
+provider = "typesafe"
+auth = {{ kind = "env", key = "ANTHROPIC_KEY" }}
+"#
+    ))
+    .value
+    .unwrap();
+    assert_eq!(
+        (both.connection.as_str(), both.model.as_str()),
+        ("ts", "jev-latest"),
+        "first-party wins even when OpenRouter sorts first"
+    );
+
+    let own = spotter(&format!(
+        r#"{}
+spotter-model = "claude-haiku-4-5"
+
+[connections.ts]
+provider = "typesafe"
+auth = {{ kind = "env", key = "ANTHROPIC_KEY" }}
+"#,
+        main.trim_end()
+    ));
+    assert_eq!(own.source, Some(SelectionSource::MainProvider));
+    assert_eq!(own.value.unwrap().model, "claude-haiku-4-5");
+}

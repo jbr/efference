@@ -60,6 +60,8 @@ pub enum SelectionSource {
     UserDefault,
     /// The main connection's provider supplied its own cheap-band spotter.
     MainProvider,
+    /// A connection that can reach a decision model supplied jev as the spotter.
+    DecisionConnection,
     /// The selected project config's `[transport]`.
     ProjectConfig,
     /// Nothing named it, so the wire omits it and the provider decides.
@@ -344,9 +346,9 @@ impl InferenceRegistry {
                     SelectionSource::UserDefault,
                     issues,
                 ),
-                // No default and no main to borrow a provider from: the spotter is
-                // unresolvable for a reason main's issue already states, so this
-                // adds no second issue for one mistake.
+                // Then the main connection's own `spotter-model`, then a decision
+                // model on any connection that reaches one, then the main
+                // provider's cheap band.
                 None => match main.value.as_ref() {
                     // The main connection answers first, in its own configuration
                     // (`spotter-model`), then the arm's built-in default. Both are
@@ -357,16 +359,20 @@ impl InferenceRegistry {
                         .connections
                         .get(&main.connection)
                         .and_then(|connection| connection.spotter_model.clone())
-                        .or_else(|| main.provider.default_spotter_model().map(str::to_string))
-                    {
-                        Some(model) => Effective::resolved(
-                            ModelSelection {
-                                connection: main.connection.clone(),
-                                provider: main.provider,
-                                model,
-                            },
-                            SelectionSource::MainProvider,
-                        ),
+                        .map(|model| (main_selection(main, model), SelectionSource::MainProvider))
+                        .or_else(|| {
+                            self.decision_spotter()
+                                .map(|selection| (selection, SelectionSource::DecisionConnection))
+                        })
+                        .or_else(|| {
+                            main.provider.default_spotter_model().map(|model| {
+                                (
+                                    main_selection(main, model.to_string()),
+                                    SelectionSource::MainProvider,
+                                )
+                            })
+                        }) {
+                        Some((selection, source)) => Effective::resolved(selection, source),
                         // A custom endpoint has no cheap band to borrow and no
                         // catalog to read one from: whatever the operator pointed
                         // at is the whole domain, so the spotter has to be named
@@ -385,10 +391,35 @@ impl InferenceRegistry {
                             Effective::failed()
                         }
                     },
+                    // No main to borrow a provider from: the spotter is unresolvable
+                    // for a reason main's issue already states, so this adds no
+                    // second issue for one mistake.
                     None => Effective::failed(),
                 },
             },
         }
+    }
+
+    /// The spotter default where a decision model is reachable (docs/permissions.md):
+    /// the first loaded `typesafe` connection by name, else the first OpenRouter one.
+    /// First-party ahead of OpenRouter, whose decisions route is an alpha; by name
+    /// within a provider so the choice is the same on every host with this config.
+    fn decision_spotter(&self) -> Option<ModelSelection> {
+        [
+            crate::api::Provider::TypeSafe,
+            crate::api::Provider::OpenRouter,
+        ]
+        .into_iter()
+        .find_map(|provider| {
+            let (name, _) = self.connections.iter().find(|(_, connection)| {
+                connection.provider == provider && connection.credential.is_ok()
+            })?;
+            Some(ModelSelection {
+                connection: name.clone(),
+                provider,
+                model: provider.default_decision_model()?.to_string(),
+            })
+        })
     }
 
     /// The effective triage client is what a session would actually get: the
@@ -663,6 +694,15 @@ fn required<T>(effective: Effective<T>, field: &str) -> Result<T, Error> {
 
 #[cfg(test)]
 mod test;
+
+/// A spotter on the main connection, under `model`.
+fn main_selection(main: &ModelSelection, model: String) -> ModelSelection {
+    ModelSelection {
+        connection: main.connection.clone(),
+        provider: main.provider,
+        model,
+    }
+}
 
 /// Reject a selection whose provider serves no inference, for a role that needs
 /// it. Separate from `select` because the spotter role is exactly the one that

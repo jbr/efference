@@ -72,6 +72,7 @@ fn source_label(source: SelectionSource) -> &'static str {
         SelectionSource::Request => "you set",
         SelectionSource::UserDefault => "your default",
         SelectionSource::MainProvider => "main's provider",
+        SelectionSource::DecisionConnection => "decision model",
         SelectionSource::ProjectConfig => "project config",
         SelectionSource::ProviderDefault => "provider default",
         // Not "shares main": the triage row already renders that as its value,

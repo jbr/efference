@@ -296,6 +296,19 @@ impl Provider {
         }
     }
 
+    /// The decision model this provider serves, for the spotter default
+    /// (docs/permissions.md): any connection that can reach jev supplies it, ahead
+    /// of the main provider's cheap band. Floating aliases on both — the
+    /// first-party `jev-latest`, and OpenRouter's `~`-prefixed alias for it — so
+    /// a new jev version needs no new build.
+    pub fn default_decision_model(&self) -> Option<&'static str> {
+        match self {
+            Self::TypeSafe => Some("jev-latest"),
+            Self::OpenRouter => Some("~typesafe/jev-latest"),
+            Self::Anthropic | Self::OpenAI | Self::OpenAICodex | Self::Custom(_) => None,
+        }
+    }
+
     /// Parse a configured provider name. The vocabulary is closed because a provider
     /// selects the endpoint, auth shape, metadata lookup, and wire dialect together.
     pub fn from_name(value: &str) -> Result<Self, Error> {

@@ -613,17 +613,18 @@ async fn prepare_minting(
     // so the lookup is the existence check that fails boot instead of the first
     // permission decision.
     //
-    // A decision-model provider publishes no such metadata: there is no context
-    // window, output cap, or cache policy behind a decisions request
-    // (docs/permissions.md). Its model listing stands in for the existence check.
-    let checked = if spotter_endpoint.provider.serves_inference() {
-        spotter_endpoint
-            .fetch_capabilities(&spotter_model, &[])
-            .await
-            .map(drop)
-    } else {
-        spotter_endpoint.check_decision_model(&spotter_model).await
-    };
+    // A decision model has no such metadata: there is no context window, output
+    // cap, or cache policy behind a decisions request (docs/permissions.md), on
+    // either provider that serves one. Its own existence check stands in.
+    let checked =
+        if crate::spotter::jev::is_decision_spotter(spotter_endpoint.provider, &spotter_model) {
+            spotter_endpoint.check_decision_model(&spotter_model).await
+        } else {
+            spotter_endpoint
+                .fetch_capabilities(&spotter_model, &[])
+                .await
+                .map(drop)
+        };
     if let Err(error) = checked {
         return Err(format!(
             "spotter model {spotter_model:?} on {}: {error}",

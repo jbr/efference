@@ -21,6 +21,10 @@ behind a change, see [`journal/`](journal/).
   catalog routes, so what each credential can see is one run's output.
 
 ### Changed
+- **jev is the default spotter wherever it is reachable** (docs/permissions.md): with no
+  spotter named, a typesafe connection's `jev-latest`, else OpenRouter's
+  `~typesafe/jev-latest`, ahead of the main provider's cheap band. An OpenRouter-hosted
+  decision model now passes boot's existence check instead of failing its capability lookup.
 - **A decision-model spotter id is checked at boot** (docs/transport.md): a misspelled id
   fails session creation, naming the ids the provider lists, instead of failing every gate.
 - **The decisions route retries rate limits** (docs/transport.md): 429 and 5xx get three

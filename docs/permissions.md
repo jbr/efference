@@ -472,12 +472,21 @@ acting session can't check its own folly because it shares its own trajectory; t
 can, precisely because its context is built from scratch — *not* `project(log)`.
 
 Which model that is resolves in order: an explicit `--spotter-model`, then
-`[defaults].spotter`, then the connection's own `spotter-model`, then the arm's built-in
-default (`Provider::default_spotter_model`). The per-connection key sits below `[defaults]`
+`[defaults].spotter`, then the main connection's own `spotter-model`, then **jev on any
+connection that reaches it** — the first `typesafe` connection by name (`jev-latest`), else
+the first OpenRouter one (`~typesafe/jev-latest`) — then the main arm's built-in default
+(`Provider::default_spotter_model`). The per-connection key sits below `[defaults]`
 because it answers about *one* account's cheap band, which an account-wide default cannot;
-the arm's fallback is last because it is a guess about a catalog the harness no longer
-compiles — one id, and a stale one now costs a pricier spotter rather than a refusal
-(docs/operating.md).
+it sits above jev because a key someone wrote outranks one inferred from which providers
+are configured. Typesafe comes ahead of OpenRouter because OpenRouter's decisions route is
+an alpha. The arm's fallback is last because it is a guess about a catalog the harness no
+longer compiles — one id, and a stale one now costs a pricier spotter rather than a refusal
+(docs/operating.md). `preview` reports a jev default's source as `decision_connection`.
+
+Boot checks the spotter's id before any gate needs it. An inference model is looked up in
+its provider's capabilities; a decision model has none, so it is checked for existence
+instead — the first-party listing, or OpenRouter's per-model endpoints route, which answers
+404 for an id it does not serve (`Endpoint::check_decision_model`).
 
 ### Two rungs behind one trait
 

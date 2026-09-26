@@ -238,7 +238,8 @@ all is that a cheap band is an account's property, not a provider's.
 Each role leads with what it already is, so the cheapest answer is Enter. Leaving
 the main model unset says what that costs — sessions must then name
 `<connection>/<model>` themselves — because that is the one role a session cannot
-start without; an unset spotter falls back to the provider's cheap band and an
+start without; an unset spotter falls back to jev where a typesafe or OpenRouter
+connection exists, else to the provider's cheap band, and an
 unset triage shares the main client, so those are working configurations rather
 than gaps. Declining the whole visit is a complete answer and writes no
 `[defaults]` at all: `src/inference.rs` treats the table as optional, and an

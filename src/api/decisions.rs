@@ -200,12 +200,21 @@ pub(super) fn listed_decision_models(body: &str) -> Result<Vec<String>, Error> {
 }
 
 impl Endpoint {
-    /// Boot's existence check for a decision model on a provider that serves no
-    /// inference (docs/permissions.md). Such a provider publishes no capabilities
-    /// to look the id up in, so without this a misspelled id boots clean and then
-    /// fails every gate closed. The listing GET is authenticated, so this is the
+    /// Boot's existence check for a decision model (docs/permissions.md). A
+    /// decision model has no context window or output cap, so the capability
+    /// lookup that checks an inference model cannot check it; without this a
+    /// misspelled id boots clean and then fails every gate closed.
+    ///
+    /// On OpenRouter the model's endpoints route answers 2xx for an id it serves
+    /// (the `~typesafe/jev-latest` alias included) and 404 otherwise. The
+    /// first-party provider has no such route; its listing names every id,
+    /// aliases included, and the listing GET is authenticated, so it is the
     /// credential check too.
     pub async fn check_decision_model(&self, model: &str) -> Result<(), Error> {
+        if self.provider == Provider::OpenRouter {
+            let url = self.provider.capabilities_url(None, model)?;
+            return self.authed_get(&url).await.map(drop);
+        }
         let url = self.models_url().ok_or_else(|| -> Error {
             format!("provider {} publishes no model listing", self.provider).into()
         })?;

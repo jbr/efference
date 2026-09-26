@@ -783,7 +783,7 @@ openai-provider/validation.md).
 daemon never starts the loop on Responses (backlog: openai-provider/validation.md).
 OpenAI exposes no per-generation cost endpoint, so cost tracking stays off. The
 spotter model must be one its connection's metadata source knows: with no
-`[defaults].spotter`, the main connection's cheap band applies
+`[defaults].spotter` and no connection reaching jev, the main connection's cheap band applies
 (`Provider::default_spotter_model`, gpt-5.6-luna here, claude-haiku-4-5 on
 Anthropic and its `anthropic/` slug on OpenRouter), and an explicit `--spotter-model` passes its own provider's
 check. Model capabilities on this dialect come from the provider's catalog, not
@@ -1013,7 +1013,9 @@ host without an `anthropic` connection names the missing connection, never a
 native id on the default). Any other id, slashes included, resolves through
 `[defaults].model`'s connection; a native id equal to a connection name must be
 written qualified. Omitted `--model` takes `[defaults].model`; an omitted spotter
-takes `[defaults].spotter`, else the main connection's cheap band; an omitted
+takes `[defaults].spotter`, else the main connection's `spotter-model`, else jev on a
+connection that reaches it, else the main connection's cheap band
+([permissions.md](permissions.md)); an omitted
 triage takes `[defaults].triage`, else shares the main client. Defaults are
 written fully qualified, so adding a connection cannot reinterpret one. All three
 roles resolve before a session directory exists; a main/triage pair on different
