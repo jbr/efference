@@ -78,6 +78,14 @@ pub const DOCUMENTS: &[Document] = &[
         tools: &["read"],
     },
     Document {
+        slug: "advanced-config",
+        description: "What a setup can offer when the project calls for it: mounting efference \
+                      in another agent harness, secrets through [env], denying secret-bearing \
+                      files, Claude Code memories, watch-for.",
+        body: include_str!("../assets/guide/advanced-config.md"),
+        tools: &["read"],
+    },
+    Document {
         slug: "config-format",
         description: "Reference for every `efference.toml` key: scope, tools, [commands], \
                       [paths], [context], [env], [bash], [transport], [mcp.servers].",

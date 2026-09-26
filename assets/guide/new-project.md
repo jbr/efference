@@ -30,10 +30,11 @@ Then ask three things, and end your turn:
 3. whether there are any files you should stay out of. If the listing shows something
    likely to hold secrets (a `.env`, a `secrets/` directory), name it as an example.
 
-**If this is their first time with efference,** define each term the first time you use it
-— a session, a grant, the permission spotter, the preamble — in a clause, the way you would
-for a colleague seeing the tool for the first time. Someone who has used it before gets the
-terms without the definitions.
+**If this is their first time with efference,** tell them how it decides what a session
+may do before you ask about any of it — the questions only make sense with that picture
+(the next section is the explanation, in brief). After that, define each remaining term the
+first time you use it, in a clause. Someone who has used efference before gets the terms
+without the explanations.
 
 **Files they ask you to avoid are off limits for the rest of the session** — not read, not
 searched, not opened through a shell command — and each becomes a `deny` entry in the
@@ -47,7 +48,28 @@ report.
 session they start here with `efference` uses the new config, and that it can be changed by
 editing `efference.toml` or by asking a session to.
 
-The rest of this document is how to do the task in between.
+## How efference decides what a session may do
+
+This is what to tell a first-time user, in your own words and briefly; it is also why the
+interview asks what it asks.
+
+- **A session** is one agent working in one directory, with its own conversation and its own
+  copy of the project's config. Several can run at once; each keeps running if the window
+  showing it closes.
+- **Every tool call is checked before it runs.** A call the config grants outright — a
+  command in `[commands]`, a file tool on a path in `[paths]` — runs with no one asked.
+- **Anything else goes to the permission spotter**: a second, smaller model that reads the
+  call against the config's `scope`, a sentence saying what sessions here are for, and
+  either lets it run or holds it for the operator to approve. So grants decide what never
+  needs a second look, and the scope decides how the second look judges everything else.
+  A narrow grant with a clear scope is a working configuration; the spotter covers the gap.
+- **Triage** is the other model at work — use the word, since the transcript does. Every
+  tool result is read before it enters the
+  agent's context, and only the lines that matter are kept — "kept 6 of 12 lines" in the
+  transcript. The full output stays in the session's log. Nothing in `efference.toml`
+  configures it; it is worth a sentence so the transcript makes sense.
+- **The preamble** is what a session knows when it starts, before anyone says anything: the
+  scope, and the files and command output the config lists under `[context]`.
 
 ## Two files, two jobs
 
@@ -71,46 +93,67 @@ diverge freely. So:
 A malformed config is rejected whole rather than partially applied, and a rejected edit is
 reverted, so if a change does not seem to take, check that the file still parses.
 
-## How to do this task
+## The interview
 
-Half of a template is fact and half is preference, and they are found differently. The
-task runs in this order, across two of your turns:
+Half of a template is fact and half is preference, and they are found differently.
 
-1. **Survey the workspace yourself.** What the project is and how it builds and tests;
-   which files carry secrets (check variable *names*, never print values); what is
-   gitignored; which files a session would want to know before its first command; whether
-   a `CLAUDE.md` is present, and if so whether Claude Code's memory directory for this
-   workspace exists (below). Do not ask about any of this — you are inside the workspace.
-2. **Ask, then end your turn.** Say in a few lines what the survey found, then put the
-   operator's decisions (the list below) as questions — each one short, with the default
-   you would pick if they say "your call" — and stop there. Do not paste a draft of the
-   file: the file is what their answers produce, and a draft under the questions reads as
-   already decided. There is no ask tool; a turn that ends on the questions is how they
-   are asked, and the operator's next message answers them.
-3. **On your next turn, write the files** from the answers — `AGENTS.md` if the project
-   has none, then `efference.toml` — show them, and run `efference check`.
+**Look before you ask**, once they have said you may: enough to know what the project is,
+how it builds and tests, and how its source is laid out — the README, the build manifest
+(`Cargo.toml`, `package.json`, `pyproject.toml`), and a listing. That is the whole survey.
+Do not go looking for secrets, credentials, or other tools' data; the operator has already
+named what to avoid.
 
-If the operator said up front to proceed without questions, skip step 2's stop: write your
-defaults and list the decisions in your report.
+**Then ask, and end your turn.** Say in a few lines what you found, then ask the four
+questions below — each short, with the default you would pick if they say "your call" —
+and stop there. Do not paste a draft of the file: the file is what their answers produce,
+and a draft under the questions reads as already decided. There is no ask tool; a turn
+that ends on the questions is how they are asked. Ask them together, or one at a time for
+someone new to all this; their call either way.
 
-**What is the operator's to decide** (propose a default, don't settle it):
+1. **What should sessions be able to do without asking?** This becomes the `scope` — what
+   sessions here are for, in their words; draft it from the README, but it is theirs to
+   confirm — and the grants: the build tool (`cargo = true`), how much of `git` (read-only
+   by default, `"git push" = "deny"` either way unless they say otherwise), anything that
+   touches a network or a registry. The built-in tools are all granted by default
+   (`"efference.*"`); withholding one is their choice to make, not yours.
+2. **Are there directories outside this one that sessions should always reach, or places
+   inside it they should never touch?** A sibling checkout, a shared reference directory,
+   a generated tree. These become `[paths]` entries — `"../shared" = { read = true }`,
+   `"generated" = false` — beside `"." = true`. The files they asked you to avoid are
+   already in this list.
+3. **What should every session know when it starts?** The project's guide for agents is
+   the default: its existing `CLAUDE.md` or `AGENTS.md` if it has one, a new `AGENTS.md`
+   if not (below). Beyond that: files that should always ride along, and *dynamic* facts a
+   command can print fresh at each start — the current branch, a tool's version, what is
+   running. These become `[context]` entries.
+4. **Are there MCP servers or other external tools sessions should have?** A documentation
+   server, an issue tracker, a browser, a search tool. Nothing in the project says, and no
+   registry is trusted to suggest them, so ask; each becomes an `[mcp.servers]` stanza.
 
-- How broad the command grants are — `git = true` with `"git push" = "deny"`, or named
-  sub-verbs; whether sessions may commit; anything that touches a network or a registry.
-- Whether any built-in tool should be *withheld*. The default is all of them (below); a
-  narrower list is a choice the operator makes, not one to make for them.
-- Which MCP servers, if any, sessions should have connected (`[mcp.servers]`) — a
-  documentation server, an issue tracker, a browser. Ask; nothing in the workspace says.
-- What rides in the preamble beyond `AGENTS.md` (below), if anything — including whether
-  to share the Claude Code memories, when the survey found them.
-- The `scope` wording — what sessions in this project are *for* is theirs to say; you can
-  draft it from the README but not confirm it.
-- `watch-for`, if they want one at all (below).
+**On your next turn, write the files** from the answers — `AGENTS.md` only if the project
+has no guide for agents already, then `efference.toml` — show them, and run
+`efference check`.
 
-**What is yours to do** without asking: a deny carve-out for any secret-bearing file;
-grants for the project's own build tool; drafting `AGENTS.md` from the survey (below);
-keeping `.efference/` out of version control; comments in the file saying what each entry
-is for; running the check at the end.
+**Yours to do without asking:** a grant for the project's own build tool; listing the
+project's guide for agents, or drafting one; `deny` entries for the files they asked you to avoid; comments in the file
+saying what each entry is for; running the check at the end.
+
+## Things you can offer
+
+Some of what efference can do is not part of every setup, and belongs in the conversation
+only when something in the project, or something the operator says, points at it. Know
+that each is possible; read `efference://guide/advanced-config` for how, when one comes up.
+
+- **Another agent harness is in use here** — a `CLAUDE.md`, a `.claude/` or `.cursor/`
+  directory, an `.mcp.json`. Efference can be mounted in that harness as an MCP server, so
+  it can start, drive, and supervise efference sessions. Offer it.
+- **Secrets the project's own tools need** — an API key a test suite reads. The `[env]` table
+  can supply one from a password manager at session start without it ever being written
+  down, and keeps credentials out of the log and out of the commands a session runs.
+- **Claude Code has worked here** (`CLAUDE.md`). Its per-project memories can be listed for
+  efference sessions to read.
+- **A hazard the spotter should watch for** — deploy scripts, a production database URL.
+  `watch-for` names it for the spotter alone.
 
 ## A starter template
 
@@ -168,33 +211,24 @@ table, present and future, so it is the operator's call rather than a default.
 Nothing is picked up by name — an `AGENTS.md` or `CLAUDE.md` already in the repo rides only
 if listed here.
 
-**List `AGENTS.md`, and write it if the project has none.** A README is written for a
-person deciding whether to install the thing; a session needs what a new contributor is
-told on day one, in the order a session meets it: what the project is in two sentences,
+**List the project's guide for agents, and write one only if it has none.** A `CLAUDE.md`
+or `AGENTS.md` already in the repo is written for exactly this reader: list it as it is,
+under a label, rather than writing a second file beside it —
+
+```toml
+[context]
+ProjectGuide = { path = "CLAUDE.md" }
+```
+
+— and if it is missing something a session needs, say so and offer to add it there. With
+neither, draft an `AGENTS.md`. A README is written for a person deciding whether to install
+the thing; a session needs what a new contributor is told on day one, in the order a session meets it: what the project is in two sentences,
 how to build and test, the layout of the source and what each part owns, the conventions
 the code observes (formatting, where tests live, how errors are handled), and where the
 records are (changelog, docs). Draft it from the survey — a page at most, present tense,
 no praise — and show it with the config. Do not list the README alongside it: what the
-README says that a session needs belongs in `AGENTS.md`, and the rest is install and
-license text re-sent on every request.
-
-**Claude Code memories.** A `CLAUDE.md` in the repo means Claude Code has worked here, and
-it may have kept per-project memories at
-`~/.claude/projects/<workspace path with every "/" replaced by "-">/memory/` — for a
-workspace at `/home/<user>/code/<project>`, that is
-`~/.claude/projects/-home-<user>-code-<project>/memory/`. Each memory is one Markdown file
-with a frontmatter `description`, so listing the directory rides as one stub per memory,
-read on demand. The index file `MEMORY.md` is Claude Code's own and is excluded. Whether
-efference sessions should see them is the operator's call — they were written for another
-harness and may say things that are not true here — so ask, and if yes the entry is:
-
-```toml
-[context]
-Memories = { path = "/home/<user>/.claude/projects/-home-<user>-code-<project>/memory", exclude = ["MEMORY.md"] }
-```
-
-Read-only as written; `create = true` would let sessions add memories of their own there,
-which is a further question.
+README says that a session needs belongs in the guide, and the rest is install and license
+text re-sent on every request.
 
 List the files every session should have:
 
@@ -216,11 +250,10 @@ count.
 
 ## What to leave out
 
-- **Secrets.** Name a vault reference in `[env]` rather than a literal value; a resolved
-  reference is masked out of the log automatically.
-- **`watch-for`.** It is read only by the permission spotter and is never shown to the
-  session, which is the point of it. It is the operator's to set: if the survey turns up a
-  hazard worth naming, put it in the proposal, not the file.
+- **Secrets.** Never a literal value; `efference://guide/advanced-config` has the vault
+  reference, when one is needed at all.
+- **`watch-for`,** unless the operator asked for one. It is read only by the permission
+  spotter and never shown to the session, which is the point of it.
 - **Anything the session should discover for itself.** The preamble is frozen at boot and
   every byte of it is re-sent on every request.
 

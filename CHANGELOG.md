@@ -8,6 +8,11 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- **A setup session that interviews** (docs/context.md): a directory with no project config
+  opens a session granted the directory, scoped to setting it up, that asks whether the user
+  is new to efference, explains the spotter and triage if so, asks four questions, and writes
+  `efference.toml` — listing an existing `CLAUDE.md`/`AGENTS.md`, or drafting an `AGENTS.md`. `efference://guide/advanced-config` holds what it can
+  offer on request: mounting efference in another harness, `[env]` secrets, memories.
 - **`first-turn`** (docs/context.md): a config key whose text the harness sends as the opening
   turn of a session with an empty log, so the agent speaks first; neither client draws it. The
   scaffold for a directory with no project config carries one, with `new-project` inlined.
