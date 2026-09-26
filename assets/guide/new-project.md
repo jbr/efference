@@ -5,8 +5,8 @@ find out what the operator wants there.
 
 ## Two files, two jobs
 
-A session's policy and boot knowledge come from one TOML file. `efference serve` resolves
-it in this order: `--config <path>` (which must exist), else `efference.toml` in the
+A session's policy and boot knowledge come from one TOML file, resolved when the session
+is created, in this order: `--config <path>` (which must exist), else `efference.toml` in the
 working directory, else a scaffolded file with only an orientation entry in it. Nothing
 else is scanned — there is no `EFFERENCE.md` convention, no auto-loaded `CLAUDE.md`, no
 search for skill files.
@@ -196,7 +196,7 @@ count.
 ## Checking the result
 
 `efference check` (or `efference check <path>`) validates a template without minting a session: the parse and
-the same soundness checks `serve` runs at boot, then every `[context]` entry resolved from
+the same soundness checks a session runs at boot, then every `[context]` entry resolved from
 the current directory — `exec` entries do run — then every `[mcp.servers.*]` stanza mounted,
 so each server's advertised tools print against the file's `tools` grants. It prints what the file grants and the
 preamble's size, or the boot-time error. Stored MCP credentials are reused; a server needing

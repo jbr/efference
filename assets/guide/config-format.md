@@ -148,7 +148,7 @@ declares: on OpenRouter a level the model does not declare is refused at boot
 with the supported list (OpenRouter would otherwise map it to the nearest
 silently), and the provider default is printed on the boot line when nothing is
 set. Anthropic's metadata names no levels, so a misspelled one surfaces as the
-provider's own 400 on the first turn. `serve --effort` overrides this key, both
+provider's own 400 on the first turn. The `--effort` flag at session creation overrides this key, both
 are read once at session start, and neither can change mid-session. `xhigh` and
 `max` require thinking, so pairing either with `EFFERENCE_THINKING=off` is
 refused at startup.
