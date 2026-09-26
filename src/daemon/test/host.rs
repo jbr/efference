@@ -203,11 +203,9 @@ async fn a_network_host_previews_but_does_not_create() {
         "m"
     );
     assert!(host.ids().is_empty());
-    server
-        .post("/sessions")
-        .with_json_body(&serde_json::json!({"cwd": "/project", "env": {}}))
-        .await
-        .assert_status(403);
+    // Bodiless, as in `creation_validates_its_body_and_is_socket_only`: the refusal
+    // answers unread, and a body still being written races the connection's close.
+    server.post("/sessions").await.assert_status(403);
     host.swansong().shut_down().await;
 }
 
@@ -475,10 +473,13 @@ async fn creation_validates_its_body_and_is_socket_only() {
     );
     assert_eq!(host.ids(), ["one"]);
 
+    // Bodiless: the refusal answers without reading a body, so the in-memory server
+    // can finish and drop the connection while the client is still writing one, and
+    // the client's write fails before it reads the 403. The refusal does not depend
+    // on the body, so none is sent.
     let network = host_server(&host, false).await;
     network
         .post("/sessions")
-        .with_json_body(&base("fresh", &roots.0.join("two")))
         .await
         .assert_status(403)
         .assert_body_contains("Unix socket only");

@@ -105,10 +105,12 @@ async fn the_web_client_is_anonymous_and_the_api_is_not() {
     server.get("/sessions/work").await.assert_status(404);
     server.get("/sessions/work/tree").await.assert_status(404);
 
-    // A non-GET outside `/v1` fails closed at the gate.
+    // A non-GET outside `/v1` fails closed at the gate. JSON-typed, to pass the
+    // content-type check ahead of it, but bodiless: the gate answers without reading
+    // one, and a body still being written races the in-memory connection's close.
     server
         .post("/nonexistent")
-        .with_json_body(&serde_json::json!({}))
+        .with_request_header(KnownHeaderName::ContentType, "application/json")
         .await
         .assert_status(401);
 }
@@ -300,12 +302,12 @@ async fn unsafe_methods_enforce_origin_and_content_type() {
     let (server, _guard) = tcp_server(&auth).await;
     let bearer = format!("Bearer {}", auth.bearer());
 
-    // A cross-site Origin is rejected even with a valid credential.
+    // A cross-site Origin is rejected even with a valid credential. Bodiless for the
+    // same reason as the gate's 401 above: the rejection answers unread.
     server
         .post("/v1/turns")
         .with_request_header(KnownHeaderName::Authorization, bearer.clone())
         .with_request_header(KnownHeaderName::Origin, "https://evil.example")
-        .with_json_body(&serde_json::json!({ "text": "hi" }))
         .await
         .assert_status(403)
         .assert_body_contains(r#""code":"forbidden""#);
