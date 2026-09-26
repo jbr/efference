@@ -61,16 +61,18 @@ const KEEP_FIELDS: &str =
 ///
 /// - **The ask must be bounded.** "Every [call id] above" reads as the whole
 ///   conversation, and every prior `tool_result` on the canonical wire already carries a
-///   `[seq]` block-addressing tag in the same bracket syntax as a `[call id]` header. A
+///   `[seq]` block-addressing tag in the same bracket syntax the result headers once used
+///   for call ids. A
 ///   model deep in a session answered by re-triaging the entire transcript — twenty-odd
 ///   entries keyed by `[seq]` tags, its own dialect's internal tool names, and invented
 ///   ids — and the id actually under the gate was often not among them, so coverage
 ///   failed and the gate hard-errored. Saying what is *not* in scope is what stops it.
-/// - **A single-result gate should not ask for a call id at all.** Copying an id when
-///   only one result is in question is transcription with no decision in it, and it is
-///   the single most failure-prone token in the response. The flat top-level
+/// - **A single-result gate should not ask for a label at all.** Naming the result when
+///   only one is in question is transcription with no decision in it. The flat top-level
 ///   `keep`/`note` is asked for instead; the `results` array is for gates that genuinely
-///   carry several. The ids are interpolated in that case — the peek's tail is thrown
+///   carry several, keyed by the short labels of [`labels`](super::labels) rather than
+///   provider call ids, which models copied back with characters dropped. The labels
+///   are interpolated in that case — the peek's tail is thrown
 ///   away, so nothing here is cache-keyed (docs/log-and-projection.md), unlike the
 ///   static schema it drives.
 ///
@@ -91,20 +93,20 @@ const KEEP_FIELDS: &str =
 pub(super) fn retain_instruction(offered: &[String], riders: &[&str]) -> String {
     let v = AskVariant::from_env();
     let scope = "Nothing earlier in this conversation is being triaged — those results are \
-already decided, and their [n] tags are not call ids.";
+already decided, and their [n] tags are not result labels.";
     let shape = match offered {
         [_one] => format!(
             "The block above is the FULL, line-numbered output of the one call you just made. \
-{scope} Answer with a top-level `keep` and `note`: no `results` array and no call id, since \
+{scope} Answer with a top-level `keep` and `note`: no `results` array and no label, since \
 there is only one result in question."
         ),
         many => format!(
             "The blocks above are the FULL, line-numbered output of the {n} calls you just made, \
-each under a header naming its [call id]. Line numbers restart at 1 within each result, so ranges \
+each under a header naming its label. Line numbers restart at 1 within each result, so ranges \
 are always relative to the result you are deciding. {scope} Answer with exactly {n} `results` \
-entries, one per call id listed here and no others: [{ids}]. Copy each `call_id` exactly.",
+entries, one per label listed here and no others: {labels}.",
             n = many.len(),
-            ids = many.join("], ["),
+            labels = many.join(", "),
         ),
     };
     let fields: Vec<&str> = std::iter::once(KEEP_FIELDS)
@@ -437,20 +439,21 @@ pub(super) fn append_roster(view: &mut String, roster: &[Item]) {
 }
 
 /// One result's block in a peek view (docs/redaction-fork.md): a header naming the
-/// `[call id]` and tool, then the capped, line-numbered output.
+/// result's label ([`labels`](super::labels)) and tool, then the capped, line-numbered
+/// output.
 ///
 /// Numbering restarts at 1 in every block, and the header is what the `retain`
-/// verdict's `call_id` addresses. A gate can carry several results, so a single
+/// verdict's `result` addresses. A gate can carry several results, so a single
 /// continuous coordinate system would invite the model to keep lines from one result
 /// under another's verdict — a silent mis-attribution, since a wrong verdict renders
 /// exactly like a right one. Per-block numbering makes the coordinate systems visibly
 /// separate. The cap matches `render_distilled`'s, so the verdict's coordinates stay
 /// aligned with what the model saw.
-pub(super) fn result_view(call: &ToolCall, raw: &RawResult) -> String {
+pub(super) fn result_view(label: &str, call: &ToolCall, raw: &RawResult) -> String {
     let all: Vec<&str> = raw.content.lines().collect();
     let lines = &all[..all.len().min(PEEK_LINE_CAP)];
     let dropped = all.len() - lines.len();
-    let mut view = format!("═══ result · [{}] {} ═══\n", call.id.0, call.name);
+    let mut view = format!("═══ result {label} · {} ═══\n", call.name);
     // The call's `intent` (docs/tools.md), so the verdict's `note` answers the
     // question the call was asking rather than restating what the tool did. The two
     // are written at different times by different requests, which is what lets them
@@ -476,10 +479,10 @@ pub(super) fn result_view(call: &ToolCall, raw: &RawResult) -> String {
 /// the results that *are* in question invites a verdict on it.
 pub(super) fn bypassed_view(call: &ToolCall, shape: &str) -> String {
     format!(
-        "═══ result · [{}] {} ═══\nnot triaged — this result carries a {shape}, a value that \
+        "═══ result · {} ═══\nnot triaged — this result carries a {shape}, a value that \
          only works reproduced exactly, so its full output goes to you unchanged. It is not \
          one of the results you are deciding about below.",
-        call.id.0, call.name
+        call.name
     )
 }
 
@@ -525,7 +528,8 @@ pub(super) fn peek_messages(
     // Scoped to exactly this gate's ids, and shape-selected on its size — the tail is
     // discarded with the fork, so nothing here is cache-keyed (docs/redaction-fork.md).
     // A rider's field row is offered only when its section is actually above.
-    let offered = offered_ids(pending);
+    let labels = labels(pending);
+    let offered: Vec<String> = labels.iter().flatten().cloned().collect();
     let mut riders: Vec<&str> = Vec::new();
     if !inbox.is_empty() {
         riders.push(INBOX_FIELD);
@@ -549,12 +553,14 @@ pub(super) fn peek_messages(
     // already decided it (docs/redaction-fork.md), and the ask above does not offer it.
     let mut content: Vec<UserPart> = pending
         .iter()
-        .map(|p| UserPart::ToolResult {
+        .zip(&labels)
+        .map(|(p, label)| UserPart::ToolResult {
             call_id: p.call.id.clone(),
             seq: None,
-            content: match bypassed(p) {
-                Some(shape) => bypassed_view(p.call, shape),
-                None => result_view(p.call, p.raw),
+            content: match (bypassed(p), label) {
+                (Some(shape), _) => bypassed_view(p.call, shape),
+                (None, Some(label)) => result_view(label, p.call, p.raw),
+                (None, None) => unreachable!("labels() labels every unbypassed result"),
             },
             is_error: p.raw.is_error,
             images: Vec::new(),

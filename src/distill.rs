@@ -352,19 +352,17 @@ impl ForkPeek {
         if pending.is_empty() {
             return GateOutcome::default();
         }
-        // The ids this gate is asking about, in call order — the `retain` verdict's
-        // coordinate system, minus the results the shape rule bypassed. Coverage of
-        // every offered id is part of verdict *validity* ([`require_coverage`]): an
-        // incomplete verdict retries in-fork rather than leaving a result untriaged.
+        // The labels this gate is asking about, in call order — the `retain` verdict's
+        // coordinate system ([`labels`]), minus the results the shape rule bypassed.
+        // Coverage of every offered label is part of verdict *validity*
+        // ([`require_coverage`]): an incomplete verdict retries in-fork rather than
+        // leaving a result untriaged.
         if let Some(outcome) = bypassed_gate(pending) {
             return outcome;
         }
-        let offered = offered_ids(pending);
-        let shown_lines: Vec<(String, usize)> = pending
-            .iter()
-            .filter(|p| bypassed(p).is_none())
-            .map(|p| (p.call.id.0.clone(), shown_line_count(p.raw)))
-            .collect();
+        let labels = labels(pending);
+        let offered = offered_labels(pending);
+        let shown_lines = shown_lines(pending, &labels);
 
         let roster = surfaceable_roster(prefix);
         let messages = peek_messages(prefix, pending, inbox, background, &roster);
@@ -408,17 +406,22 @@ impl ForkPeek {
         };
 
         // Apply the model's verdicts in call order. Coverage was validated above, so
-        // every pending result finds its verdict; ids the model invented simply find
+        // every pending result finds its verdict; labels the model invented simply find
         // no home — the same harness-side guard applied to notification ids and
         // roster names below.
         let results = pending
             .iter()
-            .map(|p| match bypassed(p) {
+            .zip(&labels)
+            .map(|(p, label)| match bypassed(p) {
                 // Decided by the shape rule before the fork was consulted
                 // (docs/redaction-fork.md) — a `retain` entry for it, had the peek
                 // written one unasked, finds no home.
                 Some(shape) => bypass_verdict(shape),
-                None => match verdict.results.iter().find(|v| v.call_id == p.call.id.0) {
+                None => match verdict
+                    .results
+                    .iter()
+                    .find(|v| Some(&v.label) == label.as_ref())
+                {
                     Some(v) => {
                         let wire = WireState::Distilled(Distilled {
                             keep: v.keep.clone(),

@@ -116,8 +116,8 @@ fn an_incomplete_verdict_is_rejected_naming_the_missing_ids() {
         &retain_completion(
             RETAIN,
             json!({ "results": [
-                { "call_id": "a", "keep": "all" },
-                { "call_id": "b", "keep": "none", "note": "n" },
+                { "result": "a", "keep": "all" },
+                { "result": "b", "keep": "none", "note": "n" },
             ] }),
         ),
         &offered,
@@ -128,7 +128,7 @@ fn an_incomplete_verdict_is_rejected_naming_the_missing_ids() {
     let partial = parse_retain(
         &retain_completion(
             RETAIN,
-            json!({ "results": [{ "call_id": "a", "keep": "all" }] }),
+            json!({ "results": [{ "result": "a", "keep": "all" }] }),
         ),
         &offered,
     )
@@ -215,9 +215,9 @@ fn bounds_skip_keywords_and_unoffered_ids() {
         &retain_completion(
             RETAIN,
             json!({ "results": [
-                { "call_id": "a", "keep": "all" },
-                { "call_id": "b", "keep": "none" },
-                { "call_id": "ghost", "keep": "900-901" },
+                { "result": "a", "keep": "all" },
+                { "result": "b", "keep": "none" },
+                { "result": "ghost", "keep": "900-901" },
             ] }),
         ),
         &offered,
@@ -268,9 +268,9 @@ fn a_coverage_rejection_reports_what_was_answered() {
         &retain_completion(
             RETAIN,
             json!({ "results": [
-                { "call_id": "6", "keep": "all" },
-                { "call_id": "multi_tool_use.parallel", "keep": "all" },
-                { "call_id": "8", "keep": "all" },
+                { "result": "6", "keep": "all" },
+                { "result": "multi_tool_use.parallel", "keep": "all" },
+                { "result": "8", "keep": "all" },
             ] }),
         ),
         &offered,

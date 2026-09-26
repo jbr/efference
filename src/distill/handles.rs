@@ -70,16 +70,32 @@ pub(super) fn bypassed(pending: &Pending<'_>) -> Option<&'static str> {
     verbatim_handle(&pending.raw.content)
 }
 
-/// The call ids this gate asks about: every pending result the shape rule did not
-/// bypass. This is the verdict's coordinate system, so the bypassed ids appear in
-/// neither the ask nor the coverage check — the peek is never asked to decide
-/// something the harness already decided.
-pub(super) fn offered_ids(pending: &[Pending<'_>]) -> Vec<String> {
+/// Each pending result's label in the ask (docs/redaction-fork.md), in call order:
+/// `r1`, `r2`, … across the results the shape rule did not bypass, `None` for a bypassed
+/// one. This is the verdict's coordinate system — the peek view heads each block with its
+/// label and the verdict answers by label, mapped back to the call harness-side. The
+/// provider's call id never reaches the ask: it is a 24–36 character opaque string, and
+/// copying it back verbatim is a transcription task models fail at by dropping or
+/// altering characters, which withholds output the model had decided on.
+///
+/// A bypassed result gets no label, so it appears in neither the ask nor the coverage
+/// check — the peek is never asked to decide something the harness already decided.
+pub(super) fn labels(pending: &[Pending<'_>]) -> Vec<Option<String>> {
+    let mut n = 0;
     pending
         .iter()
-        .filter(|p| bypassed(p).is_none())
-        .map(|p| p.call.id.0.clone())
+        .map(|p| {
+            bypassed(p).is_none().then(|| {
+                n += 1;
+                format!("r{n}")
+            })
+        })
         .collect()
+}
+
+/// The labels this gate asks about: [`labels`] without the bypassed gaps.
+pub(super) fn offered_labels(pending: &[Pending<'_>]) -> Vec<String> {
+    labels(pending).into_iter().flatten().collect()
 }
 
 /// The harness's verdict on a bypassed result (docs/redaction-fork.md):

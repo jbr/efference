@@ -103,12 +103,9 @@ async fn peek_attempt(
     inbox: &[ShownNotification],
     background: &[BgView],
 ) -> Result<PeekAttempt, String> {
-    let offered = offered_ids(pending);
-    let shown_lines: Vec<(String, usize)> = pending
-        .iter()
-        .filter(|p| bypassed(p).is_none())
-        .map(|p| (p.call.id.0.clone(), shown_line_count(p.raw)))
-        .collect();
+    let labels = labels(pending);
+    let offered = offered_labels(pending);
+    let shown_lines = shown_lines(pending, &labels);
     let messages = peek_request(prefix, pending, inbox, background);
     let completion = client
         .complete(&messages, tools, choice, |_| {})
@@ -150,10 +147,18 @@ async fn peek_attempt(
                 first.and_then(|r| r.note.clone()),
                 v.results
                     .iter()
-                    .map(|r| ReplayVerdict {
-                        call_id: r.call_id.clone(),
-                        keep: r.keep.clone(),
-                        note: r.note.clone(),
+                    .filter_map(|r| {
+                        // Back from the ask's label to the call it stands for; a label
+                        // never offered has no call and no verdict to compare.
+                        let (p, _) = pending
+                            .iter()
+                            .zip(&labels)
+                            .find(|(_, l)| l.as_ref() == Some(&r.label))?;
+                        Some(ReplayVerdict {
+                            call_id: p.call.id.0.clone(),
+                            keep: r.keep.clone(),
+                            note: r.note.clone(),
+                        })
                     })
                     .collect(),
             )

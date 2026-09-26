@@ -161,19 +161,19 @@ fn parse_retain_keys_verdicts_by_call_id() {
         &retain_completion(
             RETAIN,
             json!({ "results": [
-                { "call_id": "a", "keep": "1-2", "note": "first" },
-                { "call_id": "invented", "keep": "all" },
+                { "result": "a", "keep": "1-2", "note": "first" },
+                { "result": "invented", "keep": "all" },
             ] }),
         ),
         &offered,
     )
     .expect("parses");
     assert_eq!(p.results.len(), 2);
-    let a = p.results.iter().find(|v| v.call_id == "a").unwrap();
+    let a = p.results.iter().find(|v| v.label == "a").unwrap();
     assert_eq!(a.keep, Keep::Ranges(vec![(1, 2)]));
     assert_eq!(a.note.as_deref(), Some("first"));
     assert!(
-        !p.results.iter().any(|v| v.call_id == "b"),
+        !p.results.iter().any(|v| v.label == "b"),
         "`b` was offered but never addressed — the caller keeps it uncurated, loudly"
     );
 }
@@ -186,7 +186,7 @@ fn flat_keep_is_adopted_only_for_a_single_result_gate() {
     let one = ["only".to_string()];
     let p = parse_retain(&retain_completion(RETAIN, json!({ "keep": "all" })), &one).unwrap();
     assert_eq!(p.results.len(), 1);
-    assert_eq!(p.results[0].call_id, "only");
+    assert_eq!(p.results[0].label, "only");
     assert_eq!(p.results[0].keep, Keep::All);
 
     let two = ["a".to_string(), "b".to_string()];
@@ -207,13 +207,13 @@ fn a_lone_mis_keyed_verdict_is_re_keyed_only_for_a_single_result_gate() {
     let p = parse_retain(
         &retain_completion(
             RETAIN,
-            json!({ "results": [{ "call_id": "functions.read", "keep": "1-4", "note": "n" }] }),
+            json!({ "results": [{ "result": "functions.read", "keep": "1-4", "note": "n" }] }),
         ),
         &one,
     )
     .unwrap();
     assert_eq!(p.results.len(), 1);
-    assert_eq!(p.results[0].call_id, "only");
+    assert_eq!(p.results[0].label, "only");
     assert_eq!(p.results[0].keep, Keep::Ranges(vec![(1, 4)]));
     assert!(require_coverage(p, &one).is_ok());
 
@@ -222,8 +222,8 @@ fn a_lone_mis_keyed_verdict_is_re_keyed_only_for_a_single_result_gate() {
         &retain_completion(
             RETAIN,
             json!({ "results": [
-                { "call_id": "wrong", "keep": "all" },
-                { "call_id": "alsowrong", "keep": "none" },
+                { "result": "wrong", "keep": "all" },
+                { "result": "alsowrong", "keep": "none" },
             ] }),
         ),
         &one,
@@ -235,16 +235,12 @@ fn a_lone_mis_keyed_verdict_is_re_keyed_only_for_a_single_result_gate() {
     let p = parse_retain(
         &retain_completion(
             RETAIN,
-            json!({ "results": [{ "call_id": "wrong", "keep": "all" }] }),
+            json!({ "results": [{ "result": "wrong", "keep": "all" }] }),
         ),
         &two,
     )
     .unwrap();
-    assert!(
-        !p.results
-            .iter()
-            .any(|v| v.call_id == "a" || v.call_id == "b")
-    );
+    assert!(!p.results.iter().any(|v| v.label == "a" || v.label == "b"));
 }
 
 /// A `Completion` whose assistant turn is prose only — the title peek's answer

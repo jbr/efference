@@ -21,6 +21,9 @@ behind a change, see [`journal/`](journal/).
   catalog routes, so what each credential can see is one run's output.
 
 ### Changed
+- **Triage verdicts key multi-result gates by short labels** (docs/redaction-fork.md): the
+  peek shows `r1`, `r2`, … and maps them back to calls, instead of asking the model to copy
+  provider call ids verbatim — mistyped ids were withholding results the model had decided.
 - **Web call signatures lay out at the column's width** (docs/web-client.md): a call fits
   on one line or breaks Prettier-style, a built-in's primary argument reads positionally
   (`read("a.rs", "b.rs")`), and only multi-line values (or ones past three lines at this

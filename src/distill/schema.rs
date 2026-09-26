@@ -75,7 +75,8 @@ pub(super) fn surfaced_schema_field() -> Value {
 /// top-level `keep`/`note`: naming the one call whose result is right there is
 /// transcription work with no decision in it, and the id it asks for is the id most
 /// likely to come back wrong. A gate carrying several is answered with the `results`
-/// array, where a `call_id` per entry is what makes the verdicts attributable.
+/// array, where a `result` label per entry (`r1`, `r2` — [`labels`](super::labels)) is
+/// what makes the verdicts attributable.
 /// Neither is `required`: the schema can't know the gate size, so the peek's tail
 /// instruction ([`retain_instruction`](super::retain_instruction)) names the shape.
 pub fn retain_tool() -> Value {
@@ -87,7 +88,7 @@ pub fn retain_tool() -> Value {
             "properties": {
                 "keep": {
                     "type": "string",
-                    "description": "The verdict when the harness asked about a single result: \"all\", \"none\", or comma-separated 1-based inclusive line ranges, e.g. \"40-52,310-318\" (a single line is \"7\"). No call id needed — there is only one result in question."
+                    "description": "The verdict when the harness asked about a single result: \"all\", \"none\", or comma-separated 1-based inclusive line ranges, e.g. \"40-52,310-318\" (a single line is \"7\"). No label needed — there is only one result in question."
                 },
                 "note": {
                     "type": "string",
@@ -103,9 +104,9 @@ pub fn retain_tool() -> Value {
                     "items": {
                         "type": "object",
                         "properties": {
-                            "call_id": {
+                            "result": {
                                 "type": "string",
-                                "description": "The [call id] of the result this entry decides, copied exactly from the header the harness showed it under."
+                                "description": "The label of the result this entry decides, from the header the harness showed it under, e.g. \"r1\"."
                             },
                             "keep": {
                                 "type": "string",
@@ -120,7 +121,7 @@ pub fn retain_tool() -> Value {
                                 "description": "Optional; omit almost always. One clause, only when this call's intent gave you nothing to decide against, saying what it lacked. About the intent, never about the task."
                             }
                         },
-                        "required": ["call_id", "keep"]
+                        "required": ["result", "keep"]
                     }
                 },
                 "inbox": inbox_schema_field(),

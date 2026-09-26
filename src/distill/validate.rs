@@ -2,8 +2,8 @@
 
 use super::*;
 
-/// Verdict validity includes **coverage** (docs/redaction-fork.md): every offered call
-/// id must be answered, or the verdict is rejected and retried in-fork. This gate has no
+/// Verdict validity includes **coverage** (docs/redaction-fork.md): every offered
+/// label must be answered, or the verdict is rejected and retried in-fork. This gate has no
 /// keep-all fallback, so a result silently left untriaged has nowhere to land.
 ///
 /// The rejection names what the verdict *did* answer, not only what it missed. Without
@@ -16,7 +16,7 @@ pub(super) fn require_coverage(
 ) -> Result<ParsedRetain, String> {
     let unanswered: Vec<&str> = offered
         .iter()
-        .filter(|id| !verdict.results.iter().any(|v| &v.call_id == *id))
+        .filter(|id| !verdict.results.iter().any(|v| &v.label == *id))
         .map(String::as_str)
         .collect();
     if unanswered.is_empty() {
@@ -28,7 +28,7 @@ pub(super) fn require_coverage(
             "[{}]",
             answered
                 .iter()
-                .map(|v| v.call_id.as_str())
+                .map(|v| v.label.as_str())
                 .collect::<Vec<_>>()
                 .join("], [")
         ),
@@ -47,6 +47,19 @@ pub(super) fn shown_line_count(raw: &RawResult) -> usize {
     raw.content.lines().count().min(PEEK_LINE_CAP)
 }
 
+/// Each offered label's shown line count, the bound table [`require_in_bounds`] checks
+/// against. `labels` is [`labels`](super::labels) for the same `pending`.
+pub(super) fn shown_lines(
+    pending: &[Pending<'_>],
+    labels: &[Option<String>],
+) -> Vec<(String, usize)> {
+    pending
+        .iter()
+        .zip(labels)
+        .filter_map(|(p, label)| Some((label.clone()?, shown_line_count(p.raw))))
+        .collect()
+}
+
 /// Verdict validity also includes **bounds** (docs/redaction-fork.md): a `keep` range
 /// lying wholly outside the shown line numbers is a coordinate mistake, not a decision
 /// (a peek adopting the file line numbers embedded in `grep -n` output as its retain
@@ -62,7 +75,7 @@ pub(super) fn shown_line_count(raw: &RawResult) -> usize {
 /// as a typo'd lower bound it means 1–5, and guessing either silently keeps the wrong
 /// lines.
 ///
-/// `shown` maps each offered call id to its shown line count; a verdict keyed to an id
+/// `shown` maps each offered label to its shown line count; a verdict keyed to a label
 /// that was never offered has no bound to check and passes through — the caller's
 /// reconciliation drops it, the same guard as everywhere else.
 pub(super) fn require_in_bounds(
@@ -73,7 +86,7 @@ pub(super) fn require_in_bounds(
         let Keep::Ranges(ranges) = &v.keep else {
             continue;
         };
-        let Some(&(_, n)) = shown.iter().find(|(id, _)| *id == v.call_id) else {
+        let Some(&(_, n)) = shown.iter().find(|(id, _)| *id == v.label) else {
             continue;
         };
         for &(s, e) in ranges {
@@ -85,7 +98,7 @@ pub(super) fn require_in_bounds(
             if s.min(e) == 0 {
                 return Err(format!(
                     "keep {range} for [{}] starts at 0 — the shown line numbers start at 1",
-                    v.call_id
+                    v.label
                 ));
             }
             if s.min(e) > n {
@@ -93,7 +106,7 @@ pub(super) fn require_in_bounds(
                     "keep {range} for [{}] is beyond the shown output, which has {n} \
                      lines — keep ranges index the line numbers shown, not numbers \
                      inside the output",
-                    v.call_id
+                    v.label
                 ));
             }
         }

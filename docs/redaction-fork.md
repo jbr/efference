@@ -18,14 +18,21 @@ request whenever a completion made more than one — the later calls have no res
 Running every call before opening the gate means the tail can answer all of them with
 real output, so nothing is orphaned and no placeholder is needed.
 
-Each result is rendered as its own block, headed by its `[call id]` and **numbering from
-1**. A single continuous coordinate system across results would invite the model to keep
+Each result is rendered as its own block, headed by a short **label** (`result r1 ·
+bash`) and **numbering from 1**. A single continuous coordinate system across results would invite the model to keep
 lines from one result under another's verdict — a mis-attribution that renders exactly
 like a correct verdict, so nothing downstream could detect it. A multi-result verdict is
-correspondingly an array keyed by `call_id`; a verdict naming an id that was never
-offered is dropped, the same harness-side guard applied to notification ids and roster
-names. A **single-result** gate — the overwhelming majority — asks for no id at all; see
+correspondingly an array keyed by label; a verdict naming a label that was never offered
+is dropped, the same harness-side guard applied to notification ids and roster names. A
+**single-result** gate — the overwhelming majority — asks for no label at all; see
 [the two answer shapes](#two-answer-shapes-and-one-scoped-ask) below.
+
+Labels are `r1`, `r2`, … over the gate's offered results in call order, assigned and
+mapped back to calls harness-side (`distill::labels`); the provider's call id stays on
+the `tool_result` pairing and never appears in the view or the ask. Keying by call id
+asks the model to copy back a 24–36 character opaque string, which verdicts got wrong
+by dropped or altered characters under both UUID-shaped and `call_…` ids; each miss
+failed coverage and withheld a result the model had decided on.
 
 The inbox, background tails, and surfacing roster are **gate-scoped** — decided once per
 step rather than per result — so they ride the trailing text block and their dispositions
@@ -72,8 +79,8 @@ handle-bearing format is one more entry in that list, not another mechanism.
 
 A matched result is **bypassed**:
 
-- Its call id is not in the gate's `offered` list, so the ask never mentions it and
-  coverage never requires a verdict for it.
+- It gets no label and is not in the gate's `offered` list, so the ask never mentions it
+  and coverage never requires a verdict for it.
 - Its block in the peek view is a stand-in — the call must still be answered or the
   request is invalid, but its output is not shown, since no verdict can change it.
 - Its wire form is `WireState::Raw`: the whole body reaches the model byte-for-byte.
@@ -291,33 +298,32 @@ concern (the field being written for a gate that can punish, [permissions.md](pe
 does not apply: triage cannot punish, so there is nothing to plead to. Its emission rate
 per session and per triage model is a reading of how often intents are degenerate.
 
-- **One result** — top-level `keep`/`note`, **no call id**. Naming the one call whose
-  output is right there is transcription with no decision in it, and it is the single
-  most failure-prone token in the response.
-- **Several results** — the `results` array, one entry per `call_id`. Here the id is the
-  only attribution there is, so it is asked for and the gate's ids are listed verbatim
-  in the ask.
+- **One result** — top-level `keep`/`note`, **no label**. Naming the one result whose
+  output is right there is transcription with no decision in it.
+- **Several results** — the `results` array, one entry per `result` label. Here the
+  label is the only attribution there is, so it is asked for and the gate's labels are
+  listed in the ask.
 
 Neither field is `required`; the harness accepts either shape for either size, because
 nothing enforces the schema and a parse failure costs a withheld result. On a
 single-result gate two id-free shapes resolve unambiguously and are adopted: a bare
-top-level `keep`, and a **lone** `results` entry whose `call_id` doesn't match, which is
-re-keyed onto the one offered id — with a single target there is nothing to
-mis-attribute *to*, so rejecting a decided verdict over a mistyped id withholds output
+top-level `keep`, and a **lone** `results` entry whose `result` doesn't match, which is
+re-keyed onto the one offered label — with a single target there is nothing to
+mis-attribute *to*, so rejecting a decided verdict over a mistyped label withholds output
 for nothing. Neither applies once several results are in flight.
 
 **The ask states what is out of scope.** Both shapes carry a line disowning the
 transcript behind them. The earlier phrasing — "every `[call id]` **above** must be
 answered" — is unbounded, and every prior `tool_result` on the canonical wire already
-carries a `[seq]` block-addressing tag (below) in the same bracket syntax as a
-`[call id]` header. Observed against a live model on a long transcript: it answered by
-re-triaging the whole conversation — twenty-odd entries keyed by `[seq]` tags, its own
-dialect's internal tool names (`functions.read`, `multi_tool_use.parallel`), and
-fabricated ids — with the gate's own id usually absent, so coverage failed, the retries
+carries a `[seq]` block-addressing tag (below) in the same bracket syntax the result
+headers then used for call ids. Observed against a live model on a long transcript: it
+answered by re-triaging the whole conversation — twenty-odd entries keyed by `[seq]`
+tags, its own dialect's internal tool names (`functions.read`, `multi_tool_use.parallel`),
+and fabricated ids — with the gate's own id usually absent, so coverage failed, the retries
 exhausted, and the result's output was withheld. The pull scaled with transcript length:
 clean early in a session, then most gates failing. Gates that happened to pass were no
 better, deciding the real result inside a pile of invented ones. Naming the count, the
-ids, and the exclusion is what bounds it.
+labels, and the exclusion is what bounds it.
 
 ## The `retain` verdict
 
@@ -539,10 +545,11 @@ content is prefixed `[<seq>] …` (e.g. `[2] file.txt`), a render-time tag requi
 no schema change. This is what makes "reread 14" / "branch from 14" / "compare to
 block 14" describable across the model wire, the TUI, and the control plane.
 
-These tags share their bracket syntax with the peek's `[call id]` headers, which is what
-made an unbounded peek ask resolve against them; the ask is scoped rather than the syntax
-changed, since `[n]` is the handle the agent, the TUI, and the control plane all use
-([two answer shapes](#two-answer-shapes-and-one-scoped-ask)).
+These tags once shared their bracket syntax with the peek's call-id headers, which is
+what made an unbounded peek ask resolve against them; the ask is scoped rather than the
+`[n]` syntax changed, since `[n]` is the handle the agent, the TUI, and the control plane
+all use ([two answer shapes](#two-answer-shapes-and-one-scoped-ask)). The peek's headers
+now carry unbracketed `r1` labels.
 
 The **stable `seq`** is used, not a positional wire-index. A positional count
 renumbers on elision or consolidation, which would bust the cache. `seq` is

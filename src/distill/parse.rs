@@ -2,13 +2,14 @@
 
 use super::*;
 
-/// The verdict on one result of a gate: which call it addresses, the structured
+/// The verdict on one result of a gate: which result it addresses (by its label —
+/// [`labels`](super::labels)), the structured
 /// `keep`, the optional `note`, and the model's exact pre-parse `keep` string (for
 /// that result's [`Triage`] audit entry).
 ///
 /// [`Triage`]: crate::log::Triage
 pub(super) struct ResultVerdict {
-    pub(super) call_id: String,
+    pub(super) label: String,
     pub(super) keep: Keep,
     pub(super) note: Option<String>,
     /// Triage's request for a better `intent`, when the one it was given left it
@@ -21,7 +22,7 @@ pub(super) struct ResultVerdict {
 /// gate-scoped inbox / background / surfacing dispositions (unfiltered — the caller
 /// drops ids it didn't show).
 pub(super) struct ParsedRetain {
-    /// Verdicts keyed by `call_id`. May be short, over-long, or carry ids that were
+    /// Verdicts keyed by label. May be short, over-long, or carry labels that were
     /// never offered — the caller reconciles against what it actually showed.
     pub(super) results: Vec<ResultVerdict>,
     pub(super) inbox: Vec<(Seq, Disposition)>,
@@ -33,7 +34,7 @@ pub(super) struct ParsedRetain {
 /// One entry of the `results` array the schema asks for.
 #[derive(Deserialize)]
 pub(super) struct ResultInput {
-    pub(super) call_id: String,
+    pub(super) result: String,
     pub(super) keep: String,
     #[serde(default)]
     pub(super) note: Option<String>,
@@ -140,18 +141,18 @@ pub(super) fn collect_dispositions(
 /// Pull the `retain` verdict out of the peek's completion. `None` when the turn
 /// didn't call `retain` (or called something else).
 ///
-/// `offered` is the call ids the peek actually showed, in order. It is used only to
-/// resolve verdicts that carry no usable id, both of which are unambiguous exactly when
+/// `offered` is the labels the peek actually showed, in order. It is used only to
+/// resolve verdicts that carry no usable label, both of which are unambiguous exactly when
 /// one result is in flight and are ignored otherwise:
 ///
 /// - a bare top-level `keep`/`note` — the **flat form**, which is what the tail
 ///   instruction asks for on a single-result gate;
-/// - a lone `results` entry whose `call_id` doesn't match, which is re-keyed to the one
-///   offered id. With a single target there is nothing to mis-attribute *to*, so
-///   rejecting a decided verdict over a mistyped id would withhold output the model
+/// - a lone `results` entry whose `result` doesn't match, which is re-keyed to the one
+///   offered label. With a single target there is nothing to mis-attribute *to*, so
+///   rejecting a decided verdict over a mistyped label would withhold output the model
 ///   plainly triaged (docs/redaction-fork.md).
 ///
-/// Verdicts naming an id that was never offered are otherwise left in place — the
+/// Verdicts naming a label that was never offered are otherwise left in place — the
 /// caller reconciles, the same harness-side guard used for invented notification ids
 /// and roster names (docs/redaction-fork.md).
 pub(super) fn parse_retain(completion: &Completion, offered: &[String]) -> Option<ParsedRetain> {
@@ -173,7 +174,7 @@ pub(super) fn parse_retain(completion: &Completion, offered: &[String]) -> Optio
     let mut verdicts: Vec<ResultVerdict> = results
         .into_iter()
         .map(|r| ResultVerdict {
-            call_id: r.call_id,
+            label: r.result,
             keep: parse_keep(&r.keep),
             note: r.note,
             intent_feedback: r.intent_feedback,
@@ -183,20 +184,20 @@ pub(super) fn parse_retain(completion: &Completion, offered: &[String]) -> Optio
     // Both id-free shapes resolve only against a single-result gate, and only when the
     // array didn't already answer it.
     if let [only] = offered
-        && !verdicts.iter().any(|v| v.call_id == *only)
+        && !verdicts.iter().any(|v| v.label == *only)
     {
         match (keep, verdicts.as_mut_slice()) {
             // Flat form — the shape the tail instruction asks for on a single gate.
             (Some(keep), _) => verdicts.push(ResultVerdict {
-                call_id: only.clone(),
+                label: only.clone(),
                 keep: parse_keep(&keep),
                 note,
                 intent_feedback,
                 raw_keep: keep,
             }),
-            // A lone keyed entry with the wrong id: unambiguous, so re-key it rather
+            // A lone keyed entry with the wrong label: unambiguous, so re-key it rather
             // than withhold a result the model plainly decided.
-            (None, [lone]) => lone.call_id = only.clone(),
+            (None, [lone]) => lone.label = only.clone(),
             (None, _) => {}
         }
     }

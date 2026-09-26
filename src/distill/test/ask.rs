@@ -128,30 +128,30 @@ fn roster_is_empty_without_a_preamble() {
     assert!(surfaceable_roster(&[]).is_empty());
 }
 
-/// A single-result gate asks for the flat form and names no call id at all: copying an
-/// id when only one result is in question is transcription with no decision in it, and
-/// it is the token most likely to come back wrong (docs/redaction-fork.md).
+/// A single-result gate asks for the flat form and names no label at all: naming the
+/// result when only one is in question is transcription with no decision in it
+/// (docs/redaction-fork.md).
 #[test]
-fn a_single_result_gate_asks_for_the_flat_form_and_no_call_id() {
-    let instruction = retain_instruction(&["call_abc123".to_string()], &[]);
+fn a_single_result_gate_asks_for_the_flat_form_and_no_label() {
+    let instruction = retain_instruction(&["r1".to_string()], &[]);
     assert!(
-        !instruction.contains("call_abc123"),
+        !instruction.contains("r1"),
         "nothing to copy: {instruction}"
     );
     assert!(instruction.contains("`keep` and `note`"));
     assert!(
-        instruction.contains("no `results` array and no call id"),
+        instruction.contains("no `results` array and no label"),
         "names the shape: {instruction}"
     );
 }
 
-/// A multi-result gate asks for the keyed form and interpolates exactly the ids this
+/// A multi-result gate asks for the keyed form and interpolates exactly the labels this
 /// gate offered — the tail is discarded with the fork, so nothing here is cache-keyed.
 #[test]
-fn a_multi_result_gate_lists_every_offered_id_and_the_count() {
-    let offered = ["call_a".to_string(), "call_b".to_string()];
+fn a_multi_result_gate_lists_every_offered_label_and_the_count() {
+    let offered = ["r1".to_string(), "r2".to_string()];
     let instruction = retain_instruction(&offered, &[]);
-    assert!(instruction.contains("[call_a], [call_b]"), "{instruction}");
+    assert!(instruction.contains("no others: r1, r2."), "{instruction}");
     assert!(
         instruction.contains("exactly 2 `results` entries"),
         "{instruction}"
@@ -159,16 +159,16 @@ fn a_multi_result_gate_lists_every_offered_id_and_the_count() {
 }
 
 /// Both shapes bound the ask to *this* gate. Every prior `tool_result` on the canonical
-/// wire carries a `[seq]` block-addressing tag in the same bracket syntax as a
-/// `[call id]` header, and an unbounded "every [call id] above" was read by a live model
+/// wire carries a `[seq]` block-addressing tag in the same bracket syntax the result
+/// headers once used for call ids, and an unbounded "every [call id] above" was read by a live model
 /// as "re-triage the whole transcript" — twenty-odd entries keyed by `[seq]` tags and
 /// invented ids, with the gate's own id missing, so coverage failed and the gate
 /// hard-errored (docs/redaction-fork.md).
 #[test]
 fn every_retain_ask_excludes_the_transcript_behind_it() {
     for offered in [
-        vec!["only".to_string()],
-        vec!["a".to_string(), "b".to_string()],
+        vec!["r1".to_string()],
+        vec!["r1".to_string(), "r2".to_string()],
     ] {
         let instruction = retain_instruction(&offered, &[]);
         assert!(
@@ -176,7 +176,7 @@ fn every_retain_ask_excludes_the_transcript_behind_it() {
             "the ask must say what is out of scope: {instruction}"
         );
         assert!(
-            instruction.contains("[n] tags are not call ids"),
+            instruction.contains("[n] tags are not result labels"),
             "and must disown the block-addressing tags: {instruction}"
         );
     }
@@ -315,8 +315,8 @@ fn intent_feedback_is_carried_in_both_answer_shapes_and_absent_by_default() {
         &retain_completion(
             RETAIN,
             json!({ "results": [
-                { "call_id": "a", "keep": "none", "intent_feedback": "no question to keep against" },
-                { "call_id": "b", "keep": "all" }
+                { "result": "a", "keep": "none", "intent_feedback": "no question to keep against" },
+                { "result": "b", "keep": "all" }
             ] }),
         ),
         &two,

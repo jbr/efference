@@ -55,8 +55,9 @@ fn a_gate_over_a_multi_call_step_answers_every_tool_use() {
         "both calls must be paired or the API rejects the request"
     );
 
-    // Each result carries its own header and restarts numbering at 1, so the model
-    // cannot address one result's lines under another's verdict.
+    // Each result carries its own labelled header and restarts numbering at 1, so the
+    // model cannot address one result's lines under another's verdict. The provider's
+    // call id stays on the pairing and out of the view: the verdict answers by label.
     let views: Vec<&str> = tail
         .content
         .iter()
@@ -65,8 +66,22 @@ fn a_gate_over_a_multi_call_step_answers_every_tool_use() {
             _ => None,
         })
         .collect();
-    assert!(views[0].contains("[search_2] search"), "{}", views[0]);
-    assert!(views[1].contains("[bash_3] bash"), "{}", views[1]);
+    assert!(
+        views[0].starts_with("═══ result r1 · search ═══"),
+        "{}",
+        views[0]
+    );
+    assert!(
+        views[1].starts_with("═══ result r2 · bash ═══"),
+        "{}",
+        views[1]
+    );
+    assert!(
+        !views
+            .iter()
+            .any(|v| v.contains("search_2") || v.contains("bash_3")),
+        "{views:?}"
+    );
     assert!(views[0].contains("     1\talpha") && views[0].contains("     2\tbeta"));
     assert!(
         views[1].contains("     1\tgamma"),
@@ -123,12 +138,12 @@ fn an_ordinary_result_still_goes_through_the_fork() {
         raw: &raw,
     }];
     assert!(bypassed_gate(&pending).is_none());
-    assert_eq!(offered_ids(&pending), vec!["read_1".to_string()]);
+    assert_eq!(offered_labels(&pending), vec!["r1".to_string()]);
 }
 
 /// A mixed gate still runs — the handle-bearing result is answered (an unpaired
-/// `tool_use` makes the request invalid) but with a stand-in, and only the other id is
-/// offered, so the peek is never asked to decide the one the harness already decided.
+/// `tool_use` makes the request invalid) but with a stand-in and no label, and only the
+/// other result is offered, so the peek is never asked to decide the one the harness already decided.
 #[test]
 fn a_handle_bearing_result_is_answered_but_never_offered() {
     let calls = [
@@ -162,7 +177,8 @@ fn a_handle_bearing_result_is_answered_but_never_offered() {
         bypassed_gate(&pending).is_none(),
         "one result still needs a verdict"
     );
-    assert_eq!(offered_ids(&pending), vec!["read_2".to_string()]);
+    assert_eq!(labels(&pending), vec![None, Some("r1".to_string())]);
+    assert_eq!(offered_labels(&pending), vec!["r1".to_string()]);
 
     let messages = wire(&peek_messages(&prefix, &pending, &[], &[], &[]));
     let tail = messages.last().expect("a tail message");
@@ -188,6 +204,8 @@ fn a_handle_bearing_result_is_answered_but_never_offered() {
         "the bypassed result answers with a stand-in, not its output: {}",
         blocks[0].1
     );
+    assert!(!blocks[0].1.contains("r1"), "{}", blocks[0].1);
+    assert!(blocks[1].1.starts_with("═══ result r1 · read ═══"));
     assert!(blocks[1].1.contains("     1\talpha"));
 
     let instruction = match tail.content.last() {
