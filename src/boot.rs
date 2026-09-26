@@ -66,16 +66,25 @@ pub const CONFIG_SCAFFOLD: &str = "\
 # The kickoff: in a session that has said nothing yet, the harness sends this as the opening
 # turn, so the agent speaks first (docs/context.md). Like the preamble, it is not shown as a
 # turn; what you see is the reply. Delete the line for a session that waits for you.
-first-turn = \"This is the operator's first session in this directory, which has no efference.toml. Greet them, say briefly what you can see of the project, and offer to set it up.\"
+first-turn = \"efference opened this session in a directory with no efference.toml, after the operator chose to set it up. They have not said anything yet.\"
 
-# The one command a session with no project config needs cleared: validating the template it
-# is about to write (docs/operating.md). Everything else goes through the spotter until granted.
+# A session here is setting the project up, which means reading it and writing efference.toml
+# and AGENTS.md into it: the built-in tools and the directory are granted so that work is not
+# a string of approvals. This session's own config (this file) stays review-only, and
+# `.efference/` stays denied, whatever is granted here (docs/permissions.md).
+tools = [\"efference.*\"]
+
+# The one command cleared by name: validating the template the session is about to write
+# (docs/operating.md). Every other command goes through the spotter.
 [commands]
 \"efference check\" = true
 
+[paths]
+\".\" = true
+
 # Orientation as config: this section's stdout is frozen into the session preamble at boot.
 [context]
-\"Environment at boot\" = { exec = 'echo \"working directory: $PWD\"; echo \"platform: $(uname -sm)\"; echo \"top-level entries:\"; ls' }
+\"Environment at boot\" = { exec = 'echo \"working directory: $PWD\"; echo \"platform: $(uname -sm)\"; git rev-parse --is-inside-work-tree >/dev/null 2>&1 && echo \"git: a repository\" || echo \"git: not a repository\"; echo \"top-level entries:\"; ls -A' }
 # The harness's own usage documents, listed as read-on-demand stubs. This is what makes a
 # session with no project config recoverable: it starts knowing how to learn everything
 # else, including how to write this file. Delete the line to stop listing them; the

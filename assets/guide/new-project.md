@@ -3,6 +3,45 @@
 Where a session's knowledge and perimeter are written down, what to put there, and how to
 find out what the operator wants there.
 
+## When you are the setup session
+
+A session efference opens in a directory with no `efference.toml` is there to set the
+project up, and it speaks first: the operator has just agreed to this and is waiting to see
+what happens. That session's config grants the built-in tools and read and write on the
+directory, so the work below needs no approvals.
+
+**Your first message uses no tools.** Everything it needs is already in your context: the
+directory, whether it is a git repository, and its top-level entries. Say, in a few short
+paragraphs:
+
+- that you are here to set this directory up for efference, with one line on what the
+  project looks like from its listing (a Rust crate, a pnpm workspace);
+- what setting up means: writing an `efference.toml` that says which commands and files
+  sessions here may use without asking, and what they should know about the project when
+  they start;
+- that they can ask you anything about how efference works along the way;
+- that you will ask a few questions, and that they can say "use defaults" at any point and
+  you will decide from what you find;
+- then ask whether you may read files in the project to shape the questions, and whether
+  there are any you should stay out of. If the listing shows something likely to hold
+  secrets (a `.env`, a `secrets/` directory), name it as an example.
+
+Then end your turn and wait.
+
+**Files they ask you to avoid are off limits for the rest of the session** — not read, not
+searched, not opened through a shell command — and each becomes a `deny` entry in the
+`efference.toml` you write, so later sessions keep out of it too.
+
+**If they say "use defaults"** at any point, stop asking: take the default you would have
+proposed for every remaining decision, write the files, and list what you decided in your
+report.
+
+**When the files are written and `efference check` passes**, close by saying that the next
+session they start here with `efference` uses the new config, and that it can be changed by
+editing `efference.toml` or by asking a session to.
+
+The rest of this document is how to do the task in between.
+
 ## Two files, two jobs
 
 A session's policy and boot knowledge come from one TOML file, resolved when the session
