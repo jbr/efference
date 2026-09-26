@@ -988,11 +988,11 @@ cold-streak classification.
 
 A decision model also publishes no per-model capabilities: there is no context
 window, output cap, or cache policy behind a decisions request. `capabilities_url`
-errors for it, and boot skips the spotter capability lookup on a provider that
-serves no inference — so a misspelled decision-model id surfaces at the first gate
-rather than at boot. That direction is fail-closed (the gate routes to the human),
-but it is worse feedback than boot failure, and the auth half is still checked via
-`key_check_url`.
+errors for it. Boot instead checks the id against the provider's model listing
+(`GET /v1/models`, shaped `{"models": [{"name": …}]}`, aliases like `jev-latest`
+listed by name), so a misspelled decision-model id fails session creation naming the
+ids that exist, rather than booting clean and failing every gate closed. The listing
+GET is authenticated, so it is the credential check too.
 
 **Host-owned connections (`src/inference.rs`).** A host names its connections in
 `~/.efference/config.toml`, read from the host's startup `HOME` — a secret-free

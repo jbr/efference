@@ -660,8 +660,8 @@ impl Provider {
                 .into()),
             // A decision model has no context window, output cap, or cache policy
             // to look up: the request is one state and a set of questions, and the
-            // only per-model fact is whether the id exists. Boot checks that with
-            // `key_check_url` instead (docs/permissions.md).
+            // only per-model fact is whether the id exists. Boot checks that against
+            // the model listing instead (`Endpoint::check_decision_model`).
             Self::TypeSafe => {
                 Err("typesafe models report no inference capabilities to fetch".into())
             }
@@ -1521,7 +1521,7 @@ impl Endpoint {
     /// A GET that must answer 2xx: every metadata and credential read on the boot
     /// path, where any other status is a failure to report. The transport is
     /// [`Self::probe`]'s, so these reads carry the same identity a turn does.
-    async fn authed_get(&self, url: &str) -> Result<String, Error> {
+    pub(in crate::api) async fn authed_get(&self, url: &str) -> Result<String, Error> {
         let response = self.probe(url).await?;
         match response.status {
             Some(status) if (200..300).contains(&status) => Ok(response.body),

@@ -181,7 +181,46 @@ struct DecisionsRequest<'a> {
     session_id: Option<&'a str>,
 }
 
+/// The names a decisions provider's model listing offers. The first-party
+/// listing is `{"models": [{"name": …}]}` — neither the OpenAI `data[].id` shape
+/// nor anything the custom-endpoint listing parse reads — and it names aliases
+/// (`jev-latest`) alongside versions, so a configured alias matches exactly.
+pub(super) fn listed_decision_models(body: &str) -> Result<Vec<String>, Error> {
+    #[derive(Deserialize)]
+    struct Listing {
+        models: Vec<Entry>,
+    }
+    #[derive(Deserialize)]
+    struct Entry {
+        name: String,
+    }
+    let listing: Listing = serde_json::from_str(body)
+        .map_err(|e| -> Error { format!("could not parse the model listing: {e}").into() })?;
+    Ok(listing.models.into_iter().map(|m| m.name).collect())
+}
+
 impl Endpoint {
+    /// Boot's existence check for a decision model on a provider that serves no
+    /// inference (docs/permissions.md). Such a provider publishes no capabilities
+    /// to look the id up in, so without this a misspelled id boots clean and then
+    /// fails every gate closed. The listing GET is authenticated, so this is the
+    /// credential check too.
+    pub async fn check_decision_model(&self, model: &str) -> Result<(), Error> {
+        let url = self.models_url().ok_or_else(|| -> Error {
+            format!("provider {} publishes no model listing", self.provider).into()
+        })?;
+        let listed = listed_decision_models(&self.authed_get(&url).await?)?;
+        if listed.iter().any(|name| name == model) {
+            return Ok(());
+        }
+        Err(format!(
+            "{} lists no model {model:?}; it lists {}",
+            self.provider,
+            listed.join(", ")
+        )
+        .into())
+    }
+
     /// Ask `model` the `questions` about `state`.
     ///
     /// Unlike the streaming routes this is one request and one body, so there is

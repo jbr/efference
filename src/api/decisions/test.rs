@@ -176,3 +176,15 @@ async fn a_long_retry_after_is_not_waited_out() {
         started.elapsed()
     );
 }
+
+/// The first-party listing's shape, as `GET /v1/models` answered on 2026-09-25:
+/// aliases are listed by name, so a configured `jev-latest` matches exactly.
+#[test]
+fn the_decisions_listing_names_aliases() {
+    let body = r#"{"models":[{"name":"jev-latest","description":"The latest iteration","release_date":"2026-09-10T18:38:01.391457+00:00"},{"name":"jev-preview","description":"A preview","release_date":"2026-09-10T18:39:06.057655+00:00"}]}"#;
+    assert_eq!(
+        listed_decision_models(body).expect("parses"),
+        vec!["jev-latest".to_string(), "jev-preview".to_string()]
+    );
+    assert!(listed_decision_models(r#"{"data":[]}"#).is_err());
+}

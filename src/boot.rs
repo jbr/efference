@@ -615,14 +615,16 @@ async fn prepare_minting(
     //
     // A decision-model provider publishes no such metadata: there is no context
     // window, output cap, or cache policy behind a decisions request
-    // (docs/permissions.md). Nothing stands in for the existence check there, so a
-    // misspelled model id surfaces at the first gate — fail-closed, which routes to
-    // the human rather than clearing.
-    if spotter_endpoint.provider.serves_inference()
-        && let Err(error) = spotter_endpoint
+    // (docs/permissions.md). Its model listing stands in for the existence check.
+    let checked = if spotter_endpoint.provider.serves_inference() {
+        spotter_endpoint
             .fetch_capabilities(&spotter_model, &[])
             .await
-    {
+            .map(drop)
+    } else {
+        spotter_endpoint.check_decision_model(&spotter_model).await
+    };
+    if let Err(error) = checked {
         return Err(format!(
             "spotter model {spotter_model:?} on {}: {error}",
             spotter_endpoint.provider
