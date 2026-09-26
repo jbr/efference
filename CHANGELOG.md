@@ -8,6 +8,9 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- **Islands** (docs/operating.md): with no host running, `efference` and `efference tui` start
+  a host owned by the terminal, create a session here, and attach; quitting or killing the TUI
+  ends the host and reaps its sessions' processes, and no other client affects its lifetime.
 - **Model discovery for both OpenAI arms** (docs/transport.md): capabilities come from the
   subscription backend's own catalog — context window, reasoning levels, input modalities —
   cached per connection for five minutes, so a model published after this build resolves as

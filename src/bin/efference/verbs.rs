@@ -21,6 +21,17 @@ pub(crate) async fn tui_new(
     images: efference::tui::ImageMode,
     frame_cost: bool,
 ) -> CliResult {
+    let id = create_here(&host_socket, name, flags).await?;
+    attach_created(&host_socket, &id, theme, images, frame_cost, false).await
+}
+
+/// Create a session in this directory, with this process's environment, on the
+/// host at `host_socket`; returns its id.
+pub(crate) async fn create_here(
+    host_socket: &Path,
+    name: Option<String>,
+    flags: SessionFlags,
+) -> Result<String, CliError> {
     let cwd = std::env::current_dir()?;
     let env = efference::env_table::EnvSnapshot::capture()?.into_entries();
     let triage = flags.triage();
@@ -38,7 +49,7 @@ pub(crate) async fn tui_new(
     } = flags;
     let request = efference::daemon::CreateSession {
         name,
-        cwd: cwd.clone(),
+        cwd,
         config,
         options: efference::inference::SessionOptions {
             model,
@@ -57,19 +68,34 @@ pub(crate) async fn tui_new(
         env,
     };
     eprintln!("creating a session on {}…", host_socket.display());
-    let id = ControlClient::new(&host_socket)
+    Ok(ControlClient::new(host_socket)
         .create_session(&request)
-        .await?;
+        .await?)
+}
+
+/// Attach the TUI to a session this process just created in its own directory.
+pub(crate) async fn attach_created(
+    host_socket: &Path,
+    id: &str,
+    theme: Option<String>,
+    images: efference::tui::ImageMode,
+    frame_cost: bool,
+    owns_host: bool,
+) -> CliResult {
     // The session dir is where the host minted it: `<cwd>/.efference/<id>`, the
     // same layout boot uses (docs/control-channel.md), so the attachment store
     // resolves as at a socket attach.
-    let attachments = efference::attachments::dir_for_session(&cwd.join(session_dir(&id)));
+    let cwd = std::env::current_dir()?;
+    let attachments = efference::attachments::dir_for_session(&cwd.join(session_dir(id)));
     efference::tui::run(
-        ControlClient::at(host_socket, &format!("/sessions/{id}")),
+        ControlClient::at(host_socket.to_path_buf(), &format!("/sessions/{id}")),
         theme,
         images,
         frame_cost,
-        Some(attachments),
+        efference::tui::Attached {
+            attachments_dir: Some(attachments),
+            owns_host,
+        },
     )
     .await?;
     Ok(())
@@ -90,6 +116,16 @@ pub(crate) async fn tui(
     let attachments = target
         .session_dir()
         .map(|dir| efference::attachments::dir_for_session(&dir));
-    efference::tui::run(target.client(), theme, images, frame_cost, attachments).await?;
+    efference::tui::run(
+        target.client(),
+        theme,
+        images,
+        frame_cost,
+        efference::tui::Attached {
+            attachments_dir: attachments,
+            owns_host: false,
+        },
+    )
+    .await?;
     Ok(())
 }

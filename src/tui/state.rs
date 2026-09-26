@@ -508,6 +508,9 @@ pub(super) struct InteractiveState<'a> {
     /// threshold is written here and described by the daemon's watcher (docs/inbox.md); the TUI
     /// never announces an attachment itself, so paste and drag-in are one path.
     pub attachments_dir: Option<std::path::PathBuf>,
+    /// This client launched the host and quitting it ends the host (docs/operating.md),
+    /// so the strip's leaving verb reads `quit` rather than `detach`.
+    pub owns_host: bool,
     /// Optimistic echoes of just-submitted user turns, in submission order, awaiting
     /// the committed `User` log entry that confirms them (docs/tui.md).
     ///

@@ -142,7 +142,8 @@ running `efference host` (the first live of `.efference/host.sock` here and
 `~/.efference/host.sock`, or `--host-socket <path>`) from this
 directory, this shell's environment, `--name`, and the session flags,
 then attaches under `/sessions/<id>/`; quitting detaches, and the session stays on the host
-([control-api.md](control-api.md)). Without `--new`, `tui --name <id>` attaches to that
+([control-api.md](control-api.md)). With no host running, it starts an island instead
+(below). Without `--new`, `tui --name <id>` attaches to that
 session whether it runs on the host or on its own socket. Without `--new`, a session flag is an error rather than
 silently ignored.
 
@@ -158,8 +159,27 @@ session is the only row, so the other entries stay visible; the cursor starts on
 row, so attaching to it is one Enter. Sessions the same hosts hold in other directories are
 counted in a line above the menu rather than listed — attaching from here to a session
 rooted elsewhere would put the TUI's directory and the session's out of step. With no host
-listening and no session on its own socket, the prompt is replaced by the sockets that were
-tried and the `efference host` command that binds one. Esc leaves without attaching. Where
+listening and no session on its own socket, there is nothing to pick, and the TUI starts an
+island. Esc leaves without attaching.
+
+**Islands** (`src/bin/efference/island.rs`, `src/daemon/island.rs`). A TUI that finds no host
+runs its own: `efference host --island` as a child process, a session created in this
+directory from the host's defaults, and the TUI attached to it. Nothing outlives the TUI.
+The host is a separate process from birth: its own OS session (`setsid`), so the terminal's
+Ctrl-C and hangup never reach it; stdout and stderr to `host.log`, so nothing it prints lands
+over the full-screen UI; and stdin a pipe the TUI holds and never writes. That pipe is the
+ownership connection. The kernel closes it however the TUI ends — quitting, a crash, SIGKILL —
+and the host reads EOF and shuts down as a signal would, reaping every session's processes
+([supervisor.md](supervisor.md)). Owner loss is watched from before the host initializes, so
+a TUI that dies during startup leaves nothing running. No other client carries ownership: a
+second TUI, the web client, or an agent attaching and leaving does not extend or end the
+island. Until the TUI takes the screen, the launcher echoes `host.log` — the boot report,
+and the reason when the host refuses to start or creation fails. Each island lives in
+`~/.efference/islands/<launcher pid>/` (`host.sock`, `host.log`), which the host removes on a
+clean exit and leaves in place when it fails. The strip's leaving verb reads `quit` rather
+than `detach` in the owning TUI. The web bind's environment fallbacks (`EFFERENCE_BIND` and
+its family) are withheld from the island, which is Unix-socket-only. Islands are not in
+host discovery: a second client reaches one by its socket path. Where
 stdin or stdout is not a terminal there is nothing to draw in, and the invocation resolves
 as it would with an explicit target.
 
@@ -185,7 +205,8 @@ different matter: sessions exist by then, and it is re-read in place
 The boot report and the sidebar's SESSION section name each role by connection.
 
 **First run: `efference setup`** (`src/setup.rs`). A bare `efference` on a machine
-with no `~/.efference/config.toml` runs it; with one, it says what to run next.
+with no `~/.efference/config.toml` runs it; with one, it is `efference tui` — the picker,
+or an island when no host is running.
 Setup is a sequence of inline terminal prompts, not a full-screen view, and it
 needs no host and no model: it is the one path that has to work before any
 inference is configured. Per connection it asks the provider, a name, and where

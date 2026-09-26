@@ -193,22 +193,6 @@ fn escape_is_cancelled_rather_than_a_pick() {
     assert_eq!(pick(&mut script, &menu, &here()), Err(Cancelled));
 }
 
-/// No host is a message naming both sockets and the command that binds one,
-/// rather than a bare resolution error.
-#[test]
-fn no_host_names_what_was_tried_and_what_to_run() {
-    let message = no_host_message(&[
-        PathBuf::from(".efference/host.sock"),
-        PathBuf::from("/home/someone/.efference/host.sock"),
-    ]);
-    assert!(message.contains(".efference/host.sock"), "{message}");
-    assert!(
-        message.contains("/home/someone/.efference/host.sock"),
-        "{message}"
-    );
-    assert!(message.contains("`efference host`"), "{message}");
-}
-
 #[test]
 fn a_path_under_home_is_written_with_a_tilde() {
     let home = Some(Path::new("/home/someone"));

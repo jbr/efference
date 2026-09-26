@@ -108,6 +108,7 @@ impl<'a> InteractiveState<'a> {
             submit_tx,
             recall_tx,
             attachments_dir: None,
+            owns_host: false,
             continue_tx,
             pending_turns: Vec::new(),
             pending_gate: None,

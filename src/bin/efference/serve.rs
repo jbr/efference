@@ -284,12 +284,28 @@ pub(crate) async fn spotter_check(
 /// clients look for after their own directory; `socket` (the global `--socket`)
 /// binds elsewhere — `.efference/host.sock` for a project-local host
 /// (docs/control-channel.md).
-pub(crate) async fn host(bind_flags: BindFlags, socket: Option<PathBuf>) -> CliResult {
-    let bind = resolve_bind(bind_flags)?;
+///
+/// `island` binds the host's life to the process that launched it: stdin is the
+/// ownership connection, watched from before anything else initializes
+/// ([`efference::daemon::island`]).
+pub(crate) async fn host(
+    bind_flags: BindFlags,
+    socket: Option<PathBuf>,
+    island: bool,
+) -> CliResult {
     let socket = match socket {
         Some(socket) => socket,
         None => user_host_socket().ok_or("no HOME to place ~/.efference/host.sock under")?,
     };
+    let owner = island.then(|| {
+        let socket = socket.clone();
+        efference::daemon::island::OwnerWatch::spawn(std::io::stdin(), move || {
+            // No sessions exist yet, so there is nothing to wind down.
+            efference::daemon::island::remove_island_files(&socket);
+            std::process::exit(0);
+        })
+    });
+    let bind = resolve_bind(bind_flags)?;
     if let Some(dir) = socket.parent().filter(|dir| !dir.as_os_str().is_empty()) {
         std::fs::create_dir_all(dir)?;
     }
@@ -305,7 +321,14 @@ pub(crate) async fn host(bind_flags: BindFlags, socket: Option<PathBuf>) -> CliR
     let secrets = std::sync::Arc::new(efference::secrets::Secrets::detect()?);
     let inference = efference::inference::InferenceRegistry::load(&host_cwd, host_env, &secrets)?;
     refuse_broken_connections(&inference)?;
-    daemon::serve_host(efference::daemon::Host::new(inference), socket, bind).await?;
+    let host = efference::daemon::Host::new(inference);
+    if let Some(owner) = &owner {
+        owner.adopt(host.swansong());
+    }
+    daemon::serve_host(host, socket.clone(), bind).await?;
+    if island {
+        efference::daemon::island::remove_island_files(&socket);
+    }
     Ok(())
 }
 

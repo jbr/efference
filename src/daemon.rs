@@ -1161,6 +1161,7 @@ mod test;
 
 mod frontend;
 mod host;
+pub mod island;
 mod paths;
 mod review;
 mod runtime;

@@ -1,6 +1,6 @@
 //! `efference setup` — the interactive first-run path (docs/operating.md), and
-//! what a bare `efference` does: setup when there is no configuration, a
-//! pointer to the next verb when there is.
+//! what a bare `efference` does: setup when there is no configuration,
+//! `efference tui` when there is.
 
 use super::*;
 use efference::setup::{Existing, LiveProbe, Prompter as _, Tone, terminal::Terminal};
@@ -12,19 +12,20 @@ fn default_config_path() -> Result<PathBuf, CliError> {
 }
 
 /// Bare `efference`: setup on a machine with no configuration, otherwise the
-/// two commands that start a session.
+/// session picker, which starts a terminal-owned host when none is running.
 pub(crate) async fn default_verb() -> CliResult {
     let path = default_config_path()?;
     if !path.exists() {
         return run(Some(path)).await;
     }
-    eprintln!(
-        "efference is configured ({}). Start a host with `efference host`, then \
-         `efference tui --new` in a project directory. `efference setup` adds a \
-         connection; `efference --help` lists the verbs.",
-        path.display()
-    );
-    Ok(())
+    // Configured: the same as `efference tui` with nothing named — pick a
+    // session here, or with no host running, start one for this terminal.
+    let images = match std::env::var("EFFERENCE_IMAGES") {
+        Ok(value) => <ImagesArg as clap::ValueEnum>::from_str(&value, true)
+            .map_err(|error| format!("EFFERENCE_IMAGES: {error}"))?,
+        Err(_) => ImagesArg::default(),
+    };
+    picker::run(std::env::var("EFFERENCE_THEME").ok(), images.into(), false).await
 }
 
 /// The verb: ask, render, show, write.

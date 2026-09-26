@@ -30,6 +30,22 @@ fn strip_is_always_present_and_never_empty() {
     play.snapshot("strip_idle_set");
 }
 
+/// The island owner's leaving verb ends the host with it, so it reads `quit`;
+/// it is the same verb in the same place, bound to the same key.
+#[test]
+fn owning_the_host_labels_the_leaving_verb_quit() {
+    let mut play = Screenplay::new(80, 10);
+    play.state.owns_host = true;
+    play.user("hello");
+    assert_eq!(
+        labels(&play),
+        vec!["pace", "sessions", "theme", "help", "quit"]
+    );
+    let leave = play.state.strip_items().pop().unwrap();
+    assert_eq!(leave.verb, StripVerb::Detach);
+    assert_eq!(leave.hint, "q");
+}
+
 /// The context verbs swap with the state while the tail stays put — the tail is
 /// omnipresent, so a state change never costs the operator `pace`/`theme`/
 /// `help`/`detach`.

@@ -50,6 +50,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             tls_cert,
             tls_key,
             open,
+            island,
         } => {
             serve::host(
                 serve::BindFlags {
@@ -60,6 +61,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     open,
                 },
                 socket_override.clone(),
+                island,
             )
             .await
         }
@@ -104,9 +106,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             images,
             frame_cost,
         } => {
-            let host_socket = match host_socket {
-                Some(host_socket) => host_socket,
-                None => cli::live_host()?,
+            let Some(host_socket) = host_socket.or_else(cli::live_host) else {
+                return island::run(cli.name.clone(), session, theme, images.into(), frame_cost)
+                    .await;
             };
             tui_new(
                 host_socket,
@@ -161,6 +163,7 @@ mod dev;
 mod dev_models;
 #[cfg(feature = "dev")]
 mod inference;
+mod island;
 
 #[cfg(feature = "dev")]
 mod paint;

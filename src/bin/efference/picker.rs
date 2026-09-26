@@ -152,19 +152,6 @@ pub(crate) fn under_home(path: &Path, home: Option<&Path>) -> String {
     }
 }
 
-/// What to say when nothing is listening: the sockets that were tried and the
-/// command that binds one. Starting a host from here is where an island will
-/// belong (docs/control-channel.md).
-pub(crate) fn no_host_message(candidates: &[PathBuf]) -> String {
-    let tried: Vec<String> = candidates.iter().map(|host| tilde(host)).collect();
-    format!(
-        "no efference host is running (looked for {}).\n\
-         Start one with `efference host` in a terminal you can leave running, \
-         then run `efference tui` again.",
-        tried.join(" and ")
-    )
-}
-
 /// The verb: gather what the live hosts hold here, ask, and hand off to the
 /// path the explicit flag would have taken.
 pub(crate) async fn run(
@@ -191,10 +178,9 @@ pub(crate) async fn run(
         if let Ok(target) = resolve_client_target(None, None).await {
             return tui(target, theme, images, frame_cost).await;
         }
-        // Printed and exited rather than returned: the message is two lines of
-        // instruction, and a returned error reaches the terminal escaped.
-        eprintln!("{}", no_host_message(&candidates));
-        std::process::exit(1);
+        // Nothing to pick from and nowhere to create: start a host owned by
+        // this terminal and create here (docs/operating.md).
+        return island::run(None, SessionFlags::default(), theme, images, frame_cost).await;
     }
     let menu = menu(&listings, &here);
     // Without a terminal to draw in there is nothing to ask with; resolve the

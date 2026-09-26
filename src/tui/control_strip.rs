@@ -133,6 +133,12 @@ impl InteractiveState<'_> {
         }
         let mut items = self.strip_context_verbs();
         items.extend(TAIL);
+        if self.owns_host
+            && let Some(leave) = items.iter_mut().find(|i| i.verb == StripVerb::Detach)
+        {
+            // Nothing outlives this client, so there is nothing to detach from.
+            leave.label = "quit";
+        }
         items
     }
 

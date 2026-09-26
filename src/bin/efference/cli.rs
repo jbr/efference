@@ -21,7 +21,8 @@ pub(crate) struct Cli {
     #[arg(long, global = true)]
     pub(crate) socket: Option<PathBuf>,
     /// Omitted, `efference` runs `setup` when there is no host configuration
-    /// yet, and otherwise says what to run next.
+    /// yet, and otherwise is `efference tui`: pick a session here, or with no
+    /// host running, start one owned by this terminal.
     #[command(subcommand)]
     pub(crate) command: Option<Command>,
 }
@@ -55,21 +56,9 @@ pub(crate) fn host_candidates() -> Vec<PathBuf> {
 }
 
 /// The host a verb that needs one live now talks to (`tui --new`): the first
-/// live candidate, else an error naming what was tried.
-pub(crate) fn live_host() -> Result<PathBuf, CliError> {
-    let candidates = host_candidates();
-    if let Some(host) = candidates.iter().find(|host| is_live(host)) {
-        return Ok(host.clone());
-    }
-    let tried: Vec<String> = candidates
-        .iter()
-        .map(|host| host.display().to_string())
-        .collect();
-    Err(format!(
-        "no host is running (tried {}) — start one with `efference host`, or pass --host-socket",
-        tried.join(", ")
-    )
-    .into())
+/// live candidate. `None` is where a terminal-owned island starts instead.
+pub(crate) fn live_host() -> Option<PathBuf> {
+    host_candidates().into_iter().find(|host| is_live(host))
 }
 
 /// The host a mount addresses (`control`, `mcp`): the first live candidate, else
@@ -522,6 +511,11 @@ pub(crate) enum Command {
         /// Open the operator's browser at the bootstrap link once bound.
         #[arg(long, requires = "bind")]
         open: bool,
+        /// Run as a terminal-owned island: stdin is the launcher's ownership
+        /// connection, and its closing shuts the host down (docs/control-channel.md).
+        /// Set by the launcher, not typed.
+        #[arg(long, hide = true)]
+        island: bool,
     },
     /// Drive a running session from a script: send turns, resolve approvals, read state.
     ///
@@ -566,7 +560,8 @@ pub(crate) enum Command {
     /// as its id — and attaches to it. Quitting
     /// detaches; the session keeps running on the host.
     Tui {
-        /// Create a session on the host at --host-socket, then attach to it.
+        /// Create a session on the host at --host-socket, then attach to it. With
+        /// no host running, starts one owned by this terminal, which ends with it.
         #[arg(long)]
         new: bool,
         /// The host's control socket. Defaults to the first live of

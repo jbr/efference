@@ -142,8 +142,10 @@ minted, builds a `SessionRequest` carrying the resolved endpoints, runs
 `boot::prepare`, starts the runtime, and adopts it. The `Host` is constructed with
 the registry its launch loaded; the sessions mutex is not held across creation. Its
 boot report goes to the host's stderr, and an MCP authorization opens a browser
-on the host's machine; an island host launched by a TUI will need
-that output captured (backlog/host-process.md).
+on the host's machine. An island host's stderr is its `host.log`, which the
+launching TUI echoes until it takes the screen ([operating.md](operating.md));
+its lifetime is bound to the launcher by a pipe on its stdin rather than by any
+connection to this socket (`src/daemon/island.rs`).
 
 ## The route set
 

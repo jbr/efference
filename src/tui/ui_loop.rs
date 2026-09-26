@@ -23,9 +23,9 @@ pub(super) fn ui_loop(
     // every normal run; the readout is not reproducible, so nothing that snapshots
     // can turn it on.
     frame_cost: bool,
-    // This session's attachment store (docs/inbox.md), or `None` for a run with no session
-    // behind it — the gallery and the read-only view.
-    attachments_dir: Option<std::path::PathBuf>,
+    // The default for a run with no session behind it — the gallery and the
+    // read-only view.
+    attached: super::run::Attached,
 ) -> io::Result<Exit> {
     // Build the render context: interactive TTY, sized to the terminal.
     let width = crossterm::terminal::size()
@@ -78,7 +78,8 @@ pub(super) fn ui_loop(
     terminal.clear()?;
 
     let mut state = InteractiveState::new(events, senders, render_context, theme);
-    state.attachments_dir = attachments_dir;
+    state.attachments_dir = attached.attachments_dir;
+    state.owns_host = attached.owns_host;
     if let Some(label) = viewing {
         state.set_viewing(label);
     }

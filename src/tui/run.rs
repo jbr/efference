@@ -16,19 +16,17 @@ pub async fn run(
     theme: Option<String>,
     images: ImageMode,
     frame_cost: bool,
-    // This session's attachment store (docs/inbox.md) — where a paste past the inline
-    // threshold is written. `None` disables the routing and pastes inline as before.
-    attachments_dir: Option<std::path::PathBuf>,
+    attached: Attached,
 ) -> Result<()> {
     let mut client = client;
-    let mut attachments_dir = attachments_dir;
+    let mut attached = attached;
     loop {
         match attach(
             client.clone(),
             theme.clone(),
             images,
             frame_cost,
-            attachments_dir.clone(),
+            attached.clone(),
         )
         .await?
         {
@@ -37,7 +35,7 @@ pub async fn run(
                 client = client.with_prefix(&format!("/sessions/{id}"));
                 // The host mints a session's directory under its own cwd
                 // (docs/control-channel.md), which is what the listing carries.
-                attachments_dir = cwd.map(|cwd| {
+                attached.attachments_dir = cwd.map(|cwd| {
                     crate::attachments::dir_for_session(
                         &std::path::Path::new(&cwd)
                             .join(crate::daemon::SESSION_BASE)
@@ -49,6 +47,19 @@ pub async fn run(
     }
 }
 
+/// What this client is to the sessions it attaches, as opposed to how it draws them.
+#[derive(Debug, Clone, Default)]
+pub struct Attached {
+    /// The session's attachment store (docs/inbox.md) — where a paste past the
+    /// inline threshold is written. `None` disables the routing and pastes inline.
+    /// Re-derived on a session switch.
+    pub attachments_dir: Option<std::path::PathBuf>,
+    /// This client launched the host, and quitting it ends the host with every
+    /// session on it (docs/operating.md): the island owner. `detach` would be
+    /// false there, so the strip says `quit`.
+    pub owns_host: bool,
+}
+
 /// One attach: open the stream, run the UI, and tear every task down on the way
 /// out. Returns why the loop ended.
 async fn attach(
@@ -56,7 +67,7 @@ async fn attach(
     theme: Option<String>,
     images: ImageMode,
     frame_cost: bool,
-    attachments_dir: Option<std::path::PathBuf>,
+    attached: Attached,
 ) -> Result<Exit> {
     // Validate the theme up front, before the alt-screen takes over, so a bad
     // name surfaces a clean error (with the list) instead of a silent fallback.
@@ -226,15 +237,7 @@ async fn attach(
 
     // The crossterm UI loop is blocking — run it off the async runtime.
     let ui = tokio::task::spawn_blocking(move || {
-        ui_loop(
-            rx,
-            senders,
-            theme,
-            images,
-            None,
-            frame_cost,
-            attachments_dir,
-        )
+        ui_loop(rx, senders, theme, images, None, frame_cost, attached)
     });
 
     let result = ui.await.context("the TUI thread panicked")?;
@@ -331,7 +334,15 @@ async fn run_offline(
     });
 
     let ui = tokio::task::spawn_blocking(move || {
-        ui_loop(rx, senders, theme, images, viewing, frame_cost, None)
+        ui_loop(
+            rx,
+            senders,
+            theme,
+            images,
+            viewing,
+            frame_cost,
+            Attached::default(),
+        )
     });
     let result = ui.await.context("the TUI thread panicked")?;
 
