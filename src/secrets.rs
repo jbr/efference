@@ -291,17 +291,17 @@ mod security_cli {
     const NOT_FOUND: i32 = 44;
 
     pub fn get(name: &str) -> Result<Option<String>, String> {
-        let output = Command::new("security")
-            .args([
-                "find-generic-password",
-                "-s",
-                super::SERVICE,
-                "-a",
-                name,
-                "-w",
-            ])
-            .stdin(Stdio::null())
-            .output()
+        let mut cmd = Command::new("security");
+        cmd.args([
+            "find-generic-password",
+            "-s",
+            super::SERVICE,
+            "-a",
+            name,
+            "-w",
+        ])
+        .stdin(Stdio::null());
+        let output = crate::spawn::std_output(&mut cmd)
             .map_err(|error| format!("could not run security: {error}"))?;
         if output.status.code() == Some(NOT_FOUND) {
             return Ok(None);
@@ -321,13 +321,14 @@ mod security_cli {
     /// existing item in place.
     pub fn set(name: &str, value: &str) -> Result<(), String> {
         let script = super::security_script(name, value);
-        let mut child = Command::new("security")
-            .arg("-i")
-            .stdin(Stdio::piped())
-            .stdout(Stdio::null())
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(|error| format!("could not run security: {error}"))?;
+        let mut child = crate::spawn::std(
+            Command::new("security")
+                .arg("-i")
+                .stdin(Stdio::piped())
+                .stdout(Stdio::null())
+                .stderr(Stdio::piped()),
+        )
+        .map_err(|error| format!("could not run security: {error}"))?;
         child
             .stdin
             .take()
@@ -347,11 +348,12 @@ mod security_cli {
     }
 
     pub fn delete(name: &str) -> Result<(), String> {
-        let output = Command::new("security")
-            .args(["delete-generic-password", "-s", super::SERVICE, "-a", name])
-            .stdin(Stdio::null())
-            .output()
-            .map_err(|error| format!("could not run security: {error}"))?;
+        let output = crate::spawn::std_output(
+            Command::new("security")
+                .args(["delete-generic-password", "-s", super::SERVICE, "-a", name])
+                .stdin(Stdio::null()),
+        )
+        .map_err(|error| format!("could not run security: {error}"))?;
         if output.status.success() || output.status.code() == Some(NOT_FOUND) {
             return Ok(());
         }

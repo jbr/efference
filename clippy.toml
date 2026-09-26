@@ -1,0 +1,11 @@
+# Every child process goes through the spawn lock (src/spawn.rs): on macOS an
+# unserialized spawn can hand its child another spawn's pipe, stalling that
+# command's reader until the stranger exits.
+disallowed-methods = [
+    { path = "std::process::Command::spawn", reason = "spawn through crate::spawn (src/spawn.rs)" },
+    { path = "std::process::Command::output", reason = "use crate::spawn::std_output (src/spawn.rs)" },
+    { path = "std::process::Command::status", reason = "spawn through crate::spawn (src/spawn.rs)" },
+    { path = "tokio::process::Command::spawn", reason = "spawn through crate::spawn (src/spawn.rs)" },
+    { path = "tokio::process::Command::output", reason = "spawn through crate::spawn (src/spawn.rs)" },
+    { path = "tokio::process::Command::status", reason = "spawn through crate::spawn (src/spawn.rs)" },
+]

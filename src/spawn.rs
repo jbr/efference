@@ -23,7 +23,18 @@ pub fn std(cmd: &mut std::process::Command) -> io::Result<std::process::Child> {
     let _serialized = SPAWN
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
+    // The one sanctioned spawn: the lock above is held (clippy.toml).
+    #[allow(clippy::disallowed_methods)]
     cmd.spawn()
+}
+
+/// `Command::output` under the process-wide spawn lock: stdout and stderr piped
+/// and collected, as `output` does. `output` spawns internally, so a call to it
+/// is a spawn outside the lock.
+pub fn std_output(cmd: &mut std::process::Command) -> io::Result<std::process::Output> {
+    cmd.stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    std(cmd)?.wait_with_output()
 }
 
 /// Spawn a `tokio` command under the process-wide spawn lock. `tokio`'s `spawn`
@@ -33,5 +44,7 @@ pub fn tokio(cmd: &mut tokio::process::Command) -> io::Result<tokio::process::Ch
     let _serialized = SPAWN
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
+    // The one sanctioned spawn: the lock above is held (clippy.toml).
+    #[allow(clippy::disallowed_methods)]
     cmd.spawn()
 }
