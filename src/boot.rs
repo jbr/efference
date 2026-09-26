@@ -66,6 +66,10 @@ pub const CONFIG_SCAFFOLD: &str = "\
 # The kickoff: in a session that has said nothing yet, the harness sends this as the opening
 # turn, so the agent speaks first (docs/context.md). Like the preamble, it is not shown as a
 # turn; what you see is the reply. Delete the line for a session that waits for you.
+# What this session is for. The permission spotter judges each move against it, so an
+# ordinary look around the project reads as part of the task (docs/permissions.md).
+scope = \"Set this project up for efference: look over the project to learn how it is built and laid out, ask the operator what they want sessions here to be allowed and to know, and write efference.toml and AGENTS.md at the project root. Stay out of any file the operator asks you to avoid.\"
+
 first-turn = \"efference opened this session in a directory with no efference.toml, after the operator chose to set it up. They have not said anything yet.\"
 
 # A session here is setting the project up, which means reading it and writing efference.toml
