@@ -20,12 +20,14 @@ use crate::api::{Provider, WireDialect};
 
 mod defaults;
 mod flow;
+mod handoff;
 mod manage;
 mod probe;
 mod render;
 pub mod terminal;
 
 pub use flow::run;
+pub use handoff::offer_project_setup;
 pub use probe::{ChatGptLogin, KeyReport, LiveProbe, ModelListing, ModelReport, Probe, Target};
 pub use render::{render, write};
 
@@ -541,7 +543,7 @@ pub(crate) struct ProviderCard {
     pub(crate) env_key: Option<&'static str>,
 }
 
-pub(crate) const PROVIDERS: [ProviderCard; 5] = [
+pub(crate) const PROVIDERS: [ProviderCard; 6] = [
     ProviderCard {
         provider: Some(Provider::Anthropic),
         label: "Anthropic",
@@ -565,6 +567,12 @@ pub(crate) const PROVIDERS: [ProviderCard; 5] = [
         label: "ChatGPT subscription",
         detail: "your Plus or Pro plan",
         env_key: None,
+    },
+    ProviderCard {
+        provider: Some(Provider::TypeSafe),
+        label: "TypeSafe",
+        detail: "decision models for the permission spotter, beside a provider for the agent",
+        env_key: Some("TYPESAFE_API_KEY"),
     },
     ProviderCard {
         provider: None,

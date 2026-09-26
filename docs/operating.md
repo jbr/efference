@@ -205,16 +205,23 @@ different matter: sessions exist by then, and it is re-read in place
 The boot report and the sidebar's SESSION section name each role by connection.
 
 **First run: `efference setup`** (`src/setup.rs`). A bare `efference` on a machine
-with no `~/.efference/config.toml` runs it; with one, it is `efference tui` — the picker,
-or an island when no host is running.
+with no `~/.efference/config.toml` runs it. With one, a directory holding neither an
+`efference.toml` nor any session gets the hand-off question below; any other is
+`efference tui` — the picker, or an island when no host is running.
 Setup is a sequence of inline terminal prompts, not a full-screen view, and it
 needs no host and no model: it is the one path that has to work before any
 inference is configured. Per connection it asks the provider, a name, and where
 the credential comes from — and stops there. **Adding a connection asks nothing
 about models.** Which endpoints are configured and which model each role runs are
 separate questions, and folding the second into the first asked it once per
-connection while answering it at most once. Defaults have their own editor,
-visited once at the end of a first run.
+connection while answering it at most once. A first run then asks one more
+thing: the model sessions use by default, on a connection that can take a turn —
+not skippable, since a file with no main model starts no session. The spotter and
+triage roles are not asked: each has a default that runs, and a new user cannot
+yet know what either is. The defaults editor reaches all three from the
+management list. `TypeSafe` is on the provider menu as a decision-model provider
+backing the spotter; since it takes no turns, a first run that adds only it is
+asked for another provider before the model question.
 The credential source is an environment variable (prefilled with the provider's
 conventional name), a key pasted now and kept in the OS credential store as
 `inference:<name>` ([secrets.md](secrets.md); the file then records only
@@ -226,6 +233,21 @@ provider, never written), a key to be kept is checked before it is kept,
 Anthropic offers its model listing as a menu, and a chosen model is described
 from the same metadata boot reads. A rejected key or an unknown model
 is said and can be kept.
+
+**The hand-off** (`src/setup/handoff.rs`). After writing the file, setup asks
+whether to set up the current directory now, defaulting to yes, and says what that
+entails first: an agent session that looks over the project, asks a few questions,
+and writes `efference.toml`, billed as ordinary use of the default model it names.
+The wizard is free up to that point, and the question keeps the change to billed
+use from happening unannounced. Yes creates a session here — on a running host, or
+on an island — and with no project config it is the setup profile. No exits,
+saying to run `efference` in the project to set up; the same question is asked on
+every later bare `efference` in a directory with no project config and no sessions,
+so setup run in the wrong directory is recovered by changing directory. A
+connection whose variable is not set in setup's own shell skips the question: the
+host would refuse to launch, so setup says to export it and run `efference` in the
+project. The prompts draw on `/dev/tty` when stdout is a pipe, which is what
+`op run` makes it.
 
 **An endpoint with no name in this build.** The provider menu's last entry is
 "Something else", for an endpoint speaking a dialect efference already has an

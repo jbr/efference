@@ -152,6 +152,22 @@ pub(crate) fn under_home(path: &Path, home: Option<&Path>) -> String {
     }
 }
 
+/// Every live host's session listing, in candidate order.
+pub(crate) async fn live_listings() -> Result<Vec<(PathBuf, Vec<SessionSummary>)>, CliError> {
+    let mut listings = Vec::new();
+    for host in host_candidates() {
+        if !is_live(&host) {
+            continue;
+        }
+        let sessions = ControlClient::new(&host)
+            .sessions()
+            .await
+            .map_err(|error| format!("listing {}: {error}", host.display()))?;
+        listings.push((host, sessions));
+    }
+    Ok(listings)
+}
+
 /// The verb: gather what the live hosts hold here, ask, and hand off to the
 /// path the explicit flag would have taken.
 pub(crate) async fn run(
@@ -160,18 +176,7 @@ pub(crate) async fn run(
     frame_cost: bool,
 ) -> CliResult {
     let here = std::env::current_dir()?;
-    let candidates = host_candidates();
-    let mut listings: Vec<(PathBuf, Vec<SessionSummary>)> = Vec::new();
-    for host in &candidates {
-        if !is_live(host) {
-            continue;
-        }
-        let sessions = ControlClient::new(host)
-            .sessions()
-            .await
-            .map_err(|error| format!("listing {}: {error}", host.display()))?;
-        listings.push((host.clone(), sessions));
-    }
+    let listings = live_listings().await?;
     if listings.is_empty() {
         // A session on its own socket needs no host, so the discovery path
         // still gets its chance before the message about binding one.

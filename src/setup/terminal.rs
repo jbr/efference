@@ -1,5 +1,6 @@
 //! The [`Prompter`] for a real terminal (docs/operating.md): inline prompts on
-//! stdout, raw mode only while a prompt is open, and every path out of a prompt
+//! stdout — or on `/dev/tty` when stdout is a pipe, as under `op run`, which
+//! pipes it to mask secrets — raw mode only while a prompt is open, and every path out of a prompt
 //! restoring the terminal — including cancellation, which is a return value
 //! here rather than a signal.
 //!
@@ -8,7 +9,7 @@
 //! Secret entry echoes a fixed mask and the collapsed line never carries the
 //! length.
 
-use std::io::{IsTerminal, Stdout, Write, stdout};
+use std::io::{IsTerminal, Write, stdout};
 
 use crossterm::cursor::{Hide, MoveToColumn, MoveUp, Show};
 use crossterm::event::{
@@ -21,10 +22,25 @@ use crossterm::{execute, queue};
 
 use super::{Cancelled, Choice, Prompter, Tone};
 
-/// A prompter over this process's stdin and stdout.
+/// A prompter over this process's stdin and its terminal.
 pub struct Terminal {
-    out: Stdout,
+    out: Box<dyn Write + Send>,
     color: bool,
+}
+
+/// Where prompts are drawn: stdout when it is the terminal, else the controlling
+/// terminal itself. A wrapper that pipes stdout through itself (`op run` masks
+/// secrets that way) still leaves the person at a terminal; `None` is a process
+/// with no terminal at all.
+fn terminal_output() -> Option<Box<dyn Write + Send>> {
+    if stdout().is_terminal() {
+        return Some(Box::new(stdout()));
+    }
+    let tty = std::fs::OpenOptions::new()
+        .write(true)
+        .open("/dev/tty")
+        .ok()?;
+    Some(Box::new(tty))
 }
 
 /// What a key press meant to a prompt.
@@ -46,7 +62,7 @@ enum Key {
 struct Raw;
 
 impl Raw {
-    fn enter(out: &mut Stdout) -> std::io::Result<Self> {
+    fn enter(out: &mut impl Write) -> std::io::Result<Self> {
         enable_raw_mode()?;
         execute!(out, EnableBracketedPaste)?;
         Ok(Self)
@@ -55,21 +71,25 @@ impl Raw {
 
 impl Drop for Raw {
     fn drop(&mut self) {
-        let mut out = stdout();
-        let _ = execute!(out, DisableBracketedPaste, Show);
+        if let Some(mut out) = terminal_output() {
+            let _ = execute!(out, DisableBracketedPaste, Show);
+        }
         let _ = disable_raw_mode();
     }
 }
 
 impl Terminal {
-    /// Open stdout as a prompter. Refuses a stdin or stdout that is not a
-    /// terminal: the prompts need raw mode and a place to redraw.
+    /// Open the terminal as a prompter. Refuses a stdin that is not a terminal,
+    /// or a process with no terminal to draw on: the prompts need raw mode and a
+    /// place to redraw.
     pub fn open() -> Result<Self, String> {
-        if !std::io::stdin().is_terminal() || !stdout().is_terminal() {
-            return Err("this prompt is interactive; run efference in a terminal".to_string());
-        }
+        let out = std::io::stdin()
+            .is_terminal()
+            .then(terminal_output)
+            .flatten()
+            .ok_or("this prompt is interactive; run efference in a terminal")?;
         Ok(Self {
-            out: stdout(),
+            out,
             color: std::env::var_os("NO_COLOR").is_none(),
         })
     }

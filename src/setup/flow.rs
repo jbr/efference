@@ -1,6 +1,7 @@
 //! The questions, in order (docs/operating.md). One connection per pass of the
-//! loop: provider, name, credential source, model, spotter; then whether to add
-//! another; then which connection sessions default to when there is a choice.
+//! loop: provider, name, credential source; then whether to add another; then
+//! the model sessions default to. The spotter and triage roles are not asked:
+//! each has a default that runs, and the defaults editor reaches them later.
 //!
 //! What is checked live depends on what the flow can see. A key that is in this
 //! shell's environment is checked without asking. One that is not can be pasted
@@ -33,10 +34,23 @@ pub async fn run<P: Prompter, Q: Probe>(
         );
         let mut draft = Draft::default();
         add_connections(prompter, probe, existing, &mut draft).await?;
+        // A decision-model provider backs the spotter and never takes a turn,
+        // so a file holding only that has no agent to start (docs/transport.md).
+        while !draft
+            .connections
+            .iter()
+            .any(|(_, connection)| connection.provider.serves_inference())
+        {
+            prompter.say(
+                Tone::Note,
+                "That provider serves the permission spotter only. Sessions also need \
+                 a provider for the agent itself.",
+            );
+            add_connections(prompter, probe, existing, &mut draft).await?;
+        }
         // Adding a connection says nothing about which model sessions default
-        // to; that is a separate concern with its own editor, visited once here
-        // so a first run does not end with a file no session can use
-        // (docs/operating.md).
+        // to; that is asked once here so a first run does not end with a file no
+        // session can use (docs/operating.md).
         let added = draft.added_connections();
         super::defaults::first_run(prompter, probe, &added, &mut draft).await?;
         Ok(draft)

@@ -20,13 +20,8 @@ async fn first_run_with_key_in_environment() {
             Answer::Pick("An environment variable"),
             Answer::Type(""),
             Answer::No,
-            // The defaults editor, visited once on the way out.
-            Answer::Yes,
-            Answer::Pick("Choose a model"),
+            // The main model, asked once on the way out; no other role is.
             Answer::Pick("claude-sonnet-4-5"),
-            Answer::Pick("Choose a model"),
-            Answer::Pick("claude-haiku-4-5"),
-            Answer::Pick("Leave unset"),
         ],
         &probe,
         "",
@@ -60,7 +55,6 @@ async fn first_run_with_key_in_environment() {
 
 [defaults]
 model = "anthropic/claude-sonnet-4-5"
-spotter = "anthropic/claude-haiku-4-5"
 
 [connections.anthropic]
 provider = "anthropic"
@@ -89,7 +83,8 @@ async fn pasted_key_is_checked_and_not_recorded() {
             Answer::Yes,
             Answer::Secret("sk-or-pasted"),
             Answer::No,
-            Answer::No,
+            // No key is left to list models with, so the id is typed.
+            Answer::Type("anthropic/claude-sonnet-4-5"),
         ],
         &probe,
         "",
@@ -102,10 +97,12 @@ async fn pasted_key_is_checked_and_not_recorded() {
     assert!(!text.contains("sk-or-pasted"));
     assert!(text.contains(r#"[connections.router]"#));
     assert!(text.contains(r#"auth = { kind = "env", key = "MY_ROUTER_KEY" }"#));
-    // A key pasted for the check alone is not retained, so it is not there to
-    // list models with either: the defaults visit was declined and nothing was
-    // written for it.
-    assert!(!text.contains("\n[defaults]\n"), "{text}");
+    // A key pasted for the check alone is not retained, so the model menu had
+    // nothing to list with and the typed id is what was written.
+    assert!(
+        text.contains(r#"model = "router/anthropic/claude-sonnet-4-5""#),
+        "{text}"
+    );
 }
 
 /// A rejected key is said, and declining to keep the connection cancels.
@@ -149,12 +146,8 @@ async fn an_unknown_model_is_said_and_can_be_kept() {
             // The key is rejected and the connection kept anyway.
             Answer::Yes,
             Answer::No,
-            Answer::Yes,
-            Answer::Pick("Choose a model"),
             Answer::Type("gpt-5.6"),
             Answer::Yes,
-            Answer::Pick("Leave unset"),
-            Answer::Pick("Leave unset"),
         ],
         &probe,
         "",
@@ -185,12 +178,8 @@ async fn a_pasted_key_is_kept_in_the_store_and_the_file_names_only_the_kind() {
             Answer::Pick("Paste it now, kept in the OS keychain"),
             Answer::Secret("sk-pasted"),
             Answer::No,
-            // The stored key drives the defaults editor's menu too.
-            Answer::Yes,
-            Answer::Pick("Choose a model"),
+            // The stored key drives the model menu too.
             Answer::Pick("claude-sonnet-4-5"),
-            Answer::Pick("Leave unset"),
-            Answer::Pick("Leave unset"),
         ],
         &probe,
         "",
@@ -288,5 +277,52 @@ fn keychain_is_shown_unavailable_without_a_store() {
     assert_eq!(
         keychain.unavailable.as_deref(),
         Some("no store on this platform")
+    );
+}
+
+/// A decision-model provider alone is not a complete config: the flow says so
+/// and asks for another connection, and the main-model question never offers
+/// the decision-model connection.
+#[tokio::test]
+async fn a_typesafe_only_config_asks_for_a_provider_for_the_agent() {
+    let probe = Table {
+        env: BTreeMap::from([
+            ("TYPESAFE_API_KEY".to_string(), "ts-real".to_string()),
+            ("ANTHROPIC_API_KEY".to_string(), "sk-real".to_string()),
+        ]),
+        accepted_keys: strings(&["ts-real", "sk-real"]),
+        known_models: strings(&["claude-sonnet-4-5"]),
+        ..Default::default()
+    };
+    let (draft, script) = run_script(
+        vec![
+            Answer::Pick("TypeSafe"),
+            Answer::Type(""),
+            Answer::Pick("An environment variable"),
+            Answer::Type(""),
+            Answer::No,
+            Answer::Pick("Anthropic"),
+            Answer::Type(""),
+            Answer::Pick("An environment variable"),
+            Answer::Type(""),
+            Answer::No,
+            // One connection can take a turn, so there is no connection menu.
+            Answer::Pick("claude-sonnet-4-5"),
+        ],
+        &probe,
+        "",
+    )
+    .await;
+    let draft = draft.unwrap();
+    assert!(script.said("serves the permission spotter only"));
+    assert_eq!(
+        draft.decided_default(DefaultRole::Model),
+        Some(Some("anthropic/claude-sonnet-4-5"))
+    );
+    let text = render("", &draft).unwrap();
+    assert!(text.contains("[connections.typesafe]"), "{text}");
+    assert!(
+        crate::inference::InferenceConfig::from_toml(&text).is_ok(),
+        "{text}"
     );
 }

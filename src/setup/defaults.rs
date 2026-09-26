@@ -39,32 +39,52 @@ impl DefaultRole {
     }
 }
 
-/// The first-run visit: offered once, after the connections are added, so a run
-/// does not end with a file no session can use. Declining is a complete answer —
-/// a session naming a qualified `<connection>/<model>` needs no `[defaults]` at
-/// all — so the decline says that rather than warning.
+/// The first-run visit: the main model alone, asked once after the connections
+/// are added, so a run does not end with a file no session can use. Not
+/// skippable, and no other role is walked: the spotter and triage each have a
+/// default that runs, and a new user cannot yet know what either is
+/// (docs/operating.md). The management list reaches all three later.
 pub(super) async fn first_run<P: Prompter, Q: Probe>(
     prompter: &mut P,
     probe: &Q,
     connections: &BTreeMap<String, ExistingConnection>,
     draft: &mut Draft,
 ) -> Result<(), Cancelled> {
-    let Some(first) = connections.keys().next().cloned() else {
-        return Ok(());
-    };
-    prompter.say(
-        Tone::Plain,
-        "A session picks its model as <connection>/<model>. Defaults fill in what \
-         a session leaves out.",
-    );
-    if !prompter.confirm("Set a default model now?", true)? {
-        prompter.say(
-            Tone::Note,
-            &format!("No defaults set — start sessions with {first}/<model>."),
-        );
+    // Only a connection that can take a turn can hold the main model.
+    let agents: BTreeMap<String, ExistingConnection> = connections
+        .iter()
+        .filter(|(_, connection)| serves_inference(connection))
+        .map(|(name, connection)| (name.clone(), connection.clone()))
+        .collect();
+    if agents.is_empty() {
         return Ok(());
     }
-    edit(prompter, probe, connections, draft, &Current::default()).await
+    let name = pick_connection(prompter, &agents)?;
+    let connection = &agents[&name];
+    let key = readable_key(probe, &name, connection);
+    let model = flow::choose_model(
+        prompter,
+        probe,
+        &format!("Which model should sessions use on {name}?"),
+        &target_for(connection),
+        None,
+        key.as_deref(),
+    )
+    .await?;
+    draft.record(Change::SetDefaultRole {
+        role: DefaultRole::Model,
+        value: Some(format!("{name}/{model}")),
+    });
+    Ok(())
+}
+
+/// Whether a connection can take a turn. A provider name this build cannot read
+/// (a described endpoint's `custom-<dialect>`) speaks an inference dialect by
+/// construction.
+fn serves_inference(connection: &ExistingConnection) -> bool {
+    crate::api::Provider::from_name(&connection.provider)
+        .map(|provider| provider.serves_inference())
+        .unwrap_or(true)
 }
 
 /// What `[defaults]` holds now, so the editor can show each role's current value

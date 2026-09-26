@@ -236,3 +236,20 @@ mod file;
 mod keys;
 mod manage;
 mod subscription;
+
+/// The hand-off names what it costs before asking, and a decline says where to
+/// run it instead.
+#[test]
+fn the_handoff_names_the_cost_and_a_decline_says_where_to_go() {
+    let mut script = Script::new(vec![Answer::No]);
+    let yes =
+        offer_project_setup(&mut script, "~/code/app", Some("anthropic/claude-sonnet-5")).unwrap();
+    assert!(!yes);
+    assert!(script.said("billed as ordinary use of anthropic/claude-sonnet-5"));
+    assert!(script.said("confirm: Set up ~/code/app now?"));
+    assert!(script.said("Run `efference` in the project you want to set up"));
+
+    let mut script = Script::new(vec![Answer::Yes]);
+    assert!(offer_project_setup(&mut script, "~/code/app", None).unwrap());
+    assert!(script.said("your default model"));
+}

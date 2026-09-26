@@ -78,13 +78,9 @@ async fn two_connections_choose_a_default() {
             Answer::Type(""),
             Answer::Pick("Piggyback on Codex's login"),
             Answer::No,
-            // Two connections, so the defaults editor asks which one.
-            Answer::Yes,
-            Answer::Pick("Choose a model"),
+            // Two connections, so the model question asks which one first.
             Answer::Pick("openai-codex"),
             Answer::Type("gpt-5.6"),
-            Answer::Pick("Leave unset"),
-            Answer::Pick("Leave unset"),
         ],
         &probe,
         "",
@@ -101,8 +97,8 @@ async fn two_connections_choose_a_default() {
     );
     let text = render("", &draft).unwrap();
     assert!(text.contains("model = \"openai-codex/gpt-5.6\""));
-    // The spotter was left unset, so no key is written for it — a role the
-    // editor skipped is absent, not defaulted.
+    // The first run asks no spotter question, so no key is written for it: the
+    // role resolves to its default at session creation.
     assert!(!text.contains("spotter ="), "{text}");
     assert!(text.contains("[connections.anthropic]"));
     assert!(text.contains("[connections.openai-codex]"));

@@ -8,6 +8,11 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- **The setup hand-off** (docs/operating.md): after the wizard, and on a bare `efference` in a
+  directory with no project config and no sessions, efference asks whether to set that
+  directory up now, naming the model the conversation is billed on; yes starts the session.
+- **TypeSafe on the setup provider menu** (docs/operating.md), as a decision-model provider
+  beside one for the agent. A first run asks only for the main model, not spotter or triage.
 - **Islands** (docs/operating.md): with no host running, `efference` and `efference tui` start
   a host owned by the terminal, create a session here, and attach; quitting or killing the TUI
   ends the host and reaps its sessions' processes, and no other client affects its lifetime.
@@ -141,6 +146,9 @@ behind a change, see [`journal/`](journal/).
 - **The idle triage runs on the agent's own lineage** (docs/redaction-fork.md): with a separate `--triage-model`, only the per-result peeks go to it; the wake decision an idle session makes on a notification sends the agent's client, tools, and thinking, reading the cache the keepalive holds warm.
 
 ### Fixed
+- **Setup's prompts and the session picker work under `op run`** (docs/operating.md): `op run`
+  pipes stdout to mask secrets, and the prompts refused a non-terminal stdout; they now draw
+  on `/dev/tty` when stdout is a pipe.
 - **An interrupt during the triage peek ends the turn at the gate** (docs/control-channel.md): the peek withheld its verdict but left the latch set, so the loop made another request — draining any turn the operator queued — and that completion's first call came back "aborted by user".
 - **`usage.context.limit` is the context window** (docs/transport.md): it reported the window less the output reservation, which for a model whose output cap is a large fraction of its window read as a 475k ceiling on a 1M window, and rose with the prompt as the reservation shrank. The TUI sidebar and web meters now read occupancy against the window, which the prompt stalls `MARGIN + RESERVATION_MIN` short of.
 - **`efference dev wire` follows the recorded session identity** (docs/transport.md): boot stores a log-owned connection/provider/native-model record, and both wire views derive dialect and placement from it without endpoint resolution; legacy logs use defaults, and `--model` is gone.

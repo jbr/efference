@@ -17,7 +17,8 @@ async fn piggybacking_on_codex_records_the_cache_kind() {
             Answer::Type(""),
             Answer::Pick("Piggyback on Codex's login"),
             Answer::No,
-            Answer::No,
+            // No key to list with, so the id is typed.
+            Answer::Type("gpt-5.6"),
         ],
         &probe,
         "",
@@ -30,10 +31,8 @@ async fn piggybacking_on_codex_records_the_cache_kind() {
     assert_eq!(draft.connections[0].1.auth, AuthSource::CodexCache);
     let text = render("", &draft).unwrap();
     assert!(text.contains(r#"auth = { kind = "codex-cache" }"#));
-    // Declining the defaults visit is a complete answer, so no `[defaults]` is
-    // written and the decline says how to start a session without one.
-    assert!(!text.contains("\n[defaults]\n"), "{text}");
-    assert!(script.said("start sessions with openai-codex/<model>"));
+    // The first run always ends with a main model, so a session can start.
+    assert!(text.contains(r#"model = "openai-codex/gpt-5.6""#), "{text}");
 }
 
 /// Logging in here stores the grant and records the oauth kind; the file names
@@ -54,7 +53,7 @@ async fn logging_in_here_records_the_oauth_kind() {
             Answer::Type("chatgpt"),
             Answer::Pick("Log in here"),
             Answer::No,
-            Answer::No,
+            Answer::Type("gpt-5.6"),
         ],
         &probe,
         "",
