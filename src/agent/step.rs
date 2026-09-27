@@ -127,7 +127,10 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
     let config_write = shared
         .config_path()
         .is_some_and(|cfg| policy::is_config_write(shared.cwd(), call, cfg));
-    let approval = if config_write {
+    // A hand-off gives this session's place to a new one (docs/tools.md): the operator's
+    // decision, like a policy edit, so it takes the same route past the cascade.
+    let hand_off = call.name == crate::control_tools::HAND_OFF_WIRE_NAME;
+    let approval = if config_write || hand_off {
         frontend.approve(call, bound.as_ref()).await
     } else {
         judge(

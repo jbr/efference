@@ -144,7 +144,7 @@ auth = { kind = "codex-cache" }
         reauth: Vec::new(),
         keep_scratch: false,
         host: None,
-        created_by: None,
+        lineage: crate::env::Lineage::default(),
     }
 }
 
@@ -281,7 +281,7 @@ auth = {{ kind = "env", key = "EFFERENCE_BOOT_TEST_KEY" }}
         reauth: Vec::new(),
         keep_scratch: false,
         host: None,
-        created_by: None,
+        lineage: crate::env::Lineage::default(),
     }
 }
 

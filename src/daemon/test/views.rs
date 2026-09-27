@@ -134,6 +134,7 @@ fn state_reports_the_session_identity() {
         model: "anthropic/claude-opus-4".into(),
         cwd: "/Users/jbr/code/efference".into(),
         inference: None,
+        successor: None,
     });
     let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
     assert_eq!(

@@ -51,6 +51,9 @@ pub(super) struct Hosted {
     /// Whether this session outlives its creator (docs/tools.md). Children end
     /// with the session that made them unless created `detached`.
     pub(super) detached: bool,
+    /// The session that handed its work to this one (docs/tools.md) — the one
+    /// session outside its descendants this one may archive.
+    pub(super) succeeds: Option<String>,
     /// Who hears this session's status, and on what terms (`subscriptions.rs`).
     pub(super) subscribers: BTreeMap<String, super::subscriptions::Subscription>,
 }
@@ -98,6 +101,7 @@ impl Host {
             swansong: runtime.swansong().clone(),
             created_by: created_by.clone(),
             detached,
+            succeeds: None,
             subscribers: BTreeMap::new(),
         };
         self.sessions.lock().unwrap().insert(id.clone(), hosted);
@@ -169,6 +173,15 @@ impl Host {
         self.sessions.lock().unwrap()
     }
 
+    /// The session `id` succeeds, when one handed off to it (docs/tools.md).
+    pub fn predecessor(&self, id: &str) -> Option<String> {
+        self.sessions
+            .lock()
+            .unwrap()
+            .get(id)
+            .and_then(|hosted| hosted.succeeds.clone())
+    }
+
     /// The session that commissioned `id`, when a session did (docs/tools.md).
     /// Control state — the creation tree, never logged or projected.
     pub fn created_by(&self, id: &str) -> Option<String> {
@@ -180,13 +193,14 @@ impl Host {
     }
     /// Create a session on this host: the path behind `POST /sessions`
     /// (docs/control-api.md) and the in-session `sessions__create` tool
-    /// (docs/tools.md). `created_by` is the calling session when a session
-    /// commissioned this one, `None` for a human root. Returns the minted id,
-    /// or the reason nothing was minted.
+    /// (docs/tools.md). `lineage` names the calling session as creator when a
+    /// session commissioned this one, and the predecessor for a `hand_off`;
+    /// default for a human root. Returns the minted id, or the reason nothing was
+    /// minted.
     pub async fn create(
         self: &Arc<Self>,
         body: CreateSession,
-        created_by: Option<String>,
+        lineage: crate::env::Lineage,
     ) -> std::result::Result<String, String> {
         // The session base is what an unnamed id must be free in, on disk and in
         // the live map — a dead session's directory still holds its name
@@ -232,17 +246,62 @@ impl Host {
             // The new session's toolbox mounts the `sessions` provider against
             // this host, with the new session itself as the caller (docs/tools.md).
             host: Some(Arc::clone(self)),
-            // The creator reaches the child's identity line (docs/context.md);
-            // `adopt_with` below records the same value as control state.
-            created_by: created_by.clone(),
+            // The creator and predecessor reach the identity line
+            // (docs/context.md); `adopt_with` below records the same values as
+            // control state.
+            lineage: lineage.clone(),
         };
         let boot = match crate::boot::prepare(request).await {
             Ok(boot) => boot,
             Err(e) => return Err(format!("could not prepare session: {e}")),
         };
         let runtime = SessionRuntime::start(boot, self.swansong());
-        self.adopt_with(id.clone(), runtime, created_by, body.detached);
+        self.adopt_with(id.clone(), runtime, lineage.created_by, body.detached);
         Ok(id)
+    }
+
+    /// Hand `from`'s work to a new session (docs/tools.md): one in the same
+    /// directory, placed where `from` sits rather than under it — its creator is
+    /// `from`'s creator and it outlives `from` exactly as `from` outlived its
+    /// own — whose first turn is `brief`, attributed to `from`. `from` records the
+    /// successor, which attached clients follow. Returns the successor's id.
+    pub async fn hand_off(
+        self: &Arc<Self>,
+        from: &str,
+        mut body: CreateSession,
+        brief: String,
+    ) -> std::result::Result<String, String> {
+        let Some(hosted) = self.hosted(from) else {
+            return Err(format!("session {from:?} is not hosted"));
+        };
+        body.detached = hosted.detached;
+        let lineage = crate::env::Lineage {
+            created_by: hosted.created_by.clone(),
+            succeeds: Some(from.to_string()),
+        };
+        let id = self.create(body, lineage).await?;
+        self.record_succession(from, &id, brief);
+        Ok(id)
+    }
+
+    /// The succession half of [`hand_off`](Self::hand_off), once the successor
+    /// exists: it may archive `from`, its first turn is `brief` attributed to
+    /// `from`, and `from` names it for the clients to follow.
+    pub(crate) fn record_succession(&self, from: &str, successor: &str, brief: String) {
+        if let Some(hosted) = self.sessions.lock().unwrap().get_mut(successor) {
+            hosted.succeeds = Some(from.to_string());
+        }
+        if let Some(session) = self.session(successor) {
+            session.submit_turn(crate::frontend::SubmittedTurn {
+                text: brief,
+                submission_id: super::mint_submission_id(),
+                source: Some(crate::frontend::handoff_source(from)),
+            });
+        }
+        if let Some(predecessor) = self.session(from) {
+            predecessor.set_successor(successor);
+        }
+        self.touch_summary();
     }
 
     /// The hosted session ids, sorted (docs/control-api.md).
@@ -461,7 +520,7 @@ async fn create_session(mut conn: Conn) -> Conn {
     };
     // A human root: no session commissioned it, so it has no `created_by`
     // (docs/tools.md).
-    match host.create(body, None).await {
+    match host.create(body, crate::env::Lineage::default()).await {
         Ok(id) => conn
             .with_status(201)
             .with_body(serde_json::json!({ "id": id }).to_string())

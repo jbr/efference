@@ -595,7 +595,8 @@ not a topic — it is the log's cursor rather than control state, and sits outsi
       "main":    {"connection": "work", "provider": "openrouter", "model": "anthropic/claude-opus-4"},
       "spotter": {"connection": "work", "provider": "openrouter", "model": "anthropic/claude-haiku-4-5"},
       "triage":  {"shared": true, "connection": "work", "provider": "openrouter", "model": "anthropic/claude-opus-4"}
-    }
+    },
+    "successor": "calm-finch"            // once this session has handed off (docs/tools.md); absent before
   }
 }
 ```

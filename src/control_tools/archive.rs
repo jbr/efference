@@ -45,8 +45,9 @@ impl Tool<Control> for Archive {
                 Ok(format!("archived {}", self.session))
             }
             Executor::Host(state) => {
-                // Archiving is mutating: the target must be a descendant.
-                state.resolve_mutating(Some(&self.session))?;
+                // Archiving is mutating: the target must be a descendant, or
+                // the caller's own predecessor.
+                state.resolve_archive(Some(&self.session))?;
                 state.archive(&self.session).await?;
                 Ok(format!("archived {}", self.session))
             }

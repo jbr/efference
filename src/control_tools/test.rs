@@ -247,6 +247,7 @@ fn tools_list_is_ordered_and_annotated() {
             "title",
             "sessions",
             "create",
+            "hand_off",
             "archive",
             "subscribe",
             "unsubscribe",
@@ -326,8 +327,8 @@ async fn an_unbound_mount_requires_session() {
     assert!(err.contains("no host at"), "{err}");
 }
 
-/// Every session tool but the host's own three takes `session`, and the three
-/// take none or a required one — the mount's whole addressing surface, pinned
+/// Every session tool but the host's own takes `session`, and those take none or
+/// a required one — `hand_off` none, since a session hands off only its own work — the mount's whole addressing surface, pinned
 /// against a tool that forgets the field.
 #[test]
 fn every_session_tool_takes_session() {
@@ -337,7 +338,9 @@ fn every_session_tool_takes_session() {
             .cloned()
             .unwrap_or_default();
         match tool.name.as_str() {
-            "sessions" | "create" => assert!(!properties.contains_key("session"), "{}", tool.name),
+            "sessions" | "create" | "hand_off" => {
+                assert!(!properties.contains_key("session"), "{}", tool.name)
+            }
             "archive" => assert_eq!(
                 tool.input_schema["required"],
                 serde_json::json!(["session"])

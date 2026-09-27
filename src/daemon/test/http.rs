@@ -114,6 +114,12 @@ async fn the_kickoff_source_is_reserved() {
         .unwrap_err()
         .to_string();
     assert!(err.contains("reserved"), "{err}");
+    let err = client
+        .turn_sourced("hidden", Some("handoff[someone]"))
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("hand-off brief"), "{err}");
     assert!(turns_rx.try_recv().is_err(), "rejected turn never queued");
 }
 

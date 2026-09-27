@@ -752,7 +752,7 @@ pub(crate) async fn wire(
         efference::env::system_prompt(
             &model,
             &session_id,
-            None,
+            &efference::env::Lineage::default(),
             context_block.as_deref(),
             role_section.as_deref(),
             None,

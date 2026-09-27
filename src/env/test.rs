@@ -2,11 +2,11 @@ use super::*;
 
 #[test]
 fn system_prompt_appends_role_section_when_present() {
-    let without = system_prompt("m", "sample-session", None, None, None, None);
+    let without = system_prompt("m", "sample-session", &Lineage::default(), None, None, None);
     let with = system_prompt(
         "m",
         "sample-session",
-        None,
+        &Lineage::default(),
         None,
         Some("Your role for this session:\n\nStay put."),
         None,
@@ -25,7 +25,7 @@ fn system_prompt_splices_context_block_before_the_role() {
     let s = system_prompt(
         "m",
         "sample-session",
-        None,
+        &Lineage::default(),
         Some("<CLAUDE.md>\nhi\n</CLAUDE.md>"),
         Some("Your role for this session:\n\nDo it."),
         None,
@@ -33,7 +33,10 @@ fn system_prompt_splices_context_block_before_the_role() {
     assert!(s.contains("<CLAUDE.md>\nhi\n</CLAUDE.md>"));
     assert!(s.find("<CLAUDE.md>").unwrap() < s.find("Your role").unwrap());
     // No block → nothing spliced.
-    assert!(!system_prompt("m", "sample-session", None, None, None, None).contains("<CLAUDE.md>"));
+    assert!(
+        !system_prompt("m", "sample-session", &Lineage::default(), None, None, None)
+            .contains("<CLAUDE.md>")
+    );
 }
 
 /// The session's config file is never named in the system prompt: the permission perimeter
@@ -44,7 +47,7 @@ fn system_prompt_never_names_the_config_file() {
     let full = system_prompt(
         "m",
         "sample-session",
-        None,
+        &Lineage::default(),
         Some("<CLAUDE.md>\nhi\n</CLAUDE.md>"),
         Some("Your role for this session:\n\nDo it."),
         None,
@@ -63,7 +66,7 @@ fn system_prompt_appends_the_unmounted_section_last() {
     let full = system_prompt(
         "m",
         "sample-session",
-        None,
+        &Lineage::default(),
         Some("<CLAUDE.md>\nhi\n</CLAUDE.md>"),
         Some("Your role for this session:\n\nDo it."),
         Some(unmounted),
@@ -75,7 +78,7 @@ fn system_prompt_appends_the_unmounted_section_last() {
     let without = system_prompt(
         "m",
         "sample-session",
-        None,
+        &Lineage::default(),
         Some("<CLAUDE.md>\nhi\n</CLAUDE.md>"),
         Some("Your role for this session:\n\nDo it."),
         None,
@@ -98,7 +101,7 @@ fn system_prompt_states_the_model_identity_and_the_session_id() {
     let s = system_prompt(
         "anthropic/claude-sonnet-5",
         "burgundy-skink",
-        None,
+        &Lineage::default(),
         Some("<CLAUDE.md>\nhi\n</CLAUDE.md>"),
         None,
         None,
@@ -127,7 +130,10 @@ fn system_prompt_names_the_creating_session_when_there_is_one() {
     let child = system_prompt(
         "anthropic/claude-sonnet-5",
         "eager-meadow",
-        Some("lucid-lark"),
+        &Lineage {
+            created_by: Some(String::from("lucid-lark")),
+            ..Lineage::default()
+        },
         Some("<CLAUDE.md>\nhi\n</CLAUDE.md>"),
         None,
         None,
@@ -151,7 +157,7 @@ fn system_prompt_names_the_creating_session_when_there_is_one() {
     let root = system_prompt(
         "anthropic/claude-sonnet-5",
         "eager-meadow",
-        None,
+        &Lineage::default(),
         Some("<CLAUDE.md>\nhi\n</CLAUDE.md>"),
         None,
         None,
@@ -173,7 +179,10 @@ fn system_prompt_names_the_creating_session_when_there_is_one() {
         system_prompt(
             "anthropic/claude-sonnet-5",
             "eager-meadow",
-            Some("lucid-lark"),
+            &Lineage {
+                created_by: Some(String::from("lucid-lark")),
+                ..Lineage::default()
+            },
             Some("<CLAUDE.md>\nhi\n</CLAUDE.md>"),
             None,
             None,
@@ -192,4 +201,26 @@ fn triage_system_prompt_names_both_models_and_carries_the_context() {
     assert!(prompt.ends_with("\n\n<ctx>x</ctx>"));
     assert!(!prompt.contains(PREAMBLE.trim_end()));
     assert!(!triage_system_prompt("small", "big", None).ends_with("\n\n"));
+}
+
+/// A successor's identity line names its predecessor, says the first message is
+/// that session's brief, and says archiving it is the successor's to do
+/// (docs/tools.md).
+#[test]
+fn a_successor_is_told_whom_it_succeeds() {
+    let prompt = system_prompt(
+        "m",
+        "new-leaf",
+        &Lineage {
+            created_by: None,
+            succeeds: Some("old-leaf".into()),
+        },
+        None,
+        None,
+        None,
+    );
+    assert!(prompt.contains("It succeeds `old-leaf`"), "{prompt}");
+    assert!(prompt.contains("the first message is that session's brief"));
+    assert!(prompt.contains("archive it with `archive`"));
+    assert!(!prompt.contains("It was created by"));
 }

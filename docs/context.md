@@ -67,6 +67,14 @@ the prefix mid-session. Status reaches a session through turns and inbox
 notifications instead ([inbox.md](inbox.md)). The creator id is immutable for the
 session's life, which is what makes it safe to freeze.
 
+A session made by `hand_off` ([tools.md](tools.md)) has a second provenance sentence,
+from the same `Lineage` (`src/env.rs`): "It succeeds `{predecessor}`, which handed this work
+off to it: the first message is that session's brief. Ask it anything the brief leaves open
+with `notify`, and archive it with `archive` once you have no more questions for it." Unlike
+the creator sentence it confers something — the one session outside its descendants this
+session may archive — and it says so, because that is the step the successor is expected
+to take. It is fixed for the session's life like the creator's, and absent otherwise.
+
 `efference dev wire` rebuilding an old log cannot recover this sentence:
 `created_by` is host control state and is never logged. Sessions recorded since
 the boot-preamble snapshot read the stored `system` back verbatim and are

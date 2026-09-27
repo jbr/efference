@@ -286,6 +286,33 @@ running the same teardown. Cascade is the default because the keepalive re-warms
 orphan's prefix every interval forever; `detached` exists for a session meant to
 outlive its creator. The human sees every session in `sessions` either way.
 
+##### Hand-off: a successor in the caller's place
+
+`hand_off { brief }` gives the caller's work to a new session in the caller's own directory,
+which resolves the project's config afresh — its grants, its preamble, its MCP servers — and
+takes the caller's place (`Host::hand_off`, `src/daemon/host.rs`). It is `create` with the
+placement changed rather than a `create` flag, because nearly everything that makes a child a
+child is inverted:
+
+- **Placement.** The successor's creator is the caller's creator, and it is detached exactly
+  when the caller was: a successor of a human root is a human root, reviewing as
+  `spotter_human` with its gates reaching the operator, where a child would default to
+  `upstream` and answer to its creator. The caller is not subscribed to it.
+- **The brief** is the successor's first turn, under the reserved source
+  `handoff[<predecessor>]`: the clients draw it as the predecessor's brief rather than the
+  operator's turn, and `POST /turns` refuses the prefix from a client.
+- **Clients follow.** The predecessor's `session_identity` gains `successor`, and a client
+  attached to it moves to the successor.
+- **Archiving the predecessor** is the successor's, and the one exception to "a mutating verb
+  reaches descendants only": `archive` also reaches the caller's own predecessor. The
+  successor's identity line says so ([context.md](context.md)); it asks the predecessor what
+  the brief leaves open with `notify` first, if anything.
+- **Always the operator's call.** `sessions__hand_off` bypasses the fast path and the spotter
+  to the human gate, as a write to the session's own config does (docs/permissions.md).
+
+A client has no session to hand off, so the verb refuses from `efference control` and
+`efference mcp` and names `create`.
+
 `sessions__approve` is bound before it is classified (docs/permissions.md): the loop
 asks the provider for the target's pending gate and gets the child's held action — tool,
 input, intent, cwd, and the chain of sessions down to the leaf. The parent's fast-path,

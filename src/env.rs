@@ -34,9 +34,10 @@ const TRIAGE_PERSONA: &str = include_str!("../assets/prompts/triage.md");
 /// cached prefix, so every part must be byte-stable. The `wire` dev view shows the recorded boot
 /// snapshot instead of reconstructing (docs/log-and-projection.md).
 ///
-/// `created_by` is the id of the session that commissioned this one, when a session did: it
-/// renders as one further sentence on the identity line, so a child has its creator's return
-/// address without carrying one through prose (docs/context.md).
+/// `lineage` is where the session came from: the session that commissioned it, and the one it
+/// succeeds. Each renders as one further sentence on the identity line, so a child has its
+/// creator's return address and a successor its predecessor's without carrying either through
+/// prose (docs/context.md).
 ///
 /// The session's config file is deliberately **not** named here. Surfacing it up front read as
 /// "this is what you're allowed to do" and drew sessions into reading and probing their own
@@ -44,10 +45,21 @@ const TRIAGE_PERSONA: &str = include_str!("../assets/prompts/triage.md");
 /// designed to spare the agent. The permission perimeter stays invisible until a move actually
 /// strays, at which point the gate-rejection message names the config as the request channel
 /// ([`crate::agent`], docs/permissions.md).
+/// Where a session came from, as its identity line states it (docs/context.md). Host
+/// control state at creation; neither id is logged, and both are fixed for the session's
+/// life.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Lineage {
+    /// The session that commissioned this one with `create`, when a session did.
+    pub created_by: Option<String>,
+    /// The session that handed its work to this one with `hand_off`, when one did.
+    pub succeeds: Option<String>,
+}
+
 pub fn system_prompt(
     model: &str,
     session_id: &str,
-    created_by: Option<&str>,
+    lineage: &Lineage,
     context_block: Option<&str>,
     role_section: Option<&str>,
     unmounted: Option<&str>,
@@ -79,10 +91,22 @@ pub fn system_prompt(
     // prefix; `created_by` is immutable provenance, so this sentence is
     // byte-stable for the session's life. A root has none, and the sentence is
     // then absent rather than rendered empty.
-    if let Some(creator) = created_by {
+    if let Some(creator) = &lineage.created_by {
         prompt.push_str(" It was created by `");
         prompt.push_str(creator);
         prompt.push_str("`, which you can reach the same way.");
+    }
+    // The predecessor, when this session was handed off to (docs/tools.md): the
+    // first message is its brief, and archiving it is this session's to do. Like
+    // the creator, provenance fixed for the session's life, so byte-stable.
+    if let Some(predecessor) = &lineage.succeeds {
+        prompt.push_str(" It succeeds `");
+        prompt.push_str(predecessor);
+        prompt.push_str(
+            "`, which handed this work off to it: the first message is that session's \
+             brief. Ask it anything the brief leaves open with `notify`, and archive it \
+             with `archive` once you have no more questions for it.",
+        );
     }
     // How the harness works — `include_str!` keeps the file's trailing newline;
     // trim it so the join is clean.

@@ -40,6 +40,19 @@ pub(super) async fn submit_turn(mut conn: Conn) -> Conn {
                     ),
                 );
             }
+            // Likewise a hand-off brief's: the clients render it as the
+            // predecessor's brief, which only `hand_off` writes (docs/tools.md).
+            if source
+                .as_deref()
+                .and_then(crate::frontend::handoff_predecessor)
+                .is_some()
+            {
+                return fail(
+                    conn,
+                    ErrorCode::BadRequest,
+                    "a `handoff[…]` source is reserved for a hand-off brief".to_string(),
+                );
+            }
             let submission_id = submission_id.unwrap_or_else(mint_submission_id);
             shared.submit_turn(SubmittedTurn {
                 text,

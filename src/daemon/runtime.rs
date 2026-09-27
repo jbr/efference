@@ -131,6 +131,7 @@ impl SessionRuntime {
             model,
             cwd: paths.cwd().to_string_lossy().into_owned(),
             inference,
+            successor: None,
         });
         // Session cost telemetry (docs/transport.md): armed only where the provider
         // has a per-request accounting surface (OpenRouter's generation endpoint).

@@ -54,6 +54,7 @@ mcplease::tools!(
     (Title, title, "title"),
     (Sessions, sessions, "sessions"),
     (Create, create, "create"),
+    (HandOff, hand_off, "hand_off"),
     (Archive, archive, "archive"),
     (Subscribe, subscribe, "subscribe"),
     (Unsubscribe, unsubscribe, "unsubscribe")
@@ -94,6 +95,11 @@ fetches an image a result carried.";
 /// (docs/permissions.md). The mount namespaces it `<server>__<tool>` for
 /// `sessions` (docs/tools.md).
 pub const APPROVE_WIRE_NAME: &str = "sessions__approve";
+
+/// `hand_off`'s wire name in a session's toolbox: the call that gives the
+/// session's place to a new one, which is always put to the operator
+/// (docs/permissions.md).
+pub const HAND_OFF_WIRE_NAME: &str = "sessions__hand_off";
 
 /// The leaf action a `sessions__approve` call authorizes (docs/permissions.md).
 ///
@@ -295,6 +301,17 @@ impl HostExecutor {
         Ok(session)
     }
 
+    /// The target for `archive`: a mutating verb's rules, with one more session in
+    /// reach — the caller's own predecessor, which handed its work to the caller
+    /// and is the caller's to archive once it has no more questions (docs/tools.md).
+    fn resolve_archive(&self, requested: Option<&str>) -> Result<Arc<crate::daemon::Session>> {
+        let target = self.target(requested)?;
+        if self.host()?.predecessor(&self.caller).as_deref() == Some(target.as_str()) {
+            return self.in_project(&target);
+        }
+        self.resolve_mutating(Some(&target))
+    }
+
     /// Whether `target`'s `created_by` chain reaches `ancestor`. The tree is
     /// acyclic by construction; the `seen` set only guards a malformed one.
     fn chain_reaches(host: &crate::daemon::Host, ancestor: &str, target: &str) -> bool {
@@ -405,8 +422,20 @@ impl HostExecutor {
     /// (docs/tools.md).
     async fn create(&self, body: crate::daemon::CreateSession) -> Result<String> {
         let host = self.host()?;
-        let created = host.create(body, Some(self.caller.clone())).await;
+        let lineage = crate::env::Lineage {
+            created_by: Some(self.caller.clone()),
+            succeeds: None,
+        };
+        let created = host.create(body, lineage).await;
         created.map_err(|reason| anyhow!("{reason}"))
+    }
+
+    /// `hand_off` in-session: the caller's work goes to a new session in its own
+    /// directory, which it then succeeds (docs/tools.md).
+    async fn hand_off(&self, body: crate::daemon::CreateSession, brief: String) -> Result<String> {
+        let host = self.host()?;
+        let handed = host.hand_off(&self.caller, body, brief).await;
+        handed.map_err(|reason| anyhow!("{reason}"))
     }
 
     /// `subscribe` in-session: the caller hears the target's status

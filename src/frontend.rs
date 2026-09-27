@@ -26,6 +26,18 @@ use crate::log::{ConfigChange, ToolCall};
 /// belongs to the session's opening the way the preamble does, not to the operator.
 pub const KICKOFF_SOURCE: &str = "efference";
 
+/// The `source` of a hand-off brief: the predecessor's id in the reserved
+/// `handoff[…]` form (docs/tools.md). The clients render it as the brief it is
+/// rather than as the operator's turn, which is why a client may not claim it.
+pub fn handoff_source(predecessor: &str) -> String {
+    format!("handoff[{predecessor}]")
+}
+
+/// The predecessor a hand-off brief's `source` names, or `None` for any other.
+pub fn handoff_predecessor(source: &str) -> Option<&str> {
+    source.strip_prefix("handoff[")?.strip_suffix(']')
+}
+
 /// A user turn as it arrived over the control channel: the text plus the
 /// submission id that names this `POST /v1/turns` in the 202 body and on the
 /// resulting `User` entry (docs/control-api.md). The id is adopted from the

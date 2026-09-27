@@ -123,11 +123,11 @@ pub struct SessionRequest {
     /// `sessions` mount reaches it directly (docs/tools.md). `None` for a
     /// standalone session, which has no host to address.
     pub host: Option<std::sync::Arc<crate::daemon::Host>>,
-    /// The session that commissioned this one, when a session did
-    /// (docs/tools.md). It reaches the prompt's identity line as the child's
-    /// return address (docs/context.md); the host records the same value as
-    /// `created_by` when it adopts the started runtime. `None` for a root.
-    pub created_by: Option<String>,
+    /// Where this session came from — its creator and its predecessor, when a
+    /// session made it (docs/tools.md). Both reach the prompt's identity line
+    /// (docs/context.md); the host records the same values when it adopts the
+    /// started runtime. Default for a human root.
+    pub lineage: crate::env::Lineage,
 }
 
 /// What this creation attempt minted, for rollback (docs/control-channel.md).
@@ -210,7 +210,7 @@ async fn prepare_minting(
         reauth,
         keep_scratch,
         host,
-        created_by,
+        lineage,
     } = request;
     assert!(cwd.is_absolute(), "session cwd must be absolute");
     assert!(session_dir.is_absolute(), "session dir must be absolute");
@@ -562,7 +562,7 @@ async fn prepare_minting(
     let system = env_policy.mask(&crate::env::system_prompt(
         model,
         &session_id,
-        created_by.as_deref(),
+        &lineage,
         context_block.as_deref(),
         role_section.as_deref(),
         unmounted_section.as_deref(),

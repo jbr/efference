@@ -2,7 +2,9 @@
 //! directly, with the caller's identity enforced (docs/tools.md).
 
 use super::*;
-use crate::control_tools::{Control, Create, Executor, Interrupt, Notify, Sessions, State, Turn};
+use crate::control_tools::{
+    Archive, Control, Create, Executor, Interrupt, Notify, Sessions, State, Turn,
+};
 use crate::daemon::{Host, SessionRuntime};
 use mcplease::traits::Tool as _;
 use mcplease::traits::ToolOutput as _;
@@ -396,4 +398,65 @@ async fn a_create_outside_the_project_is_refused() {
     assert!(!err.contains("outside this project"), "{err}");
 
     fixture.host.swansong().shut_down().await;
+}
+
+/// A succession (docs/tools.md): the successor's first turn is the brief under the
+/// reserved hand-off source, the predecessor names its successor for the clients to
+/// follow, and the successor — alone among non-descendants — may archive it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_successor_gets_the_brief_and_may_archive_its_predecessor() {
+    let fixture = Fixture::new();
+    fixture
+        .host
+        .record_succession("parent", "peer", "carry on".into());
+
+    let parent = fixture.host.session("parent").unwrap();
+    assert_eq!(
+        parent.identity().and_then(|identity| identity.successor),
+        Some("peer".to_string())
+    );
+    let peer = fixture.host.session("peer").unwrap();
+    wait_for("the brief", || {
+        peer.snapshot().iter().any(|entry| {
+            entry.source.as_deref() == Some("handoff[parent]")
+                && matches!(&entry.payload, crate::log::Payload::User(_))
+        })
+    })
+    .await;
+
+    // A session that is neither a descendant nor the successor is refused.
+    let err = Archive {
+        session: "parent".into(),
+    }
+    .execute(fixture.control("stranger"), RequestContext::default())
+    .await
+    .unwrap_err()
+    .to_string();
+    assert!(
+        err.contains("no session") || err.contains("not an ancestor"),
+        "{err}"
+    );
+
+    Archive {
+        session: "parent".into(),
+    }
+    .execute(fixture.control("peer"), RequestContext::default())
+    .await
+    .expect("the successor archives its predecessor");
+    wait_for("the predecessor to leave", || {
+        fixture.host.session("parent").is_none()
+    })
+    .await;
+
+    fixture.host.swansong().shut_down().await;
+}
+
+async fn wait_for(what: &str, mut done: impl FnMut() -> bool) {
+    for _ in 0..250 {
+        if done() {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    panic!("timed out waiting for {what}");
 }

@@ -121,6 +121,10 @@ pub struct SessionIdentity {
     /// boot (tests).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub inference: Option<crate::inference::InferenceIdentity>,
+    /// The session this one handed its work to with `hand_off` (docs/tools.md),
+    /// once it has. An attached client follows it there.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub successor: Option<String>,
 }
 
 /// Why a trajectory stopped short of finishing (docs/transport.md).
@@ -823,6 +827,15 @@ impl Session {
         drop(guard);
         self.touch_state();
         Ok(Some(seq))
+    }
+
+    /// Record the session this one handed off to (docs/tools.md), so the
+    /// `session_identity` topic republishes and attached clients follow it.
+    pub fn set_successor(&self, successor: &str) {
+        if let Some(identity) = self.identity.lock().unwrap().as_mut() {
+            identity.successor = Some(successor.to_string());
+        }
+        self.touch_state();
     }
 
     /// Record that the trajectory gave up (docs/transport.md) — the loop is
