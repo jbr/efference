@@ -8,6 +8,9 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- **`efference://guide/host`** (docs/context.md): the user-wide config and its three roles, the
+  host, the web interface, reaching it over Tailscale, and running the host as a launchd or
+  systemd service — what a session needs to answer questions about efference itself.
 - **`[host]` in `~/.efference/config.toml`** (docs/web-bind.md): the web bind's `bind`,
   `public-name`, `tls-cert`, and `tls-key`, each overridable by its flag on `efference host`;
   replaces the `EFFERENCE_BIND`/`EFFERENCE_HOST`/`EFFERENCE_TLS_*` environment fallbacks, and

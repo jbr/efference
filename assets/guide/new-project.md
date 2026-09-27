@@ -155,6 +155,9 @@ that each is possible; read `efference://guide/advanced-config` for how, when on
 - **A hazard the spotter should watch for** — deploy scripts, a production database URL.
   `watch-for` names it for the spotter alone.
 
+Questions about efference itself rather than this project — a different default model,
+using it from a phone, keeping it running — are answered in `efference://guide/host`.
+
 ## A starter template
 
 The shape, shown for a TypeScript project; the build tool, the orientation file, and the

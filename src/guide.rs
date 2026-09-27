@@ -86,6 +86,14 @@ pub const DOCUMENTS: &[Document] = &[
         tools: &["read"],
     },
     Document {
+        slug: "host",
+        description: "Above any one project: the user-wide config (connections, default models, \
+                      the three roles), the host, the web interface, reaching it over Tailscale, \
+                      and keeping the host running as a service.",
+        body: include_str!("../assets/guide/host.md"),
+        tools: &["read"],
+    },
+    Document {
         slug: "config-format",
         description: "Reference for every `efference.toml` key: scope, tools, [commands], \
                       [paths], [context], [env], [bash], [transport], [mcp.servers].",
