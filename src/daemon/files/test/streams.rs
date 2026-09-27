@@ -116,9 +116,12 @@ async fn a_directory_stream_pokes_for_its_own_entries() {
         .expect("open stream");
     assert_eq!(conn.status().map(|s| s as u16), Some(200));
 
+    // Read past any poke the setup's own write produced: file events arrive late
+    // (FSEvents coalesces on a latency), so `sub/nested.txt` can land after the
+    // stream opens and be the first change. The needle is the arrival.
     scratch.write("sub/arrived.txt", "a");
-    let body = read_until(&mut conn, "event: change").await;
-    assert!(body.contains("data: sub/arrived.txt"), "{body}");
+    let body = read_until(&mut conn, "data: sub/arrived.txt").await;
+    assert!(body.contains("event: change"), "{body}");
 }
 
 /// The stream route takes the filesystem's answer too, so neither spelling of a
