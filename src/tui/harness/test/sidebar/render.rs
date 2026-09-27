@@ -185,6 +185,8 @@ fn sidebar_names_the_model_and_working_directory() {
         model: "anthropic/claude-opus-4".into(),
         cwd: "~/code/efference".into(),
         roles: None,
+        successor: None,
+        root: String::new(),
     })));
     let after = play.sidebar_grid();
     assert!(after.contains("SESSION"), "{after}");
@@ -200,6 +202,8 @@ fn sidebar_names_the_model_and_working_directory() {
         model: "anthropic/claude-opus-4".into(),
         cwd: "~/code/efference".into(),
         roles: None,
+        successor: None,
+        root: String::new(),
     })));
     let titled = play.sidebar_grid();
     let title_row = titled
@@ -230,6 +234,8 @@ fn sidebar_names_hosted_roles_by_connection() {
             spotter: "personal/claude-haiku-4-5".into(),
             triage: "shared".into(),
         }),
+        successor: None,
+        root: String::new(),
     })));
     let grid = play.sidebar_grid();
     assert!(grid.contains("work/claude-opus-4"), "{grid}");

@@ -29,6 +29,16 @@ export interface LogEntry {
  * does not draw it (docs/context.md). */
 export const KICKOFF_SOURCE = "efference";
 
+/** The predecessor a hand-off brief's `source` names — `handoff[<id>]`, the
+ * reserved form `hand_off` writes (src/frontend.rs, docs/tools.md) — or `null`
+ * for any other source. The brief is the predecessor speaking, not the operator. */
+export function handoffPredecessor(
+  source: string | null | undefined,
+): string | null {
+  const match = /^handoff\[(.+)\]$/.exec(source ?? "");
+  return match === null ? null : match[1];
+}
+
 export type Payload =
   | { User: ContentBlock[] }
   | {
@@ -500,6 +510,9 @@ export interface SessionIdentity {
   // The session's working directory, absolute. Shortening it against a home
   // directory is presentation (`ui/identity.ts`), not wire.
   cwd: string;
+  // The session this one handed its work to with `hand_off` (docs/tools.md),
+  // once it has; the client follows it there.
+  successor?: string;
   // The host connection behind each role; absent under standalone `serve`.
   inference?: InferenceIdentity;
 }

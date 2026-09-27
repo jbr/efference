@@ -107,6 +107,8 @@ fn enter_on_another_session_leaves_with_a_destination() {
         model: "test/m".into(),
         cwd: "/work".into(),
         roles: None,
+        successor: None,
+        root: String::new(),
     });
     play.state.open_sessions();
     let _ = play.took_host_cmd();
@@ -173,6 +175,8 @@ fn the_switcher_overlay() {
         model: "test/m".into(),
         cwd: "/work".into(),
         roles: None,
+        successor: None,
+        root: String::new(),
     });
     play.state.open_sessions();
     let _ = play.took_host_cmd();
@@ -182,4 +186,27 @@ fn the_switcher_overlay() {
         row("gamma", "gated", 0),
     ])));
     play.snapshot("session_switcher");
+}
+
+/// A session that handed off names its successor, and the TUI follows it there
+/// by the switcher's own exit (docs/tools.md).
+#[test]
+fn a_named_successor_is_followed() {
+    let mut play = Screenplay::new(80, 12);
+    let quits = play.event_quits(crate::tui::TuiEvent::SessionIdentity(Some(
+        crate::tui::SessionIdentityView {
+            id: "old-leaf".into(),
+            title: None,
+            model: "m".into(),
+            cwd: "~/p".into(),
+            roles: None,
+            successor: Some("new-leaf".into()),
+            root: "/home/someone/p".into(),
+        },
+    )));
+    assert!(quits, "the loop leaves for the successor");
+    assert!(matches!(
+        play.state.switch_to.take(),
+        Some(crate::tui::Exit::Switch { id, cwd }) if id == "new-leaf" && cwd.as_deref() == Some("/home/someone/p")
+    ));
 }

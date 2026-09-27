@@ -5,7 +5,7 @@
 // `/sessions/<id>/`; `App.tsx` decides which of the two it is.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { apiBase, clientRoute } from "../api/base.ts";
+import { apiBase, clientRoute, sessionHref } from "../api/base.ts";
 import type { CallId } from "../api/types.ts";
 import { spotFor } from "../session/store.ts";
 import {
@@ -20,6 +20,7 @@ import { Drawer } from "./Drawer.tsx";
 import { drawerAttention } from "./drawerAttention.ts";
 import { FileView } from "./FileView.tsx";
 import { GateSurface } from "./Gate.tsx";
+import { successorHref } from "./identity.ts";
 import { Inspector } from "./Inspector.tsx";
 import { JumpToLatest } from "./JumpToLatest.tsx";
 import { Login } from "./Login.tsx";
@@ -52,6 +53,12 @@ export function SessionView() {
   // the node is re-found each render so a landing result or verdict shows
   // up in an open inspector.
   const nodes = useMemo(() => buildTree(session.entries), [session.entries]);
+  // A session that handed off (docs/tools.md) is followed to its successor.
+  // `replace`, so Back does not return to the archived predecessor.
+  const follow = successorHref(session.topics.session_identity, sessionHref);
+  useEffect(() => {
+    if (follow !== null) window.location.replace(follow);
+  }, [follow]);
   // The gated call's slot in the transcript, where the gate's decision
   // renders (ui/Gate.tsx); null until that call is on screen.
   const [gateSlot, setGateSlot] = useState<HTMLDivElement | null>(null);

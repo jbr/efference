@@ -512,3 +512,23 @@ fn the_kickoff_turn_is_not_drawn() {
         vec![EntryKind::AssistantMessage, EntryKind::UserMessage]
     );
 }
+
+/// A hand-off brief is the predecessor speaking (docs/tools.md): drawn as the
+/// harness's note of the hand-off with the brief under it, never as the operator's
+/// turn.
+#[test]
+fn a_handoff_brief_is_drawn_as_the_predecessors_note() {
+    let mut brief = entry(
+        0,
+        Payload::User(vec![ContentBlock::Text("carry on".into())]),
+    );
+    brief.source = Some(crate::frontend::handoff_source("old-leaf"));
+    let doc = project(
+        &[brief],
+        &LiveTail::default(),
+        &ViewState::default(),
+        Gate::default(),
+        &[],
+    );
+    assert_eq!(kinds(&doc), vec![EntryKind::Annotation]);
+}

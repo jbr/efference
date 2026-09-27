@@ -1,6 +1,7 @@
+import { handoffPredecessor } from "../api/types.ts";
 import { describe, expect, it } from "vitest";
 
-import { homeRelative } from "./identity.ts";
+import { successorHref, homeRelative } from "./identity.ts";
 
 describe("homeRelative", () => {
   it("shortens a path under a recognized home layout", () => {
@@ -16,5 +17,26 @@ describe("homeRelative", () => {
     expect(homeRelative("/Users")).toBe("/Users");
     expect(homeRelative("/homework/x")).toBe("/homework/x");
     expect(homeRelative("relative/path")).toBe("relative/path");
+  });
+});
+
+describe("successorHref", () => {
+  // A session that handed off (docs/tools.md) sends its viewer to the successor.
+  it("names the successor's page once there is one", () => {
+    const href = (id: string) => `/sessions/${id}/`;
+    expect(successorHref({ successor: "new-leaf" }, href)).toBe(
+      "/sessions/new-leaf/",
+    );
+    expect(successorHref({}, href)).toBe(null);
+    expect(successorHref(null, href)).toBe(null);
+  });
+});
+
+describe("handoffPredecessor", () => {
+  it("reads the reserved hand-off source and nothing else", () => {
+    expect(handoffPredecessor("handoff[old-leaf]")).toBe("old-leaf");
+    expect(handoffPredecessor("web")).toBe(null);
+    expect(handoffPredecessor("agent[old-leaf]")).toBe(null);
+    expect(handoffPredecessor(undefined)).toBe(null);
   });
 });

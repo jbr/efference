@@ -144,6 +144,25 @@ pub(crate) fn entry_nodes(
             // (docs/context.md).
             Payload::User(_)
                 if entry.source.as_deref() == Some(crate::frontend::KICKOFF_SOURCE) => {}
+            // A hand-off brief (docs/tools.md) is the predecessor speaking, not the
+            // operator: drawn as the harness's note of the hand-off with the brief under
+            // it, so the operator sees what this session was told.
+            Payload::User(blocks)
+                if let Some(predecessor) = entry
+                    .source
+                    .as_deref()
+                    .and_then(crate::frontend::handoff_predecessor) =>
+            {
+                let mut body = vec![DocumentNode::Paragraph {
+                    spans: vec![Span {
+                        text: format!("⟢ handed off from {predecessor} · its brief:").into(),
+                        style: SpanStyle::Comment,
+                        action: None,
+                    }],
+                }];
+                body.extend(markdown(&join_text(blocks)));
+                nodes.push(DocumentNode::entry(EntryKind::Annotation, body));
+            }
             Payload::User(blocks) => {
                 // A sourced turn is attributed with the same `source:` address it
                 // carries on the wire (docs/control-api.md); the operator's turns

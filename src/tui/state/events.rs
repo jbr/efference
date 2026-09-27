@@ -173,10 +173,27 @@ impl<'a> InteractiveState<'a> {
             }
 
             TuiEvent::SessionIdentity(identity) => {
+                // A session that handed off (docs/tools.md) is followed to its
+                // successor: the same exit the session switcher takes, so the
+                // attach loop re-enters on the successor's prefix.
+                let follow = self.switch_to.is_none()
+                    && identity
+                        .as_ref()
+                        .and_then(|view| view.successor.as_ref())
+                        .is_some();
+                if follow && let Some(view) = &identity {
+                    self.switch_to = Some(super::Exit::Switch {
+                        id: view.successor.clone().unwrap_or_default(),
+                        cwd: Some(view.root.clone()),
+                    });
+                }
                 // Sidebar chrome (the SESSION section), not transcript content —
                 // update and repaint, no reproject.
                 self.session_identity = identity;
                 self.dirty = true;
+                if follow {
+                    return true;
+                }
             }
 
             TuiEvent::Policy(policy) => {

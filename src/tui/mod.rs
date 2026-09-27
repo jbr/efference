@@ -443,6 +443,12 @@ pub(crate) struct SessionIdentityView {
     /// The hosted role selections (`session_identity.inference`), or `None` for a
     /// standalone session that has no connection catalog to name.
     pub roles: Option<SessionRolesView>,
+    /// The session this one handed its work to (docs/tools.md), once it has: the
+    /// TUI follows it there.
+    pub successor: Option<String>,
+    /// The working directory as the host reports it, unshortened — where a
+    /// followed successor's session directory is.
+    pub root: String,
 }
 
 /// The three inference roles as the sidebar prints them: each a qualified

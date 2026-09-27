@@ -5,6 +5,7 @@
 // every folded item opens whole on a tap, and the density toggles hide, they
 // never drop (docs/web-client.md).
 
+import { handoffPredecessor } from "../api/types.ts";
 import { memo, useMemo } from "react";
 import type { ConfigEdit, ContentBlock, Mark, Spot } from "../api/types.ts";
 import type { LiveBlock, PendingTurn, Streaming } from "../session/store.ts";
@@ -140,6 +141,18 @@ function Leaf({ node }: { node: LeafNode }) {
   const { entry } = node;
   const p = entry.payload;
   if ("User" in p) {
+    // A hand-off brief is the predecessor speaking (docs/tools.md): shown as
+    // the harness's note of the hand-off, never as the operator's turn.
+    const predecessor = handoffPredecessor(entry.source);
+    if (predecessor !== null) {
+      return (
+        <Entry label="handed off" as="ambient">
+          <span className="ambient-source">from {predecessor}</span> — its
+          brief:
+          <Markdown>{text(p.User)}</Markdown>
+        </Entry>
+      );
+    }
     return (
       <Entry label="you" as="user">
         <Markdown>{text(p.User)}</Markdown>

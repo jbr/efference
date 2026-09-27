@@ -1542,6 +1542,15 @@ CSRF is a different threat and is already answered: the session cookie is `Secur
 would not help against injection — script running in this origin can read one out
 of the DOM.
 
+## Following a hand-off
+
+A session that hands off (docs/tools.md) names its successor in `session_identity`, and
+`SessionView` replaces the page's location with the successor's (`ui/identity.ts`
+`successorHref`) — `replace`, so Back does not return to the archived predecessor. The
+successor's transcript opens on the predecessor's brief, whose `User` entry carries the
+reserved `handoff[<id>]` source (`api/types.ts` `handoffPredecessor`): drawn as a harness
+note ("handed off from `<id>` — its brief:") rather than as the operator's turn.
+
 ## Serving and auth
 
 The gate's anonymous surface is every GET outside `/v1` plus `POST /auth/session`

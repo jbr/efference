@@ -10,6 +10,15 @@
 
 const HOME_PARENTS = ["Users", "home"];
 
+/** Where a session that handed off (docs/tools.md) sends its viewer: the
+ * successor's page, or `null` while it has none. */
+export function successorHref(
+  identity: { successor?: string } | null | undefined,
+  href: (id: string) => string,
+): string | null {
+  return identity?.successor === undefined ? null : href(identity.successor);
+}
+
 /** `/Users/jbr/code/efference` → `~/code/efference`; anything else verbatim. */
 export function homeRelative(cwd: string): string {
   const parts = cwd.split("/");

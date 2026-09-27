@@ -327,6 +327,11 @@ pub(super) fn parse_session_identity(value: &serde_json::Value) -> Option<Sessio
         model: value.get("model")?.as_str()?.to_string(),
         cwd: home_relative(value.get("cwd")?.as_str()?),
         roles: value.get("inference").and_then(parse_session_roles),
+        successor: value
+            .get("successor")
+            .and_then(|s| s.as_str())
+            .map(str::to_string),
+        root: value.get("cwd")?.as_str()?.to_string(),
     })
 }
 
