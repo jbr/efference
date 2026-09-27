@@ -147,12 +147,27 @@ someone new to all this; their call either way.
    server, an issue tracker, a browser, a search tool. Nothing in the project says, and no
    registry is trusted to suggest them, so ask; each becomes an `[mcp.servers]` stanza.
 
+**Whose project it is.** Ask alongside the four, with what the survey showed — a `git
+remote` naming someone else's repository is a hint, not an answer, since forks and
+organization repositories blur it: "this looks like a clone of `org/name` — is it yours, or
+are you contributing to it?" The answer decides what the setup may leave in git's view:
+
+- **Theirs:** offer to add `.efference/` (each session's working state) to `.gitignore`;
+  `efference.toml` and a new `AGENTS.md` are ordinary files they may commit.
+- **Someone else's:** nothing the setup writes should reach their contribution. Add
+  `.efference/`, `efference.toml`, and any guide you write to `.git/info/exclude`, which
+  git reads but never commits, rather than to `.gitignore`. Leave an existing `CLAUDE.md`
+  or `AGENTS.md` as it is — it is the project's — and put anything to add in a separate
+  file you exclude and list beside it. A `CONTRIBUTING.md` is worth listing for sessions:
+  it is what the work will be reviewed against.
+- **No answer:** `.git/info/exclude` for `.efference/` is right either way.
+
 **On your next turn, write the files** from the answers — `AGENTS.md` only if the project
 has no guide for agents already, then `efference.toml` — show them, and run
 `efference check`.
 
 **Yours to do without asking:** a grant for the project's own build tool; listing the
-project's guide for agents, or drafting one; `deny` entries for the files they asked you to avoid; comments in the file
+project's guide for agents, or drafting one; the `.git/info/exclude` entries above; `deny` entries for the files they asked you to avoid; comments in the file
 saying what each entry is for; running the check at the end.
 
 ## Things you can offer
