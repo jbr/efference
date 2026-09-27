@@ -654,6 +654,7 @@ impl InferenceRegistry {
             spotter,
             triage,
             secret_values,
+            credential_variables: self.credential_variables.iter().cloned().collect(),
         })
     }
 

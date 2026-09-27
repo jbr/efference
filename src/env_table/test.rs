@@ -756,3 +756,62 @@ fn absorb_secret_masks_short_values_without_a_prefix() {
         "key ⟦work (WORK_KEY): elided by harness⟧ here"
     );
 }
+
+/// The host's credential variables join the table as built-ins that strip and mask
+/// (docs/env.md): a session's tools do not inherit the key the host reaches its
+/// models with, the value stays out of the log, and a project that needs the key
+/// opts back in with `strip = false` and keeps the mask.
+#[test]
+fn host_credentials_strip_and_mask_and_a_project_can_opt_back_in() {
+    let host = vec!["ANTHROPIC_API_KEY".to_string()];
+    let table = Table::merge_with_host(&BTreeMap::new(), &host);
+    assert_eq!(
+        table.resolve("ANTHROPIC_API_KEY").0,
+        EnvRule {
+            mask: true,
+            strip: true
+        }
+    );
+    // Only the named variable: another `*_KEY` keeps the glob's mask-only rule.
+    assert_eq!(
+        table.resolve("OTHER_KEY").0,
+        EnvRule {
+            mask: true,
+            strip: false
+        }
+    );
+    let opted_in = Table::merge_with_host(
+        &user(&[("ANTHROPIC_API_KEY", entry(None, Some(false)))]),
+        &host,
+    );
+    assert_eq!(
+        opted_in.resolve("ANTHROPIC_API_KEY").0,
+        EnvRule {
+            mask: true,
+            strip: false
+        }
+    );
+
+    let base = EnvSnapshot::new(
+        [
+            (
+                "ANTHROPIC_API_KEY".to_string(),
+                "sk-ant-host-credential".to_string(),
+            ),
+            ("PATH".to_string(), "/bin".to_string()),
+        ]
+        .into(),
+    )
+    .unwrap();
+    let policy = EnvPolicy::build_session(
+        &BTreeMap::new(),
+        &host,
+        base,
+        &[],
+        Arc::new(Resolver::default()),
+    )
+    .policy;
+    let child = policy.child_env().resolved();
+    assert!(!child.contains_key("ANTHROPIC_API_KEY"), "{child:?}");
+    assert_eq!(child.get("PATH").map(String::as_str), Some("/bin"));
+}

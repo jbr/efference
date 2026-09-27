@@ -427,8 +427,26 @@ async fn prepare_minting(
     // of the origin, so its references are already in the resolver's cache — no
     // second vault prompt.
     let session_values = resolve_env_table(&resolver, &loaded.role.env)?;
-    let env_report = crate::env_table::EnvPolicy::build_snapshot(
+    let host_credentials = inference.credential_variables().to_vec();
+    let withheld: Vec<&String> = host_credentials
+        .iter()
+        .filter(|name| base_env.get(name).is_some())
+        .filter(|name| loaded.role.env.get(*name).and_then(|entry| entry.strip) != Some(false))
+        .collect();
+    if !withheld.is_empty() {
+        eprintln!(
+            "env: withheld from this session's commands — the host's model credentials \
+             ({}); a project that needs one sets `strip = false` for it under [env]",
+            withheld
+                .iter()
+                .map(|name| format!("`{name}`"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+    }
+    let env_report = crate::env_table::EnvPolicy::build_session(
         &loaded.role.env,
+        &host_credentials,
         base_env,
         &session_values,
         resolver.clone(),

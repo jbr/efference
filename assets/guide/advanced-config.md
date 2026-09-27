@@ -54,7 +54,9 @@ variable out of every command the session runs — the right answer for a creden
 person should use. `efference://guide/config-format` has the full table.
 
 This is only for credentials the *project* needs. The keys efference itself uses to reach a
-model live in the user-wide `~/.efference/config.toml`, not here.
+model live in the user-wide `~/.efference/config.toml`, not here, and are withheld from a
+session's commands by default; a project whose own code calls the same provider opts one
+back in with `NAME = { strip = false }`, which keeps it masked.
 
 ## Files that hold secrets
 

@@ -228,6 +228,21 @@ Disabling is possible, but only by saying `mask = false`.
 
 Never file order: TOML tables are semantically unordered.
 
+**The host's credentials are built-ins too.** Every variable a host connection reads its
+key from (`auth = { kind = "env", key = … }` in `~/.efference/config.toml`, disabled
+connections included) joins a hosted session's table as an exact-name entry that strips
+and masks (`Table::merge_with_host`, fed from `SessionInference::credential_variables`).
+Those values are the host's, not the project's: the host has already read them to reach
+its models, and a session's commands have no need of them. The client's environment
+snapshot carries them whenever the creating shell had them — an exported key, or any
+launcher run under `op run` — so without this every tool a session ran inherited the
+host's model credentials. Being an exact name, the entry outranks `*_KEY`; being a
+built-in, a project entry at the same name inherits what it omits, so
+`ANTHROPIC_API_KEY = { strip = false }` opts a project that genuinely calls the provider
+back in and keeps the value masked. Boot names the variables it withheld, since a tool
+that needed one fails obscurely (the Codex strip gotcha below). The names are kept on the
+policy, so a mid-session `[env]` edit re-merges them.
+
 ## Values and references
 
 An `[env]` entry can name the variable's **value**, in two forms:

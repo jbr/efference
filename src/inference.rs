@@ -200,6 +200,11 @@ pub struct ConnectionInventory {
 pub struct InferenceRegistry {
     connections: BTreeMap<String, Connection>,
     defaults: ResolvedDefaults,
+    /// Every environment variable a connection reads its credential from
+    /// (`auth = { kind = "env", key = … }`), disabled connections included: the
+    /// host's credentials, which sessions strip from their tools' environment
+    /// by default (docs/env.md).
+    credential_variables: BTreeSet<String>,
 }
 
 struct Connection {
@@ -240,6 +245,9 @@ pub struct SessionInference {
     spotter: ResolvedRole,
     triage: Option<ResolvedTriage>,
     secret_values: Vec<(String, String)>,
+    /// The host's credential variables ([`InferenceRegistry`]), for the
+    /// session's env table to strip (docs/env.md).
+    credential_variables: Vec<String>,
 }
 
 struct ResolvedRole {
@@ -318,8 +326,12 @@ impl InferenceRegistry {
         // than waiting for a session to resolve that role (docs/operating.md).
         let mut enabled_names = BTreeSet::new();
         let mut disabled_names = BTreeSet::new();
+        let mut credential_variables = BTreeSet::new();
         for (name, config) in config.connections {
             validate_connection_name(&name)?;
+            if let AuthConfig::Env { key } = &config.auth {
+                credential_variables.insert(key.clone());
+            }
             let (provider, base) = resolve_declaration(&name, &config)?;
             let credential = if config.disabled {
                 Err(format!("connection {name:?} is disabled"))
@@ -372,6 +384,7 @@ impl InferenceRegistry {
         Ok(Self {
             connections,
             defaults,
+            credential_variables,
         })
     }
 
@@ -442,6 +455,7 @@ impl InferenceRegistry {
         Self {
             connections: BTreeMap::new(),
             defaults: ResolvedDefaults::default(),
+            credential_variables: BTreeSet::new(),
         }
     }
 
@@ -505,6 +519,12 @@ impl InferenceRegistry {
 }
 
 impl SessionInference {
+    /// The host's credential variables, for the session's env table to strip
+    /// from its tools' environment (docs/env.md).
+    pub fn credential_variables(&self) -> &[String] {
+        &self.credential_variables
+    }
+
     pub fn main(&self) -> (&ModelSelection, Endpoint) {
         (&self.main.selection, self.main.endpoint.clone())
     }

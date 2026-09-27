@@ -184,10 +184,28 @@ impl Table {
     /// Merge the operator's `[env]` entries over the built-ins. At a key both
     /// declare, an omitted field inherits the built-in's answer.
     pub fn merge(user: &BTreeMap<String, EnvEntry>) -> Self {
+        Self::merge_with_host(user, &[])
+    }
+
+    /// [`merge`](Self::merge) with the host's credential variables as further
+    /// built-ins: each an exact name that strips and masks (docs/env.md). An exact
+    /// name outranks the `*_KEY` glob, and an operator entry at the same name
+    /// inherits the fields it omits — so `strip = false` opts one back in and
+    /// keeps it masked.
+    pub fn merge_with_host(user: &BTreeMap<String, EnvEntry>, host_credentials: &[String]) -> Self {
         let mut entries: BTreeMap<String, EnvRule> = BUILT_IN
             .iter()
             .map(|(k, v)| ((*k).to_string(), *v))
             .collect();
+        for name in host_credentials {
+            entries.insert(
+                name.clone(),
+                EnvRule {
+                    mask: true,
+                    strip: true,
+                },
+            );
+        }
         for (key, entry) in user {
             let inherited = entries.get(key).copied().unwrap_or_default();
             entries.insert(
@@ -323,6 +341,9 @@ pub fn glob_match(pattern: &str, name: &str) -> bool {
 #[derive(Debug, Clone)]
 pub struct EnvPolicy {
     table: Table,
+    /// The host's credential variables, merged as built-ins (docs/env.md) —
+    /// kept so a config edit's re-merge keeps them.
+    host_credentials: Vec<String>,
     base: EnvSnapshot,
     child_env: ChildEnv,
     masker: Arc<Masker>,
@@ -408,7 +429,21 @@ impl EnvPolicy {
         resolved: &[ResolvedValue],
         resolver: Arc<Resolver>,
     ) -> EnvReport {
-        let table = Table::merge(user);
+        Self::build_session(user, &[], base, resolved, resolver)
+    }
+
+    /// [`build_snapshot`](Self::build_snapshot) for a hosted session: the host's
+    /// credential variables join the table as built-ins that strip and mask, so a
+    /// session's tools do not inherit the keys the host reaches its models with
+    /// unless the project opts one back in (docs/env.md).
+    pub fn build_session(
+        user: &BTreeMap<String, EnvEntry>,
+        host_credentials: &[String],
+        base: EnvSnapshot,
+        resolved: &[ResolvedValue],
+        resolver: Arc<Resolver>,
+    ) -> EnvReport {
+        let table = Table::merge_with_host(user, host_credentials);
         let mut conflicts = Vec::new();
         let mut below_floor = Vec::new();
         let mut strip = Vec::new();
@@ -460,6 +495,7 @@ impl EnvPolicy {
         EnvReport {
             policy: Self {
                 table,
+                host_credentials: host_credentials.to_vec(),
                 child_env: ChildEnv::from_snapshot(base.clone(), strip).with_inject(inject),
                 base,
                 masker,
@@ -487,7 +523,7 @@ impl EnvPolicy {
     /// child environment is fixed at boot with the spawn sites that hold it, so
     /// a value added by an edit reaches children on the next session.
     pub fn absorb_config(&self, user: &BTreeMap<String, EnvEntry>) -> Vec<ResolveError> {
-        let table = Table::merge(user);
+        let table = Table::merge_with_host(user, &self.host_credentials);
         let mut to_mask: Vec<(String, String)> = self
             .base
             .iter()

@@ -657,3 +657,38 @@ auth = {{ kind = "env", key = "K" }}
     let base = declare(r#"base-url = "https://api.example.com/v1""#);
     assert!(base.contains("takes no base-url"), "{base}");
 }
+
+/// Every connection's environment credential variable reaches the session, disabled
+/// connections included, for its env table to strip (docs/env.md).
+#[test]
+fn a_session_carries_the_hosts_credential_variables() {
+    let config = InferenceConfig::from_toml(
+        r#"
+[defaults]
+model = "work/m"
+
+[connections.work]
+provider = "anthropic"
+auth = { kind = "env", key = "WORK_KEY" }
+
+[connections.idle]
+provider = "openai"
+auth = { kind = "env", key = "IDLE_KEY" }
+disabled = true
+"#,
+    )
+    .unwrap();
+    let env = EnvSnapshot::new([("WORK_KEY".to_string(), "k".repeat(16))].into()).unwrap();
+    let registry = InferenceRegistry::from_config(
+        config,
+        Path::new("/host"),
+        env,
+        &Arc::new(Secrets::in_memory()),
+    )
+    .unwrap();
+    let session = registry.resolve(None, None, None).unwrap();
+    assert_eq!(
+        session.credential_variables(),
+        ["IDLE_KEY".to_string(), "WORK_KEY".to_string()]
+    );
+}

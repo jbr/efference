@@ -50,6 +50,9 @@ behind a change, see [`journal/`](journal/).
   catalog routes, so what each credential can see is one run's output.
 
 ### Changed
+- **The host's model credentials are withheld from sessions' commands** (docs/env.md): every
+  variable a connection reads its key from strips and masks by default in a hosted session;
+  a project opts one back in with `strip = false`, and boot names what it withheld.
 - **`end` is `archive`** (docs/tools.md, docs/tui.md): the control verb, `efference control
   archive`, the in-session `sessions__archive`, the TUI switcher's `a`, and the web client's
   menu. The session stops and its log stays on disk for a later resume.
