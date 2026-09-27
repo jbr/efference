@@ -340,7 +340,7 @@ fn cache_report_does_not_join_streaks_across_sessions() {
 fn bind_flags(bind: Option<&str>) -> serve::BindFlags {
     serve::BindFlags {
         bind: bind.map(str::to_string),
-        public_name: None,
+        public_url: None,
         tls_cert: None,
         tls_key: None,
         open: false,
@@ -353,13 +353,16 @@ fn bind_flags(bind: Option<&str>) -> serve::BindFlags {
 fn bind_flags_override_the_host_table_key_by_key() {
     let table = efference::inference::HostConfig {
         bind: Some("100.64.0.1:7878".into()),
-        public_name: Some("box.example.ts.net".into()),
+        public_url: Some("https://box.example.ts.net:7878".into()),
         tls_cert: Some("/c.crt".into()),
         tls_key: Some("/c.key".into()),
     };
     let merged = bind_flags(Some("127.0.0.1:0")).over(table.clone());
     assert_eq!(merged.bind.as_deref(), Some("127.0.0.1:0"));
-    assert_eq!(merged.public_name.as_deref(), Some("box.example.ts.net"));
+    assert_eq!(
+        merged.public_url.as_deref(),
+        Some("https://box.example.ts.net:7878")
+    );
     assert_eq!(merged.tls_key, Some(PathBuf::from("/c.key")));
 
     let off = bind_flags(Some("")).over(table.clone());
@@ -388,4 +391,18 @@ fn a_half_tls_pair_and_an_open_without_a_bind_are_refused() {
     };
     let err = err.to_string();
     assert!(err.contains("--open needs a bind"), "{err}");
+}
+
+/// A public URL is an origin, and one a TLS-terminating host prints is https; a
+/// plaintext loopback listener behind a proxy may name an https one.
+#[test]
+fn a_public_url_is_an_https_origin_when_the_host_terminates_tls() {
+    assert_eq!(
+        serve::checked_public_url("https://Box.example.ts.net/", true).unwrap(),
+        "https://box.example.ts.net"
+    );
+    assert!(serve::checked_public_url("https://box.example.ts.net", false).is_ok());
+    assert!(serve::checked_public_url("http://box.example.ts.net:7878", true).is_err());
+    assert!(serve::checked_public_url("https://box.example.ts.net/app", false).is_err());
+    assert!(serve::checked_public_url("box.example.ts.net", false).is_err());
 }

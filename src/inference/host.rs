@@ -20,10 +20,10 @@ use crate::api::Error;
 pub struct HostConfig {
     /// `ADDR:PORT` for the TCP listener, the web client's front door.
     pub bind: Option<String>,
-    /// The name browsers address the bind by: the Host allowlist and the
-    /// hostname in the printed link. Required with TLS; `localhost` on a
+    /// The address browsers open, `https://name[:port]`: the printed link and
+    /// the Host allowlist. Required with TLS; `http://localhost:<port>` on a
     /// loopback bind otherwise.
-    pub public_name: Option<String>,
+    pub public_url: Option<String>,
     /// PEM certificate chain for the bind (what `tailscale cert` writes).
     pub tls_cert: Option<PathBuf>,
     /// PEM private key matching `tls-cert`.

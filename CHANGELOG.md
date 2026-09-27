@@ -12,9 +12,10 @@ behind a change, see [`journal/`](journal/).
   host, the web interface, reaching it over Tailscale, and running the host as a launchd or
   systemd service — what a session needs to answer questions about efference itself.
 - **`[host]` in `~/.efference/config.toml`** (docs/web-bind.md): the web bind's `bind`,
-  `public-name`, `tls-cert`, and `tls-key`, each overridable by its flag on `efference host`;
-  replaces the `EFFERENCE_BIND`/`EFFERENCE_HOST`/`EFFERENCE_TLS_*` environment fallbacks, and
-  `--host` is now `--public-name`. An island ignores it.
+  `public-url`, `tls-cert`, and `tls-key`, each overridable by its flag on `efference host`;
+  replaces the `EFFERENCE_BIND`/`EFFERENCE_HOST`/`EFFERENCE_TLS_*` environment fallbacks.
+  `--host <name>` is now `--public-url <origin>`, which also lets the host sit behind
+  `tailscale serve`. An island ignores it.
 - **A setup session that interviews** (docs/context.md): a directory with no project config
   opens a session granted the directory, scoped to setting it up, that asks whether the user
   is new to efference, explains the spotter and triage if so, asks four questions, and writes

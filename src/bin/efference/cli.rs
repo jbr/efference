@@ -489,11 +489,12 @@ pub(crate) enum Command {
         /// socket alone whatever the table says.
         #[arg(long, value_name = "ADDR:PORT")]
         bind: Option<String>,
-        /// The name browsers address the bind by — the Host allowlist and the
-        /// hostname in the printed link. Defaults to `localhost` on a loopback bind;
-        /// required with TLS. Overrides `[host] public-name`.
-        #[arg(long, value_name = "NAME")]
-        public_name: Option<String>,
+        /// The address browsers open, `https://name[:port]` — the printed link and
+        /// the Host allowlist. Defaults to `http://localhost:<port>` on a loopback
+        /// bind; required with TLS; differs from the bind behind a proxy that
+        /// terminates TLS. Overrides `[host] public-url`.
+        #[arg(long, value_name = "URL")]
+        public_url: Option<String>,
         /// PEM certificate chain for the bind (the `tailscale cert` output).
         /// Overrides `[host] tls-cert`.
         #[arg(long, value_name = "PEM")]

@@ -29,9 +29,11 @@ pub struct TcpBind {
     pub addr: String,
     /// PEM cert chain + key (the `tailscale cert` output). `None` = plaintext loopback.
     pub tls: Option<TlsPem>,
-    /// The public name browsers address the daemon by: the Host allowlist entry and
-    /// the hostname in the printed bootstrap link.
-    pub host: String,
+    /// The address browsers open, `scheme://name[:port]` with no path: the base of
+    /// the printed bootstrap link, and — by its host — the Host allowlist entry. It
+    /// differs from the listener when something in front terminates TLS (a
+    /// `tailscale serve`), which is why it is given rather than derived.
+    pub public_url: String,
     /// The machine root every credential derives from.
     pub root: Root,
     /// Launch the operator's browser at the bootstrap link once bound.
@@ -96,15 +98,15 @@ pub(crate) fn arm_with_ledger(bind: TcpBind, ledger: BurnLedger) -> (Arc<TcpAuth
     let TcpBind {
         addr,
         tls,
-        host,
+        public_url,
         root,
         open,
     } = bind;
-    let scheme = if tls.is_some() { "https" } else { "http" };
-    let port = addr.rsplit(':').next().unwrap_or_default();
-    let host = host.to_ascii_lowercase();
-    let public_base = format!("{scheme}://{host}:{port}");
-    let mut hosts = vec![host];
+    let public_base = public_url.trim_end_matches('/').to_string();
+    let authority = public_base
+        .split_once("://")
+        .map_or(public_base.as_str(), |(_, rest)| rest);
+    let mut hosts = vec![host_only(authority).to_ascii_lowercase()];
     if tls.is_none() {
         // A plaintext bind is loopback-only (CLI-enforced); accept its spellings.
         for loopback in ["localhost", "127.0.0.1", "[::1]"] {

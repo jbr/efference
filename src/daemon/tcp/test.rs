@@ -21,7 +21,7 @@ fn armed(root: &str) -> Arc<TcpAuth> {
         TcpBind {
             addr: "127.0.0.1:0".into(),
             tls: None,
-            host: "localhost".into(),
+            public_url: "http://localhost:7777".into(),
             root: Root::new(root),
             open: false,
         },

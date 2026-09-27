@@ -15,7 +15,7 @@ fn the_table_parses_beside_the_connections_and_expands_home() {
         r#"
 [host]
 bind = "100.64.0.1:7878"
-public-name = "box.example.ts.net"
+public-url = "https://box.example.ts.net:7878"
 tls-cert = "~/.tls/box.crt"
 tls-key = "/etc/box.key"
 
@@ -27,7 +27,10 @@ auth = { kind = "env", key = "K" }
     .unwrap();
     let host = HostConfig::load(&home).unwrap();
     assert_eq!(host.bind.as_deref(), Some("100.64.0.1:7878"));
-    assert_eq!(host.public_name.as_deref(), Some("box.example.ts.net"));
+    assert_eq!(
+        host.public_url.as_deref(),
+        Some("https://box.example.ts.net:7878")
+    );
     assert_eq!(host.tls_cert, Some(home.join(".tls/box.crt")));
     assert_eq!(host.tls_key, Some(PathBuf::from("/etc/box.key")));
     std::fs::remove_dir_all(&home).unwrap();

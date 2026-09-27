@@ -81,12 +81,16 @@ for this machine's name on that network. It is the one arrangement this guide de
 Anything else — another VPN, a public tunnel, a home-made certificate authority — is the
 operator's own design, with its own security trade-offs; do not propose one.
 
-With Tailscale installed and signed in on this machine and the other device:
+There are two ways to arrange it. Both need Tailscale installed and signed in on this
+machine and the other device, and HTTPS certificates enabled for the tailnet in its admin
+console.
+
+**Bind to the Tailscale address.** The host serves HTTPS itself, with a certificate from
+`tailscale cert`.
 
 1. Find this machine's Tailscale address and name: `tailscale ip -4` prints the address;
    the name is the `DNSName` in `tailscale status --json`, without its trailing dot — a
-   name like `laptop.tail1234.ts.net`. HTTPS certificates must be enabled for the tailnet
-   in its admin console.
+   name like `laptop.tail1234.ts.net`.
 2. Get a certificate: `tailscale cert laptop.tail1234.ts.net` writes a `.crt` and a `.key`
    into the current directory. Keep them together somewhere private, such as `~/.tls/`.
 3. Point `[host]` at them:
@@ -94,7 +98,7 @@ With Tailscale installed and signed in on this machine and the other device:
 ```toml ~/.efference/config.toml
 [host]
 bind = "100.101.102.103:7878"            # the address from `tailscale ip -4`
-public-name = "laptop.tail1234.ts.net"   # the name the certificate is for
+public-url = "https://laptop.tail1234.ts.net:7878"  # the certificate's name, and the port
 tls-cert = "~/.tls/laptop.tail1234.ts.net.crt"
 tls-key = "~/.tls/laptop.tail1234.ts.net.key"
 ```
@@ -104,7 +108,25 @@ tls-key = "~/.tls/laptop.tail1234.ts.net.key"
 
 The host listens only on the Tailscale address, so only the operator's own devices can
 reach it. Tailscale's certificates expire: rerunning `tailscale cert` and restarting the host
-renews one. A plain-HTTP bind on anything but loopback is refused.
+renews one.
+
+**Behind `tailscale serve`.** The host stays on loopback, and Tailscale serves it to the
+tailnet over HTTPS, managing the certificate itself — nothing to renew by hand.
+
+```toml ~/.efference/config.toml
+[host]
+bind = "127.0.0.1:7878"
+public-url = "https://laptop.tail1234.ts.net"   # where Tailscale serves it: port 443
+```
+
+Then `tailscale serve --bg http://127.0.0.1:7878` once; the setting persists in Tailscale
+until `tailscale serve --https=443 off`. Start the host with `efference host`, and open the
+`https://…ts.net` link it prints on the other device. `public-url` is what makes this work:
+the host prints and accepts the address browsers use, which here is not the one it listens
+on. It gives up HTTP/3, which needs the host to terminate TLS itself; it shares port 443
+with anything else the machine serves through Tailscale.
+
+A plain-HTTP bind on anything but loopback is refused, in either arrangement.
 
 ## Keeping the host running
 

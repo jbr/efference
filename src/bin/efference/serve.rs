@@ -9,7 +9,7 @@ use super::*;
 /// [`TcpBind`]: efference::daemon::TcpBind
 pub(crate) struct BindFlags {
     pub(crate) bind: Option<String>,
-    pub(crate) public_name: Option<String>,
+    pub(crate) public_url: Option<String>,
     pub(crate) tls_cert: Option<PathBuf>,
     pub(crate) tls_key: Option<PathBuf>,
     pub(crate) open: bool,
@@ -22,7 +22,7 @@ impl BindFlags {
     pub(crate) fn over(self, table: efference::inference::HostConfig) -> Self {
         Self {
             bind: self.bind.or(table.bind),
-            public_name: self.public_name.or(table.public_name),
+            public_url: self.public_url.or(table.public_url),
             tls_cert: self.tls_cert.or(table.tls_cert),
             tls_key: self.tls_key.or(table.tls_key),
             open: self.open,
@@ -74,13 +74,16 @@ pub(crate) fn resolve_bind(
         )
         .into());
     }
-    let host = match (flags.public_name, &tls) {
-        (Some(host), _) => host,
-        (None, None) => "localhost".into(),
+    let public_url = match (flags.public_url, &tls) {
+        (Some(url), tls) => checked_public_url(&url, tls.is_some())?,
+        (None, None) => format!(
+            "http://localhost:{}",
+            addr.rsplit(':').next().unwrap_or_default()
+        ),
         (None, Some(_)) => {
             return Err(
-                "a TLS bind needs a public name (--public-name, or public-name under \
-                 [host]) — the cert's DNS name, which browsers must address the host by"
+                "a TLS bind needs a public URL (--public-url, or public-url under [host]) \
+                 — https://<the certificate's name>:<port>, the address browsers open"
                     .into(),
             );
         }
@@ -92,10 +95,38 @@ pub(crate) fn resolve_bind(
     Ok(Some(efference::daemon::TcpBind {
         addr,
         tls,
-        host,
+        public_url,
         root,
         open: flags.open,
     }))
+}
+
+/// A public URL is an origin — `http(s)://name[:port]`, no path — and one the host
+/// serves over TLS itself is `https`. A plaintext listener may sit behind an `https`
+/// one (a proxy terminating TLS), so the reverse is allowed.
+pub(crate) fn checked_public_url(url: &str, terminates_tls: bool) -> Result<String, CliError> {
+    let url = url.trim().trim_end_matches('/');
+    let Some((scheme, authority)) = url.split_once("://") else {
+        return Err(
+            format!("public-url {url:?} is not a URL: expected https://name[:port]").into(),
+        );
+    };
+    if scheme != "https" && scheme != "http" {
+        return Err(format!("public-url {url:?} must be http or https").into());
+    }
+    if authority.is_empty() || authority.contains('/') {
+        return Err(
+            format!("public-url {url:?} is an origin, scheme://name[:port], with no path").into(),
+        );
+    }
+    if terminates_tls && scheme != "https" {
+        return Err(format!(
+            "public-url {url:?} is http, but this host terminates TLS itself: browsers reach \
+             it at https"
+        )
+        .into());
+    }
+    Ok(url.to_ascii_lowercase())
 }
 
 /// Every mounted tool name, dotted — what the tester prints when `--tool` names

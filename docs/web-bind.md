@@ -17,7 +17,7 @@ a host guards `/sessions`. `Surface::Host` is the seam the in-process host mount
 its session routes behind, so the gate's prefix decision is the same shape on both.
 
 The bind is configured by the `[host]` table of the user configuration,
-`~/.efference/config.toml` (`bind`, `public-name`, `tls-cert`, `tls-key`;
+`~/.efference/config.toml` (`bind`, `public-url`, `tls-cert`, `tls-key`;
 `src/inference/host.rs`), with a flag on `efference host` overriding each key alone —
 `--bind ""` turns a configured bind off for one launch. The table describes the machine's
 host rather than a shell, which is what lets a host started by a service manager, with no
@@ -69,9 +69,14 @@ QUIC listener on the same port (UDP, `trillium-quinn`), which the listener build
 auto-pairs with the TLS listener and advertises via `alt-svc: h3` — browsers upgrade
 on a later request. A plaintext bind is accepted only on
 a loopback address; the operator posture for anything routable is the tailnet address
-with the ts.net cert. `public-name` (`--public-name`) is the public DNS name — it is both the
-Host allowlist entry and the hostname in printed links (defaults to `localhost` on a
-plaintext loopback bind, required with TLS). The certificate and key are a pair,
+with the ts.net cert. `public-url` (`--public-url`) is the address browsers open, an origin
+(`https://name[:port]`, no path): the base of printed links, and by its host the Host
+allowlist entry. It defaults to `http://localhost:<port>` on a plaintext loopback bind and
+is required with TLS, where it must be `https`. It is given rather than derived because a
+proxy terminating TLS in front of a loopback listener — `tailscale serve`, verified
+2026-09-26 — puts browsers at an address the listener cannot infer: `https` on the proxy's
+port. The proxy must forward the client's `Host` (serve does), and the Origin check compares
+hosts only, so both hold behind it. The certificate and key are a pair,
 checked after the table and flags are merged, since each may come from either.
 
 ## Credentials: one root, everything derived
