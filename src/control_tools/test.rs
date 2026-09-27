@@ -247,7 +247,7 @@ fn tools_list_is_ordered_and_annotated() {
             "title",
             "sessions",
             "create",
-            "end",
+            "archive",
             "subscribe",
             "unsubscribe",
         ]
@@ -279,7 +279,7 @@ fn tools_list_is_ordered_and_annotated() {
     // Interrupt kills a process group; approving runs a call the rungs did not
     // clear; ending a session tears it down; committing a proposal folds a
     // change into the effective config.
-    for name in ["interrupt", "approve", "end", "proposal"] {
+    for name in ["interrupt", "approve", "archive", "proposal"] {
         assert_eq!(
             hints(name),
             (Some(false), Some(true), Some(false)),
@@ -338,7 +338,7 @@ fn every_session_tool_takes_session() {
             .unwrap_or_default();
         match tool.name.as_str() {
             "sessions" | "create" => assert!(!properties.contains_key("session"), "{}", tool.name),
-            "end" => assert_eq!(
+            "archive" => assert_eq!(
                 tool.input_schema["required"],
                 serde_json::json!(["session"])
             ),

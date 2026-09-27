@@ -627,7 +627,7 @@ async fn the_sessions_provider_mounts_namespaced_and_hides_settle() {
         "sessions__title",
         "sessions__sessions",
         "sessions__create",
-        "sessions__end",
+        "sessions__archive",
     ] {
         assert!(
             names.iter().any(|name| name == expected),

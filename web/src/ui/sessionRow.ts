@@ -4,12 +4,12 @@
 import type { SessionEntry } from "../api/http.ts";
 
 /**
- * Why ending this session should be confirmed, or `null` when there is nothing
- * to lose by ending it now — the same rule the TUI's switcher applies
+ * Why archiving this session should be confirmed, or `null` when there is nothing
+ * to lose by archiving it now — the same rule the TUI's switcher applies
  * (docs/tui.md): a session that is doing something, or that holds background
- * processes ending would reap.
+ * processes archiving would reap.
  */
-export function endWarning(session: SessionEntry): string | null {
+export function archiveWarning(session: SessionEntry): string | null {
   const doing =
     session.status === "running"
       ? "is mid-turn"

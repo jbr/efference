@@ -188,7 +188,7 @@
   background: color-mix(in srgb, var(--attention) 4%, var(--bg-surface));
 }
 
-.card.ending {
+.card.archiving {
   opacity: 0.5;
   pointer-events: none;
 }

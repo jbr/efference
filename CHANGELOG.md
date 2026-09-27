@@ -46,6 +46,9 @@ behind a change, see [`journal/`](journal/).
   catalog routes, so what each credential can see is one run's output.
 
 ### Changed
+- **`end` is `archive`** (docs/tools.md, docs/tui.md): the control verb, `efference control
+  archive`, the in-session `sessions__archive`, the TUI switcher's `a`, and the web client's
+  menu. The session stops and its log stays on disk for a later resume.
 - **jev is the default spotter wherever it is reachable** (docs/permissions.md): with no
   spotter named, a typesafe connection's `jev-latest`, else OpenRouter's
   `~typesafe/jev-latest`, ahead of the main provider's cheap band. An OpenRouter-hosted

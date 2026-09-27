@@ -66,8 +66,8 @@ pub(super) async fn serve(
             // An end is followed by a re-read, and the host answers a `DELETE`
             // only once teardown has run, so the listing that comes back is the
             // finished state.
-            HostCmd::End(id) => {
-                if let Err(e) = client.end_session(&id).await {
+            HostCmd::Archive(id) => {
+                if let Err(e) = client.archive_session(&id).await {
                     let _ = events.send(TuiEvent::Sessions(Err(format!("ending {id}: {e}"))));
                     continue;
                 }

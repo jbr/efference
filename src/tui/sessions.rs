@@ -1,6 +1,6 @@
 //! The session switcher (docs/tui.md): the host's sessions as an overlay, with
 //! the two verbs that act on a session's *life* rather than on its loop —
-//! switch to it, and end it.
+//! switch to it, and archive it.
 //!
 //! The TUI streams exactly one session. Switching is therefore not a second
 //! subscription: it closes this session's stream and opens the next one, which
@@ -29,7 +29,7 @@ pub(crate) struct SessionMenu {
     /// The row the keys act on. Clamped at use, because the listing is replaced
     /// wholesale and a row can leave under the cursor.
     pub selected: usize,
-    /// `Some(id)` while an end is waiting to be confirmed — the destructive
+    /// `Some(id)` while an archive is waiting to be confirmed — the destructive
     /// verb's second press (docs/tui.md).
     pub confirming: Option<String>,
     /// A line under the list: what the switcher is waiting for, what the host
@@ -219,8 +219,8 @@ impl InteractiveState<'_> {
         if let Some(id) = menu.confirming.clone() {
             menu.confirming = None;
             if matches!(key.code, KeyCode::Enter | KeyCode::Char('y' | 'Y')) {
-                menu.note = Some(format!("ending {id}…"));
-                let _ = self.host_tx.send(HostCmd::End(id));
+                menu.note = Some(format!("archiving {id}…"));
+                let _ = self.host_tx.send(HostCmd::Archive(id));
             } else {
                 menu.note = None;
             }
@@ -234,16 +234,16 @@ impl InteractiveState<'_> {
                 let last = menu.rows.len().saturating_sub(1);
                 menu.selected = (menu.selected + 1).min(last);
             }
-            KeyCode::Char('e') | KeyCode::Delete => return self.end_selected_session(),
+            KeyCode::Char('a') | KeyCode::Delete => return self.archive_selected_session(),
             KeyCode::Enter => return self.switch_to_selected_session(),
             _ => {}
         }
         false
     }
 
-    /// `e` on a row: end it now, or raise the confirm when there is something to
+    /// `a` on a row: archive it now, or raise the confirm when there is something to
     /// lose (see [`needs_confirm`]).
-    fn end_selected_session(&mut self) -> bool {
+    fn archive_selected_session(&mut self) -> bool {
         let UiMode::Sessions(menu) = &mut self.ui_mode else {
             return false;
         };
@@ -252,12 +252,12 @@ impl InteractiveState<'_> {
         };
         match needs_confirm(&row) {
             Some(reason) => {
-                menu.note = Some(format!("{reason}. end it anyway? y / any other key"));
+                menu.note = Some(format!("{reason}. archive it anyway? y / any other key"));
                 menu.confirming = Some(row.id);
             }
             None => {
-                menu.note = Some(format!("ending {}…", row.id));
-                let _ = self.host_tx.send(HostCmd::End(row.id));
+                menu.note = Some(format!("archiving {}…", row.id));
+                let _ = self.host_tx.send(HostCmd::Archive(row.id));
             }
         }
         false

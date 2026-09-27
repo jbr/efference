@@ -84,8 +84,8 @@ impl InteractiveState<'_> {
         // The note, then the key legend, on the modal's last two rows.
         let note = menu.note.clone().unwrap_or_default();
         let legend = match menu.confirming {
-            Some(_) => " y:end  any other key:cancel ",
-            None => " ↑/↓:move  ⏎:switch  n:new  e:end  ⎋:close ",
+            Some(_) => " y:archive  any other key:cancel ",
+            None => " ↑/↓:move  ⏎:switch  n:new  a:archive  ⎋:close ",
         };
         write_row(buf, modal, 3, &note, self.theme.status_hint_style);
         write_row(buf, modal, 2, legend, self.theme.status_hint_style);

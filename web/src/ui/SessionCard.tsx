@@ -5,7 +5,7 @@
 //
 // The whole card opens the session: the title's link is stretched over the
 // card, and the few controls that are not "open" (the supervisor link, the
-// menu) sit above it. Ending is behind the menu — it is the one destructive
+// menu) sit above it. Archiving is behind the menu — it is the one destructive
 // verb here, and a card's prominent action is opening it.
 
 import { useEffect, useRef, useState } from "react";
@@ -51,11 +51,11 @@ function Activity({ card }: { card: CardModel }) {
 function CardMenu({
   card,
   warning,
-  onEnd,
+  onArchive,
 }: {
   card: CardModel;
   warning: string | null;
-  onEnd: () => void;
+  onArchive: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [confirming, setConfirming] = useState(false);
@@ -98,8 +98,8 @@ function CardMenu({
               <p className="card-menu-warning">
                 {card.id} {warning}.
               </p>
-              <button role="menuitem" className="danger" onClick={onEnd}>
-                End anyway
+              <button role="menuitem" className="danger" onClick={onArchive}>
+                Archive anyway
               </button>
               <button role="menuitem" onClick={() => setConfirming(false)}>
                 Cancel
@@ -109,9 +109,11 @@ function CardMenu({
             <button
               role="menuitem"
               className="danger"
-              onClick={() => (warning === null ? onEnd() : setConfirming(true))}
+              onClick={() =>
+                warning === null ? onArchive() : setConfirming(true)
+              }
             >
-              End session
+              Archive session
             </button>
           )}
         </div>
@@ -123,20 +125,20 @@ function CardMenu({
 export function SessionCard({
   card,
   warning,
-  ending,
-  onEnd,
+  archiving,
+  onArchive,
 }: {
   card: CardModel;
   warning: string | null;
-  ending: boolean;
-  onEnd: () => void;
+  archiving: boolean;
+  onArchive: () => void;
 }) {
   const context = card.context;
   const used = context?.used ?? null;
-  const phrase = ending ? "is ending…" : statusPhrase(card);
+  const phrase = archiving ? "is archiving…" : statusPhrase(card);
   return (
     <article
-      className={`card attention-${card.attention}${card.status === "stalled" ? " status-stalled" : ""}${ending ? " ending" : ""}`}
+      className={`card attention-${card.attention}${card.status === "stalled" ? " status-stalled" : ""}${archiving ? " archiving" : ""}`}
     >
       <header className="card-head">
         <span className="card-status-line">
@@ -144,7 +146,7 @@ export function SessionCard({
           {phrase !== null && <span className="card-status"> {phrase}</span>}
         </span>
         <span className="spacer" />
-        <CardMenu card={card} warning={warning} onEnd={onEnd} />
+        <CardMenu card={card} warning={warning} onArchive={onArchive} />
       </header>
 
       <h3 className="card-title">

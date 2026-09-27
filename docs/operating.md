@@ -19,7 +19,7 @@ driven, and it is refined from use rather than written ahead of it.
   over the session's control channel ([control-channel.md](control-channel.md)) —
   and the three that address the host: `sessions` (list, with titles), `create`
   (a session in a working directory, this process's environment as its base), and
-  `end` (tear one down).
+  `archive` (stop one, keeping its log for a later resume).
 - **`efference mcp`** — the same calls, served as an MCP server over stdin/stdout
   (below). One definition, three entry points: they are written once as mcplease tools
   (`src/control_tools.rs` and `src/control_tools/`, one file per tool) and mounted by
@@ -82,7 +82,7 @@ child as `session[<caller id>]` ([control-api.md](control-api.md)).
 
 Two rules are enforced by the mount, not by config. A session is never its own target: a
 call naming the caller, or naming no `session`, is an error. And the mutating verbs —
-`turn`, `approve`, `interrupt`, `end`, `review-level`, `pace`, `title`, `background`,
+`turn`, `approve`, `interrupt`, `archive`, `review-level`, `pace`, `title`, `background`,
 `dismiss`, `proposal` — reach only sessions the caller created; `notify` and the reads
 reach any session in the project. Reach is the project: `sessions__sessions` lists, and every
 `sessions__*` target resolves, only among sessions sharing the caller's `.efference/`

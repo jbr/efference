@@ -9,11 +9,11 @@
 
 import { type RefObject, useEffect, useMemo, useRef, useState } from "react";
 import { openSessionCard, openSessions } from "../api/sessions.ts";
-import { endSession, type SessionEntry } from "../api/http.ts";
+import { archiveSession, type SessionEntry } from "../api/http.ts";
 import type { StateSnapshot } from "../api/types.ts";
 import { cardModel, foldRecent, type Recent, workspaces } from "./overview.ts";
 import { SessionCard } from "./SessionCard.tsx";
-import { endWarning } from "./sessionRow.ts";
+import { archiveWarning } from "./sessionRow.ts";
 import "./SessionList.css";
 
 interface Feed {
@@ -103,7 +103,7 @@ export function SessionList({
   sessions: SessionEntry[];
 }) {
   const [sessions, setSessions] = useState(initial);
-  const [ending, setEnding] = useState<string | null>(null);
+  const [archiving, setArchiving] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const feeds = useSessionFeeds(sessions);
   const { page, bar, height: barHeight } = useTopBarHeight();
@@ -134,15 +134,15 @@ export function SessionList({
   );
 
   async function end(id: string) {
-    setEnding(id);
+    setArchiving(id);
     try {
-      await endSession(id);
+      await archiveSession(id);
       // The card leaves on the next frame of the listing stream; the host
       // answers only once teardown has run, so that frame is already out.
     } catch (failure) {
-      setError(`Ending ${id}: ${String(failure)}`);
+      setError(`Archiving ${id}: ${String(failure)}`);
     } finally {
-      setEnding(null);
+      setArchiving(null);
     }
   }
 
@@ -190,11 +190,11 @@ export function SessionList({
                   <SessionCard
                     key={card.id}
                     card={card}
-                    warning={endWarning(
+                    warning={archiveWarning(
                       sessions.find((s) => s.id === card.id)!,
                     )}
-                    ending={ending === card.id}
-                    onEnd={() => void end(card.id)}
+                    archiving={archiving === card.id}
+                    onArchive={() => void end(card.id)}
                   />
                 ))}
               </div>

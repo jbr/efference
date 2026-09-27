@@ -7,7 +7,7 @@ import { expect, test } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { SessionEntry } from "../api/http.ts";
 import { SessionList } from "./SessionList.tsx";
-import { endWarning } from "./sessionRow.ts";
+import { archiveWarning } from "./sessionRow.ts";
 
 const row = (over: Partial<SessionEntry> = {}): SessionEntry => ({
   id: "alpha",
@@ -18,19 +18,21 @@ const row = (over: Partial<SessionEntry> = {}): SessionEntry => ({
 });
 
 test("only a session with something to lose is confirmed", () => {
-  expect(endWarning(row())).toBe(null);
-  expect(endWarning(row({ status: "running" }))).toBe("is mid-turn");
-  expect(endWarning(row({ status: "gated" }))).toBe(
+  expect(archiveWarning(row())).toBe(null);
+  expect(archiveWarning(row({ status: "running" }))).toBe("is mid-turn");
+  expect(archiveWarning(row({ status: "gated" }))).toBe(
     "is holding a call at a gate",
   );
-  expect(endWarning(row({ status: "stalled" }))).toBe(
+  expect(archiveWarning(row({ status: "stalled" }))).toBe(
     "stalled and has not been answered",
   );
-  expect(endWarning(row({ processes: 1 }))).toBe("holds 1 background process");
-  expect(endWarning(row({ processes: 3 }))).toBe(
+  expect(archiveWarning(row({ processes: 1 }))).toBe(
+    "holds 1 background process",
+  );
+  expect(archiveWarning(row({ processes: 3 }))).toBe(
     "holds 3 background processes",
   );
-  expect(endWarning(row({ status: "running", processes: 2 }))).toBe(
+  expect(archiveWarning(row({ status: "running", processes: 2 }))).toBe(
     "is mid-turn and holds 2 background processes",
   );
 });

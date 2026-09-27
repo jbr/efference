@@ -13,7 +13,7 @@ fn row(id: &str, status: &str, processes: usize) -> SessionSummary {
     }
 }
 
-/// The confirm rule (docs/tui.md): an idle session with nothing running is ended
+/// The confirm rule (docs/tui.md): an idle session with nothing running is archived
 /// on the spot, and anything else says what would be lost.
 #[test]
 fn only_a_session_with_something_to_lose_is_confirmed() {
@@ -57,10 +57,10 @@ fn opening_the_switcher_asks_for_the_listing() {
     assert!(screen.contains("running"), "{screen}");
 }
 
-/// `e` on an idle row ends it with no ceremony; `e` on a busy one asks first,
+/// `a` on an idle row archives it with no ceremony; `a` on a busy one asks first,
 /// and only `y` goes through.
 #[test]
-fn ending_asks_only_when_there_is_something_to_lose() {
+fn archiving_asks_only_when_there_is_something_to_lose() {
     let mut play = Screenplay::new(90, 24);
     play.state.open_sessions();
     let _ = play.took_host_cmd();
@@ -69,30 +69,30 @@ fn ending_asks_only_when_there_is_something_to_lose() {
         row("beta", "running", 0),
     ])));
 
-    play.route_key(KeyCode::Char('e'), KeyModifiers::NONE);
+    play.route_key(KeyCode::Char('a'), KeyModifiers::NONE);
     assert!(
-        matches!(play.took_host_cmd(), Some(crate::tui::HostCmd::End(id)) if id == "alpha"),
-        "an idle session ends on the first press"
+        matches!(play.took_host_cmd(), Some(crate::tui::HostCmd::Archive(id)) if id == "alpha"),
+        "an idle session is archived on the first press"
     );
 
     play.route_key(KeyCode::Down, KeyModifiers::NONE);
-    play.route_key(KeyCode::Char('e'), KeyModifiers::NONE);
+    play.route_key(KeyCode::Char('a'), KeyModifiers::NONE);
     assert!(
         play.took_host_cmd().is_none(),
         "a running session is held at the confirm"
     );
     let screen = play.render();
-    assert!(screen.contains("end it anyway?"), "{screen}");
+    assert!(screen.contains("archive it anyway?"), "{screen}");
 
     // Any key that is not the confirm backs out, and nothing is sent.
     play.route_key(KeyCode::Char('x'), KeyModifiers::NONE);
     assert!(play.took_host_cmd().is_none());
 
-    play.route_key(KeyCode::Char('e'), KeyModifiers::NONE);
+    play.route_key(KeyCode::Char('a'), KeyModifiers::NONE);
     play.route_key(KeyCode::Char('y'), KeyModifiers::NONE);
     assert!(
-        matches!(play.took_host_cmd(), Some(crate::tui::HostCmd::End(id)) if id == "beta"),
-        "the confirmed end goes through"
+        matches!(play.took_host_cmd(), Some(crate::tui::HostCmd::Archive(id)) if id == "beta"),
+        "the confirmed archive goes through"
     );
 }
 
@@ -156,8 +156,10 @@ fn the_cursor_follows_the_row_it_was_on() {
         row("beta", "idle", 0),
         row("gamma", "idle", 0),
     ])));
-    play.route_key(KeyCode::Char('e'), KeyModifiers::NONE);
-    assert!(matches!(play.took_host_cmd(), Some(crate::tui::HostCmd::End(id)) if id == "gamma"),);
+    play.route_key(KeyCode::Char('a'), KeyModifiers::NONE);
+    assert!(
+        matches!(play.took_host_cmd(), Some(crate::tui::HostCmd::Archive(id)) if id == "gamma"),
+    );
 }
 
 /// The overlay as it paints (docs/tui.md): a row per session with the status and

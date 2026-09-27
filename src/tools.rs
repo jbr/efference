@@ -279,7 +279,7 @@ impl Provider {
             // semantic-edit run their bodies on tokio's blocking pool.
             Provider::Fs(s) => s.run_call(&call.name, &call.input).await.into(),
             Provider::SemanticEdit(s) => s.run_call(&call.name, &call.input).await.into(),
-            // `create` and `end` await real work on this runtime (docs/tools.md).
+            // `create` and `archive` await real work on this runtime (docs/tools.md).
             Provider::Sessions(s) => s.run_call(&call.name, &call.input).await.into(),
             Provider::ReadImage(r) => r.run(&call.input).into(),
             // Async over a wire, but no OS process of the *call's* own: the

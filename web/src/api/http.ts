@@ -211,7 +211,7 @@ export interface SessionEntry {
   created_by?: string;
   /** What the session is doing, in one word. */
   status: "running" | "idle" | "gated" | "stalled";
-  /** Live background processes the session holds; ending it reaps them. */
+  /** Live background processes the session holds; archiving it reaps them. */
   processes: number;
 }
 
@@ -222,10 +222,10 @@ export interface SessionEntry {
 export const fetchSessions = () =>
   requestAt<SessionEntry[]>("GET", "/sessions");
 
-// End a hosted session (docs/control-api.md). The host answers once teardown has
+// Archive a hosted session (docs/control-api.md). The host answers once teardown has
 // run — background processes reaped, scratch removed — so the listing that
 // follows shows the finished state rather than a session on its way out.
-export const endSession = (id: string) =>
+export const archiveSession = (id: string) =>
   requestAt<{ id: string; state: string }>(
     "DELETE",
     `/sessions/${encodeURIComponent(id)}`,

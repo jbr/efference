@@ -194,7 +194,7 @@ pub(crate) enum HostCmd {
     List,
     /// `DELETE /sessions/:id` — end a session and re-read the listing. The host
     /// answers once teardown has run, so the re-read shows the finished state.
-    End(String),
+    Archive(String),
     /// `GET /inference` — the connection inventory, as the new-session form
     /// opens. Answered with the working root the dispatcher would create in, so
     /// the form displays exactly what creation will send (docs/tui.md).

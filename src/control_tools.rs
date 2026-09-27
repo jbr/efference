@@ -2,7 +2,7 @@
 //!
 //! Each verb that drives a *running* session is one control-API call
 //! over its control channel (docs/control-channel.md), and the three that
-//! address the host — `sessions`, `create`, `end` — are one host-route call each.
+//! address the host — `sessions`, `create`, `archive` — are one host-route call each.
 //! Every one is written once here as an [mcplease](mcplease) tool. The `tools!` macro below turns them into a single
 //! `Tools` enum that is simultaneously
 //!
@@ -54,7 +54,7 @@ mcplease::tools!(
     (Title, title, "title"),
     (Sessions, sessions, "sessions"),
     (Create, create, "create"),
-    (End, end, "end"),
+    (Archive, archive, "archive"),
     (Subscribe, subscribe, "subscribe"),
     (Unsubscribe, unsubscribe, "unsubscribe")
 );
@@ -66,7 +66,7 @@ pub const INSTRUCTIONS: &str = "\
 Drive the efference sessions on one host. Each session runs its own agent loop; \
 these tools submit work to it, resolve the gates it stops at, and read where it is. \
 `sessions` lists what the host holds, `create` starts a session in a working \
-directory, `end` tears one down. Every other tool takes a `session` id; it is \
+directory, `archive` stops one and keeps its log. Every other tool takes a `session` id; it is \
 required unless this server was started against one session, and then it \
 overrides that session for the call.
 
@@ -420,8 +420,8 @@ impl HostExecutor {
         Ok(self.host()?.unsubscribe(target, &self.caller))
     }
 
-    /// `end` in-session: wait for the target's teardown.
-    async fn end(&self, target: &str) -> Result<()> {
+    /// `archive` in-session: wait for the target's teardown.
+    async fn archive(&self, target: &str) -> Result<()> {
         if let Some(done) = self.host()?.end(target) {
             done.await;
         }

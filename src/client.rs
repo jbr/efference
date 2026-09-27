@@ -529,7 +529,7 @@ impl Client {
     /// End a hosted session (`DELETE /sessions/:id`, docs/control-api.md):
     /// answers once its teardown has run. A listener route at the socket root;
     /// `404` for an id the host does not hold.
-    pub async fn end_session(&self, id: &str) -> Result<()> {
+    pub async fn archive_session(&self, id: &str) -> Result<()> {
         let path = format!("/sessions/{id}");
         let conn = self
             .http
