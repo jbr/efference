@@ -420,3 +420,18 @@ fn the_probe_and_the_chain_ride_only_when_present() {
     assert_eq!(bound["promotion_probe"], json!("cargo test"));
     assert_eq!(bound["approval_chain"]["held_by"], json!("child"));
 }
+
+/// A leading `cd` into the working directory goes nowhere, so jev's move is the rest
+/// — the same resolution the prose rung is spared (docs/permissions.md).
+#[test]
+fn a_cd_into_the_working_directory_is_left_out_of_the_move() {
+    let call = ToolCall::new(
+        crate::bash::NAME,
+        "c1",
+        json!({ "command": "cd /work/proj && cargo test" }),
+    );
+    let config = role("scope = \"work here\"");
+    let cwd = std::path::Path::new("/work/proj");
+    let state = state::state(&config, &call, None, &[], None, Some(cwd), None);
+    assert_eq!(state["move"]["command"], json!("cargo test"));
+}

@@ -665,6 +665,16 @@ fail-closed rate) plus each verdict correlated to the call it judged and its one
 across every `.efference/*/log.jsonl` or one session; `--stance`/`--no-fallback` filter, and
 `--summary`/`--list` pick a half. The dev-facing lens for auditing how the spotter is doing.
 
+
+**A `cd` that goes nowhere is left out of the move** (`policy::without_cd_into`). Agents prefix
+their own working directory habitually (`cd /abs/project && cat .claude/x`), and a reviewer
+asked to resolve that `cd` against the working-directory line reads the move as leaving it:
+the prose rung gated such a read as "not under `.`" on a first run, and the decision rung's
+false gates had a 63-case cluster of the same shape. When a bash command is `cd <dir> && rest`
+with `<dir>` a literal resolving lexically to the session's cwd, both rungs judge `rest` — the
+prose rung's move block says the `cd` was left out, and jev's `move.command` is the rest. A
+`cd` anywhere else stays in the move for the reviewer to see. What the operator sees, and what
+runs, is the command as written; only the reviewer's copy is shortened.
 ## The config-edit loop (`src/policy.rs`, `src/agent.rs`, `src/config.rs`, `src/daemon/config_edits.rs`)
 
 A deny is not a dead-end: the orchestrator can **edit the config** at a gate. A

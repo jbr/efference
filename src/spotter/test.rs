@@ -72,11 +72,11 @@ fn parse_spot_reads_the_promotion_safe_vote() {
 fn render_move_asks_the_promotion_question_only_when_a_prefix_is_probed() {
     let call = ToolCall::new(bash::NAME, "x", json!({ "command": "git log --oneline" }));
     // No probe → no promotion question.
-    let plain = render_move(&call, None, &[], None);
+    let plain = render_move(&call, None, &[], None, None);
     assert!(!plain.contains("clear_always"), "{plain}");
     assert!(!plain.contains("promotion"), "{plain}");
     // Probe → the named prefix and the clear_always instruction ride the move.
-    let probed = render_move(&call, None, &[], Some("git log"));
+    let probed = render_move(&call, None, &[], Some("git log"), None);
     assert!(probed.contains("git log"), "{probed}");
     assert!(probed.contains("clear_always"), "{probed}");
 }
@@ -92,12 +92,12 @@ fn parse_spot_is_none_without_a_spot_call() {
 #[test]
 fn render_move_shows_bash_command_and_structured_input() {
     let bash_call = ToolCall::new(bash::NAME, "x", json!({ "command": "git push" }));
-    let rendered = render_move(&bash_call, None, &[], None);
+    let rendered = render_move(&bash_call, None, &[], None, None);
     assert!(rendered.contains("git push"), "{rendered}");
     assert!(rendered.contains("spot"), "instruction present: {rendered}");
 
     let write_call = ToolCall::new("write", "y", json!({ "path": "/etc/hosts" }));
-    let rendered = render_move(&write_call, None, &[], None);
+    let rendered = render_move(&write_call, None, &[], None, None);
     assert!(rendered.contains("write"), "{rendered}");
     assert!(rendered.contains("/etc/hosts"), "{rendered}");
 }
@@ -114,7 +114,7 @@ fn render_move_withholds_the_calls_intent() {
         "z",
         json!({ "path": "/etc/hosts", "intent": "this host file is disposable" }),
     );
-    let rendered = render_move(&call, None, &[], None);
+    let rendered = render_move(&call, None, &[], None, None);
     assert!(rendered.contains("/etc/hosts"), "{rendered}");
     assert!(
         !rendered.contains("disposable"),
@@ -153,7 +153,7 @@ fn a_brief_puts_the_tool_before_its_input() {
         server: Some("ferritin"),
         definition: &definition,
     };
-    let rendered = render_move(&call, Some(&brief), &[], None);
+    let rendered = render_move(&call, Some(&brief), &[], None, None);
 
     // The tool reads dotted here as everywhere user-facing, and is attributed to the
     // server that advertised it.
@@ -389,4 +389,35 @@ fn render_context_without_a_cwd_names_no_directory() {
     let ctx = render_context(&role, None, None);
     assert!(ctx.contains("- working directory: unknown\n"), "{ctx}");
     assert!(ctx.contains("  - . (read, write)\n"), "{ctx}");
+}
+
+/// A leading `cd` into the session's own directory goes nowhere, so the spotter judges
+/// the rest and is told so; a `cd` anywhere else is left for it to see
+/// (docs/permissions.md).
+#[test]
+fn a_cd_into_the_working_directory_is_left_out_of_the_move() {
+    let cwd = std::path::Path::new("/work/proj");
+    let into = ToolCall::new(
+        bash::NAME,
+        "c1",
+        json!({ "command": "cd /work/proj && cat .claude/settings.local.json" }),
+    );
+    let block = render_move(&into, None, &[], None, Some(cwd));
+    assert!(
+        block.contains("    cat .claude/settings.local.json"),
+        "{block}"
+    );
+    assert!(block.contains("leading `cd` into that directory is left out"));
+    assert!(!block.contains("cd /work/proj"));
+
+    let elsewhere = ToolCall::new(
+        bash::NAME,
+        "c2",
+        json!({ "command": "cd /work/other && cat secrets.txt" }),
+    );
+    let block = render_move(&elsewhere, None, &[], None, Some(cwd));
+    assert!(
+        block.contains("cd /work/other && cat secrets.txt"),
+        "{block}"
+    );
 }

@@ -203,7 +203,7 @@ impl Spotter for ForkSpot {
                 self.scratch.as_deref(),
             )),
             UserPart::Breakpoint,
-            UserPart::Text(render_move(call, brief, chain, probe)),
+            UserPart::Text(render_move(call, brief, chain, probe, self.cwd.as_deref())),
         ])];
 
         // No-op sink: the spotter's tokens are internal and must never surface on        // the control stream (mirrors the fork peek).
@@ -380,10 +380,19 @@ fn render_move(
     brief: Option<&ToolBrief<'_>>,
     chain: &[String],
     probe: Option<&str>,
+    cwd: Option<&std::path::Path>,
 ) -> String {
     let body = if call.name == bash::NAME {
         match call.input.get("command").and_then(Value::as_str) {
-            Some(cmd) => format!("A shell command:\n\n    {cmd}"),
+            // A leading `cd` into the working directory goes nowhere; the reviewer
+            // judges the rest, and is told so (`policy::without_cd_into`).
+            Some(cmd) => match cwd.and_then(|cwd| crate::policy::without_cd_into(cmd, cwd)) {
+                Some(rest) => format!(
+                    "A shell command, run in the session's working directory (its leading \
+                     `cd` into that directory is left out):\n\n    {rest}"
+                ),
+                None => format!("A shell command:\n\n    {cmd}"),
+            },
             None => format!(
                 "A `{}` call with no string command (malformed): {}",
                 call.name, call.input
@@ -455,7 +464,7 @@ fn chain_context(chain: &[String]) -> String {
 /// spotter model reads, byte for byte. The `efference dev spotter` tester prints it, so
 /// iterating on a tool's brief doesn't mean guessing at what the model saw.
 pub fn preview_move(call: &ToolCall, brief: Option<&ToolBrief<'_>>, probe: Option<&str>) -> String {
-    render_move(call, brief, &[], probe)
+    render_move(call, brief, &[], probe, None)
 }
 
 /// How much of a description and of an input schema ride into the move block. A

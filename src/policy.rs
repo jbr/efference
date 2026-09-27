@@ -346,7 +346,7 @@ mod paths;
 mod probe;
 
 pub use commands::promotable_command;
-pub(crate) use commands::{bash_tokens_in, simple_command_tokens};
+pub(crate) use commands::{bash_tokens_in, simple_command_tokens, without_cd_into};
 pub use effective::{apply_config_change, effective_config};
 pub(crate) use paths::{absolutize, lexical_normalize, path_spec};
 pub use probe::{ProbeLedger, probe_ledger};

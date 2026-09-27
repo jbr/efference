@@ -328,6 +328,30 @@ pub(crate) fn bash_tokens_in(role: &Config, command: &str, cwd: &Path) -> Option
     }
 }
 
+/// A leading `cd` into the session's own working directory changes nothing about
+/// what the rest of the command touches, so the spotter judges the rest
+/// (docs/permissions.md): agents prefix their own cwd habitually, and a reviewer
+/// asked to resolve `cd /abs/path` against a working-directory line reads the move
+/// as leaving it. Returns the remainder as written when `command` is `cd <dir> &&
+/// rest` with `<dir>` a literal that resolves, lexically, to `cwd`; `None` for
+/// anything else, including a `cd` somewhere else, which the reviewer must see.
+pub(crate) fn without_cd_into<'a>(command: &'a str, cwd: &Path) -> Option<&'a str> {
+    let (head, rest) = command.split_once("&&")?;
+    let tokens = simple_command_tokens(head)?;
+    let [program, target] = tokens.as_slice() else {
+        return None;
+    };
+    if program != "cd" {
+        return None;
+    }
+    let lexical = super::lexical_normalize;
+    if lexical(&cwd.join(target)) != lexical(cwd) {
+        return None;
+    }
+    let rest = rest.trim_start();
+    (!rest.is_empty()).then_some(rest)
+}
+
 /// **Stage 1 — structural simplicity.** Parse `command` and return its literal token
 /// vector (`[program, args…]`) iff it is exactly one simple command with no operators,
 /// redirections, assignments, or expansions, and whose every word is wholly literal.

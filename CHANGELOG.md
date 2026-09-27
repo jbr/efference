@@ -50,6 +50,9 @@ behind a change, see [`journal/`](journal/).
   catalog routes, so what each credential can see is one run's output.
 
 ### Changed
+- **A `cd` into the session's own directory is left out of the spotter's move**
+  (docs/permissions.md): both rungs judge the rest, so a habitual `cd /abs/project && …` no
+  longer reads as leaving the project.
 - **The host's model credentials are withheld from sessions' commands** (docs/env.md): every
   variable a connection reads its key from strips and masks by default in a hosted session;
   a project opts one back in with `strip = false`, and boot names what it withheld.

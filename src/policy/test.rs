@@ -125,3 +125,19 @@ fn structured(role: &Config, c: &ToolCall) -> Verdict {
 fn call(name: &str, input: Value) -> ToolCall {
     ToolCall::new(name, "toolu_s", input)
 }
+
+/// Which leading `cd`s go nowhere: into the working directory by any spelling that
+/// resolves there, and nothing else (docs/permissions.md).
+#[test]
+fn a_cd_is_dropped_only_when_it_goes_nowhere() {
+    let cwd = std::path::Path::new("/work/proj");
+    let drop = |command| without_cd_into(command, cwd);
+    assert_eq!(drop("cd /work/proj && ls"), Some("ls"));
+    assert_eq!(drop("cd . && ls -a"), Some("ls -a"));
+    assert_eq!(drop("cd ../proj && ls"), Some("ls"));
+    assert_eq!(drop("cd .. && ls"), None);
+    assert_eq!(drop("cd /work/other && ls"), None);
+    assert_eq!(drop("cd /work/proj"), None);
+    assert_eq!(drop("cd /work/proj && "), None);
+    assert_eq!(drop("pushd /work/proj && ls"), None);
+}

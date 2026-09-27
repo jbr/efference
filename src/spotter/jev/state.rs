@@ -40,7 +40,7 @@ pub(super) fn state(
         "path_grants": grants(role, cwd),
         "scratch_directory": scratch.map(|p| p.display().to_string()),
         "watch_for": watch_for(role),
-        "move": proposed_move(call, brief),
+        "move": proposed_move(call, brief, cwd),
     });
     let object = state.as_object_mut().expect("state is built as an object");
     if let Some(holder) = chain.last() {
@@ -109,10 +109,22 @@ fn watch_for(role: &Config) -> Vec<&str> {
 /// The move itself. Bash carries its command text and nothing else — the text is
 /// self-describing, which is exactly what a bare structured call is not, so a
 /// structured call carries what the tool *is* alongside what it was handed.
-fn proposed_move(call: &ToolCall, brief: Option<&ToolBrief<'_>>) -> Value {
+fn proposed_move(
+    call: &ToolCall,
+    brief: Option<&ToolBrief<'_>>,
+    cwd: Option<&std::path::Path>,
+) -> Value {
     if call.name == bash::NAME {
         return match call.input.get("command").and_then(Value::as_str) {
-            Some(command) => json!({ "kind": "shell_command", "command": command }),
+            // A leading `cd` into the working directory goes nowhere, so the move is
+            // the rest (`policy::without_cd_into`) — the resolution the model would
+            // otherwise have to do against `working_directory` itself.
+            Some(command) => json!({
+                "kind": "shell_command",
+                "command": cwd
+                    .and_then(|cwd| crate::policy::without_cd_into(command, cwd))
+                    .unwrap_or(command),
+            }),
             None => json!({
                 "kind": "malformed_call",
                 "tool": call.name,
