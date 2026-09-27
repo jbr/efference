@@ -25,6 +25,9 @@ pub(in crate::tui) struct CallBody {
     pub key: Option<String>,
     pub lang: Option<String>,
     pub text: String,
+    /// Rendered as prose rather than as a code block: a body that is a message,
+    /// like a hand-off's brief, not a value.
+    pub prose: bool,
 }
 
 /// A call as pseudocode — the shape both clients render (docs/web-client.md,
@@ -82,10 +85,29 @@ pub(in crate::tui) fn call_view(name: &str, input: &serde_json::Value) -> CallVi
                 key: None,
                 lang: Some("json".to_string()),
                 text: pretty(input),
+                prose: false,
             }],
         );
     };
     let str_arg = |key: &str| object.get(key).and_then(|v| v.as_str());
+
+    // A hand-off's brief is a message to the session that takes over
+    // (docs/tools.md): labelled with whom it is for and read as prose, so it is not
+    // mistaken for the agent addressing the operator.
+    if name == crate::control_tools::HAND_OFF_WIRE_NAME
+        && let Some(brief) = str_arg("brief")
+    {
+        return base(
+            Some(Vec::new()),
+            None,
+            vec![CallBody {
+                key: Some("to the new session".to_string()),
+                lang: None,
+                text: brief.to_string(),
+                prose: true,
+            }],
+        );
+    }
 
     if name == crate::bash::NAME
         && let Some(command) = str_arg("command")
@@ -98,6 +120,7 @@ pub(in crate::tui) fn call_view(name: &str, input: &serde_json::Value) -> CallVi
                     key: None,
                     lang: Some("bash".to_string()),
                     text: command.to_string(),
+                    prose: false,
                 }],
             )
         } else {
@@ -135,11 +158,13 @@ pub(in crate::tui) fn call_view(name: &str, input: &serde_json::Value) -> CallVi
                 key: Some(key.clone()),
                 lang: lang.clone(),
                 text: text.clone(),
+                prose: false,
             },
             other => CallBody {
                 key: Some(key.clone()),
                 lang: Some("json".to_string()),
                 text: pretty(other),
+                prose: false,
             },
         });
     }
@@ -285,7 +310,11 @@ pub(in crate::tui) fn call_spans(
         if let Some(key) = body.key {
             blocks.push(DocumentNode::styled_lines([dim_span(&format!("{key}:"))]));
         }
-        blocks.push(code_block(body.lang.as_deref(), &body.text));
+        if body.prose {
+            blocks.extend(markdown(&body.text));
+        } else {
+            blocks.push(code_block(body.lang.as_deref(), &body.text));
+        }
     }
     (spans, blocks)
 }

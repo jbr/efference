@@ -29,7 +29,7 @@ import { CallHead } from "./CallHead.tsx";
 import { useColumns } from "./columns.ts";
 import { bodyOf, callView, type CallBody, type CallView } from "./signature.ts";
 import { layoutSignature, type SigLayout } from "./signatureLayout.ts";
-import { InlineMarkdown } from "./Markdown.tsx";
+import { InlineMarkdown, Markdown } from "./Markdown.tsx";
 import { truncateBody, truncateText } from "./truncate.ts";
 import { useNarrow } from "./useNarrow.ts";
 import { useWholeResult } from "./wholeResult.ts";
@@ -90,7 +90,9 @@ function CallBodies({
             {/* bash's own multi-line command: it carries the prompt the
                 head would have. */}
             <dd className={body.key === null ? "shell-command" : undefined}>
-              {body.lang === null ? (
+              {body.prose === true ? (
+                <Markdown>{text}</Markdown>
+              ) : body.lang === null ? (
                 <div className="call-body-text">{text}</div>
               ) : (
                 <Code text={text} lang={body.lang} />

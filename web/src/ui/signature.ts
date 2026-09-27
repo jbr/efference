@@ -32,6 +32,9 @@ export interface CallBody {
   key: string | null;
   lang: string | null;
   text: string;
+  /** Rendered as prose rather than as code: a body that is a message, like a
+   * hand-off's brief, not a value. */
+  prose?: boolean;
 }
 
 export interface CallView {
@@ -144,6 +147,22 @@ export function callView(name: string, input: unknown): CallView {
   const str = (key: string) =>
     typeof obj[key] === "string" ? (obj[key] as string) : null;
   base.intent = str("intent");
+
+  // A hand-off's brief is a message to the session that takes over
+  // (docs/tools.md): labelled with whom it is for and read as prose, so it is
+  // not mistaken for the agent addressing the operator.
+  const brief = name === "sessions__hand_off" ? str("brief") : null;
+  if (brief !== null) {
+    return {
+      ...base,
+      args: [],
+      target: null,
+      shell: null,
+      bodies: [
+        { key: "to the new session", lang: null, text: brief, prose: true },
+      ],
+    };
+  }
 
   if (name === "bash") {
     const command = str("command");

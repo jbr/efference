@@ -114,3 +114,20 @@ test("the edit family omits its content and emits no body — the diff is below"
   expect(flatSignature(view)).toBe('edit("a.rs", operation: "replace")');
   expect(view.bodies).toEqual([]);
 });
+
+// The brief is a message to the session that takes over (docs/tools.md).
+test("a hand-off puts the brief under whom it is for, as prose", () => {
+  const view = callView("sessions__hand_off", {
+    brief: "Greet the operator.",
+    intent: "hand off",
+  });
+  expect(view.args).toEqual([]);
+  expect(view.bodies).toEqual([
+    {
+      key: "to the new session",
+      lang: null,
+      text: "Greet the operator.",
+      prose: true,
+    },
+  ]);
+});

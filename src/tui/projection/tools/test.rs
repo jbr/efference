@@ -160,7 +160,8 @@ fn bash_keeps_its_command_bare() {
         vec![CallBody {
             key: None,
             lang: Some("bash".into()),
-            text: "a\nb".into()
+            text: "a\nb".into(),
+            prose: false,
         }]
     );
     // No key, so no label line — the block is the command.
@@ -228,4 +229,18 @@ fn a_still_arriving_call_puts_its_ellipsis_inside_the_parentheses() {
         header("bash", json!({ "command": "ls" }), true),
         "bash · ls…"
     );
+}
+
+/// A hand-off's brief is a message to the session that takes over (docs/tools.md):
+/// labelled with whom it is for and drawn as prose, not as a code-style argument.
+#[test]
+fn a_hand_off_brief_is_labelled_for_the_new_session() {
+    let view = call_view(
+        crate::control_tools::HAND_OFF_WIRE_NAME,
+        &json!({ "brief": "Greet the operator.\n\nThey are new here.", "intent": "hand off" }),
+    );
+    assert_eq!(view.args, Some(Vec::new()));
+    assert_eq!(view.bodies.len(), 1);
+    assert_eq!(view.bodies[0].key.as_deref(), Some("to the new session"));
+    assert!(view.bodies[0].prose);
 }
