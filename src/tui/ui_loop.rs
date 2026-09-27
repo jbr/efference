@@ -111,15 +111,34 @@ pub(super) fn ui_loop(
         .images
         .set_theme_background(state.theme.document_bg_style.bg);
 
-    // Event reader thread: blocks on crossterm reads, forwards to a channel.
+    // Event reader thread: polls crossterm, forwards to a channel. It polls with a
+    // short timeout rather than blocking in `read`, and is stopped and joined when
+    // the loop ends, because crossterm serializes every stdin read — an event read
+    // and a terminal query's answer alike — behind one lock that a blocked `read`
+    // holds. A reader left blocked from this attach would starve the next one's
+    // startup queries (the cursor-position read times out), which is what a
+    // session switch or a followed hand-off does next (docs/tui.md).
     let (event_tx, event_rx) = crossbeam_channel::unbounded();
-    let _reader = thread::spawn(move || {
-        while let Ok(evt) = event::read() {
-            if event_tx.send(evt).is_err() {
-                break;
+    let reading = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+    let reader = {
+        let reading = std::sync::Arc::clone(&reading);
+        thread::spawn(move || {
+            while reading.load(std::sync::atomic::Ordering::Relaxed) {
+                match event::poll(Duration::from_millis(50)) {
+                    Ok(true) => match event::read() {
+                        Ok(evt) => {
+                            if event_tx.send(evt).is_err() {
+                                break;
+                            }
+                        }
+                        Err(_) => break,
+                    },
+                    Ok(false) => {}
+                    Err(_) => break,
+                }
             }
-        }
-    });
+        })
+    };
 
     let timer_tick = crossbeam_channel::tick(Duration::from_millis(30));
     // Elapsed-time displays (process running/idle seconds, seconds since the last
@@ -232,6 +251,11 @@ pub(super) fn ui_loop(
 
         state.update_cursor(&mut terminal);
     };
+
+    // Release stdin before anything else touches the terminal: the next attach's
+    // queries need the lock the reader polls under.
+    reading.store(false, std::sync::atomic::Ordering::Relaxed);
+    let _ = reader.join();
 
     // Restore the terminal.
     disable_raw_mode()?;
