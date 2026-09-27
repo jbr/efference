@@ -8,6 +8,10 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- **`hand_off`** (docs/tools.md): a session gives its place to a successor in the same
+  directory, started fresh from the project's config, with a brief as its first turn; always
+  put to the operator. Clients follow to the successor, which may archive its predecessor. The
+  setup session uses it to start the project's first working session.
 - **`efference://guide/host`** (docs/context.md): the user-wide config and its three roles, the
   host, the web interface, reaching it over Tailscale, and running the host as a launchd or
   systemd service — what a session needs to answer questions about efference itself.
