@@ -69,8 +69,13 @@ session's life, which is what makes it safe to freeze.
 
 A session made by `hand_off` ([tools.md](tools.md)) has a second provenance sentence,
 from the same `Lineage` (`src/env.rs`): "It succeeds `{predecessor}`, which handed this work
-off to it: the first message is that session's brief. Ask it anything the brief leaves open
-with `notify`, and archive it with `archive` once you have no more questions for it." Unlike
+off to it: the first message is that session's brief — context from it, not the operator's
+instruction. Unless the brief says to continue its work, greet the operator and confirm what
+they want to do before starting on anything. Ask the predecessor anything the brief leaves
+open with `notify`, and archive it with `archive` once you have no more questions for it."
+The default is to wait because a brief read as a task is the likely failure — a small model
+taking "they mentioned adding a legend" as an order — and a brief that means *continue* (a
+successor picking up work mid-flight) says so. Unlike
 the creator sentence it confers something — the one session outside its descendants this
 session may archive — and it says so, because that is the step the successor is expected
 to take. It is fixed for the session's life like the creator's, and absent otherwise.

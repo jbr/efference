@@ -221,6 +221,8 @@ fn a_successor_is_told_whom_it_succeeds() {
     );
     assert!(prompt.contains("It succeeds `old-leaf`"), "{prompt}");
     assert!(prompt.contains("the first message is that session's brief"));
+    assert!(prompt.contains("not the operator's instruction"));
+    assert!(prompt.contains("confirm what they want to do"));
     assert!(prompt.contains("archive it with `archive`"));
     assert!(!prompt.contains("It was created by"));
 }

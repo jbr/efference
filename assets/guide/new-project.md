@@ -67,9 +67,11 @@ grants, its guide in the preamble, its MCP servers. When the operator is ready t
    anything outside what the config allows.
 2. Call `hand_off` with a brief written for the new session: that it is the first efference
    session in this project, whether the operator is new to efference (so it keeps defining
-   terms), what they said they want to work on, and anything from the setup it should know
-   that the files do not say. It has no questions for you, so say that too — it will
-   archive this session straight away.
+   terms), anything from the setup it should know that the files do not say, and what the
+   operator *mentioned* wanting to work on — as something mentioned, not a request, since
+   it is rarely specified enough to start from. End the brief by saying to greet the
+   operator and confirm what to do first rather than to begin, and that you have no
+   questions for it, so it can archive this session straight away.
 3. Once it runs, you are done: the operator's view moves to the new session.
 
 If they would rather start later, say that `efference` in this directory starts a session

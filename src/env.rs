@@ -104,8 +104,11 @@ pub fn system_prompt(
         prompt.push_str(predecessor);
         prompt.push_str(
             "`, which handed this work off to it: the first message is that session's \
-             brief. Ask it anything the brief leaves open with `notify`, and archive it \
-             with `archive` once you have no more questions for it.",
+             brief — context from it, not the operator's instruction. Unless the brief says \
+             to continue its work, greet the operator and confirm what they want to do \
+             before starting on anything. Ask the predecessor anything the brief leaves \
+             open with `notify`, and archive it with `archive` once you have no more \
+             questions for it.",
         );
     }
     // How the harness works — `include_str!` keeps the file's trailing newline;
