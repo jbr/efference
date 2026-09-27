@@ -20,16 +20,6 @@ use std::time::Duration;
 /// How often the launcher looks at the log and the socket while it waits.
 const POLL: Duration = Duration::from_millis(50);
 
-/// The web bind's environment fallbacks (`host --bind` and its family). An island
-/// is UDS-only; a direnv'd default bind would otherwise give every island the
-/// same TCP address.
-const BIND_ENV: [&str; 4] = [
-    "EFFERENCE_BIND",
-    "EFFERENCE_HOST",
-    "EFFERENCE_TLS_CERT",
-    "EFFERENCE_TLS_KEY",
-];
-
 /// A running island host and this process's end of its ownership pipe.
 pub(crate) struct Island {
     child: std::process::Child,
@@ -57,9 +47,6 @@ impl Island {
             .stdin(Stdio::piped())
             .stdout(log_file.try_clone()?)
             .stderr(log_file);
-        for name in BIND_ENV {
-            command.env_remove(name);
-        }
         // SAFETY: `setsid` is async-signal-safe, and the closure allocates nothing.
         unsafe {
             command.pre_exec(|| {

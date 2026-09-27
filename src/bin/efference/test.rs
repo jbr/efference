@@ -336,3 +336,56 @@ fn cache_report_does_not_join_streaks_across_sessions() {
     assert_eq!(report.unexplained, 2);
     assert_eq!(report.longest_streak, 1);
 }
+
+fn bind_flags(bind: Option<&str>) -> serve::BindFlags {
+    serve::BindFlags {
+        bind: bind.map(str::to_string),
+        public_name: None,
+        tls_cert: None,
+        tls_key: None,
+        open: false,
+    }
+}
+
+/// Each flag wins over its `[host]` key alone (docs/web-bind.md): a flag bind keeps
+/// the table's name and certificate, and `--bind ""` switches the table's bind off.
+#[test]
+fn bind_flags_override_the_host_table_key_by_key() {
+    let table = efference::inference::HostConfig {
+        bind: Some("100.64.0.1:7878".into()),
+        public_name: Some("box.example.ts.net".into()),
+        tls_cert: Some("/c.crt".into()),
+        tls_key: Some("/c.key".into()),
+    };
+    let merged = bind_flags(Some("127.0.0.1:0")).over(table.clone());
+    assert_eq!(merged.bind.as_deref(), Some("127.0.0.1:0"));
+    assert_eq!(merged.public_name.as_deref(), Some("box.example.ts.net"));
+    assert_eq!(merged.tls_key, Some(PathBuf::from("/c.key")));
+
+    let off = bind_flags(Some("")).over(table.clone());
+    assert!(serve::resolve_bind(off).unwrap().is_none());
+
+    let from_table = bind_flags(None).over(table);
+    assert_eq!(from_table.bind.as_deref(), Some("100.64.0.1:7878"));
+}
+
+/// Checks that clap made structural before the table existed now run after the
+/// merge, since a pair can come half from each source.
+#[test]
+fn a_half_tls_pair_and_an_open_without_a_bind_are_refused() {
+    let mut half = bind_flags(Some("127.0.0.1:0"));
+    half.tls_cert = Some("/c.crt".into());
+    let Err(err) = serve::resolve_bind(half) else {
+        panic!("a half pair resolved");
+    };
+    let err = err.to_string();
+    assert!(err.contains("go together"), "{err}");
+
+    let mut open = bind_flags(None);
+    open.open = true;
+    let Err(err) = serve::resolve_bind(open) else {
+        panic!("--open without a bind resolved");
+    };
+    let err = err.to_string();
+    assert!(err.contains("--open needs a bind"), "{err}");
+}

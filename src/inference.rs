@@ -71,6 +71,10 @@ pub struct InferenceConfig {
     defaults: Defaults,
     #[serde(default)]
     connections: BTreeMap<String, ConnectionConfig>,
+    /// `[host]`: the web bind (`inference/host.rs`). Parsed here so the one
+    /// file keeps its unknown-key refusal whole; read by `efference host`.
+    #[serde(default)]
+    host: HostConfig,
 }
 
 impl InferenceConfig {
@@ -778,6 +782,8 @@ fn validate_connection_name(name: &str) -> Result<(), Error> {
 }
 
 pub mod chatgpt;
+mod host;
+pub use host::HostConfig;
 pub mod options;
 pub use options::{
     Effective, EffectiveOptions, EffectiveTriage, Issue, IssueCode, ResolvedOptions,

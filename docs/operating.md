@@ -177,8 +177,8 @@ island. Until the TUI takes the screen, the launcher echoes `host.log` — the b
 and the reason when the host refuses to start or creation fails. Each island lives in
 `~/.efference/islands/<launcher pid>/` (`host.sock`, `host.log`), which the host removes on a
 clean exit and leaves in place when it fails. The strip's leaving verb reads `quit` rather
-than `detach` in the owning TUI. The web bind's environment fallbacks (`EFFERENCE_BIND` and
-its family) are withheld from the island, which is Unix-socket-only. Islands are not in
+than `detach` in the owning TUI. The island ignores the `[host]` table's web bind and is
+Unix-socket-only ([web-bind.md](web-bind.md)). Islands are not in
 host discovery: a second client reaches one by its socket path. Where
 stdin or stdout is not a terminal there is nothing to draw in, and the invocation resolves
 as it would with an explicit target.

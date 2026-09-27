@@ -8,6 +8,10 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- **`[host]` in `~/.efference/config.toml`** (docs/web-bind.md): the web bind's `bind`,
+  `public-name`, `tls-cert`, and `tls-key`, each overridable by its flag on `efference host`;
+  replaces the `EFFERENCE_BIND`/`EFFERENCE_HOST`/`EFFERENCE_TLS_*` environment fallbacks, and
+  `--host` is now `--public-name`. An island ignores it.
 - **A setup session that interviews** (docs/context.md): a directory with no project config
   opens a session granted the directory, scoped to setting it up, that asks whether the user
   is new to efference, explains the spotter and triage if so, asks four questions, and writes

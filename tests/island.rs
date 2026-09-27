@@ -55,10 +55,6 @@ auth = { kind = "env", key = "EFFERENCE_ISLAND_TEST_KEY" }
             .current_dir(&self.root)
             .env("HOME", &self.root)
             .env("EFFERENCE_ISLAND_TEST_KEY", "not-a-real-credential")
-            .env_remove("EFFERENCE_BIND")
-            .env_remove("EFFERENCE_HOST")
-            .env_remove("EFFERENCE_TLS_CERT")
-            .env_remove("EFFERENCE_TLS_KEY")
             .stdin(Stdio::piped())
             .stdout(log.try_clone().unwrap())
             .stderr(log);

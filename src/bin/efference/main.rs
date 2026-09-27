@@ -46,7 +46,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         Command::Setup { config } => setup::run(config).await,
         Command::Host {
             bind,
-            host,
+            public_name,
             tls_cert,
             tls_key,
             open,
@@ -55,7 +55,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             serve::host(
                 serve::BindFlags {
                     bind,
-                    host,
+                    public_name,
                     tls_cert,
                     tls_key,
                     open,

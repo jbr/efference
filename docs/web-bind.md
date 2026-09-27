@@ -16,13 +16,19 @@ prefixes it guards, carried as a `Surface`: a session bind guards `/v1` and `/fi
 a host guards `/sessions`. `Surface::Host` is the seam the in-process host mounts
 its session routes behind, so the gate's prefix decision is the same shape on both.
 
-The bind is configured by CLI flags — each with an env fallback (`EFFERENCE_BIND`,
-`EFFERENCE_HOST`, `EFFERENCE_TLS_CERT`, `EFFERENCE_TLS_KEY`) so a direnv'd shell can
-carry a standing default, and `--bind ""` overrides such a default back to UDS-only —
-but never by the session `config.toml`: the config file is model-proposable and
-fs-watched live, and network exposure must not be requestable from inside the session.
-The operator's shell env is the same trust domain as the operator's argv; the config
-file is not.
+The bind is configured by the `[host]` table of the user configuration,
+`~/.efference/config.toml` (`bind`, `public-name`, `tls-cert`, `tls-key`;
+`src/inference/host.rs`), with a flag on `efference host` overriding each key alone —
+`--bind ""` turns a configured bind off for one launch. The table describes the machine's
+host rather than a shell, which is what lets a host started by a service manager, with no
+interactive environment, carry the same bind. A leading `~/` in a certificate path
+expands against the home directory. A terminal-owned island ignores the table: it is
+Unix-socket-only ([operating.md](operating.md)).
+
+The bind is never set by a session's `config.toml`: that file is model-proposable and
+fs-watched live, and network exposure must not be requestable from inside a session. The
+user configuration is outside every session's grants — an edit a session proposes to it
+is held for the operator like any write outside its perimeter.
 
 ## Listener topology is the trust model
 
@@ -63,9 +69,10 @@ QUIC listener on the same port (UDP, `trillium-quinn`), which the listener build
 auto-pairs with the TLS listener and advertises via `alt-svc: h3` — browsers upgrade
 on a later request. A plaintext bind is accepted only on
 a loopback address; the operator posture for anything routable is the tailnet address
-with the ts.net cert. `--host` names the public DNS name — it is both the Host
-allowlist entry and the hostname in printed links (defaults to `localhost` on a
-plaintext loopback bind, required with TLS).
+with the ts.net cert. `public-name` (`--public-name`) is the public DNS name — it is both the
+Host allowlist entry and the hostname in printed links (defaults to `localhost` on a
+plaintext loopback bind, required with TLS). The certificate and key are a pair,
+checked after the table and flags are merged, since each may come from either.
 
 ## Credentials: one root, everything derived
 

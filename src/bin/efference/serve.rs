@@ -2,16 +2,32 @@
 
 use super::*;
 
-/// The raw `--bind` flag family, resolved by [`resolve_bind`] into the daemon's
+/// The raw `--bind` flag family, laid over the `[host]` table by
+/// [`over`](Self::over) and resolved by [`resolve_bind`] into the daemon's
 /// [`TcpBind`] — or rejected before anything else boots.
 ///
 /// [`TcpBind`]: efference::daemon::TcpBind
 pub(crate) struct BindFlags {
     pub(crate) bind: Option<String>,
-    pub(crate) host: Option<String>,
+    pub(crate) public_name: Option<String>,
     pub(crate) tls_cert: Option<PathBuf>,
     pub(crate) tls_key: Option<PathBuf>,
     pub(crate) open: bool,
+}
+
+impl BindFlags {
+    /// Each flag given wins over its `[host]` key, one key at a time
+    /// (docs/web-bind.md), so `--bind 127.0.0.1:0` keeps a configured name and
+    /// `--bind ""` turns the table's bind off.
+    pub(crate) fn over(self, table: efference::inference::HostConfig) -> Self {
+        Self {
+            bind: self.bind.or(table.bind),
+            public_name: self.public_name.or(table.public_name),
+            tls_cert: self.tls_cert.or(table.tls_cert),
+            tls_key: self.tls_key.or(table.tls_key),
+            open: self.open,
+        }
+    }
 }
 
 /// Validate the bind flags into a [`TcpBind`] (docs/web-bind.md), enforcing the
@@ -24,8 +40,11 @@ pub(crate) fn resolve_bind(
     flags: BindFlags,
 ) -> Result<Option<efference::daemon::TcpBind>, Box<dyn std::error::Error + Send + Sync>> {
     // An empty bind is the explicit "UDS-only" spelling: `--bind ""` overrides a
-    // direnv'd EFFERENCE_BIND default (e.g. for a second concurrent session).
+    // configured `[host] bind` (e.g. for a second concurrent host).
     let Some(addr) = flags.bind.filter(|a| !a.trim().is_empty()) else {
+        if flags.open {
+            return Err("--open needs a bind: there is no link to open without one".into());
+        }
         return Ok(None);
     };
     use std::net::ToSocketAddrs;
@@ -37,12 +56,16 @@ pub(crate) fn resolve_bind(
     let tls = match (flags.tls_cert, flags.tls_key) {
         (Some(cert), Some(key)) => Some(efference::daemon::TlsPem {
             cert: std::fs::read(&cert)
-                .map_err(|e| format!("could not read --tls-cert {}: {e}", cert.display()))?,
+                .map_err(|e| format!("could not read tls-cert {}: {e}", cert.display()))?,
             key: std::fs::read(&key)
-                .map_err(|e| format!("could not read --tls-key {}: {e}", key.display()))?,
+                .map_err(|e| format!("could not read tls-key {}: {e}", key.display()))?,
         }),
-        // clap's `requires` pairing makes one-without-the-other unrepresentable.
-        _ => None,
+        (None, None) => None,
+        // Checked after the merge, not by clap: the pair may come half from a
+        // flag and half from the table.
+        _ => {
+            return Err("tls-cert and tls-key go together: set both, or neither".into());
+        }
     };
     if tls.is_none() && !loopback {
         return Err(format!(
@@ -51,13 +74,13 @@ pub(crate) fn resolve_bind(
         )
         .into());
     }
-    let host = match (flags.host, &tls) {
+    let host = match (flags.public_name, &tls) {
         (Some(host), _) => host,
         (None, None) => "localhost".into(),
         (None, Some(_)) => {
             return Err(
-                "--bind with TLS needs --host <name> — the cert's DNS name, which browsers \
-                 must address the daemon by"
+                "a TLS bind needs a public name (--public-name, or public-name under \
+                 [host]) — the cert's DNS name, which browsers must address the host by"
                     .into(),
             );
         }
@@ -296,6 +319,15 @@ pub(crate) async fn host(
     let socket = match socket {
         Some(socket) => socket,
         None => user_host_socket().ok_or("no HOME to place ~/.efference/host.sock under")?,
+    };
+    // An island is Unix-socket-only (docs/operating.md): the machine's bind
+    // belongs to the machine's host, and two islands would contend for it.
+    let bind_flags = if island {
+        bind_flags
+    } else {
+        let home =
+            std::env::var_os("HOME").ok_or("no HOME to read ~/.efference/config.toml under")?;
+        bind_flags.over(efference::inference::HostConfig::load(Path::new(&home))?)
     };
     let owner = island.then(|| {
         let socket = socket.clone();

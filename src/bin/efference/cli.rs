@@ -484,32 +484,25 @@ pub(crate) enum Command {
     /// carries its working directory and environment; each session's control API is
     /// then at `/sessions/<id>/`.
     Host {
-        /// Also listen on a TCP address: the web client's front door.
-        #[arg(long, value_name = "ADDR:PORT", env = "EFFERENCE_BIND")]
+        /// Also listen on a TCP address: the web client's front door. Overrides
+        /// `[host] bind` in ~/.efference/config.toml; `--bind ""` serves the Unix
+        /// socket alone whatever the table says.
+        #[arg(long, value_name = "ADDR:PORT")]
         bind: Option<String>,
-        /// The public name browsers address the bind by — the Host allowlist and the
+        /// The name browsers address the bind by — the Host allowlist and the
         /// hostname in the printed link. Defaults to `localhost` on a loopback bind;
-        /// required with TLS.
-        #[arg(long, value_name = "NAME", requires = "bind", env = "EFFERENCE_HOST")]
-        host: Option<String>,
+        /// required with TLS. Overrides `[host] public-name`.
+        #[arg(long, value_name = "NAME")]
+        public_name: Option<String>,
         /// PEM certificate chain for the bind (the `tailscale cert` output).
-        #[arg(
-            long,
-            value_name = "PEM",
-            requires = "tls_key",
-            env = "EFFERENCE_TLS_CERT"
-        )]
+        /// Overrides `[host] tls-cert`.
+        #[arg(long, value_name = "PEM")]
         tls_cert: Option<PathBuf>,
-        /// PEM private key matching --tls-cert.
-        #[arg(
-            long,
-            value_name = "PEM",
-            requires = "tls_cert",
-            env = "EFFERENCE_TLS_KEY"
-        )]
+        /// PEM private key matching the certificate. Overrides `[host] tls-key`.
+        #[arg(long, value_name = "PEM")]
         tls_key: Option<PathBuf>,
         /// Open the operator's browser at the bootstrap link once bound.
-        #[arg(long, requires = "bind")]
+        #[arg(long)]
         open: bool,
         /// Run as a terminal-owned island: stdin is the launcher's ownership
         /// connection, and its closing shuts the host down (docs/control-channel.md).

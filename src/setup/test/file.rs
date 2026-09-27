@@ -4,12 +4,16 @@
 use super::*;
 
 /// Adding to an existing file: the name collision is refused, the standing
-/// default is kept, comments survive, and the new table is appended.
+/// default is kept, comments and the `[host]` table survive, and the new table is
+/// appended.
 #[tokio::test]
 async fn adding_to_an_existing_file_keeps_it_intact() {
     let existing = r#"# my notes
 [defaults]
 model = "anthropic/claude-sonnet-4-5" # pinned
+
+[host]
+bind = "100.64.0.1:7878"
 
 [connections.anthropic]
 provider = "anthropic"
@@ -45,6 +49,9 @@ auth = { kind = "env", key = "ANTHROPIC_API_KEY" }
         r#"# my notes
 [defaults]
 model = "anthropic/claude-sonnet-4-5" # pinned
+
+[host]
+bind = "100.64.0.1:7878"
 
 [connections.anthropic]
 provider = "anthropic"
