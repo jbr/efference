@@ -221,7 +221,9 @@ ProjectGuide = { path = "CLAUDE.md" }
 ```
 
 — and if it is missing something a session needs, say so and offer to add it there. With
-neither, draft an `AGENTS.md`. A README is written for a person deciding whether to install
+neither, draft an `AGENTS.md` and list it the same way (`"AGENTS.md" = true`): a file
+`[context]` does not name is never read at session start, so an unlisted guide is one no
+session sees. A README is written for a person deciding whether to install
 the thing; a session needs what a new contributor is told on day one, in the order a session meets it: what the project is in two sentences,
 how to build and test, the layout of the source and what each part owns, the conventions
 the code observes (formatting, where tests live, how errors are handled), and where the
