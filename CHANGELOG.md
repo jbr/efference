@@ -52,9 +52,10 @@ behind a change, see [`journal/`](journal/).
 ### Changed
 - **Decision-spotter verdicts record every axis probability in the log** (docs/permissions.md),
   so live sessions build the calibration corpus.
-- **The spotter's move block states where a bash command's paths resolve** (docs/permissions.md):
-  each path-shaped word and redirection target, resolved, with the grant that decides it, so
-  an in-tree `.git/info/exclude` no longer reads as outside the project.
+- **Both spotter rungs are told where a bash command's paths resolve** (docs/permissions.md):
+  each path-shaped word and redirection target, resolved, with the grant that decides it —
+  listed unresolved when it only expands at run time — so an in-tree `.git/info/exclude` no
+  longer reads as outside the project.
 - **The setup session's scope names keeping efference's files out of version control**, and
   its guide says triage runs on the agent's model unless `[defaults].triage` or
   `--triage-model` names another.

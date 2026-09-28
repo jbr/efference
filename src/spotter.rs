@@ -373,31 +373,49 @@ fn grant_label(perms: &crate::config::Perms) -> &'static str {
 /// misreads it often enough to gate in-tree work; stated as facts, the question
 /// becomes a comparison (docs/permissions.md).
 fn path_facts(command: &str, role: &Config, cwd: &std::path::Path) -> String {
-    let words = crate::policy::path_words(command, cwd);
-    if words.is_empty() {
+    let found = crate::policy::path_words(command, cwd);
+    if found.words.is_empty() {
         return String::new();
     }
     let mut s = String::from(
         "\n\nThe paths this command names, as the harness resolves them (lexically, \
          against the working directory or the `cd` before them; the disk is not read):\n",
     );
-    for word in words {
-        let resolved = word.resolved.display();
+    for word in &found.words {
+        use crate::policy::Decided;
         let written = if word.written { ", written" } else { "" };
+        let Some(resolved) = &word.resolved else {
+            s.push_str(&format!(
+                "- `{}`{written} → not resolved here: it expands when the command runs\n",
+                word.word
+            ));
+            continue;
+        };
         // Only the deciding grant is stated: "outside the working directory" read
         // as leaving scope even for a granted sibling, and the grant is what decides.
-        let grant = match crate::policy::governing_grant(role, &word.resolved, cwd) {
-            Some((grant, perms)) => format!(
+        let grant = match crate::policy::decide(role, word, cwd) {
+            Decided::Grant(grant, perms) => format!(
                 "under the grant `{}` ({})",
                 grant.display(),
                 grant_label(perms)
             ),
-            None => "no grant covers it".to_string(),
+            Decided::NoGrant => "no grant covers it".to_string(),
+            Decided::Straddles(prefix) => format!(
+                "a pattern that may match paths under more than one grant below `{}`",
+                prefix.display()
+            ),
+            Decided::Unresolved => "not resolved here".to_string(),
         };
         s.push_str(&format!(
-            "- `{}`{written} → `{resolved}`: {grant}\n",
-            word.word
+            "- `{}`{written} → `{}`: {grant}\n",
+            word.word,
+            resolved.display()
         ));
+    }
+    if !found.complete {
+        s.push_str(
+            "- (not every path the command names is listed; read the command for the rest)\n",
+        );
     }
     s.pop();
     s

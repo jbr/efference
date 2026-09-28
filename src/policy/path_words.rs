@@ -9,50 +9,103 @@
 //! when it *looks* like a path, so an argument such as `origin/main` can appear;
 //! the block is labeled as the harness's reading, and the reviewer still has the
 //! command itself.
+//!
+//! The list must not read as complete when it is not. A reviewer shown three
+//! resolved in-tree paths takes them as everything the command touches, so a
+//! path word that only expands at run time (`~/.cargo/…`, `$HOME/x`, a glob) is
+//! listed unresolved rather than dropped — dropping one cleared a read under
+//! `~/.cargo` on the decision rung — and [`PathWords::complete`] says when words
+//! were left unread (a compound command, the listing limit).
 
-use super::commands::{literal_word, parser_options};
+use super::commands::{literal_word, parser_options, pattern_word};
 use super::*;
 
 /// How many path words a move lists at most; past that the block stops being a
 /// quick read and the command itself is the better source.
 const LIMIT: usize = 12;
 
-/// One path-shaped word, resolved.
+/// The path-shaped words of one command.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct PathWords {
+    pub words: Vec<PathWord>,
+    /// False when words were left unread — a compound command, a function, or
+    /// the listing limit — so the list is not everything the command names.
+    pub complete: bool,
+}
+
+/// One path-shaped word.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct PathWord {
     /// The word as the command spells it.
     pub word: String,
     /// The word resolved against the directory the command is in at that point
     /// (the working directory, or a literal `cd`'s target), lexically normalized.
-    pub resolved: PathBuf,
+    /// `None` when that cannot be said here: the word expands when the command
+    /// runs (a tilde, a variable, a brace), or follows a `cd` whose target does.
+    pub resolved: Option<PathBuf>,
+    /// Whether `resolved` is a pathname pattern (`src/*.rs`): it names whatever
+    /// matches under its fixed prefix, which [`decide`] accounts for.
+    pub pattern: bool,
     /// Whether the word is the target of an output redirection (`>`, `>>`, `>|`,
     /// `<>`, `&>`) — a write whatever the program is.
     pub written: bool,
 }
 
 /// The path-shaped words in `command`, in order and without repeats, resolved
-/// against `cwd` as the command moves through literal `cd`s. Empty when the command
-/// does not parse. Stops at a `cd` whose target is not a literal, since every
-/// relative word after it resolves somewhere this cannot say.
-pub(crate) fn path_words(command: &str, cwd: &Path) -> Vec<PathWord> {
+/// against `cwd` as the command moves through literal `cd`s. Empty and complete
+/// when the command names none; empty and incomplete when it does not parse.
+pub(crate) fn path_words(command: &str, cwd: &Path) -> PathWords {
     let mut walk = Walk {
         dir: Some(cwd.to_path_buf()),
-        words: Vec::new(),
+        found: PathWords {
+            words: Vec::new(),
+            complete: true,
+        },
     };
     let mut parser = brush_parser::Parser::new(command.as_bytes(), &parser_options());
-    if let Ok(program) = parser.parse_program() {
-        for list in &program.complete_commands {
-            walk.compound_list(list);
+    match parser.parse_program() {
+        Ok(program) => {
+            for list in &program.complete_commands {
+                walk.compound_list(list);
+            }
         }
+        Err(_) => walk.found.complete = false,
     }
-    walk.words
+    walk.found
 }
 
 struct Walk {
     /// The directory relative words resolve against; `None` once a non-literal `cd`
     /// makes it unknowable.
     dir: Option<PathBuf>,
-    words: Vec<PathWord>,
+    found: PathWords,
+}
+
+/// A word as the walk sees it: its literal value when bash would not expand it,
+/// else its source text, which only the running shell can resolve.
+#[derive(Clone)]
+enum Spelled {
+    Literal(String),
+    Pattern(String),
+    Expands(String),
+}
+
+impl Spelled {
+    fn text(&self) -> &str {
+        match self {
+            Spelled::Literal(text) | Spelled::Pattern(text) | Spelled::Expands(text) => text,
+        }
+    }
+}
+
+fn spelled(word: &brush_parser::ast::Word) -> Spelled {
+    if let Some(literal) = literal_word(word) {
+        return Spelled::Literal(literal);
+    }
+    match pattern_word(word) {
+        Some(pattern) => Spelled::Pattern(pattern),
+        None => Spelled::Expands(word.value.clone()),
+    }
 }
 
 impl Walk {
@@ -70,10 +123,11 @@ impl Walk {
     fn pipeline(&mut self, pipeline: &brush_parser::ast::Pipeline) {
         use brush_parser::ast::Command;
         for command in &pipeline.seq {
-            // Compound commands, functions, and `[[ … ]]` are left to the reviewer to
-            // read: their words are not a flat argument list.
-            if let Command::Simple(simple) = command {
-                self.simple(simple);
+            match command {
+                Command::Simple(simple) => self.simple(simple),
+                // Compound commands, functions, and `[[ … ]]` are left to the
+                // reviewer to read: their words are not a flat argument list.
+                _ => self.found.complete = false,
             }
         }
     }
@@ -99,8 +153,9 @@ impl Walk {
             match item {
                 CommandPrefixOrSuffixItem::IoRedirect(redirect) => self.redirect(redirect),
                 CommandPrefixOrSuffixItem::Word(word) => {
-                    if let Some(argument) = literal_word(word).filter(|a| looks_like_path(a)) {
-                        self.push(&argument, false);
+                    let word = spelled(word);
+                    if looks_like_path(word.text()) {
+                        self.push(word, false);
                     }
                 }
                 _ => {}
@@ -117,16 +172,16 @@ impl Walk {
         use brush_parser::ast::CommandPrefixOrSuffixItem;
         let arguments: Vec<_> = items
             .filter_map(|item| match item {
-                CommandPrefixOrSuffixItem::Word(word) => Some(literal_word(word)),
+                CommandPrefixOrSuffixItem::Word(word) => Some(spelled(word)),
                 _ => None,
             })
             .collect();
         let target = match arguments.as_slice() {
-            [Some(target)] if target != "-" => Some(target.clone()),
+            [Spelled::Literal(target)] if target != "-" => Some(target.clone()),
             _ => None,
         };
-        if let Some(target) = &target {
-            self.push(target, false);
+        if let [argument] = arguments.as_slice() {
+            self.push(argument.clone(), false);
         }
         self.dir = target
             .zip(self.dir.as_deref())
@@ -145,44 +200,116 @@ impl Walk {
             // A here-doc or here-string is data, and its body is not paths.
             _ => return,
         };
-        if let Some(word) = literal_word(word) {
-            self.push(&word, written);
-        }
+        self.push(spelled(word), written);
     }
 
-    fn push(&mut self, word: &str, written: bool) {
-        let Some(dir) = &self.dir else {
-            return;
+    fn push(&mut self, word: Spelled, written: bool) {
+        let resolve = |text: &str| {
+            self.dir
+                .as_deref()
+                .map(|dir| lexical_normalize(&absolutize(text, dir)))
         };
-        let resolved = lexical_normalize(&absolutize(word, dir));
+        let (word, resolved, pattern) = match word {
+            Spelled::Literal(text) => {
+                let resolved = resolve(&text);
+                (text, resolved, false)
+            }
+            Spelled::Pattern(text) => {
+                let resolved = resolve(&text);
+                (text, resolved, true)
+            }
+            Spelled::Expands(text) => (text, None, false),
+        };
         // A device (`2>/dev/null`, `/dev/stdout`) is not a grant question; listed as
         // "no grant covers it", it read as a write outside scope.
-        if resolved.starts_with("/dev") {
+        if resolved.as_deref().is_some_and(|r| r.starts_with("/dev")) {
             return;
         }
-        if let Some(seen) = self.words.iter_mut().find(|seen| seen.word == word) {
+        let words = &mut self.found.words;
+        if let Some(seen) = words.iter_mut().find(|seen| seen.word == word) {
             seen.written |= written;
             return;
         }
-        if self.words.len() < LIMIT {
-            self.words.push(PathWord {
-                word: word.to_string(),
+        if words.len() < LIMIT {
+            words.push(PathWord {
+                word,
                 resolved,
+                pattern,
                 written,
             });
+        } else {
+            self.found.complete = false;
         }
     }
 }
 
-/// Whether an argument reads as a path: `.`/`..`, a dot-prefixed name, or anything
-/// with a `/` — but not a flag, a URL, or a phrase (a commit message with a slash
-/// in it).
+/// What the grants say about one [`PathWord`] — the fact both spotter rungs state.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum Decided<'a> {
+    /// The deepest grant containing the path (every path a pattern can match).
+    Grant(PathBuf, &'a crate::config::Perms),
+    /// No grant contains it.
+    NoGrant,
+    /// The word expands when the command runs; nothing can be said here.
+    Unresolved,
+    /// A pattern whose matches may fall under a more specific grant (a carve-out
+    /// such as `.efference`) below its fixed prefix, so no single grant decides.
+    Straddles(PathBuf),
+}
+
+/// Which grant decides `word`. A pattern is decided by its fixed prefix — the
+/// components before the first one holding a glob character — unless a more
+/// specific grant sits below that prefix where the pattern could match it: `.e*/x`
+/// resolves lexically under `.` but can reach a denied `.efference`. A component
+/// without a leading `.` does not match a dot-name (bash's default), so `*.md`
+/// at the root does not reach `.efference`.
+pub(crate) fn decide<'a>(role: &'a Config, word: &PathWord, cwd: &Path) -> Decided<'a> {
+    let Some(resolved) = &word.resolved else {
+        return Decided::Unresolved;
+    };
+    let decided = |path: &Path| match governing_grant(role, path, cwd) {
+        Some((grant, perms)) => Decided::Grant(grant, perms),
+        None => Decided::NoGrant,
+    };
+    if !word.pattern {
+        return decided(resolved);
+    }
+    let is_glob = |c: &Component| c.as_os_str().to_string_lossy().contains(['*', '?', '[']);
+    let components: Vec<Component> = resolved.components().collect();
+    let Some(first_glob) = components.iter().position(is_glob) else {
+        return decided(resolved);
+    };
+    let prefix: PathBuf = components[..first_glob].iter().collect();
+    let glob = components[first_glob].as_os_str().to_string_lossy();
+    let reaches_deeper = role.paths.keys().any(|grant| {
+        let grant = lexical_normalize(&absolutize(grant, cwd));
+        let Ok(below) = grant.strip_prefix(&prefix) else {
+            return false;
+        };
+        match below.components().next() {
+            Some(first) => {
+                let name = first.as_os_str().to_string_lossy();
+                glob.starts_with('.') || !name.starts_with('.')
+            }
+            None => false,
+        }
+    });
+    if reaches_deeper {
+        Decided::Straddles(prefix)
+    } else {
+        decided(&prefix)
+    }
+}
+
+/// Whether an argument reads as a path: `.`/`..`, a dot- or tilde-prefixed name,
+/// or anything with a `/` — but not a flag, a URL, or a phrase (a commit message
+/// with a slash in it).
 fn looks_like_path(word: &str) -> bool {
     !word.is_empty()
         && !word.starts_with('-')
         && !word.contains("://")
         && !word.contains(char::is_whitespace)
-        && (word.starts_with('.') || word.contains('/'))
+        && (word.starts_with(['.', '~']) || word.contains('/'))
 }
 
 #[cfg(test)]

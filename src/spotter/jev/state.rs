@@ -40,7 +40,7 @@ pub(super) fn state(
         "path_grants": grants(role, cwd),
         "scratch_directory": scratch.map(|p| p.display().to_string()),
         "watch_for": watch_for(role),
-        "move": proposed_move(call, brief, cwd),
+        "move": proposed_move(role, call, brief, cwd),
     });
     let object = state.as_object_mut().expect("state is built as an object");
     if let Some(holder) = chain.last() {
@@ -75,11 +75,7 @@ fn grants(role: &Config, cwd: Option<&std::path::Path>) -> Vec<Value> {
     role.paths
         .iter()
         .map(|(path, perms)| {
-            let access = match (perms.read, perms.write) {
-                (_, true) => "read, write",
-                (true, false) => "read only",
-                (false, false) => "denied",
-            };
+            let access = access(perms);
             let resolved = cwd.map(|cwd| {
                 crate::policy::lexical_normalize(&crate::policy::absolutize(path, cwd))
                     .display()
@@ -98,6 +94,14 @@ fn grants(role: &Config, cwd: Option<&std::path::Path>) -> Vec<Value> {
         .collect()
 }
 
+fn access(perms: &crate::config::Perms) -> &'static str {
+    match (perms.read, perms.write) {
+        (_, true) => "read, write",
+        (true, false) => "read only",
+        (false, false) => "denied",
+    }
+}
+
 fn watch_for(role: &Config) -> Vec<&str> {
     role.watch_for
         .iter()
@@ -106,25 +110,96 @@ fn watch_for(role: &Config) -> Vec<&str> {
         .collect()
 }
 
+/// The paths a shell command names, resolved, each with the grant that decides it
+/// (`policy::path_words`) — the resolution `path_outside`, `path_denied`, and
+/// `in_scope` otherwise do inside the model, as a multi-hop read of the command
+/// text (backlog/decision-spotter-tuning.md). Stated as data beside the command,
+/// the same facts the prose rung's move block carries.
+fn paths(command: &str, role: &Config, cwd: &std::path::Path) -> (Vec<Value>, bool) {
+    let found = crate::policy::path_words(command, cwd);
+    let entries = found
+        .words
+        .into_iter()
+        .map(|word| {
+            use crate::policy::Decided;
+            let mut entry = match (&word.resolved, crate::policy::decide(role, &word, cwd)) {
+                // Listed rather than dropped: a list missing it reads as complete
+                // (docs/permissions.md).
+                (None, _) | (_, Decided::Unresolved) => json!({
+                    "as_written": word.word,
+                    "resolved": null,
+                    "expands_at_run_time": true,
+                }),
+                (Some(resolved), decided) => {
+                    let mut entry = json!({
+                        "as_written": word.word,
+                        "resolved": resolved.display().to_string(),
+                    });
+                    let object = entry.as_object_mut().expect("built as an object");
+                    match decided {
+                        Decided::Grant(grant, perms) => {
+                            object.insert(
+                                "under_grant".into(),
+                                json!({ "path": grant.display().to_string(), "access": access(perms) }),
+                            );
+                        }
+                        Decided::NoGrant | Decided::Unresolved => {
+                            object.insert("under_grant".into(), Value::Null);
+                        }
+                        Decided::Straddles(_) => {
+                            object.insert("grant_undetermined".into(), json!(true));
+                        }
+                    }
+                    if word.pattern {
+                        object.insert("pattern".into(), json!(true));
+                    }
+                    entry
+                }
+            };
+            if word.written {
+                entry
+                    .as_object_mut()
+                    .expect("built as an object")
+                    .insert("written".into(), json!(true));
+            }
+            entry
+        })
+        .collect();
+    (entries, found.complete)
+}
+
 /// The move itself. Bash carries its command text and nothing else — the text is
 /// self-describing, which is exactly what a bare structured call is not, so a
 /// structured call carries what the tool *is* alongside what it was handed.
 fn proposed_move(
+    role: &Config,
     call: &ToolCall,
     brief: Option<&ToolBrief<'_>>,
     cwd: Option<&std::path::Path>,
 ) -> Value {
     if call.name == bash::NAME {
         return match call.input.get("command").and_then(Value::as_str) {
-            // A leading `cd` into the working directory goes nowhere, so the move is
-            // the rest (`policy::without_cd_into`) — the resolution the model would
-            // otherwise have to do against `working_directory` itself.
-            Some(command) => json!({
-                "kind": "shell_command",
-                "command": cwd
-                    .and_then(|cwd| crate::policy::without_cd_into(command, cwd))
-                    .unwrap_or(command),
-            }),
+            Some(command) => {
+                // A leading `cd` into the working directory goes nowhere, so the move
+                // is the rest (`policy::without_cd_into`) — the resolution the model
+                // would otherwise have to do against `working_directory` itself.
+                let mut shell = json!({
+                    "kind": "shell_command",
+                    "command": cwd
+                        .and_then(|cwd| crate::policy::without_cd_into(command, cwd))
+                        .unwrap_or(command),
+                });
+                if let Some((paths, complete)) = cwd.map(|cwd| paths(command, role, cwd))
+                    && !paths.is_empty()
+                {
+                    let object = shell.as_object_mut().expect("built as an object");
+                    object.insert("paths".into(), Value::Array(paths));
+                    if !complete {
+                        object.insert("paths_complete".into(), json!(false));
+                    }
+                }
+                shell
+            }
             None => json!({
                 "kind": "malformed_call",
                 "tool": call.name,

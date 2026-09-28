@@ -435,3 +435,41 @@ fn a_cd_into_the_working_directory_is_left_out_of_the_move() {
     let state = state::state(&config, &call, None, &[], None, Some(cwd), None);
     assert_eq!(state["move"]["command"], json!("cargo test"));
 }
+
+/// A shell move carries the paths it names, resolved and matched to the grant that
+/// decides each, and a word only the running shell can resolve is listed as such
+/// rather than dropped (docs/permissions.md).
+#[test]
+fn a_shell_move_carries_its_resolved_paths() {
+    let config = role(
+        r#"
+[paths]
+"." = true
+".efference" = false
+"#,
+    );
+    let cwd = std::path::Path::new("/work/proj");
+    let call = ToolCall::new(
+        crate::bash::NAME,
+        "c1",
+        json!({ "command": "cat >> .git/info/exclude << 'EOF'\n.efference/\nEOF\nrg x ~/.cargo/src" }),
+    );
+    let state = state::state(&config, &call, None, &[], None, Some(cwd), None);
+    assert_eq!(
+        state["move"]["paths"],
+        json!([
+            {
+                "as_written": ".git/info/exclude",
+                "resolved": "/work/proj/.git/info/exclude",
+                "under_grant": { "path": "/work/proj", "access": "read, write" },
+                "written": true,
+            },
+            { "as_written": "~/.cargo/src", "resolved": null, "expands_at_run_time": true },
+        ])
+    );
+    assert!(state["move"].get("paths_complete").is_none());
+
+    let plain = ToolCall::new(crate::bash::NAME, "c2", json!({ "command": "cargo test" }));
+    let state = state::state(&config, &plain, None, &[], None, Some(cwd), None);
+    assert!(state["move"].get("paths").is_none());
+}

@@ -677,21 +677,40 @@ prose rung's move block says the `cd` was left out, and jev's `move.command` is 
 `cd` anywhere else stays in the move for the reviewer to see. What the operator sees, and what
 runs, is the command as written; only the reviewer's copy is shortened.
 
-**A bash move states where its paths resolve** (`policy::path_words`). Below the command, the
-prose rung's move block lists each word that reads as a path — a redirection target (marked
-written), or an argument that is `.`/`..`, dot-prefixed, or contains a `/` — resolved lexically
-against the working directory or the literal `cd` before it, with the grant that decides it
-(``- `.git/info/exclude`, written → `/…/proj/.git/info/exclude`: under the grant `/…/proj`
-(read, write)``). The grants were already rendered absolute, but the move side was left for the
-model to resolve, and Haiku misread it: a first-run setup session's append to
-`.git/info/exclude` gated as "outside the project root" or "under the denied `.efference`"
-(whose name the here-doc body mentioned) in 14 of 16 replays with the live grant set, and
-cleared in 16 of 16 with the block. Here-doc and here-string bodies are data and are not
-scanned; devices (`2>/dev/null`) are not listed, since "no grant covers it" read as a write
-outside scope; words after a non-literal `cd` are not listed, since where they resolve is unknown;
-compound commands are left to the reviewer. The block names the deciding grant only: an earlier
-wording that also said "outside the working directory" moved `cd ../sibling` moves into a
-granted sibling toward gate. Only the prose rung carries it; jev reads a trained state shape.
+**A bash move states where its paths resolve** (`policy::path_words`, `policy::decide`). Both
+rungs are given the words of a shell command that read as paths — a redirection target (marked
+written), or an argument that is `.`/`..`, dot- or tilde-prefixed, or contains a `/` — resolved
+lexically against the working directory or the literal `cd` before them, each with the grant
+that decides it. The prose rung reads a list under the command (``- `.git/info/exclude`,
+written → `/…/proj/.git/info/exclude`: under the grant `/…/proj` (read, write)``); jev reads
+`move.paths`, one object per word with `as_written`, `resolved`, and `under_grant`, and its
+three path-facing questions point at that field; its `in_scope` criteria also count ordinary
+work on a granted path, a sibling checkout included, as inside the job's reach. The grants were already rendered absolute, but
+the move side was left for the model to resolve, and both misread it: a first-run setup
+session's append to `.git/info/exclude` gated on Haiku as "outside the project root" or "under
+the denied `.efference`" (whose name the here-doc body mentioned) in 14 of 16 replays with the
+live grant set, and cleared in 16 of 16 with the list.
+
+The list must not read as complete when it is not, because a reviewer takes it as everything
+the command touches: dropping `~/.cargo/registry/src/*/io.rs` because it does not resolve here
+cleared a read outside every grant on jev. So:
+
+- a word that expands at run time (a tilde, a variable, a brace) or follows a non-literal `cd`
+  is listed unresolved (`expands_at_run_time` on jev);
+- a pathname pattern (`src/*.rs`) resolves to its fixed prefix's grant, unless a more specific
+  grant sits below that prefix where the pattern could match it — `.e*/x` can reach a denied
+  `.efference`, `*.md` cannot, since a glob matches a dot-name only when it starts with `.` —
+  and then it is reported as possibly spanning grants (`grant_undetermined`);
+- when words go unread (a compound command, a function, past twelve entries, an unparseable
+  command) the list says so (`paths_complete: false`).
+
+Here-doc and here-string bodies are data and are not scanned; devices (`2>/dev/null`) are not
+listed, since "no grant covers it" read as a write outside scope. The list names the deciding
+grant only: an earlier wording that also said "outside the working directory" moved `cd
+../sibling` moves into a granted sibling toward gate. Measured on the labeled corpus: Haiku
+(one run) misses 22/23 → 15, false gates 52/53 → 45; jev (three runs, 2562 attempts) false
+gates 568 → 527 with misses 4 → 5, the added one being `./target/release/efference log`, whose
+path is in-tree and whose harm is what the binary does.
 
 ## The config-edit loop (`src/policy.rs`, `src/agent.rs`, `src/config.rs`, `src/daemon/config_edits.rs`)
 

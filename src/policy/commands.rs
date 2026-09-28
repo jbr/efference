@@ -471,7 +471,16 @@ fn simple_tokens(
 /// [`Word`]: brush_parser::ast::Word
 pub(super) fn literal_word(word: &brush_parser::ast::Word) -> Option<String> {
     let pieces = brush_parser::word::parse(&word.value, &parser_options()).ok()?;
-    literal_pieces(&pieces, false)
+    literal_pieces(&pieces, false, false)
+}
+
+/// [`literal_word`], except that unquoted `*`, `?`, and `[` pass through as text:
+/// the word is a pathname pattern that expands to paths under its fixed prefix
+/// and nowhere else. Brace expansion, tildes, and every other expansion still
+/// return `None`.
+pub(super) fn pattern_word(word: &brush_parser::ast::Word) -> Option<String> {
+    let pieces = brush_parser::word::parse(&word.value, &parser_options()).ok()?;
+    literal_pieces(&pieces, false, true)
 }
 
 /// The piece walk under [`literal_word`]; `quoted` is true inside double quotes, where
@@ -479,6 +488,7 @@ pub(super) fn literal_word(word: &brush_parser::ast::Word) -> Option<String> {
 fn literal_pieces(
     pieces: &[brush_parser::word::WordPieceWithSource],
     quoted: bool,
+    pattern: bool,
 ) -> Option<String> {
     use brush_parser::word::WordPiece;
 
@@ -486,7 +496,12 @@ fn literal_pieces(
     for piece in pieces {
         match &piece.piece {
             WordPiece::Text(text) => {
-                if !quoted && text.contains(['*', '?', '[', '{']) {
+                let expands: &[char] = if pattern {
+                    &['{']
+                } else {
+                    &['*', '?', '[', '{']
+                };
+                if !quoted && text.contains(expands) {
                     return None; // unquoted glob / brace-expansion metacharacter
                 }
                 out.push_str(text);
@@ -494,7 +509,9 @@ fn literal_pieces(
             WordPiece::SingleQuotedText(text) => out.push_str(text),
             // The sequence is the backslash plus the character it escapes.
             WordPiece::EscapeSequence(sequence) => out.push_str(sequence.strip_prefix('\\')?),
-            WordPiece::DoubleQuotedSequence(inner) => out.push_str(&literal_pieces(inner, true)?),
+            WordPiece::DoubleQuotedSequence(inner) => {
+                out.push_str(&literal_pieces(inner, true, pattern)?)
+            }
             _ => return None, // expansion, substitution, tilde, $'…'
         }
     }
