@@ -21,6 +21,7 @@ pub(crate) async fn tui_new(
     images: efference::tui::ImageMode,
     frame_cost: bool,
 ) -> CliResult {
+    eprintln!("creating a session on {}…", host_socket.display());
     let id = create_here(&host_socket, name, flags).await?;
     attach_created(&host_socket, &id, theme, images, frame_cost, false).await
 }
@@ -67,7 +68,6 @@ pub(crate) async fn create_here(
         detached: false,
         env,
     };
-    eprintln!("creating a session on {}…", host_socket.display());
     Ok(ControlClient::new(host_socket)
         .create_session(&request)
         .await?)

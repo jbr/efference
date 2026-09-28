@@ -5,7 +5,10 @@
 //! here rather than a signal.
 //!
 //! A menu redraws in place, and an answered prompt collapses to one line, so the
-//! transcript that is left on screen reads as a record of what was chosen.
+//! transcript that is left on screen reads as a record of what was chosen. The
+//! prompter counts the rows that record occupies, so a flow that hands the
+//! terminal to a full-screen client can [`erase`](Terminal::erase) it first and
+//! leave nothing behind when the terminal is given back.
 //! Secret entry echoes a fixed mask and the collapsed line never carries the
 //! length.
 
@@ -26,6 +29,8 @@ use super::{Cancelled, Choice, Prompter, Tone};
 pub struct Terminal {
     out: Box<dyn Write + Send>,
     color: bool,
+    /// Rows this prompter has left on screen, wrapped lines counted per row.
+    rows: usize,
 }
 
 /// Where prompts are drawn: stdout when it is the terminal, else the controlling
@@ -91,7 +96,37 @@ impl Terminal {
         Ok(Self {
             out,
             color: std::env::var_os("NO_COLOR").is_none(),
+            rows: 0,
         })
+    }
+
+    /// Clear everything this prompter has left on screen and put the cursor where
+    /// its first line was. Past a screenful the earliest rows have scrolled away
+    /// and cannot be reached; everything still visible is then this prompter's,
+    /// and the move up stops at the top.
+    pub fn erase(&mut self) {
+        if self.rows == 0 {
+            return;
+        }
+        let up = u16::try_from(self.rows).unwrap_or(u16::MAX);
+        let _ = execute!(
+            self.out,
+            MoveUp(up),
+            MoveToColumn(0),
+            Clear(ClearType::FromCursorDown)
+        );
+        self.rows = 0;
+    }
+
+    /// Write one line that stays on screen, counting the rows it takes.
+    fn keep(&mut self, line: &str) -> std::io::Result<()> {
+        writeln!(self.out, "{line}")?;
+        let columns = size()
+            .map(|(columns, _)| columns as usize)
+            .unwrap_or(80)
+            .max(1);
+        self.rows += visible_width(line).div_ceil(columns).max(1);
+        Ok(())
     }
 
     fn width(&self) -> usize {
@@ -121,7 +156,7 @@ impl Terminal {
     fn answered(&mut self, question: &str, answer: &str) -> std::io::Result<()> {
         let mark = self.paint("✓", |s| s.green().to_string());
         let answer = self.paint(answer, |s| s.cyan().to_string());
-        writeln!(self.out, "{mark} {question} {answer}")
+        self.keep(&format!("{mark} {question} {answer}"))
     }
 
     fn read_key() -> std::io::Result<Key> {
@@ -294,7 +329,7 @@ impl Prompter for Terminal {
                 } else {
                     " ".repeat(hang)
                 };
-                let _ = writeln!(self.out, "{mark} {indent}{line}");
+                let _ = self.keep(&format!("{mark} {indent}{line}"));
             }
         }
         let _ = self.out.flush();
@@ -309,6 +344,8 @@ impl Prompter for Terminal {
         };
         let mut selected = first;
         let question_line = self.question(question);
+        // Drawn with the menu and erased with it; `answered` or the cancel path
+        // writes the line that stays.
         writeln!(self.out, "{question_line}").map_err(io_cancelled)?;
         let _raw = Raw::enter(&mut self.out).map_err(io_cancelled)?;
         execute!(self.out, Hide).map_err(io_cancelled)?;
@@ -351,7 +388,7 @@ impl Prompter for Terminal {
                 Ok(index)
             }
             Err(cancelled) => {
-                writeln!(self.out, "{question_line}").map_err(io_cancelled)?;
+                self.keep(&question_line).map_err(io_cancelled)?;
                 Err(cancelled)
             }
         }
@@ -370,7 +407,7 @@ impl Prompter for Terminal {
         drop(raw);
         queue!(self.out, MoveToColumn(0), Clear(ClearType::CurrentLine)).map_err(io_cancelled)?;
         let Some(typed) = typed else {
-            writeln!(self.out, "{question_line}").map_err(io_cancelled)?;
+            self.keep(&question_line).map_err(io_cancelled)?;
             return Err(Cancelled);
         };
         let answer = if typed.trim().is_empty() {
@@ -391,7 +428,7 @@ impl Prompter for Terminal {
         drop(raw);
         queue!(self.out, MoveToColumn(0), Clear(ClearType::CurrentLine)).map_err(io_cancelled)?;
         let Some(typed) = typed else {
-            writeln!(self.out, "{question_line}").map_err(io_cancelled)?;
+            self.keep(&question_line).map_err(io_cancelled)?;
             return Err(Cancelled);
         };
         self.answered(question, "••••••••").map_err(io_cancelled)?;
@@ -418,13 +455,35 @@ impl Prompter for Terminal {
         drop(raw);
         queue!(self.out, MoveToColumn(0), Clear(ClearType::CurrentLine)).map_err(io_cancelled)?;
         let Some(answer) = answer else {
-            writeln!(self.out, "{question_line}").map_err(io_cancelled)?;
+            self.keep(&question_line).map_err(io_cancelled)?;
             return Err(Cancelled);
         };
         self.answered(question, if answer { "yes" } else { "no" })
             .map_err(io_cancelled)?;
         Ok(answer)
     }
+}
+
+/// The columns `line` occupies on screen: its text without the SGR escapes the
+/// prompter paints with.
+fn visible_width(line: &str) -> usize {
+    let mut plain = String::with_capacity(line.len());
+    let mut chars = line.chars();
+    while let Some(c) = chars.next() {
+        if c == '\x1b' {
+            // `ESC [ params final`: skip through the final byte (`@`–`~`).
+            if chars.next() == Some('[') {
+                for c in chars.by_ref() {
+                    if ('@'..='~').contains(&c) {
+                        break;
+                    }
+                }
+            }
+            continue;
+        }
+        plain.push(c);
+    }
+    unicode_width::UnicodeWidthStr::width(plain.as_str())
 }
 
 /// How far a paragraph's continuation lines indent: its own leading spaces,
@@ -460,3 +519,6 @@ fn wrap(text: &str, width: usize) -> Vec<String> {
     }
     lines
 }
+
+#[cfg(test)]
+mod test;

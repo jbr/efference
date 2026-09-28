@@ -50,6 +50,9 @@ behind a change, see [`journal/`](journal/).
   catalog routes, so what each credential can see is one run's output.
 
 ### Changed
+- **An island leaves the terminal as it found it** (docs/operating.md): the host's boot report
+  stays in its log unless startup fails, and a setup offer erases its questions before the
+  TUI takes the screen.
 - **Decision-spotter verdicts record every axis probability in the log** (docs/permissions.md),
   so live sessions build the calibration corpus.
 - **Both spotter rungs are told where a bash command's paths resolve** (docs/permissions.md):

@@ -146,7 +146,11 @@ impl Probe for Table {
     /// No browser and no socket: the canned answer stands in for the dance.
     /// The grant the live probe would store is stood in for by a store item
     /// under the same name, so the readiness row reads it the same way.
-    async fn chatgpt_login(&self, connection: &str) -> Result<ChatGptLogin, String> {
+    async fn chatgpt_login(
+        &self,
+        connection: &str,
+        _say: &mut dyn FnMut(&str),
+    ) -> Result<ChatGptLogin, String> {
         let login = self
             .login
             .clone()

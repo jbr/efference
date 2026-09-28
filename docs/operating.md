@@ -173,8 +173,13 @@ and the host reads EOF and shuts down as a signal would, reaping every session's
 ([supervisor.md](supervisor.md)). Owner loss is watched from before the host initializes, so
 a TUI that dies during startup leaves nothing running. No other client carries ownership: a
 second TUI, the web client, or an agent attaching and leaving does not extend or end the
-island. Until the TUI takes the screen, the launcher echoes `host.log` — the boot report,
-and the reason when the host refuses to start or creation fails. Each island lives in
+island. An island leaves the terminal as it found it: while the host starts the launcher
+shows one status line, erased before the TUI takes the screen, and the boot report stays in
+`host.log`. Echoed before the TUI, it was left on the normal screen when the TUI gave the
+terminal back. The log is printed only when startup fails — the host refuses to start or
+creation fails — where it is the explanation. A setup offer that launches the session erases
+its own questions first (`setup::terminal::Terminal::erase`, which counts the rows its
+prompts leave), keeping only the line naming a file the wizard wrote. Each island lives in
 `~/.efference/islands/<launcher pid>/` (`host.sock`, `host.log`), which the host removes on a
 clean exit and leaves in place when it fails. The strip's leaving verb reads `quit` rather
 than `detach` in the owning TUI. The island ignores the `[host]` table's web bind and is

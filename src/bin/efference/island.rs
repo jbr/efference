@@ -6,13 +6,17 @@
 //! stderr to a log file, so nothing it prints lands over the full-screen UI and a
 //! host that outlives its launcher never writes into a closed pipe; and stdin a
 //! pipe this process holds, which is the ownership connection
-//! ([`efference::daemon::island`]). Until the TUI takes the screen, the log is
-//! echoed here — that is the boot report the creating terminal would otherwise
-//! not see.
+//! ([`efference::daemon::island`]).
+//!
+//! An island leaves the terminal as it found it. The host's boot report stays in
+//! the log: echoed before the TUI took the screen, it was left behind on the
+//! normal screen when the TUI gave it back. The log is shown here only when
+//! startup fails — the host exits, or the session cannot be created — which is
+//! when its contents are the explanation.
 
 use super::*;
 use efference::daemon::island::{ISLAND_LOG, ISLAND_SOCKET, island_dir};
-use std::io::Read;
+use std::io::IsTerminal;
 use std::os::unix::process::CommandExt;
 use std::process::Stdio;
 use std::time::Duration;
@@ -70,19 +74,28 @@ impl Island {
         &self.socket
     }
 
-    /// Wait until the socket answers, echoing the host's log. A host that exits
-    /// first has said why in the log, which has been echoed by then.
-    pub(crate) async fn wait_ready(&mut self, tail: &mut LogTail) -> Result<(), CliError> {
+    /// Wait until the socket answers. A host that exits first has said why in
+    /// its log, which the caller shows.
+    pub(crate) async fn wait_ready(&mut self) -> Result<(), CliError> {
         loop {
-            tail.echo();
             if is_live(&self.socket) {
                 return Ok(());
             }
             if let Some(status) = self.child.try_wait()? {
-                tail.echo();
                 return Err(format!("the host exited during startup ({status})").into());
             }
             tokio::time::sleep(POLL).await;
+        }
+    }
+
+    /// Print the host's log so far — the explanation for a failed startup.
+    fn show_log(&self) {
+        let Ok(log) = std::fs::read_to_string(&self.log) else {
+            return;
+        };
+        eprintln!("the host's log:");
+        for line in log.lines() {
+            eprintln!("  {line}");
         }
     }
 
@@ -113,58 +126,6 @@ impl Island {
     }
 }
 
-/// The host's log, read forward from where the last read stopped and echoed a
-/// complete line at a time.
-pub(crate) struct LogTail {
-    file: std::fs::File,
-    partial: Vec<u8>,
-}
-
-impl LogTail {
-    pub(crate) fn open(island: &Island) -> Result<Self, CliError> {
-        Ok(Self {
-            file: std::fs::File::open(&island.log)?,
-            partial: Vec::new(),
-        })
-    }
-
-    /// Echo every complete line written since the last call.
-    pub(crate) fn echo(&mut self) {
-        let _ = self.file.read_to_end(&mut self.partial);
-        let Some(end) = self.partial.iter().rposition(|&b| b == b'\n') else {
-            return;
-        };
-        let lines: Vec<u8> = self.partial.drain(..=end).collect();
-        for line in String::from_utf8_lossy(&lines).lines() {
-            eprintln!("  {line}");
-        }
-    }
-
-    /// Echo on a timer until the returned stop is sent, then once more, and hand
-    /// the tail back.
-    fn echo_in_background(
-        mut self,
-    ) -> (
-        tokio::sync::oneshot::Sender<()>,
-        tokio::task::JoinHandle<Self>,
-    ) {
-        let (stop, mut stopped) = tokio::sync::oneshot::channel::<()>();
-        let task = tokio::spawn(async move {
-            loop {
-                self.echo();
-                tokio::select! {
-                    _ = &mut stopped => {
-                        self.echo();
-                        return self;
-                    }
-                    _ = tokio::time::sleep(POLL) => {}
-                }
-            }
-        });
-        (stop, task)
-    }
-}
-
 /// The whole path: start the island, create a session in this directory, attach,
 /// and end the island when the TUI exits.
 pub(crate) async fn run(
@@ -174,24 +135,33 @@ pub(crate) async fn run(
     images: efference::tui::ImageMode,
     frame_cost: bool,
 ) -> CliResult {
-    eprintln!("no efference host is running; starting one for this terminal…");
-    let mut island = Island::launch()?;
-    let mut tail = LogTail::open(&island)?;
-    if let Err(error) = island.wait_ready(&mut tail).await {
-        island.end().await;
-        return Err(error);
+    // One status line while the host starts, erased before the TUI takes the
+    // screen so nothing of the launch is left behind when it gives it back. Not
+    // drawn when stderr is not a terminal, where there is no line to erase.
+    let status = std::io::stderr().is_terminal();
+    if status {
+        eprint!("starting efference for this terminal…");
     }
-    let (stop, echo) = tail.echo_in_background();
-    let created = create_here(island.socket(), name, flags).await;
-    let _ = stop.send(());
-    let _ = echo.await;
+    let end_status = |erase: bool| match (status, erase) {
+        (true, true) => eprint!("\r\x1b[2K"),
+        (true, false) => eprintln!(),
+        (false, _) => {}
+    };
+    let mut island = Island::launch().inspect_err(|_| end_status(false))?;
+    let created = match island.wait_ready().await {
+        Ok(()) => create_here(island.socket(), name, flags).await,
+        Err(error) => Err(error),
+    };
     let id = match created {
         Ok(id) => id,
         Err(error) => {
+            end_status(false);
+            island.show_log();
             island.end().await;
             return Err(error);
         }
     };
+    end_status(true);
     let attached = attach_created(island.socket(), &id, theme, images, frame_cost, true).await;
     island.end().await;
     attached

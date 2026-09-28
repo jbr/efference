@@ -27,7 +27,7 @@ pub(crate) async fn default_verb() -> CliResult {
     if !configured {
         let listings = picker::live_listings().await?;
         if picker::menu(&listings, &here).rows.is_empty() {
-            return offer_here(&path, theme, images).await;
+            return offer_here(&mut Terminal::open()?, &path, None, theme, images).await;
         }
     }
     picker::run(theme, images, false).await
@@ -47,8 +47,15 @@ fn display_env() -> Result<(Option<String>, efference::tui::ImageMode), CliError
 /// Ask whether to set this directory up now, and on yes create a session here —
 /// on the running host, or on an island — whose missing project config makes it
 /// the setup profile (docs/operating.md).
+///
+/// On yes, everything `terminal` has printed is erased before the TUI takes the
+/// screen, so quitting it returns to the shell as it was: the questions are
+/// answered, and the session is where the conversation continues. `kept` is the
+/// one line worth leaving, such as where the wizard wrote its file.
 async fn offer_here(
+    terminal: &mut Terminal,
     config: &Path,
+    kept: Option<String>,
     theme: Option<String>,
     images: efference::tui::ImageMode,
 ) -> CliResult {
@@ -60,18 +67,16 @@ async fn offer_here(
         .ok()
         .and_then(|text| Existing::from_toml(&text).ok())
         .and_then(|existing| existing.default_model);
-    let yes = {
-        let mut terminal = Terminal::open()?;
-        // Esc at the question is a decline like any other.
-        efference::setup::offer_project_setup(
-            &mut terminal,
-            &picker::tilde(&here),
-            model.as_deref(),
-        )
-        .unwrap_or_default()
-    };
+    // Esc at the question is a decline like any other.
+    let yes =
+        efference::setup::offer_project_setup(terminal, &picker::tilde(&here), model.as_deref())
+            .unwrap_or_default();
     if !yes {
         return Ok(());
+    }
+    terminal.erase();
+    if let Some(kept) = kept {
+        terminal.say(Tone::Good, &kept);
     }
     match cli::live_host() {
         Some(host) => tui_new(host, None, SessionFlags::default(), theme, images, false).await,
@@ -154,5 +159,6 @@ pub(crate) async fn run(config: Option<PathBuf>) -> CliResult {
         return Ok(());
     }
     let (theme, images) = display_env()?;
-    offer_here(&path, theme, images).await
+    let kept = format!("Wrote {}.", path.display());
+    offer_here(&mut terminal, &path, Some(kept), theme, images).await
 }

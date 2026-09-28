@@ -73,7 +73,10 @@ pub(crate) async fn oauth_source<P: Prompter, Q: Probe>(
             "A browser will open on ChatGPT's login page. The URL is printed too, \
              for a machine with no browser of its own.",
         );
-        match probe.chatgpt_login(connection).await {
+        let login = probe
+            .chatgpt_login(connection, &mut |text| prompter.say(Tone::Plain, text))
+            .await;
+        match login {
             Ok(login) => {
                 let plan = login
                     .plan

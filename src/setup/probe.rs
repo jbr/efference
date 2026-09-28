@@ -93,8 +93,13 @@ pub trait Probe {
     /// Run the ChatGPT authorization dance and store the grant under
     /// `oauth:<connection>` (docs/secrets.md), returning what it named. The
     /// browser opening and the HTTP round trips live behind this method so the
-    /// flow stays testable.
-    async fn chatgpt_login(&self, connection: &str) -> Result<ChatGptLogin, String>;
+    /// flow stays testable. `say` is how the person is told where to log in: the
+    /// flow's prompter, so the lines land in the transcript it keeps.
+    async fn chatgpt_login(
+        &self,
+        connection: &str,
+        say: &mut dyn FnMut(&str),
+    ) -> Result<ChatGptLogin, String>;
     /// The value kept under `name` in the store, when there is a store and it
     /// holds one. Read-only: never printed except by an explicit reveal.
     fn secret_value(&self, name: &str) -> Result<Option<String>, String>;
@@ -178,9 +183,14 @@ impl Probe for LiveProbe {
         Ok(account)
     }
 
-    async fn chatgpt_login(&self, connection: &str) -> Result<ChatGptLogin, String> {
+    async fn chatgpt_login(
+        &self,
+        connection: &str,
+        say: &mut dyn FnMut(&str),
+    ) -> Result<ChatGptLogin, String> {
         let secrets = self.secrets.as_ref().map_err(Clone::clone)?;
-        let grant = crate::inference::chatgpt::log_in(present_authorization).await?;
+        let grant =
+            crate::inference::chatgpt::log_in(|url| present_authorization(url, say)).await?;
         grant.save(secrets, connection)?;
         Ok(ChatGptLogin {
             account_id: grant.account_id,
@@ -226,26 +236,22 @@ impl Probe for LiveProbe {
     }
 }
 
-/// Get the person to the authorization URL: print it, then try to open it.
+/// Get the person to the authorization URL: say it, then try to open it.
 ///
-/// The URL is printed either way, so the open is attempted unconditionally and
+/// The URL is said either way, so the open is attempted unconditionally and
 /// a failure is reported rather than fatal — the same reasoning as the MCP
-/// authorization path (`src/boot/mcp_mount.rs`). Written on stdout, where the
-/// prompts are, so it reads in place in the transcript setup leaves behind; no
-/// prompt is open while the login runs, so raw mode is not in effect.
-fn present_authorization(url: &str) -> Result<(), String> {
-    println!();
-    println!("  Log in to ChatGPT to authorize efference:");
-    println!();
-    println!("  {url}");
-    println!();
+/// authorization path (`src/boot/mcp_mount.rs`). Said through the flow's
+/// prompter, so it reads in place in the transcript setup keeps.
+fn present_authorization(url: &str, say: &mut dyn FnMut(&str)) -> Result<(), String> {
+    say(&format!(
+        "Log in to ChatGPT to authorize efference:\n\n  {url}\n"
+    ));
     match webbrowser::open(url) {
-        Ok(()) => println!("  (opened in your browser — waiting for you to finish)"),
-        Err(error) => {
-            println!("  (could not open a browser: {error} — open the URL above to continue)")
-        }
+        Ok(()) => say("(opened in your browser — waiting for you to finish)"),
+        Err(error) => say(&format!(
+            "(could not open a browser: {error} — open the URL above to continue)"
+        )),
     }
-    println!();
     Ok(())
 }
 
