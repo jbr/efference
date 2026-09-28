@@ -81,11 +81,20 @@ async fn offer_here(
     if surface == efference::setup::Surface::Browser {
         // Always an island: a running host has its own web bind, or none, and
         // this choice never changes one (docs/operating.md).
-        return island::run_browser(None, SessionFlags::default()).await;
+        let creation = island::Creation::Form { theme };
+        return island::run_browser(creation).await;
     }
+    // The session's settings are chosen in the new-session form, as any other
+    // session's are (docs/tui.md); in a directory with no project config the
+    // session it creates is the setup profile.
     match cli::live_host() {
-        Some(host) => tui_new(host, None, SessionFlags::default(), theme, images, false).await,
-        None => island::run(None, SessionFlags::default(), theme, images, false).await,
+        Some(host) => picker::create_through_form(host, theme, images, false).await,
+        None => {
+            let creation = island::Creation::Form {
+                theme: theme.clone(),
+            };
+            island::run(creation, theme, images, false).await
+        }
     }
 }
 

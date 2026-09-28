@@ -100,23 +100,22 @@ pub(crate) fn pick<P: Prompter>(
     here: &Path,
 ) -> Result<Pick, Cancelled> {
     let here_label = tilde(here);
-    if menu.rows.is_empty() {
-        prompter.say(
-            Tone::Plain,
-            &format!("no efference sessions in {here_label}."),
-        );
-    }
     if menu.elsewhere > 0 {
         prompter.say(
             Tone::Plain,
             &format!(
-                "{} session{} on this host {} in other directories; run `efference tui` there to see {}.",
+                "{} session{} on this host {} in other directories; run `efference` there to see {}.",
                 menu.elsewhere,
                 if menu.elsewhere == 1 { "" } else { "s" },
                 if menu.elsewhere == 1 { "is" } else { "are" },
                 if menu.elsewhere == 1 { "it" } else { "them" }
             ),
         );
+    }
+    // With nothing here to attach to, the menu's one entry is "create", and
+    // asking for it is a keystroke that says nothing: the form comes next.
+    if menu.rows.is_empty() {
+        return Ok(Pick::Create);
     }
     let choices = choices(menu, here);
     let index = prompter.select(&format!("sessions in {here_label}"), &choices)?;
@@ -185,7 +184,10 @@ pub(crate) async fn run(
         }
         // Nothing to pick from and nowhere to create: start a host owned by
         // this terminal and create here (docs/operating.md).
-        return island::run(None, SessionFlags::default(), theme, images, frame_cost).await;
+        let creation = island::Creation::Form {
+            theme: theme.clone(),
+        };
+        return island::run(creation, theme, images, frame_cost).await;
     }
     let menu = menu(&listings, &here);
     // Without a terminal to draw in there is nothing to ask with; resolve the
@@ -203,6 +205,9 @@ pub(crate) async fn run(
         Ok(pick) => pick,
         Err(Cancelled) => return Ok(()),
     };
+    // Answered: nothing of the question is left behind once the form or the TUI
+    // takes over, as with a terminal island (docs/operating.md).
+    terminal.erase();
     match pick {
         Pick::Attach { host, id } => {
             tui(ClientTarget::hosted(host, &id), theme, images, frame_cost).await
@@ -211,18 +216,26 @@ pub(crate) async fn run(
             // The first live candidate, which is the host `tui --new` creates
             // on (docs/control-channel.md).
             let host = listings[0].0.clone();
-            // The picker answered "what are you doing"; the form is the rest of
-            // that question, so it runs inline where the picker just was rather
-            // than creating from bare defaults (docs/tui.md). `tui --new` is the
-            // non-interactive path and is unchanged.
-            let client = ControlClient::new(&host);
-            let Some(id) = efference::tui::session_form::run_hosted(client, theme.clone()).await?
-            else {
-                return Ok(());
-            };
-            tui(ClientTarget::hosted(host, &id), theme, images, frame_cost).await
+            create_through_form(host, theme, images, frame_cost).await
         }
     }
+}
+
+/// Create a session on `host` through the new-session form and attach to it.
+/// The picker answered "what are you doing"; the form is the rest of that
+/// question, so it runs inline where the picker just was rather than creating
+/// from bare defaults (docs/tui.md). `tui --new` is the non-interactive path.
+pub(crate) async fn create_through_form(
+    host: PathBuf,
+    theme: Option<String>,
+    images: efference::tui::ImageMode,
+    frame_cost: bool,
+) -> CliResult {
+    let client = ControlClient::new(&host);
+    let Some(id) = efference::tui::session_form::run_hosted(client, theme.clone()).await? else {
+        return Ok(());
+    };
+    tui(ClientTarget::hosted(host, &id), theme, images, frame_cost).await
 }
 
 #[cfg(test)]

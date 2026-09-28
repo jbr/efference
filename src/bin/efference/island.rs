@@ -133,18 +133,30 @@ impl Island {
     }
 }
 
-/// The whole path: start the island, create a session in this directory, attach,
-/// and end the island when the TUI exits.
-pub(crate) async fn run(
-    name: Option<String>,
-    flags: SessionFlags,
-    theme: Option<String>,
-    images: efference::tui::ImageMode,
-    frame_cost: bool,
-) -> CliResult {
-    // One status line while the host starts, erased before the TUI takes the
-    // screen so nothing of the launch is left behind when it gives it back. Not
-    // drawn when stderr is not a terminal, where there is no line to erase.
+/// How the island's session is created once its host answers.
+pub(crate) enum Creation {
+    /// From what the command line named (`tui --new`), with no questions.
+    Direct {
+        name: Option<String>,
+        flags: SessionFlags,
+    },
+    /// Through the new-session form, drawn inline against the island's own host —
+    /// the same form a running host's picker opens (docs/tui.md), so the model and
+    /// its settings are chosen the same way with or without one.
+    Form { theme: Option<String> },
+}
+
+/// Start an island with `bind` (the browser island's web bind, or none) and
+/// create the session: `None` when the form was cancelled, in which case the
+/// island has already ended. A host that fails to start or a creation that fails
+/// shows the host's log, the one case where its contents are the explanation.
+pub(crate) async fn start(
+    bind: Option<&str>,
+    creation: Creation,
+) -> Result<Option<(Island, String)>, CliError> {
+    // One status line while the host starts, erased before anything else draws,
+    // so nothing of the launch is left behind. Not drawn when stderr is not a
+    // terminal, where there is no line to erase.
     let status = std::io::stderr().is_terminal();
     if status {
         eprint!("starting efference for this terminal…");
@@ -154,21 +166,54 @@ pub(crate) async fn run(
         (true, false) => eprintln!(),
         (false, _) => {}
     };
-    let mut island = Island::launch(None).inspect_err(|_| end_status(false))?;
-    let created = match island.wait_ready().await {
-        Ok(()) => create_here(island.socket(), name, flags).await,
-        Err(error) => Err(error),
-    };
-    let id = match created {
-        Ok(id) => id,
-        Err(error) => {
-            end_status(false);
-            island.show_log();
-            island.end().await;
-            return Err(error);
+    let mut island = Island::launch(bind).inspect_err(|_| end_status(false))?;
+    if let Err(error) = island.wait_ready().await {
+        end_status(false);
+        island.show_log();
+        island.end().await;
+        return Err(error);
+    }
+    let created = match creation {
+        Creation::Direct { name, flags } => create_here(island.socket(), name, flags)
+            .await
+            .map(Some)
+            .inspect_err(|_| end_status(false)),
+        Creation::Form { theme } => {
+            end_status(true);
+            let client = ControlClient::new(island.socket());
+            efference::tui::session_form::run_hosted(client, theme)
+                .await
+                .map_err(|error| -> CliError { error.to_string().into() })
         }
     };
-    end_status(true);
+    match created {
+        Ok(Some(id)) => {
+            end_status(true);
+            Ok(Some((island, id)))
+        }
+        Ok(None) => {
+            island.end().await;
+            Ok(None)
+        }
+        Err(error) => {
+            island.show_log();
+            island.end().await;
+            Err(error)
+        }
+    }
+}
+
+/// The whole path: start the island, create a session in this directory, attach,
+/// and end the island when the TUI exits.
+pub(crate) async fn run(
+    creation: Creation,
+    theme: Option<String>,
+    images: efference::tui::ImageMode,
+    frame_cost: bool,
+) -> CliResult {
+    let Some((island, id)) = start(None, creation).await? else {
+        return Ok(());
+    };
     let attached = attach_created(island.socket(), &id, theme, images, frame_cost, true).await;
     island.end().await;
     attached

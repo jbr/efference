@@ -107,8 +107,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             frame_cost,
         } => {
             let Some(host_socket) = host_socket.or_else(cli::live_host) else {
-                return island::run(cli.name.clone(), session, theme, images.into(), frame_cost)
-                    .await;
+                let creation = island::Creation::Direct {
+                    name: cli.name.clone(),
+                    flags: session,
+                };
+                return island::run(creation, theme, images.into(), frame_cost).await;
             };
             tui_new(
                 host_socket,

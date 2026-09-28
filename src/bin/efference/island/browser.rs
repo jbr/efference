@@ -22,31 +22,10 @@ const KEY_POLL: Duration = Duration::from_millis(200);
 
 /// Start the island with a web bind, create a session here, open the browser on
 /// it, and hold the prompt until the person quits or the host ends.
-pub(crate) async fn run(name: Option<String>, flags: SessionFlags) -> CliResult {
-    let status = std::io::stderr().is_terminal();
-    if status {
-        eprint!("starting efference for this terminal…");
-    }
-    let finish_status = |erase: bool| match (status, erase) {
-        (true, true) => eprint!("\r\x1b[2K"),
-        (true, false) => eprintln!(),
-        (false, _) => {}
+pub(crate) async fn run(creation: Creation) -> CliResult {
+    let Some((mut island, id)) = start(Some(BIND), creation).await? else {
+        return Ok(());
     };
-    let mut island = Island::launch(Some(BIND)).inspect_err(|_| finish_status(false))?;
-    let created = match island.wait_ready().await {
-        Ok(()) => create_here(island.socket(), name, flags).await,
-        Err(error) => Err(error),
-    };
-    let id = match created {
-        Ok(id) => id,
-        Err(error) => {
-            finish_status(false);
-            island.show_log();
-            island.end().await;
-            return Err(error);
-        }
-    };
-    finish_status(true);
     let links = Links {
         client: ControlClient::new(island.socket()),
         session: id,

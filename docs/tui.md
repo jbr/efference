@@ -416,10 +416,11 @@ Remaining polish — the box→`│` connector refinement for result bodies, bri
 
 One form creates sessions from two places (docs/control-api.md):
 
-- **Before a session exists** — the bare-`efference tui` picker's "create a new session"
-  (docs/operating.md) opens it in an inline viewport, where the picker's own prompt just
-  was, and the client attaches to what it creates. `efference tui --new` is unchanged and
-  stays the non-interactive path.
+- **Before a session exists** — the bare-`efference` picker's "create a new session", the
+  picker with nothing to pick, a terminal island, and the setup offer (docs/operating.md)
+  all open it in an inline viewport, and the client attaches to what it creates. An
+  island runs it against its own freshly started host. `efference tui --new` is unchanged
+  and stays the non-interactive path.
 - **From inside an attached session** — `n` in the Sessions overlay opens it as a modal.
 
 The embedded one does not open on the keypress: `n` sends `HostCmd::NewSession`, and the

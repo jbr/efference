@@ -174,16 +174,18 @@ fn picking_the_last_entry_creates_here() {
     assert_eq!(pick(&mut script, &menu, &here()).unwrap(), Pick::Create);
 }
 
-/// With nothing here the menu is still asked: it says the directory is empty and
-/// offers the one thing there is to do.
+/// With nothing here to attach to, the picker asks nothing: its one entry would be
+/// "create", and the new-session form that follows has its own cancel. A running
+/// host and a terminal island then open the same form (docs/tui.md).
 #[test]
-fn the_empty_state_offers_only_create() {
+fn the_empty_state_goes_straight_to_create() {
     let menu = menu(&listings(&[ELSEWHERE_SESSION]), &here());
     assert!(menu.rows.is_empty());
-    let mut script = Script::new(vec![Some("create a new session")]);
+    let mut script = Script::new(vec![]);
     assert_eq!(pick(&mut script, &menu, &here()).unwrap(), Pick::Create);
-    assert!(script.said("no efference sessions in /tmp/efference-picker/project"));
-    assert_eq!(script.menus[0].len(), 1);
+    assert!(script.menus.is_empty());
+    // The sessions elsewhere are still pointed at.
+    assert!(script.said("in other directories"));
 }
 
 #[test]

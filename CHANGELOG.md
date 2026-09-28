@@ -53,6 +53,9 @@ behind a change, see [`journal/`](journal/).
   catalog routes, so what each credential can see is one run's output.
 
 ### Changed
+- **Every interactive start goes through the new-session form** (docs/operating.md): a
+  terminal island, the setup offer, and a picker with nothing to pick open the same form a
+  running host's picker does, so the model and its settings are chosen before the TUI.
 - **A hand-off successor keeps its predecessor's model** (docs/tools.md): model, spotter,
   triage, effort, and temperature carry across instead of falling back to the host's
   defaults.
