@@ -72,6 +72,7 @@ impl Tool<Control> for HandOff {
                     name: None,
                     cwd: caller.cwd().to_path_buf(),
                     config: None,
+                    // The host substitutes the caller's own options.
                     options: crate::inference::SessionOptions::default(),
                     upstream: Vec::new(),
                     autonomous: false,

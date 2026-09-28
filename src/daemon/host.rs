@@ -56,6 +56,11 @@ pub(super) struct Hosted {
     pub(super) succeeds: Option<String>,
     /// Who hears this session's status, and on what terms (`subscriptions.rs`).
     pub(super) subscribers: BTreeMap<String, super::subscriptions::Subscription>,
+    /// The inference options this session was created with — model, spotter,
+    /// triage, effort, temperature — which a `hand_off` successor is created
+    /// with in turn (docs/tools.md). Empty for a session adopted without a
+    /// creation request.
+    pub(super) options: crate::inference::SessionOptions,
 }
 
 impl Host {
@@ -103,6 +108,7 @@ impl Host {
             detached,
             succeeds: None,
             subscribers: BTreeMap::new(),
+            options: crate::inference::SessionOptions::default(),
         };
         self.sessions.lock().unwrap().insert(id.clone(), hosted);
         self.touch_summary();
@@ -226,6 +232,7 @@ impl Host {
         };
         // The same resolution preview reports, then credentials for the roles it
         // selected. Project effort is boot's to apply, so it is not resolved here.
+        let options = body.options.clone();
         let resolved = self.inference.resolve_options(&body.options, None);
         let inference = match self.inference.prepare(resolved) {
             Ok(inference) => inference,
@@ -257,6 +264,7 @@ impl Host {
         };
         let runtime = SessionRuntime::start(boot, self.swansong());
         self.adopt_with(id.clone(), runtime, lineage.created_by, body.detached);
+        self.record_options(&id, options);
         Ok(id)
     }
 
@@ -265,6 +273,11 @@ impl Host {
     /// `from`'s creator and it outlives `from` exactly as `from` outlived its
     /// own — whose first turn is `brief`, attributed to `from`. `from` records the
     /// successor, which attached clients follow. Returns the successor's id.
+    ///
+    /// The successor is created with `from`'s own inference options, whatever
+    /// `body` carries: a supervisor started on a large model must not hand its
+    /// place to whatever the host defaults to, or everything it supervises
+    /// starts answering to a weaker model.
     pub async fn hand_off(
         self: &Arc<Self>,
         from: &str,
@@ -275,6 +288,7 @@ impl Host {
             return Err(format!("session {from:?} is not hosted"));
         };
         body.detached = hosted.detached;
+        body.options = hosted.options.clone();
         let lineage = crate::env::Lineage {
             created_by: hosted.created_by.clone(),
             succeeds: Some(from.to_string()),
@@ -282,6 +296,14 @@ impl Host {
         let id = self.create(body, lineage).await?;
         self.record_succession(from, &id, brief);
         Ok(id)
+    }
+
+    /// Record the inference options `id` was created with, which a `hand_off`
+    /// successor is created with in turn.
+    pub(super) fn record_options(&self, id: &str, options: crate::inference::SessionOptions) {
+        if let Some(hosted) = self.sessions.lock().unwrap().get_mut(id) {
+            hosted.options = options;
+        }
     }
 
     /// The succession half of [`hand_off`](Self::hand_off), once the successor

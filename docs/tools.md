@@ -298,6 +298,11 @@ child is inverted:
   when the caller was: a successor of a human root is a human root, reviewing as
   `spotter_human` with its gates reaching the operator, where a child would default to
   `upstream` and answer to its creator. The caller is not subscribed to it.
+- **Inference.** The successor is created with the options the caller was created with —
+  model, spotter, triage, effort, temperature — and resolves them as the caller did, so a
+  model named at creation carries across and one that came from the host's defaults or
+  the project's `[transport]` comes from there again. A supervisor on a large model that
+  hands off must not leave everything it supervises answering to the host's default.
 - **The brief** is the successor's first turn, under the reserved source
   `handoff[<predecessor>]`: the clients draw it as the predecessor's brief rather than the
   operator's turn, and `POST /turns` refuses the prefix from a client.

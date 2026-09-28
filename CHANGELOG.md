@@ -53,6 +53,9 @@ behind a change, see [`journal/`](journal/).
   catalog routes, so what each credential can see is one run's output.
 
 ### Changed
+- **A hand-off successor keeps its predecessor's model** (docs/tools.md): model, spotter,
+  triage, effort, and temperature carry across instead of falling back to the host's
+  defaults.
 - **An island leaves the terminal as it found it** (docs/operating.md): the host's boot report
   stays in its log unless startup fails, and a setup offer erases its questions before the
   TUI takes the screen.

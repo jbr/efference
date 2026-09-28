@@ -460,3 +460,40 @@ async fn wait_for(what: &str, mut done: impl FnMut() -> bool) {
     }
     panic!("timed out waiting for {what}");
 }
+
+/// A successor is created with its predecessor's inference options, not the
+/// host's defaults (docs/tools.md): a supervisor on a large model must not hand
+/// its place to a smaller one. The empty registry refuses the model, and the
+/// refusal names the one the predecessor was created with.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_successor_is_created_with_its_predecessors_options() {
+    let fixture = Fixture::new();
+    fixture.host.record_options(
+        "parent",
+        crate::inference::SessionOptions {
+            model: Some("frontier/supervisor-9".into()),
+            effort: Some("max".into()),
+            ..Default::default()
+        },
+    );
+    let body = CreateSession {
+        name: None,
+        cwd: fixture.root.join("a"),
+        config: None,
+        options: crate::inference::SessionOptions::default(),
+        upstream: Vec::new(),
+        autonomous: false,
+        reauth: Vec::new(),
+        keep_scratch: false,
+        detached: false,
+        env: Default::default(),
+    };
+    let err = fixture
+        .host
+        .hand_off("parent", body, "carry on".into())
+        .await
+        .expect_err("the empty registry refuses the carried model");
+    assert!(err.contains("frontier"), "{err}");
+
+    fixture.host.swansong().shut_down().await;
+}
