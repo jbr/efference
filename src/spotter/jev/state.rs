@@ -40,7 +40,7 @@ pub(super) fn state(
         "path_grants": grants(role, cwd),
         "scratch_directory": scratch.map(|p| p.display().to_string()),
         "watch_for": watch_for(role),
-        "move": proposed_move(role, call, brief, cwd),
+        "move": proposed_move(role, call, brief, cwd, scratch),
     });
     let object = state.as_object_mut().expect("state is built as an object");
     if let Some(holder) = chain.last() {
@@ -115,14 +115,19 @@ fn watch_for(role: &Config) -> Vec<&str> {
 /// `in_scope` otherwise do inside the model, as a multi-hop read of the command
 /// text (backlog/decision-spotter-tuning.md). Stated as data beside the command,
 /// the same facts the prose rung's move block carries.
-fn paths(command: &str, role: &Config, cwd: &std::path::Path) -> (Vec<Value>, bool) {
-    let found = crate::policy::path_words(command, cwd);
+fn paths(
+    command: &str,
+    role: &Config,
+    cwd: &std::path::Path,
+    scratch: Option<&std::path::Path>,
+) -> (Vec<Value>, bool) {
+    let found = crate::policy::path_words(command, cwd, scratch);
     let entries = found
         .words
         .into_iter()
         .map(|word| {
             use crate::policy::Decided;
-            let mut entry = match (&word.resolved, crate::policy::decide(role, &word, cwd)) {
+            let mut entry = match (&word.resolved, crate::policy::decide(role, &word, cwd, scratch)) {
                 // Listed rather than dropped: a list missing it reads as complete
                 // (docs/permissions.md).
                 (None, _) | (_, Decided::Unresolved) => json!({
@@ -176,6 +181,7 @@ fn proposed_move(
     call: &ToolCall,
     brief: Option<&ToolBrief<'_>>,
     cwd: Option<&std::path::Path>,
+    scratch: Option<&std::path::Path>,
 ) -> Value {
     if call.name == bash::NAME {
         return match call.input.get("command").and_then(Value::as_str) {
@@ -189,7 +195,7 @@ fn proposed_move(
                         .and_then(|cwd| crate::policy::without_cd_into(command, cwd))
                         .unwrap_or(command),
                 });
-                if let Some((paths, complete)) = cwd.map(|cwd| paths(command, role, cwd))
+                if let Some((paths, complete)) = cwd.map(|cwd| paths(command, role, cwd, scratch))
                     && !paths.is_empty()
                 {
                     let object = shell.as_object_mut().expect("built as an object");

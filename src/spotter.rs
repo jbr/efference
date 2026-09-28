@@ -201,7 +201,15 @@ impl Spotter for ForkSpot {
                 self.scratch.as_deref(),
             )),
             UserPart::Breakpoint,
-            UserPart::Text(render_move(role, call, brief, chain, probe, cwd.as_deref())),
+            UserPart::Text(render_move(
+                role,
+                call,
+                brief,
+                chain,
+                probe,
+                cwd.as_deref(),
+                self.scratch.as_deref(),
+            )),
         ])];
 
         // No-op sink: the spotter's tokens are internal and must never surface on        // the control stream (mirrors the fork peek).
@@ -372,8 +380,13 @@ fn grant_label(perms: &crate::config::Perms) -> &'static str {
 /// resolve `.git/info/exclude` against the working directory and the grants itself
 /// misreads it often enough to gate in-tree work; stated as facts, the question
 /// becomes a comparison (docs/permissions.md).
-fn path_facts(command: &str, role: &Config, cwd: &std::path::Path) -> String {
-    let found = crate::policy::path_words(command, cwd);
+fn path_facts(
+    command: &str,
+    role: &Config,
+    cwd: &std::path::Path,
+    scratch: Option<&std::path::Path>,
+) -> String {
+    let found = crate::policy::path_words(command, cwd, scratch);
     if found.words.is_empty() {
         return String::new();
     }
@@ -393,7 +406,7 @@ fn path_facts(command: &str, role: &Config, cwd: &std::path::Path) -> String {
         };
         // Only the deciding grant is stated: "outside the working directory" read
         // as leaving scope even for a granted sibling, and the grant is what decides.
-        let grant = match crate::policy::decide(role, word, cwd) {
+        let grant = match crate::policy::decide(role, word, cwd, scratch) {
             Decided::Grant(grant, perms) => format!(
                 "under the grant `{}` ({})",
                 grant.display(),
@@ -439,6 +452,7 @@ fn render_move(
     chain: &[String],
     probe: Option<&str>,
     cwd: Option<&std::path::Path>,
+    scratch: Option<&std::path::Path>,
 ) -> String {
     let body = if call.name == bash::NAME {
         match call.input.get("command").and_then(Value::as_str) {
@@ -453,7 +467,7 @@ fn render_move(
                     None => format!("A shell command:\n\n    {cmd}"),
                 };
                 let facts = cwd
-                    .map(|cwd| path_facts(cmd, role, cwd))
+                    .map(|cwd| path_facts(cmd, role, cwd, scratch))
                     .unwrap_or_default();
                 format!("{shown}{facts}")
             }
@@ -534,7 +548,7 @@ pub fn preview_move(
     probe: Option<&str>,
     cwd: &std::path::Path,
 ) -> String {
-    render_move(role, call, brief, &[], probe, Some(cwd))
+    render_move(role, call, brief, &[], probe, Some(cwd), None)
 }
 
 /// How much of a description and of an input schema ride into the move block. A

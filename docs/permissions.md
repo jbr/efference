@@ -696,7 +696,10 @@ the command touches: dropping `~/.cargo/registry/src/*/io.rs` because it does no
 cleared a read outside every grant on jev. So:
 
 - a word that expands at run time (a tilde, a variable, a brace) or follows a non-literal `cd`
-  is listed unresolved (`expands_at_run_time` on jev);
+  is listed unresolved (`expands_at_run_time` on jev) — except `$TMPDIR/…` with a literal
+  remainder, which resolves under the session's scratch directory, since the harness set the
+  variable; listed unresolved, it decided 89 of 162 re-scored `cd … && … "$TMPDIR/x"` gates on
+  jev as "outside the grants";
 - a pathname pattern (`src/*.rs`) resolves to its fixed prefix's grant, unless a more specific
   grant sits below that prefix where the pattern could match it — `.e*/x` can reach a denied
   `.efference`, `*.md` cannot, since a glob matches a dot-name only when it starts with `.` —

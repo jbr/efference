@@ -295,10 +295,13 @@ fn the_builtin_glob_clears_embedded_tools_within_their_path_grants() {
     let mut role = fs_role();
     role.tools = ["efference__*"].iter().map(|s| s.to_string()).collect();
     // A path-less built-in clears on the glob alone.
-    assert_eq!(
-        structured(&role, &call("kill_process", serde_json::json!({}))),
-        Verdict::Clear
-    );
+    for name in ["kill_process", "read_process", "wait"] {
+        assert_eq!(
+            structured(&role, &call(name, serde_json::json!({}))),
+            Verdict::Clear,
+            "{name}"
+        );
+    }
     // A path-bearing one clears inside a grant…
     assert_eq!(
         structured(

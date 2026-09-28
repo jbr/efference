@@ -54,9 +54,15 @@ pub(crate) struct PathWord {
 /// The path-shaped words in `command`, in order and without repeats, resolved
 /// against `cwd` as the command moves through literal `cd`s. Empty and complete
 /// when the command names none; empty and incomplete when it does not parse.
-pub(crate) fn path_words(command: &str, cwd: &Path) -> PathWords {
+///
+/// `scratch` is the session's scratch directory, which every tool child sees as
+/// `$TMPDIR` (docs/tools.md): a word that is `$TMPDIR` (or `${TMPDIR}`) followed
+/// by a literal remainder resolves under it rather than being listed unresolved,
+/// since the harness set the variable itself.
+pub(crate) fn path_words(command: &str, cwd: &Path, scratch: Option<&Path>) -> PathWords {
     let mut walk = Walk {
         dir: Some(cwd.to_path_buf()),
+        scratch: scratch.map(Path::to_path_buf),
         found: PathWords {
             words: Vec::new(),
             complete: true,
@@ -78,6 +84,7 @@ struct Walk {
     /// The directory relative words resolve against; `None` once a non-literal `cd`
     /// makes it unknowable.
     dir: Option<PathBuf>,
+    scratch: Option<PathBuf>,
     found: PathWords,
 }
 
@@ -218,7 +225,13 @@ impl Walk {
                 let resolved = resolve(&text);
                 (text, resolved, true)
             }
-            Spelled::Expands(text) => (text, None, false),
+            Spelled::Expands(text) => {
+                let resolved = self
+                    .scratch
+                    .as_deref()
+                    .and_then(|scratch| under_scratch(&text, scratch));
+                (text, resolved, false)
+            }
         };
         // A device (`2>/dev/null`, `/dev/stdout`) is not a grant question; listed as
         // "no grant covers it", it read as a write outside scope.
@@ -243,6 +256,32 @@ impl Walk {
     }
 }
 
+/// `$TMPDIR/rest`, `${TMPDIR}/rest`, or either in double quotes, resolved under
+/// `scratch` when `rest` is wholly literal; `None` for anything else.
+fn under_scratch(text: &str, scratch: &Path) -> Option<PathBuf> {
+    let text = text
+        .strip_prefix('"')
+        .and_then(|t| t.strip_suffix('"'))
+        .unwrap_or(text);
+    let rest = text
+        .strip_prefix("$TMPDIR")
+        .or_else(|| text.strip_prefix("${TMPDIR}"))?;
+    if !(rest.is_empty() || rest.starts_with('/'))
+        || rest.contains(['$', '`', '\\', '"', '\'', '~', '*', '?', '[', '{'])
+    {
+        return None;
+    }
+    Some(lexical_normalize(
+        &scratch.join(rest.trim_start_matches('/')),
+    ))
+}
+
+/// The scratch directory's grant: always read-write (docs/tools.md).
+const SCRATCH: crate::config::Perms = crate::config::Perms {
+    read: true,
+    write: true,
+};
+
 /// What the grants say about one [`PathWord`] — the fact both spotter rungs state.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Decided<'a> {
@@ -263,10 +302,21 @@ pub(crate) enum Decided<'a> {
 /// resolves lexically under `.` but can reach a denied `.efference`. A component
 /// without a leading `.` does not match a dot-name (bash's default), so `*.md`
 /// at the root does not reach `.efference`.
-pub(crate) fn decide<'a>(role: &'a Config, word: &PathWord, cwd: &Path) -> Decided<'a> {
+///
+/// A path under `scratch` is decided by the scratch grant, which a live session
+/// carries in its `[paths]` and an offline replay knows only by the alias.
+pub(crate) fn decide<'a>(
+    role: &'a Config,
+    word: &PathWord,
+    cwd: &Path,
+    scratch: Option<&Path>,
+) -> Decided<'a> {
     let Some(resolved) = &word.resolved else {
         return Decided::Unresolved;
     };
+    if let Some(scratch) = scratch.filter(|scratch| resolved.starts_with(scratch)) {
+        return Decided::Grant(scratch.to_path_buf(), &SCRATCH);
+    }
     let decided = |path: &Path| match governing_grant(role, path, cwd) {
         Some((grant, perms)) => Decided::Grant(grant, perms),
         None => Decided::NoGrant,
