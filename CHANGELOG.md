@@ -197,6 +197,9 @@ behind a change, see [`journal/`](journal/).
 - **The idle triage runs on the agent's own lineage** (docs/redaction-fork.md): with a separate `--triage-model`, only the per-result peeks go to it; the wake decision an idle session makes on a notification sends the agent's client, tools, and thinking, reading the cache the keepalive holds warm.
 
 ### Fixed
+- **The new-session form draws on the terminal's own background** (docs/tui.md): it no longer
+  paints the full-screen theme's bar and band backgrounds under its gutter, source labels,
+  and status row.
 - **Live clients see a turn's `source`** (docs/control-api.md): the stream's entry view dropped
   it, so the TUI's attribution of web, MCP, and agent turns only ever appeared offline.
 - **Setup's prompts and the session picker work under `op run`** (docs/operating.md): `op run`

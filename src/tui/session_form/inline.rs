@@ -216,14 +216,24 @@ impl Inline {
 
 impl From<&InteractiveTheme> for Styles {
     fn from(theme: &InteractiveTheme) -> Self {
+        // Foregrounds and modifiers only. The theme's styles are built for the
+        // full-screen TUI, where each carries its surface's background (the
+        // status bar, the breadcrumb band); lent to the form they painted a band
+        // under every gutter, a darker box under each source label, and a filled
+        // blank status row. The form's surface is whatever it is drawn on — the
+        // terminal's own background inline, the modal's block embedded.
+        let fg_only = |style: ratatui::style::Style| ratatui::style::Style { bg: None, ..style };
         Self {
-            // Unstyled, so the terminal's own background shows through inline.
-            // The embedded modal paints its surface with a `Block` underneath
-            // this, which `Style::default()` patches nothing over.
             text: ratatui::style::Style::default(),
-            title: theme.help_title_style,
-            hint: theme.status_hint_style,
-            selected: theme.breadcrumb_style,
+            title: fg_only(theme.help_title_style),
+            hint: fg_only(theme.status_hint_style),
+            // The accent, as the picker's selected row: the breadcrumb's own
+            // foreground was chosen against the breadcrumb band, and without that
+            // band it need not contrast with the terminal's background.
+            selected: ratatui::style::Style {
+                fg: theme.help_title_style.fg,
+                ..Default::default()
+            },
         }
     }
 }

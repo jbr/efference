@@ -512,3 +512,25 @@ fn embedded_form_snapshots() {
     )));
     play.snapshot("session_form_creation_error");
 }
+
+/// The form borrows the full-screen theme's styles, each of which carries its own
+/// surface's background; lent as-is they painted a band under every gutter, a box
+/// under each source label, and a filled blank status row. No cell of the drawn
+/// form carries a background: its surface is whatever it is drawn on.
+#[test]
+fn the_form_paints_no_backgrounds_of_its_own() {
+    let theme = crate::tui::theme::InteractiveTheme::from_render_context(
+        &crate::tui::render_context::RenderContext::new(),
+    );
+    let styles = render::Styles::from(&theme);
+    let area = Rect::new(0, 0, 80, 15);
+    let mut buffer = Buffer::empty(area);
+    form().render(&mut buffer, area, styles);
+    let painted: Vec<_> = buffer
+        .content
+        .iter()
+        .filter(|cell| cell.bg != ratatui::style::Color::Reset)
+        .map(|cell| cell.symbol().to_string())
+        .collect();
+    assert!(painted.is_empty(), "cells with a background: {painted:?}");
+}
