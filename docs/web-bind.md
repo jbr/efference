@@ -114,6 +114,21 @@ id, no scopes, no server-side session store. Cookies ignore ports, so one daemon
 cookie authenticates to every daemon on the host: correct under the machine-scoped
 key, which makes "authed" a property of the machine, not the port.
 
+A plaintext loopback bind sets `efference-session` instead — the same value,
+`HttpOnly; SameSite=Strict`, without `Secure` and so without the `__Host-` prefix that
+requires it. Measured 2026-09-27: Safari (26.6.1, and Technology Preview 26.0) refuses
+any `Secure` cookie over `http://localhost` or `http://127.0.0.1`, where Chrome and
+Firefox accept it, so the prefixed cookie never stuck in Safari. On loopback `Secure`
+protects nothing — the traffic never leaves the machine — and because cookies ignore
+ports, either cookie reaches every service on `localhost` in any browser: a local
+service on another port receives it and could replay it. That exposure predates the
+split and is narrow (a same-user process already holds the socket, which is more);
+keeping the token out of cookies entirely on loopback would close it. A distinct
+`efference.localhost` hostname would scope the cookie away from other `localhost`
+services, but Safari does not resolve `*.localhost`.
+
+A bind to port 0 learns its port once listening, and minted links name that port.
+
 **The root is not in any environment.** It is read from the store into the binding
 process and nowhere else, so no spawn site has to strip it. A tool child that wants
 it must read the store itself, which on every backend is a visibly gated command

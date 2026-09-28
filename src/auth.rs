@@ -182,6 +182,14 @@ impl Root {
 /// non-loopback origin can't plant one.
 pub const COOKIE_NAME: &str = "__Host-efference";
 
+/// The session cookie's name on a plaintext loopback bind, where it carries neither
+/// `Secure` nor the `__Host-` prefix that requires it. Safari refuses a `Secure`
+/// cookie over plain http even from `localhost` (Chrome and Firefox accept it), so
+/// the prefixed cookie never sticks there. On loopback the attribute protects
+/// nothing: the traffic never leaves the machine, and no browser scopes cookies by
+/// port, so either cookie reaches every service on `localhost` (docs/web-bind.md).
+pub const LOOPBACK_COOKIE_NAME: &str = "efference-session";
+
 /// How long a minted cookie verifies. Fixed from the signed issued-at — no server-side
 /// session store; earlier revocation is root rotation (a mass logout).
 pub const COOKIE_TTL: Duration = Duration::from_secs(30 * 24 * 60 * 60);

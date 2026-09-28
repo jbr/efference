@@ -65,8 +65,12 @@ pub struct TcpAuth {
     /// DNS-rebinding check. The configured public name, plus the loopback spellings
     /// on a plaintext dev bind.
     hosts: Vec<String>,
-    /// `scheme://host:port` for minted links.
-    public_base: String,
+    /// `scheme://host:port` for minted links. Behind a lock because a bind to
+    /// port 0 learns its port only once listening ([`TcpAuth::bound_port`]).
+    public_base: Mutex<String>,
+    /// Plaintext loopback: the session cookie is [`auth::LOOPBACK_COOKIE_NAME`]
+    /// without `Secure`, which Safari refuses over http.
+    plaintext: bool,
     /// The TOTP rate limit (docs/web-bind.md): per-daemon, in-memory.
     lockout: Mutex<Lockout>,
     /// The shared record of accepted TOTP steps — user-scoped because every daemon
@@ -120,7 +124,8 @@ pub(crate) fn arm_with_ledger(bind: TcpBind, ledger: BurnLedger) -> (Arc<TcpAuth
         totp_secret: root.totp_secret(),
         root,
         hosts,
-        public_base,
+        public_base: Mutex::new(public_base),
+        plaintext: tls.is_none(),
         lockout: Mutex::new(Lockout::default()),
         ledger,
     });
@@ -179,8 +184,33 @@ pub(crate) fn spawn(
 }
 
 impl TcpAuth {
-    pub(crate) fn public_base(&self) -> &str {
-        &self.public_base
+    pub(crate) fn public_base(&self) -> String {
+        self.public_base
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
+    }
+
+    /// Record the port the listener actually bound, for a bind that asked for
+    /// port 0: minted links then name a port a browser can reach. A base that
+    /// names a port of its own is left alone — it is the configured public URL.
+    pub(crate) fn bound_port(&self, port: u16) {
+        let mut base = self
+            .public_base
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if let Some(unbound) = base.strip_suffix(":0") {
+            *base = format!("{unbound}:{port}");
+        }
+    }
+
+    /// The session cookie's name for this bind.
+    pub(crate) fn cookie_name(&self) -> &'static str {
+        if self.plaintext {
+            auth::LOOPBACK_COOKIE_NAME
+        } else {
+            auth::COOKIE_NAME
+        }
     }
 
     /// The bootstrap link: the current TOTP code in the URL *fragment*, which never
@@ -188,7 +218,7 @@ impl TcpAuth {
     /// browser-history residue inert (docs/web-bind.md).
     pub(crate) fn mint_link(&self) -> String {
         let code = auth::totp(&self.totp_secret, auth::timestep(SystemTime::now()));
-        format!("{}/#token={}", self.public_base, auth::format_code(code))
+        format!("{}/#token={}", self.public_base(), auth::format_code(code))
     }
 
     /// The enrollment URI for a stock authenticator app. Host-only surface.
@@ -225,7 +255,7 @@ impl TcpAuth {
         // host rides along and forces the split — `get_str` reads none of a
         // multi-valued header, so a browser sharing the host with any other
         // service fails auth that curl (one cookie, one line) passes.
-        if let Some(value) = conn.cookies().get(auth::COOKIE_NAME).map(Cookie::value)
+        if let Some(value) = conn.cookies().get(self.cookie_name()).map(Cookie::value)
             && auth::cookie_is_valid(&self.cookie_key, value, SystemTime::now())
         {
             return Some(Credential::Cookie);
@@ -614,9 +644,9 @@ async fn mint_session(auth: Arc<TcpAuth>, mut conn: Conn) -> Conn {
     match auth.authenticate_code(code.trim()) {
         Ok(()) => {
             let value = auth::mint_cookie(&auth.cookie_key, SystemTime::now());
-            let cookie = Cookie::build((auth::COOKIE_NAME, value))
+            let cookie = Cookie::build((auth.cookie_name(), value))
                 .path("/")
-                .secure(true)
+                .secure(!auth.plaintext)
                 .http_only(true)
                 .same_site(SameSite::Strict)
                 .max_age(auth::COOKIE_TTL.try_into().expect("30 days fits"))

@@ -130,13 +130,16 @@ async fn a_current_code_mints_a_cookie_and_burns() {
         .header(KnownHeaderName::SetCookie)
         .expect("a session cookie was set")
         .to_string();
-    assert!(set_cookie.starts_with(auth::COOKIE_NAME));
-    for attribute in ["Secure", "HttpOnly", "SameSite=Strict", "Path=/"] {
+    // A plaintext loopback bind: no `Secure`, which Safari refuses over http, and
+    // so no `__Host-` prefix, which requires it.
+    assert!(set_cookie.starts_with(auth::LOOPBACK_COOKIE_NAME));
+    for attribute in ["HttpOnly", "SameSite=Strict", "Path=/"] {
         assert!(
             set_cookie.contains(attribute),
             "{attribute} in {set_cookie}"
         );
     }
+    assert!(!set_cookie.contains("Secure"), "{set_cookie}");
 
     // The minted cookie authenticates the API.
     let cookie = set_cookie.split(';').next().unwrap().to_string();
@@ -472,4 +475,53 @@ fn only_plain_ids_name_a_session() {
     assert_eq!(session_scoped("/sessions/work/tree"), Some("/tree"));
     assert_eq!(session_scoped("/sessions/../tree"), None);
     assert_eq!(session_scoped("/v1/state"), None);
+}
+
+/// A TLS bind keeps the `__Host-` cookie, which requires `Secure`; only plaintext
+/// loopback drops it (docs/web-bind.md).
+#[test]
+fn only_a_plaintext_bind_drops_the_secure_cookie() {
+    let (tls, _listener) = arm_with_ledger(
+        TcpBind {
+            addr: "0.0.0.0:0".into(),
+            tls: Some(TlsPem {
+                cert: Vec::new(),
+                key: Vec::new(),
+            }),
+            public_url: "https://host.example:8443".into(),
+            root: Root::new("tls-cookie"),
+            open: false,
+        },
+        scratch_ledger(),
+    );
+    assert_eq!(tls.cookie_name(), auth::COOKIE_NAME);
+    assert_eq!(
+        armed("plain-cookie").cookie_name(),
+        auth::LOOPBACK_COOKIE_NAME
+    );
+}
+
+/// A bind to port 0 mints links naming the port it actually bound; a configured
+/// public URL with its own port is left as given.
+#[test]
+fn a_port_zero_bind_mints_links_on_its_bound_port() {
+    let (auth, _listener) = arm_with_ledger(
+        TcpBind {
+            addr: "127.0.0.1:0".into(),
+            tls: None,
+            public_url: "http://localhost:0".into(),
+            root: Root::new("port-zero"),
+            open: false,
+        },
+        scratch_ledger(),
+    );
+    auth.bound_port(51234);
+    assert_eq!(auth.public_base(), "http://localhost:51234");
+    assert!(
+        auth.mint_link()
+            .starts_with("http://localhost:51234/#token=")
+    );
+    let configured = armed("configured-port");
+    configured.bound_port(51234);
+    assert_eq!(configured.public_base(), "http://localhost:7777");
 }

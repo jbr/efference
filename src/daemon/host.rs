@@ -577,10 +577,13 @@ pub async fn serve_host(
             Arc::clone(&host),
         )
         .map_err(|e| -> Error { format!("failed to bind {addr}: {e}").into() })?;
+        // Bound before the link is minted: a bind to port 0 learns its port here.
+        if let Some(bound) = handle.info().await.tcp_socket_addr() {
+            auth.bound_port(bound.port());
+        }
         let link = auth.mint_link();
         eprintln!("web: {} (bound {addr})", auth.public_base());
         eprintln!("  {link}");
-        handle.info().await;
         if open && webbrowser::open(&link).is_err() {
             eprintln!("[could not open a browser for {link}]");
         }
