@@ -36,6 +36,7 @@ pub(crate) mod image;
 pub(crate) mod keyboard;
 pub(crate) mod markdown;
 pub(crate) mod mouse;
+pub(crate) mod pasteboard;
 pub(crate) mod projection;
 pub(crate) mod render_code_block;
 pub(crate) mod render_context;
@@ -49,6 +50,7 @@ pub(crate) mod render_scrollbar;
 pub(crate) mod render_sessions;
 pub(crate) mod render_sidebar;
 pub(crate) mod render_span;
+pub(crate) mod render_staged;
 pub(crate) mod render_status_bar;
 pub(crate) mod render_table;
 pub(crate) mod render_theme_picker;
@@ -57,6 +59,7 @@ pub mod session_form;
 pub(crate) mod sessions;
 pub(crate) mod sidebar;
 pub(crate) mod span_style;
+pub(crate) mod staged;
 pub(crate) mod state;
 pub(crate) mod table_layout;
 pub(crate) mod theme;
@@ -165,6 +168,20 @@ pub(crate) enum TuiEvent {
     /// dequeued the turn first — because the server's answer is authoritative; the composer
     /// splices exactly this and nothing else.
     Recalled(Vec<crate::client::WithdrawnTurn>),
+    /// A staged attachment's upload answered (docs/inbox.md): what the daemon stored, keyed
+    /// by the staging key, or why it could not.
+    Uploaded {
+        key: u64,
+        result: Result<crate::attachments::Arrival, String>,
+    },
+    /// Whether the system clipboard holds an image and no text, learned from its type
+    /// list alone when it changes — the strip then says `C-v` attaches it (docs/tui.md).
+    ClipboardImage(bool),
+    /// A staged image's thumbnail, decoded and scaled off the UI thread.
+    Thumbnail {
+        key: u64,
+        image: ::image::DynamicImage,
+    },
     /// The host's session listing came back, or said why it could not
     /// (docs/tui.md). One whole listing per event: the switcher holds the latest
     /// and nothing is reconciled.
@@ -216,12 +233,7 @@ pub(crate) enum Exit {
     /// The client is done.
     Quit,
     /// Attach to a different session on the same host.
-    Switch {
-        id: String,
-        /// The session's working directory, as the listing carried it — where
-        /// its attachment store lives (docs/inbox.md).
-        cwd: Option<String>,
-    },
+    Switch { id: String },
 }
 
 /// How the TUI picks its graphics protocol for result images (docs/tui.md).
@@ -550,8 +562,8 @@ use anyhow::{Context, Result};
 use crossbeam_channel::{Receiver, Sender, select};
 use crossterm::{
     event::{
-        self, DisableMouseCapture, EnableMouseCapture, Event, KeyboardEnhancementFlags,
-        PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
+        self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
+        Event, KeyboardEnhancementFlags, PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
     },
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},

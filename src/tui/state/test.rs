@@ -152,41 +152,48 @@ fn submit_without_gate_is_a_normal_turn() {
     assert!(arx.try_recv().is_err(), "not to the approval channel");
 }
 
-/// The paste threshold (docs/inbox.md): a short paste goes into the composer, a long one goes
-/// to the attachment store instead — the composer is left untouched, and the daemon's watcher
-/// (not the TUI) is what announces the arrival.
+/// The paste threshold (docs/inbox.md): a short paste goes into the composer; a long one is
+/// staged — uploaded at once, the composer untouched — and the next send carries it once the
+/// upload has landed. A send while it is still uploading waits rather than dropping it.
 #[test]
-fn a_long_paste_lands_in_the_attachment_store() {
-    let dir = std::env::temp_dir().join(format!("efference-tui-paste-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    let (mut s, _arx) = state_with_gate();
-    s.attachments_dir = Some(dir.clone());
+fn a_long_paste_is_staged_and_sent_with_the_next_turn() {
+    let rc = RenderContext::new();
+    let theme = InteractiveTheme::from_render_context(&rc);
+    let (_etx, erx) = crossbeam_channel::unbounded();
+    let (senders, receivers) = crate::tui::senders::Senders::channels();
+    let (mut srx, mut atx) = (receivers.submit, receivers.attachments);
+    let mut s = InteractiveState::new(erx, senders, rc, theme);
 
     let short = "one\ntwo\nthree";
-    s.paste_text_or_attach(short);
+    s.handle_paste(short.into());
     assert_eq!(s.composer.text(), short, "a short paste inlines");
 
     let long = (0..40)
         .map(|n| format!("line {n}"))
         .collect::<Vec<_>>()
         .join("\n");
-    s.paste_text_or_attach(&long);
+    s.handle_paste(long.clone());
     assert_eq!(s.composer.text(), short, "the composer is untouched");
-    let stored: Vec<_> = std::fs::read_dir(&dir)
-        .expect("the store was created")
-        .filter_map(Result::ok)
-        .collect();
-    assert_eq!(stored.len(), 1);
-    assert_eq!(std::fs::read_to_string(stored[0].path()).unwrap(), long);
-    std::fs::remove_dir_all(&dir).unwrap();
-}
+    let crate::tui::staged::AttachCmd::Upload { key, name, bytes } = atx.try_recv().unwrap() else {
+        panic!("a long paste uploads")
+    };
+    assert!(
+        name.starts_with("paste-") && name.ends_with(".txt"),
+        "{name}"
+    );
+    assert_eq!(bytes, long.as_bytes());
 
-/// With no store — a gallery run or a read-only view — everything inlines, which is the
-/// behaviour that existed before the store did.
-#[test]
-fn without_a_store_every_paste_inlines() {
-    let (mut s, _arx) = state_with_gate();
-    let long = (0..40).map(|n| format!("line {n}\n")).collect::<String>();
-    s.paste_text_or_attach(&long);
-    assert_eq!(s.composer.text(), long);
+    s.submit_composer("look".into());
+    assert!(srx.try_recv().is_err(), "a send waits for its upload");
+
+    let arrival = crate::attachments::Arrival {
+        name: name.clone(),
+        path: format!("att/composer/{name}"),
+        kind: crate::attachments::Kind::Binary { bytes: 1 },
+    };
+    s.upload_landed(key, Ok(arrival.clone()));
+    s.submit_composer("look".into());
+    let sent = srx.try_recv().unwrap();
+    assert_eq!(sent.attachments, vec![arrival]);
+    assert!(s.staged.is_empty(), "sent chips leave the row");
 }

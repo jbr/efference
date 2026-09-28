@@ -6,6 +6,7 @@
 // imports React or touches the network.
 
 import type {
+  Attachment,
   CallId,
   Frame,
   LogEntry,
@@ -95,6 +96,7 @@ export interface Session {
 export interface PendingTurn {
   id: string;
   text: string;
+  attachments: Attachment[];
 }
 
 export const emptyStreaming: Streaming = {
@@ -140,9 +142,13 @@ export function pushPendingTurn(
   session: Session,
   id: string,
   text: string,
+  attachments: Attachment[] = [],
 ): Session {
   if (session.entries.some((e) => e.submission_id === id)) return session;
-  return { ...session, pendingTurns: [...session.pendingTurns, { id, text }] };
+  return {
+    ...session,
+    pendingTurns: [...session.pendingTurns, { id, text, attachments }],
+  };
 }
 
 /** Drop the delivery echoes a recall actually withdrew (docs/web-client.md). Only

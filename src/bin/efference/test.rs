@@ -12,7 +12,6 @@ async fn socket_override_beats_name() {
         .unwrap();
     assert_eq!(got.socket, PathBuf::from("/tmp/x.sock"));
     assert_eq!(got.prefix, None);
-    assert_eq!(got.session_dir(), Some(PathBuf::from("/tmp")));
 }
 
 #[tokio::test]
@@ -41,17 +40,6 @@ async fn a_name_resolves_against_the_given_host() {
         err.contains("/nonexistent/efference/host.sock is not running"),
         "{err}"
     );
-}
-
-/// A hosted target's attachment store is the session dir under *this* directory,
-/// wherever the host's socket is: the host mints under the session's cwd.
-#[test]
-fn a_hosted_target_finds_its_session_dir() {
-    let target = ClientTarget {
-        socket: PathBuf::from("/home/someone/.efference/host.sock"),
-        prefix: Some("/sessions/b".into()),
-    };
-    assert_eq!(target.session_dir(), Some(PathBuf::from(".efference/b")));
 }
 
 /// A host's listing is scoped to this directory: sessions with another cwd are

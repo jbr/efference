@@ -83,7 +83,9 @@ test("recall drops only the echoes the daemon reports popping", async () => {
       }),
     ),
   );
-  expect(await recallTurn(store, "b")).toEqual(["two"]);
+  expect(await recallTurn(store, "b")).toEqual([
+    { submission_id: "b", text: "two" },
+  ]);
   expect(store.snapshot().pendingTurns.map((p) => p.id)).toEqual(["a"]);
 });
 

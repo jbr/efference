@@ -44,16 +44,21 @@ impl<'a> InteractiveState<'a> {
             return;
         }
 
+        // A send carries its staged files, so it waits for them: a chip still uploading has no
+        // name to send yet.
+        if self.staged.uploading() {
+            self.ui.debug_message = "an attachment is still uploading".into();
+            self.dirty = true;
+            return;
+        }
         // Mint the submission id here (docs/tui.md): the echo below and any later recall both
         // address this exact submission, which text equality could not do once a recalled turn
         // can be edited and re-sent.
-        let submitted = crate::frontend::SubmittedTurn {
-            text,
-            submission_id: crate::daemon::mint_submission_id(),
-            // The TUI is the operator: no source, so the model reads a bare turn.
-            source: None,
-        };
+        let submitted =
+            crate::frontend::SubmittedTurn::new(text, crate::daemon::mint_submission_id())
+                .with_attachments(self.staged.ready());
         if self.submit_tx.send(submitted.clone()).is_ok() {
+            self.clear_staged();
             // Echo the message immediately as a pending transcript unit
             // (docs/tui.md): it's handed to the daemon but not yet a
             // committed `User` entry, so it renders dimmed until its log entry streams back
@@ -122,6 +127,13 @@ impl<'a> InteractiveState<'a> {
             self.pending_turns
                 .retain(|p| p.submission_id != turn.submission_id);
         }
+        // Their attachments are still in the store: staged again, ready to re-send.
+        self.staged.restore(
+            withdrawn
+                .iter()
+                .flat_map(|t| t.attachments.iter().cloned())
+                .collect(),
+        );
         let mut buffer = withdrawn
             .iter()
             .map(|t| t.text.as_str())

@@ -202,7 +202,8 @@ perimeter (`env::system_prompt`). The curation preamble itself (`assets/prompts/
 states the turn-attribution convention in one sentence, so a prefix is read as an
 address rather than as content: a user turn may open with a `source:` prefix naming
 who submitted it, and a turn with no prefix is from the operator
-(docs/control-api.md).
+(docs/control-api.md). It likewise says that lines beginning `⟢` are the harness's notes, which
+report and never carry the operator's instructions ([inbox.md](inbox.md)).
 
 ## Exec sections — a section whose body is a command's stdout
 

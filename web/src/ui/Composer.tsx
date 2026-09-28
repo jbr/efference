@@ -13,10 +13,25 @@ import {
   interruptLoop,
   patchLoop,
 } from "../api/http.ts";
-import type { Pace, Stall } from "../api/types.ts";
+import type { Attachment, Pace, Stall } from "../api/types.ts";
 import { turnState } from "./turnState.ts";
 import { useDockOffset } from "./float.ts";
 import { useNarrow } from "./useNarrow.ts";
+import { StagedAttachments } from "./Attachments.tsx";
+import { pastesAsFile, useStagedAttachments } from "./staging.ts";
+
+/** What a recall handed back: the text to prepend and the attachments to stage
+ * again. `nonce` is what makes a repeat splice — recalling the same turn twice is
+ * two events, not one value. */
+export interface Recalled {
+  text: string;
+  attachments: Attachment[];
+  nonce: number;
+}
+
+/** Whether a drag carries files (not text or a link being dragged about). */
+const dragsFiles = (event: DragEvent) =>
+  event.dataTransfer?.types.includes("Files") ?? false;
 
 export function Composer({
   submit: send,
@@ -26,11 +41,10 @@ export function Composer({
   stall,
   gatePending,
 }: {
-  submit: (text: string) => Promise<void>;
-  /** Text a recall pulled back out of the daemon's queue, to prepend to the draft
-   * (docs/web-client.md). `nonce` is what makes a repeat splice — recalling the same
-   * text twice is two events, not one value. */
-  recalled: { text: string; nonce: number } | null;
+  submit: (text: string, attachments: Attachment[]) => Promise<void>;
+  /** A turn a recall pulled back out of the daemon's queue, to prepend to the
+   * draft (docs/web-client.md). */
+  recalled: Recalled | null;
   pace: Pace | null;
   running: boolean;
   /** The trajectory gave up rather than finished (docs/transport.md): the
@@ -42,6 +56,12 @@ export function Composer({
 }) {
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const attachments = useStagedAttachments();
+  const { stage, restore } = attachments;
+  // A file dragged anywhere over the page is headed here: the composer is the
+  // only drop target, so the whole window accepts it (docs/web-client.md).
+  const [dragging, setDragging] = useState(false);
+  const picker = useRef<HTMLInputElement>(null);
   const narrow = useNarrow();
   // On narrow the composer band collapses when not in use — the dock is a
   // third of a phone screen otherwise — and the floating compose chip
@@ -66,19 +86,91 @@ export function Composer({
     setDraft((current) =>
       current ? `${recalled.text}\n${current}` : recalled.text,
     );
+    restore(recalled.attachments);
     setExpanded(true);
     field.current?.focus();
-  }, [recalled]);
+  }, [recalled, restore]);
+  useEffect(() => {
+    // `dragleave` fires on every child boundary crossed, so presence is tracked
+    // as a depth rather than a flag.
+    let depth = 0;
+    const enter = (event: DragEvent) => {
+      if (!dragsFiles(event)) return;
+      depth += 1;
+      setDragging(true);
+    };
+    const leave = (event: DragEvent) => {
+      if (!dragsFiles(event)) return;
+      depth = Math.max(0, depth - 1);
+      if (depth === 0) setDragging(false);
+    };
+    // Without a cancelled `dragover` the browser refuses the drop — and then
+    // navigates to the file, which would leave the session.
+    const over = (event: DragEvent) => {
+      if (dragsFiles(event)) event.preventDefault();
+    };
+    const drop = (event: DragEvent) => {
+      if (!dragsFiles(event)) return;
+      event.preventDefault();
+      depth = 0;
+      setDragging(false);
+      for (const file of event.dataTransfer?.files ?? []) stage(file);
+      setExpanded(true);
+      field.current?.focus();
+    };
+    window.addEventListener("dragenter", enter);
+    window.addEventListener("dragleave", leave);
+    window.addEventListener("dragover", over);
+    window.addEventListener("drop", drop);
+    return () => {
+      window.removeEventListener("dragenter", enter);
+      window.removeEventListener("dragleave", leave);
+      window.removeEventListener("dragover", over);
+      window.removeEventListener("drop", drop);
+    };
+  }, [stage]);
+
+  // A pasted file or image is staged; so is text past the inline limit, kept
+  // as a file the model can grep rather than a wall in the draft. Anything else
+  // pastes as it always has.
+  function onPaste(event: React.ClipboardEvent<HTMLTextAreaElement>) {
+    const files = [...event.clipboardData.files];
+    if (files.length > 0) {
+      event.preventDefault();
+      files.forEach((file) => stage(file));
+      return;
+    }
+    const text = event.clipboardData.getData("text/plain");
+    if (pastesAsFile(text)) {
+      event.preventDefault();
+      stage(new File([text], "paste.txt", { type: "text/plain" }), text);
+    }
+  }
+
+  // Put a paste staged for its length back into the draft, at the caret.
+  function inline(key: string) {
+    const staged = attachments.staged.find((s) => s.key === key);
+    if (staged?.pastedText === undefined) return;
+    const text = staged.pastedText;
+    attachments.remove(key);
+    const at = field.current?.selectionStart ?? draft.length;
+    setDraft((current) => current.slice(0, at) + text + current.slice(at));
+  }
   const act = (call: Promise<unknown>) =>
     void call.then(() => setError(null)).catch((e) => setError(`${e}`));
 
   async function submit() {
     const text = draft.trim();
+    // A send waits for its files: a chip still uploading has no name to send.
+    if (attachments.uploading) {
+      setError("an attachment is still uploading");
+      return;
+    }
     // An empty send hands control back with no input (docs/web-client.md): the
     // loop takes another turn on the wire it already has. A decline is a normal
     // answer — the moment had no continue in it — so its message renders on its
-    // own rather than as a thrown-error string.
-    if (!text) {
+    // own rather than as a thrown-error string. Attachments alone are a turn.
+    if (!text && attachments.ready.length === 0) {
       try {
         await continueLoop();
         setError(null);
@@ -88,7 +180,8 @@ export function Composer({
       return;
     }
     try {
-      await send(text);
+      await send(text, attachments.ready);
+      attachments.clear();
       setDraft("");
       setError(null);
       setExpanded(false);
@@ -110,7 +203,7 @@ export function Composer({
         </button>
       )}
       <form
-        className="composer"
+        className={dragging ? "composer dragging" : "composer"}
         hidden={collapsed}
         onSubmit={(event) => {
           event.preventDefault();
@@ -119,12 +212,18 @@ export function Composer({
       >
         <div className="col composer-inner">
           {error && <div className="error">{error}</div>}
+          <StagedAttachments
+            staged={attachments.staged}
+            onRemove={attachments.remove}
+            onInline={inline}
+          />
           <div className="composer-input">
             <span className="prompt">›</span>
             <textarea
               ref={field}
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
+              onPaste={onPaste}
               onKeyDown={(event) => {
                 // On a phone there is no shift-enter, so intercepting Enter
                 // would make multi-line drafts impossible: return inserts a
@@ -152,7 +251,27 @@ export function Composer({
                 ⌄
               </button>
             )}
-            <button>send</button>
+            {/* The picker is the phone's way in: there is no drag, and a
+                paste carries no file. */}
+            <input
+              ref={picker}
+              type="file"
+              multiple
+              hidden
+              onChange={(event) => {
+                for (const file of event.target.files ?? []) stage(file);
+                event.target.value = "";
+              }}
+            />
+            <button
+              type="button"
+              className="linkish"
+              title="attach files (or paste, or drop them anywhere)"
+              onClick={() => picker.current?.click()}
+            >
+              attach
+            </button>
+            <button disabled={attachments.uploading}>send</button>
           </div>
         </div>
       </form>

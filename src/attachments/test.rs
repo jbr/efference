@@ -104,6 +104,7 @@ fn an_image_is_classified_with_its_dimensions() {
 #[test]
 fn the_notification_states_what_arrived_and_nothing_else() {
     let arrival = Arrival {
+        name: "paste.txt".into(),
         path: ".efference/s1/attachments/paste.txt".into(),
         kind: Kind::Text {
             bytes: 2048,
@@ -116,12 +117,36 @@ fn the_notification_states_what_arrived_and_nothing_else() {
     assert_eq!(source, "attachment");
     assert_eq!(
         body,
-        "attachment at .efference/s1/attachments/paste.txt\n\
-         text · 2.0 KB · 40 lines · looks like JSON\n\
+        "paste.txt — text, 40 lines, 2.0 KB, looks like JSON — at \
+         .efference/s1/attachments/paste.txt\n\
          first line: {\"a\": 1,"
+    );
+    assert_eq!(
+        turn_line(&arrival).lines().next().unwrap(),
+        "⟢ attached: paste.txt — text, 40 lines, 2.0 KB, looks like JSON — at \
+         .efference/s1/attachments/paste.txt",
+        "a turn's attachment is the harness's note"
     );
     assert_eq!(
         slot.as_deref(),
         Some("attachment:.efference/s1/attachments/paste.txt")
     );
+}
+
+/// A store hands out names and resolves only names it could have handed out: anything that is
+/// not one clean path component is refused rather than joined onto the directory.
+#[test]
+fn a_store_resolves_only_its_own_names() {
+    let dir = tmpdir("named");
+    let store = Store::new(&dir, "attachments").composer();
+    let arrival = store.put("shot.txt", b"hello").unwrap();
+    assert_eq!(arrival.name, "shot.txt");
+    assert_eq!(arrival.path, "attachments/composer/shot.txt");
+    assert_eq!(store.arrival("shot.txt").unwrap(), arrival);
+    for bad in ["", "../shot.txt", ".hidden", "a/b", "missing.txt"] {
+        assert!(store.path(bad).is_err(), "{bad:?} resolved");
+    }
+    store.remove("shot.txt").unwrap();
+    assert!(store.arrival("shot.txt").is_err());
+    std::fs::remove_dir_all(&dir).unwrap();
 }

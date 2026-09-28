@@ -9,21 +9,52 @@ use super::*;
 /// — "handed to the daemon, not yet on the wire." It resolves to the normal committed
 /// rendering the instant the matching `User` entry arrives via `/events`. Rendered as plain
 /// dimmed lines (not markdown) so the in-flight echo doesn't reflow as it commits.
-pub(in crate::tui) fn pending_turn(text: &str) -> DocumentNode<'static> {
+pub(in crate::tui) fn pending_turn(
+    text: &str,
+    attachments: &[crate::attachments::Arrival],
+) -> DocumentNode<'static> {
     let mut lines: Vec<Span<'static>> = text
         .lines()
         .enumerate()
         // The marker leads the first line; continuation lines indent to align.
         .map(|(i, line)| dim_span(&format!("{}{line}", if i == 0 { "⋯ " } else { "  " })))
         .collect();
-    // A blank submit can't reach here, but always emit a turn rather than an empty one.
+    // An attachments-only turn has no text line: its first attachment carries the marker.
     if lines.is_empty() {
+        if !attachments.is_empty() {
+            let mut body = attachment_spans(attachments);
+            body[0] = dim_span(&format!("⋯ {}", body[0].text));
+            return DocumentNode::entry(
+                EntryKind::UserMessage,
+                vec![DocumentNode::styled_lines(body)],
+            );
+        }
         lines.push(dim_span("⋯ "));
     }
-    DocumentNode::entry(
-        EntryKind::UserMessage,
-        vec![DocumentNode::styled_lines(lines)],
-    )
+    let mut body = vec![DocumentNode::styled_lines(lines)];
+    body.extend(attachment_lines(attachments));
+    DocumentNode::entry(EntryKind::UserMessage, body)
+}
+
+/// The files a user turn carried, one dimmed line each (docs/tui.md): name and what the daemon
+/// made of it. `None` when the turn carried none.
+pub(in crate::tui) fn attachment_lines(
+    attachments: &[crate::attachments::Arrival],
+) -> Option<DocumentNode<'static>> {
+    (!attachments.is_empty()).then(|| DocumentNode::styled_lines(attachment_spans(attachments)))
+}
+
+fn attachment_spans(attachments: &[crate::attachments::Arrival]) -> Vec<Span<'static>> {
+    attachments
+        .iter()
+        .map(|a| {
+            dim_span(&format!(
+                "⎘ {} · {}",
+                a.name,
+                crate::tui::render_staged::kind_detail(&a.kind)
+            ))
+        })
+        .collect()
 }
 
 /// One in-flight tool call, rendered in full (docs/tui.md): its settled arguments as
@@ -154,7 +185,7 @@ pub(in crate::tui) fn thinking_entry(thinking: &[ContentBlock]) -> Option<Docume
             ContentBlock::RedactedThinking { .. } => {
                 body.push(dim_line("(encrypted by the provider — not readable)"));
             }
-            ContentBlock::Text(_) => {}
+            ContentBlock::Text(_) | ContentBlock::Attachment(_) => {}
         }
     }
     (!body.is_empty()).then(|| thinking_block(body))
@@ -490,7 +521,9 @@ pub(crate) fn join_text(blocks: &[ContentBlock]) -> String {
         .iter()
         .filter_map(|b| match b {
             ContentBlock::Text(t) => Some(t.as_str()),
-            ContentBlock::Thinking { .. } | ContentBlock::RedactedThinking { .. } => None,
+            ContentBlock::Thinking { .. }
+            | ContentBlock::RedactedThinking { .. }
+            | ContentBlock::Attachment(_) => None,
         })
         .collect::<Vec<_>>()
         .join("\n\n")

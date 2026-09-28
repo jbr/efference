@@ -24,6 +24,9 @@ pub(crate) struct Senders {
     /// (docs/control-api.md); the answer rides home as a
     /// [`TuiEvent::Recalled`](super::TuiEvent::Recalled).
     pub recall: UnboundedSender<String>,
+    /// Upload or remove a staged attachment (docs/inbox.md); an upload's answer
+    /// rides home as a [`TuiEvent::Uploaded`](super::TuiEvent::Uploaded).
+    pub attachments: UnboundedSender<super::staged::AttachCmd>,
     /// The zero-token continue (docs/control-api.md): payload-free, because the
     /// verb is.
     pub continue_loop: UnboundedSender<()>,
@@ -42,6 +45,7 @@ pub(crate) struct Senders {
 pub(crate) struct Receivers {
     pub submit: UnboundedReceiver<SubmittedTurn>,
     pub recall: UnboundedReceiver<String>,
+    pub attachments: UnboundedReceiver<super::staged::AttachCmd>,
     pub continue_loop: UnboundedReceiver<()>,
     pub approve: UnboundedReceiver<(String, Approval)>,
     pub pace: UnboundedReceiver<PaceCmd>,
@@ -56,6 +60,7 @@ impl Senders {
     pub(crate) fn channels() -> (Self, Receivers) {
         let (submit, submit_rx) = unbounded_channel();
         let (recall, recall_rx) = unbounded_channel();
+        let (attachments, attachments_rx) = unbounded_channel();
         let (continue_loop, continue_rx) = unbounded_channel();
         let (approve, approve_rx) = unbounded_channel();
         let (pace, pace_rx) = unbounded_channel();
@@ -67,6 +72,7 @@ impl Senders {
             Self {
                 submit,
                 recall,
+                attachments,
                 continue_loop,
                 approve,
                 pace,
@@ -78,6 +84,7 @@ impl Senders {
             Receivers {
                 submit: submit_rx,
                 recall: recall_rx,
+                attachments: attachments_rx,
                 continue_loop: continue_rx,
                 approve: approve_rx,
                 pace: pace_rx,

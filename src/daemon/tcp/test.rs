@@ -328,7 +328,7 @@ async fn unsafe_methods_enforce_origin_and_content_type() {
     // No JSON content-type on a body-bearing method: the no-preflight CSRF shape.
     server
         .post("/v1/turns")
-        .with_request_header(KnownHeaderName::Authorization, bearer)
+        .with_request_header(KnownHeaderName::Authorization, bearer.clone())
         .with_request_header(
             KnownHeaderName::ContentType,
             "application/x-www-form-urlencoded",
@@ -336,6 +336,23 @@ async fn unsafe_methods_enforce_origin_and_content_type() {
         .with_body("text=hi")
         .await
         .assert_status(400);
+    // `text/plain` is the other safelisted type a cross-site fetch can send unpreflighted.
+    server
+        .post("/v1/turns")
+        .with_request_header(KnownHeaderName::Authorization, bearer.clone())
+        .with_request_header(KnownHeaderName::ContentType, "text/plain")
+        .with_body("{\"text\":\"hi\"}")
+        .await
+        .assert_status(400);
+    // Raw bytes preflight cross-site, so an upload passes the gate.
+    server
+        .post("/v1/attachments?name=a.txt")
+        .with_request_header(KnownHeaderName::Authorization, bearer)
+        .with_request_header(KnownHeaderName::ContentType, "application/octet-stream")
+        .with_body("hello")
+        .await
+        .assert_status(404)
+        .assert_body_contains("no attachment store");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

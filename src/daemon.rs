@@ -205,6 +205,10 @@ pub struct Session {
     /// mount scopes its listing and target resolution to it. Set once by the
     /// runtime; unset in tests and offline sessions.
     storage_base: std::sync::OnceLock<PathBuf>,
+    /// The attachment store (docs/inbox.md), set once by the runtime alongside
+    /// its watcher. Unset in tests and offline sessions, where the upload
+    /// routes answer that there is nowhere to put a file.
+    attachment_store: std::sync::OnceLock<crate::attachments::Store>,
     /// The loop appends under this lock; handlers snapshot it for `GET /log`.
     /// The lock is only ever held across the
     /// synchronous `project`/append — never an `await`.
@@ -712,6 +716,7 @@ impl Session {
         let shared = Arc::new(Self {
             cwd,
             storage_base: std::sync::OnceLock::new(),
+            attachment_store: std::sync::OnceLock::new(),
             log: Mutex::new(log),
             image_placement,
             turns_tx,

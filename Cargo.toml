@@ -180,6 +180,11 @@ keyring-core = "1"
 apple-native-keyring-store = { version = "1", features = ["keychain"] }
 # `SecCode::for_self` answers "is this binary identity-signed" at startup.
 security-framework = "3.7"
+# The pasteboard's change count and type list — whether the clipboard holds an image,
+# learned without reading it (docs/tui.md). Already in the tree through arboard.
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSPasteboard"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSString", "NSEnumerator"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 # Secret Service over zbus; the runtime feature matches the daemon's tokio.

@@ -1,11 +1,11 @@
 //! The attachment watcher — a file appearing in the store becomes a notification
 //! (docs/inbox.md).
 //!
-//! One rule: **a file that appears in `.efference/<id>/attachments/` is an attachment**, whatever
-//! put it there. A composer paste past the inline threshold writes the file and the watcher does
-//! the rest; so does a drag-in, a `mv`, or a `curl -o`. That unification is why paste needs no
-//! path of its own — the same code describes every arrival — and it is the same affordance as
-//! editing `config.toml` for immediate effect, on the same machinery (`daemon/watch.rs`).
+//! One rule: **a file that appears in the top level of `.efference/<id>/attachments/` is an
+//! attachment**, whatever put it there — a file-manager drag, a `mv`, a `curl -o`. It is the same
+//! affordance as editing `config.toml` for immediate effect, on the same machinery
+//! (`daemon/watch.rs`). A composer's uploads land in `composer/` instead and are announced by the
+//! turn that carries them; the watcher never reads that subdirectory.
 //!
 //! Nothing here touches the log. The notification rides the existing inbox rail
 //! (`Session::notify`), is shown at a triage gate, and is logged as `Ambient` at first-show like
@@ -14,6 +14,22 @@
 
 use super::*;
 use std::path::Path;
+
+impl Session {
+    /// Record the session's attachment store. Called once by the runtime.
+    pub(crate) fn set_attachment_store(&self, store: crate::attachments::Store) {
+        let _ = self.attachment_store.set(store);
+    }
+
+    /// Where a composer's uploads go (docs/inbox.md): the store's `composer/`
+    /// subdirectory, which the watcher does not read, so an upload is described
+    /// once — by the turn that carries it. `None` when the runtime set no store.
+    pub(crate) fn composer_store(&self) -> Option<crate::attachments::Store> {
+        self.attachment_store
+            .get()
+            .map(crate::attachments::Store::composer)
+    }
+}
 
 /// How long arrivals are coalesced before the watcher looks. A drag of several files, or an
 /// editor's write-then-rename, fires a burst; one look per burst is one notice per file rather
@@ -71,7 +87,9 @@ pub(crate) async fn attachments_watch_loop(
 }
 
 /// The store's current regular files, by path. Directories and dotfiles are skipped: a dropped
-/// folder is not a single attachment, and a `.DS_Store` is not one at all.
+/// folder is not a single attachment, and a `.DS_Store` is not one at all. Skipping directories is
+/// also what keeps `composer/` out: an upload is announced by the turn that carries it, and
+/// describing it here too would say it twice.
 fn read_names(dir: &Path) -> std::collections::HashSet<PathBuf> {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return Default::default();

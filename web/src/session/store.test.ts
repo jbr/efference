@@ -397,7 +397,9 @@ describe("pending turns", () => {
       "second",
     );
     const s = fold(queued, [logFrame(submitted(1, "sub-a", "first"))]);
-    expect(s.pendingTurns).toEqual([{ id: "sub-b", text: "second" }]);
+    expect(s.pendingTurns).toEqual([
+      { id: "sub-b", text: "second", attachments: [] },
+    ]);
   });
 
   it("leaves the queue alone for an entry with someone else's id", () => {
@@ -405,7 +407,9 @@ describe("pending turns", () => {
     const s = fold(queued, [
       logFrame(submitted(1, "sub-other", "someone else's")),
     ]);
-    expect(s.pendingTurns).toEqual([{ id: "sub-mine", text: "mine" }]);
+    expect(s.pendingTurns).toEqual([
+      { id: "sub-mine", text: "mine", attachments: [] },
+    ]);
   });
 
   it("settles identical texts independently — ids, not content, key them", () => {
@@ -415,7 +419,9 @@ describe("pending turns", () => {
       "go",
     );
     const once = fold(queued, [logFrame(submitted(1, "sub-2", "go"))]);
-    expect(once.pendingTurns).toEqual([{ id: "sub-1", text: "go" }]);
+    expect(once.pendingTurns).toEqual([
+      { id: "sub-1", text: "go", attachments: [] },
+    ]);
     const twice = fold(once, [logFrame(submitted(2, "sub-1", "go"))]);
     expect(twice.pendingTurns).toEqual([]);
   });
@@ -425,7 +431,9 @@ describe("pending turns", () => {
     const s = fold(queued, [
       logFrame(entry(1, { User: [{ Text: "pending" }] })),
     ]);
-    expect(s.pendingTurns).toEqual([{ id: "sub-x", text: "pending" }]);
+    expect(s.pendingTurns).toEqual([
+      { id: "sub-x", text: "pending", attachments: [] },
+    ]);
   });
 
   it("skips the push when the entry already folded ahead of the 202", () => {

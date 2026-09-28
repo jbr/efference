@@ -110,11 +110,7 @@ fn a_running_or_gated_loop_declines() {
     let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
     shared.append(1, user("hello")).unwrap();
 
-    shared.submit_turn(SubmittedTurn {
-        text: "hi".into(),
-        submission_id: "sub-test".into(),
-        source: None,
-    });
+    shared.submit_turn(SubmittedTurn::new("hi", "sub-test"));
     assert_eq!(
         shared.request_continue().unwrap_err().message(),
         "the loop is already running — there is nothing to hand back"

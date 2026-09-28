@@ -468,7 +468,6 @@ fn creation_switches_to_the_new_session() {
         play.state.switch_to,
         Some(crate::tui::Exit::Switch {
             id: "brave-otter".into(),
-            cwd: Some("/code/example".into()),
         })
     );
 }

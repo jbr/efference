@@ -16,6 +16,7 @@ pub(super) async fn submit_turn(mut conn: Conn) -> Conn {
             text,
             submission_id,
             source,
+            attachments,
         }) => {
             if submission_id
                 .as_ref()
@@ -53,12 +54,16 @@ pub(super) async fn submit_turn(mut conn: Conn) -> Conn {
                     "a `handoff[…]` source is reserved for a hand-off brief".to_string(),
                 );
             }
+            let attachments = match resolve_attachments(&shared, &attachments) {
+                Ok(attachments) => attachments,
+                Err(message) => return fail(conn, ErrorCode::BadRequest, message),
+            };
             let submission_id = submission_id.unwrap_or_else(mint_submission_id);
-            shared.submit_turn(SubmittedTurn {
-                text,
-                submission_id: submission_id.clone(),
-                source,
-            });
+            shared.submit_turn(
+                SubmittedTurn::new(text, submission_id.clone())
+                    .sourced(source)
+                    .with_attachments(attachments),
+            );
             // `?wait`: hold the connection until the turn reaches a gate or completes,
             // then answer with the resulting state — "act → read state" in one round-trip
             // (docs/permissions.md).
@@ -80,6 +85,28 @@ pub(super) async fn submit_turn(mut conn: Conn) -> Conn {
     }
 }
 
+/// Describe each named upload as the turn will carry it. Described at submission rather than when
+/// the loop dequeues the turn, so a refusal reaches the client that sent it.
+fn resolve_attachments(
+    shared: &Session,
+    names: &[String],
+) -> Result<Vec<crate::attachments::Arrival>, String> {
+    if names.is_empty() {
+        return Ok(Vec::new());
+    }
+    let store = shared
+        .composer_store()
+        .ok_or("this session has no attachment store")?;
+    names
+        .iter()
+        .map(|name| {
+            store
+                .arrival(name)
+                .map_err(|e| format!("attachment `{name}`: {e}"))
+        })
+        .collect()
+}
+
 /// Withdraw the pending-queue suffix beginning at this submission id — recall
 /// (docs/control-api.md). Always 200: the loop may have dequeued the turn already,
 /// and "popped nothing" is a race outcome the client renders, not an error. The
@@ -94,7 +121,7 @@ pub(super) async fn withdraw_turns(conn: Conn) -> Conn {
     let withdrawn: Vec<Value> = shared
         .withdraw_turns(&id)
         .into_iter()
-        .map(|t| serde_json::json!({ "submission_id": t.submission_id, "text": t.text }))
+        .map(|t| t.pending_json())
         .collect();
     let body = serde_json::json!({ "withdrawn": withdrawn });
     conn.with_status(200).with_body(body.to_string()).halt()

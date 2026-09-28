@@ -55,7 +55,7 @@ async fn turn_submission_ids_adopt_or_mint() {
 
     // Client-minted: adopted verbatim, echoed back, and on the queued turn.
     let body = client
-        .turn_with_submission_id("hello", "sub-mine")
+        .submit(&SubmittedTurn::new("hello", "sub-mine"))
         .await
         .unwrap();
     assert!(
@@ -74,7 +74,7 @@ async fn turn_submission_ids_adopt_or_mint() {
 
     // Oversized: rejected in the typed envelope, nothing enqueued.
     let err = client
-        .turn_with_submission_id("nope", &"x".repeat(129))
+        .submit(&SubmittedTurn::new("nope", "x".repeat(129)))
         .await
         .expect_err("oversized id → 400")
         .to_string();
@@ -131,9 +131,18 @@ async fn withdraw_turns_pops_a_suffix_and_reports_what_it_popped() {
     let (shared, _turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
     let client = test_client(&shared).await;
 
-    client.turn_with_submission_id("one", "s1").await.unwrap();
-    client.turn_with_submission_id("two", "s2").await.unwrap();
-    client.turn_with_submission_id("three", "s3").await.unwrap();
+    client
+        .submit(&SubmittedTurn::new("one", "s1"))
+        .await
+        .unwrap();
+    client
+        .submit(&SubmittedTurn::new("two", "s2"))
+        .await
+        .unwrap();
+    client
+        .submit(&SubmittedTurn::new("three", "s3"))
+        .await
+        .unwrap();
 
     let state = client.state().await.unwrap();
     assert!(
@@ -276,4 +285,60 @@ async fn state_wait_takes_a_predicate() {
     app.get("/v1/state?wait").await.assert_status(400);
     // And an un-waited read still answers immediately.
     app.get("/v1/state").await.assert_status(200);
+}
+
+/// A composer attaches by uploading, then naming the upload on the turn
+/// (docs/inbox.md): the queued turn carries what the daemon made of the file, a
+/// recall hands the attachment back to be staged again, and a name the store
+/// does not hold refuses the whole turn rather than landing a message that
+/// claims a file that is not there.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_turn_carries_the_attachments_it_names() {
+    let dir = std::env::temp_dir().join(format!("efference-upload-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let (shared, mut turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    shared.set_attachment_store(crate::attachments::Store::new(&dir, "att"));
+    let client = test_client(&shared).await;
+
+    let arrival = client
+        .upload_attachment("notes one.txt", b"hello\nworld\n".to_vec())
+        .await
+        .unwrap();
+    assert_eq!(arrival.name, "notes one.txt");
+    assert_eq!(arrival.path, "att/composer/notes one.txt");
+    assert!(
+        !dir.join("notes one.txt").exists(),
+        "an upload lands in composer/, which the watcher does not read"
+    );
+
+    let turn = SubmittedTurn::new("look", "s1").with_attachments(vec![arrival.clone()]);
+    client.submit(&turn).await.unwrap();
+    let queued = turns_rx.recv().await.unwrap();
+    assert_eq!(queued.attachments, vec![arrival.clone()]);
+    assert_eq!(
+        queued.blocks(),
+        vec![
+            ContentBlock::Text("look".into()),
+            ContentBlock::Attachment(arrival.clone())
+        ]
+    );
+    let popped = client.withdraw_turns("s1").await.unwrap();
+    assert_eq!(popped[0].attachments, vec![arrival.clone()]);
+
+    let err = client
+        .submit(
+            &SubmittedTurn::new("", "s2").with_attachments(vec![crate::attachments::Arrival {
+                name: "../escape".into(),
+                ..arrival.clone()
+            }]),
+        )
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("../escape"), "{err}");
+    assert!(turns_rx.try_recv().is_err(), "rejected turn never queued");
+
+    client.remove_attachment("notes one.txt").await.unwrap();
+    assert!(!dir.join("composer/notes one.txt").exists());
+    std::fs::remove_dir_all(&dir).unwrap();
 }

@@ -1,10 +1,11 @@
 //! The attachment store — pull-based ingestion of bulky content (docs/inbox.md).
 //!
 //! An attachment is an **availability** affordance, not a push. A pasted blob, a dragged-in
-//! image, a file moved into the store directory: the bytes land on disk and a small
-//! [`crate::log::Notification`] rides alongside the conversation saying what arrived. Nothing
-//! enters the log at arrival — no `User` block, no tool result — so a 50 KB paste never pins
-//! 50 KB into every subsequent turn's cached prefix (docs/log-and-projection.md). The model
+//! image, a file moved into the store directory: the bytes land on disk and a small notice says
+//! what arrived and where — on the turn that carried it (a composer upload, as a
+//! [`crate::log::ContentBlock::Attachment`]) or as a [`crate::log::Notification`] (a file
+//! written into the store directly). Only the notice enters the log, so a 50 KB paste never
+//! pins 50 KB into every subsequent turn's cached prefix (docs/log-and-projection.md). The model
 //! decides whether and how to pull it in, using the tools it already has: `read`/`search` for
 //! text, `read_image` (with its `region` crop) for an image. When it does pull, the bytes enter
 //! as an ordinary tool result and are `Elidable` like any other.
@@ -18,11 +19,20 @@
 //! This module is the pure half — naming, storing, and describing what arrived. The watcher
 //! that notices an arrival and enqueues the notification is `src/daemon/attachments.rs`.
 
+use serde::{Deserialize, Serialize};
 use std::io;
 use std::path::{Path, PathBuf};
 
+mod store;
+pub use store::Store;
+
 /// The store's directory name inside a session dir (`.efference/<id>/attachments/`).
 pub const DIR_NAME: &str = "attachments";
+
+/// The subdirectory a composer's uploads land in (`attachments/composer/`). An upload is
+/// announced by the turn that carries it, not by the watcher: the watcher reads only the
+/// store's top level, so a file here is never described twice (docs/inbox.md).
+pub const COMPOSER_DIR: &str = "composer";
 
 /// How many lines of pasted UTF-8 stay **inline** in the composer. Past this, a paste is
 /// stored as an attachment instead — the model can then triage/filter/transform it with the fs
@@ -44,7 +54,7 @@ pub fn dir_for_session(session_dir: &Path) -> PathBuf {
 /// The set is deliberately small and prototype-first: enough for the model to decide whether the
 /// file is worth pulling *without* re-deriving its content from the notice. Tunable — the right
 /// fields are an empirical question about real pastes, not a settled schema.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Kind {
     /// Valid UTF-8: byte size, line count, a sniffed shape, and the first non-blank line.
     Text {
@@ -66,7 +76,7 @@ pub enum Kind {
 
 /// A coarse guess at a text attachment's shape, from its first lines. Coarse on purpose: it
 /// steers a first move (grep vs read vs ignore) and is never relied on.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Shape {
     Json,
     Diff,
@@ -88,8 +98,14 @@ impl Shape {
 }
 
 /// One file that arrived in the store: where it is, and what it looks like.
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// Also the content of a [`crate::log::ContentBlock::Attachment`], which is how a turn carries
+/// the files its composer attached — so its serialized form is part of the log.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Arrival {
+    /// The file's name inside its store directory — how a client addresses it
+    /// (`GET /attachments/:name`) and how a turn references an upload.
+    pub name: String,
     /// The path as the model will use it — how the store was addressed, plus the file name.
     pub path: String,
     pub kind: Kind,
@@ -135,7 +151,7 @@ pub fn store(dir: &Path, suggested: &str, bytes: &[u8]) -> io::Result<PathBuf> {
 /// Reduce a suggested name to a single safe path component: no separators, no leading dots, and
 /// a fallback when nothing usable is left. A drag-in supplies its own name; a paste supplies one
 /// this makes; neither may escape the store directory.
-fn sanitize(suggested: &str) -> String {
+pub(crate) fn sanitize(suggested: &str) -> String {
     let cleaned: String = suggested
         .chars()
         .map(|c| match c {
@@ -172,6 +188,10 @@ pub fn inspect(display: &str, full: &Path) -> io::Result<Arrival> {
     let bytes = std::fs::metadata(full)?.len();
     let kind = classify(full, bytes);
     Ok(Arrival {
+        name: full
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_default(),
         path: display.to_string(),
         kind,
     })
@@ -308,49 +328,87 @@ fn human_bytes(bytes: u64) -> String {
     }
 }
 
-/// The notification an arrival enqueues: `(source, body, slot)` for [`crate::daemon`]'s
-/// `notify` (docs/inbox.md).
+/// What an arrival is, as the model reads it: **what arrived and where**, and nothing about what
+/// to do with it (docs/inbox.md). The harness takes no stance — the user attached the file, and
+/// the user can say what that means — so there is no eager-read default baked in here and no
+/// ask-first one either.
 ///
-/// The body states **what arrived and where**, and nothing about what to do with it. The
-/// harness takes no stance: the user attached the file, and the user can say what that means —
-/// so there is no eager-read default baked in here and no ask-first one either.
-///
-/// The slot is the file's path, so a second arrival at the same name supersedes the first
-/// notice rather than stacking a second one for the same bytes.
-pub fn notification(arrival: &Arrival) -> (String, String, Option<String>) {
-    let detail = match &arrival.kind {
+/// One line, subject first — `shot.png — PNG image, 828×120, 28.7 KB — at <path>` — with a text
+/// file's first line under it. A two-line form with the path leading read as boilerplate, and a
+/// model looking back at it later could not say whether it had seen the dimensions at all
+/// (journal/2026-09-27-composer-attachments.md). The same body is an ambient notice's and, under
+/// the harness's `⟢`, a turn's attachment line ([`turn_line`]).
+pub fn describe(arrival: &Arrival) -> String {
+    let (detail, first) = match &arrival.kind {
         Kind::Text {
             bytes,
             lines,
             shape,
             first_line,
         } => {
-            let mut s = format!("text · {}", human_bytes(*bytes));
+            let mut s = "text".to_string();
             if *lines > 0 {
-                s.push_str(&format!(" · {lines} lines"));
+                s.push_str(&format!(", {lines} lines"));
             }
-            s.push_str(&format!(" · looks like {}", shape.as_str()));
-            if !first_line.is_empty() {
-                s.push_str(&format!("\nfirst line: {first_line}"));
-            }
-            s
+            s.push_str(&format!(
+                ", {}, looks like {}",
+                human_bytes(*bytes),
+                shape.as_str()
+            ));
+            (s, (!first_line.is_empty()).then(|| first_line.clone()))
         }
         Kind::Image {
             format,
             width,
             height,
             bytes,
-        } => format!(
-            "image · {format} · {width}×{height} · {}",
-            human_bytes(*bytes)
+        } => (
+            format!("{format} image, {width}×{height}, {}", human_bytes(*bytes)),
+            None,
         ),
-        Kind::Binary { bytes } => format!("binary · {}", human_bytes(*bytes)),
+        Kind::Binary { bytes } => (format!("binary, {}", human_bytes(*bytes)), None),
     };
+    let mut line = format!("{} — {detail} — at {}", arrival.name, arrival.path);
+    if let Some(first) = first {
+        line.push_str(&format!("\nfirst line: {first}"));
+    }
+    line
+}
+
+/// How a turn's attachment reads on the wire: the harness's `⟢` note, so the model can tell the
+/// harness's report from the operator's words (docs/inbox.md).
+pub fn turn_line(arrival: &Arrival) -> String {
+    format!("⟢ attached: {}", describe(arrival))
+}
+
+/// The notification an arrival enqueues: `(source, body, slot)` for [`crate::daemon`]'s
+/// `notify` (docs/inbox.md). The body is [`describe`].
+///
+/// The slot is the file's path, so a second arrival at the same name supersedes the first
+/// notice rather than stacking a second one for the same bytes.
+pub fn notification(arrival: &Arrival) -> (String, String, Option<String>) {
     (
         "attachment".to_string(),
-        format!("attachment at {}\n{detail}", arrival.path),
+        describe(arrival),
         Some(format!("attachment:{}", arrival.path)),
     )
+}
+
+/// The media type a file is served under (`GET /attachments/:name`): an image's own, UTF-8 text
+/// as `text/plain`, anything else as opaque bytes.
+pub fn media_type(full: &Path) -> &'static str {
+    if let Some(format) = image::ImageReader::open(full)
+        .ok()
+        .and_then(|reader| reader.with_guessed_format().ok())
+        .and_then(|reader| reader.format())
+    {
+        return format.to_mime_type();
+    }
+    match head_text(full) {
+        Some(_) => "text/plain; charset=utf-8",
+        None if std::fs::metadata(full).is_ok_and(|m| m.len() == 0) => "text/plain; charset=utf-8",
+        None => "application/octet-stream",
+    }
 }
 
 #[cfg(test)]

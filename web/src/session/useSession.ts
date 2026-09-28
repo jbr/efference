@@ -9,7 +9,8 @@
 // Everything below this hook is framework-free.
 
 import { useEffect, useMemo, useRef, useSyncExternalStore } from "react";
-import type { CallId, Decision } from "../api/types.ts";
+import type { Attachment, CallId, Decision } from "../api/types.ts";
+import type { WithdrawnTurn } from "../api/http.ts";
 import { recallTurn, resolveGate, submitTurn } from "./actions.ts";
 import { connect, type Connector } from "./connect.ts";
 import { ProcessSeeder } from "./processSeed.ts";
@@ -17,10 +18,10 @@ import { Store, type Session } from "./store.ts";
 
 export interface SessionActions {
   resolveGate(callId: CallId, decision: Decision): Promise<"applied" | "moved">;
-  submitTurn(text: string): Promise<void>;
-  /** Withdraw the pending suffix from this submission; resolves with the texts
-   * actually popped, for the composer to splice. */
-  recallTurn(id: string): Promise<string[]>;
+  submitTurn(text: string, attachments?: Attachment[]): Promise<void>;
+  /** Withdraw the pending suffix from this submission; resolves with the turns
+   * actually popped, for the composer to splice and re-stage. */
+  recallTurn(id: string): Promise<WithdrawnTurn[]>;
 }
 
 export function useSession(): {
@@ -78,7 +79,7 @@ export function useSession(): {
   const actions = useMemo<SessionActions>(
     () => ({
       resolveGate: (callId, decision) => resolveGate(store, callId, decision),
-      submitTurn: (text) => submitTurn(store, text),
+      submitTurn: (text, attachments) => submitTurn(store, text, attachments),
       recallTurn: (id) => recallTurn(store, id),
     }),
     [store],

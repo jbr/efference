@@ -115,6 +115,18 @@ impl ImageStore {
     /// of the metadata and the width — never of whether bytes have arrived — so
     /// the reservation cannot reflow when they do. `None` when images are off.
     pub(crate) fn footprint(&self, px_width: u32, px_height: u32, max_cols: u16) -> Option<Size> {
+        self.footprint_within(px_width, px_height, max_cols, MAX_IMAGE_ROWS)
+    }
+
+    /// [`footprint`](Self::footprint) under a row cap of the caller's — a staged
+    /// attachment's thumbnail is a few rows of chrome, not a transcript figure.
+    pub(crate) fn footprint_within(
+        &self,
+        px_width: u32,
+        px_height: u32,
+        max_cols: u16,
+        max_rows: u16,
+    ) -> Option<Size> {
         let font = self.picker.as_ref()?.font_size();
         // Floor, not ceil: a ceil'd final row is mostly padding (at an 18×36
         // font, 400 px is 11.1 rows — the 12th would be 90% background), and
@@ -124,7 +136,7 @@ impl ImageStore {
         let cols = (px_width / u32::from(font.width.max(1))).max(1);
         let rows = (px_height / u32::from(font.height.max(1))).max(1);
         let max_cols = u32::from(max_cols.max(1));
-        let max_rows = u32::from(MAX_IMAGE_ROWS);
+        let max_rows = u32::from(max_rows.max(1));
         let scale = 1.0_f64
             .min(max_cols as f64 / cols as f64)
             .min(max_rows as f64 / rows as f64);
@@ -138,6 +150,24 @@ impl ImageStore {
     /// so a re-delivered entry (a reattach replay) doesn't decode twice.
     pub(crate) fn needs_fetch(&self, key: ImageKey) -> bool {
         !self.slots.contains_key(&key)
+    }
+
+    /// Whether images render at all — a graphics capability was detected.
+    pub(crate) fn enabled(&self) -> bool {
+        self.picker.is_some()
+    }
+
+    /// The decoded pixel size of `key`, once its bytes have landed.
+    pub(crate) fn source_size(&self, key: ImageKey) -> Option<(u32, u32)> {
+        match self.slots.get(&key) {
+            Some(Slot::Ready { source, .. }) => Some((source.width(), source.height())),
+            _ => None,
+        }
+    }
+
+    /// Forget `key` — a staged thumbnail whose chip was removed or sent.
+    pub(crate) fn remove(&mut self, key: ImageKey) {
+        self.slots.remove(&key);
     }
 
     /// Record that `key`'s bytes have been requested.

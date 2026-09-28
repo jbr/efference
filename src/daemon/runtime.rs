@@ -98,11 +98,10 @@ impl SessionRuntime {
                 .iter()
                 .any(|entry| matches!(entry.payload, crate::log::Payload::User(_)));
             if fresh {
-                session.submit_turn(crate::frontend::SubmittedTurn {
-                    text,
-                    submission_id: crate::daemon::mint_submission_id(),
-                    source: Some(crate::frontend::KICKOFF_SOURCE.to_string()),
-                });
+                session.submit_turn(
+                    crate::frontend::SubmittedTurn::new(text, crate::daemon::mint_submission_id())
+                        .sourced(Some(crate::frontend::KICKOFF_SOURCE.to_string())),
+                );
             }
         }
         // The project's storage base, for the in-session `sessions` mount's
@@ -206,6 +205,10 @@ impl SessionRuntime {
         // `.efference/<id>/attachments/`. A file appearing there — pasted, dragged,
         // moved in — becomes a notification naming what arrived; the bytes stay on
         // disk until the model pulls them, so nothing here enters the log.
+        session.set_attachment_store(crate::attachments::Store::new(
+            paths.attachments(),
+            paths.attachment_display(),
+        ));
         tokio::spawn(swansong.interrupt(attachments_watch_loop(
             Arc::clone(&session),
             paths.attachments(),

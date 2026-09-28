@@ -18,7 +18,7 @@ pub(super) enum IdleWake {
 impl IdleWake {
     pub(super) fn from_turn(turn: Option<SubmittedTurn>) -> Self {
         match turn {
-            Some(t) if !t.text.trim().is_empty() => IdleWake::Turn(t),
+            Some(t) if !t.is_blank() => IdleWake::Turn(t),
             Some(_) => IdleWake::Blank,
             None => IdleWake::Shutdown,
         }

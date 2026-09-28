@@ -170,11 +170,7 @@ async fn an_interrupt_during_the_peek_ends_the_turn_at_the_gate() {
     let host = Swansong::new();
     let runtime = SessionRuntime::start(boot, &host);
     let session = Arc::clone(runtime.session());
-    session.submit_turn(SubmittedTurn {
-        text: "go".into(),
-        submission_id: "s1".into(),
-        source: None,
-    });
+    session.submit_turn(SubmittedTurn::new("go", "s1"));
 
     wait_until("the peek is open", || requests.load(Ordering::SeqCst) == 2).await;
     session.interrupt();

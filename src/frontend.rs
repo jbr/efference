@@ -19,7 +19,7 @@
 //!   background supervisor (docs/supervisor.md).
 
 use crate::control_tools::BoundAction;
-use crate::log::{ConfigChange, ToolCall};
+use crate::log::{ConfigChange, ContentBlock, ToolCall};
 
 /// The `source` of the kickoff turn a `first-turn` config submits (docs/context.md).
 /// Reserved: the clients read it to leave the turn out of the transcript, since it
@@ -52,6 +52,67 @@ pub struct SubmittedTurn {
     /// a turn the operator submitted (the TUI) — the operator is the implicit
     /// default voice on the wire, so no prefix renders.
     pub source: Option<String>,
+    /// Files the submitting composer attached, already in the session's store
+    /// (docs/inbox.md). Each lands on the `User` entry as a
+    /// [`ContentBlock::Attachment`] after the text.
+    pub attachments: Vec<crate::attachments::Arrival>,
+}
+
+impl SubmittedTurn {
+    /// An operator turn: no source, no attachments. The one way to build a
+    /// submission, so a field added later lands here rather than at every site.
+    pub fn new(text: impl Into<String>, submission_id: impl Into<String>) -> Self {
+        Self {
+            text: text.into(),
+            submission_id: submission_id.into(),
+            source: None,
+            attachments: Vec::new(),
+        }
+    }
+
+    /// Attribute the turn to a non-operator speaker (docs/control-api.md).
+    pub fn sourced(mut self, source: Option<String>) -> Self {
+        self.source = source;
+        self
+    }
+
+    pub fn with_attachments(mut self, attachments: Vec<crate::attachments::Arrival>) -> Self {
+        self.attachments = attachments;
+        self
+    }
+
+    /// Nothing to deliver: blank text and no attachments. A blank submit keeps the
+    /// loop idling rather than landing an empty `User` entry on the wire.
+    pub fn is_blank(&self) -> bool {
+        self.text.trim().is_empty() && self.attachments.is_empty()
+    }
+
+    /// A pending turn as the `queued` topic and a recall present it
+    /// (docs/control-api.md): `attachments` only when there are any, so a
+    /// text-only turn reads as it always has.
+    pub fn pending_json(&self) -> serde_json::Value {
+        let mut json = serde_json::json!({
+            "submission_id": self.submission_id,
+            "text": self.text,
+        });
+        if !self.attachments.is_empty() {
+            json["attachments"] = serde_json::to_value(&self.attachments).unwrap_or_default();
+        }
+        json
+    }
+
+    /// The `User` entry's content: the text when there is any, then each attachment.
+    pub fn blocks(&self) -> Vec<ContentBlock> {
+        let text = (!self.text.trim().is_empty()).then(|| ContentBlock::Text(self.text.clone()));
+        text.into_iter()
+            .chain(
+                self.attachments
+                    .iter()
+                    .cloned()
+                    .map(ContentBlock::Attachment),
+            )
+            .collect()
+    }
 }
 
 /// The operator's intent when interrupting a *running* tool (docs/supervisor.md).

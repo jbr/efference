@@ -180,8 +180,9 @@ Runs before every TCP route, in order:
    pseudo-header (trillium-http 1.6).
 2. **On unsafe methods:** a present `Origin` must resolve to an allowlisted host
    (`403`), and body-bearing methods (POST/PUT/PATCH) must declare
-   `Content-Type: application/json` (`400`) — forms can't spell that, which closes the
-   no-preflight CSRF shapes. A localhost or LAN bind is not a trust boundary while a
+   `Content-Type: application/json`, or `application/octet-stream` for an attachment
+   upload (`400`) — forms can't spell either, and a cross-site `fetch` carrying either is
+   preflighted, which closes the no-preflight CSRF shapes. A localhost or LAN bind is not a trust boundary while a
    browser is present; these ship with the bind, not after it.
 3. **Credential check** — valid cookie or bearer, else `401 unauthorized`. The
    anonymous surface is every GET outside the guarded prefixes — the web client's

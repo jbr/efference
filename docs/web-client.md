@@ -910,9 +910,10 @@ withdraws the pending-queue suffix beginning at that turn and answers with what
 it actually popped (docs/control-api.md). Nothing was ever logged, so there is
 nothing to retract. The action drops only the echoes the daemon reported
 popping, and hands the texts to the composer, which prepends them to the draft
-already there joined with a newline — via a `{text, nonce}` prop, because the
-composer owns its draft and recalling the same text twice is two events rather
-than one value. An empty answer is the lost race — the loop dequeued the turn
+already there joined with a newline — via a `{text, attachments, nonce}` prop,
+because the composer owns its draft and recalling the same text twice is two
+events rather than one value. The turns' attachments come back with them, still
+stored, and are staged again. An empty answer is the lost race — the loop dequeued the turn
 first — and the draft is left alone.
 
 **A running tool's output streams into its call's result slot** — where the
@@ -1020,6 +1021,28 @@ turn does, so naming the mechanism cost prime UI space without adding
 anything the operator acts on (a hint shipped here and was removed
 2026-08-26).
 
+**Attachments.** A file reaches the composer three ways — pasted (a
+clipboard image or file), dropped anywhere on the page (the window listens
+for file drags, so the composer is the one drop target, and the input takes a
+dashed accent border while one is over the page), or picked with the `attach`
+button (the phone's way in, where there is no drag). Pasted text past a dozen
+lines is staged as a `.txt` rather than typed, the same limit and rule as the
+TUI ([inbox.md](inbox.md)); its chip offers `inline` to put the text back in
+the draft instead. Each staged file uploads at once as raw bytes
+(`POST /attachments`, [control-api.md](control-api.md)) —
+`application/octet-stream` being the one other type the TCP bind's CSRF gate
+admits — so its chip shows what the daemon made of it (`PNG · 1280×800 ·
+240 KB`, `40 lines · 2 KB`) while it can still be removed. Chips sit above the
+input; an image's chip is its thumbnail (an object URL of the local file).
+Removing one deletes the upload; one removed mid-upload is deleted when the
+upload lands. Send waits for uploads to finish, carries every ready chip's
+name, and clears the row only once the turn is accepted, so a refused send
+keeps them. A draft of attachments alone is a turn, not the continue. The
+staging rules are `ui/staging.ts`; the chips, staged and sent, are
+`ui/Attachments.tsx`. A sent turn — and its pending echo — shows its
+attachments under its prose, an image as a thumbnail served by
+`GET /attachments/:name` that opens full size in a new tab.
+
 **Sending an empty composer is the continue gesture.** With no draft, send
 (and Enter, where Enter sends) issues `POST /v1/loop/continue`
 ([control-api.md](control-api.md)) — control handed back with no input, no
@@ -1033,8 +1056,9 @@ the chrome's flat language. The field auto-grows with the draft
 (`field-sizing: content`, 3–10 lines), replacing the manual resize grip; a
 `1ch` right padding gives the block caret its cell at the wrap column, where
 zero padding clipped it to a sliver. A `contenteditable` composer (live
-markdown styling) is an anticipated replacement for the textarea; nothing
-here should grow attachments to the textarea being one.
+markdown styling) is an anticipated replacement for the textarea; the
+attachment handling above listens on the textarea's paste and the window's
+drag events, neither of which depends on the field being a textarea.
 
 The controls strip is gone; its last resident, the usage line, lives in the
 top bar. A non-`live` connection still shows as a full-width banner under

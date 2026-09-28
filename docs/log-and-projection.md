@@ -59,6 +59,13 @@ enum Payload {
 `Commit` is a placeholder: when compaction needs an explicit freeze primitive
 it slots in here without touching any other type.
 
+A `User` entry's blocks are prose and, after it, the files its composer
+attached: `ContentBlock::Attachment` records a file's store name, path, and
+triage signals, never its bytes, and projects as a text block holding the same
+notice an ambient arrival carries ([inbox.md](inbox.md)). The notice is derived
+from the recorded fields at projection time, so a change to its wording moves
+the prefix only for a session that restarts on the new binary.
+
 `ToolTelemetry` and `ProcessEvent` are log metadata in the same sense timestamps
 are: both project to nothing, which is what lets them be appended mid-session —
 on every tool call, and at every background spawn and exit — without moving the

@@ -44,8 +44,9 @@ impl<'a> super::InteractiveState<'a> {
 
                 let terminal_height = size.height;
                 let terminal_width = size.width;
-                let content_height = terminal_height
-                    .saturating_sub(1 + self.viewport.input_height + self.viewport.gate_height); // status row + composer
+                let content_height = terminal_height.saturating_sub(
+                    1 + self.viewport.input_height + self.viewport.above_input_height,
+                ); // status row + composer
                 let content_width = terminal_width.saturating_sub(1); // Exclude scrollbar column
 
                 // Check if hovering over scrollbar
@@ -109,8 +110,9 @@ impl<'a> super::InteractiveState<'a> {
                 };
 
                 let terminal_height = size.height;
-                let content_height = terminal_height
-                    .saturating_sub(1 + self.viewport.input_height + self.viewport.gate_height); // status row + composer
+                let content_height = terminal_height.saturating_sub(
+                    1 + self.viewport.input_height + self.viewport.above_input_height,
+                ); // status row + composer
                 let content_width = size.width.saturating_sub(1); // Exclude scrollbar column
 
                 // The control strip row sits directly above the composer
@@ -127,6 +129,15 @@ impl<'a> super::InteractiveState<'a> {
                     // Click in main content area
                     self.viewport.clicked_position =
                         Some(Position::new(column, row + self.viewport.scroll_offset));
+                } else if let Some(key) = self
+                    .viewport
+                    .staged_hits
+                    .iter()
+                    .find(|(y, x0, x1, _)| row == *y && column >= *x0 && column < *x1)
+                    .map(|(_, _, _, key)| *key)
+                {
+                    // A staged attachment's `✕` (docs/tui.md), resolved to the chip's key.
+                    self.remove_staged(key);
                 } else if row == strip_row
                     && let Some(verb) = self
                         .strip_hits
@@ -171,9 +182,9 @@ impl<'a> super::InteractiveState<'a> {
                 let Ok(size) = terminal.size() else {
                     return;
                 };
-                let content_height = size
-                    .height
-                    .saturating_sub(1 + self.viewport.input_height + self.viewport.gate_height);
+                let content_height = size.height.saturating_sub(
+                    1 + self.viewport.input_height + self.viewport.above_input_height,
+                );
                 self.handle_scrollbar_drag(row, content_height);
             }
 

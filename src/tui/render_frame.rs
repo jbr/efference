@@ -102,11 +102,15 @@ impl<'a> InteractiveState<'a> {
         };
         self.viewport.input_height = input_height;
         // The control strip (docs/tui.md) holds a constant one-row slot directly
-        // above the composer — the old inline-gate slot, whose `gate_height` the
-        // mouse/scroll math still reads, so the strip reuses it.
+        // above the composer; staged attachments take a row each above it, capped.
         let strip_height: u16 = 1;
-        self.viewport.gate_height = strip_height;
-        let bottom = 1 + input_height + strip_height + proc_height;
+        let staged_height = if self.read_only() {
+            0
+        } else {
+            self.staged_rows()
+        };
+        self.viewport.above_input_height = strip_height + staged_height;
+        let bottom = 1 + input_height + strip_height + staged_height + proc_height;
 
         let main_area = Rect {
             x: full.x,
@@ -119,6 +123,14 @@ impl<'a> InteractiveState<'a> {
             y: full.height.saturating_sub(bottom),
             width: content_width,
             height: proc_height,
+        };
+        let staged_area = Rect {
+            x: full.x,
+            y: full
+                .height
+                .saturating_sub(1 + input_height + strip_height + staged_height),
+            width: content_width,
+            height: staged_height,
         };
         let strip_area = Rect {
             x: full.x,
@@ -196,7 +208,8 @@ impl<'a> InteractiveState<'a> {
             self.render_processes_panel(frame.buffer_mut(), proc_area);
         }
 
-        // The control strip (docs/tui.md), directly above the composer.
+        // Staged attachments, then the control strip directly above the composer.
+        self.render_staged(frame.buffer_mut(), staged_area);
         self.render_control_strip(frame.buffer_mut(), strip_area);
 
         // Composer — skipped entirely in a read-only view, which reserved it no rows

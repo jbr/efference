@@ -466,3 +466,28 @@ async fn concurrent_creations_of_one_name_yield_one_session() {
     );
     drop_boot(winner);
 }
+
+/// The self-surface stack (docs/permissions.md, docs/inbox.md): under an operator's `.` grant the
+/// session's own log stays unreadable and unwritable, while its attachment store is readable —
+/// the notice tells the model to pull from there — and still not writable.
+#[test]
+fn the_attachment_store_is_readable_through_the_self_surface_deny() {
+    let mut role = crate::config::Config::from_toml(
+        "tools = [\"read\", \"read_image\", \"write\"]\n[paths]\n\".\" = { read = true, write = true }\n",
+    )
+    .unwrap();
+    let session_dir = Path::new(BASE_DIR).join("s1");
+    self_surface_grants(&mut role.paths, &session_dir);
+    let cwd = PathBuf::from("/work/proj");
+    let call = |tool: &str, path: PathBuf| {
+        let input = serde_json::json!({ "path": path, "paths": [path], "content": "x" });
+        crate::policy::classify(&cwd, &role, &crate::log::ToolCall::new(tool, "c", input))
+    };
+    let attached = session_dir.join("attachments/composer/shot.png");
+    use crate::policy::Verdict::{Clear, Gate};
+    assert_eq!(call("read_image", attached.clone()), Clear);
+    assert_eq!(call("read", attached.clone()), Clear);
+    assert_eq!(call("write", attached), Gate);
+    assert_eq!(call("read", session_dir.join(LOG_NAME)), Gate);
+    assert_eq!(call("read", session_dir.join(CONFIG_NAME)), Clear);
+}

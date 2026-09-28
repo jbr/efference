@@ -40,7 +40,7 @@ export function handoffPredecessor(
 }
 
 export type Payload =
-  | { User: ContentBlock[] }
+  | { User: UserBlock[] }
   | {
       Assistant: {
         /** The provider's output in provider order, in whichever wire dialect
@@ -143,6 +143,25 @@ export type ContentBlock =
   | { Text: string }
   | { Thinking: { text: string; signature: string } }
   | { RedactedThinking: { data: string } };
+
+/** What a `User` entry carries: prose, and the files its composer attached. */
+export type UserBlock = ContentBlock | { Attachment: Attachment };
+
+/** A file a composer attached (docs/inbox.md): what the daemon stored it as,
+ * the path the model reads it at, and the triage signals the model's notice
+ * states. `name` addresses its bytes at `GET /v1/attachments/:name`. */
+export interface Attachment {
+  name: string;
+  path: string;
+  kind: AttachmentKind;
+}
+
+export type AttachmentKind =
+  | {
+      Text: { bytes: number; lines: number; shape: string; first_line: string };
+    }
+  | { Image: { format: string; width: number; height: number; bytes: number } }
+  | { Binary: { bytes: number } };
 
 export interface ToolCall {
   id: CallId;

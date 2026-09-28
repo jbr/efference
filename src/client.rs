@@ -17,8 +17,9 @@ use anyhow::{Context, Result, anyhow};
 use trillium_client::{Client as HttpClient, Connector};
 use trillium_tokio::UnixClientConfig;
 
+use crate::attachments::Arrival;
 use crate::daemon::{CreateSession, SessionOptionsRequest};
-use crate::frontend::Approval;
+use crate::frontend::{Approval, SubmittedTurn};
 use crate::inference::{ConnectionInventory, ResolvedOptions};
 
 /// A client bound to one daemon control socket. Cheap to [`Clone`] (the inner
@@ -95,13 +96,25 @@ impl Client {
         self.post("/turns", body).await.map(drop)
     }
 
-    /// Enqueue a user turn under a client-minted submission id
-    /// (docs/control-api.md): the id is recorded on the resulting `User`
-    /// entry and echoed in the returned 202 body, so the caller can reconcile
-    /// delivery by exact key rather than content.
-    pub async fn turn_with_submission_id(&self, text: &str, submission_id: &str) -> Result<String> {
-        let body = Self::turn_body(text, Some(submission_id), None);
-        self.post("/turns", body).await
+    /// Enqueue a turn the client built — its own submission id, and any
+    /// attachments it uploaded (docs/control-api.md, docs/inbox.md). The id is
+    /// recorded on the resulting `User` entry and echoed in the returned 202
+    /// body, so the caller can reconcile delivery by exact key rather than
+    /// content.
+    pub async fn submit(&self, turn: &SubmittedTurn) -> Result<String> {
+        let mut body: serde_json::Value = serde_json::from_str(&Self::turn_body(
+            &turn.text,
+            Some(&turn.submission_id),
+            turn.source.as_deref(),
+        ))?;
+        if !turn.attachments.is_empty() {
+            body["attachments"] = turn
+                .attachments
+                .iter()
+                .map(|arrival| serde_json::Value::from(arrival.name.as_str()))
+                .collect();
+        }
+        self.post("/turns", body.to_string()).await
     }
 
     /// The `POST /turns` body: `text`, plus `submission_id` and `source` when
@@ -116,6 +129,35 @@ impl Client {
             body["source"] = serde_json::Value::from(source);
         }
         body.to_string()
+    }
+
+    /// Upload a file for a turn to carry (`POST /attachments`, docs/inbox.md),
+    /// returning what the daemon stored: the name to send it under, the path the
+    /// model will read, and its triage signals.
+    pub async fn upload_attachment(&self, name: &str, bytes: Vec<u8>) -> Result<Arrival> {
+        let query: String = trillium_client::url::form_urlencoded::Serializer::new(String::new())
+            .append_pair("name", name)
+            .finish();
+        let path = self.versioned(&format!("/attachments?{query}"));
+        let path = path.as_str();
+        let conn = self
+            .http
+            .post(path)
+            .with_request_header("content-type", "application/octet-stream")
+            .with_body(bytes)
+            .await
+            .with_context(|| format!("POST {path} to the control socket"))?;
+        let body = read_2xx(conn, "POST", path).await?;
+        serde_json::from_str(&body).with_context(|| format!("parsing the upload response: {body}"))
+    }
+
+    /// Remove a staged upload the operator took back before sending
+    /// (`DELETE /attachments/:name`).
+    pub async fn remove_attachment(&self, name: &str) -> Result<()> {
+        let name: String =
+            percent_encoding::utf8_percent_encode(name, percent_encoding::NON_ALPHANUMERIC)
+                .collect();
+        self.delete(&format!("/attachments/{name}")).await.map(drop)
     }
 
     /// Withdraw the pending-queue suffix beginning at `submission_id`
@@ -680,11 +722,14 @@ impl Client {
 pub use crate::daemon::SessionSummary;
 
 /// One turn a `DELETE /turns/:submission_id` actually popped (docs/control-api.md) — the text a
-/// client splices back into its composer, with the id it was submitted under.
+/// client splices back into its composer, with the id it was submitted under, and the uploads it
+/// carried, still in the store to be staged again.
 #[derive(Clone, Debug, PartialEq, Eq, serde::Deserialize)]
 pub struct WithdrawnTurn {
     pub submission_id: String,
     pub text: String,
+    #[serde(default)]
+    pub attachments: Vec<Arrival>,
 }
 
 #[derive(serde::Deserialize)]

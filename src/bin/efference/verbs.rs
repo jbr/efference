@@ -82,20 +82,12 @@ pub(crate) async fn attach_created(
     frame_cost: bool,
     owns_host: bool,
 ) -> CliResult {
-    // The session dir is where the host minted it: `<cwd>/.efference/<id>`, the
-    // same layout boot uses (docs/control-channel.md), so the attachment store
-    // resolves as at a socket attach.
-    let cwd = std::env::current_dir()?;
-    let attachments = efference::attachments::dir_for_session(&cwd.join(session_dir(id)));
     efference::tui::run(
         ControlClient::at(host_socket.to_path_buf(), &format!("/sessions/{id}")),
         theme,
         images,
         frame_cost,
-        efference::tui::Attached {
-            attachments_dir: Some(attachments),
-            owns_host,
-        },
+        efference::tui::Attached { owns_host },
     )
     .await?;
     Ok(())
@@ -110,21 +102,12 @@ pub(crate) async fn tui(
     images: efference::tui::ImageMode,
     frame_cost: bool,
 ) -> CliResult {
-    // The attachment store lives in the session dir (docs/inbox.md), so a paste past
-    // the inline threshold has somewhere local to land. A socket with no parent
-    // leaves the TUI storeless and pasting inline.
-    let attachments = target
-        .session_dir()
-        .map(|dir| efference::attachments::dir_for_session(&dir));
     efference::tui::run(
         target.client(),
         theme,
         images,
         frame_cost,
-        efference::tui::Attached {
-            attachments_dir: attachments,
-            owns_host: false,
-        },
+        efference::tui::Attached { owns_host: false },
     )
     .await?;
     Ok(())

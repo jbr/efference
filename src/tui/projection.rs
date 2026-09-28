@@ -171,7 +171,20 @@ pub(crate) fn entry_nodes(
                     Some(source) => format!("{source}: {}", join_text(blocks)),
                     None => join_text(blocks),
                 };
-                nodes.push(DocumentNode::entry(EntryKind::UserMessage, markdown(&text)));
+                let attachments: Vec<_> = blocks
+                    .iter()
+                    .filter_map(|block| match block {
+                        ContentBlock::Attachment(arrival) => Some(arrival.clone()),
+                        _ => None,
+                    })
+                    .collect();
+                let mut body = if text.is_empty() {
+                    Vec::new()
+                } else {
+                    markdown(&text)
+                };
+                body.extend(attachment_lines(&attachments));
+                nodes.push(DocumentNode::entry(EntryKind::UserMessage, body));
             }
             Payload::Assistant {
                 output,
@@ -349,7 +362,7 @@ pub(crate) fn tail_nodes(
 
     // Optimistic echoes of just-submitted turns, last of all (docs/tui.md).
     for turn in pending_turns {
-        nodes.push(pending_turn(&turn.text));
+        nodes.push(pending_turn(&turn.text, &turn.attachments));
     }
 
     nodes

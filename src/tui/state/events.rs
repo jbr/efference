@@ -184,7 +184,6 @@ impl<'a> InteractiveState<'a> {
                 if follow && let Some(view) = &identity {
                     self.switch_to = Some(super::Exit::Switch {
                         id: view.successor.clone().unwrap_or_default(),
-                        cwd: Some(view.root.clone()),
                     });
                 }
                 // Sidebar chrome (the SESSION section), not transcript content —
@@ -228,6 +227,18 @@ impl<'a> InteractiveState<'a> {
                 self.dirty = true;
             }
             TuiEvent::Recalled(withdrawn) => self.apply_recall(withdrawn),
+            TuiEvent::Uploaded { key, result } => self.upload_landed(key, result),
+            TuiEvent::ClipboardImage(found) => {
+                self.clipboard_image = found;
+                self.dirty = true;
+            }
+            TuiEvent::Thumbnail { key, image } => {
+                // A chip removed before its thumbnail decoded has nowhere to show it.
+                if self.staged.items().iter().any(|s| s.key == key) {
+                    self.staged_images.insert((key, 0), Ok(image));
+                    self.dirty = true;
+                }
+            }
             TuiEvent::Sessions(listing) => {
                 self.apply_sessions(listing);
                 self.dirty = true;

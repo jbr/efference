@@ -367,12 +367,14 @@ carves an exclusion out of a broader parent.** Among the `[paths]` grants whose 
 contains the target, the *most specific* (deepest) one governs; a no-access grant (`false`
 sugar / `Perms::default()`) is a real **deny** once it is the governing prefix. This is what
 lets the standard three-layer stack work: allow `.`, deny `.efference/`, re-allow
-`.efference/<id>/config.toml` read-only. The harness **injects that self-surface stack in
+`.efference/<id>/config.toml` and `.efference/<id>/attachments/` read-only. The harness
+**injects that self-surface stack in
 boot** (`src/boot.rs`), layered over the operator's grants: the session dir holds this
 session's control socket, its append-only log, and every *other* session's dir, all under the
 operator's `.` grant — so without the deny nothing would stop a session from writing its own
 log (corrupting the session record) or POSTing to its own control socket (approving its own gates,
-injecting a user turn). The `config.toml` re-allow is the sanctioned scope-expansion path: the
+injecting a user turn). The attachment re-allow is what lets the model pull a file the operator
+attached ([inbox.md](inbox.md)) without a gate. The `config.toml` re-allow is the sanctioned scope-expansion path: the
 session reads its own perimeter and *edits* the file, a write the governing read-only grant
 refuses at the fast-path, so it gates for the operator. Injected keys are inserted *after* the
 operator config, so a safety deny overrides an equal-specificity operator grant; an operator

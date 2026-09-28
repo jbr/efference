@@ -115,6 +115,9 @@ fn lines(entry: &LogEntry, siblings: &mut HashMap<CallId, String>) -> Vec<Line> 
                         };
                         Some(line("user", body))
                     }
+                    crate::log::ContentBlock::Attachment(arrival) => {
+                        Some(line("user", format!("attached {}", arrival.path)))
+                    }
                     _ => None,
                 })
                 .collect()

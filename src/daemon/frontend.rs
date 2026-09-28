@@ -40,7 +40,7 @@ impl Frontend for RemoteFrontend {
         // the idle path's blank-keep-idling, never landing an empty `User` entry on the wire.
         let mut turns = Vec::new();
         while let Ok(turn) = self.turns.try_recv() {
-            if self.shared.claim_turn(&turn.submission_id, false) && !turn.text.trim().is_empty() {
+            if self.shared.claim_turn(&turn.submission_id, false) && !turn.is_blank() {
                 turns.push(turn);
             }
         }

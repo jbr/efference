@@ -26,7 +26,9 @@ impl<'a> InteractiveState<'a> {
             // Recall the most recent queued-but-unsent turn into the composer (docs/tui.md).
             self.recall_pending_turn();
             ComposerAction::Consumed
-        } else if char_with('y') && ctrl && !alt {
+        } else if (char_with('y') || char_with('v')) && ctrl && !alt {
+            // `C-v` reads the clipboard directly: a terminal's own paste (⌘V) carries text
+            // only, and an image-only clipboard reaches the app as nothing at all.
             self.paste_clipboard();
             ComposerAction::Consumed
         } else if char_with('c') && super_key && !alt {
@@ -186,9 +188,25 @@ impl<'a> InteractiveState<'a> {
                 && !key.modifiers.contains(KeyModifiers::ALT)
                 && self.composer.is_empty()
                 && !self.read_only()
-                && !self.is_loop_active()
             {
-                self.continue_trajectory();
+                // Staged attachments are a turn on their own; with none, an idle loop takes
+                // the continue.
+                if !self.staged.is_empty() {
+                    self.submit_composer(String::new());
+                    return false;
+                }
+                if !self.is_loop_active() {
+                    self.continue_trajectory();
+                    return false;
+                }
+            }
+            // `⌫` on an empty composer takes back the most recently staged attachment.
+            if key.code == KeyCode::Backspace
+                && key.modifiers.is_empty()
+                && self.composer.is_empty()
+                && let Some(key) = self.staged.last_key()
+            {
+                self.remove_staged(key);
                 return false;
             }
             match self.handle_composer_key(key) {

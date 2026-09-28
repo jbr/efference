@@ -34,6 +34,39 @@ pub const LOG_NAME: &str = "log.jsonl";
 
 pub const CONFIG_NAME: &str = "config.toml";
 
+/// Layer the harness's self-surface protection over the operator's grants (docs/permissions.md).
+///
+/// The session dir holds this session's control socket, its append-only log, and — under the same
+/// base — every *other* session's dir; all of it sits inside the operator's `.` grant, so nothing
+/// stops the session from writing its own log (corrupting the log) or POSTing to its own control
+/// socket (approving its own gates, injecting a user turn) without this. Deny the whole base dir,
+/// then re-allow read-only on two things of *this* session's:
+///
+/// - its `config.toml` — the sanctioned scope-expansion path: the session reads its own perimeter
+///   and *edits* the file, which is a write the fast-path won't clear, so it gates for the
+///   operator;
+/// - its attachment store — the files the operator attached, which the notice tells the model to
+///   pull with `read` / `read_image` (docs/inbox.md). Without the re-allow, every pull gates.
+///
+/// Inserted after the operator config so an equal-specificity operator key is overridden;
+/// `policy::path_granted`'s longest-prefix rule still lets a strictly deeper operator grant win.
+fn self_surface_grants(
+    paths: &mut std::collections::BTreeMap<String, crate::config::Perms>,
+    session_dir: &Path,
+) {
+    let read_only = crate::config::Perms {
+        read: true,
+        write: false,
+    };
+    paths.insert(BASE_DIR.to_string(), crate::config::Perms::default());
+    for path in [
+        session_dir.join(CONFIG_NAME),
+        crate::attachments::dir_for_session(session_dir),
+    ] {
+        paths.insert(path.to_string_lossy().into_owned(), read_only);
+    }
+}
+
 /// Written into a fresh session's `config.toml` when there's no origin to snapshot — a header that
 /// teaches the schema, plus the one default that isn't empty: an `Environment at boot` `[context]`
 /// exec entry, orientation expressed as config rather than hardcoded (docs/context.md). It's a real,
@@ -379,27 +412,7 @@ async fn prepare_minting(
         }
     };
 
-    // Layer the harness's self-surface protection over the operator's grants (docs/permissions.md).
-    // The session dir holds this session's control socket, its append-only log, and — under the same
-    // base — every *other* session's dir; all of it sits inside the operator's `.` grant, so nothing
-    // stops the session from writing its own log (corrupting the log) or POSTing to its own
-    // control socket (approving its own gates, injecting a user turn) without this. Deny the whole
-    // base dir, then re-allow read-only on *this* session's `config.toml` — the sanctioned
-    // scope-expansion path: the session reads its own perimeter and *edits* the file, which is a
-    // write the fast-path won't clear, so it gates for the operator. Inserted after the operator
-    // config so an equal-specificity operator key is overridden; `policy::path_granted`'s
-    // longest-prefix rule still lets a strictly deeper operator grant win.
-    loaded
-        .role
-        .paths
-        .insert(BASE_DIR.to_string(), crate::config::Perms::default());
-    loaded.role.paths.insert(
-        session_config.to_string_lossy().into_owned(),
-        crate::config::Perms {
-            read: true,
-            write: false,
-        },
-    );
+    self_surface_grants(&mut loaded.role.paths, &session_dir);
 
     // The per-session scratch dir (docs/tools.md): minted mkdtemp-style, exported to
     // every tool child as `$TMPDIR`, and always granted rw — the sanctioned answer

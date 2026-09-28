@@ -280,6 +280,10 @@ fn routed_clipboard_bindings_use_in_process_fallback() {
     assert_eq!(play.state.composer.text(), "");
     play.route_key(KeyCode::Char('v'), KeyModifiers::SUPER);
     assert_eq!(play.state.composer.text(), "hello");
+    // `C-v` is the same clipboard read — the key that reaches the app where ⌘V is the
+    // terminal's own and carries no image.
+    play.route_key(KeyCode::Char('v'), KeyModifiers::CONTROL);
+    assert_eq!(play.state.composer.text(), "hellohello");
 
     play.composer_event(KeyEvent::new(KeyCode::Char('h'), KeyModifiers::CONTROL))
         .route_key(KeyCode::Char('w'), KeyModifiers::CONTROL);

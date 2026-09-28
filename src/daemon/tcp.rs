@@ -446,18 +446,26 @@ pub(crate) fn gate(auth: Arc<TcpAuth>, surface: Surface) -> impl trillium::Handl
                         format!("origin {origin:?} is not this daemon"),
                     );
                 }
-                // Form posts can only spell form encodings, so requiring JSON on
-                // body-bearing methods closes the no-preflight CSRF shapes.
+                // Form posts can only spell form encodings, and a cross-site `fetch`
+                // with any other type is preflighted (which this listener never
+                // answers), so requiring one of these two on body-bearing methods
+                // closes the no-preflight CSRF shapes. Raw bytes are the upload
+                // route's (`POST /attachments`, docs/inbox.md).
                 if matches!(method, Method::Post | Method::Put | Method::Patch) {
-                    let json = conn
+                    let preflighted = conn
                         .request_headers()
                         .get_str(KnownHeaderName::ContentType)
-                        .is_some_and(|ct| ct.trim_start().starts_with("application/json"));
-                    if !json {
+                        .is_some_and(|ct| {
+                            let ct = ct.trim_start();
+                            ct.starts_with("application/json")
+                                || ct.starts_with("application/octet-stream")
+                        });
+                    if !preflighted {
                         return fail(
                             conn,
                             ErrorCode::BadRequest,
-                            "unsafe methods require content-type: application/json",
+                            "unsafe methods require content-type: application/json \
+                             (or application/octet-stream for an upload)",
                         );
                     }
                 }

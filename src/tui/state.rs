@@ -284,10 +284,14 @@ pub(super) struct ViewportState {
     /// Height (rows) the composer occupied last frame, so mouse hit-testing and
     /// scroll clamping agree with `render_frame` on where the transcript ends.
     pub input_height: u16,
-    /// Always 0: the approval gate renders inline in the transcript (docs/tui.md)
-    /// and reserves no bottom-chrome row. Kept so the mouse hit-testing math reads
-    /// uniformly as `1 + input_height + gate_height`.
-    pub gate_height: u16,
+    /// Rows of bottom chrome between the transcript and the composer last frame:
+    /// the staged-attachment rows and the control strip beneath them. The
+    /// transcript ends `1 + input_height + above_input_height` rows from the bottom.
+    pub above_input_height: u16,
+    /// Each drawn staged-attachment row's `✕`, by screen row and column span, and
+    /// the chip it removes — resolved to the chip's key, not its position, so a
+    /// click can never remove whatever slid into the row since the paint.
+    pub staged_hits: Vec<(u16, u16, u16, u64)>,
     /// The right-docked sidebar's rectangle as of the last frame, or `None` when it's
     /// hidden (narrow terminal). Remembered so the sidebar-only dev screenshot can
     /// slice exactly those columns (docs/tui.md).
@@ -437,6 +441,9 @@ pub(super) struct InteractiveState<'a> {
     /// pixels, encodings — plus the terminal's graphics capability
     /// (docs/tui.md). The transcript's image nodes are references into this.
     pub images: super::image::ImageStore,
+    /// Thumbnails of staged image attachments (docs/tui.md), keyed `(staging key, 0)` —
+    /// a store of their own, so they can never collide with a log address.
+    pub staged_images: super::image::ImageStore,
     /// Requests a result image's bytes from the tokio side, which GETs
     /// `/log/:seq/images/:idx` and answers with a [`TuiEvent::Image`].
     pub images_tx: UnboundedSender<super::image::ImageKey>,
@@ -503,11 +510,13 @@ pub(super) struct InteractiveState<'a> {
     /// because the verb carries none: nothing is submitted and nothing is appended.
     /// A decline comes back as a [`TuiEvent::Notice`] for the status line.
     pub continue_tx: UnboundedSender<()>,
-    /// This session's attachment store — `.efference/<id>/attachments/`, or `None` for a run
-    /// with no session behind it (the gallery, a read-only view). A paste past the inline
-    /// threshold is written here and described by the daemon's watcher (docs/inbox.md); the TUI
-    /// never announces an attachment itself, so paste and drag-in are one path.
-    pub attachments_dir: Option<std::path::PathBuf>,
+    /// Asks the tokio side to upload or remove a staged attachment (docs/inbox.md).
+    pub attachments_tx: UnboundedSender<crate::tui::staged::AttachCmd>,
+    /// The composer's staged attachments: uploaded as they are staged, sent with the next
+    /// turn, removable until then (docs/tui.md).
+    pub staged: crate::tui::staged::StagedAttachments,
+    /// The clipboard holds an image and no text, by its type list — the strip offers `C-v`.
+    pub clipboard_image: bool,
     /// This client launched the host and quitting it ends the host (docs/operating.md),
     /// so the strip's leaving verb reads `quit` rather than `detach`.
     pub owns_host: bool,
@@ -630,6 +639,7 @@ impl<'a> InteractiveState<'a> {}
 #[cfg(test)]
 mod test;
 
+mod attachments;
 mod escape;
 mod events;
 mod gate;

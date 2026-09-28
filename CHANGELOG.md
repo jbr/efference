@@ -8,6 +8,13 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- **Composer attachments** (docs/inbox.md): paste, drop, or pick files in the web composer,
+  or paste and drag them onto the TUI, to stage them as removable chips (thumbnails for
+  images). The next turn carries them, and the model is told what arrived and where.
+  Pastes past a dozen lines are staged as a file. Adds `POST`/`GET`/`DELETE /attachments`,
+  and the attachment store is readable by the session without a gate.
+- **The preamble explains `⟢`** (docs/inbox.md): lines so marked are the harness's notes,
+  which report and never carry the operator's instructions; attachment notices now use it.
 - **The browser island** (docs/operating.md): the setup offer can open the session in the
   browser on a loopback bind this terminal owns, with a prompt to reopen, copy, or print a
   link. Loopback binds set a cookie Safari keeps, and a minted link never carries a used code.

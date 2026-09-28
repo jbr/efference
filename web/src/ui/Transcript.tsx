@@ -7,13 +7,20 @@
 
 import { handoffPredecessor } from "../api/types.ts";
 import { memo, useMemo } from "react";
-import type { ConfigEdit, ContentBlock, Mark, Spot } from "../api/types.ts";
+import type {
+  Attachment,
+  ConfigEdit,
+  Mark,
+  Spot,
+  UserBlock,
+} from "../api/types.ts";
 import type { LiveBlock, PendingTurn, Streaming } from "../session/store.ts";
 import type { CallNode, LeafNode, TranscriptNode } from "../session/tree.ts";
 import { upstreamFailureWhy } from "../session/tree.ts";
 import { assistantView } from "../session/assistant.ts";
 import type { CallId } from "../api/types.ts";
 import { Markdown } from "./Markdown.tsx";
+import { SentAttachments } from "./Attachments.tsx";
 import { CallBlock, LiveCallBlock, ResultBlock } from "./ToolBlocks.tsx";
 import { useFollowTail } from "./useFollowTail.ts";
 import { useViewSettings } from "./viewSettings.ts";
@@ -26,8 +33,9 @@ import {
 // Blank-line joined: these bodies render as markdown, and distinct wire
 // blocks are separate paragraphs — a single newline would soft-wrap the last
 // line of one block into the first of the next.
-const text = (blocks: ContentBlock[]) =>
+const text = (blocks: UserBlock[]) =>
   blocks
+    .filter((b) => !("Attachment" in b))
     .map((b) =>
       "Text" in b
         ? b.Text
@@ -36,6 +44,9 @@ const text = (blocks: ContentBlock[]) =>
           : "[redacted thinking]",
     )
     .join("\n\n");
+
+const attachmentsOf = (blocks: UserBlock[]): Attachment[] =>
+  blocks.flatMap((b) => ("Attachment" in b ? [b.Attachment] : []));
 
 /** One transcript row: the label gutter and the content column. `label` is
  * `null` for the two voices marked structurally instead — a user turn carries
@@ -156,6 +167,7 @@ function Leaf({ node }: { node: LeafNode }) {
     return (
       <Entry label="you" as="user">
         <Markdown>{text(p.User)}</Markdown>
+        <SentAttachments attachments={attachmentsOf(p.User)} />
       </Entry>
     );
   }
@@ -398,6 +410,7 @@ function PendingTurns({
       {pending.map((turn) => (
         <Entry key={`pending:${turn.id}`} label="you" as="user pending">
           <Markdown>{turn.text}</Markdown>
+          <SentAttachments attachments={turn.attachments} />
           {/* A state, then the one thing to do about it — two pieces, not
               one run of text. */}
           <div className="pending-mark">

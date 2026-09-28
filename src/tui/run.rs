@@ -19,7 +19,6 @@ pub async fn run(
     attached: Attached,
 ) -> Result<()> {
     let mut client = client;
-    let mut attached = attached;
     loop {
         match attach(
             client.clone(),
@@ -31,17 +30,8 @@ pub async fn run(
         .await?
         {
             Exit::Quit => return Ok(()),
-            Exit::Switch { id, cwd } => {
+            Exit::Switch { id } => {
                 client = client.with_prefix(&format!("/sessions/{id}"));
-                // The host mints a session's directory under its own cwd
-                // (docs/control-channel.md), which is what the listing carries.
-                attached.attachments_dir = cwd.map(|cwd| {
-                    crate::attachments::dir_for_session(
-                        &std::path::Path::new(&cwd)
-                            .join(crate::daemon::SESSION_BASE)
-                            .join(&id),
-                    )
-                });
             }
         }
     }
@@ -50,10 +40,6 @@ pub async fn run(
 /// What this client is to the sessions it attaches, as opposed to how it draws them.
 #[derive(Debug, Clone, Default)]
 pub struct Attached {
-    /// The session's attachment store (docs/inbox.md) — where a paste past the
-    /// inline threshold is written. `None` disables the routing and pastes inline.
-    /// Re-derived on a session switch.
-    pub attachments_dir: Option<std::path::PathBuf>,
     /// This client launched the host, and quitting it ends the host with every
     /// session on it (docs/operating.md): the island owner. `detach` would be
     /// false there, so the strip says `quit`.
@@ -82,6 +68,7 @@ async fn attach(
     let Receivers {
         submit: mut submit_rx,
         recall: mut recall_rx,
+        attachments: mut attachments_rx,
         continue_loop: mut continue_rx,
         approve: mut approve_rx,
         pace: mut pace_rx,
@@ -99,13 +86,78 @@ async fn attach(
     // every topic up front.
     let bridge = tokio::spawn(bridge(client.clone(), events, tx.clone()));
 
-    // Turn sender: each composer submission is POSTed as a user turn.
+    // Turn sender: each composer submission is POSTed as a user turn. A refusal
+    // (an attachment no longer in the store) comes home as a notice, since the
+    // pending echo alone would read as "still queued" forever.
     let turn_client = client.clone();
+    let turn_events = tx.clone();
     let sender = tokio::spawn(async move {
         while let Some(turn) = submit_rx.recv().await {
-            let _ = turn_client
-                .turn_with_submission_id(&turn.text, &turn.submission_id)
-                .await;
+            if let Err(e) = turn_client.submit(&turn).await
+                && turn_events
+                    .send(TuiEvent::Notice(format!("send failed: {e}")))
+                    .is_err()
+            {
+                break; // UI thread gone.
+            }
+        }
+    });
+
+    // Clipboard watch (docs/tui.md): a terminal's own paste carries no image, so the strip says
+    // when `C-v` would fetch one. Learned from the pasteboard's change count and type list —
+    // never its contents — polled because nothing announces a change.
+    let watch_events = tx.clone();
+    let clipboard_watcher = tokio::spawn(async move {
+        if !crate::tui::pasteboard::Watch::SUPPORTED {
+            return;
+        }
+        let mut watch = crate::tui::pasteboard::Watch::default();
+        let mut tick = tokio::time::interval(std::time::Duration::from_millis(500));
+        loop {
+            tick.tick().await;
+            if let Some(found) = watch.poll()
+                && watch_events.send(TuiEvent::ClipboardImage(found)).is_err()
+            {
+                break; // UI thread gone.
+            }
+        }
+    });
+
+    // Attachment dispatcher (docs/inbox.md): a staged file uploads at once and its answer
+    // comes home keyed by the staging key; a removal is fire-and-forget.
+    let attach_client = client.clone();
+    let attach_events = tx.clone();
+    let attacher = tokio::spawn(async move {
+        while let Some(cmd) = attachments_rx.recv().await {
+            match cmd {
+                crate::tui::staged::AttachCmd::Upload { key, name, bytes } => {
+                    // An image's thumbnail is decoded and scaled here, off the UI thread —
+                    // a full-resolution screenshot is a noticeable decode.
+                    if ::image::guess_format(&bytes).is_ok() {
+                        let bytes = bytes.clone();
+                        let events = attach_events.clone();
+                        tokio::task::spawn_blocking(move || {
+                            if let Ok(image) = ::image::load_from_memory(&bytes) {
+                                let image = image.thumbnail(512, 512);
+                                let _ = events.send(TuiEvent::Thumbnail { key, image });
+                            }
+                        });
+                    }
+                    let result = attach_client
+                        .upload_attachment(&name, bytes)
+                        .await
+                        .map_err(|e| e.to_string());
+                    if attach_events
+                        .send(TuiEvent::Uploaded { key, result })
+                        .is_err()
+                    {
+                        break; // UI thread gone.
+                    }
+                }
+                crate::tui::staged::AttachCmd::Remove { name } => {
+                    let _ = attach_client.remove_attachment(&name).await;
+                }
+            }
         }
     });
 
@@ -244,6 +296,8 @@ async fn attach(
     bridge.abort();
     sender.abort();
     recaller.abort();
+    attacher.abort();
+    clipboard_watcher.abort();
     continuer.abort();
     approver.abort();
     pacer.abort();

@@ -11,11 +11,7 @@ fn settle_predicate_tracks_the_loop_lifecycle() {
     assert!(shared.is_settled(), "a fresh daemon is idle");
 
     // Submitted but not yet dequeued — busy (the submit-race guard via the queued count).
-    shared.submit_turn(SubmittedTurn {
-        text: "hi".into(),
-        submission_id: "sub-test".into(),
-        source: None,
-    });
+    shared.submit_turn(SubmittedTurn::new("hi", "sub-test"));
     assert!(
         !shared.is_settled(),
         "a queued turn is busy before the loop sees it"
@@ -50,11 +46,7 @@ fn settle_predicate_tracks_the_loop_lifecycle() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn await_settled_returns_when_the_loop_parks() {
     let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
-    shared.submit_turn(SubmittedTurn {
-        text: "hi".into(),
-        submission_id: "sub-test".into(),
-        source: None,
-    });
+    shared.submit_turn(SubmittedTurn::new("hi", "sub-test"));
     shared.claim_turn("sub-test", true); // busy, mid-turn
 
     let waiter = {
@@ -91,21 +83,9 @@ fn drain_injected_turns_delivers_queued_turns_and_balances_settle() {
     };
 
     // Three turns arrive while the loop is busy (mid-trajectory), one of them blank.
-    shared.submit_turn(SubmittedTurn {
-        text: "first".into(),
-        submission_id: "sub-1".into(),
-        source: None,
-    });
-    shared.submit_turn(SubmittedTurn {
-        text: "   ".into(),
-        submission_id: "sub-2".into(),
-        source: None,
-    });
-    shared.submit_turn(SubmittedTurn {
-        text: "second".into(),
-        submission_id: "sub-3".into(),
-        source: None,
-    });
+    shared.submit_turn(SubmittedTurn::new("first", "sub-1"));
+    shared.submit_turn(SubmittedTurn::new("   ", "sub-2"));
+    shared.submit_turn(SubmittedTurn::new("second", "sub-3"));
     assert!(
         !shared.is_settled(),
         "queued turns → not settled while they wait"
@@ -189,11 +169,7 @@ async fn a_submit_resumes_and_skips_the_seam() {
     shared.set_pace(None, Some(true));
     assert!(shared.pace_snapshot().1, "held before submit");
 
-    shared.submit_turn(SubmittedTurn {
-        text: "go".into(),
-        submission_id: "sub-test".into(),
-        source: None,
-    });
+    shared.submit_turn(SubmittedTurn::new("go", "sub-test"));
     assert!(!shared.pace_snapshot().1, "submit dropped the hold");
 
     // A turn is queued, so the seam returns at once even though we had been held.
@@ -212,11 +188,7 @@ async fn a_submit_interrupts_a_finite_paced_sleep() {
     let s2 = Arc::clone(&shared);
     let seam = tokio::spawn(async move { s2.pace_at_seam().await });
     tokio::time::sleep(Duration::from_millis(20)).await; // let the seam enter its sleep
-    shared.submit_turn(SubmittedTurn {
-        text: "urgent".into(),
-        submission_id: "sub-test".into(),
-        source: None,
-    }); // fires the pace interrupt
+    shared.submit_turn(SubmittedTurn::new("urgent", "sub-test")); // fires the pace interrupt
 
     tokio::time::timeout(Duration::from_millis(500), seam)
         .await
@@ -254,11 +226,7 @@ fn an_interrupt_latches_and_is_consumed_exactly_once() {
 fn withdraw_pops_the_suffix_from_the_named_turn() {
     let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
     for (text, id) in [("one", "s1"), ("two", "s2"), ("three", "s3")] {
-        shared.submit_turn(SubmittedTurn {
-            text: text.into(),
-            submission_id: id.into(),
-            source: None,
-        });
+        shared.submit_turn(SubmittedTurn::new(text, id));
     }
     let popped = shared.withdraw_turns("s2");
     assert_eq!(
@@ -285,11 +253,7 @@ fn withdraw_pops_the_suffix_from_the_named_turn() {
 #[test]
 fn withdraw_pops_nothing_once_the_loop_has_claimed_the_turn() {
     let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
-    shared.submit_turn(SubmittedTurn {
-        text: "sent".into(),
-        submission_id: "s1".into(),
-        source: None,
-    });
+    shared.submit_turn(SubmittedTurn::new("sent", "s1"));
     assert!(shared.claim_turn("s1", true));
     assert!(shared.withdraw_turns("s1").is_empty());
 }
@@ -303,16 +267,8 @@ async fn a_withdrawn_turn_is_dropped_rather_than_delivered() {
         shared: Arc::clone(&shared),
         turns: turns_rx,
     };
-    shared.submit_turn(SubmittedTurn {
-        text: "recalled".into(),
-        submission_id: "s1".into(),
-        source: None,
-    });
-    shared.submit_turn(SubmittedTurn {
-        text: "kept".into(),
-        submission_id: "s2".into(),
-        source: None,
-    });
+    shared.submit_turn(SubmittedTurn::new("recalled", "s1"));
+    shared.submit_turn(SubmittedTurn::new("kept", "s2"));
     assert_eq!(
         shared.withdraw_turns("s1").len(),
         2,
@@ -321,11 +277,7 @@ async fn a_withdrawn_turn_is_dropped_rather_than_delivered() {
     // Both are still sitting in the channel; neither may be delivered.
     assert!(frontend.drain_injected_turns().is_empty());
 
-    shared.submit_turn(SubmittedTurn {
-        text: "fresh".into(),
-        submission_id: "s3".into(),
-        source: None,
-    });
+    shared.submit_turn(SubmittedTurn::new("fresh", "s3"));
     let delivered = frontend.drain_injected_turns();
     assert_eq!(delivered.len(), 1);
     assert_eq!(delivered[0].text, "fresh");

@@ -181,11 +181,7 @@ impl InteractiveState<'_> {
         };
         match created {
             Ok(id) => {
-                let cwd = menu
-                    .form
-                    .as_ref()
-                    .map(|form| form.cwd().display().to_string());
-                self.switch_to = Some(Exit::Switch { id, cwd });
+                self.switch_to = Some(Exit::Switch { id });
                 true
             }
             Err(error) => {
@@ -278,10 +274,7 @@ impl InteractiveState<'_> {
             self.composing = !self.read_only();
             return false;
         }
-        self.switch_to = Some(Exit::Switch {
-            id: row.id,
-            cwd: row.cwd,
-        });
+        self.switch_to = Some(Exit::Switch { id: row.id });
         true
     }
 }

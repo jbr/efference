@@ -222,7 +222,7 @@ impl Session {
         Value::Array(
             self.queued_turns()
                 .into_iter()
-                .map(|t| serde_json::json!({ "submission_id": t.submission_id, "text": t.text }))
+                .map(|t| t.pending_json())
                 .collect(),
         )
     }

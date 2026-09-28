@@ -214,6 +214,17 @@ impl Screenplay<'_> {
         self.receivers.submit.try_recv().ok().map(|turn| turn.text)
     }
 
+    /// The attachment command a staging gesture dispatched since the last check, if
+    /// any — drains the channel the UI would upload or remove over.
+    pub(crate) fn took_attach(&mut self) -> Option<super::staged::AttachCmd> {
+        self.receivers.attachments.try_recv().ok()
+    }
+
+    /// The whole turn a submit sent since the last check — text and attachments.
+    pub(crate) fn took_submission(&mut self) -> Option<crate::frontend::SubmittedTurn> {
+        self.receivers.submit.try_recv().ok()
+    }
+
     /// The submission id a recall asked to withdraw since the last check, if any —
     /// drains the channel the UI would `DELETE /turns/:id` over.
     #[allow(dead_code)]

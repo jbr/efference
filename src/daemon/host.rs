@@ -314,11 +314,10 @@ impl Host {
             hosted.succeeds = Some(from.to_string());
         }
         if let Some(session) = self.session(successor) {
-            session.submit_turn(crate::frontend::SubmittedTurn {
-                text: brief,
-                submission_id: super::mint_submission_id(),
-                source: Some(crate::frontend::handoff_source(from)),
-            });
+            session.submit_turn(
+                crate::frontend::SubmittedTurn::new(brief, super::mint_submission_id())
+                    .sourced(Some(crate::frontend::handoff_source(from))),
+            );
         }
         if let Some(predecessor) = self.session(from) {
             predecessor.set_successor(successor);

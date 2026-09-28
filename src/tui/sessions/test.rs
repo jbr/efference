@@ -132,10 +132,7 @@ fn enter_on_another_session_leaves_with_a_destination() {
     assert!(play.key_quits(KeyCode::Enter, KeyModifiers::NONE));
     assert_eq!(
         play.state.switch_to,
-        Some(Exit::Switch {
-            id: "beta".into(),
-            cwd: Some("/work".into()),
-        })
+        Some(Exit::Switch { id: "beta".into() })
     );
 }
 
@@ -207,6 +204,6 @@ fn a_named_successor_is_followed() {
     assert!(quits, "the loop leaves for the successor");
     assert!(matches!(
         play.state.switch_to.take(),
-        Some(crate::tui::Exit::Switch { id, cwd }) if id == "new-leaf" && cwd.as_deref() == Some("/home/someone/p")
+        Some(crate::tui::Exit::Switch { id }) if id == "new-leaf"
     ));
 }

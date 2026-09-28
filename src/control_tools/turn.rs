@@ -101,11 +101,7 @@ impl Tool<Control> for Turn {
                 let source = format!("session[{}]", state.caller);
                 state
                     .resolve_mutating(self.session.as_deref())?
-                    .submit_turn(crate::frontend::SubmittedTurn {
-                        text,
-                        submission_id: crate::daemon::mint_submission_id(),
-                        source: Some(source),
-                    });
+                    .submit_turn(crate::frontend::SubmittedTurn::new(text, crate::daemon::mint_submission_id()).sourced(Some(source)));
                 Ok("accepted".into())
             }
         }

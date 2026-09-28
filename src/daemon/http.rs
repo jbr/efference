@@ -18,6 +18,11 @@ pub(crate) struct TurnBody {
     /// wire block when present.
     #[serde(default)]
     pub(crate) source: Option<String>,
+    /// Names of files this client uploaded (`POST /attachments`) to send with the
+    /// turn (docs/inbox.md). Each must still be in the store; the turn is refused
+    /// otherwise, so a message never lands claiming a file that is not there.
+    #[serde(default)]
+    pub(crate) attachments: Vec<String>,
 }
 
 /// Cap on a client-minted submission id: long enough for any uuid-ish scheme,
@@ -149,6 +154,7 @@ fn missing_state(conn: Conn) -> Conn {
 /// ping; unrelated.)
 pub(crate) const EVENTS_HEARTBEAT: Duration = Duration::from_secs(15);
 
+mod attachments;
 mod events;
 mod log_reads;
 mod loop_control;
@@ -183,6 +189,9 @@ pub(crate) fn control_routes_with_heartbeat(heartbeat: Duration) -> Router {
         .get("/v1/processes/:id/output", processes::read_process_output)
         .patch("/v1/processes/:id", processes::patch_process)
         .delete("/v1/processes/:id", processes::kill_process)
+        .post("/v1/attachments", attachments::upload)
+        .get("/v1/attachments/:name", attachments::read)
+        .delete("/v1/attachments/:name", attachments::remove)
         .post("/v1/notifications", notifications::notify)
         .delete("/v1/notifications/:id", notifications::dismiss_notification)
         .get("/v1/proposals", proposals::list_proposals)

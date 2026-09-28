@@ -6,8 +6,9 @@ import {
   resolveApproval,
   submitTurn as postTurn,
   withdrawTurns,
+  type WithdrawnTurn,
 } from "../api/http.ts";
-import type { CallId, Decision, Gate } from "../api/types.ts";
+import type { Attachment, CallId, Decision, Gate } from "../api/types.ts";
 import {
   applyFrame,
   pushPendingTurn,
@@ -25,10 +26,14 @@ import {
  * frame folds before the 202 body resolves (`pushPendingTurn` then skips the
  * queue entirely).
  */
-export async function submitTurn(store: Store, text: string): Promise<void> {
+export async function submitTurn(
+  store: Store,
+  text: string,
+  attachments: Attachment[] = [],
+): Promise<void> {
   const id = crypto.randomUUID();
-  await postTurn(text, id);
-  store.update((s) => pushPendingTurn(s, id, text));
+  await postTurn(text, id, attachments);
+  store.update((s) => pushPendingTurn(s, id, text, attachments));
 }
 
 /**
@@ -39,9 +44,13 @@ export async function submitTurn(store: Store, text: string): Promise<void> {
  * Nothing was ever logged — a pending turn sits in the daemon's queue, unprojected —
  * so there is nothing to retract, and the echoes are dropped only for the ids that
  * came back. An empty result is the lost race (the loop dequeued it first); the caller
- * leaves its draft alone.
+ * leaves its draft alone. Their attachments come back too, still stored, for the
+ * composer to stage again.
  */
-export async function recallTurn(store: Store, id: string): Promise<string[]> {
+export async function recallTurn(
+  store: Store,
+  id: string,
+): Promise<WithdrawnTurn[]> {
   const { withdrawn } = await withdrawTurns(id);
   store.update((s) =>
     removePendingTurns(
@@ -49,7 +58,7 @@ export async function recallTurn(store: Store, id: string): Promise<string[]> {
       withdrawn.map((t) => t.submission_id),
     ),
   );
-  return withdrawn.map((t) => t.text);
+  return withdrawn;
 }
 
 /**

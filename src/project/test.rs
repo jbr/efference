@@ -128,6 +128,59 @@ fn source_does_not_move_unsourced_bytes() {
     assert!(sourced.contains(r#""text":"web: hello""#));
 }
 
+/// An attachment a turn carried projects as its notice — what arrived and
+/// where — in its own text block after the turn's prose, never as its bytes
+/// (docs/inbox.md). Pins the log shape too: the block round-trips through the
+/// jsonl, so a renamed field here would silently drop attachments from old logs.
+#[test]
+fn attachment_projects_as_its_notice() {
+    let arrival = crate::attachments::Arrival {
+        name: "shot.png".into(),
+        path: ".efference/s1/attachments/composer/shot.png".into(),
+        kind: crate::attachments::Kind::Image {
+            format: "PNG".into(),
+            width: 1280,
+            height: 800,
+            bytes: 245_760,
+        },
+    };
+    let payload = Payload::User(vec![
+        ContentBlock::Text("why is this red".into()),
+        ContentBlock::Attachment(arrival),
+    ]);
+    let log = vec![entry(0, 0, payload)];
+    let wire = serde_json::to_string(&project(&log)).unwrap();
+    let expected = r#"[{"role":"user","content":[{"type":"text","text":"why is this red"},{"type":"text","text":"⟢ attached: shot.png — PNG image, 1280×800, 240.0 KB — at .efference/s1/attachments/composer/shot.png"}]}]"#;
+    assert_eq!(wire, expected);
+    let json = serde_json::to_string(&log[0].payload).unwrap();
+    assert_eq!(
+        json,
+        r#"{"User":[{"Text":"why is this red"},{"Attachment":{"name":"shot.png","path":".efference/s1/attachments/composer/shot.png","kind":{"Image":{"format":"PNG","width":1280,"height":800,"bytes":245760}}}}]}"#
+    );
+}
+
+/// A sourced turn carrying only attachments has no prose for its `source:` to open, so the
+/// source takes a line of its own and the harness's `⟢` note still starts a line.
+#[test]
+fn a_sourced_attachment_only_turn_keeps_the_sigil_at_a_line_start() {
+    let arrival = crate::attachments::Arrival {
+        name: "a.txt".into(),
+        path: "att/composer/a.txt".into(),
+        kind: crate::attachments::Kind::Binary { bytes: 3 },
+    };
+    let mut log = vec![entry(
+        0,
+        0,
+        Payload::User(vec![ContentBlock::Attachment(arrival)]),
+    )];
+    log[0].source = Some("web".into());
+    let wire = serde_json::to_string(&project(&log)).unwrap();
+    assert!(
+        wire.contains(r#""text":"web:\n⟢ attached: a.txt — binary, 3 B — at att/composer/a.txt""#),
+        "{wire}"
+    );
+}
+
 /// A log whose tool result carries one image, in the given wire state.
 fn image_log(wire: WireState) -> Vec<LogEntry> {
     use crate::log::ResultImage;

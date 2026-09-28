@@ -446,6 +446,7 @@ fn recall_asks_by_submission_id_and_splices_what_came_back() {
     play.event(TuiEvent::Recalled(vec![crate::client::WithdrawnTurn {
         submission_id: submitted.submission_id.clone(),
         text: submitted.text.clone(),
+        attachments: Vec::new(),
     }]));
     assert!(
         play.state.pending_turns.is_empty(),

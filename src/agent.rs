@@ -312,7 +312,7 @@ pub async fn run<F: Frontend, S: Spotter>(
                 turn += 1;
                 shared.append_submission(
                     turn,
-                    Payload::User(vec![ContentBlock::Text(submitted.text)]),
+                    Payload::User(submitted.blocks()),
                     submitted.submission_id,
                     submitted.source,
                 )?;
@@ -376,7 +376,7 @@ pub async fn run<F: Frontend, S: Spotter>(
                 distiller.begin_turn();
                 shared.append_submission(
                     turn,
-                    Payload::User(vec![ContentBlock::Text(submitted.text)]),
+                    Payload::User(submitted.blocks()),
                     submitted.submission_id,
                     submitted.source,
                 )?;

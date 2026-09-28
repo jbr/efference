@@ -376,6 +376,9 @@ impl AssistantOutput {
                 ContentBlock::RedactedThinking { data } => {
                     MessagesOutputBlock::RedactedThinking { data }
                 }
+                ContentBlock::Attachment(arrival) => {
+                    MessagesOutputBlock::Text(crate::attachments::turn_line(&arrival))
+                }
             })
             .chain(calls.into_iter().map(MessagesOutputBlock::ToolUse))
             .collect();
@@ -587,11 +590,17 @@ pub enum ResponsesMessageContent {
 /// (it rejects a modified block); `redacted_thinking` carries opaque `data` instead
 /// of text. Images are not blocks here — a tool result's images live on
 /// [`RawResult`], where the bytes are stored as they go on the wire.
+///
+/// `Attachment` is a file the operator's composer attached to a `User` turn. It
+/// records the file's name, path, and triage signals, never its bytes: it
+/// projects as the same notice an ambient arrival carries, and the model pulls
+/// the file with `read` / `read_image` if it wants it (docs/inbox.md).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ContentBlock {
     Text(String),
     Thinking { text: String, signature: String },
     RedactedThinking { data: String },
+    Attachment(crate::attachments::Arrival),
 }
 
 /// A tool invocation emitted by the model. `input` is a [`serde_json::Value`],

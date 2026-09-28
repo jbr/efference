@@ -15,7 +15,7 @@ import {
 } from "../session/touchedFiles.ts";
 import { buildTree, type CallNode } from "../session/tree.ts";
 import { useSession } from "../session/useSession.ts";
-import { Composer } from "./Composer.tsx";
+import { Composer, type Recalled } from "./Composer.tsx";
 import { Drawer } from "./Drawer.tsx";
 import { drawerAttention } from "./drawerAttention.ts";
 import { FileView } from "./FileView.tsx";
@@ -118,18 +118,16 @@ export function SessionView() {
   // What a recall handed back, for the composer to prepend (docs/web-client.md). The
   // counter is the trigger: recalling the same text twice must still splice twice, and
   // the composer owns its draft, so the splice has to be an event rather than a value.
-  const [recalled, setRecalled] = useState<{
-    text: string;
-    nonce: number;
-  } | null>(null);
+  const [recalled, setRecalled] = useState<Recalled | null>(null);
   // Only what the daemon reports it actually popped reaches the composer — a turn the
   // loop already dequeued comes back as an empty list and the draft is left alone.
   const onRecall = useCallback(
     (id: string) => {
-      void actions.recallTurn(id).then((texts) => {
-        if (texts.length === 0) return;
+      void actions.recallTurn(id).then((turns) => {
+        if (turns.length === 0) return;
         setRecalled((prev) => ({
-          text: texts.join("\n"),
+          text: turns.map((t) => t.text).join("\n"),
+          attachments: turns.flatMap((t) => t.attachments ?? []),
           nonce: (prev?.nonce ?? 0) + 1,
         }));
       });

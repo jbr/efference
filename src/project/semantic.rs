@@ -231,24 +231,32 @@ pub fn project_semantic(log: &[LogEntry]) -> Vec<WireTurn> {
         match &entry.payload {
             Payload::User(blocks) => {
                 // Merge into the pending user turn rather than flushing first (see
-                // `pending` above). Only prose is user-authored today; the thinking
-                // block forms exist on `ContentBlock` for the legacy fixture shape and
-                // never occur in a `User` entry.
+                // `pending` above). User turns author prose and attachments; the
+                // thinking block forms exist on `ContentBlock` for the legacy fixture
+                // shape and never occur in a `User` entry. An attachment projects as
+                // its notice, never its bytes (docs/inbox.md).
                 //
                 // A source names who is speaking, when it is not the operator
                 // (docs/control-api.md); it opens the turn's first prose part so the
                 // model reads it as an address. No source renders no prefix, which is
                 // what keeps every unsourced turn's bytes unchanged.
+                // An attachments-only turn has no prose to open, so its source gets a
+                // line of its own: the `⟢` of the harness's note stays at a line start.
                 let mut source = entry.source.as_deref();
-                pending.extend(blocks.iter().filter_map(|block| match block {
-                    ContentBlock::Text(text) => {
-                        let text = match source.take() {
-                            Some(source) => format!("{source}: {text}"),
-                            None => text.clone(),
-                        };
-                        Some(UserPart::Text(text))
-                    }
-                    ContentBlock::Thinking { .. } | ContentBlock::RedactedThinking { .. } => None,
+                pending.extend(blocks.iter().filter_map(|block| {
+                    let (text, separator) = match block {
+                        ContentBlock::Text(text) => (text.clone(), " "),
+                        ContentBlock::Attachment(arrival) => {
+                            (crate::attachments::turn_line(arrival), "\n")
+                        }
+                        ContentBlock::Thinking { .. } | ContentBlock::RedactedThinking { .. } => {
+                            return None;
+                        }
+                    };
+                    Some(UserPart::Text(match source.take() {
+                        Some(source) => format!("{source}:{separator}{text}"),
+                        None => text,
+                    }))
                 }));
             }
             // A record-only partial (docs/transport.md): the stream that produced this

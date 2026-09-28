@@ -1003,6 +1003,100 @@ pre {
   align-self: flex-end;
 }
 
+/* Attachment chips (ui/Attachments.tsx): the composer's staged row above the
+   input, and a sent turn's files under its prose. Flat like the dock's other
+   chrome; an image is its own thumbnail, anything else its name and the
+   signals the model reads about it. */
+.attachments {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  white-space: normal;
+}
+
+.attachments.sent {
+  margin-top: 0.5rem;
+}
+
+.attachment {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  max-width: 22rem;
+  padding: 0.3rem 0.45rem;
+  background: var(--bg-chip);
+  border: 1px solid var(--border-control);
+  border-radius: 2px;
+  font-family: var(--font-ui);
+  font-size: 0.8rem;
+}
+
+.attachment img {
+  display: block;
+  height: 3rem;
+  max-width: 6rem;
+  object-fit: cover;
+  border-radius: 1px;
+}
+
+.attachments.sent .attachment img {
+  height: 7rem;
+  max-width: 14rem;
+  object-fit: contain;
+}
+
+.attachment-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.attachment-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg);
+}
+
+.attachment-detail {
+  color: var(--fg-dim);
+}
+
+.attachment.uploading {
+  opacity: 0.65;
+}
+
+.attachment.failed {
+  border-color: var(--warn);
+}
+
+.attachment.failed .attachment-detail {
+  color: var(--warn);
+}
+
+.attachment-remove {
+  border: none;
+  background: none;
+  padding: 0 0.2rem;
+  font-size: 1.1rem;
+  line-height: 1;
+  color: var(--fg-dim);
+}
+
+.attachment-remove:hover:not(:disabled) {
+  color: var(--accent);
+}
+
+/* A file dragged over the page: the input is where it will land. */
+.composer.dragging .composer-input {
+  border-style: dashed;
+  border-color: var(--accent);
+  box-shadow: 0 0 10px var(--accent-glow);
+}
+
 /* Rendered markdown prose. Tightened against the browser defaults, which
    are sized for documents: a transcript is a sequence of short turns, and
    default heading and paragraph margins put more space inside one turn than

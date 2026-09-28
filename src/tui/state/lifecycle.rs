@@ -20,6 +20,7 @@ impl<'a> InteractiveState<'a> {
         let crate::tui::senders::Senders {
             submit: submit_tx,
             recall: recall_tx,
+            attachments: attachments_tx,
             continue_loop: continue_tx,
             approve: approve_tx,
             pace: pace_tx,
@@ -54,7 +55,8 @@ impl<'a> InteractiveState<'a> {
                 last_painted_scroll: 0,
                 last_document_height: 0,
                 input_height: 1,
-                gate_height: 0,
+                above_input_height: 0,
+                staged_hits: Vec::new(),
                 sidebar_area: None,
                 composer_area: None,
                 composer_dragging: false,
@@ -93,6 +95,7 @@ impl<'a> InteractiveState<'a> {
             dim_register: false,
             highlight_memo: Default::default(),
             images: Default::default(),
+            staged_images: Default::default(),
             images_tx,
             frame_cost: None,
             composer: Composer::new(),
@@ -107,7 +110,9 @@ impl<'a> InteractiveState<'a> {
             block_menu_hits: Vec::new(),
             submit_tx,
             recall_tx,
-            attachments_dir: None,
+            attachments_tx,
+            staged: Default::default(),
+            clipboard_image: false,
             owns_host: false,
             continue_tx,
             pending_turns: Vec::new(),
@@ -328,79 +333,6 @@ impl<'a> InteractiveState<'a> {
         });
     }
 
-    /// Paste from the system clipboard, falling back only when system access fails. Arboard
-    /// does not distinguish empty from non-text content, so `ContentNotAvailable` is reported
-    /// without using stale fallback text.
-    ///
-    /// A large text paste and any image go to the **attachment store** rather than into the
-    /// composer (docs/inbox.md): the bytes land on disk, the daemon's watcher notices them and
-    /// says what arrived, and the model pulls what it wants with the tools it already has.
-    pub(in crate::tui) fn paste_clipboard(&mut self) {
-        match self.clipboard.paste() {
-            crate::tui::clipboard::Paste::Text(text) => self.paste_text_or_attach(&text),
-            crate::tui::clipboard::Paste::Image(png) => {
-                match self.attach("png", &png) {
-                    Some(path) => self.set_debug_message(format!("image attached at {path}")),
-                    // No store (an offline view, a gallery run) — an image has nowhere to go
-                    // and nothing sensible to become in a text composer.
-                    None => self.set_debug_message("no attachment store for this session"),
-                }
-            }
-            crate::tui::clipboard::Paste::Unavailable => {
-                if let Some(text) = self.clipboard.fallback().map(str::to_owned) {
-                    self.paste_text_or_attach(&text);
-                    self.set_debug_message("pasted (in-process clipboard)");
-                } else {
-                    self.set_debug_message("clipboard unavailable");
-                }
-            }
-            crate::tui::clipboard::Paste::NoText => {
-                self.set_debug_message("clipboard has no text");
-            }
-        }
-    }
-
-    /// A paste of at most [`INLINE_LINE_LIMIT`] lines goes into the composer; anything longer
-    /// goes to the attachment store, so a bulky blob never takes the decision about whether to
-    /// read it away from the model (docs/inbox.md). With no store configured everything inlines
-    /// — the old behaviour, which is the honest fallback.
-    ///
-    /// [`INLINE_LINE_LIMIT`]: crate::attachments::INLINE_LINE_LIMIT
-    pub(in crate::tui) fn paste_text_or_attach(&mut self, text: &str) {
-        let lines = text.lines().count();
-        if lines <= crate::attachments::INLINE_LINE_LIMIT {
-            self.composer.paste_text(text);
-            self.set_debug_message("pasted");
-            return;
-        }
-        match self.attach("txt", text.as_bytes()) {
-            Some(path) => self.set_debug_message(format!("{lines} lines attached at {path}")),
-            None => {
-                self.composer.paste_text(text);
-                self.set_debug_message("pasted");
-            }
-        }
-    }
-
-    /// Write pasted bytes into this session's attachment store, returning the path for the
-    /// status line. `None` when the session has no store (a read-only view or the gallery).
-    /// Nothing is announced from here: the daemon's watcher sees the file appear and enqueues
-    /// the notification, so paste, drag-in, and move-in all describe themselves the same way.
-    fn attach(&mut self, extension: &str, bytes: &[u8]) -> Option<String> {
-        let dir = self.attachments_dir.clone()?;
-        let stamp = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
-        match crate::attachments::store(&dir, &format!("paste-{stamp}.{extension}"), bytes) {
-            Ok(path) => Some(path.display().to_string()),
-            Err(e) => {
-                self.set_debug_message(format!("could not attach: {e}"));
-                None
-            }
-        }
-    }
-
     /// Apply a theme by name, rebuilding the interactive theme
     pub(in crate::tui) fn apply_theme(&mut self, theme_name: &str) -> Result<(), ThemeError> {
         self.render_context.set_theme_name(theme_name)?;
@@ -409,6 +341,8 @@ impl<'a> InteractiveState<'a> {
         // Image padding is theme-background-colored (docs/tui.md); re-encode so
         // it follows the new background rather than keeping the old theme's.
         self.images
+            .set_theme_background(self.theme.document_bg_style.bg);
+        self.staged_images
             .set_theme_background(self.theme.document_bg_style.bg);
         Ok(())
     }

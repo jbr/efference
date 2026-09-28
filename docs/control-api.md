@@ -196,7 +196,7 @@ it.
 Enqueue a user turn. Also seeds turn 1 on an idle daemon. Submission is
 decoupled from inference.
 
-- Body: `{ "text": "<string>", "submission_id": "<string, optional>", "source": "<string, optional>" }` —
+- Body: `{ "text": "<string>", "submission_id": "<string, optional>", "source": "<string, optional>", "attachments": ["<name>", …] }` —
   `submission_id` identifies this submission: adopted when the client minted
   one (1–128 bytes), daemon-minted otherwise, and recorded on the resulting
   `User` entry as its `submission_id` (log metadata, never projected). A
@@ -209,6 +209,11 @@ decoupled from inference.
   (docs/log-and-projection.md); absent means the operator, whose turns render no
   prefix. `efference` is reserved for the harness's `first-turn` kickoff, which the
   clients do not draw ([context.md](context.md)); a request claiming it is a 400.
+- `attachments` names files this client uploaded (`POST /attachments`, below) to
+  send with the turn. Each is described at submission and lands on the `User`
+  entry as an `Attachment` block after the text ([inbox.md](inbox.md)); a turn
+  with attachments and blank text is still a turn. A name the store does not
+  hold is a `400` and nothing is queued.
 - `202 {"status":"accepted","submission_id":"<string>"}` — enqueued; watch
   `/events` (or `/state`) for the result. The echoed id is informational: any
   effect of a request — including the `User` entry carrying this id — may
@@ -229,12 +234,35 @@ A suffix rather than an arbitrary delete: recalling an older queued turn means
 "pop up to and including that one", which is identical to popping repeatedly, so
 queue order is preserved for free and there is exactly one operation.
 
-- `200 {"withdrawn":[{"submission_id":"…","text":"…"}, …]}` — in submission
-  order. The response is **authoritative**: the loop may have dequeued the turn
+- `200 {"withdrawn":[{"submission_id":"…","text":"…","attachments":[…]?}, …]}` — in
+  submission order; `attachments` (present only when the turn carried any) are the
+  arrivals as described at submission, still in the store for the client to stage
+  again. The response is **authoritative**: the loop may have dequeued the turn
   between the read and this call, in which case fewer turns come back — possibly
   none, which is an ordinary race outcome and not an error. A client splicing the
   text back into a composer splices exactly this list, so a turn already on its
   way to the model is never handed back as a draft.
+
+#### `POST /attachments?name=<name>` · `GET /attachments/:name` · `DELETE /attachments/:name`
+A composer's uploads ([inbox.md](inbox.md)). A client stages a file by uploading
+it and names it in the `POST /turns` that sends it; uploading at staging time
+means the client shows what the daemon made of the file while it is still
+removable.
+
+- `POST` — the raw bytes as the body, `Content-Type: application/octet-stream`
+  (the one non-JSON type the TCP bind's CSRF gate admits, [web-bind.md](web-bind.md)),
+  up to 64 MB. `?name=` suggests the file name; it is reduced to one path
+  component and made unique (`shot-2.png`) rather than overwriting.
+  `201 {"name","path","kind"}` — the stored name to send, the path the model
+  reads it at, and its triage signals (`{"Text":{bytes,lines,shape,first_line}}`,
+  `{"Image":{format,width,height,bytes}}`, or `{"Binary":{bytes}}`).
+- `GET` — the bytes under their sniffed media type, `no-store`: unlike a log
+  entry's image, a stored file can be removed. The thumbnail source for a sent
+  turn's image.
+- `DELETE` — `204`; for a staged file taken back before sending. A sent file
+  stays in the store: its turn names it.
+- `404 not_found` — a name that is not one this store handed out, or a session
+  with no store.
 
 #### `PUT /approvals/:call_id`
 Resolve the pending approval gate, addressed by the tool call's `tool_use` id
@@ -556,7 +584,8 @@ not a topic — it is the log's cursor rather than control state, and sits outsi
   },
   "queued": [                      // turns submitted but not yet dequeued, in submission order
     { "submission_id": "…",        //   `[]` when nothing is pending. Ephemeral — a pending
-      "text": "…" }                //   turn is never logged, so this is the only place it is
+      "text": "…",                 //   turn is never logged, so this is the only place it is
+      "attachments": [ … ] }       //   (only when it carries any)
   ],                               //   readable, and what `DELETE /turns/:id` addresses
   "stall": {                       // null unless the last trajectory gave up (transport.md)
     "reason": "retries_exhausted", // "retries_exhausted" | "request_failed"

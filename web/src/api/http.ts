@@ -7,6 +7,7 @@
 
 import { join } from "./base.ts";
 import type {
+  Attachment,
   CallId,
   Decision,
   ErrorEnvelope,
@@ -46,16 +47,20 @@ async function requestAt<T>(
     headers: body === undefined ? {} : { "content-type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
-  if (!response.ok) {
-    let envelope: ErrorEnvelope;
-    try {
-      envelope = (await response.json()) as ErrorEnvelope;
-    } catch {
-      envelope = { code: "internal", message: `http ${response.status}` };
-    }
-    throw new ApiError(response.status, envelope);
-  }
+  await throwIfFailed(response);
   return (await response.json()) as T;
+}
+
+/** Throw a non-2xx as an ApiError carrying its error envelope. */
+async function throwIfFailed(response: Response): Promise<void> {
+  if (response.ok) return;
+  let envelope: ErrorEnvelope;
+  try {
+    envelope = (await response.json()) as ErrorEnvelope;
+  } catch {
+    envelope = { code: "internal", message: `http ${response.status}` };
+  }
+  throw new ApiError(response.status, envelope);
 }
 
 /** A request to a control path, joined onto this client's base. */
@@ -83,21 +88,66 @@ export const fetchLogTail = (n: number) => get<LogEntry[]>(`/v1/log?tail=${n}`);
 // elide (a truncated result's `content`, docs/control-api.md). ETag-validated, so
 // a second look is a 304.
 export const fetchLogEntry = (seq: Seq) => get<LogEntry>(`/v1/log/${seq}`);
-export const submitTurn = (text: string, submissionId: string) =>
+export const submitTurn = (
+  text: string,
+  submissionId: string,
+  attachments: Attachment[] = [],
+) =>
   post<{ status: string; submission_id: string }>("/v1/turns", {
     text,
     submission_id: submissionId,
     // The web client is not the operator at a terminal; name where the turn
     // came from so the model can attribute it (docs/control-api.md).
     source: "web",
+    ...(attachments.length > 0
+      ? { attachments: attachments.map((a) => a.name) }
+      : {}),
   });
 // Withdraw the pending-queue suffix beginning at this submission (docs/control-api.md —
 // recall). The answer is authoritative: the loop may have dequeued the turn already, so
 // `withdrawn` can be shorter than the queue showed, or empty. A caller splices only this.
+export interface WithdrawnTurn {
+  submission_id: string;
+  text: string;
+  attachments?: Attachment[];
+}
 export const withdrawTurns = (submissionId: string) =>
-  del<{ withdrawn: { submission_id: string; text: string }[] }>(
+  del<{ withdrawn: WithdrawnTurn[] }>(
     `/v1/turns/${encodeURIComponent(submissionId)}`,
   );
+
+// Attachments (docs/inbox.md): a file is uploaded when it is staged, so the
+// daemon's description of it — the one the model will read — is known while it
+// is still removable; the turn then names it. Raw bytes rather than a JSON body:
+// `application/octet-stream` is the one other type the listener's CSRF gate
+// accepts, since a cross-site fetch carrying it is preflighted (docs/web-bind.md).
+export async function uploadAttachment(
+  name: string,
+  body: Blob,
+): Promise<Attachment> {
+  const response = await fetch(
+    join(`/v1/attachments?name=${encodeURIComponent(name)}`),
+    {
+      method: "POST",
+      headers: { "content-type": "application/octet-stream" },
+      body,
+    },
+  );
+  await throwIfFailed(response);
+  return (await response.json()) as Attachment;
+}
+// A staged upload taken back before sending. A sent one stays: its turn names it.
+// A 204 has no body for `request` to parse, hence the bare fetch.
+export async function removeAttachment(name: string): Promise<void> {
+  await throwIfFailed(
+    await fetch(join(`/v1/attachments/${encodeURIComponent(name)}`), {
+      method: "DELETE",
+    }),
+  );
+}
+/** Where a stored attachment's bytes are — an `<img src>` for an image. */
+export const attachmentUrl = (name: string) =>
+  join(`/v1/attachments/${encodeURIComponent(name)}`);
 // The id is a precondition: a 409 gate_moved answer means that call is no
 // longer the pending gate, and `detail` carries the current one.
 export const resolveApproval = (callId: CallId, decision: Decision) =>

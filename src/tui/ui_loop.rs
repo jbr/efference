@@ -56,6 +56,7 @@ pub(super) fn ui_loop(
             stdout(),
             LeaveAlternateScreen,
             DisableMouseCapture,
+            DisableBracketedPaste,
             PopKeyboardEnhancementFlags,
             crossterm::cursor::Show
         );
@@ -66,11 +67,14 @@ pub(super) fn ui_loop(
     let mut stdout = stdout();
     // DISAMBIGUATE_ESCAPE_CODES lets kitty-protocol terminals report SUPER and
     // other unambiguous modifiers. Terminals that do not implement it continue
-    // emitting their ordinary key events.
+    // emitting their ordinary key events. Bracketed paste delivers a paste (⌘V,
+    // a file dragged onto the window) as one event rather than a burst of typed
+    // keys, which is what lets it be routed to an attachment (docs/tui.md).
     execute!(
         stdout,
         EnterAlternateScreen,
         EnableMouseCapture,
+        EnableBracketedPaste,
         PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES)
     )?;
     let backend = CrosstermBackend::new(stdout);
@@ -78,7 +82,6 @@ pub(super) fn ui_loop(
     terminal.clear()?;
 
     let mut state = InteractiveState::new(events, senders, render_context, theme);
-    state.attachments_dir = attached.attachments_dir;
     state.owns_host = attached.owns_host;
     if let Some(label) = viewing {
         state.set_viewing(label);
@@ -104,12 +107,13 @@ pub(super) fn ui_loop(
             font.height,
         ));
     }
+    state.staged_images.set_picker(picker.clone());
     state.images.set_picker(picker);
     // Aspect-fit padding takes the theme's background so it disappears into
     // the transcript (iTerm2 renders the default transparent pad as opaque).
-    state
-        .images
-        .set_theme_background(state.theme.document_bg_style.bg);
+    let background = state.theme.document_bg_style.bg;
+    state.images.set_theme_background(background);
+    state.staged_images.set_theme_background(background);
 
     // Event reader thread: polls crossterm, forwards to a channel. It polls with a
     // short timeout rather than blocking in `read`, and is stopped and joined when
@@ -202,6 +206,10 @@ pub(super) fn ui_loop(
                                 state.handle_mouse_event(mouse_event, &terminal);
                                 redraw = true;
                             }
+                            Event::Paste(text) => {
+                                state.handle_paste(text);
+                                redraw = true;
+                            }
                             Event::Resize(_, _) => {
                                 // The terminal changed size: the cached layout (wrap +
                                 // document height) is width-dependent, so drop it and
@@ -266,6 +274,7 @@ pub(super) fn ui_loop(
         terminal.backend_mut(),
         LeaveAlternateScreen,
         DisableMouseCapture,
+        DisableBracketedPaste,
         PopKeyboardEnhancementFlags
     )?;
     terminal.show_cursor()?;

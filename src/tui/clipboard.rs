@@ -5,8 +5,8 @@
 //! which keeps copy/cut usable when the platform clipboard cannot be reached.
 //!
 //! Images are read as well as text: a pasted screenshot is an attachment
-//! (docs/inbox.md), so it is re-encoded as a PNG and lands in the store like any other
-//! arrival rather than being pushed into the conversation.
+//! (docs/inbox.md), so it is re-encoded as a PNG and staged for the next turn rather than
+//! pushed into the conversation.
 
 use arboard::{Clipboard, Error};
 
@@ -18,6 +18,9 @@ pub(super) enum Paste {
     /// A bitmap is available, already encoded as PNG bytes — the store's format, chosen here
     /// because the clipboard hands over raw RGBA and something has to name an encoding.
     Image(Vec<u8>),
+    /// The clipboard holds an image that could not be read or re-encoded; the reason, for the
+    /// status line — a silent empty paste is what this replaced.
+    ImageUnreadable(String),
     /// The system clipboard cannot be read; callers may use the fallback.
     Unavailable,
     /// `arboard` reports unavailable text, which conflates empty and incompatible
@@ -77,13 +80,29 @@ impl TextClipboard {
             return Paste::Unavailable;
         };
         // Text first: a copy from an editor often carries a bitmap flavour too, and text is
-        // what the operator meant. Only when there is no text at all is an image the answer.
-        if let Ok(image) = system.get_image()
-            && let Some(png) = encode_png(&image)
+        // what the operator meant. Blank text is not text — a browser's "copy image" can carry
+        // an empty text flavour beside the picture — so only non-blank text wins.
+        let text = system.get_text();
+        if let Ok(text) = &text
+            && !text.trim().is_empty()
         {
-            return Paste::Image(png);
+            self.fallback = Some(text.clone());
+            return Paste::Text(text.clone());
         }
-        match system.get_text() {
+        match system.get_image() {
+            Ok(image) => {
+                return match encode_png(&image) {
+                    Some(png) => Paste::Image(png),
+                    None => Paste::ImageUnreadable(format!(
+                        "a {}×{} image whose bytes do not match its size",
+                        image.width, image.height
+                    )),
+                };
+            }
+            Err(Error::ContentNotAvailable) => {}
+            Err(e) => return Paste::ImageUnreadable(e.to_string()),
+        }
+        match text {
             Ok(text) => {
                 self.fallback = Some(text.clone());
                 Paste::Text(text)

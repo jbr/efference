@@ -103,19 +103,6 @@ impl ClientTarget {
             None => ControlClient::new(&self.socket),
         }
     }
-
-    /// The session dir the attachment store lives beside (docs/inbox.md): the
-    /// socket's own dir, or `.efference/<id>` here for a hosted session — the
-    /// host mints under the session's cwd, not beside its own socket
-    /// (docs/control-channel.md), and a hosted target is only ever resolved for
-    /// a session whose cwd is this directory. `None` for an explicit socket with
-    /// no parent.
-    pub(crate) fn session_dir(&self) -> Option<PathBuf> {
-        match &self.prefix {
-            Some(prefix) => Some(session_dir(prefix.rsplit('/').next()?)),
-            None => self.socket.parent().map(Path::to_path_buf),
-        }
-    }
 }
 
 /// Whether a listener is bound at `socket`: a successful connect, not mere

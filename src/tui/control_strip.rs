@@ -492,6 +492,9 @@ impl InteractiveState<'_> {
             Some("pinned · leave to re-rank")
         } else if self.pending_gate.is_some() {
             Some("type below to redirect")
+        } else if self.clipboard_image {
+            // A terminal's own paste cannot carry an image; `C-v` reads the clipboard itself.
+            Some("image in clipboard · C-v to attach")
         } else {
             None
         }
