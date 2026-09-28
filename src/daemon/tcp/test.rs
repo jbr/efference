@@ -519,9 +519,30 @@ fn a_port_zero_bind_mints_links_on_its_bound_port() {
     assert_eq!(auth.public_base(), "http://localhost:51234");
     assert!(
         auth.mint_link()
+            .unwrap()
             .starts_with("http://localhost:51234/#token=")
     );
     let configured = armed("configured-port");
     configured.bound_port(51234);
     assert_eq!(configured.public_base(), "http://localhost:7777");
+}
+
+/// A second link minted in the same 30 seconds as a redeemed one carries the next
+/// step's code, not the burned one; once every accepted step is used, none is
+/// minted rather than a dead one.
+#[test]
+fn a_minted_link_never_carries_a_used_code() {
+    let auth = armed("mint-unburned");
+    let code_of = |link: String| link.rsplit_once("token=").unwrap().1.to_string();
+    let first = code_of(auth.mint_link().expect("nothing burned yet"));
+    let now = auth::timestep(SystemTime::now());
+    auth.ledger.burn(now).unwrap();
+    let second = code_of(auth.mint_link().expect("the next step is unused"));
+    assert_ne!(first, second);
+    assert_eq!(
+        second,
+        auth::format_code(auth::totp(&auth.totp_secret, now + 1))
+    );
+    auth.ledger.burn(now + 1).unwrap();
+    assert_eq!(auth.mint_link(), None);
 }

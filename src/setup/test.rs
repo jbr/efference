@@ -241,19 +241,28 @@ mod keys;
 mod manage;
 mod subscription;
 
-/// The hand-off names what it costs before asking, and a decline says where to
-/// run it instead.
+/// The hand-off names what it costs before asking, offers where to run, and a
+/// decline says where to run it instead.
 #[test]
 fn the_handoff_names_the_cost_and_a_decline_says_where_to_go() {
-    let mut script = Script::new(vec![Answer::No]);
-    let yes =
+    let mut script = Script::new(vec![Answer::Pick("Not now")]);
+    let chosen =
         offer_project_setup(&mut script, "~/code/app", Some("anthropic/claude-sonnet-5")).unwrap();
-    assert!(!yes);
+    assert_eq!(chosen, None);
     assert!(script.said("billed as ordinary use of anthropic/claude-sonnet-5"));
-    assert!(script.said("confirm: Set up ~/code/app now?"));
+    assert!(script.said("select: Set up ~/code/app now?"));
     assert!(script.said("Run `efference` in the project you want to set up"));
 
-    let mut script = Script::new(vec![Answer::Yes]);
-    assert!(offer_project_setup(&mut script, "~/code/app", None).unwrap());
+    let mut script = Script::new(vec![Answer::Pick("In this terminal")]);
+    assert_eq!(
+        offer_project_setup(&mut script, "~/code/app", None).unwrap(),
+        Some(Surface::Terminal)
+    );
     assert!(script.said("your default model"));
+
+    let mut script = Script::new(vec![Answer::Pick("In the browser")]);
+    assert_eq!(
+        offer_project_setup(&mut script, "~/code/app", None).unwrap(),
+        Some(Surface::Browser)
+    );
 }

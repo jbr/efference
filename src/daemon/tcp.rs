@@ -216,9 +216,19 @@ impl TcpAuth {
     /// The bootstrap link: the current TOTP code in the URL *fragment*, which never
     /// reaches server or proxy logs; burning on acceptance makes scrollback and
     /// browser-history residue inert (docs/web-bind.md).
-    pub(crate) fn mint_link(&self) -> String {
-        let code = auth::totp(&self.totp_secret, auth::timestep(SystemTime::now()));
-        format!("{}/#token={}", self.public_base(), auth::format_code(code))
+    /// A link carrying a code no one has used yet: the current step's, or when
+    /// that one was just redeemed, a later step's inside the accepted skew — a
+    /// second link minted in the same 30 seconds would otherwise carry a code
+    /// already burned, and fail as a replay. `None` when every candidate is used.
+    pub(crate) fn mint_link(&self) -> Option<String> {
+        let now = auth::timestep(SystemTime::now());
+        let step = (now..=now + auth::TOTP_SKEW).find(|step| !self.ledger.is_burned(*step))?;
+        let code = auth::totp(&self.totp_secret, step);
+        Some(format!(
+            "{}/#token={}",
+            self.public_base(),
+            auth::format_code(code)
+        ))
     }
 
     /// The enrollment URI for a stock authenticator app. Host-only surface.
@@ -693,9 +703,17 @@ pub(crate) fn enrollment_routes(auth: Option<Arc<TcpAuth>>) -> Router {
 
 /// The bootstrap link: the public base with a current code in the fragment.
 async fn auth_link(auth: Arc<TcpAuth>, conn: Conn) -> Conn {
-    conn.with_status(200)
-        .with_body(serde_json::json!({ "url": auth.mint_link() }).to_string())
-        .halt()
+    match auth.mint_link() {
+        Some(url) => conn
+            .with_status(200)
+            .with_body(serde_json::json!({ "url": url }).to_string())
+            .halt(),
+        None => fail(
+            conn,
+            ErrorCode::RateLimited,
+            "every current code has been used; ask again in half a minute",
+        ),
+    }
 }
 
 /// The `otpauth://` URI an authenticator app enrolls from.

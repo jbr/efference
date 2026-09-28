@@ -239,7 +239,7 @@ pub fn cookie_is_valid(key: &[u8; 32], value: &str, now: SystemTime) -> bool {
 pub const TOTP_STEP_SECS: u64 = 30;
 
 /// Accepted clock skew, in steps, on either side of now.
-const TOTP_SKEW: u64 = 1;
+pub const TOTP_SKEW: u64 = 1;
 
 /// The timestep a moment falls in.
 pub fn timestep(now: SystemTime) -> u64 {
@@ -315,6 +315,15 @@ impl BurnLedger {
     /// machine-scoped.) `None` only when the platform reports no home directory.
     pub fn user_scoped() -> Option<Self> {
         std::env::home_dir().map(|home| Self::new(home.join(".efference").join("totp-burns")))
+    }
+
+    /// Whether `step` has been accepted already. Read without the lock: a mint
+    /// that races a burn can hand out a code that then fails as a replay, which is
+    /// the outcome the lock exists to guarantee anyway. A missing or unreadable
+    /// file reads as nothing burned.
+    pub fn is_burned(&self, step: u64) -> bool {
+        std::fs::read_to_string(&self.path)
+            .is_ok_and(|contents| contents.lines().any(|line| line.trim().parse() == Ok(step)))
     }
 
     /// Check-and-burn one accepted step: `Ok(false)` if it was already burned (a

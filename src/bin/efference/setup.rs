@@ -68,15 +68,20 @@ async fn offer_here(
         .and_then(|text| Existing::from_toml(&text).ok())
         .and_then(|existing| existing.default_model);
     // Esc at the question is a decline like any other.
-    let yes =
+    let chosen =
         efference::setup::offer_project_setup(terminal, &picker::tilde(&here), model.as_deref())
             .unwrap_or_default();
-    if !yes {
+    let Some(surface) = chosen else {
         return Ok(());
-    }
+    };
     terminal.erase();
     if let Some(kept) = kept {
         terminal.say(Tone::Good, &kept);
+    }
+    if surface == efference::setup::Surface::Browser {
+        // Always an island: a running host has its own web bind, or none, and
+        // this choice never changes one (docs/operating.md).
+        return island::run_browser(None, SessionFlags::default()).await;
     }
     match cli::live_host() {
         Some(host) => tui_new(host, None, SessionFlags::default(), theme, images, false).await,

@@ -8,6 +8,9 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- **The browser island** (docs/operating.md): the setup offer can open the session in the
+  browser on a loopback bind this terminal owns, with a prompt to reopen, copy, or print a
+  link. Loopback binds set a cookie Safari keeps, and a minted link never carries a used code.
 - **`hand_off`** (docs/tools.md): a session gives its place to a successor in the same
   directory, started fresh from the project's config, with a brief as its first turn; always
   put to the operator. Clients follow to the successor, which may archive its predecessor. The

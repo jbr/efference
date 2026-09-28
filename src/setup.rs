@@ -27,7 +27,7 @@ mod render;
 pub mod terminal;
 
 pub use flow::run;
-pub use handoff::offer_project_setup;
+pub use handoff::{Surface, offer_project_setup};
 pub use probe::{ChatGptLogin, KeyReport, LiveProbe, ModelListing, ModelReport, Probe, Target};
 pub use render::{render, write};
 

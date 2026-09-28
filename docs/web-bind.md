@@ -127,7 +127,10 @@ keeping the token out of cookies entirely on loopback would close it. A distinct
 `efference.localhost` hostname would scope the cookie away from other `localhost`
 services, but Safari does not resolve `*.localhost`.
 
-A bind to port 0 learns its port once listening, and minted links name that port.
+A bind to port 0 learns its port once listening, and minted links name that port. A
+link carries a code no one has used: the current step's, or when that was just redeemed
+the next step's, which the one-step skew accepts; with both used, no link is minted
+(`/auth/link` answers 429) rather than a dead one.
 
 **The root is not in any environment.** It is read from the store into the binding
 process and nowhere else, so no spawn site has to strip it. A tool child that wants

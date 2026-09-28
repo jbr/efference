@@ -10,14 +10,23 @@
 
 use super::*;
 
-/// Ask whether to set up `here` (as the person would read the path) now, naming
-/// the model the session would run on when the host config names one. `true`
-/// is yes; a decline has already said what to do instead.
+/// Where the setup conversation runs, when the person chooses to start it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Surface {
+    /// The TUI, in this terminal.
+    Terminal,
+    /// The web client, on a loopback page this terminal holds open.
+    Browser,
+}
+
+/// Ask whether to set up `here` (as the person would read the path) now, and
+/// where, naming the model the session would run on when the host config names
+/// one. `None` is a decline, which has already said what to do instead.
 pub fn offer_project_setup<P: Prompter>(
     prompter: &mut P,
     here: &str,
     model: Option<&str>,
-) -> Result<bool, Cancelled> {
+) -> Result<Option<Surface>, Cancelled> {
     let billed = match model {
         Some(model) => format!("billed as ordinary use of {model}"),
         None => "billed as ordinary use of your default model".to_string(),
@@ -30,12 +39,19 @@ pub fn offer_project_setup<P: Prompter>(
              file — a conversation {billed}."
         ),
     );
-    if prompter.confirm(&format!("Set up {here} now?"), true)? {
-        return Ok(true);
+    let choices = [
+        Choice::new("In this terminal"),
+        Choice::new("In the browser").detail("a local page; this terminal keeps it running"),
+        Choice::new("Not now"),
+    ];
+    match prompter.select(&format!("Set up {here} now?"), &choices)? {
+        0 => return Ok(Some(Surface::Terminal)),
+        1 => return Ok(Some(Surface::Browser)),
+        _ => {}
     }
     prompter.say(
         Tone::Plain,
         "Nothing started. Run `efference` in the project you want to set up.",
     );
-    Ok(false)
+    Ok(None)
 }

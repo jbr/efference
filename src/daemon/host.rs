@@ -581,10 +581,17 @@ pub async fn serve_host(
         if let Some(bound) = handle.info().await.tcp_socket_addr() {
             auth.bound_port(bound.port());
         }
-        let link = auth.mint_link();
         eprintln!("web: {} (bound {addr})", auth.public_base());
-        eprintln!("  {link}");
-        if open && webbrowser::open(&link).is_err() {
+        let link = auth.mint_link();
+        match &link {
+            Some(link) => eprintln!("  {link}"),
+            None => {
+                eprintln!("  (every current code is used; a link minted in half a minute works)")
+            }
+        }
+        if let Some(link) = link.filter(|_| open)
+            && webbrowser::open(&link).is_err()
+        {
             eprintln!("[could not open a browser for {link}]");
         }
         _tcp_server = Some(handle);

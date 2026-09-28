@@ -15,6 +15,10 @@
 //! when its contents are the explanation.
 
 use super::*;
+
+mod browser;
+
+pub(crate) use browser::run as run_browser;
 use efference::daemon::island::{ISLAND_LOG, ISLAND_SOCKET, island_dir};
 use std::io::IsTerminal;
 use std::os::unix::process::CommandExt;
@@ -36,7 +40,9 @@ pub(crate) struct Island {
 
 impl Island {
     /// Start the host process. It is not ready until [`wait_ready`](Self::wait_ready).
-    pub(crate) fn launch() -> Result<Self, CliError> {
+    /// `bind` is a web bind for the host to open beside its socket — the browser
+    /// island's loopback listener; the terminal island has none.
+    pub(crate) fn launch(bind: Option<&str>) -> Result<Self, CliError> {
         let home = std::env::var_os("HOME").ok_or("no HOME to place ~/.efference/islands under")?;
         let dir = island_dir(Path::new(&home), std::process::id());
         std::fs::create_dir_all(&dir)?;
@@ -48,6 +54,7 @@ impl Island {
             .arg("--socket")
             .arg(&socket)
             .args(["host", "--island"])
+            .args(bind.map(|bind| ["--bind", bind]).into_iter().flatten())
             .stdin(Stdio::piped())
             .stdout(log_file.try_clone()?)
             .stderr(log_file);
@@ -147,7 +154,7 @@ pub(crate) async fn run(
         (true, false) => eprintln!(),
         (false, _) => {}
     };
-    let mut island = Island::launch().inspect_err(|_| end_status(false))?;
+    let mut island = Island::launch(None).inspect_err(|_| end_status(false))?;
     let created = match island.wait_ready().await {
         Ok(()) => create_here(island.socket(), name, flags).await,
         Err(error) => Err(error),

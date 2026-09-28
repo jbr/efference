@@ -179,7 +179,20 @@ shows one status line, erased before the TUI takes the screen, and the boot repo
 terminal back. The log is printed only when startup fails — the host refuses to start or
 creation fails — where it is the explanation. A setup offer that launches the session erases
 its own questions first (`setup::terminal::Terminal::erase`, which counts the rows its
-prompts leave), keeping only the line naming a file the wizard wrote. Each island lives in
+prompts leave), keeping only the line naming a file the wizard wrote.
+
+**The browser island** (`src/bin/efference/island/browser.rs`) is the same launch with
+`--bind 127.0.0.1:0`: a plaintext loopback web bind on a port the kernel picks, which the
+host records once listening so its links name it ([web-bind.md](web-bind.md)). After
+creating the session, the launcher mints a link over the socket (`GET /auth/link`),
+points it at the session's page, and opens the browser. It is always an island, even with
+a host running: this choice never adds a web bind to a host. The owner is the
+foreground launcher, never the tab — reloads and stream reconnects cannot end it — and
+the terminal holds one prompt line: `o` opens the session again, `c` copies a link, `p`
+prints one, `q`, Esc, or Ctrl-C quits. Every link is minted when asked for, because a
+code works once and only for about a minute; the cookie it trades for is what keeps a
+tab signed in. Quitting erases the prompt and ends the island as the terminal island
+does. Each island lives in
 `~/.efference/islands/<launcher pid>/` (`host.sock`, `host.log`), which the host removes on a
 clean exit and leaves in place when it fails. The strip's leaving verb reads `quit` rather
 than `detach` in the owning TUI. The island ignores the `[host]` table's web bind and is
@@ -240,12 +253,13 @@ from the same metadata boot reads. A rejected key or an unknown model
 is said and can be kept.
 
 **The hand-off** (`src/setup/handoff.rs`). After writing the file, setup asks
-whether to set up the current directory now, defaulting to yes, and says what that
-entails first: an agent session that looks over the project, asks a few questions,
+whether to set up the current directory now — in this terminal (the default), in the
+browser, or not now — and says what that entails first: an agent session that looks over the project, asks a few questions,
 and writes `efference.toml`, billed as ordinary use of the default model it names.
 The wizard is free up to that point, and the question keeps the change to billed
-use from happening unannounced. Yes creates a session here — on a running host, or
-on an island — and with no project config it is the setup profile. No exits,
+use from happening unannounced. The terminal choice creates a session here — on a
+running host, or on an island — and with no project config it is the setup profile;
+the browser choice always starts a browser island (below). Not now exits,
 saying to run `efference` in the project to set up; the same question is asked on
 every later bare `efference` in a directory with no project config and no sessions,
 so setup run in the wrong directory is recovered by changing directory. A
