@@ -46,7 +46,7 @@ trillium = "1.4.0"
 # `trillium::Conn::host()` (docs/web-bind.md).
 trillium-http = "1.7"
 trillium-client = { version = "0.9.19", features = ["sse"] }
-trillium-client-retry = "0.0.1"
+trillium-client-retry = "0.1"
 trillium-rustls = "0.11.3"
 # 0.6.4 adds `UnixClientConfig` — the client-side Unix-socket connector the
 # control-channel client (src/client.rs) dials the daemon through (DESIGN §10).
