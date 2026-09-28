@@ -93,12 +93,15 @@ interview asks what it asks.
   either lets it run or holds it for the operator to approve. So grants decide what never
   needs a second look, and the scope decides how the second look judges everything else.
   A narrow grant with a clear scope is a working configuration; the spotter covers the gap.
-- **Triage** is the other model at work — name it and say what it does, since the
-  transcript shows it at work. Every
-  tool result is read before it enters the
-  agent's context, and only the lines that matter are kept — "kept 6 of 12 lines" in the
-  transcript. The full output stays in the session's log. Nothing in `efference.toml`
-  configures it; it is worth a sentence so the transcript makes sense.
+- **Triage** — name it and say what it does, since the transcript shows it at work. Every
+  tool result is read before it enters the agent's context, and only the lines that
+  matter are kept — "kept 6 of 12 lines" in the transcript. The full output stays in the
+  session's log. By default the agent's own model does this reading. With an expensive
+  main model a smaller one can take it over — for every session with `triage` under
+  `[defaults]` in `~/.efference/config.toml`, or for one session started with
+  `efference tui --new --triage-model <model>`. It is not an `efference.toml` setting,
+  so the interview asks nothing about it; a sentence is enough for the transcript to make
+  sense.
 - **The preamble** is what a session knows when it starts, before anyone says anything: the
   scope, and the files and command output the config lists under `[context]`.
 

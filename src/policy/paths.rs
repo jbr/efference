@@ -112,23 +112,30 @@ pub(super) fn path_granted(role: &Config, path: &str, perm: Perm, cwd: &Path) ->
 ///
 /// [`commands::classify_redirect_write`]: super::commands
 pub(super) fn path_granted_at(role: &Config, target: &Path, perm: Perm, cwd: &Path) -> bool {
-    let governing = role
-        .paths
-        .iter()
-        .filter_map(|(grant_path, perms)| {
-            let grant = lexical_normalize(&absolutize(grant_path, cwd));
-            target
-                .starts_with(&grant)
-                .then_some((grant.components().count(), perms))
-        })
-        .max_by_key(|(depth, _)| *depth);
-    match governing {
+    match governing_grant(role, target, cwd) {
         Some((_, perms)) => match perm {
             Perm::Read => perms.read || perms.write, // write implies read
             Perm::Write => perms.write,
         },
         None => false, // no grant covers the target at all
     }
+}
+
+/// The `[paths]` grant that decides an absolute, normalized `target` — the deepest one
+/// whose subtree contains it — resolved to its absolute form, with its perms. `None`
+/// when no grant covers the target.
+pub(crate) fn governing_grant<'a>(
+    role: &'a Config,
+    target: &Path,
+    cwd: &Path,
+) -> Option<(PathBuf, &'a Perms)> {
+    role.paths
+        .iter()
+        .filter_map(|(grant_path, perms)| {
+            let grant = lexical_normalize(&absolutize(grant_path, cwd));
+            target.starts_with(&grant).then_some((grant, perms))
+        })
+        .max_by_key(|(grant, _)| grant.components().count())
 }
 
 /// Make `path` absolute by joining it onto `cwd` if it is relative.

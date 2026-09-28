@@ -50,6 +50,12 @@ behind a change, see [`journal/`](journal/).
   catalog routes, so what each credential can see is one run's output.
 
 ### Changed
+- **The spotter's move block states where a bash command's paths resolve** (docs/permissions.md):
+  each path-shaped word and redirection target, resolved, with the grant that decides it, so
+  an in-tree `.git/info/exclude` no longer reads as outside the project.
+- **The setup session's scope names keeping efference's files out of version control**, and
+  its guide says triage runs on the agent's model unless `[defaults].triage` or
+  `--triage-model` names another.
 - **A `cd` into the session's own directory is left out of the spotter's move**
   (docs/permissions.md): both rungs judge the rest, so a habitual `cd /abs/project && …` no
   longer reads as leaving the project.

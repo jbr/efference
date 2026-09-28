@@ -342,13 +342,15 @@ mod test;
 
 mod commands;
 mod effective;
+mod path_words;
 mod paths;
 mod probe;
 
 pub use commands::promotable_command;
 pub(crate) use commands::{bash_tokens_in, simple_command_tokens, without_cd_into};
 pub use effective::{apply_config_change, effective_config};
-pub(crate) use paths::{absolutize, lexical_normalize, path_spec};
+pub(crate) use path_words::path_words;
+pub(crate) use paths::{absolutize, governing_grant, lexical_normalize, path_spec};
 pub use probe::{ProbeLedger, probe_ledger};
 
 use commands::classify_bash;

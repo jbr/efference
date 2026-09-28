@@ -279,7 +279,7 @@ pub(crate) async fn spotter_check(
                 None,
             ),
             MountedSpotter::Fork(_) => {
-                efference::spotter::preview_move(&call, sent, probe.as_deref())
+                efference::spotter::preview_move(&role, &call, sent, probe.as_deref(), &cwd)
             }
         };
         println!("{preview}\n");

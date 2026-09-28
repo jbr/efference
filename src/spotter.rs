@@ -193,17 +193,15 @@ impl Spotter for ForkSpot {
         // block: the move (plus the optional promotion probe — it rides the fresh tail, so it never
         // perturbs the cached prefix, docs/log-and-projection.md). The persona (system) + the cached block are
         // the prefix; only the move is rewritten each call (docs/permissions.md).
+        let cwd = self.cwd.clone().or_else(|| std::env::current_dir().ok());
         let turns = vec![WireTurn::User(vec![
             UserPart::Text(render_context(
                 role,
-                self.cwd
-                    .clone()
-                    .or_else(|| std::env::current_dir().ok())
-                    .as_deref(),
+                cwd.as_deref(),
                 self.scratch.as_deref(),
             )),
             UserPart::Breakpoint,
-            UserPart::Text(render_move(call, brief, chain, probe, self.cwd.as_deref())),
+            UserPart::Text(render_move(role, call, brief, chain, probe, cwd.as_deref())),
         ])];
 
         // No-op sink: the spotter's tokens are internal and must never surface on        // the control stream (mirrors the fork peek).
@@ -311,13 +309,7 @@ fn render_context(
         // log, or a poke at its own control socket, both under a denied `.efference/`).
         s.push_str("- path grants (a more specific grant overrides a broader one):\n");
         for (path, perms) in &role.paths {
-            let label = if perms.write {
-                "read, write"
-            } else if perms.read {
-                "read only"
-            } else {
-                "no access — denied, even though it sits under an allowed parent"
-            };
+            let label = grant_label(perms);
             // The absolute form leads; the configured spelling stays so a move that
             // types `../x` literally still matches. A grant already in its resolved
             // spelling renders once, unannotated.
@@ -364,6 +356,53 @@ fn render_context(
     s
 }
 
+/// How a grant's perms read in the scope block and the path facts.
+fn grant_label(perms: &crate::config::Perms) -> &'static str {
+    if perms.write {
+        "read, write"
+    } else if perms.read {
+        "read only"
+    } else {
+        "no access — denied, even though it sits under an allowed parent"
+    }
+}
+
+/// The paths a bash command names, resolved and matched to the grant that decides
+/// each (`policy::path_words`), or empty when it names none. A reviewer asked to
+/// resolve `.git/info/exclude` against the working directory and the grants itself
+/// misreads it often enough to gate in-tree work; stated as facts, the question
+/// becomes a comparison (docs/permissions.md).
+fn path_facts(command: &str, role: &Config, cwd: &std::path::Path) -> String {
+    let words = crate::policy::path_words(command, cwd);
+    if words.is_empty() {
+        return String::new();
+    }
+    let mut s = String::from(
+        "\n\nThe paths this command names, as the harness resolves them (lexically, \
+         against the working directory or the `cd` before them; the disk is not read):\n",
+    );
+    for word in words {
+        let resolved = word.resolved.display();
+        let written = if word.written { ", written" } else { "" };
+        // Only the deciding grant is stated: "outside the working directory" read
+        // as leaving scope even for a granted sibling, and the grant is what decides.
+        let grant = match crate::policy::governing_grant(role, &word.resolved, cwd) {
+            Some((grant, perms)) => format!(
+                "under the grant `{}` ({})",
+                grant.display(),
+                grant_label(perms)
+            ),
+            None => "no grant covers it".to_string(),
+        };
+        s.push_str(&format!(
+            "- `{}`{written} → `{resolved}`: {grant}\n",
+            word.word
+        ));
+    }
+    s.pop();
+    s
+}
+
 /// Render the move the session is about to make. Bash shows its command verbatim; a
 /// structured tool shows what the tool *is* — its brief — and then the call. The
 /// instruction to call `spot` rides here (the fresh tail), not in the cached context.
@@ -376,6 +415,7 @@ fn render_context(
 /// Bash needs no equivalent — its command text is self-describing, which is exactly
 /// what a bare structured call is not.
 fn render_move(
+    role: &Config,
     call: &ToolCall,
     brief: Option<&ToolBrief<'_>>,
     chain: &[String],
@@ -384,15 +424,21 @@ fn render_move(
 ) -> String {
     let body = if call.name == bash::NAME {
         match call.input.get("command").and_then(Value::as_str) {
-            // A leading `cd` into the working directory goes nowhere; the reviewer
-            // judges the rest, and is told so (`policy::without_cd_into`).
-            Some(cmd) => match cwd.and_then(|cwd| crate::policy::without_cd_into(cmd, cwd)) {
-                Some(rest) => format!(
-                    "A shell command, run in the session's working directory (its leading \
-                     `cd` into that directory is left out):\n\n    {rest}"
-                ),
-                None => format!("A shell command:\n\n    {cmd}"),
-            },
+            Some(cmd) => {
+                // A leading `cd` into the working directory goes nowhere; the reviewer
+                // judges the rest, and is told so (`policy::without_cd_into`).
+                let shown = match cwd.and_then(|cwd| crate::policy::without_cd_into(cmd, cwd)) {
+                    Some(rest) => format!(
+                        "A shell command, run in the session's working directory (its leading \
+                         `cd` into that directory is left out):\n\n    {rest}"
+                    ),
+                    None => format!("A shell command:\n\n    {cmd}"),
+                };
+                let facts = cwd
+                    .map(|cwd| path_facts(cmd, role, cwd))
+                    .unwrap_or_default();
+                format!("{shown}{facts}")
+            }
             None => format!(
                 "A `{}` call with no string command (malformed): {}",
                 call.name, call.input
@@ -463,8 +509,14 @@ fn chain_context(chain: &[String]) -> String {
 /// The exact move block [`Spotter::assess`] would send for this call — what the
 /// spotter model reads, byte for byte. The `efference dev spotter` tester prints it, so
 /// iterating on a tool's brief doesn't mean guessing at what the model saw.
-pub fn preview_move(call: &ToolCall, brief: Option<&ToolBrief<'_>>, probe: Option<&str>) -> String {
-    render_move(call, brief, &[], probe, None)
+pub fn preview_move(
+    role: &Config,
+    call: &ToolCall,
+    brief: Option<&ToolBrief<'_>>,
+    probe: Option<&str>,
+    cwd: &std::path::Path,
+) -> String {
+    render_move(role, call, brief, &[], probe, Some(cwd))
 }
 
 /// How much of a description and of an input schema ride into the move block. A

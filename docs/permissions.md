@@ -665,7 +665,6 @@ fail-closed rate) plus each verdict correlated to the call it judged and its one
 across every `.efference/*/log.jsonl` or one session; `--stance`/`--no-fallback` filter, and
 `--summary`/`--list` pick a half. The dev-facing lens for auditing how the spotter is doing.
 
-
 **A `cd` that goes nowhere is left out of the move** (`policy::without_cd_into`). Agents prefix
 their own working directory habitually (`cd /abs/project && cat .claude/x`), and a reviewer
 asked to resolve that `cd` against the working-directory line reads the move as leaving it:
@@ -675,6 +674,23 @@ with `<dir>` a literal resolving lexically to the session's cwd, both rungs judg
 prose rung's move block says the `cd` was left out, and jev's `move.command` is the rest. A
 `cd` anywhere else stays in the move for the reviewer to see. What the operator sees, and what
 runs, is the command as written; only the reviewer's copy is shortened.
+
+**A bash move states where its paths resolve** (`policy::path_words`). Below the command, the
+prose rung's move block lists each word that reads as a path — a redirection target (marked
+written), or an argument that is `.`/`..`, dot-prefixed, or contains a `/` — resolved lexically
+against the working directory or the literal `cd` before it, with the grant that decides it
+(``- `.git/info/exclude`, written → `/…/proj/.git/info/exclude`: under the grant `/…/proj`
+(read, write)``). The grants were already rendered absolute, but the move side was left for the
+model to resolve, and Haiku misread it: a first-run setup session's append to
+`.git/info/exclude` gated as "outside the project root" or "under the denied `.efference`"
+(whose name the here-doc body mentioned) in 14 of 16 replays with the live grant set, and
+cleared in 16 of 16 with the block. Here-doc and here-string bodies are data and are not
+scanned; devices (`2>/dev/null`) are not listed, since "no grant covers it" read as a write
+outside scope; words after a non-literal `cd` are not listed, since where they resolve is unknown;
+compound commands are left to the reviewer. The block names the deciding grant only: an earlier
+wording that also said "outside the working directory" moved `cd ../sibling` moves into a
+granted sibling toward gate. Only the prose rung carries it; jev reads a trained state shape.
+
 ## The config-edit loop (`src/policy.rs`, `src/agent.rs`, `src/config.rs`, `src/daemon/config_edits.rs`)
 
 A deny is not a dead-end: the orchestrator can **edit the config** at a gate. A

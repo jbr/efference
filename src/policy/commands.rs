@@ -373,7 +373,7 @@ pub(crate) fn simple_command_tokens(command: &str) -> Option<Vec<String>> {
 /// extended globbing off (bash's own default, so `@(…)` fails to parse and gates), and
 /// tilde recognition at word start only — the position where bash expands a tilde in an
 /// argument, so `~/x` gates while `HEAD~1` and `a:~/b` stay literal.
-fn parser_options() -> brush_parser::ParserOptions {
+pub(super) fn parser_options() -> brush_parser::ParserOptions {
     brush_parser::ParserOptions {
         enable_extended_globbing: false,
         posix_mode: false,
