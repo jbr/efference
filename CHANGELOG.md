@@ -50,6 +50,8 @@ behind a change, see [`journal/`](journal/).
   catalog routes, so what each credential can see is one run's output.
 
 ### Changed
+- **Decision-spotter verdicts record every axis probability in the log** (docs/permissions.md),
+  so live sessions build the calibration corpus.
 - **The spotter's move block states where a bash command's paths resolve** (docs/permissions.md):
   each path-shaped word and redirection target, resolved, with the grant that decides it, so
   an in-tree `.git/info/exclude` no longer reads as outside the project.

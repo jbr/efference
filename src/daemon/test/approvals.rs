@@ -19,6 +19,7 @@ fn the_gate_carries_the_spotter_reason() {
                 origin: crate::log::Origin::Model,
                 model: None,
                 probed_prefix: None,
+                axes: None,
             }),
         )
         .unwrap();

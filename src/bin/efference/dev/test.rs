@@ -356,6 +356,7 @@ fn spot_fixture() -> Vec<efference::log::LogEntry> {
                 origin: Origin::Model,
                 model: None,
                 probed_prefix: None,
+                axes: None,
             }),
         ),
         entry(
@@ -367,6 +368,7 @@ fn spot_fixture() -> Vec<efference::log::LogEntry> {
                 origin: Origin::Fallback,
                 model: None,
                 probed_prefix: None,
+                axes: None,
             }),
         ),
     ]

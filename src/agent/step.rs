@@ -514,6 +514,7 @@ pub(super) async fn judge<F: Frontend, S: Spotter>(
             let stance = spotting.read.stance;
             let reason = spotting.read.reason;
             let origin = spotting.origin;
+            let axes = spotting.axes;
             shared.append(
                 turn,
                 Payload::Spot(Spot {
@@ -523,6 +524,7 @@ pub(super) async fn judge<F: Frontend, S: Spotter>(
                     origin,
                     model,
                     probed_prefix: probe.clone(),
+                    axes,
                 }),
             )?;
             // The probe's answer *is* the stance: `clear_always` is the safe-vote for

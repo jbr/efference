@@ -848,6 +848,14 @@ pub struct Spot {
     /// probe rode (most calls), so old logs and unprobed calls fold to nothing.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub probed_prefix: Option<String>,
+    /// Every probability the decision rung answered, when that rung produced the
+    /// verdict (docs/permissions.md). The stance and reason are a fold over these
+    /// under the thresholds of the day; recording the vector is what lets a live
+    /// session's verdicts join the calibration corpus and replay under a different
+    /// band without re-asking. `None` from the prose rung, from a fail-closed
+    /// verdict, and on entries written before this field existed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub axes: Option<crate::spotter::jev::Axes>,
 }
 
 /// The spotter's graded disposition for one move (docs/permissions.md). It splits

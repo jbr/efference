@@ -629,8 +629,8 @@ until it is relevant), and the `watch-for` list (which the spotter holds instead
 
 Beyond turns, calls, and results, the log carries the decisions:
 
-- **`Spot`** — every spotter verdict, its stance, its one-line reason, and the prefix it was
-  asked to vouch for. Audit-only; it never reaches the wire. `efference dev spotter-log`
+- **`Spot`** — every spotter verdict, its stance, its one-line reason, the prefix it was
+  asked to vouch for, and — from the decision rung — every axis probability it answered. Audit-only; it never reaches the wire. `efference dev spotter-log`
   summarizes these across sessions.
 - **`ConfigEdit`** — every proposed, committed, or cancelled policy change, with its note.
 - **`Triage`** — what each result's peek decided to keep, and whether the verdict came from

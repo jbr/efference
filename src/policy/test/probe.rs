@@ -103,6 +103,7 @@ fn probe_ledger_folds_seen_and_votes_from_the_log() {
                 origin: Origin::Model,
                 model: None,
                 probed_prefix: probed.map(str::to_string),
+                axes: None,
             }),
         }
     }
@@ -164,6 +165,7 @@ fn probe_ledger_ignores_fallback_verdicts() {
             origin: Origin::Fallback,
             model: None,
             probed_prefix: Some("cargo".into()),
+            axes: None,
         }),
     }];
     let ledger = probe_ledger(Path::new(CWD), &Config::default(), &log);

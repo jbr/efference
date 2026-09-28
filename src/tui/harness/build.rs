@@ -197,6 +197,7 @@ impl Screenplay<'_> {
             origin: crate::log::Origin::Model,
             model: None,
             probed_prefix: None,
+            axes: None,
         }))
     }
 

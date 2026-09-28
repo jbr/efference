@@ -527,7 +527,9 @@ reported rather than a conclusion it never wrote, which also puts the deciding n
 the `Spot` log entry.
 
 **Tuning moves offline.** Because the fold is code over recorded numbers, the axis vector
-rides on `Spotting::axes` and is written into the eval's per-attempt records: `efference dev
+rides on `Spotting::axes` and is written into the eval's per-attempt records and into every
+live `Spot` entry (`Spot::axes`), so a session's verdicts join the calibration corpus as they
+happen (`eval/spotter/extract.py` carries them as `recorded.axes`): `efference dev
 spotter-bands` replays a whole corpus under a different band with no requests at all. The
 prose rung has no equivalent — every persona edit there is a fresh paid sweep. `Thresholds`
 is `JevSpot`'s analogue of `ForkSpot::with_persona`, and consequently a `--persona` against

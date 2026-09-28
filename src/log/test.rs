@@ -109,3 +109,32 @@ fn latest_title_latest_entry_wins() {
     ];
     assert_eq!(latest_title(&entries), Some("Second Title"));
 }
+
+/// A decision-rung verdict carries its whole answer vector, and an entry written
+/// before the field existed still reads (docs/permissions.md).
+#[test]
+fn a_spot_carries_the_decision_axes_and_old_entries_still_read() {
+    let axes = crate::spotter::jev::Axes {
+        in_scope: 0.94,
+        reversible: 0.97,
+        path_outside: 0.19,
+        ..Default::default()
+    };
+    let spot = Spot {
+        call_id: CallId("c1".into()),
+        stance: Stance::Clear,
+        reason: "in scope (94%) and reversible (97%).".into(),
+        origin: Origin::Model,
+        model: Some("jev-1.13.0".into()),
+        probed_prefix: None,
+        axes: Some(axes),
+    };
+    let json = serde_json::to_string(&spot).unwrap();
+    assert!(json.contains(r#""axes":{"in_scope":0.94,"#), "{json}");
+    let back: Spot = serde_json::from_str(&json).unwrap();
+    assert_eq!(back.axes, Some(axes));
+
+    let old = r#"{"call_id":"c1","stance":"clear","reason":"r","origin":"Model"}"#;
+    let back: Spot = serde_json::from_str(old).unwrap();
+    assert_eq!(back.axes, None);
+}
