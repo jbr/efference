@@ -232,6 +232,3 @@ syntect = { version = "5.3", default-features = false, features = [
 # Proving out the async mcplease before it is released.
 [patch.crates-io]
 mcplease = { path = "../mcplease" }
-# `with_max_elapsed(None)` (unreleased): a retried request is not cut short by the
-# elapsed budget (docs/transport.md). Drop once published.
-trillium-client-retry = { path = "../trillium-client-retry" }

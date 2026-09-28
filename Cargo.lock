@@ -5763,6 +5763,8 @@ dependencies = [
 [[package]]
 name = "trillium-client-retry"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f00785af2c14ba02529c1ee9aa714c6e6d56a18ae3286771afa5ebc3f2690847"
 dependencies = [
  "fastrand",
  "trillium-client",
