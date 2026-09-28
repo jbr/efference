@@ -60,6 +60,17 @@ behind a change, see [`journal/`](journal/).
   catalog routes, so what each credential can see is one run's output.
 
 ### Changed
+- **Upstream failures are retried, never shown to the agent** (docs/transport.md,
+  docs/redaction-fork.md): a timed-out or refused request joins the 12-attempt schedule
+  instead of stalling; a triage gate without a verdict retries, restarts its fork, then holds
+  its results with the session stalled instead of withholding them as an error; the spotter
+  retries a transient failure briefly. Retried requests are no longer cut short by a 30s
+  elapsed budget.
+- **Continue is "retry now"** (docs/control-api.md): `⏎` (TUI) or an empty send (web) during a
+  retry pause or a held gate fires the next attempt immediately; after a stall it retries the
+  failed request. Status lines say the retry is automatic and name the gesture.
+- **Parallel tool calls are allowed** (docs/README.md): requests no longer ask for one call per
+  turn, and the preamble no longer says to work one call at a time.
 - **Every interactive start goes through the new-session form** (docs/operating.md): a
   terminal island, the setup offer, and a picker with nothing to pick open the same form a
   running host's picker does, so the model and its settings are chosen before the TUI.

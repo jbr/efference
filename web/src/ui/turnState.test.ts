@@ -6,8 +6,7 @@ const stall: Stall = {
   reason: "retries_exhausted",
   attempts: 12,
   at: 1_754_300_000_000,
-  message:
-    "the trajectory stopped: 12 attempts in a row aborted upstream — send a turn to retry",
+  message: "the trajectory stopped: 12 attempts in a row failed upstream",
   detail: "upstream SSE stream failed mid-stream: connection reset",
 };
 
@@ -20,11 +19,17 @@ describe("the turn-state readout", () => {
   it("distinguishes an idle daemon that gave up from one that finished", () => {
     const state = turnState(false, stall);
     expect(state.kind).toBe("stalled");
-    expect(state.text).toBe(stall.message);
+    expect(state.text).toBe(`${stall.message} · send to retry`);
     expect(state.title).toBe(stall.detail);
   });
 
-  it("lets a running trajectory win over a stall left from a reconnect", () => {
-    expect(turnState(true, stall).kind).toBe("running");
+  it("reports a stall while running — a triage gate held on the upstream", () => {
+    expect(turnState(true, stall).kind).toBe("stalled");
+  });
+
+  it("says a retry wait can be cut short by an empty send", () => {
+    const state = turnState(true, null, true);
+    expect(state.kind).toBe("running");
+    expect(state.text).toBe("retrying the upstream · send to retry now");
   });
 });

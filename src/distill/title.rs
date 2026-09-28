@@ -65,6 +65,8 @@ impl ForkPeek {
         let mut record = PeekRecord::default();
         let parsed = peek_with_retries(
             self.client(agent),
+            &agent.upstream_retry(),
+            Patience::ASIDE,
             messages,
             self.tools(agent_tools),
             ToolChoice::auto(),

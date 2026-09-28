@@ -31,8 +31,8 @@ pub(super) struct ResponsesRequest<'a> {
     /// Function tools in the Responses spelling ([`tool_definitions`]).
     pub tools: Vec<Value>,
     pub tool_choice: Value,
-    /// Mirrors Messages `disable_parallel_tool_use: true` — one call per turn
-    /// (docs/README.md).
+    /// Mirrors Messages `disable_parallel_tool_use`: allowed under `auto`, off
+    /// under a forced choice, whose answer is one verdict (docs/README.md).
     pub parallel_tool_calls: bool,
     /// Stateless replay: the log is the only history, and encrypted reasoning
     /// arrives by default when nothing is stored (docs/transport.md).

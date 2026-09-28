@@ -93,12 +93,9 @@ pub(super) fn an_interrupted_call_is_paired_but_says_nothing_and_the_operator_sp
 /// A completion that carried several calls produces a **fully-paired** log, and
 /// `project` merges the results into one user message (docs/README.md).
 ///
-/// One tool call per turn is *requested* of the provider via
-/// `disable_parallel_tool_use`, but it is only a request: no OpenRouter-routed endpoint
-/// lists the equivalent knob in its supported parameters, so a provider may return
-/// several calls and the flag is ignored by design. The loop therefore has to handle
-/// N ≥ 1 rather than assume N = 1 — every `tool_use` gets exactly one `tool_result`, or
-/// projection orphans it and the API rejects the request.
+/// Parallel calls are allowed under `auto`, so the loop handles N ≥ 1 — every
+/// `tool_use` gets exactly one `tool_result`, or projection orphans it and the API
+/// rejects the request.
 #[test]
 pub(super) fn a_multi_call_completion_projects_a_fully_paired_wire() {
     use crate::project::ApiBlock;

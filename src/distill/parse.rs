@@ -160,35 +160,56 @@ pub(super) fn parse_retain(completion: &Completion, offered: &[String]) -> Optio
         return None;
     };
     let calls = output.tool_calls().ok()?;
-    let retain = calls.iter().find(|c| c.name == RETAIN)?;
-    let RetainInput {
-        results,
-        keep,
-        note,
-        intent_feedback,
-        inbox,
-        background,
-        surfaced,
-    } = RetainInput::deserialize(&retain.input).ok()?;
+    // The shared envelope allows parallel calls (docs/README.md), so a peek may
+    // split its verdict across several `retain` calls — one per result, say. Each
+    // is read and their answers merged; any that does not parse makes the whole
+    // verdict unusable, as a single malformed call does.
+    let inputs = calls
+        .iter()
+        .filter(|c| c.name == RETAIN)
+        .map(|c| RetainInput::deserialize(&c.input).ok())
+        .collect::<Option<Vec<_>>>()?;
+    if inputs.is_empty() {
+        return None;
+    }
 
-    let mut verdicts: Vec<ResultVerdict> = results
-        .into_iter()
-        .map(|r| ResultVerdict {
+    let mut verdicts: Vec<ResultVerdict> = Vec::new();
+    let mut flat = None;
+    let (mut dispositions, mut bg) = (Vec::new(), Vec::new());
+    let mut surfaced: Vec<String> = Vec::new();
+    for input in inputs {
+        let RetainInput {
+            results,
+            keep,
+            note,
+            intent_feedback,
+            inbox,
+            background,
+            surfaced: named,
+        } = input;
+        verdicts.extend(results.into_iter().map(|r| ResultVerdict {
             label: r.result,
             keep: parse_keep(&r.keep),
             note: r.note,
             intent_feedback: r.intent_feedback,
             raw_keep: r.keep,
-        })
-        .collect();
+        }));
+        if flat.is_none() {
+            flat = keep.map(|keep| (keep, note, intent_feedback));
+        }
+        let (ibx, b) = collect_dispositions(inbox, background);
+        dispositions.extend(ibx);
+        bg.extend(b);
+        surfaced.extend(named);
+    }
     // Both id-free shapes resolve only against a single-result gate, and only when the
     // array didn't already answer it.
     if let [only] = offered
         && !verdicts.iter().any(|v| v.label == *only)
     {
-        match (keep, verdicts.as_mut_slice()) {
+        match (flat, verdicts.as_mut_slice()) {
             // Flat form — the shape the tail instruction asks for on a single gate.
-            (Some(keep), _) => verdicts.push(ResultVerdict {
+            (Some((keep, note, intent_feedback)), _) => verdicts.push(ResultVerdict {
                 label: only.clone(),
                 keep: parse_keep(&keep),
                 note,
@@ -202,7 +223,6 @@ pub(super) fn parse_retain(completion: &Completion, offered: &[String]) -> Optio
         }
     }
 
-    let (dispositions, bg) = collect_dispositions(inbox, background);
     Some(ParsedRetain {
         results: verdicts,
         inbox: dispositions,

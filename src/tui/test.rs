@@ -65,12 +65,12 @@ fn parses_upstream_retry() {
         "attempt": 2,
         "budget": 12,
         "next_attempt_at": 1754300002000u64,
-        "message": "stream aborted, retrying (2 of 12)",
+        "message": "attempt 2 of 12 failed upstream, retrying",
         "detail": "upstream SSE stream failed mid-stream: connection reset",
     });
     let retry = parse_upstream_retry(&topic).expect("upstream retry");
     assert_eq!(retry.surface, "peek");
-    assert_eq!(retry.message, "stream aborted, retrying (2 of 12)");
+    assert_eq!(retry.message, "attempt 2 of 12 failed upstream, retrying");
 }
 
 #[test]
@@ -78,43 +78,41 @@ fn null_upstream_retry_is_the_all_clear() {
     assert!(parse_upstream_retry(&serde_json::Value::Null).is_none());
 }
 
-/// The indicator leads with the daemon's own sentence, never the status code, and
-/// marks a fork peek's retry apart from a turn's (docs/transport.md).
+/// The indicator leads with the daemon's own sentence, never the status code, marks
+/// a triage retry apart from a turn's, and says `⏎` retries now (docs/transport.md).
 #[test]
 fn retry_indicator_names_the_surface() {
     let view = |surface: &str| UpstreamRetryView {
         surface: surface.into(),
-        message: "stream aborted, retrying (2 of 12)".into(),
+        message: "attempt 2 of 12 failed upstream, retrying".into(),
     };
     assert_eq!(
         upstream_retry_indicator(Some(&view("turn"))).unwrap(),
-        "↻ stream aborted, retrying (2 of 12)"
+        "↻ attempt 2 of 12 failed upstream, retrying · ⏎ retries now"
     );
     assert_eq!(
         upstream_retry_indicator(Some(&view("peek"))).unwrap(),
-        "↻ peek: stream aborted, retrying (2 of 12)"
+        "↻ triage: attempt 2 of 12 failed upstream, retrying · ⏎ retries now"
     );
     assert!(upstream_retry_indicator(None).is_none());
 }
 
 /// The `stall` topic is what tells an idle TUI that the last trajectory gave up
-/// rather than finished (docs/transport.md). Only the lead line is kept, and it
-/// renders verbatim; `null` — a trajectory running again — is no indicator.
+/// rather than finished (docs/transport.md). Only the lead line is kept; it renders
+/// verbatim with the recovery gesture; `null` — a trajectory running again — is no indicator.
 #[test]
 fn stall_indicator_shows_the_daemons_lead_line() {
     let topic = serde_json::json!({
         "reason": "retries_exhausted",
         "attempts": 12,
         "at": 1754300002000u64,
-        "message": "the trajectory stopped: 12 attempts in a row aborted \
-                    upstream — send a turn to retry",
+        "message": "the trajectory stopped: 12 attempts in a row failed upstream",
         "detail": "upstream SSE stream failed mid-stream: connection reset",
     });
     let stall = parse_stall(&topic).expect("stall");
     assert_eq!(
         stall_indicator(Some(&stall)).unwrap(),
-        "⚠ the trajectory stopped: 12 attempts in a row aborted upstream — send a \
-         turn to retry"
+        "⚠ the trajectory stopped: 12 attempts in a row failed upstream · ⏎ to retry"
     );
     assert!(parse_stall(&serde_json::Value::Null).is_none());
     assert!(stall_indicator(None).is_none());

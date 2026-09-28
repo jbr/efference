@@ -147,6 +147,7 @@ mod review;
 mod status;
 mod subscriptions;
 mod tools;
+mod upstream_hold;
 mod views;
 
 mod host;

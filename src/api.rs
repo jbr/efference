@@ -379,7 +379,7 @@ pub use diagnostics::{
 };
 pub(crate) use endpoint::codex_cached_credentials;
 pub use endpoint::{Endpoint, ProbeResponse, sticky_session_id};
-pub use failure::FailureClass;
+pub use failure::{FailureClass, OpenError, error_class};
 pub use plan::{PlanLimit, PlanSnapshot, PlanState, PlanWindow, plan_state};
 #[cfg(test)]
 pub(crate) use provider::seed_codex_catalog;

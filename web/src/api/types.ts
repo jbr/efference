@@ -490,25 +490,32 @@ export interface UpstreamRetry {
   // Absolute Unix millis at which the next attempt fires; the client subtracts,
   // so the daemon never re-emits a ticking field.
   next_attempt_at: number;
-  // Leads with what is happening — "stream aborted, retrying (2 of 12)". The
+  // Leads with what is happening — "attempt 2 of 12 failed upstream, retrying". The
   // status code and the upstream's words are `detail`, not the headline.
   message: string;
   detail: string;
 }
 
-// A trajectory that ended without finishing (docs/transport.md). The loop
-// returns to idle on the failure paths that produce it, so `running: false`,
-// no gate, and an empty inbox look exactly like a finished run; this topic is
-// the difference. Level-triggered: `null` once a trajectory starts again.
+// A trajectory that stopped short (docs/transport.md). On the turn's failure
+// paths the loop returns to idle, so `running: false`, no gate, and an empty
+// inbox look exactly like a finished run; this topic is the difference. A
+// triage gate held on the upstream (the `triage_*` reasons) stalls with the
+// loop still running (docs/redaction-fork.md). Either way `POST
+// /loop/continue` retries. Level-triggered: `null` once the work resumes.
 export interface Stall {
   // Why it stopped short.
-  reason: "retries_exhausted" | "request_failed" | "upstream_refused";
+  reason:
+    | "retries_exhausted"
+    | "request_failed"
+    | "upstream_refused"
+    | "triage_unavailable"
+    | "triage_defect";
   // Attempts spent, where the failure path counts them.
   attempts: number | null;
   // Absolute Unix millis at which the loop gave up.
   at: number;
-  // Leads with what happened and what recovers it — the same register the
-  // retry topic's `message` uses.
+  // Leads with what happened — the same register the retry topic's `message`
+  // uses. The recovery is the client's own gesture, so clients add it.
   message: string;
   // The upstream's own words for the failure that ended the trajectory.
   detail: string;

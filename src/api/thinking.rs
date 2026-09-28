@@ -168,18 +168,20 @@ pub(super) fn is_recognized_adaptive_claude(model: &str) -> bool {
     (model.contains("claude") || model.contains("anthropic")) && !model.contains("haiku")
 }
 
-/// The `tool_choice` field. `disable_parallel_tool_use` is always set, so the
-/// model emits **at most one** `tool_use` per turn (docs/README.md) — never
-/// varied, so it never invalidates the cache. `auto()` lets the model decide
-/// whether to call a tool; `force(name)` makes it call exactly that one, which
-/// only the spotter's `spot` does (docs/permissions.md) — forcing moves the
-/// prefix relative to the shared envelope every other call type sends.
+/// The `tool_choice` field. `auto()` lets the model decide whether to call a
+/// tool, and how many to call at once (docs/README.md); `force(name)` makes it
+/// call exactly that one, which only the spotter's `spot` does
+/// (docs/permissions.md) — forcing moves the prefix relative to the shared
+/// envelope every other call type sends. A forced choice also sets
+/// `disable_parallel_tool_use`, because its answer is one verdict; `auto` omits
+/// the field.
 #[derive(Serialize, Clone, Copy)]
 pub struct ToolChoice {
     #[serde(rename = "type")]
     kind: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
     name: Option<&'static str>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
     disable_parallel_tool_use: bool,
 }
 
@@ -188,7 +190,7 @@ impl ToolChoice {
         Self {
             kind: "auto",
             name: None,
-            disable_parallel_tool_use: true,
+            disable_parallel_tool_use: false,
         }
     }
 

@@ -71,7 +71,7 @@ fn responses_envelope_matches_expected_wire_bytes() {
         input: encode_responses(&turns, "you are a harness", PromptCachePolicy::Explicit),
         tools: tool_definitions(&tools),
         tool_choice: tool_choice_value(&ToolChoice::auto()),
-        parallel_tool_calls: false,
+        parallel_tool_calls: true,
         store: false,
         include: None,
         truncation: Some("disabled"),
@@ -90,7 +90,7 @@ fn responses_envelope_matches_expected_wire_bytes() {
         r#""input":[{"type":"message","role":"developer","content":[{"type":"input_text","text":"you are a harness"}]},"#,
         r#"{"type":"message","role":"user","content":[{"type":"input_text","text":"hello","prompt_cache_breakpoint":{"mode":"explicit"}}]}],"#,
         r#""tools":[{"description":"run a command","name":"bash","parameters":{"type":"object"},"strict":false,"type":"function"}],"#,
-        r#""tool_choice":"auto","parallel_tool_calls":false,"store":false,"truncation":"disabled","max_output_tokens":4096,"#,
+        r#""tool_choice":"auto","parallel_tool_calls":true,"store":false,"truncation":"disabled","max_output_tokens":4096,"#,
         r#""reasoning":{"effort":"low","summary":"auto"},"temperature":0.7,"prompt_cache_key":"sess","#,
         r#""prompt_cache_options":{"mode":"explicit"},"stream":true}"#,
     );
@@ -110,7 +110,7 @@ fn codex_profile_envelope_matches_expected_wire_bytes() {
         input: encode_responses(&turns, "", PromptCachePolicy::None),
         tools: Vec::new(),
         tool_choice: tool_choice_value(&ToolChoice::auto()),
-        parallel_tool_calls: false,
+        parallel_tool_calls: true,
         store: false,
         include: Some(vec!["reasoning.encrypted_content"]),
         truncation: None,
@@ -127,7 +127,7 @@ fn codex_profile_envelope_matches_expected_wire_bytes() {
     let expected = concat!(
         r#"{"model":"gpt-5.6-luna","instructions":"you are a harness","#,
         r#""input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"hello"}]}],"#,
-        r#""tools":[],"tool_choice":"auto","parallel_tool_calls":false,"store":false,"#,
+        r#""tools":[],"tool_choice":"auto","parallel_tool_calls":true,"store":false,"#,
         r#""include":["reasoning.encrypted_content"],"reasoning":{"summary":"auto"},"#,
         r#""prompt_cache_key":"sess","stream":true}"#,
     );

@@ -12,7 +12,7 @@ const retry = (
   attempt,
   budget: 12,
   next_attempt_at: NOW + 4_000,
-  message: `stream aborted, retrying (${attempt} of 12)`,
+  message: `attempt ${attempt} of 12 failed upstream, retrying`,
   detail: "upstream SSE stream failed mid-stream: connection reset",
 });
 
@@ -32,14 +32,14 @@ describe("the upstream chip", () => {
 
   it("leads with the retry message, not the status, while one is in flight", () => {
     const chip = upstreamChip({ status: 529, count: 2 }, retry("turn", 2));
-    expect(chip?.text).toBe("↻ stream aborted, retrying (2 of 12)");
+    expect(chip?.text).toBe("↻ attempt 2 of 12 failed upstream, retrying");
     expect(chip?.retrying).toBe(true);
     expect(chip?.text).not.toContain("529");
   });
 
-  it("marks a fork peek's retry apart from a turn's", () => {
+  it("marks a triage retry apart from a turn's", () => {
     expect(upstreamChip(null, retry("peek", 3))?.text).toBe(
-      "↻ peek: stream aborted, retrying (3 of 12)",
+      "↻ triage: attempt 3 of 12 failed upstream, retrying",
     );
   });
 

@@ -340,32 +340,65 @@ is no freeform parsing. The verdict is one of three forms:
 `retain(none)` is not silent: the note stays on the canonical wire so the agent
 doesn't re-run what it just disowned — inline dead-end shedding at the source.
 
-An aborted peek stream is retried first, on the main loop's budget and schedule
-([transport.md](transport.md)) — the fork's tail is throwaway, so the retry re-sends
-the same bytes over the warm prefix. When those attempts are exhausted, when the
-request itself fails, or when the in-fork retries are exhausted without a usable
-verdict, the gate **withholds the output as a hard error** — there is no keep-all
-fallback. Each result's wire form becomes `WireState::TriageFailed`: an error
-`tool_result` (`is_error` forced true) saying the output was withheld and why, and
-that the call itself ran to completion — so the agent treats it exactly like a failed
-call, deciding whether to re-issue it with side effects in mind, and the operator sees
-the same error in the transcript. The message attributes the failure to the harness
-rather than to the call, and makes the re-issue advice conditional on re-running being
-safe: agents have read an unattributed triage failure as their own tool failing and
-adapted a tool-use strategy that was never the problem, and a blind re-issue of a
-stateful command has turned a passing result into a failing one. The full untriaged raw is never the fallback:
-`WireState` is fixed once, so an uncurated result would sit in the cached prefix for
-the rest of the session with every later turn paying for it. `raw` stays in the log
-(the TUI can flip the result to raw), and the `Triage` records the same **breadcrumb**
-in `raw_keep`: the model's unparseable `retain` input, the tool it called instead, or
-the transport error — plus which attempt gave up. Without that, a malformed verdict, a
-wrong-tool call and a 429 are indistinguishable in the log after the fact. A **coverage**
-rejection names what the verdict did answer as well as what it missed, for the same
-reason: "answered nothing" and "answered twenty-six ids that were never offered" are
-different defects, and the second is a prompt-scoping failure the first gives no hint
-of — a session's worth of gates failed that way with nothing in the log to say so. The message
-is rendered by one shared function (`render_triage_failure`, stable
-"result withheld — triage failed" prefix) so the wire and the TUI say the same thing.
+### A gate that cannot triage holds
+
+The gate never shows the agent a triage failure, and never falls back to the untriaged
+raw. It retries until it has a verdict or the operator stops the turn:
+
+- **Upstream failures** — an aborted peek stream, or a peek request that failed
+  transiently — are retried on the main loop's budget and schedule
+  ([transport.md](transport.md)). The fork's tail is throwaway, so the retry re-sends
+  the same bytes over the warm prefix.
+- **Unusable verdicts** — the wrong tool, no tool, malformed or incomplete input — get
+  bounded in-fork retries (`PEEK_ATTEMPTS`), and when those are spent the fork is
+  dropped and a **fresh fork** starts from the ask alone (`PEEK_FORKS`, three), with
+  none of the rejected turns in its tail. A fork that has argued itself into a wrong
+  shape tends to stay there.
+- **Still no verdict** — the upstream schedule ran out or the upstream refused, or
+  every fork came back unusable — and the loop **holds** (`agent/gate.rs`). The batch's
+  results stay in the loop, unappended; the session stalls with
+  `StallReason::TriageUnavailable` (upstream) or `StallReason::TriageDefect` (every
+  fork unusable, which is a harness defect and is logged at error level as one) while
+  the loop keeps running. The operator's continue runs the gate again from the top;
+  the operator's interrupt ends the turn with each result withheld as the interrupt's
+  *after* juncture withholds one — `WireState::Elided`, nothing that says triage
+  failed, and the operator's own message next on the wire
+  ([control-channel.md](control-channel.md)).
+
+Why not an error on the wire: the gate used to withhold each result as
+`WireState::TriageFailed`, a hard error saying the call ran and its output was
+withheld. Every wording of that message was a problem for the agent to solve. It had
+to decide whether to re-issue a call whose side effects already stand — a blind
+re-issue of a stateful command has turned a passing result into a failing one — and
+agents read it as their own tool failing even when it named the harness ("That
+listing hit a harness failure. Retrying.", `.efference/still-cliff`, 2026-09-28).
+Failing a harness step is the harness's problem, so the harness waits on it rather
+than handing it to the agent. The variant stays in `WireState`, no longer written, so
+logs that carry it still load and project as they did.
+
+Why not keep-all: `WireState` is fixed once, so an uncurated result would sit in the
+cached prefix for the rest of the session with every later turn paying for it.
+
+A hold is visible to the operator — the `stall` topic, the TUI's status bar, the web
+composer's readout — but the results themselves are not yet, because nothing is on the
+log until the gate decides their wire form (backlog/result-before-triage.md). A host
+that stops during a hold loses them as it would mid-tool.
+
+**Every attempt leaves a breadcrumb.** The `Triage` records the attempts it took in
+`retries` — the model's unparseable `retain` input, the tool it called instead, or the
+transport error, each stamped with its fork and attempt, plus a `held: …` line for each
+hold the operator retried. They land on the `Triage` of the attempt that finally
+succeeded, so a recovered failure is still in the corpus. Without them, a malformed
+verdict, a wrong-tool call and a 429 are indistinguishable in the log after the fact. A
+**coverage** rejection names what the verdict did answer as well as what it missed, for
+the same reason: "answered nothing" and "answered twenty-six ids that were never
+offered" are different defects, and the second is a prompt-scoping failure the first
+gives no hint of — a session's worth of gates failed that way with nothing in the log
+to say so.
+
+**A verdict may arrive in parallel calls.** The shared envelope allows parallel tool
+calls ([README.md](README.md)), so a peek may answer a batch in several `retain` calls
+— one per result, say. They are merged into one verdict before coverage is checked.
 
 ## Line numbers are the coordinate system
 

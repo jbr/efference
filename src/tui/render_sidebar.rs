@@ -257,8 +257,9 @@ impl<'a> InteractiveState<'a> {
                 );
                 y += 1;
             }
-            // A failed gate withholds its result's output entirely — a distinct
-            // condition from a low ratio, so it is stated rather than folded into one.
+            // A result an older harness withheld on a failed gate (`TriageFailed`,
+            // no longer written) carries no output at all — a distinct condition
+            // from a low ratio, so it is stated rather than folded into one.
             if u.withheld_results > 0 && y < bottom {
                 put(
                     buf,

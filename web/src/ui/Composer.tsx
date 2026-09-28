@@ -39,6 +39,7 @@ export function Composer({
   pace,
   running,
   stall,
+  retrying,
   gatePending,
 }: {
   submit: (text: string, attachments: Attachment[]) => Promise<void>;
@@ -50,6 +51,9 @@ export function Composer({
   /** The trajectory gave up rather than finished (docs/transport.md): the
    * turn-state readout says so, since `running: false` alone cannot. */
   stall: Stall | null;
+  /** A retry of the upstream is waiting (docs/transport.md): an empty send
+   * retries now, and the readout says so. */
+  retrying: boolean;
   /** A gate float may own the above-dock slot; the compose chip yields to
    * it (the float carries its own steering input). */
   gatePending: boolean;
@@ -190,7 +194,7 @@ export function Composer({
     }
   }
 
-  const turn = turnState(running, stall);
+  const turn = turnState(running, stall, retrying);
   return (
     <>
       {collapsed && !gatePending && (

@@ -140,8 +140,9 @@ async fn wait_until(what: &str, mut ready: impl FnMut() -> bool) {
 }
 
 /// **An interrupt during the peek ends the turn there.** The press ends the peek's
-/// read and withholds its verdict; the loop then consumes the latch after the
-/// gate and goes idle without another request. Left set, the latch rides into the
+/// read and the results are withheld as the interrupt's *after* juncture withholds
+/// one (`Elided`, nothing blaming triage); the loop then consumes the latch after
+/// the gate and goes idle without another request. Left set, the latch rides into the
 /// next completion and stops its first call as "aborted by user" — the model's
 /// answer to whatever the operator queued to explain the press.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -193,11 +194,11 @@ async fn an_interrupt_during_the_peek_ends_the_turn_at_the_gate() {
         log.iter().any(|e| matches!(
             &e.payload,
             Payload::ToolResult {
-                wire: WireState::TriageFailed { .. },
+                wire: WireState::Elided,
                 ..
             }
         )),
-        "the ran call's result is logged under the withheld verdict"
+        "the ran call's result is logged withheld, as at the interrupt's after juncture"
     );
 
     host.shut_down().await;

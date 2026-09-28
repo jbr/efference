@@ -181,9 +181,11 @@ impl<'a> InteractiveState<'a> {
             }
             // Empty composer, operator's turn: `⏎` hands control back with no input
             // (docs/tui.md) — the zero-token continue, which the composer would
-            // otherwise swallow as a no-op. Gated on the loop being idle, so a stray
-            // `⏎` during a generation stays the silent no-op it has always been; the
-            // daemon re-checks the same preconditions and declines a race.
+            // otherwise swallow as a no-op. Gated on the loop being idle or waiting
+            // on the upstream (a retry pause, a held triage gate — where the continue
+            // retries now), so a stray `⏎` during a generation stays the silent no-op
+            // it has always been; the daemon re-checks the same preconditions and
+            // declines a race.
             if key.code == KeyCode::Enter
                 && !key.modifiers.contains(KeyModifiers::ALT)
                 && self.composer.is_empty()
@@ -195,7 +197,7 @@ impl<'a> InteractiveState<'a> {
                     self.submit_composer(String::new());
                     return false;
                 }
-                if !self.is_loop_active() {
+                if !self.is_loop_active() || self.upstream_retry.is_some() || self.stall.is_some() {
                     self.continue_trajectory();
                     return false;
                 }

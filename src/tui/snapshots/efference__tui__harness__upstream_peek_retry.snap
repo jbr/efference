@@ -1,5 +1,6 @@
 ---
 source: src/tui/harness.rs
+assertion_line: 444
 expression: self.render()
 ---
     0         1         2         3         4         5         6         7         
@@ -17,5 +18,5 @@ expression: self.render()
  9 │   interrupt ⎋⎋     pause ⎋     pace fast     sessions s     theme t     help ? │
 10 │›                                                                               │
    │  ^                                                                             │
-11 │   ↻ peek: stream aborted, retrying (3 of 12)  efference — ↑ controls           │
+11 │   ↻ triage: attempt 3 of 12 failed upstream, retrying · ⏎ retries now  efferenc│
    └────────────────────────────────────────────────────────────────────────────────┘

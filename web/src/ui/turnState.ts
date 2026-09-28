@@ -1,8 +1,11 @@
-// The composer status bar's turn-state readout (docs/web-client.md). Three
-// conditions, from two level-triggered topics: the loop is running, it is idle
-// after finishing, or it is idle after giving up (docs/transport.md). The third
-// is the one `running` alone cannot say — a stalled session and a finished one
-// are the same `false` — so the `stall` topic decides it.
+// The composer status bar's turn-state readout (docs/web-client.md). Four
+// conditions, from three level-triggered topics: the loop is running, it is
+// waiting to retry the upstream, it is idle after finishing, or it has stopped
+// short (docs/transport.md). A stall is the one `running` alone cannot say — a
+// stalled session and a finished one are the same `false`, and a triage gate
+// held on the upstream is stalled while still `true` — so the `stall` topic
+// decides it. Both the retry wait and the stall name the recovery: an empty
+// send, which the daemon takes as "retry now".
 
 import type { Stall } from "../api/types.ts";
 
@@ -16,17 +19,28 @@ export interface TurnState {
 }
 
 /**
- * The readout for the current pair of topic values. A pure function: no clock
- * is read, so the `at` the stall carries is not rendered as an elapsed time.
- *
- * A stall while `running` is true cannot happen — the daemon clears the topic
- * as a trajectory starts — but if a client sees that pair across a reconnect,
- * running wins: it describes what the daemon is doing now.
+ * The readout for the current topic values. A pure function: no clock is read,
+ * so neither the stall's `at` nor the retry's `next_attempt_at` is rendered as
+ * a time.
  */
-export function turnState(running: boolean, stall: Stall | null): TurnState {
-  if (running) return { text: "running…", kind: "running" };
+export function turnState(
+  running: boolean,
+  stall: Stall | null,
+  retrying = false,
+): TurnState {
   if (stall !== null) {
-    return { text: stall.message, title: stall.detail, kind: "stalled" };
+    return {
+      text: `${stall.message} · send to retry`,
+      title: stall.detail,
+      kind: "stalled",
+    };
   }
+  if (running && retrying) {
+    return {
+      text: "retrying the upstream · send to retry now",
+      kind: "running",
+    };
+  }
+  if (running) return { text: "running…", kind: "running" };
   return { text: "your turn", kind: "idle" };
 }

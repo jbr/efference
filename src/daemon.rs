@@ -139,6 +139,14 @@ pub enum StallReason {
     /// rejected request, a bad credential — so the loop stalled on the first
     /// attempt rather than spend the schedule (docs/transport.md).
     UpstreamRefused,
+    /// The triage gate could not reach its model — the schedule ran out, or the
+    /// upstream refused — so the loop holds the batch's results, unshown, until a
+    /// retry succeeds or the operator interrupts (docs/redaction-fork.md).
+    TriageUnavailable,
+    /// The triage model answered every fork and never usably: a harness defect,
+    /// logged as one. The loop holds the results the same way
+    /// (docs/redaction-fork.md).
+    TriageDefect,
 }
 
 /// A trajectory that ended without finishing (docs/transport.md).
@@ -847,12 +855,16 @@ impl Session {
     /// returning to idle without finishing. Read back by the `stall` topic.
     pub(crate) fn set_stall(&self, stall: Stall) {
         *self.stall.lock().unwrap() = Some(stall);
+        // A stall is a decision point (`is_settled`): a held gate reaches it with the
+        // loop still running, so the settle waiters are woken here, not only at park.
+        self.settle_changed.notify_waiters();
         self.touch_state();
     }
 
-    /// Clear the stall: a trajectory is starting, so the last one's outcome is no
-    /// longer the current condition. Called at the top of every trajectory rather
-    /// than on a successful completion, so the topic is never both set and running.
+    /// Clear the stall: a trajectory is starting, or a held gate is retrying, so the
+    /// last outcome is no longer the current condition. Called when the work
+    /// resumes rather than on a successful completion; the one time the topic is set
+    /// while the loop runs is a held triage gate (docs/redaction-fork.md).
     pub(crate) fn clear_stall(&self) {
         let mut stall = self.stall.lock().unwrap();
         if stall.is_none() {

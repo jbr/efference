@@ -31,9 +31,10 @@ fn retry_and_failure_are_level_triggered_in_the_status_bar() {
         status: 529,
         count: 2,
     })));
-    play.event(retry("turn", "stream aborted, retrying (2 of 12)"));
+    play.event(retry("turn", "attempt 2 of 12 failed upstream, retrying"));
     assert!(
-        play.find("stream aborted, retrying (2 of 12)").is_some(),
+        play.find("attempt 2 of 12 failed upstream, retrying")
+            .is_some(),
         "the retry message renders verbatim"
     );
     assert!(
@@ -62,19 +63,19 @@ fn turn_retry_status_line() {
         status: 529,
         count: 2,
     })));
-    play.event(retry("turn", "stream aborted, retrying (2 of 12)"));
+    play.event(retry("turn", "attempt 2 of 12 failed upstream, retrying"));
     play.snapshot("upstream_turn_retry");
 }
 
-/// A fork peek's retry carries a `peek:` prefix — an exhausted peek withholds a
-/// verdict where an exhausted turn ends the trajectory, so the two are not the
-/// same event to an operator watching a live run.
+/// A triage peek's retry carries a `triage:` prefix — the wait sits between tool
+/// results, not in a generation, so the two are not the same event to an operator
+/// watching a live run.
 #[test]
 fn peek_retry_status_line() {
     let mut play = Screenplay::new(80, 12);
     play.user("do a thing");
     play.event(TuiEvent::Running(true));
-    play.event(retry("peek", "stream aborted, retrying (3 of 12)"));
+    play.event(retry("peek", "attempt 3 of 12 failed upstream, retrying"));
     play.snapshot("upstream_peek_retry");
 }
 
@@ -87,14 +88,12 @@ fn a_stalled_trajectory_stays_visible_at_idle() {
     let mut play = Screenplay::new(80, 12);
     play.user("do a thing");
     play.event(TuiEvent::Running(true));
-    play.event(retry("turn", "stream aborted, retrying (12 of 12)"));
+    play.event(retry("turn", "attempt 11 of 12 failed upstream, retrying"));
 
     // The budget is spent: the retry clears, the stall is set, the loop parks.
     play.event(TuiEvent::UpstreamRetry(None));
     play.event(TuiEvent::Stall(Some(StallView {
-        message: "the trajectory stopped: 12 attempts in a row aborted upstream \
-                  — send a turn to retry"
-            .into(),
+        message: "the trajectory stopped: 12 attempts in a row failed upstream".into(),
     })));
     play.event(TuiEvent::Running(false));
     assert!(play.find("retrying").is_none(), "nothing is being retried");

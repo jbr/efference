@@ -309,9 +309,15 @@ is a public record of a harness that already announces itself in its `User-Agent
 request. The handler retries the replay-safe Messages POSTs (their serialized
 request body is an owned `String`) on 429, 500, 502, 503, and 504. Other 4xx
 responses remain terminal, so malformed or oversized requests fail without
-replaying them. It makes at most four total attempts and has a 30-second
-wall-clock budget; an HTTP `Retry-After` is honored only within that same
-budget. The set is shared by both dialects and is a superset of what OpenAI's
+replaying them. It makes at most four total attempts and has **no** wall-clock
+budget (`with_max_elapsed(None)`); an HTTP `Retry-After` is waited out in place up
+to 30 seconds, and a longer one surfaces as the failed attempt for the loop's
+schedule (below). There was a 30-second budget, and the handler enforces a
+budget by clamping each retry's timeout to what remains of it — so after a 503,
+the retry of a large uncached prompt on a model whose time to first byte is near
+30 seconds was cut off at the clamp, and the attempt failed for the clamp rather
+than for the upstream (observed 2026-09-28, `.efference/still-cliff`: an
+overloaded 503 followed each time by "Conn took longer than 28.4s"). The set is shared by both dialects and is a superset of what OpenAI's
 error guide names as retryable (429 rate limits and `slow_down`, 500, 503
 `server_is_overloaded`, each with `Retry-After` when present); the guide's
 non-retryable 429s — exhausted credit, spend and usage limits — are the body
@@ -323,7 +329,12 @@ its body once, a 503 open retried and queued, and the ceiling cutting a
 Responses stream mid-text.
 
 The retry handler covers failures while opening a response, before an SSE stream
-has yielded any deltas. A connection that has returned 200 and then dies
+has yielded any deltas. When it gives up, `Client::complete` returns an
+`OpenError` carrying its class (`api/failure.rs`): no response at all (a refused
+or timed-out connection) and a retryable status are **transient**, unless the
+body names a terminal condition; any other status is a rejection of the request
+itself and is **terminal**. A transient one joins the loop's schedule below,
+exactly as an aborted stream does. A connection that has returned 200 and then dies
 mid-stream is not resumed — it may already have published live deltas — but it
 is not lost either: the partial assembles as a record-only completion
 (finalized-or-marked, above), and the **agent loop retries the whole request**.
@@ -337,14 +348,26 @@ is never evidence about the cache prefix, and tagging it separately is what
 keeps `daemon::metrics` and `efference dev cache` from reading it as a main-loop
 request. The budget is sized
 to **wait the failure out**, because a mid-stream abort is an ephemeral upstream
-condition and the alternative on exhaustion is worse than waiting: idling with
-"send a turn to retry" needs an operator, and an autonomous run has none. The cap
+condition and the alternative on exhaustion is worse than waiting: idling on a
+stall needs an operator to continue it, and an autonomous run has none. The cap
 is what lets the count be large without the tail becoming a hang — uncapped
 doubling over twelve attempts would sleep for over an hour. Because a marked entry projects to nothing, every retry re-sends
 byte-identical messages and rides the still-warm cached prefix. On exhaustion
 the loop returns to idle, leaving the failure in two places: the record-only log
 entries (durable) and the `stall` state topic (below), which carries the attempt
 count and the upstream's own words.
+
+**Continue is "retry now".** `POST /loop/continue` — the TUI's `⏎` and the web
+client's send, each on an empty composer — retries whatever is waiting on the
+upstream, as often as the operator repeats it. After a stall it re-enters the
+trajectory with nothing appended, which re-sends the failed request. While a
+backoff pause is running (or a triage gate is held, below) it ends the wait, so the
+next attempt fires at once; the daemon accepts it then even though the loop is
+running. The signal lives on the retry cell (`UpstreamRetryCell::hurry`), beside
+the retry state both loops already publish, because the fork peek's wait runs
+where only the client is in reach. Both clients add the gesture to what they show —
+`↻ … · ⏎ retries now` during a pause, `⚠ … · ⏎ to retry` on a stall — so the
+daemon's own `message` names what happened and not which key recovers it.
 
 **Who is told what.** The model is never told about an upstream failure. If the
 harness is in a position to describe the failure to it, the harness has already
@@ -360,9 +383,10 @@ this path deliberately — the socket is alive and one turn recovers the session
 but the return to idle otherwise looks exactly like a finished run to a client:
 `running: false` and no gate. So the loop sets the **`stall` state topic**
 (control-api.md): the reason, the attempts spent, the instant it gave up, a lead
-line naming what recovers it, and the upstream's words as `detail`. It is
-cleared at the top of the next trajectory rather than on a successful
-completion, so it reports the condition now. The topic is addressed to whatever
+line naming what happened, and the upstream's words as `detail`. It is
+cleared when the work resumes — the top of the next trajectory, or a held gate
+retrying — rather than on a successful completion, so it reports the condition
+now. A stall is a decision point for `?wait=settled`. The topic is addressed to whatever
 is supervising the daemon from outside, which is the rung that can actually send
 the recovering turn — an inbox copy would be addressed to the model, which is
 neither told about upstream failures nor able to act on one. Before the topic
@@ -391,22 +415,29 @@ this table has not met keeps the bounded retry rather than stalling a session on
 it; the name stays visible in the record-only entry and the stall detail.
 
 The **fork peek** takes the same treatment on the same budget: an aborted peek
-stream is retried up to `STREAM_ABORT_ATTEMPTS` times on the same capped
-schedule, re-sending byte-identical messages over the warm prefix (its
-tail is throwaway, so nothing has to be committed to arrange the replay). Only
-on exhaustion — or a terminal failure, above — does the gate withhold. The surfaces used to disagree — an
-aborted turn got four attempts while an aborted peek withheld on the first —
-and the asymmetry was expensive in a way the turn path is not: a withheld
-result asks the agent to re-issue a call whose side effects already stand. In a
-controlled run a withheld conformance `PASS` was re-earned by re-running the
-suite against a still-live server whose counters the invisible first run had
-moved, turning the pass into a spurious failure.
+stream or a transiently failed peek request is retried up to
+`STREAM_ABORT_ATTEMPTS` times on the same capped schedule, re-sending
+byte-identical messages over the warm prefix (its tail is throwaway, so nothing
+has to be committed to arrange the replay). On exhaustion — or a terminal
+failure, above — the gate does not give the agent anything: it **holds** the
+batch's results, unappended, and stalls with `StallReason::TriageUnavailable`
+while the loop keeps running, until a continue retries it or an interrupt ends
+the turn ([redaction-fork.md](redaction-fork.md)). The gate used to withhold the
+results as a hard error instead, and that was expensive in a way the turn path is
+not: a withheld result asks the agent to re-issue a call whose side effects
+already stand. In a controlled run a withheld conformance `PASS` was re-earned by
+re-running the suite against a still-live server whose counters the invisible
+first run had moved, turning the pass into a spurious failure; in another the
+agent read the error as its own tool failing and said so. The asides that ride the
+same peek machinery — the idle triage and the title — keep a short budget (three
+attempts, one fork) instead, because each has a harmless fallback and the loop is
+blocked on it meanwhile.
 
 ### The duration ceiling
 
 Everything above bounds *failures*. A stream that stays open and keeps trickling
 — or stops trickling without closing — is bounded by none of it: the retry
-handler's 30-second budget covers only the attempt to *open* a response, and a
+handler covers only the attempt to *open* a response, and a
 response that is open has no other clock on it. Left alone, such a stream blocks
 its turn indefinitely and shows nowhere, since nothing aborts and `upstream_retry`
 only reports a retry already in flight.
@@ -510,16 +541,15 @@ wire: an entry with an `upstream_failure` projects to nothing
 ([log-and-projection.md](log-and-projection.md)), so the shape cannot move the
 cached prefix.
 
-An exhausted *open* failure (a non-2xx after the retry handler gives up) still
-fails the current trajectory rather than the daemon, but no longer only to
-stderr: the loop appends an empty record-only assistant entry carrying the
-error body — Anthropic's 4xx bodies name exactly what was malformed, and the
-log is the durable file where stderr is not — and sets `stall` with `reason:
-"request_failed"` carrying that body as `detail`, before returning to idle. The
-model is told nothing here either. The projection
-remains unchanged either way. Classifying *which* open failures deserve further
-loop-level retries beyond the transport's own remains deferred. Keepalive
-failures are transport-only and leave the log unchanged.
+An exhausted *open* failure (the retry handler gave up) is recorded before it is
+judged: the loop appends an empty record-only assistant entry carrying the error
+body — Anthropic's 4xx bodies name exactly what was malformed, and the log is the
+durable file where stderr is not. A transient one then takes the schedule like an
+aborted stream. A terminal one fails the current trajectory rather than the
+daemon: it sets `stall` with `reason: "request_failed"` carrying that body as
+`detail`, and returns to idle. The model is told nothing either way, and the
+projection is unchanged. Keepalive failures are transport-only and leave the log
+unchanged.
 
 Every non-2xx response also updates one shared diagnostic: its numeric status and
 how many consecutive responses carried that status. `RetryHandler` is outermost
@@ -536,15 +566,17 @@ count are all it carries, and the bodies live in the log (below).
 
 ### The retry in flight
 
-While either loop is waiting out an aborted stream, that wait is its own
+While either loop is waiting out a failed attempt, that wait is its own
 level-triggered state topic, `upstream_retry` on `GET /state`
 (docs/control-api.md). It names the **surface** (`turn` or `peek`), the attempt
 that just failed, the budget it is spending, the absolute instant the next
-attempt fires, a lead line — *stream aborted, retrying (2 of 12)* — and the
+attempt fires, a lead line — *attempt 2 of 12 failed upstream, retrying* — and the
 upstream's own error text as `detail`. Both retry loops publish it (`agent.rs`
-for a turn, `distill.rs` for a fork peek) through one shared constructor, so the
-surfaces differ only in the name they carry; the distinction is kept because an
-exhausted peek withholds a verdict where an exhausted turn ends the trajectory.
+for a turn, `distill/peek.rs` for a fork peek, on the agent's cell even when
+triage runs on its own model) through one shared constructor, so the surfaces
+differ only in the name they carry; the distinction is kept because a triage wait
+sits between tool results, where an operator would otherwise read it as the model
+generating.
 It is set when an abort begins a pause, replaced per attempt, and cleared by the
 attempt that finalizes or by exhaustion — nothing is being retried once the
 budget is spent, so the topic does not double as a gravestone; `stall` is the
@@ -656,7 +688,7 @@ masked secret, [env.md](env.md): the logged string is then a re-serialization
 without it, and that is what replays). `store: false` (the log
 is the only history; encrypted reasoning arrives by default in stateless mode),
 `truncation: disabled` (a history change is the harness's decision),
-`parallel_tool_calls: false` (one call per turn), `tools[]` as `function` entries
+`parallel_tool_calls: true` under `auto` and `false` under a forced choice ([README.md](README.md)), `tools[]` as `function` entries
 with `strict: false` built from the same `{name, description, input_schema}`
 definitions Messages sends, `tool_choice` as `auto` or `{type: function, name}`,
 `max_output_tokens` from the same reservation as `max_tokens`, `reasoning: {effort,

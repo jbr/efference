@@ -180,6 +180,10 @@ impl ForkSpot {
     }
 }
 
+/// Attempts per spotter call when the upstream fails transiently, doubling from a
+/// one-second pause (docs/permissions.md).
+const SPOT_ATTEMPTS: u32 = 3;
+
 impl Spotter for ForkSpot {
     async fn assess(
         &self,
@@ -212,35 +216,55 @@ impl Spotter for ForkSpot {
             )),
         ])];
 
-        // No-op sink: the spotter's tokens are internal and must never surface on        // the control stream (mirrors the fork peek).
-        match self
-            .client
-            .complete(
-                &turns,
-                &[spot_tool()],
-                crate::api::ToolChoice::force(SPOT),
-                |_| {},
-            )
-            .await
-        {
-            Ok(completion) => {
-                let usage = Some(completion.request_usage());
-                // An unfinalized stream (docs/transport.md) is not a verdict —
-                // fail closed, exactly as an unparseable one does.
-                if completion.upstream_failure().is_some() {
-                    return Spotting::fail_closed(usage);
-                }
-                match parse_spot(&completion) {
-                    Some(read) => Spotting {
-                        read,
-                        origin: Origin::Model,
+        // A transient upstream failure is retried briefly before failing closed
+        // (docs/permissions.md): the fallback is a human gate, which an operator at
+        // the keyboard answers in less time than a long backoff, and which leaves
+        // an unattended run waiting — so a short burst is worth absorbing and an
+        // outage is not worth waiting out here.
+        let mut attempt = 0;
+        loop {
+            attempt += 1;
+            // No-op sink: the spotter's tokens are internal and must never surface
+            // on the control stream (mirrors the fork peek).
+            let (usage, transient) = match self
+                .client
+                .complete(
+                    &turns,
+                    &[spot_tool()],
+                    crate::api::ToolChoice::force(SPOT),
+                    |_| {},
+                )
+                .await
+            {
+                Ok(completion) => {
+                    let usage = Some(completion.request_usage());
+                    if completion.upstream_failure().is_none() {
+                        return match parse_spot(&completion) {
+                            Some(read) => Spotting {
+                                read,
+                                origin: Origin::Model,
+                                usage,
+                                axes: None,
+                            },
+                            None => Spotting::fail_closed(usage),
+                        };
+                    }
+                    // An unfinalized stream (docs/transport.md) is not a verdict.
+                    (
                         usage,
-                        axes: None,
-                    },
-                    None => Spotting::fail_closed(usage),
+                        completion.terminal_failure().is_none() && !completion.operator_abort(),
+                    )
                 }
+                Err(e) => (
+                    None,
+                    crate::api::error_class(&e) == crate::api::FailureClass::Transient,
+                ),
+            };
+            if !transient || attempt >= SPOT_ATTEMPTS {
+                return Spotting::fail_closed(usage);
             }
-            Err(_) => Spotting::fail_closed(None),
+            let pause = std::time::Duration::from_secs(1 << (attempt - 1));
+            tokio::time::sleep(pause).await;
         }
     }
 }

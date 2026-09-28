@@ -11,7 +11,7 @@ use trillium_client_retry::RetryHandler;
 
 use crate::api::assembler::ResponseMeta;
 use crate::api::auth_value::Reloaded;
-use crate::api::failure::{FailureClass, classify_body};
+use crate::api::failure::{FailureClass, OpenError, classify_body};
 use crate::api::plan::{PlanState, plan_from_headers, plan_state};
 use crate::api::responses::assembler::ResponsesAssembler;
 use crate::api::thinking::ThinkingOff;
@@ -20,10 +20,16 @@ use crate::project::{WireTurn, encode_messages};
 
 /// Retry policy for requests that did not receive a successful response
 /// (docs/transport.md). Every upstream request is a replay-safe POST carrying
-/// an owned `String` body. The elapsed ceiling bounds an outage from the
-/// operator's perspective; exhaustion still surfaces the final response.
+/// an owned `String` body. Bounded by attempt count alone: there is no elapsed
+/// budget, because the handler enforces one by clamping each retry's timeout to
+/// what remains of it, and a model's time to first byte on a large uncached
+/// prompt can be most of that budget by itself — a retry cut short by the clamp
+/// fails for the clamp, not for the upstream. Exhaustion still surfaces the
+/// final response, and the loops' own schedules bound an outage beyond that.
 const RETRY_MAX_ATTEMPTS: u32 = 4;
-const RETRY_MAX_ELAPSED: Duration = Duration::from_secs(30);
+/// The longest `Retry-After` the transport waits out in place; a longer one
+/// surfaces as the failed attempt, for the loop's schedule to absorb.
+const RETRY_AFTER_CAP: Duration = Duration::from_secs(30);
 
 /// How long one SSE response may stay open before the read loop stops waiting on
 /// it (docs/transport.md). The retry policy above bounds *failures*; this bounds
@@ -364,8 +370,8 @@ impl Client {
                     .is_none_or(|body| classify_body(&body.0) == FailureClass::Transient)
             })
             .with_max_attempts(RETRY_MAX_ATTEMPTS)
-            .with_max_elapsed(RETRY_MAX_ELAPSED)
-            .with_max_retry_after(RETRY_MAX_ELAPSED);
+            .with_max_elapsed(None)
+            .with_max_retry_after(RETRY_AFTER_CAP);
         Self {
             // The process-wide client (`http.rs`), so every `Client` in a process
             // — the agent's, the fork's spotter, one per case in a spotter eval —
@@ -1012,7 +1018,7 @@ impl Client {
                 input,
                 tools: responses::tool_definitions(tools),
                 tool_choice: responses::tool_choice_value(tool_choice),
-                parallel_tool_calls: false,
+                parallel_tool_calls: tool_choice.forced().is_none(),
                 store: false,
                 include: None,
                 truncation: Some("disabled"),
@@ -1034,7 +1040,7 @@ impl Client {
                 input,
                 tools: responses::tool_definitions(tools),
                 tool_choice: responses::tool_choice_value(tool_choice),
-                parallel_tool_calls: false,
+                parallel_tool_calls: tool_choice.forced().is_none(),
                 store: false,
                 include: Some(vec!["reasoning.encrypted_content"]),
                 truncation: None,
@@ -1115,7 +1121,7 @@ impl Client {
             None => format!("upstream SSE request failed: {detail}"),
         };
         log::error!("{message}");
-        message.into()
+        Box::new(OpenError::new(status.map(|s| s as u16), message, &detail))
     }
 
     /// A cache-keepalive ping (docs/transport.md): a **non-streaming**

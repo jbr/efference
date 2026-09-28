@@ -331,9 +331,16 @@ idling** — a blank submit never lands a `User` entry and never starts a turn.
   other write, the effects arrive on `/events`; the daemon reads as busy from
   the moment it accepts (`GET /state?wait=settled` will not answer until the
   resulting turn settles).
+
+  It is also **"retry now"** ([transport.md](transport.md)). While the loop is
+  running but waiting on the upstream — an `upstream_retry` pause, or a triage
+  gate held under a `stall` — the continue is accepted and ends that wait, so the
+  next attempt fires at once; after a stall that returned the loop to idle, it
+  re-sends the failed request. It can be repeated as often as the operator
+  likes.
 - `409 not_continuable` — the moment has no continue in it. `message` names
   which case:
-  - the loop is already running, or a turn is queued
+  - the loop is already running (and not waiting on the upstream), or a turn is queued
   - an approval gate is pending — resolve it instead
   - the session has no turns yet (nothing projects)
   - the last turn completed (the wire ends in a final assistant response)
@@ -501,8 +508,9 @@ stream pushes per-topic replacements of. A one-shot read for scripts and
 bootstraps; a client holding the stream needs never request it.
 
 **`?wait=settled`** turns the read into a long-poll: block until the daemon
-reaches a **decision point** (a gate is pending, or the loop is idle with
-nothing queued), then return the snapshot. Returns immediately if already
+reaches a **decision point** (a gate is pending, the loop is stalled — which
+includes a triage gate held on the upstream, waiting on a continue — or the loop
+is idle with nothing queued), then return the snapshot. Returns immediately if already
 settled; capped server-side at **300 s** (on timeout it returns current state
 and the client re-polls). The same predicate backs the `?wait` flags on
 `/turns` and `/approvals`. A `wait` with a missing or unknown predicate is a
@@ -587,11 +595,14 @@ not a topic — it is the log's cursor rather than control state, and sits outsi
       "text": "…",                 //   turn is never logged, so this is the only place it is
       "attachments": [ … ] }       //   (only when it carries any)
   ],                               //   readable, and what `DELETE /turns/:id` addresses
-  "stall": {                       // null unless the last trajectory gave up (transport.md)
-    "reason": "retries_exhausted", // "retries_exhausted" | "request_failed"
+  "stall": {                       // null unless the work stopped short (transport.md);
+                                   //   `POST /loop/continue` retries it
+    "reason": "retries_exhausted", // "retries_exhausted" | "request_failed" | "upstream_refused"
+                                   //   | "triage_unavailable" | "triage_defect" — the triage
+                                   //   reasons hold a gate with the loop still running
     "attempts": 12,                // attempts spent, where the path counts them; else null
     "at": 1754300000000,           // absolute Unix millis at which the loop gave up
-    "message": "the trajectory stopped: 12 attempts in a row aborted upstream — send a turn to retry",
+    "message": "the trajectory stopped: 12 attempts in a row failed upstream",
     "detail": "upstream SSE stream failed mid-stream: connection reset"
   },
   "upstream_failure": {            // null once a 2xx arrives — the all-clear (transport.md)
@@ -599,13 +610,13 @@ not a topic — it is the log's cursor rather than control state, and sits outsi
     "count": 2                     // consecutive responses carrying it
   },
   "upstream_retry": {              // null when nothing is being retried (transport.md)
-    "surface": "turn",             // "turn" | "peek" — an exhausted peek withholds a
-                                   //   verdict; an exhausted turn ends the trajectory
+    "surface": "turn",             // "turn" | "peek" — a peek waits between tool
+                                   //   results; `POST /loop/continue` retries now
     "attempt": 2,                  // the attempt that just failed, 1-based
     "budget": 12,                  // attempts before the loop gives up
     "next_attempt_at": 1754300002000,  // absolute Unix millis; the client subtracts,
                                    //   so the daemon never re-emits a ticking field
-    "message": "stream aborted, retrying (2 of 12)",  // leads with what is happening
+    "message": "attempt 2 of 12 failed upstream, retrying",  // leads with what is happening
     "detail": "upstream SSE stream failed mid-stream: connection reset"
   },
   "config_repair": {               // null whenever the config file parses (permissions.md)
@@ -650,10 +661,11 @@ succeeds, so it always names the current condition rather than a past one.
 a stalled daemon is a live daemon, by design. Two shapes, both already here:
 
 - **Long-poll** — `GET /state?wait=settled` blocks until the daemon reaches a
-  decision point (a gate is pending, or the loop is idle with nothing queued)
-  and returns the snapshot. A supervisor loops on it and branches on `stall`:
-  `null` with no gate means the run finished; non-`null` means it stopped
-  short, and `POST /turns` is the recovery. The 300 s server cap makes an
+  decision point (a gate is pending, the loop is stalled, or it is idle with
+  nothing queued) and returns the snapshot. A supervisor loops on it and
+  branches on `stall`: `null` with no gate means the run finished; non-`null`
+  means it stopped short, and `POST /loop/continue` retries it (or `POST /turns`
+  says something first). The 300 s server cap makes an
   unchanged answer a re-poll rather than a hang.
 - **Subscribe** — `GET /events?include=state:stall,state:running` delivers the
   topic on connect and on every change, for a supervisor already holding a
@@ -833,10 +845,10 @@ so it needs its own address, and `call_id` is the one already in the log, in
 an orphaned `tool_result`. `404 not_found` if no entry carries it. Validated by
 `ETag` like `/log/:seq`.
 
-The scale of the orphan problem is small by construction:
-`disable_parallel_tool_use` means one call per turn
-([transport.md](transport.md)), so a call sits at seq N and its result at N+1,
-and a cut orphans **at most one result, at the boundary itself**.
+The scale of the orphan problem is bounded by the batch: a completion's calls
+share one assistant entry, and their results are appended together after the
+gate ([README.md](README.md)), so a cut orphans **at most one batch of results,
+at the boundary itself**.
 
 #### `GET /proposals`
 JSON array of pending proposals — the same array `/state` carries, for a client

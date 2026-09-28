@@ -106,17 +106,18 @@ Violating any one silently breaks caching or correctness:
    fold — is exactly one deliberate cache write.
 3. **raw is never overwritten; only `wire` flips.** This is what makes every redaction
    reversible and the log a complete audit record.
-4. **One tool call per assistant turn — requested, not guaranteed.** Every request sets
-   `disable_parallel_tool_use`, so the usual shape is one `tool_use` per turn: the
-   approval gate is one-command-per-turn and the log reads `U → A·t → R → …`. But the
-   flag is a *request*. A provider that doesn't implement it returns several calls and
-   nothing reports that it was ignored — on OpenRouter-routed models the knob is absent
-   from every serving endpoint's supported parameters, in either API dialect, so there
-   is no provider-side way to enforce it. The loop therefore handles N ≥ 1: it runs every
-   call a completion made, then triages their results at one gate
-   ([redaction-fork.md](redaction-fork.md)). What *is* invariant is the pairing — every
-   `tool_use` gets exactly one `tool_result`, or projection orphans it and the API
-   rejects the request.
+4. **A completion may make several tool calls.** A turn under `auto` tool choice is
+   free to call tools in parallel: the request does not set `disable_parallel_tool_use`
+   (Messages) and sends `parallel_tool_calls: true` (Responses). The loop runs every call
+   a completion made, holding the results, then triages them together at one gate
+   ([redaction-fork.md](redaction-fork.md)) — a peek fired between calls would carry
+   unanswered `tool_use` blocks, which the API rejects. What *is* invariant is the
+   pairing — every `tool_use` gets exactly one `tool_result`, or projection orphans it
+   and the API rejects the request. A forced tool choice (the spotter's `spot`) still
+   disables parallel calls, because its answer is one verdict. Requests once asked for
+   one call per turn; models read the restriction (and a matching preamble sentence) as
+   a pace to keep, making one read per turn and ending turns on announcements, so it
+   was dropped (journal/2026-09-28-upstream-failures-and-parallel-calls.md).
 5. **No privileged client.** The loop's only input is the HTTP control channel; the human
    TUI, the driver, and subagents are all equal clients of the same socket. See
    [control-channel.md](control-channel.md).

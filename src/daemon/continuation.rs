@@ -59,12 +59,23 @@ impl Session {
     /// gate, the loop idle with nothing queued, and a **continuable tail**
     /// ([`continuable_tail`](Self::continuable_tail)). A continue already pending
     /// is idempotent — the loop has one to consume either way.
+    ///
+    /// One case is accepted while the loop runs: it is **waiting on the upstream**
+    /// — a backoff pause between attempts, or a triage gate held after its budget
+    /// ran out. The same gesture that retries a stalled trajectory then retries
+    /// that wait now (docs/transport.md), so the operator has one "try again"
+    /// whichever side of the give-up they are on.
     pub(super) fn request_continue(&self) -> Result<(), NotContinuable> {
         if self.continue_pending.load(Ordering::SeqCst) {
             return Ok(());
         }
         if self.pending.lock().unwrap().is_some() {
             return Err(NotContinuable::Gated);
+        }
+        let running = self.running.load(Ordering::SeqCst);
+        if running && (self.upstream_retry.get().is_some() || self.stall().is_some()) {
+            self.upstream_retry.hurry();
+            return Ok(());
         }
         if !self.is_settled() {
             return Err(NotContinuable::Busy);

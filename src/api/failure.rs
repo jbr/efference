@@ -104,6 +104,55 @@ pub fn classify_body(body: &str) -> FailureClass {
     classify(kind, field("code"))
 }
 
+/// A request that failed to open a response stream (docs/transport.md): the
+/// error [`Client::complete`](super::Client::complete) returns when no stream
+/// opened, carrying its class so a retry loop can tell an outage from a refusal
+/// without parsing the message.
+#[derive(Debug)]
+pub struct OpenError {
+    message: String,
+    class: FailureClass,
+}
+
+impl OpenError {
+    /// Classify an open failure by its status and the upstream's words. No status
+    /// means no response arrived — a refused or timed-out connection — which is
+    /// transient. The statuses the transport itself retries are transient unless
+    /// the body names a terminal condition. Every other status is a rejection of
+    /// the request, which a retry would repeat.
+    pub(super) fn new(status: Option<u16>, message: String, detail: &str) -> Self {
+        let class = match status {
+            None => FailureClass::Transient,
+            Some(408 | 429) | Some(500..=599) => match classify_body(detail) {
+                // An expired credential on a retryable status is still one the
+                // transport already re-read; nothing more to try here.
+                FailureClass::CredentialExpired => FailureClass::Terminal,
+                class => class,
+            },
+            Some(_) => FailureClass::Terminal,
+        };
+        Self { message, class }
+    }
+}
+
+impl std::fmt::Display for OpenError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for OpenError {}
+
+/// How a retry loop should treat an `Err` from
+/// [`Client::complete`](super::Client::complete): an [`OpenError`]'s own class,
+/// and terminal for anything else — an encoding failure or a dialect mismatch is
+/// a property of the request, and resending it changes nothing.
+pub fn error_class(error: &super::Error) -> FailureClass {
+    error
+        .downcast_ref::<OpenError>()
+        .map_or(FailureClass::Terminal, |open| open.class)
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -163,6 +212,31 @@ mod test {
         assert_eq!(classify_body(body), FailureClass::Transient);
         let body = r#"{"type":"error","error":{"type":"permission_error","message":"no"}}"#;
         assert_eq!(classify_body(body), FailureClass::Terminal);
+    }
+
+    #[test]
+    fn an_open_failure_without_a_response_is_transient() {
+        let e: crate::api::Error =
+            OpenError::new(None, "Conn took longer than 29s".into(), "").into();
+        assert_eq!(error_class(&e), FailureClass::Transient);
+    }
+
+    #[test]
+    fn an_open_failure_on_a_retryable_status_reads_the_body() {
+        let overloaded = r#"{"type":"error","error":{"type":"overloaded_error"}}"#;
+        let e: crate::api::Error = OpenError::new(Some(503), "503".into(), overloaded).into();
+        assert_eq!(error_class(&e), FailureClass::Transient);
+        let spent = r#"{"error":{"type":"usage_limit_reached"}}"#;
+        let e: crate::api::Error = OpenError::new(Some(429), "429".into(), spent).into();
+        assert_eq!(error_class(&e), FailureClass::Terminal);
+    }
+
+    #[test]
+    fn an_open_failure_on_any_other_status_is_terminal() {
+        let e: crate::api::Error = OpenError::new(Some(400), "400".into(), "bad").into();
+        assert_eq!(error_class(&e), FailureClass::Terminal);
+        let other: crate::api::Error = "dialect mismatch".into();
+        assert_eq!(error_class(&other), FailureClass::Terminal);
     }
 
     #[test]

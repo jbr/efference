@@ -173,6 +173,7 @@ async fn a_retry_publishes_without_an_append() {
     retry.set(crate::agent::stream_abort_retry(
         crate::api::RetrySurface::Turn,
         2,
+        crate::agent::STREAM_ABORT_ATTEMPTS,
         std::time::Duration::from_secs(2),
         "upstream SSE stream failed mid-stream",
     ));
@@ -185,7 +186,7 @@ async fn a_retry_publishes_without_an_append() {
         .to_string();
     assert!(published.contains(r#""surface":"turn""#), "{published}");
     assert!(
-        published.contains("stream aborted, retrying (2 of 12)"),
+        published.contains("attempt 2 of 12 failed upstream, retrying"),
         "{published}"
     );
 

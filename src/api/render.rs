@@ -100,7 +100,7 @@ pub fn render_responses_request_pretty(
         input: responses::encode_responses(turns, system, cache),
         tools: responses::tool_definitions(tools),
         tool_choice: responses::tool_choice_value(&tool_choice),
-        parallel_tool_calls: false,
+        parallel_tool_calls: tool_choice.forced().is_none(),
         store: false,
         include: None,
         truncation: Some("disabled"),

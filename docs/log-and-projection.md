@@ -148,7 +148,7 @@ enum WireState {
     Raw,                                              // project the full `raw`
     Distilled(Distilled),                             // the verdict, re-rendered by project
     Elided,                                           // project a placeholder
-    TriageFailed { why: String },                     // project a hard error (is_error forced), never the untriaged raw
+    TriageFailed { why: String },                     // no longer written (a gate without a verdict holds); older logs project a hard error
 }
 struct Distilled { keep: Keep, note: Option<String>, intent_feedback: Option<String> }
 enum Keep { All, None, Ranges(Vec<(usize, usize)>) }

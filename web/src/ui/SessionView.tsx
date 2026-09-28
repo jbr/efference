@@ -303,6 +303,7 @@ export function SessionView() {
           pace={session.topics.pace ?? null}
           running={session.topics.running ?? false}
           stall={session.topics.stall ?? null}
+          retrying={(session.topics.upstream_retry ?? null) !== null}
           gatePending={gate != null}
         />
       </div>

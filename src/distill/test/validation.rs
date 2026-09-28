@@ -226,21 +226,18 @@ fn bounds_skip_keywords_and_unoffered_ids() {
     assert!(require_in_bounds(p, &shown).is_ok());
 }
 
-/// A failed gate (docs/redaction-fork.md) withholds every result as a hard error —
-/// `WireState::TriageFailed`, `Origin::Fallback`, the why in `raw_keep` — never the
-/// untriaged raw.
+/// A gate the operator interrupted before a verdict (docs/control-channel.md) withholds
+/// every result as the interrupt's *after* juncture does — `Elided`, never an error that
+/// blames triage, never the untriaged raw — and keeps the held attempts' breadcrumbs.
 #[test]
-fn a_failed_gate_withholds_every_result_as_an_error() {
-    let outcome = GateOutcome::failed(2, Vec::new(), "peek called no tool (attempt 3 of 3)");
+fn an_interrupted_gate_withholds_every_result_without_blaming_triage() {
+    let outcome = GateOutcome::interrupted(2, vec!["held: overloaded".into()], Vec::new());
     assert_eq!(outcome.results.len(), 2);
     for d in &outcome.results {
-        assert!(
-            matches!(&d.wire, WireState::TriageFailed { why } if why.contains("peek called no tool")),
-            "withheld, not kept"
-        );
+        assert!(matches!(d.wire, WireState::Elided), "withheld, not kept");
         assert_eq!(d.origin, Origin::Fallback);
-        assert!(d.raw_keep.contains("peek called no tool"));
     }
+    assert_eq!(outcome.retries, ["held: overloaded"]);
     assert!(outcome.inbox.is_empty() && outcome.background.is_empty());
 }
 
@@ -316,4 +313,30 @@ fn an_aborted_peek_stream_backs_off_on_the_main_loops_budget() {
         .map(|d| d.as_secs())
         .sum();
     assert!((120..400).contains(&total), "whole schedule was {total}s");
+}
+
+/// Parallel calls are allowed on the shared envelope (docs/README.md), so a peek may
+/// answer a two-result gate in two `retain` calls; the verdicts merge, and the merged
+/// verdict covers the gate.
+#[test]
+fn a_verdict_split_across_parallel_retain_calls_merges() {
+    let offered = ["a".to_string(), "b".to_string()];
+    let split = parse_retain(
+        &calls_completion(vec![
+            ToolCall::new(
+                RETAIN,
+                "r1",
+                json!({ "results": [{ "result": "a", "keep": "all" }], "surfaced": ["x"] }),
+            ),
+            ToolCall::new(
+                RETAIN,
+                "r2",
+                json!({ "results": [{ "result": "b", "keep": "none", "note": "n" }] }),
+            ),
+        ]),
+        &offered,
+    )
+    .unwrap();
+    assert_eq!(split.surfaced, ["x"]);
+    assert!(require_coverage(split, &offered).is_ok());
 }

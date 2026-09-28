@@ -1,9 +1,8 @@
 //! Running one call of a completion: the permission cascade (docs/permissions.md)
 //! and the tool run, up to but not including triage.
 //!
-//! A completion usually makes one call, but `disable_parallel_tool_use` is a request
-//! the provider may ignore (docs/README.md), so the loop runs each call here and
-//! triages the whole batch at one gate (docs/redaction-fork.md). Splitting execution
+//! A completion may make several calls (docs/README.md), so the loop runs each call
+//! here and triages the whole batch at one gate (docs/redaction-fork.md). Splitting execution
 //! from triage is what keeps the fork's request valid: a peek fired between calls would
 //! carry unanswered `tool_use` blocks and be rejected.
 

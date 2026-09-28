@@ -922,7 +922,7 @@ box (`PinnedBox`, `ui/TranscriptItems.tsx`): a fixed height holding the newest
 line, the top fading only while lines are scrolled out above. The triaged
 result replaces it when it commits. Output whose call has not committed yet
 still peeks as its own item below the tail. Tools that do not stream show
-nothing until triage finishes (backlog/web/result-before-triage.md).
+nothing until triage finishes (backlog/result-before-triage.md).
 Background-process output is the drawer's tasks section.
 
 **Streaming flows into the committed state without a change of shape.** A call
@@ -979,8 +979,8 @@ processes (`ui/drawerAttention.ts`).
 It also carries one warn-tinted chip left of the meter, fed by the two
 transport topics through `ui/upstream.ts` (a pure function of the pair, so the
 component holds no endpoint or clock logic). While `upstream_retry` is set the
-chip names the retry — `↻ stream aborted, retrying (2 of 12)`, with a `peek:`
-prefix for a fork peek's retry, and the upstream's `detail` text as the title;
+chip names the retry — `↻ attempt 2 of 12 failed upstream, retrying`, with a
+`triage:` prefix for a triage peek's retry, and the upstream's `detail` text as the title;
 otherwise `upstream_failure` names the last non-success status,
 `upstream 429 ×3`, the count covering consecutive matching statuses and elided
 at one. Both topics are level-triggered and both clear on recovery
@@ -1006,12 +1006,14 @@ that apply now: **interrupt** (`POST /v1/loop/interrupt`) while a turn runs,
 and **resume** while the loop is held, because a hidden hold reads as a hang.
 The other dials — review level, pace, hold — are the drawer's. The turn state is
 "your turn" in the serif when the loop is idle, a dim `running…` while it
-moves, and the daemon's own sentence in the warn color when the `stall` topic
-is set — a trajectory that gave up rather than finished
-([transport.md](transport.md)), which the idle state alone cannot say; the
-upstream's words ride along as the hover title. The three-way choice
-is `ui/turnState.ts`, a pure function of `running` and `stall`, so the
-component holds no branching of its own. The span between state and controls is
+moves (`retrying the upstream · send to retry now` while an `upstream_retry`
+pause runs), and the daemon's own sentence plus `· send to retry` in the warn
+color when the `stall` topic is set — a trajectory that stopped short, or a
+triage gate held with the loop still running ([transport.md](transport.md)),
+which `running` alone cannot say; the upstream's words ride along as the hover
+title. An empty send is the continue, which retries either wait. The choice is
+`ui/turnState.ts`, a pure function of `running`, `stall`, and whether a retry
+is waiting, so the component holds no branching of its own. The span between state and controls is
 reserved for the key-hint strip (binds are deferred to interactive
 suggestions; [backlog/web/README.md](../backlog/web/README.md)). The input
 carries no hint about mid-trajectory injection

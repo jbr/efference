@@ -84,7 +84,7 @@ describe("the state fold", () => {
       attempt: 2,
       budget: 12,
       next_attempt_at: 1754300002000,
-      message: "stream aborted, retrying (2 of 12)",
+      message: "attempt 2 of 12 failed upstream, retrying",
       detail: "upstream SSE stream failed mid-stream: connection reset",
     };
     const failing = fold(emptySession, [

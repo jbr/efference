@@ -1,0 +1,306 @@
+//! Upstream failures against a real turn loop and a scripted upstream
+//! (docs/transport.md, docs/redaction-fork.md): a failed request takes the retry
+//! schedule instead of stalling at once, a triage gate without a verdict holds
+//! its results rather than showing the agent an error, and the operator's
+//! continue retries either wait now.
+
+use super::runtime::boot;
+use super::*;
+use crate::daemon::{SessionRuntime, StallReason};
+use crate::frontend::SubmittedTurn;
+use crate::log::{Origin, WireState};
+use std::io::{BufRead, BufReader, Read, Write};
+use std::net::{TcpListener, TcpStream};
+use std::sync::atomic::AtomicUsize;
+use trillium_tokio::Swansong;
+
+/// A `tool_use` completion calling `name` with `input` (JSON text).
+fn tool_call(id: &str, name: &str, input: &str) -> String {
+    let input = serde_json::to_string(input).unwrap();
+    events(&[
+        r#"{"type":"message_start","message":{"model":"m","usage":{"input_tokens":1,"output_tokens":0}}}"#.to_string(),
+        format!(
+            r#"{{"type":"content_block_start","index":0,"content_block":{{"type":"tool_use","id":"{id}","name":"{name}","input":{{}}}}}}"#
+        ),
+        format!(
+            r#"{{"type":"content_block_delta","index":0,"delta":{{"type":"input_json_delta","partial_json":{input}}}}}"#
+        ),
+        r#"{"type":"content_block_stop","index":0}"#.to_string(),
+        r#"{"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":1}}"#.to_string(),
+        r#"{"type":"message_stop"}"#.to_string(),
+    ])
+}
+
+/// A plain end of turn.
+fn end_turn() -> String {
+    events(&[
+        r#"{"type":"message_start","message":{"model":"m","usage":{"input_tokens":1,"output_tokens":0}}}"#.to_string(),
+        r#"{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}"#.to_string(),
+        r#"{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"ok"}}"#.to_string(),
+        r#"{"type":"content_block_stop","index":0}"#.to_string(),
+        r#"{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":1}}"#.to_string(),
+        r#"{"type":"message_stop"}"#.to_string(),
+    ])
+}
+
+fn events(data: &[String]) -> String {
+    data.iter()
+        .map(|d| {
+            let kind: serde_json::Value = serde_json::from_str(d).unwrap();
+            format!("event: {}\ndata: {d}\n\n", kind["type"].as_str().unwrap())
+        })
+        .collect()
+}
+
+/// One scripted answer.
+enum Answer {
+    /// A 200 event stream with this body.
+    Stream(String),
+    /// A non-2xx with this JSON body.
+    Status(u16, &'static str),
+}
+
+/// Read one request off a kept-alive connection; `false` once the client closed it.
+fn read_request(reader: &mut BufReader<TcpStream>) -> bool {
+    let mut length = 0;
+    loop {
+        let mut line = String::new();
+        if reader.read_line(&mut line).unwrap_or(0) == 0 {
+            return false;
+        }
+        if line == "\r\n" {
+            break;
+        }
+        if let Some((name, value)) = line.split_once(':')
+            && name.eq_ignore_ascii_case("content-length")
+        {
+            length = value.trim().parse().unwrap();
+        }
+    }
+    let mut body = vec![0; length];
+    reader.read_exact(&mut body).is_ok()
+}
+
+/// A Messages upstream answering request *n* with `script(n)`; `requests` counts
+/// arrivals.
+fn scripted(requests: Arc<AtomicUsize>, script: fn(usize) -> Answer) -> std::net::SocketAddr {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    std::thread::spawn(move || {
+        for sock in listener.incoming() {
+            let Ok(sock) = sock else { return };
+            let requests = Arc::clone(&requests);
+            std::thread::spawn(move || {
+                let mut reader = BufReader::new(sock.try_clone().unwrap());
+                let mut sock = sock;
+                while read_request(&mut reader) {
+                    let n = requests.fetch_add(1, Ordering::SeqCst);
+                    let _ = match script(n) {
+                        Answer::Stream(body) => write!(
+                            sock,
+                            "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\n\
+                             content-length: {}\r\n\r\n{body}",
+                            body.len()
+                        ),
+                        Answer::Status(status, body) => write!(
+                            sock,
+                            "HTTP/1.1 {status} Error\r\ncontent-type: application/json\r\n\
+                             content-length: {}\r\n\r\n{body}",
+                            body.len()
+                        ),
+                    };
+                    let _ = sock.flush();
+                }
+            });
+        }
+    });
+    addr
+}
+
+async fn wait_until(what: &str, mut ready: impl FnMut() -> bool) {
+    tokio::time::timeout(Duration::from_secs(20), async {
+        while !ready() {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .unwrap_or_else(|_| panic!("timed out waiting: {what}"));
+}
+
+fn start(addr: std::net::SocketAddr) -> (Swansong, SessionRuntime) {
+    use std::hash::{BuildHasher, Hasher, RandomState};
+    let nonce = RandomState::new().build_hasher().finish();
+    let cwd = std::env::temp_dir().join(format!("efference-upstream-{nonce:016x}"));
+    std::fs::create_dir_all(cwd.join("scratch")).unwrap();
+    let cwd = cwd.canonicalize().unwrap();
+    let mut boot = boot(&cwd);
+    let endpoint = crate::api::Endpoint {
+        provider: crate::api::Provider::Anthropic,
+        url: Some(format!("http://{addr}/v1/messages")),
+        auth_header: "x-api-key".into(),
+        auth_value: "k".into(),
+        session_id: None,
+        extra_headers: Vec::new(),
+        base: None,
+    };
+    boot.client = Client::new(endpoint, "m", "sys", None);
+    let host = Swansong::new();
+    let runtime = SessionRuntime::start(boot, &host);
+    (host, runtime)
+}
+
+const REFUSED: &str = r#"{"type":"error","error":{"type":"invalid_request_error","message":"no"}}"#;
+const OVERLOADED: &str = r#"{"type":"error","error":{"type":"overloaded_error","message":"busy"}}"#;
+
+/// **A triage gate without a verdict holds; continue retries it.** The peek's
+/// request is refused, so the gate has no verdict. Nothing reaches the log for the
+/// call — no error result the agent would read — and the session reports a stall
+/// while its loop still runs. The operator's continue runs the gate again, the
+/// verdict lands, and the held attempt's breadcrumb rides the `Triage`.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_gate_without_a_verdict_holds_until_continue() {
+    let requests = Arc::new(AtomicUsize::new(0));
+    let addr = scripted(Arc::clone(&requests), |n| match n {
+        0 => Answer::Stream(tool_call("toolu_1", "bash", r#"{"command":"echo hi"}"#)),
+        1 => Answer::Status(400, REFUSED),
+        2 => Answer::Stream(tool_call("toolu_r", "retain", r#"{"keep":"all"}"#)),
+        _ => Answer::Stream(end_turn()),
+    });
+    let (host, runtime) = start(addr);
+    let session = Arc::clone(runtime.session());
+    session.submit_turn(SubmittedTurn::new("go", "s1"));
+
+    wait_until("the gate is held", || session.stall().is_some()).await;
+    let stall = session.stall().unwrap();
+    assert_eq!(stall.reason, StallReason::TriageUnavailable);
+    assert!(session.running.load(Ordering::SeqCst), "held, not parked");
+    assert!(session.is_settled(), "a held gate is a decision point");
+    assert!(
+        !session
+            .snapshot()
+            .iter()
+            .any(|e| matches!(e.payload, Payload::ToolResult { .. })),
+        "nothing about the call reaches the log while it is held"
+    );
+
+    assert_eq!(
+        session.request_continue(),
+        Ok(()),
+        "continue retries the hold"
+    );
+    wait_until("the turn finishes", || {
+        !session.running.load(Ordering::SeqCst)
+    })
+    .await;
+    assert!(
+        session.stall().is_none(),
+        "the recovered hold is not a stall"
+    );
+    let log = session.snapshot();
+    assert!(log.iter().any(|e| matches!(
+        &e.payload,
+        Payload::ToolResult {
+            wire: WireState::Distilled(_),
+            ..
+        }
+    )));
+    assert!(
+        !log.iter().any(|e| matches!(
+            &e.payload,
+            Payload::ToolResult {
+                wire: WireState::TriageFailed { .. },
+                ..
+            }
+        )),
+        "no triage failure is ever written"
+    );
+    let triage = log
+        .iter()
+        .find_map(|e| match &e.payload {
+            Payload::Triage(t) if t.for_result.is_some() => Some(t),
+            _ => None,
+        })
+        .expect("the gate's triage");
+    assert_eq!(triage.origin, Origin::Model);
+    assert!(
+        triage.retries.iter().any(|r| r.starts_with("held: ")),
+        "the hold is in the record: {:?}",
+        triage.retries
+    );
+    host.shut_down().await;
+}
+
+/// **A failed request takes the schedule.** The transport exhausts its own
+/// attempts on an overloaded upstream and returns an error; the loop records it
+/// and waits to retry instead of stalling, and the operator's continue cuts the
+/// wait short.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_failed_request_is_retried_and_continue_skips_the_wait() {
+    let requests = Arc::new(AtomicUsize::new(0));
+    // The transport makes four attempts before the loop sees the failure.
+    let addr = scripted(Arc::clone(&requests), |n| match n {
+        0..4 => Answer::Status(503, OVERLOADED),
+        _ => Answer::Stream(end_turn()),
+    });
+    let (host, runtime) = start(addr);
+    let session = Arc::clone(runtime.session());
+    session.submit_turn(SubmittedTurn::new("go", "s1"));
+
+    wait_until("the loop is waiting to retry", || {
+        session.upstream_retry.get().is_some()
+    })
+    .await;
+    assert!(
+        session.stall().is_none(),
+        "a transient failure does not stall"
+    );
+    assert_eq!(session.request_continue(), Ok(()), "continue retries now");
+    wait_until("the turn finishes", || {
+        !session.running.load(Ordering::SeqCst)
+    })
+    .await;
+    assert!(session.stall().is_none());
+    assert!(session.upstream_retry.get().is_none());
+    assert!(
+        session.snapshot().iter().any(|e| matches!(
+            &e.payload,
+            Payload::Assistant {
+                upstream_failure: Some(_),
+                ..
+            }
+        )),
+        "the failed request is in the record"
+    );
+    host.shut_down().await;
+}
+
+/// **Fresh forks, then a harness defect.** A peek that answers every attempt of
+/// every fork without a usable verdict is not an upstream condition: after
+/// `PEEK_FORKS` fresh forks of `PEEK_ATTEMPTS` each, the gate holds under
+/// `TriageDefect`, and still nothing reaches the agent.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_peek_that_never_answers_usably_is_held_as_a_defect() {
+    use crate::distill::PEEK_FORKS;
+    let requests = Arc::new(AtomicUsize::new(0));
+    let addr = scripted(Arc::clone(&requests), |n| match n {
+        0 => Answer::Stream(tool_call("toolu_1", "bash", r#"{"command":"echo hi"}"#)),
+        // Prose, not a verdict: unusable every time.
+        _ => Answer::Stream(end_turn()),
+    });
+    let (host, runtime) = start(addr);
+    let session = Arc::clone(runtime.session());
+    session.submit_turn(SubmittedTurn::new("go", "s1"));
+
+    wait_until("the gate is held", || session.stall().is_some()).await;
+    assert_eq!(session.stall().unwrap().reason, StallReason::TriageDefect);
+    // The tool call, then three attempts in each fork.
+    assert_eq!(requests.load(Ordering::SeqCst), 1 + 3 * PEEK_FORKS);
+    assert!(
+        !session
+            .snapshot()
+            .iter()
+            .any(|e| matches!(e.payload, Payload::ToolResult { .. })),
+        "nothing about the call reaches the log while it is held"
+    );
+    host.shut_down().await;
+}

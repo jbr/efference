@@ -414,11 +414,11 @@ pub(crate) struct UpstreamFailureView {
 /// rather than in a single status row.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct UpstreamRetryView {
-    /// `"turn"` or `"peek"` — an exhausted peek withholds a verdict where an
-    /// exhausted turn ends the trajectory, so the surface is rendered, not folded away.
+    /// `"turn"` or `"peek"` — a triage wait sits between tool results rather than
+    /// in a generation, so the surface is rendered, not folded away.
     pub surface: String,
-    /// The daemon's lead line, e.g. *stream aborted, retrying (2 of 12)*. It already
-    /// names the attempt and budget, so the status bar shows it verbatim.
+    /// The daemon's lead line, e.g. *attempt 2 of 12 failed upstream, retrying*. It
+    /// already names the attempt and budget, so the status bar shows it verbatim.
     pub message: String,
 }
 
@@ -431,8 +431,8 @@ pub(crate) struct UpstreamRetryView {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct StallView {
     /// The daemon's lead line, e.g. *the trajectory stopped: 12 attempts in a
-    /// row aborted upstream — send a turn to retry*. It already names the
-    /// recovery, so the status bar shows it verbatim.
+    /// row failed upstream*. The status bar shows it verbatim and adds the
+    /// recovery gesture.
     pub message: String,
 }
 

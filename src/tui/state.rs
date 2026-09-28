@@ -102,25 +102,26 @@ pub(super) fn upstream_failure_indicator(failure: Option<UpstreamFailureView>) -
 }
 
 /// The status-bar retry indicator (docs/transport.md). The daemon's `message`
-/// already reads as a sentence — *stream aborted, retrying (2 of 12)* — so it is
-/// shown verbatim and leads; the status code is never the headline. A fork peek's
-/// retry takes a `peek:` prefix, because an exhausted peek withholds a verdict
-/// where an exhausted turn ends the trajectory.
+/// already reads as a sentence — *attempt 2 of 12 failed upstream, retrying* — so
+/// it is shown verbatim and leads; the status code is never the headline. A triage
+/// peek's retry takes a `triage:` prefix, so a wait between tool results is not read
+/// as the model generating. The tail says the retry is automatic and that `⏎` on an
+/// empty composer skips the wait.
 pub(super) fn upstream_retry_indicator(retry: Option<&UpstreamRetryView>) -> Option<String> {
     let retry = retry?;
     Some(match retry.surface.as_str() {
-        "turn" => format!("↻ {}", retry.message),
-        surface => format!("↻ {surface}: {}", retry.message),
+        "turn" => format!("↻ {} · ⏎ retries now", retry.message),
+        "peek" => format!("↻ triage: {} · ⏎ retries now", retry.message),
+        surface => format!("↻ {surface}: {} · ⏎ retries now", retry.message),
     })
 }
 
 /// The status-bar stall indicator (docs/transport.md). The daemon's `message`
-/// already names both what happened and what recovers it — *the trajectory
-/// stopped: 12 attempts in a row aborted upstream — send a turn to retry* — so
-/// it is shown verbatim. It is the one indicator that means the loop is idle
-/// *and* unfinished, which nothing else in the bar says.
+/// names what happened — *the trajectory stopped: 12 attempts in a row failed
+/// upstream* — and the tail names the recovery, which is this client's gesture:
+/// `⏎` on an empty composer retries, as often as it is pressed.
 pub(super) fn stall_indicator(stall: Option<&StallView>) -> Option<String> {
-    Some(format!("⚠ {}", stall?.message))
+    Some(format!("⚠ {} · ⏎ to retry", stall?.message))
 }
 
 /// UI mode — the modal structure of the interface. ferritin's `DevLog` and

@@ -23,10 +23,11 @@
 //!   notifications to pin. The peek sends the *same* request envelope as an agent turn —
 //!   one shared `tools[]`, `tool_choice: auto`, the same thinking policy — so both
 //!   shapes read one cache lineage (docs/redaction-fork.md, docs/log-and-projection.md).
-//!   A non-compliant response gets a bounded in-fork retry; exhaustion is a **hard
-//!   error** — the results project [`WireState::TriageFailed`] (an error in place of
-//!   the output; the raw stays in the log) and the inbox is left untouched. The full
-//!   untriaged raw is never welded onto the canonical wire.
+//!   A non-compliant response gets a bounded in-fork retry, then a fresh fork; an
+//!   upstream failure takes the main loop's schedule. A gate that still has no verdict
+//!   returns a [`GateFailure`] and the loop **holds** the results — nothing reaches
+//!   the agent until a verdict does (docs/redaction-fork.md). The full untriaged raw
+//!   is never welded onto the canonical wire.
 
 use std::collections::HashSet;
 
@@ -34,7 +35,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::agent::{STREAM_ABORT_ATTEMPTS, stream_abort_backoff, stream_abort_retry};
-use crate::api::{Client, Completion, RequestUsage, RetrySurface, ToolChoice};
+use crate::api::{Client, Completion, RequestUsage, RetrySurface, ToolChoice, UpstreamRetryCell};
 use crate::context::Item;
 use crate::inbox::ShownNotification;
 use crate::log::{
@@ -94,9 +95,8 @@ pub struct Distillation {
 }
 
 /// The outcome of one triage gate (docs/redaction-fork.md). A gate rides the results of
-/// a single completion — usually one, but a provider that ignores the single-call
-/// request (docs/README.md) returns several, and all of them are triaged together in
-/// one peek. That grouping is what keeps the peek's request valid: every `tool_use` in
+/// a single completion — one or several calls (docs/README.md), all of them triaged
+/// together in one peek. That grouping is what keeps the peek's request valid: every `tool_use` in
 /// the trailing assistant message is answered by a real result in the same tail, so
 /// nothing is ever orphaned.
 ///
@@ -106,8 +106,8 @@ pub struct Distillation {
 #[derive(Default)]
 pub struct GateOutcome {
     /// One verdict per [`Pending`] handed in, in the same order. Always the same
-    /// length as the input — a failed peek yields [`WireState::TriageFailed`]
-    /// verdicts, never a short vector, so the loop can zip them without checking.
+    /// length as the input — a gate without a verdict for every result is a
+    /// [`GateFailure`], never a short vector — so the loop can zip them without checking.
     pub results: Vec<Distillation>,
     /// Per-notification dispositions this peek chose, by arrival `seq` (docs/inbox.md) —
     /// filtered to notifications actually shown. Empty when nothing was pinned or
@@ -141,38 +141,50 @@ pub struct GateOutcome {
     pub thinking: Vec<String>,
 }
 
+/// A gate that produced no verdict (docs/redaction-fork.md): why, plus the audit
+/// pieces its attempts accumulated, which the loop carries onto the `Triage` of the
+/// attempt that finally succeeds. The results are never shown to the agent in this
+/// state; the loop holds them.
+pub struct GateFailure {
+    pub failure: PeekFailure,
+    pub usage: Vec<RequestUsage>,
+    pub retries: Vec<String>,
+    pub thinking: Vec<String>,
+}
+
+impl GateFailure {
+    fn new(failure: PeekFailure, record: PeekRecord) -> Self {
+        Self {
+            failure,
+            usage: record.usage,
+            retries: record.retries,
+            thinking: record.thinking,
+        }
+    }
+}
+
 impl GateOutcome {
-    /// The hard-error outcome for a whole gate (docs/redaction-fork.md): the peek
-    /// could not elicit a usable verdict (a transport failure, or in-fork retry
-    /// exhaustion), so every result projects [`WireState::TriageFailed`] — an error
-    /// in place of the output, `is_error` forced true, exactly as if the call itself
-    /// had failed. The full untriaged raw is **never** the fallback: `WireState` is
-    /// fixed once, so an uncurated result would stay in the cached prefix for the
-    /// rest of the session with every later turn paying for it. `raw` stays in the
-    /// log; the agent decides whether to re-issue the call, and the error is visible
-    /// to the operator in the transcript like any failed call.
-    ///
-    /// `why` records the cause — it renders in each error result and lands in each
-    /// result's `raw_keep`, the field the `Triage` entry carries for audit. Without
-    /// it a failure is anonymous: a malformed verdict, a wrong-tool call, and a
-    /// transport error all read identically after the fact.
-    pub fn failed(count: usize, usage: Vec<RequestUsage>, why: &str) -> Self {
+    /// The outcome of a gate the operator interrupted before any verdict
+    /// (docs/control-channel.md): every result is withheld from the wire exactly as
+    /// the interrupt's *after* juncture withholds one — [`WireState::Elided`], the raw
+    /// kept in the log — and the operator's own message is the next thing the agent
+    /// reads. Nothing here says triage failed, because from the agent's side nothing
+    /// did: the operator stopped the turn.
+    pub fn interrupted(count: usize, retries: Vec<String>, thinking: Vec<String>) -> Self {
         Self {
             results: (0..count)
                 .map(|_| Distillation {
-                    wire: WireState::TriageFailed {
-                        why: why.to_string(),
-                    },
+                    wire: WireState::Elided,
                     origin: Origin::Fallback,
-                    raw_keep: why.to_string(),
+                    raw_keep: "interrupted by the operator before a verdict".to_string(),
                 })
                 .collect(),
             inbox: Vec::new(),
             background: Vec::new(),
             surfaced: Vec::new(),
-            usage,
-            retries: Vec::new(),
-            thinking: Vec::new(),
+            usage: Vec::new(),
+            retries,
+            thinking,
         }
     }
 }
@@ -348,9 +360,9 @@ impl ForkPeek {
         pending: &[Pending<'_>],
         inbox: &[ShownNotification],
         background: &[BgView],
-    ) -> GateOutcome {
+    ) -> Result<GateOutcome, GateFailure> {
         if pending.is_empty() {
-            return GateOutcome::default();
+            return Ok(GateOutcome::default());
         }
         // The labels this gate is asking about, in call order — the `retain` verdict's
         // coordinate system ([`labels`]), minus the results the shape rule bypassed.
@@ -358,7 +370,7 @@ impl ForkPeek {
         // ([`require_coverage`]): an incomplete verdict retries in-fork rather than
         // leaving a result untriaged.
         if let Some(outcome) = bypassed_gate(pending) {
-            return outcome;
+            return Ok(outcome);
         }
         let labels = labels(pending);
         let offered = offered_labels(pending);
@@ -370,6 +382,8 @@ impl ForkPeek {
         let mut record = PeekRecord::default();
         let parsed = peek_with_retries(
             self.client(agent),
+            &agent.upstream_retry(),
+            Patience::GATE,
             messages,
             self.tools(agent_tools),
             self.choice(RETAIN),
@@ -385,24 +399,10 @@ impl ForkPeek {
 
         let verdict = match parsed {
             Ok(v) => v,
-            Err(why) => {
-                // No usable verdict. The results are withheld as hard errors
-                // (docs/redaction-fork.md) — never kept untriaged, which would weld
-                // the full raw into the cached prefix for the rest of the session.
-                // The error is on the wire, so the agent can re-issue the call and
-                // the operator sees the failure in the transcript; the raw stays in
-                // the log, and the breadcrumb classifies what came back.
-                log::error!(
-                    "fork peek produced no usable verdict for {} result(s); withholding \
-                     output as a hard error — {why}",
-                    offered.len()
-                );
-                let mut outcome = GateOutcome::failed(pending.len(), record.usage, &why);
-                outcome.retries = record.retries;
-                // A gate that failed is the one whose reasoning most needs reading.
-                outcome.thinking = record.thinking;
-                return outcome;
-            }
+            // No verdict: the loop holds the results (docs/redaction-fork.md) — never
+            // kept untriaged, which would weld the full raw into the cached prefix, and
+            // never withheld as an error the agent would have to reason about.
+            Err(failure) => return Err(GateFailure::new(failure, record)),
         };
 
         // Apply the model's verdicts in call order. Coverage was validated above, so
@@ -416,7 +416,7 @@ impl ForkPeek {
                 // Decided by the shape rule before the fork was consulted
                 // (docs/redaction-fork.md) — a `retain` entry for it, had the peek
                 // written one unasked, finds no home.
-                Some(shape) => bypass_verdict(shape),
+                Some(shape) => Some(bypass_verdict(shape)),
                 None => match verdict
                     .results
                     .iter()
@@ -428,24 +428,24 @@ impl ForkPeek {
                             note: v.note.clone(),
                             intent_feedback: v.intent_feedback.clone(),
                         });
-                        Distillation {
+                        Some(Distillation {
                             wire,
                             origin: Origin::Model,
                             raw_keep: v.raw_keep.clone(),
-                        }
+                        })
                     }
-                    // Unreachable in practice (coverage validated); defensively
-                    // withhold rather than keep untriaged output.
-                    None => Distillation {
-                        wire: WireState::TriageFailed {
-                            why: "no verdict for this result".into(),
-                        },
-                        origin: Origin::Fallback,
-                        raw_keep: String::new(),
-                    },
+                    // Unreachable in practice (coverage validated); a gap is a
+                    // harness defect, answered like any other gate without a verdict.
+                    None => None,
                 },
             })
-            .collect();
+            .collect::<Option<Vec<_>>>();
+        let Some(results) = results else {
+            return Err(GateFailure::new(
+                PeekFailure::Unusable("a validated verdict left a result unanswered".into()),
+                record,
+            ));
+        };
 
         // Keep only dispositions for notifications we actually showed (drop any stray id
         // the model invented).
@@ -471,7 +471,7 @@ impl ForkPeek {
             .filter(|n| offered_names.contains(n.as_str()) && kept.insert(n.clone()))
             .collect();
 
-        GateOutcome {
+        Ok(GateOutcome {
             results,
             inbox: dispositions,
             background: bg,
@@ -479,7 +479,7 @@ impl ForkPeek {
             usage: record.usage,
             retries: record.retries,
             thinking: record.thinking,
-        }
+        })
     }
 
     /// The standalone idle-triage peek (docs/supervisor.md, docs/inbox.md): fork off
@@ -509,6 +509,8 @@ impl ForkPeek {
         let (client, tools, choice) = self.idle_envelope(agent, agent_tools);
         let parsed = peek_with_retries(
             client,
+            &agent.upstream_retry(),
+            Patience::ASIDE,
             messages,
             tools,
             choice,
@@ -575,6 +577,7 @@ use prompt::*;
 use validate::*;
 
 pub use own::TriageModel;
+pub use peek::{PEEK_FORKS, PeekFailure};
 pub use replay::{PeekAttempt, ReplayVerdict, peek_request};
 pub use schema::{retain_tool, triage_tool};
 pub use title::{TITLE_MAX_CHARS, TitlePeek};

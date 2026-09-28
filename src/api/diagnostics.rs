@@ -16,7 +16,9 @@
 //! record-only entries that project to nothing (docs/log-and-projection.md).
 
 use std::collections::VecDeque;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use serde::Serialize;
 use tokio::sync::Notify;
@@ -98,17 +100,23 @@ pub struct UpstreamRetry {
     pub detail: String,
 }
 
-/// The retry cell and its change signal.
+/// The retry cell, its change signal, and the operator's "retry now".
 ///
 /// The signal is here rather than on `Session` because the fork peek publishes retry
 /// state from inside `distill`, which holds a `Client` and no `Session` — and unlike
 /// the upstream-failure cell, a retry is *not* followed by an append, so the
 /// daemon's wake-on-`appended` fallback would leave the topic late for the whole
-/// pause (daemon/topics.rs).
+/// pause (daemon/topics.rs). "Retry now" lives here for the same reason: the waits it
+/// cuts short run in both loops, and only this cell reaches both.
 #[derive(Default, Debug)]
 pub struct UpstreamRetryCell {
     state: Mutex<Option<UpstreamRetry>>,
     changed: Notify,
+    /// Set by [`hurry`](Self::hurry), consumed by the wait it ends — a flag beside
+    /// the notify so a hurry landing between a publish and the wait that follows it
+    /// is not lost.
+    hurried: AtomicBool,
+    hurry: Notify,
 }
 
 /// Shared retry state: written by both retry loops, read by `GET /state`.
@@ -150,7 +158,44 @@ impl UpstreamRetryCell {
         }
         *state = None;
         drop(state);
+        // A hurry aimed at the retry that just ended has nothing left to cut short.
+        self.hurried.store(false, Ordering::SeqCst);
         self.changed.notify_waiters();
+    }
+
+    /// The operator's "retry now" (docs/transport.md): end the current wait — a
+    /// backoff pause, or a hold after the budget ran out — so the next attempt
+    /// fires immediately. The caller decides whether anything is waiting; a hurry
+    /// with no wait in progress is consumed by the next wait to start, or dropped
+    /// when that retry clears.
+    pub fn hurry(&self) {
+        self.hurried.store(true, Ordering::SeqCst);
+        self.hurry.notify_waiters();
+    }
+
+    /// Wait out `pause`, or until [`hurry`](Self::hurry) — with `None`, only until
+    /// a hurry. Returns whether the wait was cut short.
+    pub async fn pause(&self, pause: Option<Duration>) -> bool {
+        let hurried = self.hurry.notified();
+        tokio::pin!(hurried);
+        // Registered before the flag is read, so a hurry between the two wakes this.
+        hurried.as_mut().enable();
+        if self.hurried.swap(false, Ordering::SeqCst) {
+            return true;
+        }
+        let elapsed = async {
+            match pause {
+                Some(pause) => tokio::time::sleep(pause).await,
+                None => std::future::pending().await,
+            }
+        };
+        tokio::select! {
+            () = elapsed => false,
+            () = &mut hurried => {
+                self.hurried.store(false, Ordering::SeqCst);
+                true
+            }
+        }
     }
 
     /// Wait for the next change. Arm this **before** reading the value, like every

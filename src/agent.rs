@@ -157,20 +157,20 @@ const MAX_TOOL_RESULT_BYTES: usize = 256 * 1024;
 /// Coalesce a burst of near-simultaneous events into one idle-triage peek (docs/supervisor.md).
 const IDLE_TRIAGE_DEBOUNCE_MS: u64 = 250;
 
-/// Attempts per model call when the stream dies before finalizing
-/// (docs/transport.md): each aborted attempt's partial is appended record-only
-/// (it projects to nothing, so the replay re-sends byte-identical messages over
-/// the still-warm prefix), then the request goes again after a
-/// [`stream_abort_backoff`] pause. The fork peek reaches for the same constant
-/// and the same schedule (`distill.rs`): one stated policy for a stream that
-/// dies before finalizing, whichever surface it lands on.
+/// Attempts per model call when the upstream fails transiently — a stream that
+/// dies before finalizing, or a request that could not open one
+/// (docs/transport.md): each failed attempt is appended record-only (it projects
+/// to nothing, so the replay re-sends byte-identical messages over the still-warm
+/// prefix), then the request goes again after a [`stream_abort_backoff`] pause.
+/// The fork peek's gate reaches for the same constant and the same schedule
+/// (`distill/peek.rs`): one stated policy, whichever surface the failure lands on.
 ///
-/// Sized to **wait the failure out**. A mid-stream abort is an ephemeral
-/// upstream condition, and the alternative on exhaustion — idling with "send a
-/// turn to retry" — is not clearly better than waiting another few minutes, and
-/// is strictly worse when nobody is at the keyboard to read it — exhaustion is
-/// legible to a supervising client through the `stall` topic, but a turn still
-/// has to come from somewhere (docs/transport.md). Sized against an endpoint whose p99
+/// Sized to **wait the failure out**. An upstream failure is usually an ephemeral
+/// condition, and the alternative on exhaustion — a stall the operator has to
+/// continue — is not clearly better than waiting another few minutes, and is
+/// strictly worse when nobody is at the keyboard to read it: exhaustion is
+/// legible to a supervising client through the `stall` topic, but the continue
+/// still has to come from somewhere (docs/transport.md). Sized against an endpoint whose p99
 /// latency sits near the client's timeout, where abort streaks run several deep rather
 /// than recovering on the first retry. Twelve attempts on the capped schedule spends
 /// about three and a half minutes before giving up.
@@ -196,17 +196,18 @@ pub(crate) fn stream_abort_backoff(aborted: u32) -> Option<std::time::Duration> 
 pub(crate) fn stream_abort_retry(
     surface: RetrySurface,
     attempt: u32,
+    budget: u32,
     pause: std::time::Duration,
     why: &str,
 ) -> UpstreamRetry {
     UpstreamRetry {
         surface,
         attempt,
-        budget: STREAM_ABORT_ATTEMPTS,
+        budget,
         next_attempt_at: crate::log::Timestamp::now()
             .0
             .saturating_add(pause.as_millis() as u64),
-        message: format!("stream aborted, retrying ({attempt} of {STREAM_ABORT_ATTEMPTS})"),
+        message: format!("attempt {attempt} of {budget} failed upstream, retrying"),
         detail: why.to_string(),
     }
 }
@@ -432,7 +433,10 @@ pub async fn run<F: Frontend, S: Spotter>(
                 // failed HTTP attempts on the way here; each gets its own durable
                 // record before the outcome is judged (docs/transport.md).
                 record_absorbed_attempts(&shared, client, &mut turn)?;
-                match outcome {
+                // A failed attempt, in either of its two shapes, becomes the same
+                // three things: its words, whether the provider named it as one no
+                // retry can change, and the stall reason if that ends the trajectory.
+                let (why, terminal) = match outcome {
                     Ok(completion) => {
                         let Some(why) = completion.upstream_failure().map(str::to_string) else {
                             break Some(completion);
@@ -455,83 +459,29 @@ pub async fn run<F: Frontend, S: Spotter>(
                             eprintln!("[generation ended by the operator]");
                             break None;
                         }
-                        aborted_attempts += 1;
                         turn += 1;
                         shared.record_request(
                             RequestOrigin::AbortedAttempt,
                             completion.request_usage(),
                         );
-                        let terminal = completion.terminal_failure().is_some();
+                        // The provider named the failure as one a retry cannot change
+                        // (`api/failure.rs`): an exhausted plan, a rejected request.
+                        let terminal = completion
+                            .terminal_failure()
+                            .is_some()
+                            .then_some(StallReason::UpstreamRefused);
                         shared.append(turn, completion.assistant)?;
-                        if terminal {
-                            // The provider named the failure as one a retry cannot
-                            // change (`api/failure.rs`): an exhausted plan, a
-                            // rejected request. The schedule would only repeat the
-                            // answer, so the trajectory stalls now, with the same
-                            // audiences as exhaustion — the record-only entry, stderr,
-                            // and the stall topic carrying the provider's words.
-                            eprintln!("[stream refused upstream: {why}]");
-                            shared.set_stall(stalled(
-                                StallReason::UpstreamRefused,
-                                Some(aborted_attempts),
-                                "the trajectory stopped: the upstream refused the \
-                                 request — send a turn to retry once the condition \
-                                 it names has changed"
-                                    .to_string(),
-                                why.clone(),
-                            ));
-                            break None;
-                        }
-                        if aborted_attempts >= STREAM_ABORT_ATTEMPTS {
-                            eprintln!(
-                                "[stream unusable, {aborted_attempts} attempts \
-                                 exhausted: {why}]"
-                            );
-                            // An upstream failure is told to the operator and the log,
-                            // never to the model (docs/transport.md): if we are in a
-                            // position to describe the failure to it, we have already
-                            // recovered from it, and the description only becomes
-                            // something it reasons about mid-task. The topic is
-                            // addressed to a supervising *client*, which otherwise sees
-                            // an idle daemon indistinguishable from a finished run; it
-                            // carries the attempt count and the upstream's own words.
-                            shared.set_stall(stalled(
-                                StallReason::RetriesExhausted,
-                                Some(aborted_attempts),
-                                format!(
-                                    "the trajectory stopped: {aborted_attempts} \
-                                     attempts in a row aborted upstream — send a \
-                                     turn to retry"
-                                ),
-                                why.clone(),
-                            ));
-                            break None;
-                        }
-                        eprintln!(
-                            "[stream unusable (attempt {aborted_attempts} of \
-                             {STREAM_ABORT_ATTEMPTS}): {why} — retrying]"
-                        );
-                        if let Some(pause) = stream_abort_backoff(aborted_attempts) {
-                            // The wait is the state: publish it before sleeping, so a
-                            // client can tell "retrying, attempt 3 of 12" from "the
-                            // model is thinking hard" (docs/transport.md).
-                            client.upstream_retry().set(stream_abort_retry(
-                                RetrySurface::Turn,
-                                aborted_attempts,
-                                pause,
-                                &why,
-                            ));
-                            tokio::time::sleep(pause).await;
-                        }
+                        (why, terminal)
                     }
                     // The request itself failed — nothing streamed, and the transport's
-                    // own retry handler already exhausted the transient family
+                    // own retry handler has already spent its attempts
                     // (docs/transport.md). An empty record-only entry carries the error
-                    // body into the log (stderr isn't durable), the projected prefix is
-                    // unchanged, and the trajectory fails back to idle with the daemon
-                    // and its control socket alive.
+                    // into the log (stderr isn't durable) and the projected prefix is
+                    // unchanged. A connection that timed out or was refused, or a
+                    // retryable status that outlasted the transport, takes the same
+                    // schedule as an aborted stream; a rejection of the request itself
+                    // stalls at once.
                     Err(error) => {
-                        eprintln!("[completion failed: {error}]");
                         turn += 1;
                         shared.append(
                             turn,
@@ -540,19 +490,64 @@ pub async fn run<F: Frontend, S: Spotter>(
                                 upstream_failure: Some(error.to_string().into()),
                             },
                         )?;
-                        // Operator and log, not the model (docs/transport.md): the error
-                        // body rides the stall's `detail` and the record-only entry.
-                        shared.set_stall(stalled(
-                            StallReason::RequestFailed,
-                            None,
-                            "the trajectory stopped: the upstream request failed — \
-                             send a turn to retry"
-                                .to_string(),
-                            error.to_string(),
-                        ));
-                        break None;
+                        let terminal = (crate::api::error_class(&error)
+                            != crate::api::FailureClass::Transient)
+                            .then_some(StallReason::RequestFailed);
+                        (error.to_string(), terminal)
                     }
+                };
+                aborted_attempts += 1;
+                if let Some(reason) = terminal {
+                    // The schedule would only repeat the answer, so the trajectory
+                    // stalls now, with the same audiences as exhaustion — the
+                    // record-only entry, stderr, and the stall topic carrying the
+                    // provider's words.
+                    eprintln!("[upstream refused the request: {why}]");
+                    shared.set_stall(stalled(
+                        reason,
+                        Some(aborted_attempts),
+                        "the trajectory stopped: the upstream refused the request".to_string(),
+                        why,
+                    ));
+                    break None;
                 }
+                let Some(pause) = stream_abort_backoff(aborted_attempts) else {
+                    eprintln!("[upstream unusable, {aborted_attempts} attempts exhausted: {why}]");
+                    // An upstream failure is told to the operator and the log,
+                    // never to the model (docs/transport.md): if we are in a
+                    // position to describe the failure to it, we have already
+                    // recovered from it, and the description only becomes
+                    // something it reasons about mid-task. The topic is
+                    // addressed to a supervising *client*, which otherwise sees
+                    // an idle daemon indistinguishable from a finished run; it
+                    // carries the attempt count and the upstream's own words.
+                    shared.set_stall(stalled(
+                        StallReason::RetriesExhausted,
+                        Some(aborted_attempts),
+                        format!(
+                            "the trajectory stopped: {aborted_attempts} attempts in a row \
+                             failed upstream"
+                        ),
+                        why,
+                    ));
+                    break None;
+                };
+                eprintln!(
+                    "[upstream attempt {aborted_attempts} of {STREAM_ABORT_ATTEMPTS} failed: \
+                     {why} — retrying]"
+                );
+                // The wait is the state: publish it before sleeping, so a client can
+                // tell "retrying, attempt 3 of 12" from "the model is thinking hard"
+                // (docs/transport.md). The operator's continue cuts it short.
+                let retry = client.upstream_retry();
+                retry.set(stream_abort_retry(
+                    RetrySurface::Turn,
+                    aborted_attempts,
+                    STREAM_ABORT_ATTEMPTS,
+                    pause,
+                    &why,
+                ));
+                retry.pause(Some(pause)).await;
             };
             // The all-clear, on every exit from the loop: the attempt that finalized,
             // the exhausted budget (its own visible outcome, via the stall topic and
@@ -623,11 +618,8 @@ pub async fn run<F: Frontend, S: Spotter>(
                 break; // model is done with this turn → wait for the next.
             }
 
-            // A completion usually carries one call (docs/README.md), but
-            // `disable_parallel_tool_use` is a *request*, not a guarantee — no
-            // OpenRouter-routed endpoint supports the equivalent knob at all, so a
-            // provider may return several. Run them all here, holding the results, and
-            // triage them together at one gate below. Triaging between calls would build
+            // A completion may carry several calls (docs/README.md). Run them all
+            // here, holding the results, and triage them together at one gate below. Triaging between calls would build
             // a fork request whose trailing assistant message still carries unanswered
             // `tool_use` blocks, which the API rejects (docs/redaction-fork.md).
             let mut abort_turn = false;
@@ -741,11 +733,22 @@ pub async fn run<F: Frontend, S: Spotter>(
                 // The live background processes' fresh tails ride the same peek
                 // (docs/supervisor.md) — re-sampled now, never logged unless pinned.
                 let background = shared.bg_snapshot();
-                Some(
-                    distiller
+                // A gate without a verdict holds rather than reaching the agent
+                // (docs/redaction-fork.md): the stall names it, and the operator's
+                // continue runs the gate again from the top.
+                let mut carried = Carried::default();
+                Some(loop {
+                    match distiller
                         .distill(client, &tools, &entries, &pending, &shown, &background)
-                        .await,
-                )
+                        .await
+                    {
+                        Ok(outcome) => break carried.onto(outcome),
+                        Err(failure) => match hold(&shared, client, failure, &mut carried).await {
+                            Held::Retry => continue,
+                            Held::Interrupted => break carried.interrupted(pending.len()),
+                        },
+                    }
+                })
             };
             drop(pending);
 
@@ -904,8 +907,8 @@ pub async fn run<F: Frontend, S: Spotter>(
                 shared.append(turn, Payload::User(vec![ContentBlock::Text(message)]))?;
             }
             // The juncture after the gate (docs/control-channel.md): an interrupt
-            // pressed during the peek ended it with the latch still set. Consumed
-            // here, the turn ends with the results logged under a failed verdict;
+            // pressed during the peek or a held gate ended it with the latch still
+            // set. Consumed here, the turn ends with the results logged withheld;
             // left set, the next completion's first call would take it, after a
             // paid request and after any turn the operator queued to explain the
             // press had already been drained into that request.
@@ -923,6 +926,7 @@ pub async fn run<F: Frontend, S: Spotter>(
 mod test;
 
 mod config_edit;
+mod gate;
 mod results;
 mod step;
 mod telemetry;
@@ -930,6 +934,7 @@ mod title;
 mod triage;
 
 use config_edit::*;
+use gate::*;
 use results::*;
 use step::*;
 use title::*;

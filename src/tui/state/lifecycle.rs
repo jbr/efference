@@ -195,13 +195,12 @@ impl<'a> InteractiveState<'a> {
     /// `None`: the loop records such a turn without executing it, so nothing is in
     /// flight.
     ///
-    /// `disable_parallel_tool_use` asks for one call per turn but cannot enforce it
-    /// (docs/README.md), so an entry may carry several — and the loop appends *no*
-    /// result until every call has run and the gate has closed
+    /// A completion may make several calls (docs/README.md), and the loop appends
+    /// *no* result until every call has run and the gate has closed
     /// (docs/redaction-fork.md). So on a multi-call step this reports the entry's first
-    /// call for the whole step, not whichever call is currently executing. Exact in the
-    /// single-call case, which is the norm; approximate on the rare multi-call one, where
-    /// the cost is a slightly stale label rather than a wrong lifecycle state. A gate
+    /// call for the whole step, not whichever call is currently executing — exact for a
+    /// single call; on a batch the cost is a stale label rather than a wrong lifecycle
+    /// state. A gate
     /// pending on the call looks the same from here; callers that care check
     /// `pending_gate` first.
     ///

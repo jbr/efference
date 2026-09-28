@@ -191,11 +191,14 @@ impl Session {
         }
     }
 
-    /// Whether the daemon is at a **decision point** a client can act on: a gate is pending, or the
-    /// loop is idle (parked with nothing queued). Mid-turn — running, no gate — is *not* settled.
-    /// The predicate behind `/settle` and the `?wait` flag (docs/permissions.md).
+    /// Whether the daemon is at a **decision point** a client can act on: a gate is pending, the
+    /// loop is stalled (a triage gate held on the upstream waits on the operator's continue,
+    /// docs/redaction-fork.md), or the loop is idle (parked with nothing queued). Mid-turn —
+    /// running, no gate, no stall — is *not* settled. The predicate behind `/settle` and the
+    /// `?wait` flag (docs/permissions.md).
     pub(super) fn is_settled(&self) -> bool {
         self.pending.lock().unwrap().is_some()
+            || self.stall().is_some()
             || (!self.running.load(Ordering::SeqCst)
                 && self.queue.lock().unwrap().is_empty()
                 // An accepted `POST /loop/continue` (docs/control-api.md) is a turn

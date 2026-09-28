@@ -17,13 +17,13 @@ export interface UpstreamChip {
   retrying: boolean;
 }
 
-/** The retry's lead line, with a fork peek marked apart from a turn: an
- * exhausted peek withholds a verdict where an exhausted turn ends the
- * trajectory, so the two are not the same event to someone watching a run. */
+/** The retry's lead line, with a triage retry marked apart from a turn's: the
+ * wait sits between tool results rather than in a generation, so the two are
+ * not the same event to someone watching a run. */
 export function retryText(retry: UpstreamRetry): string {
-  return retry.surface === "turn"
-    ? `↻ ${retry.message}`
-    : `↻ ${retry.surface}: ${retry.message}`;
+  if (retry.surface === "turn") return `↻ ${retry.message}`;
+  const surface = retry.surface === "peek" ? "triage" : retry.surface;
+  return `↻ ${surface}: ${retry.message}`;
 }
 
 /**

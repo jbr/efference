@@ -1127,12 +1127,11 @@ pub enum WireState {
     Distilled(Distilled),
     /// Project nothing of substance; still recoverable from the log.
     Elided,
-    /// The gate could not elicit a usable triage verdict — a transport failure or
-    /// in-fork retry exhaustion (docs/redaction-fork.md). Projects a **hard error**
-    /// in place of the output (`is_error` forced true), never the untriaged raw,
-    /// which would weld the bloat into the cached prefix for the rest of the
-    /// session. `why` is the same breadcrumb the `Triage` entry records; `raw`
-    /// stays in the log.
+    /// A result an earlier harness withheld as a hard error because its gate had no
+    /// verdict. **No longer written**: a gate without a verdict now holds its
+    /// results until it has one (docs/redaction-fork.md). Kept so logs that carry it
+    /// still load and project as they did — a hard error in place of the output
+    /// (`is_error` forced true), `raw` still in the log.
     TriageFailed { why: String },
 }
 

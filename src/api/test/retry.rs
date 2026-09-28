@@ -64,6 +64,7 @@ fn retry_topic_tracks_attempts_and_clears_on_finalize() {
         retry.set(crate::agent::stream_abort_retry(
             RetrySurface::Turn,
             attempt,
+            crate::agent::STREAM_ABORT_ATTEMPTS,
             std::time::Duration::from_secs(1),
             "upstream SSE stream failed mid-stream: connection reset",
         ));
@@ -75,7 +76,7 @@ fn retry_topic_tracks_attempts_and_clears_on_finalize() {
         assert_eq!(
             live.message,
             format!(
-                "stream aborted, retrying ({attempt} of {})",
+                "attempt {attempt} of {} failed upstream, retrying",
                 crate::agent::STREAM_ABORT_ATTEMPTS
             )
         );
@@ -96,6 +97,7 @@ fn exhaustion_leaves_the_retry_topic_cleared() {
     retry.set(crate::agent::stream_abort_retry(
         RetrySurface::Peek,
         crate::agent::STREAM_ABORT_ATTEMPTS - 1,
+        crate::agent::STREAM_ABORT_ATTEMPTS,
         std::time::Duration::from_secs(30),
         "aborted",
     ));
@@ -119,6 +121,7 @@ fn a_peek_clear_does_not_erase_a_turn_retry() {
     retry.set(crate::agent::stream_abort_retry(
         RetrySurface::Turn,
         2,
+        crate::agent::STREAM_ABORT_ATTEMPTS,
         std::time::Duration::from_secs(2),
         "aborted",
     ));
@@ -368,4 +371,28 @@ async fn a_503_open_is_retried_and_the_attempt_is_queued() {
     assert_eq!(attempts.len(), 1);
     assert_eq!(attempts[0].status, 503);
     assert!(attempts[0].body.contains("server_is_overloaded"));
+}
+
+/// The operator's "retry now" (docs/transport.md) ends a backoff pause early, and a
+/// hurry landing before the pause starts is not lost; an unhurried pause runs out.
+#[tokio::test]
+async fn a_hurry_ends_the_pause_whenever_it_lands() {
+    let retry = upstream_retry_state();
+    let long = Some(std::time::Duration::from_secs(60));
+
+    retry.hurry();
+    assert!(retry.pause(long).await, "a hurry before the pause is kept");
+
+    let waiting = std::sync::Arc::clone(&retry);
+    let pause = tokio::spawn(async move { waiting.pause(long).await });
+    tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    retry.hurry();
+    assert!(pause.await.unwrap(), "a hurry during the pause ends it");
+
+    assert!(
+        !retry
+            .pause(Some(std::time::Duration::from_millis(10)))
+            .await,
+        "each hurry is consumed once"
+    );
 }

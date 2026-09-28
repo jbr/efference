@@ -170,7 +170,7 @@ fn request_envelope_matches_expected_wire_bytes() {
     let expected = concat!(
         r#"{"model":"claude-opus-5","max_tokens":4096,"system":"you are a harness","#,
         r#""tools":[{"description":"run a command","input_schema":{"type":"object"},"name":"bash"}],"#,
-        r#""tool_choice":{"type":"auto","disable_parallel_tool_use":true},"#,
+        r#""tool_choice":{"type":"auto"},"#,
         r#""thinking":{"type":"disabled"},"temperature":0.7,"#,
         r#""messages":[{"role":"user","content":[{"type":"text","text":"hello","cache_control":{"type":"ephemeral"}}]}],"#,
         r#""stream":true}"#,
@@ -224,7 +224,7 @@ fn with_effort_envelope_matches_expected_wire_bytes() {
     let expected = concat!(
         r#"{"model":"claude-opus-5","max_tokens":4096,"system":"you are a harness","#,
         r#""tools":[{"description":"run a command","input_schema":{"type":"object"},"name":"bash"}],"#,
-        r#""tool_choice":{"type":"auto","disable_parallel_tool_use":true},"#,
+        r#""tool_choice":{"type":"auto"},"#,
         r#""thinking":{"type":"adaptive","display":"summarized"},"#,
         r#""output_config":{"effort":"xhigh"},"temperature":0.7,"#,
         r#""messages":[{"role":"user","content":[{"type":"text","text":"hello","cache_control":{"type":"ephemeral"}}]}],"#,
@@ -260,7 +260,7 @@ fn openrouter_envelope_carries_the_prompt_cache_key() {
     };
     let expected = concat!(
         r#"{"model":"google/gemini-3.7-flash","max_tokens":1,"tools":[],"#,
-        r#""tool_choice":{"type":"auto","disable_parallel_tool_use":true},"#,
+        r#""tool_choice":{"type":"auto"},"#,
         r#""provider":{"order":["google-ai-studio"],"allow_fallbacks":false},"#,
         r#""prompt_cache_key":"work-0123456789abcdef","#,
         r#""messages":[],"stream":true}"#,
@@ -291,7 +291,7 @@ fn request_envelope_omits_unset_fields_entirely() {
     };
     let expected = concat!(
         r#"{"model":"m","max_tokens":1,"tools":[],"#,
-        r#""tool_choice":{"type":"auto","disable_parallel_tool_use":true},"#,
+        r#""tool_choice":{"type":"auto"},"#,
         r#""messages":[],"stream":true}"#,
     );
     assert_eq!(serde_json::to_string(&request).unwrap(), expected);
