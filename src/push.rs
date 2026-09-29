@@ -76,9 +76,10 @@ pub struct Message {
     pub title: String,
     pub body: String,
     /// Where `notificationclick` navigates, relative to the origin the
-    /// subscription was created on. `/` today — the session bind's own root; when
-    /// a host fronts sessions this carries the session-prefixed path instead, and
-    /// only this sender changes (the service worker opens whatever it is named).
+    /// subscription was created on: the session's web path (docs/web-bind.md) —
+    /// `/` on the session's own bind, `/sessions/<id>/` under a host. The
+    /// sender names it (docs/web-push.md); the service worker opens whatever
+    /// it is named.
     pub path: String,
 }
 

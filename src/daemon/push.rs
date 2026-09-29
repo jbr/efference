@@ -39,7 +39,10 @@ impl Session {
     /// settle suppress identically: both are notifications, enabled and disabled
     /// together, and no caller can grow its own exception.
     pub(super) fn push(&self, event: &str, body: String) {
-        let message = crate::push::Message::new(self.push_title(event), body);
+        let mut message = crate::push::Message::new(self.push_title(event), body);
+        // The notification opens this session, not the bind's root: the path
+        // the web client addresses this session by (docs/web-push.md).
+        message.path = self.web_path().to_string();
         if self.watched() {
             *self.suppressed.lock().unwrap() = Some(Suppressed {
                 at: std::time::Instant::now(),

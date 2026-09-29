@@ -100,6 +100,9 @@ impl Host {
         detached: bool,
     ) {
         let session = Arc::clone(runtime.session());
+        // The web client addresses an adopted session under the host's own
+        // mount, and a push notification opens that path (docs/web-push.md).
+        session.set_web_path(format!("/sessions/{id}/"));
         let hosted = Hosted {
             files: Files::rooted_at(session.cwd()),
             session: Arc::clone(&session),

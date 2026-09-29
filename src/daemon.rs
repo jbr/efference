@@ -217,6 +217,12 @@ pub struct Session {
     /// its watcher. Unset in tests and offline sessions, where the upload
     /// routes answer that there is nowhere to put a file.
     attachment_store: std::sync::OnceLock<crate::attachments::Store>,
+    /// The path the web client addresses this session by (docs/web-bind.md):
+    /// `/` on the session's own bind, `/sessions/<id>/` under a host. Set once
+    /// by whoever adopts the session — the bind's shape belongs to whoever
+    /// binds, never to a session (docs/web-client.md) — and read by the push
+    /// sender: a notification opens this path (docs/web-push.md).
+    web_path: std::sync::OnceLock<String>,
     /// The loop appends under this lock; handlers snapshot it for `GET /log`.
     /// The lock is only ever held across the
     /// synchronous `project`/append — never an `await`.
@@ -550,6 +556,19 @@ impl Session {
     pub fn cwd(&self) -> &std::path::Path {
         &self.cwd
     }
+    /// Name the session's web path (docs/web-bind.md): `/sessions/<id>/` under
+    /// a host, `/` on the session's own bind. Called once, by the host's
+    /// adopt; a session daemon never calls it and keeps the root default.
+    pub fn set_web_path(&self, path: String) {
+        let _ = self.web_path.set(path);
+    }
+
+    /// The path a push notification opens for this session (docs/web-push.md):
+    /// the web path the client addresses it by, `/` before a host has named it.
+    pub fn web_path(&self) -> &str {
+        self.web_path.get().map(String::as_str).unwrap_or("/")
+    }
+
     /// Record the session's storage base — the parent of `SessionPaths::storage`,
     /// the `.efference/` every session in this project shares (docs/tools.md).
     /// Called once by the runtime; unset in tests and offline sessions.
@@ -729,6 +748,7 @@ impl Session {
             cwd,
             storage_base: std::sync::OnceLock::new(),
             attachment_store: std::sync::OnceLock::new(),
+            web_path: std::sync::OnceLock::new(),
             log: Mutex::new(log),
             image_placement,
             turns_tx,

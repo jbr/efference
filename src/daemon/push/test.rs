@@ -22,6 +22,36 @@ fn stash_of(shared: &Session) -> Option<String> {
         .map(|s| s.message.title.clone())
 }
 
+fn stash_path_of(shared: &Session) -> Option<String> {
+    shared
+        .suppressed
+        .lock()
+        .unwrap()
+        .as_ref()
+        .map(|s| s.message.path.clone())
+}
+
+/// A push names the session's web path, `/` by default — the session bind's
+/// own root (docs/web-bind.md).
+#[test]
+fn a_push_names_the_bind_root_by_default() {
+    let shared = shared();
+    let _guard = shared.watch(Presence::On);
+    shared.push("Gate", "body".into());
+    assert_eq!(stash_path_of(&shared), Some("/".into()));
+}
+
+/// The host names each session's web path at adopt, and the push carries it —
+/// the deep link a notification opens (docs/web-push.md).
+#[test]
+fn a_push_names_the_adopted_web_path() {
+    let shared = shared();
+    shared.set_web_path("/sessions/hardy-hawk/".into());
+    let _guard = shared.watch(Presence::On);
+    shared.push("Gate", "body".into());
+    assert_eq!(stash_path_of(&shared), Some("/sessions/hardy-hawk/".into()));
+}
+
 /// Unwatched, a push goes straight to the send path and nothing is stashed.
 #[test]
 fn an_unwatched_push_is_not_stashed() {

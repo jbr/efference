@@ -325,7 +325,11 @@ async fn a_host_routes_each_prefix_to_its_own_session() {
     let host = Host::new(crate::inference::InferenceRegistry::empty());
     for label in ["one", "two"] {
         let runtime = SessionRuntime::start(runtime::boot(&roots.0.join(label)), host.swansong());
+        let session = Arc::clone(runtime.session());
         host.adopt(label.into(), runtime);
+        // The host names each adopted session's web path — what a push
+        // notification opens (docs/web-push.md).
+        assert_eq!(session.web_path(), format!("/sessions/{label}/"));
     }
     let server = host_server(&host, true).await;
 
