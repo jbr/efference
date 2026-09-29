@@ -32,7 +32,7 @@ export interface CardModel {
   /** The one line of what is happening: the gate's ask, the stall's message,
    * the running call's intent, or the last reply. `null` when none is known. */
   activity: Activity | null;
-  context: { used: number | null; limit: number } | null;
+  context: { used: number | null; limit: number | null } | null;
   costUsd: number | null;
   /** `triage` is `null` when it is the main model — the default. */
   models: { main: string; spotter: string; triage: string | null } | null;

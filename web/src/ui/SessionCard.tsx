@@ -215,18 +215,21 @@ export function SessionCard({
         <div className="card-line card-usage">
           {context !== null && (
             <span className="card-context">
-              <span className="meter">
-                <span
-                  className="meter-fill"
-                  style={{
-                    width:
-                      used === null
-                        ? 0
-                        : `${Math.min(100, (used / context.limit) * 100)}%`,
-                  }}
-                />
-              </span>
-              {used === null ? "–" : tokens(used)}/{tokens(context.limit)}
+              {context.limit !== null && (
+                <span className="meter">
+                  <span
+                    className="meter-fill"
+                    style={{
+                      width:
+                        used === null
+                          ? 0
+                          : `${Math.min(100, (used / context.limit) * 100)}%`,
+                    }}
+                  />
+                </span>
+              )}
+              {used === null ? "–" : tokens(used)}
+              {context.limit !== null && `/${tokens(context.limit)}`}
             </span>
           )}
           {card.costUsd !== null && <span>${card.costUsd.toFixed(2)}</span>}

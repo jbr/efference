@@ -433,8 +433,9 @@ export interface Usage {
   last_request_at: number | null;
   // Context-window occupancy (docs/transport.md): `limit` is the window itself —
   // not reduced by the output reservation — and `used` the last request's
-  // prompt tokens, null until the first request.
-  context: { limit: number; used: number | null } | null;
+  // prompt tokens, null until the first request. `limit` is null when the
+  // endpoint reported no window (a custom endpoint).
+  context: { limit: number | null; used: number | null } | null;
   cost: { usd: number; unpriced: number } | null;
   // The Codex backend's subscription windows as of the last response that named
   // them (docs/transport.md); null on every other provider. Resets are absolute

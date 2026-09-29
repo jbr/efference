@@ -21,27 +21,34 @@ const tokens = (n: number) =>
       : `${n}`;
 
 /** Context occupancy: the bar is the reading, the numbers a caption under it
- * so they take no width of their own. Drawn only when the context is known. */
+ * so they take no width of their own. Drawn only when the context is known; an
+ * endpoint that reported no window gets the count alone, with no bar to fill. */
 function ContextMeter({ context }: { context: NonNullable<Usage["context"]> }) {
-  const used = context.used;
+  const { used, limit } = context;
+  const usedText = used === null ? "?" : used.toLocaleString();
   return (
     <span
       className="context-meter"
-      title={`context: ${used === null ? "?" : used.toLocaleString()} of ${context.limit.toLocaleString()} tokens`}
+      title={
+        limit === null
+          ? `context: ${usedText} tokens (window unknown)`
+          : `context: ${usedText} of ${limit.toLocaleString()} tokens`
+      }
     >
-      <span className="meter">
-        <span
-          className="meter-fill"
-          style={{
-            width:
-              used === null
-                ? 0
-                : `${Math.min(100, (used / context.limit) * 100)}%`,
-          }}
-        />
-      </span>
+      {limit !== null && (
+        <span className="meter">
+          <span
+            className="meter-fill"
+            style={{
+              width:
+                used === null ? 0 : `${Math.min(100, (used / limit) * 100)}%`,
+            }}
+          />
+        </span>
+      )}
       <span className="context-caption">
-        {used === null ? "–" : tokens(used)}/{tokens(context.limit)}
+        {used === null ? "–" : tokens(used)}
+        {limit !== null && `/${tokens(limit)}`}
       </span>
     </span>
   );
