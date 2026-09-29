@@ -22,7 +22,8 @@ mod test;
 
 pub use inline::{run, run_hosted};
 
-pub(in crate::tui) use draft::{Draft, Role, RoleDraft, TriageDraft};
+pub(crate) use draft::Role;
+pub(in crate::tui) use draft::{Draft, RoleDraft, TriageDraft};
 
 use crate::inference::{ConnectionInventory, ResolvedOptions, SessionOptions};
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
@@ -54,6 +55,16 @@ enum Page {
     Form,
     Connections {
         role: Role,
+        selected: usize,
+    },
+    /// Recent models on one connection, most decayed weight first, with the
+    /// typed-ID editor as the last row. Entered with whatever the host has
+    /// answered so far: an empty list is a picker with only the typed path,
+    /// not a failure — which is also what a no-host form always shows.
+    Models {
+        role: Role,
+        connection: usize,
+        models: Vec<crate::client::ModelSuggestion>,
         selected: usize,
     },
     Text {
@@ -90,6 +101,15 @@ pub(super) struct Form {
     note: Option<String>,
 }
 
+/// The connection a recents menu was opened on: the role being picked, and
+/// the connection's index in the inventory. The container resolves the name
+/// and the working root, which never enter the UI thread.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct RecentsRequest {
+    pub(crate) role: Role,
+    pub(crate) connection: usize,
+}
+
 /// What a keypress asked the container to do. The form issues no requests
 /// itself: it names them, and the container's host dispatcher addresses the
 /// socket (`tui/run.rs`).
@@ -102,6 +122,9 @@ pub(super) enum Action {
     /// Post the creation. The container attaches the working root and the
     /// environment, which never enter the UI thread (docs/env.md).
     Create(SessionOptions),
+    /// Read this connection's recent models for the open menu. Answered with
+    /// whatever the host has; an empty answer is a typed-ID-only menu.
+    Recents(RecentsRequest),
 }
 
 impl Form {
@@ -166,6 +189,13 @@ impl Form {
         self.note = Some(message);
     }
 
+    /// Recent models failed to load. The menu stays open on its typed-ID row:
+    /// an empty answer and a failed one read the same, and closing the menu
+    /// would punish the operator for a read that was only ever a shortcut.
+    pub(crate) fn note_recents_failed(&mut self, message: String) {
+        self.note = Some(message);
+    }
+
     /// Ask for a fresh preview of the current draft, recording what was sent so
     /// a reply that arrives after the next edit can be recognized as stale.
     fn preview(&mut self) -> Action {
@@ -190,6 +220,15 @@ impl Form {
         &self.context.connections
     }
 
+    /// The connection index the open Models menu was opened on. Zero when no
+    /// menu is open — the value is only read beside a Models page.
+    fn model_connection(&self) -> usize {
+        match &self.page {
+            Page::Models { connection, .. } => *connection,
+            _ => 0,
+        }
+    }
+
     pub(super) fn handle(&mut self, key: KeyEvent) -> Action {
         if key.kind == KeyEventKind::Release {
             return Action::Continue;
@@ -200,11 +239,19 @@ impl Form {
         if key.code == KeyCode::Esc {
             self.page = match &self.page {
                 Page::Form => return Action::Cancel,
-                Page::Text {
+                Page::Models {
                     role, connection, ..
                 } => Page::Connections {
                     role: *role,
                     selected: connection + self.leading_choices(*role),
+                },
+                Page::Text {
+                    role, connection, ..
+                } => Page::Models {
+                    role: *role,
+                    connection: *connection,
+                    models: Vec::new(),
+                    selected: 0,
                 },
                 _ => Page::Form,
             };
@@ -230,6 +277,19 @@ impl Form {
                 }
                 match key.code {
                     KeyCode::Enter => self.choose_connection(role),
+                    _ => Action::Continue,
+                }
+            }
+            Page::Models { role, .. } => {
+                let len = match &self.page {
+                    Page::Models { models, .. } => models.len() + 1,
+                    _ => 1,
+                };
+                if let Page::Models { selected, .. } = &mut self.page {
+                    move_selection(selected, len, key.code);
+                }
+                match key.code {
+                    KeyCode::Enter => self.choose_model(role, self.model_connection()),
                     _ => Action::Continue,
                 }
             }

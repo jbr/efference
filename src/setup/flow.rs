@@ -379,44 +379,73 @@ async fn check_key<P: Prompter, Q: Probe>(
     }
 }
 
-/// Pick a model on `target`: a live listing when the endpoint offers one and a
-/// key is on hand, else typed with `hint` prefilled. A checked model is
-/// described; an unchecked one is taken as written. `question` is what the model
-/// is *for*, so the same picker serves each default role.
+/// Pick a model for `connection`: past picks on it first — most decayed
+/// weight first, the only entries for a zero-inventory endpoint — then the
+/// live listing when the endpoint offers one and a key is on hand, then the
+/// typed-ID escape hatch, which stays in every case. A checked model is
+/// described; an unchecked one is taken as written. `question` is what the
+/// model is *for*, so the same picker serves each default role.
 ///
 /// A listing entry whose display name is its own id — every described endpoint's,
 /// since no listing carries display names — is shown once rather than twice.
+/// History entries merge with the listing rather than shadowing it: a model in
+/// both keeps the listing's row, so the check state reads the same.
 pub(super) async fn choose_model<P: Prompter, Q: Probe>(
     prompter: &mut P,
     probe: &Q,
     question: &str,
+    connection: &str,
     target: &Target,
     hint: Option<&str>,
     key: Option<&str>,
 ) -> Result<String, Cancelled> {
+    // Setup runs wherever the operator invoked it, so recents scope to this
+    // process's root — the project the new config will serve. A root that will
+    // not read scopes nothing: the menu falls back to listing plus typed.
+    let scope = std::env::current_dir()
+        .map(|cwd| crate::history::Scope::for_request(&cwd, None))
+        .ok();
+    let store = match std::env::var_os("HOME") {
+        Some(home) => crate::history::History::user(std::path::Path::new(&home)),
+        None => crate::history::History::disabled(),
+    };
+    let recents: Vec<String> = scope
+        .map(|scope| {
+            store
+                .recent(&scope, connection, crate::history::now(), 5)
+                .into_iter()
+                .map(|candidate| candidate.model)
+                .collect()
+        })
+        .unwrap_or_default();
     let listing = match key {
         Some(key) => probe.list_models(target, key).await.unwrap_or_default(),
         None => Vec::new(),
     };
     loop {
-        let model = if listing.is_empty() {
+        let model = if listing.is_empty() && recents.is_empty() {
             prompter.text(question, hint)?.trim().to_string()
         } else {
-            let mut choices: Vec<Choice> = listing
+            let mut choices: Vec<Choice> = recents
                 .iter()
-                .map(|entry| {
-                    let choice = Choice::new(&entry.id);
-                    if entry.display_name == entry.id {
-                        choice
-                    } else {
-                        choice.detail(&entry.display_name)
-                    }
-                })
+                .filter(|recent| !listing.iter().any(|entry| &entry.id == *recent))
+                .map(Choice::new)
                 .collect();
+            choices.extend(listing.iter().map(|entry| {
+                let choice = Choice::new(&entry.id);
+                if entry.display_name == entry.id {
+                    choice
+                } else {
+                    choice.detail(&entry.display_name)
+                }
+            }));
             choices.push(Choice::new("Type a model id"));
             let picked = prompter.select(question, &choices)?;
-            match listing.get(picked) {
-                Some(entry) => entry.id.clone(),
+            match choices.get(picked) {
+                Some(choice) if choice.label == "Type a model id" => {
+                    prompter.text("Model id", hint)?.trim().to_string()
+                }
+                Some(choice) => choice.label.clone(),
                 None => prompter.text("Model id", hint)?.trim().to_string(),
             }
         };

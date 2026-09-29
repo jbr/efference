@@ -42,6 +42,33 @@ auth = { kind = "env", key = "ANTHROPIC_KEY" }
     )
 }
 
+/// A registry with a history store in a temporary directory, so resolution
+/// tests can seed past picks. The scope keys on the same directory.
+fn historied(
+    toml: &str,
+) -> (
+    InferenceRegistry,
+    crate::history::History,
+    crate::history::Scope,
+) {
+    let dir = std::env::temp_dir().join(format!(
+        "efference-resolve-test-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|elapsed| elapsed.as_nanos())
+            .unwrap_or(0)
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+    let store = crate::history::History::at(dir.join("state.db"));
+    let registry = registry(toml);
+    let scope = crate::history::Scope {
+        cwd: dir,
+        config_key: crate::history::BUILTIN_CONFIG_KEY.to_string(),
+    };
+    (registry, store, scope)
+}
+
 fn options(json: serde_json::Value) -> SessionOptions {
     serde_json::from_value(json).expect("a session options body")
 }
@@ -70,7 +97,7 @@ provider = "anthropic"
 auth = { kind = "env", key = "ANTHROPIC_KEY" }
 "#,
     );
-    let resolved = registry.resolve_options(&SessionOptions::default(), None);
+    let resolved = registry.resolve_options(&SessionOptions::default(), None, None);
     assert_eq!(resolved.issues, vec![]);
     let EffectiveTriage::Separate { selection, .. } = resolved
         .effective
@@ -94,7 +121,7 @@ auth = { kind = "env", key = "ANTHROPIC_KEY" }
 /// the two reasons for `shared` apart.
 #[test]
 fn an_omitted_triage_with_no_default_shares_main() {
-    let resolved = one_connection().resolve_options(&SessionOptions::default(), None);
+    let resolved = one_connection().resolve_options(&SessionOptions::default(), None, None);
     assert_eq!(
         resolved.effective.triage.value,
         Some(EffectiveTriage::Shared)
@@ -126,6 +153,7 @@ auth = { kind = "env", key = "ANTHROPIC_KEY" }
             ..Default::default()
         },
         None,
+        None,
     );
     assert_eq!(
         resolved.effective.triage.value,
@@ -151,6 +179,7 @@ fn an_unresolvable_role_leaves_every_other_field_resolved() {
             "effort": "high",
         })),
         None,
+        None,
     );
     assert_eq!(
         codes(&resolved),
@@ -175,6 +204,117 @@ fn an_unresolvable_role_leaves_every_other_field_resolved() {
     );
 }
 
+/// Past picks are the omitted-branch default: the aggregate answers when the
+/// project has no mass of its own, and reports the history branch.
+#[test]
+fn an_omitted_model_defaults_to_the_history_aggregate() {
+    let (registry, store, scope) = historied(
+        r#"
+[connections.main]
+provider = "anthropic"
+auth = { kind = "env", key = "ANTHROPIC_KEY" }
+"#,
+    );
+    let now = crate::history::now();
+    store.record(&crate::history::Pick {
+        at: now,
+        cwd: "/code/elsewhere".to_string(),
+        config_key: crate::history::BUILTIN_CONFIG_KEY.to_string(),
+        connection: "main".to_string(),
+        provider: "anthropic".to_string(),
+        model: "claude-opus-4-5".to_string(),
+    });
+    let resolved =
+        registry.resolve_options(&SessionOptions::default(), None, Some((&store, &scope)));
+    assert_eq!(resolved.issues, vec![]);
+    let main = resolved.effective.main.value.expect("a history default");
+    assert_eq!(main.model, "claude-opus-4-5");
+    assert_eq!(
+        resolved.effective.main.source,
+        Some(SelectionSource::History)
+    );
+}
+
+/// Project mass elects the project mode over a heavier aggregate.
+#[test]
+fn project_mass_elects_the_project_mode_in_resolution() {
+    let (registry, store, scope) = historied(
+        r#"
+[connections.main]
+provider = "anthropic"
+auth = { kind = "env", key = "ANTHROPIC_KEY" }
+
+[connections.other]
+provider = "anthropic"
+auth = { kind = "env", key = "ANTHROPIC_KEY" }
+"#,
+    );
+    let now = crate::history::now();
+    for _ in 0..6 {
+        store.record(&crate::history::Pick {
+            at: now,
+            cwd: scope.cwd.to_string_lossy().into_owned(),
+            config_key: scope.config_key.clone(),
+            connection: "main".to_string(),
+            provider: "anthropic".to_string(),
+            model: "claude-sonnet-4-5".to_string(),
+        });
+    }
+    for _ in 0..20 {
+        store.record(&crate::history::Pick {
+            at: now,
+            cwd: "/code/elsewhere".to_string(),
+            config_key: crate::history::BUILTIN_CONFIG_KEY.to_string(),
+            connection: "other".to_string(),
+            provider: "anthropic".to_string(),
+            model: "claude-opus-4-5".to_string(),
+        });
+    }
+    let resolved =
+        registry.resolve_options(&SessionOptions::default(), None, Some((&store, &scope)));
+    let main = resolved.effective.main.value.expect("a project default");
+    assert_eq!(main.connection, "main");
+    assert_eq!(main.model, "claude-sonnet-4-5");
+    assert_eq!(
+        resolved.effective.main.source,
+        Some(SelectionSource::History)
+    );
+}
+
+/// A remembered connection that is no longer configured falls through to the
+/// configured default silently — no request named it, so there is no issue.
+#[test]
+fn a_stale_history_pick_falls_through_to_the_configured_default() {
+    let (registry, store, scope) = historied(
+        r#"
+[defaults]
+model = "main/claude-sonnet-4-5"
+
+[connections.main]
+provider = "anthropic"
+auth = { kind = "env", key = "ANTHROPIC_KEY" }
+"#,
+    );
+    let now = crate::history::now();
+    store.record(&crate::history::Pick {
+        at: now,
+        cwd: scope.cwd.to_string_lossy().into_owned(),
+        config_key: scope.config_key.clone(),
+        connection: "retired".to_string(),
+        provider: "anthropic".to_string(),
+        model: "old-model".to_string(),
+    });
+    let resolved =
+        registry.resolve_options(&SessionOptions::default(), None, Some((&store, &scope)));
+    assert_eq!(resolved.issues, vec![]);
+    let main = resolved.effective.main.value.expect("a configured default");
+    assert_eq!(main.model, "claude-sonnet-4-5");
+    assert_eq!(
+        resolved.effective.main.source,
+        Some(SelectionSource::UserDefault)
+    );
+}
+
 /// A host with no `[defaults].model` is the ordinary first-run state. It leaves an
 /// editable response — one issue on `model`, every independent field resolved —
 /// rather than an empty one the form cannot open on.
@@ -189,6 +329,7 @@ auth = { kind = "env", key = "ANTHROPIC_KEY" }
     );
     let resolved = registry.resolve_options(
         &options(serde_json::json!({"temperature": 42, "effort": "high"})),
+        None,
         None,
     );
     assert_eq!(codes(&resolved), [("model", IssueCode::Required)]);
@@ -208,6 +349,7 @@ fn independent_issues_survive_together() {
     let resolved = one_connection().resolve_options(
         &options(serde_json::json!({"connection": "absent", "model": "m", "temperature": 200})),
         None,
+        None,
     );
     assert_eq!(
         codes(&resolved),
@@ -222,8 +364,11 @@ fn independent_issues_survive_together() {
 /// temperature the caller just sent tells a form its own edit was ignored.
 #[test]
 fn a_requested_tuning_value_reports_the_request_as_its_source() {
-    let resolved =
-        one_connection().resolve_options(&options(serde_json::json!({"temperature": 42})), None);
+    let resolved = one_connection().resolve_options(
+        &options(serde_json::json!({"temperature": 42})),
+        None,
+        None,
+    );
     assert_eq!(resolved.effective.temperature.value, Some(42));
     assert_eq!(
         resolved.effective.temperature.source,
@@ -235,7 +380,7 @@ fn a_requested_tuning_value_reports_the_request_as_its_source() {
 /// which is a different answer from a field that failed to resolve.
 #[test]
 fn an_omitted_tuning_value_is_an_omission_not_a_failure() {
-    let resolved = one_connection().resolve_options(&SessionOptions::default(), None);
+    let resolved = one_connection().resolve_options(&SessionOptions::default(), None, None);
     assert_eq!(resolved.effective.temperature.value, None);
     assert_eq!(
         resolved.effective.temperature.source,
@@ -255,13 +400,14 @@ fn request_effort_beats_project_effort_which_beats_omission() {
     let requested = registry.resolve_options(
         &options(serde_json::json!({"effort": "high"})),
         Some("medium"),
+        None,
     );
     assert_eq!(requested.effective.effort.value.as_deref(), Some("high"));
     assert_eq!(
         requested.effective.effort.source,
         Some(SelectionSource::Request)
     );
-    let inherited = registry.resolve_options(&SessionOptions::default(), Some("medium"));
+    let inherited = registry.resolve_options(&SessionOptions::default(), Some("medium"), None);
     assert_eq!(inherited.effective.effort.value.as_deref(), Some("medium"));
     assert_eq!(
         inherited.effective.effort.source,
@@ -287,6 +433,7 @@ auth = { kind = "env", key = "ANTHROPIC_KEY" }
     let resolved = registry.resolve_options(
         &options(serde_json::json!({"connection": "main", "model": "anthropic/claude-sonnet-4-5"})),
         None,
+        None,
     );
     assert_eq!(resolved.issues, vec![]);
     let main = resolved
@@ -305,6 +452,7 @@ fn the_slug_spelling_still_names_a_connection_and_a_model() {
     let resolved = one_connection().resolve_options(
         &options(serde_json::json!({"model": "main/claude-opus-4-5"})),
         None,
+        None,
     );
     assert_eq!(resolved.issues, vec![]);
     let main = resolved.effective.main.value.expect("a slug selection");
@@ -321,6 +469,7 @@ fn an_unknown_connection_is_an_issue() {
     let resolved = one_connection().resolve_options(
         &options(serde_json::json!({"connection": "absent", "model": "m"})),
         None,
+        None,
     );
     assert_eq!(codes(&resolved), [("model", IssueCode::InvalidSelection)]);
     assert_eq!(resolved.effective.main.value, None);
@@ -332,6 +481,7 @@ fn an_unknown_connection_is_an_issue() {
 fn an_unknown_model_on_a_known_connection_resolves() {
     let resolved = one_connection().resolve_options(
         &options(serde_json::json!({"connection": "main", "model": "not-a-real-model"})),
+        None,
         None,
     );
     assert_eq!(resolved.issues, vec![]);
@@ -345,8 +495,11 @@ fn an_unknown_model_on_a_known_connection_resolves() {
 /// main model to stand in, so the honest answer is that one is still needed.
 #[test]
 fn a_connection_without_a_model_asks_for_a_model() {
-    let resolved =
-        one_connection().resolve_options(&options(serde_json::json!({"connection": "main"})), None);
+    let resolved = one_connection().resolve_options(
+        &options(serde_json::json!({"connection": "main"})),
+        None,
+        None,
+    );
     assert_eq!(codes(&resolved), [("model", IssueCode::Required)]);
     assert_eq!(resolved.effective.main.value, None);
 }
@@ -357,6 +510,7 @@ fn a_connection_without_a_model_asks_for_a_model() {
 fn an_invalid_override_does_not_fall_back_to_the_default() {
     let resolved = one_connection().resolve_options(
         &options(serde_json::json!({"connection": "absent", "model": "m"})),
+        None,
         None,
     );
     assert_eq!(resolved.effective.main.value, None);
@@ -377,6 +531,7 @@ disabled = true
     );
     let resolved = registry.resolve_options(
         &options(serde_json::json!({"connection": "off", "model": "m"})),
+        None,
         None,
     );
     assert_eq!(
@@ -408,6 +563,7 @@ auth = { kind = "env", key = "OPENAI_KEY" }
             "triage": {"mode": "separate", "connection": "responses", "model": "gpt-5.6"},
         })),
         None,
+        None,
     );
     assert_eq!(
         codes(&resolved),
@@ -437,7 +593,7 @@ provider = "anthropic"
 auth = { kind = "env", key = "ANTHROPIC_KEY" }
 "#,
     )
-    .resolve_options(&SessionOptions::default(), None);
+    .resolve_options(&SessionOptions::default(), None, None);
     assert_eq!(
         configured.effective.spotter.source,
         Some(SelectionSource::UserDefault)
@@ -447,7 +603,7 @@ auth = { kind = "env", key = "ANTHROPIC_KEY" }
         Some("spot".to_string())
     );
 
-    let borrowed = one_connection().resolve_options(&SessionOptions::default(), None);
+    let borrowed = one_connection().resolve_options(&SessionOptions::default(), None, None);
     assert_eq!(
         borrowed.effective.spotter.source,
         Some(SelectionSource::MainProvider)
@@ -482,7 +638,7 @@ auth = { kind = "env", key = "ANTHROPIC_KEY" }
         "triage": {"mode": "separate", "connection": "main", "model": "claude-haiku-4-5",
                    "thinking": true},
     }));
-    let resolved = registry.resolve_options(&options, None);
+    let resolved = registry.resolve_options(&options, None, None);
     let effective = resolved.effective.clone();
     let prepared = registry.prepare(resolved).expect("a clean draft boots");
     assert_eq!(Some(prepared.main().0.clone()), effective.main.value);
@@ -504,8 +660,11 @@ auth = { kind = "env", key = "ANTHROPIC_KEY" }
 #[test]
 fn creation_refuses_a_draft_with_issues() {
     let registry = one_connection();
-    let resolved =
-        registry.resolve_options(&options(serde_json::json!({"temperature": 200})), None);
+    let resolved = registry.resolve_options(
+        &options(serde_json::json!({"temperature": 200})),
+        None,
+        None,
+    );
     // `SessionInference` has no Debug — it holds credential material — so the
     // refusal is read out of the Err arm rather than unwrapped.
     let Err(error) = registry.prepare(resolved) else {
@@ -522,6 +681,7 @@ fn the_temperature_bound_is_the_resolver_s() {
     for (temperature, expected) in [(0u8, true), (100, true), (101, false)] {
         let resolved = registry.resolve_options(
             &options(serde_json::json!({"temperature": temperature})),
+            None,
             None,
         );
         assert_eq!(
@@ -547,6 +707,7 @@ auth = { kind = "env", key = "ABSENT_KEY" }
     );
     let resolved = registry.resolve_options(
         &options(serde_json::json!({"connection": "main", "model": "m"})),
+        None,
         None,
     );
     let issue = resolved.issues.first().expect("an unavailable connection");
@@ -590,6 +751,7 @@ fn a_decision_connection_is_refused_for_the_main_model() {
             "model": "jev-latest",
         })),
         None,
+        None,
     );
     assert_eq!(codes(&resolved), [("model", IssueCode::InvalidSelection)]);
     assert_eq!(resolved.effective.main.value, None);
@@ -604,6 +766,7 @@ fn a_decision_connection_is_refused_for_triage() {
             "triage": {"mode": "separate", "connection": "typesafe", "model": "jev-latest"},
         })),
         None,
+        None,
     );
     assert_eq!(codes(&resolved), [("triage", IssueCode::InvalidSelection)]);
 }
@@ -616,6 +779,7 @@ fn a_decision_connection_backs_the_spotter() {
             "spotter_connection": "typesafe",
             "spotter_model": "jev-latest",
         })),
+        None,
         None,
     );
     assert_eq!(codes(&resolved), []);
@@ -692,7 +856,7 @@ fn every_provider_display_name_decodes_back() {
 fn a_reachable_decision_model_is_the_default_spotter() {
     let spotter = |toml: &str| {
         registry(toml)
-            .resolve_options(&SessionOptions::default(), None)
+            .resolve_options(&SessionOptions::default(), None, None)
             .effective
             .spotter
     };

@@ -1044,7 +1044,14 @@ provider name is always a connection prefix, configured or not (`anthropic/…` 
 host without an `anthropic` connection names the missing connection, never a
 native id on the default). Any other id, slashes included, resolves through
 `[defaults].model`'s connection; a native id equal to a connection name must be
-written qualified. Omitted `--model` takes `[defaults].model`; an omitted spotter
+written qualified. An omitted `--model` takes past picks first: the project mode
+once the project holds about five effective explicit selections after decay, else
+the system-wide aggregate, else whatever `[defaults].model` still names. Only
+explicit human picks are remembered — never an inherited default, so the default
+cannot reinforce itself — keyed by working root and origin config, with a single
+exponential decay (half-life 30 days) over both reads. A remembered connection
+that is no longer usable falls through silently, since no request named it. An
+omitted spotter
 takes `[defaults].spotter`, else the main connection's `spotter-model`, else jev on a
 connection that reaches it, else the main connection's cheap band
 ([permissions.md](permissions.md)); an omitted
@@ -1058,7 +1065,10 @@ the connection name appears in boot output, `session_identity`, and the
 boot log metadata. The main role's connection, provider, and native model are
 written once to the session's boot Preamble as unprojected log metadata in the
 log-owned identity shape, so an offline reader does not have to infer the
-session's provider from current config or usage telemetry.
+session's provider from current config or usage telemetry. Picks live in
+`~/.efference/state.db`, beside the config file that named it; the same store
+answers the recent-models menu in every picker (`GET /inference/recent-models`)
+and the offline `efference dev history` reader.
 
 The dev verbs that dial a provider without a host (`dev peek`, `dev spotter`,
 `dev spotter-eval`) load the same file from their own environment and resolve

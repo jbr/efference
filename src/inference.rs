@@ -205,6 +205,10 @@ pub struct InferenceRegistry {
     /// host's credentials, which sessions strip from their tools' environment
     /// by default (docs/env.md).
     credential_variables: BTreeSet<String>,
+    /// Past explicit model picks (docs/transport.md): the store behind the
+    /// omitted-branch default and the recent menus. Opened from the config
+    /// file's own directory, so a test config names no store.
+    history: crate::history::History,
 }
 
 struct Connection {
@@ -309,7 +313,22 @@ impl InferenceRegistry {
         };
         let config = InferenceConfig::from_toml(&text)
             .map_err(|error| format!("inference config {}: {error}", path.display()))?;
-        Self::from_config(config, host_cwd, host_env, secrets)
+        let mut registry = Self::from_config(config, host_cwd, host_env, secrets)?;
+        // The state database lives beside the config file that named it
+        // (`~/.efference/state.db`), so a relocated config carries its history
+        // along rather than keying it off wherever the host happened to start.
+        if let Some(dir) = path.parent() {
+            registry.history = crate::history::History::at(dir.join("state.db"));
+        }
+        Ok(registry)
+    }
+
+    /// Point this registry at a history store, for the recent-models route and
+    /// for tests that seed past picks. Production registries open the store
+    /// beside their config file in [`load_at`](Self::load_at).
+    pub fn with_history(mut self, history: crate::history::History) -> Self {
+        self.history = history;
+        self
     }
 
     pub fn from_config(
@@ -385,6 +404,7 @@ impl InferenceRegistry {
             connections,
             defaults,
             credential_variables,
+            history: crate::history::History::disabled(),
         })
     }
 
@@ -456,12 +476,16 @@ impl InferenceRegistry {
             connections: BTreeMap::new(),
             defaults: ResolvedDefaults::default(),
             credential_variables: BTreeSet::new(),
+            history: crate::history::History::disabled(),
         }
     }
 
     /// Resolve a session's roles from the slug spellings the CLI and offline
     /// verbs carry, then attach credentials. One call through the shared flow
     /// (`options.rs`), so these surfaces and the control routes cannot drift.
+    /// Offline verbs name no working root, so no history scope applies: an
+    /// omitted model there is the configured default or a refusal, never a
+    /// remembered pick from some other directory.
     pub fn resolve(
         &self,
         model: Option<&str>,
@@ -476,7 +500,15 @@ impl InferenceRegistry {
                 ..Default::default()
             },
             None,
+            None,
         ))
+    }
+
+    /// The history store behind the omitted-branch default and the recent
+    /// menus. The host reads it for preview and creation; the write path
+    /// records explicit picks through it after a session starts.
+    pub fn history(&self) -> &crate::history::History {
+        &self.history
     }
 
     /// Split a `connection/model` slug, or resolve a bare native id against

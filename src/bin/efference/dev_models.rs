@@ -17,6 +17,51 @@ use serde_json::Value;
 /// rest; `--raw` prints all of it.
 const BODY_PREVIEW_BYTES: usize = 1000;
 
+/// What past sessions picked, decayed: the recent menu (per connection, or
+/// every connection) and the omitted-branch default for one project scope —
+/// the same answers creation and the pickers read, printed for inspection.
+pub(crate) fn history(
+    cwd: Option<std::path::PathBuf>,
+    config: Option<std::path::PathBuf>,
+    connection: Option<String>,
+) -> CliResult {
+    let cwd = match cwd {
+        Some(cwd) => cwd,
+        None => std::env::current_dir()?,
+    };
+    let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
+    let store = match home.as_deref() {
+        Some(home) => efference::history::History::user(home),
+        None => efference::history::History::disabled(),
+    };
+    let scope = efference::history::Scope::for_request(&cwd, config.as_deref());
+    let now = efference::history::now();
+    println!("scope: {}", scope.cwd.display());
+    println!("config: {}", scope.config_key);
+    match connection.as_deref() {
+        Some(connection) => {
+            let recents = store.recent(&scope, connection, now, 10);
+            if recents.is_empty() {
+                println!("no past picks on {connection}");
+            }
+            for candidate in &recents {
+                println!("  {:>8.2}  {}", candidate.mass, candidate.model);
+            }
+        }
+        None => {
+            if let Some(default) = store.default(&scope, now) {
+                println!(
+                    "default: {}/{} ({:.2})",
+                    default.connection, default.model, default.mass
+                );
+            } else {
+                println!("default: none (no past picks apply)");
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Read the listing routes for one configured connection and print what each
 /// answered.
 pub(crate) async fn models(connection: &str, urls: &[String], raw: bool) -> CliResult {

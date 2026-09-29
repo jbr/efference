@@ -63,6 +63,33 @@ pub(super) async fn serve(
                 }
                 continue;
             }
+            HostCmd::Recents(request) => {
+                let recents = match origin.as_deref() {
+                    Ok(cwd) => {
+                        // The form holds the inventory the menu index came
+                        // from — but the dispatcher holds the client, so the
+                        // name resolves here, against a fresh inventory read.
+                        // A connection renamed mid-menu answers empty, which
+                        // is a typed-ID-only menu rather than an error.
+                        match client.inference_inventory().await {
+                            Ok(inventory) => match inventory.get(request.connection) {
+                                Some(row) => client
+                                    .recent_models(&row.name, cwd, None)
+                                    .await
+                                    .map(|models| (request.role, request.connection, models))
+                                    .map_err(|e| format!("reading recent models: {e}")),
+                                None => Ok((request.role, request.connection, Vec::new())),
+                            },
+                            Err(e) => Err(format!("reading the host's connections: {e}")),
+                        }
+                    }
+                    Err(e) => Err(format!("reading the working directory: {e}")),
+                };
+                if events.send(TuiEvent::Recents(recents)).is_err() {
+                    break;
+                }
+                continue;
+            }
             // An end is followed by a re-read, and the host answers a `DELETE`
             // only once teardown has run, so the listing that comes back is the
             // finished state.

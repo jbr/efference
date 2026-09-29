@@ -78,7 +78,7 @@ disabled = true
         &std::sync::Arc::new(crate::secrets::Secrets::in_memory()),
     )
     .unwrap()
-    .resolve_options(options, None)
+    .resolve_options(options, None, None)
 }
 
 fn context() -> NewSessionContext {
@@ -99,11 +99,28 @@ fn form() -> Form {
 
 /// Answer whatever the form asked for, the way a container's dispatcher would:
 /// resolve the options it sent and hand the reply back, repeating while the
-/// form supersedes its own request.
+/// form supersedes its own request. Recents has no scripted answer here — the
+/// menu opens on its typed-ID row, the way an empty host answer reads.
 fn settle(form: &mut Form, mut action: Action) {
     while let Action::Preview(options) = action {
         action = form.preview_returned(Ok(resolve(&options)));
     }
+}
+
+/// Step from the Connections picker into the Text editor through the Models
+/// menu: pick the connection row, then take the menu's last row (the typed-ID
+/// escape hatch), which is where every empty-recents menu lands.
+fn through_menu_to_editor(form: &mut Form) {
+    let Page::Models {
+        models, selected, ..
+    } = &form.page
+    else {
+        panic!("expected the models menu, found {:?}", form.page);
+    };
+    assert!(models.is_empty());
+    assert_eq!(*selected, 0);
+    press(form, KeyCode::Enter);
+    assert!(matches!(form.page, Page::Text { .. }));
 }
 
 fn key(form: &mut Form, code: KeyCode) -> Action {
@@ -152,7 +169,8 @@ fn a_flagged_field_holds_creation_and_names_the_control() {
     press(&mut form, KeyCode::Enter);
     press(&mut form, KeyCode::Down);
     press(&mut form, KeyCode::Enter);
-    assert!(matches!(form.page, Page::Text { .. }));
+    assert!(matches!(form.page, Page::Models { .. }));
+    through_menu_to_editor(&mut form);
     form.paste("gpt-5.6\n");
     press(&mut form, KeyCode::Enter);
     let resolved = form.resolved.as_ref().expect("a preview landed");
@@ -192,8 +210,10 @@ fn a_native_id_with_a_slash_keeps_its_connection_separate() {
         press(&mut form, KeyCode::Down);
     }
     press(&mut form, KeyCode::Enter);
-    assert!(matches!(form.page, Page::Text { .. }));
+    assert!(matches!(form.page, Page::Models { .. }));
+    through_menu_to_editor(&mut form);
     // An empty id is refused locally and does not leave the editor.
+
     press(&mut form, KeyCode::Enter);
     assert!(form.note.is_some());
     assert!(matches!(form.page, Page::Text { .. }));
@@ -281,7 +301,8 @@ fn a_typed_model_id_is_accepted_and_reset_and_back() {
         press(&mut form, KeyCode::Down);
     }
     press(&mut form, KeyCode::Enter);
-    assert!(matches!(form.page, Page::Text { .. }));
+    assert!(matches!(form.page, Page::Models { .. }));
+    through_menu_to_editor(&mut form);
     for c in "gpt-5.6-luna".chars() {
         press(&mut form, KeyCode::Char(c));
     }
@@ -295,21 +316,26 @@ fn a_typed_model_id_is_accepted_and_reset_and_back() {
     );
     press(&mut form, KeyCode::Char('r'));
     assert_eq!(form.draft.main, None);
-    // Escape backs out of an editor to its picker before it cancels the form.
+    // Escape backs out of an editor to its menu, then to its picker, before
+    // it cancels the form.
     press(&mut form, KeyCode::Enter);
     press(&mut form, KeyCode::Down);
     press(&mut form, KeyCode::Enter);
+    through_menu_to_editor(&mut form);
+    press(&mut form, KeyCode::Esc);
+    assert!(matches!(form.page, Page::Models { .. }));
     press(&mut form, KeyCode::Esc);
     assert!(matches!(form.page, Page::Connections { .. }));
     press(&mut form, KeyCode::Esc);
     assert_eq!(form.page, Page::Form);
 }
 
-/// Every connection opens the native-id editor: this build compiles no catalog
-/// to suggest from, and the host's discovery route is what will offer a menu
+/// Every connection opens its recent-models menu, with the native-id editor
+/// as the last row: past picks suggest, the typed path stays, and the host's
+/// discovery route merges its catalog into this same menu when it lands
 /// (backlog/session-model-discovery.md).
 #[test]
-fn every_connection_opens_the_id_editor() {
+fn every_connection_opens_the_recent_models_menu() {
     let mut form = form();
     press(&mut form, KeyCode::Down);
     press(&mut form, KeyCode::Enter);
@@ -318,7 +344,72 @@ fn every_connection_opens_the_id_editor() {
         press(&mut form, KeyCode::Down);
     }
     press(&mut form, KeyCode::Enter);
-    assert!(matches!(form.page, Page::Text { .. }));
+    let Page::Models {
+        models, selected, ..
+    } = &form.page
+    else {
+        panic!("expected the models menu, found {:?}", form.page);
+    };
+    // No host behind this form, so the menu holds only its typed-ID row.
+    assert!(models.is_empty());
+    assert_eq!(*selected, 0);
+    through_menu_to_editor(&mut form);
+}
+
+/// A recents answer folds into the open menu; a remembered pick commits
+/// straight into the draft, skipping the editor.
+#[test]
+fn a_remembered_pick_commits_straight_into_the_draft() {
+    let mut form = form();
+    press(&mut form, KeyCode::Down);
+    press(&mut form, KeyCode::Enter);
+    // Main → `lab`: past "use the default" and `blank` (disabled, still listed).
+    for _ in 0..2 {
+        press(&mut form, KeyCode::Down);
+    }
+    press(&mut form, KeyCode::Enter);
+    assert!(matches!(form.page, Page::Models { .. }));
+    form.recents_returned(
+        Role::Main,
+        1,
+        vec![crate::client::ModelSuggestion {
+            model: "claude-opus-4-5".to_string(),
+            label: "claude-opus-4-5".to_string(),
+        }],
+    );
+    press(&mut form, KeyCode::Enter);
+    assert_eq!(form.page, Page::Form);
+    assert_eq!(
+        form.draft.role(Role::Main),
+        Some(&RoleDraft {
+            connection: "lab".into(),
+            model: "claude-opus-4-5".into(),
+        })
+    );
+}
+
+/// A recents answer for a menu nobody is looking at is dropped.
+#[test]
+fn a_stale_recents_answer_is_dropped() {
+    let mut form = form();
+    press(&mut form, KeyCode::Down);
+    press(&mut form, KeyCode::Enter);
+    press(&mut form, KeyCode::Down);
+    press(&mut form, KeyCode::Enter);
+    assert!(matches!(form.page, Page::Models { .. }));
+    form.recents_returned(
+        Role::Spotter,
+        1,
+        vec![crate::client::ModelSuggestion {
+            model: "claude-opus-4-5".to_string(),
+            label: "claude-opus-4-5".to_string(),
+        }],
+    );
+    assert!(matches!(form.page, Page::Models { .. }));
+    let Page::Models { models, .. } = &form.page else {
+        unreachable!();
+    };
+    assert!(models.is_empty());
 }
 
 #[test]
@@ -350,6 +441,7 @@ fn failed_creation_preserves_every_edit() {
         press(&mut form, KeyCode::Down);
     }
     press(&mut form, KeyCode::Enter);
+    through_menu_to_editor(&mut form);
     form.paste("gpt-5.6\n");
     press(&mut form, KeyCode::Enter);
     assert_eq!(form.page, Page::Form);
@@ -376,6 +468,7 @@ fn paste_is_text_not_form_commands() {
     press(&mut form, KeyCode::Enter);
     press(&mut form, KeyCode::Down);
     press(&mut form, KeyCode::Enter);
+    through_menu_to_editor(&mut form);
     form.paste("gpt-5.6-luna\n");
     // The newline is not a keystroke: the pasted text lands in the editor and
     // Enter is still the operator's to press.

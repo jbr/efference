@@ -70,6 +70,9 @@ impl<'a> InteractiveState<'a> {
                 Action::Create(options) => {
                     let _ = self.host_tx.send(HostCmd::Create(options));
                 }
+                Action::Recents(request) => {
+                    let _ = self.host_tx.send(HostCmd::Recents(request));
+                }
             }
             return false;
         }

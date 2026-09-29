@@ -19,7 +19,7 @@ impl Form {
         }
     }
 
-    pub(super) fn choose_connection(&mut self, role: Role) -> Action {
+    pub(crate) fn choose_connection(&mut self, role: Role) -> Action {
         let Page::Connections { selected, .. } = &self.page else {
             return Action::Continue;
         };
@@ -34,16 +34,78 @@ impl Form {
             return self.preview();
         }
         let connection = selected - leading;
-        // Every connection opens the native-id editor: this build compiles no
-        // catalog to suggest from, and a menu of ids the build knows would be
-        // the stale half of the problem. The host's discovery route replaces it
-        // with the provider's own list (backlog/session-model-discovery.md).
-        self.page = Page::Text {
+        // A connection opens its recent models first: past picks on it, most
+        // decayed weight first, with the typed-ID editor as the last row. The
+        // host's discovery route merges its catalog into this same menu when it
+        // lands (backlog/session-model-discovery.md); the typed path stays in
+        // every case.
+        self.page = Page::Models {
             role,
             connection,
-            value: String::new(),
+            models: Vec::new(),
+            selected: 0,
         };
+        Action::Recents(RecentsRequest { role, connection })
+    }
+
+    /// Fold the host's recent-models answer into the open menu. Dropped when
+    /// the operator has moved on — the answer describes a menu nobody is
+    /// looking at, the same staleness rule preview follows.
+    pub(crate) fn recents_returned(
+        &mut self,
+        role: Role,
+        connection: usize,
+        models: Vec<crate::client::ModelSuggestion>,
+    ) -> Action {
+        let Page::Models {
+            role: page_role,
+            connection: page_connection,
+            ..
+        } = &self.page
+        else {
+            return Action::Continue;
+        };
+        if *page_role != role || *page_connection != connection {
+            return Action::Continue;
+        }
+        if let Page::Models {
+            models: current,
+            selected,
+            ..
+        } = &mut self.page
+        {
+            *current = models;
+            *selected = (*selected).min(current.len());
+        }
         Action::Continue
+    }
+
+    pub(super) fn choose_model(&mut self, role: Role, connection: usize) -> Action {
+        let Page::Models {
+            models, selected, ..
+        } = &self.page
+        else {
+            return Action::Continue;
+        };
+        let (role, connection) = (role, connection);
+        // The last row is the typed-ID escape hatch; any other row is a
+        // remembered pick, folded straight into the draft.
+        if *selected >= models.len() {
+            self.page = Page::Text {
+                role,
+                connection,
+                value: String::new(),
+            };
+            return Action::Continue;
+        }
+        let Some(suggestion) = models.get(*selected) else {
+            return Action::Continue;
+        };
+        let model = suggestion.model.clone();
+        self.set_role_model(role, connection, model);
+        self.page = Page::Form;
+        self.note = None;
+        self.preview()
     }
 
     pub(super) fn accept_model_text(&mut self) -> Action {

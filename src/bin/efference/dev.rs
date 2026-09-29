@@ -84,6 +84,23 @@ pub(crate) enum DevCommand {
         #[arg(long)]
         raw: bool,
     },
+    /// What past sessions picked, decayed (docs/transport.md): the recent menu
+    /// and the omitted-branch default the history store would answer, read
+    /// offline from `~/.efference/state.db`. No daemon, no network.
+    History {
+        /// The project root to scope to, defaulting to this process's. Scoped
+        /// like creation scopes it: an explicit `--config` names the config
+        /// key, else the checkout's `efference.toml` when present.
+        #[arg(long)]
+        cwd: Option<std::path::PathBuf>,
+        /// An explicit `--config` path, resolved against the root like boot
+        /// resolves it.
+        #[arg(long)]
+        config: Option<std::path::PathBuf>,
+        /// A connection to narrow the recent menu to, omitting the default.
+        #[arg(long)]
+        connection: Option<String>,
+    },
     /// Read a recorded session in the TUI, inert: the same transcript rendering as
     /// `tui`, over a session's `log.jsonl` instead of a live daemon. Nothing can be
     /// sent — no composer, no approvals, no loop verbs — and the log is read once,
@@ -415,6 +432,11 @@ pub(crate) async fn run<F: Future<Output = Result<ClientTarget, CliError>>>(
             urls,
             raw,
         } => dev_models::models(&connection, &urls, raw).await,
+        DevCommand::History {
+            cwd,
+            config,
+            connection,
+        } => dev_models::history(cwd, config, connection),
         DevCommand::View {
             session,
             theme,

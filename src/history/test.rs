@@ -75,7 +75,9 @@ fn single_pick_is_the_aggregate_default() {
     let scope = scope(&dir);
     let now = 1_800_000_000;
     store.record(&pick(now, &scope, "meta", "muse-spark"));
-    let candidate = store.default(&scope, now).expect("one pick is an aggregate");
+    let candidate = store
+        .default(&scope, now)
+        .expect("one pick is an aggregate");
     assert_eq!(candidate.connection, "meta");
     assert_eq!(candidate.model, "muse-spark");
 }
@@ -210,11 +212,17 @@ fn config_key_separates_patterns() {
         });
     assert_eq!(masses.len(), 2);
     assert_eq!(
-        store.default(&checkout, now).expect("checkout has mass").model,
+        store
+            .default(&checkout, now)
+            .expect("checkout has mass")
+            .model,
         "muse-spark"
     );
     assert_eq!(
-        store.default(&supervisor, now).expect("supervisor has mass").model,
+        store
+            .default(&supervisor, now)
+            .expect("supervisor has mass")
+            .model,
         "sonnet"
     );
 }
@@ -232,8 +240,7 @@ fn scope_for_request_mirrors_load_probe() {
     let probed = Scope::for_request(&dir, None);
     assert_eq!(
         probed.config_key,
-        canonicalize(&dir.join(crate::config::DEFAULT_PATH))
-            .to_string_lossy()
+        canonicalize(&dir.join(crate::config::DEFAULT_PATH)).to_string_lossy()
     );
     let explicit = Scope::for_request(&dir, Some(Path::new("custom.toml")));
     assert_eq!(

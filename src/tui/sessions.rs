@@ -172,6 +172,44 @@ impl InteractiveState<'_> {
         }
     }
 
+    /// Recent models answered for the open menu. Folded in when the menu is
+    /// still open on the same role and connection; dropped or failed answers
+    /// leave the typed-ID-only menu in place rather than closing it.
+    pub(super) fn apply_recents(
+        &mut self,
+        recents: Result<
+            (
+                super::session_form::Role,
+                usize,
+                Vec<crate::client::ModelSuggestion>,
+            ),
+            String,
+        >,
+    ) {
+        let UiMode::Sessions(menu) = &mut self.ui_mode else {
+            return;
+        };
+        let Some(form) = &mut menu.form else {
+            return;
+        };
+        match recents {
+            Ok((role, connection, models)) => {
+                let action = form.recents_returned(role, connection, models);
+                // Opening the menu asked for recents alongside nothing else,
+                // so the reply folds silently — but a superseding preview
+                // request still goes out when the draft has moved on.
+                if let super::session_form::Action::Preview(options) = action {
+                    let _ = self.host_tx.send(HostCmd::Preview(options));
+                } else if let super::session_form::Action::Recents(request) = action {
+                    let _ = self.host_tx.send(HostCmd::Recents(request));
+                }
+            }
+            Err(error) => {
+                form.note_recents_failed(error);
+            }
+        }
+    }
+
     /// Creation answered. On success the TUI leaves this session's stream for the
     /// new one, which is the same one-cursor-per-handshake switch `⏎` performs —
     /// the session was created in this client's own working root, so that is

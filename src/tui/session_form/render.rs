@@ -70,6 +70,7 @@ impl Row {
 fn source_label(source: SelectionSource) -> &'static str {
     match source {
         SelectionSource::Request => "you set",
+        SelectionSource::History => "recent pick",
         SelectionSource::UserDefault => "your default",
         SelectionSource::MainProvider => "main's provider",
         SelectionSource::DecisionConnection => "decision model",
@@ -269,6 +270,27 @@ impl Form {
                     }));
                 }
                 (format!("{} — connection", role.label()), rows, *selected)
+            }
+            Page::Models {
+                role,
+                connection,
+                models,
+                selected,
+            } => {
+                let mut rows: Vec<Row> = models
+                    .iter()
+                    .map(|suggestion| Row::plain(&suggestion.model))
+                    .collect();
+                rows.push(Row::plain("Type a model id"));
+                (
+                    format!(
+                        "{} on {} — recent models",
+                        role.label(),
+                        self.connection_name(*connection)
+                    ),
+                    rows,
+                    *selected,
+                )
             }
             Page::Text {
                 role,

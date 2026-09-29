@@ -235,12 +235,42 @@ impl Host {
         };
         // The same resolution preview reports, then credentials for the roles it
         // selected. Project effort is boot's to apply, so it is not resolved here.
+        // History is resolved here: the omitted branch defaults to past picks
+        // in this working root, and the write below records an explicit pick.
         let options = body.options.clone();
-        let resolved = self.inference.resolve_options(&body.options, None);
+        let scope = crate::history::Scope::for_request(&body.cwd, body.config.as_deref());
+        let resolved = self.inference.resolve_options(
+            &body.options,
+            None,
+            Some((self.inference.history(), &scope)),
+        );
+        // Whether the main model was an explicit human pick: only those are
+        // recorded, never an inherited default, so the default cannot reinforce
+        // itself. Captured before `prepare` consumes the resolution.
+        let main_explicit = matches!(
+            resolved.effective.main.source,
+            Some(crate::inference::SelectionSource::Request)
+        );
         let inference = match self.inference.prepare(resolved) {
             Ok(inference) => inference,
             Err(error) => return Err(error.to_string()),
         };
+        // Remember the pick this creation made, for the omitted-branch default
+        // and the recent menus. Built before the request moves the inference
+        // away; recorded below, after the session starts, so only sessions that
+        // actually started are remembered. Best-effort either way: the store
+        // never fails a creation.
+        let remembered = main_explicit.then(|| {
+            let (selection, _) = inference.main();
+            crate::history::Pick {
+                at: crate::history::now(),
+                cwd: scope.cwd.to_string_lossy().into_owned(),
+                config_key: scope.config_key.clone(),
+                connection: selection.connection.clone(),
+                provider: selection.provider.to_string(),
+                model: selection.model.clone(),
+            }
+        });
         let request = crate::boot::SessionRequest {
             session_dir: body.cwd.join(SESSION_BASE).join(&id),
             cwd: body.cwd,
@@ -268,6 +298,12 @@ impl Host {
         let runtime = SessionRuntime::start(boot, self.swansong());
         self.adopt_with(id.clone(), runtime, lineage.created_by, body.detached);
         self.record_options(&id, options);
+        // Remember the pick this creation made, for the omitted-branch default
+        // and the recent menus. Best-effort: the store never fails a creation,
+        // and only sessions that actually started are remembered.
+        if let Some(pick) = remembered.as_ref() {
+            self.inference.history().record(pick);
+        }
         Ok(id)
     }
 
@@ -361,6 +397,7 @@ impl Host {
 pub(crate) fn host_routes(create: bool, files: bool) -> impl trillium::Handler {
     let mut router = Router::new()
         .get("/inference", inference_inventory)
+        .get("/inference/recent-models", recent_models)
         .with_route(trillium::Method::Query, "/sessions", preview_session)
         .get("/sessions", list_sessions())
         .delete("/sessions/:id", end_session)
@@ -400,6 +437,58 @@ async fn inference_inventory(conn: Conn) -> Conn {
             .halt(),
         None => missing_host(conn),
     }
+}
+
+/// `GET /inference/recent-models?connection=<name>&cwd=<root>&config=<path>`:
+/// the models past sessions picked on one connection, most decayed weight
+/// first, for the project scope `cwd` (+ optional `config`) names. `models`
+/// carries provider-native ids — what a draft holds beside the connection —
+///
+/// and a model absent from the list is still sent to preview and creation
+/// normally, exactly like the discovery route's contract
+/// (backlog/session-model-discovery.md): history suggests, never authorizes.
+/// Unknown or absent connections answer an empty list, not an error — an empty
+/// menu is a picker with only the typed-ID path, not a failure.
+async fn recent_models(conn: Conn) -> Conn {
+    let Some(host) = host_of(&conn) else {
+        return missing_host(conn);
+    };
+    let query = conn.querystring();
+    let param = |name: &str| {
+        crate::daemon::http::parse_param(query, name).map(|value| {
+            trillium_client::url::form_urlencoded::parse(value.as_bytes())
+                .next()
+                .map(|(_, decoded)| decoded.into_owned())
+                .unwrap_or_default()
+        })
+    };
+    let (Some(connection), Some(cwd)) = (param("connection"), param("cwd")) else {
+        return fail(
+            conn,
+            ErrorCode::BadRequest,
+            "recent-models needs ?connection=<name>&cwd=<root>",
+        );
+    };
+    let scope = crate::history::Scope::for_request(
+        std::path::Path::new(&cwd),
+        param("config").as_deref().map(std::path::Path::new),
+    );
+    let models: Vec<serde_json::Value> = host
+        .inference
+        .history()
+        .recent(&scope, &connection, crate::history::now(), 10)
+        .into_iter()
+        .map(|candidate| serde_json::json!({ "model": candidate.model, "label": candidate.model }))
+        .collect();
+    conn.with_status(200)
+        .with_body(
+            serde_json::json!({
+                "connection": connection,
+                "models": models,
+            })
+            .to_string(),
+        )
+        .halt()
 }
 
 /// `GET /sessions`: the listing (`summary.rs`) — one row per hosted session,

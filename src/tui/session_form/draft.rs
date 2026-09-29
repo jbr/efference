@@ -10,7 +10,7 @@
 use crate::inference::{SessionOptions, TriageChoice};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(in crate::tui) enum Role {
+pub(crate) enum Role {
     Main,
     Spotter,
     Triage,

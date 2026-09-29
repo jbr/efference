@@ -22,6 +22,16 @@ use crate::daemon::{CreateSession, SessionOptionsRequest};
 use crate::frontend::{Approval, SubmittedTurn};
 use crate::inference::{ConnectionInventory, ResolvedOptions};
 
+/// One recent-models suggestion: the provider-native id the draft carries,
+/// and the label the menu renders. Shaped like the discovery route's items
+/// (backlog/session-model-discovery.md), so the two sources merge in one menu
+/// when discovery lands.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+pub struct ModelSuggestion {
+    pub model: String,
+    pub label: String,
+}
+
 /// A client bound to one daemon control socket. Cheap to [`Clone`] (the inner
 /// trillium client is `Arc`-backed) so a client can hand a copy to a
 /// background event-tail task.
@@ -513,6 +523,37 @@ impl Client {
             .with_context(|| format!("QUERY {path} on the host socket"))?;
         let body = read_2xx(conn, "QUERY", path).await?;
         serde_json::from_str(&body).with_context(|| format!("decoding QUERY {path}"))
+    }
+
+    /// The models past sessions picked on `connection` for the project at
+    /// `cwd` (`GET /inference/recent-models`): most decayed weight first.
+    /// Empty when nothing was ever picked there — a picker with only the
+    /// typed-ID path, not a failure. A listener route, so it always addresses
+    /// the socket root.
+    pub async fn recent_models(
+        &self,
+        connection: &str,
+        cwd: &std::path::Path,
+        config: Option<&std::path::Path>,
+    ) -> Result<Vec<ModelSuggestion>> {
+        #[derive(serde::Deserialize)]
+        struct Recent {
+            models: Vec<ModelSuggestion>,
+        }
+        let query = {
+            let mut query = trillium_client::url::form_urlencoded::Serializer::new(String::new());
+            query.append_pair("connection", connection);
+            query.append_pair("cwd", &cwd.to_string_lossy());
+            if let Some(config) = config {
+                query.append_pair("config", &config.to_string_lossy());
+            }
+            query.finish()
+        };
+        let path = format!("/inference/recent-models?{query}");
+        let body = self.get_unversioned(&path).await?;
+        let recent: Recent =
+            serde_json::from_str(&body).with_context(|| format!("decoding GET {path}"))?;
+        Ok(recent.models)
     }
 
     /// The host's configured inference connections (`GET /inference`). This is a

@@ -56,6 +56,9 @@ pub struct SessionOptions {
 pub enum SelectionSource {
     /// The request named it.
     Request,
+    /// Past explicit picks, decayed (docs/transport.md): the project mode
+    /// past its mass threshold, else the system-wide aggregate.
+    History,
     /// `[defaults]` in the user's inference config.
     UserDefault,
     /// The main connection's provider supplied its own cheap-band spotter.
@@ -241,9 +244,10 @@ impl InferenceRegistry {
         &self,
         options: &SessionOptions,
         project_effort: Option<&str>,
+        history: Option<(&crate::history::History, &crate::history::Scope)>,
     ) -> ResolvedOptions {
         let mut issues = Vec::new();
-        let main = self.resolve_main(options, &mut issues);
+        let main = self.resolve_main(options, history, &mut issues);
         let spotter = self.resolve_spotter(options, &main, &mut issues);
         let triage = self.resolve_triage(options, &main, &mut issues);
         let effort = match (&options.effort, project_effort) {
@@ -286,6 +290,7 @@ impl InferenceRegistry {
     fn resolve_main(
         &self,
         options: &SessionOptions,
+        history: Option<(&crate::history::History, &crate::history::Scope)>,
         issues: &mut Vec<Issue>,
     ) -> Effective<ModelSelection> {
         match self.requested(
@@ -299,22 +304,58 @@ impl InferenceRegistry {
                 let selected = self.select(&reference, "model", SelectionSource::Request, issues);
                 inference_only(selected, "model", issues)
             }
-            Requested::Omitted => match self.defaults.model.as_ref() {
-                Some(default) => {
-                    let selected =
-                        self.select(default, "model", SelectionSource::UserDefault, issues);
-                    inference_only(selected, "model", issues)
-                }
-                None => {
-                    issues.push(Issue::new(
+            // Past picks are the default: the project mode past its mass
+            // threshold, else the system-wide aggregate, else whatever
+            // `[defaults].model` still names. A remembered connection that is
+            // no longer usable is not an issue — it falls through to the next
+            // branch, since no request named it (docs/transport.md).
+            Requested::Omitted => {
+                if let Some((store, scope)) = history
+                    && let Some(candidate) = store.default(scope, crate::history::now())
+                    && let Some(selected) =
+                        self.select_if_usable(&candidate.connection, &candidate.model)
+                {
+                    return inference_only(
+                        Effective::resolved(selected, SelectionSource::History),
                         "model",
-                        IssueCode::Required,
-                        "no model was given and [defaults].model is not configured",
-                    ));
-                    Effective::failed()
+                        issues,
+                    );
                 }
-            },
+                match self.defaults.model.as_ref() {
+                    Some(default) => {
+                        let selected =
+                            self.select(default, "model", SelectionSource::UserDefault, issues);
+                        inference_only(selected, "model", issues)
+                    }
+                    None => {
+                        issues.push(Issue::new(
+                            "model",
+                            IssueCode::Required,
+                            "no model was given and no past pick applies",
+                        ));
+                        Effective::failed()
+                    }
+                }
+            }
         }
+    }
+
+    /// The history candidate, when its connection is still configured and
+    /// available. Silent (`None`) otherwise, so a stale pick falls through to
+    /// the configured default rather than erroring on a request nobody made.
+    fn select_if_usable(&self, connection: &str, model: &str) -> Option<ModelSelection> {
+        let configured = self.connections.get(connection)?;
+        if configured.disabled || configured.credential.is_err() {
+            return None;
+        }
+        if !configured.provider.serves_inference() {
+            return None;
+        }
+        Some(ModelSelection {
+            connection: connection.to_string(),
+            provider: configured.provider,
+            model: model.to_string(),
+        })
     }
 
     /// Spotter falls back to the main connection's provider default, so it needs

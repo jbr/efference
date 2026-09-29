@@ -199,6 +199,13 @@ fn session_options_response(host: &Host, decoded: DecodedOptions) -> String {
         options,
         mut issues,
     } = decoded;
+    // The omitted branch defaults to past picks in the proposed root, keyed
+    // the way creation keys them — so preview reports the default creation
+    // would build. Scoped before the effort match moves the root; a root that
+    // will not scope reads as no history, never an error.
+    let scope = cwd
+        .as_ref()
+        .map(|cwd| crate::history::Scope::for_request(cwd, config.as_deref()));
     // Effort can be inherited from the project config, so preview reads the one
     // creation would select. A config that will not load is an issue, never its
     // contents or the parser's view of them.
@@ -218,9 +225,12 @@ fn session_options_response(host: &Host, decoded: DecodedOptions) -> String {
         // roles depends on it.
         None => None,
     };
+    let history = scope
+        .as_ref()
+        .map(|scope| (host.inference.history(), scope));
     let mut resolved = host
         .inference
-        .resolve_options(&options, project_effort.as_deref());
+        .resolve_options(&options, project_effort.as_deref(), history);
     // A field the decoder rejected never reached resolution, which would report
     // it as an ordinary omission. Blank it, so every issue's field reads the same.
     for issue in &issues {
