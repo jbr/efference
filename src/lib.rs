@@ -17,6 +17,7 @@ pub mod expand;
 pub mod frontend;
 pub mod fswatch;
 pub mod guide;
+pub mod history;
 pub mod http;
 pub mod inbox;
 pub mod inference;

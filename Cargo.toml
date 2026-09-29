@@ -14,7 +14,10 @@ semantic-edit-mcp = { path = "../semantic-edit-mcp" }
 # `cli` adds the `tools!` macro's clap derive and the stdio serve loop, which is
 # what lets `efference control <tool>` and `efference mcp` be one definition
 # (docs/operating.md).
-mcplease = { version = "0.4.2", features = ["client", "cli"], default-features = false }
+mcplease = { version = "0.4.2", features = [
+  "client",
+  "cli",
+], default-features = false }
 # `efference mcp` drives mcplease's stdio transport over tokio's stdio.
 async-compat = "0.2"
 # JSON Schema derive for the control tools' arguments — what an MCP client reads
@@ -106,7 +109,9 @@ unicode-segmentation = "1.13"
 # `image-data` is on because a pasted screenshot is an attachment (docs/inbox.md):
 # the clipboard's raw RGBA is re-encoded as a PNG into the store. It costs the
 # image/tiff/zune-jpeg stack, most of which `image` (below) already pulls in.
-arboard = { version = "3.6.1", default-features = false, features = ["image-data"] }
+arboard = { version = "3.6.1", default-features = false, features = [
+  "image-data",
+] }
 # Bash parsing for the `[commands]` fast path (docs/permissions.md). brush-parser is the
 # parser of the actively-maintained brush shell, so it tracks bash syntax and keeps
 # receiving updates — the reason it replaced a pinned-old yash-syntax (whose later
@@ -153,13 +158,20 @@ data-encoding = "2"
 # instead, since there is no browser to hand a redirect back to.
 webbrowser = "1.2.4"
 jiter = { version = "0.17.0", default-features = false }
-image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
+image = { version = "0.25.10", default-features = false, features = [
+  "png",
+  "jpeg",
+  "gif",
+  "webp",
+] }
 # Terminal image rendering for the TUI (docs/tui.md): protocol detection
 # (kitty/iTerm2), the font-size-in-pixels query, per-protocol encoding, and the
 # cell-skip that keeps ratatui from overwriting a drawn image. Default features
 # off: they re-enable all of `image`'s decoders (the slim set above is the
 # decode surface) and add a pkg-config dependency on libchafa.
-ratatui-image = { version = "11", default-features = false, features = ["crossterm"] }
+ratatui-image = { version = "11", default-features = false, features = [
+  "crossterm",
+] }
 # Web push (docs/web-push.md). Both halves of the protocol are P-256: `ecdh` is
 # RFC 8291 payload encryption (the sender's ephemeral key against the
 # subscription's), `ecdsa` is the RFC 8292 VAPID token. The 0.14/0.11 line is the
@@ -167,6 +179,11 @@ ratatui-image = { version = "11", default-features = false, features = ["crosste
 # so there is one digest stack rather than two.
 p256 = { version = "0.14", features = ["ecdh", "ecdsa"] }
 aes-gcm = "0.11"
+# Explicit model picks, remembered per project (docs/transport.md): one row per
+# session creation, read back as the model default and the recent menu. Bundled
+# build, so no system sqlite is needed; concurrent readers/writers are why this
+# is a real store rather than one more machine-written text file.
+rusqlite = { version = "0.40.2", features = ["bundled"] }
 
 # The secret store (docs/secrets.md): one get/set/delete over the user's OS
 # credential store. `keyring-core` is the store-agnostic entry API; the platform
@@ -183,12 +200,22 @@ security-framework = "3.7"
 # The pasteboard's change count and type list — whether the clipboard holds an image,
 # learned without reading it (docs/tui.md). Already in the tree through arboard.
 objc2 = "0.6"
-objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSPasteboard"] }
-objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSString", "NSEnumerator"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = [
+  "std",
+  "NSPasteboard",
+] }
+objc2-foundation = { version = "0.3", default-features = false, features = [
+  "std",
+  "NSArray",
+  "NSString",
+  "NSEnumerator",
+] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 # Secret Service over zbus; the runtime feature matches the daemon's tokio.
-zbus-secret-service-keyring-store = { version = "1", features = ["rt-tokio-crypto-rust"] }
+zbus-secret-service-keyring-store = { version = "1", features = [
+  "rt-tokio-crypto-rust",
+] }
 
 [features]
 default = ["dev"]
