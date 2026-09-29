@@ -158,6 +158,11 @@ impl<'a> InteractiveState<'a> {
     /// restarted client, or another client's queue, restores nothing. What comes back goes
     /// through [`apply_recall`](Self::apply_recall), as a recall the operator asked for would.
     pub(in crate::tui) fn apply_ask(&mut self, ask: Option<crate::tui::parse::PendingAsk>) {
+        // The mark on the question follows the topic, with no log entry behind it.
+        if self.ask.as_ref().map(|a| &a.call_id) != ask.as_ref().map(|a| &a.call_id) {
+            self.mark_reproject();
+        }
+        self.ask.clone_from(&ask);
         let Some(ask) = ask else {
             return;
         };

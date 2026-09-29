@@ -106,6 +106,8 @@ fn recalled_turns_return_once_and_only_when_ours() {
     let topic = || {
         Some(PendingAsk {
             call_id: "toolu_ask".into(),
+            n: 1,
+            of: 1,
             recalled: vec![
                 WithdrawnTurn {
                     submission_id: ours.clone(),
@@ -136,6 +138,8 @@ fn a_restarted_client_restores_nothing() {
     let mut play = Screenplay::new(70, 12);
     play.event(TuiEvent::Ask(Some(PendingAsk {
         call_id: "toolu_ask".into(),
+        n: 1,
+        of: 1,
         recalled: vec![WithdrawnTurn {
             submission_id: "minted-before-restart".into(),
             text: "old".into(),
@@ -154,4 +158,101 @@ fn the_continue_refusal_reaches_the_status_line() {
         "a question is pending — answer it with a turn to continue".into(),
     ));
     assert!(play.find("a question is pending").is_some());
+}
+
+fn topic(call_id: &str, n: usize, of: usize) -> TuiEvent {
+    TuiEvent::Ask(Some(PendingAsk {
+        call_id: call_id.into(),
+        n,
+        of,
+        recalled: Vec::new(),
+    }))
+}
+
+/// Two questions in one completion: the topic names the first, which the composer's
+/// send answers; the second is marked as coming next, and the status line says which.
+#[test]
+fn transcript_ask_batch_first_current() {
+    let mut play = Screenplay::new(70, 14);
+    play.assistant(
+        "Two things.",
+        vec![
+            ask("toolu_1", "Which crate?"),
+            ask("toolu_2", "Which branch?"),
+        ],
+    );
+    play.event(topic("toolu_1", 1, 2));
+    assert!(play.find("▸ answering · question 1 of 2").is_some());
+    assert!(play.find("next · question 2 of 2").is_some());
+    assert!(play.find("your reply answers question 1 of 2").is_some());
+    play.snapshot("transcript_ask_batch_first_current");
+}
+
+/// The first is answered and the topic moves to the second: the mark on the second
+/// changes with no log entry behind it, and the first reads as asked with its reply.
+#[test]
+fn transcript_ask_batch_second_current() {
+    let mut play = Screenplay::new(70, 16);
+    play.assistant(
+        "Two things.",
+        vec![
+            ask("toolu_1", "Which crate?"),
+            ask("toolu_2", "Which branch?"),
+        ],
+    );
+    play.event(topic("toolu_1", 1, 2));
+    play.type_str("efference");
+    play.route_key(KeyCode::Enter, KeyModifiers::NONE);
+    play.commit_reply("toolu_1", None);
+    play.event(topic("toolu_2", 2, 2));
+    assert!(play.find("asked · question 1 of 2").is_some());
+    assert!(play.find("▸ answering · question 2 of 2").is_some());
+    assert!(play.find("next").is_none());
+    play.snapshot("transcript_ask_batch_second_current");
+}
+
+/// A lone pending question: emphasized, without a position.
+#[test]
+fn transcript_ask_lone_current() {
+    let mut play = Screenplay::new(70, 12);
+    play.assistant("Ready.", vec![ask("toolu_ask", "Ship it?")]);
+    play.event(topic("toolu_ask", 1, 1));
+    assert!(play.find("▸ answering").is_some());
+    assert!(play.find("your reply answers the question").is_some());
+    play.snapshot("transcript_ask_lone_current");
+}
+
+/// The topic clearing (the ask ended some other way) leaves an unresolved question as
+/// merely asked: nothing observable says it is still open.
+#[test]
+fn a_cleared_topic_leaves_an_ask_as_asked() {
+    let mut play = Screenplay::new(70, 12);
+    play.assistant("Ready.", vec![ask("toolu_ask", "Ship it?")]);
+    play.event(topic("toolu_ask", 1, 1));
+    play.event(TuiEvent::Ask(None));
+    assert!(play.find("▸ answering").is_none());
+    assert!(play.find("asked").is_some());
+    assert!(play.find("your reply answers").is_none());
+}
+
+/// The mark is the emphasized register only while current.
+#[test]
+fn the_current_mark_is_bolder_than_the_upcoming_one() {
+    let mut play = Screenplay::new(70, 14);
+    play.assistant(
+        "Two things.",
+        vec![
+            ask("toolu_1", "Which crate?"),
+            ask("toolu_2", "Which branch?"),
+        ],
+    );
+    play.event(topic("toolu_1", 1, 2));
+    let (cx, cy) = play.find("answering").expect("current mark");
+    let (ux, uy) = play.find("next").expect("upcoming mark");
+    let current = play.cell(cx, cy);
+    let upcoming = play.cell(ux, uy);
+    assert!(
+        current.modifier.contains(ratatui::style::Modifier::BOLD) || current.fg != upcoming.fg,
+        "current {current:?} vs upcoming {upcoming:?}"
+    );
 }

@@ -59,9 +59,13 @@ export interface LeafNode {
 /** A question put to the operator, and its place among the asks of one
  * completion. */
 export interface AskQuestion {
+  /** The `ask` call's id — what the live `ask` topic's `call_id` names. */
+  callId: CallId;
   question: string;
   n: number;
   of: number;
+  /** Its result has committed, so the topic no longer says anything about it. */
+  resolved?: boolean;
 }
 
 /** The question an `ask` call puts, when `calls[index]` is one with a usable
@@ -79,6 +83,7 @@ export function askOfCall(
   if (question === "") return null;
   const asks = calls.filter((c) => c.name === "ask");
   return {
+    callId: call.id,
     question,
     n: calls.slice(0, index).filter((c) => c.name === "ask").length + 1,
     of: asks.length,
@@ -136,7 +141,7 @@ export function buildTree(entries: LogEntry[]): TranscriptNode[] {
   const nodes: TranscriptNode[] = [];
   const byCall = new Map<CallId, CallNode>();
   // Calls drawn as questions: their results are replies, not tool results.
-  const askCalls = new Set<CallId>();
+  const askCalls = new Map<CallId, AskQuestion>();
   const seqs: Seq[] = [];
   let title: string | null = null;
 
@@ -209,7 +214,7 @@ export function buildTree(entries: LogEntry[]): TranscriptNode[] {
       }
       // A question reads as a turn ending, after the step's other calls.
       for (const { call, ask } of asks) {
-        askCalls.add(call.id);
+        askCalls.set(call.id, ask);
         nodes.push({
           kind: "leaf",
           key: `${entry.seq}:ask:${call.id}`,
@@ -221,7 +226,9 @@ export function buildTree(entries: LogEntry[]): TranscriptNode[] {
     }
 
     if ("ToolResult" in p) {
-      if (askCalls.has(p.ToolResult.call_id)) {
+      const ask = askCalls.get(p.ToolResult.call_id);
+      if (ask !== undefined) {
+        ask.resolved = true;
         // A reply is the result of a submission, which is what carries a
         // `submission_id`; an interrupt's error result has none.
         nodes.push({

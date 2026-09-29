@@ -148,6 +148,7 @@ fn a_gate_arriving_and_resolving_rebuilds_its_call() {
             call: Some("call-1"),
             reason: Some("deletes outside the git tree"),
             acting_on: None,
+            ..Default::default()
         },
         &[],
     );
@@ -161,6 +162,7 @@ fn a_gate_arriving_and_resolving_rebuilds_its_call() {
             call: Some("call-1"),
             reason: Some("deletes outside the git tree"),
             acting_on: None,
+            ..Default::default()
         },
         &[],
     );
@@ -260,4 +262,63 @@ fn a_shrinking_log_rebuilds_from_scratch() {
     transcript.update(&mut doc, shorter, &tail, &mut view, Gate::default(), &[]);
     let expected = project(shorter, &tail, &view, Gate::default(), &[]);
     assert_eq!(shape(&doc.document.nodes), shape(&expected.nodes));
+}
+
+/// The `ask` topic moving between the asks of one completion changes their marks with no
+/// log entry, so the cache has to notice it as it does a gate.
+#[test]
+fn the_ask_topic_moving_rebuilds_the_marks() {
+    let asks = entry(
+        0,
+        Payload::Assistant {
+            output: crate::log::AssistantOutput::from_legacy_messages(
+                vec![],
+                vec![],
+                vec![
+                    ToolCall::new("ask", "q1", serde_json::json!({ "question": "First?" })),
+                    ToolCall::new("ask", "q2", serde_json::json!({ "question": "Second?" })),
+                ],
+            ),
+            upstream_failure: None,
+        },
+    );
+    let log = vec![asks];
+    let mut view = ViewState::default();
+    let mut doc = empty_doc();
+    let mut transcript = Transcript::default();
+    let tail = LiveTail::default();
+    for live in [None, Some("q1"), Some("q2"), None] {
+        let gate = Gate {
+            ask: live,
+            ..Default::default()
+        };
+        transcript.update(&mut doc, &log, &tail, &mut view, gate, &[]);
+        let expected = project(&log, &tail, &view, gate, &[]);
+        assert_eq!(
+            shape(&doc.document.nodes),
+            shape(&expected.nodes),
+            "topic at {live:?}"
+        );
+    }
+    let first = project(
+        &log,
+        &tail,
+        &view,
+        Gate {
+            ask: Some("q1"),
+            ..Default::default()
+        },
+        &[],
+    );
+    let second = project(
+        &log,
+        &tail,
+        &view,
+        Gate {
+            ask: Some("q2"),
+            ..Default::default()
+        },
+        &[],
+    );
+    assert_ne!(shape(&first.nodes), shape(&second.nodes));
 }

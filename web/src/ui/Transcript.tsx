@@ -8,6 +8,7 @@
 import { handoffPredecessor } from "../api/types.ts";
 import { memo, useMemo } from "react";
 import type {
+  Ask,
   Attachment,
   ConfigEdit,
   Mark,
@@ -19,6 +20,7 @@ import type { CallNode, LeafNode, TranscriptNode } from "../session/tree.ts";
 import { upstreamFailureWhy } from "../session/tree.ts";
 import { assistantView } from "../session/assistant.ts";
 import type { CallId } from "../api/types.ts";
+import { askMarkText, askStanding } from "./askMark.ts";
 import { Markdown } from "./Markdown.tsx";
 import { SentAttachments } from "./Attachments.tsx";
 import { CallBlock, LiveCallBlock, ResultBlock } from "./ToolBlocks.tsx";
@@ -148,18 +150,26 @@ function Consolidation({
 }
 
 /** One log entry rendered at session level. */
-function Leaf({ node }: { node: LeafNode }) {
+function Leaf({
+  node,
+  liveAsk,
+}: {
+  node: LeafNode;
+  /** The `ask` topic, for ask leaves only (others get `null` so a topic change
+   * does not re-render them). */
+  liveAsk: Ask | null;
+}) {
   const { entry } = node;
   const p = entry.payload;
   // An `ask` reads as a turn ending: the question is the assistant's prose
   // with a small mark, and the reply the operator's message (docs/web-client.md).
   if (node.ask !== undefined) {
-    const { question, n, of } = node.ask;
+    const standing = askStanding(node.ask, liveAsk);
     return (
       <Entry label={null}>
-        <Markdown>{question}</Markdown>
-        <p className="ask-mark">
-          asked{of > 1 ? ` · question ${n} of ${of}` : ""}
+        <Markdown>{node.ask.question}</Markdown>
+        <p className={`ask-mark ask-${standing}`}>
+          {askMarkText(node.ask, standing)}
         </p>
       </Entry>
     );
@@ -477,7 +487,7 @@ export function Transcript({
   nodes,
   streaming,
   pending,
-  answering,
+  ask,
   gatedCall,
   onGateSlot,
   onRecall,
@@ -492,8 +502,8 @@ export function Transcript({
   onGateSlot: (element: HTMLDivElement | null) => void;
   streaming: Streaming;
   pending: PendingTurn[];
-  /** The `ask` topic is non-null: a send answers the question. */
-  answering: boolean;
+  /** The `ask` topic: while non-null, a send answers the current question. */
+  ask: Ask | null;
   onRecall: (id: string) => void;
   onInspect: (callId: CallId) => void;
   onOpenFile: (path: string, callId: CallId) => void;
@@ -525,7 +535,9 @@ export function Transcript({
         nodes={shown}
         thinking={thinking}
         gatedCall={gatedCall}
-        renderLeaf={(node) => <MemoLeaf node={node} />}
+        renderLeaf={(node) => (
+          <MemoLeaf node={node} liveAsk={node.ask === undefined ? null : ask} />
+        )}
         renderFullCall={(node) => (
           <Call
             node={node}
@@ -539,7 +551,7 @@ export function Transcript({
       <StreamingTail streaming={streaming} committed={committed} />
       <PendingTurns
         pending={pending}
-        answering={answering}
+        answering={ask !== null}
         onRecall={onRecall}
       />
     </div>

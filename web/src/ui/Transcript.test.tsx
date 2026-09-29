@@ -6,7 +6,7 @@
 import { expect, test, vi } from "vitest";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import type { LogEntry } from "../api/types.ts";
+import type { Ask, LogEntry } from "../api/types.ts";
 import { messagesAssistant } from "../session/assistant.ts";
 import { emptyStreaming } from "../session/store.ts";
 import { buildTree } from "../session/tree.ts";
@@ -51,7 +51,7 @@ function markup(element: React.ReactElement): string {
 
 const render = (
   entries: LogEntry[],
-  over: { answering?: boolean; pending?: string[] } = {},
+  over: { ask?: Ask | null; pending?: string[] } = {},
 ) =>
   markup(
     <Transcript
@@ -62,7 +62,7 @@ const render = (
         text,
         attachments: [],
       }))}
-      answering={over.answering ?? false}
+      ask={over.ask ?? null}
       gatedCall={null}
       onGateSlot={() => {}}
       onRecall={() => {}}
@@ -70,6 +70,14 @@ const render = (
       onOpenFile={() => {}}
     />,
   );
+
+const topic = (call_id: string, n: number, of: number): Ask => ({
+  call_id,
+  question: "?",
+  n,
+  of,
+  recalled: [],
+});
 
 const asking = entry(1, {
   Assistant: messagesAssistant(
@@ -117,7 +125,53 @@ test("the echo of a reply says answering and offers no recall", () => {
   const queued = render([asking], { pending: ["yes"] });
   expect(queued).toContain("Queued");
   expect(queued).toContain("Recall");
-  const answering = render([asking], { pending: ["yes"], answering: true });
+  const answering = render([asking], {
+    pending: ["yes"],
+    ask: topic("a", 1, 2),
+  });
   expect(answering).toContain("Sent · answering the question");
   expect(answering).not.toContain("Recall");
+});
+
+test("the topic names the current question and the next one is marked upcoming", () => {
+  const html = render([asking], { ask: topic("a", 1, 2) });
+  expect(html).toContain("▸ answering · question 1 of 2");
+  expect(html).toContain("next · question 2 of 2");
+  expect(html).not.toContain("asked · question");
+});
+
+test("an answered question reads as asked while the next is current", () => {
+  const first: LogEntry = {
+    ...entry(2, {
+      ToolResult: {
+        call_id: "a",
+        raw: { content: "one", is_error: false },
+        wire: "Raw",
+      },
+    }),
+    submission_id: "s1",
+  };
+  const html = render([asking, first], { ask: topic("b", 2, 2) });
+  expect(html).toContain("asked · question 1 of 2");
+  expect(html).toContain("▸ answering · question 2 of 2");
+  expect(html).not.toContain("next");
+});
+
+test("a lone current question has no position", () => {
+  const html = render(
+    [
+      entry(1, {
+        Assistant: messagesAssistant([], [], [ask("a", "Ship it?")]),
+      }),
+    ],
+    { ask: topic("a", 1, 1) },
+  );
+  expect(html).toContain("▸ answering<");
+});
+
+test("with no topic an open question is only asked", () => {
+  const html = render([asking]);
+  expect(html).toContain("asked · question 1 of 2");
+  expect(html).not.toContain("answering ·");
+  expect(html).not.toContain("next");
 });

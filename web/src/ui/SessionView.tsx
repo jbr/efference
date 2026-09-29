@@ -238,7 +238,7 @@ export function SessionView() {
         nodes={nodes}
         streaming={session.streaming}
         pending={session.pendingTurns}
-        answering={session.topics.ask != null}
+        ask={session.topics.ask ?? null}
         gatedCall={gate?.call_id ?? null}
         onGateSlot={setGateSlot}
         onRecall={onRecall}
@@ -323,6 +323,7 @@ export function SessionView() {
           stall={session.topics.stall ?? null}
           retrying={(session.topics.upstream_retry ?? null) !== null}
           gatePending={gate != null}
+          ask={session.topics.ask ?? null}
         />
       </div>
     </div>

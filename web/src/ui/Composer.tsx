@@ -13,7 +13,8 @@ import {
   interruptLoop,
   patchLoop,
 } from "../api/http.ts";
-import type { Attachment, Pace, Stall } from "../api/types.ts";
+import type { Ask, Attachment, Pace, Stall } from "../api/types.ts";
+import { replyHint } from "./askMark.ts";
 import { turnState } from "./turnState.ts";
 import { useDockOffset } from "./float.ts";
 import { useNarrow } from "./useNarrow.ts";
@@ -41,6 +42,7 @@ export function Composer({
   stall,
   retrying,
   gatePending,
+  ask,
 }: {
   submit: (text: string, attachments: Attachment[]) => Promise<void>;
   /** A turn a recall pulled back out of the daemon's queue, to prepend to the
@@ -57,6 +59,8 @@ export function Composer({
   /** A gate float may own the above-dock slot; the compose chip yields to
    * it (the float carries its own steering input). */
   gatePending: boolean;
+  /** The pending `ask`: the placeholder says which question a send answers. */
+  ask: Pick<Ask, "n" | "of"> | null;
 }) {
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -239,9 +243,11 @@ export function Composer({
                 if (narrow && event.key === "Escape") setExpanded(false);
               }}
               placeholder={
-                narrow
-                  ? "send a turn"
-                  : "send a turn (enter to send, shift-enter for newline)"
+                ask !== null
+                  ? replyHint(ask)
+                  : narrow
+                    ? "send a turn"
+                    : "send a turn (enter to send, shift-enter for newline)"
               }
               rows={3}
             />

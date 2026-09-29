@@ -33,7 +33,7 @@ use tokio::sync::mpsc::UnboundedSender;
 
 /// The idle status-bar line (also restored when an approval gate resolves). It does
 /// not enumerate verb keys: the strip is the legend (docs/tui.md), so this points there.
-const IDLE_STATUS: &str = "efference — ↑ controls";
+pub(super) const IDLE_STATUS: &str = "efference — ↑ controls";
 
 /// The status-bar line for a read-only view of a recorded log (docs/tui.md): it
 /// names the session being read and says the view is inert, since the transcript
@@ -530,6 +530,9 @@ pub(super) struct InteractiveState<'a> {
     /// The `call_id` of the last `ask` whose recalled turns were taken back into the
     /// composer, so a re-delivered topic frame restores them once (docs/tui.md).
     pub ask_restored: Option<String>,
+    /// The pending `ask`, from the `ask` topic: which question the composer answers
+    /// (docs/tui.md). `None` while no question is pending.
+    pub ask: Option<crate::tui::parse::PendingAsk>,
     /// The pending tool-approval gate, if any — the `gate` state topic
     /// (docs/control-api.md).
     pub pending_gate: Option<PendingGate>,

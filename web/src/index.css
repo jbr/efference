@@ -396,6 +396,11 @@ input[type="checkbox"] {
   color: var(--fg-dim);
 }
 
+.ask-current {
+  color: var(--fg);
+  font-weight: 600;
+}
+
 .title-change-text {
   font-family: var(--font-prose);
   font-style: italic;

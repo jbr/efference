@@ -24,10 +24,27 @@ impl<'a> InteractiveState<'a> {
         // turn gets a marker prefix, and a non-default pace gets a loud `⏸`/`⏱`
         // indicator ahead of everything (docs/tui.md) so a held or
         // slowed loop is always legible, even when the sidebar owns the right side.
+        // While a question is pending, the idle hint says which one a send answers
+        // (docs/tui.md); a message about something the operator just did keeps its place.
+        let message = match &self.ask {
+            Some(ask)
+                if matches!(
+                    &*self.ui.debug_message,
+                    super::state::IDLE_STATUS | "click to focus this entry"
+                ) =>
+            {
+                if ask.of > 1 {
+                    format!("your reply answers question {} of {}", ask.n, ask.of)
+                } else {
+                    "your reply answers the question".to_string()
+                }
+            }
+            _ => self.ui.debug_message.to_string(),
+        };
         let base = if self.loading.pending_request {
-            format!("◍ streaming…  {}", self.ui.debug_message)
+            format!("◍ streaming…  {message}")
         } else {
-            self.ui.debug_message.to_string()
+            message
         };
         // The frame-cost readout leads, when `--frame-cost` asked for it: it is being
         // read *while* something streams, so it must not be the thing that gets

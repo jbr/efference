@@ -58,6 +58,10 @@ pub(crate) fn project(
 pub(crate) struct Gate<'g> {
     /// The `call_id` awaiting approval.
     pub call: Option<&'g str>,
+    /// The `call_id` of the `ask` the live topic names — the question the composer's
+    /// send answers. Not a gate, but ephemeral control state that changes how a
+    /// committed call renders, so it travels with one (docs/tui.md).
+    pub ask: Option<&'g str>,
     /// The reason to show beside it, when no committed `Spot` carries one.
     pub reason: Option<&'g str>,
     /// The leaf action a bound `sessions__approve` authorizes (docs/permissions.md),
@@ -240,7 +244,8 @@ pub(crate) fn entry_nodes(
                     // and the operator's reply, not as a call (docs/tui.md).
                     if let Some(question) = crate::supervisor::ask_of_call(&calls, i) {
                         let reply = index.result_entry(log, call.id.0.as_str());
-                        nodes.extend(ask::ask_nodes(question, reply));
+                        let state = ask::AskState::pending(call.id.0.as_str(), gate.ask);
+                        nodes.extend(ask::ask_nodes(question, reply, state));
                         continue;
                     }
                     let result = index.result(log, call.id.0.as_str());

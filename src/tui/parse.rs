@@ -62,6 +62,9 @@ pub(super) fn parse_processes(value: &serde_json::Value) -> Vec<BgProc> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct PendingAsk {
     pub call_id: String,
+    /// This question's place among the asks of one completion (1-based) and how many.
+    pub n: usize,
+    pub of: usize,
     pub recalled: Vec<crate::client::WithdrawnTurn>,
 }
 
@@ -70,6 +73,8 @@ pub(crate) struct PendingAsk {
 pub(super) fn parse_ask(ask: &serde_json::Value) -> Option<PendingAsk> {
     Some(PendingAsk {
         call_id: ask.get("call_id")?.as_str()?.to_string(),
+        n: ask.get("n").and_then(|n| n.as_u64()).unwrap_or(1) as usize,
+        of: ask.get("of").and_then(|n| n.as_u64()).unwrap_or(1) as usize,
         recalled: ask
             .get("recalled")
             .and_then(|r| serde_json::from_value(r.clone()).ok())

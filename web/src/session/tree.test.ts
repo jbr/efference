@@ -334,6 +334,7 @@ describe("ask", () => {
     expect(nodes.map((n) => n.key)).toEqual(["1:ask:a"]);
     const leaf = nodes[0];
     expect(leaf.kind === "leaf" && leaf.ask).toEqual({
+      callId: "a",
       question: "Ship it?",
       n: 1,
       of: 1,
@@ -366,6 +367,8 @@ describe("ask", () => {
     expect(nodes.map((n) => n.key)).toEqual(["1:ask:a", "2:reply"]);
     const leaf = nodes[1];
     expect(leaf.kind === "leaf" && leaf.reply).toBe("answered");
+    const question = nodes[0];
+    expect(question.kind === "leaf" && question.ask?.resolved).toBe(true);
   });
 
   it("reads a result with no submission as not answered", () => {

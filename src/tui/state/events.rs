@@ -359,6 +359,7 @@ impl<'a> InteractiveState<'a> {
         let started = self.frame_cost.is_some().then(std::time::Instant::now);
         let gate = projection::Gate {
             call: self.pending_gate.as_ref().map(|g| g.call_id.as_str()),
+            ask: self.ask.as_ref().map(|a| a.call_id.as_str()),
             reason: self.pending_gate.as_ref().and_then(|g| g.reason.as_deref()),
             acting_on: self
                 .pending_gate

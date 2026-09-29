@@ -40,6 +40,9 @@ pub(crate) struct Transcript {
     /// it left and the call it moved to. The bound action is part of the value: a
     /// bound `sessions__approve` moving onto the same call still changes the render.
     gate: Option<(String, Option<String>, Option<crate::tui::ActingOn>)>,
+    /// The `ask` call the document was last built as current. The mark changes with
+    /// no log entry, so a move dirties the ask it left and the one it reached.
+    ask: Option<String>,
 }
 
 impl Transcript {
@@ -82,6 +85,7 @@ impl Transcript {
         // render differently (docs/tui.md).
         let held = self.gate.as_ref().map(|(call, reason, acting_on)| Gate {
             call: Some(call.as_str()),
+            ask: gate.ask,
             reason: reason.as_deref(),
             acting_on: acting_on.as_ref(),
         });
@@ -98,6 +102,18 @@ impl Transcript {
                     gate.acting_on.cloned(),
                 )
             });
+        }
+
+        if self.ask.as_deref() != gate.ask {
+            for call_id in [self.ask.as_deref(), gate.ask].into_iter().flatten() {
+                if let Some(&owner) = self.owner.get(call_id) {
+                    self.dirty.insert(owner);
+                }
+            }
+            // The asks of one completion share an owner, but a topic clearing must
+            // also refresh siblings that were `next`: they are dirtied through the
+            // call they followed, which is the same entry.
+            self.ask = gate.ask.map(str::to_string);
         }
 
         // Raw toggles, each keyed by the call whose result they change.
