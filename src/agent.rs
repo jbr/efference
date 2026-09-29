@@ -34,116 +34,6 @@ use crate::spotter::Spotter;
 use crate::supervisor;
 use crate::tools::Toolbox;
 
-/// The exact `tools[]` a turn advertises: the world tools (`toolbox`) plus the
-/// harness tools handled structurally in the loop — `consolidate` (docs/consolidate.md)
-/// and the supervisor/inbox tools (docs/supervisor.md). One source of truth so the
-/// keepalive ping (docs/log-and-projection.md) and the real turns send a byte-identical prefix;
-/// drift here silently breaks the tools cache tier.
-pub fn tool_definitions(toolbox: &Toolbox) -> Vec<Value> {
-    let mut tools = toolbox.definitions();
-    tools.push(consolidate::definition());
-    tools.extend(supervisor::tool_definitions());
-    // The peek tools (docs/redaction-fork.md) stand in every turn's array even though
-    // only a fork peek's tail instruction ever asks for them: with the tools array,
-    // `tool_choice`, and thinking policy identical, the fork peek is the same
-    // conversation continued with a different tail and reads the agent lineage's cache
-    // instead of keying its own (docs/log-and-projection.md). Their schemas are static
-    // for the same reason. An un-asked call is paired with a nudge result in the loop.
-    tools.push(crate::distill::retain_tool());
-    tools.push(crate::distill::triage_tool());
-    tools
-}
-
-/// The names a turn's `tools[]` carries that a call may actually name — read off
-/// [`tool_definitions`] itself, so the advertised array and this list cannot drift.
-///
-/// The peek tools are excluded: `retain`/`triage` stand in every array for
-/// cache-lineage reasons but nothing is ever asked of them on an agent turn, and an
-/// un-asked call is short-circuited before this is consulted
-/// (docs/redaction-fork.md). What is left is what a call can name and have run.
-pub fn callable_names(toolbox: &Toolbox) -> Vec<String> {
-    tool_definitions(toolbox)
-        .iter()
-        .filter_map(|d| d.get("name")?.as_str().map(str::to_string))
-        .filter(|name| !crate::distill::is_peek_tool(name))
-        .collect()
-}
-
-/// The spotter's brief for any tool a turn advertises — the lookup mirror of
-/// [`tool_definitions`]: the toolbox providers, then the loop-owned tools
-/// (`consolidate`, the supervisor/inbox family). One lookup covering the whole
-/// array, so a tool in `tools[]` can't be invisible to the permission rung —
-/// the loop-owned family once was, and the spotter judged `check_inbox` and
-/// `list_processes` as bare names, calling them opaque (docs/permissions.md).
-/// Bash stays brief-less by design (judged as command text), and the peek tools
-/// never reach a gate (an un-asked call pairs with a nudge result).
-pub fn brief<'a>(toolbox: &'a Toolbox, name: &str) -> Option<crate::tools::ToolBrief<'a>> {
-    toolbox
-        .brief(name)
-        .or_else(|| consolidate::brief(name))
-        .or_else(|| supervisor::brief(name))
-}
-
-/// The full definition behind every wire name a turn's `tools[]` can carry —
-/// the `GET /v1/tools/:name` mirror of [`tool_definitions`], the way [`brief`]
-/// already mirrors it for the spotter. Built once, before the loop starts (the
-/// toolbox's mounted set and this harness's own tool family are both fixed for
-/// the session, docs/log-and-projection.md), and snapshotted into `Session`
-/// ([`crate::daemon::Session::set_tool_catalog`]).
-///
-/// A catalog built from `toolbox.tool_catalog()` alone once missed this whole
-/// family — `check_inbox`, `list_processes`, `consolidate`, the two peek
-/// tools — the same shape of gap [`brief`]'s doc comment records for the
-/// spotter (`check_inbox`/`list_processes` once judged as bare names because
-/// the lookup consulted only the providers). Composed from the same brief
-/// sources `brief` reads, plus the two peek tools, which `brief` excludes
-/// (they never reach a gate) but this route does not: `retain`/`triage` still
-/// ride every turn's `tools[]`, so a reader destructuring the fork peek's own
-/// call wants their schema too.
-///
-/// None of these five sources inject [`crate::tools::INTENT`] the way a
-/// `Toolbox`-mounted tool's wire entry does — [`tool_definitions`] pushes
-/// `consolidate::definition()`, `supervisor::tool_definitions()`, and the peek
-/// tools onto `toolbox.definitions()` *after* `with_intent` has already run
-/// over the toolbox half — so each is served with `inject_intent: false`,
-/// matching the schema the model was actually sent.
-pub fn tool_catalog(
-    toolbox: &Toolbox,
-) -> std::collections::HashMap<String, crate::tools::ToolEntry> {
-    let mut catalog = toolbox.tool_catalog();
-
-    if let Some(brief) = consolidate::brief(consolidate::NAME) {
-        catalog.insert(
-            consolidate::NAME.to_string(),
-            crate::tools::ToolEntry::from_definition(brief.definition, None, false),
-        );
-    }
-    for name in [
-        supervisor::LIST,
-        supervisor::READ,
-        supervisor::KILL,
-        supervisor::WATCH,
-        supervisor::CHECK_INBOX,
-        supervisor::WAIT,
-    ] {
-        if let Some(brief) = supervisor::brief(name) {
-            catalog.insert(
-                name.to_string(),
-                crate::tools::ToolEntry::from_definition(brief.definition, None, false),
-            );
-        }
-    }
-    for raw in [crate::distill::retain_tool(), crate::distill::triage_tool()] {
-        if let Some(name) = raw.get("name").and_then(Value::as_str) {
-            catalog.insert(
-                name.to_string(),
-                crate::tools::ToolEntry::from_raw(name, &raw, None, false),
-            );
-        }
-    }
-    catalog
-}
-
 /// Hard cap on a single tool result's bytes (defense in depth). The fork peek caps
 /// *line count* (`PEEK_LINE_CAP`), but not a pathological single huge line; an
 /// over-cap result is almost always a mistake — e.g. grepping the gitignored session
@@ -622,278 +512,13 @@ pub async fn run<F: Frontend, S: Spotter>(
             // here, holding the results, and triage them together at one gate below. Triaging between calls would build
             // a fork request whose trailing assistant message still carries unanswered
             // `tool_use` blocks, which the API rejects (docs/redaction-fork.md).
-            let mut abort_turn = false;
-            let mut redirect: Option<String> = None;
-            let mut steps: Vec<Step> = Vec::new();
-            for call in &calls {
-                // Once we've decided to stop running calls (abort or redirect),
-                // every remaining `tool_use` still needs a paired result or the
-                // wire orphans it and the API rejects the request (docs/README.md).
-                if abort_turn || redirect.is_some() {
-                    steps.push(Step::direct(aborted(call)));
-                    continue;
-                }
-                // The interrupt's *before* juncture (docs/control-channel.md): the operator
-                // asked out while the model was generating, so this call never runs — the
-                // un-run stand-in already says so, and the turn ends here.
-                if shared.take_interrupt() {
-                    steps.push(Step::direct(aborted(call)));
-                    abort_turn = true;
-                    continue;
-                }
-                // Path env-var expansion (docs/tools.md): resolve `$TMPDIR` in the
-                // call's path fields at one choke point, before anything judges or
-                // runs the call — the fast-path, the spotter, and the executor all
-                // see the same expanded literal (an unexpanded variable is opaque
-                // to the spotter, so this is what makes the path judgeable). A
-                // failed expansion (unlisted/undefined name) pairs the call with an
-                // error result and never reaches the cascade — a hard stop, not
-                // expand-to-empty. The logged `tool_use` keeps the variable form
-                // the model wrote; only the in-flight call is rewritten.
-                let expanded;
-                let running = match shared.expand_call(call) {
-                    Ok(None) => call,
-                    Ok(Some(rewritten)) => {
-                        expanded = rewritten;
-                        &expanded
-                    }
-                    Err(message) => {
-                        steps.push(Step::direct(expansion_error(call, &message)));
-                        continue;
-                    }
-                };
-                match run_call(frontend, &shared, &spotter, &toolbox, turn, running).await? {
-                    Decision::Ran {
-                        result,
-                        telemetry,
-                        handoff,
-                    } => steps.push(Step::Ran {
-                        call: call.clone(),
-                        result,
-                        telemetry,
-                        handoff,
-                    }),
-                    Decision::Direct(payloads) => steps.push(Step::Direct(payloads)),
-                    Decision::Withheld(payload) => {
-                        // The interrupt's *after* juncture (docs/control-channel.md). The
-                        // call finished but its output stops at the log — taken before the
-                        // gate, so the discarded result is never peeked at and costs no
-                        // round-trip, which is the point of the verb.
-                        steps.push(Step::Direct(vec![payload]));
-                        abort_turn = true;
-                    }
-                    Decision::Abort(payload) => {
-                        steps.push(Step::Direct(vec![payload]));
-                        abort_turn = true;
-                    }
-                    Decision::Redirect { payload, message } => {
-                        steps.push(Step::Direct(vec![payload]));
-                        redirect = Some(message);
-                    }
-                }
-            }
+            let Batch {
+                steps,
+                abort_turn,
+                redirect,
+            } = run_batch(frontend, &shared, &spotter, &toolbox, turn, &calls).await?;
 
-            // The gate (docs/redaction-fork.md): one peek over every result this
-            // completion produced. Nothing to triage means no round-trip.
-            let pending: Vec<Pending<'_>> = steps
-                .iter()
-                .filter_map(|s| match s {
-                    Step::Ran { call, result, .. } => Some(Pending { call, raw: result }),
-                    Step::Direct(_) => None,
-                })
-                .collect();
-            // The must-wake notifications this gate first-shows (docs/inbox.md):
-            // pinned below whatever the peek decides.
-            let mut forced_pins: Vec<crate::log::Seq> = Vec::new();
-            let mut gate = if pending.is_empty() {
-                None
-            } else {
-                // `ForkPeek` re-enters the model here — the prefix is the log through
-                // this completion's `tool_use` blocks, so we snapshot it (can't borrow
-                // across the distiller's await).
-                let entries = shared.snapshot();
-                // Open the triage gate (docs/inbox.md): re-show the still-active
-                // notifications (left at earlier gates), then log any newly arrived
-                // (ephemeral) ones as first-show `Ambient` entries — each entry's seq
-                // becomes its durable id, the handle the verdict pins/dismisses by. (They
-                // project to nothing, so the fork prefix `entries` stays byte-identical,
-                // docs/log-and-projection.md.)
-                let mut shown = active_shown(&entries);
-                let mut forced = Vec::new();
-                for drained in shared.drain_inbox() {
-                    let source = drained.notification.source.clone();
-                    let body = drained.notification.body.clone();
-                    let seq = shared.append(turn, Payload::Ambient(drained.notification))?;
-                    shown.push(ShownNotification { seq, source, body });
-                    if drained.wake {
-                        forced.push(seq);
-                    }
-                }
-                forced_pins = forced;
-                // The live background processes' fresh tails ride the same peek
-                // (docs/supervisor.md) — re-sampled now, never logged unless pinned.
-                let background = shared.bg_snapshot();
-                // A gate without a verdict holds rather than reaching the agent
-                // (docs/redaction-fork.md): the stall names it, and the operator's
-                // continue runs the gate again from the top.
-                let mut carried = Carried::default();
-                Some(loop {
-                    match distiller
-                        .distill(client, &tools, &entries, &pending, &shown, &background)
-                        .await
-                    {
-                        Ok(outcome) => break carried.onto(outcome),
-                        Err(failure) => match hold(&shared, client, failure, &mut carried).await {
-                            Held::Retry => continue,
-                            Held::Interrupted => break carried.interrupted(pending.len()),
-                        },
-                    }
-                })
-            };
-            drop(pending);
-
-            // The gate's usage: each fork request reads the shared canonical prefix
-            // (sliding its TTL), so it belongs in the docs/log-and-projection.md telemetry.
-            if let Some(g) = &gate {
-                for u in &g.usage {
-                    shared.record_request(RequestOrigin::Peek, u.clone());
-                }
-            }
-            // Apply the background verdicts before writing the `Triage`s: a `Pin`
-            // snapshots the process's current tail into an `Ambient` and folds a `Pin`
-            // disposition into the inbox verdict — so it projects at the `Triage`
-            // position, reusing the notification pin path (docs/supervisor.md). A `Mute`
-            // just flags the supervisor.
-            let mut inbox_verdict = gate
-                .as_mut()
-                .map(|g| std::mem::take(&mut g.inbox))
-                .unwrap_or_default();
-            force_pins(&mut inbox_verdict, &forced_pins);
-            if let Some(g) = &gate {
-                for (handle, verdict) in &g.background {
-                    match verdict {
-                        BgVerdict::Mute => shared.mute_bg(handle),
-                        BgVerdict::Pin => {
-                            if let Some((source, body)) = shared.bg_pin_snapshot(handle) {
-                                let seq = shared.append(
-                                    turn,
-                                    Payload::Ambient(Notification {
-                                        source,
-                                        body,
-                                        slot: Some(handle.clone()),
-                                    }),
-                                )?;
-                                inbox_verdict.push((seq, Disposition::Pin));
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Append in call order: each step's own payloads, and for a triaged result
-            // its `ToolResult` followed by the `Triage` audit entry keyed to that
-            // result's seq (docs/redaction-fork.md). The gate-scoped riders — inbox
-            // dispositions and surfaced context — ride the **last** `Triage` of the batch:
-            // they were decided once for the whole step, and tail-ward placement keeps the
-            // wire append-only (docs/inbox.md), which is exactly where they already land
-            // when a completion carried a single call.
-            let mut verdicts = gate
-                .as_mut()
-                .map(|g| std::mem::take(&mut g.results))
-                .unwrap_or_default()
-                .into_iter();
-            let surfaced = gate
-                .as_ref()
-                .map(|g| g.surfaced.clone())
-                .unwrap_or_default();
-            // Gate-scoped like the inbox riders: the non-compliant-attempt breadcrumbs
-            // land on the last `Triage` of the batch — durable even when a retry
-            // recovered (docs/redaction-fork.md).
-            let mut retries = gate
-                .as_mut()
-                .map(|g| std::mem::take(&mut g.retries))
-                .unwrap_or_default();
-            // Gate-scoped for the same reason: one peek reasoned about the whole batch,
-            // so its thinking rides the last `Triage` rather than being copied per
-            // result (docs/redaction-fork.md).
-            let mut thinking = gate
-                .as_mut()
-                .map(|g| std::mem::take(&mut g.thinking))
-                .unwrap_or_default();
-            let last_ran = steps
-                .iter()
-                .rposition(|s| matches!(s, Step::Ran { .. }))
-                .unwrap_or(0);
-            let mut handoffs: Vec<String> = Vec::new();
-            for (index, step) in steps.into_iter().enumerate() {
-                match step {
-                    Step::Direct(payloads) => {
-                        for p in payloads {
-                            shared.append(turn, p)?;
-                        }
-                    }
-                    Step::Ran {
-                        call,
-                        result,
-                        telemetry,
-                        handoff,
-                    } => {
-                        let Some(verdict) = verdicts.next() else {
-                            continue;
-                        };
-                        let result_seq = shared.append(
-                            turn,
-                            Payload::tool_result(call.id.clone(), result, verdict.wire),
-                        )?;
-                        let last = index == last_ran;
-                        shared.append(
-                            turn,
-                            Payload::Triage(Triage {
-                                for_result: Some(result_seq),
-                                origin: verdict.origin,
-                                raw_keep: verdict.raw_keep,
-                                inbox: if last {
-                                    std::mem::take(&mut inbox_verdict)
-                                } else {
-                                    Vec::new()
-                                },
-                                surfaced: if last { surfaced.clone() } else { Vec::new() },
-                                retries: if last {
-                                    std::mem::take(&mut retries)
-                                } else {
-                                    Vec::new()
-                                },
-                                thinking: if last {
-                                    std::mem::take(&mut thinking)
-                                } else {
-                                    Vec::new()
-                                },
-                            }),
-                        )?;
-                        // The call's telemetry, after the verdict that describes
-                        // the same result (docs/tools.md). It projects to nothing,
-                        // so appending it cannot move the wire — which is what
-                        // lets it be written unconditionally.
-                        shared.append(turn, Payload::ToolTelemetry(*telemetry))?;
-                        if let Some(note) = handoff {
-                            handoffs.push(note);
-                        }
-                    }
-                }
-            }
-            // The operator note attached to a handoff lands as a real user turn after the
-            // step's results — direction, not tool output (docs/supervisor.md). Same
-            // canonical `Payload::User` as the seam-drain; `project` merges it into the
-            // trailing tool_result message.
-            for note in handoffs {
-                turn += 1;
-                shared.append(
-                    turn,
-                    Payload::User(vec![ContentBlock::Text(format!(
-                        "[on backgrounding the command, the user says:] {note}"
-                    ))]),
-                )?;
-            }
+            land(client, &tools, &shared, &distiller, &mut turn, steps).await?;
 
             if abort_turn {
                 eprintln!("[turn aborted]");
@@ -925,17 +550,25 @@ pub async fn run<F: Frontend, S: Spotter>(
 #[cfg(test)]
 mod test;
 
+mod ask;
+mod batch;
 mod config_edit;
 mod gate;
+mod landing;
 mod results;
 mod step;
+mod surface;
 mod telemetry;
 mod title;
 mod triage;
 
+use ask::*;
+use batch::*;
 use config_edit::*;
 use gate::*;
+use landing::*;
 use results::*;
 use step::*;
+pub use surface::{brief, callable_names, tool_catalog, tool_definitions};
 use title::*;
 use triage::*;

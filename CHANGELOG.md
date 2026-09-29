@@ -8,6 +8,7 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- **`ask`** (docs/supervisor.md): a question to the operator that blocks like a tool call; the next submitted turn from any client is its reply. Queued turns are recalled when it starts, several asks are put one at a time, and `/state`, `settle`, subscriptions, push, and `dev stops` all read it. The preamble now sends questions through it; ending a turn means the work is done.
 - **The preamble says when a turn ends** (journal/2026-09-28-turn-persistence-and-a-false-reproduction.md):
   when the task is done, on a question only the operator can answer, or when something it was told proves untrue.
 - **Composer attachments** (docs/inbox.md): paste, drop, or pick files in the web composer,

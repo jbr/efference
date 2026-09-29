@@ -26,6 +26,8 @@ pub(crate) enum NotContinuable {
     /// An approval gate is pending: the loop is waiting on a decision, not on a
     /// turn.
     Gated,
+    /// An `ask` is pending: the loop is waiting on a reply, not on a turn.
+    Asking,
     /// The log projects to nothing — there is no wire to re-prompt.
     Empty,
     /// The wire ends in a final assistant response: re-prompting identical bytes
@@ -44,6 +46,7 @@ impl NotContinuable {
         match self {
             Self::Busy => "the loop is already running — there is nothing to hand back",
             Self::Gated => "an approval gate is pending — resolve it to continue",
+            Self::Asking => "a question is pending — answer it with a turn to continue",
             Self::Empty => "nothing to continue: the session has no turns yet",
             Self::Completed => "nothing to continue: the last turn completed",
             Self::Orphaned => "nothing to continue: the last tool call has no result",
@@ -71,6 +74,9 @@ impl Session {
         }
         if self.pending.lock().unwrap().is_some() {
             return Err(NotContinuable::Gated);
+        }
+        if self.asking().is_some() {
+            return Err(NotContinuable::Asking);
         }
         let running = self.running.load(Ordering::SeqCst);
         if running && (self.upstream_retry.get().is_some() || self.stall().is_some()) {

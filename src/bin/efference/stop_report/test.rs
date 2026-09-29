@@ -104,3 +104,45 @@ fn sessions_are_counted_by_whether_they_stalled_at_all() {
     );
     assert_eq!((report.question, report.barren), (1, 1));
 }
+
+/// Asks are folded beside the turn endings without moving them: a log with only turn
+/// endings has no ask counts, and a log with asks keeps its ending counts.
+#[test]
+fn asks_are_counted_beside_endings_and_leave_them_alone() {
+    use efference::log::{RawResult, ToolCall, WireState};
+    let ask = |id: &str| Payload::Assistant {
+        output: AssistantOutput::from_legacy_messages(
+            Vec::new(),
+            Vec::new(),
+            vec![ToolCall::new(
+                efference::supervisor::ASK,
+                id,
+                serde_json::json!({ "question": "OK?" }),
+            )],
+        ),
+        upstream_failure: None,
+    };
+    let result =
+        |id: &str, text: &str| Payload::tool_result(id, RawResult::text(text), WireState::Raw);
+    let plain = ("plain".to_string(), vec![entry(0, None, said("Done."))]);
+    let before = fold(std::slice::from_ref(&plain));
+    assert_eq!(before.asks(), 0);
+
+    let asking = (
+        "asking".to_string(),
+        vec![
+            entry(0, None, ask("a1")),
+            entry(1, None, result("a1", "sounds good")),
+            entry(3, None, ask("a2")),
+            entry(4, Some("agent[x]"), result("a2", "ok")),
+            entry(5, None, ask("a3")),
+            entry(6, None, result("a3", "use main")),
+            entry(7, None, said("Done.")),
+        ],
+    );
+    let after = fold(&[plain, asking]);
+    assert_eq!((after.asks_barren, after.asks_answered), (2, 1));
+    assert_eq!(after.asks_barren_from_agents, 1);
+    assert_eq!(after.final_stop, before.final_stop + 1, "endings unchanged");
+    assert_eq!(after.stops(), 2);
+}

@@ -309,9 +309,17 @@ async fn a_call_naming_no_tool_is_answered_ahead_of_the_cascade() {
     );
     let toolbox = Toolbox::bash_only();
     let call = call("ferritin");
-    let decision = run_call(&mut NeverGates, &shared, &NeverAsked, &toolbox, 1, &call)
-        .await
-        .expect("the check answers rather than erroring");
+    let decision = run_call(
+        &mut NeverGates,
+        &shared,
+        &NeverAsked,
+        &toolbox,
+        1,
+        &call,
+        AskPosition { n: 1, of: 1 },
+    )
+    .await
+    .expect("the check answers rather than erroring");
     let Decision::Direct(payloads) = decision else {
         panic!("an unrunnable call is answered directly, never run or gated");
     };

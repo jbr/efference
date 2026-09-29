@@ -23,6 +23,8 @@ pub(super) enum Decision {
         /// The operator's note from a foreground→background handoff, delivered as a
         /// user turn after the step's results (docs/supervisor.md).
         handoff: Option<String>,
+        /// Who answered, when the call was an `ask` (docs/supervisor.md).
+        reply: Option<Box<Reply>>,
     },
     /// Payloads to append verbatim — they never reach the gate, because there is no
     /// world output to curate (`consolidate`) or the call never ran.
@@ -46,6 +48,7 @@ pub(super) enum Step {
         result: RawResult,
         telemetry: Box<ToolTelemetry>,
         handoff: Option<String>,
+        reply: Option<Box<Reply>>,
     },
 }
 
@@ -66,6 +69,7 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
     toolbox: &Toolbox,
     turn: Turn,
     call: &ToolCall,
+    ask_at: AskPosition,
 ) -> Result<Decision, Error> {
     // An un-asked peek tool (docs/redaction-fork.md) never enters the cascade — there
     // is nothing to judge or run; the paired nudge result tells the model to carry on.
@@ -85,6 +89,30 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
     let callable = super::callable_names(toolbox);
     if !callable.contains(&call.name) {
         return Ok(Decision::Direct(vec![unknown_tool(call, &callable)]));
+    }
+    // `ask` puts a question to the operator (docs/supervisor.md): there is nothing in the
+    // world to authorize, so it skips the cascade, and the wait for the reply is the
+    // call. The interrupt's *after* juncture applies as for any call.
+    if call.name == supervisor::ASK {
+        let started = std::time::Instant::now();
+        let (result, reply) = ask_result(shared, call, ask_at).await;
+        let result = cap_tool_result(call, result);
+        let telemetry = Box::new(telemetry::observe(
+            call,
+            &result,
+            started.elapsed(),
+            result.is_error,
+            None,
+        ));
+        if shared.take_interrupt() {
+            return Ok(Decision::Withheld(withheld(call, result)));
+        }
+        return Ok(Decision::Ran {
+            result,
+            telemetry,
+            handoff: None,
+            reply,
+        });
     }
     // The guide overlay's one closed door (docs/context.md): a call that names an
     // `efference://` path with anything but `read` is answered here, ahead of the cascade.
@@ -406,6 +434,7 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
                 result,
                 telemetry,
                 handoff,
+                reply: None,
             })
         }
         Approval::Abort => Ok(Decision::Abort(aborted(call))),

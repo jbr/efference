@@ -18,6 +18,7 @@ impl Session {
     pub(super) fn topic_json(&self, topic: Topic) -> Value {
         match topic {
             Topic::Gate => self.gate_json(),
+            Topic::Ask => self.ask_json(),
             Topic::Processes => self.processes_json(),
             Topic::Usage => self.usage_json(),
             Topic::Role => self.role_json(),
@@ -88,6 +89,20 @@ impl Session {
     /// The pending approval gate, or `null` when none is open.
     fn gate_json(&self) -> Value {
         serde_json::to_value(self.pending.lock().unwrap().clone()).unwrap_or(Value::Null)
+    }
+
+    /// The pending `ask` (docs/supervisor.md), or `null` when none is open.
+    fn ask_json(&self) -> Value {
+        match self.asking() {
+            Some(ask) => serde_json::json!({
+                "call_id": ask.call_id,
+                "question": ask.question,
+                "n": ask.n,
+                "of": ask.of,
+                "recalled": ask.recalled,
+            }),
+            None => Value::Null,
+        }
     }
 
     /// The live background processes (docs/supervisor.md), as structure only — no tail

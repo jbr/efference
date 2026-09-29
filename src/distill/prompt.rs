@@ -478,6 +478,14 @@ pub(super) fn result_view(label: &str, call: &ToolCall, raw: &RawResult) -> Stri
 /// spend the fork's uncached tail on text no verdict can change, and offering it beside
 /// the results that *are* in question invites a verdict on it.
 pub(super) fn bypassed_view(call: &ToolCall, shape: &str) -> String {
+    if is_reply(call) {
+        return format!(
+            "═══ result · {} ═══\nnot triaged — this is the operator's reply to a question the \
+             agent asked, and it goes to the agent unchanged. It is not one of the results you \
+             are deciding about below.",
+            call.name
+        );
+    }
     format!(
         "═══ result · {} ═══\nnot triaged — this result carries a {shape}, a value that \
          only works reproduced exactly, so its full output goes to you unchanged. It is not \

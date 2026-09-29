@@ -78,7 +78,7 @@ impl Session {
     /// Take the stashed message if it is still worth sending. Split from
     /// [`Session::replay_suppressed`] so the window arithmetic is testable without
     /// observing a send.
-    fn take_replayable(&self) -> Option<crate::push::Message> {
+    pub(super) fn take_replayable(&self) -> Option<crate::push::Message> {
         let suppressed = self.suppressed.lock().unwrap().take()?;
         (suppressed.at.elapsed() <= REPLAY_WINDOW).then_some(suppressed.message)
     }
@@ -191,6 +191,11 @@ pub(super) fn settle_body(entries: &[LogEntry]) -> String {
     };
     let prose = output.text().join(" ");
     truncate(prose.trim())
+}
+
+/// The body of the push an `ask` sends: the question, cut to fit.
+pub(super) fn ask_body(question: &str) -> String {
+    truncate(question.trim())
 }
 
 /// The first [`BODY_MAX_CHARS`] characters, on a char boundary, with an ellipsis

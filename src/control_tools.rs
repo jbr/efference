@@ -683,7 +683,7 @@ pub struct StateResult {
     #[serde(skip_serializing_if = "Option::is_none")]
     settled: Option<bool>,
     /// The daemon's ephemeral control state: the pending gate if there is one, the
-    /// loop's status, the inbox, and the running processes.
+    /// pending question (`ask`) if the loop is waiting on a reply, the loop's status, the inbox, and the running processes.
     state: Value,
 }
 

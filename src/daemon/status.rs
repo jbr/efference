@@ -26,6 +26,13 @@ pub(crate) enum SessionStatus {
         /// The spotter's reason for routing it to the gate, when one preceded it.
         reason: Option<String>,
     },
+    /// Waiting on the operator's reply to an `ask` (docs/supervisor.md): question `n` of
+    /// `of` from one completion.
+    Asking {
+        question: String,
+        n: usize,
+        of: usize,
+    },
     /// The last trajectory gave up (docs/transport.md).
     Stalled { message: String },
     /// The runtime returned cleanly.
@@ -50,6 +57,15 @@ impl Session {
                 name: pending.name.clone(),
                 intent,
                 reason: pending.reason.clone(),
+            };
+        }
+        // A pending question outranks a stall for the same reason a gate does: the loop
+        // is parked on the operator, and nothing runs until they answer.
+        if let Some(ask) = self.asking() {
+            return SessionStatus::Asking {
+                question: ask.question,
+                n: ask.n,
+                of: ask.of,
             };
         }
         if let Some(stall) = self.stall() {
@@ -108,6 +124,18 @@ impl Session {
                      (approve, abort, or redirect); sessions__state shows the held call."
                 ));
                 body
+            }
+            SessionStatus::Asking { question, n, of } => {
+                let count = if *of > 1 {
+                    format!(" (question {n} of {of})")
+                } else {
+                    String::new()
+                };
+                format!(
+                    "{id} is asking a question{count} ({at}): {}\nNothing runs until it is \
+                     answered; a turn submitted with sessions__turn is the reply.",
+                    question.trim_end()
+                )
             }
             SessionStatus::Stalled { message } => format!("{id} stalled {at}: {message}"),
             SessionStatus::Ended => format!("{id} ended ({at}); its log stays on disk."),

@@ -233,6 +233,45 @@ async fn a_childs_gate_wakes_the_parent_and_is_pinned_whatever_the_peek_says() {
     fixture.host.swansong().shut_down().await;
 }
 
+/// A child's question reaches its parent as a must-wake status on the child's slot, with
+/// the question and how to answer it; answering it moves the child on, and the parent
+/// hears the next condition on the same slot.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_childs_question_wakes_the_parent() {
+    let fixture = Fixture::new();
+    let parent = fixture.session("parent");
+    let child = fixture.session("child");
+    assert!(fixture.session("peer").pending_notifications().is_empty());
+
+    let wait = child.begin_ask("ask_1", "Which branch?".into(), 1, 1);
+    wait_until("the question reached the parent", || {
+        heard(&parent, |source, body, slot| {
+            source == "child"
+                && slot == Some("session:child")
+                && body.starts_with("child is asking a question")
+                && body.contains("Which branch?")
+                && body.contains("sessions__turn")
+        })
+        .is_some()
+    })
+    .await;
+    assert!(fixture.session("peer").pending_notifications().is_empty());
+
+    child.submit_turn(SubmittedTurn::new("main", "s1"));
+    drop(wait);
+    wait_until("the parent heard the child move on", || {
+        heard(&parent, |source, body, slot| {
+            source == "child"
+                && slot == Some("session:child")
+                && body.starts_with("child finished its turn and is idle")
+        })
+        .is_some()
+    })
+    .await;
+
+    fixture.host.swansong().shut_down().await;
+}
+
 /// Ending a session posts its end to its subscribers, and ends the sessions it
 /// commissioned — except a detached one, which outlives it.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

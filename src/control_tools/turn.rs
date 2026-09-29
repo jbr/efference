@@ -11,6 +11,9 @@ use serde::{Deserialize, Serialize};
 /// soon as the message is accepted — set `wait` to block until the session reaches
 /// its next gate or finishes the turn, and read the resulting state instead.
 ///
+/// While the session is asking a question (`state` shows it under `ask`), the message
+/// is the answer to it rather than a new turn.
+///
 /// This is the interrupting channel: it becomes a user message the model answers.
 /// For something that can wait for a natural break, use `notify`.
 #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema, clap::Args)]

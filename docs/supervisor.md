@@ -396,9 +396,45 @@ The supervisor verbs: `list_processes`, `read_process(handle, cursor)`,
 `kill_process(handle)`, `watch_process(handle, pattern)` ([watches](#watches)),
 `check_inbox` (surface pending inbox notifications on demand), and `wait()` (block
 until the next notification and return the pending notifications; refuse without a
-known wake source). Tool definitions are constant `json!` values with sorted keys so
+known wake source), and `ask(question)` ([below](#ask--a-question-that-blocks)).
+Tool definitions are constant `json!` values with sorted keys so
 the `tools[]` array stays byte-stable across turns (see [transport](transport.md) for
 why this matters for prefix caching).
+
+## `ask` — a question that blocks
+
+`ask(question)` puts a question to the operator and blocks until the reply, which
+returns as the call's result. It exists so that ending a turn has one meaning — the work
+is done — and a question has its own spelling (`agent/ask.rs`, `daemon/ask.rs`). It is
+always advertised and skips the permission cascade: it acts on nothing, and asking
+permission to ask would gate a question behind a question.
+
+- **The next submission is the answer.** While an `ask` is pending, a non-blank
+  `POST /turns` from any client resolves it (`Session::submit_turn`): the turn becomes
+  the call's `ToolResult` and is never queued or logged as a `User` entry. The result
+  entry carries the submission's `submission_id` and `source`, and a sourced reply
+  projects as `[seq] source: text`, as a sourced user turn does. `notify` does not
+  resolve it. A reply releases a hold, as every submission does.
+- **Turns queued before it are recalled.** They were written before the question
+  existed, so `begin_ask` withdraws them from the queue as `DELETE /turns/:id` would and
+  publishes them on the `ask` state topic as `recalled`; the submitting client puts them
+  back in its composer.
+- **Notifications do not interrupt it.** The reply bypasses the peek (`distill::bypassed`
+  names its shape `operator reply`); the inbox is still triaged. In a batch with other
+  results the peek runs as usual with a stand-in for the reply. When every result in the
+  batch bypasses, the loop appends them and then runs the standalone triage peek that
+  idle triage uses (`agent::triage_and_record`) — which, unlike the per-result gate,
+  does not hold on failure: notifications stay pending for the next gate.
+- **Several asks in one completion are put one at a time**, in call order, each carrying
+  its position (`n` of `of`). The tool description tells the model the order is
+  unspecified, so they should be independent.
+- **Interrupts** treat it as any in-flight call: the ask ends with an error result, the
+  rest of the batch is aborted, and a reply that raced the interrupt is resubmitted as
+  an ordinary turn.
+
+A pending ask is a decision point: `is_settled` holds, the `ask` topic carries the
+question, the session's status is `asking` (waking a subscribed parent as a gate does,
+[tools.md](tools.md)), and a push goes out as for a turn end.
 
 ## Watches
 

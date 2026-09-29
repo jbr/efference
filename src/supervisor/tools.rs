@@ -8,7 +8,7 @@ use std::sync::LazyLock;
 
 use serde_json::{Value, json};
 
-use super::{CHECK_INBOX, KILL, LIST, READ, WAIT, WATCH};
+use super::{ASK, CHECK_INBOX, KILL, LIST, READ, WAIT, WATCH};
 use crate::tools::{ToolBrief, anthropic_def};
 use mcplease::types::{Tool as ToolDefinition, ToolAnnotations};
 
@@ -130,7 +130,36 @@ static SCHEMAS: LazyLock<Vec<ToolDefinition>> = LazyLock::new(|| {
     );
     wait.annotations = Some(read_only);
 
-    vec![list, read, kill, watch, inbox, wait]
+    let mut ask = ToolDefinition::new(
+        ASK,
+        json!({
+            "type": "object",
+            "properties": {
+                "question": {
+                    "type": "string",
+                    "description": "The question, in full. The operator reads it as your message, so do not repeat it in prose."
+                }
+            },
+            "required": ["question"]
+        }),
+    );
+    ask.description = Some(
+        "Put a question to the operator and wait for the reply, which comes back as this call's \
+         result. Use it when you need an answer, a decision, or a go-ahead before continuing; \
+         ending your turn means the work is done. Notifications that arrive while you wait do not \
+         answer it; they are shown to you beside the reply. Asks made in parallel are presented \
+         to the operator one at a time, in an unspecified order, so make them independent of each \
+         other."
+            .into(),
+    );
+    ask.annotations = Some(ToolAnnotations {
+        // Waits on a person and changes nothing in the world or the session's own state.
+        read_only_hint: Some(true),
+        open_world_hint: Some(false),
+        ..Default::default()
+    });
+
+    vec![list, read, kill, watch, inbox, wait, ask]
 });
 
 /// The harness-level supervisor/inbox tools (docs/supervisor.md). Like `consolidate`, these

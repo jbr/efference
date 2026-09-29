@@ -576,6 +576,7 @@ use peek::*;
 use prompt::*;
 use validate::*;
 
+pub use handles::reply_only_gate;
 pub use own::TriageModel;
 pub use peek::{PEEK_FORKS, PeekFailure};
 pub use replay::{PeekAttempt, ReplayVerdict, peek_request};

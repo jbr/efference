@@ -37,7 +37,7 @@ pub struct SessionSummary {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub created_by: Option<String>,
     /// What the session is doing, as a single word: `running`, `idle`,
-    /// `gated`, or `stalled`.
+    /// `gated`, `asking`, or `stalled`.
     pub status: String,
     /// Live background processes the session holds (docs/supervisor.md). Ending
     /// it reaps them, which is why a listing carries the count.
@@ -51,6 +51,7 @@ fn status_word(status: &SessionStatus) -> &'static str {
         SessionStatus::Running => "running",
         SessionStatus::Idle => "idle",
         SessionStatus::Gated { .. } => "gated",
+        SessionStatus::Asking { .. } => "asking",
         SessionStatus::Stalled { .. } => "stalled",
         // Neither is reachable from `Session::status`; the host reports an end
         // by removing the row (`status.rs`).

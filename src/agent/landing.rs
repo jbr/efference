@@ -1,0 +1,264 @@
+//! Landing a batch's outcomes (docs/redaction-fork.md): the gate over its results, the
+//! inbox triage that rides it, and the log entries that follow, in call order.
+
+use super::*;
+
+/// Triage the batch's results at one gate and append them to the log with their verdicts,
+/// telemetry, and any handoff notes. Nothing to triage means no round-trip.
+pub(super) async fn land(
+    client: &Client,
+    tools: &[Value],
+    shared: &Arc<Session>,
+    distiller: &ForkPeek,
+    turn_at: &mut Turn,
+    steps: Vec<Step>,
+) -> Result<(), Error> {
+    let mut turn = *turn_at;
+    // The gate (docs/redaction-fork.md): one peek over every result this
+    // completion produced. Nothing to triage means no round-trip.
+    let pending: Vec<Pending<'_>> = steps
+        .iter()
+        .filter_map(|s| match s {
+            Step::Ran { call, result, .. } => Some(Pending { call, raw: result }),
+            Step::Direct(_) => None,
+        })
+        .collect();
+    // The must-wake notifications this gate first-shows (docs/inbox.md):
+    // pinned below whatever the peek decides.
+    let mut forced_pins: Vec<crate::log::Seq> = Vec::new();
+    let mut deferred: Option<(
+        Vec<ShownNotification>,
+        Vec<crate::supervisor::BgView>,
+        Vec<crate::log::Seq>,
+    )> = None;
+    let mut gate = if pending.is_empty() {
+        None
+    } else {
+        // `ForkPeek` re-enters the model here — the prefix is the log through
+        // this completion's `tool_use` blocks, so we snapshot it (can't borrow
+        // across the distiller's await).
+        let entries = shared.snapshot();
+        // Open the triage gate (docs/inbox.md): re-show the still-active
+        // notifications (left at earlier gates), then log any newly arrived
+        // (ephemeral) ones as first-show `Ambient` entries — each entry's seq
+        // becomes its durable id, the handle the verdict pins/dismisses by. (They
+        // project to nothing, so the fork prefix `entries` stays byte-identical,
+        // docs/log-and-projection.md.)
+        let mut shown = active_shown(&entries);
+        let mut forced = Vec::new();
+        for drained in shared.drain_inbox() {
+            let source = drained.notification.source.clone();
+            let body = drained.notification.body.clone();
+            let seq = shared.append(turn, Payload::Ambient(drained.notification))?;
+            shown.push(ShownNotification { seq, source, body });
+            if drained.wake {
+                forced.push(seq);
+            }
+        }
+        // A gate that is only `ask` replies has no peek to carry the inbox
+        // (docs/supervisor.md): triage runs after the results are logged, below,
+        // and takes the must-wake pins with it.
+        if crate::distill::reply_only_gate(&pending) {
+            deferred = Some((shown.clone(), shared.bg_snapshot(), forced));
+        } else {
+            forced_pins = forced;
+        }
+        // The live background processes' fresh tails ride the same peek
+        // (docs/supervisor.md) — re-sampled now, never logged unless pinned.
+        let background = shared.bg_snapshot();
+        // A gate without a verdict holds rather than reaching the agent
+        // (docs/redaction-fork.md): the stall names it, and the operator's
+        // continue runs the gate again from the top.
+        let mut carried = Carried::default();
+        Some(loop {
+            match distiller
+                .distill(client, tools, &entries, &pending, &shown, &background)
+                .await
+            {
+                Ok(outcome) => break carried.onto(outcome),
+                Err(failure) => match hold(shared, client, failure, &mut carried).await {
+                    Held::Retry => continue,
+                    Held::Interrupted => break carried.interrupted(pending.len()),
+                },
+            }
+        })
+    };
+    drop(pending);
+
+    // The gate's usage: each fork request reads the shared canonical prefix
+    // (sliding its TTL), so it belongs in the docs/log-and-projection.md telemetry.
+    if let Some(g) = &gate {
+        for u in &g.usage {
+            shared.record_request(RequestOrigin::Peek, u.clone());
+        }
+    }
+    // Apply the background verdicts before writing the `Triage`s: a `Pin`
+    // snapshots the process's current tail into an `Ambient` and folds a `Pin`
+    // disposition into the inbox verdict — so it projects at the `Triage`
+    // position, reusing the notification pin path (docs/supervisor.md). A `Mute`
+    // just flags the supervisor.
+    let mut inbox_verdict = gate
+        .as_mut()
+        .map(|g| std::mem::take(&mut g.inbox))
+        .unwrap_or_default();
+    force_pins(&mut inbox_verdict, &forced_pins);
+    if let Some(g) = &gate {
+        for (handle, verdict) in &g.background {
+            match verdict {
+                BgVerdict::Mute => shared.mute_bg(handle),
+                BgVerdict::Pin => {
+                    if let Some((source, body)) = shared.bg_pin_snapshot(handle) {
+                        let seq = shared.append(
+                            turn,
+                            Payload::Ambient(Notification {
+                                source,
+                                body,
+                                slot: Some(handle.clone()),
+                            }),
+                        )?;
+                        inbox_verdict.push((seq, Disposition::Pin));
+                    }
+                }
+            }
+        }
+    }
+
+    // Append in call order: each step's own payloads, and for a triaged result
+    // its `ToolResult` followed by the `Triage` audit entry keyed to that
+    // result's seq (docs/redaction-fork.md). The gate-scoped riders — inbox
+    // dispositions and surfaced context — ride the **last** `Triage` of the batch:
+    // they were decided once for the whole step, and tail-ward placement keeps the
+    // wire append-only (docs/inbox.md), which is exactly where they already land
+    // when a completion carried a single call.
+    let mut verdicts = gate
+        .as_mut()
+        .map(|g| std::mem::take(&mut g.results))
+        .unwrap_or_default()
+        .into_iter();
+    let surfaced = gate
+        .as_ref()
+        .map(|g| g.surfaced.clone())
+        .unwrap_or_default();
+    // Gate-scoped like the inbox riders: the non-compliant-attempt breadcrumbs
+    // land on the last `Triage` of the batch — durable even when a retry
+    // recovered (docs/redaction-fork.md).
+    let mut retries = gate
+        .as_mut()
+        .map(|g| std::mem::take(&mut g.retries))
+        .unwrap_or_default();
+    // Gate-scoped for the same reason: one peek reasoned about the whole batch,
+    // so its thinking rides the last `Triage` rather than being copied per
+    // result (docs/redaction-fork.md).
+    let mut thinking = gate
+        .as_mut()
+        .map(|g| std::mem::take(&mut g.thinking))
+        .unwrap_or_default();
+    let last_ran = steps
+        .iter()
+        .rposition(|s| matches!(s, Step::Ran { .. }))
+        .unwrap_or(0);
+    let mut handoffs: Vec<String> = Vec::new();
+    for (index, step) in steps.into_iter().enumerate() {
+        match step {
+            Step::Direct(payloads) => {
+                for p in payloads {
+                    shared.append(turn, p)?;
+                }
+            }
+            Step::Ran {
+                call,
+                result,
+                telemetry,
+                handoff,
+                reply,
+            } => {
+                let Some(verdict) = verdicts.next() else {
+                    continue;
+                };
+                let payload = Payload::tool_result(call.id.clone(), result, verdict.wire);
+                // An `ask`'s result is a submitted turn's words, so its entry
+                // names the submission and the submitter like a `User` entry
+                // does (docs/supervisor.md).
+                let result_seq = match reply {
+                    Some(reply) => shared.append_submission(
+                        turn,
+                        payload,
+                        reply.submission_id,
+                        reply.source,
+                    )?,
+                    None => shared.append(turn, payload)?,
+                };
+                let last = index == last_ran;
+                shared.append(
+                    turn,
+                    Payload::Triage(Triage {
+                        for_result: Some(result_seq),
+                        origin: verdict.origin,
+                        raw_keep: verdict.raw_keep,
+                        inbox: if last {
+                            std::mem::take(&mut inbox_verdict)
+                        } else {
+                            Vec::new()
+                        },
+                        surfaced: if last { surfaced.clone() } else { Vec::new() },
+                        retries: if last {
+                            std::mem::take(&mut retries)
+                        } else {
+                            Vec::new()
+                        },
+                        thinking: if last {
+                            std::mem::take(&mut thinking)
+                        } else {
+                            Vec::new()
+                        },
+                    }),
+                )?;
+                // The call's telemetry, after the verdict that describes
+                // the same result (docs/tools.md). It projects to nothing,
+                // so appending it cannot move the wire — which is what
+                // lets it be written unconditionally.
+                shared.append(turn, Payload::ToolTelemetry(*telemetry))?;
+                if let Some(note) = handoff {
+                    handoffs.push(note);
+                }
+            }
+        }
+    }
+    // The inbox an `ask` reply's gate could not triage (docs/supervisor.md): the
+    // results are in the log now, so the peek forks from a prefix that answers
+    // every call.
+    if let Some((shown, background, forced)) = deferred
+        && (!shown.is_empty() || !background.is_empty() || !forced.is_empty())
+    {
+        let entries = shared.snapshot();
+        triage_and_record(
+            client,
+            tools,
+            shared,
+            distiller,
+            &mut turn,
+            Sight {
+                entries: &entries,
+                shown: &shown,
+                forced: &forced,
+                background: &background,
+            },
+        )
+        .await?;
+    }
+    // The operator note attached to a handoff lands as a real user turn after the
+    // step's results — direction, not tool output (docs/supervisor.md). Same
+    // canonical `Payload::User` as the seam-drain; `project` merges it into the
+    // trailing tool_result message.
+    for note in handoffs {
+        turn += 1;
+        shared.append(
+            turn,
+            Payload::User(vec![ContentBlock::Text(format!(
+                "[on backgrounding the command, the user says:] {note}"
+            ))]),
+        )?;
+    }
+    *turn_at = turn;
+    Ok(())
+}

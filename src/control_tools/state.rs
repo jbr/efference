@@ -7,7 +7,8 @@ use mcplease::{
 use serde::{Deserialize, Serialize};
 
 /// Read where the session is right now, without waiting: the pending gate if there
-/// is one (with the held call's id), what the loop is doing, the inbox, the running
+/// is one (with the held call's id), the pending question if the loop is asking one
+/// (answer it with `turn`), what the loop is doing, the inbox, the running
 /// background processes, and the session's usage. This is the call to make first
 /// when you do not know what a session is up to.
 #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema, clap::Args)]

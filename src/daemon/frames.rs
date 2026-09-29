@@ -80,6 +80,11 @@ pub(crate) enum Class {
 pub(crate) enum Topic {
     /// The pending approval gate, or `null` when none is open.
     Gate,
+    /// The question an `ask` has put to the operator, or `null` when none is pending:
+    /// `{call_id, question, n, of, recalled}` (docs/supervisor.md). `n` of `of` counts
+    /// the asks of one completion, which are put one at a time; `recalled` holds the
+    /// turns withdrawn when the ask began, in the shape `DELETE /turns/:id` returns.
+    Ask,
     /// Live background processes (docs/supervisor.md).
     Processes,
     /// Token/cost telemetry (docs/transport.md).
@@ -134,8 +139,9 @@ impl Topic {
     /// walking it, so a topic added here reaches both surfaces or neither — which is
     /// what keeps `GET /state` equal to the fold of every state frame
     /// (docs/control-api.md).
-    pub(crate) const ALL: [Topic; 16] = [
+    pub(crate) const ALL: [Topic; 17] = [
         Self::Gate,
+        Self::Ask,
         Self::Processes,
         Self::Usage,
         Self::Role,
@@ -164,6 +170,7 @@ impl Topic {
     pub(crate) fn as_str(self) -> &'static str {
         match self {
             Self::Gate => "gate",
+            Self::Ask => "ask",
             Self::Processes => "processes",
             Self::Usage => "usage",
             Self::Role => "role",

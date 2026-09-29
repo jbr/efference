@@ -43,6 +43,10 @@ pub const CHECK_INBOX: &str = "check_inbox";
 /// `wait` — block until a new inbox notification arrives, then surface pending
 /// notifications (docs/supervisor.md). Refuses when no known source can wake it.
 pub const WAIT: &str = "wait";
+/// `ask` — put a question to the operator and block until a submitted turn answers it
+/// (docs/supervisor.md). Loop-owned like `wait`, but it bypasses the permission cascade:
+/// there is nothing in the world to authorize.
+pub const ASK: &str = "ask";
 
 /// Render a process id as its prose handle — the form the model and every human
 /// transcript sees (`p#3`). The bare ordinal is what routes and frames carry

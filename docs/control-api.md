@@ -65,7 +65,7 @@ sessions from one process. Its own routes are the listener's, not a session's:
   the calling session's id as `created_by`. `created_by` is host control state —
   the creation tree — never logged or projected; a human-created root omits it
   ([tools.md](tools.md)). `status` is one word — `running`, `idle`, `gated`,
-  `stalled` — and `processes` counts the background processes the session holds
+  `asking`, `stalled` — and `processes` counts the background processes the session holds
   ([supervisor.md](supervisor.md)). Those two are what a list surface can show
   without one `GET /sessions/<id>/v1/state` per row, and what a client's
   destructive affordance reads before it asks: ending a session that is doing
@@ -194,7 +194,9 @@ it.
 
 #### `POST /turns`
 Enqueue a user turn. Also seeds turn 1 on an idle daemon. Submission is
-decoupled from inference.
+decoupled from inference. While an `ask` is pending (the `ask` topic below), a
+non-blank turn is instead that ask's reply: it becomes the call's result, never a
+`User` entry, and never appears in `queued` ([supervisor.md](supervisor.md)).
 
 - Body: `{ "text": "<string>", "submission_id": "<string, optional>", "source": "<string, optional>", "attachments": ["<name>", …] }` —
   `submission_id` identifies this submission: adopted when the client minted
@@ -342,6 +344,7 @@ idling** — a blank submit never lands a `User` entry and never starts a turn.
   which case:
   - the loop is already running (and not waiting on the upstream), or a turn is queued
   - an approval gate is pending — resolve it instead
+  - a question is pending — answer it with a turn
   - the session has no turns yet (nothing projects)
   - the last turn completed (the wire ends in a final assistant response)
   - the last tool call has no result (the wire ends in an unanswered `tool_use`,
@@ -540,6 +543,12 @@ not a topic — it is the log's cursor rather than control state, and sits outsi
       "chain": ["child", "grand"] //   that target down to the session holding the leaf
     }
   },
+  "ask": {                         // null unless an `ask` is pending (docs/supervisor.md)
+    "call_id": "toolu_…",
+    "question": "…",
+    "n": 1, "of": 2,               // its place among one completion's asks
+    "recalled": [ … ]              // turns withdrawn from the queue when it began,
+  },                               //   in the shape DELETE /turns/:id returns
   "role": {                        // EFFECTIVE policy = base config + folded edits
     "source": "/path/efference.toml",   // or null for the built-in default
     "scope": "…",

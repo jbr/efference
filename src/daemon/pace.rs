@@ -18,23 +18,41 @@ pub(super) struct Pace {
 
 impl Session {
     pub(crate) fn submit_turn(&self, turn: SubmittedTurn) {
+        // A pending `ask` takes the turn as its reply instead (docs/supervisor.md). The
+        // ask lock is held through the queue push below, so a turn cannot slip in between
+        // an ask starting and recalling the queue.
+        let mut ask = self.ask.lock().unwrap();
+        if !turn.is_blank()
+            && let Some(state) = ask.take()
+        {
+            drop(ask);
+            self.resume_from_hold();
+            self.deliver_reply(state, turn);
+            return;
+        }
         // Record the turn as queued *before* sending, so `is_settled` reads "busy" the instant
         // the turn is accepted — even before the loop dequeues it (the `/settle` submit race,
         // docs/permissions.md).
         self.queue.lock().unwrap().push_back(turn.clone());
-        // Submit ⇒ resume, always (docs/control-channel.md): drop any hold and wake an
-        // in-flight juncture sleep so the message is delivered at the next juncture *immediately*, not
-        // after the remaining paced delay. The retained `speed` is untouched (it recolors later
-        // junctures); only the `held` overlay drops.
+        drop(ask);
+        self.resume_from_hold();
+        // The receiver lives in the loop's `RemoteFrontend`; a send fails only if
+        // the loop has exited, in which case the daemon is shutting down anyway.
+        let _ = self.turns_tx.send(turn);
+        self.touch_state();
+    }
+
+    /// Submit ⇒ resume, always (docs/control-channel.md): drop any hold and wake an
+    /// in-flight juncture sleep so the message is delivered at the next juncture
+    /// *immediately*, not after the remaining paced delay. The retained `speed` is
+    /// untouched (it recolors later junctures); only the `held` overlay drops. Shared by a
+    /// queued submit and one that answers an `ask`.
+    fn resume_from_hold(&self) {
         {
             let mut p = self.pace.lock().unwrap();
             p.held = false;
         }
         self.pace_interrupt.notify_waiters();
-        // The receiver lives in the loop's `RemoteFrontend`; a send fails only if
-        // the loop has exited, in which case the daemon is shutting down anyway.
-        let _ = self.turns_tx.send(turn);
-        self.touch_state();
     }
 
     /// The pending queue, in submission order — the `queued` state topic's source and the
@@ -198,6 +216,8 @@ impl Session {
     /// `?wait` flag (docs/permissions.md).
     pub(super) fn is_settled(&self) -> bool {
         self.pending.lock().unwrap().is_some()
+            // A pending `ask` is the loop waiting on the operator (docs/supervisor.md).
+            || self.asking().is_some()
             || self.stall().is_some()
             || (!self.running.load(Ordering::SeqCst)
                 && self.queue.lock().unwrap().is_empty()

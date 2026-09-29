@@ -115,6 +115,21 @@ impl SubmittedTurn {
     }
 }
 
+impl SubmittedTurn {
+    /// The turn as an `ask`'s tool-result text (docs/supervisor.md): the prose, then
+    /// each attachment as the notice line a `User` entry projects, so a reply carries
+    /// what a turn would have.
+    pub fn reply_text(&self) -> String {
+        let text = self.text.trim();
+        (!text.is_empty())
+            .then(|| text.to_string())
+            .into_iter()
+            .chain(self.attachments.iter().map(crate::attachments::turn_line))
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+}
+
 /// The operator's intent when interrupting a *running* tool (docs/supervisor.md).
 /// Both reach the one intervention point pace can't — mid-tool — but differ in
 /// what happens to the child.

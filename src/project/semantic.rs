@@ -129,8 +129,16 @@ impl WireTurn {
 }
 
 /// Render a logged result the way the model reads it: the verdict applied, the
-/// `[seq]` handle prefixed, images kept only where the verdict keeps content.
-pub fn render_result(seq: u64, call_id: &CallId, raw: &RawResult, wire: &WireState) -> UserPart {
+/// `[seq]` handle prefixed, images kept only where the verdict keeps content. A result
+/// entry with a `source` (an `ask`'s reply, docs/supervisor.md) opens its content with
+/// `source: `, as a sourced `User` turn does; no source leaves the bytes as they were.
+pub fn render_result(
+    seq: u64,
+    call_id: &CallId,
+    raw: &RawResult,
+    wire: &WireState,
+    source: Option<&str>,
+) -> UserPart {
     let (content, is_error) = match wire {
         WireState::Raw => (raw.content.clone(), raw.is_error),
         WireState::Distilled(verdict) => (render_distilled(&raw.content, verdict), raw.is_error),
@@ -144,7 +152,10 @@ pub fn render_result(seq: u64, call_id: &CallId, raw: &RawResult, wire: &WireSta
     UserPart::ToolResult {
         call_id: call_id.clone(),
         seq: Some(seq),
-        content: format!("[{seq}] {content}"),
+        content: match source.filter(|_| !matches!(wire, WireState::Elided)) {
+            Some(source) => format!("[{seq}] {source}: {content}"),
+            None => format!("[{seq}] {content}"),
+        },
         is_error,
         images,
     }
@@ -277,7 +288,13 @@ pub fn project_semantic(log: &[LogEntry]) -> Vec<WireTurn> {
                 turns.push(WireTurn::Assistant(output.clone()));
             }
             Payload::ToolResult { call_id, raw, wire } => {
-                pending.push(render_result(entry.seq, call_id, raw, wire));
+                pending.push(render_result(
+                    entry.seq,
+                    call_id,
+                    raw,
+                    wire,
+                    entry.source.as_deref(),
+                ));
             }
             // Marks are in the elided set (extract_boundaries inserts every
             // Boundary mark's own seq); this arm is only reachable for future

@@ -201,3 +201,110 @@ fn an_upstream_failure_is_not_a_stop() {
         []
     );
 }
+
+/// An assistant turn that put a question through `ask`, and the result that answered it.
+fn asked(question: &str, id: &str) -> Payload {
+    Payload::Assistant {
+        output: AssistantOutput::from_legacy_messages(
+            Vec::new(),
+            Vec::new(),
+            vec![ToolCall::new(
+                crate::supervisor::ASK,
+                id,
+                serde_json::json!({ "question": question }),
+            )],
+        ),
+        upstream_failure: None,
+    }
+}
+
+fn answer(id: &str, text: &str) -> Payload {
+    Payload::tool_result(
+        id,
+        crate::log::RawResult::text(text),
+        crate::log::WireState::Raw,
+    )
+}
+
+/// An ask is graded by its reply with the turn ending's own test, and an ask is not a
+/// turn ending: `classify` does not count it.
+#[test]
+fn an_ask_is_graded_by_what_its_reply_carried() {
+    let entries = vec![
+        entry(0, asked("Proceeding with X, OK?", "a1")),
+        entry(1, answer("a1", "sounds good!")),
+        entry(2, asked("Which branch?", "a2")),
+        entry(3, answer("a2", "use the release branch")),
+    ];
+    assert_eq!(
+        classify_asks(&entries),
+        [(Some(Stop::Barren), None), (Some(Stop::Answered), None)]
+    );
+    assert!(classify(&entries).is_empty(), "an ask is not a turn ending");
+}
+
+/// The reply's label is the result entry's `source`, as a turn's is the `User` entry's.
+#[test]
+fn an_ask_reply_keeps_the_label_of_whoever_gave_it() {
+    let mut reply = entry(1, answer("a1", "ok"));
+    reply.source = Some("agent[pale-quail]".to_string());
+    let entries = vec![entry(0, asked("Proceed?", "a1")), reply];
+    assert_eq!(
+        classify_asks(&entries),
+        [(Some(Stop::Barren), Some("agent[pale-quail]".to_string()))]
+    );
+}
+
+/// An interrupted ask (error result, elided on the wire), an errored one, and one the
+/// log ends inside are counted and not graded.
+#[test]
+fn an_interrupted_or_unanswered_ask_is_counted_not_graded() {
+    use crate::log::{RawResult, WireState};
+    let entries = vec![
+        entry(0, asked("Sure?", "a1")),
+        entry(
+            1,
+            Payload::tool_result(
+                "a1",
+                RawResult::error("ask interrupted by user"),
+                WireState::Elided,
+            ),
+        ),
+        entry(2, asked("Again?", "a2")),
+        // A reply that raced the interrupt: text kept in the log, withheld on the wire.
+        entry(
+            3,
+            Payload::tool_result("a2", RawResult::text("ok"), WireState::Elided),
+        ),
+        entry(4, asked("Still there?", "a3")),
+    ];
+    assert_eq!(
+        classify_asks(&entries),
+        [(None, None), (None, None), (None, None)]
+    );
+}
+
+/// Results of other tools, and asks in a record-only (failed) turn, are not asks.
+#[test]
+fn only_completed_ask_calls_are_counted() {
+    let entries = vec![
+        entry(0, called("looking")),
+        entry(1, answer("call_1", "ok")),
+        entry(
+            2,
+            Payload::Assistant {
+                output: AssistantOutput::from_legacy_messages(
+                    Vec::new(),
+                    Vec::new(),
+                    vec![ToolCall::new(
+                        crate::supervisor::ASK,
+                        "a9",
+                        serde_json::json!({ "question": "?" }),
+                    )],
+                ),
+                upstream_failure: Some("boom".into()),
+            },
+        ),
+    ];
+    assert!(classify_asks(&entries).is_empty());
+}

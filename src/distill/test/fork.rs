@@ -267,3 +267,85 @@ fn a_bypassed_result_reaches_the_wire_verbatim() {
         "and so does the rest of the refusal, byte for byte: {result}"
     );
 }
+
+/// An `ask` reply is the operator's own words: the shape rule keeps it out of the
+/// peek's offered results and delivers it raw, while the peek's request still answers
+/// its `tool_use` (docs/supervisor.md).
+#[test]
+fn an_ask_reply_is_bypassed_and_still_answered_in_the_peek() {
+    let calls = vec![
+        ToolCall::new(crate::supervisor::ASK, "ask_1", json!({"question": "ok?"})),
+        ToolCall::new("search", "search_2", json!({})),
+    ];
+    let prefix = vec![entry(
+        1,
+        Payload::Assistant {
+            output: AssistantOutput::from_legacy_messages(vec![], vec![], calls.clone()),
+            upstream_failure: None,
+        },
+    )];
+    let raws = [RawResult::text("do it"), RawResult::text("alpha\nbeta")];
+    let pending: Vec<Pending<'_>> = calls
+        .iter()
+        .zip(&raws)
+        .map(|(call, raw)| Pending { call, raw })
+        .collect();
+
+    assert_eq!(bypassed(&pending[0]), Some("operator reply"));
+    assert_eq!(bypassed(&pending[1]), None);
+    assert!(
+        !reply_only_gate(&pending),
+        "a search result is still the peek's"
+    );
+    assert_eq!(offered_labels(&pending), vec!["r1"]);
+
+    let messages = wire(&peek_messages(&prefix, &pending, &[], &[], &[]));
+    let tail = messages.last().unwrap();
+    let views: Vec<(&str, &str)> = tail
+        .content
+        .iter()
+        .filter_map(|b| match b {
+            ApiBlock::ToolResult {
+                tool_use_id,
+                content,
+                ..
+            } => Some((tool_use_id.as_str(), content.as_text()?)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(views.len(), 2, "both calls answered");
+    assert_eq!(views[0].0, "ask_1");
+    assert!(
+        views[0].1.contains("operator's reply") && !views[0].1.contains("do it"),
+        "the stand-in names it and does not show the words: {}",
+        views[0].1
+    );
+    assert!(views[1].1.starts_with("═══ result r1 · search ═══"));
+}
+
+/// A gate holding only ask replies has every verdict decided without a request, and
+/// says so, so the loop knows it must triage the inbox itself.
+#[test]
+fn a_gate_of_only_ask_replies_needs_no_peek_and_delivers_them_raw() {
+    let call = ToolCall::new(crate::supervisor::ASK, "ask_1", json!({"question": "ok?"}));
+    let raw = RawResult::text("yes");
+    let pending = [Pending {
+        call: &call,
+        raw: &raw,
+    }];
+    assert!(reply_only_gate(&pending));
+    let outcome = bypassed_gate(&pending).expect("decided without a request");
+    assert_eq!(outcome.results.len(), 1);
+    assert!(matches!(outcome.results[0].wire, WireState::Raw));
+    assert!(
+        outcome.results[0].raw_keep.contains("operator reply"),
+        "{}",
+        outcome.results[0].raw_keep
+    );
+    // A gate with no ask in it is not this case, whatever else was bypassed.
+    let other = ToolCall::new("search", "s", json!({}));
+    assert!(!reply_only_gate(&[Pending {
+        call: &other,
+        raw: &raw
+    }]));
+}

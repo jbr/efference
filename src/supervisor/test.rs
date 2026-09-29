@@ -271,7 +271,7 @@ fn every_supervisor_tool_has_a_brief_with_honest_annotations() {
 fn wire_definitions_carry_no_annotations() {
     let defs = tool_definitions();
     let names: Vec<&str> = defs.iter().map(|d| d["name"].as_str().unwrap()).collect();
-    assert_eq!(names, vec![LIST, READ, KILL, WATCH, CHECK_INBOX, WAIT]);
+    assert_eq!(names, vec![LIST, READ, KILL, WATCH, CHECK_INBOX, WAIT, ASK]);
     for def in &defs {
         let keys: Vec<&str> = def
             .as_object()

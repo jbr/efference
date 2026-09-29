@@ -288,6 +288,10 @@ pub struct Session {
     /// no longer here — that is how a withdrawn turn is never appended. A pending turn is
     /// ephemeral: it is not in the log, so withdrawing one leaves no trace to retract.
     queue: Mutex<std::collections::VecDeque<SubmittedTurn>>,
+    /// The `ask` awaiting a reply, if any (docs/supervisor.md). Taken by the next
+    /// submitted turn, which it resolves instead of queueing. Lock order: this before
+    /// `queue`.
+    ask: Mutex<Option<ask::AskState>>,
     /// Pinged whenever the daemon may have reached a **settled** state — a gate appeared
     /// ([`register_pending`]) or the loop parked ([`parking`]). The `/settle` long-poll waits on it.
     ///
@@ -740,6 +744,7 @@ impl Session {
             suppressed: Mutex::new(None),
             running: AtomicBool::new(false),
             queue: Mutex::new(std::collections::VecDeque::new()),
+            ask: Mutex::new(None),
             settle_changed: Notify::new(),
             continue_pending: AtomicBool::new(false),
             continue_signal: Notify::new(),
@@ -1122,6 +1127,7 @@ pub const SESSION_BASE: &str = ".efference";
 pub const SOCKET_NAME: &str = "control.sock";
 
 mod approvals;
+mod ask;
 mod attachments;
 mod background;
 mod config_edits;

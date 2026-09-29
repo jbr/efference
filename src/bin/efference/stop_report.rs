@@ -30,11 +30,23 @@ pub(crate) struct StopReport {
     /// Sessions with at least one barren stop, over sessions with any stop at all.
     pub(crate) sessions_with_barren: usize,
     pub(crate) sessions_with_stops: usize,
+    /// `ask` calls (docs/supervisor.md), counted beside the turn endings and graded by
+    /// the same test: what the reply carried. `asks_ungraded` are the interrupted,
+    /// errored, or never-answered ones.
+    pub(crate) asks_answered: u64,
+    pub(crate) asks_barren: u64,
+    pub(crate) asks_ungraded: u64,
+    /// Barren asks whose reply came from a labelled client rather than the operator.
+    pub(crate) asks_barren_from_agents: u64,
 }
 
 impl StopReport {
     pub(crate) fn stops(&self) -> u64 {
         self.question + self.answered + self.barren + self.final_stop
+    }
+
+    pub(crate) fn asks(&self) -> u64 {
+        self.asks_answered + self.asks_barren + self.asks_ungraded
     }
 }
 
@@ -75,6 +87,18 @@ pub(crate) fn fold(sessions: &[(String, Vec<LogEntry>)]) -> StopReport {
         }
         if barren_here {
             report.sessions_with_barren += 1;
+        }
+        for (stop, source) in stops::classify_asks(entries) {
+            match stop {
+                Some(Stop::Barren) => {
+                    report.asks_barren += 1;
+                    if source.is_some() {
+                        report.asks_barren_from_agents += 1;
+                    }
+                }
+                Some(_) => report.asks_answered += 1,
+                None => report.asks_ungraded += 1,
+            }
         }
     }
     report
@@ -129,6 +153,7 @@ pub(crate) fn stops_report(session: Option<String>, name: Option<String>, all: b
     let total = report.stops();
     if total == 0 {
         println!("  no turn endings recorded.");
+        print_asks(&report, tty);
         return Ok(());
     }
     println!(
@@ -194,7 +219,62 @@ pub(crate) fn stops_report(session: Option<String>, name: Option<String>, all: b
             )
         );
     }
+    print_asks(&report, tty);
     Ok(())
+}
+
+/// The `ask` calls beside the turn endings, graded the same way, so a barren ask — a
+/// question answered with nothing — reads as the same failure moved into a tool call.
+/// Absent when the log has none, so a log from before `ask` prints what it always did.
+fn print_asks(report: &StopReport, tty: bool) {
+    let total = report.asks();
+    if total == 0 {
+        return;
+    }
+    println!();
+    println!("{}", paint("ASKS", BOLD, tty));
+    println!(
+        "  {:<10} {:>7} {:>6}  what it bought",
+        "reply", "count", "share"
+    );
+    let rows: [(&str, u64, &str, &str); 3] = [
+        (
+            "answered",
+            report.asks_answered,
+            GREEN,
+            "the reply carried something",
+        ),
+        (
+            "barren",
+            report.asks_barren,
+            RED,
+            "the reply carried nothing",
+        ),
+        (
+            "ungraded",
+            report.asks_ungraded,
+            DIM,
+            "interrupted, errored, or never answered",
+        ),
+    ];
+    for (label, count, code, note) in rows {
+        if count == 0 {
+            continue;
+        }
+        println!(
+            "  {:<10} {:>7} {:>5}%  {}",
+            paint(label, code, tty),
+            count,
+            format!("{:.0}", count as f64 * 100.0 / total as f64),
+            paint(note, DIM, tty),
+        );
+    }
+    if report.asks_barren_from_agents > 0 {
+        println!(
+            "  barren asks answered by an agent {:>1}",
+            report.asks_barren_from_agents
+        );
+    }
 }
 
 #[cfg(test)]

@@ -80,6 +80,56 @@ pub fn classify(entries: &[LogEntry]) -> Vec<(Stop, Option<String>)> {
     stops
 }
 
+/// Every `ask` call in one session's log, in the order its result landed (calls with no
+/// result at the end of the log follow), each with what its reply turned out to be and
+/// the label of whoever gave it (`LogEntry::source` on the result entry). A reply is
+/// graded with the same test as a turn ending's answer: `Some(Stop::Answered)` or
+/// `Some(Stop::Barren)`. An ask that was interrupted or errored, or never answered, is
+/// counted with `None` — it bought nothing and asked nothing of the reply, so it is
+/// not graded. Kept apart from [`classify`] so the turn-ending counts do not move for
+/// a log with no asks (docs/supervisor.md).
+pub fn classify_asks(entries: &[LogEntry]) -> Vec<(Option<Stop>, Option<String>)> {
+    let mut open: Vec<String> = Vec::new();
+    let mut asks = Vec::new();
+    for entry in entries {
+        match &entry.payload {
+            Payload::Assistant {
+                upstream_failure: Some(_),
+                ..
+            } => {}
+            Payload::Assistant { output, .. } => {
+                open.extend(
+                    output
+                        .tool_calls()
+                        .unwrap_or_default()
+                        .into_iter()
+                        .filter(|c| c.name == crate::supervisor::ASK)
+                        .map(|c| c.id.0),
+                );
+            }
+            Payload::ToolResult { call_id, raw, wire } => {
+                let Some(at) = open.iter().position(|id| *id == call_id.0) else {
+                    continue;
+                };
+                open.remove(at);
+                // The interrupt's stand-in keeps the raw error but elides the wire.
+                let graded = !raw.is_error && !matches!(wire, super::WireState::Elided);
+                let stop = graded.then(|| {
+                    if informative_text(&raw.content) {
+                        Stop::Answered
+                    } else {
+                        Stop::Barren
+                    }
+                });
+                asks.push((stop, entry.source.clone()));
+            }
+            _ => {}
+        }
+    }
+    asks.extend(open.iter().map(|_| (None, None)));
+    asks
+}
+
 /// Whether the assistant's parting prose put a question. A trailing `?` is the
 /// signal: a question mark mid-paragraph is usually rhetorical or quoted, and one
 /// at the end of the last thing said is the model handing the turn over on it.
@@ -102,19 +152,27 @@ fn asks(text: &[&str]) -> bool {
 /// justify changing the preamble.
 fn informative(blocks: &[super::ContentBlock]) -> bool {
     for block in blocks {
-        let super::ContentBlock::Text(text) = block else {
+        if let super::ContentBlock::Text(text) = block
+            && informative_text(text)
+        {
+            return true;
+        }
+    }
+    false
+}
+
+/// The text-level core of [`informative`], shared with an `ask`'s reply, which arrives
+/// as tool-result text rather than as blocks.
+fn informative_text(text: &str) -> bool {
+    // Who sent a turn rides on `LogEntry::source`, not in the prose, so the
+    // text here is the sender's own words with no prefix to strip.
+    for word in text.split(|c: char| !c.is_alphanumeric() && c != '\'') {
+        let word = word.trim_matches('\'').to_ascii_lowercase();
+        if word.is_empty() {
             continue;
-        };
-        // Who sent a turn rides on `LogEntry::source`, not in the prose, so the
-        // text here is the sender's own words with no prefix to strip.
-        for word in text.split(|c: char| !c.is_alphanumeric() && c != '\'') {
-            let word = word.trim_matches('\'').to_ascii_lowercase();
-            if word.is_empty() {
-                continue;
-            }
-            if !ACKNOWLEDGEMENT.contains(&word.as_str()) {
-                return true;
-            }
+        }
+        if !ACKNOWLEDGEMENT.contains(&word.as_str()) {
+            return true;
         }
     }
     // Falling through means every word was an acknowledgement — or there were no

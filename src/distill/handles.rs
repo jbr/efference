@@ -67,7 +67,27 @@ pub(super) fn verbatim_handle(text: &str) -> Option<&'static str> {
 /// of the ask, decided by the harness, and delivered raw — because the peek has
 /// nothing in front of it that says the text is unsummarizable.
 pub(super) fn bypassed(pending: &Pending<'_>) -> Option<&'static str> {
+    if is_reply(pending.call) {
+        return Some(REPLY_SHAPE);
+    }
     verbatim_handle(&pending.raw.content)
+}
+
+/// How an `ask` reply is named in the bypass breadcrumb.
+const REPLY_SHAPE: &str = "operator reply";
+
+/// Whether `call` is an `ask`, whose result is the operator's own words
+/// (docs/supervisor.md). Operator words are never the peek's to summarize.
+pub(super) fn is_reply(call: &ToolCall) -> bool {
+    call.name == crate::supervisor::ASK
+}
+
+/// Whether this gate holds an `ask` reply and nothing else the peek would decide
+/// about, so the batch reaches the gate with every result already decided
+/// ([`bypassed_gate`]). The loop then triages the inbox itself, after the results are
+/// logged, because the peek that would have carried it does not run.
+pub fn reply_only_gate(pending: &[Pending<'_>]) -> bool {
+    pending.iter().any(|p| is_reply(p.call)) && pending.iter().all(|p| bypassed(p).is_some())
 }
 
 /// Each pending result's label in the ask (docs/redaction-fork.md), in call order:

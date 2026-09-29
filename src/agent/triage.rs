@@ -2,6 +2,8 @@
 
 use super::*;
 
+use crate::supervisor::BgView;
+
 /// How the idle loop was woken (docs/supervisor.md): a user turn, a blank line (keep idling),
 /// a notification event (run a standalone triage), a zero-token continue, or shutdown.
 pub(super) enum IdleWake {
@@ -60,9 +62,45 @@ pub(super) async fn run_idle_triage(
     if shown.is_empty() && background.is_empty() {
         return Ok(false);
     }
+    let sight = Sight {
+        entries: &entries,
+        shown: &shown,
+        forced: &forced,
+        background: &background,
+    };
+    triage_and_record(client, tools, shared, distiller, turn, sight).await
+}
 
+/// What a standalone triage peek looks at: the prefix it forks from, the notifications
+/// and background tails it shows, and the must-wake seqs pinned whatever it says.
+pub(super) struct Sight<'a> {
+    pub entries: &'a [crate::log::LogEntry],
+    pub shown: &'a [ShownNotification],
+    pub forced: &'a [crate::log::Seq],
+    pub background: &'a [BgView],
+}
+
+/// Run the tool-result-free triage peek over `shown` and `background`, apply its
+/// dispositions, and log the verdict as a `Triage` with `for_result: None`. Returns
+/// whether it pinned something. `entries` is the prefix the peek forks from, which must
+/// already hold every result the wire owes. The shared tail of the idle wake and of the
+/// gate an `ask` reply rides (which has no peek of its own, docs/supervisor.md).
+pub(super) async fn triage_and_record(
+    client: &Client,
+    tools: &[Value],
+    shared: &Arc<Session>,
+    distiller: &ForkPeek,
+    turn: &mut Turn,
+    sight: Sight<'_>,
+) -> Result<bool, Error> {
+    let Sight {
+        entries,
+        shown,
+        forced,
+        background,
+    } = sight;
     let triage = distiller
-        .triage(client, tools, &entries, &shown, &background)
+        .triage(client, tools, entries, shown, background)
         .await;
     for u in triage.usage {
         shared.record_request(RequestOrigin::Triage, u);
@@ -72,7 +110,7 @@ pub(super) async fn run_idle_triage(
     // A must-wake item is pinned whatever the peek said — that is what makes the
     // wake declared rather than judged, so a dismiss cannot swallow it.
     let mut inbox = triage.inbox;
-    force_pins(&mut inbox, &forced);
+    force_pins(&mut inbox, forced);
     let mut escalate = inbox.iter().any(|(_, d)| matches!(d, Disposition::Pin));
     for (handle, verdict) in triage.background {
         match verdict {
@@ -110,7 +148,6 @@ pub(super) async fn run_idle_triage(
     )?;
     Ok(escalate)
 }
-
 /// Override the peek's verdict for the must-wake notifications (docs/inbox.md): each
 /// `forced` seq is pinned, whether the peek pinned it, dismissed it, or left it.
 /// Deterministic on purpose — the fork keeps everything downstream of *whether* the

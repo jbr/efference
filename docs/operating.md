@@ -422,7 +422,10 @@ write and no information. It takes the same session argument and `--all` sweep, 
 reports the longest run of barren endings, since a run is the shape a stalled session
 makes where a scattered few are ordinary. An assistant entry that records a failed
 request (`upstream_failure`) is not an ending — the model said nothing — so a reply to it
-is not counted. The classification is `log/stops.rs`.
+is not counted. `ask` calls get a second table: each reply graded by the same test —
+answered or barren — with interrupted and unanswered asks counted but not graded, so a
+stall moved into a tool call ("Proceeding with X, OK?" → "sounds good") stays visible.
+The classification is `log/stops.rs`.
 
 **`efference dev models {connection}`** reads a provider's answer to *which models
 do you serve*, over a connection named in `~/.efference/config.toml` and resolved
