@@ -8,6 +8,7 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- **`efference check` reports tool weight** (docs/tools.md): per mounted MCP server and per tool, the serialized wire-definition bytes, as a proxy for what the `tools` array costs in every request.
 - **`ask` in the TUI, the web client, and `transcript`** (docs/tui.md, docs/web-client.md, docs/control-api.md): a question is drawn as the assistant's prose with an *asked* mark and its reply as the operator's message; the transcript line reads it the same way; queued turns the ask recalled return to the composer; session lists show `asking` (the web card shows the question), and the TUI switcher confirms ending such a session.
 - **Push notifications deep-link to their session** (docs/web-push.md): the payload
   carries the session's web path (`/sessions/<id>/` under a host), and a tap focuses or

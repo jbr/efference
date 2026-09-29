@@ -93,24 +93,29 @@ pub(crate) async fn check(path: Option<PathBuf>) -> CliResult {
                 break;
             }
             let definitions = toolbox.definitions();
-            let advertised: Vec<&str> = definitions[before..]
+            let mounted = &definitions[before..];
+            let advertised: Vec<&str> = mounted
                 .iter()
                 .filter_map(|d| d.get("name")?.as_str())
                 .collect();
+            let weights: Vec<usize> = mounted.iter().map(|d| d.to_string().len()).collect();
+            let total: usize = weights.iter().sum();
             let cleared = advertised
                 .iter()
                 .filter(|tool| efference::policy::tool_granted(&role, tool))
                 .count();
             println!(
-                "  [mcp:{name}]: {} tool(s), {} cleared by `tools`",
+                "  [mcp:{name}]: {} tool(s), {} cleared by `tools`; {} bytes of definitions",
                 advertised.len(),
-                cleared
+                cleared,
+                total
             );
-            for tool in &advertised {
+            for (tool, weight) in advertised.iter().zip(&weights) {
                 println!(
-                    "    {} {}",
+                    "    {} {} ({} B)",
                     grant_mark(&role, tool),
-                    efference::mcp::display_name(tool)
+                    efference::mcp::display_name(tool),
+                    weight
                 );
             }
             if cleared < advertised.len() {
