@@ -1,5 +1,5 @@
 //! Classifying turn endings — was stopping worth the round trip?
-//! (backlog/turn-persistence-in-the-preamble.md, read by `efference dev stops`.)
+//! (docs/operating.md; read by `efference dev stops`.)
 //!
 //! A turn ends when the model emits no tool call, and the loop yields to whoever
 //! sends the next one. That is the harness's only way to put a question *and* its
@@ -12,8 +12,8 @@
 //! thing the round trip produced was latency and a cache write. The other arms are
 //! not graded here: a [`Stop::Question`] may be a good question or a needless one,
 //! and a [`Stop::Answered`] may be a welcome checkpoint or a missed chance to keep
-//! going. Those need a task whose answer is known in advance
-//! (backlog/harness-eval.md); this fold needs only the log.
+//! going. Those need a task whose answer is known in advance (eval/harness/README.md);
+//! this fold needs only the log.
 
 use super::{LogEntry, Payload};
 
@@ -44,6 +44,12 @@ pub fn classify(entries: &[LogEntry]) -> Vec<(Stop, Option<String>)> {
     let mut pending = false;
     for entry in entries {
         match &entry.payload {
+            // A record-only entry is a failed request, not something the model said:
+            // it ended nothing, and a reply to it answered the failure, not a stop.
+            Payload::Assistant {
+                upstream_failure: Some(_),
+                ..
+            } => {}
             Payload::Assistant { output, .. } => {
                 // A call still to run means the loop continues — including a call
                 // held at a permission gate, which is a pause, not an ending.

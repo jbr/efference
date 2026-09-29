@@ -186,3 +186,18 @@ fn the_recorded_stall_reads_as_a_run_of_barren_stops() {
     assert_eq!(stops.len(), 4);
     assert!(stops.iter().all(|stop| *stop == Stop::Barren));
 }
+
+/// A failed request leaves a record-only assistant entry with no calls. It is not
+/// something the model said, so a reply to it is not a stop — otherwise one
+/// exhausted quota, answered on every retry, reads as a run of barren stops.
+#[test]
+fn an_upstream_failure_is_not_a_stop() {
+    let failed = Payload::Assistant {
+        output: AssistantOutput::from_legacy_messages(Vec::new(), Vec::new(), Vec::new()),
+        upstream_failure: Some("upstream API returned 429 Too Many Requests".into()),
+    };
+    assert_eq!(
+        classify_pairs(&[called("Writing DONE.md."), failed, replied("sounds good!")]),
+        []
+    );
+}

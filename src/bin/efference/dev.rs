@@ -51,7 +51,7 @@ pub(crate) enum DevCommand {
         all: bool,
     },
     /// Report what a session's turn endings bought
-    /// (backlog/turn-persistence-in-the-preamble.md). A turn ends when the model
+    /// (docs/operating.md). A turn ends when the model
     /// emits no tool call, which is the harness's only way to put a question *and*
     /// its only way to say the work is done. This counts which it turned out to be,
     /// by what the next turn carried: a **barren** ending asked nothing and was

@@ -420,7 +420,9 @@ something, `final` when nothing followed, and **`barren`** when neither — the 
 asked nothing and was told nothing, so the round trip bought a request and a cache
 write and no information. It takes the same session argument and `--all` sweep, and
 reports the longest run of barren endings, since a run is the shape a stalled session
-makes where a scattered few are ordinary. The classification is `log/stops.rs`.
+makes where a scattered few are ordinary. An assistant entry that records a failed
+request (`upstream_failure`) is not an ending — the model said nothing — so a reply to it
+is not counted. The classification is `log/stops.rs`.
 
 **`efference dev models {connection}`** reads a provider's answer to *which models
 do you serve*, over a connection named in `~/.efference/config.toml` and resolved

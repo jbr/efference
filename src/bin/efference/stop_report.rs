@@ -1,5 +1,5 @@
 //! `efference dev stops` — read session logs and report what turn endings bought
-//! (backlog/turn-persistence-in-the-preamble.md).
+//! (docs/operating.md).
 //!
 //! The classification is [`efference::log::stops`]; this is the table over it. The
 //! number to read is the **barren** rate: endings where the model asked nothing and
@@ -188,8 +188,7 @@ pub(crate) fn stops_report(session: Option<String>, name: Option<String>, all: b
             "{}",
             paint(
                 "  A run means the session kept handing the turn back with nothing to say and\n  \
-                 nothing to ask. `efference dev view <session>` shows what it said each time;\n  \
-                 backlog/turn-persistence-in-the-preamble.md is what the preamble does not.",
+                 nothing to ask. `efference dev view <session>` shows what it said each time.",
                 DIM,
                 tty
             )

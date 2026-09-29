@@ -8,6 +8,8 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- **The preamble says when a turn ends** (journal/2026-09-28-turn-persistence-and-a-false-reproduction.md):
+  when the task is done, on a question only the operator can answer, or when something it was told proves untrue.
 - **Composer attachments** (docs/inbox.md): paste, drop, or pick files in the web composer,
   or paste and drag them onto the TUI, to stage them as removable chips (thumbnails for
   images). The next turn carries them, and the model is told what arrived and where.
