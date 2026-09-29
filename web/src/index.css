@@ -389,6 +389,13 @@ input[type="checkbox"] {
   color: var(--fg-dim);
 }
 
+.ask-mark {
+  margin: 0.4rem 0 0;
+  font-family: var(--font-ui);
+  font-size: 0.8rem;
+  color: var(--fg-dim);
+}
+
 .title-change-text {
   font-family: var(--font-prose);
   font-style: italic;

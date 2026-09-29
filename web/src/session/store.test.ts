@@ -4,6 +4,7 @@ import { messagesAssistant } from "./assistant.ts";
 import {
   applyFrame,
   emptySession,
+  mintTurn,
   pushPendingTurn,
   seed,
   seedProcessOutput,
@@ -586,5 +587,67 @@ describe("the call↔process mapping", () => {
       processesFrame([{ id: 3, command: "x", call_id: "toolu_a" }]),
     );
     expect(second.processCalls).toBe(first.processCalls);
+  });
+});
+
+describe("ask", () => {
+  const askFrame = (call_id: string, recalled: string[]): Frame => ({
+    class: "state",
+    kind: "ask",
+    data: {
+      call_id,
+      question: "Ship it?",
+      n: 1,
+      of: 1,
+      recalled: recalled.map((id) => ({
+        submission_id: id,
+        text: `text of ${id}`,
+      })),
+    },
+  });
+  const minted = (...ids: string[]) =>
+    ids.reduce((s, id) => mintTurn(s, id), emptySession);
+
+  it("settles a reply's echo on the result entry carrying its submission id", () => {
+    const queued = pushPendingTurn(minted("sub-r"), "sub-r", "yes");
+    const result: LogEntry = {
+      ...entry(2, {
+        ToolResult: {
+          call_id: "a",
+          raw: { content: "yes", is_error: false },
+          wire: "Raw",
+        },
+      }),
+      submission_id: "sub-r",
+    };
+    const s = fold(queued, [logFrame(result)]);
+    expect(s.pendingTurns).toEqual([]);
+    expect(s.minted).toEqual([]);
+  });
+
+  it("hands back only the recalled turns this client minted, once per ask", () => {
+    const start = pushPendingTurn(minted("mine"), "mine", "text of mine");
+    const once = fold(start, [askFrame("toolu_a", ["mine", "theirs"])]);
+    expect(once.askRecall?.turns.map((t) => t.submission_id)).toEqual(["mine"]);
+    expect(once.pendingTurns).toEqual([]);
+    // The same ask delivered again restores nothing new.
+    const again = fold(once, [askFrame("toolu_a", ["mine"])]);
+    expect(again.askRecall).toBe(once.askRecall);
+    // A later ask is a new event.
+    const next = fold(minted("mine2"), [askFrame("toolu_b", ["mine2"])]);
+    expect(next.askRecall?.nonce).toBe(1);
+  });
+
+  it("restores nothing after a restart, which minted nothing", () => {
+    const s = fold(emptySession, [askFrame("toolu_a", ["old"])]);
+    expect(s.askRecall).toBeNull();
+  });
+
+  it("does not queue an echo for a turn the ask already handed back", () => {
+    // The 202 resolves after the topic frame: the echo would never settle.
+    const handedBack = fold(minted("mine"), [askFrame("toolu_a", ["mine"])]);
+    expect(
+      pushPendingTurn(handedBack, "mine", "text of mine").pendingTurns,
+    ).toEqual([]);
   });
 });

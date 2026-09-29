@@ -27,6 +27,7 @@ import {
   type LogEntry,
   type Seq,
   type Spot,
+  type ToolCall,
   type ToolTelemetry,
   type UpstreamFailureRecord,
 } from "../api/types.ts";
@@ -47,6 +48,41 @@ export interface LeafNode {
    * from the window; the wire's token delta is provider accounting the client
    * does not hold, so the count is entries, not tokens. */
   replaces?: number;
+  /** An `ask` call drawn as the assistant's question (docs/web-client.md): the
+   * entry is the `Assistant` entry that issued it. */
+  ask?: AskQuestion;
+  /** The result of an `ask`: the operator's reply when a submission produced
+   * it, or a note that nothing did. The entry is the `ToolResult`. */
+  reply?: "answered" | "unanswered";
+}
+
+/** A question put to the operator, and its place among the asks of one
+ * completion. */
+export interface AskQuestion {
+  question: string;
+  n: number;
+  of: number;
+}
+
+/** The question an `ask` call puts, when `calls[index]` is one with a usable
+ * `question` — `supervisor::ask_of_call` in src/supervisor.rs. Anything else,
+ * including an ask the loop answers with an error, stays an ordinary call. */
+export function askOfCall(
+  calls: ToolCall[],
+  index: number,
+): AskQuestion | null {
+  const call = calls[index];
+  if (call?.name !== "ask") return null;
+  const input = call.input as { question?: unknown } | null;
+  const question =
+    typeof input?.question === "string" ? input.question.trim() : "";
+  if (question === "") return null;
+  const asks = calls.filter((c) => c.name === "ask");
+  return {
+    question,
+    n: calls.slice(0, index).filter((c) => c.name === "ask").length + 1,
+    of: asks.length,
+  };
 }
 
 /** One call, with everything the harness said about it. */
@@ -99,6 +135,8 @@ export type TranscriptNode = LeafNode | BatchNode;
 export function buildTree(entries: LogEntry[]): TranscriptNode[] {
   const nodes: TranscriptNode[] = [];
   const byCall = new Map<CallId, CallNode>();
+  // Calls drawn as questions: their results are replies, not tool results.
+  const askCalls = new Set<CallId>();
   const seqs: Seq[] = [];
   let title: string | null = null;
 
@@ -143,11 +181,16 @@ export function buildTree(entries: LogEntry[]): TranscriptNode[] {
       if (text.length > 0) {
         nodes.push({ kind: "leaf", key: `${entry.seq}:text`, entry });
       }
-      if (calls.length > 0) {
+      const asks = calls.flatMap((call, i) => {
+        const ask = askOfCall(calls, i);
+        return ask === null ? [] : [{ call, ask }];
+      });
+      const tools = calls.filter((_, i) => askOfCall(calls, i) === null);
+      if (tools.length > 0) {
         const batch: BatchNode = {
           kind: "batch",
           key: `${entry.seq}:batch`,
-          calls: calls.map((call) => {
+          calls: tools.map((call) => {
             const node: CallNode = {
               kind: "call",
               key: call.id,
@@ -164,10 +207,31 @@ export function buildTree(entries: LogEntry[]): TranscriptNode[] {
         };
         nodes.push(batch);
       }
+      // A question reads as a turn ending, after the step's other calls.
+      for (const { call, ask } of asks) {
+        askCalls.add(call.id);
+        nodes.push({
+          kind: "leaf",
+          key: `${entry.seq}:ask:${call.id}`,
+          entry,
+          ask,
+        });
+      }
       continue;
     }
 
     if ("ToolResult" in p) {
+      if (askCalls.has(p.ToolResult.call_id)) {
+        // A reply is the result of a submission, which is what carries a
+        // `submission_id`; an interrupt's error result has none.
+        nodes.push({
+          kind: "leaf",
+          key: `${entry.seq}:reply`,
+          entry,
+          reply: entry.submission_id === undefined ? "unanswered" : "answered",
+        });
+        continue;
+      }
       const owner = byCall.get(p.ToolResult.call_id);
       if (owner !== undefined) owner.result = entry;
       continue;

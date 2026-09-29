@@ -15,9 +15,11 @@ export function archiveWarning(session: SessionEntry): string | null {
       ? "is mid-turn"
       : session.status === "gated"
         ? "is holding a call at a gate"
-        : session.status === "stalled"
-          ? "stalled and has not been answered"
-          : null;
+        : session.status === "asking"
+          ? "is waiting on your answer to a question"
+          : session.status === "stalled"
+            ? "stalled and has not been answered"
+            : null;
   const held =
     session.processes > 0
       ? `holds ${session.processes} background process${session.processes === 1 ? "" : "es"}`

@@ -18,6 +18,7 @@ import { tokens } from "./overview.ts";
  * needs no words, and a new session's title already says it. */
 function statusPhrase(card: CardModel): string | null {
   if (card.status === "gated") return "needs approval";
+  if (card.status === "asking") return "has a question";
   if (card.status === "stalled") return "has stalled";
   if (card.attention === "your_turn") return "is waiting for you";
   return null;
@@ -34,6 +35,10 @@ function Activity({ card }: { card: CardModel }) {
           <span className="card-activity-tool">{activity.tool}</span>
           <code>{activity.detail}</code>
         </p>
+      );
+    case "ask":
+      return (
+        <p className="card-activity card-activity-ask">{activity.detail}</p>
       );
     case "stall":
       return (

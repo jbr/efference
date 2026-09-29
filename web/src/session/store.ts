@@ -6,6 +6,7 @@
 // imports React or touches the network.
 
 import type {
+  Ask,
   Attachment,
   CallId,
   Frame,
@@ -79,6 +80,20 @@ export interface Session {
    * the resulting `User` entry, so settling is an exact lookup rather than a
    * content match. */
   pendingTurns: PendingTurn[];
+  /** Submission ids this client minted and has not yet seen settle, recorded
+   * **before** the POST so an `ask`'s recalled turns can be recognised as ours
+   * even while a 202 is still in flight (docs/web-client.md). A restarted
+   * client has none, so it restores nothing. */
+  minted: string[];
+  /** Ids an `ask` handed back to the composer: their 202 may still resolve, and
+   * an echo pushed then would never settle. */
+  withdrawn: string[];
+  /** The `call_id` of the last `ask` whose recalled turns were restored, so a
+   * re-delivered topic frame restores them once. */
+  askRestored: CallId | null;
+  /** What that restore put back, for the composer to splice; `nonce` makes a
+   * second restore a new event. */
+  askRecall: AskRecall | null;
   /** Process id by the `tool_use` id that spawned it (docs/supervisor.md) —
    * accumulated from the `processes` topic and **never removed**.
    *
@@ -99,6 +114,12 @@ export interface PendingTurn {
   attachments: Attachment[];
 }
 
+/** The turns an `ask` handed back to the composer. */
+export interface AskRecall {
+  turns: NonNullable<StateTopics["ask"]>["recalled"];
+  nonce: number;
+}
+
 export const emptyStreaming: Streaming = {
   blocks: [],
   toolOutput: {},
@@ -114,6 +135,10 @@ export const emptySession: Session = {
   topics: {},
   streaming: emptyStreaming,
   pendingTurns: [],
+  minted: [],
+  withdrawn: [],
+  askRestored: null,
+  askRecall: null,
   processCalls: {},
 };
 
@@ -145,9 +170,40 @@ export function pushPendingTurn(
   attachments: Attachment[] = [],
 ): Session {
   if (session.entries.some((e) => e.submission_id === id)) return session;
+  if (session.withdrawn.includes(id)) return session;
   return {
     ...session,
     pendingTurns: [...session.pendingTurns, { id, text, attachments }],
+  };
+}
+
+/** Record a submission id as this client's, before its POST goes out. */
+export function mintTurn(session: Session, id: string): Session {
+  return { ...session, minted: [...session.minted, id] };
+}
+
+/** Forget a minted id whose POST failed: nothing was submitted under it. */
+export function unmintTurn(session: Session, id: string): Session {
+  return { ...session, minted: session.minted.filter((m) => m !== id) };
+}
+
+/** Take back the turns an `ask` withdrew from the queue (docs/web-client.md), once
+ * per ask: only those whose ids this client minted, whose echoes go with them.
+ * They reach the composer through `askRecall`. */
+function restoreAskRecall(session: Session, ask: Ask | null): Session {
+  if (ask === null || ask.call_id === session.askRestored) return session;
+  const own = ask.recalled.filter((t) =>
+    session.minted.includes(t.submission_id),
+  );
+  const next: Session = { ...session, askRestored: ask.call_id };
+  if (own.length === 0) return next;
+  const ids = own.map((t) => t.submission_id);
+  return {
+    ...next,
+    minted: next.minted.filter((id) => !ids.includes(id)),
+    withdrawn: [...next.withdrawn, ...ids],
+    pendingTurns: next.pendingTurns.filter((p) => !ids.includes(p.id)),
+    askRecall: { turns: own, nonce: (session.askRecall?.nonce ?? 0) + 1 },
   };
 }
 
@@ -162,6 +218,11 @@ export function removePendingTurns(session: Session, ids: string[]): Session {
     pendingTurns: session.pendingTurns.filter((p) => !gone.has(p.id)),
   };
 }
+
+const settleMinted = (minted: string[], entry: LogEntry): string[] =>
+  entry.submission_id === undefined
+    ? minted
+    : minted.filter((id) => id !== entry.submission_id);
 
 const settlePendingTurns = (
   pending: PendingTurn[],
@@ -182,6 +243,7 @@ export function seed(session: Session, entries: LogEntry[]): Session {
     entries,
     lastSeq: last ? last.seq : session.lastSeq,
     pendingTurns: entries.reduce(settlePendingTurns, session.pendingTurns),
+    minted: entries.reduce(settleMinted, session.minted),
   };
 }
 
@@ -208,14 +270,17 @@ export function applyFrame(session: Session, frame: Frame): Session {
     case "log":
       return applyLog(session, frame.data);
     case "state":
-      return {
-        ...session,
-        topics: { ...session.topics, [frame.kind]: frame.data },
-        processCalls:
-          frame.kind === "processes"
-            ? learnProcessCalls(session.processCalls, frame.data)
-            : session.processCalls,
-      };
+      return restoreAskRecall(
+        {
+          ...session,
+          topics: { ...session.topics, [frame.kind]: frame.data },
+          processCalls:
+            frame.kind === "processes"
+              ? learnProcessCalls(session.processCalls, frame.data)
+              : session.processCalls,
+        },
+        frame.kind === "ask" ? (frame.data as Ask | null) : null,
+      );
     case "output":
       return {
         ...session,
@@ -238,6 +303,7 @@ function applyLog(session: Session, entry: LogEntry): Session {
     lastSeq: entry.seq,
     streaming: settle(session.streaming, entry),
     pendingTurns: settlePendingTurns(session.pendingTurns, entry),
+    minted: settleMinted(session.minted, entry),
   };
 }
 

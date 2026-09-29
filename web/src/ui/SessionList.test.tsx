@@ -23,6 +23,9 @@ test("only a session with something to lose is confirmed", () => {
   expect(archiveWarning(row({ status: "gated" }))).toBe(
     "is holding a call at a gate",
   );
+  expect(archiveWarning(row({ status: "asking" }))).toBe(
+    "is waiting on your answer to a question",
+  );
   expect(archiveWarning(row({ status: "stalled" }))).toBe(
     "stalled and has not been answered",
   );

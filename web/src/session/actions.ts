@@ -11,8 +11,10 @@ import {
 import type { Attachment, CallId, Decision, Gate } from "../api/types.ts";
 import {
   applyFrame,
+  mintTurn,
   pushPendingTurn,
   removePendingTurns,
+  unmintTurn,
   type Store,
 } from "./store.ts";
 
@@ -32,7 +34,15 @@ export async function submitTurn(
   attachments: Attachment[] = [],
 ): Promise<void> {
   const id = crypto.randomUUID();
-  await postTurn(text, id, attachments);
+  // Recorded before the POST: an `ask` can hand this turn back while the 202
+  // is still in flight (session/store.ts).
+  store.update((s) => mintTurn(s, id));
+  try {
+    await postTurn(text, id, attachments);
+  } catch (error) {
+    store.update((s) => unmintTurn(s, id));
+    throw error;
+  }
   store.update((s) => pushPendingTurn(s, id, text, attachments));
 }
 

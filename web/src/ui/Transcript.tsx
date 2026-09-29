@@ -151,6 +151,33 @@ function Consolidation({
 function Leaf({ node }: { node: LeafNode }) {
   const { entry } = node;
   const p = entry.payload;
+  // An `ask` reads as a turn ending: the question is the assistant's prose
+  // with a small mark, and the reply the operator's message (docs/web-client.md).
+  if (node.ask !== undefined) {
+    const { question, n, of } = node.ask;
+    return (
+      <Entry label={null}>
+        <Markdown>{question}</Markdown>
+        <p className="ask-mark">
+          asked{of > 1 ? ` · question ${n} of ${of}` : ""}
+        </p>
+      </Entry>
+    );
+  }
+  if (node.reply !== undefined && "ToolResult" in p) {
+    if (node.reply === "unanswered") {
+      return (
+        <Entry label={null}>
+          <p className="ask-mark">not answered</p>
+        </Entry>
+      );
+    }
+    return (
+      <Entry label="you" as="user">
+        <Markdown>{p.ToolResult.raw.content}</Markdown>
+      </Entry>
+    );
+  }
   if ("User" in p) {
     // A hand-off brief is the predecessor speaking (docs/tools.md): shown as
     // the harness's note of the hand-off, never as the operator's turn.
@@ -329,6 +356,9 @@ function LiveBlockView({ block }: { block: LiveBlock }) {
       </Entry>
     );
   }
+  // An `ask` is drawn as prose once committed; arriving as a call it would
+  // show the plumbing.
+  if (block.name === "ask") return null;
   // The same item a committed call is (TranscriptItems), so nothing moves
   // when it commits.
   return (
@@ -400,9 +430,14 @@ function StreamingTail({
  * turns when the matching `User` entry streams back (`session/store.ts`). */
 function PendingTurns({
   pending,
+  answering,
   onRecall,
 }: {
   pending: PendingTurn[];
+  /** An `ask` is pending: what is sent now is its reply, which is never
+   * queued, so there is nothing to recall and the agent is not "reading it at
+   * its next step" (docs/web-client.md). */
+  answering: boolean;
   onRecall: (id: string) => void;
 }) {
   return (
@@ -414,17 +449,23 @@ function PendingTurns({
           {/* A state, then the one thing to do about it — two pieces, not
               one run of text. */}
           <div className="pending-mark">
-            <span>Queued · the agent reads it at its next step</span>
+            <span>
+              {answering
+                ? "Sent · answering the question"
+                : "Queued · the agent reads it at its next step"}
+            </span>
             {/* Recall is a suffix pop: this turn and every one queued after it
              * come back to the composer together (docs/web-client.md). */}
-            <button
-              type="button"
-              className="pending-recall"
-              title="Pull this turn (and any queued after it) back into the composer"
-              onClick={() => onRecall(turn.id)}
-            >
-              Recall
-            </button>
+            {!answering && (
+              <button
+                type="button"
+                className="pending-recall"
+                title="Pull this turn (and any queued after it) back into the composer"
+                onClick={() => onRecall(turn.id)}
+              >
+                Recall
+              </button>
+            )}
           </div>
         </Entry>
       ))}
@@ -436,6 +477,7 @@ export function Transcript({
   nodes,
   streaming,
   pending,
+  answering,
   gatedCall,
   onGateSlot,
   onRecall,
@@ -450,6 +492,8 @@ export function Transcript({
   onGateSlot: (element: HTMLDivElement | null) => void;
   streaming: Streaming;
   pending: PendingTurn[];
+  /** The `ask` topic is non-null: a send answers the question. */
+  answering: boolean;
   onRecall: (id: string) => void;
   onInspect: (callId: CallId) => void;
   onOpenFile: (path: string, callId: CallId) => void;
@@ -493,7 +537,11 @@ export function Transcript({
         )}
       />
       <StreamingTail streaming={streaming} committed={committed} />
-      <PendingTurns pending={pending} onRecall={onRecall} />
+      <PendingTurns
+        pending={pending}
+        answering={answering}
+        onRecall={onRecall}
+      />
     </div>
   );
 }

@@ -303,3 +303,83 @@ describe("the kickoff", () => {
     expect(nodes.map((n) => n.key)).toEqual(["2:text", "3"]);
   });
 });
+
+describe("ask", () => {
+  const ask = (id: string, question: string) => ({
+    id,
+    name: "ask",
+    input: { question },
+  });
+  const asking = (
+    seq: number,
+    calls: { id: string; name: string; input: unknown }[],
+  ) => entry(seq, { Assistant: messagesAssistant([], [], calls) });
+  const reply = (
+    seq: number,
+    callId: string,
+    submission?: string,
+  ): LogEntry => ({
+    ...entry(seq, {
+      ToolResult: {
+        call_id: callId,
+        raw: { content: "yes, ship", is_error: submission === undefined },
+        wire: "Raw",
+      },
+    }),
+    ...(submission === undefined ? {} : { submission_id: submission }),
+  });
+
+  it("is drawn as the question, with no call and no batch", () => {
+    const nodes = buildTree([asking(1, [ask("a", "Ship it?")])]);
+    expect(nodes.map((n) => n.key)).toEqual(["1:ask:a"]);
+    const leaf = nodes[0];
+    expect(leaf.kind === "leaf" && leaf.ask).toEqual({
+      question: "Ship it?",
+      n: 1,
+      of: 1,
+    });
+  });
+
+  it("numbers several asks and puts them after the step's other calls", () => {
+    const nodes = buildTree([
+      asking(1, [
+        ask("a", "First?"),
+        { id: "b", name: "bash", input: { command: "ls" } },
+        ask("c", "Second?"),
+      ]),
+    ]);
+    expect(nodes.map((n) => n.key)).toEqual(["1:batch", "1:ask:a", "1:ask:c"]);
+    const asks = nodes.flatMap((n) =>
+      n.kind === "leaf" && n.ask ? [n.ask] : [],
+    );
+    expect(asks.map((a) => [a.n, a.of])).toEqual([
+      [1, 2],
+      [2, 2],
+    ]);
+  });
+
+  it("reads a result carrying a submission id as the operator's reply", () => {
+    const nodes = buildTree([
+      asking(1, [ask("a", "Ship it?")]),
+      reply(2, "a", "sub-1"),
+    ]);
+    expect(nodes.map((n) => n.key)).toEqual(["1:ask:a", "2:reply"]);
+    const leaf = nodes[1];
+    expect(leaf.kind === "leaf" && leaf.reply).toBe("answered");
+  });
+
+  it("reads a result with no submission as not answered", () => {
+    const nodes = buildTree([asking(1, [ask("a", "Ship it?")]), reply(2, "a")]);
+    const leaf = nodes[1];
+    expect(leaf.kind === "leaf" && leaf.reply).toBe("unanswered");
+  });
+
+  it("leaves an ask with no usable question an ordinary call", () => {
+    const nodes = buildTree([
+      asking(1, [{ id: "a", name: "ask", input: {} }]),
+      reply(2, "a"),
+    ]);
+    expect(nodes.map((n) => n.key)).toEqual(["1:batch"]);
+    expect(onlyCall(nodes).result?.seq).toBe(2);
+  });
+});

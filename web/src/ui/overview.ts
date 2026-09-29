@@ -40,6 +40,7 @@ export interface CardModel {
 
 export type Activity =
   | { kind: "gate"; tool: string; detail: string }
+  | { kind: "ask"; detail: string }
   | { kind: "stall"; detail: string }
   | { kind: "intent"; detail: string }
   | { kind: "reply"; detail: string };
@@ -115,12 +116,16 @@ export function cardModel(
       ? "blocked"
       : entry.status === "running"
         ? "working"
-        : lastActivityAt === null && entry.title === undefined
-          ? "new"
-          : "your_turn";
+        : // A question is a turn ending, so it waits on the operator like one.
+          entry.status === "asking"
+          ? "your_turn"
+          : lastActivityAt === null && entry.title === undefined
+            ? "new"
+            : "your_turn";
 
   const gate = state?.gate ?? null;
   const stall = state?.stall ?? null;
+  const ask = state?.ask ?? null;
   const activity: Activity | null =
     gate !== null
       ? {
@@ -128,13 +133,15 @@ export function cardModel(
           tool: gate.name,
           detail: gatePreview(gate.input),
         }
-      : stall !== null
-        ? { kind: "stall", detail: stall.message }
-        : entry.status === "running" && recent.intent !== undefined
-          ? { kind: "intent", detail: recent.intent }
-          : recent.lastReply !== undefined
-            ? { kind: "reply", detail: recent.lastReply }
-            : null;
+      : ask !== null
+        ? { kind: "ask", detail: ask.question }
+        : stall !== null
+          ? { kind: "stall", detail: stall.message }
+          : entry.status === "running" && recent.intent !== undefined
+            ? { kind: "intent", detail: recent.intent }
+            : recent.lastReply !== undefined
+              ? { kind: "reply", detail: recent.lastReply }
+              : null;
 
   const inference = state?.session_identity?.inference;
   return {

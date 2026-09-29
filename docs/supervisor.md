@@ -427,7 +427,11 @@ permission to ask would gate a question behind a question.
   does not hold on failure: notifications stay pending for the next gate.
 - **Several asks in one completion are put one at a time**, in call order, each carrying
   its position (`n` of `of`). The tool description tells the model the order is
-  unspecified, so they should be independent.
+  unspecified, so they should be independent. A driving agent (a parent session, an MCP
+  client, `efference control`) answers them the same way the operator does: one `turn`
+  per question, reading the next from `/state` or `settle` in between. There is no
+  batched or call-addressed answer. On the wire each reply opens `asked: <question>`,
+  so the model matches answers to questions without relying on order.
 - **Interrupts** treat it as any in-flight call: the ask ends with an error result, the
   rest of the batch is aborted, and a reply that raced the interrupt is resubmitted as
   an ordinary turn.

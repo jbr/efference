@@ -135,6 +135,23 @@ export function SessionView() {
     [actions],
   );
 
+  // The turns an `ask` handed back (session/store.ts) reach the composer the way a
+  // manual recall does. The store's object is the trigger; the nonce continues the
+  // counter above so the composer never sees one twice.
+  // Adjusted during render, keyed on the store's object, rather than in an effect.
+  const askRecall = session.askRecall;
+  const [seenAskRecall, setSeenAskRecall] = useState(askRecall);
+  if (askRecall !== seenAskRecall) {
+    setSeenAskRecall(askRecall);
+    if (askRecall !== null) {
+      setRecalled((prev) => ({
+        text: askRecall.turns.map((t) => t.text).join("\n"),
+        attachments: askRecall.turns.flatMap((t) => t.attachments ?? []),
+        nonce: (prev?.nonce ?? 0) + 1,
+      }));
+    }
+  }
+
   // One open request: the path, the call that asked (which is where the edit's
   // anchor comes from — session/editAnchor.ts), and a key that changes even
   // when the path does not, so a second call's `open ⤢` on the same file still
@@ -221,6 +238,7 @@ export function SessionView() {
         nodes={nodes}
         streaming={session.streaming}
         pending={session.pendingTurns}
+        answering={session.topics.ask != null}
         gatedCall={gate?.call_id ?? null}
         onGateSlot={setGateSlot}
         onRecall={onRecall}

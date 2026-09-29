@@ -260,7 +260,7 @@ export interface SessionEntry {
   cwd?: string;
   created_by?: string;
   /** What the session is doing, in one word. */
-  status: "running" | "idle" | "gated" | "stalled";
+  status: "running" | "idle" | "gated" | "asking" | "stalled";
   /** Live background processes the session holds; archiving it reaps them. */
   processes: number;
 }

@@ -563,6 +563,7 @@ export interface InferenceIdentity {
 // cleared topic, absence an unsubscribed one.
 export interface StateTopics {
   gate?: Gate | null;
+  ask?: Ask | null;
   role?: Role | null;
   notifications?: PendingNotification[] | null;
   proposals?: Proposal[] | null;
@@ -578,6 +579,21 @@ export interface StateTopics {
   upstream_failure?: UpstreamFailure | null;
   upstream_retry?: UpstreamRetry | null;
   session_identity?: SessionIdentity | null;
+}
+
+/** The `ask` topic (docs/control-api.md): the question the loop is blocked on.
+ * `recalled` holds the turns the daemon withdrew from the queue when it began,
+ * in the shape `DELETE /turns/:id` answers with. */
+export interface Ask {
+  call_id: CallId;
+  question: string;
+  n: number;
+  of: number;
+  recalled: {
+    submission_id: string;
+    text: string;
+    attachments?: Attachment[];
+  }[];
 }
 
 export interface StateSnapshot extends StateTopics {

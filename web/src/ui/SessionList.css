@@ -302,6 +302,7 @@
   color: var(--fg-dim);
 }
 
+.card-activity-ask,
 .card-activity-stall {
   color: var(--fg);
 }

@@ -57,6 +57,25 @@ test("idle is the operator's turn once a turn has run, and new before", () => {
   );
 });
 
+test("a pending question is the operator's turn, and the card shows it", () => {
+  const one = [entry()];
+  const card = cardModel(entry({ status: "asking" }), one, {
+    last_seq: null,
+    ask: {
+      call_id: "toolu_a",
+      question: "Ship it?",
+      n: 1,
+      of: 1,
+      recalled: [],
+    },
+  });
+  expect(card.attention).toBe("your_turn");
+  expect(card.activity).toEqual({ kind: "ask", detail: "Ship it?" });
+  expect(cardModel(entry({ status: "asking" }), one, null).attention).toBe(
+    "your_turn",
+  );
+});
+
 test("supervision is named from both ends, and nothing is nested", () => {
   const all = [
     entry({ id: "boss" }),

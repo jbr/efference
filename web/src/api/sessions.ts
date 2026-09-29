@@ -73,6 +73,7 @@ export function openSessions(
 /** The state topics an overview card reads. */
 const CARD_TOPICS = [
   "gate",
+  "ask",
   "stall",
   "running",
   "usage",
