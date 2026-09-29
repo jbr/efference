@@ -48,6 +48,24 @@ pub const WAIT: &str = "wait";
 /// there is nothing in the world to authorize.
 pub const ASK: &str = "ask";
 
+/// The question an `ask` call puts and its place among the asks of one completion,
+/// `n` of `of` (1-based), for a surface that draws it as prose rather than as a call
+/// (docs/tui.md, docs/web-client.md). `None` for a call that is not an ask, or one
+/// with no usable `question` — which the loop answers with an error result and never
+/// puts to the operator.
+pub fn ask_of_call(calls: &[crate::log::ToolCall], index: usize) -> Option<(String, usize, usize)> {
+    let is_ask = |c: &&crate::log::ToolCall| c.name == ASK;
+    let call = calls.get(index).filter(is_ask)?;
+    let question = call.input.get("question")?.as_str()?.trim();
+    (!question.is_empty()).then(|| {
+        (
+            question.to_string(),
+            calls[..index].iter().filter(is_ask).count() + 1,
+            calls.iter().filter(is_ask).count(),
+        )
+    })
+}
+
 /// Render a process id as its prose handle — the form the model and every human
 /// transcript sees (`p#3`). The bare ordinal is what routes and frames carry
 /// (docs/supervisor.md): the prefix does its disambiguating work only where the id

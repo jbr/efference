@@ -129,15 +129,18 @@ impl WireTurn {
 }
 
 /// Render a logged result the way the model reads it: the verdict applied, the
-/// `[seq]` handle prefixed, images kept only where the verdict keeps content. A result
-/// entry with a `source` (an `ask`'s reply, docs/supervisor.md) opens its content with
-/// `source: `, as a sourced `User` turn does; no source leaves the bytes as they were.
+/// `[seq]` handle prefixed, images kept only where the verdict keeps content.
+///
+/// An `ask`'s reply (docs/supervisor.md) is framed as an answer: `asked: <question>` on
+/// the first line, so a reply names its question rather than leaning on call order,
+/// then the reply prefixed `source: ` when a client other than the operator sent it,
+/// as a sourced `User` turn is. Any other result leaves the bytes as they were.
 pub fn render_result(
     seq: u64,
     call_id: &CallId,
     raw: &RawResult,
     wire: &WireState,
-    source: Option<&str>,
+    reply: Option<AskReply<'_>>,
 ) -> UserPart {
     let (content, is_error) = match wire {
         WireState::Raw => (raw.content.clone(), raw.is_error),
@@ -152,13 +155,24 @@ pub fn render_result(
     UserPart::ToolResult {
         call_id: call_id.clone(),
         seq: Some(seq),
-        content: match source.filter(|_| !matches!(wire, WireState::Elided)) {
-            Some(source) => format!("[{seq}] {source}: {content}"),
+        content: match reply.filter(|_| !matches!(wire, WireState::Elided)) {
+            Some(AskReply { question, source }) => {
+                let from = source.map(|s| format!("{s}: ")).unwrap_or_default();
+                format!("[{seq}] asked: {question}\n{from}{content}")
+            }
             None => format!("[{seq}] {content}"),
         },
         is_error,
         images,
     }
+}
+
+/// What frames a result as the answer to an `ask`: the question, and who replied when
+/// it was not the operator.
+#[derive(Clone, Copy, Debug)]
+pub struct AskReply<'a> {
+    pub question: &'a str,
+    pub source: Option<&'a str>,
 }
 
 /// Fold the append-only log into dialect-neutral turns (docs/log-and-projection.md).
@@ -167,6 +181,20 @@ pub fn render_result(
 /// iteration, or other ambient input leaking into the output.
 pub fn project_semantic(log: &[LogEntry]) -> Vec<WireTurn> {
     let (boundaries, elided) = extract_boundaries(log);
+    // Each `ask`'s question by call id, so its reply can name it (`render_result`).
+    let questions: HashMap<CallId, String> = log
+        .iter()
+        .filter_map(|e| match &e.payload {
+            Payload::Assistant { output, .. } => output.tool_calls().ok(),
+            _ => None,
+        })
+        .flatten()
+        .filter(|call| call.name == crate::supervisor::ASK)
+        .filter_map(|call| {
+            let question = call.input.get("question")?.as_str()?.trim().to_string();
+            Some((call.id, question))
+        })
+        .collect();
     // Notification bodies by arrival `seq`, so a `Triage` can emit a block for each
     // notification it pinned (docs/inbox.md) without re-walking the log.
     let notifications: HashMap<Seq, &Notification> = log
@@ -288,13 +316,17 @@ pub fn project_semantic(log: &[LogEntry]) -> Vec<WireTurn> {
                 turns.push(WireTurn::Assistant(output.clone()));
             }
             Payload::ToolResult { call_id, raw, wire } => {
-                pending.push(render_result(
-                    entry.seq,
-                    call_id,
-                    raw,
-                    wire,
-                    entry.source.as_deref(),
-                ));
+                // A reply is the result a submission produced; an ask that ended
+                // without one (an interrupt, a refused call) renders as any result.
+                let reply = entry
+                    .submission_id
+                    .as_ref()
+                    .and_then(|_| questions.get(call_id))
+                    .map(|question| AskReply {
+                        question,
+                        source: entry.source.as_deref(),
+                    });
+                pending.push(render_result(entry.seq, call_id, raw, wire, reply));
             }
             // Marks are in the elided set (extract_boundaries inserts every
             // Boundary mark's own seq); this arm is only reachable for future

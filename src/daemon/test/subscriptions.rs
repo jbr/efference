@@ -243,7 +243,7 @@ async fn a_childs_question_wakes_the_parent() {
     let child = fixture.session("child");
     assert!(fixture.session("peer").pending_notifications().is_empty());
 
-    let wait = child.begin_ask("ask_1", "Which branch?".into(), 1, 1);
+    let mut wait = child.begin_ask("ask_1", "Which branch?".into(), 1, 1);
     wait_until("the question reached the parent", || {
         heard(&parent, |source, body, slot| {
             source == "child"
@@ -257,7 +257,10 @@ async fn a_childs_question_wakes_the_parent() {
     .await;
     assert!(fixture.session("peer").pending_notifications().is_empty());
 
+    // Take the reply as the loop does: dropping an unread reply resubmits it as a
+    // turn, which would race the idle this waits for.
     child.submit_turn(SubmittedTurn::new("main", "s1"));
+    assert!(wait.reply().await.is_some());
     drop(wait);
     wait_until("the parent heard the child move on", || {
         heard(&parent, |source, body, slot| {

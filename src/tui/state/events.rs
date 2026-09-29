@@ -28,7 +28,10 @@ impl<'a> InteractiveState<'a> {
                 // the request sends), so drop the echo carrying that `submission_id`. Keyed by
                 // id rather than by text — recall hands a queued turn back to be edited and
                 // re-sent, and a content match would then settle the wrong echo.
-                if matches!(entry.payload, Payload::User(_))
+                // A reply to an `ask` settles it the same way: the daemon puts it in the
+                // log as the call's result, carrying the submission's id, never as a
+                // `User` entry (docs/tui.md).
+                if matches!(entry.payload, Payload::User(_) | Payload::ToolResult { .. })
                     && let Some(id) = entry.submission_id.as_deref()
                 {
                     self.pending_turns.retain(|p| p.submission_id != id);
@@ -227,6 +230,7 @@ impl<'a> InteractiveState<'a> {
                 self.dirty = true;
             }
             TuiEvent::Recalled(withdrawn) => self.apply_recall(withdrawn),
+            TuiEvent::Ask(ask) => self.apply_ask(ask),
             TuiEvent::Uploaded { key, result } => self.upload_landed(key, result),
             TuiEvent::ClipboardImage(found) => {
                 self.clipboard_image = found;

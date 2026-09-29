@@ -8,6 +8,7 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- **`ask` in the TUI and `transcript`** (docs/tui.md, docs/control-api.md): a question is drawn as the assistant's prose with an *asked* mark and its reply as the operator's message; the transcript line reads it the same way; queued turns the ask recalled return to the composer; the session switcher confirms ending an `asking` session.
 - **`ask`** (docs/supervisor.md): a question to the operator that blocks like a tool call; the next submitted turn from any client is its reply. Queued turns are recalled when it starts, several asks are put one at a time, and `/state`, `settle`, subscriptions, push, and `dev stops` all read it. The preamble now sends questions through it; ending a turn means the work is done.
 - **The preamble says when a turn ends** (journal/2026-09-28-turn-persistence-and-a-false-reproduction.md):
   when the task is done, on a question only the operator can answer, or when something it was told proves untrue.

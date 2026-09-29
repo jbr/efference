@@ -746,7 +746,12 @@ wire verdict (`raw`, `elided`, `kept k/n lines: note`, or the triage failure), p
 how many images it carries — never its content. Calls that shared one assistant
 entry are labelled `seq.1`, `seq.2`, … in place of the bare seq, and each of their
 results opens with `for seq.n:`, so the pairing survives the spot and config
-entries that interleave them; a call alone in its entry keeps the bare seq. `notify`, `spot`,
+entries that interleave them; a call alone in its entry keeps the bare seq. An `ask`
+call is not a `call` line: it is an `asked` line carrying the question, with
+` (question n of m)` when its completion put more than one, and its result is a
+`user` line with the reply's text (opening with the `source: ` address when the reply
+was sourced) when the result entry carries a `submission_id`, or `result  not
+answered` when it does not (an interrupt, a malformed call). `notify`, `spot`,
 `config`, `process`, `mark`, `preamble` and `title` are one line each; a `triage`
 line appears only when the verdict pinned or dismissed a notification or the peek
 retried; telemetry renders to nothing. Every line's `seq` resolves through the

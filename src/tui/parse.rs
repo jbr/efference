@@ -57,6 +57,26 @@ pub(super) fn parse_processes(value: &serde_json::Value) -> Vec<BgProc> {
         .collect()
 }
 
+/// The `ask` topic's object: the question's call id, and the turns the daemon withdrew from
+/// the queue when it began.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PendingAsk {
+    pub call_id: String,
+    pub recalled: Vec<crate::client::WithdrawnTurn>,
+}
+
+/// Parse the `ask` topic. `null` — the cleared value — is no ask. The question's text is
+/// not read: the transcript draws it from the committed call.
+pub(super) fn parse_ask(ask: &serde_json::Value) -> Option<PendingAsk> {
+    Some(PendingAsk {
+        call_id: ask.get("call_id")?.as_str()?.to_string(),
+        recalled: ask
+            .get("recalled")
+            .and_then(|r| serde_json::from_value(r.clone()).ok())
+            .unwrap_or_default(),
+    })
+}
+
 /// Parse the `gate` topic's object into a [`PendingGate`]. `null` — the topic's
 /// cleared value — is no gate.
 pub(super) fn parse_pending_gate(pending: &serde_json::Value) -> Option<PendingGate> {

@@ -72,6 +72,28 @@ impl Screenplay<'_> {
         }))
     }
 
+    /// The daemon delivering the **oldest pending echo** as the reply to an `ask`: a
+    /// `ToolResult` for `call_id` carrying that submission's id and text — never a `User`
+    /// entry (docs/tui.md). `source` is what a non-operator client's reply carries.
+    pub(crate) fn commit_reply(&mut self, call_id: &str, source: Option<&str>) -> &mut Self {
+        let pending = self
+            .state
+            .pending_turns
+            .first()
+            .cloned()
+            .expect("a pending turn to deliver");
+        let seq = self.next_seq;
+        self.next_seq += 1;
+        self.event(TuiEvent::Entry(LogEntry {
+            seq,
+            turn: 1,
+            at: Timestamp(0),
+            submission_id: Some(pending.submission_id),
+            source: source.map(str::to_string),
+            payload: Payload::tool_result(call_id, RawResult::text(pending.text), WireState::Raw),
+        }))
+    }
+
     /// A committed assistant turn: markdown prose plus zero or more tool calls.
     pub(crate) fn assistant(&mut self, text: &str, calls: Vec<ToolCall>) -> &mut Self {
         self.commit(Payload::Assistant {

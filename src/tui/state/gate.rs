@@ -153,6 +153,32 @@ impl<'a> InteractiveState<'a> {
         self.mark_reproject();
     }
 
+    /// Take back the turns an `ask` withdrew from the queue, once per ask (docs/tui.md). Only
+    /// those this client submitted come back — a submission id in `pending_turns` — so a
+    /// restarted client, or another client's queue, restores nothing. What comes back goes
+    /// through [`apply_recall`](Self::apply_recall), as a recall the operator asked for would.
+    pub(in crate::tui) fn apply_ask(&mut self, ask: Option<crate::tui::parse::PendingAsk>) {
+        let Some(ask) = ask else {
+            return;
+        };
+        if self.ask_restored.as_deref() == Some(ask.call_id.as_str()) {
+            return;
+        }
+        self.ask_restored = Some(ask.call_id);
+        let own: Vec<_> = ask
+            .recalled
+            .into_iter()
+            .filter(|t| {
+                self.pending_turns
+                    .iter()
+                    .any(|p| p.submission_id == t.submission_id)
+            })
+            .collect();
+        if !own.is_empty() {
+            self.apply_recall(own);
+        }
+    }
+
     /// Handle a composer submission. When a gate is pending, the text resolves it
     /// with three-valued semantics — empty approves,
     /// `.abort` aborts, anything else redirects the model. Otherwise it's a normal

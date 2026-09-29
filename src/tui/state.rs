@@ -527,6 +527,9 @@ pub(super) struct InteractiveState<'a> {
     /// Keyed by `submission_id`, not by text: recall hands a queued turn back to be edited and
     /// re-sent, at which point a content match would settle the wrong echo.
     pub pending_turns: Vec<SubmittedTurn>,
+    /// The `call_id` of the last `ask` whose recalled turns were taken back into the
+    /// composer, so a re-delivered topic frame restores them once (docs/tui.md).
+    pub ask_restored: Option<String>,
     /// The pending tool-approval gate, if any — the `gate` state topic
     /// (docs/control-api.md).
     pub pending_gate: Option<PendingGate>,

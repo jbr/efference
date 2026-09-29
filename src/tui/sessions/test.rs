@@ -22,6 +22,7 @@ fn only_a_session_with_something_to_lose_is_confirmed() {
         ("running", 0, "busy is mid-turn"),
         ("gated", 0, "busy is holding a call at a gate"),
         ("stalled", 0, "busy stalled and has not been answered"),
+        ("asking", 0, "busy is waiting on your answer to a question"),
         ("idle", 1, "busy holds 1 background process"),
         ("idle", 3, "busy holds 3 background processes"),
         (

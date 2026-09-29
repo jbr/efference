@@ -111,6 +111,12 @@ impl CallIndex {
         }
     }
 
+    /// The whole entry carrying a call's result — for the parts of it a result's
+    /// body does not include (`source`, `submission_id`).
+    fn result_entry<'l>(&self, log: &'l [LogEntry], call_id: &str) -> Option<&'l LogEntry> {
+        log.get(*self.result_at.get(call_id)?)
+    }
+
     fn spot<'l>(&self, log: &'l [LogEntry], call_id: &str) -> Option<&'l crate::log::Spot> {
         match &log.get(*self.spot_at.get(call_id)?)?.payload {
             Payload::Spot(spot) => Some(spot),
@@ -228,10 +234,18 @@ pub(crate) fn entry_nodes(
                         markdown(&prose),
                     ));
                 }
-                for call in output.tool_calls().unwrap_or_default() {
+                let calls = output.tool_calls().unwrap_or_default();
+                for (i, call) in calls.iter().enumerate() {
+                    // A question put to the operator is drawn as the assistant's prose
+                    // and the operator's reply, not as a call (docs/tui.md).
+                    if let Some(question) = crate::supervisor::ask_of_call(&calls, i) {
+                        let reply = index.result_entry(log, call.id.0.as_str());
+                        nodes.extend(ask::ask_nodes(question, reply));
+                        continue;
+                    }
                     let result = index.result(log, call.id.0.as_str());
                     let is_pending = result.is_none() && gate.call == Some(call.id.0.as_str());
-                    nodes.push(call_entry(&call));
+                    nodes.push(call_entry(call));
                     // Reading order is call → what the spotter made of it → what came
                     // back. The harness's own lines about a call are their own entries
                     // (`EntryKind::Annotation`), never children of the call: they are a
@@ -260,12 +274,12 @@ pub(crate) fn entry_nodes(
                         nodes.push(gate_affordance());
                     }
                     if let Some((seq, raw, wire)) = result {
-                        nodes.push(result_entry(&call, seq, raw, wire, view));
+                        nodes.push(result_entry(call, seq, raw, wire, view));
                         // The distiller's note is *about* the result, not part of it
                         // — the same rung distinction the spotter's verdict gets — so
                         // it is its own entry rather than a trailing line boxed in
                         // with the output (docs/redaction-fork.md).
-                        nodes.extend(distillate_note(&call, raw, wire, view));
+                        nodes.extend(distillate_note(call, raw, wire, view));
                     }
                 }
             }
@@ -354,6 +368,11 @@ pub(crate) fn tail_nodes(
     // dropped what the operator was watching arrive for the first (docs/control-api.md
     // scopes every delta by content block, which is what makes the collection possible).
     for call in live.calls() {
+        // An `ask` is drawn as prose once committed (docs/tui.md); its arguments
+        // arriving as a call would show the plumbing.
+        if call.name == crate::supervisor::ASK {
+            continue;
+        }
         nodes.push(live_call_entry(call));
     }
     for (call_id, buf) in &live.tools {
@@ -628,6 +647,7 @@ fn line_count(body: &[DocumentNode<'static>]) -> String {
 #[cfg(test)]
 mod test;
 
+mod ask;
 mod incremental;
 mod nodes;
 mod partial;

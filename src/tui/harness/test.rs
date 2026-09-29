@@ -58,6 +58,7 @@ fn replay_fixture() -> Vec<crate::log::LogEntry> {
     crate::persist::load(&path).expect("the replay fixture loads")
 }
 
+mod ask;
 mod attachments;
 mod lifecycle;
 mod navigation;

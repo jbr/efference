@@ -168,6 +168,10 @@ pub(crate) enum TuiEvent {
     /// dequeued the turn first — because the server's answer is authoritative; the composer
     /// splices exactly this and nothing else.
     Recalled(Vec<crate::client::WithdrawnTurn>),
+    /// The `ask` topic (docs/control-api.md): `None` while no question is pending. Its
+    /// `recalled` turns are the queue the daemon withdrew when the question began, for the
+    /// composer to take back (docs/tui.md).
+    Ask(Option<parse::PendingAsk>),
     /// A staged attachment's upload answered (docs/inbox.md): what the daemon stored, keyed
     /// by the staging key, or why it could not.
     Uploaded {

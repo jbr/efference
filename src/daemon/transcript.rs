@@ -16,7 +16,7 @@ use crate::log::{
 };
 use crate::project::distillate;
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Write as _;
 
 /// Widest tag, which sets the column the bodies start in.
@@ -54,6 +54,8 @@ pub(crate) fn render(entries: &[LogEntry]) -> String {
     // line names its call's label so the pairing survives the interleaving; a call
     // that was alone in its entry needs no label — the entry above it is the call.
     let mut siblings: HashMap<CallId, String> = HashMap::new();
+    // Calls that were `ask`s: their results are the operator's reply, not a tool's.
+    let mut asks: HashSet<CallId> = HashSet::new();
     for entry in entries {
         if let Payload::Title(t) = &entry.payload {
             if title == Some(t.text.as_str()) {
@@ -61,7 +63,7 @@ pub(crate) fn render(entries: &[LogEntry]) -> String {
             }
             title = Some(&t.text);
         }
-        for Line { label, tag, body } in lines(entry, &mut siblings) {
+        for Line { label, tag, body } in lines(entry, &mut siblings, &mut asks) {
             let label = label.unwrap_or_else(|| entry.seq.to_string());
             block(&mut out, &label, tag, &body);
         }
@@ -98,7 +100,11 @@ fn block(out: &mut String, label: &str, tag: &str, body: &str) {
 
 /// The lines one entry renders as. Most entries are one; an assistant turn is one
 /// per text block and per call; some are none.
-fn lines(entry: &LogEntry, siblings: &mut HashMap<CallId, String>) -> Vec<Line> {
+fn lines(
+    entry: &LogEntry,
+    siblings: &mut HashMap<CallId, String>,
+    asks: &mut HashSet<CallId>,
+) -> Vec<Line> {
     match &entry.payload {
         Payload::User(blocks) => {
             // A sourced turn opens its line with the same `source:` address it
@@ -137,7 +143,20 @@ fn lines(entry: &LogEntry, siblings: &mut HashMap<CallId, String>) -> Vec<Line> 
             v.extend(prose.into_iter().map(|text| line("assistant", text)));
             let several = calls.len() > 1;
             for (i, call) in calls.iter().enumerate() {
-                let mut l = line("call", call_line(call));
+                // A question put to the operator reads as a turn ending: its text, not
+                // the call (docs/control-api.md).
+                let mut l = match crate::supervisor::ask_of_call(&calls, i) {
+                    Some((question, n, of)) => {
+                        asks.insert(call.id.clone());
+                        let place = if of > 1 {
+                            format!(" (question {n} of {of})")
+                        } else {
+                            String::new()
+                        };
+                        line("asked", format!("{question}{place}"))
+                    }
+                    None => line("call", call_line(call)),
+                };
                 if several {
                     let label = format!("{}.{}", entry.seq, i + 1);
                     siblings.insert(call.id.clone(), label.clone());
@@ -146,6 +165,19 @@ fn lines(entry: &LogEntry, siblings: &mut HashMap<CallId, String>) -> Vec<Line> 
                 v.push(l);
             }
             v
+        }
+        // An ask's result is the operator's reply when a submission produced it, and
+        // reads like the `User` line a sourced turn gets; the error results (an
+        // interrupt, a malformed call) carry no submission and say so.
+        Payload::ToolResult { call_id, raw, .. } if asks.contains(call_id) => {
+            if entry.submission_id.is_none() {
+                return vec![line("result", "not answered")];
+            }
+            let body = match entry.source.as_deref() {
+                Some(source) => format!("{source}: {}", raw.content),
+                None => raw.content.clone(),
+            };
+            vec![line("user", body)]
         }
         Payload::ToolResult { call_id, raw, wire } => {
             let mut body = result(raw, wire);

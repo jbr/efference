@@ -136,6 +136,7 @@ fn decode_frame(
         Some("output") => return decode_delta(kind, data, tx),
         Some("state") => match kind {
             "gate" => Some(send(TuiEvent::Gate(parse::parse_pending_gate(data)))),
+            "ask" => Some(send(TuiEvent::Ask(parse::parse_ask(data)))),
             "processes" => Some(send(TuiEvent::Processes(parse::parse_processes(data)))),
             // A null `usage` topic (no requests yet) has nothing to render; the status
             // bar keeps its absent state.

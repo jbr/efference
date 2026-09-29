@@ -301,3 +301,52 @@ fn sibling_calls_are_numbered_and_their_results_name_them() {
          \x20     7 result    ok 1 B, raw\n"
     );
 }
+
+/// A pending or answered `ask` reads as the assistant's question and the operator's
+/// reply, not as a call and a result (docs/control-api.md); the position shows only
+/// when there is more than one question.
+#[test]
+fn an_ask_reads_as_a_question_and_its_reply() {
+    let ask = |id: &str, q: &str| ToolCall::new("ask", id, serde_json::json!({ "question": q }));
+    let mut reply = entry(
+        3,
+        Payload::tool_result("toolu_a", RawResult::text("yes, go"), WireState::Raw),
+    );
+    reply.submission_id = Some("sub-1".into());
+    let mut sourced = entry(
+        6,
+        Payload::tool_result("toolu_b", RawResult::text("no"), WireState::Raw),
+    );
+    sourced.submission_id = Some("sub-2".into());
+    sourced.source = Some("web".into());
+    let log = [
+        entry(2, assistant("Ready.", vec![ask("toolu_a", "Ship it?")])),
+        reply,
+        entry(
+            5,
+            assistant(
+                "",
+                vec![ask("toolu_b", "First?"), ask("toolu_c", "Second?")],
+            ),
+        ),
+        sourced,
+        entry(
+            7,
+            Payload::tool_result(
+                "toolu_c",
+                RawResult::error("ask interrupted by user"),
+                WireState::Raw,
+            ),
+        ),
+    ];
+    assert_eq!(
+        render(&log),
+        "\x20     2 assistant Ready.\n\
+         \x20     2 asked     Ship it?\n\
+         \x20     3 user      yes, go\n\
+         \x20   5.1 asked     First? (question 1 of 2)\n\
+         \x20   5.2 asked     Second? (question 2 of 2)\n\
+         \x20     6 user      web: no\n\
+         \x20     7 result    not answered\n"
+    );
+}

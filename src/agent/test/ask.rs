@@ -282,8 +282,9 @@ async fn run_call_skips_the_cascade_and_carries_the_reply() {
     assert!(shared.asking().is_none());
 }
 
-/// The reply reaches the wire as the tool result, opened with the submitter's label
-/// when it has one; an operator reply (no source) adds no prefix.
+/// The reply reaches the wire as the tool result, naming its question and opened with
+/// the submitter's label when it has one; an operator reply (no source) adds no label,
+/// and a result no submission produced (an interrupt) is not framed as a reply.
 #[test]
 fn the_reply_projects_as_a_result_with_the_submitters_label() {
     use crate::project::ApiBlock;
@@ -314,7 +315,7 @@ fn the_reply_projects_as_a_result_with_the_submitters_label() {
         [ApiBlock::ToolResult { content, .. }] => content.as_text().unwrap().to_string(),
         other => panic!("{other:?}"),
     };
-    assert_eq!(text(&shared), "[1] web: the second");
+    assert_eq!(text(&shared), "[1] asked: Which?\nweb: the second");
 
     let plain = session();
     plain
@@ -327,16 +328,40 @@ fn the_reply_projects_as_a_result_with_the_submitters_label() {
         )
         .unwrap();
     plain
-        .append(
+        .append_submission(
             1,
             Payload::tool_result(
                 call.id.clone(),
                 RawResult::text("the second"),
                 WireState::Raw,
             ),
+            "sub".into(),
+            None,
         )
         .unwrap();
-    assert_eq!(text(&plain), "[1] the second");
+    assert_eq!(text(&plain), "[1] asked: Which?\nthe second");
+
+    let unanswered = session();
+    unanswered
+        .append(
+            1,
+            Payload::Assistant {
+                output: AssistantOutput::from_legacy_messages(vec![], vec![], vec![call.clone()]),
+                upstream_failure: None,
+            },
+        )
+        .unwrap();
+    unanswered
+        .append(
+            1,
+            Payload::tool_result(
+                call.id.clone(),
+                RawResult::error("ask interrupted by user"),
+                WireState::Raw,
+            ),
+        )
+        .unwrap();
+    assert_eq!(text(&unanswered), "[1] ask interrupted by user");
 }
 
 /// `ask` is advertised and cataloged like `wait`, with the question required.
