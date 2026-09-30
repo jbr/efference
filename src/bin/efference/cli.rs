@@ -330,9 +330,9 @@ pub(crate) fn session_listing() -> String {
 /// to a session.
 #[derive(clap::Args, Default, PartialEq, Eq)]
 pub(crate) struct SessionFlags {
-    /// Model for the agent, as `<connection>/<native model>` or a native id on the
-    /// host's default connection. Omitted, the host's `[defaults].model` applies
-    /// (~/.efference/config.toml).
+    /// Model for the agent, as `<connection>/<native model>`. Omitted, past
+    /// picks apply (the project mode, else the system-wide aggregate), else
+    /// creation refuses and the new-session form names one.
     #[arg(long)]
     pub(crate) model: Option<String>,
     /// Model for the spotter permission rung, selected like --model.

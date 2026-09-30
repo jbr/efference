@@ -125,7 +125,14 @@ pub(in crate::tui) async fn new_session_context(
         .inference_inventory()
         .await
         .map_err(|e| format!("reading the host's connections: {e}"))?;
-    Ok(crate::tui::session_form::NewSessionContext { cwd, connections })
+    // Best-effort like every history read: an unreadable store is an empty
+    // list, not a form that never opens.
+    let recent_picks = client.recent_picks(&cwd, None).await.unwrap_or_default();
+    Ok(crate::tui::session_form::NewSessionContext {
+        cwd,
+        connections,
+        recent_picks,
+    })
 }
 
 /// `POST /sessions` from the form's draft. The environment is captured here and

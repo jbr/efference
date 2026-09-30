@@ -3,8 +3,9 @@
 
 use super::*;
 
-/// The first-run path with a key already in the shell: no secret prompt, a
-/// live model menu, and a file whose bytes are pinned.
+/// The first-run path with a key already in the shell: no secret prompt, no
+/// model question — the new-session form names the current model — and a file
+/// whose bytes are pinned.
 #[tokio::test]
 async fn first_run_with_key_in_environment() {
     let probe = Table {
@@ -20,8 +21,6 @@ async fn first_run_with_key_in_environment() {
             Answer::Pick("An environment variable"),
             Answer::Type(""),
             Answer::No,
-            // The main model, asked once on the way out; no other role is.
-            Answer::Pick("claude-sonnet-4-5"),
         ],
         &probe,
         "",
@@ -30,31 +29,21 @@ async fn first_run_with_key_in_environment() {
     let draft = draft.unwrap();
     assert!(script.said("ANTHROPIC_API_KEY is set in this shell"));
     assert!(script.said("accepted the key (test key)"));
-    assert!(script.said("claude-sonnet-4-5: 200k context, 64k output"));
     assert!(
         !script
             .transcript
             .iter()
             .any(|line| line.starts_with("secret:"))
     );
-    assert!(
-        draft
-            .decided_default(DefaultRole::Model)
-            .flatten()
-            .is_some_and(|model| model.starts_with("anthropic/")),
-        "{:?}",
-        draft.decided_default(DefaultRole::Model)
-    );
+    assert_eq!(draft.decided_default(DefaultRole::Spotter), None);
+    assert_eq!(draft.decided_default(DefaultRole::Triage), None);
     assert_eq!(
         render("", &draft).unwrap(),
         r#"# efference host configuration, written by `efference setup`.
 # Connections name a provider and where its credential comes from; the
 # credential itself is never in this file. Sessions select a model as
-# <connection>/<native model>; [defaults] fills what a session omits.
+# <connection>/<native model>; [defaults] names the spotter and triage.
 # Reference: docs/operating.md.
-
-[defaults]
-model = "anthropic/claude-sonnet-4-5"
 
 [connections.anthropic]
 provider = "anthropic"
@@ -83,8 +72,6 @@ async fn pasted_key_is_checked_and_not_recorded() {
             Answer::Yes,
             Answer::Secret("sk-or-pasted"),
             Answer::No,
-            // No key is left to list models with, so the id is typed.
-            Answer::Type("anthropic/claude-sonnet-4-5"),
         ],
         &probe,
         "",
@@ -97,12 +84,9 @@ async fn pasted_key_is_checked_and_not_recorded() {
     assert!(!text.contains("sk-or-pasted"));
     assert!(text.contains(r#"[connections.router]"#));
     assert!(text.contains(r#"auth = { kind = "env", key = "MY_ROUTER_KEY" }"#));
-    // A key pasted for the check alone is not retained, so the model menu had
-    // nothing to list with and the typed id is what was written.
-    assert!(
-        text.contains(r#"model = "router/anthropic/claude-sonnet-4-5""#),
-        "{text}"
-    );
+    // A first run ends with no default model: the new-session form names the
+    // current one.
+    assert!(!text.contains("\n[defaults]"), "{text}");
 }
 
 /// A rejected key is said, and declining to keep the connection cancels.
@@ -128,11 +112,10 @@ async fn rejected_key_can_cancel() {
     assert!(script.said("rejected the key: 401: bad key"));
 }
 
-/// A model the endpoint does not know is said and can be kept. Adding a
-/// connection asks for no model, so this is the defaults editor's question, and
-/// a typed id that fails its check is still the operator's to keep.
+/// A rejected key can still record the connection: the first run keeps it and
+/// ends with no default model, and the new-session form names the current one.
 #[tokio::test]
-async fn an_unknown_model_is_said_and_can_be_kept() {
+async fn a_rejected_key_kept_anyway_records_no_default() {
     let probe = Table {
         env: BTreeMap::from([("OPENAI_API_KEY".to_string(), "sk-wrong".to_string())]),
         ..Default::default()
@@ -146,19 +129,18 @@ async fn an_unknown_model_is_said_and_can_be_kept() {
             // The key is rejected and the connection kept anyway.
             Answer::Yes,
             Answer::No,
-            Answer::Type("gpt-5.6"),
-            Answer::Yes,
         ],
         &probe,
         "",
     )
     .await;
     let draft = draft.unwrap();
-    assert!(script.said("does not know gpt-5.6"));
-    assert_eq!(
-        draft.decided_default(DefaultRole::Model),
-        Some(Some("openai/gpt-5.6"))
-    );
+    assert!(script.said("rejected the key"));
+    assert_eq!(draft.decided_default(DefaultRole::Spotter), None);
+    assert_eq!(draft.decided_default(DefaultRole::Triage), None);
+    let text = render("", &draft).unwrap();
+    assert!(text.contains("[connections.openai]"), "{text}");
+    assert!(!text.contains("\n[defaults]"), "{text}");
 }
 
 /// The paste path: the key is checked, kept under `inference:<connection>`,
@@ -178,8 +160,6 @@ async fn a_pasted_key_is_kept_in_the_store_and_the_file_names_only_the_kind() {
             Answer::Pick("Paste it now, kept in the OS keychain"),
             Answer::Secret("sk-pasted"),
             Answer::No,
-            // The stored key drives the model menu too.
-            Answer::Pick("claude-sonnet-4-5"),
         ],
         &probe,
         "",
@@ -281,8 +261,7 @@ fn keychain_is_shown_unavailable_without_a_store() {
 }
 
 /// A decision-model provider alone is not a complete config: the flow says so
-/// and asks for another connection, and the main-model question never offers
-/// the decision-model connection.
+/// and asks for another connection. A first run ends with no default model.
 #[tokio::test]
 async fn a_typesafe_only_config_asks_for_a_provider_for_the_agent() {
     let probe = Table {
@@ -306,8 +285,6 @@ async fn a_typesafe_only_config_asks_for_a_provider_for_the_agent() {
             Answer::Pick("An environment variable"),
             Answer::Type(""),
             Answer::No,
-            // One connection can take a turn, so there is no connection menu.
-            Answer::Pick("claude-sonnet-4-5"),
         ],
         &probe,
         "",
@@ -315,12 +292,11 @@ async fn a_typesafe_only_config_asks_for_a_provider_for_the_agent() {
     .await;
     let draft = draft.unwrap();
     assert!(script.said("serves the permission spotter only"));
-    assert_eq!(
-        draft.decided_default(DefaultRole::Model),
-        Some(Some("anthropic/claude-sonnet-4-5"))
-    );
+    assert_eq!(draft.decided_default(DefaultRole::Spotter), None);
+    assert_eq!(draft.decided_default(DefaultRole::Triage), None);
     let text = render("", &draft).unwrap();
     assert!(text.contains("[connections.typesafe]"), "{text}");
+    assert!(!text.contains("\n[defaults]"), "{text}");
     assert!(
         crate::inference::InferenceConfig::from_toml(&text).is_ok(),
         "{text}"

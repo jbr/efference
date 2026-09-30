@@ -289,7 +289,6 @@ impl Change {
 /// Which `[defaults]` key a [`Change::SetDefaultRole`] targets.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DefaultRole {
-    Model,
     Spotter,
     Triage,
 }
@@ -297,7 +296,6 @@ pub enum DefaultRole {
 impl DefaultRole {
     pub(crate) fn key(self) -> &'static str {
         match self {
-            DefaultRole::Model => "model",
             DefaultRole::Spotter => "spotter",
             DefaultRole::Triage => "triage",
         }
@@ -370,7 +368,6 @@ pub struct ExistingConnection {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Existing {
     pub connections: BTreeMap<String, ExistingConnection>,
-    pub default_model: Option<String>,
     pub default_spotter: Option<String>,
     pub default_triage: Option<String>,
 }
@@ -453,20 +450,18 @@ impl Existing {
         };
         Ok(Self {
             connections,
-            default_model: default_of("model"),
             default_spotter: default_of("spotter"),
             default_triage: default_of("triage"),
         })
     }
 
-    /// The connection names `[defaults]` points at, for the three roles that
+    /// The connection names `[defaults]` points at, for the two roles that
     /// name `connection`.
     pub(crate) fn defaults_naming<'a>(
         &'a self,
         connection: &'a str,
     ) -> impl Iterator<Item = DefaultRole> + 'a {
         [
-            (DefaultRole::Model, &self.default_model),
             (DefaultRole::Spotter, &self.default_spotter),
             (DefaultRole::Triage, &self.default_triage),
         ]

@@ -97,9 +97,6 @@ fn request(root: &Path, id: &str, effort: Option<&str>) -> SessionRequest {
     crate::api::seed_codex_catalog(crate::api::Provider::OpenAICodex, &account);
     let config = crate::inference::InferenceConfig::from_toml(
         r#"
-[defaults]
-model = "oai/gpt-5.6"
-
 [connections.oai]
 provider = "openai-codex"
 auth = { kind = "codex-cache" }
@@ -122,7 +119,7 @@ auth = { kind = "codex-cache" }
         &std::sync::Arc::new(crate::secrets::Secrets::in_memory()),
     )
     .unwrap()
-    .resolve(None, None, None)
+    .resolve(Some("oai/gpt-5.6"), None, None)
     .unwrap();
     let base_env = crate::env_table::EnvSnapshot::new(
         ["HOME", "PATH"]
@@ -234,7 +231,6 @@ fn request_for(base: &str, root: &Path, id: &str, temperature: Option<u8>) -> Se
     let config = crate::inference::InferenceConfig::from_toml(&format!(
         r#"
 [defaults]
-model = "edge/m"
 spotter = "edge/m"
 
 [connections.edge]
@@ -260,7 +256,7 @@ auth = {{ kind = "env", key = "EFFERENCE_BOOT_TEST_KEY" }}
         &std::sync::Arc::new(crate::secrets::Secrets::in_memory()),
     )
     .unwrap()
-    .resolve(None, None, None)
+    .resolve(Some("edge/m"), None, None)
     .unwrap();
     SessionRequest {
         cwd: root.to_path_buf(),

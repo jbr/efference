@@ -4,9 +4,8 @@
 //! pick (`SelectionSource::Request`), never an inherited default, so the
 //! default cannot reinforce itself. Two reads consume it: the hierarchical
 //! model default in `resolve_main`'s omitted branch (project mode past a mass
-//! threshold, else the configured `[defaults].model`, else the system-wide
-//! aggregate), and the usage-ordered recent menu in every model picker, scoped
-//! to the selected connection.
+//! threshold, else the system-wide aggregate), and the usage-ordered recent
+//! menu in every model picker, scoped to the selected connection.
 //!
 //! One exponential decay (half-life 30 days) serves both reads: lifetime counts
 //! would pin a stale default on a churny model distribution, and the menu
@@ -205,6 +204,33 @@ impl History {
             .unwrap_or_default()
     }
 
+    /// The picks across all connections, most decayed weight first with project
+    /// picks before aggregate ones — the list the connection picker shows, so
+    /// one menu covers every provider without opening each connection's own
+    /// recent menu first. Capped like [`Self::recent`]: memory, not the domain.
+    pub fn recent_all(&self, scope: &Scope, now: i64, limit: usize) -> Vec<Candidate> {
+        let picks = self.picks();
+        let mut candidates = aggregate(picks.iter().collect(), None, now);
+        candidates.sort_by(|a, b| {
+            let a_project = scope.matches(&a.cwd, &a.config_key);
+            let b_project = scope.matches(&b.cwd, &b.config_key);
+            b_project.cmp(&a_project).then(
+                b.mass
+                    .partial_cmp(&a.mass)
+                    .unwrap_or(std::cmp::Ordering::Equal),
+            )
+        });
+        candidates
+            .into_iter()
+            .map(|ranked| Candidate {
+                connection: ranked.connection,
+                model: ranked.model,
+                mass: ranked.mass,
+            })
+            .take(limit)
+            .collect()
+    }
+
     /// The models picked on `connection`, most decayed weight first, project
     /// picks before aggregate ones. The typed-ID escape hatch stays in every
     /// picker, so the menu is capped: it offers memory, not the domain.
@@ -239,8 +265,7 @@ impl History {
 
     /// The hierarchical default for `scope`: the project mode past
     /// [`PROJECT_MASS_THRESHOLD`], else the system-wide aggregate, else
-    /// nothing — and then the configured `[defaults].model` applies as today
-    /// (which always beats inferred history when it is set).
+    /// nothing (docs/transport.md).
     pub fn default(&self, scope: &Scope, now: i64) -> Option<Candidate> {
         let picks = self.picks();
         let project: Vec<&Pick> = picks

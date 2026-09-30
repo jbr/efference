@@ -441,8 +441,9 @@ socket root. It is a module rather than a closure inside the full-screen loop pr
 because the inline container has no `ui_loop` and still has to preview and create, and one
 dispatcher is what keeps the two surfaces from drifting.
 
-Three host-owned inputs meet in the form and nowhere else: the connection inventory, the
-effective draft `QUERY /sessions` recomputes, and the creation it finally posts.
+Four host-owned inputs meet in the form and nowhere else: the connection inventory,
+the recent picks across all connections, the effective draft `QUERY /sessions`
+recomputes, and the creation it finally posts.
 `session_form.rs` holds the operator's raw overrides and the host's latest answer about
 them side by side. The answer never replaces the draft — folding resolved values back in
 would turn every inherited default into an explicit override on the first preview — and
@@ -467,12 +468,15 @@ edited: editing it would send an environment captured somewhere else. A configur
 capture an environment at a given directory, and the `efference tui --new` entry point, are
 in backlog/new-session-form.md.
 
-Choosing a model opens the native-ID editor: this build compiles no catalog of suggestions, and a
-menu of ids the build knows would be the stale half of a problem the harness no longer has
-elsewhere — the Codex arm's capabilities come from the provider's own catalog
-(docs/transport.md), so a model it published after this build resolves as well as one it
-published before. What the form will offer instead is the host's own list per connection,
-which the discovery service builds from that same catalog
+Choosing a connection offers the recent picks across all connections first —
+past picks as `connection/model` rows, most decayed weight first — then each
+connection's own recent models, then the typed-ID editor. This build compiles
+no catalog of suggestions, and a menu of ids the build knows would be the stale
+half of a problem the harness no longer has elsewhere — the Codex arm's
+capabilities come from the provider's own catalog (docs/transport.md), so a
+model it published after this build resolves as well as one it published
+before. What the form will offer beside history is the host's own list per
+connection, which the discovery service builds from that same catalog
 (backlog/session-model-discovery.md).
 
 Creating switches to the new session, the same one-cursor-per-handshake switch `⏎`

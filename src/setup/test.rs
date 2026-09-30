@@ -258,7 +258,7 @@ fn the_handoff_names_the_cost_and_a_decline_says_where_to_go() {
         offer_project_setup(&mut script, "~/code/app", None).unwrap(),
         Some(Surface::Terminal)
     );
-    assert!(script.said("your default model"));
+    assert!(script.said("you'll pick the model in the form"));
 
     let mut script = Script::new(vec![Answer::Pick("In the browser")]);
     assert_eq!(

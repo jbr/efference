@@ -1,7 +1,8 @@
 //! The questions, in order (docs/operating.md). One connection per pass of the
-//! loop: provider, name, credential source; then whether to add another; then
-//! the model sessions default to. The spotter and triage roles are not asked:
-//! each has a default that runs, and the defaults editor reaches them later.
+//! loop: provider, name, credential source; then whether to add another. No
+//! role is asked: the main model has no default (the new-session form names
+//! the current one), and the spotter and triage each have a default that runs
+//! — the defaults editor reaches those two later.
 //!
 //! What is checked live depends on what the flow can see. A key that is in this
 //! shell's environment is checked without asking. One that is not can be pasted
@@ -48,11 +49,9 @@ pub async fn run<P: Prompter, Q: Probe>(
             );
             add_connections(prompter, probe, existing, &mut draft).await?;
         }
-        // Adding a connection says nothing about which model sessions default
-        // to; that is asked once here so a first run does not end with a file no
-        // session can use (docs/operating.md).
-        let added = draft.added_connections();
-        super::defaults::first_run(prompter, probe, &added, &mut draft).await?;
+        // A first run ends with no default model: the new-session form names
+        // the current one, prefilled from past picks where they apply
+        // (docs/operating.md).
         Ok(draft)
     } else {
         super::manage::run(prompter, probe, existing).await

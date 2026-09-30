@@ -131,6 +131,7 @@ pub fn run() -> io::Result<()> {
     let mut form = Form::new(NewSessionContext {
         cwd: std::env::current_dir().unwrap_or_default(),
         connections: Vec::new(),
+        recent_picks: Vec::new(),
     });
     let mut viewport = Inline::open(&form)?;
     let outcome = (|| {

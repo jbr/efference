@@ -13,16 +13,16 @@
 use super::*;
 
 impl DefaultRole {
-    /// The three roles in the order they are offered, which is the order they
-    /// matter: a session with no main model cannot run at all, one with no
-    /// spotter falls back to the provider's cheap band, and one with no triage
-    /// shares the main client.
-    pub(super) const ALL: [Self; 3] = [Self::Model, Self::Spotter, Self::Triage];
+    /// The two roles in the order they are offered, which is the order they
+    /// matter: one with no spotter falls back to the provider's cheap band,
+    /// and one with no triage shares the main client. The main model has no
+    /// default: past picks answer the omitted branch, else the session form
+    /// names one (docs/transport.md).
+    pub(super) const ALL: [Self; 2] = [Self::Spotter, Self::Triage];
 
     /// What this role is called where a person reads it.
     pub(super) fn label(self) -> &'static str {
         match self {
-            Self::Model => "Main model",
             Self::Spotter => "Spotter",
             Self::Triage => "Triage",
         }
@@ -32,67 +32,16 @@ impl DefaultRole {
     /// the key name, since `spotter` and `triage` name nothing a new reader knows.
     pub(super) fn purpose(self) -> &'static str {
         match self {
-            Self::Model => "what a session runs when it names no model",
             Self::Spotter => "reviews tool calls the permission rules did not clear",
             Self::Triage => "focuses tool output; shares the main model when unset",
         }
     }
 }
 
-/// The first-run visit: the main model alone, asked once after the connections
-/// are added, so a run does not end with a file no session can use. Not
-/// skippable, and no other role is walked: the spotter and triage each have a
-/// default that runs, and a new user cannot yet know what either is
-/// (docs/operating.md). The management list reaches all three later.
-pub(super) async fn first_run<P: Prompter, Q: Probe>(
-    prompter: &mut P,
-    probe: &Q,
-    connections: &BTreeMap<String, ExistingConnection>,
-    draft: &mut Draft,
-) -> Result<(), Cancelled> {
-    // Only a connection that can take a turn can hold the main model.
-    let agents: BTreeMap<String, ExistingConnection> = connections
-        .iter()
-        .filter(|(_, connection)| serves_inference(connection))
-        .map(|(name, connection)| (name.clone(), connection.clone()))
-        .collect();
-    if agents.is_empty() {
-        return Ok(());
-    }
-    let name = pick_connection(prompter, &agents)?;
-    let connection = &agents[&name];
-    let key = readable_key(probe, &name, connection);
-    let model = flow::choose_model(
-        prompter,
-        probe,
-        &format!("Which model should sessions use on {name}?"),
-        &name,
-        &target_for(connection),
-        None,
-        key.as_deref(),
-    )
-    .await?;
-    draft.record(Change::SetDefaultRole {
-        role: DefaultRole::Model,
-        value: Some(format!("{name}/{model}")),
-    });
-    Ok(())
-}
-
-/// Whether a connection can take a turn. A provider name this build cannot read
-/// (a described endpoint's `custom-<dialect>`) speaks an inference dialect by
-/// construction.
-fn serves_inference(connection: &ExistingConnection) -> bool {
-    crate::api::Provider::from_name(&connection.provider)
-        .map(|provider| provider.serves_inference())
-        .unwrap_or(true)
-}
-
 /// What `[defaults]` holds now, so the editor can show each role's current value
 /// and offer leaving it alone. Empty on a first run.
 #[derive(Debug, Clone, Default)]
 pub(super) struct Current {
-    pub(super) model: Option<String>,
     pub(super) spotter: Option<String>,
     pub(super) triage: Option<String>,
 }
@@ -100,14 +49,13 @@ pub(super) struct Current {
 impl Current {
     fn of(&self, role: DefaultRole) -> Option<&str> {
         match role {
-            DefaultRole::Model => self.model.as_deref(),
             DefaultRole::Spotter => self.spotter.as_deref(),
             DefaultRole::Triage => self.triage.as_deref(),
         }
     }
 }
 
-/// Walk the three roles. Each is a connection, then a model on it, then the
+/// Walk the two roles. Each is a connection, then a model on it, then the
 /// next — with the running draft consulted so a role set earlier in this same
 /// run shows as the current value of the one after it.
 pub(super) async fn edit<P: Prompter, Q: Probe>(
@@ -123,7 +71,6 @@ pub(super) async fn edit<P: Prompter, Q: Probe>(
             continue;
         };
         match role {
-            DefaultRole::Model => decided.model = choice.clone(),
             DefaultRole::Spotter => decided.spotter = choice.clone(),
             DefaultRole::Triage => decided.triage = choice.clone(),
         }
@@ -150,13 +97,8 @@ async fn role_value<P: Prompter, Q: Probe>(
     let existing = current.of(role).map(str::to_string);
     match &existing {
         Some(value) => choices.push(Choice::new(format!("Keep {value}")).detail(role.purpose())),
-        // An unset spotter and an unset triage are both working configurations;
-        // an unset main model is the one a session cannot start without, so its
-        // skip says what that costs.
-        None => choices.push(Choice::new("Leave unset").detail(match role {
-            DefaultRole::Model => "sessions must name <connection>/<model> themselves",
-            _ => role.purpose(),
-        })),
+        // An unset spotter and an unset triage are both working configurations.
+        None => choices.push(Choice::new("Leave unset").detail(role.purpose())),
     }
     choices.push(Choice::new("Choose a model").detail(role.purpose()));
     if existing.is_some() {

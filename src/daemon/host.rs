@@ -398,6 +398,7 @@ pub(crate) fn host_routes(create: bool, files: bool) -> impl trillium::Handler {
     let mut router = Router::new()
         .get("/inference", inference_inventory)
         .get("/inference/recent-models", recent_models)
+        .get("/inference/recent-picks", recent_picks)
         .with_route(trillium::Method::Query, "/sessions", preview_session)
         .get("/sessions", list_sessions())
         .delete("/sessions/:id", end_session)
@@ -488,6 +489,54 @@ async fn recent_models(conn: Conn) -> Conn {
             })
             .to_string(),
         )
+        .halt()
+}
+
+/// `GET /inference/recent-picks?cwd=<root>&config=<path>`: the picks past
+/// sessions made across all connections, most decayed weight first with project
+/// picks before aggregate ones, for the project scope `cwd` (+ optional
+/// `config`) names. Each entry names both halves of the draft (`connection`
+/// plus the provider-native `model`), so the connection picker offers the
+/// whole list without opening each connection's own recent menu first.
+///
+/// History suggests, never authorizes, like the per-connection route above: a
+/// pick naming a retired connection is still listed, and preview says whether
+/// the draft it completes is usable.
+async fn recent_picks(conn: Conn) -> Conn {
+    let Some(host) = host_of(&conn) else {
+        return missing_host(conn);
+    };
+    let query = conn.querystring();
+    let param = |name: &str| {
+        crate::daemon::http::parse_param(query, name).map(|value| {
+            trillium_client::url::form_urlencoded::parse(value.as_bytes())
+                .next()
+                .map(|(_, decoded)| decoded.into_owned())
+                .unwrap_or_default()
+        })
+    };
+    let Some(cwd) = param("cwd") else {
+        return fail(
+            conn,
+            ErrorCode::BadRequest,
+            "recent-picks needs ?cwd=<root>",
+        );
+    };
+    let scope = crate::history::Scope::for_request(
+        std::path::Path::new(&cwd),
+        param("config").as_deref().map(std::path::Path::new),
+    );
+    let picks: Vec<serde_json::Value> = host
+        .inference
+        .history()
+        .recent_all(&scope, crate::history::now(), 10)
+        .into_iter()
+        .map(|candidate| {
+            serde_json::json!({ "connection": candidate.connection, "model": candidate.model })
+        })
+        .collect();
+    conn.with_status(200)
+        .with_body(serde_json::json!({ "picks": picks }).to_string())
         .halt()
 }
 

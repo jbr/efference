@@ -28,18 +28,23 @@ fn registry(toml: &str) -> InferenceRegistry {
     .unwrap()
 }
 
-/// One anthropic connection named `main`, with `[defaults].model` on it.
+/// One anthropic connection named `main`, with no defaults. Tests that need a
+/// resolved main pass it explicitly; an omitted model is the ordinary
+/// no-past-pick state (one `Required` issue, other fields independent).
 fn one_connection() -> InferenceRegistry {
     registry(
         r#"
-[defaults]
-model = "main/claude-sonnet-4-5"
-
 [connections.main]
 provider = "anthropic"
 auth = { kind = "env", key = "ANTHROPIC_KEY" }
 "#,
     )
+}
+
+/// An explicit main model on the `main` connection, for tests that need main
+/// resolved while something else is under test.
+fn main_options() -> SessionOptions {
+    options(serde_json::json!({"connection": "main", "model": "claude-sonnet-4-5"}))
 }
 
 /// A registry with a history store in a temporary directory, so resolution
@@ -89,7 +94,6 @@ fn an_omitted_triage_reports_the_configured_default_rather_than_shared() {
     let registry = registry(
         r#"
 [defaults]
-model = "main/claude-sonnet-4-5"
 triage = "main/claude-haiku-4-5"
 
 [connections.main]
@@ -97,7 +101,7 @@ provider = "anthropic"
 auth = { kind = "env", key = "ANTHROPIC_KEY" }
 "#,
     );
-    let resolved = registry.resolve_options(&SessionOptions::default(), None, None);
+    let resolved = registry.resolve_options(&main_options(), None, None);
     assert_eq!(resolved.issues, vec![]);
     let EffectiveTriage::Separate { selection, .. } = resolved
         .effective
@@ -121,7 +125,7 @@ auth = { kind = "env", key = "ANTHROPIC_KEY" }
 /// the two reasons for `shared` apart.
 #[test]
 fn an_omitted_triage_with_no_default_shares_main() {
-    let resolved = one_connection().resolve_options(&SessionOptions::default(), None, None);
+    let resolved = one_connection().resolve_options(&main_options(), None, None);
     assert_eq!(
         resolved.effective.triage.value,
         Some(EffectiveTriage::Shared)
@@ -139,7 +143,6 @@ fn an_explicit_shared_triage_bypasses_a_configured_separate_default() {
     let registry = registry(
         r#"
 [defaults]
-model = "main/claude-sonnet-4-5"
 triage = "main/claude-haiku-4-5"
 
 [connections.main]
@@ -149,6 +152,8 @@ auth = { kind = "env", key = "ANTHROPIC_KEY" }
     );
     let resolved = registry.resolve_options(
         &SessionOptions {
+            connection: Some("main".to_string()),
+            model: Some("claude-sonnet-4-5".to_string()),
             triage: Some(TriageChoice::Shared),
             ..Default::default()
         },
@@ -173,6 +178,8 @@ auth = { kind = "env", key = "ANTHROPIC_KEY" }
 fn an_unresolvable_role_leaves_every_other_field_resolved() {
     let resolved = one_connection().resolve_options(
         &options(serde_json::json!({
+            "connection": "main",
+            "model": "claude-sonnet-4-5",
             "spotter_connection": "absent",
             "spotter_model": "whatever",
             "temperature": 42,
@@ -282,14 +289,12 @@ auth = { kind = "env", key = "ANTHROPIC_KEY" }
 }
 
 /// A remembered connection that is no longer configured falls through to the
-/// configured default silently — no request named it, so there is no issue.
+/// refusal silently — no request named it, so there is no invalid-selection
+/// issue, just the ordinary omitted-model one.
 #[test]
-fn a_stale_history_pick_falls_through_to_the_configured_default() {
+fn a_stale_history_pick_falls_through_to_the_refusal() {
     let (registry, store, scope) = historied(
         r#"
-[defaults]
-model = "main/claude-sonnet-4-5"
-
 [connections.main]
 provider = "anthropic"
 auth = { kind = "env", key = "ANTHROPIC_KEY" }
@@ -306,16 +311,11 @@ auth = { kind = "env", key = "ANTHROPIC_KEY" }
     });
     let resolved =
         registry.resolve_options(&SessionOptions::default(), None, Some((&store, &scope)));
-    assert_eq!(resolved.issues, vec![]);
-    let main = resolved.effective.main.value.expect("a configured default");
-    assert_eq!(main.model, "claude-sonnet-4-5");
-    assert_eq!(
-        resolved.effective.main.source,
-        Some(SelectionSource::UserDefault)
-    );
+    assert_eq!(codes(&resolved), [("model", IssueCode::Required)]);
+    assert_eq!(resolved.effective.main.value, None);
 }
 
-/// A host with no `[defaults].model` is the ordinary first-run state. It leaves an
+/// A host with no past pick is the ordinary first-run state. It leaves an
 /// editable response — one issue on `model`, every independent field resolved —
 /// rather than an empty one the form cannot open on.
 #[test]
@@ -422,9 +422,6 @@ fn request_effort_beats_project_effort_which_beats_omission() {
 fn an_explicit_connection_makes_a_slash_bearing_model_a_native_id() {
     let registry = registry(
         r#"
-[defaults]
-model = "main/claude-sonnet-4-5"
-
 [connections.main]
 provider = "openrouter"
 auth = { kind = "env", key = "ANTHROPIC_KEY" }
@@ -546,9 +543,6 @@ disabled = true
 fn a_cross_dialect_triage_is_an_issue() {
     let registry = registry(
         r#"
-[defaults]
-model = "messages/claude-sonnet-4-5"
-
 [connections.messages]
 provider = "anthropic"
 auth = { kind = "env", key = "ANTHROPIC_KEY" }
@@ -560,6 +554,8 @@ auth = { kind = "env", key = "OPENAI_KEY" }
     );
     let resolved = registry.resolve_options(
         &options(serde_json::json!({
+            "connection": "messages",
+            "model": "claude-sonnet-4-5",
             "triage": {"mode": "separate", "connection": "responses", "model": "gpt-5.6"},
         })),
         None,
@@ -581,7 +577,6 @@ fn an_omitted_spotter_prefers_the_configured_default_to_the_main_provider() {
     let configured = registry(
         r#"
 [defaults]
-model = "main/claude-sonnet-4-5"
 spotter = "spot/claude-haiku-4-5"
 
 [connections.main]
@@ -593,7 +588,7 @@ provider = "anthropic"
 auth = { kind = "env", key = "ANTHROPIC_KEY" }
 "#,
     )
-    .resolve_options(&SessionOptions::default(), None, None);
+    .resolve_options(&main_options(), None, None);
     assert_eq!(
         configured.effective.spotter.source,
         Some(SelectionSource::UserDefault)
@@ -603,7 +598,7 @@ auth = { kind = "env", key = "ANTHROPIC_KEY" }
         Some("spot".to_string())
     );
 
-    let borrowed = one_connection().resolve_options(&SessionOptions::default(), None, None);
+    let borrowed = one_connection().resolve_options(&main_options(), None, None);
     assert_eq!(
         borrowed.effective.spotter.source,
         Some(SelectionSource::MainProvider)
@@ -620,9 +615,6 @@ auth = { kind = "env", key = "ANTHROPIC_KEY" }
 fn creation_prepares_exactly_the_selections_preview_reports() {
     let registry = registry(
         r#"
-[defaults]
-model = "main/claude-sonnet-4-5"
-
 [connections.main]
 provider = "anthropic"
 auth = { kind = "env", key = "ANTHROPIC_KEY" }
@@ -633,6 +625,8 @@ auth = { kind = "env", key = "ANTHROPIC_KEY" }
 "#,
     );
     let options = options(serde_json::json!({
+        "connection": "main",
+        "model": "claude-sonnet-4-5",
         "spotter_connection": "other",
         "spotter_model": "claude-haiku-4-5",
         "triage": {"mode": "separate", "connection": "main", "model": "claude-haiku-4-5",
@@ -661,7 +655,11 @@ auth = { kind = "env", key = "ANTHROPIC_KEY" }
 fn creation_refuses_a_draft_with_issues() {
     let registry = one_connection();
     let resolved = registry.resolve_options(
-        &options(serde_json::json!({"temperature": 200})),
+        &options(serde_json::json!({
+            "connection": "main",
+            "model": "claude-sonnet-4-5",
+            "temperature": 200,
+        })),
         None,
         None,
     );
@@ -680,7 +678,11 @@ fn the_temperature_bound_is_the_resolver_s() {
     let registry = one_connection();
     for (temperature, expected) in [(0u8, true), (100, true), (101, false)] {
         let resolved = registry.resolve_options(
-            &options(serde_json::json!({"temperature": temperature})),
+            &options(serde_json::json!({
+                "connection": "main",
+                "model": "claude-sonnet-4-5",
+                "temperature": temperature,
+            })),
             None,
             None,
         );
@@ -725,9 +727,6 @@ auth = { kind = "env", key = "ABSENT_KEY" }
 fn with_a_decision_connection() -> InferenceRegistry {
     registry(
         r#"
-[defaults]
-model = "main/claude-sonnet-4-5"
-
 [connections.main]
 provider = "anthropic"
 auth = { kind = "env", key = "ANTHROPIC_KEY" }
@@ -763,6 +762,8 @@ fn a_decision_connection_is_refused_for_the_main_model() {
 fn a_decision_connection_is_refused_for_triage() {
     let resolved = with_a_decision_connection().resolve_options(
         &options(serde_json::json!({
+            "connection": "main",
+            "model": "claude-sonnet-4-5",
             "triage": {"mode": "separate", "connection": "typesafe", "model": "jev-latest"},
         })),
         None,
@@ -776,6 +777,8 @@ fn a_decision_connection_is_refused_for_triage() {
 fn a_decision_connection_backs_the_spotter() {
     let resolved = with_a_decision_connection().resolve_options(
         &options(serde_json::json!({
+            "connection": "main",
+            "model": "claude-sonnet-4-5",
             "spotter_connection": "typesafe",
             "spotter_model": "jev-latest",
         })),
@@ -856,14 +859,11 @@ fn every_provider_display_name_decodes_back() {
 fn a_reachable_decision_model_is_the_default_spotter() {
     let spotter = |toml: &str| {
         registry(toml)
-            .resolve_options(&SessionOptions::default(), None, None)
+            .resolve_options(&main_options(), None, None)
             .effective
             .spotter
     };
     let main = r#"
-[defaults]
-model = "main/claude-sonnet-4-5"
-
 [connections.main]
 provider = "anthropic"
 auth = { kind = "env", key = "ANTHROPIC_KEY" }

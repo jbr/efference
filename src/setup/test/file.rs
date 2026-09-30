@@ -43,7 +43,8 @@ auth = { kind = "env", key = "ANTHROPIC_API_KEY" }
     assert!(script.said("select: Connections"));
     assert!(script.said("\"anthropic\" is already a connection"));
     assert!(script.said("Found a Codex login for account acct_1"));
-    assert_eq!(draft.decided_default(DefaultRole::Model), None);
+    assert_eq!(draft.decided_default(DefaultRole::Spotter), None);
+    assert_eq!(draft.decided_default(DefaultRole::Triage), None);
     assert_eq!(
         render(existing, &draft).unwrap(),
         r#"# my notes
@@ -64,10 +65,10 @@ auth = { kind = "codex-cache" }
     );
 }
 
-/// Two connections in one run: the default is a menu, and the file's
-/// `[defaults]` follows the pick.
+/// Two connections in one run: a first run ends with no default model, and
+/// both connections reach the file.
 #[tokio::test]
-async fn two_connections_choose_a_default() {
+async fn two_connections_record_no_default() {
     let probe = Table {
         codex: Some("acct_1".into()),
         ..Default::default()
@@ -85,28 +86,18 @@ async fn two_connections_choose_a_default() {
             Answer::Type(""),
             Answer::Pick("Piggyback on Codex's login"),
             Answer::No,
-            // Two connections, so the model question asks which one first.
-            Answer::Pick("openai-codex"),
-            Answer::Type("gpt-5.6"),
         ],
         &probe,
         "",
     )
     .await;
     let draft = draft.unwrap();
-    assert!(
-        draft
-            .decided_default(DefaultRole::Model)
-            .flatten()
-            .is_some_and(|model| model.starts_with("openai-codex/")),
-        "{:?}",
-        draft.decided_default(DefaultRole::Model)
-    );
+    assert_eq!(draft.decided_default(DefaultRole::Spotter), None);
+    assert_eq!(draft.decided_default(DefaultRole::Triage), None);
     let text = render("", &draft).unwrap();
-    assert!(text.contains("model = \"openai-codex/gpt-5.6\""));
-    // The first run asks no spotter question, so no key is written for it: the
-    // role resolves to its default at session creation.
-    assert!(!text.contains("spotter ="), "{text}");
+    // A first run ends with no default: the new-session form names the current
+    // model, so no key is written for any role.
+    assert!(!text.contains("\n[defaults]"), "{text}");
     assert!(text.contains("[connections.anthropic]"));
     assert!(text.contains("[connections.openai-codex]"));
 }
@@ -141,10 +132,11 @@ auth = { kind = "env", key = "A" }
     assert_eq!(draft.connections[0].0, "anthropic-2");
     // Adding a connection says nothing about defaults: the standing one is left
     // exactly as it was, and the new connection does not become it.
-    assert_eq!(draft.decided_default(DefaultRole::Model), None);
+    assert_eq!(draft.decided_default(DefaultRole::Spotter), None);
+    assert_eq!(draft.decided_default(DefaultRole::Triage), None);
     let text = render(existing, &draft).unwrap();
     assert!(text.contains("[connections.anthropic-2]"), "{text}");
-    assert!(!text.contains("[defaults]"), "{text}");
+    assert!(!text.contains("\n[defaults]"), "{text}");
 }
 
 /// Backing out at any prompt is `Cancelled`, with the draft discarded.

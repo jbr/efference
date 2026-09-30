@@ -20,8 +20,9 @@ pub enum Surface {
 }
 
 /// Ask whether to set up `here` (as the person would read the path) now, and
-/// where, naming the model the session would run on when the host config names
-/// one. `None` is a decline, which has already said what to do instead.
+/// where, naming the history default the session would run on when past picks
+/// apply. With no past pick the new-session form names the current model.
+/// `None` is a decline, which has already said what to do instead.
 pub fn offer_project_setup<P: Prompter>(
     prompter: &mut P,
     here: &str,
@@ -29,7 +30,7 @@ pub fn offer_project_setup<P: Prompter>(
 ) -> Result<Option<Surface>, Cancelled> {
     let billed = match model {
         Some(model) => format!("billed as ordinary use of {model}"),
-        None => "billed as ordinary use of your default model".to_string(),
+        None => "billed as ordinary model use — you'll pick the model in the form".to_string(),
     };
     prompter.say(
         Tone::Plain,

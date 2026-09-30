@@ -9,14 +9,34 @@
 use super::*;
 
 impl Form {
+    /// The recent picks shown in a role's connection picker: past picks across
+    /// all connections, most decayed weight first, naming only connections the
+    /// host still lists. A pick on a retired connection stays out of the menu —
+    /// preview would refuse it, and the per-connection recent menu already
+    /// covers the typed-ID path for anything unlisted.
+    pub(super) fn picker_recents(&self) -> Vec<&crate::client::RecentPick> {
+        self.context
+            .recent_picks
+            .iter()
+            .filter(|pick| {
+                self.connections()
+                    .iter()
+                    .any(|row| row.name == pick.connection)
+            })
+            .collect()
+    }
+
     /// How many entries precede the connection rows in a role's picker. Every
-    /// role offers "use the default"; triage offers explicitly sharing main's
-    /// client beside it, because that is a different answer from inheriting.
+    /// role offers "use the default" (and triage offers explicitly sharing
+    /// main's client beside it), followed by the recent picks across all
+    /// connections — so one menu covers every provider without opening each
+    /// connection's own recent menu first.
     pub(super) fn leading_choices(&self, role: Role) -> usize {
-        match role {
+        let base = match role {
             Role::Triage => 2,
             Role::Main | Role::Spotter => 1,
-        }
+        };
+        base + self.picker_recents().len()
     }
 
     pub(crate) fn choose_connection(&mut self, role: Role) -> Action {
@@ -24,8 +44,11 @@ impl Form {
             return Action::Continue;
         };
         let selected = *selected;
-        let leading = self.leading_choices(role);
-        if selected < leading {
+        let base = match role {
+            Role::Triage => 2,
+            Role::Main | Role::Spotter => 1,
+        };
+        if selected < base {
             self.draft.set_role(role, None);
             if role == Role::Triage && selected == 1 {
                 self.draft.triage = TriageDraft::Shared;
@@ -33,7 +56,20 @@ impl Form {
             self.page = Page::Form;
             return self.preview();
         }
-        let connection = selected - leading;
+        let recents = self.picker_recents();
+        if selected < base + recents.len() {
+            let pick = recents[selected - base];
+            self.draft.set_role(
+                role,
+                Some(RoleDraft {
+                    connection: pick.connection.clone(),
+                    model: pick.model.clone(),
+                }),
+            );
+            self.page = Page::Form;
+            return self.preview();
+        }
+        let connection = selected - base - recents.len();
         // A connection opens its recent models first: past picks on it, most
         // decayed weight first, with the typed-ID editor as the last row. The
         // host's discovery route merges its catalog into this same menu when it

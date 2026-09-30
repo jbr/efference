@@ -257,8 +257,7 @@ pub(crate) enum DevCommand {
         /// `<path>:r` (read), or bare `<path>` (no access). E.g. `--path .:rw --path /refs:r`.
         #[arg(long = "path")]
         paths: Vec<String>,
-        /// Spotter model, as `<connection>/<native model>` or a native id on the
-        /// host's default connection. Defaults to the configured spotter.
+        /// Spotter model, as `<connection>/<native model>`. Defaults to the configured spotter.
         #[arg(long)]
         model: Option<String>,
         /// Simulate a prefix-promotion probe riding this call: ask whether `<prefix>` is safe for all

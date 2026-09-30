@@ -305,10 +305,10 @@ impl InferenceRegistry {
                 inference_only(selected, "model", issues)
             }
             // Past picks are the default: the project mode past its mass
-            // threshold, else the system-wide aggregate, else whatever
-            // `[defaults].model` still names. A remembered connection that is
-            // no longer usable is not an issue — it falls through to the next
-            // branch, since no request named it (docs/transport.md).
+            // threshold, else the system-wide aggregate. A remembered
+            // connection that is no longer usable is not an issue — it falls
+            // through to the refusal, since no request named it
+            // (docs/transport.md).
             Requested::Omitted => {
                 if let Some((store, scope)) = history
                     && let Some(candidate) = store.default(scope, crate::history::now())
@@ -321,28 +321,19 @@ impl InferenceRegistry {
                         issues,
                     );
                 }
-                match self.defaults.model.as_ref() {
-                    Some(default) => {
-                        let selected =
-                            self.select(default, "model", SelectionSource::UserDefault, issues);
-                        inference_only(selected, "model", issues)
-                    }
-                    None => {
-                        issues.push(Issue::new(
-                            "model",
-                            IssueCode::Required,
-                            "no model was given and no past pick applies",
-                        ));
-                        Effective::failed()
-                    }
-                }
+                issues.push(Issue::new(
+                    "model",
+                    IssueCode::Required,
+                    "no model was given and no past pick applies",
+                ));
+                Effective::failed()
             }
         }
     }
 
     /// The history candidate, when its connection is still configured and
     /// available. Silent (`None`) otherwise, so a stale pick falls through to
-    /// the configured default rather than erroring on a request nobody made.
+    /// the refusal rather than erroring on a request nobody made.
     fn select_if_usable(&self, connection: &str, model: &str) -> Option<ModelSelection> {
         let configured = self.connections.get(connection)?;
         if configured.disabled || configured.credential.is_err() {

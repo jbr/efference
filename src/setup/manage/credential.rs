@@ -177,11 +177,7 @@ async fn rename_connection<P: Prompter, Q: Probe>(
         to: new_name.clone(),
     });
     let prefix = format!("{name}/");
-    for role in [
-        DefaultRole::Model,
-        DefaultRole::Spotter,
-        DefaultRole::Triage,
-    ] {
+    for role in [DefaultRole::Spotter, DefaultRole::Triage] {
         if let Some(value) = working.default_role_mut(role)
             && let Some(rest) = value.strip_prefix(&prefix)
         {

@@ -209,9 +209,10 @@ where each credential comes from, and `efference host` loads them once at launch
 from the secret store, or from its own environment, where `op run -- efference host`
 unlocks the vault once for every session the host will create
 ([transport.md](transport.md)). A creating TUI
-passes model selections (`--model work/anthropic/claude-sonnet-4-5`, or a native id
-on the default connection) and no inference credentials; with no `--model`, the
-host's `[defaults].model` applies, and with none configured, creation says so. A
+passes model selections (`--model <connection>/<model>`) and no inference
+credentials; with no `--model`, past picks apply (the project mode, else the
+system-wide aggregate), else creation refuses naming the choice and the
+new-session form names one. A
 host with no config file refuses to start, naming `efference setup`. So does one
 whose configured connections include any that cannot authenticate: the host names
 each and its reason rather than starting and failing every session that touches
@@ -258,7 +259,8 @@ is said and can be kept.
 **The hand-off** (`src/setup/handoff.rs`). After writing the file, setup asks
 whether to set up the current directory now — in this terminal (the default), in the
 browser, or not now — and says what that entails first: an agent session that looks over the project, asks a few questions,
-and writes `efference.toml`, billed as ordinary use of the default model it names.
+and writes `efference.toml`, billed as ordinary use of the history default when
+past picks apply, else as ordinary model use with the model picked in the form.
 The wizard is free up to that point, and the question keeps the change to billed
 use from happening unannounced. The terminal choice creates a session here — on a
 running host, or on an island — and with no project config it is the setup profile;
@@ -285,13 +287,15 @@ keys it is — `dialect` and `base-url` — never as a `provider` line naming
 something that is not a provider name.
 
 **Defaults: which model each role runs** (`src/setup/defaults.rs`). `[defaults]`
-has three roles — `model`, `spotter`, `triage` — and the editor walks them in the
-order they matter, saying what each is for rather than leaving the key name to
-explain itself. A role is set by picking a connection and then a model on it,
-which is where a listing belongs: the connection selects the endpoint to ask, and
-the credential is read from the connection's own source (an environment variable
-set in this shell, or an item the store already holds) rather than prompted for
-again. Where setup cannot read one, the model is typed and taken as written.
+has two roles — `spotter`, `triage` — and the editor walks them in the order
+they matter, saying what each is for rather than leaving the key name to
+explain itself. The main model has no default: past picks answer the omitted
+branch, else the new-session form names the current one. A role is set by
+picking a connection and then a model on it, which is where a listing belongs:
+the connection selects the endpoint to ask, and the credential is read from the
+connection's own source (an environment variable set in this shell, or an item
+the store already holds) rather than prompted for again. Where setup cannot
+read one, the model is typed and taken as written.
 
 A connection may also answer one role for itself: `spotter-model` under
 `[connections.<name>]` names the cheap model that connection's sessions use when
@@ -300,15 +304,15 @@ nothing else does. It resolves below an explicit `--spotter-model` and
 [permissions.md](permissions.md), and the reason a per-connection key exists at
 all is that a cheap band is an account's property, not a provider's.
 
-Each role leads with what it already is, so the cheapest answer is Enter. Leaving
-the main model unset says what that costs — sessions must then name
-`<connection>/<model>` themselves — because that is the one role a session cannot
-start without; an unset spotter falls back to jev where a typesafe or OpenRouter
-connection exists, else to the provider's cheap band, and an
-unset triage shares the main client, so those are working configurations rather
-than gaps. Declining the whole visit is a complete answer and writes no
-`[defaults]` at all: `src/inference.rs` treats the table as optional, and an
-omitted or unqualified model is an error naming the key to add.
+Each role leads with what it already is, so the cheapest answer is Enter. An
+unset spotter falls back to jev where a typesafe or OpenRouter connection
+exists, else to the provider's cheap band, and an unset triage shares the main
+client, so those are working configurations rather than gaps. The first run
+asks no role at all: a new user cannot know what a spotter or triage is, and
+the new-session form names the current main model. Declining the whole visit is
+a complete answer and writes no `[defaults]` at all: `src/inference.rs` treats
+the table as optional, and an omitted model with no past pick is a refusal
+naming the choice.
 
 **Managing what is already there** opens on a top level of two entries —
 Connections and Default models — each summarizing itself, because they are two
@@ -381,7 +385,6 @@ an older build says it is not understood rather than hiding it.
 
 ```toml ~/.efference/config.toml
 [defaults]
-model = "work/anthropic/claude-sonnet-4-5"
 spotter = "work/anthropic/claude-haiku-4-5"
 # triage omitted: the peek shares the agent's client
 

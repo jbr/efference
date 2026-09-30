@@ -9,8 +9,9 @@ use std::path::PathBuf;
 
 /// Create a session on the host and return its id. The session starts idle in
 /// `cwd` with this process's environment as its base; send it a `turn` to begin.
-/// Every knob is optional and the host's defaults fill omissions; the model is
-/// spelled `<connection>/<native model>` as `tui --new --model` takes it.
+/// Every knob is optional; an omitted model takes past picks, else creation
+/// refuses naming the choice. The model is spelled `<connection>/<model>` as
+/// `tui --new --model` takes it.
 #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema, clap::Args)]
 #[serde(rename = "create")]
 pub struct Create {

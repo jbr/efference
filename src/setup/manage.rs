@@ -17,7 +17,6 @@ use credential::edit_connection;
 /// until the whole session is rendered.
 pub(super) struct Working {
     pub(super) connections: BTreeMap<String, ExistingConnection>,
-    pub(super) default_model: Option<String>,
     pub(super) default_spotter: Option<String>,
     pub(super) default_triage: Option<String>,
 }
@@ -26,7 +25,6 @@ impl Working {
     fn from(existing: &Existing) -> Self {
         Self {
             connections: existing.connections.clone(),
-            default_model: existing.default_model.clone(),
             default_spotter: existing.default_spotter.clone(),
             default_triage: existing.default_triage.clone(),
         }
@@ -37,7 +35,6 @@ impl Working {
     pub(super) fn as_existing(&self) -> Existing {
         Existing {
             connections: self.connections.clone(),
-            default_model: self.default_model.clone(),
             default_spotter: self.default_spotter.clone(),
             default_triage: self.default_triage.clone(),
         }
@@ -45,7 +42,6 @@ impl Working {
 
     pub(super) fn default_role_mut(&mut self, role: DefaultRole) -> &mut Option<String> {
         match role {
-            DefaultRole::Model => &mut self.default_model,
             DefaultRole::Spotter => &mut self.default_spotter,
             DefaultRole::Triage => &mut self.default_triage,
         }
@@ -73,7 +69,6 @@ pub async fn run<P: Prompter, Q: Probe>(
             0 => connection_list(prompter, probe, &mut working, &mut draft).await?,
             1 => {
                 let current = defaults::Current {
-                    model: working.default_model.clone(),
                     spotter: working.default_spotter.clone(),
                     triage: working.default_triage.clone(),
                 };
@@ -107,15 +102,15 @@ fn summarize_connections(working: &Working) -> String {
     }
 }
 
-/// What the roles point at, for the top level. The main model is the one a
-/// session cannot start without, so an unset one is said rather than omitted.
+/// What the roles point at, for the top level. Both roles have working
+/// fallbacks when unset, so the summary names what is set and stays quiet
+/// about the rest.
 fn summarize_defaults(working: &Working) -> String {
-    match &working.default_model {
-        None => "none set — sessions must name <connection>/<model>".to_string(),
-        Some(model) => match &working.default_spotter {
-            Some(spotter) => format!("{model}, spotter {spotter}"),
-            None => model.clone(),
-        },
+    match (&working.default_spotter, &working.default_triage) {
+        (None, None) => "provider fallbacks".to_string(),
+        (Some(spotter), None) => format!("spotter {spotter}"),
+        (None, Some(triage)) => format!("triage {triage}"),
+        (Some(spotter), Some(triage)) => format!("spotter {spotter}, triage {triage}"),
     }
 }
 
@@ -149,8 +144,9 @@ async fn connection_list<P: Prompter, Q: Probe>(
 }
 
 /// The add path (`src/setup/flow.rs`), folded in as one entry of the list: new
-/// connections join the working set so the list reflects them immediately,
-/// and a fresh default is offered the same way the first-run path offers one.
+/// connections join the working set so the list reflects them immediately.
+/// Adding a connection says nothing about defaults: the standing ones are left
+/// exactly as they were, and the new connection does not become one.
 async fn add_another<P: Prompter, Q: Probe>(
     prompter: &mut P,
     probe: &Q,

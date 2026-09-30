@@ -167,6 +167,34 @@ fn recent_respects_limit() {
     assert_eq!(store.recent(&scope, "meta", now, 3).len(), 3);
 }
 
+/// `recent_all` lists every connection's picks in one menu, project picks
+/// before aggregate ones — so the connection picker covers all providers
+/// without opening each connection first.
+#[test]
+fn recent_all_lists_every_connection_project_first() {
+    let (store, dir) = history();
+    let scope = scope(&dir);
+    let elsewhere = Scope {
+        cwd: PathBuf::from("/code/other"),
+        config_key: BUILTIN_CONFIG_KEY.to_string(),
+    };
+    let now = 1_800_000_000;
+    store.record(&pick(now, &elsewhere, "work", "aggregate-model"));
+    store.record(&pick(now, &scope, "meta", "project-model"));
+    let picks: Vec<(String, String)> = store
+        .recent_all(&scope, now, 10)
+        .into_iter()
+        .map(|candidate| (candidate.connection, candidate.model))
+        .collect();
+    assert_eq!(
+        picks,
+        vec![
+            ("meta".to_string(), "project-model".to_string()),
+            ("work".to_string(), "aggregate-model".to_string()),
+        ]
+    );
+}
+
 /// A disabled store reads empty and writes nothing.
 #[test]
 fn disabled_store_is_empty() {

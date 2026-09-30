@@ -189,8 +189,8 @@ async fn disabling_a_connection_offers_to_repoint_dangling_defaults() {
     let probe = Table::default();
     let existing = r#"
 [defaults]
-model = "primary/claude"
 spotter = "primary/haiku"
+triage = "primary/claude"
 
 [connections.primary]
 provider = "anthropic"
@@ -207,7 +207,7 @@ auth = { kind = "env", key = "BACKUP_KEY" }
             Answer::Pick("Disable"),
             Answer::Yes,
             Answer::Pick("backup"),
-            Answer::Type("claude-fresh"),
+            Answer::Type("haiku-fresh"),
             Answer::No,
             Answer::Pick("Back"),
             Answer::Pick("Done"),
@@ -217,11 +217,11 @@ auth = { kind = "env", key = "BACKUP_KEY" }
     )
     .await;
     let draft = draft.unwrap();
-    assert!(script.said("[defaults].model names primary"));
     assert!(script.said("[defaults].spotter names primary"));
+    assert!(script.said("[defaults].triage names primary"));
     let text = render(existing, &draft).unwrap();
-    assert!(text.contains(r#"model = "backup/claude-fresh""#), "{text}");
-    assert!(text.contains(r#"spotter = "primary/haiku""#), "{text}");
+    assert!(text.contains(r#"spotter = "backup/haiku-fresh""#), "{text}");
+    assert!(text.contains(r#"triage = "primary/claude""#), "{text}");
     assert!(text.contains("disabled = true"), "{text}");
     let parsed = crate::inference::InferenceConfig::from_toml(&text);
     assert!(parsed.is_ok(), "{text}");
@@ -514,7 +514,7 @@ async fn deleting_a_connection_added_in_the_same_run_leaves_the_file_alone() {
     };
     let existing = r#"
 [defaults]
-model = "other/claude-sonnet-4-5"
+spotter = "other/claude-haiku-4-5"
 
 [connections.other]
 provider = "anthropic"
@@ -560,7 +560,7 @@ async fn a_deleted_name_can_be_reused_by_a_connection_added_in_the_same_run() {
     };
     let existing = r#"
 [defaults]
-model = "other/claude-sonnet-4-5"
+spotter = "other/claude-haiku-4-5"
 
 [connections.other]
 provider = "anthropic"

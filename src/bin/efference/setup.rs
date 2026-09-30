@@ -27,7 +27,7 @@ pub(crate) async fn default_verb() -> CliResult {
     if !configured {
         let listings = picker::live_listings().await?;
         if picker::menu(&listings, &here).rows.is_empty() {
-            return offer_here(&mut Terminal::open()?, &path, None, theme, images).await;
+            return offer_here(&mut Terminal::open()?, None, theme, images).await;
         }
     }
     picker::run(theme, images, false).await
@@ -54,19 +54,21 @@ fn display_env() -> Result<(Option<String>, efference::tui::ImageMode), CliError
 /// one line worth leaving, such as where the wizard wrote its file.
 async fn offer_here(
     terminal: &mut Terminal,
-    config: &Path,
     kept: Option<String>,
     theme: Option<String>,
     images: efference::tui::ImageMode,
 ) -> CliResult {
     let here = std::env::current_dir()?;
-    // The default model is named in the question because it is what the
-    // conversation is billed on. Read leniently: a file the host cannot load
-    // fails at launch with its own message.
-    let model = std::fs::read_to_string(config)
-        .ok()
-        .and_then(|text| Existing::from_toml(&text).ok())
-        .and_then(|existing| existing.default_model);
+    // The history default is named in the question because it is what the
+    // conversation is billed on; with no past pick the form names the current
+    // model instead. Best-effort: an unreadable store reads as no history.
+    let model = std::env::var_os("HOME").and_then(|home| {
+        let store = efference::history::History::user(std::path::Path::new(&home));
+        let scope = efference::history::Scope::for_request(&here, None);
+        store
+            .default(&scope, efference::history::now())
+            .map(|candidate| format!("{}/{}", candidate.connection, candidate.model))
+    });
     // Esc at the question is a decline like any other.
     let chosen =
         efference::setup::offer_project_setup(terminal, &picker::tilde(&here), model.as_deref())
@@ -174,5 +176,5 @@ pub(crate) async fn run(config: Option<PathBuf>) -> CliResult {
     }
     let (theme, images) = display_env()?;
     let kept = format!("Wrote {}.", path.display());
-    offer_here(&mut terminal, &path, Some(kept), theme, images).await
+    offer_here(&mut terminal, Some(kept), theme, images).await
 }

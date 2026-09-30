@@ -15,7 +15,6 @@ only where each credential comes from — and it is read when a host starts.
 
 ```toml ~/.efference/config.toml
 [defaults]
-model = "anthropic/claude-sonnet-4-5"   # <connection>/<model the provider knows>
 spotter = "anthropic/claude-haiku-4-5"  # optional
 triage = "anthropic/claude-haiku-4-5"   # optional
 
@@ -31,15 +30,16 @@ auth = { kind = "env", key = "ANTHROPIC_API_KEY" }  # or { kind = "keychain" }
 - **Three roles** run models in a session. The **main model** is the agent itself. The
   **spotter** reviews tool calls the project's grants do not clear. **Triage** reads each
   tool result and keeps the lines that matter.
-- **What each role falls back to:** the main model has no fallback — sessions need
-  `[defaults].model` or a model named when they start. An unset spotter uses the main
-  connection's `spotter-model` if it has one, then jev — a model built for that decision —
-  when a TypeSafe or OpenRouter connection exists, then the provider's cheap model. An
-  unset triage shares the main model.
+- **What each role falls back to:** the main model has no configured default —
+  an omitted model takes past picks (the project mode, else the system-wide
+  aggregate), else creation refuses and the new-session form names one. An
+  unset spotter uses the main connection's `spotter-model` if it has one, then
+  jev — a model built for that decision — when a TypeSafe or OpenRouter
+  connection exists, then the provider's cheap model. An unset triage shares
+  the main model.
 
 To change a connection or a key, the operator runs `efference setup`: it checks
-credentials live and keeps pasted keys out of the file. A different default model is a
-one-line edit to `[defaults]` that you can propose.
+credentials live and keeps pasted keys out of the file.
 
 ## The host
 

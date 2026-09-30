@@ -9,7 +9,8 @@
 //! the agent loop with the HTTP-fed [`RemoteFrontend`] (docs/README.md, docs/control-channel.md):
 //! the socket is the singular authoritative input source — the first user turn
 //! arrives via `POST /turns`, not argv. `--model` selects from the host's
-//! configured connections; omitted, the host's default applies.
+//! configured connections; omitted, past picks apply, else creation refuses
+//! and the new-session form names one.
 //!
 //! [`RemoteFrontend`]: efference::daemon::RemoteFrontend
 

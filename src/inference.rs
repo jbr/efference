@@ -89,7 +89,6 @@ impl InferenceConfig {
 #[derive(Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Defaults {
-    model: Option<String>,
     spotter: Option<String>,
     triage: Option<String>,
 }
@@ -231,7 +230,6 @@ struct Credential {
 
 #[derive(Default)]
 struct ResolvedDefaults {
-    model: Option<ModelReference>,
     spotter: Option<ModelReference>,
     triage: Option<ModelReference>,
 }
@@ -381,12 +379,6 @@ impl InferenceRegistry {
             );
         }
         let defaults = ResolvedDefaults {
-            model: resolve_config_default(
-                config.defaults.model,
-                &enabled_names,
-                &disabled_names,
-                "model",
-            )?,
             spotter: resolve_config_default(
                 config.defaults.spotter,
                 &enabled_names,
@@ -484,8 +476,8 @@ impl InferenceRegistry {
     /// verbs carry, then attach credentials. One call through the shared flow
     /// (`options.rs`), so these surfaces and the control routes cannot drift.
     /// Offline verbs name no working root, so no history scope applies: an
-    /// omitted model there is the configured default or a refusal, never a
-    /// remembered pick from some other directory.
+    /// omitted model there is a refusal, never a remembered pick from some
+    /// other directory.
     pub fn resolve(
         &self,
         model: Option<&str>,
@@ -511,10 +503,11 @@ impl InferenceRegistry {
         &self.history
     }
 
-    /// Split a `connection/model` slug, or resolve a bare native id against
-    /// `[defaults].model`'s connection. A native id may itself contain a slash,
+    /// Split a `connection/model` slug. A native id may itself contain a slash,
     /// so a prefix only names a connection when one by that name exists; the
     /// unambiguous spelling is a separate `connection` field (`options.rs`).
+    /// A bare id with no connection prefix is refused: with no default model
+    /// there is nothing to resolve it against (docs/transport.md).
     fn parse_model(&self, value: &str, role: &str) -> Result<ModelReference, Error> {
         if value.is_empty() {
             return Err(format!("{role} model cannot be empty").into());
@@ -538,15 +531,10 @@ impl InferenceRegistry {
             )
             .into());
         }
-        let default = self.defaults.model.as_ref().ok_or_else(|| {
-            format!(
-                "unqualified {role} model {value:?} needs [defaults].model to choose a connection"
-            )
-        })?;
-        Ok(ModelReference {
-            connection: default.connection.clone(),
-            model: value.to_string(),
-        })
+        Err(format!(
+            "unqualified {role} model {value:?} needs a connection prefix; write it as <connection>/{value}"
+        )
+        .into())
     }
 }
 

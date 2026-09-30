@@ -1,9 +1,10 @@
 //! The new-session form (docs/tui.md): the client half of the session-options
 //! surface `QUERY /sessions` and `POST /sessions` serve (docs/control-api.md).
 //!
-//! Three host-owned inputs meet here and nowhere else — the connection inventory
-//! from `GET /inference`, the effective draft `QUERY /sessions` recomputes after
-//! each edit, and the creation the form finally posts. The form owns none of
+//! Four host-owned inputs meet here and nowhere else — the connection inventory
+//! from `GET /inference`, the recent picks across all connections from
+//! `GET /inference/recent-picks`, the effective draft `QUERY /sessions`
+//! recomputes after each edit, and the creation the form finally posts. The form owns none of
 //! them: it holds the operator's raw overrides ([`Draft`]) and the host's latest
 //! answer about them ([`ResolvedOptions`]) side by side, and renders the
 //! difference.
@@ -48,6 +49,10 @@ pub(crate) struct NewSessionContext {
     /// `GET /inference`, sorted by name. Empty until the first read lands, which
     /// the form states rather than rendering as an empty menu.
     pub(crate) connections: Vec<ConnectionInventory>,
+    /// `GET /inference/recent-picks` for the same root: past picks across all
+    /// connections, most decayed weight first. Empty when nothing was ever
+    /// picked — the picker then offers only the default and the connections.
+    pub(crate) recent_picks: Vec<crate::client::RecentPick>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

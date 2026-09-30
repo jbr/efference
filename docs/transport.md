@@ -1041,14 +1041,14 @@ snapshot or a tool child.
 
 A session selects a model per role as `<connection>/<native model>`. A built-in
 provider name is always a connection prefix, configured or not (`anthropic/…` on a
-host without an `anthropic` connection names the missing connection, never a
-native id on the default). Any other id, slashes included, resolves through
-`[defaults].model`'s connection; a native id equal to a connection name must be
-written qualified. An omitted `--model` takes past picks first: the project mode
-once the project holds about five effective explicit selections after decay, else
-the system-wide aggregate, else whatever `[defaults].model` still names. Only
-explicit human picks are remembered — never an inherited default, so the default
-cannot reinforce itself — keyed by working root and origin config, with a single
+host without an `anthropic` connection names the missing connection). A bare id
+with no connection prefix is refused — with no default model there is nothing
+to resolve it against; a native id equal to a connection name must be written
+qualified. An omitted `--model` takes past picks: the project mode once the
+project holds about five effective explicit selections after decay, else the
+system-wide aggregate, else a refusal naming the choice. Only explicit human
+picks are remembered — never an inherited default, so the default cannot
+reinforce itself — keyed by working root and origin config, with a single
 exponential decay (half-life 30 days) over both reads. A remembered connection
 that is no longer usable falls through silently, since no request named it. An
 omitted spotter

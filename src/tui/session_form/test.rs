@@ -12,9 +12,6 @@ use ratatui::{buffer::Buffer, layout::Rect, style::Style};
 fn connections() -> Vec<ConnectionInventory> {
     let config = InferenceConfig::from_toml(
         r#"
-[defaults]
-model = "work/claude-sonnet-4-5"
-
 [connections.work]
 provider = "anthropic"
 auth = { kind = "env", key = "TEST_KEY" }
@@ -45,13 +42,13 @@ disabled = true
 }
 
 /// The host's answer about a draft, produced by the same resolver the control
-/// route runs, so the form folds in a real `effective`/`issues` pair.
+/// route runs, so the form folds in a real `effective`/`issues` pair. History
+/// seeds the omitted main branch the way a lived-in store would: one past pick
+/// of `work/claude-sonnet-4-5` in this form's scope, so the untouched draft
+/// resolves (as `History`) rather than refusing.
 fn resolve(options: &SessionOptions) -> ResolvedOptions {
     let config = InferenceConfig::from_toml(
         r#"
-[defaults]
-model = "work/claude-sonnet-4-5"
-
 [connections.work]
 provider = "anthropic"
 auth = { kind = "env", key = "TEST_KEY" }
@@ -71,20 +68,43 @@ disabled = true
         [("TEST_KEY".to_string(), "test-secret".to_string())].into(),
     )
     .unwrap();
-    InferenceRegistry::from_config(
+    let registry = InferenceRegistry::from_config(
         config,
         std::path::Path::new("/host"),
         env,
         &std::sync::Arc::new(crate::secrets::Secrets::in_memory()),
     )
-    .unwrap()
-    .resolve_options(options, None, None)
+    .unwrap();
+    let dir = std::env::temp_dir().join(format!(
+        "efference-session-form-test-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|elapsed| elapsed.as_nanos())
+            .unwrap_or(0)
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+    let store = crate::history::History::at(dir.join("state.db"));
+    let scope = crate::history::Scope {
+        cwd: std::path::PathBuf::from("/code/example"),
+        config_key: crate::history::BUILTIN_CONFIG_KEY.to_string(),
+    };
+    store.record(&crate::history::Pick {
+        at: crate::history::now(),
+        cwd: "/code/example".to_string(),
+        config_key: crate::history::BUILTIN_CONFIG_KEY.to_string(),
+        connection: "work".to_string(),
+        provider: "anthropic".to_string(),
+        model: "claude-sonnet-4-5".to_string(),
+    });
+    registry.resolve_options(options, None, Some((&store, &scope)))
 }
 
 fn context() -> NewSessionContext {
     NewSessionContext {
         cwd: std::path::PathBuf::from("/code/example"),
         connections: connections(),
+        recent_picks: Vec::new(),
     }
 }
 
@@ -386,6 +406,39 @@ fn a_remembered_pick_commits_straight_into_the_draft() {
             model: "claude-opus-4-5".into(),
         })
     );
+}
+
+/// A recent pick across connections commits both halves straight into the
+/// draft: the connection picker covers every provider, so there is no need to
+/// open each connection's own recent menu first.
+#[test]
+fn a_cross_connection_recent_commits_both_halves() {
+    let mut form = Form::new(NewSessionContext {
+        cwd: std::path::PathBuf::from("/code/example"),
+        connections: connections(),
+        recent_picks: vec![crate::client::RecentPick {
+            connection: "lab".into(),
+            model: "claude-opus-4-5".into(),
+        }],
+    });
+    let opening = form.initial_preview();
+    settle(&mut form, opening);
+    press(&mut form, KeyCode::Down);
+    press(&mut form, KeyCode::Enter);
+    // Main → the recent pick: past "use the default", before `blank`.
+    press(&mut form, KeyCode::Down);
+    let action = key(&mut form, KeyCode::Enter);
+    assert_eq!(form.page, Page::Form);
+    assert_eq!(
+        form.draft.role(Role::Main),
+        Some(&RoleDraft {
+            connection: "lab".into(),
+            model: "claude-opus-4-5".into(),
+        })
+    );
+    // Committing is a draft edit, so the host re-resolves it.
+    assert!(matches!(action, Action::Preview(_)));
+    settle(&mut form, action);
 }
 
 /// A recents answer for a menu nobody is looking at is dropped.

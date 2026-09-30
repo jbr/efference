@@ -87,7 +87,7 @@ pub const DOCUMENTS: &[Document] = &[
     },
     Document {
         slug: "host",
-        description: "Above any one project: the user-wide config (connections, default models, \
+        description: "Above any one project: the user-wide config (connections, \
                       the three roles), the host, the web interface, reaching it over Tailscale, \
                       and keeping the host running as a service.",
         body: include_str!("../assets/guide/host.md"),

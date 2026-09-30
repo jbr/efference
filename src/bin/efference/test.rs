@@ -79,8 +79,8 @@ fn host_candidates_are_project_then_user() {
 }
 
 /// The session flags are refused without `--new`, since a plain `tui` attaches and
-/// would otherwise silently drop them. `--model` has no default: omitted, the
-/// host's applies.
+/// would otherwise silently drop them. `--model` has no configured default:
+/// omitted, past picks apply, else creation refuses and the form names one.
 #[test]
 fn tui_session_flags_need_new() {
     use clap::Parser;

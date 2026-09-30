@@ -25,8 +25,8 @@ async fn a_described_endpoint_is_named_after_its_host() {
             // The suggested variable name, taken from the connection.
             Answer::Type(""),
             Answer::No,
-            // The model question lists the models the endpoint serves.
-            Answer::Pick("muse-spark-1.3"),
+            // A first run ends with no default model: the new-session form
+            // names the current one.
         ],
         &probe,
         "",
@@ -100,7 +100,6 @@ async fn a_base_url_that_is_not_a_url_is_refused_at_the_prompt() {
             Answer::Pick("An environment variable"),
             Answer::Type(""),
             Answer::No,
-            Answer::Pick("m"),
         ],
         &probe,
         "",

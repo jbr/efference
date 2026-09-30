@@ -256,6 +256,12 @@ impl Form {
                 if *role == Role::Triage {
                     rows.push(Row::plain("share the main client"));
                 }
+                rows.extend(self.picker_recents().iter().map(|pick| Row {
+                    label: format!("{}/{}", pick.connection, pick.model),
+                    value: String::new(),
+                    trailer: "recent".into(),
+                    flagged: false,
+                }));
                 if self.connections().is_empty() {
                     rows.push(Row::plain("(no connections read from this host)"));
                 } else {

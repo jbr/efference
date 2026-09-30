@@ -29,7 +29,6 @@ fn qualified_roles_can_use_two_accounts_of_one_provider() {
     let registry = registry(
         r#"
 [defaults]
-model = "work/anthropic/main"
 spotter = "personal/anthropic/cheap"
 
 [connections.work]
@@ -46,7 +45,9 @@ auth = { kind = "env", key = "PERSONAL_KEY" }
         ]),
     );
 
-    let selected = registry.resolve(None, None, None).unwrap();
+    let selected = registry
+        .resolve(Some("work/anthropic/main"), None, None)
+        .unwrap();
     assert_eq!(selected.main().0.connection, "work");
     assert_eq!(selected.main().0.model, "anthropic/main");
     assert_eq!(selected.spotter().0.connection, "personal");
@@ -55,12 +56,9 @@ auth = { kind = "env", key = "PERSONAL_KEY" }
 }
 
 #[test]
-fn unqualified_native_model_with_slashes_uses_main_default_connection() {
+fn an_unqualified_model_is_refused_without_a_connection_prefix() {
     let registry = registry(
         r#"
-[defaults]
-model = "router/anthropic/default"
-
 [connections.router]
 provider = "openrouter"
 auth = { kind = "env", key = "ROUTER_KEY" }
@@ -68,20 +66,17 @@ auth = { kind = "env", key = "ROUTER_KEY" }
         environment(&[("ROUTER_KEY", "router-secret")]),
     );
 
-    let selected = registry
-        .resolve(Some("vendor/claude-sonnet-4-5"), None, None)
-        .unwrap();
-    assert_eq!(selected.main().0.connection, "router");
-    assert_eq!(selected.main().0.model, "vendor/claude-sonnet-4-5");
+    let error = match registry.resolve(Some("vendor/claude-sonnet-4-5"), None, None) {
+        Ok(_) => panic!("unqualified model unexpectedly resolved"),
+        Err(error) => error.to_string(),
+    };
+    assert!(error.contains("needs a connection prefix"), "{error}");
 }
 
 #[test]
 fn unavailable_connection_does_not_poison_ready_connection() {
     let registry = registry(
         r#"
-[defaults]
-model = "ready/main"
-
 [connections.ready]
 provider = "openrouter"
 auth = { kind = "env", key = "READY_KEY" }
@@ -93,7 +88,7 @@ auth = { kind = "env", key = "MISSING_KEY" }
         environment(&[("READY_KEY", "ready-secret")]),
     );
 
-    assert!(registry.resolve(None, None, None).is_ok());
+    assert!(registry.resolve(Some("ready/main"), None, None).is_ok());
     let error = match registry.resolve(Some("missing/claude"), None, None) {
         Ok(_) => panic!("missing connection unexpectedly resolved"),
         Err(error) => error.to_string(),
@@ -155,9 +150,6 @@ auth = { kind = "env", key = "MISSING_KEY" }
 fn own_triage_rejects_a_foreign_dialect_before_boot() {
     let registry = registry(
         r#"
-[defaults]
-model = "messages/claude"
-
 [connections.messages]
 provider = "anthropic"
 auth = { kind = "env", key = "ANTHROPIC_KEY" }
@@ -173,7 +165,7 @@ auth = { kind = "env", key = "OPENAI_KEY" }
     );
 
     let error = match registry.resolve(
-        None,
+        Some("messages/claude"),
         None,
         Some(TriageChoice::separate(
             "responses/gpt-5.6".to_string(),
@@ -189,11 +181,25 @@ auth = { kind = "env", key = "OPENAI_KEY" }
 }
 
 #[test]
-fn config_defaults_must_be_qualified() {
+fn config_defaults_rejects_an_unknown_model_key() {
+    let error = match InferenceConfig::from_toml(
+        r#"
+[defaults]
+model = "main/claude"
+
+[connections.main]
+provider = "anthropic"
+auth = { kind = "env", key = "ANTHROPIC_KEY" }
+"#,
+    ) {
+        Ok(_) => panic!("[defaults].model unexpectedly parsed"),
+        Err(error) => error.to_string(),
+    };
+    assert!(error.contains("unknown field"), "{error}");
     let config = InferenceConfig::from_toml(
         r#"
 [defaults]
-model = "claude"
+spotter = "claude"
 
 [connections.main]
 provider = "anthropic"
@@ -215,14 +221,11 @@ auth = { kind = "env", key = "ANTHROPIC_KEY" }
 
 /// A built-in provider name is always a connection prefix, configured or not:
 /// `anthropic/…` on a host with no `anthropic` connection names the missing
-/// connection rather than resolving as a native id on the default connection.
+/// connection rather than resolving without one.
 #[test]
 fn reserved_prefixes_name_connections_even_when_unconfigured() {
     let registry = registry(
         r#"
-[defaults]
-model = "router/anthropic/default"
-
 [connections.router]
 provider = "openrouter"
 auth = { kind = "env", key = "ROUTER_KEY" }
@@ -230,7 +233,7 @@ auth = { kind = "env", key = "ROUTER_KEY" }
         environment(&[("ROUTER_KEY", "router-secret")]),
     );
     let error = match registry.resolve(Some("anthropic/claude-sonnet-4-5"), None, None) {
-        Ok(_) => panic!("reserved prefix unexpectedly resolved on the default connection"),
+        Ok(_) => panic!("reserved prefix unexpectedly resolved without a connection"),
         Err(error) => error.to_string(),
     };
     assert!(error.contains("\"anthropic\""), "{error}");
@@ -250,9 +253,6 @@ auth = { kind = "env", key = "ROUTER_KEY" }
 fn connection_name_collisions_and_slashes_are_rejected() {
     let registry = registry(
         r#"
-[defaults]
-model = "main/claude"
-
 [connections.main]
 provider = "anthropic"
 auth = { kind = "env", key = "ANTHROPIC_KEY" }
@@ -293,7 +293,7 @@ fn a_disabled_connection_is_never_a_candidate() {
     let config = InferenceConfig::from_toml(
         r#"
 [defaults]
-model = "main/claude"
+spotter = "main/claude"
 
 [connections.main]
 provider = "anthropic"
@@ -308,7 +308,7 @@ disabled = true
         environment(&[("ANTHROPIC_KEY", "secret")]),
         &Arc::new(Secrets::in_memory()),
     ) {
-        Ok(_) => panic!("[defaults].model naming a disabled connection unexpectedly loaded"),
+        Ok(_) => panic!("[defaults].spotter naming a disabled connection unexpectedly loaded"),
         Err(error) => error.to_string(),
     };
     assert!(error.contains("\"main\""), "{error}");
@@ -347,25 +347,22 @@ disabled = true
 fn explicit_triage_on_the_main_model_is_its_own_client() {
     let registry = registry(
         r#"
-[defaults]
-model = "main/claude"
-
 [connections.main]
 provider = "anthropic"
 auth = { kind = "env", key = "ANTHROPIC_KEY" }
 "#,
         environment(&[("ANTHROPIC_KEY", "secret")]),
     );
-    let shared = registry.resolve(None, None, None).unwrap();
+    let shared = registry.resolve(Some("main/claude"), None, None).unwrap();
     assert!(shared.triage().is_none());
     assert!(shared.identity().triage.shared);
 
     let own = registry
         .resolve(
-            None,
+            Some("main/claude"),
             None,
             Some(TriageChoice::separate(
-                "claude".to_string(),
+                "main/claude".to_string(),
                 true,
                 false,
                 None,
@@ -393,9 +390,6 @@ fn codex_cache_loads_from_the_host_home_and_env_needs_an_account() {
     .unwrap();
     let registry = registry(
         r#"
-[defaults]
-model = "codex/gpt-5.6"
-
 [connections.codex]
 provider = "openai-codex"
 auth = { kind = "codex-cache" }
@@ -409,7 +403,7 @@ auth = { kind = "env", key = "BARE_KEY" }
             ("BARE_KEY", "bare-token"),
         ]),
     );
-    let selected = registry.resolve(None, None, None).unwrap();
+    let selected = registry.resolve(Some("codex/gpt-5.6"), None, None).unwrap();
     let (_, endpoint) = selected.main();
     assert_eq!(endpoint.auth_value, "Bearer cached-token");
     assert_eq!(
@@ -431,7 +425,6 @@ fn identity_serializes_selections_by_name() {
     let registry = registry(
         r#"
 [defaults]
-model = "work/gpt-5.6"
 spotter = "work/gpt-5.6-luna"
 
 [connections.work]
@@ -440,7 +433,10 @@ auth = { kind = "env", key = "WORK_KEY" }
 "#,
         environment(&[("WORK_KEY", "work-secret")]),
     );
-    let identity = registry.resolve(None, None, None).unwrap().identity();
+    let identity = registry
+        .resolve(Some("work/gpt-5.6"), None, None)
+        .unwrap()
+        .identity();
     assert_eq!(
         serde_json::to_value(&identity).unwrap(),
         serde_json::json!({
@@ -664,9 +660,6 @@ auth = {{ kind = "env", key = "K" }}
 fn a_session_carries_the_hosts_credential_variables() {
     let config = InferenceConfig::from_toml(
         r#"
-[defaults]
-model = "work/m"
-
 [connections.work]
 provider = "anthropic"
 auth = { kind = "env", key = "WORK_KEY" }
@@ -686,7 +679,7 @@ disabled = true
         &Arc::new(Secrets::in_memory()),
     )
     .unwrap();
-    let session = registry.resolve(None, None, None).unwrap();
+    let session = registry.resolve(Some("work/m"), None, None).unwrap();
     assert_eq!(
         session.credential_variables(),
         ["IDLE_KEY".to_string(), "WORK_KEY".to_string()]

@@ -32,9 +32,6 @@ impl Drop for Roots {
 fn one_connection_registry() -> crate::inference::InferenceRegistry {
     let config = crate::inference::InferenceConfig::from_toml(
         r#"
-[defaults]
-model = "test/m"
-
 [connections.test]
 provider = "anthropic"
 auth = { kind = "env", key = "TEST_KEY" }
@@ -97,8 +94,11 @@ async fn query_sessions_previews_a_proposed_session_without_creating_one() {
     let roots = Roots::new();
     let host = Host::new(one_connection_registry());
     let client = host_client(&host, "one").await.with_prefix("");
+    let mut request = SessionOptionsRequest::new(roots.0.join("one"));
+    request.options.connection = Some("test".to_string());
+    request.options.model = Some("m".to_string());
     let preview = client
-        .session_options(&SessionOptionsRequest::new(roots.0.join("one")))
+        .session_options(&request)
         .await
         .expect("preview a proposed session");
     // Asserted through a re-encode: `preview` is the typed `ResolvedOptions` the
@@ -110,7 +110,7 @@ async fn query_sessions_previews_a_proposed_session_without_creating_one() {
             "effective": {
                 "main": {
                     "value": {"connection": "test", "provider": "anthropic", "model": "m"},
-                    "source": "user_default",
+                    "source": "request",
                 },
                 "spotter": {
                     "value": {
@@ -143,6 +143,8 @@ async fn query_sessions_reports_an_invalid_field_without_hiding_the_rest() {
         .build(trillium::Method::Query, "/sessions")
         .with_json_body(&serde_json::json!({
             "cwd": roots.0.join("one"),
+            "connection": "test",
+            "model": "m",
             "temperature": "260",
             "effort": "high",
         }))
@@ -195,7 +197,7 @@ async fn a_network_host_previews_but_does_not_create() {
     let server = host_server(&host, false).await;
     let response = server
         .build(trillium::Method::Query, "/sessions")
-        .with_json_body(&serde_json::json!({"cwd": "/project"}))
+        .with_json_body(&serde_json::json!({"cwd": "/project", "connection": "test", "model": "m"}))
         .await;
     response.assert_status(200);
     assert_eq!(
@@ -216,9 +218,6 @@ async fn a_network_host_previews_but_does_not_create() {
 async fn inference_inventory_is_sorted_and_secret_free() {
     let config = crate::inference::InferenceConfig::from_toml(
         r#"
-[defaults]
-model = "test/m"
-
 [connections.test]
 provider = "anthropic"
 auth = { kind = "env", key = "TEST_KEY" }
@@ -445,7 +444,7 @@ async fn creation_validates_its_body_and_is_socket_only() {
     let server = host_server(&host, true).await;
     let base = |name: &str, cwd: &Path| {
         serde_json::json!({
-            "name": name, "cwd": cwd, "model": "m",
+            "name": name, "cwd": cwd, "model": "test/m",
             "env": {"HOME": "/h"},
         })
     };
@@ -514,9 +513,6 @@ async fn hosted_sessions_select_roles_from_the_host_registry() {
     std::fs::write(
         &config_path,
         r#"
-[defaults]
-model = "codex/gpt-5.6-terra"
-
 [connections.codex]
 provider = "openai-codex"
 auth = { kind = "codex-cache" }
@@ -577,6 +573,7 @@ auth = { kind = "env", key = "MESSAGES_KEY" }
         .post("/sessions")
         .with_json_body(&serde_json::json!({
             "name": "a", "cwd": roots.0.join("one"), "env": caller_env,
+            "model": "codex/gpt-5.6-terra",
         }))
         .await
         .assert_status(201);
@@ -648,7 +645,8 @@ auth = { kind = "env", key = "MESSAGES_KEY" }
         .assert_body_contains("dialects differ");
     assert!(!roots.0.join("two/.efference/c").exists());
     // A connection that exists but is unconfigured is named as such, not resolved
-    // on the default connection.
+    // without one.
+
     server
         .post("/sessions")
         .with_json_body(&serde_json::json!({
