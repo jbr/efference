@@ -163,13 +163,15 @@ TUI or web onboarding flow).
 
 TOTP acceptance has two hard properties:
 
-- **Accepted timesteps burn.** The ledger (`~/.efference/totp-burns`) is user-scoped —
-  every daemon under the user derives the same TOTP secret, so they must share burns
-  or a code accepted by one would replay against another. Writes run under an
-  exclusive file lock; entries are a *set* of recent steps (±1-step skew means codes
-  arrive out of order, so a high-water counter would reject legitimate ones) and prune
-  once they fall outside the window where a code could verify at all. The steps are
-  counters, not secrets; losing the file re-opens at most the current ~90 s window.
+- **Accepted timesteps burn.** The `totp_burns` table of the user state database
+  ([state-store.md](state-store.md)) is user-scoped — every daemon under the user derives
+  the same TOTP secret, so they must share burns or a code accepted by one would replay
+  against another. A step is the primary key, so the insert is the check: a conflicting
+  one is a replay, decided inside sqlite rather than behind a lock. Rows are a *set* of
+  recent steps (±1-step skew means codes arrive out of order, so a high-water counter
+  would reject legitimate ones) and prune once they fall outside the window where a code
+  could verify at all. The steps are counters, not secrets; losing them re-opens at most
+  the current ~90 s window.
 - **Verification is rate-limited with lockout.** Six digits is ~20 bits; the limiter
   is what makes that arithmetic acceptable. Five consecutive failures free, then a
   doubling lockout (30 s → 15 min cap), answered `429` with `Retry-After`. Per-daemon

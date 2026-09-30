@@ -8,21 +8,16 @@ use super::Stored;
 use std::path::Path;
 
 fn connect(path: &Path) -> Option<rusqlite::Connection> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).ok()?;
-    }
-    let connection = rusqlite::Connection::open(path).ok()?;
-    connection
-        .execute_batch(
-            "CREATE TABLE IF NOT EXISTS model_catalog (
-                connection TEXT PRIMARY KEY,
-                provider TEXT NOT NULL,
-                fetched_at INTEGER NOT NULL,
-                rows TEXT NOT NULL
-            );",
-        )
-        .ok()?;
-    Some(connection)
+    crate::state::open(
+        path,
+        "CREATE TABLE IF NOT EXISTS model_catalog (
+            connection TEXT PRIMARY KEY,
+            provider TEXT NOT NULL,
+            fetched_at INTEGER NOT NULL,
+            rows TEXT NOT NULL
+        );",
+    )
+    .ok()
 }
 
 /// The stored copy for `connection`. A row that does not parse is absent.

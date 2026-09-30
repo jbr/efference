@@ -10,8 +10,9 @@ normalization in `src/api/provider/` (`row.rs`, `openrouter.rs`, `anthropic.rs`,
 
 ## The table
 
-`model_catalog` in `~/.efference/state.db` (the file the history store uses,
-[transport.md](transport.md)) has one row per connection: connection name (primary key),
+`model_catalog` in the user state database ([state-store.md](state-store.md), beside the
+history table the picks live in — [transport.md](transport.md)) has one row per
+connection: connection name (primary key),
 provider name, `fetched_at` (unix seconds), and the normalized rows as JSON. It is keyed by
 connection name rather than base URL because Anthropic and OpenAI listings are scoped to
 the account behind the credential. A stored row whose provider differs from the

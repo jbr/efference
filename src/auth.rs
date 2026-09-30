@@ -7,8 +7,8 @@
 //! the VAPID push-signing keypair (docs/web-push.md). Same root in, same credentials
 //! out, every boot: enrollments and cookies survive restarts, and revocation is
 //! rotation — deleting the item, so the next bind mints another. Nobody supplies or
-//! sees the root; the only stored state beside it is the burn ledger of accepted TOTP
-//! timesteps, which are counters, not secrets.
+//! sees the root; the only state derived from it that is stored is the burn ledger of
+//! accepted TOTP timesteps, which are counters, not secrets (docs/state-store.md).
 //!
 //! Everything here is pure credential arithmetic; which conns it gates — and which
 //! listener is exempt — is the daemon's wiring (docs/web-bind.md).
@@ -19,8 +19,6 @@ use hmac::digest::KeyInit;
 use hmac::{Hmac, Mac};
 use sha1::Sha1;
 use sha2::Sha256;
-use std::fs::OpenOptions;
-use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::PathBuf;
 use std::sync::RwLock;
 use std::time::{Duration, Instant, SystemTime};
@@ -300,64 +298,73 @@ const RETAIN_STEPS: u64 = 16;
 /// observed codes single-use. User-scoped, not per-session: every daemon under this
 /// user shares the derived TOTP secret, so they must share the burns too, or a code
 /// accepted by one daemon would replay against another. The steps are counters, not
-/// secrets; losing the file re-opens at most the current skew window.
+/// secrets; losing them re-opens at most the current skew window.
 pub struct BurnLedger {
     path: PathBuf,
 }
+
+/// The ledger's half of the user state database ([`crate::state`],
+/// docs/state-store.md). The step is the primary key, so an insert that does
+/// nothing is how a replay is recognized.
+const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS totp_burns (
+    step INTEGER PRIMARY KEY
+);";
 
 impl BurnLedger {
     pub fn new(path: impl Into<PathBuf>) -> Self {
         Self { path: path.into() }
     }
 
-    /// The real location: `~/.efference/totp-burns`. (`BASE_DIR` is repo-relative — a
-    /// per-repo ledger would leave a cross-repo replay window, since the TOTP secret is
-    /// machine-scoped.) `None` only when the platform reports no home directory.
-    pub fn user_scoped() -> Option<Self> {
-        std::env::home_dir().map(|home| Self::new(home.join(".efference").join("totp-burns")))
+    /// The real location: the user state database's `totp_burns` table. It is
+    /// user-scoped rather than beside a project's session base because a per-project
+    /// ledger would leave a cross-repo replay window, the TOTP secret being
+    /// machine-scoped.
+    pub fn user_scoped() -> Self {
+        Self::new(crate::state::user_scoped())
     }
 
-    /// Whether `step` has been accepted already. Read without the lock: a mint
-    /// that races a burn can hand out a code that then fails as a replay, which is
-    /// the outcome the lock exists to guarantee anyway. A missing or unreadable
-    /// file reads as nothing burned.
+    fn connect(&self) -> Result<rusqlite::Connection, crate::state::Error> {
+        crate::state::open(&self.path, SCHEMA)
+    }
+
+    /// Whether `step` has been accepted already. Best-effort, so an unreadable store
+    /// reads as nothing burned: a mint that races a burn can hand out a code that then
+    /// fails as a replay, which is the outcome [`Self::burn`] exists to allow anyway.
     pub fn is_burned(&self, step: u64) -> bool {
-        std::fs::read_to_string(&self.path)
-            .is_ok_and(|contents| contents.lines().any(|line| line.trim().parse() == Ok(step)))
+        self.connect().is_ok_and(|db| {
+            db.query_row(
+                "SELECT 1 FROM totp_burns WHERE step = ?1",
+                [step as i64],
+                |_| Ok(()),
+            )
+            .is_ok()
+        })
     }
 
     /// Check-and-burn one accepted step: `Ok(false)` if it was already burned (a
-    /// replay), `Ok(true)` if this call burned it. Read-check-rewrite runs under an
-    /// exclusive file lock because concurrent daemons share the ledger; the whole file
-    /// is rewritten each burn (it holds at most a handful of recent steps).
-    pub fn burn(&self, step: u64) -> std::io::Result<bool> {
-        if let Some(parent) = self.path.parent() {
-            std::fs::create_dir_all(parent)?;
+    /// replay), `Ok(true)` if this call burned it. The insert *is* the check: a
+    /// primary-key conflict is the other daemon's burn, and nothing else can lose
+    /// that race, so concurrent daemons serialize inside the insert, with no lock
+    /// spanning a check and a write.
+    ///
+    /// An error is a step this daemon cannot record, and the caller rejects the code
+    /// rather than accept it twice — the fail-closed half of the same reasoning that
+    /// lets [`Self::is_burned`] read optimistically.
+    pub fn burn(&self, step: u64) -> Result<bool, crate::state::Error> {
+        let db = self.connect()?;
+        let burned = db.execute(
+            "INSERT OR IGNORE INTO totp_burns (step) VALUES (?1)",
+            [step as i64],
+        )? > 0;
+        if burned {
+            // Pruned against the step just accepted, and skipped on a replay so a
+            // burst of them cannot delete what the window still needs.
+            db.execute(
+                "DELETE FROM totp_burns WHERE step < ?1 - ?2",
+                rusqlite::params![step as i64, RETAIN_STEPS as i64],
+            )?;
         }
-        let mut file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(false)
-            .open(&self.path)?;
-        file.lock()?; // released when `file` drops
-        let mut contents = String::new();
-        file.read_to_string(&mut contents)?;
-        let mut burned: Vec<u64> = contents
-            .lines()
-            .filter_map(|line| line.trim().parse().ok())
-            .collect();
-        if burned.contains(&step) {
-            return Ok(false);
-        }
-        burned.push(step);
-        burned.retain(|&s| s + RETAIN_STEPS >= step);
-        file.set_len(0)?;
-        file.seek(SeekFrom::Start(0))?;
-        for s in &burned {
-            writeln!(file, "{s}")?;
-        }
-        Ok(true)
+        Ok(burned)
     }
 }
 

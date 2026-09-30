@@ -1087,7 +1087,8 @@ boot log metadata. The main role's connection, provider, and native model are
 written once to the session's boot Preamble as unprojected log metadata in the
 log-owned identity shape, so an offline reader does not have to infer the
 session's provider from current config or usage telemetry. Picks live in
-`~/.efference/state.db`, beside the config file that named it; the same store
+the `model_picks` table of the user state database
+([state-store.md](state-store.md)), beside the config file that named it; the same store
 answers the recent ranks in the model catalog (`GET /inference/catalog`,
 [model-catalog.md](model-catalog.md)) and the offline `efference dev history`
 reader. The provider listings behind the model menus, their normalization, and

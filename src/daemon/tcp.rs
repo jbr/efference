@@ -88,11 +88,7 @@ pub(crate) struct Listener {
 
 /// Split a bind into its credential state and its listener parameters.
 pub(crate) fn arm(bind: TcpBind) -> (Arc<TcpAuth>, Listener) {
-    let ledger = BurnLedger::user_scoped().unwrap_or_else(|| {
-        // No home directory: fall back beside the cwd's session base. Weaker
-        // (repo-scoped burns) but never silently absent.
-        BurnLedger::new(std::path::Path::new(".efference").join("totp-burns"))
-    });
+    let ledger = BurnLedger::user_scoped();
     arm_with_ledger(bind, ledger)
 }
 

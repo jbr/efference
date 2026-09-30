@@ -34,6 +34,7 @@ pub mod secrets;
 pub mod setup;
 pub mod spawn;
 pub mod spotter;
+pub mod state;
 pub mod supervisor;
 pub mod tools;
 pub mod tui;

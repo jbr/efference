@@ -5,8 +5,8 @@ fn at(secs: u64) -> SystemTime {
     UNIX_EPOCH + Duration::from_secs(secs)
 }
 
-/// A throwaway ledger path under the OS temp dir (same create-or-retry entropy idiom as
-/// the scratch dir; no tempfile dependency).
+/// A throwaway ledger database under the OS temp dir (same create-or-retry entropy idiom
+/// as the scratch dir; no tempfile dependency).
 fn scratch_ledger() -> BurnLedger {
     use std::hash::{BuildHasher, Hasher, RandomState};
     let n = RandomState::new().build_hasher().finish();
@@ -234,6 +234,19 @@ fn a_step_burns_once() {
     assert!(ledger.burn(1000).unwrap());
     assert!(!ledger.burn(1000).unwrap());
     assert!(ledger.burn(1001).unwrap());
+}
+
+/// Two daemons, two ledgers, one file: the second burn of a step is a replay.
+/// Two handles over one file is the whole cross-daemon case, and the primary key
+/// decides it alone.
+#[test]
+fn a_step_burns_once_across_two_ledgers_on_one_file() {
+    let one = scratch_ledger();
+    let two = BurnLedger::new(one.path.clone());
+    assert!(one.burn(3000).unwrap(), "the first burn wins");
+    assert!(!two.burn(3000).unwrap(), "the other daemon sees it burned");
+    assert!(two.burn(3001).unwrap(), "a different step is not a replay");
+    assert!(!one.burn(3001).unwrap());
 }
 
 #[test]

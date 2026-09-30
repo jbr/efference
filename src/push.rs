@@ -3,8 +3,9 @@
 //! Two events mean the session needs its operator — a pending approval gate and a
 //! settled turn — and both happen inside a live daemon, so each daemon sends push for
 //! its own events. There is no watcher process and no per-session state: the VAPID
-//! keypair is derived from the machine root (`auth.rs`), and the subscriptions the
-//! browser produced live in one machine-scoped file every daemon reads.
+//! keypair is derived from the machine root (`auth.rs`) and never stored, and the
+//! subscriptions the browser produced are rows in one machine-scoped table every
+//! daemon reads ([`crate::state`], docs/state-store.md).
 //!
 //! The three pieces here: [`Subscription`] and [`Store`] (what the browser handed over,
 //! and where it is kept), `encrypt` (RFC 8291 payload encryption), and `vapid`
@@ -13,7 +14,7 @@
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD as B64;
 use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 mod encrypt;
@@ -97,87 +98,91 @@ impl Message {
 ///
 /// Machine-scoped for the same reason the TOTP burn ledger is user-scoped
 /// (`auth.rs`): the VAPID key is derived from the machine root, so every daemon
-/// under it can send to every subscription, and a per-repo file would hide a
+/// under it can send to every subscription, and a per-repo store would hide a
 /// subscription from the session that ought to reach it. Writes are rare —
 /// subscribe, unsubscribe, and a prune when a push service reports the endpoint
-/// gone — so the whole file is rewritten each time and the last writer wins;
-/// there is no lock, and a lost concurrent write costs one resubscribe.
+/// gone — and each one touches one row.
 pub struct Store {
     path: PathBuf,
 }
 
-/// The file's shape: an object with one key, so a later field can be added
-/// without the file changing kind.
-#[derive(Serialize, Deserialize, Default)]
-struct StoreFile {
-    subscriptions: Vec<Subscription>,
-}
+/// This store's half of the user state database ([`crate::state`],
+/// docs/state-store.md). The endpoint is the primary key: the browser mints a
+/// fresh one per subscribe, so it is what an upsert replaces on and what an
+/// unsubscribe names.
+const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS push_subscriptions (
+    endpoint TEXT PRIMARY KEY,
+    p256dh TEXT NOT NULL,
+    auth TEXT NOT NULL
+);";
 
 impl Store {
     pub fn new(path: impl Into<PathBuf>) -> Self {
         Self { path: path.into() }
     }
 
-    /// The real location: `~/.efference/push.json`, beside the burn ledger. Falls
-    /// back to the cwd's session base when the platform reports no home directory
-    /// — weaker (a per-repo store) but never silently absent.
+    /// The real location: the user state database's `push_subscriptions` table.
     pub fn machine_scoped() -> Self {
-        match std::env::home_dir() {
-            Some(home) => Self::new(home.join(".efference").join("push.json")),
-            None => Self::new(Path::new(".efference").join("push.json")),
-        }
+        Self::new(crate::state::user_scoped())
     }
 
-    /// Every stored subscription. A missing file is an empty list, not an error:
+    fn connect(&self) -> Result<rusqlite::Connection, crate::state::Error> {
+        crate::state::open(&self.path, SCHEMA)
+    }
+
+    /// Every stored subscription. An empty table is an empty list, not an error:
     /// "nobody has subscribed" is the ordinary state, and every caller would
-    /// otherwise have to spell it. An unreadable or unparseable file reads the
+    /// otherwise have to spell it. A store that cannot be opened or read reads the
     /// same way, with a log line — a push that does not go out must never be able
     /// to fail a turn.
     pub fn load(&self) -> Vec<Subscription> {
-        match std::fs::read_to_string(&self.path) {
-            Ok(contents) => match serde_json::from_str::<StoreFile>(&contents) {
-                Ok(file) => file.subscriptions,
-                Err(e) => {
-                    log::warn!("push store {} did not parse: {e}", self.path.display());
-                    Vec::new()
-                }
-            },
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Vec::new(),
-            Err(e) => {
-                log::warn!("push store {} unreadable: {e}", self.path.display());
-                Vec::new()
-            }
-        }
+        let Ok(db) = self.connect() else {
+            log::warn!("push store {} unreadable", self.path.display());
+            return Vec::new();
+        };
+        let Ok(mut rows) =
+            db.prepare("SELECT endpoint, p256dh, auth FROM push_subscriptions ORDER BY endpoint")
+        else {
+            log::warn!("push store {} unreadable", self.path.display());
+            return Vec::new();
+        };
+        // A row that does not read is a row that is not there, which is how the
+        // file store read an entry it could not parse.
+        rows.query_map([], |row| {
+            Ok(Subscription {
+                endpoint: row.get(0)?,
+                p256dh: row.get(1)?,
+                auth: row.get(2)?,
+            })
+        })
+        .map(|rows| rows.filter_map(Result::ok).collect())
+        .unwrap_or_default()
     }
 
-    fn write(&self, subscriptions: Vec<Subscription>) -> std::io::Result<()> {
-        if let Some(parent) = self.path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        let file = StoreFile { subscriptions };
-        std::fs::write(&self.path, serde_json::to_vec_pretty(&file)?)
-    }
-
-    /// Record a subscription, replacing any entry with the same endpoint. The
+    /// Record a subscription, replacing any row with the same endpoint. The
     /// browser mints a new endpoint per subscribe, so this is an upsert rather
     /// than an append mostly to keep a repeated POST idempotent.
-    pub fn upsert(&self, subscription: Subscription) -> std::io::Result<()> {
-        let mut subscriptions = self.load();
-        subscriptions.retain(|s| s.endpoint != subscription.endpoint);
-        subscriptions.push(subscription);
-        self.write(subscriptions)
+    pub fn upsert(&self, subscription: Subscription) -> Result<(), crate::state::Error> {
+        self.connect()?.execute(
+            "INSERT OR REPLACE INTO push_subscriptions (endpoint, p256dh, auth)
+             VALUES (?1, ?2, ?3)",
+            rusqlite::params![
+                subscription.endpoint,
+                subscription.p256dh,
+                subscription.auth
+            ],
+        )?;
+        Ok(())
     }
 
     /// Forget one endpoint. Silent when it is not there — an unsubscribe is a
     /// statement about the end state, and a browser may unsubscribe twice.
-    pub fn remove(&self, endpoint: &str) -> std::io::Result<()> {
-        let mut subscriptions = self.load();
-        let before = subscriptions.len();
-        subscriptions.retain(|s| s.endpoint != endpoint);
-        if subscriptions.len() == before {
-            return Ok(());
-        }
-        self.write(subscriptions)
+    pub fn remove(&self, endpoint: &str) -> Result<(), crate::state::Error> {
+        self.connect()?.execute(
+            "DELETE FROM push_subscriptions WHERE endpoint = ?1",
+            [endpoint],
+        )?;
+        Ok(())
     }
 }
 

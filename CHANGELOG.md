@@ -79,6 +79,7 @@ behind a change, see [`journal/`](journal/).
   catalog routes, so what each credential can see is one run's output.
 
 ### Changed
+- **The push subscriptions and TOTP burn ledger are tables in the state database** (docs/state-store.md): `~/.efference/push.json` and `~/.efference/totp-burns` are gone, replaced by `push_subscriptions` and `totp_burns` in `~/.efference/state.db`, which also holds model picks and the model catalog; `src/state.rs` opens it for every table. A burn is one `INSERT OR IGNORE` against a step primary key, so the check-and-burn is decided inside sqlite instead of behind an exclusive file lock, and a subscription write touches one row instead of rewriting a file the last writer won.
 - **Upstream failures are retried, never shown to the agent** (docs/transport.md,
   docs/redaction-fork.md): a timed-out or refused request joins the 12-attempt schedule
   instead of stalling; a triage gate without a verdict retries, restarts its fork, then holds

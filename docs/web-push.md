@@ -22,15 +22,14 @@ open — the same blast radius the cookie/bearer/TOTP family already has.
 
 ## The subscription store
 
-`~/.efference/push.json` (`src/push.rs`), beside the TOTP burn ledger and
-machine-scoped for the same reason: the key is the machine's, so every daemon can send
-to every subscription, and a per-repo file would hide a subscription from the session
-that ought to reach it. The file is a `{"subscriptions": [...]}` object; each entry is
-what `PushSubscription.toJSON()` produced (endpoint, `p256dh`, `auth`). Writes are rare
-— subscribe, unsubscribe, and pruning when a push service answers 404/410 — so the
-whole file rewrites each time and the last writer wins; a lost concurrent write costs
-one resubscribe. A missing or unparseable file reads as an empty list: a push that does
-not go out must never fail a turn.
+The `push_subscriptions` table of the user state database ([state-store.md](state-store.md),
+`src/push.rs`), machine-scoped for the same reason the burn ledger is user-scoped: the
+key is the machine's, so every daemon can send to every subscription, and a per-repo
+store would hide a subscription from the session that ought to reach it. One row per
+subscription, keyed by its endpoint — what `PushSubscription.toJSON()` produced
+(endpoint, `p256dh`, `auth`). Writes are rare: subscribe, unsubscribe, and pruning when
+a push service answers 404/410, each touching one row. A table that cannot be read is an
+empty list, and a push that does not go out must never fail a turn.
 
 ## The send
 

@@ -12,18 +12,29 @@
 //! absorbs ranking error (a slightly-wrong order costs a keypress, not a wrong
 //! session), so a single parameter is deliberately all there is.
 //!
-//! Storage is sqlite at `~/.efference/state.db` — no jsonl interim — with the
-//! history table as its first schema. Every operation opens its own connection:
-//! writes happen once per session creation and reads once per preview, so a
-//! pooled or shared connection would buy nothing and `Connection` is `Send`
-//! but not `Sync`. Every operation is best-effort: a store that cannot be
-//! opened or written reads as empty history, never a failed creation.
+//! Storage is the `model_picks` table of the user state database
+//! ([`crate::state`], docs/state-store.md) — no jsonl interim. Every operation
+//! opens its own connection: writes happen once per session creation and reads
+//! once per preview, so a pooled or shared connection would buy nothing and
+//! `Connection` is `Send` but not `Sync`. Every operation is best-effort: a
+//! store that cannot be opened or written reads as empty history, never a failed
+//! creation.
 
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-/// Where the user state database lives under `HOME`.
-pub const STATE_RELATIVE_PATH: &str = ".efference/state.db";
+/// This table's half of the user state database
+/// ([`crate::state`], docs/state-store.md).
+const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS model_picks (
+        at INTEGER NOT NULL,
+        cwd TEXT NOT NULL,
+        config_key TEXT NOT NULL,
+        connection TEXT NOT NULL,
+        provider TEXT NOT NULL,
+        model TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS model_picks_lookup
+        ON model_picks (connection, cwd, config_key, at);";
 
 /// Single exponential decay, half-life 30 days. Eyeballed, not tuned: ~200
 /// sessions is too little to fit per-person coefficients without overfitting a
@@ -126,7 +137,7 @@ impl History {
 
     /// The user state database under `home` (`~/.efference/state.db`).
     pub fn user(home: &Path) -> Self {
-        Self::at(home.join(STATE_RELATIVE_PATH))
+        Self::at(crate::state::path_in(home))
     }
 
     /// No store: every read is empty, every write is a no-op.
@@ -141,26 +152,7 @@ impl History {
     }
 
     fn connect(&self) -> Option<rusqlite::Connection> {
-        let path = self.path.as_ref()?;
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).ok()?;
-        }
-        let connection = rusqlite::Connection::open(path).ok()?;
-        connection
-            .execute_batch(
-                "CREATE TABLE IF NOT EXISTS model_picks (
-                    at INTEGER NOT NULL,
-                    cwd TEXT NOT NULL,
-                    config_key TEXT NOT NULL,
-                    connection TEXT NOT NULL,
-                    provider TEXT NOT NULL,
-                    model TEXT NOT NULL
-                );
-                CREATE INDEX IF NOT EXISTS model_picks_lookup
-                    ON model_picks (connection, cwd, config_key, at);",
-            )
-            .ok()?;
-        Some(connection)
+        crate::state::open(self.path.as_ref()?, SCHEMA).ok()
     }
 
     /// Record one explicit pick. Best-effort: a store that cannot be written
