@@ -1070,7 +1070,7 @@ session's provider from current config or usage telemetry. Picks live in
 answers the recent-models menu in every picker (`GET /inference/recent-models`)
 and the offline `efference dev history` reader. The TUI's model menu lists
 those picks first, then `GET /inference/models?connection=` — the provider's
-listing (`Endpoint::list_models`: Anthropic, Codex, described endpoints; other
+listing (`Endpoint::list_models`: Anthropic, Codex, the platform's unfiltered `/v1/models`, described endpoints; other
 providers answer empty), read live with the host's credential. A failed listing
 leaves the recents and the typed-ID row.
 

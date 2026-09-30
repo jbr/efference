@@ -1482,10 +1482,10 @@ impl Endpoint {
         }
     }
 
-    /// The models an Anthropic key can see, `(id, display name)` in the
-    /// listing's order. Only Anthropic's listing is short and curated enough to
-    /// offer as a menu; the other providers answer an empty list and the caller
-    /// asks for an id instead.
+    /// The models a key can see, `(id, display name)` in the listing's order.
+    /// OpenRouter's catalog is too large to offer whole and answers an empty
+    /// list, as does any provider without a listing; the caller asks for an id
+    /// instead (backlog/session-model-discovery.md).
     pub async fn list_models(&self) -> Result<Vec<(String, String)>, Error> {
         // A described endpoint's listing is the same route the credential check
         // and the capability lookup use, so one shape reads all three
@@ -1506,6 +1506,16 @@ impl Endpoint {
         // (`api/provider/codex.rs`).
         if self.provider == Provider::OpenAICodex {
             return Ok(codex::catalog(self).await?.suggestions());
+        }
+        // The platform listing names every model the key can reach — embeddings,
+        // speech, image, and dated snapshots among them — unfiltered: a long
+        // menu beats an empty one, and the typed id stays.
+        if self.provider == Provider::OpenAI {
+            let body = self.authed_get("https://api.openai.com/v1/models").await?;
+            return Ok(listing::model_ids(&body)?
+                .into_iter()
+                .map(|id| (id.clone(), id))
+                .collect());
         }
         if self.provider != Provider::Anthropic {
             return Ok(Vec::new());
