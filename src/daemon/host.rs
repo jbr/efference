@@ -410,11 +410,18 @@ pub(crate) fn host_routes(create: bool, files: bool) -> impl trillium::Handler {
         .get("/inference/catalog/:connection", catalog_one)
         .with_route(trillium::Method::Query, "/sessions", preview_session)
         .get("/sessions", list_sessions())
-        .delete("/sessions/:id", end_session)
+        .delete("/sessions/:session", end_session)
         // The wildcard remainder becomes the conn's path, so the control routes
         // match `/v1/…` exactly as they do at a session bind's root.
+        //
+        // The session segment is `:session`, never `:id`: the wildcard rewrites
+        // the *path* but leaves this capture in the conn's params, and a
+        // same-named capture inside `control_routes` (`/v1/processes/:id`,
+        // `/v1/notifications/:id`) would then read the session name where the
+        // route means an ordinal — every such route answering 400
+        // "process id must be an integer" for a well-formed id.
         .all(
-            "/sessions/:id/*",
+            "/sessions/:session/*",
             (
                 resolve_session,
                 control_routes(),
@@ -486,13 +493,13 @@ async fn read_sessions(conn: Conn) -> Conn {
 /// watcher and ignore state, so cloning it per request is cheap.
 struct HostedFiles(Files);
 
-/// `/sessions/:id/*`: put the session into conn state for the control routes,
-/// or `404` when no hosted session has that id.
+/// `/sessions/:session/*`: put the session into conn state for the control
+/// routes, or `404` when no hosted session has that id.
 async fn resolve_session(conn: Conn) -> Conn {
     let Some(host) = host_of(&conn) else {
         return missing_host(conn);
     };
-    let id = conn.param("id").unwrap_or_default().to_string();
+    let id = conn.param("session").unwrap_or_default().to_string();
     match host.hosted(&id) {
         Some(hosted) => conn
             .with_state(hosted.session)
@@ -508,14 +515,14 @@ async fn session_files(mut conn: Conn) -> Conn {
     }
 }
 
-/// `DELETE /sessions/:id`: end the session. Answers once teardown has run —
+/// `DELETE /sessions/:session`: end the session. Answers once teardown has run —
 /// background children reaped, scratch removed — so a client that then lists
 /// sessions or reads the dir sees the finished state.
 async fn end_session(conn: Conn) -> Conn {
     let Some(host) = host_of(&conn) else {
         return missing_host(conn);
     };
-    let id = conn.param("id").unwrap_or_default().to_string();
+    let id = conn.param("session").unwrap_or_default().to_string();
     match host.end(&id) {
         Some(completion) => {
             completion.await;

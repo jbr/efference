@@ -233,6 +233,11 @@ behind a change, see [`journal/`](journal/).
 - **The idle triage runs on the agent's own lineage** (docs/redaction-fork.md): with a separate `--triage-model`, only the per-result peeks go to it; the wake decision an idle session makes on a notification sends the agent's client, tools, and thinking, reading the cache the keepalive holds warm.
 
 ### Fixed
+- **A host-prefixed client can reach a session's `:id` routes** (docs/control-channel.md): the
+  `/sessions/<id>/*` stage captured its segment as `:id`, which shadowed the `:id` inside the
+  session's own routes, so every `/v1/processes/:id` and `/v1/notifications/:id` request through
+  a host — from the TUI, the web client, or any client on the prefix — answered `400 process id
+  must be an integer` for a well-formed id. Killing a process from a client signalled nothing.
 - **The new-session form draws on the terminal's own background** (docs/tui.md): it no longer
   paints the full-screen theme's bar and band backgrounds under its gutter, source labels,
   and status row.

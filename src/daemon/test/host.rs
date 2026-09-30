@@ -837,3 +837,42 @@ disabled = true
             .is_err()
     );
 }
+
+/// A `:id` route keeps its own id under the host's `/sessions/<id>/…` prefix.
+/// The wildcard that hands `/v1/…` to the session's router rewrites the *path*
+/// but leaves the session segment in the conn's params, so a same-named capture
+/// there would be read in place of the route's own — every `/v1/processes/:id`
+/// answering `400 process id must be an integer` for a well-formed ordinal, and
+/// the kill never reaching a process at all.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_process_id_survives_the_session_prefix() {
+    let roots = Roots::new();
+    let host = Host::new(crate::inference::InferenceRegistry::empty());
+    let runtime = SessionRuntime::start(runtime::boot(&roots.0.join("one")), host.swansong());
+    let session = Arc::clone(runtime.session());
+    host.adopt("one".into(), runtime);
+
+    let handle = session
+        .spawn_background("sleep 30".into(), None)
+        .expect("spawn");
+    assert_eq!(handle, "p#1");
+
+    let server = host_server(&host, true).await;
+
+    let read = server.get("/sessions/one/v1/processes/1").await;
+    read.assert_status(200);
+    read.assert_body_contains(r#""id":1"#);
+
+    let killed = server.delete("/sessions/one/v1/processes/1").await;
+    killed.assert_status(200);
+    killed.assert_body_contains(r#""status":"killed""#);
+
+    // The signal landed: the drain saw the exit and cleared the running set.
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while session.running_process(1).is_some() {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("the killed process left the running set");
+}

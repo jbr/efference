@@ -126,12 +126,21 @@ entry once the runtime has finished, whether by `DELETE /sessions/:id`, its own
 end of input, or host shutdown. That watcher is the host's supervision of session
 completion.
 
-Routing is per-conn state: the `/sessions/:id/*` stage looks the id up, puts the
-session's `Arc<Session>` (and its `Files` view) into conn state, and dispatches
+Routing is per-conn state: the `/sessions/:session/*` stage looks the id up, puts
+the session's `Arc<Session>` (and its `Files` view) into conn state, and dispatches
 into the unchanged control routes, whose one accessor reads conn state first and
 the server-global session second. A session bind still registers its session as
 server-global state; a host registers the `Arc<Host>` there instead. Nothing is
 forwarded and there is no per-session process.
+
+The `*` rewrites the conn's *path*, so the control routes match `/v1/…` exactly as
+they do at a session bind's root; it does not clear the *params*. Both live in one
+per-conn namespace, so a session-bind route's own `:name` must differ from the
+session segment's — the segment is `:session` for that reason. A collision is
+silent and reads as a malformed id rather than a routing fault: with the segment
+named `:id`, `/sessions/<name>/v1/processes/1` reached the handler with `id` =
+the session name, and every `/v1/processes/:id` and `/v1/notifications/:id` route
+answered `400 process id must be an integer` for a well-formed ordinal.
 
 Creation is a route on the socket handler tuple and a refusal on the web tuple:
 listener topology decides where a session request — which carries the caller's
