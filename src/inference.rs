@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 use serde::Deserialize;
 
-use crate::api::{AuthValue, Endpoint, Error, Provider, Reload, WireDialect};
+use crate::api::{AuthValue, Endpoint, Error, Provider, Reload, Reread, WireDialect};
 use crate::distill::TriageModel;
 use crate::env_table::EnvSnapshot;
 use crate::secrets::Secrets;
@@ -408,6 +408,20 @@ impl InferenceRegistry {
             .collect()
     }
 
+    /// The auth values that renew on a deadline, one per connection, for a
+    /// host to keep renewed while idle ([`AuthValue::keep_renewed`]).
+    pub fn renewing(&self) -> Vec<(&str, AuthValue)> {
+        self.connections
+            .iter()
+            .filter(|(_, connection)| !connection.disabled)
+            .filter_map(|(name, connection)| {
+                let auth = &connection.credential.as_ref().ok()?.endpoint.auth_value;
+                auth.renew_at()?;
+                Some((name.as_str(), auth.clone()))
+            })
+            .collect()
+    }
+
     /// The provider and a ready endpoint for one named connection, credential
     /// attached — the same resolution a session's roles get, for a caller that
     /// wants a single connection rather than a set of roles. The registry holds
@@ -667,6 +681,9 @@ fn load_credential(
     host_env: &EnvSnapshot,
     secrets: &Arc<Secrets>,
 ) -> Result<Credential, String> {
+    // Only a source that states its own expiry sets this; the rest are re-read
+    // when a request is rejected (docs/transport.md).
+    let mut renew_at = None;
     let (token, account, label, reload) = match auth {
         AuthConfig::Keychain { name: item } => {
             let item = crate::secrets::inference_name(item.as_deref().unwrap_or(name));
@@ -709,10 +726,12 @@ fn load_credential(
             // The grant is refreshed by the reloader below rather than here:
             // loading a registry is synchronous and happens in offline verbs
             // too, and a launch is not the place to discover the issuer is
-            // unreachable. An expired token is re-read on its first rejection
-            // like any other kind (docs/transport.md).
+            // unreachable. The first request past `renew_at` refreshes it
+            // (`AuthValue::current`), and a host renews it idle
+            // (docs/transport.md).
             let account = grant.account_id.clone();
             let token = grant.tokens.access_token().to_string();
+            renew_at = grant.renew_at();
             let (store, connection) = (secrets.clone(), item.clone());
             let reload: Option<Reload> = Some(Box::new(move || {
                 let (store, connection) = (store.clone(), connection.clone());
@@ -727,7 +746,10 @@ fn load_credential(
                     } else {
                         stored
                     };
-                    Ok(provider.auth_header_value(grant.tokens.access_token()))
+                    Ok(Reread {
+                        value: provider.auth_header_value(grant.tokens.access_token()),
+                        renew_at: grant.renew_at(),
+                    })
                 })
             }));
             (token, Some(account), format!("oauth:{item}"), reload)
@@ -757,7 +779,8 @@ fn load_credential(
     let mut endpoint = Endpoint::from_credentials(provider, token.clone(), account, base)
         .map_err(|error| error.to_string())?;
     if let Some(reload) = reload {
-        endpoint.auth_value = AuthValue::reloadable(provider.auth_header_value(&token), reload);
+        endpoint.auth_value =
+            AuthValue::renewing(provider.auth_header_value(&token), renew_at, reload);
     }
     Ok(Credential {
         endpoint,

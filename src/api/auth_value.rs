@@ -14,23 +14,44 @@
 //! carries no reloader and reports as much. `From<&str>` and `From<String>`
 //! build a cell with no reloader, which is what a literal in a test wants.
 //!
+//! A value whose source states when it expires carries a renewal deadline, and
+//! [`AuthValue::current`] re-reads ahead of it rather than waiting for a
+//! rejection. That covers every request path alike — a turn, a listing probe,
+//! a decisions call — where the rejection-driven re-read is only wired into the
+//! turn's retry loop.
+//!
 //! [`Endpoint`]: super::Endpoint
 
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, RwLock, Weak};
+use std::time::{Duration, SystemTime};
 
 use crate::env_table::Masker;
 
 /// Re-reads a credential from wherever it came from, yielding the assembled
-/// header value or why it could not be read.
+/// header value and when to renew it, or why it could not be read.
 ///
 /// Async because re-reading is not always local: `codex-cache` and `keychain`
 /// read a file or the OS store, but an OAuth grant's re-read is a *refresh* —
 /// an HTTP round-trip to the issuer. A blocking closure doing that inside the
 /// runtime would hold a worker thread for the length of a network call.
 pub type Reload =
-    Box<dyn Fn() -> Pin<Box<dyn Future<Output = Result<String, String>> + Send>> + Send + Sync>;
+    Box<dyn Fn() -> Pin<Box<dyn Future<Output = Result<Reread, String>> + Send>> + Send + Sync>;
+
+/// What a [`Reload`] yields: the header value, and the instant after which it
+/// should be re-read before use. `None` for a source that states no expiry,
+/// which is re-read only when a request is rejected.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Reread {
+    pub value: String,
+    pub renew_at: Option<SystemTime>,
+}
+
+/// How long a failed renewal waits before the next request tries again. The
+/// value it kept may still be accepted until its real expiry, so every request
+/// in that window would otherwise pay an issuer round-trip that is failing.
+const RENEW_RETRY: Duration = Duration::from_secs(5 * 60);
 
 /// Wrap a synchronous re-read — a file, a store lookup — as a [`Reload`].
 ///
@@ -39,7 +60,10 @@ pub type Reload =
 /// by a person, and moving it would not make it cancellable.
 pub fn sync_reload(read: impl Fn() -> Result<String, String> + Send + Sync + 'static) -> Reload {
     Box::new(move || {
-        let result = read();
+        let result = read().map(|value| Reread {
+            value,
+            renew_at: None,
+        });
         Box::pin(async move { result })
     })
 }
@@ -51,6 +75,10 @@ pub struct AuthValue(Arc<Cell>);
 struct Cell {
     current: RwLock<String>,
     reload: Option<Reload>,
+    /// When `current` should be re-read before it is sent, from the source's
+    /// own statement of expiry. Moved by every successful re-read, and pushed
+    /// back by [`RENEW_RETRY`] on a failed one.
+    renew_at: RwLock<Option<SystemTime>>,
     /// The maskers of the sessions using this credential. A replacement has to
     /// join them or the new token is unmasked in every transcript that was
     /// protected from the old one (docs/secrets.md). Weak, because a session's
@@ -98,9 +126,15 @@ impl std::fmt::Display for Reloaded {
 impl AuthValue {
     /// A value with a source it can be re-read from.
     pub fn reloadable(initial: String, reload: Reload) -> Self {
+        Self::renewing(initial, None, reload)
+    }
+
+    /// A value with a source, renewed from it once `renew_at` passes.
+    pub fn renewing(initial: String, renew_at: Option<SystemTime>, reload: Reload) -> Self {
         Self(Arc::new(Cell {
             current: RwLock::new(initial),
             reload: Some(reload),
+            renew_at: RwLock::new(renew_at),
             reloading: tokio::sync::Mutex::new(()),
             maskers: RwLock::new(Vec::new()),
         }))
@@ -127,9 +161,75 @@ impl AuthValue {
         }
     }
 
-    /// The value to put on the request, as of now.
+    /// The value as it stands, without renewing it. A request should send
+    /// [`current`](Self::current) instead; this is for comparison and tests.
     pub fn get(&self) -> String {
         self.0.current.read().unwrap().clone()
+    }
+
+    /// When this value is next due for renewal, if its source states one.
+    pub fn renew_at(&self) -> Option<SystemTime> {
+        *self.0.renew_at.read().unwrap()
+    }
+
+    fn due(&self) -> bool {
+        self.renew_at().is_some_and(|at| at <= SystemTime::now())
+    }
+
+    /// The value to put on a request, renewed first if it is due.
+    ///
+    /// A failed renewal keeps the old value, which may still be accepted until
+    /// its real expiry; the failure is logged, and if the provider does reject
+    /// it, the rejection path's re-read reports the source's words.
+    pub async fn current(&self) -> String {
+        if self.due() {
+            let _guard = self.0.reloading.lock().await;
+            // Another caller may have renewed while this one waited.
+            if self.due()
+                && let Some(reload) = &self.0.reload
+            {
+                match reload().await {
+                    Ok(reread) => self.replace(reread),
+                    Err(why) => {
+                        log::warn!("renewing a credential ahead of its expiry failed: {why}");
+                        *self.0.renew_at.write().unwrap() = Some(SystemTime::now() + RENEW_RETRY);
+                    }
+                }
+            }
+        }
+        self.get()
+    }
+
+    /// Renew this value whenever it comes due, for as long as it states a
+    /// deadline — so a credential nobody is using stays renewed, and a grant
+    /// whose refresh token has gone bad is reported at the host rather than
+    /// at the next request. A value already due is renewed at once, which is
+    /// what tests a stored refresh token at host launch.
+    ///
+    /// Waits in bounded steps rather than one sleep to the deadline: a tokio
+    /// timer runs on the monotonic clock, which a sleeping laptop does not
+    /// advance, so one long sleep would wake late by however long the lid was
+    /// shut.
+    pub async fn keep_renewed(self) {
+        const STEP: Duration = Duration::from_secs(15 * 60);
+        while let Some(at) = self.renew_at() {
+            match at.duration_since(SystemTime::now()) {
+                Ok(wait) => tokio::time::sleep(wait.min(STEP)).await,
+                Err(_) => {
+                    self.current().await;
+                }
+            }
+        }
+    }
+
+    /// Put a re-read value in place. Masked before it is reachable: nothing may
+    /// read the new value off the cell until it is redactable.
+    fn replace(&self, reread: Reread) {
+        if reread.value != self.get() {
+            self.mask(&reread.value);
+            *self.0.current.write().unwrap() = reread.value;
+        }
+        *self.0.renew_at.write().unwrap() = reread.renew_at;
     }
 
     /// Re-read the credential, replacing the value when it differs from
@@ -151,12 +251,9 @@ impl AuthValue {
         };
         match reload().await {
             Err(why) => Reloaded::Failed(why),
-            Ok(value) if value == rejected => Reloaded::Unchanged,
-            Ok(value) => {
-                // Masked before it is reachable: nothing may read the new value
-                // off the cell until it is redactable.
-                self.mask(&value);
-                *self.0.current.write().unwrap() = value;
+            Ok(reread) if reread.value == rejected => Reloaded::Unchanged,
+            Ok(reread) => {
+                self.replace(reread);
                 Reloaded::Replaced
             }
         }
@@ -168,6 +265,7 @@ impl From<String> for AuthValue {
         Self(Arc::new(Cell {
             current: RwLock::new(value),
             reload: None,
+            renew_at: RwLock::new(None),
             reloading: tokio::sync::Mutex::new(()),
             maskers: RwLock::new(Vec::new()),
         }))

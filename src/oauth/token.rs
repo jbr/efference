@@ -307,6 +307,28 @@ impl CodeExchange<'_> {
     }
 }
 
+/// The token endpoint answered, and refused. Typed apart from a transport
+/// failure because the remedies differ: a refused refresh token needs a new
+/// login, where an unreachable issuer needs only a later attempt.
+#[derive(Debug)]
+pub struct Rejected {
+    endpoint: String,
+    pub status: u16,
+    detail: String,
+}
+
+impl std::fmt::Display for Rejected {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "token endpoint {} returned {}: {}",
+            self.endpoint, self.status, self.detail
+        )
+    }
+}
+
+impl std::error::Error for Rejected {}
+
 async fn post_token(
     http: &HttpClient,
     token_endpoint: &str,
@@ -323,10 +345,12 @@ async fn post_token(
     let status = conn.status().map_or(0, u16::from);
     let body = conn.response_body().read_string().await.unwrap_or_default();
     if !(200..300).contains(&status) {
-        anyhow::bail!(
-            "token endpoint {token_endpoint} returned {status}: {}",
-            describe_error(&body)
-        );
+        return Err(Rejected {
+            endpoint: token_endpoint.to_string(),
+            status,
+            detail: describe_error(&body),
+        }
+        .into());
     }
     let response: TokenResponse = serde_json::from_str(&body)
         .with_context(|| format!("unparseable token response: {body}"))?;

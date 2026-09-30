@@ -735,7 +735,9 @@ impl Client {
             // What this attempt authenticates with, kept so a rejection can say
             // which value was rejected rather than re-reading one that may
             // already have been repaired by another session (`AuthValue`).
-            let sent_auth = self.endpoint.auth_value.get();
+            // `current` renews a value near its stated expiry before it is
+            // sent, so an OAuth grant is refreshed here rather than on a 401.
+            let sent_auth = self.endpoint.auth_value.current().await;
             let conn = self.post();
             match conn.with_body(body).into_sse().await {
                 Ok(events) => break events,

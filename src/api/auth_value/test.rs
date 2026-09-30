@@ -1,5 +1,6 @@
 use super::*;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::{Duration, SystemTime};
 
 use crate::env_table::Masker;
 
@@ -126,4 +127,80 @@ async fn a_masker_is_held_weakly() {
     drop(masker);
     assert_eq!(weak.strong_count(), 0, "nothing keeps it alive");
     assert_eq!(value.reload("old").await, Reloaded::Replaced);
+}
+
+/// A value whose source states an expiry, re-read through `results` in order.
+fn renewing(
+    renew_at: Option<SystemTime>,
+    results: Vec<Result<Reread, String>>,
+) -> (AuthValue, Arc<AtomicUsize>) {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let seen = calls.clone();
+    let value = AuthValue::renewing(
+        "old".into(),
+        renew_at,
+        Box::new(move || {
+            let n = seen.fetch_add(1, Ordering::SeqCst);
+            let result = results[n].clone();
+            Box::pin(async move { result })
+        }),
+    );
+    (value, calls)
+}
+
+fn in_a_day() -> Option<SystemTime> {
+    Some(SystemTime::now() + Duration::from_secs(60 * 60 * 24))
+}
+
+fn fresh(value: &str, renew_at: Option<SystemTime>) -> Result<Reread, String> {
+    Ok(Reread {
+        value: value.into(),
+        renew_at,
+    })
+}
+
+/// The case `efference dev models` hit: a listing probe sent the value loaded
+/// at launch, which had passed its expiry, with nothing to renew it.
+#[tokio::test]
+async fn a_value_past_its_deadline_is_renewed_before_it_is_sent() {
+    let next = in_a_day();
+    let (value, calls) = renewing(Some(SystemTime::UNIX_EPOCH), vec![fresh("new", next)]);
+    assert_eq!(value.current().await, "new");
+    assert_eq!(value.renew_at(), next);
+    assert_eq!(value.current().await, "new");
+    assert_eq!(
+        calls.load(Ordering::SeqCst),
+        1,
+        "renewed once, then current"
+    );
+}
+
+#[tokio::test]
+async fn a_value_before_its_deadline_is_sent_without_a_read() {
+    let (value, calls) = renewing(in_a_day(), vec![]);
+    assert_eq!(value.current().await, "old");
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+}
+
+/// The old value may still be accepted until its real expiry, so a failed
+/// renewal sends it anyway — and waits before trying again rather than asking
+/// the issuer on every request.
+#[tokio::test]
+async fn a_failed_renewal_keeps_the_value_and_backs_off() {
+    let (value, calls) = renewing(Some(SystemTime::UNIX_EPOCH), vec![Err("refused".into())]);
+    assert_eq!(value.current().await, "old");
+    assert!(value.renew_at().unwrap() > SystemTime::now());
+    assert_eq!(value.current().await, "old");
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+}
+
+/// What tests a stored refresh token at host launch: a value already due is
+/// renewed without waiting, and the loop ends when the source stops stating a
+/// deadline.
+#[tokio::test]
+async fn keeping_a_due_value_renewed_renews_it_at_once() {
+    let (value, calls) = renewing(Some(SystemTime::UNIX_EPOCH), vec![fresh("new", None)]);
+    value.clone().keep_renewed().await;
+    assert_eq!(value.get(), "new");
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
 }

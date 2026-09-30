@@ -384,6 +384,10 @@ pub(crate) async fn host(
     let secrets = std::sync::Arc::new(efference::secrets::Secrets::detect()?);
     let inference = efference::inference::InferenceRegistry::load(&host_cwd, host_env, &secrets)?;
     refuse_broken_connections(&inference)?;
+    for (name, auth) in inference.renewing() {
+        log::info!("{name}: renewing its credential ahead of expiry while the host runs");
+        tokio::spawn(auth.keep_renewed());
+    }
     let host = efference::daemon::Host::new(inference);
     if let Some(owner) = &owner {
         owner.adopt(host.swansong());

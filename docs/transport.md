@@ -648,8 +648,28 @@ maskers are held weakly, since a session's masker dies with the session while th
 cell lives as long as the host.
 
 The account id is not re-read: it rides `extra_headers` and is stable across a
-refresh of the same login. Refreshing *before* expiry — the access token is a JWT
-carrying `exp` — belongs with owning the grant, not here.
+refresh of the same login.
+
+**Renewing ahead of expiry.** A source that states when its value expires gives
+the cell a renewal deadline, and every request reads the value through
+`AuthValue::current`, which re-reads first once the deadline has passed. Only
+`oauth` states one today: the access token is a JWT carrying `exp`, and the
+deadline is an hour before it. Renewal therefore covers every request path — a
+turn, a listing probe (`efference dev models`), a decisions call — where the
+rejection-driven re-read above is wired only into the turn's retry loop. A failed
+renewal keeps the old value, which may still be accepted until its real `exp`,
+logs the source's words, and moves the deadline five minutes out so a failing
+issuer is not asked on every request.
+
+A host also renews while idle: at launch it spawns `AuthValue::keep_renewed` for
+each connection with a deadline, which renews at once if the stored grant is
+already due — so a bad refresh token is reported at launch rather than at the
+first turn — and then waits for the next deadline in bounded steps, since a
+monotonic timer does not advance while the machine sleeps. The `oauth` re-read
+loads the stored grant before refreshing, so a grant that `efference setup` or
+another process stored meanwhile is picked up rather than refreshed again. A
+refresh the issuer refuses with a 4xx (`oauth::token::Rejected`) is reported as
+a login to redo, naming `efference setup`; a transport failure or 5xx is not.
 
 ---
 
@@ -757,7 +777,8 @@ two auth kinds:
   pick that up.
 - `oauth` is efference's own grant (`inference/chatgpt.rs`): it runs the
   authorization dance itself, stores access, refresh, and id tokens in the secret
-  store ([secrets.md](secrets.md)), and refreshes them against the issuer. No
+  store ([secrets.md](secrets.md)), and refreshes them against the issuer ahead
+  of `exp` (renewing ahead of expiry, above). No
   Codex install is required, a Codex that keeps its login in the keyring is no
   obstacle, and renewal is unattended.
 

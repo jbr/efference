@@ -115,9 +115,15 @@ impl Grant {
     /// renewed. A token with no stated expiry is taken as current: the issuer
     /// said nothing, and guessing would refresh on every request.
     pub fn needs_refresh(&self) -> bool {
+        self.renew_at().is_some_and(|at| at <= SystemTime::now())
+    }
+
+    /// When the access token enters its renewal window, or `None` for a token
+    /// with no stated expiry.
+    pub fn renew_at(&self) -> Option<SystemTime> {
         self.tokens
             .expires_at()
-            .is_some_and(|at| at <= SystemTime::now() + REFRESH_WITHIN)
+            .map(|at| at.checked_sub(REFRESH_WITHIN).unwrap_or(at))
     }
 }
 
@@ -262,7 +268,22 @@ pub async fn refresh(secrets: &Secrets, connection: &str, grant: &Grant) -> Resu
         CLIENT_ID,
     )
     .await
-    .map_err(|e| format!("refreshing the ChatGPT grant: {e}"))?;
+    .map_err(|e| {
+        // A 4xx is the issuer refusing the refresh token itself (expired,
+        // revoked, or reused); only a new login repairs that. Anything else —
+        // no answer, a 5xx — may pass on its own.
+        let refused = e
+            .downcast_ref::<token::Rejected>()
+            .is_some_and(|rejected| (400..500).contains(&rejected.status));
+        if refused {
+            format!(
+                "the ChatGPT login for {connection:?} was refused ({e}); run `efference setup` \
+                 to log in again"
+            )
+        } else {
+            format!("refreshing the ChatGPT grant: {e}")
+        }
+    })?;
 
     // Re-read from the new token rather than carried over: a refresh is where
     // a plan change would show up, and the account is asserted afresh instead

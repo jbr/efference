@@ -1332,11 +1332,12 @@ impl Endpoint {
     /// conversation to route or cache-key on a listing read.
     pub async fn probe(&self, url: &str) -> Result<ProbeResponse, Error> {
         let http = crate::http::client();
+        let auth = self.auth_value.current().await;
         // Every header is set before the request is sent: a header added to an
         // in-flight connection is not part of the request that went out.
         let mut conn = http
             .get(url)
-            .with_request_header(self.auth_header.clone(), self.auth_value.get());
+            .with_request_header(self.auth_header.clone(), auth);
         if self.provider.inference_dialect() == Some(WireDialect::Messages) {
             conn = conn.with_request_header("anthropic-version", ANTHROPIC_VERSION);
         }
