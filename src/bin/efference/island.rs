@@ -18,7 +18,7 @@ use super::*;
 
 mod browser;
 
-pub(crate) use browser::run as run_browser;
+pub(crate) use browser::{BIND, run as run_browser};
 use efference::daemon::island::{ISLAND_LOG, ISLAND_SOCKET, island_dir};
 use std::io::IsTerminal;
 use std::os::unix::process::CommandExt;
@@ -205,12 +205,22 @@ pub(crate) async fn start(
 
 /// The whole path: start the island, create a session in this directory, attach,
 /// and end the island when the TUI exits.
+///
+/// A `bind` makes this the browser island instead — the same host, the same
+/// ownership connection, and the session created the same way, but the web
+/// client answers on that address rather than the TUI taking the screen
+/// ([`run_browser`]). One flag picks the surface; there is no second path to
+/// learn.
 pub(crate) async fn run(
+    bind: Option<&str>,
     creation: Creation,
     theme: Option<String>,
     images: efference::tui::ImageMode,
     frame_cost: bool,
 ) -> CliResult {
+    if let Some(bind) = bind {
+        return run_browser(bind, creation).await;
+    }
     let Some((island, id)) = start(None, creation).await? else {
         return Ok(());
     };

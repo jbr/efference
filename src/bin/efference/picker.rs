@@ -173,6 +173,7 @@ pub(crate) async fn run(
     theme: Option<String>,
     images: efference::tui::ImageMode,
     frame_cost: bool,
+    bind: Option<&str>,
 ) -> CliResult {
     let here = std::env::current_dir()?;
     let listings = live_listings().await?;
@@ -183,11 +184,12 @@ pub(crate) async fn run(
             return tui(target, theme, images, frame_cost).await;
         }
         // Nothing to pick from and nowhere to create: start a host owned by
-        // this terminal and create here (docs/operating.md).
+        // this terminal and create here (docs/operating.md). A `bind` makes it
+        // the browser island rather than the TUI.
         let creation = island::Creation::Form {
             theme: theme.clone(),
         };
-        return island::run(creation, theme, images, frame_cost).await;
+        return island::run(bind, creation, theme, images, frame_cost).await;
     }
     let menu = menu(&listings, &here);
     // Without a terminal to draw in there is nothing to ask with; resolve the

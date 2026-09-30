@@ -185,11 +185,16 @@ its own questions first (`setup::terminal::Terminal::erase`, which counts the ro
 prompts leave), keeping only the line naming a file the wizard wrote.
 
 **The browser island** (`src/bin/efference/island/browser.rs`) is the same launch with
-`--bind 127.0.0.1:0`: a plaintext loopback web bind on a port the kernel picks, which the
-host records once listening so its links name it ([web-bind.md](web-bind.md)). After
+`--bind`: a plaintext loopback web bind, on a port the kernel picks unless the operator
+named one, which the host records once listening so its links name it
+([web-bind.md](web-bind.md)). After
 creating the session, the launcher mints a link over the socket (`GET /auth/link`),
 points it at the session's page, and opens the browser. It is always an island, even with
-a host running: this choice never adds a web bind to a host. The owner is the
+a host running: this choice never adds a web bind to a host. `--bind` on any invocation
+reaches it — a bare `efference --bind 8080` in a directory with no host running is this
+path, the same one the setup offer's browser choice takes, and without `--bind` the same
+invocation starts the terminal island instead. The one flag picks the surface; there is
+no verb to learn for it. The owner is the
 foreground launcher, never the tab — reloads and stream reconnects cannot end it — and
 the terminal holds one prompt line: `o` opens the session again, `c` copies a link, `p`
 prints one, `q`, Esc, or Ctrl-C quits. Every link is minted when asked for, because a
@@ -198,8 +203,8 @@ tab signed in. Quitting erases the prompt and ends the island as the terminal is
 does. Each island lives in
 `~/.efference/islands/<launcher pid>/` (`host.sock`, `host.log`), which the host removes on a
 clean exit and leaves in place when it fails. The strip's leaving verb reads `quit` rather
-than `detach` in the owning TUI. The island ignores the `[host]` table's web bind and is
-Unix-socket-only ([web-bind.md](web-bind.md)). Islands are not in
+than `detach` in the owning TUI. The island ignores the `[host]` table's web bind and
+takes its address from `--bind` alone ([web-bind.md](web-bind.md)). Islands are not in
 host discovery: a second client reaches one by its socket path. Where
 stdin or stdout is not a terminal there is nothing to draw in, and the invocation resolves
 as it would with an explicit target.

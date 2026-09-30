@@ -16,10 +16,14 @@ fn default_config_path() -> Result<PathBuf, CliError> {
 /// directory with neither a project config nor sessions is offered setup; any
 /// other is `efference tui` with nothing named — pick a session here, or with
 /// no host running, start one for this terminal.
-pub(crate) async fn default_verb() -> CliResult {
+///
+/// `bind` is `--bind`, carried to whichever island this ends up starting so the
+/// flag survives the questions in between and reaches the browser rather than
+/// being dropped at the first branch (docs/operating.md).
+pub(crate) async fn default_verb(bind: Option<&str>) -> CliResult {
     let path = default_config_path()?;
     if !path.exists() {
-        return run(Some(path)).await;
+        return run(Some(path), bind).await;
     }
     let here = std::env::current_dir()?;
     let (theme, images) = display_env()?;
@@ -27,10 +31,10 @@ pub(crate) async fn default_verb() -> CliResult {
     if !configured {
         let listings = picker::live_listings().await?;
         if picker::menu(&listings, &here).rows.is_empty() {
-            return offer_here(&mut Terminal::open()?, None, theme, images).await;
+            return offer_here(&mut Terminal::open()?, None, bind, theme, images).await;
         }
     }
-    picker::run(theme, images, false).await
+    picker::run(theme, images, false, bind).await
 }
 
 /// What `tui`'s display flags read from the environment, for the bare verb,
@@ -55,6 +59,7 @@ fn display_env() -> Result<(Option<String>, efference::tui::ImageMode), CliError
 async fn offer_here(
     terminal: &mut Terminal,
     kept: Option<String>,
+    bind: Option<&str>,
     theme: Option<String>,
     images: efference::tui::ImageMode,
 ) -> CliResult {
@@ -82,9 +87,10 @@ async fn offer_here(
     }
     if surface == efference::setup::Surface::Browser {
         // Always an island: a running host has its own web bind, or none, and
-        // this choice never changes one (docs/operating.md).
+        // this choice never changes one (docs/operating.md). The address is
+        // `--bind` when given, and a port the kernel picks otherwise.
         let creation = island::Creation::Form { theme };
-        return island::run_browser(creation).await;
+        return island::run_browser(bind.unwrap_or(island::BIND), creation).await;
     }
     // The session's settings are chosen in the new-session form, as any other
     // session's are (docs/tui.md); in a directory with no project config the
@@ -95,13 +101,18 @@ async fn offer_here(
             let creation = island::Creation::Form {
                 theme: theme.clone(),
             };
-            island::run(creation, theme, images, false).await
+            island::run(bind, creation, theme, images, false).await
         }
     }
 }
 
 /// The verb: ask, render, show, write.
-pub(crate) async fn run(config: Option<PathBuf>) -> CliResult {
+///
+/// `bind` reaches the hand-off's island, so `efference setup --bind 8080`
+/// answers the setup offer in the browser on that address — the wizard asks
+/// which surface, and the flag is the address, not a replacement for the
+/// question (docs/operating.md).
+pub(crate) async fn run(config: Option<PathBuf>, bind: Option<&str>) -> CliResult {
     let path = match config {
         Some(path) => path,
         None => default_config_path()?,
@@ -176,5 +187,5 @@ pub(crate) async fn run(config: Option<PathBuf>) -> CliResult {
     }
     let (theme, images) = display_env()?;
     let kept = format!("Wrote {}.", path.display());
-    offer_here(&mut terminal, Some(kept), theme, images).await
+    offer_here(&mut terminal, Some(kept), bind, theme, images).await
 }

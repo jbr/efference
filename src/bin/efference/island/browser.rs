@@ -14,16 +14,23 @@ use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use std::io::Write;
 
 /// Loopback at a port the kernel picks; the host reports the one it bound, and
-/// its minted links name it.
-const BIND: &str = "127.0.0.1:0";
+/// its minted links name it. The default for a browser island launched without
+/// an address of its own — the setup offer's choice, and `efference` with no
+/// `--bind`.
+pub(crate) const BIND: &str = "127.0.0.1:0";
 
 /// How often the prompt checks that the host is still running between keys.
 const KEY_POLL: Duration = Duration::from_millis(200);
 
 /// Start the island with a web bind, create a session here, open the browser on
 /// it, and hold the prompt until the person quits or the host ends.
-pub(crate) async fn run(creation: Creation) -> CliResult {
-    let Some((mut island, id)) = start(Some(BIND), creation).await? else {
+///
+/// `bind` is the address the operator asked for; the setup offer's browser
+/// choice passes [`BIND`] and so keeps a port the kernel picks. Whatever it is,
+/// the loopback rule in [`resolve_bind`](super::serve::resolve_bind) decides
+/// whether it is accepted — the grammar is the host's, not a second one.
+pub(crate) async fn run(bind: &str, creation: Creation) -> CliResult {
+    let Some((mut island, id)) = start(Some(bind), creation).await? else {
         return Ok(());
     };
     let links = Links {

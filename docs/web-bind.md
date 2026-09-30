@@ -22,8 +22,16 @@ The bind is configured by the `[host]` table of the user configuration,
 `--bind ""` turns a configured bind off for one launch. The table describes the machine's
 host rather than a shell, which is what lets a host started by a service manager, with no
 interactive environment, carry the same bind. A leading `~/` in a certificate path
-expands against the home directory. A terminal-owned island ignores the table: it is
-Unix-socket-only ([operating.md](operating.md)).
+expands against the home directory. A terminal-owned island ignores the table: it takes
+its address from `--bind` alone ([operating.md](operating.md)).
+
+`--bind` is one flag with two homes, since both surfaces serve the same web client from
+the same credential. A port (`--bind 8080`) is the loopback address with that port, an
+address is read as written (`127.0.0.1:8000`, `0.0.0.0:0` for a port the kernel picks),
+and a bare port can never widen exposure past the loopback rule below because it *is*
+loopback. On `efference host` it is the machine's front door; on any other invocation it
+is the island's, and the island answers in the browser on that address rather than in the
+TUI ([operating.md](operating.md)).
 
 The bind is never set by a session's `config.toml`: that file is model-proposable and
 fs-watched live, and network exposure must not be requestable from inside a session. The

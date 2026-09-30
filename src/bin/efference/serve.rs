@@ -47,6 +47,7 @@ pub(crate) fn resolve_bind(
         }
         return Ok(None);
     };
+    let addr = loopback_addr(&addr);
     use std::net::ToSocketAddrs;
     let resolved: Vec<_> = addr
         .to_socket_addrs()
@@ -69,8 +70,10 @@ pub(crate) fn resolve_bind(
     };
     if tls.is_none() && !loopback {
         return Err(format!(
-            "--bind {addr} is not loopback: --tls-cert/--tls-key are required — \
-             never cleartext on a routable interface (docs/web-bind.md)"
+            "--bind {addr} is not loopback, and a cleartext bind is only accepted on \
+             loopback: anyone who can reach this interface can replay a session cookie \
+             and drive the agent's tools. Serve it with --tls-cert/--tls-key, or bind \
+             loopback (a bare port, or 127.0.0.1/::1) (docs/web-bind.md)"
         )
         .into());
     }
@@ -99,6 +102,17 @@ pub(crate) fn resolve_bind(
         root,
         open: flags.open,
     }))
+}
+
+/// A bare port is the loopback address with that port: `--bind 8080` and
+/// `--bind 127.0.0.1:8080` are the same listener, so the short spelling never
+/// widens exposure past the loopback-only rule below. Anything with a colon,
+/// or a name, is left for `to_socket_addrs` to resolve as written.
+pub(crate) fn loopback_addr(addr: &str) -> String {
+    match addr.parse::<u16>() {
+        Ok(port) => format!("127.0.0.1:{port}"),
+        Err(_) => addr.to_string(),
+    }
 }
 
 /// A public URL is an origin — `http(s)://name[:port]`, no path — and one the host
@@ -351,8 +365,11 @@ pub(crate) async fn host(
         Some(socket) => socket,
         None => user_host_socket().ok_or("no HOME to place ~/.efference/host.sock under")?,
     };
-    // An island is Unix-socket-only (docs/operating.md): the machine's bind
-    // belongs to the machine's host, and two islands would contend for it.
+    // An island takes no bind from the table (docs/operating.md): the machine's
+    // bind belongs to the machine's host, and two islands would contend for
+    // it. `--bind` still reaches one, since the operator named that address for
+    // this launch alone.
+
     let bind_flags = if island {
         bind_flags
     } else {

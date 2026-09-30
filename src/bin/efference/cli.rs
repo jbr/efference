@@ -20,6 +20,17 @@ pub(crate) struct Cli {
     /// Explicit control-socket path; overrides `--name` and discovery.
     #[arg(long, global = true)]
     pub(crate) socket: Option<PathBuf>,
+    /// Listen on a TCP address as well: the web client's front door. A port
+    /// (`8080`), an address (`127.0.0.1:8000`, `0` for one the kernel picks), or
+    /// `host:port`; a bare port means loopback, and a cleartext bind is
+    /// accepted only there, so the short spelling never widens exposure
+    /// (docs/web-bind.md). Overrides `[host] bind` for `efference host`;
+    /// `--bind ""` serves the Unix socket alone whatever the table says.
+    ///
+    /// On any other invocation this is the island's: with no host running, the
+    /// island answers in the browser on that address instead of in the TUI.
+    #[arg(long, global = true, value_name = "ADDR:PORT")]
+    pub(crate) bind: Option<String>,
     /// Omitted, `efference` runs `setup` when there is no host configuration
     /// yet, and otherwise is `efference tui`: pick a session here, or with no
     /// host running, start one owned by this terminal.
@@ -471,11 +482,6 @@ pub(crate) enum Command {
     /// carries its working directory and environment; each session's control API is
     /// then at `/sessions/<id>/`.
     Host {
-        /// Also listen on a TCP address: the web client's front door. Overrides
-        /// `[host] bind` in ~/.efference/config.toml; `--bind ""` serves the Unix
-        /// socket alone whatever the table says.
-        #[arg(long, value_name = "ADDR:PORT")]
-        bind: Option<String>,
         /// The address browsers open, `https://name[:port]` — the printed link and
         /// the Host allowlist. Defaults to `http://localhost:<port>` on a loopback
         /// bind; required with TLS; differs from the bind behind a proxy that

@@ -381,6 +381,33 @@ fn a_half_tls_pair_and_an_open_without_a_bind_are_refused() {
     assert!(err.contains("--open needs a bind"), "{err}");
 }
 
+/// A bare port is the loopback address with that port, so the short spelling
+/// cannot widen exposure past the rule that cleartext binds are loopback-only.
+#[test]
+fn a_bare_port_binds_loopback() {
+    assert_eq!(serve::loopback_addr("8080"), "127.0.0.1:8080");
+    assert_eq!(serve::loopback_addr("0"), "127.0.0.1:0");
+    // Anything already addressed is left for the resolver to read as written.
+    assert_eq!(serve::loopback_addr("127.0.0.1:8000"), "127.0.0.1:8000");
+    assert_eq!(serve::loopback_addr("[::1]:8000"), "[::1]:8000");
+    assert_eq!(serve::loopback_addr("localhost:8000"), "localhost:8000");
+    assert_eq!(serve::loopback_addr("0.0.0.0:0"), "0.0.0.0:0");
+}
+
+/// A cleartext bind on a routable interface is refused, and the message says why
+/// in terms of what an attacker gets: a replayed cookie drives the agent's
+/// tools. It also names both ways out.
+#[test]
+fn a_routable_cleartext_bind_is_refused_with_the_reason() {
+    let Err(err) = serve::resolve_bind(bind_flags(Some("0.0.0.0:8080"))) else {
+        panic!("a routable cleartext bind resolved");
+    };
+    let err = err.to_string();
+    assert!(err.contains("not loopback"), "{err}");
+    assert!(err.contains("replay a session cookie"), "{err}");
+    assert!(err.contains("--tls-cert/--tls-key"), "{err}");
+}
+
 /// A public URL is an origin, and one a TLS-terminating host prints is https; a
 /// plaintext loopback listener behind a proxy may name an https one.
 #[test]

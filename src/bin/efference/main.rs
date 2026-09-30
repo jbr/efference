@@ -41,12 +41,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let client_target = || resolve_client_target(name.as_deref(), socket_override.clone());
     let command = match cli.command {
         Some(command) => command,
-        None => return setup::default_verb().await,
+        None => return setup::default_verb(cli.bind.as_deref()).await,
     };
     match command {
-        Command::Setup { config } => setup::run(config).await,
+        Command::Setup { config } => setup::run(config, cli.bind.as_deref()).await,
         Command::Host {
-            bind,
             public_url,
             tls_cert,
             tls_key,
@@ -55,7 +54,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         } => {
             serve::host(
                 serve::BindFlags {
-                    bind,
+                    bind: cli.bind.clone(),
                     public_url,
                     tls_cert,
                     tls_key,
@@ -112,7 +111,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     name: cli.name.clone(),
                     flags: session,
                 };
-                return island::run(creation, theme, images.into(), frame_cost).await;
+                return island::run(
+                    cli.bind.as_deref(),
+                    creation,
+                    theme,
+                    images.into(),
+                    frame_cost,
+                )
+                .await;
             };
             tui_new(
                 host_socket,
@@ -140,7 +146,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             // An explicit target is an answer already; the picker is for the
             // invocation that named nothing (docs/operating.md).
             if name.is_none() && socket_override.is_none() {
-                picker::run(theme, images.into(), frame_cost).await
+                picker::run(theme, images.into(), frame_cost, cli.bind.as_deref()).await
             } else {
                 tui(client_target().await?, theme, images.into(), frame_cost).await
             }
