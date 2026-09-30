@@ -205,8 +205,16 @@ impl ResponsesAssembler {
         data: &str,
     ) -> Result<Option<Streamed>, Error> {
         self.capture_frame(event_type, data);
-        let body: Value = serde_json::from_str(data)
-            .map_err(|e| -> Error { format!("unparseable Responses event: {e}").into() })?;
+        // Some Responses backends (Meta) append the Chat Completions `[DONE]`
+        // sentinel after `response.completed`. It carries nothing and finalizes
+        // nothing: the terminal event is still what ends the turn.
+        if data.trim() == "[DONE]" {
+            return Ok(None);
+        }
+        let body: Value = serde_json::from_str(data).map_err(|e| -> Error {
+            let head: String = data.chars().take(120).collect();
+            format!("unparseable Responses event: {e}: {head:?}").into()
+        })?;
         let kind = body
             .get("type")
             .and_then(Value::as_str)

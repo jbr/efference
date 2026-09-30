@@ -378,6 +378,22 @@ fn a_stream_without_a_terminal_event_is_record_only() {
     assert_eq!(completion.assistant_output().text(), vec!["half"]);
 }
 
+/// A trailing `[DONE]` sentinel (Meta sends one after `response.completed`) is
+/// neither a parse failure nor a terminal event on its own.
+#[test]
+fn a_done_sentinel_is_ignored() {
+    let (completion, _) = feed(&[COMPLETED_WITH_CALL, "[DONE]"]);
+    assert_eq!(completion.upstream_failure(), None);
+    let (completion, _) = feed(&["[DONE]"]);
+    assert!(
+        completion
+            .upstream_failure()
+            .is_some_and(|why| why.contains("no response.completed")),
+        "{:?}",
+        completion.upstream_failure()
+    );
+}
+
 /// An in-stream `error` event ends assembly as a record-only partial with the
 /// provider's message.
 #[test]
