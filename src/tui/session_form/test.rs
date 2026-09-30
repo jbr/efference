@@ -441,6 +441,34 @@ fn a_cross_connection_recent_commits_both_halves() {
     settle(&mut form, action);
 }
 
+/// Spotter and triage pickers offer no cross-connection recents: main's
+/// history is the wrong suggestion for roles that want different qualities.
+#[test]
+fn spotter_picker_shows_no_cross_connection_recents() {
+    let mut form = Form::new(NewSessionContext {
+        cwd: std::path::PathBuf::from("/code/example"),
+        connections: connections(),
+        recent_picks: vec![crate::client::RecentPick {
+            connection: "lab".into(),
+            model: "claude-opus-4-5".into(),
+        }],
+    });
+    let opening = form.initial_preview();
+    settle(&mut form, opening);
+    assert_eq!(form.leading_choices(Role::Spotter), 1);
+    // Spotter is the fifth row: past start, main, effort, temperature.
+    for _ in 0..4 {
+        press(&mut form, KeyCode::Down);
+    }
+    press(&mut form, KeyCode::Enter);
+    // One Down past "use the default" lands on a connection, not a recent:
+    // Enter opens its models menu rather than committing a draft.
+    press(&mut form, KeyCode::Down);
+    press(&mut form, KeyCode::Enter);
+    assert!(matches!(form.page, Page::Models { .. }));
+    assert_eq!(form.draft.role(Role::Spotter), None);
+}
+
 /// A recents answer for a menu nobody is looking at is dropped.
 #[test]
 fn a_stale_recents_answer_is_dropped() {

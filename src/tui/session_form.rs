@@ -2,9 +2,10 @@
 //! surface `QUERY /sessions` and `POST /sessions` serve (docs/control-api.md).
 //!
 //! Four host-owned inputs meet here and nowhere else — the connection inventory
-//! from `GET /inference`, the recent picks across all connections from
-//! `GET /inference/recent-picks`, the effective draft `QUERY /sessions`
-//! recomputes after each edit, and the creation the form finally posts. The form owns none of
+//! from `GET /inference`, the recent main picks across all connections from
+//! `GET /inference/recent-picks` (offered in the main picker's menu only),
+//! the effective draft `QUERY /sessions` recomputes after each edit, and the
+//! creation the form finally posts. The form owns none of
 //! them: it holds the operator's raw overrides ([`Draft`]) and the host's latest
 //! answer about them ([`ResolvedOptions`]) side by side, and renders the
 //! difference.

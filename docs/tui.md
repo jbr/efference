@@ -468,9 +468,12 @@ edited: editing it would send an environment captured somewhere else. A configur
 capture an environment at a given directory, and the `efference tui --new` entry point, are
 in backlog/new-session-form.md.
 
-Choosing a connection offers the recent picks across all connections first —
-past picks as `connection/model` rows, most decayed weight first — then each
-connection's own recent models, then the typed-ID editor. This build compiles
+Choosing the main model's connection offers the recent picks across all
+connections first — past main picks as `connection/model` rows, most decayed
+weight first — then each connection's own recent models, then the typed-ID
+editor. Spotter and triage pickers offer no cross-connection recents: the roles
+want different qualities and should grow different histories rather than share
+main's. This build compiles
 no catalog of suggestions, and a menu of ids the build knows would be the stale
 half of a problem the harness no longer has elsewhere — the Codex arm's
 capabilities come from the provider's own catalog (docs/transport.md), so a

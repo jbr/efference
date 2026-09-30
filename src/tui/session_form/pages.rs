@@ -9,12 +9,18 @@
 use super::*;
 
 impl Form {
-    /// The recent picks shown in a role's connection picker: past picks across
-    /// all connections, most decayed weight first, naming only connections the
-    /// host still lists. A pick on a retired connection stays out of the menu —
-    /// preview would refuse it, and the per-connection recent menu already
-    /// covers the typed-ID path for anything unlisted.
-    pub(super) fn picker_recents(&self) -> Vec<&crate::client::RecentPick> {
+    /// The recent picks shown in the main role's connection picker: past main
+    /// picks across all connections, most decayed weight first, naming only
+    /// connections the host still lists. Main-only because the roles want
+    /// different qualities — spotter is the smallest trustworthy model, not the
+    /// agent the operator kept picking — and should grow different histories
+    /// rather than share main's. A pick on a retired connection stays out of
+    /// the menu: preview would refuse it, and the per-connection recent menu
+    /// already covers the typed-ID path for anything unlisted.
+    pub(super) fn picker_recents(&self, role: Role) -> Vec<&crate::client::RecentPick> {
+        if role != Role::Main {
+            return Vec::new();
+        }
         self.context
             .recent_picks
             .iter()
@@ -28,15 +34,15 @@ impl Form {
 
     /// How many entries precede the connection rows in a role's picker. Every
     /// role offers "use the default" (and triage offers explicitly sharing
-    /// main's client beside it), followed by the recent picks across all
-    /// connections — so one menu covers every provider without opening each
-    /// connection's own recent menu first.
+    /// main's client beside it); the main role's menu then lists the recent
+    /// picks across all connections, so one menu covers every provider without
+    /// opening each connection's own recent menu first.
     pub(super) fn leading_choices(&self, role: Role) -> usize {
         let base = match role {
             Role::Triage => 2,
             Role::Main | Role::Spotter => 1,
         };
-        base + self.picker_recents().len()
+        base + self.picker_recents(role).len()
     }
 
     pub(crate) fn choose_connection(&mut self, role: Role) -> Action {
@@ -56,7 +62,7 @@ impl Form {
             self.page = Page::Form;
             return self.preview();
         }
-        let recents = self.picker_recents();
+        let recents = self.picker_recents(role);
         if selected < base + recents.len() {
             let pick = recents[selected - base];
             self.draft.set_role(

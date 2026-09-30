@@ -256,7 +256,7 @@ impl Form {
                 if *role == Role::Triage {
                     rows.push(Row::plain("share the main client"));
                 }
-                rows.extend(self.picker_recents().iter().map(|pick| Row {
+                rows.extend(self.picker_recents(*role).iter().map(|pick| Row {
                     label: format!("{}/{}", pick.connection, pick.model),
                     value: String::new(),
                     trailer: "recent".into(),
