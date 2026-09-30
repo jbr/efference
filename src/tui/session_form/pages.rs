@@ -69,10 +69,8 @@ impl Form {
         }
         let connection = selected - INHERIT_ROWS - recents.len();
         // A connection opens its recent models first: past picks on it, most
-        // decayed weight first, with the typed-ID editor as the last row. The
-        // host's discovery route merges its catalog into this same menu when it
-        // lands (backlog/session-model-discovery.md); the typed path stays in
-        // every case.
+        // decayed weight first, then the provider's listing (merged by the host
+        // dispatcher), with the typed-ID editor as the last row in every case.
         self.page = Page::Models {
             role,
             connection,

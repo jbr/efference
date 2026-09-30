@@ -292,7 +292,7 @@ impl Form {
                 rows.push(Row::plain("Type a model id"));
                 (
                     format!(
-                        "{} on {} — recent models",
+                        "{} on {} — models",
                         role.label(),
                         self.connection_name(*connection)
                     ),
