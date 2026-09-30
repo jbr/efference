@@ -33,16 +33,12 @@ impl Form {
     }
 
     /// How many entries precede the connection rows in a role's picker. Every
-    /// role offers "use the default" (and triage offers explicitly sharing
-    /// main's client beside it); the main role's menu then lists the recent
-    /// picks across all connections, so one menu covers every provider without
+    /// role leads with exactly one inherit row — for triage that row shares
+    /// the main client — and the main role's menu then lists the recent picks
+    /// across all connections, so one menu covers every provider without
     /// opening each connection's own recent menu first.
     pub(super) fn leading_choices(&self, role: Role) -> usize {
-        let base = match role {
-            Role::Triage => 2,
-            Role::Main | Role::Spotter => 1,
-        };
-        base + self.picker_recents(role).len()
+        1 + self.picker_recents(role).len()
     }
 
     pub(crate) fn choose_connection(&mut self, role: Role) -> Action {
@@ -50,21 +46,17 @@ impl Form {
             return Action::Continue;
         };
         let selected = *selected;
-        let base = match role {
-            Role::Triage => 2,
-            Role::Main | Role::Spotter => 1,
-        };
-        if selected < base {
+        // The one inherit row clears the role back to its default — for triage
+        // that is sharing the main client.
+        const INHERIT_ROWS: usize = 1;
+        if selected < INHERIT_ROWS {
             self.draft.set_role(role, None);
-            if role == Role::Triage && selected == 1 {
-                self.draft.triage = TriageDraft::Shared;
-            }
             self.page = Page::Form;
             return self.preview();
         }
         let recents = self.picker_recents(role);
-        if selected < base + recents.len() {
-            let pick = recents[selected - base];
+        if selected < INHERIT_ROWS + recents.len() {
+            let pick = recents[selected - INHERIT_ROWS];
             self.draft.set_role(
                 role,
                 Some(RoleDraft {
@@ -75,7 +67,7 @@ impl Form {
             self.page = Page::Form;
             return self.preview();
         }
-        let connection = selected - base - recents.len();
+        let connection = selected - INHERIT_ROWS - recents.len();
         // A connection opens its recent models first: past picks on it, most
         // decayed weight first, with the typed-ID editor as the last row. The
         // host's discovery route merges its catalog into this same menu when it

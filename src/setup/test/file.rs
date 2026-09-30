@@ -44,7 +44,6 @@ auth = { kind = "env", key = "ANTHROPIC_API_KEY" }
     assert!(script.said("\"anthropic\" is already a connection"));
     assert!(script.said("Found a Codex login for account acct_1"));
     assert_eq!(draft.decided_default(DefaultRole::Spotter), None);
-    assert_eq!(draft.decided_default(DefaultRole::Triage), None);
     assert_eq!(
         render(existing, &draft).unwrap(),
         r#"# my notes
@@ -93,7 +92,6 @@ async fn two_connections_record_no_default() {
     .await;
     let draft = draft.unwrap();
     assert_eq!(draft.decided_default(DefaultRole::Spotter), None);
-    assert_eq!(draft.decided_default(DefaultRole::Triage), None);
     let text = render("", &draft).unwrap();
     // A first run ends with no default: the new-session form names the current
     // model, so no key is written for any role.
@@ -133,7 +131,6 @@ auth = { kind = "env", key = "A" }
     // Adding a connection says nothing about defaults: the standing one is left
     // exactly as it was, and the new connection does not become it.
     assert_eq!(draft.decided_default(DefaultRole::Spotter), None);
-    assert_eq!(draft.decided_default(DefaultRole::Triage), None);
     let text = render(existing, &draft).unwrap();
     assert!(text.contains("[connections.anthropic-2]"), "{text}");
     assert!(!text.contains("\n[defaults]"), "{text}");

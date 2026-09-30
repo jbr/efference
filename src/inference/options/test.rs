@@ -86,39 +86,24 @@ fn codes(resolved: &ResolvedOptions) -> Vec<(&str, IssueCode)> {
         .collect()
 }
 
-/// **The effective triage is what creation would build.** An omitted triage takes
-/// `[defaults].triage` before it falls back to sharing main's client, so reporting
-/// `shared` here would describe a session the host would not create.
+/// **The effective triage is what creation would build.** An omitted triage
+/// shares the main client, so reporting `shared` here describes the session
+/// the host creates — and creation agrees, with no client of its own.
 #[test]
-fn an_omitted_triage_reports_the_configured_default_rather_than_shared() {
-    let registry = registry(
-        r#"
-[defaults]
-triage = "main/claude-haiku-4-5"
-
-[connections.main]
-provider = "anthropic"
-auth = { kind = "env", key = "ANTHROPIC_KEY" }
-"#,
-    );
+fn an_omitted_triage_shares_main() {
+    let registry = one_connection();
     let resolved = registry.resolve_options(&main_options(), None, None);
     assert_eq!(resolved.issues, vec![]);
-    let EffectiveTriage::Separate { selection, .. } = resolved
-        .effective
-        .triage
-        .value
-        .clone()
-        .expect("a configured default triage resolves")
-    else {
-        panic!("a configured [defaults].triage is a separate client");
-    };
-    assert_eq!(selection.model, "claude-haiku-4-5");
+    assert_eq!(
+        resolved.effective.triage.value,
+        Some(EffectiveTriage::Shared)
+    );
     assert_eq!(
         resolved.effective.triage.source,
-        Some(SelectionSource::UserDefault)
+        Some(SelectionSource::SharedMain)
     );
-    // And creation agrees: the same resolution, prepared, has its own client.
-    assert!(registry.prepare(resolved).unwrap().triage().is_some());
+    // And creation agrees: the same resolution, prepared, has no triage client.
+    assert!(registry.prepare(resolved).unwrap().triage().is_none());
 }
 
 /// With nothing configured, triage shares main — and says so, so a client can tell
@@ -136,15 +121,13 @@ fn an_omitted_triage_with_no_default_shares_main() {
     );
 }
 
-/// An explicit `shared` bypasses a configured separate default, and reports the
-/// request as its source rather than the fallback.
+/// An explicit `shared` reports the request as its source rather than the
+/// fallback — the wire still accepts a pinned share even though the form no
+/// longer offers one (there is nothing to pin against).
 #[test]
-fn an_explicit_shared_triage_bypasses_a_configured_separate_default() {
+fn an_explicit_shared_triage_reports_the_request() {
     let registry = registry(
         r#"
-[defaults]
-triage = "main/claude-haiku-4-5"
-
 [connections.main]
 provider = "anthropic"
 auth = { kind = "env", key = "ANTHROPIC_KEY" }

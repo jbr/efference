@@ -15,7 +15,7 @@ const HEADER: &str = "\
 # efference host configuration, written by `efference setup`.
 # Connections name a provider and where its credential comes from; the
 # credential itself is never in this file. Sessions select a model as
-# <connection>/<native model>; [defaults] names the spotter and triage.
+# <connection>/<native model>; [defaults] names the spotter.
 # Reference: docs/operating.md.
 
 ";
@@ -110,7 +110,7 @@ fn apply_change(doc: &mut DocumentMut, change: &Change) -> Result<(), String> {
                 .and_then(|item| item.as_table_like_mut())
             {
                 let prefix = format!("{from}/");
-                let rewritten: Vec<(&str, String)> = ["spotter", "triage"]
+                let rewritten: Vec<(&str, String)> = ["spotter"]
                     .into_iter()
                     .filter_map(|key| {
                         let current = defaults.get(key)?.as_str()?;

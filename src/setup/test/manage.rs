@@ -182,15 +182,14 @@ auth = { kind = "keychain" }
     assert_eq!(secrets.get("inference:work").unwrap(), None);
 }
 
-/// Disabling a connection [defaults] names offers to repoint each affected
-/// role, and a declined repoint is left dangling rather than forced.
+/// Disabling the connection [defaults] names offers to repoint the spotter,
+/// and the repointed file still loads.
 #[tokio::test]
 async fn disabling_a_connection_offers_to_repoint_dangling_defaults() {
     let probe = Table::default();
     let existing = r#"
 [defaults]
 spotter = "primary/haiku"
-triage = "primary/claude"
 
 [connections.primary]
 provider = "anthropic"
@@ -208,7 +207,6 @@ auth = { kind = "env", key = "BACKUP_KEY" }
             Answer::Yes,
             Answer::Pick("backup"),
             Answer::Type("haiku-fresh"),
-            Answer::No,
             Answer::Pick("Back"),
             Answer::Pick("Done"),
         ],
@@ -218,10 +216,8 @@ auth = { kind = "env", key = "BACKUP_KEY" }
     .await;
     let draft = draft.unwrap();
     assert!(script.said("[defaults].spotter names primary"));
-    assert!(script.said("[defaults].triage names primary"));
     let text = render(existing, &draft).unwrap();
     assert!(text.contains(r#"spotter = "backup/haiku-fresh""#), "{text}");
-    assert!(text.contains(r#"triage = "primary/claude""#), "{text}");
     assert!(text.contains("disabled = true"), "{text}");
     let parsed = crate::inference::InferenceConfig::from_toml(&text);
     assert!(parsed.is_ok(), "{text}");

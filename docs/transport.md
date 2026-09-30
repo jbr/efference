@@ -1055,7 +1055,7 @@ omitted spotter
 takes `[defaults].spotter`, else the main connection's `spotter-model`, else jev on a
 connection that reaches it, else the main connection's cheap band
 ([permissions.md](permissions.md)); an omitted
-triage takes `[defaults].triage`, else shares the main client. Defaults are
+triage shares the main client, whatever main resolved to. Defaults are
 written fully qualified, so adding a connection cannot reinterpret one. All three
 roles resolve before a session directory exists; a main/triage pair on different
 dialects is refused there, naming both. Each role gets its own clone of the

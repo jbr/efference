@@ -224,9 +224,9 @@ fn a_native_id_with_a_slash_keeps_its_connection_separate() {
         press(&mut form, KeyCode::Down);
     }
     press(&mut form, KeyCode::Enter);
-    // Past "use the default" and "share the main client", then to `work` —
-    // third of `blank`, `lab`, `work`.
-    for _ in 0..4 {
+    // Past "share the main client", then to `work` — third of `blank`,
+    // `lab`, `work`.
+    for _ in 0..3 {
         press(&mut form, KeyCode::Down);
     }
     press(&mut form, KeyCode::Enter);
@@ -260,11 +260,11 @@ fn a_native_id_with_a_slash_keeps_its_connection_separate() {
     );
 }
 
-/// Sharing main's client and inheriting are different answers, and the effective
-/// view reports them differently even though both render as the main client
-/// here: `request` versus `shared_main` (docs/control-api.md).
+/// The triage picker offers sharing main's client, which inherits: with no
+/// configured triage there is nothing to override, so the draft stays
+/// `Inherit` and the effective view reports `shared_main`.
 #[test]
-fn explicitly_sharing_main_is_not_the_same_as_inheriting() {
+fn triage_picker_shares_main_by_inheriting() {
     use crate::inference::SelectionSource;
     let mut form = form();
     assert_eq!(
@@ -275,15 +275,8 @@ fn explicitly_sharing_main_is_not_the_same_as_inheriting() {
         press(&mut form, KeyCode::Down);
     }
     press(&mut form, KeyCode::Enter);
-    press(&mut form, KeyCode::Down);
     press(&mut form, KeyCode::Enter);
-    assert_eq!(form.draft.triage, TriageDraft::Shared);
-    assert_eq!(
-        form.resolved.as_ref().unwrap().effective.triage.source,
-        Some(SelectionSource::Request)
-    );
-    // `r` clears the override back to inheriting, not to sharing.
-    press(&mut form, KeyCode::Char('r'));
+    assert_eq!(form.page, Page::Form);
     assert_eq!(form.draft.triage, TriageDraft::Inherit);
     assert_eq!(
         form.resolved.as_ref().unwrap().effective.triage.source,

@@ -252,10 +252,12 @@ impl Form {
         match &self.page {
             Page::Form => self.form_page(),
             Page::Connections { role, selected } => {
-                let mut rows = vec![Row::plain("use the default")];
-                if *role == Role::Triage {
-                    rows.push(Row::plain("share the main client"));
-                }
+                // Triage has no configured default: its inherit row shares the
+                // main client, which is what the session gets.
+                let mut rows = match role {
+                    Role::Triage => vec![Row::plain("share the main client")],
+                    _ => vec![Row::plain("use the default")],
+                };
                 rows.extend(self.picker_recents(*role).iter().map(|pick| Row {
                     label: format!("{}/{}", pick.connection, pick.model),
                     value: String::new(),

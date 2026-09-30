@@ -36,13 +36,12 @@ async fn first_run_with_key_in_environment() {
             .any(|line| line.starts_with("secret:"))
     );
     assert_eq!(draft.decided_default(DefaultRole::Spotter), None);
-    assert_eq!(draft.decided_default(DefaultRole::Triage), None);
     assert_eq!(
         render("", &draft).unwrap(),
         r#"# efference host configuration, written by `efference setup`.
 # Connections name a provider and where its credential comes from; the
 # credential itself is never in this file. Sessions select a model as
-# <connection>/<native model>; [defaults] names the spotter and triage.
+# <connection>/<native model>; [defaults] names the spotter.
 # Reference: docs/operating.md.
 
 [connections.anthropic]
@@ -137,7 +136,6 @@ async fn a_rejected_key_kept_anyway_records_no_default() {
     let draft = draft.unwrap();
     assert!(script.said("rejected the key"));
     assert_eq!(draft.decided_default(DefaultRole::Spotter), None);
-    assert_eq!(draft.decided_default(DefaultRole::Triage), None);
     let text = render("", &draft).unwrap();
     assert!(text.contains("[connections.openai]"), "{text}");
     assert!(!text.contains("\n[defaults]"), "{text}");
@@ -293,7 +291,6 @@ async fn a_typesafe_only_config_asks_for_a_provider_for_the_agent() {
     let draft = draft.unwrap();
     assert!(script.said("serves the permission spotter only"));
     assert_eq!(draft.decided_default(DefaultRole::Spotter), None);
-    assert_eq!(draft.decided_default(DefaultRole::Triage), None);
     let text = render("", &draft).unwrap();
     assert!(text.contains("[connections.typesafe]"), "{text}");
     assert!(!text.contains("\n[defaults]"), "{text}");

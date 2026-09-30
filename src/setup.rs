@@ -286,18 +286,18 @@ impl Change {
     }
 }
 
-/// Which `[defaults]` key a [`Change::SetDefaultRole`] targets.
+/// Which `[defaults]` key a [`Change::SetDefaultRole`] targets. One role
+/// remains: the main model takes past picks or the form, and triage shares
+/// the main client unless a session names a separate one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DefaultRole {
     Spotter,
-    Triage,
 }
 
 impl DefaultRole {
     pub(crate) fn key(self) -> &'static str {
         match self {
             DefaultRole::Spotter => "spotter",
-            DefaultRole::Triage => "triage",
         }
     }
 }
@@ -369,7 +369,6 @@ pub struct ExistingConnection {
 pub struct Existing {
     pub connections: BTreeMap<String, ExistingConnection>,
     pub default_spotter: Option<String>,
-    pub default_triage: Option<String>,
 }
 
 impl Existing {
@@ -451,26 +450,22 @@ impl Existing {
         Ok(Self {
             connections,
             default_spotter: default_of("spotter"),
-            default_triage: default_of("triage"),
         })
     }
 
-    /// The connection names `[defaults]` points at, for the two roles that
-    /// name `connection`.
+    /// The connection name `[defaults]` points at, for the one role that
+    /// names `connection`.
     pub(crate) fn defaults_naming<'a>(
         &'a self,
         connection: &'a str,
     ) -> impl Iterator<Item = DefaultRole> + 'a {
-        [
-            (DefaultRole::Spotter, &self.default_spotter),
-            (DefaultRole::Triage, &self.default_triage),
-        ]
-        .into_iter()
-        .filter_map(move |(role, value)| {
-            let value = value.as_deref()?;
-            let (name, _) = value.split_once('/')?;
-            (name == connection).then_some(role)
-        })
+        [(DefaultRole::Spotter, &self.default_spotter)]
+            .into_iter()
+            .filter_map(move |(role, value)| {
+                let value = value.as_deref()?;
+                let (name, _) = value.split_once('/')?;
+                (name == connection).then_some(role)
+            })
     }
 }
 

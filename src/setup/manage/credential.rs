@@ -176,13 +176,13 @@ async fn rename_connection<P: Prompter, Q: Probe>(
         from: name.to_string(),
         to: new_name.clone(),
     });
+    // The spotter default names its connection as `<old>/<model>`; follow the
+    // rename so render does not point at a table the file will not have.
     let prefix = format!("{name}/");
-    for role in [DefaultRole::Spotter, DefaultRole::Triage] {
-        if let Some(value) = working.default_role_mut(role)
-            && let Some(rest) = value.strip_prefix(&prefix)
-        {
-            *value = format!("{new_name}/{rest}");
-        }
+    if let Some(value) = working.default_role_mut(DefaultRole::Spotter)
+        && let Some(rest) = value.strip_prefix(&prefix)
+    {
+        *value = format!("{new_name}/{rest}");
     }
     // A keychain or oauth auth with an implicit item name now defaults to the
     // new connection's name, which is exactly what just happened above.

@@ -16,7 +16,6 @@ only where each credential comes from — and it is read when a host starts.
 ```toml ~/.efference/config.toml
 [defaults]
 spotter = "anthropic/claude-haiku-4-5"  # optional
-triage = "anthropic/claude-haiku-4-5"   # optional
 
 [connections.anthropic]
 provider = "anthropic"

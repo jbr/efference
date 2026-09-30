@@ -1,5 +1,5 @@
-//! Editing `[defaults]` — which model each role runs when a session names none
-//! (docs/operating.md).
+//! Editing `[defaults]` — which model the spotter runs when a session names
+//! none (docs/operating.md).
 //!
 //! Its own step, not part of adding a connection. Which providers are configured
 //! and which model sessions default to are separate questions, and asking the
@@ -13,27 +13,24 @@
 use super::*;
 
 impl DefaultRole {
-    /// The two roles in the order they are offered, which is the order they
-    /// matter: one with no spotter falls back to the provider's cheap band,
-    /// and one with no triage shares the main client. The main model has no
-    /// default: past picks answer the omitted branch, else the session form
-    /// names one (docs/transport.md).
-    pub(super) const ALL: [Self; 2] = [Self::Spotter, Self::Triage];
+    /// The one role setup edits. The main model has no default: past picks
+    /// answer the omitted branch, else the session form names one — and an
+    /// omitted triage shares the main client, so neither is anything to
+    /// configure (docs/transport.md).
+    pub(super) const ALL: [Self; 1] = [Self::Spotter];
 
     /// What this role is called where a person reads it.
     pub(super) fn label(self) -> &'static str {
         match self {
             Self::Spotter => "Spotter",
-            Self::Triage => "Triage",
         }
     }
 
     /// What it is for, in one clause. Said beside the label rather than left to
-    /// the key name, since `spotter` and `triage` name nothing a new reader knows.
+    /// the key name, since `spotter` names nothing a new reader knows.
     pub(super) fn purpose(self) -> &'static str {
         match self {
             Self::Spotter => "reviews tool calls the permission rules did not clear",
-            Self::Triage => "focuses tool output; shares the main model when unset",
         }
     }
 }
@@ -43,21 +40,17 @@ impl DefaultRole {
 #[derive(Debug, Clone, Default)]
 pub(super) struct Current {
     pub(super) spotter: Option<String>,
-    pub(super) triage: Option<String>,
 }
 
 impl Current {
     fn of(&self, role: DefaultRole) -> Option<&str> {
         match role {
             DefaultRole::Spotter => self.spotter.as_deref(),
-            DefaultRole::Triage => self.triage.as_deref(),
         }
     }
 }
 
-/// Walk the two roles. Each is a connection, then a model on it, then the
-/// next — with the running draft consulted so a role set earlier in this same
-/// run shows as the current value of the one after it.
+/// Walk the one role: a connection, then a model on it.
 pub(super) async fn edit<P: Prompter, Q: Probe>(
     prompter: &mut P,
     probe: &Q,
@@ -72,7 +65,6 @@ pub(super) async fn edit<P: Prompter, Q: Probe>(
         };
         match role {
             DefaultRole::Spotter => decided.spotter = choice.clone(),
-            DefaultRole::Triage => decided.triage = choice.clone(),
         }
         draft.record(Change::SetDefaultRole {
             role,
@@ -97,7 +89,7 @@ async fn role_value<P: Prompter, Q: Probe>(
     let existing = current.of(role).map(str::to_string);
     match &existing {
         Some(value) => choices.push(Choice::new(format!("Keep {value}")).detail(role.purpose())),
-        // An unset spotter and an unset triage are both working configurations.
+        // An unset spotter is a working configuration: the provider fallbacks apply.
         None => choices.push(Choice::new("Leave unset").detail(role.purpose())),
     }
     choices.push(Choice::new("Choose a model").detail(role.purpose()));
@@ -124,7 +116,7 @@ async fn role_value<P: Prompter, Q: Probe>(
         &format!("{} on {name}", role.label()),
         &name,
         &target_for(connection),
-        hint(role, connection),
+        hint(connection),
         key.as_deref(),
     )
     .await?;
@@ -165,16 +157,12 @@ fn target_for(connection: &ExistingConnection) -> Target {
     }
 }
 
-/// The prefill for a typed model id: for the spotter, the provider's cheap band
-/// where it has one. Nothing for the other roles — there is no id that is right
-/// across endpoints.
-fn hint(role: DefaultRole, connection: &ExistingConnection) -> Option<&'static str> {
-    match role {
-        DefaultRole::Spotter => crate::api::Provider::from_name(&connection.provider)
-            .ok()
-            .and_then(|provider| provider.default_spotter_model()),
-        _ => None,
-    }
+/// The prefill for a typed model id: the provider's cheap band where it has
+/// one. There is no id that is right across endpoints otherwise.
+fn hint(connection: &ExistingConnection) -> Option<&'static str> {
+    crate::api::Provider::from_name(&connection.provider)
+        .ok()
+        .and_then(|provider| provider.default_spotter_model())
 }
 
 /// The connection's key, where setup can read it without asking: an environment

@@ -491,19 +491,11 @@ impl InferenceRegistry {
                     SelectionSource::Request,
                 )
             }
-            None => match self.defaults.triage.as_ref() {
-                Some(default) => (
-                    default.clone(),
-                    (false, false, None),
-                    SelectionSource::UserDefault,
-                ),
-                None => {
-                    return Effective::resolved(
-                        EffectiveTriage::Shared,
-                        SelectionSource::SharedMain,
-                    );
-                }
-            },
+            // No configured triage: an omitted triage shares the main client,
+            // whatever main resolved to (docs/transport.md).
+            None => {
+                return Effective::resolved(EffectiveTriage::Shared, SelectionSource::SharedMain);
+            }
         };
         let selected = self.select(&selection, "triage", source, issues);
         let Some(selection) = selected.value else {

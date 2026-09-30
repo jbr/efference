@@ -18,7 +18,6 @@ use credential::edit_connection;
 pub(super) struct Working {
     pub(super) connections: BTreeMap<String, ExistingConnection>,
     pub(super) default_spotter: Option<String>,
-    pub(super) default_triage: Option<String>,
 }
 
 impl Working {
@@ -26,7 +25,6 @@ impl Working {
         Self {
             connections: existing.connections.clone(),
             default_spotter: existing.default_spotter.clone(),
-            default_triage: existing.default_triage.clone(),
         }
     }
 
@@ -36,14 +34,12 @@ impl Working {
         Existing {
             connections: self.connections.clone(),
             default_spotter: self.default_spotter.clone(),
-            default_triage: self.default_triage.clone(),
         }
     }
 
     pub(super) fn default_role_mut(&mut self, role: DefaultRole) -> &mut Option<String> {
         match role {
             DefaultRole::Spotter => &mut self.default_spotter,
-            DefaultRole::Triage => &mut self.default_triage,
         }
     }
 }
@@ -62,7 +58,7 @@ pub async fn run<P: Prompter, Q: Probe>(
         // (docs/operating.md).
         let choices = vec![
             Choice::new("Connections").detail(summarize_connections(&working)),
-            Choice::new("Default models").detail(summarize_defaults(&working)),
+            Choice::new("Default spotter").detail(summarize_defaults(&working)),
             Choice::new("Done"),
         ];
         match prompter.select("Setup", &choices)? {
@@ -70,7 +66,6 @@ pub async fn run<P: Prompter, Q: Probe>(
             1 => {
                 let current = defaults::Current {
                     spotter: working.default_spotter.clone(),
-                    triage: working.default_triage.clone(),
                 };
                 defaults::edit(prompter, probe, &working.connections, &mut draft, &current).await?;
                 // The working copy follows the draft so the summary above, and a
@@ -102,15 +97,13 @@ fn summarize_connections(working: &Working) -> String {
     }
 }
 
-/// What the roles point at, for the top level. Both roles have working
-/// fallbacks when unset, so the summary names what is set and stays quiet
-/// about the rest.
+/// What the spotter default points at, for the top level. Unset is a working
+/// configuration — the provider fallbacks apply — so the summary stays quiet
+/// about it rather than reading as a gap.
 fn summarize_defaults(working: &Working) -> String {
-    match (&working.default_spotter, &working.default_triage) {
-        (None, None) => "provider fallbacks".to_string(),
-        (Some(spotter), None) => format!("spotter {spotter}"),
-        (None, Some(triage)) => format!("triage {triage}"),
-        (Some(spotter), Some(triage)) => format!("spotter {spotter}, triage {triage}"),
+    match &working.default_spotter {
+        None => "provider fallback".to_string(),
+        Some(spotter) => spotter.clone(),
     }
 }
 

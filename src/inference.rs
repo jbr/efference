@@ -90,7 +90,6 @@ impl InferenceConfig {
 #[serde(deny_unknown_fields)]
 struct Defaults {
     spotter: Option<String>,
-    triage: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -231,7 +230,6 @@ struct Credential {
 #[derive(Default)]
 struct ResolvedDefaults {
     spotter: Option<ModelReference>,
-    triage: Option<ModelReference>,
 }
 
 #[derive(Clone)]
@@ -384,12 +382,6 @@ impl InferenceRegistry {
                 &enabled_names,
                 &disabled_names,
                 "spotter",
-            )?,
-            triage: resolve_config_default(
-                config.defaults.triage,
-                &enabled_names,
-                &disabled_names,
-                "triage",
             )?,
         };
         Ok(Self {

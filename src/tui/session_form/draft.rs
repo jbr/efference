@@ -39,15 +39,13 @@ pub(in crate::tui) struct RoleDraft {
     pub(in crate::tui) model: String,
 }
 
-/// The triage control has three states, not two: inheriting is distinct from
-/// explicitly sharing main's client. `[defaults].triage` can configure a separate
-/// client, so "nothing said" and "share main" resolve differently — which is the
-/// distinction the effective view exists to draw.
+/// The triage control has two states: inheriting the main client, or naming a
+/// separate one. With no configured triage default, "nothing said" always
+/// resolves to sharing main.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(in crate::tui) enum TriageDraft {
     #[default]
     Inherit,
-    Shared,
     Separate(RoleDraft),
 }
 
@@ -67,15 +65,13 @@ impl Draft {
             Role::Spotter => self.spotter.as_ref(),
             Role::Triage => match &self.triage {
                 TriageDraft::Separate(draft) => Some(draft),
-                TriageDraft::Inherit | TriageDraft::Shared => None,
+                TriageDraft::Inherit => None,
             },
         }
     }
 
-    /// Record a role's selection, or clear it back to inheriting. Triage's
-    /// cleared state is `Inherit` rather than `Shared`: removing an override
-    /// returns the field to the defaults, and choosing to share main is its own
-    /// selection made elsewhere.
+    /// Record a role's selection, or clear it back to inheriting — which for
+    /// triage is sharing the main client.
     pub(in crate::tui) fn set_role(&mut self, role: Role, selection: Option<RoleDraft>) {
         match role {
             Role::Main => self.main = selection,
@@ -101,9 +97,8 @@ impl Draft {
             spotter_connection,
             spotter_model,
             triage: match &self.triage {
-                // Inheriting sends nothing, so `[defaults].triage` applies.
+                // Inheriting sends nothing, so triage shares the main client.
                 TriageDraft::Inherit => None,
-                TriageDraft::Shared => Some(TriageChoice::Shared),
                 TriageDraft::Separate(draft) => Some(TriageChoice::Separate {
                     connection: Some(draft.connection.clone()),
                     model: draft.model.clone(),

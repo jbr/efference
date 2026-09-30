@@ -286,36 +286,36 @@ conventional answer arrive prefilled anyway. The connection is written as the tw
 keys it is — `dialect` and `base-url` — never as a `provider` line naming
 something that is not a provider name.
 
-**Defaults: which model each role runs** (`src/setup/defaults.rs`). `[defaults]`
-has two roles — `spotter`, `triage` — and the editor walks them in the order
-they matter, saying what each is for rather than leaving the key name to
-explain itself. The main model has no default: past picks answer the omitted
-branch, else the new-session form names the current one. A role is set by
-picking a connection and then a model on it, which is where a listing belongs:
-the connection selects the endpoint to ask, and the credential is read from the
-connection's own source (an environment variable set in this shell, or an item
-the store already holds) rather than prompted for again. Where setup cannot
-read one, the model is typed and taken as written.
+**Defaults: which model the spotter runs** (`src/setup/defaults.rs`). `[defaults]`
+has one role — `spotter` — and the editor says what it is for rather than
+leaving the key name to explain itself. The main model has no default: past
+picks answer the omitted branch, else the new-session form names the current
+one — and an omitted triage shares the main client, so neither is anything to
+configure. The role is set by picking a connection and then a model on it,
+which is where a listing belongs: the connection selects the endpoint to ask,
+and the credential is read from the connection's own source (an environment
+variable set in this shell, or an item the store already holds) rather than
+prompted for again. Where setup cannot read one, the model is typed and taken
+as written.
 
-A connection may also answer one role for itself: `spotter-model` under
+A connection may also answer the role for itself: `spotter-model` under
 `[connections.<name>]` names the cheap model that connection's sessions use when
 nothing else does. It resolves below an explicit `--spotter-model` and
 `[defaults].spotter`, and above the arm's built-in default — the order is in
 [permissions.md](permissions.md), and the reason a per-connection key exists at
 all is that a cheap band is an account's property, not a provider's.
 
-Each role leads with what it already is, so the cheapest answer is Enter. An
+The role leads with what it already is, so the cheapest answer is Enter. An
 unset spotter falls back to jev where a typesafe or OpenRouter connection
-exists, else to the provider's cheap band, and an unset triage shares the main
-client, so those are working configurations rather than gaps. The first run
-asks no role at all: a new user cannot know what a spotter or triage is, and
-the new-session form names the current main model. Declining the whole visit is
-a complete answer and writes no `[defaults]` at all: `src/inference.rs` treats
-the table as optional, and an omitted model with no past pick is a refusal
-naming the choice.
+exists, else to the provider's cheap band, so that is a working configuration
+rather than a gap. The first run asks no role at all: a new user cannot yet
+know what a spotter is, and the new-session form names the current main model.
+Declining the whole visit is a complete answer and writes no `[defaults]` at
+all: `src/inference.rs` treats the table as optional, and an omitted model
+with no past pick is a refusal naming the choice.
 
 **Managing what is already there** opens on a top level of two entries —
-Connections and Default models — each summarizing itself, because they are two
+Connections and Default spotter — each summarizing itself, because they are two
 concerns and a list that mixed them is what made the model questions land on every
 connection. Picking Connections gives the row list below.
 
@@ -386,7 +386,6 @@ an older build says it is not understood rather than hiding it.
 ```toml ~/.efference/config.toml
 [defaults]
 spotter = "work/anthropic/claude-haiku-4-5"
-# triage omitted: the peek shares the agent's client
 
 [connections.work]
 provider = "openrouter"
