@@ -546,7 +546,7 @@ fn paste_is_text_not_form_commands() {
     form.paste("gpt-5.6-luna\n");
     // The newline is not a keystroke: the pasted text lands in the editor and
     // Enter is still the operator's to press.
-    assert!(matches!(&form.page, Page::Text { value, .. } if value == "gpt-5.6-luna"));
+    assert!(matches!(&form.page, Page::Text { value, .. } if value.text() == "gpt-5.6-luna"));
 }
 
 #[test]
@@ -699,4 +699,47 @@ fn the_form_paints_no_backgrounds_of_its_own() {
         .map(|cell| cell.symbol().to_string())
         .collect();
     assert!(painted.is_empty(), "cells with a background: {painted:?}");
+}
+
+fn ctrl(form: &mut Form, c: char) {
+    let action = form.handle(KeyEvent::new(KeyCode::Char(c), KeyModifiers::CONTROL));
+    settle(form, action);
+}
+
+#[test]
+fn ctrl_n_and_ctrl_p_move_the_form_and_pickers() {
+    let mut form = Form::new(context());
+    ctrl(&mut form, 'n');
+    ctrl(&mut form, 'n');
+    assert_eq!(form.selected, 2);
+    ctrl(&mut form, 'p');
+    assert_eq!(form.selected, 1);
+    // Ctrl-r is not the plain-r reset.
+    ctrl(&mut form, 'r');
+    assert_eq!(form.selected, 1);
+    press(&mut form, KeyCode::Enter);
+    ctrl(&mut form, 'n');
+    assert!(matches!(form.page, Page::Connections { selected: 1, .. }));
+    ctrl(&mut form, 'p');
+    assert!(matches!(form.page, Page::Connections { selected: 0, .. }));
+}
+
+#[test]
+fn text_pages_take_the_composer_editing_binds() {
+    let mut form = Form::new(context());
+    for _ in 0..3 {
+        press(&mut form, KeyCode::Down);
+    }
+    press(&mut form, KeyCode::Enter);
+    for c in "12345".chars() {
+        press(&mut form, KeyCode::Char(c));
+    }
+    ctrl(&mut form, 'a');
+    ctrl(&mut form, 'k');
+    assert!(matches!(&form.page, Page::Temperature { value } if value.text().is_empty()));
+    press(&mut form, KeyCode::Char('7'));
+    press(&mut form, KeyCode::Char('8'));
+    ctrl(&mut form, 'b');
+    ctrl(&mut form, 'd');
+    assert!(matches!(&form.page, Page::Temperature { value } if value.text() == "7"));
 }

@@ -565,6 +565,11 @@ impl Composer {
         (i, 0)
     }
 
+    /// The caret's byte offset in [`text`](Self::text), on a grapheme boundary.
+    pub(super) fn cursor(&self) -> usize {
+        self.cursor
+    }
+
     /// The current text.
     pub(super) fn text(&self) -> String {
         self.text.clone()

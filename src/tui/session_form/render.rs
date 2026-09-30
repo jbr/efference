@@ -310,7 +310,7 @@ impl Form {
                     role.label(),
                     self.connection_name(*connection)
                 ),
-                vec![Row::plain(format!("{value}▏"))],
+                vec![Row::plain(value.with_cursor())],
                 0,
             ),
             Page::Effort { selected } => (
@@ -324,7 +324,7 @@ impl Form {
                     crate::inference::TEMPERATURE.start(),
                     crate::inference::TEMPERATURE.end()
                 ),
-                vec![Row::plain(format!("{value}▏"))],
+                vec![Row::plain(value.with_cursor())],
                 0,
             ),
         }

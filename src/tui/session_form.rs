@@ -17,6 +17,7 @@
 
 mod draft;
 mod inline;
+mod line;
 mod pages;
 pub(super) mod render;
 #[cfg(test)]
@@ -29,6 +30,7 @@ pub(in crate::tui) use draft::{Draft, RoleDraft, TriageDraft};
 
 use crate::inference::{ConnectionInventory, ResolvedOptions, SessionOptions};
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use line::Line;
 use std::path::PathBuf;
 
 /// The form page's fixed rows: start, main, effort, temperature, spotter,
@@ -76,13 +78,13 @@ enum Page {
     Text {
         role: Role,
         connection: usize,
-        value: String,
+        value: Line,
     },
     Effort {
         selected: usize,
     },
     Temperature {
-        value: String,
+        value: Line,
     },
 }
 
@@ -211,11 +213,9 @@ impl Form {
     }
 
     fn paste(&mut self, text: &str) {
-        let target = match &mut self.page {
-            Page::Text { value, .. } | Page::Temperature { value } => value,
-            _ => return,
-        };
-        target.extend(text.chars().filter(|c| !c.is_control()));
+        if let Page::Text { value, .. } | Page::Temperature { value } = &mut self.page {
+            value.paste(text);
+        }
     }
 
     /// The connections a role may choose from. Every configured connection is
@@ -264,22 +264,12 @@ impl Form {
             self.note = None;
             return Action::Continue;
         }
-        let typed = match key.code {
-            KeyCode::Char(c)
-                if !key.modifiers.intersects(
-                    KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER,
-                ) =>
-            {
-                Some(c)
-            }
-            _ => None,
-        };
         match self.page {
             Page::Form => self.handle_form_key(key),
             Page::Connections { role, .. } => {
                 let len = self.connections().len() + self.leading_choices(role);
                 if let Page::Connections { selected, .. } = &mut self.page {
-                    move_selection(selected, len, key.code);
+                    move_selection(selected, len, key);
                 }
                 match key.code {
                     KeyCode::Enter => self.choose_connection(role),
@@ -292,7 +282,7 @@ impl Form {
                     _ => 1,
                 };
                 if let Page::Models { selected, .. } = &mut self.page {
-                    move_selection(selected, len, key.code);
+                    move_selection(selected, len, key);
                 }
                 match key.code {
                     KeyCode::Enter => self.choose_model(role, self.model_connection()),
@@ -301,7 +291,7 @@ impl Form {
             }
             Page::Text { .. } => {
                 if let Page::Text { value, .. } = &mut self.page {
-                    edit_text(value, typed, key.code);
+                    value.handle_key(key);
                 }
                 match key.code {
                     KeyCode::Enter => self.accept_model_text(),
@@ -310,7 +300,7 @@ impl Form {
             }
             Page::Effort { .. } => {
                 if let Page::Effort { selected } = &mut self.page {
-                    move_selection(selected, EFFORTS.len(), key.code);
+                    move_selection(selected, EFFORTS.len(), key);
                 }
                 match (key.code, &self.page) {
                     (KeyCode::Enter, Page::Effort { selected }) => {
@@ -324,7 +314,7 @@ impl Form {
             }
             Page::Temperature { .. } => {
                 if let Page::Temperature { value } = &mut self.page {
-                    edit_text(value, typed, key.code);
+                    value.handle_key(key);
                 }
                 match key.code {
                     KeyCode::Enter => self.accept_temperature(),
@@ -335,9 +325,12 @@ impl Form {
     }
 
     fn handle_form_key(&mut self, key: KeyEvent) -> Action {
+        match step(key) {
+            Some(Step::Back) => self.selected = self.selected.saturating_sub(1),
+            Some(Step::Forward) => self.selected = (self.selected + 1).min(5),
+            None => {}
+        }
         match key.code {
-            KeyCode::Up | KeyCode::BackTab => self.selected = self.selected.saturating_sub(1),
-            KeyCode::Down | KeyCode::Tab => self.selected = (self.selected + 1).min(5),
             KeyCode::Enter => {
                 self.note = None;
                 self.page = match self.selected {
@@ -355,11 +348,13 @@ impl Form {
                             .unwrap_or(0),
                     },
                     3 => Page::Temperature {
-                        value: self
-                            .draft
-                            .temperature
-                            .map(|t| t.to_string())
-                            .unwrap_or_default(),
+                        value: Line::new(
+                            &self
+                                .draft
+                                .temperature
+                                .map(|t| t.to_string())
+                                .unwrap_or_default(),
+                        ),
                     },
                     4 => Page::Connections {
                         role: Role::Spotter,
@@ -371,7 +366,7 @@ impl Form {
                     },
                 };
             }
-            KeyCode::Char('r') => {
+            KeyCode::Char('r') if key.modifiers.is_empty() => {
                 match self.selected {
                     1 => self.draft.main = None,
                     2 => self.draft.effort = None,
@@ -414,18 +409,27 @@ impl Form {
     }
 }
 
-fn edit_text(value: &mut String, typed: Option<char>, key: KeyCode) {
-    if let Some(c) = typed {
-        value.push(c);
-    } else if key == KeyCode::Backspace {
-        value.pop();
+/// A list move: the arrows and Tab, plus the emacs pair C-p / C-n.
+enum Step {
+    Back,
+    Forward,
+}
+
+fn step(key: KeyEvent) -> Option<Step> {
+    let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+    match key.code {
+        KeyCode::Up | KeyCode::BackTab => Some(Step::Back),
+        KeyCode::Down | KeyCode::Tab => Some(Step::Forward),
+        KeyCode::Char('p') if ctrl => Some(Step::Back),
+        KeyCode::Char('n') if ctrl => Some(Step::Forward),
+        _ => None,
     }
 }
 
-fn move_selection(selected: &mut usize, len: usize, key: KeyCode) {
-    match key {
-        KeyCode::Up | KeyCode::BackTab => *selected = selected.saturating_sub(1),
-        KeyCode::Down | KeyCode::Tab => *selected = (*selected + 1).min(len.saturating_sub(1)),
-        _ => {}
+fn move_selection(selected: &mut usize, len: usize, key: KeyEvent) {
+    match step(key) {
+        Some(Step::Back) => *selected = selected.saturating_sub(1),
+        Some(Step::Forward) => *selected = (*selected + 1).min(len.saturating_sub(1)),
+        None => {}
     }
 }

@@ -8,6 +8,7 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- **Emacs binds in the new-session form** (docs/tui.md): C-n/C-p move between rows and menu entries, and the model-ID and temperature fields are the composer's editor restricted to one line.
 - **History-based model default and recent menu** (docs/transport.md): explicit model picks are remembered per project in `~/.efference/state.db` (single 30-day decay), the omitted model defaults to the project mode past ~5 effective picks else the aggregate, every picker opens a usage-ordered recent menu with the typed-ID path intact, and `efference dev history` inspects the store.
 - **No default model; the connection picker lists recent picks** (docs/transport.md, docs/operating.md, docs/tui.md): `[defaults].model` no longer parses, setup stops asking it (the first run ends with no default and the new-session form names the current model), the omitted model takes past picks else refuses, and the form's connection picker shows recent `connection/model` picks across all providers via `GET /inference/recent-picks`.
 - **No default triage; an omitted triage shares the main client** (docs/transport.md, docs/operating.md): `[defaults].triage` no longer parses, setup's management flow edits only the spotter, and the form's triage picker offers sharing main or naming a separate model per session.

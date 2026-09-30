@@ -128,7 +128,7 @@ impl Form {
             self.page = Page::Text {
                 role,
                 connection,
-                value: String::new(),
+                value: Line::new(""),
             };
             return Action::Continue;
         }
@@ -152,7 +152,7 @@ impl Form {
             return Action::Continue;
         };
         let (role, connection) = (*role, *connection);
-        let value = value.trim().to_string();
+        let value = value.text().trim().to_string();
         // The only check the client makes: a model id is one token, and the
         // whitespace case is a paste accident rather than something worth a round
         // trip. Whether the id *exists* is the host's answer, not this one.
@@ -170,7 +170,7 @@ impl Form {
         let Page::Temperature { value } = &self.page else {
             return Action::Continue;
         };
-        let value = value.trim().to_string();
+        let value = value.text().trim().to_string();
         if value.is_empty() {
             self.draft.temperature = None;
         } else {
