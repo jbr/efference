@@ -73,11 +73,30 @@ pub(super) async fn serve(
                         // is a typed-ID-only menu rather than an error.
                         match client.inference_inventory().await {
                             Ok(inventory) => match inventory.get(request.connection) {
-                                Some(row) => client
-                                    .recent_models(&row.name, cwd, None)
-                                    .await
-                                    .map(|models| (request.role, request.connection, models))
-                                    .map_err(|e| format!("reading recent models: {e}")),
+                                Some(row) => {
+                                    let recent = client.recent_models(&row.name, cwd, None).await;
+                                    // Discovery is a suggestion source: a failed
+                                    // read leaves the recents (and the typed-ID
+                                    // row), it does not fail the menu.
+                                    let discovered = client
+                                        .discovered_models(&row.name)
+                                        .await
+                                        .unwrap_or_default();
+                                    recent
+                                        .map(|mut models| {
+                                            // Past picks first, then the listing
+                                            // minus what they already named.
+                                            let picked: std::collections::HashSet<_> =
+                                                models.iter().map(|m| m.model.clone()).collect();
+                                            models.extend(
+                                                discovered
+                                                    .into_iter()
+                                                    .filter(|m| !picked.contains(&m.model)),
+                                            );
+                                            (request.role, request.connection, models)
+                                        })
+                                        .map_err(|e| format!("reading recent models: {e}"))
+                                }
                                 None => Ok((request.role, request.connection, Vec::new())),
                             },
                             Err(e) => Err(format!("reading the host's connections: {e}")),

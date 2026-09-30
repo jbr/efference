@@ -563,6 +563,23 @@ impl Client {
         Ok(recent.picks)
     }
 
+    /// The models `connection`'s provider lists (`GET /inference/models`),
+    /// read live by the host. Empty for a provider with no listing.
+    pub async fn discovered_models(&self, connection: &str) -> Result<Vec<ModelSuggestion>> {
+        #[derive(serde::Deserialize)]
+        struct Listing {
+            models: Vec<ModelSuggestion>,
+        }
+        let query = trillium_client::url::form_urlencoded::Serializer::new(String::new())
+            .append_pair("connection", connection)
+            .finish();
+        let path = format!("/inference/models?{query}");
+        let body = self.get_unversioned(&path).await?;
+        let listing: Listing =
+            serde_json::from_str(&body).with_context(|| format!("decoding GET {path}"))?;
+        Ok(listing.models)
+    }
+
     /// The models past sessions picked on `connection` for the project at
     /// `cwd` (`GET /inference/recent-models`): most decayed weight first.
     /// Empty when nothing was ever picked there — a picker with only the

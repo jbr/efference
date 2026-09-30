@@ -1068,7 +1068,11 @@ log-owned identity shape, so an offline reader does not have to infer the
 session's provider from current config or usage telemetry. Picks live in
 `~/.efference/state.db`, beside the config file that named it; the same store
 answers the recent-models menu in every picker (`GET /inference/recent-models`)
-and the offline `efference dev history` reader.
+and the offline `efference dev history` reader. The TUI's model menu lists
+those picks first, then `GET /inference/models?connection=` — the provider's
+listing (`Endpoint::list_models`: Anthropic, Codex, described endpoints; other
+providers answer empty), read live with the host's credential. A failed listing
+leaves the recents and the typed-ID row.
 
 The dev verbs that dial a provider without a host (`dev peek`, `dev spotter`,
 `dev spotter-eval`) load the same file from their own environment and resolve

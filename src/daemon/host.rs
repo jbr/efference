@@ -397,6 +397,7 @@ impl Host {
 pub(crate) fn host_routes(create: bool, files: bool) -> impl trillium::Handler {
     let mut router = Router::new()
         .get("/inference", inference_inventory)
+        .get("/inference/models", discovered_models)
         .get("/inference/recent-models", recent_models)
         .get("/inference/recent-picks", recent_picks)
         .with_route(trillium::Method::Query, "/sessions", preview_session)
@@ -437,6 +438,55 @@ async fn inference_inventory(conn: Conn) -> Conn {
             .with_body(serde_json::json!({ "connections": host.inference.inventory() }).to_string())
             .halt(),
         None => missing_host(conn),
+    }
+}
+
+/// `GET /inference/models?connection=<name>`: the models the connection's
+/// provider lists, read live with the host's credential (the same listing
+/// `efference dev models` prints). Suggestions only, per the contract
+/// `recent-models` states: a model absent here is still accepted. A provider
+/// with no listing answers an empty list; an unknown or unusable connection or a
+/// failed read is an error the client treats as "no suggestions"
+/// (backlog/session-model-discovery.md).
+async fn discovered_models(conn: Conn) -> Conn {
+    let Some(host) = host_of(&conn) else {
+        return missing_host(conn);
+    };
+    let Some(connection) =
+        crate::daemon::http::parse_param(conn.querystring(), "connection").map(|value| {
+            trillium_client::url::form_urlencoded::parse(value.as_bytes())
+                .next()
+                .map(|(_, decoded)| decoded.into_owned())
+                .unwrap_or_default()
+        })
+    else {
+        return fail(
+            conn,
+            ErrorCode::BadRequest,
+            "models needs ?connection=<name>",
+        );
+    };
+    let (_, endpoint) = match host.inference.endpoint(&connection) {
+        Ok(found) => found,
+        Err(e) => return fail(conn, ErrorCode::NotFound, e.to_string()),
+    };
+    match endpoint.list_models().await {
+        Ok(listing) => {
+            let models: Vec<serde_json::Value> = listing
+                .into_iter()
+                .map(|(model, label)| serde_json::json!({ "model": model, "label": label }))
+                .collect();
+            conn.with_status(200)
+                .with_body(
+                    serde_json::json!({ "connection": connection, "models": models }).to_string(),
+                )
+                .halt()
+        }
+        Err(e) => fail(
+            conn,
+            ErrorCode::Internal,
+            format!("listing models on {connection}: {e}"),
+        ),
     }
 }
 
