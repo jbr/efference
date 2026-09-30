@@ -442,8 +442,8 @@ because the inline container has no `ui_loop` and still has to preview and creat
 dispatcher is what keeps the two surfaces from drifting.
 
 Four host-owned inputs meet in the form and nowhere else: the connection inventory,
-the recent picks across all connections, the effective draft `QUERY /sessions`
-recomputes, and the creation it finally posts.
+the model catalog, the effective draft `QUERY /sessions` recomputes, and the creation
+it finally posts.
 `session_form.rs` holds the operator's raw overrides and the host's latest answer about
 them side by side. The answer never replaces the draft — folding resolved values back in
 would turn every inherited default into an explicit override on the first preview — and
@@ -468,19 +468,68 @@ edited: editing it would send an environment captured somewhere else. A configur
 capture an environment at a given directory, and the `efference tui --new` entry point, are
 in backlog/new-session-form.md.
 
-Choosing the main model's connection offers the recent picks across all
-connections first — past main picks as `connection/model` rows, most decayed
-weight first — then each connection's own recent models, then the typed-ID
-editor. Spotter and triage pickers offer no cross-connection recents: the roles
-want different qualities and should grow different histories rather than share
-main's. This build compiles
-no catalog of suggestions, and a menu of ids the build knows would be the stale
-half of a problem the harness no longer has elsewhere — the Codex arm's
-capabilities come from the provider's own catalog (docs/transport.md), so a
-model it published after this build resolves as well as one it published
-before. A connection's menu lists its past picks first, then the rest of the host's
-catalog for that connection as one flat list (`GET /inference/catalog/:connection`,
-docs/model-catalog.md), each row labelled with its name where the catalog has one.
+Each role's model is chosen in one picker over the whole catalog tree
+([model-catalog.md](model-catalog.md)), a typeahead rather than a chain of menus. The
+tree has connections (interior), groups (interior, only where the provider's rows carry
+a `group`: OpenRouter's authors), models (leaves), and under a connection chip a
+synthetic typed-id leaf. The input line is the path: chips for the connection and group
+taken so far, then the query, as in `[openrouter] [z-ai] gl▏`.
+
+What the rows are depends on the path and the role. The root with nothing typed lists,
+for the main role, the top five recent picks across connections (as
+`connection/model`, trailer `recent`) and then every connection; the spotter and triage
+roles list the connections alone, since history records only main picks. Under a
+connection chip the main role lists that connection's top five recents first, then its groups by
+name (trailer `N models`) or, for a provider without groups, its models in catalog order;
+under a group chip, its models. A connection row shows its provider and, when relevant, a
+trailer: `unavailable` (dimmed, still selectable, since a typed id is still possible and
+preview names the problem), `loading…` while a connection with no copy is being read, or
+`failed`. A model row shows its id relative to the chips (the `author/` prefix is dropped
+under a group chip), the name when it adds information (its lowercased alphanumerics
+differ from the id's last segment), and up to three dim facts: context (`1M`, `272k`),
+price (`$0.15/$0.50`, `free` at zero), and age from `created` (absent when unset; `3d`, `5w`, `8mo`, `2y`). Columns align
+across the visible rows; at narrow widths the facts go first (age, price, context), then
+the name, then the id is truncated.
+
+With a query, the rows under the chips are filtered and sorted by the matching rule in
+`matcher.rs`: case-insensitive, whitespace-separated tokens that must all match. A token
+without `/` is matched against the row's own text (a connection's or group's name, a
+model's id without its author with a leading `~` alias marker kept, and the model's
+`name`), so a row is not found through its ancestors' names: `op` at the root lists
+openai and openrouter, not every openrouter model. A token with `/` is matched against the
+row's slug relative to the chips (`z-ai/gl`, `openrouter/z`). Each token scores a tier
+(exact final `/`-segment; prefix of the text at a segment start, where segments break on
+`/ - . : ~`; substring of the text or name; subsequence of the text). Rows sort by their
+worst token's tier, interior rows ahead of leaves within a tier, then (main role only)
+recent rank, then catalog order. The rule is one the web client implements too, and both
+run the fixture `session_form/match_cases.json` (a small tree and a list of
+`(chips, query) -> ranked ids`). Under a connection chip, a non-empty query without
+whitespace adds a last row, "use `<typed>` as model id"; it is the only row when nothing
+matches, and is present when something does because a wanted id can be a prefix of a
+listed one. Under a group chip a bare typed id is prefixed with the group, since the chip
+already names the author. An empty result reads "nothing matches" (or, with no
+connections at all, "no connections read from this host").
+
+Keys: printable characters edit the query (the composer's editing binds apply); Up/Down
+and C-p/C-n move the selection, which returns to the first row whenever the query
+changes. Tab or `/` on an interior row pushes its chip and clears the query (`/`
+inserts a literal slash where the highlighted row is not interior); Enter does the same
+on an interior row and picks on a leaf, setting the role's draft and asking for a
+preview. Tab on a leaf pushes its ancestor chips (connection, then group) and fills the query with
+its own id (`~` alias marker kept) so a variant can be typed.
+Backspace on an empty query removes the last chip whole. Esc clears a non-empty query and
+otherwise returns to the form; `r` on a form row resets that role. There is no inherit row:
+the form's `r` is the reset.
+
+The form reads `GET /inference/catalog` when it opens (stored copies, never waiting on a
+provider), then the dispatcher awaits `GET /inference/catalog/:connection` for every
+entry that is not `fresh` (and not `unavailable`), one task per connection, and each
+answer replaces that connection's entry in the open form as a `TuiEvent::Catalog`; the
+selection stays inside the rows that are there. A query under a connection chip that
+matches nothing asks for one `max_age=60` read of that connection, at most once per
+connection per visit to the picker, so a model released since the last read shows up by
+the time its id is typed. Both containers forward that request (`Action::RefreshCatalog`
+to `HostCmd::Catalog`), and a failed read marks the entry `failed` and keeps its rows.
 
 Creating switches to the new session, the same one-cursor-per-handshake switch `⏎`
 performs. A refused creation keeps the form open with its edits and the host's reason,
@@ -498,13 +547,14 @@ transcript is underneath it.
 
 An inline viewport's height is fixed at creation — ratatui's `resize` reads its argument as
 the *terminal* size for `Viewport::Inline` — so the form reports the tallest page it can
-reach (`viewport_height`), bounded by the connections this host actually offers rather than
+reach (`viewport_height`; the picker's root needs room for five recents and every connection), bounded by the connections this host actually offers rather than
 a constant picked for the worst case. Rows pack to the top so the slack falls below the key
 hint rather than between the fields and it.
 
 `session_form.rs` owns the draft, focus, and page transitions; `draft.rs` is the override
-state and its conversion to the request; `pages.rs` is where each picker and editor commits;
-`render.rs` renders into a supplied rectangle with supplied styles; `inline.rs` owns raw
+state and its conversion to the request; `pages.rs` is where the editors commit; `picker.rs`,
+`picker_rows.rs`, and `matcher.rs` are the model picker's keys, rows, and matching rule, and
+`picker_render.rs` draws it; `render.rs` renders into a supplied rectangle with supplied styles; `inline.rs` owns raw
 mode and the inline viewport for both the wired and the offline entry points.
 `sessions.rs`, `keyboard.rs`, and `render_sessions.rs` are the embedded integration. The form receives Escape and Ctrl-C before the session's handlers and
 blocks mouse events from reaching the transcript; cancelling returns to Sessions without

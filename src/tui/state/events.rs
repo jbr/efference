@@ -268,8 +268,8 @@ impl<'a> InteractiveState<'a> {
                 self.apply_preview(resolved);
                 self.dirty = true;
             }
-            TuiEvent::Recents(recents) => {
-                self.apply_recents(recents);
+            TuiEvent::Catalog { connection, result } => {
+                self.apply_catalog(&connection, result);
                 self.dirty = true;
             }
             TuiEvent::Created(created) => return self.apply_created(created),

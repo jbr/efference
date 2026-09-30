@@ -23,23 +23,6 @@ use crate::daemon::{CreateSession, SessionOptionsRequest};
 use crate::frontend::{Approval, SubmittedTurn};
 use crate::inference::{ConnectionInventory, ResolvedOptions};
 
-/// One model suggestion: the provider-native id the draft carries, and the label
-/// the menu renders.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
-pub struct ModelSuggestion {
-    pub model: String,
-    pub label: String,
-}
-
-/// One cross-connection recent pick: both halves of a role draft, so the
-/// connection picker can offer the whole list without opening each
-/// connection's own recent menu first.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
-pub struct RecentPick {
-    pub connection: String,
-    pub model: String,
-}
-
 fn catalog_query(
     cwd: &std::path::Path,
     config: Option<&std::path::Path>,
@@ -547,35 +530,6 @@ impl Client {
             .with_context(|| format!("QUERY {path} on the host socket"))?;
         let body = read_2xx(conn, "QUERY", path).await?;
         serde_json::from_str(&body).with_context(|| format!("decoding QUERY {path}"))
-    }
-
-    /// The picks past sessions made across all connections for the project at
-    /// `cwd` (`GET /inference/recent-picks`): most decayed weight first with
-    /// project picks before aggregate ones. Empty when nothing was ever picked
-    /// — a picker with only the default-and-connections path, not a failure.
-    /// A listener route, so it always addresses the socket root.
-    pub async fn recent_picks(
-        &self,
-        cwd: &std::path::Path,
-        config: Option<&std::path::Path>,
-    ) -> Result<Vec<RecentPick>> {
-        #[derive(serde::Deserialize)]
-        struct Recent {
-            picks: Vec<RecentPick>,
-        }
-        let query = {
-            let mut query = trillium_client::url::form_urlencoded::Serializer::new(String::new());
-            query.append_pair("cwd", &cwd.to_string_lossy());
-            if let Some(config) = config {
-                query.append_pair("config", &config.to_string_lossy());
-            }
-            query.finish()
-        };
-        let path = format!("/inference/recent-picks?{query}");
-        let body = self.get_unversioned(&path).await?;
-        let recent: Recent =
-            serde_json::from_str(&body).with_context(|| format!("decoding GET {path}"))?;
-        Ok(recent.picks)
     }
 
     /// Every configured connection's stored model listing, with recent ranks for

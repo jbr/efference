@@ -112,9 +112,6 @@ sessions from one process. Its own routes are the listener's, not a session's:
   tokens; `price` is USD per million tokens; `recent` is the rank (1 first) of the
   matching recent pick, counted across connections. A field the source did not
   declare is absent.
-- `GET /inference/recent-picks?cwd=<root>&config=<path>` — the picks past sessions
-  made across all connections, most decayed weight first with project picks before
-  aggregate ones: `{"picks":[{"connection","model"}]}`.
 - `QUERY /sessions` — resolve a proposed session without minting a directory or
   starting runtime preparation. The body carries an absolute `cwd`, an optional
   `config`, and the same editable selections creation takes: `connection`, `model`,

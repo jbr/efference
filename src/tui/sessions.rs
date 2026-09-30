@@ -18,7 +18,7 @@ use super::*;
 use crate::client::SessionSummary;
 
 /// The switcher's state while it is open.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub(crate) struct SessionMenu {
     /// The new-session form, while it is open over the listing (docs/tui.md).
     /// It owns every key it is given, including Escape and Ctrl-C.
@@ -172,34 +172,19 @@ impl InteractiveState<'_> {
         }
     }
 
-    /// Recent models answered for the open menu. Folded in when the menu is
-    /// still open on the same role and connection; dropped or failed answers
-    /// leave the typed-ID-only menu in place rather than closing it.
-    pub(super) fn apply_recents(
+    /// One connection's catalog entry answered. Folded into the open form's
+    /// picker; dropped when no form is open, since the entry describes a list
+    /// nobody can see.
+    pub(super) fn apply_catalog(
         &mut self,
-        recents: Result<super::session_form::MenuAnswer, String>,
+        connection: &str,
+        result: Result<crate::client::ConnectionCatalog, String>,
     ) {
         let UiMode::Sessions(menu) = &mut self.ui_mode else {
             return;
         };
-        let Some(form) = &mut menu.form else {
-            return;
-        };
-        match recents {
-            Ok(answer) => {
-                let action = form.recents_returned(answer);
-                // Opening the menu asked for recents alongside nothing else,
-                // so the reply folds silently — but a superseding preview
-                // request still goes out when the draft has moved on.
-                if let super::session_form::Action::Preview(options) = action {
-                    let _ = self.host_tx.send(HostCmd::Preview(options));
-                } else if let super::session_form::Action::Recents(request) = action {
-                    let _ = self.host_tx.send(HostCmd::Recents(request));
-                }
-            }
-            Err(error) => {
-                form.note_recents_failed(error);
-            }
+        if let Some(form) = &mut menu.form {
+            form.catalog_returned(connection, result);
         }
     }
 

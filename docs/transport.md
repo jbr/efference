@@ -1089,8 +1089,7 @@ log-owned identity shape, so an offline reader does not have to infer the
 session's provider from current config or usage telemetry. Picks live in
 `~/.efference/state.db`, beside the config file that named it; the same store
 answers the recent ranks in the model catalog (`GET /inference/catalog`,
-[model-catalog.md](model-catalog.md)), the connection picker's cross-connection
-list (`GET /inference/recent-picks`), and the offline `efference dev history`
+[model-catalog.md](model-catalog.md)) and the offline `efference dev history`
 reader. The provider listings behind the model menus, their normalization, and
 their storage in the same database are described in
 [model-catalog.md](model-catalog.md).

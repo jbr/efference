@@ -2,23 +2,27 @@
 //! surface `QUERY /sessions` and `POST /sessions` serve (docs/control-api.md).
 //!
 //! Four host-owned inputs meet here and nowhere else — the connection inventory
-//! from `GET /inference`, the recent main picks across all connections from
-//! `GET /inference/recent-picks` (offered in the main picker's menu only),
-//! the effective draft `QUERY /sessions` recomputes after each edit, and the
-//! creation the form finally posts. The form owns none of
+//! from `GET /inference`, the model catalog from `GET /inference/catalog`
+//! (docs/model-catalog.md; each connection's entry is replaced as its own read
+//! lands), the effective draft `QUERY /sessions` recomputes after each edit, and
+//! the creation the form finally posts. The form owns none of
 //! them: it holds the operator's raw overrides ([`Draft`]) and the host's latest
 //! answer about them ([`ResolvedOptions`]) side by side, and renders the
 //! difference.
 //!
 //! Preview is recomputed on *committed* edits — leaving a picker or accepting an
-//! editor — never per keystroke. Typing inside the model filter and the text
-//! editors is local, so the request rate follows selections rather than
+//! editor — never per keystroke. Typing in the model picker's query and in the
+//! text editors is local, so the request rate follows selections rather than
 //! characters and no debounce timer is needed.
 
 mod draft;
 mod inline;
 mod line;
+mod matcher;
 mod pages;
+mod picker;
+mod picker_render;
+mod picker_rows;
 pub(super) mod render;
 #[cfg(test)]
 mod test;
@@ -28,9 +32,11 @@ pub use inline::{run, run_hosted};
 pub(crate) use draft::Role;
 pub(in crate::tui) use draft::{Draft, RoleDraft, TriageDraft};
 
+use crate::client::ConnectionCatalog;
 use crate::inference::{ConnectionInventory, ResolvedOptions, SessionOptions};
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use line::Line;
+use matcher::Chip;
 use std::path::PathBuf;
 
 /// The form page's fixed rows: start, main, effort, temperature, spotter,
@@ -38,8 +44,18 @@ use std::path::PathBuf;
 /// same six (`render.rs`).
 const FORM_ROWS: usize = 6;
 
-/// Rows a model menu gets before it scrolls.
-const MENU_ROWS: usize = 10;
+/// Rows the model picker gets before it scrolls. Sized so the root view — the
+/// top recents and every connection of a typical host — fits without scrolling
+/// (`picker.rs`).
+const MENU_ROWS: usize = 12;
+
+/// The most rows the picker's viewport reserves, however many connections a
+/// host lists.
+const MAX_PICKER_ROWS: usize = 20;
+
+/// How stale a copy may be before a no-match query reads the connection again
+/// (`picker.rs`). The host raises anything under a minute to a minute.
+const CATALOG_MISS_MAX_AGE: u64 = 60;
 
 const EFFORTS: &[&str] = &["Use default", "low", "medium", "high", "xhigh", "max"];
 
@@ -49,41 +65,32 @@ const EFFORTS: &[&str] = &["Use default", "low", "medium", "high", "xhigh", "max
 /// the form displays this rather than asking, and why it cannot be edited until
 /// there is a way to capture an environment at an arbitrary directory
 /// (backlog/new-session-form.md).
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct NewSessionContext {
     pub(crate) cwd: PathBuf,
     /// `GET /inference`, sorted by name. Empty until the first read lands, which
     /// the form states rather than rendering as an empty menu.
     pub(crate) connections: Vec<ConnectionInventory>,
-    /// `GET /inference/recent-picks` for the same root: past picks across all
-    /// connections, most decayed weight first. Empty when nothing was ever
-    /// picked — the picker then offers only the default and the connections.
-    pub(crate) recent_picks: Vec<crate::client::RecentPick>,
+    /// `GET /inference/catalog` for the same root: each connection's listing
+    /// with its status and the recent ranks. Empty when the read failed or no
+    /// host is behind the form — the picker then offers the connections and
+    /// the typed-id path only.
+    pub(crate) catalog: Vec<ConnectionCatalog>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Page {
     Form,
-    Connections {
+    /// The one model picker (`picker.rs`): a typeahead over the catalog tree. The
+    /// chips are the path taken so far; `query` filters what is under them.
+    Picker {
         role: Role,
+        path: Vec<Chip>,
+        query: Line,
         selected: usize,
-    },
-    /// Recent models on one connection, most decayed weight first, with the
-    /// typed-ID editor as the last row. Entered with whatever the host has
-    /// answered so far: an empty list is a picker with only the typed path,
-    /// not a failure — which is also what a no-host form always shows.
-    Models {
-        role: Role,
-        connection: usize,
-        models: Vec<crate::client::ModelSuggestion>,
-        selected: usize,
-        /// The host has not answered yet; the menu shows what it has and says so.
-        loading: bool,
-    },
-    Text {
-        role: Role,
-        connection: usize,
-        value: Line,
+        /// Connections whose no-match refresh was already requested during this
+        /// visit, so a miss asks the host at most once per connection.
+        refreshed: Vec<String>,
     },
     Effort {
         selected: usize,
@@ -93,7 +100,7 @@ enum Page {
     },
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub(super) struct Form {
     context: NewSessionContext,
     draft: Draft,
@@ -114,39 +121,6 @@ pub(super) struct Form {
     note: Option<String>,
 }
 
-/// The connection a recents menu was opened on: the role being picked, and
-/// the connection's index in the inventory. The container resolves the name
-/// and the working root, which never enter the UI thread.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct RecentsRequest {
-    pub(crate) role: Role,
-    pub(crate) connection: usize,
-}
-
-/// The host's answer to a [`RecentsRequest`]: recent picks first, then the
-/// connection's listed models.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct MenuAnswer {
-    pub(crate) role: Role,
-    pub(crate) connection: usize,
-    pub(crate) models: Vec<crate::client::ModelSuggestion>,
-}
-
-impl MenuAnswer {
-    /// The answer for one connection's menu.
-    pub(crate) fn models(
-        role: Role,
-        connection: usize,
-        models: Vec<crate::client::ModelSuggestion>,
-    ) -> Self {
-        Self {
-            role,
-            connection,
-            models,
-        }
-    }
-}
-
 /// What a keypress asked the container to do. The form issues no requests
 /// itself: it names them, and the container's host dispatcher addresses the
 /// socket (`tui/run.rs`).
@@ -159,9 +133,13 @@ pub(super) enum Action {
     /// Post the creation. The container attaches the working root and the
     /// environment, which never enter the UI thread (docs/env.md).
     Create(SessionOptions),
-    /// Read this connection's recent models for the open menu. Answered with
-    /// whatever the host has; an empty answer is a typed-ID-only menu.
-    Recents(RecentsRequest),
+    /// Read one connection's catalog entry again, awaiting the provider when
+    /// the stored copy is older than `max_age` seconds. Answered with
+    /// [`Form::catalog_returned`].
+    RefreshCatalog {
+        connection: String,
+        max_age: Option<u64>,
+    },
 }
 
 impl Form {
@@ -226,16 +204,6 @@ impl Form {
         self.note = Some(message);
     }
 
-    /// Recent models failed to load. The menu stays open on its typed-ID row:
-    /// an empty answer and a failed one read the same, and closing the menu
-    /// would punish the operator for a read that was only ever a shortcut.
-    pub(crate) fn note_recents_failed(&mut self, message: String) {
-        if let Page::Models { loading, .. } = &mut self.page {
-            *loading = false;
-        }
-        self.note = Some(message);
-    }
-
     /// Ask for a fresh preview of the current draft, recording what was sent so
     /// a reply that arrives after the next edit can be recognized as stale.
     fn preview(&mut self) -> Action {
@@ -244,10 +212,19 @@ impl Form {
         Action::Preview(options)
     }
 
-    fn paste(&mut self, text: &str) {
-        if let Page::Text { value, .. } | Page::Temperature { value } = &mut self.page {
-            value.paste(text);
+    pub(super) fn paste(&mut self, text: &str) -> Action {
+        match &mut self.page {
+            Page::Temperature { value } => value.paste(text),
+            Page::Picker {
+                query, selected, ..
+            } => {
+                query.paste(text);
+                *selected = 0;
+                return self.refresh_on_miss();
+            }
+            _ => {}
         }
+        Action::Continue
     }
 
     /// The connections a role may choose from. Every configured connection is
@@ -258,15 +235,6 @@ impl Form {
         &self.context.connections
     }
 
-    /// The connection index the open Models menu was opened on. Zero when no
-    /// menu is open — the value is only read beside a Models page.
-    fn model_connection(&self) -> usize {
-        match &self.page {
-            Page::Models { connection, .. } => *connection,
-            _ => 0,
-        }
-    }
-
     pub(super) fn handle(&mut self, key: KeyEvent) -> Action {
         if key.kind == KeyEventKind::Release {
             return Action::Continue;
@@ -275,62 +243,22 @@ impl Form {
             return Action::Cancel;
         }
         if key.code == KeyCode::Esc {
-            self.page = match &self.page {
-                Page::Form => return Action::Cancel,
-                Page::Models {
-                    role, connection, ..
-                } => Page::Connections {
-                    role: *role,
-                    selected: connection + self.leading_choices(*role),
-                },
-                Page::Text {
-                    role, connection, ..
-                } => Page::Models {
-                    role: *role,
-                    connection: *connection,
-                    models: Vec::new(),
-                    selected: 0,
-                    loading: false,
-                },
-                _ => Page::Form,
-            };
             self.note = None;
+            match &mut self.page {
+                Page::Form => return Action::Cancel,
+                Page::Picker {
+                    query, selected, ..
+                } if !query.text().is_empty() => {
+                    *query = Line::new("");
+                    *selected = 0;
+                }
+                _ => self.page = Page::Form,
+            }
             return Action::Continue;
         }
         match self.page {
             Page::Form => self.handle_form_key(key),
-            Page::Connections { role, .. } => {
-                let len = self.connections().len() + self.leading_choices(role);
-                if let Page::Connections { selected, .. } = &mut self.page {
-                    move_selection(selected, len, key);
-                }
-                match key.code {
-                    KeyCode::Enter => self.choose_connection(role),
-                    _ => Action::Continue,
-                }
-            }
-            Page::Models { role, .. } => {
-                let len = match &self.page {
-                    Page::Models { models, .. } => models.len() + 1,
-                    _ => 1,
-                };
-                if let Page::Models { selected, .. } = &mut self.page {
-                    move_selection(selected, len, key);
-                }
-                match key.code {
-                    KeyCode::Enter => self.choose_model(role, self.model_connection()),
-                    _ => Action::Continue,
-                }
-            }
-            Page::Text { .. } => {
-                if let Page::Text { value, .. } = &mut self.page {
-                    value.handle_key(key);
-                }
-                match key.code {
-                    KeyCode::Enter => self.accept_model_text(),
-                    _ => Action::Continue,
-                }
-            }
+            Page::Picker { .. } => self.handle_picker_key(key),
             Page::Effort { .. } => {
                 if let Page::Effort { selected } = &mut self.page {
                     move_selection(selected, EFFORTS.len(), key);
@@ -368,10 +296,7 @@ impl Form {
                 self.note = None;
                 self.page = match self.selected {
                     0 => return self.start(),
-                    1 => Page::Connections {
-                        role: Role::Main,
-                        selected: 0,
-                    },
+                    1 => Self::picker(Role::Main),
                     2 => Page::Effort {
                         selected: self
                             .draft
@@ -389,14 +314,8 @@ impl Form {
                                 .unwrap_or_default(),
                         ),
                     },
-                    4 => Page::Connections {
-                        role: Role::Spotter,
-                        selected: 0,
-                    },
-                    _ => Page::Connections {
-                        role: Role::Triage,
-                        selected: 0,
-                    },
+                    4 => Self::picker(Role::Spotter),
+                    _ => Self::picker(Role::Triage),
                 };
             }
             KeyCode::Char('r') if key.modifiers.is_empty() => {

@@ -11,24 +11,24 @@ expression: self.render()
  3 │                                                            │                                       │
  4 │                                                            │                                       │
  5 │                                                            │                                       │
- 6 │                                                            │                                       │
- 7 │    ┌──────────────────────────────────────────────────────────────────────────────────────────┐    │
- 8 │    │? new session in /code/example                                                            │    │
- 9 │    │❯ start session                                                                           │    │
-10 │    │  main model     work/claude-sonnet-4-5  recent pick                                      │    │
-11 │    │  effort         —                       provider default                                 │    │
-12 │    │  temperature    —                       provider default                                 │    │
-13 │    │  spotter model  work/claude-haiku-4-5   main's provider                                  │    │
-14 │    │  triage model   the main client         nothing configured                               │    │
-15 │    │  model: connection "blank" is unavailable                                                │    │
-16 │    │  ↑↓ move · enter picks · r resets · esc cancels                                          │    │
+ 6 │    ┌──────────────────────────────────────────────────────────────────────────────────────────┐    │
+ 7 │    │? new session in /code/example                                                            │    │
+ 8 │    │❯ start session                                                                           │    │
+ 9 │    │  main model     work/claude-sonnet-4-5       recent pick                                 │    │
+10 │    │  effort         —                            provider default                            │    │
+11 │    │  temperature    —                            provider default                            │    │
+12 │    │  spotter model  router/~typesafe/jev-latest  decision model                              │    │
+13 │    │  triage model   the main client              nothing configured                          │    │
+14 │    │  model: connection "blank" is unavailable                                                │    │
+15 │    │  ↑↓ move · enter picks · r resets · esc cancels                                          │    │
+16 │    │                                                                                          │    │
 17 │    │                                                                                          │    │
 18 │    │                                                                                          │    │
 19 │    │                                                                                          │    │
 20 │    │                                                                                          │    │
-21 │    └──────────────────────────────────────────────────────────────────────────────────────────┘    │
-22 │                                                            │                                       │
-23 │                                                            │                                       │
+21 │    │                                                                                          │    │
+22 │    │                                                                                          │    │
+23 │    └──────────────────────────────────────────────────────────────────────────────────────────┘    │
 24 │                                                            │                                       │
 25 │                                                            │                                       │
 26 │                                                            │                                       │

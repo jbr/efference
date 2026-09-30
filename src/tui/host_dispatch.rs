@@ -1,7 +1,7 @@
 //! The host's own routes, served to the UI thread (docs/tui.md).
 //!
 //! These are the routes addressed to the *host* rather than to the attached
-//! session — the listing, the end, and the three the new-session form needs — so
+//! session — the listing, the end, and the ones the new-session form needs — so
 //! they run against a client re-based at the socket root, where they live under
 //! either binding (docs/control-api.md).
 //!
@@ -11,8 +11,7 @@
 //! still has to preview and create (backlog/new-session-form.md).
 
 use super::{HostCmd, TuiEvent};
-use crate::client::Client;
-use crate::tui::session_form::MenuAnswer;
+use crate::client::{CatalogStatus, Client, ConnectionCatalog};
 
 /// Answer host commands until the UI thread goes away.
 ///
@@ -34,8 +33,18 @@ pub(super) async fn serve(
                     Ok(cwd) => new_session_context(&client, cwd).await,
                     Err(e) => Err(format!("reading the working directory: {e}")),
                 };
+                // The form opens on what the host has stored; every copy that is not
+                // fresh is read (and awaited) next, each in its own task so a slow
+                // provider holds up nothing else.
+                let stale = context
+                    .as_ref()
+                    .map(|context| unfresh_connections(&context.catalog))
+                    .unwrap_or_default();
                 if events.send(TuiEvent::NewSession(context)).is_err() {
                     break;
+                }
+                if let Ok(cwd) = origin.as_deref() {
+                    spawn_catalog_reads(&client, cwd, stale, None, &events);
                 }
                 continue;
             }
@@ -64,41 +73,12 @@ pub(super) async fn serve(
                 }
                 continue;
             }
-            HostCmd::Recents(request) => {
-                let recents = match origin.as_deref() {
-                    Ok(cwd) => {
-                        // The form holds the inventory the menu index came
-                        // from — but the dispatcher holds the client, so the
-                        // name resolves here, against a fresh inventory read.
-                        // A connection renamed mid-menu answers empty, which
-                        // is a typed-ID-only menu rather than an error.
-                        let empty = || MenuAnswer {
-                            role: request.role,
-                            connection: request.connection,
-                            models: Vec::new(),
-                        };
-                        match client.inference_inventory().await {
-                            Ok(inventory) => match inventory.get(request.connection) {
-                                // The catalog is a suggestion source: a failed
-                                // read leaves an empty menu with the typed-ID
-                                // row, it does not fail the menu.
-                                Some(row) => Ok(client
-                                    .catalog_connection(&row.name, cwd, None, None)
-                                    .await
-                                    .map(|catalog| MenuAnswer {
-                                        models: menu_models(catalog),
-                                        ..empty()
-                                    })
-                                    .unwrap_or_else(|_| empty())),
-                                None => Ok(empty()),
-                            },
-                            Err(e) => Err(format!("reading the host's connections: {e}")),
-                        }
-                    }
-                    Err(e) => Err(format!("reading the working directory: {e}")),
-                };
-                if events.send(TuiEvent::Recents(recents)).is_err() {
-                    break;
+            HostCmd::Catalog {
+                connection,
+                max_age,
+            } => {
+                if let Ok(cwd) = origin.as_deref() {
+                    spawn_catalog_reads(&client, cwd, vec![connection], max_age, &events);
                 }
                 continue;
             }
@@ -123,21 +103,48 @@ pub(super) async fn serve(
     }
 }
 
-/// A connection's catalog as a flat menu: past picks first in rank order, then
-/// the rest in the catalog's order, each labelled with its name where it has one.
-fn menu_models(catalog: crate::client::ConnectionCatalog) -> Vec<crate::client::ModelSuggestion> {
-    let mut rows = catalog.models;
-    rows.sort_by_key(|row| row.recent.unwrap_or(u32::MAX));
-    rows.into_iter()
-        .map(|row| crate::client::ModelSuggestion {
-            label: row.row.name.unwrap_or_else(|| row.row.model.clone()),
-            model: row.row.model,
+/// The connections whose catalog copy is not fresh: the ones the form reads
+/// again as it opens. A connection with no credential is left out, since the host
+/// attempts no read for it (docs/model-catalog.md).
+pub(in crate::tui) fn unfresh_connections(catalog: &[ConnectionCatalog]) -> Vec<String> {
+    catalog
+        .iter()
+        .filter(|entry| {
+            !matches!(
+                entry.status,
+                CatalogStatus::Fresh | CatalogStatus::Unavailable
+            )
         })
+        .map(|entry| entry.connection.clone())
         .collect()
 }
 
+/// Read each named connection's catalog entry, awaiting the provider when the
+/// stored copy is older than `max_age` seconds, and deliver each answer as a
+/// [`TuiEvent::Catalog`]. One task per connection: the host bounds a read at 30
+/// seconds, and a slow connection should not hold up the others.
+pub(in crate::tui) fn spawn_catalog_reads(
+    client: &Client,
+    cwd: &std::path::Path,
+    connections: Vec<String>,
+    max_age: Option<u64>,
+    events: &crossbeam_channel::Sender<TuiEvent>,
+) {
+    for connection in connections {
+        let (client, cwd, events) = (client.clone(), cwd.to_path_buf(), events.clone());
+        tokio::spawn(async move {
+            let result = client
+                .catalog_connection(&connection, &cwd, None, max_age)
+                .await
+                .map_err(|e| format!("reading {connection}'s models: {e}"));
+            let _ = events.send(TuiEvent::Catalog { connection, result });
+        });
+    }
+}
+
 /// The new-session form's opening read (docs/tui.md): where a session would be
-/// created, and the connections the host has configured for it. Both come from
+/// created, the connections the host has configured for it, and their stored
+/// model catalogs. Both come from
 /// the client that is creating — the working root is this process's, as the
 /// environment creation carries will be — so the form shows what will actually
 /// be sent rather than a root it asked for and cannot supply an environment at.
@@ -150,13 +157,14 @@ pub(in crate::tui) async fn new_session_context(
         .inference_inventory()
         .await
         .map_err(|e| format!("reading the host's connections: {e}"))?;
-    // Best-effort like every history read: an unreadable store is an empty
-    // list, not a form that never opens.
-    let recent_picks = client.recent_picks(&cwd, None).await.unwrap_or_default();
+    // The stored copies, never waiting on a provider. A failed read is an empty
+    // catalog, not a form that never opens: the picker still offers every
+    // connection and the typed-id path.
+    let catalog = client.catalog(&cwd, None).await.unwrap_or_default();
     Ok(crate::tui::session_form::NewSessionContext {
         cwd,
         connections,
-        recent_picks,
+        catalog,
     })
 }
 

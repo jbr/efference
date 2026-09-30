@@ -62,8 +62,8 @@ history store keys on (`cwd`, optional `config`) and fold the ranked picks of
 `recent_all` (up to 20, counted across connections, project picks first) onto the
 matching (connection, model) row as `recent`. A pick the listing does not name — a typed
 id — becomes a row with only `connection`, `model`, the OpenRouter `group` derived from
-the id, and `recent`. `GET /inference/recent-picks` remains for the connection picker's
-cross-connection list.
+the id, and `recent`. The catalog routes are the only source of recents: the terminal
+picker ([tui.md](tui.md)) ranks its root and connection views from them.
 
 ## Routes
 

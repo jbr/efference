@@ -48,6 +48,15 @@ pub async fn run_hosted(client: Client, theme: Option<String>) -> anyhow::Result
         .map_err(anyhow::Error::msg)?;
     let (events, replies) = crossbeam_channel::unbounded();
     let (commands, command_rx) = tokio::sync::mpsc::unbounded_channel();
+    // The stored copies that are not fresh are read as the form opens, the same
+    // reads the embedded container's dispatcher starts after `NewSession`.
+    crate::tui::host_dispatch::spawn_catalog_reads(
+        &client,
+        &cwd,
+        crate::tui::host_dispatch::unfresh_connections(&context.catalog),
+        None,
+        &events,
+    );
     let dispatcher = tokio::spawn(crate::tui::host_dispatch::serve(client, command_rx, events));
     let created =
         tokio::task::spawn_blocking(move || drive(Form::new(context), styles, replies, commands))
@@ -78,10 +87,9 @@ fn drive(
                     TuiEvent::Preview(resolved) => {
                         dispatch(&commands, form.preview_returned(resolved));
                     }
-                    TuiEvent::Recents(Ok(answer)) => {
-                        dispatch(&commands, form.recents_returned(answer));
+                    TuiEvent::Catalog { connection, result } => {
+                        form.catalog_returned(&connection, result);
                     }
-                    TuiEvent::Recents(Err(error)) => form.note_recents_failed(error),
                     TuiEvent::Created(Ok(id)) => return Ok(Some(id)),
                     TuiEvent::Created(Err(error)) => form.creation_failed(error),
                     // The context was read before the loop started, and nothing
@@ -94,10 +102,7 @@ fn drive(
             }
             let action = match event::read()? {
                 Event::Key(key) => form.handle(key),
-                Event::Paste(text) => {
-                    form.paste(&text);
-                    Action::Continue
-                }
+                Event::Paste(text) => form.paste(&text),
                 _ => Action::Continue,
             };
             if matches!(action, Action::Cancel) {
@@ -116,7 +121,13 @@ pub(super) fn dispatch(commands: &tokio::sync::mpsc::UnboundedSender<HostCmd>, a
     let _ = match action {
         Action::Preview(options) => commands.send(HostCmd::Preview(options)),
         Action::Create(options) => commands.send(HostCmd::Create(options)),
-        Action::Recents(request) => commands.send(HostCmd::Recents(request)),
+        Action::RefreshCatalog {
+            connection,
+            max_age,
+        } => commands.send(HostCmd::Catalog {
+            connection,
+            max_age,
+        }),
         Action::Continue | Action::Cancel => Ok(()),
     };
 }
@@ -131,7 +142,7 @@ pub fn run() -> io::Result<()> {
     let mut form = Form::new(NewSessionContext {
         cwd: std::env::current_dir().unwrap_or_default(),
         connections: Vec::new(),
-        recent_picks: Vec::new(),
+        catalog: Vec::new(),
     });
     let mut viewport = Inline::open(&form)?;
     let outcome = (|| {
@@ -139,10 +150,7 @@ pub fn run() -> io::Result<()> {
             viewport.draw(&form, styles)?;
             let action = match event::read()? {
                 Event::Key(key) => form.handle(key),
-                Event::Paste(text) => {
-                    form.paste(&text);
-                    Action::Continue
-                }
+                Event::Paste(text) => form.paste(&text),
                 _ => Action::Continue,
             };
             match action {

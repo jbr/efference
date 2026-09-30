@@ -203,10 +203,13 @@ pub(crate) enum TuiEvent {
     /// `POST /sessions` answered: the new session's id, or why nothing was
     /// minted. On success the TUI leaves this session's stream for that one.
     Created(Result<String, String>),
-    /// `GET /inference/catalog/:connection` answered for the open menu: the role
-    /// and connection it was opened on, plus whatever the host had. A
-    /// failure leaves the typed-ID-only menu in place rather than closing it.
-    Recents(Result<crate::tui::session_form::MenuAnswer, String>),
+    /// `GET /inference/catalog/:connection` answered: the connection it was asked
+    /// for, and its entry or why the read failed. Replaces that connection's
+    /// entry in the open form's picker.
+    Catalog {
+        connection: String,
+        result: Result<crate::client::ConnectionCatalog, String>,
+    },
 }
 
 /// A verb the switcher issues against the *host* rather than the attached
@@ -231,10 +234,13 @@ pub(crate) enum HostCmd {
     /// the working root and the environment are the dispatcher's, and never
     /// enter the UI thread (docs/env.md).
     Create(crate::inference::SessionOptions),
-    /// `GET /inference/catalog/:connection` — the open menu's connection, answered
-    /// with whatever the host has. The working root is the dispatcher's, like
-    /// preview's, so the menu scopes to the project creation would run in.
-    Recents(crate::tui::session_form::RecentsRequest),
+    /// `GET /inference/catalog/:connection` — one connection's entry, refreshed
+    /// when older than `max_age` seconds. The working root is the dispatcher's,
+    /// like preview's, so recent ranks scope to the project creation would run in.
+    Catalog {
+        connection: String,
+        max_age: Option<u64>,
+    },
 }
 
 /// Why the UI loop returned (docs/tui.md). Detaching leaves the session running

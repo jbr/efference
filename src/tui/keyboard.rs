@@ -70,8 +70,14 @@ impl<'a> InteractiveState<'a> {
                 Action::Create(options) => {
                     let _ = self.host_tx.send(HostCmd::Create(options));
                 }
-                Action::Recents(request) => {
-                    let _ = self.host_tx.send(HostCmd::Recents(request));
+                Action::RefreshCatalog {
+                    connection,
+                    max_age,
+                } => {
+                    let _ = self.host_tx.send(HostCmd::Catalog {
+                        connection,
+                        max_age,
+                    });
                 }
             }
             return false;

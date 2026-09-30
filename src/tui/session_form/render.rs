@@ -84,33 +84,40 @@ fn source_label(source: SelectionSource) -> &'static str {
 }
 
 impl Form {
-    /// How tall the form can ever get: the most rows any page it can reach would
-    /// draw, plus the question, the status line, and the key hint.
+    /// How tall the form can ever get: the tallest page it can reach, chrome
+    /// included (the question, the status line, the key hint, and the picker's
+    /// input line).
     ///
     /// The tallest page rather than the current one because an inline viewport's
     /// height is fixed at creation — ratatui's `resize` reads its argument as the
     /// *terminal* size for `Viewport::Inline`, not the viewport's — so a
-    /// container that sized itself to the form page would clip the connection
-    /// list. Bounded by what this host actually offers, so it is far tighter than
-    /// a constant picked for the worst imaginable case.
+    /// container that sized itself to the form page would clip the picker.
+    /// Bounded by what this host actually offers, so it is far tighter than a
+    /// constant picked for the worst imaginable case.
     pub(in crate::tui) fn viewport_height(&self) -> u16 {
-        let connections = self.connections().len().max(1);
+        // The picker lists what the provider offers (taller ones scroll), and the
+        // root shows its recents above every connection.
+        let picker = MENU_ROWS
+            .max(self.connections().len() + picker_rows::ROOT_RECENTS)
+            .min(MAX_PICKER_ROWS);
         let rows = [
-            FORM_ROWS,
-            // A model menu lists what the provider offers; taller ones scroll.
-            MENU_ROWS,
-            // Triage offers two leading choices; the others one.
-            connections + 2,
-            EFFORTS.len(),
+            // The question, the status line, and the key hint.
+            FORM_ROWS + 3,
+            // The same three and the input line.
+            picker + 4,
+            EFFORTS.len() + 3,
         ]
         .into_iter()
         .max()
-        .unwrap_or(FORM_ROWS);
-        u16::try_from(rows).unwrap_or(u16::MAX).saturating_add(3)
+        .unwrap_or(FORM_ROWS + 3);
+        u16::try_from(rows).unwrap_or(u16::MAX)
     }
 
     pub(in crate::tui) fn render(&self, buf: &mut Buffer, area: Rect, styles: Styles) {
         buf.set_style(area, styles.text);
+        if matches!(self.page, Page::Picker { .. }) {
+            return self.render_picker(buf, area, styles);
+        }
         let (title, rows, selected) = self.content();
         // Packed to the top, with the slack below the hint rather than above it.
         // The viewport is sized for the tallest page this form can reach, so a
@@ -175,7 +182,7 @@ impl Form {
         // Partway down a scrolled menu, the position outranks the preview
         // chatter; a note or the loading line still says something more urgent.
         let scrolled = rows.len() > capacity && self.note.is_none();
-        let status = match scrolled && !matches!(self.page, Page::Models { loading: true, .. }) {
+        let status = match scrolled {
             true => format!("{}/{}", selected + 1, rows.len()),
             false => self.status(),
         };
@@ -190,10 +197,7 @@ impl Form {
     /// The line under the rows: what the form last had to say, else what it is
     /// waiting for. A preview in flight and no host at all are different states,
     /// and an all-`—` column means the second one when nothing was ever sent.
-    fn status(&self) -> String {
-        if matches!(self.page, Page::Models { loading: true, .. }) && self.note.is_none() {
-            return "Loading...".into();
-        }
+    pub(super) fn status(&self) -> String {
         match (&self.note, self.pending.is_some(), &self.resolved) {
             (Some(note), _, _) => note.clone(),
             (None, true, _) => "resolving this draft with the host…".into(),
@@ -202,12 +206,13 @@ impl Form {
         }
     }
 
-    fn keys(&self) -> &'static str {
+    pub(super) fn keys(&self) -> &'static str {
         match self.page {
             Page::Form => "↑↓ move · enter picks · r resets · esc cancels",
-            Page::Text { .. } | Page::Temperature { .. } => {
-                "type a value · enter accepts · esc backs out"
+            Page::Picker { .. } => {
+                "↑↓ move · tab completes · ⌫ goes up · enter picks · esc backs out"
             }
+            Page::Temperature { .. } => "type a value · enter accepts · esc backs out",
             _ => "↑↓ move · enter picks · esc backs out",
         }
     }
@@ -269,69 +274,7 @@ impl Form {
     fn content(&self) -> (String, Vec<Row>, usize) {
         match &self.page {
             Page::Form => self.form_page(),
-            Page::Connections { role, selected } => {
-                // Triage has no configured default: its inherit row shares the
-                // main client, which is what the session gets.
-                let mut rows = match role {
-                    Role::Triage => vec![Row::plain("share the main client")],
-                    _ => vec![Row::plain("use the default")],
-                };
-                rows.extend(self.picker_recents(*role).iter().map(|pick| Row {
-                    label: format!("{}/{}", pick.connection, pick.model),
-                    value: String::new(),
-                    trailer: "recent".into(),
-                    flagged: false,
-                }));
-                if self.connections().is_empty() {
-                    rows.push(Row::plain("(no connections read from this host)"));
-                } else {
-                    rows.extend(self.connections().iter().map(|row| Row {
-                        label: row.name.clone(),
-                        value: row.provider.to_string(),
-                        trailer: match row.available {
-                            true => String::new(),
-                            false => "unavailable".into(),
-                        },
-                        flagged: !row.available,
-                    }));
-                }
-                (format!("{} — connection", role.label()), rows, *selected)
-            }
-            Page::Models {
-                role,
-                connection,
-                models,
-                selected,
-                ..
-            } => {
-                let mut rows: Vec<Row> = models
-                    .iter()
-                    .map(|suggestion| Row::plain(&suggestion.model))
-                    .collect();
-                rows.push(Row::plain("Type a model id"));
-                (
-                    format!(
-                        "{} on {} — models",
-                        role.label(),
-                        self.connection_name(*connection)
-                    ),
-                    rows,
-                    *selected,
-                )
-            }
-            Page::Text {
-                role,
-                connection,
-                value,
-            } => (
-                format!(
-                    "{} on {} — provider-native model ID",
-                    role.label(),
-                    self.connection_name(*connection)
-                ),
-                vec![Row::plain(value.with_cursor())],
-                0,
-            ),
+            Page::Picker { .. } => unreachable!("the picker draws itself"),
             Page::Effort { selected } => (
                 "main model — effort".into(),
                 EFFORTS.iter().map(|s| Row::plain(*s)).collect(),
@@ -347,13 +290,6 @@ impl Form {
                 0,
             ),
         }
-    }
-
-    fn connection_name(&self, connection: usize) -> String {
-        self.connections()
-            .get(connection)
-            .map(|row| row.name.clone())
-            .unwrap_or_default()
     }
 
     fn form_page(&self) -> (String, Vec<Row>, usize) {

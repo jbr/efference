@@ -1,0 +1,302 @@
+{
+  "about": "Fixture for the model picker's matching rule (docs/tui.md). `tree` is the flat node list in list order; `id` is derived, not stored: connection `c` is `c`, group `g` under `c` is `c/g`, model `m` under `c` is `c/m`. A token without `/` matches a node's own text (a connection's or group's name, a model's id without its author, a leading `~` alias marker kept) and its `name`; a token with `/` matches the node's slug relative to the chips. A case scopes the tree by `chips` (connection name, then group name), matches `query`, and expects the ids of the matching nodes, best first. `role` is `main` when recent ranks count in the ordering and `other` when they do not. The typed-id row is not part of the ranking and is not listed.",
+  "tree": [
+    {
+      "kind": "connection",
+      "connection": "router"
+    },
+    {
+      "kind": "group",
+      "connection": "router",
+      "group": "anthropic"
+    },
+    {
+      "kind": "group",
+      "connection": "router",
+      "group": "moonshotai"
+    },
+    {
+      "kind": "group",
+      "connection": "router",
+      "group": "z-ai"
+    },
+    {
+      "kind": "model",
+      "connection": "router",
+      "group": "z-ai",
+      "model": "z-ai/glm-5.3-flash",
+      "name": "GLM 5.3 Flash"
+    },
+    {
+      "kind": "model",
+      "connection": "router",
+      "group": "z-ai",
+      "model": "z-ai/glm-5.3",
+      "name": "GLM 5.3",
+      "recent": 2
+    },
+    {
+      "kind": "model",
+      "connection": "router",
+      "group": "anthropic",
+      "model": "anthropic/claude-sonnet-4.5",
+      "name": "Claude Sonnet 4.5"
+    },
+    {
+      "kind": "model",
+      "connection": "router",
+      "group": "moonshotai",
+      "model": "~moonshotai/kimi-latest",
+      "name": "Kimi Latest"
+    },
+    {
+      "kind": "model",
+      "connection": "router",
+      "group": "moonshotai",
+      "model": "moonshotai/kimi-k2",
+      "name": "Kimi K2"
+    },
+    {
+      "kind": "connection",
+      "connection": "lab"
+    },
+    {
+      "kind": "model",
+      "connection": "lab",
+      "model": "gpt-5.6",
+      "name": "GPT-5.6",
+      "recent": 1
+    },
+    {
+      "kind": "model",
+      "connection": "lab",
+      "model": "gpt-5.6-mini",
+      "name": "GPT-5.6 mini"
+    },
+    {
+      "kind": "model",
+      "connection": "lab",
+      "model": "o-series",
+      "name": "Reasoning Workhorse"
+    },
+    {
+      "kind": "connection",
+      "connection": "work"
+    },
+    {
+      "kind": "model",
+      "connection": "work",
+      "model": "claude-sonnet-4-5",
+      "name": "Claude Sonnet 4.5",
+      "recent": 3
+    },
+    {
+      "kind": "model",
+      "connection": "work",
+      "model": "claude-haiku-4-5",
+      "name": "Claude Haiku 4.5"
+    }
+  ],
+  "cases": [
+    {
+      "why": "a bare token at the root finds leaves in every connection, recent rank first for main",
+      "query": "glm",
+      "chips": [],
+      "role": "main",
+      "expect": [
+        "router/z-ai/glm-5.3",
+        "router/z-ai/glm-5.3-flash"
+      ]
+    },
+    {
+      "why": "recent rank does not order the other roles; list order does",
+      "query": "glm",
+      "chips": [],
+      "role": "other",
+      "expect": [
+        "router/z-ai/glm-5.3-flash",
+        "router/z-ai/glm-5.3"
+      ]
+    },
+    {
+      "why": "an exact final segment outranks a prefix, ahead of list order",
+      "query": "glm-5.3",
+      "chips": [],
+      "role": "other",
+      "expect": [
+        "router/z-ai/glm-5.3",
+        "router/z-ai/glm-5.3-flash"
+      ]
+    },
+    {
+      "why": "every token must match, each at a segment start",
+      "query": "gpt 5",
+      "chips": [],
+      "role": "main",
+      "expect": [
+        "lab/gpt-5.6",
+        "lab/gpt-5.6-mini"
+      ]
+    },
+    {
+      "why": "a token absent from every row leaves nothing",
+      "query": "gpt glm",
+      "chips": [],
+      "role": "main",
+      "expect": []
+    },
+    {
+      "why": "a subsequence of the slug is the last tier",
+      "query": "gm",
+      "chips": [],
+      "role": "main",
+      "expect": [
+        "router/z-ai/glm-5.3",
+        "router/z-ai/glm-5.3-flash",
+        "lab/gpt-5.6-mini"
+      ]
+    },
+    {
+      "why": "a substring of the name matches when the slug has none",
+      "query": "workhorse",
+      "chips": [],
+      "role": "main",
+      "expect": [
+        "lab/o-series"
+      ]
+    },
+    {
+      "why": "a token without a slash matches the row's own text, so a connection's models are not found through its name",
+      "query": "work",
+      "chips": [],
+      "role": "main",
+      "expect": [
+        "work",
+        "lab/o-series"
+      ]
+    },
+    {
+      "why": "under a connection chip the slug is relative to it",
+      "query": "glm",
+      "chips": [
+        "router"
+      ],
+      "role": "main",
+      "expect": [
+        "router/z-ai/glm-5.3",
+        "router/z-ai/glm-5.3-flash"
+      ]
+    },
+    {
+      "why": "a group is found by its own name; its models are not found through it",
+      "query": "z-ai",
+      "chips": [
+        "router"
+      ],
+      "role": "main",
+      "expect": [
+        "router/z-ai"
+      ]
+    },
+    {
+      "why": "under a group chip the author prefix is dropped",
+      "query": "gl",
+      "chips": [
+        "router",
+        "z-ai"
+      ],
+      "role": "main",
+      "expect": [
+        "router/z-ai/glm-5.3",
+        "router/z-ai/glm-5.3-flash"
+      ]
+    },
+    {
+      "why": "an alias marker stays out of the relative slug under its group",
+      "query": "kimi",
+      "chips": [
+        "router",
+        "moonshotai"
+      ],
+      "role": "other",
+      "expect": [
+        "router/~moonshotai/kimi-latest",
+        "router/moonshotai/kimi-k2"
+      ]
+    },
+    {
+      "why": "the dropped author no longer matches under its own group",
+      "query": "moonshotai",
+      "chips": [
+        "router",
+        "moonshotai"
+      ],
+      "role": "main",
+      "expect": []
+    },
+    {
+      "why": "the query is case-insensitive and tokens may come in any order",
+      "query": "SONNET 4.5",
+      "chips": [
+        "router"
+      ],
+      "role": "main",
+      "expect": [
+        "router/anthropic/claude-sonnet-4.5"
+      ]
+    },
+    {
+      "why": "a connection name finds the connection alone at the root",
+      "query": "rout",
+      "chips": [],
+      "role": "main",
+      "expect": [
+        "router"
+      ]
+    },
+    {
+      "why": "a group is found by its name under its connection, not its models",
+      "query": "anthro",
+      "chips": [
+        "router"
+      ],
+      "role": "main",
+      "expect": [
+        "router/anthropic"
+      ]
+    },
+    {
+      "why": "a token with a slash matches the slug relative to the chips",
+      "query": "z-ai/gl",
+      "chips": [],
+      "role": "main",
+      "expect": [
+        "router/z-ai/glm-5.3",
+        "router/z-ai/glm-5.3-flash"
+      ]
+    },
+    {
+      "why": "a slash token can start at the connection",
+      "query": "router/z",
+      "chips": [],
+      "role": "main",
+      "expect": [
+        "router/z-ai",
+        "router/z-ai/glm-5.3",
+        "router/z-ai/glm-5.3-flash"
+      ]
+    },
+    {
+      "why": "an alias marker is not a segment start a bare token must skip",
+      "query": "latest",
+      "chips": [
+        "router",
+        "moonshotai"
+      ],
+      "role": "main",
+      "expect": [
+        "router/~moonshotai/kimi-latest"
+      ]
+    }
+  ]
+}

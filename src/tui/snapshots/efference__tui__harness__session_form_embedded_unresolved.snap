@@ -11,24 +11,24 @@ expression: self.render()
  3 │                                                            │                                       │
  4 │                                                            │                                       │
  5 │                                                            │                                       │
- 6 │                                                            │                                       │
- 7 │    ┌──────────────────────────────────────────────────────────────────────────────────────────┐    │
- 8 │    │? new session in /code/example                                                            │    │
- 9 │    │❯ start session                                                                           │    │
-10 │    │  main model     —                                                                        │    │
-11 │    │  effort         —                                                                        │    │
-12 │    │  temperature    —                                                                        │    │
-13 │    │  spotter model  —                                                                        │    │
-14 │    │  triage model   —                                                                        │    │
-15 │    │  resolving this draft with the host…                                                     │    │
-16 │    │  ↑↓ move · enter picks · r resets · esc cancels                                          │    │
+ 6 │    ┌──────────────────────────────────────────────────────────────────────────────────────────┐    │
+ 7 │    │? new session in /code/example                                                            │    │
+ 8 │    │❯ start session                                                                           │    │
+ 9 │    │  main model     —                                                                        │    │
+10 │    │  effort         —                                                                        │    │
+11 │    │  temperature    —                                                                        │    │
+12 │    │  spotter model  —                                                                        │    │
+13 │    │  triage model   —                                                                        │    │
+14 │    │  resolving this draft with the host…                                                     │    │
+15 │    │  ↑↓ move · enter picks · r resets · esc cancels                                          │    │
+16 │    │                                                                                          │    │
 17 │    │                                                                                          │    │
 18 │    │                                                                                          │    │
 19 │    │                                                                                          │    │
 20 │    │                                                                                          │    │
-21 │    └──────────────────────────────────────────────────────────────────────────────────────────┘    │
-22 │                                                            │                                       │
-23 │                                                            │                                       │
+21 │    │                                                                                          │    │
+22 │    │                                                                                          │    │
+23 │    └──────────────────────────────────────────────────────────────────────────────────────────┘    │
 24 │                                                            │                                       │
 25 │                                                            │                                       │
 26 │                                                            │                                       │
