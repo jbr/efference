@@ -8,6 +8,7 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- **Model menus in the inline session picker** (docs/tui.md): opening a connection lists its recent and provider-listed models (with a dimmed `Loading...` while fetching), long menus scroll with an `n/total` position, and the host's query-parameter decoding for `/inference/models`, `recent-models` and `recent-picks` no longer blanks every value.
 - **Model menu lists the connection's models** (docs/transport.md): the new-session form shows past picks, then `GET /inference/models`, before the typed-ID row.
 - **ChatGPT grants renew ahead of expiry** (docs/transport.md): an `oauth` connection refreshes an hour before `exp` on any request path (turns, `dev models`, decisions), a host renews idle grants from launch, and a refused refresh names `efference setup`.
 - **Emacs binds in the new-session form** (docs/tui.md): C-n/C-p move between rows and menu entries, and the model-ID and temperature fields are the composer's editor restricted to one line.

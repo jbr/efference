@@ -274,6 +274,13 @@ fn parse_u64_param(query: &str, name: &str) -> Result<Option<u64>, String> {
         .transpose()
 }
 
+/// One query parameter, percent-decoded, or `None` if absent. For values a
+/// client encodes (paths, connection names); [`parse_param`] is the raw slice.
+pub(crate) fn query_value(query: &str, name: &str) -> Option<String> {
+    trillium_client::url::form_urlencoded::parse(query.as_bytes())
+        .find_map(|(key, value)| (key == name).then(|| value.into_owned()))
+}
+
 /// One `name=<value>` query parameter as a raw string slice, or `None` if absent.
 pub(crate) fn parse_param<'a>(query: &'a str, name: &str) -> Option<&'a str> {
     query
@@ -304,4 +311,17 @@ pub(crate) fn wants_wait(query: &str) -> bool {
 pub(crate) async fn settle_and_state(shared: &Arc<Session>, conn: Conn) -> Conn {
     let _ = tokio::time::timeout(SETTLE_TIMEOUT, shared.await_settled()).await;
     conn.with_status(200).with_body(shared.state_json()).halt()
+}
+
+#[cfg(test)]
+mod test {
+    use super::query_value;
+
+    #[test]
+    fn query_value_decodes_the_named_value() {
+        let query = "connection=open%20router&cwd=%2FUsers%2Fjbr%2Fcode";
+        assert_eq!(query_value(query, "connection").unwrap(), "open router");
+        assert_eq!(query_value(query, "cwd").unwrap(), "/Users/jbr/code");
+        assert_eq!(query_value(query, "config"), None);
+    }
 }

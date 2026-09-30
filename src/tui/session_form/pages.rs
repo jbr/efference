@@ -76,6 +76,7 @@ impl Form {
             connection,
             models: Vec::new(),
             selected: 0,
+            loading: true,
         };
         Action::Recents(RecentsRequest { role, connection })
     }
@@ -103,9 +104,11 @@ impl Form {
         if let Page::Models {
             models: current,
             selected,
+            loading,
             ..
         } = &mut self.page
         {
+            *loading = false;
             *current = models;
             *selected = (*selected).min(current.len());
         }

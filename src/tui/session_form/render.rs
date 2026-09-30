@@ -97,6 +97,8 @@ impl Form {
         let connections = self.connections().len().max(1);
         let rows = [
             FORM_ROWS,
+            // A model menu lists what the provider offers; taller ones scroll.
+            MENU_ROWS,
             // Triage offers two leading choices; the others one.
             connections + 2,
             EFFORTS.len(),
@@ -139,9 +141,15 @@ impl Form {
         };
         let label_width = width(|row| &row.label);
         let value_width = width(|row| &row.value);
+        // A menu can list more rows than the viewport (fixed at creation) holds,
+        // so the window follows the selection rather than clipping the tail.
+        let capacity = usize::from(layout[1].height).max(1);
+        let first = (selected + 1).saturating_sub(capacity);
         let lines: Vec<Line> = rows
             .iter()
             .enumerate()
+            .skip(first)
+            .take(capacity)
             .map(|(index, row)| {
                 let body = match row.value.is_empty() && row.trailer.is_empty() {
                     true => row.label.clone(),
@@ -164,7 +172,14 @@ impl Form {
             .collect();
         Paragraph::new(lines).render(layout[1], buf);
 
-        Paragraph::new(format!("  {}", self.status()))
+        // Partway down a scrolled menu, the position outranks the preview
+        // chatter; a note or the loading line still says something more urgent.
+        let scrolled = rows.len() > capacity && self.note.is_none();
+        let status = match scrolled && !matches!(self.page, Page::Models { loading: true, .. }) {
+            true => format!("{}/{}", selected + 1, rows.len()),
+            false => self.status(),
+        };
+        Paragraph::new(format!("  {status}"))
             .style(styles.hint)
             .render(layout[2], buf);
         Paragraph::new(format!("  {}", self.keys()))
@@ -176,6 +191,9 @@ impl Form {
     /// waiting for. A preview in flight and no host at all are different states,
     /// and an all-`—` column means the second one when nothing was ever sent.
     fn status(&self) -> String {
+        if matches!(self.page, Page::Models { loading: true, .. }) && self.note.is_none() {
+            return "Loading...".into();
+        }
         match (&self.note, self.pending.is_some(), &self.resolved) {
             (Some(note), _, _) => note.clone(),
             (None, true, _) => "resolving this draft with the host…".into(),
@@ -284,6 +302,7 @@ impl Form {
                 connection,
                 models,
                 selected,
+                ..
             } => {
                 let mut rows: Vec<Row> = models
                     .iter()

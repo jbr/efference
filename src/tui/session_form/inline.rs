@@ -78,10 +78,10 @@ fn drive(
                     TuiEvent::Preview(resolved) => {
                         dispatch(&commands, form.preview_returned(resolved));
                     }
-                    // No host behind this form, so no recents answer can
-                    // arrive; the arm exists so the event is ignored rather
-                    // than tripping the catch-all below.
-                    TuiEvent::Recents(_) => {}
+                    TuiEvent::Recents(Ok((role, connection, models))) => {
+                        dispatch(&commands, form.recents_returned(role, connection, models));
+                    }
+                    TuiEvent::Recents(Err(error)) => form.note_recents_failed(error),
                     TuiEvent::Created(Ok(id)) => return Ok(Some(id)),
                     TuiEvent::Created(Err(error)) => form.creation_failed(error),
                     // The context was read before the loop started, and nothing
@@ -111,13 +111,13 @@ fn drive(
 }
 
 /// Turn what a keypress asked for into a host command. The form issues no
-/// requests itself (`session_form.rs`). Recents has no host behind it here —
-/// the menu opens with only its typed-ID row, like an empty answer.
-fn dispatch(commands: &tokio::sync::mpsc::UnboundedSender<HostCmd>, action: Action) {
+/// requests itself (`session_form.rs`).
+pub(super) fn dispatch(commands: &tokio::sync::mpsc::UnboundedSender<HostCmd>, action: Action) {
     let _ = match action {
         Action::Preview(options) => commands.send(HostCmd::Preview(options)),
         Action::Create(options) => commands.send(HostCmd::Create(options)),
-        Action::Recents(_) | Action::Continue | Action::Cancel => Ok(()),
+        Action::Recents(request) => commands.send(HostCmd::Recents(request)),
+        Action::Continue | Action::Cancel => Ok(()),
     };
 }
 

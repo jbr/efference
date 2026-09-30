@@ -452,13 +452,7 @@ async fn discovered_models(conn: Conn) -> Conn {
     let Some(host) = host_of(&conn) else {
         return missing_host(conn);
     };
-    let Some(connection) =
-        crate::daemon::http::parse_param(conn.querystring(), "connection").map(|value| {
-            trillium_client::url::form_urlencoded::parse(value.as_bytes())
-                .next()
-                .map(|(_, decoded)| decoded.into_owned())
-                .unwrap_or_default()
-        })
+    let Some(connection) = crate::daemon::http::query_value(conn.querystring(), "connection")
     else {
         return fail(
             conn,
@@ -505,14 +499,7 @@ async fn recent_models(conn: Conn) -> Conn {
         return missing_host(conn);
     };
     let query = conn.querystring();
-    let param = |name: &str| {
-        crate::daemon::http::parse_param(query, name).map(|value| {
-            trillium_client::url::form_urlencoded::parse(value.as_bytes())
-                .next()
-                .map(|(_, decoded)| decoded.into_owned())
-                .unwrap_or_default()
-        })
-    };
+    let param = |name: &str| crate::daemon::http::query_value(query, name);
     let (Some(connection), Some(cwd)) = (param("connection"), param("cwd")) else {
         return fail(
             conn,
@@ -557,14 +544,7 @@ async fn recent_picks(conn: Conn) -> Conn {
         return missing_host(conn);
     };
     let query = conn.querystring();
-    let param = |name: &str| {
-        crate::daemon::http::parse_param(query, name).map(|value| {
-            trillium_client::url::form_urlencoded::parse(value.as_bytes())
-                .next()
-                .map(|(_, decoded)| decoded.into_owned())
-                .unwrap_or_default()
-        })
-    };
+    let param = |name: &str| crate::daemon::http::query_value(query, name);
     let Some(cwd) = param("cwd") else {
         return fail(
             conn,

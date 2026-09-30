@@ -1,6 +1,5 @@
 ---
 source: src/tui/harness.rs
-assertion_line: 444
 expression: self.render()
 ---
     0         1         2         3         4         5         6         7         8         9         
@@ -13,21 +12,21 @@ expression: self.render()
  4 │                                                            │                                       │
  5 │                                                            │                                       │
  6 │                                                            │                                       │
- 7 │                                                            │                                       │
- 8 │                                                            │                                       │
- 9 │    ┌──────────────────────────────────────────────────────────────────────────────────────────┐    │
-10 │    │? new session in /code/example                                                            │    │
-11 │    │❯ start session                                                                           │    │
-12 │    │  main model     work/claude-sonnet-4-5  recent pick                                      │    │
-13 │    │  effort         —                       provider default                                 │    │
-14 │    │  temperature    —                       provider default                                 │    │
-15 │    │  spotter model  work/claude-haiku-4-5   main's provider                                  │    │
-16 │    │  triage model   the main client         nothing configured                               │    │
+ 7 │    ┌──────────────────────────────────────────────────────────────────────────────────────────┐    │
+ 8 │    │? new session in /code/example                                                            │    │
+ 9 │    │❯ start session                                                                           │    │
+10 │    │  main model     work/claude-sonnet-4-5  recent pick                                      │    │
+11 │    │  effort         —                       provider default                                 │    │
+12 │    │  temperature    —                       provider default                                 │    │
+13 │    │  spotter model  work/claude-haiku-4-5   main's provider                                  │    │
+14 │    │  triage model   the main client         nothing configured                               │    │
+15 │    │                                                                                          │    │
+16 │    │  ↑↓ move · enter picks · r resets · esc cancels                                          │    │
 17 │    │                                                                                          │    │
-18 │    │  ↑↓ move · enter picks · r resets · esc cancels                                          │    │
-19 │    └──────────────────────────────────────────────────────────────────────────────────────────┘    │
-20 │                                                            │                                       │
-21 │                                                            │                                       │
+18 │    │                                                                                          │    │
+19 │    │                                                                                          │    │
+20 │    │                                                                                          │    │
+21 │    └──────────────────────────────────────────────────────────────────────────────────────────┘    │
 22 │                                                            │                                       │
 23 │                                                            │                                       │
 24 │                                                            │                                       │

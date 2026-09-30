@@ -38,6 +38,9 @@ use std::path::PathBuf;
 /// same six (`render.rs`).
 const FORM_ROWS: usize = 6;
 
+/// Rows a model menu gets before it scrolls.
+const MENU_ROWS: usize = 10;
+
 const EFFORTS: &[&str] = &["Use default", "low", "medium", "high", "xhigh", "max"];
 
 /// Where a created session would run, and what the host has to offer for it.
@@ -74,6 +77,8 @@ enum Page {
         connection: usize,
         models: Vec<crate::client::ModelSuggestion>,
         selected: usize,
+        /// The host has not answered yet; the menu shows what it has and says so.
+        loading: bool,
     },
     Text {
         role: Role,
@@ -201,6 +206,9 @@ impl Form {
     /// an empty answer and a failed one read the same, and closing the menu
     /// would punish the operator for a read that was only ever a shortcut.
     pub(crate) fn note_recents_failed(&mut self, message: String) {
+        if let Page::Models { loading, .. } = &mut self.page {
+            *loading = false;
+        }
         self.note = Some(message);
     }
 
@@ -258,6 +266,7 @@ impl Form {
                     connection: *connection,
                     models: Vec::new(),
                     selected: 0,
+                    loading: false,
                 },
                 _ => Page::Form,
             };

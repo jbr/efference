@@ -743,3 +743,80 @@ fn text_pages_take_the_composer_editing_binds() {
     ctrl(&mut form, 'd');
     assert!(matches!(&form.page, Page::Temperature { value } if value.text() == "7"));
 }
+
+/// The inline picker has a host behind it, so a menu open reaches the
+/// dispatcher rather than being dropped.
+#[test]
+fn inline_dispatch_forwards_a_recents_request() {
+    let (commands, mut received) = tokio::sync::mpsc::unbounded_channel();
+    let request = RecentsRequest {
+        role: Role::Main,
+        connection: 1,
+    };
+    super::inline::dispatch(&commands, Action::Recents(request));
+    assert!(matches!(
+        received.try_recv(),
+        Ok(crate::tui::HostCmd::Recents(sent)) if sent == request
+    ));
+}
+
+fn drawn(form: &Form, height: u16) -> String {
+    let area = Rect::new(0, 0, 60, height);
+    let mut buf = Buffer::empty(area);
+    let theme = crate::tui::theme::InteractiveTheme::from_render_context(
+        &crate::tui::render_context::RenderContext::new(),
+    );
+    form.render(&mut buf, area, render::Styles::from(&theme));
+    (0..height)
+        .map(|y| (0..60).map(|x| buf[(x, y)].symbol()).collect::<String>())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn open_menu(form: &mut Form) {
+    press(form, KeyCode::Down);
+    press(form, KeyCode::Enter);
+    for _ in 0..2 {
+        press(form, KeyCode::Down);
+    }
+    press(form, KeyCode::Enter);
+    assert!(matches!(form.page, Page::Models { .. }));
+}
+
+#[test]
+fn a_model_menu_says_loading_until_the_host_answers() {
+    let mut form = form();
+    open_menu(&mut form);
+    assert!(drawn(&form, 12).contains("Loading..."));
+    form.recents_returned(Role::Main, 1, Vec::new());
+    assert!(!drawn(&form, 12).contains("Loading..."));
+}
+
+#[test]
+fn a_failed_read_stops_the_loading_note() {
+    let mut form = form();
+    open_menu(&mut form);
+    form.note_recents_failed("boom".into());
+    let text = drawn(&form, 12);
+    assert!(text.contains("boom") && !text.contains("Loading..."));
+}
+
+#[test]
+fn a_long_menu_scrolls_to_keep_the_selection_in_view() {
+    let mut form = form();
+    open_menu(&mut form);
+    let models = (0..20)
+        .map(|n| crate::client::ModelSuggestion {
+            model: format!("model-{n}"),
+            label: format!("model-{n}"),
+        })
+        .collect();
+    form.recents_returned(Role::Main, 1, models);
+    for _ in 0..20 {
+        press(&mut form, KeyCode::Down);
+    }
+    let text = drawn(&form, 10);
+    assert!(text.contains("❯ Type a model id"), "{text}");
+    assert!(text.contains("  21/21"), "{text}");
+    assert!(!text.contains("model-0\n"), "{text}");
+}
