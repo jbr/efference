@@ -36,7 +36,7 @@ fn gate_shows_spotter_reason_inline() {
     );
     assert!(
         !screen.contains(".allow"),
-        "the typed .allow form is no longer advertised (the strip is the legend):\n{screen}"
+        "the typed .allow form is not advertised (the strip is the legend):\n{screen}"
     );
 }
 

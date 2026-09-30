@@ -1,7 +1,7 @@
 # The web client
 
 A React single-page app served by the daemon's TCP bind ([web-bind.md](web-bind.md)):
-the second human client after the TUI, and the mobile client for now. Sources live in
+the second human client after the TUI, and the mobile client. Sources live in
 `web/` and are built and embedded into the serving binary at compile time
 (`trillium-frontend` in `src/daemon/tcp.rs`); there is no separate static host. It is
 a client of the same `/v1` surface as everything else ([control-api.md](control-api.md))
@@ -793,7 +793,7 @@ Three decisions:
 Highlighting is best-effort: until the grammars load, and permanently if they
 fail to, every caller renders the plain text it did before. The one rule carried
 from the TUI is that a block is highlighted **only when its language is known** —
-the TUI's renderer used to default to `rust`, which was right in ferritin and
+ferritin's renderer defaults to `rust`, which is right there and
 wrong here, where the commonest untagged block is a tool result, so `ls` output
 was coloured as Rust. `data-lang` stays on the element either way: it records
 what the cordon inferred, independent of what got coloured.
@@ -1121,7 +1121,7 @@ The sections carried over from the bottom panel they replaced, in detail
   (`PATCH /v1/processes/:id`, a 202) on the foreground entry, kill
   (`DELETE /v1/processes/:id`) on any — and a live tail pinned to its
   bottom. The tail is `streaming.processOutput`'s rendering surface, the one
-  streaming topic that previously folded into the store and rendered
+  streaming topic that folds into the store and renders
   nowhere. The mock's "foreground" verb is deliberately absent: the wire has
   a background handoff, not a foregrounding.
 

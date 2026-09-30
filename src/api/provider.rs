@@ -941,8 +941,8 @@ impl Provider {
                 // availability as a side effect of a display value — but the
                 // min over endpoints that clear [`OUTPUT_FLOOR`]: an outlier
                 // below it would otherwise cap every turn of the session at
-                // its number (observed 2026-09-02: one of twenty-two
-                // endpoints at 2048 held a thinking model to 2048 output
+                // its number (one of twenty-two
+                // endpoints at 2048 holds a thinking model to 2048 output
                 // tokens per turn, docs/transport.md). Only when no endpoint
                 // clears the floor is the plain min kept.
                 let max_output_tokens =

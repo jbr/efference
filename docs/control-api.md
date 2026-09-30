@@ -199,8 +199,7 @@ Two requests, one of them long-lived:
 
 Reconnect is the same two steps with a fresh cursor; `?since` is the only
 handshake. There is nothing a client must poll — the stream's `state` class
-carries the gate, processes, usage, and effective policy that used to require
-it.
+carries the gate, processes, usage, and effective policy in the same stream.
 
 > **`GET /state` is still served** as a one-shot read (a script, a health
 > check, the `efference control state` verb). No shipped client polls it: the

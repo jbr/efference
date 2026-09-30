@@ -145,8 +145,7 @@ the maximum `long_edge` differs from the realized size, the request's
 `long_edge` bound (advise a larger one); if it does not, dropping the token cap
 tells the budget apart from the 2576-px edge ceiling. Naming the budget matters
 because the alternative — advising a larger `long_edge` at the ceiling — costs a
-read to learn that no such value exists (observed live 2026-08-23, from both
-sides of the glass).
+read to learn that no such value exists.
 
 **The region read is the escalation once a ceiling limit binds.** `region`
 (`x`, `y`, `w`, `h`, in source pixels — the header reports the source frame's
@@ -451,8 +450,7 @@ What it records:
 - **Edit-shaped**: `operation`, anchor bytes, and content bytes, read off the
   call's own `input` under any of the spellings the mounted editing tools use.
 
-The point is that these questions were previously answered by grepping result
-*prose*: "did that edit apply or get refused" was recovered from
+The point is that grepping result *prose* answers none of them: "did that edit apply or get refused" was recovered from
 `startswith("Applied")`, and anchor discipline was inferred from argument lengths
 plus a count of `===TIP===` markers that turned out to be a throttle cap rather
 than a measure. Prose written for a model is not a measurement surface.
@@ -746,7 +744,7 @@ end by the session runtime; `--keep-scratch` retains it as a post-mortem artifac
 
 ## Open items
 
-**cargo-mcp** is not embedded, and no longer needs to be: as a stdio binary it
+**cargo-mcp** is not embedded, and needs no embedding: as a stdio binary it
 is one `[mcp.servers.cargo]` stanza away (the connected path negotiates down
 to its protocol revision; no `mcplease` version alignment required). It
 remains off the critical path per the taxonomy above — mount it when driving

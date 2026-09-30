@@ -251,7 +251,7 @@ The deadline exists because a foreground call waits for its **output** to close,
 not for its direct child to exit. A command that starts a server with a shell
 `&` leaves a grandchild holding the pipes open, so the call never reaches EOF,
 and both recovery levers are operator-side over the control channel — an
-unattended autonomous session has no way back. One such command used to end a
+unattended autonomous session has no way back. One such command ends a
 session.
 
 Two numbers, `[bash]` in the config (`config::BashLimits`), because one value

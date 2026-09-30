@@ -203,7 +203,7 @@ in stage 1, before any prefix is consulted. This ordering is what makes a blanke
 
   This exists because the heredoc is what a model reaches for when `edit`/`write` doesn't go
   through: the harness then loses the reviewable diff at the moment review matters most
-  (observed in session `1784334112726`). Governing the bash form as the same write means
+  Governing the bash form as the same write means
   routing around the tool changes nothing about the answer.
 
   **Two authorities govern and the more restrictive one wins.** The command must still clear
@@ -409,7 +409,7 @@ sharp case: `undo_edit` writes to disk but carries *no* path (the target was nam
 earlier `edit`), so write permission is enforced at `edit` — the only
 edit-pipeline call that names the file — and `undo_edit` clears on the name grant. The
 cohesive fix (an MCP-superset that carries permission/notification metadata alongside the
-schema) is later architectural work; for now the coupling is marked, not hidden.
+schema) is later architectural work, and the coupling is marked rather than hidden.
 
 ### the `[context]` rung: a listing is a grant
 
@@ -596,8 +596,8 @@ is red team first: take commands the spotter blocks, have a model write intents 
 to get them through, read the flip rate. Withheld is the reversible default until then.
 
 **A structured move carries a brief.** A bash command describes itself; `{"path": "x"}`
-does not, so a call to a connected server's tool used to reach the spotter as a name and a
-JSON blob. The move block now leads with what the mounted table knows about that tool —
+does not, so a call to a connected server's tool reaches the spotter as a name and a
+JSON blob. The move block leads with what the mounted table knows about that tool —
 which server advertised it, its description, its input schema, and the server's own
 behavior hints — and only then shows the arguments (`tools::ToolBrief`,
 `spotter::render_brief`). The brief is read from the `ToolDefinition` the mount

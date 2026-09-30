@@ -83,7 +83,7 @@ fn transcript_long_line_wraps_inside_the_box() {
     );
     assert!(
         frame.contains("wire block"),
-        "…and so is its tail, which used to be clipped at the border:\n{frame}"
+        "…and so is its tail, which must not be clipped at the border:\n{frame}"
     );
 }
 

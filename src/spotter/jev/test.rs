@@ -37,7 +37,7 @@ fn the_axes_do_not_share_a_scale() {
     // and below the second, which is not a number.
     assert!(
         t.path_outside.low > 0.19 && t.exposes_secrets.low < 0.19,
-        "the two floors ({} and {}) no longer straddle path_outside's measured \
+        "the two floors ({} and {}) straddle path_outside's measured \
          background — a single band could cover them, which the sweep says it cannot",
         t.path_outside.low,
         t.exposes_secrets.low

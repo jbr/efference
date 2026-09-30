@@ -418,9 +418,9 @@ impl Assembler {
         // A tool call in a completion that stopped at the output-token cap was cut
         // mid-arguments — the model stops at `tool_use`, never at the cap, after a
         // call it finished. Whether the fragments happen to parse is the
-        // upstream's doing, not the model's (observed 2026-09-02: a cap-cut
-        // `write` came back as a valid object with its `contents` split across
-        // several nonsense keys and no `path`, and was dispatched), so the call
+        // upstream's doing, not the model's: a cap-cut
+        // `write` comes back as a valid object with its `contents` split across
+        // several nonsense keys and no `path`, and is dispatched, so the call
         // is marked undispatchable here on the stop reason alone, the same
         // record-only partial an unparseable input becomes (docs/transport.md).
         if upstream_failure.is_none()

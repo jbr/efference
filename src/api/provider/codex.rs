@@ -1,8 +1,8 @@
 //! The subscription backend's model catalog, read from the route Codex CLI
 //! reads (docs/transport.md).
 //!
-//! This is the capability source for both OpenAI arms, in place of the compiled
-//! table that used to be: the catalog names each model the backend serves and
+//! This is the capability source for both OpenAI arms: the catalog names each model
+//! the backend serves and
 //! reports a context window, its reasoning levels, and its input modalities, so
 //! the facts a boot path checks come from the provider rather than from the
 //! build. The route answers a platform API key as well as a ChatGPT grant, and

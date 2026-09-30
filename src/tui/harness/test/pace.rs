@@ -45,7 +45,7 @@ fn pace_state_is_loud_in_the_status_bar() {
 /// held set, `⏎` on the `pace` item enters it, `↑` steps the dial slower in
 /// place (preview only — no daemon push), and `⏎` commits the previewed value.
 /// `p` still resumes (a plain button); the old `slower`/`faster` buttons and
-/// their `+`/`-` mnemonics are gone (the widget replaced them).
+/// their `+`/`-` mnemonics are gone (the widget owns those keys now).
 #[test]
 fn pace_widget_steps_and_commits() {
     let none = KeyModifiers::NONE;

@@ -464,7 +464,7 @@ request into a consecutive-unexplained-cold counter: only `turn` requests move i
 `keepalive`, and `aborted_attempt` stamp the touch clock the idle test reads
 without counting, and any warm read clears it. An aborted attempt's zero
 `cache_read` is not evidence the prefix moved — counting it drove a false
-streak observed live 2026-08-28 (two aborted attempts on one turn moved the
+streak (two aborted attempts on one turn moved the
 streak to 2). `COLD_STREAK_WARN` is 4, set
 against this repo's own corpus:
 across 1371 recorded turns, unexplained cold reads formed 28 runs — 24 of length

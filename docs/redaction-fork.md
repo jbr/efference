@@ -365,7 +365,7 @@ raw. It retries until it has a verdict or the operator stops the turn:
   failed, and the operator's own message next on the wire
   ([control-channel.md](control-channel.md)).
 
-Why not an error on the wire: the gate used to withhold each result as
+Why not an error on the wire: withholding each result as
 `WireState::TriageFailed`, a hard error saying the call ran and its output was
 withheld. Every wording of that message was a problem for the agent to solve. It had
 to decide whether to re-issue a call whose side effects already stand — a blind

@@ -63,8 +63,8 @@ raw string rather than erroring the whole partial away), but the provider has
 no record of the generation and doesn't stand behind it, so the entry never
 projects. A **finalized** stream is marked the same way in one further case: when
 its accumulated `input_json_delta` fragments do not parse as JSON. Such a call
-cannot be dispatched however the stream ended (observed 2026-08-28: a foreign
-model sent `message_stop` after fragments cut mid-string), so it becomes the same
+cannot be dispatched however the stream ended (a foreign model sends
+`message_stop` after fragments cut mid-string), so it becomes the same
 record-only partial, keeping the raw fragment as a string, and the caller's
 abort-retry budget decides what happens next. Returning a parse error instead
 spent none of that budget and put a serde message where the model could read it.
@@ -74,16 +74,15 @@ and the loop rightly commits it — where an unfinalized stream carries neither.
 Finalized → commit; unfinalized → record-but-retry. One exception rides the
 stop reason alone: a `tool_use` block in a `max_tokens` completion was cut
 mid-arguments (a model stops at `tool_use` after a call it finished, never at
-the cap), and whether the fragments parse is the upstream's doing — observed
-2026-09-02, a cap-cut `write` arrived as a valid object with its `contents`
-split across nonsense keys and no `path`, and was dispatched. So a finalized
+the cap), and whether the fragments parse is the upstream's doing: a cap-cut
+`write` arrives as a valid object with its `contents` split across nonsense keys
+and no `path`, and is dispatched. So a finalized
 completion carrying both `stop_reason: max_tokens` and a call is marked the
 same record-only partial, whatever its input parsed to. A failure observed *after*
 finalization (draining the already-closed stream) does not unmake the
-completion. Before this existed, an aborted stream committed as a clean turn —
-empty or thinking-only, zero usage — indistinguishable from the agent choosing
-silence (observed three times in one session, 2026-08-21; OpenRouter 404'd all
-three generation ids).
+completion. The marking is what tells an aborted stream from the agent choosing
+silence: without it the aborted stream commits as a clean turn — empty or
+thinking-only, zero usage — and the two are indistinguishable.
 
 *Usage merge.* Both usage-bearing events are read and folded into one `Usage` by
 per-field maximum (`Usage::merge_max`); which event carries a given count is
@@ -185,9 +184,8 @@ list and sent as spelled, not rejected by a local list that cannot know it.
 against a list the source names and whose values are the request's own. OpenRouter
 refuses a level outside a list its metadata names, because it maps an unsupported
 level to the nearest supported one **silently** — a session could otherwise believe
-it set a knob that did nothing (observed 2026-08-29: `--effort max` on GLM 5.3
-flash, whose `default_effort` was already `max`, so the flag was a no-op by
-coincidence). A model whose entry names no levels is not refused: 137 of 459
+it set a knob that did nothing (a model whose `default_effort` is already `max`
+makes `--effort max` a no-op by coincidence). A model whose entry names no levels is not refused: 137 of 459
 OpenRouter models name none, `openai/o4-mini` among them, and o4-mini honors effort
 all the same (2,752 reasoning tokens at `low`, the 6,000-token cap at `high`,
 2026-09-25). Anthropic's metadata names no levels, and a Codex catalog entry names
@@ -316,8 +314,7 @@ schedule (below). There was a 30-second budget, and the handler enforces a
 budget by clamping each retry's timeout to what remains of it — so after a 503,
 the retry of a large uncached prompt on a model whose time to first byte is near
 30 seconds was cut off at the clamp, and the attempt failed for the clamp rather
-than for the upstream (observed 2026-09-28, `.efference/still-cliff`: an
-overloaded 503 followed each time by "Conn took longer than 28.4s"). The set is shared by both dialects and is a superset of what OpenAI's
+than for the upstream (an overloaded 503 arriving each time, followed by "Conn took longer than 28.4s"). The set is shared by both dialects and is a superset of what OpenAI's
 error guide names as retryable (429 rate limits and `slow_down`, 500, 503
 `server_is_overloaded`, each with `Retry-After` when present); the guide's
 non-retryable 429s — exhausted credit, spend and usage limits — are the body
@@ -372,8 +369,7 @@ daemon's own `message` names what happened and not which key recovers it.
 **Who is told what.** The model is never told about an upstream failure. If the
 harness is in a position to describe the failure to it, the harness has already
 recovered from it — and the description is not neutral: a serde parse error
-delivered to the inbox is something the model then reasons about mid-task
-(observed 2026-08-28). So the audiences are the **log** (a record-only entry per
+delivered to the inbox is something the model then reasons about mid-task. So the audiences are the **log** (a record-only entry per
 failed attempt, for audit), **stderr** (live operator text), and the **operator's
 state topics** (`upstream_retry` while a retry is in flight, `stall` once a
 budget is spent). Nothing on these paths posts to the inbox.
@@ -389,9 +385,8 @@ retrying — rather than on a successful completion, so it reports the condition
 now. A stall is a decision point for `?wait=settled`. The topic is addressed to whatever
 is supervising the daemon from outside, which is the rung that can actually send
 the recovering turn — an inbox copy would be addressed to the model, which is
-neither told about upstream failures nor able to act on one. Before the topic
-existed, an earlier inbox notice was the only signal and a triage peek could
-dismiss it, leaving a clean idle (observed 2026-08-28). Both clients render the
+neither told about upstream failures nor able to act on one. Without the topic, an earlier inbox notice is the only signal, and a triage peek
+can dismiss it — leaving a clean idle. Both clients render the
 topic where turn state already shows — the
 TUI's status bar, the web composer's turn-state readout.
 
@@ -422,9 +417,8 @@ has to be committed to arrange the replay). On exhaustion — or a terminal
 failure, above — the gate does not give the agent anything: it **holds** the
 batch's results, unappended, and stalls with `StallReason::TriageUnavailable`
 while the loop keeps running, until a continue retries it or an interrupt ends
-the turn ([redaction-fork.md](redaction-fork.md)). The gate used to withhold the
-results as a hard error instead, and that was expensive in a way the turn path is
-not: a withheld result asks the agent to re-issue a call whose side effects
+the turn ([redaction-fork.md](redaction-fork.md)). Withholding the
+results as a hard error instead is expensive in a way the turn path is not: a withheld result asks the agent to re-issue a call whose side effects
 already stand. In a controlled run a withheld conformance `PASS` was re-earned by
 re-running the suite against a still-live server whose counters the invisible
 first run had moved, turning the pass into a spurious failure; in another the
@@ -476,7 +470,7 @@ The counterpart to a generous value is that a genuinely hung endpoint costs the
 ceiling once per abort-retry attempt before the trajectory stalls — which is the
 other reason the number belongs to whoever knows the workload.
 
-This was never observed directly; the empty-finalized-turn cases were *consistent
+This is never observed directly; the empty-finalized-turn cases are *consistent
 with* a gateway timing out in front of a slow upstream, and the ceiling closes the
 adjacent hole rather than a measured one.
 
@@ -595,8 +589,8 @@ either way.
 Each **failed HTTP attempt** is recorded durably, bearing its status and body, as
 a record-only assistant entry that projects to nothing — the same class as an
 aborted attempt's partial. That covers the attempts the retry handler absorbs: a
-429 that recovers on the next try used to leave nothing behind but a status and a
-count, so the chip could not be inspected for what actually went wrong. The
+429 that recovers on the next try leaves nothing behind but a status and a count,
+so the chip cannot be inspected for what actually went wrong. The
 handler sits below the loop and cannot append, so the body crosses that boundary
 through an in-memory queue beside the failure cell: the observer reads the
 non-2xx body once, stashes it on the conn for whoever asks next (the SSE open
@@ -827,7 +821,7 @@ agent's client and so the token; the spotter's client is built
 `without_turn_routing`, since each of its requests is its own conversation. Every
 Codex request also names its model in `x-codex-routing-hint` (`model=<slug>`), as
 Codex CLI does. Both headers are transport-only and never enter the log. The
-rejection of `prompt_cache_breakpoint` above was observed on gpt-5.6-luna; OpenAI's
+rejection of `prompt_cache_breakpoint` above is observed on gpt-5.6-luna; OpenAI's
 guide lists explicit breakpoints as a GPT-5.6-family feature on the platform, so it
 is the backend, not the model, that is presumed to refuse them (backlog:
 openai-provider/validation.md).
@@ -1318,8 +1312,8 @@ in `Session`, never logged or projected. `max_output_tokens` sets the
 per-turn output cap (`Client::with_max_output`): a reasoning model's
 thinking bills against `max_tokens`, and the pre-reasoning 4096 default —
 which stands only when the provider reports no cap — starves a long think,
-terminating the turn at the cap before any text or call arrives (observed
-live, 2026-08-21; the committed turn was thinking alone). A cap-terminated
+terminating the turn at the cap before any text or call arrives (the committed
+turn is thinking alone). A cap-terminated
 turn commits whatever arrived and posts a notification naming the cap
 (`agent.rs` on `stop_reason: "max_tokens"`) — before that existed, the
 session just sat idle, reading as a hang.
@@ -1385,7 +1379,7 @@ brittle. OpenRouter is the one provider with such a surface today:
 each response carries (the same id `usage.jsonl` records — the join to the
 provider's own accounting). The record lands some time after the response
 completes and a too-early GET 404s; the lag is the upstream's (seconds for
-Anthropic-served models, over a minute observed for `meta/muse-spark-1.3`), so
+Anthropic-served models, over a minute for `meta/muse-spark-1.3`), so
 the fetch backs off across six attempts (2s through 300s, `COST_FETCH_DELAYS`
 in `daemon/metrics.rs`); exhaustion increments `unpriced`, so the total is a
 legible undercount rather than a silent one. On direct Anthropic there is no
@@ -1437,9 +1431,8 @@ mandatory — the case that forced the change, an explicit `disabled` 400ing
 every request), `deepseek/deepseek-v4-flash` (default-off; thinks when the
 block is sent), and `thinkingmachines/inkling` all accept the adaptive block.
 inkling is the load-bearing re-test: an earlier probe had it rejecting the
-Anthropic block while advertising reasoning support, which is why metadata was
-previously kept out of the decision as an invalid signal. That rejection no
-longer reproduces — retired as fixed upstream (OpenRouter's translation,
+Anthropic block while advertising reasoning support, which is why metadata stays
+out of the decision as an invalid signal. That rejection does not reproduce — retired as fixed upstream (OpenRouter's translation,
 presumably), not as wrong at the time.
 
 ---
@@ -1527,7 +1520,7 @@ stream shows raw live output, the result shows the fork's distillate (see
 
 Caching shapes this layer (see [log-and-projection.md](log-and-projection.md) for the
 TTL-is-a-write-time-property background). It
-was previously invisible and died at the 5-minute TTL on any idle. This layer
+is invisible and dies at the 5-minute TTL on any idle. This layer
 makes it legible and keeps it warm, entirely within transport and daemon — no
 log appends, no projection changes, fully reversible.
 
