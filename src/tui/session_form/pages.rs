@@ -69,22 +69,17 @@ impl Form {
         }
         let connection = selected - INHERIT_ROWS - recents.len();
         // A connection opens its recent models first: past picks on it, most
-        // decayed weight first, then the provider's listing (merged by the host
-        // dispatcher), with the typed-ID editor as the last row in every case.
+        // decayed weight first, then the rest of the connection's catalog
+        // (merged by the host dispatcher), with the typed-ID editor as the last
+        // row in every case.
         self.page = Page::Models {
             role,
             connection,
             models: Vec::new(),
-            authors: Vec::new(),
-            author: None,
             selected: 0,
             loading: true,
         };
-        Action::Recents(RecentsRequest {
-            role,
-            connection,
-            author: None,
-        })
+        Action::Recents(RecentsRequest { role, connection })
     }
 
     /// Fold the host's answer into the open menu. Dropped when the operator has
@@ -94,66 +89,39 @@ impl Form {
         let Page::Models {
             role,
             connection,
-            author,
             models,
-            authors,
             selected,
             loading,
         } = &mut self.page
         else {
             return Action::Continue;
         };
-        if *role != answer.role || *connection != answer.connection || *author != answer.author {
+        if *role != answer.role || *connection != answer.connection {
             return Action::Continue;
         }
         *loading = false;
         *models = answer.models;
-        *authors = answer.authors;
-        *selected = (*selected).min(models.len() + authors.len());
+        *selected = (*selected).min(models.len());
         Action::Continue
     }
 
     pub(super) fn choose_model(&mut self, role: Role, connection: usize) -> Action {
         let Page::Models {
-            models,
-            authors,
-            selected,
-            ..
+            models, selected, ..
         } = &self.page
         else {
             return Action::Continue;
         };
         let (role, connection) = (role, connection);
-        // Rows run recents and models, then authors, then the typed-ID escape
-        // hatch. A model row folds straight into the draft; an author row opens
-        // that author's models.
-        if *selected >= models.len() + authors.len() {
+        // Rows run recents and models, then the typed-ID escape hatch. A model
+        // row folds straight into the draft.
+        if *selected >= models.len() {
             self.page = Page::Text {
                 role,
                 connection,
                 value: Line::new(""),
             };
             return Action::Continue;
-        }
-        if let Some(author) = selected
-            .checked_sub(models.len())
-            .and_then(|index| authors.get(index))
-        {
-            let author = author.model.clone();
-            self.page = Page::Models {
-                role,
-                connection,
-                models: Vec::new(),
-                authors: Vec::new(),
-                author: Some(author.clone()),
-                selected: 0,
-                loading: true,
-            };
-            return Action::Recents(RecentsRequest {
-                role,
-                connection,
-                author: Some(author),
-            });
         }
         let Some(suggestion) = models.get(*selected) else {
             return Action::Continue;

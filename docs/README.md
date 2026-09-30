@@ -165,6 +165,7 @@ Read top-down; open the subsystem doc you need.
 | The `[env]` table — stripping and injecting env vars at spawn, masking them at append, resolving vault references | [env.md](env.md) | `src/env_table.rs`, `src/env_table/resolve.rs`, `src/persist.rs`, `src/bash.rs` |
 | Transport & streaming (upstream SSE, deltas, keepalive, the shared HTTP client) | [transport.md](transport.md) | `src/api.rs`, `src/http.rs` |
 | Host-owned inference — named connections, credential loading, per-role model selection | [transport.md](transport.md) | `src/inference.rs`, `src/boot.rs`, `src/daemon/host.rs` |
+| Model catalog — each connection's normalized model listing, stored in the state database | [model-catalog.md](model-catalog.md) | `src/catalog.rs`, `src/daemon/host/catalog.rs`, `src/api/provider/row.rs` |
 | MCP authorization — the OAuth dance for connected HTTP providers | [mcp-auth.md](mcp-auth.md) | `src/oauth.rs` (+ `src/oauth/`), `src/www_authenticate.rs`, `src/mcp/http.rs` |
 | The secret store — API keys and OAuth grants in the OS credential store | [secrets.md](secrets.md) | `src/secrets.rs`, `src/mcp/auth/store.rs`, `src/inference.rs` |
 | The TCP bind — the web client's front door (root-derived credentials, TOTP bootstrap, the gate) | [web-bind.md](web-bind.md) | `src/auth.rs`, `src/daemon/handler.rs`, `src/daemon/tcp.rs` |

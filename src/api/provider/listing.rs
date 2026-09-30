@@ -22,6 +22,7 @@
 //! OpenAI-shaped listing can front both dialects, and a capability-rich one can
 //! front a dialect this crate does not speak at all.
 
+use super::row::{ListedModel, arrange};
 use super::*;
 
 /// One entry in a model listing. Every field is optional: this type is the union
@@ -57,6 +58,14 @@ struct Entry {
     supported_parameters: Option<Vec<String>>,
     #[serde(default)]
     pricing: Option<Pricing>,
+    /// The display name, in either spelling, and the creation time in unix
+    /// seconds: the two facts a menu shows that a capability parse does not read.
+    #[serde(default)]
+    name: Option<String>,
+    #[serde(default)]
+    display_name: Option<String>,
+    #[serde(default)]
+    created: Option<i64>,
 }
 
 #[derive(Deserialize)]
@@ -167,20 +176,49 @@ pub(super) fn capabilities_for(body: &str, model: &str) -> Result<ModelCapabilit
         .unwrap_or_else(ModelCapabilities::unknown))
 }
 
-/// Every model id a listing names, in the order the endpoint gave them — the
-/// suggestions a client offers beside the native-id input, never a domain of
-/// legal models. An id absent here is still sent to creation normally.
-pub(super) fn model_ids(body: &str) -> Result<Vec<String>, Error> {
+/// The rows a listing names, in the order the endpoint gave them and then
+/// arranged newest first where it dates them. Facts are read field-by-field like
+/// the capabilities above: a spelling that is present is used, and nothing is
+/// inferred from one that is not. The row set is a suggestion list, never a
+/// domain of legal models: an id absent here is still sent to creation normally.
+pub(super) fn rows(body: &str) -> Result<Vec<ListedModel>, Error> {
     #[derive(Deserialize)]
     struct Listing {
         #[serde(default)]
-        data: Vec<Id>,
-    }
-    #[derive(Deserialize)]
-    struct Id {
-        id: String,
+        data: Vec<Entry>,
     }
     let listing: Listing = serde_json::from_str(body)
         .map_err(|e| -> Error { format!("model listing is not a model listing: {e}").into() })?;
-    Ok(listing.data.into_iter().map(|entry| entry.id).collect())
+    Ok(arrange(
+        listing
+            .data
+            .into_iter()
+            .map(|entry| {
+                let images = entry
+                    .input_modalities
+                    .as_ref()
+                    .or(entry
+                        .architecture
+                        .as_ref()
+                        .and_then(|a| a.input_modalities.as_ref()))
+                    .map(|modalities| modalities.iter().any(|m| m == "image"));
+                let name = entry
+                    .display_name
+                    .as_deref()
+                    .or(entry.name.as_deref())
+                    .unwrap_or_default();
+                ListedModel {
+                    // Some endpoints fill `created` with 0 for every entry, which
+                    // is a placeholder rather than a date to sort by.
+                    created: entry.created.filter(|&created| created > 0),
+                    context: entry.context_length.or(entry.max_input_tokens),
+                    images,
+                    ..ListedModel::new(&entry.id).named(name)
+                }
+            })
+            .collect(),
+    ))
 }
+
+#[cfg(test)]
+mod test;

@@ -343,12 +343,10 @@ fn a_typed_model_id_is_accepted_and_reset_and_back() {
     assert_eq!(form.page, Page::Form);
 }
 
-/// Every connection opens its recent-models menu, with the native-id editor
-/// as the last row: past picks suggest, the typed path stays, and the host's
-/// discovery route merges its catalog into this same menu when it lands
-/// (backlog/session-model-discovery.md).
+/// Every connection opens its model menu, with the native-id editor as the last
+/// row: the host's catalog suggests, and the typed path stays.
 #[test]
-fn every_connection_opens_the_recent_models_menu() {
+fn every_connection_opens_its_model_menu() {
     let mut form = form();
     press(&mut form, KeyCode::Down);
     press(&mut form, KeyCode::Enter);
@@ -752,7 +750,6 @@ fn inline_dispatch_forwards_a_recents_request() {
     let request = RecentsRequest {
         role: Role::Main,
         connection: 1,
-        author: None,
     };
     super::inline::dispatch(&commands, Action::Recents(request.clone()));
     assert!(matches!(
@@ -820,99 +817,4 @@ fn a_long_menu_scrolls_to_keep_the_selection_in_view() {
     assert!(text.contains("❯ Type a model id"), "{text}");
     assert!(text.contains("  21/21"), "{text}");
     assert!(!text.contains("model-0\n"), "{text}");
-}
-
-fn suggestion(model: &str, label: &str) -> crate::client::ModelSuggestion {
-    crate::client::ModelSuggestion {
-        model: model.to_string(),
-        label: label.to_string(),
-    }
-}
-
-/// Open connection 1's menu and answer it with authors after one recent pick.
-fn open_two_step_menu(form: &mut Form) {
-    press(form, KeyCode::Down);
-    press(form, KeyCode::Enter);
-    for _ in 0..2 {
-        press(form, KeyCode::Down);
-    }
-    press(form, KeyCode::Enter);
-    form.recents_returned(MenuAnswer {
-        authors: vec![
-            suggestion("anthropic", "29 models"),
-            suggestion("openai", "104 models"),
-        ],
-        ..MenuAnswer::models(
-            Role::Main,
-            1,
-            vec![suggestion("openai/gpt-6", "openai/gpt-6")],
-        )
-    });
-}
-
-/// An author row opens that author's models; a model there commits into the
-/// draft as its full id.
-#[test]
-fn an_author_row_opens_that_authors_models() {
-    let mut form = form();
-    open_two_step_menu(&mut form);
-    // Row 0 is the recent pick, row 1 the first author.
-    press(&mut form, KeyCode::Down);
-    let action = form.handle(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
-    assert_eq!(
-        action,
-        Action::Recents(RecentsRequest {
-            role: Role::Main,
-            connection: 1,
-            author: Some("anthropic".to_string()),
-        })
-    );
-    assert!(matches!(
-        &form.page,
-        Page::Models { author: Some(a), loading: true, .. } if a == "anthropic"
-    ));
-    // The unscoped answer that raced this request is dropped.
-    form.recents_returned(MenuAnswer::models(Role::Main, 1, Vec::new()));
-    assert!(matches!(&form.page, Page::Models { loading: true, .. }));
-    form.recents_returned(MenuAnswer {
-        author: Some("anthropic".to_string()),
-        ..MenuAnswer::models(
-            Role::Main,
-            1,
-            vec![suggestion("anthropic/claude-opus", "Claude Opus")],
-        )
-    });
-    press(&mut form, KeyCode::Enter);
-    assert_eq!(form.page, Page::Form);
-    assert_eq!(
-        form.draft.main.as_ref().map(|r| r.model.as_str()),
-        Some("anthropic/claude-opus")
-    );
-}
-
-/// Esc from an author's models asks for the author list again instead of
-/// leaving the connection.
-#[test]
-fn escape_from_an_authors_models_returns_to_the_author_list() {
-    let mut form = form();
-    open_two_step_menu(&mut form);
-    press(&mut form, KeyCode::Down);
-    press(&mut form, KeyCode::Enter);
-    let action = form.handle(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
-    assert_eq!(
-        action,
-        Action::Recents(RecentsRequest {
-            role: Role::Main,
-            connection: 1,
-            author: None,
-        })
-    );
-    assert!(matches!(
-        &form.page,
-        Page::Models {
-            author: None,
-            loading: true,
-            ..
-        }
-    ));
 }

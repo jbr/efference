@@ -1088,28 +1088,12 @@ written once to the session's boot Preamble as unprojected log metadata in the
 log-owned identity shape, so an offline reader does not have to infer the
 session's provider from current config or usage telemetry. Picks live in
 `~/.efference/state.db`, beside the config file that named it; the same store
-answers the recent-models menu in every picker (`GET /inference/recent-models`)
-and the offline `efference dev history` reader. The TUI's model menu lists
-those picks first, then `GET /inference/models?connection=` — the provider's
-listing (`Endpoint::list_models`: Anthropic, Codex, the platform's unfiltered `/v1/models`, described endpoints; other
-providers answer empty), read live with the host's credential. A failed listing
-leaves the recents and the typed-ID row.
-
-OpenRouter's listing is two steps (`Endpoint::discover_models`,
-`api/provider/openrouter.rs`). Its `GET /api/v1/models` answers every text model
-in one body (464 models, 762 KB on 2026-09-29) and has no author listing; its
-`model_authors` filter narrows a read but cannot enumerate authors, so the host
-reads the whole body once, holds it for five minutes (a failed refresh serves
-the older copy), and answers both steps from it. `GET /inference/models` then
-carries a `kind`: with no `author` an OpenRouter connection answers `authors`
-(`model` is the author slug, `label` its model count, sorted by name), and
-`?author=<slug>` answers that author's `models` in catalog order. An author is
-the id's prefix, with the leading `~` of a rolling alias (`~anthropic/…`) folded
-into the plain author; the alias ids themselves stay as spelled. Every other
-provider answers `kind: models` and ignores `author`. The TUI menu shows the
-recents, then an author row per author, then the typed-ID row; choosing an
-author reopens the menu on that author's models, and Esc returns to the author
-list.
+answers the recent ranks in the model catalog (`GET /inference/catalog`,
+[model-catalog.md](model-catalog.md)), the connection picker's cross-connection
+list (`GET /inference/recent-picks`), and the offline `efference dev history`
+reader. The provider listings behind the model menus, their normalization, and
+their storage in the same database are described in
+[model-catalog.md](model-catalog.md).
 
 The dev verbs that dial a provider without a host (`dev peek`, `dev spotter`,
 `dev spotter-eval`) load the same file from their own environment and resolve

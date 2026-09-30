@@ -27,6 +27,7 @@
 //! release, and the id may still be served. The model passes boot on the
 //! baseline, and the provider's own answer is the test.
 
+use super::row::ListedModel;
 use super::*;
 
 #[cfg(test)]
@@ -92,13 +93,15 @@ pub(super) struct Level {
 }
 
 impl Entry {
-    /// The label a menu shows: the backend's display name, or the id when it
-    /// gave none.
-    pub(super) fn label(&self) -> &str {
-        if self.display_name.is_empty() {
-            &self.slug
-        } else {
-            &self.display_name
+    /// This entry as a menu row. An entry that lists no modality or no reasoning
+    /// level declares nothing about either, so those facts stay absent.
+    fn row(&self) -> ListedModel {
+        ListedModel {
+            context: self.context_window.or(self.max_context_window),
+            reasoning: self.efforts().map(|_| true),
+            images: (!self.input_modalities.is_empty())
+                .then(|| self.input_modalities.iter().any(|m| m == "image")),
+            ..ListedModel::new(&self.slug).named(&self.display_name)
         }
     }
 
@@ -221,14 +224,14 @@ impl Listing {
         self.models.iter().find(|entry| entry.slug == model)
     }
 
-    /// The models a menu offers, in the backend's order: `(id, label)` for every
-    /// entry it does not hide. Additive — an id absent here is still sent to a
-    /// turn unchanged.
-    pub(super) fn suggestions(&self) -> Vec<(String, String)> {
+    /// The rows a menu offers, in the backend's order: every entry it does not
+    /// hide. The catalog dates nothing, so the order is the backend's own.
+    /// Additive — an id absent here is still sent to a turn unchanged.
+    pub(super) fn rows(&self) -> Vec<ListedModel> {
         self.models
             .iter()
             .filter(|entry| entry.is_suggested())
-            .map(|entry| (entry.slug.clone(), entry.label().to_string()))
+            .map(Entry::row)
             .collect()
     }
 }

@@ -127,15 +127,14 @@ fn a_model_the_catalog_does_not_name_passes_on_the_baseline() {
 /// nothing else. An entry the backend says it does not serve through the API is
 /// left out for the same reason a menu leaves it out.
 #[test]
-fn hidden_and_unserved_entries_are_left_out_of_suggestions() {
+fn hidden_and_unserved_entries_are_left_out_of_rows() {
     let catalog = parse(CATALOG).unwrap();
-    let suggested = catalog.suggestions();
     assert_eq!(
-        suggested,
-        vec![
-            ("gpt-6-sol".to_string(), "GPT-6-Sol".to_string()),
-            ("gpt-5.5".to_string(), "GPT-5.5".to_string()),
-        ]
+        serde_json::to_string(&catalog.rows()).unwrap(),
+        concat!(
+            r#"[{"model":"gpt-6-sol","name":"GPT-6-Sol","context":272000,"reasoning":true,"images":true},"#,
+            r#"{"model":"gpt-5.5","name":"GPT-5.5","context":272000,"reasoning":true,"images":false}]"#
+        )
     );
     // Still present in the catalog: a hidden model is selectable by id.
     assert!(catalog.entry("gpt-reserve").is_some());

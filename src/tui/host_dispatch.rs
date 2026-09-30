@@ -11,7 +11,7 @@
 //! still has to preview and create (backlog/new-session-form.md).
 
 use super::{HostCmd, TuiEvent};
-use crate::client::{Client, SuggestionKind};
+use crate::client::Client;
 use crate::tui::session_form::MenuAnswer;
 
 /// Answer host commands until the UI thread goes away.
@@ -75,53 +75,21 @@ pub(super) async fn serve(
                         let empty = || MenuAnswer {
                             role: request.role,
                             connection: request.connection,
-                            author: request.author.clone(),
                             models: Vec::new(),
-                            authors: Vec::new(),
                         };
                         match client.inference_inventory().await {
                             Ok(inventory) => match inventory.get(request.connection) {
-                                Some(row) => {
-                                    // An author's menu is that author's models
-                                    // alone; the top menu leads with past picks.
-                                    let recent = match request.author {
-                                        Some(_) => Ok(Vec::new()),
-                                        None => client.recent_models(&row.name, cwd, None).await,
-                                    };
-                                    // Discovery is a suggestion source: a failed
-                                    // read leaves the recents (and the typed-ID
-                                    // row), it does not fail the menu.
-                                    let discovered = client
-                                        .discovered_models(&row.name, request.author.as_deref())
-                                        .await
-                                        .unwrap_or_default();
-                                    recent
-                                        .map(|mut models| {
-                                            // Past picks first, then the listing
-                                            // minus what they already named.
-                                            let picked: std::collections::HashSet<_> =
-                                                models.iter().map(|m| m.model.clone()).collect();
-                                            let (listed, authors) = match discovered.kind {
-                                                SuggestionKind::Models => {
-                                                    (discovered.models, Vec::new())
-                                                }
-                                                SuggestionKind::Authors => {
-                                                    (Vec::new(), discovered.models)
-                                                }
-                                            };
-                                            models.extend(
-                                                listed
-                                                    .into_iter()
-                                                    .filter(|m| !picked.contains(&m.model)),
-                                            );
-                                            MenuAnswer {
-                                                models,
-                                                authors,
-                                                ..empty()
-                                            }
-                                        })
-                                        .map_err(|e| format!("reading recent models: {e}"))
-                                }
+                                // The catalog is a suggestion source: a failed
+                                // read leaves an empty menu with the typed-ID
+                                // row, it does not fail the menu.
+                                Some(row) => Ok(client
+                                    .catalog_connection(&row.name, cwd, None, None)
+                                    .await
+                                    .map(|catalog| MenuAnswer {
+                                        models: menu_models(catalog),
+                                        ..empty()
+                                    })
+                                    .unwrap_or_else(|_| empty())),
                                 None => Ok(empty()),
                             },
                             Err(e) => Err(format!("reading the host's connections: {e}")),
@@ -153,6 +121,19 @@ pub(super) async fn serve(
             break; // UI thread gone.
         }
     }
+}
+
+/// A connection's catalog as a flat menu: past picks first in rank order, then
+/// the rest in the catalog's order, each labelled with its name where it has one.
+fn menu_models(catalog: crate::client::ConnectionCatalog) -> Vec<crate::client::ModelSuggestion> {
+    let mut rows = catalog.models;
+    rows.sort_by_key(|row| row.recent.unwrap_or(u32::MAX));
+    rows.into_iter()
+        .map(|row| crate::client::ModelSuggestion {
+            label: row.row.name.unwrap_or_else(|| row.row.model.clone()),
+            model: row.row.model,
+        })
+        .collect()
 }
 
 /// The new-session form's opening read (docs/tui.md): where a session would be

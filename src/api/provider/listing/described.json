@@ -1,0 +1,13 @@
+{
+ "data": [
+  {
+   "id": "acme/large",
+   "name": "Large",
+   "created": 1790000100,
+   "context_length": 200000,
+   "architecture": {"input_modalities": ["text", "image"]}
+  },
+  {"id": "acme/small", "display_name": "Small", "max_input_tokens": 32000},
+  {"id": "acme/plain"}
+ ]
+}

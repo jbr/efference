@@ -319,7 +319,7 @@ impl InferenceRegistry {
         Ok(registry)
     }
 
-    /// Point this registry at a history store, for the recent-models route and
+    /// Point this registry at a history store, for the recent ranks in the model catalog and
     /// for tests that seed past picks. Production registries open the store
     /// beside their config file in [`load_at`](Self::load_at).
     pub fn with_history(mut self, history: crate::history::History) -> Self {

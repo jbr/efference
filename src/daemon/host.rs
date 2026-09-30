@@ -22,6 +22,9 @@ mod options;
 pub use options::SessionOptionsRequest;
 use options::preview_session;
 
+mod catalog;
+use catalog::{catalog_all, catalog_one};
+
 mod summary;
 pub use summary::SessionSummary;
 use summary::summary_stream;
@@ -30,6 +33,9 @@ use summary::summary_stream;
 pub struct Host {
     swansong: Swansong,
     inference: crate::inference::InferenceRegistry,
+    /// Each connection's model listing, stored in the user state database
+    /// (docs/model-catalog.md).
+    catalog: crate::catalog::Catalog,
     sessions: Mutex<BTreeMap<String, Hosted>>,
     /// Signalled when the session listing may have moved (`summary.rs`): a
     /// session arriving or leaving, and every wake of a session's status
@@ -67,6 +73,9 @@ impl Host {
     pub fn new(inference: crate::inference::InferenceRegistry) -> Arc<Self> {
         Arc::new(Self {
             swansong: Swansong::new(),
+            catalog: crate::catalog::Catalog::new(
+                inference.history().state_path().map(ToOwned::to_owned),
+            ),
             inference,
             sessions: Mutex::new(BTreeMap::new()),
             summary_changed: Notify::new(),
@@ -397,8 +406,8 @@ impl Host {
 pub(crate) fn host_routes(create: bool, files: bool) -> impl trillium::Handler {
     let mut router = Router::new()
         .get("/inference", inference_inventory)
-        .get("/inference/models", discovered_models)
-        .get("/inference/recent-models", recent_models)
+        .get("/inference/catalog", catalog_all)
+        .get("/inference/catalog/:connection", catalog_one)
         .get("/inference/recent-picks", recent_picks)
         .with_route(trillium::Method::Query, "/sessions", preview_session)
         .get("/sessions", list_sessions())
@@ -439,100 +448,6 @@ async fn inference_inventory(conn: Conn) -> Conn {
             .halt(),
         None => missing_host(conn),
     }
-}
-
-/// `GET /inference/models?connection=<name>[&author=<slug>]`: the models the
-/// connection's provider lists, read live with the host's credential.
-/// Suggestions only, per the contract `recent-models` states: a model absent
-/// here is still accepted. `kind` says what the rows are: `models`, or
-/// `authors` for a provider whose catalog is offered in two steps (OpenRouter),
-/// where `author` then asks for one author's models. A provider with no listing
-/// answers an empty list; an unknown or unusable connection or a failed read is
-/// an error the client treats as "no suggestions"
-/// (backlog/session-model-discovery.md).
-async fn discovered_models(conn: Conn) -> Conn {
-    let Some(host) = host_of(&conn) else {
-        return missing_host(conn);
-    };
-    let Some(connection) = crate::daemon::http::query_value(conn.querystring(), "connection")
-    else {
-        return fail(
-            conn,
-            ErrorCode::BadRequest,
-            "models needs ?connection=<name>",
-        );
-    };
-    let (_, endpoint) = match host.inference.endpoint(&connection) {
-        Ok(found) => found,
-        Err(e) => return fail(conn, ErrorCode::NotFound, e.to_string()),
-    };
-    let author = crate::daemon::http::query_value(conn.querystring(), "author");
-    match endpoint.discover_models(author.as_deref()).await {
-        Ok(listing) => {
-            let kind = listing.kind.as_str();
-            let models: Vec<serde_json::Value> = listing
-                .entries
-                .into_iter()
-                .map(|(model, label)| serde_json::json!({ "model": model, "label": label }))
-                .collect();
-            conn.with_status(200)
-                .with_body(
-                    serde_json::json!({ "connection": connection, "kind": kind, "models": models })
-                        .to_string(),
-                )
-                .halt()
-        }
-        Err(e) => fail(
-            conn,
-            ErrorCode::Internal,
-            format!("listing models on {connection}: {e}"),
-        ),
-    }
-}
-
-/// `GET /inference/recent-models?connection=<name>&cwd=<root>&config=<path>`:
-/// the models past sessions picked on one connection, most decayed weight
-/// first, for the project scope `cwd` (+ optional `config`) names. `models`
-/// carries provider-native ids — what a draft holds beside the connection —
-///
-/// and a model absent from the list is still sent to preview and creation
-/// normally, exactly like the discovery route's contract
-/// (backlog/session-model-discovery.md): history suggests, never authorizes.
-/// Unknown or absent connections answer an empty list, not an error — an empty
-/// menu is a picker with only the typed-ID path, not a failure.
-async fn recent_models(conn: Conn) -> Conn {
-    let Some(host) = host_of(&conn) else {
-        return missing_host(conn);
-    };
-    let query = conn.querystring();
-    let param = |name: &str| crate::daemon::http::query_value(query, name);
-    let (Some(connection), Some(cwd)) = (param("connection"), param("cwd")) else {
-        return fail(
-            conn,
-            ErrorCode::BadRequest,
-            "recent-models needs ?connection=<name>&cwd=<root>",
-        );
-    };
-    let scope = crate::history::Scope::for_request(
-        std::path::Path::new(&cwd),
-        param("config").as_deref().map(std::path::Path::new),
-    );
-    let models: Vec<serde_json::Value> = host
-        .inference
-        .history()
-        .recent(&scope, &connection, crate::history::now(), 10)
-        .into_iter()
-        .map(|candidate| serde_json::json!({ "model": candidate.model, "label": candidate.model }))
-        .collect();
-    conn.with_status(200)
-        .with_body(
-            serde_json::json!({
-                "connection": connection,
-                "models": models,
-            })
-            .to_string(),
-        )
-        .halt()
 }
 
 /// `GET /inference/recent-picks?cwd=<root>&config=<path>`: the picks past

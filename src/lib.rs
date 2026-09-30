@@ -4,6 +4,7 @@ pub mod attachments;
 pub mod auth;
 pub mod bash;
 pub mod boot;
+pub mod catalog;
 pub mod client;
 pub mod config;
 pub mod consolidate;

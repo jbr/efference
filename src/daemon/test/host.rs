@@ -775,3 +775,65 @@ async fn creation_enforces_the_temperature_range() {
     assert!(host.ids().is_empty());
     host.swansong().shut_down().await;
 }
+
+/// `GET /inference/catalog` and `/inference/catalog/:connection`
+/// (docs/model-catalog.md): a connection that cannot be read reports why without
+/// a provider read, and a recent pick for it still arrives as a bare row. Only a
+/// disabled connection is configured, so no refresh leaves the process.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_catalog_reports_an_unavailable_connection_with_its_recent_picks() {
+    let roots = Roots::new();
+    let cwd = roots.0.join("one");
+    let config = crate::inference::InferenceConfig::from_toml(
+        r#"
+[connections.off]
+provider = "openrouter"
+auth = { kind = "env", key = "TEST_KEY" }
+disabled = true
+"#,
+    )
+    .unwrap();
+    let env = crate::env_table::EnvSnapshot::new(
+        [("TEST_KEY".to_string(), "test-secret".to_string())].into(),
+    )
+    .unwrap();
+    let history = crate::history::History::at(roots.0.join("state.db"));
+    history.record(&crate::history::Pick {
+        at: crate::history::now(),
+        cwd: cwd.to_string_lossy().into_owned(),
+        config_key: crate::history::BUILTIN_CONFIG_KEY.to_string(),
+        connection: "off".into(),
+        provider: "openrouter".into(),
+        model: "z-ai/glm-5.3".into(),
+    });
+    let host = Host::new(
+        crate::inference::InferenceRegistry::from_config(
+            config,
+            Path::new("/host"),
+            env,
+            &std::sync::Arc::new(crate::secrets::Secrets::in_memory()),
+        )
+        .unwrap()
+        .with_history(history),
+    );
+    let client = host_client(&host, "one").await.with_prefix("");
+    let all = client.catalog(&cwd, None).await.expect("read the catalog");
+    assert_eq!(all.len(), 1);
+    assert_eq!(all[0].status, crate::client::CatalogStatus::Unavailable);
+    assert!(all[0].error.as_deref().unwrap().contains("disabled"));
+    assert_eq!(
+        serde_json::to_string(&all[0].models).unwrap(),
+        r#"[{"connection":"off","model":"z-ai/glm-5.3","group":"z-ai","recent":1}]"#
+    );
+    let one = client
+        .catalog_connection("off", &cwd, None, Some(300))
+        .await
+        .expect("read one connection");
+    assert_eq!(one, all[0]);
+    assert!(
+        client
+            .catalog_connection("nope", &cwd, None, None)
+            .await
+            .is_err()
+    );
+}

@@ -478,9 +478,9 @@ no catalog of suggestions, and a menu of ids the build knows would be the stale
 half of a problem the harness no longer has elsewhere — the Codex arm's
 capabilities come from the provider's own catalog (docs/transport.md), so a
 model it published after this build resolves as well as one it published
-before. What the form will offer beside history is the host's own list per
-connection, which the discovery service builds from that same catalog
-(backlog/session-model-discovery.md).
+before. A connection's menu lists its past picks first, then the rest of the host's
+catalog for that connection as one flat list (`GET /inference/catalog/:connection`,
+docs/model-catalog.md), each row labelled with its name where the catalog has one.
 
 Creating switches to the new session, the same one-cursor-per-handshake switch `⏎`
 performs. A refused creation keeps the form open with its edits and the host's reason,

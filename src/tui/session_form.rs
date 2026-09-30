@@ -72,16 +72,10 @@ enum Page {
     /// typed-ID editor as the last row. Entered with whatever the host has
     /// answered so far: an empty list is a picker with only the typed path,
     /// not a failure — which is also what a no-host form always shows.
-    ///
-    /// A provider listed in two steps (OpenRouter) follows its models with an
-    /// author row per author: choosing one re-enters this page scoped to that
-    /// `author`, whose rows are that author's models alone.
     Models {
         role: Role,
         connection: usize,
         models: Vec<crate::client::ModelSuggestion>,
-        authors: Vec<crate::client::ModelSuggestion>,
-        author: Option<String>,
         selected: usize,
         /// The host has not answered yet; the menu shows what it has and says so.
         loading: bool,
@@ -127,23 +121,19 @@ pub(super) struct Form {
 pub(crate) struct RecentsRequest {
     pub(crate) role: Role,
     pub(crate) connection: usize,
-    /// Set to list one author's models, on a provider listed in two steps.
-    pub(crate) author: Option<String>,
 }
 
-/// The host's answer to a [`RecentsRequest`]: recent picks and discovered
-/// models in `models`, and the authors a second step opens in `authors`.
+/// The host's answer to a [`RecentsRequest`]: recent picks first, then the
+/// connection's listed models.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct MenuAnswer {
     pub(crate) role: Role,
     pub(crate) connection: usize,
-    pub(crate) author: Option<String>,
     pub(crate) models: Vec<crate::client::ModelSuggestion>,
-    pub(crate) authors: Vec<crate::client::ModelSuggestion>,
 }
 
 impl MenuAnswer {
-    /// The top menu's answer for a provider listed in one step.
+    /// The answer for one connection's menu.
     pub(crate) fn models(
         role: Role,
         connection: usize,
@@ -152,9 +142,7 @@ impl MenuAnswer {
         Self {
             role,
             connection,
-            author: None,
             models,
-            authors: Vec::new(),
         }
     }
 }
@@ -289,31 +277,6 @@ impl Form {
         if key.code == KeyCode::Esc {
             self.page = match &self.page {
                 Page::Form => return Action::Cancel,
-                // An author's models go back to the author list, which the host
-                // answers again from its held catalog.
-                Page::Models {
-                    role,
-                    connection,
-                    author: Some(_),
-                    ..
-                } => {
-                    let (role, connection) = (*role, *connection);
-                    self.page = Page::Models {
-                        role,
-                        connection,
-                        models: Vec::new(),
-                        authors: Vec::new(),
-                        author: None,
-                        selected: 0,
-                        loading: true,
-                    };
-                    self.note = None;
-                    return Action::Recents(RecentsRequest {
-                        role,
-                        connection,
-                        author: None,
-                    });
-                }
                 Page::Models {
                     role, connection, ..
                 } => Page::Connections {
@@ -326,8 +289,6 @@ impl Form {
                     role: *role,
                     connection: *connection,
                     models: Vec::new(),
-                    authors: Vec::new(),
-                    author: None,
                     selected: 0,
                     loading: false,
                 },
@@ -350,9 +311,7 @@ impl Form {
             }
             Page::Models { role, .. } => {
                 let len = match &self.page {
-                    Page::Models {
-                        models, authors, ..
-                    } => models.len() + authors.len() + 1,
+                    Page::Models { models, .. } => models.len() + 1,
                     _ => 1,
                 };
                 if let Page::Models { selected, .. } = &mut self.page {

@@ -18,38 +18,17 @@ use trillium_client::{Client as HttpClient, Connector};
 use trillium_tokio::UnixClientConfig;
 
 use crate::attachments::Arrival;
+pub use crate::catalog::{CatalogModel, ConnectionCatalog, Status as CatalogStatus};
 use crate::daemon::{CreateSession, SessionOptionsRequest};
 use crate::frontend::{Approval, SubmittedTurn};
 use crate::inference::{ConnectionInventory, ResolvedOptions};
 
-/// One recent-models suggestion: the provider-native id the draft carries,
-/// and the label the menu renders. Shaped like the discovery route's items
-/// (backlog/session-model-discovery.md), so the two sources merge in one menu
-/// when discovery lands.
+/// One model suggestion: the provider-native id the draft carries, and the label
+/// the menu renders.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
 pub struct ModelSuggestion {
     pub model: String,
     pub label: String,
-}
-
-/// What the rows of a discovery answer are.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum SuggestionKind {
-    /// Provider-native model ids.
-    #[default]
-    Models,
-    /// Authors, each opening a second read of that author's models.
-    Authors,
-}
-
-/// One `GET /inference/models` answer: `models` holds authors when `kind` says so
-/// (`model` is then the author slug).
-#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Deserialize)]
-pub struct DiscoveredModels {
-    #[serde(default)]
-    pub kind: SuggestionKind,
-    pub models: Vec<ModelSuggestion>,
 }
 
 /// One cross-connection recent pick: both halves of a role draft, so the
@@ -59,6 +38,22 @@ pub struct DiscoveredModels {
 pub struct RecentPick {
     pub connection: String,
     pub model: String,
+}
+
+fn catalog_query(
+    cwd: &std::path::Path,
+    config: Option<&std::path::Path>,
+    max_age: Option<u64>,
+) -> String {
+    let mut query = trillium_client::url::form_urlencoded::Serializer::new(String::new());
+    query.append_pair("cwd", &cwd.to_string_lossy());
+    if let Some(config) = config {
+        query.append_pair("config", &config.to_string_lossy());
+    }
+    if let Some(max_age) = max_age {
+        query.append_pair("max_age", &max_age.to_string());
+    }
+    query.finish()
 }
 
 /// A client bound to one daemon control socket. Cheap to [`Clone`] (the inner
@@ -583,57 +578,45 @@ impl Client {
         Ok(recent.picks)
     }
 
-    /// The rows `connection`'s provider lists (`GET /inference/models`), read
-    /// live by the host. `author` asks for one author's models on a provider
-    /// listed in two steps; without it that provider answers its authors.
-    /// Empty for a provider with no listing.
-    pub async fn discovered_models(
+    /// Every configured connection's stored model listing, with recent ranks for
+    /// the project at `cwd` (`GET /inference/catalog`). Never waits on a provider:
+    /// an entry's `status` says whether its copy is fresh, stale, missing, or
+    /// failed, and a missing or stale one is being refreshed in the host
+    /// (docs/model-catalog.md). A listener route, so it addresses the socket root.
+    pub async fn catalog(
         &self,
-        connection: &str,
-        author: Option<&str>,
-    ) -> Result<DiscoveredModels> {
-        let query = {
-            let mut query = trillium_client::url::form_urlencoded::Serializer::new(String::new());
-            query.append_pair("connection", connection);
-            if let Some(author) = author {
-                query.append_pair("author", author);
-            }
-            query.finish()
-        };
-        let path = format!("/inference/models?{query}");
+        cwd: &std::path::Path,
+        config: Option<&std::path::Path>,
+    ) -> Result<Vec<ConnectionCatalog>> {
+        #[derive(serde::Deserialize)]
+        struct Catalog {
+            connections: Vec<ConnectionCatalog>,
+        }
+        let path = format!("/inference/catalog?{}", catalog_query(cwd, config, None));
         let body = self.get_unversioned(&path).await?;
-        serde_json::from_str(&body).with_context(|| format!("decoding GET {path}"))
+        let catalog: Catalog =
+            serde_json::from_str(&body).with_context(|| format!("decoding GET {path}"))?;
+        Ok(catalog.connections)
     }
 
-    /// The models past sessions picked on `connection` for the project at
-    /// `cwd` (`GET /inference/recent-models`): most decayed weight first.
-    /// Empty when nothing was ever picked there — a picker with only the
-    /// typed-ID path, not a failure. A listener route, so it always addresses
-    /// the socket root.
-    pub async fn recent_models(
+    /// One connection's entry (`GET /inference/catalog/:connection`), refreshed
+    /// and awaited by the host when its copy is older than `max_age` seconds
+    /// (the host's 24-hour TTL when `None`; it floors the value at one minute).
+    pub async fn catalog_connection(
         &self,
         connection: &str,
         cwd: &std::path::Path,
         config: Option<&std::path::Path>,
-    ) -> Result<Vec<ModelSuggestion>> {
-        #[derive(serde::Deserialize)]
-        struct Recent {
-            models: Vec<ModelSuggestion>,
-        }
-        let query = {
-            let mut query = trillium_client::url::form_urlencoded::Serializer::new(String::new());
-            query.append_pair("connection", connection);
-            query.append_pair("cwd", &cwd.to_string_lossy());
-            if let Some(config) = config {
-                query.append_pair("config", &config.to_string_lossy());
-            }
-            query.finish()
-        };
-        let path = format!("/inference/recent-models?{query}");
+        max_age: Option<u64>,
+    ) -> Result<ConnectionCatalog> {
+        let name =
+            percent_encoding::utf8_percent_encode(connection, percent_encoding::NON_ALPHANUMERIC);
+        let path = format!(
+            "/inference/catalog/{name}?{}",
+            catalog_query(cwd, config, max_age)
+        );
         let body = self.get_unversioned(&path).await?;
-        let recent: Recent =
-            serde_json::from_str(&body).with_context(|| format!("decoding GET {path}"))?;
-        Ok(recent.models)
+        serde_json::from_str(&body).with_context(|| format!("decoding GET {path}"))
     }
 
     /// The host's configured inference connections (`GET /inference`). This is a

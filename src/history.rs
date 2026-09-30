@@ -134,6 +134,12 @@ impl History {
         Self { path: None }
     }
 
+    /// The database file, when the store has one. Other tables of the user
+    /// state (`src/catalog.rs`) open the same file.
+    pub fn state_path(&self) -> Option<&Path> {
+        self.path.as_deref()
+    }
+
     fn connect(&self) -> Option<rusqlite::Connection> {
         let path = self.path.as_ref()?;
         if let Some(parent) = path.parent() {

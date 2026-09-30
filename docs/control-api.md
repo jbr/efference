@@ -91,6 +91,30 @@ sessions from one process. Its own routes are the listener's, not a session's:
   sorted by connection name. The response contains configuration status only; it never
   exposes endpoint URLs, credential sources, credentials, or environment values. It is
   available on authenticated Unix and TCP host listeners.
+- `GET /inference/catalog?cwd=<root>&config=<path>` — every configured connection's
+  model listing (docs/model-catalog.md):
+  `{"connections":[{"connection", "provider", "status", "age"?, "error"?, "models":[…]}]}`,
+  sorted by connection name. `status` is `fresh`, `stale`, `missing`, `failed`, or
+  `unavailable` (no usable credential, or disabled: no read is attempted and `error`
+  says why). `age` is seconds since the stored copy was fetched. Never waits on a
+  provider: a `missing` or `stale` connection starts a background refresh and is
+  served as stored; a `failed` one keeps its old copy in `models`. `cwd` (+ optional
+  `config`) names the project scope whose recent picks fold in as `recent`; without
+  `cwd` no row has one.
+- `GET /inference/catalog/:connection?max_age=<secs>&cwd=&config=` — one connection's
+  entry in the same shape, refreshed and awaited when its stored copy is missing or
+  older than `max_age` (default 24 hours; values under 60 are raised to 60). A failed
+  read answers `200` with `status: "failed"` and the old copy; an unknown connection
+  is `404`; a non-numeric `max_age` is `400`.
+  A row is `{"connection", "model", "group"?, "name"?, "created"?, "context"?,
+  "price"?: {"input","output"}, "reasoning"?, "images"?, "recent"?}`. `model` is the
+  provider-native id a draft carries; `created` is unix seconds; `context` is
+  tokens; `price` is USD per million tokens; `recent` is the rank (1 first) of the
+  matching recent pick, counted across connections. A field the source did not
+  declare is absent.
+- `GET /inference/recent-picks?cwd=<root>&config=<path>` — the picks past sessions
+  made across all connections, most decayed weight first with project picks before
+  aggregate ones: `{"picks":[{"connection","model"}]}`.
 - `QUERY /sessions` — resolve a proposed session without minting a directory or
   starting runtime preparation. The body carries an absolute `cwd`, an optional
   `config`, and the same editable selections creation takes: `connection`, `model`,

@@ -8,6 +8,7 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- **Model catalog** (docs/model-catalog.md): the host stores each connection's normalized model listing (names, dates, context, price, reasoning, images; tool-less and OpenRouter `:batch` rows dropped) in `state.db`, refreshes it in the background past 24 hours, and serves it with recent ranks at `GET /inference/catalog` and `/inference/catalog/:connection`; replaces `GET /inference/models` and `recent-models`, and the new-session form's model menu reads it as one flat list per connection.
 - **OpenRouter model menu, by author** (docs/transport.md): the host holds OpenRouter's catalog for five minutes and `GET /inference/models` answers its authors, then `?author=` one author's models; the new-session form gains an author step between the connection and the model.
 - **Model menus in the inline session picker** (docs/tui.md): opening a connection lists its recent and provider-listed models (with a dimmed `Loading...` while fetching), long menus scroll with an `n/total` position, and the host's query-parameter decoding for `/inference/models`, `recent-models` and `recent-picks` no longer blanks every value.
 - **Model menu lists the connection's models** (docs/transport.md): the new-session form shows past picks, then `GET /inference/models`, before the typed-ID row.

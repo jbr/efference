@@ -10,9 +10,14 @@
 
 use super::*;
 
+mod anthropic;
 mod codex;
 mod listing;
+mod models;
 mod openrouter;
+mod row;
+
+pub use row::{ListedModel, Price};
 
 /// The spotter model a bare session uses on either OpenAI arm when the
 /// connection names none of its own (docs/permissions.md). A single default
@@ -1314,33 +1319,6 @@ impl ModelCapabilities {
     }
 }
 
-/// What a discovery menu's rows are (`GET /inference/models`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ListingKind {
-    /// Provider-native model ids, ready to pick.
-    Models,
-    /// Authors whose models a second read lists — the first step of a
-    /// provider whose catalog is too large to offer whole.
-    Authors,
-}
-
-impl ListingKind {
-    /// The spelling the control channel carries.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Models => "models",
-            Self::Authors => "authors",
-        }
-    }
-}
-
-/// Rows for a model menu: `(id or author, label)` and what they are.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DiscoveredModels {
-    pub kind: ListingKind,
-    pub entries: Vec<(String, String)>,
-}
-
 impl Endpoint {
     /// The route listing the models this endpoint's provider serves, for a
     /// discovery menu and for `efference dev models` (docs/transport.md).
@@ -1514,91 +1492,6 @@ impl Endpoint {
             Some(url) => self.authed_get(&url).await.map(Some),
             None => Ok(None),
         }
-    }
-
-    /// A menu's rows for this provider, scoped by `author` where the provider
-    /// lists in two steps. OpenRouter's catalog is too large to offer whole, so
-    /// with no author it answers the authors and with one it answers that
-    /// author's models, both from the host's held copy of the catalog
-    /// (`provider/openrouter.rs`). Every other provider answers its flat
-    /// [`Self::list_models`] and ignores `author`
-    /// (backlog/session-model-discovery.md).
-    pub async fn discover_models(&self, author: Option<&str>) -> Result<DiscoveredModels, Error> {
-        if self.provider != Provider::OpenRouter {
-            return Ok(DiscoveredModels {
-                kind: ListingKind::Models,
-                entries: self.list_models().await?,
-            });
-        }
-        let catalog = openrouter::catalog(self).await?;
-        Ok(match author {
-            None => DiscoveredModels {
-                kind: ListingKind::Authors,
-                entries: openrouter::authors(&catalog),
-            },
-            Some(author) => DiscoveredModels {
-                kind: ListingKind::Models,
-                entries: openrouter::models_of(&catalog, author),
-            },
-        })
-    }
-
-    /// The models a key can see, `(id, display name)` in the listing's order.
-    /// OpenRouter answers an empty list here, as does any provider without a
-    /// listing: its two-step menu is [`Self::discover_models`].
-    pub async fn list_models(&self) -> Result<Vec<(String, String)>, Error> {
-        // A described endpoint's listing is the same route the credential check
-        // and the capability lookup use, so one shape reads all three
-        // (`provider/listing.rs`). Ids only: no listing carries a display name.
-        if let Provider::Custom(_) = self.provider {
-            let url = self
-                .provider
-                .capabilities_url(self.base.as_deref(), "")
-                .map_err(|e| -> Error { e })?;
-            let body = self.authed_get(&url).await?;
-            return Ok(listing::model_ids(&body)?
-                .into_iter()
-                .map(|id| (id.clone(), id))
-                .collect());
-        }
-        // The subscription backend's catalog, read through the same cache the
-        // capability path uses, minus the entries it hides from a menu
-        // (`api/provider/codex.rs`).
-        if self.provider == Provider::OpenAICodex {
-            return Ok(codex::catalog(self).await?.suggestions());
-        }
-        // The platform listing names every model the key can reach — embeddings,
-        // speech, image, and dated snapshots among them — unfiltered: a long
-        // menu beats an empty one, and the typed id stays.
-        if self.provider == Provider::OpenAI {
-            let body = self.authed_get("https://api.openai.com/v1/models").await?;
-            return Ok(listing::model_ids(&body)?
-                .into_iter()
-                .map(|id| (id.clone(), id))
-                .collect());
-        }
-        if self.provider != Provider::Anthropic {
-            return Ok(Vec::new());
-        }
-        let body = self
-            .authed_get("https://api.anthropic.com/v1/models?limit=100")
-            .await?;
-        #[derive(Deserialize)]
-        struct Listing {
-            data: Vec<Entry>,
-        }
-        #[derive(Deserialize)]
-        struct Entry {
-            id: String,
-            #[serde(default)]
-            display_name: String,
-        }
-        let listing: Listing = serde_json::from_str(&body)?;
-        Ok(listing
-            .data
-            .into_iter()
-            .map(|entry| (entry.id, entry.display_name))
-            .collect())
     }
 
     /// A GET that must answer 2xx: every metadata and credential read on the boot
