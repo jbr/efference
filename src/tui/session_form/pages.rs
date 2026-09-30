@@ -75,63 +75,85 @@ impl Form {
             role,
             connection,
             models: Vec::new(),
+            authors: Vec::new(),
+            author: None,
             selected: 0,
             loading: true,
         };
-        Action::Recents(RecentsRequest { role, connection })
+        Action::Recents(RecentsRequest {
+            role,
+            connection,
+            author: None,
+        })
     }
 
-    /// Fold the host's recent-models answer into the open menu. Dropped when
-    /// the operator has moved on — the answer describes a menu nobody is
-    /// looking at, the same staleness rule preview follows.
-    pub(crate) fn recents_returned(
-        &mut self,
-        role: Role,
-        connection: usize,
-        models: Vec<crate::client::ModelSuggestion>,
-    ) -> Action {
+    /// Fold the host's answer into the open menu. Dropped when the operator has
+    /// moved on — the answer describes a menu nobody is looking at, the same
+    /// staleness rule preview follows.
+    pub(crate) fn recents_returned(&mut self, answer: MenuAnswer) -> Action {
         let Page::Models {
-            role: page_role,
-            connection: page_connection,
-            ..
-        } = &self.page
+            role,
+            connection,
+            author,
+            models,
+            authors,
+            selected,
+            loading,
+        } = &mut self.page
         else {
             return Action::Continue;
         };
-        if *page_role != role || *page_connection != connection {
+        if *role != answer.role || *connection != answer.connection || *author != answer.author {
             return Action::Continue;
         }
-        if let Page::Models {
-            models: current,
-            selected,
-            loading,
-            ..
-        } = &mut self.page
-        {
-            *loading = false;
-            *current = models;
-            *selected = (*selected).min(current.len());
-        }
+        *loading = false;
+        *models = answer.models;
+        *authors = answer.authors;
+        *selected = (*selected).min(models.len() + authors.len());
         Action::Continue
     }
 
     pub(super) fn choose_model(&mut self, role: Role, connection: usize) -> Action {
         let Page::Models {
-            models, selected, ..
+            models,
+            authors,
+            selected,
+            ..
         } = &self.page
         else {
             return Action::Continue;
         };
         let (role, connection) = (role, connection);
-        // The last row is the typed-ID escape hatch; any other row is a
-        // remembered pick, folded straight into the draft.
-        if *selected >= models.len() {
+        // Rows run recents and models, then authors, then the typed-ID escape
+        // hatch. A model row folds straight into the draft; an author row opens
+        // that author's models.
+        if *selected >= models.len() + authors.len() {
             self.page = Page::Text {
                 role,
                 connection,
                 value: Line::new(""),
             };
             return Action::Continue;
+        }
+        if let Some(author) = selected
+            .checked_sub(models.len())
+            .and_then(|index| authors.get(index))
+        {
+            let author = author.model.clone();
+            self.page = Page::Models {
+                role,
+                connection,
+                models: Vec::new(),
+                authors: Vec::new(),
+                author: Some(author.clone()),
+                selected: 0,
+                loading: true,
+            };
+            return Action::Recents(RecentsRequest {
+                role,
+                connection,
+                author: Some(author),
+            });
         }
         let Some(suggestion) = models.get(*selected) else {
             return Action::Continue;

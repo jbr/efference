@@ -301,6 +301,8 @@ impl Form {
                 role,
                 connection,
                 models,
+                authors,
+                author,
                 selected,
                 ..
             } => {
@@ -308,10 +310,17 @@ impl Form {
                     .iter()
                     .map(|suggestion| Row::plain(&suggestion.model))
                     .collect();
+                rows.extend(authors.iter().map(|suggestion| Row {
+                    trailer: suggestion.label.clone(),
+                    ..Row::plain(&suggestion.model)
+                }));
                 rows.push(Row::plain("Type a model id"));
+                let scope = author
+                    .as_deref()
+                    .map_or_else(|| "models".to_string(), |author| format!("{author} models"));
                 (
                     format!(
-                        "{} on {} — models",
+                        "{} on {} — {scope}",
                         role.label(),
                         self.connection_name(*connection)
                     ),

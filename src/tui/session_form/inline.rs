@@ -78,8 +78,8 @@ fn drive(
                     TuiEvent::Preview(resolved) => {
                         dispatch(&commands, form.preview_returned(resolved));
                     }
-                    TuiEvent::Recents(Ok((role, connection, models))) => {
-                        dispatch(&commands, form.recents_returned(role, connection, models));
+                    TuiEvent::Recents(Ok(answer)) => {
+                        dispatch(&commands, form.recents_returned(answer));
                     }
                     TuiEvent::Recents(Err(error)) => form.note_recents_failed(error),
                     TuiEvent::Created(Ok(id)) => return Ok(Some(id)),

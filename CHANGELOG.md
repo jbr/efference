@@ -8,6 +8,7 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- **OpenRouter model menu, by author** (docs/transport.md): the host holds OpenRouter's catalog for five minutes and `GET /inference/models` answers its authors, then `?author=` one author's models; the new-session form gains an author step between the connection and the model.
 - **Model menus in the inline session picker** (docs/tui.md): opening a connection lists its recent and provider-listed models (with a dimmed `Loading...` while fetching), long menus scroll with an `n/total` position, and the host's query-parameter decoding for `/inference/models`, `recent-models` and `recent-picks` no longer blanks every value.
 - **Model menu lists the connection's models** (docs/transport.md): the new-session form shows past picks, then `GET /inference/models`, before the typed-ID row.
 - **ChatGPT grants renew ahead of expiry** (docs/transport.md): an `oauth` connection refreshes an hour before `exp` on any request path (turns, `dev models`, decisions), a host renews idle grants from launch, and a refused refresh names `efference setup`.

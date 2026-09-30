@@ -441,12 +441,14 @@ async fn inference_inventory(conn: Conn) -> Conn {
     }
 }
 
-/// `GET /inference/models?connection=<name>`: the models the connection's
-/// provider lists, read live with the host's credential (the same listing
-/// `efference dev models` prints). Suggestions only, per the contract
-/// `recent-models` states: a model absent here is still accepted. A provider
-/// with no listing answers an empty list; an unknown or unusable connection or a
-/// failed read is an error the client treats as "no suggestions"
+/// `GET /inference/models?connection=<name>[&author=<slug>]`: the models the
+/// connection's provider lists, read live with the host's credential.
+/// Suggestions only, per the contract `recent-models` states: a model absent
+/// here is still accepted. `kind` says what the rows are: `models`, or
+/// `authors` for a provider whose catalog is offered in two steps (OpenRouter),
+/// where `author` then asks for one author's models. A provider with no listing
+/// answers an empty list; an unknown or unusable connection or a failed read is
+/// an error the client treats as "no suggestions"
 /// (backlog/session-model-discovery.md).
 async fn discovered_models(conn: Conn) -> Conn {
     let Some(host) = host_of(&conn) else {
@@ -464,15 +466,19 @@ async fn discovered_models(conn: Conn) -> Conn {
         Ok(found) => found,
         Err(e) => return fail(conn, ErrorCode::NotFound, e.to_string()),
     };
-    match endpoint.list_models().await {
+    let author = crate::daemon::http::query_value(conn.querystring(), "author");
+    match endpoint.discover_models(author.as_deref()).await {
         Ok(listing) => {
+            let kind = listing.kind.as_str();
             let models: Vec<serde_json::Value> = listing
+                .entries
                 .into_iter()
                 .map(|(model, label)| serde_json::json!({ "model": model, "label": label }))
                 .collect();
             conn.with_status(200)
                 .with_body(
-                    serde_json::json!({ "connection": connection, "models": models }).to_string(),
+                    serde_json::json!({ "connection": connection, "kind": kind, "models": models })
+                        .to_string(),
                 )
                 .halt()
         }

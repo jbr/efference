@@ -11,7 +11,8 @@
 //! still has to preview and create (backlog/new-session-form.md).
 
 use super::{HostCmd, TuiEvent};
-use crate::client::Client;
+use crate::client::{Client, SuggestionKind};
+use crate::tui::session_form::MenuAnswer;
 
 /// Answer host commands until the UI thread goes away.
 ///
@@ -71,15 +72,27 @@ pub(super) async fn serve(
                         // name resolves here, against a fresh inventory read.
                         // A connection renamed mid-menu answers empty, which
                         // is a typed-ID-only menu rather than an error.
+                        let empty = || MenuAnswer {
+                            role: request.role,
+                            connection: request.connection,
+                            author: request.author.clone(),
+                            models: Vec::new(),
+                            authors: Vec::new(),
+                        };
                         match client.inference_inventory().await {
                             Ok(inventory) => match inventory.get(request.connection) {
                                 Some(row) => {
-                                    let recent = client.recent_models(&row.name, cwd, None).await;
+                                    // An author's menu is that author's models
+                                    // alone; the top menu leads with past picks.
+                                    let recent = match request.author {
+                                        Some(_) => Ok(Vec::new()),
+                                        None => client.recent_models(&row.name, cwd, None).await,
+                                    };
                                     // Discovery is a suggestion source: a failed
                                     // read leaves the recents (and the typed-ID
                                     // row), it does not fail the menu.
                                     let discovered = client
-                                        .discovered_models(&row.name)
+                                        .discovered_models(&row.name, request.author.as_deref())
                                         .await
                                         .unwrap_or_default();
                                     recent
@@ -88,16 +101,28 @@ pub(super) async fn serve(
                                             // minus what they already named.
                                             let picked: std::collections::HashSet<_> =
                                                 models.iter().map(|m| m.model.clone()).collect();
+                                            let (listed, authors) = match discovered.kind {
+                                                SuggestionKind::Models => {
+                                                    (discovered.models, Vec::new())
+                                                }
+                                                SuggestionKind::Authors => {
+                                                    (Vec::new(), discovered.models)
+                                                }
+                                            };
                                             models.extend(
-                                                discovered
+                                                listed
                                                     .into_iter()
                                                     .filter(|m| !picked.contains(&m.model)),
                                             );
-                                            (request.role, request.connection, models)
+                                            MenuAnswer {
+                                                models,
+                                                authors,
+                                                ..empty()
+                                            }
                                         })
                                         .map_err(|e| format!("reading recent models: {e}"))
                                 }
-                                None => Ok((request.role, request.connection, Vec::new())),
+                                None => Ok(empty()),
                             },
                             Err(e) => Err(format!("reading the host's connections: {e}")),
                         }

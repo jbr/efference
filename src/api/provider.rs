@@ -12,6 +12,7 @@ use super::*;
 
 mod codex;
 mod listing;
+mod openrouter;
 
 /// The spotter model a bare session uses on either OpenAI arm when the
 /// connection names none of its own (docs/permissions.md). A single default
@@ -1313,6 +1314,33 @@ impl ModelCapabilities {
     }
 }
 
+/// What a discovery menu's rows are (`GET /inference/models`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ListingKind {
+    /// Provider-native model ids, ready to pick.
+    Models,
+    /// Authors whose models a second read lists — the first step of a
+    /// provider whose catalog is too large to offer whole.
+    Authors,
+}
+
+impl ListingKind {
+    /// The spelling the control channel carries.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Models => "models",
+            Self::Authors => "authors",
+        }
+    }
+}
+
+/// Rows for a model menu: `(id or author, label)` and what they are.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DiscoveredModels {
+    pub kind: ListingKind,
+    pub entries: Vec<(String, String)>,
+}
+
 impl Endpoint {
     /// The route listing the models this endpoint's provider serves, for a
     /// discovery menu and for `efference dev models` (docs/transport.md).
@@ -1338,7 +1366,12 @@ impl Endpoint {
         let mut conn = http
             .get(url)
             .with_request_header(self.auth_header.clone(), auth);
-        if self.provider.inference_dialect() == Some(WireDialect::Messages) {
+        // OpenRouter answers a read carrying `anthropic-version` in Anthropic's
+        // paginated listing shape (20 rows, ids re-prefixed `anthropic/…[1m]`)
+        // rather than its own catalog, so its reads go without it.
+        if self.provider.inference_dialect() == Some(WireDialect::Messages)
+            && self.provider != Provider::OpenRouter
+        {
             conn = conn.with_request_header("anthropic-version", ANTHROPIC_VERSION);
         }
         let conn = self
@@ -1483,10 +1516,36 @@ impl Endpoint {
         }
     }
 
+    /// A menu's rows for this provider, scoped by `author` where the provider
+    /// lists in two steps. OpenRouter's catalog is too large to offer whole, so
+    /// with no author it answers the authors and with one it answers that
+    /// author's models, both from the host's held copy of the catalog
+    /// (`provider/openrouter.rs`). Every other provider answers its flat
+    /// [`Self::list_models`] and ignores `author`
+    /// (backlog/session-model-discovery.md).
+    pub async fn discover_models(&self, author: Option<&str>) -> Result<DiscoveredModels, Error> {
+        if self.provider != Provider::OpenRouter {
+            return Ok(DiscoveredModels {
+                kind: ListingKind::Models,
+                entries: self.list_models().await?,
+            });
+        }
+        let catalog = openrouter::catalog(self).await?;
+        Ok(match author {
+            None => DiscoveredModels {
+                kind: ListingKind::Authors,
+                entries: openrouter::authors(&catalog),
+            },
+            Some(author) => DiscoveredModels {
+                kind: ListingKind::Models,
+                entries: openrouter::models_of(&catalog, author),
+            },
+        })
+    }
+
     /// The models a key can see, `(id, display name)` in the listing's order.
-    /// OpenRouter's catalog is too large to offer whole and answers an empty
-    /// list, as does any provider without a listing; the caller asks for an id
-    /// instead (backlog/session-model-discovery.md).
+    /// OpenRouter answers an empty list here, as does any provider without a
+    /// listing: its two-step menu is [`Self::discover_models`].
     pub async fn list_models(&self) -> Result<Vec<(String, String)>, Error> {
         // A described endpoint's listing is the same route the credential check
         // and the capability lookup use, so one shape reads all three

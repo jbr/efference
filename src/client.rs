@@ -32,6 +32,26 @@ pub struct ModelSuggestion {
     pub label: String,
 }
 
+/// What the rows of a discovery answer are.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SuggestionKind {
+    /// Provider-native model ids.
+    #[default]
+    Models,
+    /// Authors, each opening a second read of that author's models.
+    Authors,
+}
+
+/// One `GET /inference/models` answer: `models` holds authors when `kind` says so
+/// (`model` is then the author slug).
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Deserialize)]
+pub struct DiscoveredModels {
+    #[serde(default)]
+    pub kind: SuggestionKind,
+    pub models: Vec<ModelSuggestion>,
+}
+
 /// One cross-connection recent pick: both halves of a role draft, so the
 /// connection picker can offer the whole list without opening each
 /// connection's own recent menu first.
@@ -563,21 +583,26 @@ impl Client {
         Ok(recent.picks)
     }
 
-    /// The models `connection`'s provider lists (`GET /inference/models`),
-    /// read live by the host. Empty for a provider with no listing.
-    pub async fn discovered_models(&self, connection: &str) -> Result<Vec<ModelSuggestion>> {
-        #[derive(serde::Deserialize)]
-        struct Listing {
-            models: Vec<ModelSuggestion>,
-        }
-        let query = trillium_client::url::form_urlencoded::Serializer::new(String::new())
-            .append_pair("connection", connection)
-            .finish();
+    /// The rows `connection`'s provider lists (`GET /inference/models`), read
+    /// live by the host. `author` asks for one author's models on a provider
+    /// listed in two steps; without it that provider answers its authors.
+    /// Empty for a provider with no listing.
+    pub async fn discovered_models(
+        &self,
+        connection: &str,
+        author: Option<&str>,
+    ) -> Result<DiscoveredModels> {
+        let query = {
+            let mut query = trillium_client::url::form_urlencoded::Serializer::new(String::new());
+            query.append_pair("connection", connection);
+            if let Some(author) = author {
+                query.append_pair("author", author);
+            }
+            query.finish()
+        };
         let path = format!("/inference/models?{query}");
         let body = self.get_unversioned(&path).await?;
-        let listing: Listing =
-            serde_json::from_str(&body).with_context(|| format!("decoding GET {path}"))?;
-        Ok(listing.models)
+        serde_json::from_str(&body).with_context(|| format!("decoding GET {path}"))
     }
 
     /// The models past sessions picked on `connection` for the project at

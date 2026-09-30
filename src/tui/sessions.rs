@@ -177,14 +177,7 @@ impl InteractiveState<'_> {
     /// leave the typed-ID-only menu in place rather than closing it.
     pub(super) fn apply_recents(
         &mut self,
-        recents: Result<
-            (
-                super::session_form::Role,
-                usize,
-                Vec<crate::client::ModelSuggestion>,
-            ),
-            String,
-        >,
+        recents: Result<super::session_form::MenuAnswer, String>,
     ) {
         let UiMode::Sessions(menu) = &mut self.ui_mode else {
             return;
@@ -193,8 +186,8 @@ impl InteractiveState<'_> {
             return;
         };
         match recents {
-            Ok((role, connection, models)) => {
-                let action = form.recents_returned(role, connection, models);
+            Ok(answer) => {
+                let action = form.recents_returned(answer);
                 // Opening the menu asked for recents alongside nothing else,
                 // so the reply folds silently — but a superseding preview
                 // request still goes out when the draft has moved on.

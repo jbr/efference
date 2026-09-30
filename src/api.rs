@@ -384,7 +384,8 @@ pub use plan::{PlanLimit, PlanSnapshot, PlanState, PlanWindow, plan_state};
 #[cfg(test)]
 pub(crate) use provider::seed_codex_catalog;
 pub use provider::{
-    ModelCapabilities, OUTPUT_FLOOR, PromptCachePolicy, Provider, ResponsesProfile, WireDialect,
+    DiscoveredModels, ListingKind, ModelCapabilities, OUTPUT_FLOOR, PromptCachePolicy, Provider,
+    ResponsesProfile, WireDialect,
 };
 pub use render::{
     render_messages_pretty, render_messages_yaml, render_request_pretty, render_request_yaml,

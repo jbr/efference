@@ -203,19 +203,10 @@ pub(crate) enum TuiEvent {
     /// `POST /sessions` answered: the new session's id, or why nothing was
     /// minted. On success the TUI leaves this session's stream for that one.
     Created(Result<String, String>),
-    /// `GET /inference/recent-models` answered for the open menu: the role and
-    /// connection it was opened on, plus whatever the host had. A failure
-    /// leaves the typed-ID-only menu in place rather than closing it.
-    Recents(
-        Result<
-            (
-                crate::tui::session_form::Role,
-                usize,
-                Vec<crate::client::ModelSuggestion>,
-            ),
-            String,
-        >,
-    ),
+    /// `GET /inference/recent-models` answered for the open menu: the role,
+    /// connection, and author it was opened on, plus whatever the host had. A
+    /// failure leaves the typed-ID-only menu in place rather than closing it.
+    Recents(Result<crate::tui::session_form::MenuAnswer, String>),
 }
 
 /// A verb the switcher issues against the *host* rather than the attached
