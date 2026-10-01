@@ -25,6 +25,9 @@ use options::preview_session;
 mod catalog;
 use catalog::{catalog_all, catalog_one};
 
+mod projects;
+use projects::{forget_project, list_projects};
+
 mod summary;
 pub use summary::SessionSummary;
 use summary::summary_stream;
@@ -36,6 +39,9 @@ pub struct Host {
     /// Each connection's model listing, stored in the user state database
     /// (docs/model-catalog.md).
     catalog: crate::catalog::Catalog,
+    /// Where sessions have been launched, in the same database (docs/control-api.md).
+    /// Written by every successful creation and read by the index route.
+    remembered: crate::remembered::Projects,
     sessions: Mutex<BTreeMap<String, Hosted>>,
     /// The host's own environment, captured once at start (docs/env.md).
     ///
@@ -93,6 +99,14 @@ impl Host {
             catalog: crate::catalog::Catalog::new(
                 inference.history().state_path().map(ToOwned::to_owned),
             ),
+            // The same file as the catalog and the picks, and disabled with them:
+            // a config that named no home directory names no place to remember.
+            remembered: inference
+                .history()
+                .state_path()
+                .map_or_else(crate::remembered::Projects::disabled, |path| {
+                    crate::remembered::Projects::at(path.to_owned())
+                }),
             inference,
             sessions: Mutex::new(BTreeMap::new()),
             host_env,
@@ -326,7 +340,7 @@ impl Host {
         // away; recorded below, after the session starts, so only sessions that
         // actually started are remembered. Best-effort either way: the store
         // never fails a creation.
-        let remembered = main_explicit.then(|| {
+        let pick = main_explicit.then(|| {
             let (selection, _) = inference.main();
             crate::history::Pick {
                 at: crate::history::now(),
@@ -337,6 +351,20 @@ impl Host {
                 model: selection.model.clone(),
             }
         });
+        // Where this session starts, for the index the launch picker reads. Every
+        // creation records one — a web launch, a session's own `sessions__create`,
+        // a `hand_off` in its predecessor's directory — because they are one
+        // path here and a launch is what puts a directory on the list. Built
+        // before the request takes `body.config`, which is also what keeps the row
+        // naming the template configuration rather than the session's own copy;
+        // `config` is the spelling, so the index can hand a client back exactly
+        // what to create with. Recorded below, with the pick.
+        let launch = crate::remembered::Project {
+            last_used_at: crate::history::now(),
+            cwd: scope.cwd.clone(),
+            config_key: scope.config_key.clone(),
+            config: body.config.clone(),
+        };
         let request = crate::boot::SessionRequest {
             session_dir: body.cwd.join(SESSION_BASE).join(&id),
             cwd: body.cwd,
@@ -368,11 +396,13 @@ impl Host {
         self.adopt_with(id.clone(), runtime, lineage.created_by, body.detached)?;
         self.record_options(&id, options);
         // Remember the pick this creation made, for the omitted-branch default
-        // and the recent menus. Best-effort: the store never fails a creation,
-        // and only sessions that actually started are remembered.
-        if let Some(pick) = remembered.as_ref() {
+        // and the recent menus, and the directory it started in, for the index.
+        // Both after the session exists, so neither remembers a creation that
+        // did not happen; best-effort, so neither store fails one that did.
+        if let Some(pick) = pick.as_ref() {
             self.inference.history().record(pick);
         }
+        self.remembered.record(&launch);
         Ok(id)
     }
 
@@ -471,6 +501,11 @@ pub(crate) fn host_routes(files: bool) -> impl trillium::Handler {
         .with_route(trillium::Method::Query, "/sessions", preview_session)
         .get("/sessions", list_sessions())
         .delete("/sessions/:session", end_session)
+        // Where sessions have been started, and forgetting one. Registered
+        // before the `/sessions/:session/*` wildcard below, which is a different
+        // prefix but the same reader of a path's first segment.
+        .get("/projects", list_projects)
+        .delete("/projects", forget_project)
         // The wildcard remainder becomes the conn's path, so the control routes
         // match `/v1/…` exactly as they do at a session bind's root.
         //

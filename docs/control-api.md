@@ -172,15 +172,47 @@ sessions from one process. Its own routes are the listener's, not a session's:
   channel, and a caller that can approve a gate can already have a session run
   anything. Nothing about creation widens that. The environment is applied and
   dropped, never logged or echoed.
-  A creation whose client disconnects still completes and still mints; only the
+    A creation whose client disconnects still completes and still mints; only the
   hook is bounded. Host shutdown cancels an establishment in progress, which fails
   the creation without minting.
+  A creation that mints also records its directory in `GET /projects` — whatever
+  asked for it, a web launch, a session's own `sessions__create`, or a `hand_off`
+  in its predecessor's directory, since they are one path here — and one that
+  fails records nothing. The write is best-effort like the model pick beside it:
+  a store that cannot be opened never fails a creation that did start.
   One preparation step is not yet answerable by a network caller: an MCP server
   that answers `401` sends the harness into an authorization dance that prints to
   the host's stderr and opens a browser on the host's desktop, which that caller
   cannot see. Such a creation blocks until the authorization finishes or the host
   shuts down; a caller that disconnects does not cancel it, and nothing else
   bounds the wait. `backlog/remote-mcp-authorization.md` records the fix.
+- `GET /projects` — the remembered launch locations: every successful `POST
+  /sessions` records the directory it started in, keyed by that directory plus the
+  *source* configuration the boot consumed (never the per-session copy under
+  `.efference/<id>/`, whose path is per session). A relaunch refreshes the entry's
+  timestamp rather than adding one, so the list reads most-recently-used first.
+  There is no registration and no nickname: the `label` is the directory's own
+  name, falling back to the full path at a filesystem root.
+  `200 {"projects":[{"label", "cwd", "config", "config_key", "last_used_at"}, …]}`,
+  at most 50 entries, where `cwd` and `config` are exactly what `POST /sessions`
+  takes back (`config` `null` asks creation to probe, which is what a launch that
+  named none did) and `config_key` is the identity the entry is stored under.
+  The index **filters against the filesystem and writes nothing**: an entry whose
+  `cwd` is not a directory, or whose *named* configuration is not a file, is left
+  out — creation would refuse either ([permissions.md](permissions.md)) — while an
+  absent *probed* `efference.toml` is not a reason to hide a directory, because
+  creation falls back to its defaults there. Filtering is not forgetting: a
+  directory on an unmounted volume is omitted until the volume returns. Creation
+  validates again regardless; the check cannot close the race with a mount, and
+  remembering a location never narrows which directories `POST /sessions` accepts.
+- `DELETE /projects?cwd=<root>&config_key=<key>` — forget one entry, by the
+  identity the index reported. `200 {"forgotten":{…}}`, `404 not_found` for an
+  identity that is not remembered (which a client reads as "already gone"),
+  `400 bad_request` when either parameter is absent. It deletes the remembered
+  entry alone: no file, no directory, no session that ran there. The identity is
+  taken as stored rather than recomputed from `cwd` and `config`, because
+  recomputing re-probes the filesystem and a directory that gained an
+  `efference.toml` since its launch resolves to a different key.
 - `DELETE /sessions/:id` — end the session. Answers `200` once its teardown has
   run (background children reaped, scratch removed); the id leaves the list once
   the loop has returned. `404` for an id that is not hosted.
