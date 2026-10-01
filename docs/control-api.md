@@ -175,6 +175,11 @@ sessions from one process. Its own routes are the listener's, not a session's:
   A creation whose client disconnects still completes and still mints; only the
   hook is bounded. Host shutdown cancels an establishment in progress, which fails
   the creation without minting.
+  One preparation step is not yet answerable by a network caller: an MCP server
+  that answers `401` sends the harness into an authorization dance that prints to
+  the host's stderr and opens a browser on the host's desktop, which that caller
+  cannot see. Such a creation blocks until the authorization finishes or the
+  request is abandoned. `backlog/remote-mcp-authorization.md` records the fix.
 - `DELETE /sessions/:id` — end the session. Answers `200` once its teardown has
   run (background children reaped, scratch removed); the id leaves the list once
   the loop has returned. `404` for an id that is not hosted.

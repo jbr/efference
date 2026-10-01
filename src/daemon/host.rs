@@ -647,8 +647,8 @@ pub struct CreateSession {
 /// host listener, so a network caller reaches this too.
 ///
 /// Preparation reports to this process's stderr and may open a browser for an MCP
-/// authorization, on the host — which a network caller cannot see or answer. That
-/// is [remote-mcp-authorization.md](backlog/remote-mcp-authorization.md).
+/// authorization, on the host — which a network caller cannot see or answer
+/// (docs/control-api.md).
 async fn create_session(mut conn: Conn) -> Conn {
     let Some(host) = host_of(&conn) else {
         return missing_host(conn);
