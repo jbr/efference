@@ -13,7 +13,9 @@ import { archiveSession, type SessionEntry } from "../api/http.ts";
 import type { StateSnapshot } from "../api/types.ts";
 import { cardModel, foldRecent, type Recent, workspaces } from "./overview.ts";
 import { SessionCard } from "./SessionCard.tsx";
+import { NewSessionForm } from "./NewSessionForm.tsx";
 import { archiveWarning } from "./sessionRow.ts";
+import type { Draft } from "./sessionForm.ts";
 import "./SessionList.css";
 
 interface Feed {
@@ -105,6 +107,14 @@ export function SessionList({
   const [sessions, setSessions] = useState(initial);
   const [archiving, setArchiving] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // The new-session form's draft, held here rather than by the form: the draft
+  // survives while the page is open, so cancelling and reopening returns to it
+  // and only a reload discards it (backlog/new-session-form.md). `requested`
+  // is the directory a workspace `+` asked for, applied once the form knows
+  // which configuration that directory was last launched with.
+  const [draft, setDraft] = useState<Draft | null>(null);
+  const [requested, setRequested] = useState<string | null>(null);
+  const [formOpen, setFormOpen] = useState(false);
   const feeds = useSessionFeeds(sessions);
   const { page, bar, height: barHeight } = useTopBarHeight();
 
@@ -152,7 +162,13 @@ export function SessionList({
         <div className="top-bar-inner">
           <span className="wordmark">efference</span>
           <span className="spacer" />
-          <button className="primary" disabled title="Not built yet">
+          <button
+            className="primary"
+            onClick={() => {
+              setRequested(null);
+              setFormOpen(true);
+            }}
+          >
             New session
           </button>
         </div>
@@ -178,9 +194,11 @@ export function SessionList({
                 </h2>
                 <button
                   className="workspace-new"
-                  disabled
                   aria-label={`New session in ${group.parent}${group.name}`}
-                  title="Not built yet"
+                  onClick={() => {
+                    setRequested(group.cwd);
+                    setFormOpen(true);
+                  }}
                 >
                   +
                 </button>
@@ -202,6 +220,14 @@ export function SessionList({
           ))
         )}
       </main>
+      {formOpen && (
+        <NewSessionForm
+          draft={draft}
+          requested={requested}
+          onDraft={setDraft}
+          onClose={() => setFormOpen(false)}
+        />
+      )}
     </div>
   );
 }

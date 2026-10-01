@@ -33,7 +33,7 @@ the wire:
 
 | layer | job | React? |
 | --- | --- | --- |
-| `web/src/api/` | mirrored `/v1` types (`types.ts`), the control base (`base.ts`), the fetch wrapper + error envelope (`http.ts`), the SSE reader (`stream.ts`) | no |
+| `web/src/api/` | mirrored `/v1` types (`types.ts`), the control base (`base.ts`), the fetch wrapper + error envelope (`http.ts`), the SSE reader (`stream.ts`), the host's own routes — the listing stream (`sessions.ts`) and the new-session surface (`sessionForm.ts`) | no |
 | `web/src/session/` | the fold: frames → an immutable `Session` snapshot (`store.ts`), the connect lifecycle (`connect.ts`), session verbs whose error recovery folds into the store (`actions.ts`), one `useSyncExternalStore` binding (`useSession.ts`) | binding only |
 | `web/src/ui/` | display — transcript, login, composer; the churn zone | yes |
 
@@ -219,9 +219,7 @@ already out by the time the call returns. The confirm rule is `ui/sessionRow.ts`
 same rule the TUI's switcher applies ([tui.md](tui.md)): a session that is doing
 something, or that holds processes an end would reap, confirms in the menu naming
 which; an idle session with nothing running ends on the first click. The top bar's
-"New session" and each workspace's `+` are placed but disabled: creating from here is
-refused at the network listener (`backlog/web-remote-creation.md`) and the web form is
-unbuilt (`backlog/new-session-form.md`).
+"New session" and each workspace's `+` open the new-session form below.
 
 **Entering a session is a navigation, not client-side state.** A card's title is an `<a href>`
 to `/sessions/<id>/`, and the back affordance in the top bar is the wordmark, a link to
@@ -236,6 +234,53 @@ with the base in front of it, which is why the route is read with the base remov
 `ui/SessionView.tsx`, which is the component the rest of this document means when it
 says App holds a piece of state (the inspector selection, the open file request, the
 overlay count).
+
+## The new-session form
+
+A session starts from the overview, at the top bar's **New session** or a
+workspace's **+** ([backlog/new-session-form.md](../backlog/new-session-form.md),
+whose surface choices are marked tentative and are jbr's to iterate). The form
+is the terminal form's ([tui.md](tui.md)) translated, not a second design: the
+same draft, the same request, the same precedence branches, the same refusal
+rules, at each step growing the sections that step owns.
+
+The draft is **the operator's raw overrides, and the host's answer never
+replaces them** — folding resolved values back in would turn every inherited
+default into an explicit override on the first preview — so creation posts the
+overrides and never the effective values preview answered with. `sessionRequest`
+(`ui/sessionForm.ts`) is the one conversion, and both routes take it, so the
+preview and the creation cannot drift. `env` is never sent: the host
+establishes the environment from the user-wide hook or its own
+([env.md](env.md)), and that is the whole of what creating from a browser
+changes.
+
+Preview is recomputed on **committed** edits — opening, picking a location —
+never per keystroke, so the request rate follows selections and no debounce
+timer exists. A request counter pairs each reply with the draft it answers, and
+a reply whose counter is not the current one is dropped: it describes a draft
+that no longer exists. `Start session` is refused while no preview has answered
+for the current draft, while it answered with issues, and while a creation is
+in flight — creation is not idempotent, so that last one is the
+duplicate-submit guard. **A refused creation keeps the form open with every
+edit** and shows the host's reason, because a refusal mints nothing and leaves
+nothing to reconcile. Success is a navigation to `/sessions/<id>/`, the same
+one opening a card performs.
+
+**The draft outlives the form.** `SessionList` holds it and passes it down, so
+cancelling with Escape or the close button and reopening returns to it; a
+reload discards it. Escape and the close button cancel, and the scrim is the
+tap target that does the same, as the drawer's is.
+
+The **Where** section is `GET /projects`, most recent first — the index's own
+order — as single-select rows: the label in the serif, the parent path small
+and faint the way a workspace heading shows it, and a mono `config` line only
+where it distinguishes rows (an entry that names a configuration, or a
+directory the index carries twice, since it is keyed by directory *plus*
+configuration). A quiet `×` forgets one entry, unconfirmed, because it deletes
+nothing on disk and a relaunch brings it back. A path typed into *Other
+directory…* becomes a row of its own rather than vanishing into an emptied
+input. With no remembered location the section says so above that input, which
+is the way out of the empty state.
 
 ## The phone breakpoint
 

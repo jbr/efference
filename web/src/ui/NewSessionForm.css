@@ -1,0 +1,268 @@
+/* The new-session form (docs/web-client.md): a centered modal over the
+   overview on a wide window, a full-screen sheet on a phone. The overview's
+   material and type rather than the drawer's — this is a form, not a panel
+   over a transcript, so it is centered and bounded rather than a side sheet.
+   Two voices as everywhere: the section and the location names are prose, in
+   the serif; paths and configurations are identifiers, in mono. */
+
+.new-session-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  /* The tap target that cancels, as the drawer's scrim is. */
+  background: rgb(0 0 0 / 0.28);
+}
+
+.new-session {
+  width: min(38rem, 100%);
+  max-height: min(40rem, 100%);
+  display: flex;
+  flex-direction: column;
+  /* The page's own default is the mono voice (index.css); a form's prose and
+     labels are set in the UI face, as the drawer's controls are, and the
+     identifiers inside it name themselves in mono. */
+  font-family: var(--font-ui);
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  background: var(--bg-raised);
+  box-shadow: 0 18px 48px rgb(0 0 0 / 0.28);
+  overflow: hidden;
+}
+
+.new-session-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.9rem 1.1rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.new-session-head h2 {
+  margin: 0;
+  font-family: var(--font-prose);
+  font-size: 1.15rem;
+  font-weight: 500;
+  color: var(--fg-bright);
+}
+
+.new-session-close {
+  font-size: 0.8rem;
+  padding: 0.25rem 0.7rem;
+}
+
+.new-session-body {
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 1rem 1.1rem;
+}
+
+/* A section heading, as the drawer's are. */
+.new-session-where h3 {
+  margin: 0 0 0.75rem;
+  font-family: var(--font-ui);
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--fg-bright);
+}
+
+.new-session-empty {
+  margin: 0 0 0.75rem;
+  font-family: var(--font-prose);
+  font-size: 0.95rem;
+  line-height: 1.5;
+  color: var(--fg-muted);
+}
+
+/* ---- one location ---- */
+
+.location {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  border-radius: 8px;
+}
+
+.location:hover {
+  background: var(--bg-chip);
+}
+
+/* The chosen row, marked by its cursor rather than filled: a bar of colour
+   across a whole row reads as a highlight bar, and the terminal form's own
+   idiom is a cursor that colours the row it is on. */
+.location.selected {
+  background: color-mix(in srgb, var(--accent) 7%, var(--bg-raised));
+}
+
+.location.selected .location-cursor {
+  color: var(--accent);
+}
+
+.location-pick {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  align-items: flex-start;
+  padding: 0.5rem 0.6rem;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  text-align: left;
+}
+
+.location-line {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+/* Reserved in every row, so a chosen one does not shift as it is picked. */
+.location-cursor {
+  flex: none;
+  color: transparent;
+}
+
+.location-name {
+  font-family: var(--font-prose);
+  font-size: 1rem;
+  line-height: 1.3;
+  color: var(--fg-bright);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The parent path is small and faint: the last component carries the name, the
+   same split a workspace heading makes (ui/overview.ts). */
+.location-parent {
+  padding-left: 1.3rem;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--fg-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.location-config {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--fg-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.location-forget {
+  flex: none;
+  width: 1.6rem;
+  height: 1.6rem;
+  padding: 0;
+  font-size: 0.9rem;
+  line-height: 1;
+  border-color: transparent;
+  background: none;
+  color: var(--fg-faint);
+}
+
+.location-forget:hover {
+  border-color: var(--border-control);
+  background: var(--bg-surface);
+  color: var(--fg-muted);
+}
+
+/* ---- the other directory ---- */
+
+.new-session-other {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin-top: 0.9rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--border-subtle);
+  font-family: var(--font-ui);
+  font-size: 0.8rem;
+  color: var(--fg-muted);
+}
+
+.new-session-other input {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+}
+
+.new-session-note {
+  margin: 0.85rem 0 0;
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.new-session-note code {
+  font-family: var(--font-mono);
+  font-size: 0.95em;
+}
+
+/* ---- the action ---- */
+
+.new-session-foot {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+  padding: 0.9rem 1.1rem calc(0.9rem + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--border-subtle);
+}
+
+/* The action keeps the app's compact primary rather than spanning the sheet;
+   a full-width bar is the one treatment its controls do not use. */
+.new-session-foot .primary {
+  margin-top: 0.25rem;
+  min-width: 9rem;
+}
+
+.new-session-foot p {
+  /* The action is left-aligned, so the messages beside it take the full width
+     rather than the button's. */
+  width: 100%;
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.new-session-issue {
+  color: var(--warn);
+}
+
+/* A phone: the whole sheet, with a close button in its bar. */
+@media (max-width: 700px) {
+  .new-session-scrim {
+    padding: 0;
+    align-items: stretch;
+  }
+
+  .new-session {
+    width: auto;
+    height: 100%;
+    max-height: none;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    /* Room for the status bar and the home indicator. */
+    padding-top: env(safe-area-inset-top);
+  }
+
+  .new-session-foot {
+    padding-bottom: calc(1rem + env(safe-area-inset-bottom));
+  }
+}

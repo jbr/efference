@@ -34,8 +34,10 @@ export class ApiError extends Error {
 }
 
 /** A request to a URL as given — the listener's own surfaces, which sit at its
- * root under either binding. */
-async function requestAt<T>(
+ * root under either binding. Exported because those surfaces are not all the
+ * session's own: `/projects` and `POST /sessions` are the host's, and a module
+ * that addresses them joins no base (api/sessionForm.ts). */
+export async function requestAt<T>(
   method: string,
   url: string,
   body?: unknown,

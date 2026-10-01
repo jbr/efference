@@ -6,13 +6,19 @@
 
 import { useSyncExternalStore } from "react";
 
-const query = window.matchMedia("(max-width: 700px)");
+// Read on first use rather than at module scope: a module that touches
+// `window` while loading cannot be imported by a DOM-free test, and the
+// components that read this are rendered to static markup in one.
+let media: MediaQueryList | null = null;
+const query = (): MediaQueryList =>
+  (media ??= window.matchMedia("(max-width: 700px)"));
 
 function subscribe(onChange: () => void): () => void {
-  query.addEventListener("change", onChange);
-  return () => query.removeEventListener("change", onChange);
+  const list = query();
+  list.addEventListener("change", onChange);
+  return () => list.removeEventListener("change", onChange);
 }
 
 export function useNarrow(): boolean {
-  return useSyncExternalStore(subscribe, () => query.matches);
+  return useSyncExternalStore(subscribe, () => query().matches);
 }

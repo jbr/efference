@@ -129,8 +129,9 @@ sessions from one process. Its own routes are the listener's, not a session's:
 
   **`effective` is what a session would actually get**, field by field: the value
   and the precedence branch that supplied it. `source` is closed —
-  `request`, `user_default`, `main_provider`, `project_config`, `provider_default`,
-  `shared_main` — and only the branches that apply to a field occur for it.
+  `request`, `history`, `user_default`, `main_provider`, `decision_connection`,
+  `project_config`, `provider_default`, `shared_main` — and only the branches that
+  apply to a field occur for it.
   `triage` resolves to `{"mode": "shared"}` or a flattened separate selection, so
   an inherited `[defaults].triage` previews as the separate client creation would
   build rather than as sharing main.
