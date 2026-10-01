@@ -1,0 +1,165 @@
+/* The model picker (docs/web-client.md): a popover anchored to its row on a
+   wide window, a full-screen sheet on a phone. The chip line is the path, so it
+   reads as one input with leading chips; the rows below are the candidates, and
+   the facts sit in a dim trailing column the way the drawer's do. */
+
+.picker {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--bg-raised);
+  box-shadow: 0 12px 32px rgb(0 0 0 / 0.26);
+  overflow: hidden;
+}
+
+.picker-input {
+  flex: none;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  padding: 0.5rem 0.6rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.picker-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  padding: 0.1rem 0.2rem 0.1rem 0.45rem;
+  border-radius: 5px;
+  background: var(--bg-chip);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--fg);
+}
+
+.picker-chip button {
+  padding: 0 0.25rem;
+  font-size: 0.75rem;
+  line-height: 1;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--fg-faint);
+}
+
+.picker-chip button:hover {
+  color: var(--fg-bright);
+}
+
+.picker-input input {
+  flex: 1;
+  min-width: 6rem;
+  padding: 0.15rem 0.2rem;
+  border: none;
+  background: none;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--fg-bright);
+}
+
+.picker-input input:focus {
+  outline: none;
+}
+
+.picker-rows {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0.25rem;
+}
+
+.picker-note {
+  margin: 0.4rem 0.5rem;
+  font-size: 0.8rem;
+}
+
+.picker-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+  width: 100%;
+  padding: 0.3rem 0.45rem;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  text-align: left;
+  font-size: 0.8rem;
+  color: var(--fg);
+  cursor: pointer;
+}
+
+/* The cursor colours the highlighted row rather than filling it, the terminal
+   form's own idiom (docs/tui.md). */
+.picker-cursor {
+  flex: none;
+  width: 1ch;
+  color: transparent;
+}
+
+.picker-row.selected .picker-cursor {
+  color: var(--accent);
+}
+
+.picker-row:hover:not(.selected) {
+  background: var(--bg-chip);
+}
+
+.picker-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  overflow: hidden;
+}
+
+.picker-id {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--fg-bright);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.picker-name {
+  font-size: 0.75rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The trailing facts, dim: age, price, context. A fixed three-column grid so
+   they line up across the visible rows rather than each row hugging its own
+   longest fact. */
+.picker-facts,
+.picker-fact {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--fg-faint);
+  white-space: nowrap;
+}
+
+.picker-facts {
+  display: grid;
+  grid-template-columns: 3ch 10ch 5ch;
+  column-gap: 0.6rem;
+  width: 21ch;
+  text-align: right;
+}
+
+@media (max-width: 700px) {
+  .picker {
+    width: 100%;
+    height: 100%;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+  }
+}

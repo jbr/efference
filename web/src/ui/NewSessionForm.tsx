@@ -84,6 +84,10 @@ export function NewSessionForm({
     setRequest(id);
     previewSession(sessionRequest(next))
       .then((answer) => {
+        // A reply for a draft that has moved on since this request went out
+        // describes a draft nobody is looking at: it is dropped rather than
+        // shown, and the current draft's own reply is the one that stands.
+        if (id !== counter.current) return;
         // A draft that resolved clears the last failure's reason: it described
         // a draft that is no longer on screen.
         setNote(null);
@@ -283,7 +287,14 @@ export function NewSessionForm({
           {draft !== null && (
             <Settings
               draft={draft}
-              preview={answered?.answer ?? null}
+              // Only an answer about the draft on screen describes it; while a
+              // newer one is in flight the older is not shown, since its sources
+              // are the ones the operator just changed.
+              preview={
+                answered !== null && answered.request === request
+                  ? answered.answer
+                  : null
+              }
               onDraft={onDraft}
             />
           )}

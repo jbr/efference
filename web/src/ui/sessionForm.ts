@@ -97,14 +97,19 @@ export function sessionRequest(draft: Draft): Record<string, unknown> {
 
 /** A role names its connection and model separately, or sends nothing — a slug
  * is also accepted by the wire, but two fields keep an id that contains a
- * slash unambiguous (docs/control-api.md). */
-const roleRequest = (role: string, draft: RoleDraft | null) =>
-  draft === null
-    ? {}
-    : {
-        [`${role}_connection`]: draft.connection,
-        [`${role}_model`]: draft.model,
-      };
+ * slash unambiguous (docs/control-api.md).
+ *
+ * Main is the one role the wire spells without a prefix; only the other roles
+ * carry one, so a `main_` prefix would be a field the host does not read, and
+ * the override would be dropped in silence. */
+const roleRequest = (role: "main" | "spotter", draft: RoleDraft | null) => {
+  if (draft === null) return {};
+  const prefix = role === "main" ? "" : "spotter_";
+  return {
+    [`${prefix}connection`]: draft.connection,
+    [`${prefix}model`]: draft.model,
+  };
+};
 
 /** The words each precedence branch is shown as. A field displays its source
  * because an inherited default and an explicit override are the same string

@@ -81,6 +81,58 @@
   padding: 0.2rem 0.4rem;
 }
 
+/* A model row's value is the control that opens the picker, so it is inset
+   rather than a plain word — and it says so on hover, since a row of text that
+   is also a button is not otherwise obvious. */
+.setting-pick {
+  flex: 1;
+  min-width: 0;
+  display: block;
+  padding: 0.1rem 0.3rem;
+  border-color: transparent;
+  background: none;
+  text-align: left;
+}
+
+.setting-pick:hover,
+.setting-pick.open {
+  border-color: var(--border-control);
+  background: var(--bg-inset);
+}
+
+.setting-pick code {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The picker hangs off the row that opened it, over the form rather than in
+   its flow — a list in a scrolling column would otherwise be clipped by the
+   row below it. */
+.setting-wrap {
+  position: relative;
+}
+
+.setting-wrap > .picker {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% - 0.35rem);
+  z-index: 4;
+  max-height: 22rem;
+}
+
+/* A phone gets the whole screen instead of a popover over the form: there is
+   no room to float one over, and the rows are the point of opening it. */
+@media (max-width: 700px) {
+  .setting-wrap > .picker {
+    position: fixed;
+    inset: 0;
+    max-height: none;
+    z-index: 6;
+  }
+}
+
 .setting-reset {
   flex: none;
   padding: 0.1rem 0.4rem;

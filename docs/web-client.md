@@ -305,8 +305,38 @@ again — the same verb the terminal form's `r` is, and its only reset: there is
 no inherit row, because the reset *is* the inherit. Changing the location keeps
 the settings beside it; only the preview and the creation move.
 
-The three model rows read the host's answer and are not editable yet: choosing
-one is the model picker, which is what remains ([backlog/new-session-form.md]).
+**The three model rows open a picker** (`ui/ModelPicker.tsx`) — the terminal
+form's typeahead over the catalog tree, not a second design. It is a popover
+anchored to the row that opened it, and the whole screen on a phone. The
+matching rule is `ui/matcher.ts`, a reading of
+`src/tui/session_form/matcher.rs`: its suite runs that module's own
+`match_cases.json` from its own path, so the fixture is the contract and a
+disagreement between the two implementations is visible rather than silent.
+The rows themselves — which rows a path shows, and the facts beside them — are
+`ui/pickerRows.ts`, and the fact labels are the terminal form's exactly:
+`1.0M` and `272k` for context, `$0.15/$0.50` for price (`free` at zero, a third
+digit under a cent), `3d`/`5w`/`8mo`/`2y` for age, in that order, aligned as
+columns and dim.
+
+Catalog loading is the terminal form's too ([model-catalog.md](model-catalog.md)):
+`GET /inference/catalog?cwd&config` on open, which never waits on a provider,
+then one awaited refresh for each connection that has no usable copy, each
+answer replacing its own rows. A one-word query that matches nothing under a
+connection chip asks for one `max_age=60` read of that connection, once per
+visit, so a model released since the last read is there by the time its id is
+typed. A connection the host cannot use is listed and dimmed rather than
+omitted — a credential problem is not the same as a connection that was never
+configured, and the host says which it is.
+
+An untouched root lists, for the main role, the top few recent picks and then
+every connection; the other two roles list the connections alone, since history
+records only main picks. Under a connection chip the models and groups are its
+own; under a group chip there is only its models, with the author dropped from
+each id. A typed id that matches nothing still gets its row, because a wanted id
+can be a prefix of a listed one; under a group chip the bare id is completed
+with the group, which the chip already names. **Triage's reset state is *share
+main***: clearing a separate selection sends nothing, which is what resolves it
+to the main client.
 
 ## The phone breakpoint
 

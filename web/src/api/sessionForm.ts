@@ -109,6 +109,66 @@ export interface PreviewIssue {
 export const previewSession = (body: unknown) =>
   requestAt<SessionPreview>("QUERY", "/sessions", body);
 
+/** One connection's entry in the catalog (docs/model-catalog.md). `status` is
+ * `fresh`, `stale`, `missing`, `failed`, or `unavailable` (no usable credential,
+ * or disabled: nothing is read and `error` says why). `age` is seconds since the
+ * stored copy was fetched. */
+export interface CatalogEntry {
+  connection: string;
+  provider: string;
+  status: "fresh" | "stale" | "missing" | "failed" | "unavailable";
+  age?: number;
+  error?: string;
+  models: CatalogModel[];
+}
+
+/** One model row: `model` is the provider-native id a draft carries, and a
+ * field the source did not declare is absent. */
+export interface CatalogModel {
+  model: string;
+  group?: string;
+  name?: string;
+  /** Unix seconds. */
+  created?: number;
+  /** Tokens. */
+  context?: number;
+  price?: { input: number; output: number };
+  reasoning?: boolean;
+  images?: boolean;
+  /** Rank of the matching recent pick, 1 first, counted across connections. */
+  recent?: number;
+}
+
+/** Every configured connection's stored listing, most recent picks folded in.
+ *
+ * Never waits on a provider: a `missing` or `stale` connection starts a
+ * background refresh and is served as stored, and a `failed` one keeps its old
+ * copy. `cwd` (+ optional `config`) names the project scope whose recent picks
+ * count; without one no row has a `recent`. */
+export const fetchCatalog = (cwd: string, config: string | null) =>
+  requestAt<{ connections: CatalogEntry[] }>(
+    "GET",
+    `/inference/catalog?cwd=${encodeURIComponent(cwd)}` +
+      (config === null ? "" : `&config=${encodeURIComponent(config)}`),
+  );
+
+/** One connection's entry, refreshed and awaited when its stored copy is
+ * missing or older than `max_age`. A failed read answers `200` with
+ * `status: "failed"` and the old copy; an unknown connection is `404`. */
+export const fetchConnection = (
+  connection: string,
+  cwd: string,
+  config: string | null,
+  maxAge?: number,
+) =>
+  requestAt<CatalogEntry>(
+    "GET",
+    `/inference/catalog/${encodeURIComponent(connection)}` +
+      `?cwd=${encodeURIComponent(cwd)}` +
+      (config === null ? "" : `&config=${encodeURIComponent(config)}`) +
+      (maxAge === undefined ? "" : `&max_age=${maxAge}`),
+  );
+
 /** Create a session. `201` names the minted id; a refusal is `400` with the
  * reason and mints nothing, so a form that keeps its edits has nothing to
  * reconcile. The host establishes the environment from the user-wide hook (or
