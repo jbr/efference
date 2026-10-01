@@ -420,7 +420,10 @@ impl Surface {
         // shell is loaded before anything can authenticate, so these are the
         // requests a credential would lock the login view out behind.
         #[cfg(feature = "dev-proxy")]
-        if get && DEV_PROXY_PREFIXES.iter().any(|prefix| under(path, prefix)) {
+        if get
+            && (path.starts_with(VITE_PREFIX)
+                || DEV_PROXY_DIRS.iter().any(|prefix| under(path, prefix)))
+        {
             return true;
         }
         // The web client tells the two bindings apart by probing `GET /sessions`
@@ -616,12 +619,19 @@ const SHELL_ASSETS: [&str; 6] = [
 
 /// Vite's own URLs, served only by the `dev-proxy` build, which proxies the
 /// whole module graph through the gate. Prefixes rather than files because the
-/// graph is generated: `/@vite/client` and `/@react-refresh` and `/@fs/…`, the
-/// app's own sources under `/src`, and the pre-bundled dependencies under
-/// `/node_modules`. A page that cannot load these cannot render the login view,
-/// so there would be nothing left to ask for a credential with.
+/// graph is generated. A page that cannot load these cannot render the login
+/// view, so there would be nothing left to ask for a credential with.
+///
+/// Vite's virtual modules — `/@vite/client`, `/@react-refresh`, `/@fs/…` — share
+/// a leading `/@` with no separator after it, so it is a plain string prefix
+/// rather than a directory: [`under`] would require `/@/` and match none of them.
 #[cfg(feature = "dev-proxy")]
-const DEV_PROXY_PREFIXES: [&str; 3] = ["/@", "/src", "/node_modules"];
+const VITE_PREFIX: &str = "/@";
+
+/// The dev server's directories: the app's own sources and the pre-bundled
+/// dependencies, matched as directories by [`under`].
+#[cfg(feature = "dev-proxy")]
+const DEV_PROXY_DIRS: [&str; 2] = ["/src", "/node_modules"];
 
 /// [`Surface::spa_route`] as the fn pointer [`frontend`] takes, one per surface.
 fn session_spa_route(conn: &Conn) -> bool {

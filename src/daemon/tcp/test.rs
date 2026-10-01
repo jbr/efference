@@ -542,6 +542,30 @@ async fn every_response_carries_the_security_headers() {
     }
 }
 
+/// The `dev-proxy` build's module graph is anonymous, or the shell cannot load
+/// the login view. Vite's virtual modules share a bare `/@` prefix, which a
+/// directory match (`/@/…`) would miss.
+#[cfg(feature = "dev-proxy")]
+#[test]
+fn the_dev_servers_module_graph_is_anonymous() {
+    for path in [
+        "/@vite/client",
+        "/@react-refresh",
+        "/@fs/Users/x/web/src/main.tsx",
+        "/src/main.tsx",
+        "/node_modules/.vite/deps/react.js",
+    ] {
+        for surface in [Surface::Session, Surface::Host] {
+            assert_eq!(surface.zone(Method::Get, path), Zone::Anonymous, "{path}");
+        }
+    }
+    assert_eq!(
+        Surface::Host.zone(Method::Get, "/srcery"),
+        Zone::Credential,
+        "a directory prefix is not a string prefix"
+    );
+}
+
 /// The embedded build loads nothing inline and nothing cross-origin, so its policy
 /// admits no `unsafe-` escape. Pinned because relaxing it is exactly the change
 /// that should have to be argued for, and because the `dev-proxy` policy — which
