@@ -40,6 +40,9 @@ pub use snapshot::EnvSnapshot;
 mod resolve;
 pub use resolve::{RESOLVE_TIMEOUT, ResolveError, ResolvedValue, Resolver, SCHEMES, Source};
 
+mod launch;
+pub use launch::{HOOK_OUTPUT_LIMIT, HOOK_TIMEOUT, LaunchError, environment_at};
+
 #[cfg(test)]
 mod test;
 

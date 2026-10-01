@@ -65,7 +65,48 @@ Offline convenience constructors still capture the local environment at
 construction. `tui --new` captures the caller's snapshot and sends its entries
 in `CreateSession` over the host's Unix socket. The host constructs an `EnvSnapshot`
 from those entries before preparation; the creation response does not echo them.
-Remote creation is refused; remote environment recipes are not implemented.
+Remote creation is refused, and no listener consults `env_hook` yet: a request's
+own environment still establishes a session's base.
+
+## Launch environment
+
+The user configuration may name `env_hook`: an argv, not a shell command string.
+It is invoked directly, with the chosen directory set on the subprocess, so
+nothing interpolates a `cd` or changes the host's own working directory. Shell
+syntax requires a shell in the array, and the harness neither discovers one nor
+chooses login/interactive flags. `env_hook = []` is refused rather than read as
+"no hook", which would make a typo look like a deliberate choice.
+
+The hook inherits the host environment, so a host started as a service — with
+whatever environment its service manager gave it — can still reach `mise`,
+`direnv`, or the user's own binaries. Reconstructing a richer environment is the
+configured command's own responsibility; an operator who wants a cleared baseline
+can invoke `env -i`.
+
+Its stdout is the complete environment: NUL-delimited `KEY=value` records split
+at the first `=`, which is what `env -0` writes. That output **replaces** the base
+rather than merging into it, so a variable the host had and the hook did not
+report is absent, and one the hook reported is present even if the host never had
+it. The session's `[env]` policy is applied afterward, to whatever this returns.
+A value may contain newlines and `=`; empty records (the trailing delimiter) are
+skipped; the records are validated by `EnvSnapshot::new` like any other base.
+
+Execution is bounded and noninteractive: no stdin, 30s, 1 MiB of stdout, and the
+hook's whole process group killed on timeout or overrun — a shell recipe has
+children of its own, and killing only the process the harness spawned would leave
+them running. A nonzero exit, malformed output, or an overrun fails the launch;
+nothing falls back to the host environment. No stderr is read into an error: a
+startup script may print secrets, and this text would reach a log and an API
+response with no masking applied to it yet. The base is established fresh per
+launch — no session's filtered environment is copied, and none is persisted.
+
+With no hook the base is the host environment read directly: no shell and no
+`env` process is spawned. That is the host's own environment, which for a
+service-started host is sparse by construction; it is not a loaded project
+environment.
+
+`InferenceRegistry` retains the configured argv, so the hook travels with the user
+configuration that session creation already loads.
 
 ## Threat model: accidental capture
 

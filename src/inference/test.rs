@@ -181,6 +181,91 @@ auth = { kind = "env", key = "OPENAI_KEY" }
 }
 
 #[test]
+fn an_env_hook_is_retained_as_the_operator_wrote_it() {
+    let registry = registry(
+        r#"
+env_hook = ["/Users/jbr/.cargo/bin/nu", "-i", "-l", "-c", "direnv exec . /usr/bin/env -0"]
+
+[connections.main]
+provider = "anthropic"
+auth = { kind = "env", key = "ANTHROPIC_KEY" }
+"#,
+        environment(&[("ANTHROPIC_KEY", "secret")]),
+    );
+
+    assert_eq!(
+        registry.env_hook(),
+        Some(
+            [
+                "/Users/jbr/.cargo/bin/nu".to_string(),
+                "-i".to_string(),
+                "-l".to_string(),
+                "-c".to_string(),
+                "direnv exec . /usr/bin/env -0".to_string(),
+            ]
+            .as_slice()
+        ),
+        "the argv is carried whole, including the shell arguments an operator had \
+         to name themselves",
+    );
+}
+
+#[test]
+fn a_config_without_an_env_hook_reports_none() {
+    let registry = registry(
+        r#"
+[connections.main]
+provider = "anthropic"
+auth = { kind = "env", key = "ANTHROPIC_KEY" }
+"#,
+        environment(&[("ANTHROPIC_KEY", "secret")]),
+    );
+
+    assert_eq!(registry.env_hook(), None);
+}
+
+#[test]
+fn an_env_hook_naming_no_program_is_refused() {
+    // Reading `[]` as "no hook" would make a typo read as a deliberate choice to
+    // inherit the host environment.
+    let error = match InferenceConfig::from_toml(
+        r#"
+env_hook = []
+
+[connections.main]
+provider = "anthropic"
+auth = { kind = "env", key = "ANTHROPIC_KEY" }
+"#,
+    ) {
+        Ok(_) => panic!("an empty env_hook unexpectedly parsed"),
+        Err(error) => error.to_string(),
+    };
+
+    assert!(error.contains("names no program"), "{error}");
+}
+
+#[test]
+fn an_env_hook_is_not_a_shell_command_string() {
+    // The array is the whole spelling: a bare string would be run through
+    // whatever shell the host happened to have, which is the thing the argv form
+    // exists to avoid.
+    let error = match InferenceConfig::from_toml(
+        r#"
+env_hook = "direnv exec . /usr/bin/env -0"
+
+[connections.main]
+provider = "anthropic"
+auth = { kind = "env", key = "ANTHROPIC_KEY" }
+"#,
+    ) {
+        Ok(_) => panic!("a bare env_hook string unexpectedly parsed"),
+        Err(error) => error.to_string(),
+    };
+
+    assert!(error.contains("invalid type"), "{error}");
+}
+
+#[test]
 fn config_defaults_rejects_an_unknown_model_key() {
     let error = match InferenceConfig::from_toml(
         r#"

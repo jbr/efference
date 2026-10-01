@@ -75,6 +75,15 @@ pub struct InferenceConfig {
     /// file keeps its unknown-key refusal whole; read by `efference host`.
     #[serde(default)]
     host: HostConfig,
+    /// `env_hook`: the argv a session's launch environment is established from
+    /// (docs/env.md). A program and its arguments, invoked directly — shell
+    /// syntax needs an explicit shell in the array, and the harness neither
+    /// discovers one nor chooses login/interactive flags. Absent means a
+    /// session inherits the host environment, which is what a session does
+    /// today; a hook is opt-in because reconstructing a user's shell
+    /// environment is a decision only the user can make.
+    #[serde(default)]
+    env_hook: Option<Vec<String>>,
 }
 
 impl InferenceConfig {
@@ -82,7 +91,18 @@ impl InferenceConfig {
     /// job, and a misspelled `[connections.x]` field is a silent unavailable
     /// connection otherwise.
     pub fn from_toml(text: &str) -> Result<Self, Error> {
-        toml_edit::de::from_str(text).map_err(|error| error.to_string().into())
+        let config: Self =
+            toml_edit::de::from_str(text).map_err(|error| Error::from(error.to_string()))?;
+        if config.env_hook.as_ref().is_some_and(|argv| argv.is_empty()) {
+            // An empty argv names no program to run. Reading it as "no hook"
+            // would make a typo look like a deliberate choice to inherit the
+            // host environment, which is the opposite of what the user wrote.
+            return Err("env_hook = [] names no program to run; omit the key to \
+                        inherit the host environment"
+                .to_string()
+                .into());
+        }
+        Ok(config)
     }
 }
 
@@ -207,6 +227,13 @@ pub struct InferenceRegistry {
     /// omitted-branch default and the recent menus. Opened from the config
     /// file's own directory, so a test config names no store.
     history: crate::history::History,
+    /// The configured `env_hook`, retained as written (docs/env.md). User-wide
+    /// because the command that reconstructs an operator's shell environment is
+    /// a property of the operator, not of any one project; it travels with the
+    /// registry so session creation reads one user configuration rather than
+    /// re-reading the file, and sits beside the credential-variable set because
+    /// both describe what a host carries into a session's environment.
+    env_hook: Option<Vec<String>>,
 }
 
 struct Connection {
@@ -389,6 +416,7 @@ impl InferenceRegistry {
             defaults,
             credential_variables,
             history: crate::history::History::disabled(),
+            env_hook: config.env_hook,
         })
     }
 
@@ -475,6 +503,7 @@ impl InferenceRegistry {
             defaults: ResolvedDefaults::default(),
             credential_variables: BTreeSet::new(),
             history: crate::history::History::disabled(),
+            env_hook: None,
         }
     }
 
@@ -507,6 +536,12 @@ impl InferenceRegistry {
     /// records explicit picks through it after a session starts.
     pub fn history(&self) -> &crate::history::History {
         &self.history
+    }
+
+    /// The configured `env_hook` argv, or `None` when the user declared none and
+    /// a session's launch environment is the host environment (docs/env.md).
+    pub fn env_hook(&self) -> Option<&[String]> {
+        self.env_hook.as_deref()
     }
 
     /// Split a `connection/model` slug. A native id may itself contain a slash,
