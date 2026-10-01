@@ -19,7 +19,10 @@
 
 .new-session {
   width: min(38rem, 100%);
-  max-height: min(40rem, 100%);
+  /* Tall enough that Where and all five settings rows sit above the fold on a
+     laptop, and short enough that a short window scrolls the body rather than
+     pushing the action off the bottom. */
+  max-height: min(46rem, 100%);
   display: flex;
   flex-direction: column;
   /* The page's own default is the mono voice (index.css); a form's prose and

@@ -282,6 +282,32 @@ directory…* becomes a row of its own rather than vanishing into an emptied
 input. With no remembered location the section says so above that input, which
 is the way out of the empty state.
 
+**Settings** is the terminal form's rows in its order — main model, effort,
+temperature, spotter model, triage model (`ui/NewSessionSettings.tsx`), each a
+label, its value in the mono voice, and the branch that supplied it in the dim
+one. The source is what makes an inherited default and an explicit override
+legible as different things: *chosen* says the operator picked it, *your
+default* says they did not, and the row is editable in place either way. **A
+field the host could not resolve shows the issue's message in the source's
+place**, in the warn colour — such a field has neither value nor source, so
+there is nothing for the source column to say — and that message is said
+*once*: the row carries it for a field with a row, and only an issue belonging
+to no row (a configuration that will not load) is stated beside Start.
+
+Effort is a select over the terminal form's own list, and temperature a number
+input where empty means the default. Both **commit rather than preview per
+keystroke**, which is why the request rate follows selections. A temperature
+outside 0–100 is sent as typed rather than clamped: the host reports it as an
+issue, which refuses Start and names itself, where a silent clamp would launch
+a session at a temperature nobody asked for. A field the operator has
+overridden shows a small **reset**, which clears the override and previews
+again — the same verb the terminal form's `r` is, and its only reset: there is
+no inherit row, because the reset *is* the inherit. Changing the location keeps
+the settings beside it; only the preview and the creation move.
+
+The three model rows read the host's answer and are not editable yet: choosing
+one is the model picker, which is what remains ([backlog/new-session-form.md]).
+
 ## The phone breakpoint
 
 An interim usability pass (2026-08-22), not the mobile design pass the backlog

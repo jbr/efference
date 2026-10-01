@@ -1,0 +1,119 @@
+/* The form's Settings rows (docs/web-client.md): a field's name, the value
+   that field would actually get, and the branch that supplied it — the same
+   key/value vocabulary the card's facts and the drawer use, in one grid so the
+   values line up as a column and read as one list. A field the host could not
+   resolve is warned rather than dimmed, because its message is an obstacle and
+   not a provenance note. */
+
+.new-session-settings {
+  margin-top: 1.1rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.new-session-settings h3 {
+  margin: 0 0 0.5rem;
+  font-family: var(--font-ui);
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--fg-bright);
+}
+
+.setting {
+  display: grid;
+  /* label | value | source. The value is a model slug and the source is usually
+     two words, so the value takes the larger share and the source what is left —
+     a long message still wraps under itself rather than stretching the row. */
+  grid-template-columns: 8.5rem minmax(0, 1.3fr) minmax(0, 1fr);
+  column-gap: 0.75rem;
+  align-items: center;
+  min-height: 1.9rem;
+  font-size: 0.85rem;
+}
+
+.setting-label {
+  color: var(--fg-muted);
+}
+
+.setting-value {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+/* The value is an identifier — a model id, a path — so the mono voice. */
+.setting-value code {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--fg-bright);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A field nothing named, as against one the host refused: the value is absent
+   rather than unknown, and says so rather than reading as blank space. */
+.setting-empty {
+  color: var(--fg-faint);
+}
+
+.setting-source {
+  min-width: 0;
+  font-size: 0.78rem;
+  color: var(--fg-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.setting.warn .setting-source {
+  color: var(--warn);
+  white-space: normal;
+}
+
+/* An editor is the row's value: it reads as the field's own control, sized to
+   the values beside it rather than spanning the row. */
+.setting-editor {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  width: 9rem;
+  padding: 0.2rem 0.4rem;
+}
+
+.setting-reset {
+  flex: none;
+  padding: 0.1rem 0.4rem;
+  font-size: 0.7rem;
+  border-color: transparent;
+  background: none;
+  color: var(--fg-faint);
+}
+
+.setting-reset:hover {
+  border-color: var(--border-control);
+  background: var(--bg-chip);
+  color: var(--fg-muted);
+}
+
+/* A phone: the label on its own line, the value and its source beneath it, so
+   a long source has the full width to wrap in. */
+@media (max-width: 700px) {
+  .setting {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 0.1rem;
+    padding: 0.35rem 0;
+  }
+
+  .setting-value {
+    grid-row: 2;
+  }
+
+  .setting-source {
+    grid-row: 3;
+  }
+
+  .setting-editor {
+    width: 100%;
+  }
+}

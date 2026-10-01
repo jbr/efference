@@ -26,18 +26,20 @@ import { sessionHref } from "../api/base.ts";
 import {
   type Answered,
   type Draft,
-  type PreviewAnswer,
   canStart,
   draftFor,
+  emptyDraft,
   locationFor,
   mostRecent,
   nextRequest,
+  orphanIssues,
   rowKey,
   sessionRequest,
   showsConfig,
   startRefusal,
   withTypedLocation,
 } from "./sessionForm.ts";
+import { Settings } from "./NewSessionSettings.tsx";
 import { homeRelative } from "./identity.ts";
 import { splitPath } from "./overview.ts";
 import { useNarrow } from "./useNarrow.ts";
@@ -85,7 +87,7 @@ export function NewSessionForm({
         // A draft that resolved clears the last failure's reason: it described
         // a draft that is no longer on screen.
         setNote(null);
-        setAnswered({ request: id, answer: answer as PreviewAnswer });
+        setAnswered({ request: id, answer });
       })
       .catch((failure: unknown) => {
         // A preview that could not be sent is the host declining to describe
@@ -113,8 +115,11 @@ export function NewSessionForm({
     opened.current = true;
     if (draft !== null || projects.length === 0) return;
     const cwd = requested ?? mostRecent(projects)?.cwd;
-    if (cwd !== undefined)
-      onDraft({ cwd, config: locationFor(projects, cwd)?.config ?? null });
+    if (cwd !== undefined) {
+      onDraft(
+        emptyDraft(cwd, locationFor(projects, cwd)?.config ?? null) as Draft,
+      );
+    }
   }, [projects, draft, requested, onDraft]);
 
   // Preview on the location, and again whenever the draft moves: recomputed on
@@ -151,8 +156,18 @@ export function NewSessionForm({
     if (path === "" || !path.startsWith("/")) return;
     setTyped("");
     setNote(null);
-    onDraft({ cwd: path, config: null });
+    onDraft({ ...emptyDraft(path), ...rest() });
   }
+
+  /** The settings half of the draft, for a location change: picking where to
+   * run does not undo what the operator chose about how. */
+  const rest = () => ({
+    main: draft?.main ?? null,
+    spotter: draft?.spotter ?? null,
+    triage: draft?.triage ?? { mode: "inherit" as const },
+    effort: draft?.effort ?? null,
+    temperature: draft?.temperature ?? null,
+  });
 
   async function forget(entry: ProjectEntry) {
     if (projects === null) return;
@@ -235,7 +250,7 @@ export function NewSessionForm({
                     selected={
                       draft?.cwd === entry.cwd && draft?.config === entry.config
                     }
-                    onSelect={() => onDraft(draftFor(entry))}
+                    onSelect={() => onDraft({ ...draftFor(entry), ...rest() })}
                     onForget={() => void forget(entry)}
                   />
                 ))}
@@ -264,10 +279,18 @@ export function NewSessionForm({
               or the host's own environment if none is configured.
             </p>
           </section>
+
+          {draft !== null && (
+            <Settings
+              draft={draft}
+              preview={answered?.answer ?? null}
+              onDraft={onDraft}
+            />
+          )}
         </div>
 
         <footer className="new-session-foot">
-          {issues.map((issue) => (
+          {orphanIssues(issues).map((issue) => (
             <p
               className="new-session-issue"
               key={`${issue.field}:${issue.message}`}
