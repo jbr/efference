@@ -6,9 +6,11 @@ import { expect, test } from "vitest";
 import type { ProjectEntry } from "../api/sessionForm.ts";
 import {
   canStart,
+  draftFor,
   locationFor,
   mostRecent,
   nextRequest,
+  rowKey,
   sessionRequest,
   showsConfig,
   sourceWords,
@@ -126,6 +128,42 @@ test("the top bar opens on the most recently used location", () => {
   const projects = [entry({ last_used_at: 300 }), entry({ last_used_at: 100 })];
   expect(mostRecent(projects)).toBe(projects[0]);
   expect(mostRecent([])).toBe(undefined);
+});
+
+test("a clicked row selects that row's own configuration", () => {
+  const plain = entry({ config_key: "builtin-default" });
+  const named = entry({
+    config: "/Users/jbr/code/efference/alt.toml",
+    config_key: "/Users/jbr/code/efference/alt.toml",
+  });
+
+  // Two rows of one directory. Reading the directory instead of the row would
+  // answer with the most recent entry's configuration, so clicking the second
+  // selected the first and highlighted neither.
+  expect(draftFor(named)).toEqual({
+    cwd: "/Users/jbr/code/efference",
+    config: "/Users/jbr/code/efference/alt.toml",
+  });
+  expect(draftFor(plain)).toEqual({
+    cwd: "/Users/jbr/code/efference",
+    config: null,
+  });
+});
+
+test("two directories launched without a configuration do not collide", () => {
+  // Both are stored under the same builtin-default key, so a key of
+  // config_key alone would render them under one key.
+  const one = entry({ cwd: "/Users/jbr/code/one" });
+  const two = entry({ cwd: "/Users/jbr/code/two" });
+  expect(one.config_key).toBe(two.config_key);
+  expect(rowKey(one)).not.toBe(rowKey(two));
+  // A named configuration still keys by both halves.
+  const named = entry({
+    cwd: "/Users/jbr/code/one",
+    config: "/Users/jbr/code/one/alt.toml",
+    config_key: "/Users/jbr/code/one/alt.toml",
+  });
+  expect(rowKey(named)).not.toBe(rowKey(one));
 });
 
 test("a typed directory stays on screen as the chosen row", () => {

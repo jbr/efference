@@ -123,6 +123,22 @@ export const mostRecent = (
   projects: ProjectEntry[],
 ): ProjectEntry | undefined => projects[0];
 
+/** The draft a clicked row stands for: **the row's own configuration**, not
+ * the directory's most recently used one. The index keys an entry by directory
+ * *plus* configuration, so one directory is several rows, and picking the
+ * second must select the second — reading the directory instead would select a
+ * row the operator did not click, and leave neither row highlighted. */
+export const draftFor = (entry: ProjectEntry): Draft => ({
+  cwd: entry.cwd,
+  config: entry.config,
+});
+
+/** The key one row is rendered under. `config_key` alone collides: a directory
+ * launched without a configuration is stored under the same `builtin-default`
+ * as every other such directory. */
+export const rowKey = (entry: ProjectEntry): string =>
+  `${entry.cwd} ${entry.config_key}`;
+
 /** Whether a row says which configuration it would launch with. Shown when the
  * entry names one, and when two entries share a directory and would otherwise
  * be indistinguishable — the index keys an entry by directory *plus*

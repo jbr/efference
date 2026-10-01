@@ -28,9 +28,11 @@ import {
   type Draft,
   type PreviewAnswer,
   canStart,
+  draftFor,
   locationFor,
   mostRecent,
   nextRequest,
+  rowKey,
   sessionRequest,
   showsConfig,
   startRefusal,
@@ -79,9 +81,12 @@ export function NewSessionForm({
     counter.current = id;
     setRequest(id);
     previewSession(sessionRequest(next))
-      .then((answer) =>
-        setAnswered({ request: id, answer: answer as PreviewAnswer }),
-      )
+      .then((answer) => {
+        // A draft that resolved clears the last failure's reason: it described
+        // a draft that is no longer on screen.
+        setNote(null);
+        setAnswered({ request: id, answer: answer as PreviewAnswer });
+      })
       .catch((failure: unknown) => {
         // A preview that could not be sent is the host declining to describe
         // the draft, not an issue with one field: the answer stays unanswered,
@@ -149,6 +154,22 @@ export function NewSessionForm({
     onDraft({ cwd: path, config: null });
   }
 
+  async function forget(entry: ProjectEntry) {
+    if (projects === null) return;
+    try {
+      await forgetProject(entry);
+    } catch (failure) {
+      // A 404 means the entry is already gone, which is the state asked for, so
+      // the row goes. Anything else did not forget it, and dropping the row
+      // would claim a state the host is not in.
+      if (!(failure instanceof ApiError) || failure.code !== "not_found") {
+        setNote(`Could not forget ${entry.cwd}: ${String(failure)}`);
+        return;
+      }
+    }
+    setProjects(projects.filter((row) => row !== entry));
+  }
+
   async function start() {
     if (draft === null || creating) return;
     setElapsed(0);
@@ -208,28 +229,14 @@ export function NewSessionForm({
                 )}
                 {rows.map((entry) => (
                   <LocationRow
-                    key={entry.config_key || entry.cwd}
+                    key={rowKey(entry)}
                     entry={entry}
                     projects={projects}
                     selected={
                       draft?.cwd === entry.cwd && draft?.config === entry.config
                     }
-                    onSelect={() =>
-                      onDraft({
-                        cwd: entry.cwd,
-                        config:
-                          locationFor(projects, entry.cwd)?.config ?? null,
-                      })
-                    }
-                    onForget={() =>
-                      forgetProject(entry)
-                        // A 404 means already gone, which is the state asked
-                        // for, so the row goes either way.
-                        .catch(() => null)
-                        .then(() =>
-                          setProjects(projects.filter((row) => row !== entry)),
-                        )
-                    }
+                    onSelect={() => onDraft(draftFor(entry))}
+                    onForget={() => void forget(entry)}
                   />
                 ))}
               </>
