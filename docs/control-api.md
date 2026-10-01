@@ -172,7 +172,7 @@ sessions from one process. Its own routes are the listener's, not a session's:
   channel, and a caller that can approve a gate can already have a session run
   anything. Nothing about creation widens that. The environment is applied and
   dropped, never logged or echoed.
-    A creation whose client disconnects still completes and still mints; only the
+  A creation whose client disconnects still completes and still mints; only the
   hook is bounded. Host shutdown cancels an establishment in progress, which fails
   the creation without minting.
   A creation that mints also records its directory in `GET /projects` — whatever
