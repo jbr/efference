@@ -103,12 +103,17 @@ to prevent. A nonzero exit, malformed output, an overrun, or a cancelled request
 fails the launch; nothing falls back to the host environment.
 
 The hook leads its own process group, and the group is killed on every terminating
-path except a hook that exited successfully with its pipes at EOF. The kill lives
-in a guard's `Drop` rather than at the end of a happy path, so a request that is
-cancelled — or a runtime shutting down — still reaps the group, which neither an
-awaited timeout nor `kill_on_drop` alone would cover for the whole tree. A process
-group is not containment: a descendant that puts itself in a new group is outside
-what one `killpg` reaches.
+path except a hook that exited successfully with its pipes at EOF **and** an output
+that parses. A zero-exit hook that wrote something unusable fails the launch, and
+its descendants do not outlive it.
+
+The kill lives in a guard's `Drop` rather than at the end of a happy path, so a
+request that is cancelled — or a runtime shutting down — still has the group
+signalled, which neither an awaited timeout nor `kill_on_drop` alone covers for the
+whole tree. Signalling is separate from reaping: the direct child is collected on the
+paths that are still awaited, and a dropped launch leaves that to the runtime. A
+process group is not containment: a descendant that puts itself in a new group is
+outside what one `killpg` reaches.
 
 A dump must be NUL-terminated: a final record with no closing delimiter is what a
 truncated write looks like, and accepting it would seed a session with a partial
@@ -119,9 +124,9 @@ The base is established fresh per launch — no session's filtered environment i
 copied, and none is persisted.
 
 With no hook the base is the host environment read directly: no shell and no
-`env` process is spawned. That is the host's own environment, which for a
-service-started host is sparse by construction; it is not a loaded project
-environment.
+`env` process is spawned. That is the environment the host process started with —
+a login shell's exports, or whatever set a service manager hands a daemon — and it
+is not a loaded project environment.
 
 `InferenceRegistry` retains the configured argv, so the hook travels with the user
 configuration that session creation already loads.

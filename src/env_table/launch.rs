@@ -7,8 +7,9 @@
 //!
 //! - **No hook**: the host environment, as given. Nothing is spawned, and no
 //!   shell startup is reconstructed. Whatever environment the host process was
-//!   started with is the baseline, which is sparse when the host was started as
-//!   a service; it is not a loaded project environment.
+//!   started with is the baseline. Whatever that is — a login shell's exports,
+//!   or the sparse set a service manager hands a daemon — it is not a loaded
+//!   project environment, and reconstructing one is the hook's own doing.
 //! - **A hook**: an argv, invoked **directly** with the chosen directory set on
 //!   the subprocess — never a shell `cd`, never a change to the host process's
 //!   cwd. It inherits the host environment, so it can reach `mise`, `direnv`, or
@@ -40,7 +41,9 @@
 //!
 //! Cleanup is a [`ProcessGroup`] guard rather than a kill at the end of a happy
 //! path: a caller that stops awaiting — a cancelled request, a shutting-down
-//! runtime — drops this future, and a guard's `Drop` still reaps the group. The
+//! runtime — drops this future, and the guard's `Drop` still signals the group.
+//! Signalling and reaping are separate: `Drop` sends the kill, while collecting
+//! the direct child is [`reap`]'s job on the paths that are still awaited. The
 //! group is killed on every terminating path except a hook that exited
 //! successfully with its pipes at EOF. A process group is not containment: a
 //! descendant that puts itself in a new group is outside what one `killpg`
@@ -218,12 +221,21 @@ async fn run_hook(
             reap(&mut child).await;
             Err(LaunchError::Exited { program, status })
         }
-        // Success is an observed successful exit *and* EOF, never either alone.
-        Halt::Finished(Ok((raw, status))) => {
-            group.disarm();
-            let _ = status;
-            parse(&raw, &program)
-        }
+        // Success is an observed successful exit *and* output that parses, never
+        // either alone. Parsing happens before the guard is disarmed: a zero-exit
+        // hook that wrote something unusable is a failed launch, and the
+        // descendants of a failed launch do not outlive it.
+        Halt::Finished(Ok((raw, _))) => match parse(&raw, &program) {
+            Ok(base) => {
+                group.disarm();
+                Ok(base)
+            }
+            Err(error) => {
+                group.kill();
+                reap(&mut child).await;
+                Err(error)
+            }
+        },
     }
 }
 
