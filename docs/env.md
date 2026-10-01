@@ -91,14 +91,32 @@ it. The session's `[env]` policy is applied afterward, to whatever this returns.
 A value may contain newlines and `=`; empty records (the trailing delimiter) are
 skipped; the records are validated by `EnvSnapshot::new` like any other base.
 
-Execution is bounded and noninteractive: no stdin, 30s, 1 MiB of stdout, and the
-hook's whole process group killed on timeout or overrun — a shell recipe has
-children of its own, and killing only the process the harness spawned would leave
-them running. A nonzero exit, malformed output, or an overrun fails the launch;
-nothing falls back to the host environment. No stderr is read into an error: a
-startup script may print secrets, and this text would reach a log and an API
-response with no masking applied to it yet. The base is established fresh per
-launch — no session's filtered environment is copied, and none is persisted.
+Execution is bounded and noninteractive: no stdin, one 30s deadline, and 1 MiB
+of retained stdout. stderr goes to null — nothing keeps diagnostics from a startup
+script that may print secrets, and a discarded stream needs no reader to keep up.
+
+The deadline covers the whole launch, reading and the exit status together, because
+a hook that closes its pipes has not thereby finished. Success is an *observed*
+successful exit, never an EOF: a hook may close stdout early and then exit nonzero,
+and reporting that as a successful environment is the failure this ordering exists
+to prevent. A nonzero exit, malformed output, an overrun, or a cancelled request
+fails the launch; nothing falls back to the host environment.
+
+The hook leads its own process group, and the group is killed on every terminating
+path except a hook that exited successfully with its pipes at EOF. The kill lives
+in a guard's `Drop` rather than at the end of a happy path, so a request that is
+cancelled — or a runtime shutting down — still reaps the group, which neither an
+awaited timeout nor `kill_on_drop` alone would cover for the whole tree. A process
+group is not containment: a descendant that puts itself in a new group is outside
+what one `killpg` reaches.
+
+A dump must be NUL-terminated: a final record with no closing delimiter is what a
+truncated write looks like, and accepting it would seed a session with a partial
+environment. Zero bytes with a successful exit is a valid empty environment, which
+is how a deliberately cleared baseline reports itself.
+
+The base is established fresh per launch — no session's filtered environment is
+copied, and none is persisted.
 
 With no hook the base is the host environment read directly: no shell and no
 `env` process is spawned. That is the host's own environment, which for a

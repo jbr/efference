@@ -62,6 +62,12 @@ impl EnvSnapshot {
     pub fn apply(&self, command: &mut std::process::Command) {
         command.env_clear().envs(self.0.iter());
     }
+
+    /// [`apply`](Self::apply) for a command spawned on the async runtime, which
+    /// is how a launch environment reaches its hook.
+    pub fn apply_tokio(&self, command: &mut tokio::process::Command) {
+        command.env_clear().envs(self.0.iter());
+    }
 }
 
 #[cfg(test)]
