@@ -412,7 +412,9 @@ auth = { kind = "oauth" }         # the store's oauth:chatgpt grant
 
 `env_hook` is the same file's other top-level key, and it decides the environment
 a session launched **without one of its own** starts with — a `POST /sessions`
-that omits `env`, which is what any client other than the terminal form does. It
+that omits `env`. The terminal form, `sessions__create` and `hand_off` all send
+their own and are unaffected; the web form and any script that leaves it out get
+the hook. It
 is an argv, invoked directly with the session's directory set on the subprocess,
 whose stdout is the complete environment as NUL-delimited `KEY=value` records; an
 empty array is refused rather than read as "no hook" ([env.md](env.md)):

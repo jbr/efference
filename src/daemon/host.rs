@@ -111,8 +111,8 @@ impl Host {
     /// that finishes on its own — end of input, a failed loop, or its own
     /// `Swansong` — leaves the map when its teardown has run. The runtime must
     /// have been started under [`swansong`](Self::swansong).
-    pub fn adopt(self: &Arc<Self>, id: String, runtime: SessionRuntime) {
-        self.adopt_with(id, runtime, None, false);
+    pub fn adopt(self: &Arc<Self>, id: String, runtime: SessionRuntime) -> Result<(), String> {
+        self.adopt_with(id, runtime, None, false)
     }
 
     /// [`adopt`](Self::adopt) recording who commissioned the session
@@ -125,7 +125,7 @@ impl Host {
         runtime: SessionRuntime,
         created_by: Option<String>,
         detached: bool,
-    ) {
+    ) -> Result<(), String> {
         let session = Arc::clone(runtime.session());
         // The web client addresses an adopted session under the host's own
         // mount, and a push notification opens that path (docs/web-push.md).
@@ -140,7 +140,21 @@ impl Host {
             subscribers: BTreeMap::new(),
             options: crate::inference::SessionOptions::default(),
         };
-        self.sessions.lock().unwrap().insert(id.clone(), hosted);
+        {
+            let mut sessions = self.sessions.lock().unwrap();
+            // First one in wins. A create checks this id is free *before* it awaits
+            // the hook and prepares, so two creates naming the same id in different
+            // directories both pass that check and arrive here together; the loser's
+            // insert would otherwise replace the winner's entry and leave a running
+            // session unreachable.
+            if sessions.contains_key(&id) {
+                // This runtime is live and will never be in the map, so it is shut
+                // down here rather than left running unhosted.
+                runtime.swansong().shut_down();
+                return Err(format!("session {id:?} is already hosted"));
+            }
+            sessions.insert(id.clone(), hosted);
+        }
         self.touch_summary();
         if let Some(creator) = created_by {
             // The creating session is this one's upstream reviewer (docs/permissions.md):
@@ -202,6 +216,7 @@ impl Host {
                 }
             }
         });
+        Ok(())
     }
 
     /// The session map, locked — for the subscription table (`subscriptions.rs`).
@@ -259,7 +274,6 @@ impl Host {
         // An environment the caller supplied is the base, and nothing is run. An
         // omitted one is established here, for this session's own directory, from
         // the user-wide `env_hook` or the host environment (docs/env.md).
-
         let base_env = match body.env {
             Some(env) => match crate::env_table::EnvSnapshot::new(env) {
                 Ok(base) => base,
@@ -348,7 +362,10 @@ impl Host {
             Err(e) => return Err(format!("could not prepare session: {e}")),
         };
         let runtime = SessionRuntime::start(boot, self.swansong());
-        self.adopt_with(id.clone(), runtime, lineage.created_by, body.detached);
+        // A name another create took while this one awaited the hook and
+        // preparation: the loser is shut down inside `adopt_with`, so nothing
+        // here records options or a model pick for a session that will not exist.
+        self.adopt_with(id.clone(), runtime, lineage.created_by, body.detached)?;
         self.record_options(&id, options);
         // Remember the pick this creation made, for the omitted-branch default
         // and the recent menus. Best-effort: the store never fails a creation,
@@ -590,8 +607,8 @@ fn no_such_session(conn: Conn, id: &str) -> Conn {
 /// empty one. Supplied, it is the base and nothing runs; omitted, the base is
 /// established for the session's directory from the user-wide `env_hook`, or
 /// from the host's own environment when none is configured (docs/env.md). An
-/// empty map is an explicit empty environment, which no client sends by
-/// accident — `EnvSnapshot::new` is the only way to spell that.
+/// empty map is an explicit empty environment, so `{}` and omitted are different
+/// requests.
 #[derive(Serialize, Deserialize)]
 pub struct CreateSession {
     /// The session id; a minted adjective-noun pair when absent
@@ -626,9 +643,12 @@ pub struct CreateSession {
     pub env: Option<BTreeMap<String, String>>,
 }
 
-/// `POST /sessions` on the Unix socket: prepare and start a session from the
-/// body. Preparation reports to this process's stderr and may open a browser
-/// for an MCP authorization, on the host (backlog/host-process.md).
+/// `POST /sessions`: prepare and start a session from the body. Mounted on every
+/// host listener, so a network caller reaches this too.
+///
+/// Preparation reports to this process's stderr and may open a browser for an MCP
+/// authorization, on the host — which a network caller cannot see or answer. That
+/// is [remote-mcp-authorization.md](backlog/remote-mcp-authorization.md).
 async fn create_session(mut conn: Conn) -> Conn {
     let Some(host) = host_of(&conn) else {
         return missing_host(conn);

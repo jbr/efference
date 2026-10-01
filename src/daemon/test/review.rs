@@ -40,7 +40,8 @@ impl Fixture {
                 SessionRuntime::start(boot, host.swansong()),
                 created_by.map(str::to_string),
                 detached,
-            );
+            )
+            .expect("the id is free in this test");
         };
         adopt("root", &project, None, false);
         adopt("child", &project, Some("root"), false);

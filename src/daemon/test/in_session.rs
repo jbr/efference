@@ -46,7 +46,8 @@ impl Fixture {
                 SessionRuntime::start(boot, host.swansong()),
                 created_by,
                 false,
-            );
+            )
+            .expect("the id is free in this test");
         };
         adopt("parent", &projects[0], None);
         adopt("peer", &projects[0], None);
