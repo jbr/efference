@@ -328,6 +328,11 @@ enum CodeRejection {
 /// control API under a `/sessions/<id>` prefix (docs/web-bind.md). Everything else
 /// about the gate is identical, so the difference lives here rather than in a
 /// second gate.
+///
+/// A surface names two paths that differ by bind rather than a set of guarded
+/// prefixes: [`Surface::zone`] prices everything against the anonymous list, so
+/// what a surface settles is `/files` taking the cookie only on a session bind,
+/// and the binding probe reaching a session bind's router.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Surface {
     /// `efference serve --bind`: `/v1` takes either credential, `/files` the cookie
@@ -340,8 +345,10 @@ pub(crate) enum Surface {
 }
 
 /// What a path costs on this surface.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Zone {
-    /// No credential: the web client's shell and hashed assets, plus the mint.
+    /// No credential: what [`Surface::anonymous`] names — the web client's own
+    /// shell, the mint, and the binding probe.
     Anonymous,
     /// A cookie or a bearer.
     Credential,
@@ -365,36 +372,71 @@ impl Surface {
                 && session_scoped(path).is_some_and(|route| SPA_ROUTES.contains(&route)))
     }
 
-    /// The guarded prefixes, and which credential each takes. A non-GET outside them
-    /// fails closed at [`Zone::Credential`] rather than 404ing.
+    /// What a path costs on this surface.
+    ///
+    /// The rule is the anonymous list inverted: everything costs a credential
+    /// except what [`Self::anonymous`] names, so a route added later is guarded
+    /// unless it is named there too. Stating it the other way — a list of
+    /// guarded prefixes — fails the other way, leaving every new top-level route
+    /// readable to anyone who can reach the bind.
     fn zone(self, method: Method, path: &str) -> Zone {
-        let under = |prefix: &str| path == prefix || path.starts_with(&format!("{prefix}/"));
-        let guarded = match self {
-            // `/files` is guarded on the same footing as `/v1`, and more narrowly: it
-            // is the operator's read surface over the working directory, so it takes
-            // the cookie only (docs/web-bind.md). A bearer holder reading it would
-            // bypass `[paths]`, including the deny that keeps a session out of other
-            // sessions' logs.
-            Surface::Session if under("/files") => return Zone::CookieOnly,
-            Surface::Session => under("/v1"),
-            Surface::Host => under("/sessions"),
-        };
-        // The web client's shell is anonymous wherever it is served (docs/web-client.md).
-        // On the host, the single-session view's own route sits *inside* `/sessions`,
-        // so the exception is stated here rather than implied by the prefix: the
-        // shell carries no session content, and the page's first act is to
-        // authenticate.
-        let guarded = guarded && !self.spa_route(path);
-        match method {
-            // `trillium_head::head()` runs ahead of the gate, so a HEAD arrives here
-            // already rewritten to GET. Anonymous surface: every GET outside the
-            // guarded prefixes — the web client's shell and hashed assets
-            // (docs/web-client.md) — plus the credential mint.
-            Method::Get if !guarded => Zone::Anonymous,
-            Method::Post if path == "/auth/session" => Zone::Anonymous,
-            _ => Zone::Credential,
+        // `/files` is guarded on the same footing as `/v1`, and more narrowly: it
+        // is the operator's read surface over the working directory, so it takes
+        // the cookie only (docs/web-bind.md). A bearer holder reading it would
+        // bypass `[paths]`, including the deny that keeps a session out of other
+        // sessions' logs.
+        if matches!(self, Surface::Session) && under(path, "/files") {
+            return Zone::CookieOnly;
         }
+        if self.anonymous(method, path) {
+            return Zone::Anonymous;
+        }
+        Zone::Credential
     }
+
+    /// Whether `path` costs nothing here. [`trillium_head::head`] runs ahead of
+    /// the gate, so a HEAD arrives here already rewritten to GET.
+    fn anonymous(self, method: Method, path: &str) -> bool {
+        let get = method == Method::Get;
+        // The web client's own shell, wherever it is served: its routes at its
+        // base, the build's hashed assets, and the few public files whose names
+        // the build does not hash. None of it is session content, and the login
+        // view lives inside it (docs/web-client.md). The asset lists mirror the
+        // service worker's precache (`web/public/sw.js`), which has to agree:
+        // a file in one and not the other is a shell that cannot load itself.
+        if get
+            && (self.spa_route(path)
+                || ASSET_PREFIXES.iter().any(|prefix| under(path, prefix))
+                || SHELL_ASSETS.contains(&path))
+        {
+            return true;
+        }
+        // The credential mint. The login flow cannot present the credential it
+        // is there to obtain.
+        if method == Method::Post && path == "/auth/session" {
+            return true;
+        }
+        // The dev server's module graph, in the build that proxies one. The
+        // shell is loaded before anything can authenticate, so these are the
+        // requests a credential would lock the login view out behind.
+        #[cfg(feature = "dev-proxy")]
+        if get && DEV_PROXY_PREFIXES.iter().any(|prefix| under(path, prefix)) {
+            return true;
+        }
+        // The web client tells the two bindings apart by probing `GET /sessions`
+        // (`web/src/session/entry.ts`): a host answers the listing, a session
+        // daemon serves no such route. It reads that `404` as "not a host", so
+        // the probe has to reach the router — a credential check ahead of it
+        // would answer `401`, which is how a host with no credential yet reads,
+        // and a session daemon's root would show a login form for a cookie the
+        // mint would accept and nothing else would.
+        matches!(self, Surface::Session) && get && path == "/sessions"
+    }
+}
+
+/// Whether `path` is `prefix` itself or under it.
+fn under(path: &str, prefix: &str) -> bool {
+    path == prefix || path.starts_with(&format!("{prefix}/"))
 }
 
 /// The hardening + auth gate, run before every route on a TCP listener
@@ -552,6 +594,34 @@ impl trillium::Handler for SecurityHeaders {
 /// - `/tree` — the file tree and finder, reachable without a call having named
 ///   a file (docs/web-client.md "Navigating the working directory").
 const SPA_ROUTES: [&str; 2] = ["/", "/tree"];
+
+/// The hashed build's own directories, served at the listener's root whichever
+/// binding answered the shell. Mirrors `isCacheable` in `web/public/sw.js`.
+const ASSET_PREFIXES: [&str; 2] = ["/assets", "/fonts"];
+
+/// Public files the build does not hash, so they are named rather than found by
+/// prefix. Mirrors `SHELL_ASSETS` in `web/public/sw.js`.
+const SHELL_ASSETS: [&str; 6] = [
+    "/manifest.webmanifest",
+    "/icon.svg",
+    "/icon-192.png",
+    "/icon-512.png",
+    "/paper.svg",
+    // The worker script itself, which the browser fetches to register the
+    // worker and which nothing precaches (`web/src/pwa.ts`). It is fetched on a
+    // bare visit, before any credential, so a gate that refused it would cost
+    // installability and the offline shell on exactly the first load.
+    "/sw.js",
+];
+
+/// Vite's own URLs, served only by the `dev-proxy` build, which proxies the
+/// whole module graph through the gate. Prefixes rather than files because the
+/// graph is generated: `/@vite/client` and `/@react-refresh` and `/@fs/…`, the
+/// app's own sources under `/src`, and the pre-bundled dependencies under
+/// `/node_modules`. A page that cannot load these cannot render the login view,
+/// so there would be nothing left to ask for a credential with.
+#[cfg(feature = "dev-proxy")]
+const DEV_PROXY_PREFIXES: [&str; 3] = ["/@", "/src", "/node_modules"];
 
 /// [`Surface::spa_route`] as the fn pointer [`frontend`] takes, one per surface.
 fn session_spa_route(conn: &Conn) -> bool {

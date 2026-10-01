@@ -1585,22 +1585,27 @@ note ("handed off from `<id>` — its brief:") rather than as the operator's tur
 
 ## Serving and auth
 
-The gate's anonymous surface is every GET outside `/v1` plus `POST /auth/session`
-([web-bind.md](web-bind.md)): the app shell and hashed assets serve without a
-credential — the same posture as the inline bootstrap page the app replaced — and
-`/v1` stays behind cookie-or-bearer. The login view (`web/src/ui/Login.tsx`) carries
-the bootstrap dance: read `#token=` from the URL fragment, trade it at
-`POST /auth/session`, scrub the fragment; render the six-digit field on a bare visit
-or a failed trade. The SPA index answers the client's named routes and nothing else
-(`SPA_ROUTES`, `src/daemon/tcp.rs`) — a broader index fallback would answer scanner
-probes `200`. On a host those routes are also answered under a session prefix,
-which is the one place the anonymous shell sits inside a guarded prefix
-([web-bind.md](web-bind.md)).
+The gate enumerates its anonymous surface rather than deriving it from guarded
+prefixes ([web-bind.md](web-bind.md)): the app shell and hashed assets serve without a
+credential — the same posture as the inline bootstrap page the app replaced — as does
+`POST /auth/session`, and everything else, `/v1` included, takes cookie-or-bearer. The
+login view (`web/src/ui/Login.tsx`) carries the bootstrap dance: read `#token=` from
+the URL fragment, trade it at `POST /auth/session`, scrub the fragment; render the
+six-digit field on a bare visit or a failed trade. The SPA index answers the client's
+named routes and nothing else (`SPA_ROUTES`, `src/daemon/tcp.rs`) — a broader index
+fallback would answer scanner probes `200`. On a host those routes are also answered
+under a session prefix, which is the one place the anonymous shell sits among guarded
+paths ([web-bind.md](web-bind.md)). One more GET is anonymous: on a *session* bind,
+`GET /sessions`, which is no route of its and answers `404` — that `404` is how
+`resolveEntry` reads "not a host" (`web/src/session/entry.ts`), so the probe has to
+reach the router rather than stop at a `401`.
 
 ## Development
 
 - `cargo run --features dev-proxy -- host --bind …` — the daemon spawns Vite and
-  proxies to it; HMR works through the gate (upgrades are GETs outside `/v1`).
+  proxies to it; HMR works through the gate, because that build widens the
+  anonymous surface to Vite's module URLs (`DEV_PROXY_PREFIXES`,
+  `src/daemon/tcp.rs`) — the shell has to load before anything can authenticate.
 - Without the feature, the build embeds: the `frontend!` macro runs `vite build` at
   compile time, so building the crate needs `pnpm` on PATH and `web/node_modules`
   installed (`pnpm install` once).

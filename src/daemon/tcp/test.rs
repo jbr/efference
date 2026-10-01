@@ -95,15 +95,18 @@ async fn the_web_client_is_anonymous_and_the_api_is_not() {
         .assert_body_contains(r#""code":"unauthorized""#);
 
     // The SPA index answers the named client routes and nothing else; an
-    // unmatched anonymous GET is a 404, not a scanner-probe `200`.
+    // unmatched GET that reaches it is a 404, not a scanner-probe `200`.
     server.get("/tree").await.assert_status(200);
-    server.get("/nonexistent").await.assert_status(404);
-    server.get("/tree/deeper").await.assert_status(404);
-    // The session-prefixed spellings of those routes are a host's (docs/web-bind.md):
-    // this bind serves the client at its own root, so the client's base is empty
-    // here and a `/sessions/…` path names nothing.
-    server.get("/sessions/work").await.assert_status(404);
-    server.get("/sessions/work/tree").await.assert_status(404);
+    server.get("/nonexistent").await.assert_status(401);
+    server.get("/tree/deeper").await.assert_status(401);
+    // A `/sessions/…` path is a host's, and this bind is not one — but only
+    // `GET /sessions` reaches the router here, because that is the probe the web
+    // client tells the two bindings apart with (`web/src/session/entry.ts`). It
+    // answers `404`, which reads as "not a host"; every other spelling of the
+    // prefix is behind the credential check like anything else.
+    server.get("/sessions").await.assert_status(404);
+    server.get("/sessions/work").await.assert_status(401);
+    server.get("/sessions/work/tree").await.assert_status(401);
 
     // A non-GET outside `/v1` fails closed at the gate. JSON-typed, to pass the
     // content-type check ahead of it, but bodiless: the gate answers without reading
@@ -113,6 +116,88 @@ async fn the_web_client_is_anonymous_and_the_api_is_not() {
         .with_request_header(KnownHeaderName::ContentType, "application/json")
         .await
         .assert_status(401);
+}
+
+/// The gate's price list as a table (docs/web-bind.md). The rule is the
+/// anonymous list inverted, so this is where a route's cost is settled: a path
+/// `Surface::anonymous` does not name costs a credential, which is what keeps a
+/// route added later from being readable to anyone who can reach the bind.
+#[test]
+fn the_anonymous_surface_is_named() {
+    let anonymous = Zone::Anonymous;
+    let credential = Zone::Credential;
+    let cookie_only = Zone::CookieOnly;
+    let cases = [
+        // A session bind: the shell at its own base, the build's files, the
+        // mint, and the probe the client reads a `404` from.
+        (Surface::Session, Method::Get, "/", anonymous),
+        (Surface::Session, Method::Get, "/tree", anonymous),
+        (
+            Surface::Session,
+            Method::Get,
+            "/assets/index-a1b2c3.js",
+            anonymous,
+        ),
+        (Surface::Session, Method::Get, "/fonts/x.woff2", anonymous),
+        (Surface::Session, Method::Get, "/icon-192.png", anonymous),
+        // The worker script, which the browser fetches to register the worker.
+        (Surface::Session, Method::Get, "/sw.js", anonymous),
+        (Surface::Session, Method::Post, "/auth/session", anonymous),
+        (Surface::Session, Method::Get, "/sessions", anonymous),
+        // A session bind's own surfaces, and everything else.
+        (Surface::Session, Method::Get, "/v1/state", credential),
+        (
+            Surface::Session,
+            Method::Get,
+            "/files/notes.md",
+            cookie_only,
+        ),
+        (Surface::Session, Method::Get, "/inference", credential),
+        (Surface::Session, Method::Get, "/nonesuch", credential),
+        (Surface::Session, Method::Post, "/sessions", credential),
+        // A host: the same shell, and the client's routes under a session
+        // prefix — inside the tree whose every other path takes a credential.
+        (Surface::Host, Method::Get, "/", anonymous),
+        (Surface::Host, Method::Get, "/sessions/work", anonymous),
+        (Surface::Host, Method::Get, "/sessions/work/tree", anonymous),
+        (
+            Surface::Host,
+            Method::Get,
+            "/assets/index-a1b2c3.js",
+            anonymous,
+        ),
+        (Surface::Host, Method::Post, "/auth/session", anonymous),
+        (Surface::Host, Method::Get, "/sessions", credential),
+        (
+            Surface::Host,
+            Method::Get,
+            "/sessions/work/v1/state",
+            credential,
+        ),
+        // The host's own routes were the reason the rule was inverted: they sit
+        // outside `/sessions` and were readable without a credential.
+        (Surface::Host, Method::Get, "/inference", credential),
+        (Surface::Host, Method::Get, "/inference/catalog", credential),
+        // And a top-level route nothing has named yet is credential too.
+        (Surface::Host, Method::Get, "/nonesuch", credential),
+        (
+            Surface::Session,
+            Method::Get,
+            "/nonesuch/deeper",
+            credential,
+        ),
+    ];
+    for (surface, method, path, zone) in cases {
+        assert_eq!(
+            surface.zone(method, path),
+            zone,
+            "{} {method:?} {path:?}",
+            match surface {
+                Surface::Session => "session",
+                Surface::Host => "host",
+            },
+        );
+    }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

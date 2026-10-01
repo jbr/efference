@@ -11,10 +11,14 @@ are its trust model) and remains the CLI verbs' channel. Implemented in
 
 This is the **one**-session bind. A multi-session host reuses everything in this
 document — the flags, the listener shape, the credential layer, and the gate — rather
-than shipping a second one. The gate's only listener-dependent decision is which
-prefixes it guards, carried as a `Surface`: a session bind guards `/v1` and `/files`,
-a host guards `/sessions`. `Surface::Host` is the seam the in-process host mounts
-its session routes behind, so the gate's prefix decision is the same shape on both.
+than shipping a second one. The gate's only listener-dependent decision is carried as
+a `Surface`, and it is not a set of guarded prefixes: the anonymous surface is
+enumerated, so every path outside it takes a credential whatever its name. What a
+surface settles is the two paths that name a bind's shape rather than its content —
+`/files` is a session bind's narrower cookie-only surface, and `GET /sessions` is the
+probe that has to reach a session bind's router so its `404` says "not a host".
+`Surface::Host` is the seam the in-process host mounts its session routes behind, so
+the gate's decision is the same shape on both.
 
 The bind is configured by the `[host]` table of the user configuration,
 `~/.efference/config.toml` (`bind`, `public-url`, `tls-cert`, `tls-key`;
@@ -195,14 +199,20 @@ Runs before every TCP route, in order:
    preflighted, which closes the no-preflight CSRF shapes. A localhost or LAN bind is not a trust boundary while a
    browser is present; these ship with the bind, not after it.
 3. **Credential check** — valid cookie or bearer, else `401 unauthorized`. The
-   anonymous surface is every GET outside the guarded prefixes — the web client's
-   shell and hashed assets ([web-client.md](web-client.md)), which reveal nothing
-   session-specific — plus `POST /auth/session` (the mint). The guarded prefixes are
-   `/v1` and `/files`; a non-GET outside them fails closed rather than 404ing. A
-   client route is anonymous wherever it is served, which on a host means the
-   single-session view's own route is the one anonymous GET inside a guarded prefix
-   — the shell carries no session content, and the page's first act is to
-   authenticate.
+   rule is the **anonymous list, not the guarded one**: everything costs a
+   credential except what is named as free, so a route added later is guarded
+   unless it is named there too. The free surface is the web client's shell and
+   hashed assets at its base ([web-client.md](web-client.md)), which reveal
+   nothing session-specific; `POST /auth/session`, the mint, which the login
+   flow cannot present a credential for; and on a session bind `GET /sessions`,
+   which is no route of its — the web client's probe to tell the two bindings
+      apart reads the `404` a session daemon gives it as "not a host"
+   ([web-client.md](web-client.md)).
+   Everything else takes cookie-or-bearer, whatever its prefix: `/v1`, `/files`,
+   a host's `/sessions` tree, and the host's own routes at its root. The
+   `dev-proxy` build widens the free surface to the dev server's module URLs
+   ([web-client.md](web-client.md)), because a shell that cannot load is a page
+   with no login view on it.
    `/files` is guarded more narrowly still: it takes the **cookie only**, and a
    valid bearer gets `403 forbidden` there rather than `401`, because the credential
    is fine and presenting it again would not help.
