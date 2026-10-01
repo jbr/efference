@@ -36,11 +36,11 @@ pub enum App {
     /// the operator's read surface over the working directory (`/files`).
     Session { files: Files },
     /// A multi-session host's listener (docs/control-channel.md): the session
-    /// list, each session's control API under `/sessions/<id>/`, and — with
-    /// `create` — `POST /sessions`. The gate guards `/sessions`, and the web
-    /// client is also served under a session prefix (docs/web-bind.md). The
-    /// server-global state is the `Arc<Host>`.
-    Host { create: bool },
+    /// list, `POST /sessions`, and each session's control API under
+    /// `/sessions/<id>/`. The gate guards `/sessions`, and the web client is also
+    /// served under a session prefix (docs/web-bind.md). The server-global state
+    /// is the `Arc<Host>`.
+    Host,
 }
 
 impl App {
@@ -54,7 +54,7 @@ impl App {
     fn surface(&self) -> Surface {
         match self {
             Self::Session { .. } => Surface::Session,
-            Self::Host { .. } => Surface::Host,
+            Self::Host => Surface::Host,
         }
     }
 }
@@ -68,9 +68,9 @@ pub fn handler(transport: Transport, app: App) -> impl trillium::Handler {
         Transport::Socket { auth } => (Some(auth), None),
         Transport::Web { auth } => (None, Some(auth)),
     };
-    let (files, host) = match app {
-        App::Session { files } => (Some(files), None),
-        App::Host { create } => (None, Some(create)),
+    let (files, is_host) = match app {
+        App::Session { files } => (Some(files), false),
+        App::Host => (None, true),
     };
     let web = web_auth.is_some();
     (
@@ -97,7 +97,7 @@ pub fn handler(transport: Transport, app: App) -> impl trillium::Handler {
         socket_auth.map(enrollment_routes),
         web_auth.map(mint_routes),
         files.is_some().then(control_routes),
-        host.map(|create| host_routes(create, web)),
+        is_host.then(|| host_routes(web)),
         // The operator's read surface over the working directory (docs/web-bind.md),
         // mounted only behind a gate so the socket never serves it. A router over
         // `/files/**`, so every other path passes through to the routes below.

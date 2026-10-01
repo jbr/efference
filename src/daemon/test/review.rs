@@ -32,7 +32,7 @@ impl Fixture {
         for id in ["root", "child", "outliver"] {
             std::fs::create_dir_all(project.join(".efference").join(id)).unwrap();
         }
-        let host = Host::new(crate::inference::InferenceRegistry::empty());
+        let host = Host::new(crate::inference::InferenceRegistry::empty(), baseline_env());
         let adopt = |id: &str, cwd: &Path, created_by: Option<&str>, detached: bool| {
             let boot = runtime::boot_in(cwd, &cwd.join(".efference").join(id));
             host.adopt_with(

@@ -195,7 +195,7 @@ async fn create_session(
         // A session created by a person at a keyboard has no creator to end with
         // (docs/tools.md).
         detached: false,
-        env,
+        env: Some(env),
     };
     client
         .create_session(&request)

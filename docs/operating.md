@@ -410,6 +410,24 @@ provider = "openai-codex"
 auth = { kind = "oauth" }         # the store's oauth:chatgpt grant
 ```
 
+`env_hook` is the same file's other top-level key, and it decides the environment
+a session launched **without one of its own** starts with — a `POST /sessions`
+that omits `env`, which is what any client other than the terminal form does. It
+is an argv, invoked directly with the session's directory set on the subprocess,
+whose stdout is the complete environment as NUL-delimited `KEY=value` records; an
+empty array is refused rather than read as "no hook" ([env.md](env.md)):
+
+```toml ~/.efference/config.toml
+env_hook = ["mise", "exec", "--", "/usr/bin/env", "-0"]
+```
+
+Two things it deliberately does not do: it does not guess a shell, so shell syntax
+needs a shell in the array (a Nushell or direnv recipe spells one explicitly), and
+it does not merge — a variable the host had and the hook did not report is absent.
+With no `env_hook` a session inherits the environment the host process started
+with. Nothing here loads your shell configuration for you: if you want that, name
+the command that does it.
+
 A fourth read is offline, about spend rather than content, and a developer's instrument
 rather than an operator's: **`efference dev cache`** folds a
 session's `usage.jsonl` into a prompt-cache read rate per request origin, separating the

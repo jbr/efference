@@ -65,8 +65,8 @@ Offline convenience constructors still capture the local environment at
 construction. `tui --new` captures the caller's snapshot and sends its entries
 in `CreateSession` over the host's Unix socket. The host constructs an `EnvSnapshot`
 from those entries before preparation; the creation response does not echo them.
-Remote creation is refused, and no listener consults `env_hook` yet: a request's
-own environment still establishes a session's base.
+Every creation route establishes a base: a request that carries `env` is used
+outright, and one that omits it is established here.
 
 ## Launch environment
 
@@ -129,7 +129,16 @@ a login shell's exports, or whatever set a service manager hands a daemon — an
 is not a loaded project environment.
 
 `InferenceRegistry` retains the configured argv, so the hook travels with the user
-configuration that session creation already loads.
+configuration that session creation already loads. The host retains its own
+start-time environment alongside it, which is the base an omitted `env` inherits
+and what the hook itself inherits; both are taken once, at host start, rather than
+per request.
+
+Creation consults this when a request omits `env`, on every listener: a supplied
+environment is used outright and no hook runs. Establishment is cancelled by host
+shutdown, which fails the creation before an id is minted. A client that
+disconnects does **not** cancel it — the deadline bounds the hook, and the session
+is minted either way.
 
 ## Threat model: accidental capture
 

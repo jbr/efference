@@ -66,7 +66,7 @@ pub(crate) async fn create_here(
         keep_scratch,
         // A human root has no creator to end with (docs/tools.md).
         detached: false,
-        env,
+        env: Some(env),
     };
     Ok(ControlClient::new(host_socket)
         .create_session(&request)

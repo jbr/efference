@@ -37,6 +37,18 @@ pub struct Host {
     /// (docs/model-catalog.md).
     catalog: crate::catalog::Catalog,
     sessions: Mutex<BTreeMap<String, Hosted>>,
+    /// The host's own environment, captured once at start (docs/env.md).
+    ///
+    /// This is the base a session launched without a caller-supplied environment
+    /// inherits, and what an `env_hook` inherits itself. It is taken once, at the
+    /// same moment the registry resolved this host's credentials from it, so the
+    /// baseline a launch starts from is a stated thing rather than whatever the
+    /// process happens to be carrying at request time. `EnvSnapshot` omits Debug
+    /// and Serialize, so it cannot be logged or echoed, and the credential
+    /// variables in it are stripped and masked for every session by the same
+    /// [`crate::env_table::EnvPolicy::build_session`] call as any other base
+    /// (docs/env.md).
+    host_env: crate::env_table::EnvSnapshot,
     /// Signalled when the session listing may have moved (`summary.rs`): a
     /// session arriving or leaving, and every wake of a session's status
     /// watcher. Every listing subscriber recomputes and diffs for itself, so
@@ -70,7 +82,12 @@ pub(super) struct Hosted {
 }
 
 impl Host {
-    pub fn new(inference: crate::inference::InferenceRegistry) -> Arc<Self> {
+    /// `host_env` is the host's own environment at start, captured by the caller
+    /// that loaded the inference registry from it (docs/env.md).
+    pub fn new(
+        inference: crate::inference::InferenceRegistry,
+        host_env: crate::env_table::EnvSnapshot,
+    ) -> Arc<Self> {
         Arc::new(Self {
             swansong: Swansong::new(),
             catalog: crate::catalog::Catalog::new(
@@ -78,6 +95,7 @@ impl Host {
             ),
             inference,
             sessions: Mutex::new(BTreeMap::new()),
+            host_env,
             summary_changed: Notify::new(),
         })
     }
@@ -238,9 +256,34 @@ impl Host {
         if !body.cwd.is_absolute() {
             return Err(format!("cwd must be absolute: {}", body.cwd.display()));
         }
-        let base_env = match crate::env_table::EnvSnapshot::new(body.env) {
-            Ok(base) => base,
-            Err(e) => return Err(format!("env: {e}")),
+        // An environment the caller supplied is the base, and nothing is run. An
+        // omitted one is established here, for this session's own directory, from
+        // the user-wide `env_hook` or the host environment (docs/env.md).
+
+        let base_env = match body.env {
+            Some(env) => match crate::env_table::EnvSnapshot::new(env) {
+                Ok(base) => base,
+                Err(e) => return Err(format!("env: {e}")),
+            },
+            None => {
+                // Host shutdown cancels the establishment, which fails the
+                // creation before an id is minted. Nothing else races it: a
+                // client that disconnects does not cancel this work, so an
+                // accepted creation completes and mints its session even with no
+                // reader on the response.
+                let abort = self.swansong.shutting_down();
+                match crate::env_table::environment_at(
+                    &body.cwd,
+                    self.inference.env_hook(),
+                    &self.host_env,
+                    abort,
+                )
+                .await
+                {
+                    Ok(base) => base,
+                    Err(e) => return Err(format!("env: {e}")),
+                }
+            }
         };
         // The same resolution preview reports, then credentials for the roles it
         // selected. Project effort is boot's to apply, so it is not resolved here.
@@ -398,13 +441,13 @@ impl Host {
     }
 }
 
-/// The host's routes (docs/control-api.md). `create` mounts `POST /sessions`;
-/// a listener that does not carry it answers the same path with a refusal, so
-/// the endpoint is one and its availability is a property of the listener the
-/// request arrived on, not a runtime guess. `files` serves each session's
+/// The host's routes (docs/control-api.md). `POST /sessions` is mounted on every
+/// host listener, socket and network alike: creation's environment is
+/// established per request (docs/env.md), so what it needs is the hook or the
+/// host's own baseline rather than a local caller. `files` serves each session's
 /// `/files` under its prefix — the web transport, as on a session bind.
-pub(crate) fn host_routes(create: bool, files: bool) -> impl trillium::Handler {
-    let mut router = Router::new()
+pub(crate) fn host_routes(files: bool) -> impl trillium::Handler {
+    let router = Router::new()
         .get("/inference", inference_inventory)
         .get("/inference/catalog", catalog_all)
         .get("/inference/catalog/:connection", catalog_one)
@@ -428,12 +471,7 @@ pub(crate) fn host_routes(create: bool, files: bool) -> impl trillium::Handler {
                 files.then_some(session_files),
             ),
         );
-    router = if create {
-        router.post("/sessions", create_session)
-    } else {
-        router.post("/sessions", refuse_remote_create)
-    };
-    router
+    router.post("/sessions", create_session)
 }
 
 fn host_of(conn: &Conn) -> Option<Arc<Host>> {
@@ -547,6 +585,13 @@ fn no_such_session(conn: Conn, id: &str) -> Conn {
 /// the host deserializes it — so a new session knob is one field here. `env` is
 /// the session's complete base environment (docs/env.md); it is applied and
 /// dropped, never logged or echoed, which is why the type has no Debug.
+///
+/// `env` is optional because an omitted one is a *different request* from an
+/// empty one. Supplied, it is the base and nothing runs; omitted, the base is
+/// established for the session's directory from the user-wide `env_hook`, or
+/// from the host's own environment when none is configured (docs/env.md). An
+/// empty map is an explicit empty environment, which no client sends by
+/// accident — `EnvSnapshot::new` is the only way to spell that.
 #[derive(Serialize, Deserialize)]
 pub struct CreateSession {
     /// The session id; a minted adjective-noun pair when absent
@@ -575,7 +620,10 @@ pub struct CreateSession {
     /// for a session-driven `create`: a human root has no creator to end with.
     #[serde(default)]
     pub detached: bool,
-    pub env: BTreeMap<String, String>,
+    /// The session's complete base environment, when the caller supplies one
+    /// (docs/env.md). `None` asks the host to establish it for `cwd`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub env: Option<BTreeMap<String, String>>,
 }
 
 /// `POST /sessions` on the Unix socket: prepare and start a session from the
@@ -607,16 +655,6 @@ async fn create_session(mut conn: Conn) -> Conn {
     }
 }
 
-/// `POST /sessions` on a network listener: remote creation needs an environment
-/// recipe the host does not have yet (backlog/host-process.md).
-async fn refuse_remote_create(conn: Conn) -> Conn {
-    fail(
-        conn,
-        ErrorCode::Forbidden,
-        "session creation is accepted on the host's Unix socket only",
-    )
-}
-
 /// Run a host: bind the control socket and the optional TCP listener over
 /// `host`, and serve until shutdown. Sessions arrive by `POST /sessions`.
 pub async fn serve_host(
@@ -636,7 +674,7 @@ pub async fn serve_host(
             Transport::Socket {
                 auth: web_auth.clone(),
             },
-            App::Host { create: true },
+            App::Host,
         ));
     eprintln!("host socket: {}", socket.display());
     let mut _tcp_server = None;
@@ -649,7 +687,7 @@ pub async fn serve_host(
                 Transport::Web {
                     auth: Arc::clone(&auth),
                 },
-                App::Host { create: false },
+                App::Host,
             ),
             host.swansong().clone(),
             Arc::clone(&host),

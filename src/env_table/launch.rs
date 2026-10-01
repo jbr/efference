@@ -8,8 +8,8 @@
 //! - **No hook**: the host environment, as given. Nothing is spawned, and no
 //!   shell startup is reconstructed. Whatever environment the host process was
 //!   started with is the baseline. Whatever that is — a login shell's exports,
-//!   or the sparse set a service manager hands a daemon — it is not a loaded
-//!   project environment, and reconstructing one is the hook's own doing.
+//!   or a service manager's environment — it is not a loaded project
+//!   environment, and reconstructing one is the hook's own doing.
 //! - **A hook**: an argv, invoked **directly** with the chosen directory set on
 //!   the subprocess — never a shell `cd`, never a change to the host process's
 //!   cwd. It inherits the host environment, so it can reach `mise`, `direnv`, or

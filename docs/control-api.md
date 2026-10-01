@@ -154,21 +154,27 @@ sessions from one process. Its own routes are the listener's, not a session's:
   Available on every authenticated listener, Unix and TCP alike: it mints nothing
   and reads no environment.
 - `POST /sessions` — create a session. The body is the session request: `cwd`
-  (absolute, always sent), `env` (the complete base environment, [env.md](env.md)),
-  the `QUERY /sessions` selections above, and optionally `name`, `config`,
-  `temperature`, `effort`, `upstream`, `autonomous`, `reauth`, `keep_scratch`,
-  and `detached` (meaningful for a session-driven create only: whether the new
-  session outlives its creator, docs/tools.md).
+  (absolute, always sent), the `QUERY /sessions` selections above, and optionally
+  `env`, `name`, `config`, `temperature`, `effort`, `upstream`, `autonomous`,
+  `reauth`, `keep_scratch`, and `detached` (meaningful for a session-driven create
+  only: whether the new session outlives its creator, docs/tools.md).
   `name` omitted mints an `adjective-noun` id free on the host and under the
-  session base ([session-title.md](session-title.md)). `201 {"id": …}`; `400` with the reason when the body, the name, the cwd, or
-  preparation is unusable, in which case nothing was minted. Accepted on the
-  host's Unix socket only: a network listener answers `403` because a remote
-  caller has no environment to send and the host has no recipe to build one
-  (backlog/web-remote-creation.md). That is an unfinished engineering problem,
-  **not a security boundary** — this API is trusted over a secure channel, and a
-  caller that can approve a gate can already have a session run anything. Nothing
-  about creation widens that. The environment is applied and dropped, never logged
-  or echoed.
+  session base ([session-title.md](session-title.md)). `201 {"id": …}`; `400` with the reason when the body, the name, the cwd, the
+  environment, or preparation is unusable, in which case nothing was minted.
+  `env` is the session's complete base environment and is optional: supplied, it
+  is used outright and no hook runs; omitted, the host establishes one for `cwd`
+  from the user-wide `env_hook`, or from the environment the host itself started
+  with when no hook is configured ([env.md](env.md)). An empty map is an explicit
+  empty environment, not an omission. Mounted on every host listener, socket and
+  network alike — a remote caller omits `env` and lets the host establish it, and
+  that is the whole of what it changes. Extending the surface to a network
+  listener is **not a security boundary**: this API is trusted over a secure
+  channel, and a caller that can approve a gate can already have a session run
+  anything. Nothing about creation widens that. The environment is applied and
+  dropped, never logged or echoed.
+  A creation whose client disconnects still completes and still mints; only the
+  hook is bounded. Host shutdown cancels an establishment in progress, which fails
+  the creation without minting.
 - `DELETE /sessions/:id` — end the session. Answers `200` once its teardown has
   run (background children reaped, scratch removed); the id leaves the list once
   the loop has returned. `404` for an id that is not hosted.

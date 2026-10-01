@@ -3,11 +3,20 @@ use super::*;
 use crate::client::Client as ControlClient;
 use crate::log::ContentBlock;
 use futures_lite::StreamExt;
+use std::collections::BTreeMap;
 use std::time::Duration;
 use trillium_testing::TestServer;
 
 fn user(text: &str) -> Payload {
     Payload::User(vec![ContentBlock::Text(text.into())])
+}
+
+/// The launch baseline a test host is built with (docs/env.md): the environment a
+/// session inherits when its creation omits one. Stated rather than captured, so
+/// that path is reproducible instead of following whatever the test process was
+/// launched with.
+fn baseline_env() -> crate::env_table::EnvSnapshot {
+    crate::env_table::EnvSnapshot::new(BTreeMap::new()).expect("an empty environment is valid")
 }
 
 /// One bash `ToolCall`, for exercising the effective-policy cache through `classify`.

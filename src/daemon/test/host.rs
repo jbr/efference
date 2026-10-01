@@ -4,6 +4,7 @@ use super::*;
 use crate::daemon::{Host, SessionRuntime};
 use serde_json::Value;
 use std::path::Path;
+use trillium::KnownHeaderName;
 
 struct Roots(PathBuf);
 
@@ -51,16 +52,106 @@ auth = { kind = "env", key = "TEST_KEY" }
     .unwrap()
 }
 
-async fn host_server(host: &Arc<Host>, create: bool) -> TestServer<impl trillium::Handler> {
+/// A registry with one env-backed connection and an `env_hook`, so a creation
+/// that omits its environment runs it (docs/env.md).
+fn registry_with_hook(argv: &[String]) -> crate::inference::InferenceRegistry {
+    let listed = argv
+        .iter()
+        .map(|part| format!("{part:?}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let config = crate::inference::InferenceConfig::from_toml(&format!(
+        "\nenv_hook = [{listed}]\n\n\
+         [connections.test]\n\
+         provider = \"anthropic\"\n\
+         auth = {{ kind = \"env\", key = \"TEST_KEY\" }}\n"
+    ))
+    .expect("a config naming a hook parses");
+    let env = crate::env_table::EnvSnapshot::new(
+        [("TEST_KEY".to_string(), "test-secret".to_string())].into(),
+    )
+    .unwrap();
+    crate::inference::InferenceRegistry::from_config(
+        config,
+        Path::new("/host"),
+        env,
+        &std::sync::Arc::new(crate::secrets::Secrets::in_memory()),
+    )
+    .unwrap()
+}
+
+/// A host environment carrying one marker, so a hook's inheritance of the launch
+/// baseline is observable (docs/env.md).
+fn marked_baseline() -> crate::env_table::EnvSnapshot {
+    crate::env_table::EnvSnapshot::new(
+        [("FROM_BASELINE".to_string(), "inherited".to_string())].into(),
+    )
+    .expect("a valid environment")
+}
+
+/// A creation body that stops at `boot::prepare` rather than reaching a
+/// provider: the config does not exist, so the request fails for a reason every
+/// environment branch shares.
+fn stops_at_boot(cwd: &Path) -> Value {
+    serde_json::json!({
+        "name": "fresh",
+        "cwd": cwd,
+        "model": "test/m",
+        "config": "missing.toml",
+    })
+}
+
+async fn host_server(host: &Arc<Host>) -> TestServer<impl trillium::Handler> {
     let host = Arc::clone(host);
     TestServer::new((
         trillium::Init::new(move |info: trillium::Info| {
             let host = Arc::clone(&host);
             async move { info.with_shared_state(host) }
         }),
-        handler(Transport::Socket { auth: None }, App::Host { create }),
+        handler(Transport::Socket { auth: None }, App::Host),
     ))
     .await
+}
+
+/// The host routes as a network listener mounts them: the web transport, behind
+/// its authenticator, so what differs from `host_server` is the transport rather
+/// than which routes exist (docs/control-channel.md, docs/web-bind.md). No socket
+/// is bound — the transport is in memory, as in the TCP tests.
+async fn network_host_server(host: &Arc<Host>) -> (TestServer<impl trillium::Handler>, String) {
+    use crate::auth::{BurnLedger, Root};
+    use std::hash::{BuildHasher, Hasher, RandomState};
+    let nonce = RandomState::new().build_hasher().finish();
+    let root = std::env::temp_dir().join(format!("efference-net-host-{nonce:016x}"));
+    std::fs::create_dir_all(&root).expect("scratch root");
+    let (auth, _listener) = crate::daemon::tcp::arm_with_ledger(
+        crate::daemon::tcp::TcpBind {
+            addr: "127.0.0.1:0".into(),
+            tls: None,
+            public_url: "http://localhost:7777".into(),
+            root: Root::new(root.to_string_lossy().as_ref()),
+            open: false,
+        },
+        BurnLedger::new(root.join("burns")),
+    );
+    let host = Arc::clone(host);
+    let server = TestServer::new((
+        trillium::Init::new(move |info: trillium::Info| {
+            let host = Arc::clone(&host);
+            async move { info.with_shared_state(host) }
+        }),
+        handler(
+            Transport::Web {
+                auth: Arc::clone(&auth),
+            },
+            App::Host,
+        ),
+    ))
+    .await
+    // The gate answers only for a host this daemon's name covers; the in-memory
+    // server presents one it does not otherwise (as in the TCP tests).
+    .with_host("localhost");
+    let bearer = format!("Bearer {}", auth.bearer());
+    (server, bearer)
 }
 
 /// The host's socket stack as a streaming client under one session's prefix — the
@@ -73,7 +164,7 @@ async fn host_client(host: &Arc<Host>, id: &str) -> ControlClient {
             let host = Arc::clone(&host);
             async move { info.with_shared_state(host) }
         }),
-        handler(Transport::Socket { auth: None }, App::Host { create: true }),
+        handler(Transport::Socket { auth: None }, App::Host),
     );
     let context = trillium_testing::init(&mut handler).await;
     ControlClient::with_connector(
@@ -86,13 +177,198 @@ fn json(body: &str) -> Value {
     serde_json::from_str(body).unwrap_or_else(|e| panic!("{e}: {body}"))
 }
 
+/// An omitted environment is established for the request's own directory: the
+/// hook runs there, inheriting the launch baseline, and its failure fails the
+/// creation before anything is minted (docs/env.md).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_omitted_environment_runs_the_hook_for_that_directory() {
+    let roots = Roots::new();
+    let ran = roots.0.join("hook-ran");
+    // Records what it was given, then fails: a hook's stderr is discarded, so the
+    // exit code is all the host has to report.
+    let hook = vec![
+        "/bin/sh".to_string(),
+        "-c".to_string(),
+        format!(
+            "printf 'cwd=%s\\nhost=%s\\n' \"$PWD\" \"$FROM_BASELINE\" > {}; exit 7",
+            ran.display()
+        ),
+    ];
+    let host = Host::new(registry_with_hook(&hook), marked_baseline());
+    let server = host_server(&host).await;
+
+    server
+        .post("/sessions")
+        .with_json_body(&stops_at_boot(&roots.0.join("one")))
+        .await
+        .assert_status(400)
+        .assert_body_contains("exited 7");
+    assert!(host.ids().is_empty(), "a failed launch mints no session");
+    assert!(
+        !roots.0.join("one/.efference").exists(),
+        "a failed launch leaves no session directory"
+    );
+
+    let seen = std::fs::read_to_string(&ran).expect("the hook ran");
+    assert!(
+        seen.contains(&format!("cwd={}", roots.0.join("one").display())),
+        "the hook ran in the session's own directory: {seen}"
+    );
+    assert!(
+        seen.contains("host=inherited"),
+        "the hook inherited the host's launch baseline: {seen}"
+    );
+}
+
+/// A supplied environment is the base outright: the hook is never run, so a
+/// request that brings its own environment is unaffected by a broken one
+/// (docs/env.md).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_supplied_environment_never_runs_the_hook() {
+    let roots = Roots::new();
+    let ran = roots.0.join("hook-ran");
+    let hook = vec![
+        "/bin/sh".to_string(),
+        "-c".to_string(),
+        format!(": > {}; exit 7", ran.display()),
+    ];
+    let host = Host::new(registry_with_hook(&hook), marked_baseline());
+    let server = host_server(&host).await;
+
+    server
+        .post("/sessions")
+        .with_json_body(&serde_json::json!({
+            "name": "fresh",
+            "cwd": roots.0.join("one"),
+            "model": "test/m",
+            "config": "missing.toml",
+            "env": {"HOME": "/h"},
+        }))
+        .await
+        // Fails at boot, on the same missing config every branch here uses.
+        .assert_status(400)
+        .assert_body_contains("could not prepare session");
+    assert!(
+        !ran.exists(),
+        "a request carrying its own environment must not run the hook"
+    );
+    assert!(
+        host.ids().is_empty(),
+        "a failed preparation mints no session"
+    );
+}
+
+/// `QUERY /sessions` stays a preview: it resolves options and nothing else, so it
+/// establishes no environment and runs no hook. Minting nothing is not by itself
+/// evidence of that — the hook writes a marker, and no marker means it never ran
+/// (docs/control-api.md, docs/env.md).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_preview_never_runs_the_hook() {
+    let roots = Roots::new();
+    let ran = roots.0.join("hook-ran");
+    let hook = vec![
+        "/bin/sh".to_string(),
+        "-c".to_string(),
+        format!(": > {}", ran.display()),
+    ];
+    let host = Host::new(registry_with_hook(&hook), marked_baseline());
+    let server = host_server(&host).await;
+
+    // No `env` at all, which is exactly the request a preview would establish an
+    // environment for if it did.
+    server
+        .build(trillium::Method::Query, "/sessions")
+        .with_json_body(&serde_json::json!({
+            "cwd": roots.0.join("one"),
+            "connection": "test",
+            "model": "m",
+        }))
+        .await
+        .assert_status(200);
+
+    assert!(host.ids().is_empty(), "a preview mints nothing");
+    assert!(
+        !ran.exists(),
+        "a preview must not establish an environment, so it must not run the hook"
+    );
+    host.swansong().shut_down().await;
+}
+
+/// Host shutdown cancels an establishment in progress, and the creation fails
+/// without minting. The hook here is killed mid-run — nothing about that rolls
+/// back whatever the hook had already done outside the process (docs/env.md).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn host_shutdown_cancels_an_establishment_in_progress() {
+    let roots = Roots::new();
+    let hook = vec![
+        "/bin/sh".to_string(),
+        "-c".to_string(),
+        "sleep 30".to_string(),
+    ];
+    let host = Host::new(registry_with_hook(&hook), marked_baseline());
+    let server = host_server(&host).await;
+
+    // Shut down while the hook is still running: the hook outlives a test's
+    // patience, so the cancellation is the only way this request ends.
+    let shutting_down = Arc::clone(&host);
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        shutting_down.swansong().shut_down().await;
+    });
+
+    server
+        .post("/sessions")
+        .with_json_body(&stops_at_boot(&roots.0.join("one")))
+        .await
+        .assert_status(400)
+        .assert_body_contains("cancelled");
+    assert!(
+        host.ids().is_empty(),
+        "a cancelled establishment mints no session"
+    );
+    assert!(
+        !roots.0.join("one/.efference").exists(),
+        "and leaves no session directory"
+    );
+}
+
+/// With no hook there is nothing to run: the launch baseline is the host's own
+/// environment, read directly, and creation proceeds past environment
+/// establishment to the same failure every other branch reaches (docs/env.md).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn without_a_hook_the_host_environment_is_the_base() {
+    let roots = Roots::new();
+    let host = Host::new(one_connection_registry(), marked_baseline());
+    let server = host_server(&host).await;
+
+    let response = server
+        .post("/sessions")
+        .with_json_body(&stops_at_boot(&roots.0.join("one")))
+        .await;
+    response.assert_status(400);
+    let body = response.body();
+    assert!(
+        body.contains("could not prepare session"),
+        "an omitted environment with no hook reaches boot rather than failing at \
+         environment establishment: {body}"
+    );
+    assert!(
+        !body.contains("env:"),
+        "and reports nothing from environment establishment: {body}"
+    );
+    assert!(
+        host.ids().is_empty(),
+        "a failed preparation mints no session"
+    );
+}
+
 /// `QUERY /sessions` (docs/control-api.md): the host's preview of a proposed
 /// session — the effective selections, where each came from, and the issues that
 /// would stop creation — without minting anything.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn query_sessions_previews_a_proposed_session_without_creating_one() {
     let roots = Roots::new();
-    let host = Host::new(one_connection_registry());
+    let host = Host::new(one_connection_registry(), baseline_env());
     let client = host_client(&host, "one").await.with_prefix("");
     let mut request = SessionOptionsRequest::new(roots.0.join("one"));
     request.options.connection = Some("test".to_string());
@@ -137,8 +413,8 @@ async fn query_sessions_previews_a_proposed_session_without_creating_one() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn query_sessions_reports_an_invalid_field_without_hiding_the_rest() {
     let roots = Roots::new();
-    let host = Host::new(one_connection_registry());
-    let server = host_server(&host, true).await;
+    let host = Host::new(one_connection_registry(), baseline_env());
+    let server = host_server(&host).await;
     let response = server
         .build(trillium::Method::Query, "/sessions")
         .with_json_body(&serde_json::json!({
@@ -177,8 +453,8 @@ async fn query_sessions_reports_an_invalid_field_without_hiding_the_rest() {
 /// is the one shape that answers `400` rather than a preview.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn query_sessions_refuses_a_non_object_body() {
-    let host = Host::new(one_connection_registry());
-    let server = host_server(&host, true).await;
+    let host = Host::new(one_connection_registry(), baseline_env());
+    let server = host_server(&host).await;
     server
         .build(trillium::Method::Query, "/sessions")
         .with_json_body(&serde_json::json!(["not", "an", "object"]))
@@ -187,16 +463,19 @@ async fn query_sessions_refuses_a_non_object_body() {
     host.swansong().shut_down().await;
 }
 
-/// Preview mints nothing and reads no environment, so it is not a network
-/// boundary: a listener without the Unix creation capability still answers it.
-/// Creation itself still refuses, for want of an environment recipe rather than
-/// for a security reason (backlog/host-process.md).
+/// `QUERY /sessions` mints nothing and establishes no environment, so it stays a
+/// pure preview on a network listener (docs/control-api.md). `POST /sessions`
+/// there behaves as it does on the socket: the route is one, and what a request
+/// omits about its environment is the host's business rather than the
+/// listener's.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_network_host_previews_but_does_not_create() {
-    let host = Host::new(one_connection_registry());
-    let server = host_server(&host, false).await;
+async fn a_network_host_previews_and_creates_the_same_way() {
+    let roots = Roots::new();
+    let host = Host::new(one_connection_registry(), baseline_env());
+    let (server, bearer) = network_host_server(&host).await;
     let response = server
         .build(trillium::Method::Query, "/sessions")
+        .with_request_header(KnownHeaderName::Authorization, bearer.clone())
         .with_json_body(&serde_json::json!({"cwd": "/project", "connection": "test", "model": "m"}))
         .await;
     response.assert_status(200);
@@ -204,10 +483,38 @@ async fn a_network_host_previews_but_does_not_create() {
         json(response.body())["effective"]["main"]["value"]["model"],
         "m"
     );
-    assert!(host.ids().is_empty());
-    // Bodiless, as in `creation_validates_its_body_and_is_socket_only`: the refusal
-    // answers unread, and a body still being written races the connection's close.
-    server.post("/sessions").await.assert_status(403);
+    assert!(
+        host.ids().is_empty(),
+        "a preview establishes no environment and mints nothing"
+    );
+
+    // Creation is mounted here, and validates the same way: a relative cwd is the
+    // same `400` the socket answers, not a refusal for arriving over TCP. A
+    // session is not minted — these tests stop before `boot::prepare`, which
+    // would reach a provider.
+    let created = server
+        .post("/sessions")
+        .with_request_header(KnownHeaderName::Authorization, bearer)
+        .with_json_body(&serde_json::json!({
+            "name": "fresh",
+            "cwd": "relative",
+            "model": "test/m",
+            "env": {"HOME": "/h"},
+        }))
+        .await;
+    assert_eq!(
+        created.status(),
+        400,
+        "network creation: {}",
+        created.body()
+    );
+    assert!(
+        created.body().contains("cwd must be absolute"),
+        "the same reason the socket gives: {}",
+        created.body()
+    );
+    assert!(host.ids().is_empty(), "a rejected creation mints nothing");
+    let _ = roots;
     host.swansong().shut_down().await;
 }
 
@@ -241,6 +548,7 @@ disabled = true
             &std::sync::Arc::new(crate::secrets::Secrets::in_memory()),
         )
         .unwrap(),
+        baseline_env(),
     );
     let client = host_client(&host, "one").await.with_prefix("");
     let inventory = client
@@ -273,7 +581,7 @@ disabled = true
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_session_listing_streams_its_current_value() {
     let roots = Roots::new();
-    let host = Host::new(crate::inference::InferenceRegistry::empty());
+    let host = Host::new(crate::inference::InferenceRegistry::empty(), baseline_env());
     host.adopt(
         "one".into(),
         SessionRuntime::start(runtime::boot(&roots.0.join("one")), host.swansong()),
@@ -321,7 +629,7 @@ async fn the_session_listing_streams_its_current_value() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_host_routes_each_prefix_to_its_own_session() {
     let roots = Roots::new();
-    let host = Host::new(crate::inference::InferenceRegistry::empty());
+    let host = Host::new(crate::inference::InferenceRegistry::empty(), baseline_env());
     for label in ["one", "two"] {
         let runtime = SessionRuntime::start(runtime::boot(&roots.0.join(label)), host.swansong());
         let session = Arc::clone(runtime.session());
@@ -330,7 +638,7 @@ async fn a_host_routes_each_prefix_to_its_own_session() {
         // notification opens (docs/web-push.md).
         assert_eq!(session.web_path(), format!("/sessions/{label}/"));
     }
-    let server = host_server(&host, true).await;
+    let server = host_server(&host).await;
 
     // Each entry carries the session's cwd — what a client scopes a shared
     // host's listing to its own project by (docs/control-channel.md).
@@ -401,7 +709,7 @@ async fn a_host_routes_each_prefix_to_its_own_session() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_prefixed_client_streams_its_sessions_events() {
     let roots = Roots::new();
-    let host = Host::new(crate::inference::InferenceRegistry::empty());
+    let host = Host::new(crate::inference::InferenceRegistry::empty(), baseline_env());
     let runtime = SessionRuntime::start(runtime::boot(&roots.0.join("one")), host.swansong());
     let session = Arc::clone(runtime.session());
     host.adopt("one".into(), runtime);
@@ -431,17 +739,17 @@ async fn a_prefixed_client_streams_its_sessions_events() {
 
 /// Creation is validated before anything is prepared: a malformed body, an id that
 /// is not a plain segment, a relative cwd, a taken id, and a config that does not
-/// exist each answer `400` with the reason and mint nothing. The network listener
-/// refuses creation outright.
+/// exist each answer `400` with the reason and mint nothing. Validation is a
+/// property of the request, so a network listener answers the same way.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn creation_validates_its_body_and_is_socket_only() {
+async fn creation_validates_its_body_on_every_listener() {
     let roots = Roots::new();
-    let host = Host::new(one_connection_registry());
+    let host = Host::new(one_connection_registry(), baseline_env());
     host.adopt(
         "one".into(),
         SessionRuntime::start(runtime::boot(&roots.0.join("one")), host.swansong()),
     );
-    let server = host_server(&host, true).await;
+    let server = host_server(&host).await;
     let base = |name: &str, cwd: &Path| {
         serde_json::json!({
             "name": name, "cwd": cwd, "model": "test/m",
@@ -449,7 +757,9 @@ async fn creation_validates_its_body_and_is_socket_only() {
         })
     };
     let cases: Vec<(Value, &str)> = vec![
-        (serde_json::json!({"cwd": "/x"}), "invalid body"),
+        // Not an object at all. A body that merely omits `env` is well-formed —
+        // that omission is what asks the host to establish one (docs/env.md).
+        (serde_json::json!(["not", "an", "object"]), "invalid body"),
         (base("../up", &roots.0), "not a single plain path segment"),
         (base("fresh", Path::new("relative")), "cwd must be absolute"),
         (base("one", &roots.0), "already hosted"),
@@ -462,10 +772,10 @@ async fn creation_validates_its_body_and_is_socket_only() {
             "could not prepare session",
         ),
     ];
-    for (body, reason) in cases {
+    for (body, reason) in &cases {
         server
             .post("/sessions")
-            .with_json_body(&body)
+            .with_json_body(body)
             .await
             .assert_status(400)
             .assert_body_contains(reason);
@@ -476,16 +786,18 @@ async fn creation_validates_its_body_and_is_socket_only() {
     );
     assert_eq!(host.ids(), ["one"]);
 
-    // Bodiless: the refusal answers without reading a body, so the in-memory server
-    // can finish and drop the connection while the client is still writing one, and
-    // the client's write fails before it reads the 403. The refusal does not depend
-    // on the body, so none is sent.
-    let network = host_server(&host, false).await;
-    network
-        .post("/sessions")
-        .await
-        .assert_status(403)
-        .assert_body_contains("Unix socket only");
+    // The same rejections on a network listener: same status, same reasons.
+    let (network, bearer) = network_host_server(&host).await;
+    for (body, reason) in &cases {
+        network
+            .post("/sessions")
+            .with_request_header(KnownHeaderName::Authorization, bearer.clone())
+            .with_json_body(body)
+            .await
+            .assert_status(400)
+            .assert_body_contains(reason);
+    }
+    assert_eq!(host.ids(), ["one"]);
 
     host.swansong().shut_down().await;
 }
@@ -552,8 +864,8 @@ auth = { kind = "env", key = "MESSAGES_KEY" }
         &std::sync::Arc::new(crate::secrets::Secrets::in_memory()),
     )
     .expect("host registry");
-    let host = Host::new(registry);
-    let server = host_server(&host, true).await;
+    let host = Host::new(registry, baseline_env());
+    let server = host_server(&host).await;
 
     // Each project's `[context]` runs `env` in a tool child, so a host secret that
     // leaked into the child environment would land — masked — in the boot preamble.
@@ -717,7 +1029,7 @@ auth = { kind = "env", key = "MESSAGES_KEY" }
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_hosted_sessions_files_are_served_under_its_prefix() {
     let roots = Roots::new();
-    let host = Host::new(crate::inference::InferenceRegistry::empty());
+    let host = Host::new(crate::inference::InferenceRegistry::empty(), baseline_env());
     let runtime = SessionRuntime::start(runtime::boot(&roots.0.join("one")), host.swansong());
     host.adopt("one".into(), runtime);
     let host_state = Arc::clone(&host);
@@ -726,7 +1038,7 @@ async fn a_hosted_sessions_files_are_served_under_its_prefix() {
             let host = Arc::clone(&host_state);
             async move { info.with_shared_state(host) }
         }),
-        crate::daemon::host::host_routes(true, true),
+        crate::daemon::host::host_routes(true),
     ))
     .await;
 
@@ -761,8 +1073,8 @@ async fn a_hosted_sessions_files_are_served_under_its_prefix() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn creation_enforces_the_temperature_range() {
     let roots = Roots::new();
-    let host = Host::new(one_connection_registry());
-    let server = host_server(&host, true).await;
+    let host = Host::new(one_connection_registry(), baseline_env());
+    let server = host_server(&host).await;
     for (temperature, status) in [(200u16, 400), (260, 400)] {
         server
             .post("/sessions")
@@ -815,6 +1127,7 @@ disabled = true
         )
         .unwrap()
         .with_history(history),
+        baseline_env(),
     );
     let client = host_client(&host, "one").await.with_prefix("");
     let all = client.catalog(&cwd, None).await.expect("read the catalog");
@@ -847,7 +1160,7 @@ disabled = true
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_process_id_survives_the_session_prefix() {
     let roots = Roots::new();
-    let host = Host::new(crate::inference::InferenceRegistry::empty());
+    let host = Host::new(crate::inference::InferenceRegistry::empty(), baseline_env());
     let runtime = SessionRuntime::start(runtime::boot(&roots.0.join("one")), host.swansong());
     let session = Arc::clone(runtime.session());
     host.adopt("one".into(), runtime);
@@ -857,7 +1170,7 @@ async fn a_process_id_survives_the_session_prefix() {
         .expect("spawn");
     assert_eq!(handle, "p#1");
 
-    let server = host_server(&host, true).await;
+    let server = host_server(&host).await;
 
     let read = server.get("/sessions/one/v1/processes/1").await;
     read.assert_status(200);

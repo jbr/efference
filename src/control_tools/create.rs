@@ -126,7 +126,7 @@ impl Tool<Control> for Create {
                     reauth: Vec::new(),
                     keep_scratch: false,
                     detached: self.detached,
-                    env,
+                    env: Some(env),
                 };
                 let host = state.host_client()?;
                 let id = host.create_session(&request).await?;
@@ -178,7 +178,7 @@ impl Tool<Control> for Create {
                     reauth: Vec::new(),
                     keep_scratch: false,
                     detached: self.detached,
-                    env,
+                    env: Some(env),
                 };
                 // The child records the caller as its creator, which is what
                 // makes it a descendant for later mutating calls — and

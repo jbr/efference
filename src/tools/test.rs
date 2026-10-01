@@ -606,7 +606,11 @@ async fn the_sessions_provider_mounts_namespaced_and_hides_settle() {
     std::fs::create_dir_all(&dir).unwrap();
 
     // `Host::new` already returns an `Arc<Host>`.
-    let host = crate::daemon::Host::new(crate::inference::InferenceRegistry::empty());
+    let host = crate::daemon::Host::new(
+        crate::inference::InferenceRegistry::empty(),
+        crate::env_table::EnvSnapshot::new(Default::default())
+            .expect("an empty environment is valid"),
+    );
     let mut toolbox = Toolbox::bash_and_mcps(dir.clone(), None).unwrap();
     toolbox.mount_sessions(host, "caller".into());
 

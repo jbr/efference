@@ -399,13 +399,17 @@ pub(crate) async fn host(
     // Shared rather than borrowed: a keychain-backed connection keeps the store
     // to re-read its credential from when one expires (docs/transport.md).
     let secrets = std::sync::Arc::new(efference::secrets::Secrets::detect()?);
+    // Cloned before the registry consumes it: the host needs the same snapshot as
+    // the baseline a session launched without one of its own inherits
+    // (docs/env.md).
+    let launch_baseline = host_env.clone();
     let inference = efference::inference::InferenceRegistry::load(&host_cwd, host_env, &secrets)?;
     refuse_broken_connections(&inference)?;
     for (name, auth) in inference.renewing() {
         log::info!("{name}: renewing its credential ahead of expiry while the host runs");
         tokio::spawn(auth.keep_renewed());
     }
-    let host = efference::daemon::Host::new(inference);
+    let host = efference::daemon::Host::new(inference, launch_baseline);
     if let Some(owner) = &owner {
         owner.adopt(host.swansong());
     }

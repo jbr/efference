@@ -80,7 +80,7 @@ impl Tool<Control> for HandOff {
                     keep_scratch: false,
                     // The host sets this from the caller's own placement.
                     detached: false,
-                    env: caller.child_env().resolved(),
+                    env: Some(caller.child_env().resolved()),
                 };
                 let successor = state.hand_off(request, self.brief).await?;
                 Ok(HandedOff { successor })
