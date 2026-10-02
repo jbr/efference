@@ -265,7 +265,7 @@ tail instruction (`retain_instruction` in `src/distill/prompt.rs`) names which o
 gate wants.
 
 **The ask is shaped against the pull of the turn it interrupts.** It carries its own
-`═══` banner, like every other section of the view; it opens on the imperative and
+banner, like every other section of the view; it opens on the imperative and
 repeats it last; it states that this is a triage turn and not a work turn; and the
 per-field asks (`keep`, `note`, and whichever of `inbox`/`background`/`surfaced` this
 gate carries) are a scannable block rather than prose appended after the fact. What
@@ -283,6 +283,18 @@ banner, the leading/closing imperative, the triage-turn stance, or the field blo
 the failure rate where it is, while ablating all four costs about twelve points. The
 shaping is redundant rather than resting on a particular sentence, which is the useful
 thing to know before editing it.
+
+**The ask says it is the harness's.** The banner is `⟢ triage · the harness asks: answer,
+don't act`, on both the gate's ask and the idle `triage` view, and the preamble names a
+`⟢ triage` block as the one `⟢` line that asks for something, spelling out `retain` and
+`triage` (`assets/prompts/session.md`). The ask rides an unprefixed user turn, which the
+preamble otherwise attributes to the operator, and the peek tools' descriptions say to call
+them only when the harness asks; without a stated provenance a model can deliberate over
+whether this is that moment and come out calling a work tool. Replayed on a session whose
+first attempts failed at 46% (space-bunny-alpha, 15 gates × 5 draws), the banner and
+sentence took first-attempt compliance from 47/75 to 74/75; a variant whose sentence said
+"the tool it names" instead of naming `retain` scored 58/75
+(journal/2026-10-02-triage-failures-root-caused.md).
 
 The ask also states that **the verdict is the `retain` call's arguments and prose is not
 read**. That one is separately attributed: measured against the all-features-off variant,

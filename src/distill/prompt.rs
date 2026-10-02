@@ -11,8 +11,11 @@ what truly warrants picking the work back up.";
 
 /// The ask's banner. Every other section of a peek view carries one (`═══ result ═══`,
 /// `═══ context ═══`, `═══ inbox ═══`); the ask carrying none left the only *instruction*
-/// in the view formatted as a trailing note about the sections above it.
-pub(super) const ASK_BANNER: &str = "═══ triage · answer, don't act ═══";
+/// in the view formatted as a trailing note about the sections above it. It opens on the
+/// harness's `⟢` because the preamble names a `⟢ triage` block as the harness's one ask
+/// (assets/prompts/session.md); without that, the ask arrives in an unprefixed user turn
+/// the preamble attributes to the operator (docs/redaction-fork.md).
+pub(super) const ASK_BANNER: &str = "⟢ triage · the harness asks: answer, don't act";
 
 /// The `keep`/`note` rows of the field block. `note` says *only what it showed* because a
 /// peek once turned a raw `unknown tool: ferritin` into "ferritin is not available as a CLI

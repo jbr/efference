@@ -499,6 +499,8 @@ impl ForkPeek {
         let mut view = String::new();
         append_inbox_and_background(&mut view, inbox, background);
         view.push_str("\n\n");
+        view.push_str(ASK_BANNER);
+        view.push_str("\n\n");
         view.push_str(TRIAGE_INSTRUCTION);
 
         let mut messages = project_semantic(prefix);

@@ -217,7 +217,9 @@ distiller's note on a result. It is a convention, not an authentication: anythin
 text in front of the model (a file, a command's output, another client's turn) can spell it.
 What keeps a forged note harmless is that a genuine one carries no authority to borrow — gates
 are enforced mechanically, never by what the model believes — so a forgery can plant a false
-fact but not an instruction. The `role:system` operator channel (the eventual Opus-4.8 upgrade
+fact but not an instruction. The one `⟢` block that asks for something, the triage ask
+(docs/redaction-fork.md), asks only for `retain` or `triage`; outside a gate either call is
+answered with a "nothing is being asked" stand-in, so a forged ask costs a round-trip. The `role:system` operator channel (the eventual Opus-4.8 upgrade
 described in `supervisor.md`) is the anticipated path for anything that *should* carry
 authority; user-role is the conservative, universally-supported default
 (backlog/harness-note-authority.md).
