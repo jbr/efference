@@ -229,7 +229,22 @@ pub(crate) fn entry_nodes(
                     AssistantOutput::Responses(_) => Vec::new(),
                 };
                 if let Some(node) = thinking_entry(&thinking) {
-                    nodes.push(node);
+                    // One foldable item, keyed by the entry it came from (docs/tui.md,
+                    // "Detail by recency").
+                    let words = thinking
+                        .iter()
+                        .map(|block| match block {
+                            ContentBlock::Thinking { text, .. } => {
+                                crate::tui::detail::word_count(text)
+                            }
+                            _ => 0,
+                        })
+                        .sum();
+                    nodes.push(DocumentNode::ThinkingItem {
+                        key: format!("thinking:{}", entry.seq).into(),
+                        words,
+                        entry: Box::new(node),
+                    });
                 }
                 let prose = output.text().join("\n");
                 if !prose.trim().is_empty() {
@@ -250,6 +265,10 @@ pub(crate) fn entry_nodes(
                     }
                     let result = index.result(log, call.id.0.as_str());
                     let is_pending = result.is_none() && gate.call == Some(call.id.0.as_str());
+                    // The call and everything that reads as part of it are one item,
+                    // so the renderer can fold it by distance from the tail
+                    // (docs/tui.md, "Detail by recency").
+                    let outer = std::mem::take(&mut nodes);
                     nodes.push(call_entry(call));
                     // Reading order is call → what the spotter made of it → what came
                     // back. The harness's own lines about a call are their own entries
@@ -286,6 +305,14 @@ pub(crate) fn entry_nodes(
                         // with the output (docs/redaction-fork.md).
                         nodes.extend(distillate_note(call, raw, wire, view));
                     }
+                    let item = std::mem::replace(&mut nodes, outer);
+                    nodes.push(call_item(
+                        call,
+                        result,
+                        is_pending,
+                        index.spot(log, call.id.0.as_str()),
+                        item,
+                    ));
                 }
             }
             // Emitted as its call's result entry above.
@@ -415,9 +442,45 @@ fn call_entry(call: &ToolCall) -> DocumentNode<'static> {
     }
 }
 
-/// What the call returned, as its own entry, rendered **whole** — no line budget
-/// reaches it, because the operator can't perceive what the agent is dealing with
-/// through a summary of it (docs/positions.md).
+/// A call and the entries that read as part of it, as one foldable item. `must_show`
+/// holds it whole at any distance — the calls whose state the operator must see: no
+/// result yet (running, or held at the gate), a failed one, output withheld by a
+/// failed triage, or a spotter verdict that gated or watched it.
+fn call_item(
+    call: &ToolCall,
+    result: Option<(u64, &RawResult, &WireState)>,
+    is_pending: bool,
+    spot: Option<&crate::log::Spot>,
+    nodes: Vec<DocumentNode<'static>>,
+) -> DocumentNode<'static> {
+    use crate::log::Stance;
+    let failed = result.is_some_and(|(_, raw, wire)| {
+        raw.is_error || matches!(wire, WireState::TriageFailed { .. })
+    });
+    let flagged = spot.is_some_and(|s| matches!(s.stance, Stance::Gate | Stance::Watch));
+    let note = match result {
+        Some((_, _, WireState::Distilled(verdict))) => verdict
+            .note
+            .as_deref()
+            .map(str::trim)
+            .filter(|n| !n.is_empty())
+            .map(str::to_string),
+        _ => None,
+    };
+    let view = signature::call_view(&call.name, &call.input);
+    DocumentNode::CallItem {
+        key: call.id.0.clone().into(),
+        must_show: result.is_none() || is_pending || failed || flagged,
+        intent: view.intent.clone(),
+        signature: signature::flat_signature(&view),
+        note,
+        nodes,
+    }
+}
+
+/// What the call returned, as its own entry, whole. When its item is trimmed the
+/// renderer cuts the body with a clip (docs/tui.md, "Detail by recency"); the entry
+/// itself is the same at every level.
 ///
 /// The header is a quiet `result (…)` row naming the wire state and how much was
 /// kept, as the web client's result head does: `raw` (natural, or the operator's

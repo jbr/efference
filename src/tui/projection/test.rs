@@ -49,10 +49,23 @@ fn sample_log() -> Vec<LogEntry> {
     ]
 }
 
+/// The document's top-level nodes with each call item opened into its entries — the
+/// flat sequence a whole transcript renders (a call item only groups them so the
+/// renderer can fold it; docs/tui.md).
+fn flat<'d, 'a>(nodes: &'d [DocumentNode<'a>]) -> Vec<&'d DocumentNode<'a>> {
+    nodes
+        .iter()
+        .flat_map(|n| match n {
+            DocumentNode::CallItem { nodes, .. } => nodes.iter().collect::<Vec<_>>(),
+            other => vec![other],
+        })
+        .collect()
+}
+
 /// The kinds of the document's top-level entries, in order.
 fn kinds(doc: &Document<'_>) -> Vec<EntryKind> {
-    doc.nodes
-        .iter()
+    flat(&doc.nodes)
+        .into_iter()
         .filter_map(|n| match n {
             DocumentNode::Entry { kind, .. } => Some(*kind),
             _ => None,
@@ -62,8 +75,8 @@ fn kinds(doc: &Document<'_>) -> Vec<EntryKind> {
 
 /// The header text of the first entry of `kind`.
 fn header_of(doc: &Document<'_>, want: EntryKind) -> String {
-    doc.nodes
-        .iter()
+    flat(&doc.nodes)
+        .into_iter()
         .find_map(|n| match n {
             DocumentNode::Entry {
                 kind,
@@ -100,9 +113,8 @@ fn projects_a_flat_sequence_of_entries() {
 
     // The call leads with its signature (no intent here, so no title row): a bash
     // call is its command, after the prompt, with no role/seq label.
-    let signature = doc
-        .nodes
-        .iter()
+    let signature = flat(&doc.nodes)
+        .into_iter()
         .find_map(|n| match n {
             DocumentNode::Entry { kind, blocks, .. } if *kind == EntryKind::ToolCall => {
                 match blocks.first() {
@@ -190,8 +202,8 @@ fn a_failed_result_is_marked_on_the_result_not_the_call() {
         &[],
     );
     let marker = |want: EntryKind| {
-        doc.nodes
-            .iter()
+        flat(&doc.nodes)
+            .into_iter()
             .find_map(|n| match n {
                 DocumentNode::Entry { kind, marker, .. } if *kind == want => {
                     Some(marker.as_ref()?.text.to_string())
@@ -256,9 +268,8 @@ fn distilled_wire_supersedes_raw() {
         !code.contains("the distilled summary"),
         "the note is not part of the result's content: {code}"
     );
-    let annotations: String = doc
-        .nodes
-        .iter()
+    let annotations: String = flat(&doc.nodes)
+        .into_iter()
         .filter(|n| {
             matches!(
                 n,
@@ -428,6 +439,7 @@ fn collect_text(nodes: &[DocumentNode<'_>]) -> String {
                 out.push('\n');
                 out.push_str(&collect_text(blocks));
             }
+            DocumentNode::CallItem { nodes, .. } => out.push_str(&collect_text(nodes)),
             _ => {}
         }
     }
@@ -451,6 +463,7 @@ fn collect_code(nodes: &[DocumentNode<'_>]) -> String {
                 }
             }
             DocumentNode::Entry { blocks, .. } => out.push_str(&collect_code(blocks)),
+            DocumentNode::CallItem { nodes, .. } => out.push_str(&collect_code(nodes)),
             _ => {}
         }
     }

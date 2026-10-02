@@ -49,8 +49,9 @@ impl<'a> InteractiveState<'a> {
             return;
         }
         let scroll = self.viewport.scroll_offset;
-        let view_bottom = scroll.saturating_add(self.layout.area.height);
-        let (vis_top, vis_bottom) = (top.max(scroll), bottom.min(view_bottom));
+        // The viewport, narrowed by any clip a folded item set (docs/tui.md).
+        let (view_top, view_bottom) = self.drawable_rows(self.layout.area.height);
+        let (vis_top, vis_bottom) = (top.max(view_top), bottom.min(view_bottom));
         if vis_top >= vis_bottom {
             return;
         }
@@ -67,7 +68,7 @@ impl<'a> InteractiveState<'a> {
                 self.write_text(buf, vis_top, x, &text, self.layout.area, style);
             }
             Painted::Ready { native, scratch } => {
-                let fully_visible = top >= scroll && bottom <= view_bottom;
+                let fully_visible = top >= view_top && bottom <= view_bottom;
                 // While the viewport is moving, a protocol that retransmits on
                 // every reposition flashes; hold the halfblocks slice for the
                 // motion and let the settled frame restore the crisp render.

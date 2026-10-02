@@ -67,7 +67,9 @@ hiding, and folding on demand or by operator preference can be added once
 reading real sessions says *what*. What the position rules out is assuming the
 answer up front, which is how a generic truncation default came to hide the two
 things most worth reading — the command that ran and what came back. Realized
-as: a flat transcript of untruncated entries ([tui.md](tui.md)).
+as: a flat transcript in which recent, failed, and flagged items render whole and
+only older ones fold, each opening whole on demand ([tui.md](tui.md), "Detail by
+recency").
 
 **Agent behavior is user feedback.** We don't know what, if anything, the
 subjective experience of a model is like — so observe and respond instead of

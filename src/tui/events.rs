@@ -4,7 +4,7 @@ use crate::tui::projection::ViewState;
 
 /// Apply a [`TuiAction`] to the document.
 ///
-/// **Nothing here mutates the document.** Entries render whole (docs/tui.md), so
+/// **Nothing here mutates the document.** Folding is render state (docs/tui.md), so
 /// `FocusEntry` carries focus and nothing else; `SelectTheme` is handled by the theme
 /// picker, and `OpenUrl` is a no-op in the read-only viewer.
 ///
@@ -21,5 +21,7 @@ pub(super) fn handle_action(
         TuiAction::FocusEntry(_) => {}
         TuiAction::OpenUrl(_) => { /* external links are not opened */ }
         TuiAction::SelectTheme(_) => { /* handled in the theme picker */ }
+        // Expansion is render state the caller owns (`InteractiveState::expanded`).
+        TuiAction::ExpandItem(_) => {}
     }
 }

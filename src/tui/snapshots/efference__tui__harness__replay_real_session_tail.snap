@@ -20,8 +20,8 @@ expression: self.render()
 12 │   /tmp/efference-smoke-test                                                    │
 13 │                                                                                │
 14 │   Done! I've created an empty file at /tmp/efference-smoke-test using the      │
-15 │   touch command.                                                               │
-16 │                                                                               ╻│
+15 │   touch command.                                                              ╻│
+16 │                                                                               ┃│
 17 │   ⟢ config · Your session scope was updated by the orchestrator:              ┃│
 18 │                                                                               ┃│
 19 │   Develop the efference Rust harness in this repository: read and edit its    ┃│

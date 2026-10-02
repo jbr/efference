@@ -347,6 +347,12 @@ impl<'a> InteractiveState<'a> {
                 }
             }
 
+            DocumentNode::CallItem { .. } => self.render_call_item(node, buf),
+
+            DocumentNode::ThinkingItem { key, words, entry } => {
+                self.render_thinking_item(key, *words, entry, buf);
+            }
+
             DocumentNode::Captioned { caption, nodes } => {
                 self.layout.pos.x = self.layout.indent;
                 self.draw_blockquote_markers(buf);
@@ -385,8 +391,8 @@ impl<'a> InteractiveState<'a> {
                 let my_action_index = self.render_cache.actions.len();
                 if kind.is_focusable() {
                     // The whole first row is the focus/click target. Focus is all it
-                    // is: an entry renders whole, so there is nothing to expand
-                    // (docs/tui.md).
+                    // is: a folded item carries its own expand target (docs/tui.md,
+                    // "Detail by recency").
                     let rect = Rect::new(0, entry_start, self.layout.area.width, 1);
                     self.render_cache
                         .actions
@@ -428,8 +434,8 @@ impl<'a> InteractiveState<'a> {
                     self.layout.pos.y += 1;
                 }
 
-                // Body: every child, whole. Nothing here consults a line budget —
-                // if the agent saw it, the operator sees it (docs/positions.md).
+                // Body: every child, whole. A folded item cuts it with a clip from
+                // outside (docs/tui.md, "Detail by recency"); nothing here does.
                 for (idx, child_node) in blocks.iter().enumerate() {
                     if idx > 0 {
                         self.layout.pos.y += 1;

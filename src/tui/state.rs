@@ -216,6 +216,9 @@ impl<'a> DocumentState<'a> {
 pub(super) struct NodeLayout<'a> {
     pub height: u16,
     pub actions: Vec<(Rect, TuiAction<'a>)>,
+    /// The detail level the node was laid out at: a node whose level has since
+    /// changed (the tail grew past it) is laid out again.
+    pub level: super::detail::Level,
 }
 
 /// Cached document layout information
@@ -401,6 +404,13 @@ pub(super) struct LayoutState {
     /// slice under protocols whose native render flashes on every reposition
     /// (docs/tui.md); a settled follow-up frame restores the crisp render.
     pub scroll_in_motion: bool,
+    /// Document rows `[top, bottom)` outside which nothing is drawn, on top of the
+    /// viewport's own bounds: how a folded item caps a body it laid out in full
+    /// (docs/tui.md, "Detail by recency"). `None` outside such a render.
+    pub clip: Option<(u16, u16)>,
+    /// The detail level of the top-level node being rendered, set by the document
+    /// walk from its distance to the tail.
+    pub level: super::detail::Level,
 }
 
 /// Main interactive state - composes all UI state
@@ -427,6 +437,10 @@ pub(super) struct InteractiveState<'a> {
     /// on every streamed token, so a block's toggles can't live in the rebuilt
     /// `Document`. `project` reads it, keyed by `call_id`.
     pub view: projection::ViewState,
+    /// Folded transcript items the operator opened whole, by item key (docs/tui.md,
+    /// "Detail by recency"). Render-only: a fold is a render-time choice, so opening
+    /// one re-lays-out the document without re-projecting it.
+    pub expanded: std::collections::HashSet<String>,
     /// Inbound events from the SSE bridge (durable entries + ephemeral deltas).
     pub events: Receiver<TuiEvent>,
 

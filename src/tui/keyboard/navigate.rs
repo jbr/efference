@@ -209,6 +209,11 @@ impl<'a> InteractiveState<'a> {
         {
             let action = action.clone();
 
+            // A folded item opens whole (docs/tui.md, "Detail by recency").
+            if let crate::tui::document::TuiAction::ExpandItem(key) = &action {
+                self.toggle_expanded(key.to_string());
+                return;
+            }
             // Handle SelectTheme specially (same as mouse click)
             if let crate::tui::document::TuiAction::SelectTheme(theme_name) = &action {
                 let _ = self.apply_theme(theme_name);

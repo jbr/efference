@@ -25,9 +25,21 @@ impl<'a> InteractiveState<'a> {
     /// Always false during the [measure](Self::measure_document) pass, so that pass
     /// costs layout arithmetic and nothing else.
     pub(super) fn row_visible(&self, row: u16) -> bool {
-        !self.layout.measuring
-            && row >= self.viewport.scroll_offset
-            && row < self.viewport.scroll_offset + self.layout.area.height
+        let (top, bottom) = self.drawable_rows(self.layout.area.height);
+        !self.layout.measuring && row >= top && row < bottom
+    }
+
+    /// The document rows a write may land in: the viewport, narrowed by any clip a
+    /// folded item set (docs/tui.md, "Detail by recency"). `height` is the
+    /// viewport's — callers pass the area they were handed.
+    pub(super) fn drawable_rows(&self, height: u16) -> (u16, u16) {
+        let mut top = self.viewport.scroll_offset;
+        let mut bottom = top.saturating_add(height);
+        if let Some((clip_top, clip_bottom)) = self.layout.clip {
+            top = top.max(clip_top);
+            bottom = bottom.min(clip_bottom);
+        }
+        (top, bottom)
     }
 
     /// Lay out any nodes whose height isn't cached, without drawing, and record the
@@ -93,11 +105,19 @@ impl<'a> InteractiveState<'a> {
                 self.layout.pos.y += 1;
             }
             let start = self.layout.pos.y;
+            // Detail by recency (docs/tui.md): each top-level node is an item, and
+            // its distance from the tail sets how much of it renders. A folded node
+            // that has drifted to a new level is laid out again.
+            let level = super::detail::level_for(node_count - 1 - idx, false);
+            self.layout.level = level;
 
             // Reuse the cached layout unless the node is on screen (where it must
             // actually be drawn). Off-screen rows produce no output either way, so
             // the only thing the walk owes them is their height and their actions.
-            if let Some(cached) = self.document.layouts[idx].as_ref() {
+            if let Some(cached) = self.document.layouts[idx]
+                .as_ref()
+                .filter(|cached| cached.level == level)
+            {
                 let end = start.saturating_add(cached.height);
                 let visible = end > self.viewport.scroll_offset
                     && start < self.viewport.scroll_offset + self.layout.area.height;
@@ -137,6 +157,7 @@ impl<'a> InteractiveState<'a> {
             self.document.layouts[idx] = Some(NodeLayout {
                 height: self.layout.pos.y.saturating_sub(start),
                 actions,
+                level,
             });
         }
 

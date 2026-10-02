@@ -228,6 +228,7 @@ fn untouched_entries_keep_their_cached_layout() {
             Some(crate::tui::state::NodeLayout {
                 height: 3,
                 actions: Vec::new(),
+                level: Default::default(),
             })
         })
         .collect();

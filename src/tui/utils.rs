@@ -37,8 +37,12 @@ pub(super) fn find_node_at_path<'a, 'b>(
     match node {
         DocumentNode::Section { nodes, .. }
         | DocumentNode::BlockQuote { nodes }
-        | DocumentNode::Captioned { nodes, .. } => find_node_at_path(nodes, rest),
+        | DocumentNode::Captioned { nodes, .. }
+        | DocumentNode::CallItem { nodes, .. } => find_node_at_path(nodes, rest),
         DocumentNode::Entry { blocks, .. } => find_node_at_path(blocks, rest),
+        DocumentNode::ThinkingItem { entry, .. } => {
+            find_node_at_path(std::slice::from_ref(entry), rest)
+        }
         DocumentNode::List { items, .. } => {
             let (&item_idx, rest) = rest.split_first()?;
             find_node_at_path(&items.get(item_idx as usize)?.content, rest)
@@ -70,8 +74,12 @@ pub(super) fn find_node_at_path_mut<'a, 'b>(
     match &mut nodes[idx] {
         DocumentNode::Section { nodes, .. }
         | DocumentNode::BlockQuote { nodes }
-        | DocumentNode::Captioned { nodes, .. } => find_node_at_path_mut(nodes, remaining_path),
+        | DocumentNode::Captioned { nodes, .. }
+        | DocumentNode::CallItem { nodes, .. } => find_node_at_path_mut(nodes, remaining_path),
         DocumentNode::Entry { blocks, .. } => find_node_at_path_mut(blocks, remaining_path),
+        DocumentNode::ThinkingItem { entry, .. } => {
+            find_node_at_path_mut(std::slice::from_mut(entry), remaining_path)
+        }
         DocumentNode::List { items, .. } => {
             // Path into list items
             if remaining_path.is_empty() {

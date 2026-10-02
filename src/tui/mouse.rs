@@ -294,6 +294,17 @@ impl<'a> super::InteractiveState<'a> {
         }
     }
 
+    /// Open a folded item whole, or fold it back (docs/tui.md, "Detail by
+    /// recency"). Expansion is render state, so the document is laid out again
+    /// rather than re-projected.
+    pub(super) fn toggle_expanded(&mut self, key: String) {
+        if !self.expanded.remove(&key) {
+            self.expanded.insert(key);
+        }
+        self.document.invalidate_all();
+        self.dirty = true;
+    }
+
     pub(super) fn handle_click(&mut self) {
         // Handle any clicked action from previous iteration
         if let Some(click_pos) = self.viewport.clicked_position.take() {
@@ -317,6 +328,15 @@ impl<'a> super::InteractiveState<'a> {
                 .actions
                 .iter()
                 .position(|(rect, _)| rect.contains(click_pos));
+
+            // A folded item opens whole on a click (docs/tui.md, "Detail by recency").
+            if let Some(index) = hit
+                && let Some((_, TuiAction::ExpandItem(key))) = self.render_cache.actions.get(index)
+            {
+                let key = key.to_string();
+                self.toggle_expanded(key);
+                return;
+            }
 
             // Clicking a transcript entry *focuses* it — the click and the `↑`/`↓`
             // cursor address the same units, so the menu that appears is the one the
@@ -387,6 +407,7 @@ impl<'a> super::InteractiveState<'a> {
                         TuiAction::SelectTheme(theme_name) => {
                             format!("Preview theme: {} (⏎ to activate)", theme_name).into()
                         }
+                        TuiAction::ExpandItem(_) => "⏎ show it whole".into(),
                     };
                     return; // Keyboard focus takes priority
                 }
@@ -412,6 +433,7 @@ impl<'a> super::InteractiveState<'a> {
                 TuiAction::SelectTheme(theme_name) => {
                     format!("Preview theme: {}", theme_name).into()
                 }
+                TuiAction::ExpandItem(_) => "click to show it whole".into(),
             };
         }
     }

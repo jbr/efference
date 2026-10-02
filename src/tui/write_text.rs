@@ -24,10 +24,8 @@ impl<'a> InteractiveState<'a> {
     ) {
         // Outside the visible area — or a measure pass, which lays out without
         // drawing (docs/tui.md).
-        if self.layout.measuring
-            || row < self.viewport.scroll_offset
-            || row >= self.viewport.scroll_offset + area.height
-        {
+        let (top, bottom) = self.drawable_rows(area.height);
+        if self.layout.measuring || row < top || row >= bottom {
             return;
         }
 

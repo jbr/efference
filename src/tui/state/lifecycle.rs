@@ -75,6 +75,8 @@ impl<'a> InteractiveState<'a> {
                 blockquote_markers: Vec::new(),
                 measuring: false,
                 scroll_in_motion: false,
+                clip: None,
+                level: Default::default(),
             },
             ui_mode: UiMode::Normal,
             ui: UiState {
@@ -93,6 +95,7 @@ impl<'a> InteractiveState<'a> {
             live: LiveTail::default(),
             transcript: projection::Transcript::default(),
             view: projection::ViewState::default(),
+            expanded: std::collections::HashSet::new(),
             events,
             viewing: None,
             dim_register: false,

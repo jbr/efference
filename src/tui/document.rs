@@ -16,6 +16,9 @@ pub enum TuiAction<'a> {
     OpenUrl(Cow<'a, str>),
     /// Select a theme (interactive mode only)
     SelectTheme(Cow<'a, str>),
+    /// Open a folded transcript item whole (docs/tui.md, "Detail by recency"), by
+    /// the item's key — a call's `call_id`, a thinking block's position.
+    ExpandItem(Cow<'a, str>),
 }
 
 impl<'a> TuiAction<'a> {
@@ -24,7 +27,7 @@ impl<'a> TuiAction<'a> {
         match self {
             TuiAction::FocusEntry(_) => None,
             TuiAction::OpenUrl(cow) => Some(cow.clone()),
-            TuiAction::SelectTheme(_) => None,
+            TuiAction::SelectTheme(_) | TuiAction::ExpandItem(_) => None,
         }
     }
 }
@@ -210,6 +213,35 @@ pub enum DocumentNode<'a> {
         nodes: Vec<DocumentNode<'a>>,
     },
 
+    /// One tool call as a transcript item (docs/tui.md, "Detail by recency"): the
+    /// call entry and everything that reads as part of it — what the spotter made of
+    /// it, the gate affordance, the result, the triage note — kept together so the
+    /// renderer can fold the whole item by its distance from the tail. Folding is a
+    /// render-time choice; the children are exactly the entries a whole call renders.
+    CallItem {
+        /// The call's `call_id`: what expansion is keyed by.
+        key: Cow<'a, str>,
+        /// Renders whole at any distance: still running or held at a gate, failed,
+        /// or flagged by the spotter.
+        must_show: bool,
+        /// What the brief form is made of: the intent, the signature on one line,
+        /// and the triage note.
+        intent: Option<String>,
+        signature: String,
+        note: Option<String>,
+        nodes: Vec<DocumentNode<'a>>,
+    },
+
+    /// A committed thinking entry as a transcript item (docs/tui.md, "Detail by
+    /// recency"): a long one folds by its distance from the tail. `words` decides
+    /// whether it may fold at all; `entry` is exactly what a whole block renders.
+    ThinkingItem {
+        /// The assistant entry's seq: what expansion is keyed by.
+        key: Cow<'a, str>,
+        words: usize,
+        entry: Box<DocumentNode<'a>>,
+    },
+
     /// A block with a caption line directly above it and no blank row between —
     /// a call argument's key over its content (docs/tui.md), the way the web
     /// client's `<dt>` sits on its `<dd>`.
@@ -235,9 +267,9 @@ pub enum DocumentNode<'a> {
     /// call, a tool result — decorated for presentation rather than grouped into
     /// conversational turns.
     ///
-    /// Every entry renders **whole**: there is no truncation level here, because
-    /// the operator cannot perceive what the agent is dealing with through a
-    /// summary of it (docs/positions.md).
+    /// An entry renders whole; folding is the item's business, decided at render
+    /// time by its distance from the tail (`CallItem`, `ThinkingItem`; docs/tui.md,
+    /// "Detail by recency").
     Entry {
         /// What this entry *is* — which drives its whole presentation (marker,
         /// gutter, register) and which verbs it carries.
