@@ -683,7 +683,7 @@ first dot is the boundary — a server's own tool name may contain dots (the MCP
 spec permits them), so `ferritin.admin.tools.list` resolves to
 `ferritin__admin.tools.list`.
 
-Every human-facing surface uses the dotted form: the transcript, the sidebar's
+Every human-facing surface uses the dotted form: the transcript, the session drawer's
 policy labels (including pending proposals, so a proposal reads and sorts as the
 grant it becomes), and the config file the auto-persist write-back produces.
 The wire and the log keep the underscores — the dot is applied at each display

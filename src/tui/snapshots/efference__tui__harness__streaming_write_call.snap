@@ -5,17 +5,17 @@ expression: self.render()
     0         1         2         3         4         5         6         7         
     01234567890123456789012345678901234567890123456789012345678901234567890123456789
    ┌────────────────────────────────────────────────────────────────────────────────┐
- 0 │ ┃ Write the renderer.                                                          │
- 1 │                                                                                │
- 2 │   ❯ calling write(path: "src/render.rs", …)                                    │
- 3 │                                                                                │
- 4 │   write the renderer                                                           │
- 5 │                                                                                │
- 6 │ ╭─────────❬rust❭─╮                                                             │
- 7 │ │ fn main() {    │                                                             │
- 8 │ │     let x = 1; │                                                             │
- 9 │ ╰────────────────╯                                                             │
-10 │                                                                                │
+ 0 │ efference                                                             session  │
+ 1 │ ┃ Write the renderer.                                                          │
+ 2 │                                                                                │
+ 3 │   ❯ calling write(path: "src/render.rs", …)                                    │
+ 4 │                                                                                │
+ 5 │   write the renderer                                                           │
+ 6 │                                                                                │
+ 7 │ ╭─────────❬rust❭─╮                                                             │
+ 8 │ │ fn main() {    │                                                             │
+ 9 │ │     let x = 1; │                                                             │
+10 │ ╰────────────────╯                                                             │
 11 │                                                                                │
 12 │                                                                                │
 13 │                                                                                │

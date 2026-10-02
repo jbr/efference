@@ -5,16 +5,16 @@ expression: self.render()
     0         1         2         3         4         5         6         7         
     01234567890123456789012345678901234567890123456789012345678901234567890123456789
    ┌────────────────────────────────────────────────────────────────────────────────┐
- 0 │ ┃ Add the line.                                                                │
- 1 │                                                                                │
- 2 │   Editing.                                                                     │
- 3 │                                                                                │
- 4 │   ❯ edit(file_path: "CHANGELOG.md", operation: "insert_after")                 │
- 5 │   ✓ kept 3 of 7 lines                                                          │
- 6 │   @@ -12,3 +12,4 @@                                                            │
- 7 │    - In-process MCP tools (fs-mcp, semantic-edit-mcp).                         │
- 8 │   +- `read` tool line-range support in `fs-mcp`.                               │
- 9 │                                                                                │
+ 0 │ efference                                                             session  │
+ 1 │ ┃ Add the line.                                                                │
+ 2 │                                                                                │
+ 3 │   Editing.                                                                     │
+ 4 │                                                                                │
+ 5 │   ❯ edit(file_path: "CHANGELOG.md", operation: "insert_after")                 │
+ 6 │   ✓ kept 3 of 7 lines                                                          │
+ 7 │   @@ -12,3 +12,4 @@                                                            │
+ 8 │    - In-process MCP tools (fs-mcp, semantic-edit-mcp).                         │
+ 9 │   +- `read` tool line-range support in `fs-mcp`.                               │
 10 │                                                                                │
 11 │                                                                                │
 12 │                                                                                │

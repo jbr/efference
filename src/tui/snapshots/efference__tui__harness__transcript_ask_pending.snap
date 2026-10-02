@@ -5,12 +5,12 @@ expression: self.render()
     0         1         2         3         4         5         6         
     0123456789012345678901234567890123456789012345678901234567890123456789
    ┌──────────────────────────────────────────────────────────────────────┐
- 0 │ ┃ Tidy the config loader.                                            │
- 1 │                                                                      │
- 2 │   The loader has two shapes.                                         │
- 3 │                                                                      │
- 4 │   Keep the legacy [env] spelling?  asked                             │
- 5 │                                                                      │
+ 0 │ efference                                                   session  │
+ 1 │ ┃ Tidy the config loader.                                            │
+ 2 │                                                                      │
+ 3 │   The loader has two shapes.                                         │
+ 4 │                                                                      │
+ 5 │   Keep the legacy [env] spelling?  asked                             │
  6 │                                                                      │
  7 │                                                                      │
  8 │                                                                      │

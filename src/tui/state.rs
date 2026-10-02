@@ -293,10 +293,20 @@ pub(super) struct ViewportState {
     /// the chip it removes — resolved to the chip's key, not its position, so a
     /// click can never remove whatever slid into the row since the paint.
     pub staged_hits: Vec<(u16, u16, u16, u64)>,
-    /// The right-docked sidebar's rectangle as of the last frame, or `None` when it's
-    /// hidden (narrow terminal). Remembered so the sidebar-only dev screenshot can
-    /// slice exactly those columns (docs/tui.md).
+    /// The session drawer's rectangle as of the last frame, or `None` while it is
+    /// closed. Remembered so a click can be resolved against it before the
+    /// transcript underneath, and so the drawer-only dev screenshot can slice
+    /// exactly those columns (docs/tui.md).
     pub sidebar_area: Option<Rect>,
+    /// Where the transcript's origin sits on screen. The document renders at
+    /// `(0, 0)` into a buffer of its own and is copied here, so a pointer
+    /// position is translated by this offset before it meets document
+    /// coordinates (docs/tui.md).
+    pub doc_origin: Position,
+    /// The header row's clickable items as of the last frame, by column span.
+    pub header_hits: Vec<(u16, u16, super::render_header::HeaderItem)>,
+    /// The header item under the pointer, which draws its hover state.
+    pub header_hovered: Option<super::render_header::HeaderItem>,
     /// The composer's text rectangle as of the last frame, after a staged-verb chip
     /// has claimed its left columns. Mouse hit testing uses this rendered geometry.
     pub composer_area: Option<Rect>,

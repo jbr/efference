@@ -5,17 +5,17 @@ expression: self.render()
     0         1         2         3         4         5         6         7         
     01234567890123456789012345678901234567890123456789012345678901234567890123456789
    ┌────────────────────────────────────────────────────────────────────────────────┐
- 0 │ ┃ Show me the project function signature.                                      │
- 1 │                                                                                │
- 2 │   On it.                                                                       │
- 3 │                                                                                │
- 4 │   ❯ bash · grep -n 'fn project' src/project.rs                                 │
- 5 │   ✓ 2 lines                                                                    │
- 6 │ ╭──────────────────────────────────────────────────────────╮                   │
- 7 │ │ 12:pub fn project(log: &[LogEntry]) -> Vec<ApiMessage> { │                   │
- 8 │ │ 88:    fn project_coalesces_tool_results() {             │                   │
- 9 │ ╰──────────────────────────────────────────────────────────╯                   │
-10 │                                                                                │
+ 0 │ efference                                                             session  │
+ 1 │ ┃ Show me the project function signature.                                      │
+ 2 │                                                                                │
+ 3 │   On it.                                                                       │
+ 4 │                                                                                │
+ 5 │   ❯ bash · grep -n 'fn project' src/project.rs                                 │
+ 6 │   ✓ 2 lines                                                                    │
+ 7 │ ╭──────────────────────────────────────────────────────────╮                   │
+ 8 │ │ 12:pub fn project(log: &[LogEntry]) -> Vec<ApiMessage> { │                   │
+ 9 │ │ 88:    fn project_coalesces_tool_results() {             │                   │
+10 │ ╰──────────────────────────────────────────────────────────╯                   │
 11 │                                                                                │
 12 │                                                                                │
 13 │                                                                                │

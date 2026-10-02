@@ -5,7 +5,7 @@ expression: self.render()
     0         1         2         3         4         5         6         7         
     01234567890123456789012345678901234567890123456789012345678901234567890123456789
    ┌────────────────────────────────────────────────────────────────────────────────┐
- 0 │                                                                                │
+ 0 │ efference                                                             session  │
  1 │   ⟢ 20,191 total lines of Rust code in src/ directory                          │
  2 │                                                                                │
  3 │   There are 20,191 total lines of Rust code in the src/ directory.             │
@@ -20,8 +20,8 @@ expression: self.render()
 12 │   /tmp/efference-smoke-test                                                    │
 13 │                                                                                │
 14 │   Done! I've created an empty file at /tmp/efference-smoke-test using the      │
-15 │   touch command.                                                              ╻│
-16 │                                                                               ┃│
+15 │   touch command.                                                               │
+16 │                                                                               ╻│
 17 │   ⟢ config · Your session scope was updated by the orchestrator:              ┃│
 18 │                                                                               ┃│
 19 │   Develop the efference Rust harness in this repository: read and edit its    ┃│

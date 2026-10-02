@@ -5,29 +5,29 @@ expression: self.render()
     0         1         2         3         4         5         6         7         8         9         0         
     01234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789
    ┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
- 0 │ ┃ watch the build                                                    │ ▾ PROCESSES  1                        │
+ 0 │ efference                                                                                           session  │
    │^                                                                                                             │
- 1 │                                                                      │  p#3  cargo watch -x test             │
- 2 │   On it.                                                             │    12s · idle 3s                      │
- 3 │                                                                      │                                       │
- 4 │                                                                      │ ▾ POLICY                              │
- 5 │                                                                      │  review  human_only                   │
- 6 │                                                                      │  scope  this repo                     │
- 7 │                                                                      │  commands                             │
- 8 │                                                                      │    cargo                              │
- 9 │                                                                      │▌   git log  ⊕    ▸ commit    cancel   │
-10 │                                                                      │  paths                                │
-11 │                                                                      │    /refs  r  ⊕                        │
-12 │                                                                      │                                       │
-13 │                                                                      │                                       │
-14 │                                                                      │                                       │
-15 │                                                                      │                                       │
-16 │                                                                      │                                       │
-17 │                                                                      │                                       │
-18 │                                                                      │                                       │
-19 │                                                                      │                                       │
-20 │                                                                      │                                       │
-21 │   pace fast     sessions s     theme t     help ?     detach q       │                                       │
-22 │›                                                                     │                                       │
-23 │   sidebar — ↑/↓ row · ←/→ verb · ⏎ act · tab back · esc compose                                              │
+ 1 │ ┃ watch the build                                    │ Processes  1                                          │
+ 2 │                                                      │ p#3  cargo watch -x test                              │
+ 3 │   On it.                                             │   12s · idle 3s                                       │
+ 4 │                                                      │                                                       │
+ 5 │                                                      │ Policy                                                │
+ 6 │                                                      │ review     human_only                                 │
+ 7 │                                                      │ scope      this repo                                  │
+ 8 │                                                      │ commands   cargo                                      │
+ 9 │                                                      │▌           git log  ⊕            ▸ commit    cancel   │
+10 │                                                      │ paths      /refs  r  ⊕                                │
+11 │                                                      │                                                       │
+12 │                                                      │                                                       │
+13 │                                                      │                                                       │
+14 │                                                      │                                                       │
+15 │                                                      │                                                       │
+16 │                                                      │                                                       │
+17 │                                                      │                                                       │
+18 │                                                      │                                                       │
+19 │                                                      │                                                       │
+20 │ ▶ p#3  cargo watch -x test · 12s · idle 3s │ ok                                                              │
+21 │   pace fast     sessions s     theme t     help ?     detach q                                               │
+22 │›                                                                                                             │
+23 │   session — ↑/↓ row · ←/→ verb · ⏎ act · tab or esc closes                                                   │
    └──────────────────────────────────────────────────────────────────────────────────────────────────────────────┘

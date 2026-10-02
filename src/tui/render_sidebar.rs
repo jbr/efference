@@ -1,13 +1,18 @@
-//! The right-docked sidebar (docs/tui.md): `SESSION`, `PROCESSES`, `STATS`, and
-//! `POLICY`. It is chrome, not transcript: rendered directly into its `Rect` at
-//! absolute coordinates, fed by the `state` topics (docs/control-api.md). A
-//! 1-column `│` divides it from the transcript on its left edge.
+//! The session drawer (docs/tui.md): Session, Processes, Usage, and Policy, as
+//! labelled rows the way the web client's drawer lays them out. It is chrome, not
+//! transcript: rendered directly into its `Rect` at absolute coordinates, fed by
+//! the `state` topics (docs/control-api.md), over the transcript's right side
+//! while open. A 1-column `│` divides it from the transcript on its left edge.
 //!
 //! Sections render top-down until they run out of room. Row and verb rects are
 //! recorded per frame for click dispatch (`sidebar_hits` / `sidebar_verb_hits`); the
 //! verbs themselves dispatch by identity through `tui/sidebar.rs`.
 
-use ratatui::{buffer::Buffer, layout::Rect, style::Style};
+use ratatui::{
+    buffer::Buffer,
+    layout::Rect,
+    style::{Modifier, Style},
+};
 
 use super::SidebarRow;
 use super::render_frame::fmt_secs;
@@ -26,12 +31,43 @@ fn put(buf: &mut Buffer, x: u16, y: u16, max_w: u16, text: &str, style: Style) {
     }
 }
 
+/// Columns of the label gutter: values start this far into the content.
+const LABEL_W: u16 = 11;
+/// Lines the session title may wrap to before it is cut.
+const TITLE_LINES: usize = 2;
+/// Lines the scope sentence may wrap to before it is cut.
+const SCOPE_LINES: usize = 3;
+
+/// Greedy word wrap to `width` columns, at most `max_lines` lines; a word longer
+/// than the width is cut at it. The last line keeps whatever did not fit, and
+/// [`put`] clips it at the column edge.
+fn wrap_words(text: &str, width: usize, max_lines: usize) -> Vec<String> {
+    let mut lines: Vec<String> = Vec::new();
+    let mut line = String::new();
+    for word in text.split_whitespace() {
+        let fits = line.is_empty() || line.chars().count() + 1 + word.chars().count() <= width;
+        if !fits && lines.len() + 1 < max_lines {
+            lines.push(std::mem::take(&mut line));
+        }
+        if !line.is_empty() {
+            line.push(' ');
+        }
+        line.push_str(word);
+    }
+    if !line.is_empty() {
+        lines.push(line);
+    }
+    lines
+}
+
 impl<'a> InteractiveState<'a> {
     pub(super) fn render_sidebar(&mut self, buf: &mut Buffer, area: Rect) {
         let bg = self.theme.document_bg_style;
-        let header = self.theme.breadcrumb_current_style;
         let muted = self.theme.muted_style;
-        let text = self.theme.status_style;
+        // The status style's foreground on the drawer's own background: the status
+        // style also carries the status row's band, which does not belong here.
+        let text = bg.fg(self.theme.status_style.fg.unwrap_or_default());
+        let header = text.add_modifier(Modifier::BOLD);
 
         // Clear the panel and paint the left divider column.
         for dy in 0..area.height {
@@ -52,34 +88,39 @@ impl<'a> InteractiveState<'a> {
 
         let x0 = area.x + 2; // content start: past the divider + one space
         let max_w = area.width.saturating_sub(3); // trailing pad
+        let vx = x0 + LABEL_W; // the value column
+        let vw = max_w.saturating_sub(LABEL_W);
         let bottom = area.y + area.height;
         let mut y = area.y;
+
+        // One `label  value` row: the label muted in its gutter, the value beside it.
+        let kv = |buf: &mut Buffer, y: u16, label: &str, value: &str, style: Style| {
+            put(buf, x0, y, LABEL_W, label, muted);
+            put(buf, vx, y, vw, value, style);
+        };
 
         // Owned snapshots for the render walk: the verb menus record hits through
         // `&mut self`, which cannot run while the view structs are borrowed.
         let processes = self.processes.clone();
         let policy = self.policy.clone();
 
-        // SESSION — which model is answering and where it is working, from the
-        // `session_identity` topic (docs/control-api.md). It leads the column: it is
-        // the only section that says what this session *is*, and nothing in the
-        // transcript names the model. Absent until the connect snapshot lands.
+        // Session — what this session is: its title, then which model answers and
+        // where it works, from the `session_identity` topic (docs/control-api.md).
+        // Nothing in the transcript names the model. Absent until the connect
+        // snapshot lands.
         if let Some(identity) = self.session_identity.clone()
             && y < bottom
         {
-            put(buf, x0, y, max_w, "▾ SESSION", header);
+            put(buf, x0, y, max_w, "Session", header);
             y += 1;
-            // The title, then the id (docs/session-title.md): what the session is
-            // for, and the name to reach it by.
-            if let Some(title) = &identity.title
-                && y < bottom
-            {
-                put(buf, x0 + 1, y, max_w.saturating_sub(1), title, text);
-                y += 1;
-            }
-            if y < bottom {
-                put(buf, x0 + 1, y, max_w.saturating_sub(1), &identity.id, muted);
-                y += 1;
+            // The title leads (docs/session-title.md): what the session is for.
+            if let Some(title) = &identity.title {
+                for line in wrap_words(title, max_w as usize, TITLE_LINES) {
+                    if y < bottom {
+                        put(buf, x0, y, max_w, &line, text);
+                        y += 1;
+                    }
+                }
             }
             // Hosted: the main role is named by connection; the spotter and
             // triage rows follow, since which account answers a permission check
@@ -88,47 +129,30 @@ impl<'a> InteractiveState<'a> {
                 .roles
                 .as_ref()
                 .map_or(identity.model.clone(), |roles| roles.main.clone());
-            if y < bottom {
-                put(buf, x0 + 1, y, max_w.saturating_sub(1), &model, text);
-                y += 1;
-            }
+            let mut rows = vec![("model", model, text)];
             if let Some(roles) = &identity.roles {
-                for (label, value) in [("spotter", &roles.spotter), ("triage", &roles.triage)] {
-                    if y < bottom {
-                        put(
-                            buf,
-                            x0 + 1,
-                            y,
-                            max_w.saturating_sub(1),
-                            &format!("{label} {value}"),
-                            muted,
-                        );
-                        y += 1;
-                    }
-                }
+                rows.push(("spotter", roles.spotter.clone(), text));
+                rows.push(("triage", roles.triage.clone(), text));
             }
-            if y < bottom {
-                put(
-                    buf,
-                    x0 + 1,
-                    y,
-                    max_w.saturating_sub(1),
-                    &identity.cwd,
-                    muted,
-                );
-                y += 1;
+            rows.push(("directory", identity.cwd.clone(), text));
+            rows.push(("session", identity.id.clone(), muted));
+            for (label, value, style) in rows {
+                if y < bottom {
+                    kv(buf, y, label, &value, style);
+                    y += 1;
+                }
             }
             y += 1; // section gap
         }
 
-        // PROCESSES — one running process per two lines (handle/command, then timing).
+        // Processes — one running process per two lines (handle/command, then timing).
         if y < bottom {
             put(
                 buf,
                 x0,
                 y,
                 max_w,
-                &format!("▾ PROCESSES  {}", self.processes.len()),
+                &format!("Processes  {}", self.processes.len()),
                 header,
             );
             y += 1;
@@ -143,9 +167,9 @@ impl<'a> InteractiveState<'a> {
                 }
                 put(
                     buf,
-                    x0 + 1,
+                    x0,
                     y,
-                    max_w.saturating_sub(1),
+                    max_w,
                     &format!("{}  {}", p.handle(), p.command),
                     text,
                 );
@@ -157,11 +181,11 @@ impl<'a> InteractiveState<'a> {
                     fmt_secs(p.running_secs),
                     fmt_secs(p.idle_secs)
                 );
-                put(buf, x0 + 3, y + 1, max_w.saturating_sub(3), &timing, muted);
+                put(buf, x0 + 2, y + 1, max_w.saturating_sub(2), &timing, muted);
                 if focused {
                     // The verb menu trails the timing on the row's second line, so
                     // focusing never reflows the column (the block menu's rule).
-                    let tx = x0 + 3 + timing.chars().count() as u16 + 2;
+                    let tx = x0 + 2 + timing.chars().count() as u16 + 2;
                     self.render_row_verbs(buf, tx, y + 1, area.x + area.width, row);
                 }
                 y += 2;
@@ -169,26 +193,24 @@ impl<'a> InteractiveState<'a> {
             y += 1; // section gap
         }
 
-        // STATS — cumulative token + cache telemetry, moved off the status bar.
-        if let Some(u) = &self.usage
+        // Usage — the context window, cost, and token and cache telemetry.
+        if let Some(u) = self.usage.clone()
             && y < bottom
         {
-            put(buf, x0, y, max_w, "▾ STATS", header);
+            put(buf, x0, y, max_w, "Usage", header);
             y += 1;
+            let mut rows: Vec<(&str, String, Style)> = Vec::new();
             // Context-window occupancy leads (docs/transport.md): the percentage is
             // the "am I close?" answer; the limit alone renders before the first
             // request (occupancy unknown, not zero).
-            if let Some(limit) = u.context_limit.filter(|l| *l > 0)
-                && y < bottom
-            {
-                let line = match u.context_used {
+            if let Some(limit) = u.context_limit.filter(|l| *l > 0) {
+                let value = match u.context_used {
                     Some(used) => {
-                        format!("ctx {}% · {}/{}", used * 100 / limit, num(used), num(limit))
+                        format!("{}% · {}/{}", used * 100 / limit, num(used), num(limit))
                     }
-                    None => format!("ctx {}", num(limit)),
+                    None => num(limit),
                 };
-                put(buf, x0 + 1, y, max_w.saturating_sub(1), &line, text);
-                y += 1;
+                rows.push(("context", value, text));
             }
             // The cold-cache warning, beside the context meter
             // (docs/log-and-projection.md): consecutive main-loop requests that read
@@ -197,149 +219,99 @@ impl<'a> InteractiveState<'a> {
             // provider still matches it, and a moved prefix is otherwise silent —
             // every turn simply costs full price. Absent below the threshold, and it
             // clears the moment a warm read arrives (the daemon resets the count).
-            if u.cold_streak >= crate::daemon::COLD_STREAK_WARN && y < bottom {
-                put(
-                    buf,
-                    x0 + 1,
-                    y,
-                    max_w.saturating_sub(1),
-                    &format!("⚠ cache cold ×{}", u.cold_streak),
-                    self.theme
-                        .status_style
-                        .add_modifier(ratatui::style::Modifier::BOLD),
-                );
-                y += 1;
+            if u.cold_streak >= crate::daemon::COLD_STREAK_WARN {
+                rows.push(("", format!("⚠ cache cold ×{}", u.cold_streak), header));
             }
             // Session cost (docs/transport.md): billed dollars from the provider's
             // accounting, absent where no per-request surface exists (direct
             // Anthropic). A nonzero unpriced count marks the total an undercount.
-            if let Some(usd) = u.cost_usd
-                && y < bottom
-            {
-                let mut line = if usd >= 1.0 {
-                    format!("cost ${usd:.2}")
+            if let Some(usd) = u.cost_usd {
+                let mut value = if usd >= 1.0 {
+                    format!("${usd:.2}")
                 } else {
-                    format!("cost ${usd:.4}")
+                    format!("${usd:.4}")
                 };
                 if let Some(n) = u.cost_unpriced.filter(|n| *n > 0) {
-                    line.push_str(&format!(" · {n} unpriced"));
+                    value.push_str(&format!(" · {n} unpriced"));
                 }
-                put(buf, x0 + 1, y, max_w.saturating_sub(1), &line, text);
-                y += 1;
+                rows.push(("cost", value, text));
             }
-            if y < bottom {
-                put(
-                    buf,
-                    x0 + 1,
-                    y,
-                    max_w.saturating_sub(1),
-                    &format!("in {} · out {}", num(u.input_tokens), num(u.output_tokens)),
-                    text,
-                );
-                y += 1;
-            }
+            rows.push((
+                "tokens",
+                format!("in {} · out {}", num(u.input_tokens), num(u.output_tokens)),
+                text,
+            ));
             // Triage retention (docs/redaction-fork.md): how much of what the gate
             // showed is still on the agent's record. Absent until the first distilled
             // result — zero shown is unknown, not 0%.
-            if u.shown_lines > 0 && y < bottom {
-                put(
-                    buf,
-                    x0 + 1,
-                    y,
-                    max_w.saturating_sub(1),
-                    &format!(
-                        "kept {}% · {}/{} lines",
-                        u.kept_lines * 100 / u.shown_lines,
+            if let Some(percent) = (u.kept_lines * 100).checked_div(u.shown_lines) {
+                rows.push((
+                    "kept",
+                    format!(
+                        "{percent}% · {}/{} lines",
                         num(u.kept_lines),
                         num(u.shown_lines)
                     ),
                     text,
-                );
-                y += 1;
+                ));
             }
             // A result an older harness withheld on a failed gate (`TriageFailed`,
             // no longer written) carries no output at all — a distinct condition
             // from a low ratio, so it is stated rather than folded into one.
-            if u.withheld_results > 0 && y < bottom {
-                put(
-                    buf,
-                    x0 + 1,
-                    y,
-                    max_w.saturating_sub(1),
-                    &format!("{} withheld", u.withheld_results),
-                    muted,
-                );
-                y += 1;
+            if u.withheld_results > 0 {
+                rows.push(("withheld", u.withheld_results.to_string(), muted));
             }
-            if u.cache_read_input_tokens > 0 && y < bottom {
-                put(
-                    buf,
-                    x0 + 1,
-                    y,
-                    max_w.saturating_sub(1),
-                    &format!("cache read {}", num(u.cache_read_input_tokens)),
-                    muted,
-                );
-                y += 1;
+            if u.cache_read_input_tokens > 0 {
+                rows.push(("cache read", num(u.cache_read_input_tokens), muted));
             }
-            if let Some(secs) = u.seconds_since_last_request
-                && y < bottom
-            {
-                put(
-                    buf,
-                    x0 + 1,
-                    y,
-                    max_w.saturating_sub(1),
-                    &format!("idle {}s", secs),
-                    muted,
-                );
-                y += 1;
+            if let Some(secs) = u.seconds_since_last_request {
+                rows.push(("idle", format!("{secs}s"), muted));
+            }
+            for (label, value, style) in rows {
+                if y < bottom {
+                    kv(buf, y, label, &value, style);
+                    y += 1;
+                }
             }
             y += 1; // section gap
         }
 
-        // POLICY — the effective perimeter + its pending proposals. A proposed grant
+        // Policy — the effective perimeter + its pending proposals. A proposed grant
         // renders in its committed position with a trailing `⊕` and a muted style
         // (docs/permissions.md); committing it drops the marker in place.
         if let Some(policy) = &policy {
             if y < bottom {
-                put(buf, x0, y, max_w, "▾ POLICY", header);
+                put(buf, x0, y, max_w, "Policy", header);
                 y += 1;
             }
-            // The review-level dial (docs/tui.md) — who reviews a
-            // gated call. Read-only here; set it with `efference control review-level` (the interactive
-            // gear selector is deferred to the ergonomics pass).
+            // The review-level dial (docs/tui.md) — who reviews a gated call.
+            // Read-only here; set it with `efference control review-level`.
             if let Some(level) = &policy.review_level
                 && y < bottom
             {
-                put(
-                    buf,
-                    x0 + 1,
-                    y,
-                    max_w.saturating_sub(1),
-                    &match &policy.resolved_review_level {
-                        // The dial and the position in force disagree: say both, dial
-                        // first, so what was set and who answers are both readable
-                        // (docs/permissions.md).
-                        Some(resolved) => format!("review  {level} → {resolved}"),
-                        None => format!("review  {level}"),
-                    },
-                    text,
-                );
+                let value = match &policy.resolved_review_level {
+                    // The dial and the position in force disagree: say both, dial
+                    // first, so what was set and who answers are both readable
+                    // (docs/permissions.md).
+                    Some(resolved) => format!("{level} → {resolved}"),
+                    None => level.clone(),
+                };
+                kv(buf, y, "review", &value, text);
                 y += 1;
             }
-            if let Some(scope) = &policy.scope
-                && y < bottom
-            {
-                put(
-                    buf,
-                    x0 + 1,
-                    y,
-                    max_w.saturating_sub(1),
-                    &format!("scope  {scope}"),
-                    text,
-                );
-                y += 1;
+            // The scope is a sentence, so it wraps in the value column, up to a few
+            // lines, rather than truncating at the first.
+            if let Some(scope) = &policy.scope {
+                for (i, line) in wrap_words(scope, vw as usize, SCOPE_LINES)
+                    .iter()
+                    .enumerate()
+                {
+                    if y >= bottom {
+                        break;
+                    }
+                    kv(buf, y, if i == 0 { "scope" } else { "" }, line, text);
+                    y += 1;
+                }
             }
             if let Some((seq, t)) = &policy.scope_proposal
                 && y < bottom
@@ -348,7 +320,7 @@ impl<'a> InteractiveState<'a> {
                     buf,
                     area,
                     y,
-                    &format!("scope  {t}  ⊕"),
+                    &format!("{t}  ⊕"),
                     SidebarRow::Proposal(*seq),
                     muted,
                 );
@@ -363,8 +335,8 @@ impl<'a> InteractiveState<'a> {
                 if entries.is_empty() || y >= bottom {
                     continue;
                 }
-                put(buf, x0 + 1, y, max_w.saturating_sub(1), name, muted);
-                y += 1;
+                // The label shares its first entry's row, as in the rows above.
+                put(buf, x0, y, LABEL_W, name, muted);
                 for e in entries {
                     if y >= bottom {
                         break;
@@ -387,14 +359,7 @@ impl<'a> InteractiveState<'a> {
                             );
                         }
                         None => {
-                            put(
-                                buf,
-                                x0 + 3,
-                                y,
-                                max_w.saturating_sub(3),
-                                &format!("{}{}", e.label, suffix),
-                                style,
-                            );
+                            put(buf, vx, y, vw, &format!("{}{}", e.label, suffix), style);
                         }
                     }
                     y += 1;
@@ -417,15 +382,14 @@ impl<'a> InteractiveState<'a> {
         row: SidebarRow,
         style: Style,
     ) {
-        let x0 = area.x + 2;
-        let max_w = area.width.saturating_sub(3);
+        let x0 = area.x + 2 + LABEL_W;
+        let max_w = area.width.saturating_sub(3 + LABEL_W);
         let focused = self.sidebar_focus == Some(row);
         // Actionable rows are clickable focused or not — the click is how a row
         // *becomes* focused.
-        self.sidebar_hits
-            .push((Rect::new(x0 + 3, y, max_w - 3, 1), row));
+        self.sidebar_hits.push((Rect::new(x0, y, max_w, 1), row));
         if !focused {
-            put(buf, x0 + 3, y, max_w.saturating_sub(3), label, style);
+            put(buf, x0, y, max_w, label, style);
             return;
         }
         self.paint_focus_bar(buf, area.x, y, 1);
@@ -435,9 +399,9 @@ impl<'a> InteractiveState<'a> {
             .iter()
             .map(|v| 3 + v.label().chars().count() as u16 + 1)
             .sum();
-        let label_room = max_w.saturating_sub(3 + menu_w + 1);
-        put(buf, x0 + 3, y, label_room, label, style);
-        let tx = x0 + 3 + label_room + 1;
+        let label_room = max_w.saturating_sub(menu_w + 1);
+        put(buf, x0, y, label_room, label, style);
+        let tx = x0 + label_room + 1;
         self.render_row_verbs(buf, tx, y, area.x + area.width, row);
     }
 
@@ -489,7 +453,7 @@ impl<'a> InteractiveState<'a> {
 }
 
 /// Compact a token count: `12k` / `1m` / `486`.
-fn num(n: u64) -> String {
+pub(super) fn num(n: u64) -> String {
     if n >= 1_000_000 {
         format!("{}m", n / 1_000_000)
     } else if n >= 1_000 {

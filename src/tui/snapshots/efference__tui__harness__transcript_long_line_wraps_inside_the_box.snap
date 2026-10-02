@@ -5,19 +5,19 @@ expression: self.render()
     0         1         2         3         4         5         6         7         
     01234567890123456789012345678901234567890123456789012345678901234567890123456789
    ┌────────────────────────────────────────────────────────────────────────────────┐
- 0 │ ┃ Why did it fail?                                                             │
- 1 │                                                                                │
- 2 │   Reading the failure.                                                         │
- 3 │                                                                                │
- 4 │   ❯ bash · cargo test --lib                                                    │
- 5 │   ✗ 2 lines                                                                    │
- 6 │ ╭──────────────────────────────────────────────────────────────────────────╮   │
- 7 │ │ thread 'tui::projection::test::projects_a_flat_sequence_of_entries'      │   │
- 8 │ │ panicked at src/tui/projection/test.rs:88:5: assertion `left == right`   │   │
- 9 │ │ failed: one entry per wire block                                         │   │
-10 │ │ short tail line                                                          │   │
-11 │ ╰──────────────────────────────────────────────────────────────────────────╯   │
-12 │                                                                                │
+ 0 │ efference                                                             session  │
+ 1 │ ┃ Why did it fail?                                                             │
+ 2 │                                                                                │
+ 3 │   Reading the failure.                                                         │
+ 4 │                                                                                │
+ 5 │   ❯ bash · cargo test --lib                                                    │
+ 6 │   ✗ 2 lines                                                                    │
+ 7 │ ╭──────────────────────────────────────────────────────────────────────────╮   │
+ 8 │ │ thread 'tui::projection::test::projects_a_flat_sequence_of_entries'      │   │
+ 9 │ │ panicked at src/tui/projection/test.rs:88:5: assertion `left == right`   │   │
+10 │ │ failed: one entry per wire block                                         │   │
+11 │ │ short tail line                                                          │   │
+12 │ ╰──────────────────────────────────────────────────────────────────────────╯   │
 13 │                                                                                │
 14 │                                                                                │
 15 │                                                                                │

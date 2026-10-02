@@ -371,10 +371,16 @@ impl Screenplay<'_> {
         self.state.capture_screenshot_grid(self.width, self.height)
     }
 
-    /// The `Alt-S` sidebar-only capture path, headless — frames just the sidebar
-    /// columns (docs/tui.md).
+    /// The `Alt-S` drawer-only capture path, headless — frames just the session
+    /// drawer's columns (docs/tui.md), opened for the capture.
     pub(crate) fn sidebar_grid(&mut self) -> String {
         self.state.capture_sidebar_grid(self.width, self.height)
+    }
+
+    /// Open the session drawer without moving focus, so a snapshot shows it.
+    pub(crate) fn open_drawer(&mut self) -> &mut Self {
+        self.state.sidebar_open = true;
+        self
     }
 
     /// Pin the viewport to the bottom — the way a stream-following TUI sits while a

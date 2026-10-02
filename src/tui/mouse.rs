@@ -44,14 +44,28 @@ impl<'a> super::InteractiveState<'a> {
 
                 let terminal_height = size.height;
                 let terminal_width = size.width;
-                let content_height = terminal_height.saturating_sub(
+                // The transcript spans from under the header to above the bottom
+                // chrome; positions in it translate to document coordinates through
+                // the origin the frame recorded (docs/tui.md).
+                let top = self.viewport.doc_origin.y;
+                let content_bottom = terminal_height.saturating_sub(
                     1 + self.viewport.input_height + self.viewport.above_input_height,
-                ); // status row + composer
+                );
                 let content_width = terminal_width.saturating_sub(1); // Exclude scrollbar column
+                let in_drawer = self
+                    .viewport
+                    .sidebar_area
+                    .is_some_and(|area| area.contains(Position::new(column, row)));
+
+                self.viewport.header_hovered =
+                    (row < top).then(|| self.header_item_at(column)).flatten();
 
                 // Check if hovering over scrollbar
-                self.viewport.scrollbar_hovered =
-                    row < content_height && column == content_width && self.scrollbar_visible();
+                self.viewport.scrollbar_hovered = !in_drawer
+                    && row >= top
+                    && row < content_bottom
+                    && column == content_width
+                    && self.scrollbar_visible();
 
                 // The control-strip row sits directly above the composer
                 // (docs/tui.md). A pointer resting on it is an *engagement*: it pins
@@ -61,12 +75,14 @@ impl<'a> super::InteractiveState<'a> {
                 self.viewport.strip_hovered =
                     row == terminal_height.saturating_sub(2 + self.viewport.input_height);
 
-                if row < content_height {
+                if !in_drawer && row >= top && row < content_bottom {
                     // Mouse in main content area
-                    self.viewport.cursor_pos =
-                        Some(Position::new(column, row + self.viewport.scroll_offset));
+                    self.viewport.cursor_pos = Some(Position::new(
+                        column.saturating_sub(self.viewport.doc_origin.x),
+                        row - top + self.viewport.scroll_offset,
+                    ));
                 } else {
-                    // Mouse over the breadcrumb/status rows (no hover targets there)
+                    // Header, drawer, or bottom chrome: no document hover targets
                     self.viewport.cursor_pos = None;
                 }
             }
@@ -110,25 +126,49 @@ impl<'a> super::InteractiveState<'a> {
                 };
 
                 let terminal_height = size.height;
-                let content_height = terminal_height.saturating_sub(
+                let top = self.viewport.doc_origin.y;
+                let content_bottom = terminal_height.saturating_sub(
                     1 + self.viewport.input_height + self.viewport.above_input_height,
                 ); // status row + composer
+                let content_height = content_bottom.saturating_sub(top);
                 let content_width = size.width.saturating_sub(1); // Exclude scrollbar column
 
                 // The control strip row sits directly above the composer
                 // (docs/tui.md); a click on an item focuses and activates it.
                 let strip_row = terminal_height.saturating_sub(2 + self.viewport.input_height);
 
-                // Check if click is in scrollbar column
-                if row < content_height && column == content_width && self.scrollbar_visible() {
+                // The drawer is over the transcript, so it takes its clicks first; a
+                // click elsewhere in the transcript closes it, as a click outside the
+                // web client's drawer does.
+                if let Some(area) = self.viewport.sidebar_area {
+                    if area.contains(Position::new(column, row)) {
+                        self.click_drawer(Position::new(column, row));
+                        return;
+                    }
+                    if row >= top && row < content_bottom {
+                        self.leave_sidebar();
+                        return;
+                    }
+                }
+
+                if row < top {
+                    if let Some(item) = self.header_item_at(column) {
+                        self.activate_header_item(item);
+                    }
+                } else if row < content_bottom
+                    && column == content_width
+                    && self.scrollbar_visible()
+                {
                     // Start scrollbar drag
                     self.viewport.scrollbar_dragging = true;
                     // Calculate scroll position from click Y
-                    self.handle_scrollbar_drag(row, content_height);
-                } else if row < content_height {
+                    self.handle_scrollbar_drag(row - top, content_height);
+                } else if row < content_bottom {
                     // Click in main content area
-                    self.viewport.clicked_position =
-                        Some(Position::new(column, row + self.viewport.scroll_offset));
+                    self.viewport.clicked_position = Some(Position::new(
+                        column.saturating_sub(self.viewport.doc_origin.x),
+                        row - top + self.viewport.scroll_offset,
+                    ));
                 } else if let Some(key) = self
                     .viewport
                     .staged_hits
@@ -182,10 +222,14 @@ impl<'a> super::InteractiveState<'a> {
                 let Ok(size) = terminal.size() else {
                     return;
                 };
-                let content_height = size.height.saturating_sub(
-                    1 + self.viewport.input_height + self.viewport.above_input_height,
-                );
-                self.handle_scrollbar_drag(row, content_height);
+                let top = self.viewport.doc_origin.y;
+                let content_height = size
+                    .height
+                    .saturating_sub(
+                        1 + self.viewport.input_height + self.viewport.above_input_height,
+                    )
+                    .saturating_sub(top);
+                self.handle_scrollbar_drag(row.saturating_sub(top), content_height);
             }
 
             MouseEvent {
@@ -198,47 +242,61 @@ impl<'a> super::InteractiveState<'a> {
         }
     }
 
+    /// A click inside the open session drawer, in screen coordinates (the drawer
+    /// is chrome, recorded at absolute positions). Verbs resolve before rows (a
+    /// verb sits on a focused row's line); a click on neither leaves the drawer
+    /// open and focused.
+    fn click_drawer(&mut self, click_pos: Position) {
+        self.composing = false;
+        self.strip_focus = None;
+        self.sidebar_return.get_or_insert(SidebarReturn::Transcript);
+        if let Some((row, idx)) = self
+            .sidebar_verb_hits
+            .iter()
+            .find(|(rect, _, _)| rect.contains(click_pos))
+            .map(|(_, r, i)| (*r, *i))
+        {
+            self.sidebar_focus = Some(row);
+            self.sidebar_verb_focus = idx;
+            self.activate_sidebar_row();
+            return;
+        }
+        if let Some(row) = self
+            .sidebar_hits
+            .iter()
+            .find(|(rect, _)| rect.contains(click_pos))
+            .map(|(_, r)| *r)
+        {
+            if self.sidebar_focus != Some(row) {
+                self.sidebar_verb_focus = 0;
+            }
+            self.sidebar_focus = Some(row);
+        }
+    }
+
+    /// The header item whose column span holds `column`, as of the last frame.
+    fn header_item_at(&self, column: u16) -> Option<super::render_header::HeaderItem> {
+        self.viewport
+            .header_hits
+            .iter()
+            .find(|(x0, x1, _)| column >= *x0 && column < *x1)
+            .map(|(_, _, item)| *item)
+    }
+
+    fn activate_header_item(&mut self, item: super::render_header::HeaderItem) {
+        match item {
+            // The drawer takes the keys while open, so the composer gives up focus
+            // first, as it does when Tab enters from the transcript.
+            super::render_header::HeaderItem::Session => {
+                self.composing = false;
+                self.toggle_sidebar();
+            }
+        }
+    }
+
     pub(super) fn handle_click(&mut self) {
         // Handle any clicked action from previous iteration
         if let Some(click_pos) = self.viewport.clicked_position.take() {
-            // The sidebar's verbs resolve before its rows (a verb sits on a focused
-            // row's line), and both before anything underneath — a click on the panel
-            // focuses the sidebar the way a click on an entry does (docs/tui.md).
-            if let Some((row, idx)) = self
-                .sidebar_verb_hits
-                .iter()
-                .find(|(rect, _, _)| rect.contains(click_pos))
-                .map(|(_, r, i)| (*r, *i))
-            {
-                self.composing = false;
-                self.strip_focus = None;
-                if self.sidebar_focus != Some(row) {
-                    self.sidebar_return.get_or_insert(SidebarReturn::Transcript);
-                    self.sidebar_focus = Some(row);
-                    self.sidebar_verb_focus = 0;
-                }
-                self.sidebar_open = true;
-                self.sidebar_verb_focus = idx;
-                self.activate_sidebar_row();
-                return;
-            }
-            if let Some(row) = self
-                .sidebar_hits
-                .iter()
-                .find(|(rect, _)| rect.contains(click_pos))
-                .map(|(_, r)| *r)
-            {
-                self.composing = false;
-                self.strip_focus = None;
-                if self.sidebar_focus != Some(row) {
-                    self.sidebar_verb_focus = 0;
-                }
-                self.sidebar_return.get_or_insert(SidebarReturn::Transcript);
-                self.sidebar_open = true;
-                self.sidebar_focus = Some(row);
-                return;
-            }
-
             // The block menu sits *on* the focused unit's header row, which is
             // itself the expand action's click target — so menu items resolve
             // first, or every menu click would just expand the block

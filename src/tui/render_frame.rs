@@ -10,11 +10,8 @@ use crate::tui::document::NodePath;
 /// running and tracked, just not all shown (Slice 2's `list()` surfaces all).
 const PROC_PANEL_MAX: u16 = 6;
 
-/// Minimum total terminal width at which the sidebar docks; below it the sidebar is
-/// hidden (the narrow-mode drawer is a later step), and the process strip returns.
-pub(super) const SIDEBAR_MIN_TOTAL: u16 = 90;
-/// Docked sidebar column width, including its 1-col left divider (docs/tui.md).
-pub(super) const SIDEBAR_WIDTH: u16 = 40;
+/// The session drawer's width, including its 1-col left divider (docs/tui.md).
+pub(super) const DRAWER_WIDTH: u16 = 56;
 
 /// Compact seconds → `8s` / `4m12s` / `1h3m`, for the process-panel timing.
 pub(super) fn fmt_secs(secs: u64) -> String {
@@ -31,6 +28,8 @@ pub(super) fn fmt_secs(secs: u64) -> String {
 /// Write `text` starting at column `start` of row `y`, in `style`, truncating at the
 /// area's right edge. Returns the next free column. Column-at-a-time, matching the
 /// gate/status-bar render (wide glyphs occupy one cell, as elsewhere in this TUI).
+/// Content text lands here too — a process's command line is whatever the model
+/// wrote — so control characters are folded, not written.
 fn put_cols(
     buf: &mut ratatui::buffer::Buffer,
     area: Rect,
@@ -45,7 +44,8 @@ fn put_cols(
             break;
         }
         if let Some(cell) = buf.cell_mut((area.x + col, y)) {
-            cell.set_char(ch).set_style(style);
+            cell.set_char(crate::tui::write_text::fold_control(ch))
+                .set_style(style);
         }
         col += 1;
     }
@@ -56,27 +56,16 @@ impl<'a> InteractiveState<'a> {
     pub(super) fn render_frame(&mut self, frame: &mut Frame) {
         let full = frame.area();
 
-        // Bottom chrome, top to bottom: [process panel?] / composer / status. The
-        // composer grows with its content (1 row, up to a cap). The rightmost column
-        // of the transcript is the scrollbar. The process panel (docs/supervisor.md) is one row
-        // per running process, capped, hidden when none run — an ambient strip between
-        // the transcript and the composer. The approval gate is *not* bottom chrome:
-        // it renders inline in the transcript at the pending call (docs/tui.md).
-        // Right-docked sidebar when the terminal is wide enough (docs/tui.md). It takes
-        // the rightmost columns for the full height above the status bar; the transcript
-        // and composer share the remaining left column. Processes move *into* the sidebar,
-        // so the bottom process strip only appears in the narrow (no-sidebar) fallback
-        // until the drawer lands.
-        // Every sidebar section (processes, stats, policy) is fed by a control
-        // stream's `state` frames, which a read-only view has no daemon to serve — so
-        // there the sidebar would be a column of empty headings, and the transcript
-        // takes the width.
-        let sidebar_width: u16 = if full.width >= SIDEBAR_MIN_TOTAL && !self.read_only() {
-            SIDEBAR_WIDTH
-        } else {
-            0
-        };
-        let content_width = full.width.saturating_sub(sidebar_width);
+        // Top to bottom: the header row; the transcript; then the bottom chrome —
+        // [process panel?] / staged / control strip / composer / status. The composer
+        // grows with its content (1 row, up to a cap). The rightmost column of the
+        // transcript is the scrollbar. The process panel (docs/supervisor.md) is one
+        // row per running process, capped, hidden when none run. The approval gate is
+        // *not* chrome: it renders inline in the transcript at the pending call
+        // (docs/tui.md). The session drawer (what the docked sidebar used to carry)
+        // is an overlay on the transcript's right, open on demand.
+        let header_height: u16 = 1;
+        let content_width = full.width;
 
         // A staged verb's chip (docs/tui.md) sits left of the composer; the
         // composer wraps within the remaining columns, so height must agree.
@@ -95,11 +84,7 @@ impl<'a> InteractiveState<'a> {
                 .line_count(content_width.saturating_sub(chip_w)) as u16)
                 .clamp(1, 6)
         };
-        let proc_height: u16 = if sidebar_width > 0 {
-            0
-        } else {
-            (self.processes.len() as u16).min(PROC_PANEL_MAX)
-        };
+        let proc_height: u16 = (self.processes.len() as u16).min(PROC_PANEL_MAX);
         self.viewport.input_height = input_height;
         // The control strip (docs/tui.md) holds a constant one-row slot directly
         // above the composer; staged attachments take a row each above it, capped.
@@ -114,9 +99,9 @@ impl<'a> InteractiveState<'a> {
 
         let main_area = Rect {
             x: full.x,
-            y: full.y,
+            y: full.y + header_height,
             width: content_width.saturating_sub(1),
-            height: full.height.saturating_sub(bottom),
+            height: full.height.saturating_sub(bottom + header_height),
         };
         let proc_area = Rect {
             x: full.x,
@@ -150,14 +135,19 @@ impl<'a> InteractiveState<'a> {
             width: full.width,
             height: 1,
         };
-        let sidebar_area = (sidebar_width > 0).then(|| Rect {
-            x: full.x + content_width,
-            y: full.y,
-            width: sidebar_width,
-            height: full.height.saturating_sub(1),
+        // The drawer overlays the transcript's right side and only the transcript:
+        // the bottom chrome stays whole, so a gate's strip verbs are never under it.
+        // A read-only view has no live state to fill it.
+        let drawer_width = DRAWER_WIDTH.min(full.width);
+        let sidebar_area = (self.sidebar_open && !self.read_only()).then(|| Rect {
+            x: full.x + full.width - drawer_width,
+            y: main_area.y,
+            width: drawer_width,
+            height: main_area.height,
         });
-        // Remembered for the sidebar-only dev screenshot slice (docs/tui.md).
+        // Remembered for drawer click dispatch and the drawer-only dev screenshot.
         self.viewport.sidebar_area = sidebar_area;
+        self.viewport.doc_origin = Position::new(main_area.x, main_area.y);
 
         if matches!(self.ui_mode, UiMode::Help) {
             // Help covers the entire area (including the composer/status rows).
@@ -165,26 +155,28 @@ impl<'a> InteractiveState<'a> {
             return;
         }
 
-        // Clear the transcript area with the theme background.
-        for y in 0..main_area.height {
-            for x in 0..main_area.width {
-                if let Some(cell) = frame.buffer_mut().cell_mut((x, main_area.y + y)) {
-                    cell.set_style(self.theme.document_bg_style);
-                }
-            }
+        // The document renders at the origin of a buffer of its own — every layout
+        // and paint path works in document coordinates anchored at `(0, 0)` — and is
+        // copied into the frame at `main_area`'s offset. Cells are copied whole,
+        // including an image protocol's escape cell and the skip flags beside it, so
+        // native images land where they were laid out (docs/tui.md).
+        let doc_area = Rect::new(0, 0, main_area.width, main_area.height);
+        let mut doc_buf = ratatui::buffer::Buffer::empty(doc_area);
+        for cell in doc_buf.content.iter_mut() {
+            cell.set_style(self.theme.document_bg_style);
         }
 
         self.viewport.last_viewport_height = main_area.height;
         self.layout.pos = Position::default();
         self.layout.indent = 0;
         self.layout.node_path = NodePath::new();
-        self.layout.area = main_area;
+        self.layout.area = doc_area;
 
         // Lay out (without drawing) first, so the document height is known before
         // anything is painted: a stream-following viewport can then be pinned to the
         // new bottom and painted *once*, instead of painting at the stale offset and
         // repainting at the corrected one (docs/tui.md).
-        self.measure_document(main_area);
+        self.measure_document(doc_area);
         if self.viewport.stuck_to_bottom {
             self.scroll_to_bottom();
         }
@@ -201,7 +193,23 @@ impl<'a> InteractiveState<'a> {
         }
         self.viewport.last_painted_scroll = self.viewport.scroll_offset;
 
-        self.render_document(main_area, frame.buffer_mut());
+        self.render_document(doc_area, &mut doc_buf);
+        let buf = frame.buffer_mut();
+        for y in 0..doc_area.height {
+            for x in 0..doc_area.width {
+                if let (Some(src), Some(dst)) = (
+                    doc_buf.cell((x, y)),
+                    buf.cell_mut((main_area.x + x, main_area.y + y)),
+                ) {
+                    *dst = src.clone();
+                }
+            }
+        }
+
+        self.render_header(
+            frame.buffer_mut(),
+            Rect::new(full.x, full.y, full.width, header_height),
+        );
 
         // Live background-process panel, between the transcript and the gate (docs/supervisor.md).
         if proc_height > 0 {
@@ -312,16 +320,19 @@ impl<'a> InteractiveState<'a> {
     }
 
     /// Like [`capture_screenshot_grid`](Self::capture_screenshot_grid) but frames only
-    /// the docked sidebar's columns (`Alt+S`) — so a wide-terminal capture of just the
-    /// sidebar stays ~30 columns wide instead of the full screen. Falls back to the
-    /// whole grid when the sidebar is hidden (narrow terminal).
+    /// the session drawer's columns (`Alt+S`) — so a wide-terminal capture of just the
+    /// drawer stays narrow instead of the full screen. The drawer is opened for the
+    /// capture and left as it was found; a read-only view, which has none, falls back
+    /// to the whole grid.
     pub(super) fn capture_sidebar_grid(&mut self, width: u16, height: u16) -> String {
         use ratatui::{Terminal, backend::TestBackend};
 
         let mut term = Terminal::new(TestBackend::new(width, height))
             .expect("TestBackend construction is infallible");
         self.flush_reproject();
+        let was_open = std::mem::replace(&mut self.sidebar_open, true);
         let _ = term.draw(|frame| self.render_frame(frame));
+        self.sidebar_open = was_open;
         match self.viewport.sidebar_area {
             Some(rect) => crate::tui::grid::frame_grid_region(term.backend().buffer(), rect),
             None => crate::tui::grid::frame_grid(term.backend().buffer(), width, None),

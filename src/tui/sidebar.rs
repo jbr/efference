@@ -118,20 +118,16 @@ impl<'a> InteractiveState<'a> {
         }
     }
 
-    /// Enter the sidebar, landing on its first actionable row. A read-only view has
-    /// no sidebar at all (every section is fed by live state topics), and an empty
-    /// sidebar has nothing to act on — both are status-line no-ops rather than a
-    /// mode you can enter but not use.
+    /// Open the session drawer, landing on its first actionable row. A read-only
+    /// view has no drawer at all (every section is fed by live state topics), so
+    /// that is a status-line no-op. A drawer with nothing actionable still opens:
+    /// it is where the session's details are read, and no row is selected.
     pub(super) fn enter_sidebar(&mut self) {
         if self.read_only() {
-            self.ui.debug_message = "no sidebar in a read-only view".into();
+            self.ui.debug_message = "no session drawer in a read-only view".into();
             return;
         }
         let rows = self.sidebar_rows();
-        if rows.is_empty() {
-            self.ui.debug_message = "nothing actionable in the sidebar".into();
-            return;
-        }
         // Remember where focus came from so Tab back is exact. The composer is not
         // a source — Tab types there — so the alternatives are strip and transcript.
         self.sidebar_return = Some(match self.strip_focus.take() {
@@ -141,8 +137,11 @@ impl<'a> InteractiveState<'a> {
         self.sidebar_open = true;
         self.sidebar_focus = rows.first().copied();
         self.sidebar_verb_focus = 0;
-        self.ui.debug_message =
-            "sidebar — ↑/↓ row · ←/→ verb · ⏎ act · tab back · esc compose".into();
+        self.ui.debug_message = if rows.is_empty() {
+            "session — tab or esc closes".into()
+        } else {
+            "session — ↑/↓ row · ←/→ verb · ⏎ act · tab or esc closes".into()
+        };
     }
 
     /// Leave the sidebar for wherever focus entered from. The transcript cursor was

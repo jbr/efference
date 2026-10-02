@@ -65,8 +65,8 @@ other cannot:
   works after exit too, since the capture outlives it — and renders the `lost`
   count with it, because a capture that hit the retention cap is genuinely
   incomplete.
-- **process → call.** A client showing a live process row (the TUI sidebar's
-  `PROCESSES`, the web tasks pane) can jump to the transcript entry the process came
+- **process → call.** A client showing a live process row (the TUI session drawer's
+  Processes, the web tasks pane) can jump to the transcript entry the process came
   from, rather than leaving the operator to find it by reading commands.
 
 `call_id` is optional in the type because the registry does not require a call to

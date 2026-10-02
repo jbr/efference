@@ -5,21 +5,21 @@ expression: self.render()
     0         1         2         3         4         5         6         7         
     01234567890123456789012345678901234567890123456789012345678901234567890123456789
    ┌────────────────────────────────────────────────────────────────────────────────┐
- 0 │ ┃ Look around.                                                                 │
- 1 │                                                                                │
- 2 │   ❯ bash · ls                                                                  │
- 3 │   list the directory                                                           │
- 4 │   ✓ 3 lines                                                                    │
- 5 │ ╭──────────────╮                                                               │
- 6 │ │ 1 Cargo.toml │                                                               │
- 7 │ │ 2 src        │                                                               │
- 8 │ │ 3 docs       │                                                               │
- 9 │ ╰──────────────╯                                                               │
-10 │                                                                                │
-11 │   ⟢ 3 entries: Cargo.toml, src, docs                                           │
-12 │   ⟢ re your intent: it said what the call does, not what you needed; kept      │
-13 │   everything                                                                   │
-14 │                                                                                │
+ 0 │ efference                                                             session  │
+ 1 │ ┃ Look around.                                                                 │
+ 2 │                                                                                │
+ 3 │   ❯ bash · ls                                                                  │
+ 4 │   list the directory                                                           │
+ 5 │   ✓ 3 lines                                                                    │
+ 6 │ ╭──────────────╮                                                               │
+ 7 │ │ 1 Cargo.toml │                                                               │
+ 8 │ │ 2 src        │                                                               │
+ 9 │ │ 3 docs       │                                                               │
+10 │ ╰──────────────╯                                                               │
+11 │                                                                                │
+12 │   ⟢ 3 entries: Cargo.toml, src, docs                                           │
+13 │   ⟢ re your intent: it said what the call does, not what you needed; kept      │
+14 │   everything                                                                   │
 15 │                                                                                │
 16 │                                                                                │
 17 │   pace fast     sessions s     theme t     help ?     detach q                 │

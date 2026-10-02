@@ -1351,7 +1351,8 @@ subtracting it would move the reported ceiling through the session and read as
 a wall the prompt never reaches. The prompt stops fitting
 `MARGIN + RESERVATION_MIN` short of the window (`api/reservation.rs`), so
 occupancy approaches 100% rather than reaching it at the stall. The TUI
-sidebar renders it as the `ctx 7% · 14k/200k` line leading STATS.
+header draws it as a context meter captioned `14k/200k`, and the session drawer's
+Usage section leads with `context  7% · 14k/200k`.
 
 **Cache-read telemetry.** The same `/state` topic carries `usage.cold_streak`:
 consecutive main-loop requests that read nothing from the prompt cache and had
@@ -1367,8 +1368,8 @@ from, and the offline `efference dev cache` view are in
 surface, every recorded request (turn, peek, spot, triage, keepalive — plus
 keepalive pings funnel through the same two record methods) spawns a
 best-effort fetch of its **billed** cost, folded into a running total that
-`GET /state` reports as `usage.cost = {usd, unpriced}` and the sidebar renders
-as `cost $0.0421`. The one exclusion is an `aborted_attempt` line with all-zero
+`GET /state` reports as `usage.cost = {usd, unpriced}` and the TUI renders
+in the header (`$0.04`) and the session drawer (`cost  $0.0421`). The one exclusion is an `aborted_attempt` line with all-zero
 usage: nothing to price, and fetching it would only run the lookup to
 exhaustion and mark it `unpriced` — an undercount signal for a total that was
 never wrong. An aborted attempt that finalized unparseable billed real tokens
@@ -1385,7 +1386,7 @@ in `daemon/metrics.rs`); exhaustion increments `unpriced`, so the total is a
 legible undercount rather than a silent one. On direct Anthropic there is no
 per-request cost surface (the Models API has no pricing; the Usage & Cost
 Admin API reports realized org costs in daily buckets under a separate admin
-key) — `usage.cost` is null there and the sidebar omits the line.
+key) — `usage.cost` is null there and the TUI omits it.
 
 **OpenRouter** is reached by declaring a connection on it and a provider-scoped
 model slug

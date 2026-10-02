@@ -481,7 +481,7 @@ the wire or the cache.
 `Retention` (`src/project/retention.rs`) folds the log into cumulative
 `kept_lines` / `shown_lines`, the lines the peek cap dropped before triage saw them,
 and a count of results whose output a failed gate withheld. `GET /state` reports it as
-`usage.retention` and the TUI sidebar renders a `kept 55% · 13k/24k lines` line
+`usage.retention` and the TUI session drawer renders it as `kept  55% · 13k/24k lines`
 ([tui.md](tui.md)).
 
 Two properties make the fold the cheap kind. It reads **only** `ToolResult` entries —

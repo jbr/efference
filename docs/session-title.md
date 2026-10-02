@@ -33,7 +33,7 @@ The current title is the text of the last `Payload::Title` entry
 log metadata like timestamps and telemetry, so a title written mid-session cannot
 move the cached prefix, and the model is never shown it. The `session_identity`
 topic ([control-api.md](control-api.md)) carries `id` and `title` beside the model
-and cwd, republished whenever the title moves, so the TUI sidebar
+and cwd, republished whenever the title moves, so the TUI header and session drawer
 ([tui.md](tui.md)), the web top bar and session list ([web-client.md](web-client.md)),
 and `GET /sessions` all read one source. On boot the identity's title is the fold
 over the log, so a resumed log would come back titled.

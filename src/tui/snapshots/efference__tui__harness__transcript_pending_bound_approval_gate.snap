@@ -5,14 +5,14 @@ expression: self.render()
     0         1         2         3         4         5         6         7         
     01234567890123456789012345678901234567890123456789012345678901234567890123456789
    ┌────────────────────────────────────────────────────────────────────────────────┐
- 0 │ ┃ Have the child clean the build directory.                                    │
- 1 │                                                                                │
- 2 │   Asking the child to remove it.                                               │
- 3 │                                                                                │
- 4 │   ❯ sessions.approve(call_id: "toolu_child_gate", session: "child")            │
- 5 │   ⤷ acting on child's bash · rm -rf ./build — clean the build tree             │
- 6 │   ⏸ awaiting your approval  ·  ⏎ approve · type to redirect                    │
- 7 │                                                                                │
+ 0 │ efference                                                             session  │
+ 1 │ ┃ Have the child clean the build directory.                                    │
+ 2 │                                                                                │
+ 3 │   Asking the child to remove it.                                               │
+ 4 │                                                                                │
+ 5 │   ❯ sessions.approve(call_id: "toolu_child_gate", session: "child")            │
+ 6 │   ⤷ acting on child's bash · rm -rf ./build — clean the build tree             │
+ 7 │   ⏸ awaiting your approval  ·  ⏎ approve · type to redirect                    │
  8 │                                                                                │
  9 │                                                                                │
 10 │                                                                                │

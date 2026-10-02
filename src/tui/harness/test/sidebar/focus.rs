@@ -82,7 +82,12 @@ fn tab_enters_the_sidebar_on_the_first_actionable_row() {
         "first actionable row is the process"
     );
     let bar = play.find("▌").expect("the focused row shows the focus bar");
-    assert!(bar.0 > 60, "the bar is in the sidebar column, got {bar:?}");
+    let drawer = play
+        .state
+        .viewport
+        .sidebar_area
+        .expect("the drawer is open");
+    assert!(bar.0 > drawer.x, "the bar is in the drawer, got {bar:?}");
     assert!(
         play.find("▸ kill").is_some(),
         "the process row's verb menu renders:\n{}",
@@ -239,6 +244,8 @@ fn tab_returns_to_where_focus_entered_from() {
 #[test]
 fn clicks_focus_rows_and_fire_verbs() {
     let mut play = sidebar_play();
+    // Open, the drawer is above the process panel, so its row is found first.
+    play.open_drawer();
     let row = play.find("p#3").expect("the process row renders");
     play.click(row.0, row.1);
     assert_eq!(

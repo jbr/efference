@@ -5,25 +5,25 @@ expression: self.render()
     0         1         2         3         4         5         6         7         8         9         0         
     01234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789
    ┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
- 0 │ ┃ Watch the build.                                                   │ ▾ PROCESSES  1                        │
- 1 │                                                                      │  p#1  cargo watch -x test             │
- 2 │   Started it — I'll keep working.                                    │    4m12s · idle 8s                    │
- 3 │                                                                      │                                       │
- 4 │                                                                      │ ▾ STATS                               │
- 5 │                                                                      │  ctx 7% · 14k/200k                    │
- 6 │                                                                      │  cost $0.0421                         │
- 7 │                                                                      │  in 12k · out 3k                      │
- 8 │                                                                      │  kept 55% · 13k/24k lines             │
- 9 │                                                                      │  cache read 8k                        │
-10 │                                                                      │  idle 8s                              │
-11 │                                                                      │                                       │
-12 │                                                                      │                                       │
-13 │                                                                      │                                       │
-14 │                                                                      │                                       │
-15 │                                                                      │                                       │
-16 │                                                                      │                                       │
-17 │   pace fast     sessions s     theme t     help ?     detach q       │                                       │
-18 │›                                                                     │                                       │
+ 0 │ efference                                                              ━───────── 14k/200k  $0.04   session  │
+ 1 │ ┃ Watch the build.                                   │ Processes  1                                          │
+ 2 │                                                      │ p#1  cargo watch -x test                              │
+ 3 │   Started it — I'll keep working.                    │   4m12s · idle 8s                                     │
+ 4 │                                                      │                                                       │
+ 5 │                                                      │ Usage                                                 │
+ 6 │                                                      │ context    7% · 14k/200k                              │
+ 7 │                                                      │ cost       $0.0421                                    │
+ 8 │                                                      │ tokens     in 12k · out 3k                            │
+ 9 │                                                      │ kept       55% · 13k/24k lines                        │
+10 │                                                      │ cache read 8k                                         │
+11 │                                                      │ idle       8s                                         │
+12 │                                                      │                                                       │
+13 │                                                      │                                                       │
+14 │                                                      │                                                       │
+15 │                                                      │                                                       │
+16 │ ▶ p#1  cargo watch -x test · 4m12s · idle 8s │ test result: ok. 12 passed                                    │
+17 │   pace fast     sessions s     theme t     help ?     detach q                                               │
+18 │›                                                                                                             │
    │  ^                                                                                                           │
 19 │   efference — ↑ controls                                                                                     │
    └──────────────────────────────────────────────────────────────────────────────────────────────────────────────┘

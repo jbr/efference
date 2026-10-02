@@ -5,19 +5,19 @@ expression: self.render()
     0         1         2         3         4         5         6         7         
     01234567890123456789012345678901234567890123456789012345678901234567890123456789
    ┌────────────────────────────────────────────────────────────────────────────────┐
- 0 │ ┃ Open state.rs.                                                               │
- 1 │                                                                                │
- 2 │   Reading the file:                                                            │
- 3 │                                                                                │
- 4 │   ❯ read(paths: ["src/tui/state.rs"])                                          │
- 5 │   ✓ kept 2 of 6 lines                                                          │
- 6 │ ╭─────────────────────────────────❬rust❭─╮                                     │
- 7 │ │ 2 pub struct InteractiveState<'a> {    │                                     │
- 8 │ │ 3     pub document: DocumentState<'a>, │                                     │
- 9 │ ╰────────────────────────────────────────╯                                     │
-10 │                                                                                │
-11 │   ⟢ the struct head and its first field                                        │
-12 │                                                                                │
+ 0 │ efference                                                             session  │
+ 1 │ ┃ Open state.rs.                                                               │
+ 2 │                                                                                │
+ 3 │   Reading the file:                                                            │
+ 4 │                                                                                │
+ 5 │   ❯ read(paths: ["src/tui/state.rs"])                                          │
+ 6 │   ✓ kept 2 of 6 lines                                                          │
+ 7 │ ╭─────────────────────────────────❬rust❭─╮                                     │
+ 8 │ │ 2 pub struct InteractiveState<'a> {    │                                     │
+ 9 │ │ 3     pub document: DocumentState<'a>, │                                     │
+10 │ ╰────────────────────────────────────────╯                                     │
+11 │                                                                                │
+12 │   ⟢ the struct head and its first field                                        │
 13 │                                                                                │
 14 │                                                                                │
 15 │                                                                                │

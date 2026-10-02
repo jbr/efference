@@ -1,13 +1,13 @@
-//! What the sidebar displays: processes and stats, folding control characters,
-//! retention, the cold-cache-streak warning, session identity, hosted roles,
-//! the sidebar-only slice, policy with a tentative proposal, the dock
-//! threshold, and the background process panel.
+//! What the session drawer displays: processes and stats, folding control
+//! characters, retention, the cold-cache-streak warning, session identity, hosted
+//! roles, the drawer-only slice, policy with a tentative proposal, opening on
+//! demand, and the background process panel.
 
 use super::*;
 
-/// The right-docked sidebar (docs/tui.md): on a wide terminal, PROCESSES and STATS
-/// render in the right column (no bottom strip), with a `│` divider from the
-/// transcript. A glanceable readout — focus + proposals come later.
+/// The session drawer (docs/tui.md): PROCESSES and STATS render in the panel over
+/// the transcript's right side, with a `│` divider. The process panel above the
+/// composer shows the same process whether or not the drawer is open.
 #[test]
 fn sidebar_shows_processes_and_stats() {
     use crate::tui::{BgProc, TuiEvent, UsageStats};
@@ -46,6 +46,7 @@ fn sidebar_shows_processes_and_stats() {
         // The cache is being read (`cache_read_input_tokens` above), so no streak.
         cold_streak: 0,
     }));
+    play.open_drawer();
     play.snapshot("sidebar_processes_and_stats");
 }
 
@@ -107,9 +108,11 @@ fn sidebar_retention_before_any_triage_and_after_a_failed_gate() {
 
     play.event(TuiEvent::Usage(stats(30, 120, 2)));
     let after = play.sidebar_grid();
-    assert!(after.contains("kept 25% · 30/120 lines"), "{after}");
+    assert!(after.contains("25% · 30/120 lines"), "{after}");
     assert!(
-        after.contains("2 withheld"),
+        after
+            .lines()
+            .any(|l| l.contains("withheld") && l.contains(" 2 ")),
         "a failed gate is its own line, not a lower ratio:\n{after}"
     );
 }
@@ -154,7 +157,7 @@ fn sidebar_warns_on_a_cold_cache_streak() {
         "the streak is stated beside the ctx meter:\n{warned}"
     );
     assert!(
-        warned.contains("ctx 7%"),
+        warned.contains("7% · 14k/200k"),
         "beside, not instead of:\n{warned}"
     );
 
@@ -175,7 +178,7 @@ fn sidebar_names_the_model_and_working_directory() {
     play.user("go");
     let before = play.sidebar_grid();
     assert!(
-        !before.contains("SESSION"),
+        !before.contains("Session"),
         "no section before the topic arrives:\n{before}"
     );
 
@@ -189,7 +192,7 @@ fn sidebar_names_the_model_and_working_directory() {
         root: String::new(),
     })));
     let after = play.sidebar_grid();
-    assert!(after.contains("SESSION"), "{after}");
+    assert!(after.contains("Session"), "{after}");
     assert!(after.contains("amber-heron"), "{after}");
     assert!(after.contains("anthropic/claude-opus-4"), "{after}");
     assert!(after.contains("~/code/efference"), "{after}");
@@ -239,8 +242,15 @@ fn sidebar_names_hosted_roles_by_connection() {
     })));
     let grid = play.sidebar_grid();
     assert!(grid.contains("work/claude-opus-4"), "{grid}");
-    assert!(grid.contains("spotter personal/claude-haiku-4-5"), "{grid}");
-    assert!(grid.contains("triage shared"), "{grid}");
+    for (label, value) in [
+        ("spotter", "personal/claude-haiku-4-5"),
+        ("triage", "shared"),
+    ] {
+        assert!(
+            grid.lines().any(|l| l.contains(label) && l.contains(value)),
+            "{label} names {value}:\n{grid}"
+        );
+    }
 }
 
 /// The sidebar-only screenshot slice (`Alt-S`) frames just the sidebar columns:
@@ -267,7 +277,7 @@ fn sidebar_slice_excludes_the_transcript() {
 
     let slice = play.sidebar_grid();
     assert!(
-        slice.contains("POLICY"),
+        slice.contains("Policy"),
         "the slice shows the sidebar:\n{slice}"
     );
     assert!(
@@ -279,9 +289,10 @@ fn sidebar_slice_excludes_the_transcript() {
         "the slice excludes the transcript:\n{slice}"
     );
     let widest = slice.lines().map(|l| l.chars().count()).max().unwrap_or(0);
+    let drawer = crate::tui::render_frame::DRAWER_WIDTH as usize;
     assert!(
-        widest < 60,
-        "the slice is narrow (≈sidebar width), not the full 110 cols; got {widest}"
+        widest < drawer + 10,
+        "the slice is narrow (≈drawer width), not the full 110 cols; got {widest}"
     );
 }
 
@@ -318,32 +329,36 @@ fn sidebar_policy_with_a_tentative_proposal() {
         resolved_review_level: None,
     }));
 
+    play.open_drawer();
     let bar = play.find("⊕").expect("the proposed grant shows a ⊕ marker");
-    assert!(
-        bar.0 > 80,
-        "the proposal marker is in the right-docked sidebar"
-    );
+    let drawer = play
+        .state
+        .viewport
+        .sidebar_area
+        .expect("the drawer is open");
+    assert!(bar.0 > drawer.x, "the proposal marker is in the drawer");
     play.snapshot("sidebar_policy_with_proposal");
 }
 
-/// The sidebar docks only at/above the width threshold; below it the layout falls
-/// back to no sidebar (the drawer is a later step). Guards the render-side
-/// width-responsiveness the resize handler relies on.
+/// The drawer is closed until asked for, at any width: the transcript takes the
+/// full width, and the header's **session** button (or Tab from command mode)
+/// opens it over the transcript's right side.
 #[test]
-fn sidebar_docks_only_above_the_width_threshold() {
-    let mut narrow = Screenplay::new(80, 10);
-    narrow.user("hi");
-    assert!(
-        narrow.find("PROCESSES").is_none(),
-        "no sidebar below the dock threshold (80 cols)"
-    );
-
-    let mut wide = Screenplay::new(110, 10);
-    wide.user("hi");
-    assert!(
-        wide.find("PROCESSES").is_some(),
-        "the sidebar docks at/above the threshold (110 cols)"
-    );
+fn the_drawer_opens_on_demand() {
+    for width in [80, 110] {
+        let mut play = Screenplay::new(width, 10);
+        play.user("hi");
+        assert!(
+            play.find("Processes").is_none(),
+            "closed by default at {width} cols"
+        );
+        assert!(play.find("session").is_some(), "the header offers it");
+        play.open_drawer();
+        assert!(
+            play.find("Processes").is_some(),
+            "open on demand at {width} cols"
+        );
+    }
 }
 
 /// The live background-process panel (docs/supervisor.md): a `Processes` event renders a

@@ -765,7 +765,7 @@ say which session is on screen. Under a host, `inference` names the connection,
 provider kind, and native model behind each role, and whether triage rides the
 main client (`shared`, in which case the selection repeats main's, so two accounts
 on one model stay distinguishable); a standalone session omits the field. The TUI
-sidebar and the web top bar print the roles from it.
+session drawer and the web top bar print the roles from it.
 
 #### `GET /log`
 JSON array of `LogEntry`. The catch-up read. Unbounded by default — the whole

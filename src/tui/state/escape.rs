@@ -19,7 +19,10 @@ impl<'a> InteractiveState<'a> {
             self.cancel_staging();
             return;
         }
-        let at_rest_composer = self.composing && matches!(self.ui_mode, UiMode::Normal);
+        // An open session drawer is not at rest, however the composer flag stands:
+        // the drawer closes before any pause or interrupt rung can fire.
+        let at_rest_composer =
+            self.composing && !self.sidebar_open && matches!(self.ui_mode, UiMode::Normal);
         if !at_rest_composer {
             self.normalize_to_composer();
             return;

@@ -5,19 +5,19 @@ expression: self.render()
     0         1         2         3         4         5         6         7         
     01234567890123456789012345678901234567890123456789012345678901234567890123456789
    ┌────────────────────────────────────────────────────────────────────────────────┐
- 0 │ ┃ Which approach?                                                              │
- 1 │                                                                                │
- 2 │   ✻ thinking                                                                   │
- 3 │   Two options here:                                                            │
- 4 │                                                                                │
- 5 │     ◦ reflow to paragraphs                                                     │
- 6 │                                                                                │
- 7 │     ◦ keep the lines                                                           │
- 8 │                                                                                │
- 9 │   The second one.                                                              │
-10 │                                                                                │
-11 │   The second one.                                                              │
-12 │                                                                                │
+ 0 │ efference                                                             session  │
+ 1 │ ┃ Which approach?                                                              │
+ 2 │                                                                                │
+ 3 │   ✻ thinking                                                                   │
+ 4 │   Two options here:                                                            │
+ 5 │                                                                                │
+ 6 │     ◦ reflow to paragraphs                                                     │
+ 7 │                                                                                │
+ 8 │     ◦ keep the lines                                                           │
+ 9 │                                                                                │
+10 │   The second one.                                                              │
+11 │                                                                                │
+12 │   The second one.                                                              │
 13 │                                                                                │
 14 │                                                                                │
 15 │                                                                                │

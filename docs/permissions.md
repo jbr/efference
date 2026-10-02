@@ -312,7 +312,7 @@ The name match is **exact**, unlike `[commands]`'s token-prefix match — with o
 A connected provider's tools reach the wire namespaced (`<server>__<tool>`, docs/tools.md), so
 clearing a whole server by exact entries means listing each of its tools; `tools = ["ferritin"]`
 clears nothing. An entry is written and displayed in the dotted form (`"ferritin.get"`) — the file
-the write-back produces, the sidebar's labels, and the transcript all agree — and is resolved
+the write-back produces, the session drawer's labels, and the transcript all agree — and is resolved
 to the wire name at validate, so the set the fast-path reads holds one name per grant
 however the operator spelled it.
 

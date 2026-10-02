@@ -5,14 +5,14 @@ expression: self.render()
     0         1         2         3         4         5         6         
     0123456789012345678901234567890123456789012345678901234567890123456789
    ┌──────────────────────────────────────────────────────────────────────┐
- 0 │   Two things.                                                        │
- 1 │                                                                      │
- 2 │   Which crate?  asked · question 1 of 2                              │
- 3 │                                                                      │
- 4 │ ┃ efference                                                          │
- 5 │                                                                      │
- 6 │   Which branch?  ▸ answering · question 2 of 2                       │
- 7 │                                                                      │
+ 0 │ efference                                                   session  │
+ 1 │   Two things.                                                        │
+ 2 │                                                                      │
+ 3 │   Which crate?  asked · question 1 of 2                              │
+ 4 │                                                                      │
+ 5 │ ┃ efference                                                          │
+ 6 │                                                                      │
+ 7 │   Which branch?  ▸ answering · question 2 of 2                       │
  8 │                                                                      │
  9 │                                                                      │
 10 │                                                                      │

@@ -103,7 +103,7 @@ A child ends with its creator unless created `detached`.
 
 Creating a session mints `.efference/<id>/` and never reuses one. The id is an
 `adjective-noun` pair unless `--name` supplied one, and it never changes; the
-one-line title beside it in the sidebar and the session list does
+one-line title beside it in the TUI header and the session list does
 ([session-title.md](session-title.md)). The directory holds:
 
 - `control.sock` — the HTTP control channel, the only input path into the loop.
@@ -229,7 +229,7 @@ still a legitimate thing to build, and an offline verb naming a specific model
 already fails on that model alone. A credential that expires *after* launch is a
 different matter: sessions exist by then, and it is re-read in place
 ([transport.md](transport.md)).
-The boot report and the sidebar's SESSION section name each role by connection.
+The boot report and the TUI session drawer's Session section name each role by connection.
 
 **First run: `efference setup`** (`src/setup.rs`). A bare `efference` on a machine
 with no `~/.efference/config.toml` runs it. With one, a directory holding neither an
@@ -650,7 +650,7 @@ loop goes idle, capped server-side, and is the shape a supervising process shoul
 The inverse condition is a session that looks entirely healthy and is quietly paying full
 price for every turn: `usage.cold_streak` counts consecutive main-loop requests that read
 nothing from the prompt cache with no reason to (docs/log-and-projection.md), and the TUI
-sidebar states it as `⚠ cache cold ×N` beside the context meter. Nothing stalls, so nothing
+header states it as `⚠ cache cold ×N` beside the context meter. Nothing stalls, so nothing
 else says so. `efference dev cache` is the detail view.
 
 ## What the session was already told

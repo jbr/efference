@@ -5,21 +5,21 @@ expression: self.render()
     0         1         2         3         4         5         6         7         
     01234567890123456789012345678901234567890123456789012345678901234567890123456789
    ┌────────────────────────────────────────────────────────────────────────────────┐
- 0 │ ┃ Wrap that long line.                                                         │
- 1 │                                                                                │
- 2 │   Here's the reformatted version.                                              │
- 3 │                                                                                │
- 4 │   ❯ edit(anchor: "fn is_empty", content: "…", file_path: "src/tui/composer.rs" │
- 5 │   , operation: "replace")                                                      │
- 6 │   ✓ 7 lines                                                                    │
- 7 │        /// True when the buffer holds no non-whitespace text.                  │
- 8 │        pub(super) fn is_empty(&self) -> bool {                                 │
- 9 │   -        self.lines.iter().all(|l| l.iter().all(|c| c.is_whitespace()))      │
-10 │   +        self.lines                                                          │
-11 │   +            .iter()                                                         │
-12 │   +            .all(|l| l.iter().all(|c| c.is_whitespace()))                   │
-13 │        }                                                                       │
-14 │                                                                                │
+ 0 │ efference                                                             session  │
+ 1 │ ┃ Wrap that long line.                                                         │
+ 2 │                                                                                │
+ 3 │   Here's the reformatted version.                                              │
+ 4 │                                                                                │
+ 5 │   ❯ edit(anchor: "fn is_empty", content: "…", file_path: "src/tui/composer.rs" │
+ 6 │   , operation: "replace")                                                      │
+ 7 │   ✓ 7 lines                                                                    │
+ 8 │        /// True when the buffer holds no non-whitespace text.                  │
+ 9 │        pub(super) fn is_empty(&self) -> bool {                                 │
+10 │   -        self.lines.iter().all(|l| l.iter().all(|c| c.is_whitespace()))      │
+11 │   +        self.lines                                                          │
+12 │   +            .iter()                                                         │
+13 │   +            .all(|l| l.iter().all(|c| c.is_whitespace()))                   │
+14 │        }                                                                       │
 15 │                                                                                │
 16 │                                                                                │
 17 │                                                                                │

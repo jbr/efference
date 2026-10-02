@@ -484,7 +484,7 @@ answers `prompt_cache_options.comparison_response_id` with a `prompt_cache_diagn
 reason naming what diverged.
 
 Two surfaces read it. `GET /state` publishes the live count as
-`usage.cold_streak`, which the TUI sidebar states beside the context meter once it
+`usage.cold_streak`, which the TUI header states beside the context meter once it
 crosses the threshold and drops when a warm read arrives. `efference dev cache`
 (docs/operating.md) replays a recorded `usage.jsonl` through the same `ColdStreak`
 offline — per-origin read rates, the explained cold starts, and the longest run —

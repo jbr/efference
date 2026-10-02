@@ -42,6 +42,7 @@ pub(crate) mod render_code_block;
 pub(crate) mod render_context;
 pub(crate) mod render_document;
 pub(crate) mod render_frame;
+pub(crate) mod render_header;
 pub(crate) mod render_help_screen;
 pub(crate) mod render_image;
 pub(crate) mod render_loading_bar;

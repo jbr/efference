@@ -1,15 +1,14 @@
 ---
 source: src/tui/harness.rs
-assertion_line: 433
 expression: self.render()
 ---
     0         1         2         3         4         5         6         7         8         
     012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789
    ┌──────────────────────────────────────────────────────────────────────────────────────────┐
- 0 │                                                  │ ▾ SESSION                             │
- 1 │                                                  │  alpha                                │
- 2 │                                                  │  test/m                               │
- 3 │                                                  │  /work                                │
+ 0 │ efference  alpha                                                                session  │
+ 1 │                                                                                          │
+ 2 │                                                                                          │
+ 3 │                                                                                          │
  4 │                  ┌ sessions ──────────────────────────────────────────┐                  │
  5 │                  │>   alpha  idle  alpha's work  · attached           │                  │
  6 │                  │    beta  running  beta's work  · 2 bg              │                  │
@@ -22,9 +21,9 @@ expression: self.render()
 13 │                  │                                                    │                  │
 14 │                  │ ↑/↓:move  ⏎:switch  n:new  a:archive  ⎋:close      │                  │
 15 │                  └────────────────────────────────────────────────────┘                  │
-16 │                                                  │                                       │
-17 │   pace fast     sessions s     theme t           │                                       │
-18 │›                                                 │                                       │
+16 │                                                                                          │
+17 │   pace fast     sessions s     theme t     help ?     detach q                           │
+18 │›                                                                                         │
    │  ^                                                                                       │
 19 │   efference — ↑ controls                                                                 │
    └──────────────────────────────────────────────────────────────────────────────────────────┘

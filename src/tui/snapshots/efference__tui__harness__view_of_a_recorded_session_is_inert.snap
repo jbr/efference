@@ -5,7 +5,7 @@ expression: self.render()
     0         1         2         3         4         5         6         7         8         9         
     0123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789
    ┌────────────────────────────────────────────────────────────────────────────────────────────────────┐
- 0 │ ╭────────────────╮                                                                                 │
+ 0 │ efference                                                                                 session  │
    │^                                                                                                   │
  1 │ │ 1  20191 total │                                                                                 │
  2 │ ╰────────────────╯                                                                                 │
@@ -21,8 +21,8 @@ expression: self.render()
 12 │   artifacts and tests within the working directory.                                                │
 13 │   ✓ kept 0 of 1 line                                                                               │
 14 │   ⟢ touch command succeeded with no output; file created at /tmp/efference-smoke-test              │
-15 │                                                                                                   ╻│
-16 │   Done! I've created an empty file at /tmp/efference-smoke-test using the touch command.          ┃│
+15 │                                                                                                    │
+16 │   Done! I've created an empty file at /tmp/efference-smoke-test using the touch command.          ╻│
 17 │                                                                                                   ┃│
 18 │   ⟢ config · Your session scope was updated by the orchestrator:                                  ┃│
 19 │                                                                                                   ┃│

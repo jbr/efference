@@ -113,7 +113,7 @@ fn transcript_image_partial_scroll() {
     play.state.set_scroll_offset(24);
     let (_, y) = play.find("▄").expect("a mosaic slice is on screen");
     assert_eq!(
-        y, 0,
+        y, play.state.viewport.doc_origin.y,
         "the top visible row is mid-image, not the image's top"
     );
     play.snapshot("transcript_image_partial_scroll");

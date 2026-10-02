@@ -5,18 +5,18 @@ expression: self.render()
     0         1         2         3         4         5         6         7         
     01234567890123456789012345678901234567890123456789012345678901234567890123456789
    ┌────────────────────────────────────────────────────────────────────────────────┐
- 0 │ ┃ Add the line.                                                                │
- 1 │                                                                                │
- 2 │   Editing.                                                                     │
- 3 │                                                                                │
- 4 │   ❯ edit(file_path: "CHANGELOG.md", operation: "insert_after")                 │
- 5 │   ✓ kept 1 of 7 lines                                                          │
- 6 │ ╭─────────────────────────────────────────────────────╮                        │
- 7 │ │ 1 Applied insert after — the file has been updated. │                        │
- 8 │ ╰─────────────────────────────────────────────────────╯                        │
- 9 │                                                                                │
-10 │   ⟢ inserted the read line-range entry                                         │
-11 │                                                                                │
+ 0 │ efference                                                             session  │
+ 1 │ ┃ Add the line.                                                                │
+ 2 │                                                                                │
+ 3 │   Editing.                                                                     │
+ 4 │                                                                                │
+ 5 │   ❯ edit(file_path: "CHANGELOG.md", operation: "insert_after")                 │
+ 6 │   ✓ kept 1 of 7 lines                                                          │
+ 7 │ ╭─────────────────────────────────────────────────────╮                        │
+ 8 │ │ 1 Applied insert after — the file has been updated. │                        │
+ 9 │ ╰─────────────────────────────────────────────────────╯                        │
+10 │                                                                                │
+11 │   ⟢ inserted the read line-range entry                                         │
 12 │                                                                                │
 13 │                                                                                │
 14 │                                                                                │

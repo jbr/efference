@@ -5,35 +5,35 @@ expression: self.render()
     0         1         2         3         4         5         6         7         
     01234567890123456789012345678901234567890123456789012345678901234567890123456789
    ┌────────────────────────────────────────────────────────────────────────────────┐
- 0 │ ┃ List the tui module.                                                         │
- 1 │                                                                                │
- 2 │   Here's the directory.                                                        │
- 3 │                                                                                │
- 4 │   ❯ bash · ls src/tui                                                          │
- 5 │   ✓ 20 lines                                                                   │
- 6 │ ╭─────────────────────╮                                                        │
- 7 │ │ render_module_01.rs │                                                        │
- 8 │ │ render_module_02.rs │                                                        │
- 9 │ │ render_module_03.rs │                                                        │
-10 │ │ render_module_04.rs │                                                        │
-11 │ │ render_module_05.rs │                                                        │
-12 │ │ render_module_06.rs │                                                        │
-13 │ │ render_module_07.rs │                                                        │
-14 │ │ render_module_08.rs │                                                        │
-15 │ │ render_module_09.rs │                                                        │
-16 │ │ render_module_10.rs │                                                        │
-17 │ │ render_module_11.rs │                                                        │
-18 │ │ render_module_12.rs │                                                        │
-19 │ │ render_module_13.rs │                                                        │
-20 │ │ render_module_14.rs │                                                        │
-21 │ │ render_module_15.rs │                                                        │
-22 │ │ render_module_16.rs │                                                        │
-23 │ │ render_module_17.rs │                                                        │
-24 │ │ render_module_18.rs │                                                        │
-25 │ │ render_module_19.rs │                                                        │
-26 │ │ render_module_20.rs │                                                        │
-27 │ ╰─────────────────────╯                                                        │
-28 │                                                                                │
+ 0 │ efference                                                             session  │
+ 1 │                                                                               ╻│
+ 2 │   Here's the directory.                                                       ┃│
+ 3 │                                                                               ┃│
+ 4 │   ❯ bash · ls src/tui                                                         ┃│
+ 5 │   ✓ 20 lines                                                                  ┃│
+ 6 │ ╭─────────────────────╮                                                       ┃│
+ 7 │ │ render_module_01.rs │                                                       ┃│
+ 8 │ │ render_module_02.rs │                                                       ┃│
+ 9 │ │ render_module_03.rs │                                                       ┃│
+10 │ │ render_module_04.rs │                                                       ┃│
+11 │ │ render_module_05.rs │                                                       ┃│
+12 │ │ render_module_06.rs │                                                       ┃│
+13 │ │ render_module_07.rs │                                                       ┃│
+14 │ │ render_module_08.rs │                                                       ┃│
+15 │ │ render_module_09.rs │                                                       ┃│
+16 │ │ render_module_10.rs │                                                       ┃│
+17 │ │ render_module_11.rs │                                                       ┃│
+18 │ │ render_module_12.rs │                                                       ┃│
+19 │ │ render_module_13.rs │                                                       ┃│
+20 │ │ render_module_14.rs │                                                       ┃│
+21 │ │ render_module_15.rs │                                                       ┃│
+22 │ │ render_module_16.rs │                                                       ┃│
+23 │ │ render_module_17.rs │                                                       ┃│
+24 │ │ render_module_18.rs │                                                       ┃│
+25 │ │ render_module_19.rs │                                                       ┃│
+26 │ │ render_module_20.rs │                                                       ┃│
+27 │ ╰─────────────────────╯                                                       ┃│
+28 │                                                                               ╹│
 29 │   pace fast     sessions s     theme t     help ?     detach q                 │
 30 │›                                                                               │
    │  ^                                                                             │
