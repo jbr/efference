@@ -43,6 +43,7 @@ enum Payload {
     ToolResult { call_id: CallId, raw: RawResult, wire: WireState },
     ResultVerdict { for_result: Seq, wire: WireState },  // the final wire for a `Pending` result (see redaction-fork.md)
     CallStarted { call_id: CallId },  // a call's dispatch is about to reach the world — never projected
+    Resumed(Resumed),  // the session was reopened by a later host process — projects a restart notice
     Mark(Mark),        // a salience annotation
     Ambient(Notification),  // an out-of-band notification (see inbox.md)
     Triage(Triage),    // a fork verdict — the audit record (see redaction-fork.md)
@@ -74,6 +75,12 @@ nothing. A call with the marker and no result may have had side effects, which i
 the one state a resumed session can't continue from, so resumption drops such a call
 and reruns one without the marker (backlog/session-resumption.md, "Recovery per
 call").
+
+`Resumed` is appended when a later host process reopens the log. It records the gap
+since the last entry, the background handles (`p#<n>`) with no recorded exit, and
+the calls dropped because they started and never returned. It projects as one text
+block at its own position (`render_resumed`), appended to the wire like any later
+turn, so the prefix before it is unchanged.
 
 `ToolTelemetry` and `ProcessEvent` are log metadata in the same sense timestamps
 are: both project to nothing, which is what lets them be appended mid-session —

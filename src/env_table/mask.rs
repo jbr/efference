@@ -332,6 +332,8 @@ impl Masker {
             // a value the tool table or the harness produced, not a value from
             // the environment. Nothing to mask (docs/env.md).
             Payload::ToolTelemetry(_) | Payload::CallStarted { .. } => {}
+            // A gap, handle ids, and call ids: nothing from the environment.
+            Payload::Resumed(_) => {}
             // A process lifecycle record (docs/supervisor.md) carries one piece
             // of free text — the command line, which is exactly where an
             // interpolated secret would ride (docs/env.md). The rest is an

@@ -354,6 +354,12 @@ pub fn project_semantic(log: &[LogEntry]) -> Vec<WireTurn> {
             // A dispatch marker is for a resumed session's loader, not the model:
             // the call and its result already carry everything the wire says.
             Payload::CallStarted { .. } => {}
+            // The restart notice (docs/log-and-projection.md): one harness text block at
+            // the entry's own position, so it appends to the wire like any later turn.
+            Payload::Resumed(resumed) => {
+                flush(&mut pending, &mut turns);
+                turns.push(WireTurn::text(super::render::render_resumed(resumed)));
+            }
             // A process lifecycle record (docs/supervisor.md) is audit metadata
             // beside events the wire already carries in prose — the backgrounding
             // result and the exit notification. It projects to nothing, so a

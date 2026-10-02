@@ -183,3 +183,38 @@ pub(super) fn normalize(ranges: &[(usize, usize)], n: usize) -> Vec<(usize, usiz
     }
     merged
 }
+
+/// The restart notice a [`Resumed`](crate::log::Resumed) entry projects
+/// (docs/log-and-projection.md): a harness line saying the session was reopened,
+/// how long it sat, and what the loader set aside. It states what happened and
+/// nothing about what to do next.
+pub fn render_resumed(resumed: &crate::log::Resumed) -> String {
+    let secs = resumed.gap_ms / 1000;
+    let gap = match secs {
+        0..=59 => format!("{secs}s"),
+        60..=3599 => format!("{}m", secs / 60),
+        3600..=86399 => format!("{}h {}m", secs / 3600, secs % 3600 / 60),
+        _ => format!("{}d {}h", secs / 86400, secs % 86400 / 3600),
+    };
+    let mut out = format!("⟢ session resumed after {gap}: the host process restarted.");
+    if !resumed.lost_processes.is_empty() {
+        out.push_str(&format!(
+            " Background processes no longer supervised, output no longer captured, \
+             still running or not unknown: {}.",
+            resumed.lost_processes.join(", ")
+        ));
+    }
+    if !resumed.dropped_calls.is_empty() {
+        let ids: Vec<&str> = resumed
+            .dropped_calls
+            .iter()
+            .map(|id| id.0.as_str())
+            .collect();
+        out.push_str(&format!(
+            " Calls that started and never returned a result were dropped; their effects, \
+             if any, stand: {}.",
+            ids.join(", ")
+        ));
+    }
+    out
+}

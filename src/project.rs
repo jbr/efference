@@ -157,7 +157,8 @@ pub use semantic::{
 };
 
 pub use render::{
-    Distillate, INTENT_FEEDBACK_LEAD, distillate, render_distilled, render_triage_failure,
+    Distillate, INTENT_FEEDBACK_LEAD, distillate, render_distilled, render_resumed,
+    render_triage_failure,
 };
 pub use retention::Retention;
 pub use wire::{

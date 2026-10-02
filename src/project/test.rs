@@ -697,3 +697,28 @@ mod consolidate;
 mod dialect;
 mod distilled;
 mod notifications;
+
+/// A `Resumed` entry projects one harness text block at its position and leaves
+/// every earlier turn's bytes unchanged (docs/log-and-projection.md).
+#[test]
+fn resumed_projects_a_notice_after_the_prefix() {
+    let before = serde_json::to_string(&project(&sample_log())).unwrap();
+    let mut log = sample_log();
+    log.push(entry(
+        3,
+        2,
+        Payload::Resumed(crate::log::Resumed {
+            gap_ms: 90_000,
+            lost_processes: vec!["p#1".into()],
+            dropped_calls: vec![CallId::from("toolu_2")],
+        }),
+    ));
+    let after = serde_json::to_string(&project(&log)).unwrap();
+    let prefix = before.trim_end_matches(']');
+    assert!(after.starts_with(prefix), "{after}");
+    assert!(after.contains("session resumed after 1m"), "{after}");
+    assert!(
+        after.contains("p#1") && after.contains("toolu_2"),
+        "{after}"
+    );
+}

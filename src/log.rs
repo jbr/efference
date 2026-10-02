@@ -158,6 +158,11 @@ pub enum Payload {
     /// with this and no result may have had side effects, which is the one state a
     /// resumed session can't continue from. Projects to nothing.
     CallStarted { call_id: CallId },
+    /// The session was reopened from its log by a later host process
+    /// (docs/log-and-projection.md). Projects the restart notice at its position: how
+    /// long the session sat, which background processes it no longer supervises, and
+    /// which calls were dropped because they started and never returned.
+    Resumed(Resumed),
     /// A salience annotation written when it is known (docs/log-and-projection.md):
     /// a decision, a dead end, a relevance note, or a consolidation boundary. The
     /// foundation for intent-aware compaction — a mark is *kept* through a fold
@@ -270,6 +275,22 @@ pub enum Payload {
     ///
     /// [`ToolTelemetry`]: Payload::ToolTelemetry
     Title(Title),
+}
+
+/// A session reopened from its log (docs/log-and-projection.md): what the loader
+/// knows changed across the restart, and what it set aside to continue.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Resumed {
+    /// Milliseconds between the last entry before the restart and this one.
+    pub gap_ms: u64,
+    /// Background handles (`p#<n>`) that were spawned with no recorded exit: their
+    /// output is no longer captured, and whether they still run is unknown.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub lost_processes: Vec<String>,
+    /// Calls of the last completion that started and never returned a result,
+    /// omitted from the wire from here on so their `tool_use` stays paired.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub dropped_calls: Vec<CallId>,
 }
 
 /// One title decision (docs/session-title.md): the text and who wrote it.

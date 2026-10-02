@@ -382,6 +382,12 @@ pub(crate) fn entry_nodes(
             // reader does not already see, so it draws nothing.
             Payload::ToolTelemetry(_) => {}
             Payload::CallStarted { .. } => {}
+            Payload::Resumed(resumed) => {
+                nodes.push(annotation_line(
+                    "⟢ ",
+                    &crate::project::render_resumed(resumed),
+                ));
+            }
             // A process lifecycle record (docs/supervisor.md) — the durable half
             // of what the transcript already shows in prose (the backgrounding
             // result, the exit notification), kept for readers with no daemon.
