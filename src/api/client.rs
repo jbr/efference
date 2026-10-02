@@ -690,6 +690,19 @@ impl Client {
         // that yields a working token yields it the first time, and a second
         // pass would only re-read the same bytes.
         let mut reloaded_auth = false;
+        // The operator's interrupt (docs/control-channel.md) is armed before the
+        // request is sent, not once its stream opens: `notify_waiters` stores no
+        // permit, so a press that lands after the request reaches the upstream but
+        // before the read loop below registers would otherwise be lost, leaving the
+        // read on a stream that may never finish. Armed here, it is ready the first
+        // time the read loop polls it.
+        let abort_signal = self
+            .abort
+            .clone()
+            .unwrap_or_else(|| Arc::new(tokio::sync::Notify::new()));
+        let abort = abort_signal.notified();
+        tokio::pin!(abort);
+        abort.as_mut().enable();
         let mut events = loop {
             let body = match &encoded {
                 Encoded::Messages(messages) => {
@@ -871,14 +884,9 @@ impl Client {
         // completion's `upstream_failure`, and the caller's abort-retry budget
         // decides what happens next.
         //
-        // The operator's interrupt (docs/control-channel.md) is the other way out:
-        // registered before the first read so a press between events is not lost
-        // (`notify_waiters` stores no permit), it ends the read the same way, and
-        // `Aborted` tells the caller not to retry.
-        let idle = Arc::new(tokio::sync::Notify::new());
-        let abort = self.abort.as_ref().unwrap_or(&idle).notified();
-        tokio::pin!(abort);
-        abort.as_mut().enable();
+        // The operator's interrupt, armed above before the request went out, is the
+        // other way out: it ends the read the same way, and `Aborted` tells the
+        // caller not to retry.
         let mut operator_abort = false;
         let deadline = tokio::time::Instant::now() + self.stream_ceiling;
         while let Some(event) = tokio::select! {

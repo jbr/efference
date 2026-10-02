@@ -92,20 +92,32 @@ fn read_request(reader: &mut BufReader<TcpStream>) -> bool {
 }
 
 /// A Messages upstream that answers by arrival order: request 0 calls a tool,
-/// request 1 (the peek) opens its stream and then sends nothing until `release`,
-/// and every later request ends the turn. `requests` counts arrivals.
-fn scripted_upstream(requests: Arc<AtomicUsize>, release: Arc<AtomicBool>) -> std::net::SocketAddr {
+/// request 1 (the peek) opens its stream once `open` is set and then sends nothing
+/// until `release`, and every later request ends the turn. `requests` counts
+/// arrivals.
+fn scripted_upstream(
+    requests: Arc<AtomicUsize>,
+    release: Arc<AtomicBool>,
+    open: Arc<AtomicBool>,
+) -> std::net::SocketAddr {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
     std::thread::spawn(move || {
         for sock in listener.incoming() {
             let Ok(sock) = sock else { return };
-            let (requests, release) = (Arc::clone(&requests), Arc::clone(&release));
+            let (requests, release, open) = (
+                Arc::clone(&requests),
+                Arc::clone(&release),
+                Arc::clone(&open),
+            );
             std::thread::spawn(move || {
                 let mut reader = BufReader::new(sock.try_clone().unwrap());
                 let mut sock = sock;
                 while read_request(&mut reader) {
                     let n = requests.fetch_add(1, Ordering::SeqCst);
+                    while n == 1 && !open.load(Ordering::SeqCst) {
+                        std::thread::sleep(Duration::from_millis(5));
+                    }
                     write!(
                         sock,
                         "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\n\
@@ -155,7 +167,8 @@ async fn an_interrupt_during_the_peek_ends_the_turn_at_the_gate() {
 
     let requests = Arc::new(AtomicUsize::new(0));
     let release = Arc::new(AtomicBool::new(false));
-    let addr = scripted_upstream(Arc::clone(&requests), Arc::clone(&release));
+    let open = Arc::new(AtomicBool::new(true));
+    let addr = scripted_upstream(Arc::clone(&requests), Arc::clone(&release), open);
     let mut boot = boot(&cwd);
     let endpoint = crate::api::Endpoint {
         provider: crate::api::Provider::Anthropic,
@@ -199,6 +212,66 @@ async fn an_interrupt_during_the_peek_ends_the_turn_at_the_gate() {
             }
         )),
         "the ran call's result is logged withheld, as at the interrupt's after juncture"
+    );
+
+    host.shut_down().await;
+    runtime.finished().await.unwrap();
+    let _ = std::fs::remove_dir_all(&cwd);
+}
+
+/// The press lands after the peek's request reached the upstream but before its
+/// stream opened — the window `notify_waiters`, which stores no permit, would lose
+/// if the client armed its abort only once the stream was open. The upstream holds
+/// the peek's response headers until the interrupt has fired, so this ordering is
+/// forced rather than left to scheduling: the loop must still end the turn.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_interrupt_before_the_peek_stream_opens_still_ends_it() {
+    use std::hash::{BuildHasher, Hasher, RandomState};
+    let nonce = RandomState::new().build_hasher().finish();
+    let cwd = std::env::temp_dir().join(format!("efference-interrupt-open-{nonce:016x}"));
+    std::fs::create_dir_all(cwd.join("scratch")).unwrap();
+    let cwd = cwd.canonicalize().unwrap();
+
+    let requests = Arc::new(AtomicUsize::new(0));
+    let release = Arc::new(AtomicBool::new(false));
+    let open = Arc::new(AtomicBool::new(false));
+    let addr = scripted_upstream(
+        Arc::clone(&requests),
+        Arc::clone(&release),
+        Arc::clone(&open),
+    );
+    let mut boot = boot(&cwd);
+    let endpoint = crate::api::Endpoint {
+        provider: crate::api::Provider::Anthropic,
+        url: Some(format!("http://{addr}/v1/messages")),
+        auth_header: "x-api-key".into(),
+        auth_value: "k".into(),
+        session_id: None,
+        extra_headers: Vec::new(),
+        base: None,
+    };
+    boot.client = Client::new(endpoint, "m", "sys", None);
+
+    let host = Swansong::new();
+    let runtime = SessionRuntime::start(boot, &host);
+    let session = Arc::clone(runtime.session());
+    session.submit_turn(SubmittedTurn::new("go", "s1"));
+
+    wait_until("the peek request reached the upstream", || {
+        requests.load(Ordering::SeqCst) == 2
+    })
+    .await;
+    session.interrupt();
+    open.store(true, Ordering::SeqCst);
+    wait_until("the loop is idle", || {
+        !session.running.load(Ordering::SeqCst)
+    })
+    .await;
+    release.store(true, Ordering::SeqCst);
+    assert_eq!(
+        requests.load(Ordering::SeqCst),
+        2,
+        "no request after the interrupted peek"
     );
 
     host.shut_down().await;
