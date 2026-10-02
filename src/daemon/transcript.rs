@@ -268,6 +268,10 @@ fn lines(
             )]
         }
         Payload::Title(title) => vec![line("title", title.text.clone())],
+        Payload::ResultVerdict { for_result, .. } => vec![line(
+            "result_verdict",
+            format!("triage resolved result #{for_result}"),
+        )],
     }
 }
 
@@ -363,6 +367,7 @@ fn result(raw: &RawResult, wire: &WireState) -> String {
     let _ = write!(body, " {}", size(total));
     match wire {
         WireState::Raw => body.push_str(", raw"),
+        WireState::Pending => body.push_str(", awaiting triage"),
         WireState::Elided => body.push_str(", elided"),
         WireState::TriageFailed { why } => {
             let _ = write!(body, ", triage failed: {why}");

@@ -60,7 +60,7 @@ impl Retention {
             // Untriaged (the uncommitted tail), bypassed (the known-shape rule,
             // docs/redaction-fork.md — never shown to triage) and elided results are
             // not verdicts about line-level relevance, so none of them counts.
-            WireState::Raw | WireState::Elided => {}
+            WireState::Pending | WireState::Raw | WireState::Elided => {}
         }
     }
 

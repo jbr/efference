@@ -317,6 +317,7 @@ pub(crate) fn payload_kind(payload: &Payload) -> &'static str {
         Payload::User(_) => "user",
         Payload::Assistant { .. } => "assistant",
         Payload::ToolResult { .. } => "tool_result",
+        Payload::ResultVerdict { .. } => "result_verdict",
         Payload::Mark(_) => "mark",
         Payload::Triage(_) => "triage",
         Payload::Ambient(_) => "ambient",

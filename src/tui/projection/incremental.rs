@@ -127,7 +127,7 @@ impl Transcript {
         // dirties those calls' owners), then project them onto the end.
         for idx in self.counts.len()..log.len() {
             if let Some(call_id) = self.index.absorb(idx, &log[idx])
-                && let Some(&owner) = self.owner.get(call_id)
+                && let Some(&owner) = self.owner.get(&call_id)
             {
                 self.dirty.insert(owner);
             }

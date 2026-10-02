@@ -8,6 +8,9 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+mod curation;
+pub use curation::result_verdicts;
+
 mod process;
 pub mod stops;
 mod upstream;
@@ -147,6 +150,9 @@ pub enum Payload {
         raw: RawResult,
         wire: WireState,
     },
+    /// The final wire decision for a previously captured pending result.
+    /// Raw output stays on the referenced entry (docs/redaction-fork.md).
+    ResultVerdict { for_result: Seq, wire: WireState },
     /// A salience annotation written when it is known (docs/log-and-projection.md):
     /// a decision, a dead end, a relevance note, or a consolidation boundary. The
     /// foundation for intent-aware compaction — a mark is *kept* through a fold
@@ -1116,6 +1122,9 @@ pub struct Notification {
 /// [`project`]: crate::project::project
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum WireState {
+    /// Captured durably, but not yet accepted onto the main agent's wire.
+    /// An appended result verdict resolves this state (docs/redaction-fork.md).
+    Pending,
     /// Project the full `raw` content.
     Raw,
     /// Project the **verdict** — which lines survive (`keep`) plus an optional `note`

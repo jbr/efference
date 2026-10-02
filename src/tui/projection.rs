@@ -80,6 +80,8 @@ pub(crate) struct Gate<'g> {
 pub(crate) struct CallIndex {
     result_at: HashMap<String, usize>,
     spot_at: HashMap<String, usize>,
+    pending_calls: HashMap<u64, String>,
+    verdict_at: HashMap<u64, usize>,
 }
 
 impl CallIndex {
@@ -87,15 +89,23 @@ impl CallIndex {
     /// annotates — which is exactly the call whose entries must be rebuilt.
     /// Later entries overwrite earlier ones, so a re-judged call shows its latest
     /// verdict, matching the daemon's `latest_spot_reason` (which reads in reverse).
-    pub(crate) fn absorb<'e>(&mut self, idx: usize, entry: &'e LogEntry) -> Option<&'e str> {
+    pub(crate) fn absorb(&mut self, idx: usize, entry: &LogEntry) -> Option<String> {
         match &entry.payload {
-            Payload::ToolResult { call_id, .. } => {
+            Payload::ToolResult { call_id, wire, .. } => {
                 self.result_at.insert(call_id.0.clone(), idx);
-                Some(call_id.0.as_str())
+                if matches!(wire, WireState::Pending) {
+                    self.pending_calls.insert(entry.seq, call_id.0.clone());
+                }
+                Some(call_id.0.clone())
+            }
+            Payload::ResultVerdict { for_result, wire } if !matches!(wire, WireState::Pending) => {
+                let call = self.pending_calls.get(for_result)?.clone();
+                self.verdict_at.entry(*for_result).or_insert(idx);
+                Some(call)
             }
             Payload::Spot(spot) => {
                 self.spot_at.insert(spot.call_id.0.clone(), idx);
-                Some(spot.call_id.0.as_str())
+                Some(spot.call_id.0.clone())
             }
             _ => None,
         }
@@ -110,7 +120,18 @@ impl CallIndex {
     ) -> Option<(u64, &'l RawResult, &'l WireState)> {
         let entry = log.get(*self.result_at.get(call_id)?)?;
         match &entry.payload {
-            Payload::ToolResult { raw, wire, .. } => Some((entry.seq, raw, wire)),
+            Payload::ToolResult { raw, wire, .. } => {
+                let wire = self
+                    .verdict_at
+                    .get(&entry.seq)
+                    .and_then(|idx| log.get(*idx))
+                    .and_then(|entry| match &entry.payload {
+                        Payload::ResultVerdict { wire, .. } => Some(wire),
+                        _ => None,
+                    })
+                    .unwrap_or(wire);
+                Some((entry.seq, raw, wire))
+            }
             _ => None,
         }
     }
@@ -371,6 +392,7 @@ pub(crate) fn entry_nodes(
             // The session title (docs/session-title.md) is sidebar state, carried by
             // the `session_identity` topic — it draws nothing in the transcript.
             Payload::Title(_) => {}
+            Payload::ResultVerdict { .. } => {}
         }
     }
     nodes
@@ -584,6 +606,10 @@ fn result_entry(
                 (raw.content.clone(), &WireState::Raw)
             } else {
                 let content = match wire {
+                    WireState::Pending => {
+                        parts.push("awaiting triage".to_string());
+                        raw.content.clone()
+                    }
                     WireState::Raw => {
                         parts.push("raw".to_string());
                         raw.content.clone()

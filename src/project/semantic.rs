@@ -144,13 +144,14 @@ pub fn render_result(
 ) -> UserPart {
     let (content, is_error) = match wire {
         WireState::Raw => (raw.content.clone(), raw.is_error),
+        WireState::Pending => ("[awaiting triage]".to_string(), false),
         WireState::Distilled(verdict) => (render_distilled(&raw.content, verdict), raw.is_error),
         WireState::Elided => ("[elided]".to_string(), false),
         WireState::TriageFailed { why } => (render_triage_failure(why), true),
     };
     let images = match wire {
         WireState::Raw | WireState::Distilled(_) => raw.images.clone(),
-        WireState::Elided | WireState::TriageFailed { .. } => Vec::new(),
+        WireState::Pending | WireState::Elided | WireState::TriageFailed { .. } => Vec::new(),
     };
     UserPart::ToolResult {
         call_id: call_id.clone(),
@@ -181,6 +182,7 @@ pub struct AskReply<'a> {
 /// iteration, or other ambient input leaking into the output.
 pub fn project_semantic(log: &[LogEntry]) -> Vec<WireTurn> {
     let (boundaries, elided) = extract_boundaries(log);
+    let verdicts = crate::log::result_verdicts(log);
     // Each `ask`'s question by call id, so its reply can name it (`render_result`).
     let questions: HashMap<CallId, String> = log
         .iter()
@@ -318,6 +320,10 @@ pub fn project_semantic(log: &[LogEntry]) -> Vec<WireTurn> {
             Payload::ToolResult { call_id, raw, wire } => {
                 // A reply is the result a submission produced; an ask that ended
                 // without one (an interrupt, a refused call) renders as any result.
+                let wire = verdicts.get(&entry.seq).copied().unwrap_or(wire);
+                if matches!(wire, WireState::Pending) {
+                    continue;
+                }
                 let reply = entry
                     .submission_id
                     .as_ref()
@@ -344,6 +350,7 @@ pub fn project_semantic(log: &[LogEntry]) -> Vec<WireTurn> {
             // what lets it be appended on every call without moving the cached
             // prefix (docs/log-and-projection.md).
             Payload::ToolTelemetry(_) => {}
+            Payload::ResultVerdict { .. } => {}
             // A process lifecycle record (docs/supervisor.md) is audit metadata
             // beside events the wire already carries in prose — the backgrounding
             // result and the exit notification. It projects to nothing, so a
