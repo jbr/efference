@@ -533,6 +533,36 @@ pub(in crate::tui) fn push_mark(
     nodes.push(DocumentNode::horizontal_rule());
 }
 
+/// A turn's text as markdown, led by the `source:` of a turn another client
+/// submitted (docs/control-api.md). The prefix is metadata, so it is a span of its
+/// own ahead of the first paragraph rather than text the markdown parser sees —
+/// where a source like `mcp[claude-code]` read as a link reference and lost its
+/// brackets. A body that opens with something other than a paragraph gets the
+/// source on a line of its own.
+pub(in crate::tui) fn sourced_markdown(
+    source: Option<&str>,
+    text: &str,
+) -> Vec<DocumentNode<'static>> {
+    let mut nodes = if text.is_empty() {
+        Vec::new()
+    } else {
+        markdown(text)
+    };
+    let Some(source) = source else {
+        return nodes;
+    };
+    let prefix = Span {
+        text: format!("{source}: ").into(),
+        style: SpanStyle::Comment,
+        action: None,
+    };
+    match nodes.first_mut() {
+        Some(DocumentNode::Paragraph { spans }) => spans.insert(0, prefix),
+        _ => nodes.insert(0, DocumentNode::paragraph(vec![prefix])),
+    }
+    nodes
+}
+
 /// Join text blocks with blank lines so paragraph structure survives. Only `Text` blocks
 /// contribute — thinking blocks render through their own (future) surface, not the prose join.
 /// `pub(crate)` so the state layer can match a committed `User` entry against its optimistic

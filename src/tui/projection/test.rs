@@ -565,3 +565,27 @@ fn a_handoff_brief_is_drawn_as_the_predecessors_note() {
     );
     assert_eq!(kinds(&doc), vec![EntryKind::Annotation]);
 }
+
+/// A turn another client submitted leads with its `source:`, kept out of the
+/// markdown: a source like `mcp[claude-code]` read as a link reference and lost its
+/// brackets.
+#[test]
+fn a_sourced_turn_keeps_its_source_verbatim() {
+    let mut turn = entry(
+        1,
+        Payload::User(vec![ContentBlock::Text("Groom the backlog.".into())]),
+    );
+    turn.source = Some("mcp[claude-code]".into());
+    let doc = project(
+        &[turn],
+        &LiveTail::default(),
+        &ViewState::default(),
+        Gate::default(),
+        &[],
+    );
+    let text = collect_text(&doc.nodes);
+    assert!(
+        text.contains("mcp[claude-code]: Groom the backlog."),
+        "the source reads as written: {text}"
+    );
+}

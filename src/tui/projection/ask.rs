@@ -74,11 +74,10 @@ pub(super) fn ask_nodes(
         && let Payload::ToolResult { raw, .. } = &entry.payload
     {
         if entry.submission_id.is_some() {
-            let text = match &entry.source {
-                Some(source) => format!("{source}: {}", raw.content),
-                None => raw.content.clone(),
-            };
-            nodes.push(DocumentNode::entry(EntryKind::UserMessage, markdown(&text)));
+            nodes.push(DocumentNode::entry(
+                EntryKind::UserMessage,
+                sourced_markdown(entry.source.as_deref(), &raw.content),
+            ));
         } else {
             nodes.push(annotation_line("· ", "not answered"));
         }

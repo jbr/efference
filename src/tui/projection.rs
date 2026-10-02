@@ -177,10 +177,7 @@ pub(crate) fn entry_nodes(
                 // A sourced turn is attributed with the same `source:` address it
                 // carries on the wire (docs/control-api.md); the operator's turns
                 // have none, so their rendering is unchanged.
-                let text = match &entry.source {
-                    Some(source) => format!("{source}: {}", join_text(blocks)),
-                    None => join_text(blocks),
-                };
+                let text = join_text(blocks);
                 let attachments: Vec<_> = blocks
                     .iter()
                     .filter_map(|block| match block {
@@ -188,11 +185,7 @@ pub(crate) fn entry_nodes(
                         _ => None,
                     })
                     .collect();
-                let mut body = if text.is_empty() {
-                    Vec::new()
-                } else {
-                    markdown(&text)
-                };
+                let mut body = sourced_markdown(entry.source.as_deref(), &text);
                 body.extend(attachment_lines(&attachments));
                 nodes.push(DocumentNode::entry(EntryKind::UserMessage, body));
             }
