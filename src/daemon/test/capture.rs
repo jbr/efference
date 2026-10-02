@@ -226,6 +226,18 @@ async fn a_completed_batch_projects_the_wire_a_directly_logged_one_would() {
             )
         });
         assert!(decided, "the result at {seq} has its own verdict");
+        // The dispatch marker precedes the result it dispatched: a call that ran is
+        // marked started before its output exists (docs/log-and-projection.md).
+        let Payload::ToolResult { call_id, .. } = &log[*seq as usize].payload else {
+            unreachable!("captured seqs index results");
+        };
+        let started = log[..*seq as usize]
+            .iter()
+            .any(|e| matches!(&e.payload, Payload::CallStarted { call_id: id } if id == call_id));
+        assert!(
+            started,
+            "the call behind the result at {seq} was marked started first"
+        );
     }
 
     // The same two calls, logged the way a session before capture wrote them.

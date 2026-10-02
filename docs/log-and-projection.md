@@ -42,6 +42,7 @@ enum Payload {
     Assistant { output: AssistantOutput, upstream_failure: Option<UpstreamFailureRecord> },
     ToolResult { call_id: CallId, raw: RawResult, wire: WireState },
     ResultVerdict { for_result: Seq, wire: WireState },  // the final wire for a `Pending` result (see redaction-fork.md)
+    CallStarted { call_id: CallId },  // a call's dispatch is about to reach the world — never projected
     Mark(Mark),        // a salience annotation
     Ambient(Notification),  // an out-of-band notification (see inbox.md)
     Triage(Triage),    // a fork verdict — the audit record (see redaction-fork.md)
@@ -66,6 +67,13 @@ triage signals, never its bytes, and projects as a text block holding the same
 notice an ambient arrival carries ([inbox.md](inbox.md)). The notice is derived
 from the recorded fields at projection time, so a change to its wording moves
 the prefix only for a session that restarts on the new binary.
+
+`CallStarted` is appended after the permission cascade clears a call and before the
+tool runs; an `ask` never gets one, since it waits on the operator and touches
+nothing. A call with the marker and no result may have had side effects, which is
+the one state a resumed session can't continue from, so resumption drops such a call
+and reruns one without the marker (backlog/session-resumption.md, "Recovery per
+call").
 
 `ToolTelemetry` and `ProcessEvent` are log metadata in the same sense timestamps
 are: both project to nothing, which is what lets them be appended mid-session —

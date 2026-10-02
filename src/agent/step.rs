@@ -235,6 +235,15 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
             ]))
         }
         Approval::Approve => {
+            // From here the call may touch the world, so the log says so before it
+            // does (docs/log-and-projection.md): a call with this marker and no
+            // result is the one a resumed session drops rather than reruns.
+            shared.append(
+                turn,
+                Payload::CallStarted {
+                    call_id: call.id.clone(),
+                },
+            )?;
             // Acquire the result. A backgrounded bash spawn returns immediately — the child
             // runs on under the supervisor and its output surfaces at later gates
             // (docs/supervisor.md); everything else runs to completion through the toolbox.

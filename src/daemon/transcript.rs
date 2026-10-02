@@ -225,7 +225,7 @@ fn lines(
             }
             vec![line("spot", body)]
         }
-        Payload::ToolTelemetry(_) => vec![],
+        Payload::ToolTelemetry(_) | Payload::CallStarted { .. } => vec![],
         Payload::ProcessEvent(event) => {
             let body = match &event.kind {
                 ProcessEventKind::Spawned(spawn) => {

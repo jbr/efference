@@ -351,6 +351,9 @@ pub fn project_semantic(log: &[LogEntry]) -> Vec<WireTurn> {
             // prefix (docs/log-and-projection.md).
             Payload::ToolTelemetry(_) => {}
             Payload::ResultVerdict { .. } => {}
+            // A dispatch marker is for a resumed session's loader, not the model:
+            // the call and its result already carry everything the wire says.
+            Payload::CallStarted { .. } => {}
             // A process lifecycle record (docs/supervisor.md) is audit metadata
             // beside events the wire already carries in prose — the backgrounding
             // result and the exit notification. It projects to nothing, so a

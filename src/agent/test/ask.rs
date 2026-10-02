@@ -280,6 +280,16 @@ async fn run_call_skips_the_cascade_and_carries_the_reply() {
     shared.interrupt();
     assert!(matches!(runner.await.unwrap(), Decision::Withheld(_)));
     assert!(shared.asking().is_none());
+
+    // An ask waits on the operator and touches nothing, so a resumed session asks it
+    // again rather than dropping it: neither run left a dispatch marker.
+    assert!(
+        !shared
+            .snapshot()
+            .iter()
+            .any(|e| matches!(e.payload, Payload::CallStarted { .. })),
+        "an ask is never marked started"
+    );
 }
 
 /// The reply reaches the wire as the tool result, naming its question and opened with

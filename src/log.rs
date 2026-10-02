@@ -153,6 +153,11 @@ pub enum Payload {
     /// The final wire decision for a previously captured pending result.
     /// Raw output stays on the referenced entry (docs/redaction-fork.md).
     ResultVerdict { for_result: Seq, wire: WireState },
+    /// A call's dispatch is about to reach the world: appended after the permission
+    /// cascade clears it and before the tool runs (docs/log-and-projection.md). A call
+    /// with this and no result may have had side effects, which is the one state a
+    /// resumed session can't continue from. Projects to nothing.
+    CallStarted { call_id: CallId },
     /// A salience annotation written when it is known (docs/log-and-projection.md):
     /// a decision, a dead end, a relevance note, or a consolidation boundary. The
     /// foundation for intent-aware compaction — a mark is *kept* through a fold
