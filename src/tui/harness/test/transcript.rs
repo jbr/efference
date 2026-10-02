@@ -317,5 +317,6 @@ fn gallery() {
     play.snapshot("gallery");
 }
 
+mod consolidation;
 mod images;
 mod results;

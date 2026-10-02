@@ -493,26 +493,44 @@ pub(in crate::tui) fn inline_code_styled(
     }
 }
 
+/// A consolidation mark (docs/consolidate.md), drawn as the web client draws it
+/// (docs/web-client.md): a rule naming its extent — `⊙ consolidated through #n ·
+/// N entries` — then the summary that replaced the span, rendered as the markdown
+/// it is, then a closing rule. Every entry it replaced is still on screen above,
+/// so there is nothing to expand: the mark says where the model's context stops
+/// carrying the raw log. `replaces` counts log entries, not tokens, which are
+/// provider accounting the client does not hold.
 pub(in crate::tui) fn push_mark(
     nodes: &mut Vec<DocumentNode<'static>>,
     kind: &MarkKind,
     note: &str,
+    replaces: usize,
 ) {
-    nodes.push(DocumentNode::horizontal_rule());
     let MarkKind::Boundary { upto } = kind;
-    nodes.push(DocumentNode::List {
-        start: None,
-        items: vec![ListItem::new(vec![DocumentNode::Paragraph {
-            spans: vec![
-                Span {
-                    text: format!("consolidated through #{upto}: ").into(),
-                    style: SpanStyle::Comment,
-                    action: None,
-                },
-                Span::plain(note.to_string()),
-            ],
-        }])],
+    nodes.push(DocumentNode::horizontal_rule());
+    nodes.push(DocumentNode::Paragraph {
+        spans: vec![
+            Span {
+                text: "⊙ ".into(),
+                style: SpanStyle::UserAccent,
+                action: None,
+            },
+            Span {
+                text: format!(
+                    "consolidated through #{upto} · {replaces} {}",
+                    if replaces == 1 { "entry" } else { "entries" }
+                )
+                .into(),
+                style: SpanStyle::Comment,
+                action: None,
+            },
+        ],
     });
+    let summary = markdown(note);
+    if !summary.is_empty() {
+        nodes.push(DocumentNode::entry(EntryKind::AssistantMessage, summary));
+    }
+    nodes.push(DocumentNode::horizontal_rule());
 }
 
 /// Join text blocks with blank lines so paragraph structure survives. Only `Text` blocks

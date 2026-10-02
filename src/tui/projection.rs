@@ -15,7 +15,7 @@ use crate::log::{
     RawResult, ToolCall, WireState,
 };
 use crate::tui::document::{
-    DiffLine, DiffLineKind, Document, DocumentNode, EntryKind, ListItem, Span, SpanStyle,
+    DiffLine, DiffLineKind, Document, DocumentNode, EntryKind, Span, SpanStyle,
 };
 use crate::tui::markdown::MarkdownRenderer;
 
@@ -265,6 +265,17 @@ pub(crate) fn entry_nodes(
                     }
                     let result = index.result(log, call.id.0.as_str());
                     let is_pending = result.is_none() && gate.call == Some(call.id.0.as_str());
+                    // A resolved consolidate collapses to its name: its input is the
+                    // summary the mark below renders in full, and its result is a
+                    // constant acknowledgement (docs/consolidate.md). A pending,
+                    // gated, or failed one renders whole — an error is information.
+                    if call.name == crate::consolidate::NAME
+                        && let Some((_, raw, _)) = result
+                        && !raw.is_error
+                    {
+                        nodes.push(collapsed_consolidate(call));
+                        continue;
+                    }
                     // The call and everything that reads as part of it are one item,
                     // so the renderer can fold it by distance from the tail
                     // (docs/tui.md, "Detail by recency").
@@ -317,7 +328,11 @@ pub(crate) fn entry_nodes(
             }
             // Emitted as its call's result entry above.
             Payload::ToolResult { .. } => {}
-            Payload::Mark(mark) => push_mark(&mut nodes, &mark.kind, &mark.note),
+            Payload::Mark(mark) => {
+                let crate::log::MarkKind::Boundary { upto } = &mark.kind;
+                let replaces = log.iter().filter(|e| e.seq <= *upto).count();
+                push_mark(&mut nodes, &mark.kind, &mark.note, replaces);
+            }
             // An ambient notification (docs/inbox.md), rendered as a marked line so the
             // human sees the out-of-band event in the stream. The transcript shows the
             // whole record — every *shown* notification renders here, where the wire
@@ -439,6 +454,30 @@ fn call_entry(call: &ToolCall) -> DocumentNode<'static> {
             DocumentNode::headed_entry(EntryKind::ToolCall, None, intent_header(&intent), blocks)
         }
         None => DocumentNode::entry(EntryKind::ToolCall, blocks),
+    }
+}
+
+/// A resolved `consolidate` call as its bare name, `› consolidate`.
+fn collapsed_consolidate(call: &ToolCall) -> DocumentNode<'static> {
+    let mut view = signature::call_view(&call.name, &call.input);
+    view.args = None;
+    view.bodies.clear();
+    let signature = signature::flat_signature(&view);
+    let intent = view.intent.clone();
+    let blocks = vec![DocumentNode::signature(view, false)];
+    let entry = match &intent {
+        Some(intent) => {
+            DocumentNode::headed_entry(EntryKind::ToolCall, None, intent_header(intent), blocks)
+        }
+        None => DocumentNode::entry(EntryKind::ToolCall, blocks),
+    };
+    DocumentNode::CallItem {
+        key: call.id.0.clone().into(),
+        must_show: false,
+        intent,
+        signature,
+        note: None,
+        nodes: vec![entry],
     }
 }
 

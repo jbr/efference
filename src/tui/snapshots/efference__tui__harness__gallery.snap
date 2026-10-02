@@ -44,54 +44,54 @@ expression: self.render()
 36 │─── • ─── • ─── • ─── • ─── • ─── • ─── • ─── • ─── • ─── • ─── • ─── • ─── • ─┃│
 37 │                                                                               ┃│
 38 │   A link closes it out.                                                       ┃│
-39 │                                                                               ╹│
-40 │   › grep -rn 'fn project' src/ | sort                                          │
+39 │                                                                               ┃│
+40 │   › grep -rn 'fn project' src/ | sort                                         ╹│
 41 │                                                                                │
 42 │   Here's a structured edit, shown as a colored diff:                           │
 43 │                                                                                │
 44 │   › edit("src/tui/composer.rs", anchor: "fn is_empty", operation: "replace")   │
-45 │   result (raw)                                                                 │
-46 │        /// True when the buffer holds no non-whitespace text.                  │
-47 │        pub(super) fn is_empty(&self) -> bool {                                 │
-48 │   -        self.lines.iter().all(|l| l.iter().all(|c| c.is_whitespace()))      │
-49 │   +        self.lines                                                          │
-50 │   +            .iter()                                                         │
-51 │   +            .all(|l| l.iter().all(|c| c.is_whitespace()))                   │
-52 │   ⋯ show the whole result                                                      │
-53 │                                                                                │
-54 │   A long listing collapses behind a triangle:                                  │
-55 │                                                                                │
-56 │   › ls src                                                                     │
-57 │   result (raw)                                                                 │
-58 │ ╭──────────────────╮                                                           │
-59 │ │ src/module_01.rs │                                                           │
-60 │ │ src/module_02.rs │                                                           │
-61 │ │ src/module_03.rs │                                                           │
-62 │ │ src/module_04.rs │                                                           │
-63 │ │ src/module_05.rs │                                                           │
-64 │   ⋯ show the whole result                                                      │
-65 │                                                                                │
-66 │   And a failing command:                                                       │
+45 │                                                                                │
+46 │   A long listing collapses behind a triangle:                                  │
+47 │                                                                                │
+48 │   › ls src                                                                     │
+49 │   result (raw)                                                                 │
+50 │ ╭──────────────────╮                                                           │
+51 │ │ src/module_01.rs │                                                           │
+52 │ │ src/module_02.rs │                                                           │
+53 │ │ src/module_03.rs │                                                           │
+54 │ │ src/module_04.rs │                                                           │
+55 │ │ src/module_05.rs │                                                           │
+56 │   ⋯ show the whole result                                                      │
+57 │                                                                                │
+58 │   And a failing command:                                                       │
+59 │                                                                                │
+60 │   › cargo test --no-run                                                        │
+61 │   ✗ result (raw, error)                                                        │
+62 │ ╭─────────────────────────────────────────────────╮                            │
+63 │ │ error[E0599]: no method named `reproject` found │                            │
+64 │ │ error: could not compile `efference`            │                            │
+65 │ ╰─────────────────────────────────────────────────╯                            │
+66 │                                                                                │
 67 │                                                                                │
-68 │   › cargo test --no-run                                                        │
-69 │   ✗ result (raw, error)                                                        │
-70 │ ╭─────────────────────────────────────────────────╮                            │
-71 │ │ error[E0599]: no method named `reproject` found │                            │
-72 │ │ error: could not compile `efference`            │                            │
-73 │ ╰─────────────────────────────────────────────────╯                            │
+68 │   A distilled result shows its summary, not the raw bytes:                     │
+69 │                                                                                │
+70 │   › cargo tree                                                                 │
+71 │   result (distilled, kept 0 of 1 line)                                         │
+72 │   ⟢ 12 direct deps; heaviest subtrees are tokio and trillium. Nothing          │
+73 │   outdated.                                                                    │
 74 │                                                                                │
-75 │                                                                                │
-76 │   A distilled result shows its summary, not the raw bytes:                     │
-77 │                                                                                │
-78 │   › cargo tree                                                                 │
-79 │   result (distilled, kept 0 of 1 line)                                         │
-80 │   ⟢ 12 direct deps; heaviest subtrees are tokio and trillium. Nothing          │
-81 │   outdated.                                                                    │
-82 │                                                                                │
-83 │   The file tools render their arguments concisely:                             │
-84 │                                                                                │
-85 │   › read("src/tui/state.rs")                                                   │
-86 │   result (raw)                                                                 │
+75 │   The file tools render their arguments concisely:                             │
+76 │                                                                                │
+77 │   › read("src/tui/state.rs")                                                   │
+78 │   result (raw)                                                                 │
+79 │ ╭───────────────────────────────❬rust❭─╮                                       │
+80 │ │ pub struct InteractiveState<'a> {    │                                       │
+81 │ │     pub document: DocumentState<'a>, │                                       │
+82 │ │     pub viewport: ViewportState,     │                                       │
+83 │ │ }                                    │                                       │
+84 │ ╰──────────────────────────────────────╯                                       │
+85 │                                                                                │
+86 │                                                                                │
 87 │   pace fast     sessions s     theme t     help ?     detach q                 │
 88 │›                                                                               │
    │  ^                                                                             │

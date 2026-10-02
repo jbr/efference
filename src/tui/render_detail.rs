@@ -110,10 +110,12 @@ impl<'a> InteractiveState<'a> {
         let action_base = self.render_cache.actions.len();
         let outer = self.layout.clip;
         let (top, bottom) = outer.unwrap_or((0, u16::MAX));
-        self.layout.clip = Some((top, bottom.min(cap)));
+        // One row of slack past the cap: a body that ends there — often in a blank
+        // row before an empty block — is shown whole rather than cut for nothing.
+        self.layout.clip = Some((top, bottom.min(cap + 1)));
         self.render_node(node, buf);
         self.layout.clip = outer;
-        if self.layout.pos.y <= cap {
+        if self.layout.pos.y <= cap + 1 {
             return;
         }
         // Nothing past the cut is on screen, so nothing past it may be clicked.
@@ -132,6 +134,15 @@ impl<'a> InteractiveState<'a> {
             for x in 0..self.layout.area.width {
                 if let Some(cell) = buf.cell_mut((x, screen_row)) {
                     cell.modifier.insert(Modifier::DIM);
+                }
+            }
+        }
+        // The slack row was drawn; the opening row replaces it.
+        if self.row_visible(cap) {
+            let screen_row = cap - self.viewport.scroll_offset;
+            for x in 0..self.layout.area.width {
+                if let Some(cell) = buf.cell_mut((x, screen_row)) {
+                    cell.set_char(' ').set_style(self.theme.document_bg_style);
                 }
             }
         }
