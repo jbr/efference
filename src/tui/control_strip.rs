@@ -573,7 +573,8 @@ impl InteractiveState<'_> {
             col = put_row(buf, area, col, entry.hint, hint);
         }
         col = put_row(buf, area, col, " ", body);
-        self.strip_hits.push((x, col, entry.verb));
+        // Screen columns: the strip may sit in a centred column (docs/tui.md).
+        self.strip_hits.push((area.x + x, area.x + col, entry.verb));
         col
     }
 

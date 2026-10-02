@@ -119,7 +119,7 @@ impl<'a> InteractiveState<'a> {
                 put(buf, line, close, "✕", self.theme.strip_item_style);
                 self.viewport
                     .staged_hits
-                    .push((y, close, close + 1, staged.key));
+                    .push((y, area.x + close, area.x + close + 1, staged.key));
             }
         }
     }

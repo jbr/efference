@@ -12,6 +12,10 @@ const PROC_PANEL_MAX: u16 = 6;
 
 /// The session drawer's width, including its 1-col left divider (docs/tui.md).
 pub(super) const DRAWER_WIDTH: u16 = 56;
+/// The widest the transcript column grows, margins included (docs/tui.md): on a
+/// wider terminal it is centred, as the web client centres its column, so a line
+/// of prose stays a readable length.
+pub(super) const TRANSCRIPT_MEASURE: u16 = 112;
 
 /// Compact seconds → `8s` / `4m12s` / `1h3m`, for the process-panel timing.
 pub(super) fn fmt_secs(secs: u64) -> String {
@@ -65,7 +69,16 @@ impl<'a> InteractiveState<'a> {
         // (docs/tui.md). The session drawer (what the docked sidebar used to carry)
         // is an overlay on the transcript's right, open on demand.
         let header_height: u16 = 1;
-        let content_width = full.width;
+        // The transcript, strip, and composer share one column, centred once the
+        // terminal is wider than the measure; the header and status rows, the
+        // scrollbar, and the drawer stay on the screen's edges.
+        let measure = full.width.min(TRANSCRIPT_MEASURE);
+        let column_x = full.x + (full.width - measure) / 2;
+        let content_width = if column_x > full.x {
+            measure
+        } else {
+            full.width
+        };
 
         // A staged verb's chip (docs/tui.md) sits left of the composer; the
         // composer wraps within the remaining columns, so height must agree.
@@ -98,19 +111,20 @@ impl<'a> InteractiveState<'a> {
         let bottom = 1 + input_height + strip_height + staged_height + proc_height;
 
         let main_area = Rect {
-            x: full.x,
+            x: column_x,
             y: full.y + header_height,
-            width: content_width.saturating_sub(1),
+            // Clear of the scrollbar, which keeps the screen's last column.
+            width: content_width.min(full.width.saturating_sub(1 + column_x - full.x)),
             height: full.height.saturating_sub(bottom + header_height),
         };
         let proc_area = Rect {
-            x: full.x,
+            x: column_x,
             y: full.height.saturating_sub(bottom),
             width: content_width,
             height: proc_height,
         };
         let staged_area = Rect {
-            x: full.x,
+            x: column_x,
             y: full
                 .height
                 .saturating_sub(1 + input_height + strip_height + staged_height),
@@ -118,13 +132,13 @@ impl<'a> InteractiveState<'a> {
             height: staged_height,
         };
         let strip_area = Rect {
-            x: full.x,
+            x: column_x,
             y: full.height.saturating_sub(1 + input_height + strip_height),
             width: content_width,
             height: strip_height,
         };
         let input_area = Rect {
-            x: full.x,
+            x: column_x,
             y: full.height.saturating_sub(1 + input_height),
             width: content_width,
             height: input_height,
@@ -153,6 +167,17 @@ impl<'a> InteractiveState<'a> {
             // Help covers the entire area (including the composer/status rows).
             self.render_help_screen(frame.buffer_mut(), full);
             return;
+        }
+
+        // The margins either side of a centred column are the document's surface
+        // too, so the column reads as placed on the page rather than cut out of it.
+        for y in (full.y + header_height)..full.height.saturating_sub(1) {
+            for x in full.x..full.x + full.width {
+                if let Some(cell) = frame.buffer_mut().cell_mut((x, y)) {
+                    cell.reset();
+                    cell.set_style(self.theme.document_bg_style);
+                }
+            }
         }
 
         // The document renders at the origin of a buffer of its own — every layout
@@ -231,7 +256,14 @@ impl<'a> InteractiveState<'a> {
         self.render_status_bar(frame.buffer_mut(), status_area);
 
         if let Some(layout_cache) = self.viewport.cached_layout {
-            self.render_scrollbar(frame.buffer_mut(), main_area, layout_cache.document_height);
+            // The scrollbar draws in the column just past the rect it is handed:
+            // the screen's last one, whatever the transcript column's placement.
+            let track = Rect {
+                x: full.x,
+                width: full.width.saturating_sub(1),
+                ..main_area
+            };
+            self.render_scrollbar(frame.buffer_mut(), track, layout_cache.document_height);
         }
 
         if let Some(sb) = sidebar_area {

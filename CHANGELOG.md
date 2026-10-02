@@ -8,6 +8,7 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- **TUI centred column** (docs/tui.md): on terminals wider than 112 columns the transcript, strip, and composer share a centred column, as the web client's page does.
 - **TUI consolidation marks read like the web client's** (docs/tui.md): `⊙ consolidated through #n · N entries` between rules with the summary rendered as markdown, and the resolved `consolidate` call collapsed to its name instead of repeating the summary.
 - **TUI hover affordances** (docs/tui.md): a call or thinking item tints as one card under the pointer and a click anywhere on it focuses it; control-strip items lift under the pointer; the pointer becomes a hand over every click target.
 - **TUI detail by recency** (docs/tui.md): as in the web client, the last six transcript items render whole, the next stretch trimmed (results cut at six rows under a dimmed last row, long thinking as a preview) and older ones brief (a call as intent, one-row signature and note; thinking as `Thought · N words`); running, failed and spotter-flagged calls stay whole, and any folded item opens on a click or `⏎`.
