@@ -1,171 +1,82 @@
-/* The form's Settings rows (docs/web-client.md): a field's name, the value
-   that field would actually get, and the branch that supplied it — the same
-   key/value vocabulary the card's facts and the drawer use, in one grid so the
-   values line up as a column and read as one list. A field the host could not
-   resolve is warned rather than dimmed, because its message is an obstacle and
-   not a provenance note. */
-
+/* Launch controls (docs/web-session-creation.md): labels above full-width values,
+   one treatment for model buttons, effort choices, and numeric input. */
 .new-session-settings {
-  margin-top: 1.1rem;
-  padding-top: 0.9rem;
-  border-top: 1px solid var(--border-subtle);
-}
-
-.new-session-settings h3 {
-  margin: 0 0 0.5rem;
-  font-family: var(--font-ui);
-  font-size: 0.95rem;
-  font-weight: 500;
-  color: var(--fg-bright);
-}
-
-.setting {
   display: grid;
-  /* label | value | source. The value is a model slug and the source is usually
-     two words, so the value takes the larger share and the source what is left —
-     a long message still wraps under itself rather than stretching the row. */
-  grid-template-columns: 8.5rem minmax(0, 1.3fr) minmax(0, 1fr);
-  column-gap: 0.75rem;
-  align-items: center;
-  min-height: 1.9rem;
-  font-size: 0.85rem;
+  gap: 1rem;
 }
-
-.setting-label {
-  color: var(--fg-muted);
-}
-
-.setting-value {
+.setting {
   min-width: 0;
+}
+.setting-heading {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
 }
-
-/* The value is an identifier — a model id, a path — so the mono voice. */
-.setting-value code {
-  font-family: var(--font-mono);
-  font-size: 0.8rem;
+.setting-label {
+  color: var(--fg);
+  font-size: 0.85rem;
+}
+.new-session .setting-editor {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 2.8rem;
+  border: 1px solid var(--border-control);
+  border-radius: 6px;
+  background: var(--bg-inset);
   color: var(--fg-bright);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* A field nothing named, as against one the host refused: the value is absent
-   rather than unknown, and says so rather than reading as blank space. */
-.setting-empty {
-  color: var(--fg-faint);
-}
-
-.setting-source {
-  min-width: 0;
-  font-size: 0.78rem;
-  color: var(--fg-faint);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.setting.warn .setting-source {
-  color: var(--warn);
-  white-space: normal;
-}
-
-/* An editor is the row's value: it reads as the field's own control, sized to
-   the values beside it rather than spanning the row. */
-.setting-editor {
+  padding: 0.65rem 0.8rem;
   font-family: var(--font-mono);
+  font-size: 0.85rem;
+}
+.setting-reset {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--fg-muted);
+  font-size: 0.75rem;
+}
+.setting .new-session-issue {
+  margin: 0.5rem 0 0;
   font-size: 0.8rem;
-  width: 9rem;
-  padding: 0.2rem 0.4rem;
+  line-height: 1.5;
 }
 
-/* A model row's value is the control that opens the picker, so it is inset
-   rather than a plain word — and it says so on hover, since a row of text that
-   is also a button is not otherwise obvious. */
-.setting-pick {
+.setting-editor::placeholder {
+  color: var(--fg-bright);
+  font-family: var(--font-mono);
+  font-size: inherit;
+  font-style: normal;
+  opacity: 1;
+}
+.effort-choices {
+  display: flex;
+  align-items: stretch;
+  gap: 0.25rem;
+}
+.effort-choices button {
   flex: 1;
   min-width: 0;
-  display: block;
-  padding: 0.1rem 0.3rem;
-  border-color: transparent;
-  background: none;
-  text-align: left;
-}
-
-.setting-pick:hover,
-.setting-pick.open {
-  border-color: var(--border-control);
+  min-height: 2.8rem;
+  padding: 0.55rem 0.35rem;
+  border: 1px solid var(--border-control);
   background: var(--bg-inset);
-}
-
-.setting-pick code {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* The picker hangs off the row that opened it, over the form rather than in
-   its flow — a list in a scrolling column would otherwise be clipped by the
-   row below it. */
-.setting-wrap {
-  position: relative;
-}
-
-.setting-wrap > .picker {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: calc(100% - 0.35rem);
-  z-index: 4;
-  max-height: 22rem;
-}
-
-/* A phone gets the whole screen instead of a popover over the form: there is
-   no room to float one over, and the rows are the point of opening it. */
-@media (max-width: 700px) {
-  .setting-wrap > .picker {
-    position: fixed;
-    inset: 0;
-    max-height: none;
-    z-index: 6;
-  }
-}
-
-.setting-reset {
-  flex: none;
-  padding: 0.1rem 0.4rem;
-  font-size: 0.7rem;
-  border-color: transparent;
-  background: none;
-  color: var(--fg-faint);
-}
-
-.setting-reset:hover {
-  border-color: var(--border-control);
-  background: var(--bg-chip);
   color: var(--fg-muted);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
 }
-
-/* A phone: the label on its own line, the value and its source beneath it, so
-   a long source has the full width to wrap in. */
-@media (max-width: 700px) {
-  .setting {
-    grid-template-columns: minmax(0, 1fr);
-    row-gap: 0.1rem;
-    padding: 0.35rem 0;
-  }
-
-  .setting-value {
-    grid-row: 2;
-  }
-
-  .setting-source {
-    grid-row: 3;
-  }
-
-  .setting-editor {
-    width: 100%;
-  }
+.effort-choices button[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--bg-chip);
+  color: var(--fg-bright);
+}
+.effort-default {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--fg-muted);
+  font-size: 0.75rem;
+}
+.effort-default[aria-pressed="true"] {
+  color: var(--accent);
 }

@@ -1142,8 +1142,8 @@ attribution, and `anthropic-version` where the dialect is Messages — because a
 catalog scoped to an account answers only to that account's headers, and a
 header added to an in-flight request is not part of the request that went out.
 `efference dev models {connection}` is its reader; on the Codex arm it is also
-the capability source above, and on the others it is a menu's source
-(backlog/session-model-discovery.md).
+the capability source above, and on the others it supplies model-catalog rows
+([model-catalog.md](model-catalog.md)).
 
 The two OpenAI arms' catalogs are separate routes. `https://api.openai.com/v1/models`
 is the platform listing and answers a ChatGPT grant with 403 naming a missing

@@ -1,15 +1,6 @@
-// The model picker's rows (docs/web-client.md, docs/tui.md): what the list
-// shows for a path, which the chips and the role decide rather than the query.
-// Pure, so the rules are testable without a host; the ordering *within* a query
-// is `matcher.ts`'s.
-//
-// The rules are the terminal form's (docs/tui.md). With nothing typed the root
-// lists, for the main role, the top few recent picks across connections and
-// then every connection; the other two roles list the connections alone, since
-// history records only main picks. Under a connection chip the main role lists
-// that connection's recents first, then its groups by name — or, for a provider
-// without groups, its models in catalog order. Under a group chip there is only
-// its models. A query filters all of that through the matcher.
+// Namespace browsing and search rows (docs/web-session-creation.md).
+// Browsing exposes direct children, with main-role recents allowed to lead.
+// Query ranking is matcher.ts, pinned to the terminal match fixture.
 
 import type { CatalogEntry, CatalogModel } from "../api/sessionForm.ts";
 import { type Chip, type Node, id, isInterior, rank } from "./matcher.ts";
@@ -94,10 +85,16 @@ export function rows(
   // At an untouched root the rest of the list is the connections: a group's
   // models are found by descending into it, and offering every group's rows
   // here would bury them.
-  const rest =
-    chips.length === 0
-      ? ranked.filter((node) => node.kind === "connection")
-      : ranked;
+  const rest = ranked.filter((node) => {
+    if (chips.length === 0) return node.kind === "connection";
+    if (chips.length === 1) {
+      return (
+        node.kind === "group" ||
+        (node.kind === "model" && node.group === undefined)
+      );
+    }
+    return true;
+  });
   const shown = new Set(leads);
   return [
     ...leads.map((node) => rowFor(node, entries)).filter(notNull),
@@ -162,48 +159,18 @@ const modelsIn = (
 export const rowSlug = (row: Row): string =>
   row.kind === "typed" ? `${row.connection}/${row.model}` : id(row.node);
 
+/** A typed id may equal a catalog slug while offering a different action. */
+export const rowKey = (row: Row): string => `${row.kind}:${rowSlug(row)}`;
+
 /** Whether a row is descended into rather than picked. */
 export const descends = (row: Row): boolean =>
   row.kind === "connection" || row.kind === "group";
-
-/** A model's name shows only when it says something the id does not: the
- * lowercased alphanumerics differing from the id's last segment. */
-export function nameAdds(node: Node, name: string | undefined): boolean {
-  if (name === undefined) return false;
-  const last = (node.model ?? "").split("/").pop() ?? "";
-  const alnum = (text: string) => text.toLowerCase().replace(/[^a-z0-9]/g, "");
-  return alnum(name) !== alnum(last);
-}
-
-/** The context window as `1M` / `272k`, absent when the source did not say. */
-export const contextFact = (model: CatalogModel): string | null =>
-  model.context === undefined ? null : context(model.context);
-
-const context = (tokens: number): string => {
-  if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(1)}M`;
-  // Whole thousands, rounded by truncating rather than by `Math.round`, which
-  // would send a half up where the terminal form sends it down.
-  if (tokens >= 1_000) return `${Math.floor((tokens + 500) / 1_000)}k`;
-  return `${tokens}`;
-};
-
-/** The price as `$0.15/$0.50`, or `free` when both sides are zero. USD per
- * million input and output tokens; a side under a cent keeps a third digit
- * rather than rounding itself away. */
-export function priceFact(model: CatalogModel): string | null {
-  const price = model.price;
-  if (price === undefined) return null;
-  if (price.input === 0 && price.output === 0) return "free";
-  const usd = (value: number) =>
-    value > 0 && value < 0.01 ? `$${value.toFixed(3)}` : `$${value.toFixed(2)}`;
-  return `${usd(price.input)}/${usd(price.output)}`;
-}
 
 /** The model's age as `3d` / `5w` / `8mo` / `2y`, absent when the source
  * declared none. A `created` in the future reads as today rather than as a
  * negative age. */
 export function ageFact(model: CatalogModel, now: number): string | null {
-  if (model.created === undefined) return null;
+  if (model.created === undefined || model.created <= 0) return null;
   const days = Math.max(0, Math.floor((now - model.created) / 86_400));
   if (days < 7) return `${days}d`;
   if (days < 60) return `${Math.floor(days / 7)}w`;

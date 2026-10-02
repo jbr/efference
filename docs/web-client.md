@@ -235,108 +235,21 @@ with the base in front of it, which is why the route is read with the base remov
 says App holds a piece of state (the inspector selection, the open file request, the
 overlay count).
 
+`ui/AppHeader.tsx` supplies the shared header frame and wordmark navigation.
+`TopBar.tsx` supplies session identity, usage and drawer controls; the overview
+and launch pages supply their own actions. The wordmark links to the session
+list, with a callback available for draft-preserving navigation within the launch
+flow. Modified clicks keep native link behavior. A page without a list can pass
+a null home URL to render a non-link wordmark. Caller refs attach to the actual
+header so overview docking still measures its rendered height.
+
 ## The new-session form
 
-A session starts from the overview, at the top bar's **New session** or a
-workspace's **+** ([backlog/new-session-form.md](../backlog/new-session-form.md),
-whose surface choices are marked tentative and are jbr's to iterate). The form
-is the terminal form's ([tui.md](tui.md)) translated, not a second design: the
-same draft, the same request, the same precedence branches, the same refusal
-rules, at each step growing the sections that step owns.
-
-The draft is **the operator's raw overrides, and the host's answer never
-replaces them** — folding resolved values back in would turn every inherited
-default into an explicit override on the first preview — so creation posts the
-overrides and never the effective values preview answered with. `sessionRequest`
-(`ui/sessionForm.ts`) is the one conversion, and both routes take it, so the
-preview and the creation cannot drift. `env` is never sent: the host
-establishes the environment from the user-wide hook or its own
-([env.md](env.md)), and that is the whole of what creating from a browser
-changes.
-
-Preview is recomputed on **committed** edits — opening, picking a location —
-never per keystroke, so the request rate follows selections and no debounce
-timer exists. A request counter pairs each reply with the draft it answers, and
-a reply whose counter is not the current one is dropped: it describes a draft
-that no longer exists. `Start session` is refused while no preview has answered
-for the current draft, while it answered with issues, and while a creation is
-in flight — creation is not idempotent, so that last one is the
-duplicate-submit guard. **A refused creation keeps the form open with every
-edit** and shows the host's reason, because a refusal mints nothing and leaves
-nothing to reconcile. Success is a navigation to `/sessions/<id>/`, the same
-one opening a card performs.
-
-**The draft outlives the form.** `SessionList` holds it and passes it down, so
-cancelling with Escape or the close button and reopening returns to it; a
-reload discards it. Escape and the close button cancel, and the scrim is the
-tap target that does the same, as the drawer's is.
-
-The **Where** section is `GET /projects`, most recent first — the index's own
-order — as single-select rows: the label in the serif, the parent path small
-and faint the way a workspace heading shows it, and a mono `config` line only
-where it distinguishes rows (an entry that names a configuration, or a
-directory the index carries twice, since it is keyed by directory *plus*
-configuration). A quiet `×` forgets one entry, unconfirmed, because it deletes
-nothing on disk and a relaunch brings it back. A path typed into *Other
-directory…* becomes a row of its own rather than vanishing into an emptied
-input. With no remembered location the section says so above that input, which
-is the way out of the empty state.
-
-**Settings** is the terminal form's rows in its order — main model, effort,
-temperature, spotter model, triage model (`ui/NewSessionSettings.tsx`), each a
-label, its value in the mono voice, and the branch that supplied it in the dim
-one. The source is what makes an inherited default and an explicit override
-legible as different things: *chosen* says the operator picked it, *your
-default* says they did not, and the row is editable in place either way. **A
-field the host could not resolve shows the issue's message in the source's
-place**, in the warn colour — such a field has neither value nor source, so
-there is nothing for the source column to say — and that message is said
-*once*: the row carries it for a field with a row, and only an issue belonging
-to no row (a configuration that will not load) is stated beside Start.
-
-Effort is a select over the terminal form's own list, and temperature a number
-input where empty means the default. Both **commit rather than preview per
-keystroke**, which is why the request rate follows selections. A temperature
-outside 0–100 is sent as typed rather than clamped: the host reports it as an
-issue, which refuses Start and names itself, where a silent clamp would launch
-a session at a temperature nobody asked for. A field the operator has
-overridden shows a small **reset**, which clears the override and previews
-again — the same verb the terminal form's `r` is, and its only reset: there is
-no inherit row, because the reset *is* the inherit. Changing the location keeps
-the settings beside it; only the preview and the creation move.
-
-**The three model rows open a picker** (`ui/ModelPicker.tsx`) — the terminal
-form's typeahead over the catalog tree, not a second design. It is a popover
-anchored to the row that opened it, and the whole screen on a phone. The
-matching rule is `ui/matcher.ts`, a reading of
-`src/tui/session_form/matcher.rs`: its suite runs that module's own
-`match_cases.json` from its own path, so the fixture is the contract and a
-disagreement between the two implementations is visible rather than silent.
-The rows themselves — which rows a path shows, and the facts beside them — are
-`ui/pickerRows.ts`, and the fact labels are the terminal form's exactly:
-`1.0M` and `272k` for context, `$0.15/$0.50` for price (`free` at zero, a third
-digit under a cent), `3d`/`5w`/`8mo`/`2y` for age, in that order, aligned as
-columns and dim.
-
-Catalog loading is the terminal form's too ([model-catalog.md](model-catalog.md)):
-`GET /inference/catalog?cwd&config` on open, which never waits on a provider,
-then one awaited refresh for each connection that has no usable copy, each
-answer replacing its own rows. A one-word query that matches nothing under a
-connection chip asks for one `max_age=60` read of that connection, once per
-visit, so a model released since the last read is there by the time its id is
-typed. A connection the host cannot use is listed and dimmed rather than
-omitted — a credential problem is not the same as a connection that was never
-configured, and the host says which it is.
-
-An untouched root lists, for the main role, the top few recent picks and then
-every connection; the other two roles list the connections alone, since history
-records only main picks. Under a connection chip the models and groups are its
-own; under a group chip there is only its models, with the author dropped from
-each id. A typed id that matches nothing still gets its row, because a wanted id
-can be a prefix of a listed one; under a group chip the bare id is completed
-with the group, which the chip already names. **Triage's reset state is *share
-main***: clearing a separate selection sends nothing, which is what resolves it
-to the main client.
+The overview's **New session** and workspace **+** open full-page location,
+settings, and role-specific model selection. Query-backed routes participate in
+browser history; the overview owns the raw override draft. The implementation,
+preview/creation guards, model hierarchy and touch behavior are documented in
+[Session creation in the web client](web-session-creation.md).
 
 ## The phone breakpoint
 

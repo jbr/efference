@@ -8,9 +8,8 @@ import type { CatalogEntry } from "../api/sessionForm.ts";
 import {
   ageFact,
   catalogNodes,
-  contextFact,
-  priceFact,
   rowSlug,
+  rowKey,
   rows,
   typedIdRow,
 } from "./pickerRows.ts";
@@ -94,8 +93,6 @@ test("under a connection chip the main role sees its recents, then its groups", 
     "router/z-ai/glm-5.3",
     "router/anthropic",
     "router/z-ai",
-    "router/z-ai/glm-5.3-flash",
-    "router/anthropic/claude-sonnet-4.5",
   ]);
   // A provider without groups lists its models where another lists groups.
   expect(slugs(rows(nodes, entries, ["lab"], "", "spotter"))).toEqual([
@@ -136,24 +133,11 @@ test("a typed id under a group chip carries the group", () => {
   ]);
 });
 
-test("a model's facts are what the source declared, and nothing more", () => {
+test("model age uses whole units and omits undeclared timestamps", () => {
   const model = {
     model: "m",
-    context: 272_000,
-    price: { input: 0.15, output: 0.5 },
     created: 1_700_000_000,
   };
-  expect(contextFact(model)).toBe("272k");
-  expect(contextFact({ model: "m", context: 1_000_000 })).toBe("1.0M");
-  expect(priceFact(model)).toBe("$0.15/$0.50");
-  expect(priceFact({ model: "m", price: { input: 0, output: 0 } })).toBe(
-    "free",
-  );
-  // A side under a cent keeps a third digit rather than rounding to nothing.
-  expect(priceFact({ model: "m", price: { input: 0.005, output: 1 } })).toBe(
-    "$0.005/$1.00",
-  );
-
   // The scale is the terminal form's: whole days and whole units, with a date
   // in the future reading as today rather than as a negative age.
   const now = model.created + 3 * 86_400;
@@ -163,7 +147,52 @@ test("a model's facts are what the source declared, and nothing more", () => {
   expect(ageFact(model, model.created + 2 * 365 * 86_400)).toBe("2y");
   expect(ageFact(model, model.created - 100)).toBe("0d");
   // Undeclared is absent, not zero.
-  expect(contextFact({ model: "m" })).toBe(null);
-  expect(priceFact({ model: "m" })).toBe(null);
   expect(ageFact({ model: "m" }, now)).toBe(null);
+});
+
+test("placeholder creation timestamps have no displayed age", () => {
+  const now = 1_790_000_000;
+  expect(ageFact({ model: "unknown", created: 0 }, now)).toBeNull();
+  expect(ageFact({ model: "unknown", created: -1 }, now)).toBeNull();
+});
+
+test("typed ids and catalog rows sharing a slug have distinct render identities", () => {
+  for (const [chips, query] of [
+    [["router"], "z-ai"],
+    [["router", "z-ai"], "glm-5.3"],
+  ] as const) {
+    const list = rows(nodes, entries, [...chips], query, "main");
+    expect(new Set(list.map(rowSlug)).size).toBeLessThan(list.length);
+    expect(new Set(list.map(rowKey)).size).toBe(list.length);
+  }
+});
+
+test("connection browsing retains ungrouped models but not author descendants", () => {
+  const mixed = [
+    { ...router, models: [...router.models, { model: "local-model" }] },
+  ];
+  const index = catalogNodes(mixed);
+  expect(slugs(rows(index, mixed, ["router"], "", "main"))).toEqual([
+    "router/z-ai/glm-5.3",
+    "router/anthropic",
+    "router/z-ai",
+    "router/local-model",
+  ]);
+  expect(slugs(rows(index, mixed, ["router"], "", "spotter"))).toEqual([
+    "router/anthropic",
+    "router/z-ai",
+    "router/local-model",
+  ]);
+  expect(slugs(rows(index, mixed, ["router", "z-ai"], "", "spotter"))).toEqual([
+    "router/z-ai/glm-5.3",
+    "router/z-ai/glm-5.3-flash",
+  ]);
+});
+
+test("search within a connection still finds models inside its authors", () => {
+  expect(slugs(rows(nodes, entries, ["router"], "glm", "main"))).toEqual([
+    "router/z-ai/glm-5.3",
+    "router/z-ai/glm-5.3-flash",
+    "router/glm",
+  ]);
 });

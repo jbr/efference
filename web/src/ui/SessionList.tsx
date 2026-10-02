@@ -13,7 +13,9 @@ import { archiveSession, type SessionEntry } from "../api/http.ts";
 import type { StateSnapshot } from "../api/types.ts";
 import { cardModel, foldRecent, type Recent, workspaces } from "./overview.ts";
 import { SessionCard } from "./SessionCard.tsx";
+import { useLaunchNavigation } from "./newSessionNavigation.ts";
 import { NewSessionForm } from "./NewSessionForm.tsx";
+import { AppHeader } from "./AppHeader.tsx";
 import { archiveWarning } from "./sessionRow.ts";
 import type { Draft } from "./sessionForm.ts";
 import "./SessionList.css";
@@ -50,7 +52,7 @@ function useSessionFeeds(sessions: SessionEntry[]): Map<string, Feed> {
 /** The top bar's rendered height as `--top-bar-height` on the page, for the
  * workspace headings to dock beneath. Measured rather than assumed: the bar's
  * height moves with the safe-area inset and the wordmark's font. */
-function useTopBarHeight() {
+function useTopBarHeight(visible: boolean) {
   const page = useRef<HTMLDivElement>(null);
   const bar = useRef<HTMLElement>(null);
   const [height, setHeight] = useState(0);
@@ -64,7 +66,7 @@ function useTopBarHeight() {
     });
     observer.observe(bar.current);
     return () => observer.disconnect();
-  }, []);
+  }, [visible]);
   return { page, bar, height };
 }
 
@@ -109,14 +111,18 @@ export function SessionList({
   const [error, setError] = useState<string | null>(null);
   // The new-session form's draft, held here rather than by the form: the draft
   // survives while the page is open, so cancelling and reopening returns to it
-  // and only a reload discards it (backlog/new-session-form.md). `requested`
+  // and only a reload discards it (docs/web-session-creation.md). `requested`
   // is the directory a workspace `+` asked for, applied once the form knows
   // which configuration that directory was last launched with.
   const [draft, setDraft] = useState<Draft | null>(null);
   const [requested, setRequested] = useState<string | null>(null);
-  const [formOpen, setFormOpen] = useState(false);
+  const launch = useLaunchNavigation();
   const feeds = useSessionFeeds(sessions);
-  const { page, bar, height: barHeight } = useTopBarHeight();
+  const {
+    page,
+    bar,
+    height: barHeight,
+  } = useTopBarHeight(launch.page === null);
 
   useEffect(() => {
     const handle = openSessions(
@@ -156,23 +162,33 @@ export function SessionList({
     }
   }
 
+  if (launch.page !== null)
+    return (
+      <NewSessionForm
+        draft={draft}
+        requested={requested}
+        onDraft={setDraft}
+        page={launch.page}
+        onNavigate={launch.navigate}
+        onBack={launch.backTo}
+        onClose={launch.close}
+      />
+    );
+
   return (
     <div className="app overview" ref={page}>
-      <header className="top-bar" ref={bar}>
-        <div className="top-bar-inner">
-          <span className="wordmark">efference</span>
-          <span className="spacer" />
-          <button
-            className="primary"
-            onClick={() => {
-              setRequested(null);
-              setFormOpen(true);
-            }}
-          >
-            New session
-          </button>
-        </div>
-      </header>
+      <AppHeader ref={bar}>
+        <span className="spacer" />
+        <button
+          className="primary"
+          onClick={() => {
+            setRequested(null);
+            launch.navigate("location");
+          }}
+        >
+          New session
+        </button>
+      </AppHeader>
       <main className="overview-body">
         {error !== null && <p className="overview-error">{error}</p>}
         {groups.length === 0 ? (
@@ -197,7 +213,7 @@ export function SessionList({
                   aria-label={`New session in ${group.parent}${group.name}`}
                   onClick={() => {
                     setRequested(group.cwd);
-                    setFormOpen(true);
+                    launch.navigate("settings");
                   }}
                 >
                   +
@@ -220,14 +236,6 @@ export function SessionList({
           ))
         )}
       </main>
-      {formOpen && (
-        <NewSessionForm
-          draft={draft}
-          requested={requested}
-          onDraft={setDraft}
-          onClose={() => setFormOpen(false)}
-        />
-      )}
     </div>
   );
 }

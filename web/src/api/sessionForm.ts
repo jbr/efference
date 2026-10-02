@@ -128,6 +128,8 @@ export interface CatalogModel {
   model: string;
   group?: string;
   name?: string;
+  /** Provider text, when supplied. */
+  description?: string;
   /** Unix seconds. */
   created?: number;
   /** Tokens. */

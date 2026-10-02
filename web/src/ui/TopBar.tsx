@@ -12,6 +12,7 @@ import type {
   Usage,
 } from "../api/types.ts";
 import { upstreamChip } from "./upstream.ts";
+import { AppHeader } from "./AppHeader.tsx";
 
 const tokens = (n: number) =>
   n >= 1_000_000
@@ -100,35 +101,23 @@ export function TopBar({
   const chip = upstreamChip(upstreamFailure, upstreamRetry);
   const context = usage?.context ?? null;
   return (
-    <header className="top-bar">
-      <div className="top-bar-inner">
-        {/* The wordmark is the way back to the session list when a host
-            served this page: a plain link, because leaving a session is a
-            navigation (the control base changes with it, api/base.ts). */}
-        {listHref !== null ? (
-          <a className="wordmark" href={listHref} title="all sessions">
-            efference
-          </a>
-        ) : (
-          <span className="wordmark">efference</span>
-        )}
-        {identity !== null && (
-          <span className="session-name" title={identity.id}>
-            {identity.title ?? identity.id}
-          </span>
-        )}
-        <span className="spacer" />
-        {chip !== null && <UpstreamChip chip={chip} />}
-        {context !== null && <ContextMeter context={context} />}
-        <button
-          className={drawerOpen ? "drawer-toggle open" : "drawer-toggle"}
-          aria-expanded={drawerOpen}
-          onClick={onDrawer}
-        >
-          Session
-          {attention > 0 && <span className="drawer-count">{attention}</span>}
-        </button>
-      </div>
-    </header>
+    <AppHeader homeHref={listHref}>
+      {identity !== null && (
+        <span className="session-name" title={identity.id}>
+          {identity.title ?? identity.id}
+        </span>
+      )}
+      <span className="spacer" />
+      {chip !== null && <UpstreamChip chip={chip} />}
+      {context !== null && <ContextMeter context={context} />}
+      <button
+        className={drawerOpen ? "drawer-toggle open" : "drawer-toggle"}
+        aria-expanded={drawerOpen}
+        onClick={onDrawer}
+      >
+        Session
+        {attention > 0 && <span className="drawer-count">{attention}</span>}
+      </button>
+    </AppHeader>
   );
 }

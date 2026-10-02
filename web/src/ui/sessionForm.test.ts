@@ -1,6 +1,5 @@
-// The new-session form's rules (docs/web-client.md): the request a draft
-// makes, what a field says its value came from, when a preview reply is still
-// about the draft on screen, and when Start may be pressed.
+// Launch draft rules (docs/web-session-creation.md): request conversion,
+// preview freshness, issue placement, and creation guards.
 
 import { expect, test } from "vitest";
 import type { ProjectEntry, SessionPreview } from "../api/sessionForm.ts";
@@ -10,21 +9,17 @@ import {
   canStart,
   draftFor,
   emptyDraft,
-  fieldSource,
-  hasIssue,
   locationFor,
   modelText,
-  mostRecent,
   nextRequest,
   orphanIssues,
   rowKey,
   sessionRequest,
   showsConfig,
-  sourceWords,
   startRefusal,
   temperatureOf,
   triageText,
-  withTypedLocation,
+  withDraftLocation,
 } from "./sessionForm.ts";
 
 const entry = (over: Partial<ProjectEntry> = {}): ProjectEntry => ({
@@ -106,18 +101,6 @@ test("triage sharing main sends nothing of its own", () => {
   });
 });
 
-test("an issue replaces the source it sits on", () => {
-  const issues = [
-    { field: "temperature", code: "out_of_range", message: "must be 0 to 100" },
-  ];
-  // A field that failed has neither value nor source, so the message is all
-  // the row has to say — and it says it in the source's place.
-  expect(fieldSource("temperature", null, issues)).toBe("must be 0 to 100");
-  expect(fieldSource("effort", "user_default", issues)).toBe("your default");
-  expect(hasIssue(issues, "temperature")).toBe(true);
-  expect(hasIssue(issues, "effort")).toBe(false);
-});
-
 test("an issue is said once — by its row, or beside Start", () => {
   const issues = [
     { field: "temperature", code: "out_of_range", message: "must be 0 to 100" },
@@ -175,20 +158,6 @@ test("an empty temperature means the default, and a bad one is not clamped", () 
   // names itself, where a silent clamp would launch at another temperature.
   expect(temperatureOf("150")).toBe(150);
   expect(temperatureOf("abc")).toBe(null);
-});
-
-test("each precedence branch has its own words", () => {
-  expect(sourceWords("request")).toBe("chosen");
-  expect(sourceWords("user_default")).toBe("your default");
-  expect(sourceWords("project_config")).toBe("project config");
-  expect(sourceWords("main_provider")).toBe("main's provider");
-  expect(sourceWords("provider_default")).toBe("provider default");
-  expect(sourceWords("shared_main")).toBe("shares main");
-  // A branch the docs' list omits but the host sends (docs/control-api.md).
-  expect(sourceWords("history")).toBe("a past pick");
-  expect(sourceWords("decision_connection")).toBe("a decision model");
-  // A field that failed resolves has no source at all.
-  expect(sourceWords(null)).toBe(null);
 });
 
 test("a committed edit moves the request on, so a reply in flight is stale", () => {
@@ -258,12 +227,6 @@ test("a workspace + opens on that directory, carrying its remembered config", ()
   });
 });
 
-test("the top bar opens on the most recently used location", () => {
-  const projects = [entry({ last_used_at: 300 }), entry({ last_used_at: 100 })];
-  expect(mostRecent(projects)).toBe(projects[0]);
-  expect(mostRecent([])).toBe(undefined);
-});
-
 test("a clicked row selects that row's own configuration", () => {
   const plain = entry({ config_key: "builtin-default" });
   const named = entry({
@@ -304,17 +267,17 @@ test("a typed directory stays on screen as the chosen row", () => {
   const projects = [entry()];
   // Typed into *Other directory…*: not in the index, so it is shown ahead of
   // it rather than leaving the form looking as though nothing is selected.
-  const rows = withTypedLocation(projects, draft({ cwd: "/tmp/scratch" }));
+  const rows = withDraftLocation(projects, draft({ cwd: "/tmp/scratch" }));
   expect(rows).toHaveLength(2);
   expect(rows[0].cwd).toBe("/tmp/scratch");
   // The empty key is what marks it not remembered, and so not forgettable.
   expect(rows[0].config_key).toBe("");
   // A remembered directory is shown once, as itself.
-  expect(withTypedLocation(projects, draft({ cwd: projects[0].cwd }))).toBe(
+  expect(withDraftLocation(projects, draft({ cwd: projects[0].cwd }))).toBe(
     projects,
   );
   // Nothing drafted yet: the index alone.
-  expect(withTypedLocation(projects, null)).toBe(projects);
+  expect(withDraftLocation(projects, null)).toBe(projects);
 });
 
 test("a row says its configuration only when it has one or shares a directory", () => {
@@ -329,4 +292,17 @@ test("a row says its configuration only when it has one or shares a directory", 
   // The index keys an entry by directory plus configuration, so one directory
   // is two rows that would otherwise read alike.
   expect(showsConfig([one, named], one)).toBe(true);
+});
+
+test("a draft configuration remains available when only another configuration is remembered", () => {
+  const current = draft({ cwd: "/tmp/work", config: "/tmp/work/current.toml" });
+  const projects = [entry({ cwd: current.cwd, config: null })];
+  const rows = withDraftLocation(projects, current);
+  expect(rows).toHaveLength(2);
+  expect(rows[0]).toMatchObject({
+    cwd: current.cwd,
+    config: current.config,
+    config_key: "",
+  });
+  expect(showsConfig(rows, projects[0])).toBe(true);
 });

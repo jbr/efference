@@ -462,11 +462,10 @@ debounce timer is needed. A reply that arrives after the draft moved on is dropp
 current draft re-sent. Opening resolves the untouched draft, so the form shows the defaults
 a session would actually get rather than blanks.
 
-The working root and the environment are the invoking client's, captured on the tokio side
-in `host_dispatch.rs` and never sent to the UI thread (docs/env.md). The root is displayed, not
-edited: editing it would send an environment captured somewhere else. A configurable way to
-capture an environment at a given directory, and the `efference tui --new` entry point, are
-in backlog/new-session-form.md.
+The working root and environment are the invoking client's, captured on the tokio side
+in `host_dispatch.rs`. The root is displayed, not edited: editing it alone would pair it
+with an environment captured elsewhere. The TUI supplies this environment explicitly;
+the host's user-wide environment hook applies to requests that omit it (docs/env.md).
 
 Each role's model is chosen in one picker over the whole catalog tree
 ([model-catalog.md](model-catalog.md)), a typeahead rather than a chain of menus. The

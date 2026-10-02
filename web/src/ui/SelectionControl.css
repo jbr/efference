@@ -1,0 +1,40 @@
+/* Selection fields (docs/web-session-creation.md). */
+.setting-pick {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 2.8rem;
+  border: 1px solid var(--border-control);
+  border-radius: 6px;
+  background: var(--bg-inset);
+  color: var(--fg-bright);
+  padding: 0.65rem 0.8rem;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+}
+.setting-pick {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  text-align: left;
+}
+.setting-pick > span:first-child {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.setting-pick > span:last-child {
+  color: var(--fg-muted);
+  font-family: var(--font-ui);
+  font-size: 1.1rem;
+}
+@media (hover: hover) and (pointer: fine) {
+  .new-session .setting-pick:hover {
+    border-color: var(--border-strong);
+    background: var(--bg-raised);
+  }
+}
+@media (max-width: 700px) {
+  .new-session .setting-pick {
+    font-size: max(1rem, 16px);
+  }
+}

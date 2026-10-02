@@ -1,18 +1,5 @@
-// The new-session form (docs/web-client.md): where a session would run, and
-// the button that starts it. A centered modal over the overview on a wide
-// window, a full-screen sheet with a close button on a phone.
-//
-// Step 1 of the form (backlog/new-session-form.md) is the Where section and
-// creation with no overrides; the Settings rows and the model picker land on
-// top of this, which is why the draft, its request and the preview rules live
-// in `sessionForm.ts` rather than here.
-//
-// Two rules are worth stating where they are implemented. The draft survives
-// while the page is open — cancelling and reopening returns to it, a reload
-// discards it — so it is held by the list page and passed in, not owned by
-// this component. And a refused creation keeps the form open with every edit,
-// because a refusal mints nothing and so leaves nothing to reconcile.
-
+// Routed launch pages (docs/web-session-creation.md). The list owns the draft;
+// preview and creation both consume its raw overrides.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError } from "../api/http.ts";
 import {
@@ -30,19 +17,22 @@ import {
   draftFor,
   emptyDraft,
   locationFor,
-  mostRecent,
   nextRequest,
   orphanIssues,
   rowKey,
   sessionRequest,
-  showsConfig,
   startRefusal,
-  withTypedLocation,
+  withDraftLocation,
 } from "./sessionForm.ts";
 import { Settings } from "./NewSessionSettings.tsx";
+import { AppHeader } from "./AppHeader.tsx";
+import { SelectionControl } from "./SelectionControl.tsx";
 import { homeRelative } from "./identity.ts";
-import { splitPath } from "./overview.ts";
-import { useNarrow } from "./useNarrow.ts";
+import { ModelPicker, type PickerBrowseState } from "./ModelPicker.tsx";
+import type { Role } from "./pickerRows.ts";
+import type { LaunchPage } from "./newSessionNavigation.ts";
+import { LocationRow } from "./LocationRow.tsx";
+import { DirectoryDisclosure } from "./DirectoryDisclosure.tsx";
 import "./NewSessionForm.css";
 
 export function NewSessionForm({
@@ -50,6 +40,9 @@ export function NewSessionForm({
   requested,
   onDraft,
   onClose,
+  page,
+  onNavigate,
+  onBack,
 }: {
   /** The draft so far, or `null` when nothing has been chosen yet. Held by the
    * list page, so it outlives this component and survives a cancel. */
@@ -61,8 +54,12 @@ export function NewSessionForm({
   requested: string | null;
   onDraft: (draft: Draft) => void;
   onClose: () => void;
+  page: LaunchPage;
+  onNavigate: (page: LaunchPage) => void;
+  onBack: (page: LaunchPage) => void;
 }) {
-  const narrow = useNarrow();
+  const [other, setOther] = useState(false);
+  const [editing, setEditing] = useState(false);
   const [projects, setProjects] = useState<ProjectEntry[] | null>(null);
   const [typed, setTyped] = useState("");
   const [answered, setAnswered] = useState<Answered | null>(null);
@@ -77,6 +74,12 @@ export function NewSessionForm({
   const [request, setRequest] = useState(0);
   const opened = useRef(false);
   const started = useRef(0);
+  const [browsing, setBrowsing] = useState<
+    Partial<Record<Role, PickerBrowseState>>
+  >({});
+  const rememberBrowse = useCallback((role: Role, state: PickerBrowseState) => {
+    setBrowsing((current) => ({ ...current, [role]: state }));
+  }, []);
 
   const preview = useCallback((next: Draft) => {
     const id = nextRequest(counter.current);
@@ -94,6 +97,7 @@ export function NewSessionForm({
         setAnswered({ request: id, answer });
       })
       .catch((failure: unknown) => {
+        if (id !== counter.current) return;
         // A preview that could not be sent is the host declining to describe
         // the draft, not an issue with one field: the answer stays unanswered,
         // so Start stays refused, and the reason is shown with Start's own.
@@ -108,21 +112,15 @@ export function NewSessionForm({
       .catch(() => setProjects([]));
   }, []);
 
-  // Opening resolves a location, so the form shows a real one rather than a
-  // blank: a `+` opens on its own workspace's directory, the top bar on the
-  // most recently used one. Applied once, and only when nothing has been chosen
-  // — a draft that survived a cancel is kept. With nothing remembered there is
-  // no location, so Start stays refused and the Other directory input is the
-  // way out of the empty state.
+  // A workspace shortcut supplies its location. The general entry asks the
+  // operator to choose, while a cancelled draft keeps its settings.
   useEffect(() => {
     if (projects === null || opened.current) return;
     opened.current = true;
-    if (draft !== null || projects.length === 0) return;
-    const cwd = requested ?? mostRecent(projects)?.cwd;
+    if (draft !== null && requested === null) return;
+    const cwd = requested ?? undefined;
     if (cwd !== undefined) {
-      onDraft(
-        emptyDraft(cwd, locationFor(projects, cwd)?.config ?? null) as Draft,
-      );
+      onDraft({ ...(draft ?? emptyDraft(cwd)), ...locationFor(projects, cwd) });
     }
   }, [projects, draft, requested, onDraft]);
 
@@ -132,9 +130,8 @@ export function NewSessionForm({
     if (draft !== null) preview(draft);
   }, [draft, preview]);
 
-  // While a creation is in flight the elapsed time is shown past five seconds,
-  // because establishing the environment runs the host's hook, which has a 30s
-  // deadline of its own (docs/control-api.md).
+  // Measure the wait while creation is in flight; its phase is not reported
+  // by the host (docs/web-session-creation.md).
   useEffect(() => {
     if (!creating) return;
     started.current = Date.now();
@@ -147,20 +144,40 @@ export function NewSessionForm({
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape" && !event.defaultPrevented) {
+        if (editing) {
+          event.preventDefault();
+          setEditing(false);
+        } else if (other) {
+          event.preventDefault();
+          setOther(false);
+        } else if (
+          draft !== null &&
+          page !== "location" &&
+          page !== "settings"
+        ) {
+          onBack("settings");
+        } else onClose();
+      }
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [onClose, onBack, page, editing, other, draft]);
 
   function commitTyped() {
     const path = typed.trim();
     // Creation takes an absolute path or refuses; the form does not widen what
     // it accepts, so a relative path is not committed.
-    if (path === "" || !path.startsWith("/")) return;
+    if (path === "" || !path.startsWith("/")) {
+      setNote("Enter a full, absolute directory path on the host.");
+      return;
+    }
     setTyped("");
+    setOther(false);
+    setEditing(false);
     setNote(null);
     onDraft({ ...emptyDraft(path), ...rest() });
+    onNavigate("settings");
   }
 
   /** The settings half of the draft, for a location change: picking where to
@@ -186,7 +203,11 @@ export function NewSessionForm({
         return;
       }
     }
-    setProjects(projects.filter((row) => row !== entry));
+    setProjects((current) =>
+      current === null
+        ? null
+        : current.filter((row) => rowKey(row) !== rowKey(entry)),
+    );
   }
 
   async function start() {
@@ -212,174 +233,222 @@ export function NewSessionForm({
 
   const hint = startRefusal(draft, answered, request);
   const ready = canStart(draft, answered, request, creating);
-  const rows = withTypedLocation(projects ?? [], draft);
+  const rows = withDraftLocation(projects ?? [], draft);
+  const currentLocation = rows.find((entry) => entry.config_key === "");
   const issues = answered?.answer.issues ?? [];
 
+  const surface = draft === null ? "location" : page;
+  const picking =
+    surface !== "location" && surface !== "settings" ? surface : null;
+  const title =
+    surface === "location"
+      ? "Where will you work?"
+      : surface === "settings"
+        ? "Session settings"
+        : `Choose ${picking} model`;
+
+  function chooseLocation(entry: ProjectEntry) {
+    setOther(false);
+    setEditing(false);
+    onDraft({ ...draftFor(entry), ...rest() });
+    onNavigate("settings");
+  }
+
+  function pick(role: Role, selection: { connection: string; model: string }) {
+    if (draft === null) return;
+    onDraft({
+      ...draft,
+      ...(role === "triage"
+        ? { triage: { mode: "separate" as const, ...selection } }
+        : { [role]: selection }),
+    });
+  }
+
+  const rememberCurrentBrowse = useCallback(
+    (state: PickerBrowseState) => {
+      if (picking !== null) rememberBrowse(picking, state);
+    },
+    [picking, rememberBrowse],
+  );
+
   return (
-    <div className="new-session-scrim" onClick={onClose}>
-      <div
-        className="new-session"
-        role="dialog"
-        aria-modal="true"
-        aria-label="New session"
-        onClick={(event) => event.stopPropagation()}
+    <div className="new-session-page">
+      <AppHeader
+        className="new-session-bar"
+        innerClassName="new-session-bar-inner"
+        onHome={onClose}
       >
+        <button onClick={onClose}>Cancel</button>
+      </AppHeader>
+      <main className="new-session" aria-label="New session">
         <header className="new-session-head">
-          <h2>New session</h2>
-          {narrow && (
-            <button className="new-session-close" onClick={onClose}>
-              Close
+          {picking !== null && (
+            <button
+              className="new-session-back"
+              onClick={() => onBack("settings")}
+            >
+              ← Back to settings
             </button>
           )}
+          <h1>{title}</h1>
         </header>
-
         <div className="new-session-body">
-          <section className="new-session-where">
-            <h3>Where</h3>
-            {projects === null ? (
-              <p className="dim">Reading remembered locations…</p>
-            ) : (
-              <>
-                {projects.length === 0 && (
-                  <p className="new-session-empty">
-                    No remembered locations yet. Sessions you start, here or in
-                    a terminal, appear here.
-                  </p>
-                )}
-                {rows.map((entry) => (
-                  <LocationRow
-                    key={rowKey(entry)}
-                    entry={entry}
-                    projects={projects}
-                    selected={
-                      draft?.cwd === entry.cwd && draft?.config === entry.config
-                    }
-                    onSelect={() => onDraft({ ...draftFor(entry), ...rest() })}
-                    onForget={() => void forget(entry)}
-                  />
-                ))}
-              </>
-            )}
-
-            <label className="new-session-other">
-              <span>Other directory…</span>
-              <input
-                type="text"
+          {surface === "location" && (
+            <section className="new-session-where" aria-label="Location">
+              <p className="new-session-description">
+                Choose a recent location on the host, or use another directory.
+              </p>
+              {projects === null ? (
+                <p className="dim">Reading recent locations…</p>
+              ) : (
+                <>
+                  {currentLocation !== undefined && (
+                    <section
+                      className="new-session-current"
+                      aria-label="Current location"
+                    >
+                      <h2 className="location-section-heading">
+                        Current location
+                      </h2>
+                      <LocationRow
+                        entry={currentLocation}
+                        projects={rows}
+                        selected
+                        editing={false}
+                        onSelect={() => chooseLocation(currentLocation)}
+                      />
+                    </section>
+                  )}
+                  <section aria-label="Recent locations">
+                    {(projects.length > 0 || editing) && (
+                      <div className="location-list-heading">
+                        <h2 className="location-section-heading">
+                          Recent locations
+                        </h2>
+                        <button
+                          type="button"
+                          className="location-edit"
+                          aria-label={
+                            editing
+                              ? "Done editing recent locations"
+                              : "Edit recent locations"
+                          }
+                          onClick={() => setEditing((current) => !current)}
+                        >
+                          {editing ? "Done" : "Edit"}
+                        </button>
+                      </div>
+                    )}
+                    {projects.length === 0 && (
+                      <p className="new-session-empty">
+                        No recent locations yet.
+                      </p>
+                    )}
+                    {projects.map((entry) => (
+                      <LocationRow
+                        key={rowKey(entry)}
+                        entry={entry}
+                        projects={rows}
+                        selected={
+                          draft?.cwd === entry.cwd &&
+                          draft?.config === entry.config
+                        }
+                        editing={editing}
+                        onSelect={() => chooseLocation(entry)}
+                        onForget={() => void forget(entry)}
+                      />
+                    ))}
+                  </section>
+                </>
+              )}
+              <DirectoryDisclosure
+                open={other}
                 value={typed}
-                placeholder="/Users/you/code/project"
-                spellCheck={false}
-                autoCapitalize="off"
-                autoCorrect="off"
-                onChange={(event) => setTyped(event.target.value)}
-                onBlur={commitTyped}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") commitTyped();
+                onToggle={() => {
+                  setEditing(false);
+                  setOther((current) => !current);
                 }}
+                onChange={setTyped}
+                onCommit={commitTyped}
               />
-            </label>
-
-            <p className="new-session-note dim">
-              The session's environment comes from your <code>env_hook</code>,
-              or the host's own environment if none is configured.
-            </p>
-          </section>
-
-          {draft !== null && (
-            <Settings
-              draft={draft}
-              // Only an answer about the draft on screen describes it; while a
-              // newer one is in flight the older is not shown, since its sources
-              // are the ones the operator just changed.
-              preview={
-                answered !== null && answered.request === request
-                  ? answered.answer
-                  : null
-              }
-              onDraft={onDraft}
+            </section>
+          )}
+          {surface === "settings" && draft !== null && (
+            <>
+              <div className="new-session-location-summary">
+                <div className="setting-heading">
+                  <span className="setting-label">Location</span>
+                </div>
+                <SelectionControl
+                  label={`Choose location: ${draft.cwd}`}
+                  onClick={() => onNavigate("location")}
+                >
+                  {homeRelative(draft.cwd)}
+                  {draft.config !== null && <code>{draft.config}</code>}
+                </SelectionControl>
+              </div>
+              <Settings
+                draft={draft}
+                preview={
+                  answered !== null && answered.request === request
+                    ? answered.answer
+                    : null
+                }
+                onDraft={onDraft}
+                onPick={onNavigate}
+              />
+            </>
+          )}
+          {picking !== null && draft !== null && (
+            <ModelPicker
+              key={picking}
+              role={picking}
+              cwd={draft.cwd}
+              config={draft.config}
+              initialBrowse={browsing[picking]}
+              onBrowse={rememberCurrentBrowse}
+              onPick={(selection) => pick(picking, selection)}
+              onClose={() => onBack("settings")}
             />
           )}
         </div>
-
-        <footer className="new-session-foot">
-          {orphanIssues(issues).map((issue) => (
-            <p
-              className="new-session-issue"
-              key={`${issue.field}:${issue.message}`}
-            >
-              {issue.message}
-            </p>
-          ))}
-          {note !== null && <p className="new-session-issue">{note}</p>}
-          {hint !== null && !creating && <p className="dim">{hint}</p>}
-          <button
-            className="primary"
-            disabled={!ready}
-            onClick={() => void start()}
-          >
-            {creating ? startingLabel(elapsed) : "Start session"}
-          </button>
-        </footer>
-      </div>
-    </div>
-  );
-}
-
-/** While creation is in flight the button says so, and past five seconds it
- * also says what is taking the time: establishing the environment runs the
- * host's hook, which has a 30s deadline of its own. */
-function startingLabel(elapsed: number): string {
-  return elapsed >= 5
-    ? `Starting… ${elapsed}s · running your environment hook`
-    : "Starting…";
-}
-
-/** One remembered location: the directory's own name in the serif, its parent
- * small and faint the way a workspace heading shows it, and the configuration
- * it would launch with when saying so is what tells two rows of one directory
- * apart. */
-function LocationRow({
-  entry,
-  projects,
-  selected,
-  onSelect,
-  onForget,
-}: {
-  entry: ProjectEntry;
-  projects: ProjectEntry[];
-  selected: boolean;
-  onSelect: () => void;
-  onForget: () => void;
-}) {
-  const [parent, name] = splitPath(homeRelative(entry.cwd));
-  return (
-    <div className={selected ? "location selected" : "location"}>
-      <button className="location-pick" onClick={onSelect}>
-        {/* The cursor colours the chosen row rather than filling it, the
-            terminal form's own idiom (docs/tui.md). */}
-        <span className="location-line">
-          <span className="location-cursor">❯</span>
-          <span className="location-name">{entry.label || name}</span>
-        </span>
-        {parent !== "" && <span className="location-parent">{parent}</span>}
-        {showsConfig(projects, entry) && (
-          <code className="location-config">
-            {entry.config ?? "project config"}
-          </code>
+        {picking === null && (
+          <footer className="new-session-foot">
+            {surface === "settings" &&
+              orphanIssues(issues).map((issue) => (
+                <p
+                  className="new-session-issue"
+                  key={`${issue.field}:${issue.message}`}
+                >
+                  {issue.message}
+                </p>
+              ))}
+            {note !== null && (
+              <p className="new-session-issue" role="alert">
+                {note}
+              </p>
+            )}
+            {surface === "settings" && (
+              <>
+                {hint !== null && !creating && <p className="dim">{hint}</p>}
+                <button
+                  className="primary"
+                  disabled={!ready}
+                  onClick={() => void start()}
+                >
+                  {creating ? startingLabel(elapsed) : "Start session"}
+                </button>
+              </>
+            )}
+          </footer>
         )}
-      </button>
-      {/* Nothing to forget about a path the index does not carry — it is
-          remembered by the first session launched there. No confirmation
-          either: forgetting deletes nothing on disk. */}
-      {entry.config_key !== "" && (
-        <button
-          className="location-forget"
-          aria-label={`Forget ${entry.cwd}`}
-          title="Forget this location"
-          onClick={onForget}
-        >
-          ×
-        </button>
-      )}
+      </main>
     </div>
   );
+}
+
+/** Elapsed time makes a slow creation visible without guessing which phase
+ * of the host launch is taking time. */
+function startingLabel(elapsed: number): string {
+  return elapsed >= 5 ? `Starting… ${elapsed}s` : "Starting…";
 }
