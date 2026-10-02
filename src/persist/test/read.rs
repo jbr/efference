@@ -60,8 +60,11 @@ fn a_blank_line_is_refused() {
     std::fs::write(&path, format!("{HEADER}\n{}\n\n", user_entry(0))).unwrap();
 
     let error = load_error(&path);
-    assert!(error.contains("blank line"), "{error}");
-    assert!(error.contains(":3:"), "the line is named: {error}");
+    assert!(
+        matches!(error, LoadError::Corrupt { line: 3, .. }),
+        "the line is named: {error:?}"
+    );
+    assert!(error.to_string().contains("blank line"), "{error}");
 
     std::fs::remove_file(&path).unwrap();
 }
@@ -78,14 +81,19 @@ fn a_malformed_interior_line_is_refused() {
     .unwrap();
 
     let error = load_error(&path);
-    assert!(error.contains("malformed entry"), "{error}");
-    assert!(error.contains(":3:"), "the line is named: {error}");
+    assert!(
+        matches!(error, LoadError::Corrupt { line: 3, .. }),
+        "the line is named: {error:?}"
+    );
+    assert!(error.to_string().contains("malformed entry"), "{error}");
 
     std::fs::remove_file(&path).unwrap();
 }
 
 /// `seq` is the address space `project` reads over, so an entry sitting at an
-/// index other than its `seq` means the file is not the sequence it claims.
+/// index other than its `seq` means the file is not the sequence it claims —
+/// its own class, since a gap is a fact about the log rather than a line that
+/// failed to parse.
 #[test]
 fn a_duplicated_seq_is_refused() {
     let path = temp_path("duplicate-seq");
@@ -95,9 +103,17 @@ fn a_duplicated_seq_is_refused() {
     )
     .unwrap();
 
-    let error = load_error(&path);
-    assert!(error.contains("seq 0 but sits at index 1"), "{error}");
-    assert!(error.contains(":3:"), "the line is named: {error}");
+    match load_error(&path) {
+        LoadError::Sequence {
+            line,
+            expected,
+            found,
+            ..
+        } => {
+            assert_eq!((line, expected, found), (3, 1, 0));
+        }
+        other => panic!("expected a sequence error, got {other:?}"),
+    }
 
     std::fs::remove_file(&path).unwrap();
 }
@@ -111,10 +127,26 @@ fn a_gapped_seq_is_refused() {
     )
     .unwrap();
 
-    let error = load_error(&path);
-    assert!(error.contains("seq 2 but sits at index 1"), "{error}");
+    match load_error(&path) {
+        LoadError::Sequence {
+            expected, found, ..
+        } => assert_eq!((expected, found), (1, 2)),
+        other => panic!("expected a sequence error, got {other:?}"),
+    }
 
     std::fs::remove_file(&path).unwrap();
+}
+
+/// A path with nothing at it is an io failure, not a malformed log — the class
+/// that tells an inventory a session directory is gone from a log that is
+/// damaged.
+#[test]
+fn a_missing_file_is_an_io_error() {
+    let path = temp_path("absent-reader");
+    match load_error(&path) {
+        LoadError::Io { error, .. } => assert_eq!(error.kind(), std::io::ErrorKind::NotFound),
+        other => panic!("expected an io error, got {other:?}"),
+    }
 }
 
 /// A crash between writing an entry and writing its newline leaves an object
@@ -177,8 +209,10 @@ fn a_complete_object_that_is_not_an_entry_is_damage_even_unterminated() {
     let not_an_entry = r#"{"seq":0,"turn":0,"at":1,"payload":{"NoSuchPayload":[]}}"#;
     std::fs::write(&path, format!("{HEADER}\n{not_an_entry}")).unwrap();
 
-    let error = load_error(&path);
-    assert!(error.contains("malformed entry"), "{error}");
+    assert!(matches!(
+        load_error(&path),
+        LoadError::Corrupt { line: 2, .. }
+    ));
 
     std::fs::remove_file(&path).unwrap();
     let path = temp_path("missing-field");
@@ -190,11 +224,10 @@ fn a_complete_object_that_is_not_an_entry_is_damage_even_unterminated() {
         ),
     )
     .unwrap();
-    assert!(
-        load_error(&path).contains("malformed entry"),
-        "{}",
-        load_error(&path)
-    );
+    assert!(matches!(
+        load_error(&path),
+        LoadError::Corrupt { line: 2, .. }
+    ));
 
     std::fs::remove_file(&path).unwrap();
 }

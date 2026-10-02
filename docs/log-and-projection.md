@@ -359,6 +359,24 @@ inside a file that already numbers its entries — every offline reader
 duplicates in it — so the refusal is what keeps that unreachable. The session
 directory is minted exclusively for the same reason.
 
+Creation also takes the **writer lock** below, which the directory already
+implies; it takes it so that every sink holds one.
+
+### The writer lock
+
+A log has one writer, including across host processes. `Log::create` and
+`Log::open` each take an exclusive advisory lock (`File::try_lock`) on the file
+and hold it for the life of the `Log` — the lock rides on the `File` the sink
+owns, so it is released when the `Log` is dropped, after the last line is
+flushed.
+
+A held lock is refused rather than waited on: the second caller is told which
+log is in use (`OpenError::Held`, and an `io::Error` of kind `WouldBlock` from
+`create`), instead of queueing behind a writer nobody asked it to wait for.
+Reading takes no lock, so a session running elsewhere — or one being
+reopened — can still be read by `load_recording`, the offline verbs, or
+another host process.
+
 ### Reading
 
 `load_recording` reads a log without touching it and returns the header, the
@@ -377,7 +395,28 @@ checks, in the order a reader needs it:
   as one continuous sequence to a consumer keying on it;
 - bytes after the last complete entry are reported, never repaired.
 
-Every failure carries the path and the line it was found on.
+### Load errors
+
+A failure is a `LoadError`, which carries the path and the class of what went
+wrong, so a caller can act on the class rather than on the wording:
+
+- `Io` — the file could not be opened or read (its `io::Error` keeps its kind,
+  so a missing recording and a permission failure stay distinct);
+- `Unversioned` — line 1 carries no `format`: a log written before the header
+  existed, or a file that is not a session log;
+- `WrongFormat { found }` — line 1 names another file type;
+- `UnsupportedVersion { version }` — this format, a version this build does not
+  read, settled before the metadata is read;
+- `Corrupt { line, message }` — line `line` is not what this version puts there:
+  a header that is not a JSON object, a blank line, a line that is not an entry;
+- `Sequence { line, expected, found }` — the entry on line `line` carries
+  `found` where its position says `expected`.
+
+`Display` is the text these errors have always printed, `"{path}:{line}: …"`,
+which is what a person reads; the variants are for a program. `LoadError`
+converts into `io::Error` (`InvalidData`, or the original kind for `Io`), so a
+caller whose signature is already `io::Result` keeps its `?` — that is how the
+offline verbs report a log they cannot load today.
 
 ### An interrupted append
 
@@ -399,9 +438,51 @@ or not a newline closes it. Lines are read as bytes and decoded one at a time,
 so a tear inside a multi-byte codepoint is reported with the rest instead of
 failing the entries in front of it.
 
-Nothing repairs a reported tail, and no writable path exists for it: reading a
-log and continuing one are separate operations, and only the second has to
-reason about who else may be writing.
+Nothing repairs a reported tail: reading a log and continuing one are separate
+operations, and only the second has to reason about who else may be writing.
+
+### Continuing a log
+
+`Log::open` is the writable half, and it is the whole of it, in an order where
+each step is still the thing that can fail:
+
+1. open the file for reading and writing, **without** creating it — a path with
+   no log at it is `OpenError::Io`, since `create` is what mints a session;
+2. take the writer lock (`OpenError::Held` if another writer has it);
+3. read the log through the same strict reader every other reader uses, through
+   the handle that holds the lock, and refuse anything it refuses
+   (`OpenError::Load`) with nothing written;
+4. resolve the reported tail, if there was one;
+5. position at the end, so the next append takes the `seq` after the last entry
+   read.
+
+It returns the header as read, the log whose `entries` are those entries and
+whose sink appends after them, and what the tail needed:
+
+- `Repair::MissingNewline` — the one byte was written. Every entry read is
+  kept, and the file is byte-for-byte what a writer that had got that far would
+  have left;
+- `Repair::PartialEntry { byte_offset, saved_to, bytes }` — the fragment is
+  written to a sibling file first, named `log.jsonl.torn-<byte_offset>`, and
+  the log is then truncated to `byte_offset`. The bytes are kept because they
+  are the only copy of whatever the interrupted append was carrying; the
+  truncation is what lets the entries behind them stand and the next append
+  begin a fresh line. A fragment file already at that name is **not**
+  overwritten — it is another repair's, and this one is about to leave the only
+  file that holds its bytes — unless it holds exactly these bytes, which is a
+  repair interrupted between the two steps and is finished rather than refused.
+
+Both repairs `fsync` before returning, and the fragment is written *before* the
+truncation, so an open that dies mid-repair leaves a log that still has the
+bytes in it. The session's `[env]` mask is installed afterwards, by the caller
+and through the same `set_masker` boot uses; an entry appended before then is
+written with whatever mask was in force, which is none.
+
+Nothing here changes what a read means: the fragment was never an entry any
+reader accepted, so dropping it costs the append that did not finish rather than
+an entry address. And a kept fragment is not a log: session discovery joins the
+exact name `log.jsonl`, so a `log.jsonl.torn-<byte_offset>` sibling is not
+picked up as one, and the reader would refuse it as unversioned if it were.
 
 ---
 

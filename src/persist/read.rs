@@ -1,10 +1,11 @@
 //! Reading a persisted log back (docs/log-and-projection.md).
 //!
 //! Strict and read-only. Nothing here opens a log for writing, truncates one,
-//! or repairs a torn tail: every failure is an error carrying the path and the
-//! line it was found on, and a load never changes a byte. An inventory pass
-//! and an offline viewer therefore see exactly what a writer finished, and the
-//! repair of anything it did not is a separate, explicit, writable step.
+//! or repairs a torn tail: every failure is a [`LoadError`] naming the file and
+//! the class of what went wrong, and a load never changes a byte. An inventory
+//! pass and an offline viewer therefore see exactly what a writer finished, and
+//! the repair of anything it did not is a separate, explicit, writable step
+//! ([`super::open`]).
 //!
 //! What is checked, in the order a reader needs it:
 //!
@@ -26,13 +27,13 @@
 //! complete object that is not an entry — an unknown payload shape, a missing
 //! field — is damage, and fails whether or not a newline closes it.
 
-use std::fmt::Display;
 use std::fs::File;
-use std::io::{self, BufRead, BufReader};
+use std::io::{BufRead, BufReader};
 use std::path::Path;
 
 use crate::log::LogEntry;
 
+use super::error::LoadError;
 use super::header::LogHeader;
 
 /// What one load found past the last complete entry — the bytes a writer left
@@ -84,9 +85,24 @@ impl LoadedRecording {
 ///
 /// See [`Trailing`] for what happens to an interrupted final append: it is
 /// reported, and this function writes nothing either way.
-pub fn load_recording(path: impl AsRef<Path>) -> io::Result<LoadedRecording> {
+pub fn load_recording(path: impl AsRef<Path>) -> Result<LoadedRecording, LoadError> {
     let path = path.as_ref();
-    let file = File::open(path).map_err(|error| at(path, error))?;
+    let file = File::open(path).map_err(|error| LoadError::io(path, error))?;
+    load_recording_from(path, &file)
+}
+
+/// [`load_recording`] over a handle the caller already holds — a writable
+/// reopen ([`super::open`]), which owns a lock on the file and so reads through
+/// the same handle: where locks bind reads, a second one could not read the
+/// bytes this writer is about to repair.
+///
+/// The read moves the handle's position, so a caller appending afterwards
+/// positions it again rather than assuming where the load left it.
+pub fn load_recording_from(
+    path: impl AsRef<Path>,
+    file: &File,
+) -> Result<LoadedRecording, LoadError> {
+    let path = path.as_ref();
     let mut reader = BufReader::new(file);
     let mut header = None;
     let mut entries: Vec<LogEntry> = Vec::new();
@@ -98,7 +114,7 @@ pub fn load_recording(path: impl AsRef<Path>) -> io::Result<LoadedRecording> {
         raw.clear();
         let read = reader
             .read_until(b'\n', &mut raw)
-            .map_err(|error| at(path, error))?;
+            .map_err(|error| LoadError::io(path, error))?;
         if read == 0 {
             break;
         }
@@ -122,7 +138,7 @@ pub fn load_recording(path: impl AsRef<Path>) -> io::Result<LoadedRecording> {
                 continue;
             }
             Err(error) => {
-                return Err(invalid(
+                return Err(LoadError::corrupt(
                     path,
                     line_number,
                     format!("malformed entry: not utf-8 ({error})"),
@@ -130,7 +146,7 @@ pub fn load_recording(path: impl AsRef<Path>) -> io::Result<LoadedRecording> {
             }
         };
         if text.trim().is_empty() {
-            return Err(invalid(
+            return Err(LoadError::corrupt(
                 path,
                 line_number,
                 "blank line: every line after the header is one entry",
@@ -140,15 +156,12 @@ pub fn load_recording(path: impl AsRef<Path>) -> io::Result<LoadedRecording> {
             Ok(entry) => {
                 let index = entries.len() as u64;
                 if entry.seq != index {
-                    return Err(invalid(
-                        path,
-                        line_number,
-                        format!(
-                            "entry carries seq {} but sits at index {index}: seq must equal the \
-                             entry's index, so a duplicated or skipped seq is a corrupt log",
-                            entry.seq
-                        ),
-                    ));
+                    return Err(LoadError::Sequence {
+                        path: path.to_path_buf(),
+                        line: line_number,
+                        expected: index,
+                        found: entry.seq,
+                    });
                 }
                 entries.push(entry);
                 if !terminated {
@@ -161,7 +174,7 @@ pub fn load_recording(path: impl AsRef<Path>) -> io::Result<LoadedRecording> {
                 trailing = Some(partial(start, body));
             }
             Err(error) => {
-                return Err(invalid(
+                return Err(LoadError::corrupt(
                     path,
                     line_number,
                     format!("malformed entry: {error}"),
@@ -170,7 +183,11 @@ pub fn load_recording(path: impl AsRef<Path>) -> io::Result<LoadedRecording> {
         }
     }
     let Some(header) = header else {
-        return Err(invalid(path, 1, "the file is empty, so it has no header"));
+        return Err(LoadError::corrupt(
+            path,
+            1,
+            "the file is empty, so it has no header",
+        ));
     };
     Ok(LoadedRecording {
         header,
@@ -184,7 +201,7 @@ pub fn load_recording(path: impl AsRef<Path>) -> io::Result<LoadedRecording> {
 /// [`Trailing`] that describes it, so an offline viewer shows a session's
 /// intact turns; a caller that must not lose those bytes asks for the whole
 /// [`LoadedRecording`].
-pub fn load(path: impl AsRef<Path>) -> io::Result<Vec<LogEntry>> {
+pub fn load(path: impl AsRef<Path>) -> Result<Vec<LogEntry>, LoadError> {
     load_recording(path).map(|recording| recording.entries)
 }
 
@@ -203,23 +220,57 @@ fn partial(byte_offset: u64, bytes: &[u8]) -> Trailing {
     }
 }
 
-fn read_header(path: &Path, body: &[u8]) -> io::Result<LogHeader> {
-    let text = std::str::from_utf8(body)
-        .map_err(|error| invalid(path, 1, format!("the header line is not utf-8: {error}")))?;
+fn read_header(path: &Path, body: &[u8]) -> Result<LogHeader, LoadError> {
+    let text = std::str::from_utf8(body).map_err(|error| {
+        LoadError::corrupt(path, 1, format!("the header line is not utf-8: {error}"))
+    })?;
     if text.trim().is_empty() {
-        return Err(invalid(path, 1, "the header line is blank"));
+        return Err(LoadError::corrupt(path, 1, "the header line is blank"));
     }
-    serde_json::from_str::<LogHeader>(text)
-        .map_err(|error| invalid(path, 1, format!("unreadable header: {error}")))
+    serde_json::from_str::<LogHeader>(text).map_err(|error| classify_header(path, text, &error))
 }
 
-fn invalid(path: &Path, line: usize, message: impl Display) -> io::Error {
-    io::Error::new(
-        io::ErrorKind::InvalidData,
-        format!("{}:{line}: {message}", path.display()),
-    )
-}
-
-fn at(path: &Path, error: io::Error) -> io::Error {
-    io::Error::new(error.kind(), format!("{}: {error}", path.display()))
+/// Name *which* way line 1 is not a header this build reads, so a caller can
+/// tell a file it must leave alone from a log it has damaged. The refusal was
+/// already decided by the header's own deserializer; this reads the line once
+/// more only to say why it said no — the three classes a caller acts on
+/// differently are named, and everything else keeps serde's wording of the
+/// damage inside [`LoadError::Corrupt`].
+fn classify_header(path: &Path, text: &str, error: &serde_json::Error) -> LoadError {
+    let damaged = || LoadError::corrupt(path, 1, format!("unreadable header: {error}"));
+    let Ok(value) = serde_json::from_str(text) else {
+        return damaged();
+    };
+    let serde_json::Value::Object(fields) = value else {
+        return LoadError::corrupt(path, 1, "the header line is not a JSON object");
+    };
+    match fields.get("format") {
+        // No `format` is the unversioned log — a file written before the header
+        // existed — or a file that is not a session log. Neither is read.
+        None => LoadError::Unversioned {
+            path: path.to_path_buf(),
+        },
+        Some(serde_json::Value::String(found)) if found != LogHeader::FORMAT => {
+            LoadError::WrongFormat {
+                path: path.to_path_buf(),
+                found: found.clone(),
+            }
+        }
+        // The right format: the version decides, and it is settled before the
+        // metadata is read, so a newer file reports as the version it is.
+        Some(serde_json::Value::String(_)) => {
+            match fields.get("version").and_then(serde_json::Value::as_u64) {
+                Some(version) if version != u64::from(LogHeader::VERSION) => {
+                    LoadError::UnsupportedVersion {
+                        path: path.to_path_buf(),
+                        version,
+                    }
+                }
+                // Absent, not a whole number, or the version this build reads with
+                // metadata it cannot read — all damage, and serde has said which.
+                _ => damaged(),
+            }
+        }
+        Some(_) => damaged(),
+    }
 }

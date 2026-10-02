@@ -146,9 +146,13 @@ fn rejects_a_file_whose_first_line_is_an_entry() {
     let path = temp_path("unversioned");
     std::fs::write(&path, format!("{}\n", user_entry(0))).unwrap();
 
-    let error = load_error(&path);
-    assert!(error.contains("no `format` field"), "{error}");
-    assert!(error.contains(":1:"), "the header line is named: {error}");
+    // Not `Corrupt`: an inventory reports this one as *not a versioned log*,
+    // which is a different thing from a versioned log that is damaged.
+    assert!(
+        matches!(load_error(&path), LoadError::Unversioned { .. }),
+        "{:?}",
+        load_error(&path)
+    );
 
     std::fs::remove_file(&path).unwrap();
 }
@@ -158,13 +162,38 @@ fn rejects_a_file_whose_first_line_is_an_entry() {
 fn rejects_an_empty_file() {
     let path = temp_path("empty");
     std::fs::write(&path, "").unwrap();
-    let error = load_error(&path);
-    assert!(error.contains("no header"), "{error}");
+    assert!(matches!(
+        load_error(&path),
+        LoadError::Corrupt { line: 1, .. }
+    ));
+    std::fs::remove_file(&path).unwrap();
+}
+
+/// A file there is not enough to be a log: line 1 has to be a header object,
+/// and a file that is not one is damage rather than a version to try.
+#[test]
+fn rejects_a_first_line_that_is_not_an_object() {
+    let path = temp_path("not-a-header");
+    std::fs::write(&path, "[1,2,3]\n").unwrap();
+
+    assert!(matches!(
+        load_error(&path),
+        LoadError::Corrupt { line: 1, .. }
+    ));
+    assert!(
+        load_error(&path)
+            .to_string()
+            .contains("the header line is not a JSON object"),
+        "{}",
+        load_error(&path)
+    );
+
     std::fs::remove_file(&path).unwrap();
 }
 
 /// A version this build does not know is refused *before* its entries are read,
-/// naming both versions so the reader knows which side to fix.
+/// carrying the version it found so an inventory can say which file is newer
+/// than the build that would read it.
 #[test]
 fn rejects_an_unknown_future_version() {
     let path = temp_path("future");
@@ -177,9 +206,13 @@ fn rejects_an_unknown_future_version() {
     )
     .unwrap();
 
-    let error = load_error(&path);
-    assert!(error.contains("unsupported log version 2"), "{error}");
-    assert!(error.contains("reads version 1"), "{error}");
+    match load_error(&path) {
+        LoadError::UnsupportedVersion { version, .. } => assert_eq!(version, 2),
+        other => panic!("expected an unsupported version, got {other:?}"),
+    }
+    let message = load_error(&path).to_string();
+    assert!(message.contains("unsupported log version 2"), "{message}");
+    assert!(message.contains("reads version 1"), "{message}");
 
     std::fs::remove_file(&path).unwrap();
 }
@@ -201,23 +234,24 @@ fn an_unsupported_version_outranks_its_metadata() {
 
     let error = load_error(&path);
     assert!(
-        error.contains("unsupported log version 9"),
-        "the version is the reason to stop: {error}"
+        matches!(error, LoadError::UnsupportedVersion { version: 9, .. }),
+        "the version is the reason to stop: {error:?}"
     );
-    assert!(!error.contains("missing field"), "{error}");
 
     std::fs::remove_file(&path).unwrap();
 }
 
-/// A different `format` is a different file type, not a version of this one.
+/// A different `format` is a different file type, not a version of this one,
+/// and the name it was found under is what says which.
 #[test]
 fn rejects_a_foreign_format() {
     let path = temp_path("foreign");
     std::fs::write(&path, "{\"format\":\"usage-jsonl\",\"version\":1}\n").unwrap();
 
-    let error = load_error(&path);
-    assert!(error.contains("unknown log format"), "{error}");
-    assert!(error.contains(LogHeader::FORMAT), "{error}");
+    match load_error(&path) {
+        LoadError::WrongFormat { found, .. } => assert_eq!(found, "usage-jsonl"),
+        other => panic!("expected a foreign format, got {other:?}"),
+    }
 
     std::fs::remove_file(&path).unwrap();
 }
@@ -229,14 +263,17 @@ fn rejects_a_header_with_no_version() {
     let path = temp_path("no-version");
     std::fs::write(&path, format!("{{\"format\":\"{}\"}}\n", LogHeader::FORMAT)).unwrap();
 
-    let error = load_error(&path);
-    assert!(error.contains("no `version`"), "{error}");
+    assert!(matches!(
+        load_error(&path),
+        LoadError::Corrupt { line: 1, .. }
+    ));
+    assert!(load_error(&path).to_string().contains("no `version`"));
 
     std::fs::remove_file(&path).unwrap();
 }
 
 /// Metadata that is not the shape this version describes is a bad header,
-/// reported as such rather than as a file with no metadata.
+/// reported as damage at line 1 rather than as a file with no metadata.
 #[test]
 fn rejects_unreadable_metadata() {
     let path = temp_path("bad-metadata");
@@ -250,7 +287,14 @@ fn rejects_unreadable_metadata() {
     .unwrap();
 
     let error = load_error(&path);
-    assert!(error.contains("unreadable session metadata"), "{error}");
+    assert!(
+        matches!(error, LoadError::Corrupt { line: 1, .. }),
+        "{error:?}"
+    );
+    assert!(
+        error.to_string().contains("unreadable session metadata"),
+        "{error}"
+    );
 
     std::fs::remove_file(&path).unwrap();
 }

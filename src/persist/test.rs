@@ -4,6 +4,7 @@ use crate::project::project;
 use serde_json::json;
 
 mod header;
+mod open;
 mod read;
 
 /// Line 1 as a reader accepts it carrying no metadata — the header a fixture
@@ -36,9 +37,20 @@ fn entry_lines(path: &std::path::Path) -> Vec<String> {
         .collect()
 }
 
-/// The message an invalid file fails with, for an assertion about *why*.
-fn load_error(path: &std::path::Path) -> String {
-    load(path).unwrap_err().to_string()
+/// Line 1 on its own, for an assertion that a header was left as it was.
+fn header_line(path: &std::path::Path) -> String {
+    std::fs::read_to_string(path)
+        .unwrap()
+        .lines()
+        .next()
+        .expect("a log has a header line")
+        .to_string()
+}
+
+/// Why loading `path` failed, as the typed error a caller branches on — the
+/// class, not the message.
+fn load_error(path: &std::path::Path) -> LoadError {
+    load(path).unwrap_err()
 }
 
 fn sample(log: &mut Log) {

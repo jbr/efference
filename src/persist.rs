@@ -23,10 +23,18 @@
 //! log and a second run over the same path cannot append to a `seq` space
 //! somebody else owns.
 //!
+//! A log has one writer. Every sink holds an **exclusive lock** on its file for
+//! as long as it is open — taken by [`Log::create`] and by [`Log::open`],
+//! released when the `Log` drops — and an existing lock is refused rather than
+//! waited on, so two writers (in one host or in two) cannot interleave their
+//! appends into one `seq` space. Reading a log takes no lock, so a session
+//! running somewhere else can still be read.
+//!
 //! [`header`] holds the header and metadata types, [`read`] the strict
-//! read-only loader.
+//! read-only loader, [`open`] the writable reopen, [`error`] what either can
+//! refuse.
 
-use std::fs::{File, OpenOptions};
+use std::fs::{File, OpenOptions, TryLockError};
 use std::io::{self, BufWriter, Write};
 use std::path::Path;
 
@@ -35,17 +43,47 @@ use std::sync::Arc;
 use crate::env_table::Masker;
 use crate::log::{LogEntry, Payload, Seq, Timestamp, Turn};
 
+mod error;
 mod header;
+mod open;
 mod read;
 
+pub use error::{LoadError, OpenError};
 pub use header::{LogHeader, SessionMetadata, TriageModel};
+pub use open::{Opened, Repair};
 pub use read::{LoadedRecording, Trailing, load, load_recording};
+
+/// Why a writer lock was refused. `Held` is another writer's lock and its
+/// process is still appending; `Io` is the platform refusing for some other
+/// reason. Kept apart from [`OpenError`] so `create`, whose signature is
+/// `io::Result` and predates a typed open path, maps the same refusal in its
+/// own terms.
+enum LockRefused {
+    Held,
+    Io(io::Error),
+}
+
+/// Take the exclusive writer lock (docs/log-and-projection.md), so this
+/// `File` is the log's only writer for as long as it is held — which is as long
+/// as the `BufWriter` owning it lives. An existing lock is refused rather than
+/// waited on: a second writer queued behind a live session would be a decision
+/// made at a moment nothing is asking for, and the caller is told instead.
+fn writer_lock(file: &File) -> Result<(), LockRefused> {
+    match file.try_lock() {
+        Ok(()) => Ok(()),
+        Err(TryLockError::WouldBlock) => Err(LockRefused::Held),
+        Err(TryLockError::Error(error)) => Err(LockRefused::Io(error)),
+    }
+}
 
 /// The live append-only log: the in-memory entries plus an optional JSONL sink.
 /// Construction is the only place that touches the clock and `seq` allocation,
 /// so those non-deterministic inputs never leak toward the wire (docs/log-and-projection.md).
 pub struct Log {
     entries: Vec<LogEntry>,
+    /// The JSONL sink, which also holds the file's exclusive writer lock: the
+    /// lock lives on the `File` inside it, so dropping the `Log` flushes the
+    /// last line and then releases it.
     sink: Option<BufWriter<File>>,
     /// The `[env]` mask (docs/env.md). Every payload passes through it on the way
     /// in, which is what makes append the one choke point securing every
@@ -68,6 +106,11 @@ impl Log {
     ///
     /// The header line is written and flushed before returning, so a file that
     /// exists at any point after this is a log a reader can open.
+    ///
+    /// The sink holds the exclusive writer lock for the `Log`'s lifetime. The
+    /// directory it was given was minted exclusively too, so the lock is not
+    /// what stops a second run here — it is what makes *every* sink hold one,
+    /// including the one [`Log::open`] takes on a log that already exists.
     pub fn create(path: impl AsRef<Path>, metadata: Option<SessionMetadata>) -> io::Result<Self> {
         let path = path.as_ref();
         let file = OpenOptions::new()
@@ -77,6 +120,21 @@ impl Log {
             .map_err(|error| {
                 io::Error::new(error.kind(), format!("{}: {error}", path.display()))
             })?;
+        match writer_lock(&file) {
+            Ok(()) => {}
+            Err(LockRefused::Held) => {
+                return Err(io::Error::new(
+                    io::ErrorKind::WouldBlock,
+                    format!("{}: another writer holds this log open", path.display()),
+                ));
+            }
+            Err(LockRefused::Io(error)) => {
+                return Err(io::Error::new(
+                    error.kind(),
+                    format!("{}: {error}", path.display()),
+                ));
+            }
+        }
         let mut sink = BufWriter::new(file);
         LogHeader::new(metadata).write_to(&mut sink)?;
         sink.flush()?;
