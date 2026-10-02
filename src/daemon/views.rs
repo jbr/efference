@@ -331,9 +331,10 @@ impl Session {
     /// tagged, resolvable through [`Self::entry_json`].
     pub(super) fn log_json(&self, select: &LogSelect) -> String {
         let log = self.log.lock().unwrap();
-        let views: Vec<_> = window(log.entries(), select)
+        let entries = log.entries();
+        let views: Vec<_> = window(entries, select)
             .iter()
-            .map(EntryView::new)
+            .map(|entry| EntryView::new(entry).with_result_raw(result_raw(entry, entries)))
             .collect();
         serde_json::to_string(&views).unwrap_or_else(|_| "[]".into())
     }
@@ -354,8 +355,10 @@ impl Session {
     /// control-channel read of an entry.
     pub(crate) fn entry_json(&self, seq: u64) -> Option<String> {
         let log = self.log.lock().unwrap();
-        let entry = log.entries().iter().find(|e| e.seq == seq)?;
-        serde_json::to_string(&EntryView::full(entry)).ok()
+        let entries = log.entries();
+        let entry = entries.iter().find(|e| e.seq == seq)?;
+        let view = EntryView::full(entry).with_result_raw(result_raw(entry, entries));
+        serde_json::to_string(&view).ok()
     }
 
     /// The decoded bytes of one logged result image, addressed by its entry's `seq` and

@@ -217,13 +217,15 @@ impl Frame {
     /// A durable log frame. The only constructor that sets `seq`, and the only one
     /// whose `data` is byte-identical to a `GET /log` element — both serialize the
     /// entry's [`EntryView::new`] (image `data` omitted, oversized result text
-    /// truncated and tagged; entry_view.rs).
-    pub(crate) fn log(entry: &LogEntry) -> Self {
+    /// truncated and tagged; entry_view.rs). `result_raw` is the bytes of the result
+    /// a [`Payload::ResultVerdict`] names, which that entry does not carry itself
+    /// (docs/redaction-fork.md); both call sites resolve it from the log.
+    pub(crate) fn log(entry: &LogEntry, result_raw: Option<&RawResult>) -> Self {
         Self {
             class: Class::Log,
             kind: payload_kind(&entry.payload),
             seq: Some(entry.seq),
-            data: raw(&EntryView::new(entry)),
+            data: raw(&EntryView::new(entry).with_result_raw(result_raw)),
             render: None,
         }
     }

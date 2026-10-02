@@ -41,6 +41,7 @@ enum Payload {
     User(Vec<ContentBlock>),
     Assistant { output: AssistantOutput, upstream_failure: Option<UpstreamFailureRecord> },
     ToolResult { call_id: CallId, raw: RawResult, wire: WireState },
+    ResultVerdict { for_result: Seq, wire: WireState },  // the final wire for a `Pending` result (see redaction-fork.md)
     Mark(Mark),        // a salience annotation
     Ambient(Notification),  // an out-of-band notification (see inbox.md)
     Triage(Triage),    // a fork verdict — the audit record (see redaction-fork.md)
@@ -145,6 +146,7 @@ is still read back rather than re-resolved from files on disk.
 
 ```rust
 enum WireState {
+    Pending,                                          // captured, awaiting its verdict: projects nothing
     Raw,                                              // project the full `raw`
     Distilled(Distilled),                             // the verdict, re-rendered by project
     Elided,                                           // project a placeholder
@@ -159,6 +161,12 @@ enum Keep { All, None, Ranges(Vec<(usize, usize)>) }
 `wire`; `raw` is never overwritten.** That is what makes every redaction
 reversible: the full result survives in the log regardless of what the wire
 shows.
+
+A result the loop captured before its triage carries `Pending`, and its decision
+arrives later as a separate `ResultVerdict` entry naming the result's `seq`.
+Projection resolves a result's wire through that entry (`log::result_verdicts`) and
+skips a result still pending; the verdict entry projects nothing at its own position.
+The mechanism is in [redaction-fork.md](redaction-fork.md).
 
 `RawResult` carries `content: String`, `is_error: bool`, and `images:
 Vec<ResultImage>` — each image the tool returned as `{media_type, data, width,

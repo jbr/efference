@@ -10,12 +10,13 @@ use crate::daemon::{SessionRuntime, StallReason};
 use crate::frontend::SubmittedTurn;
 use crate::log::{Origin, WireState};
 use std::io::{BufRead, BufReader, Read, Write};
-use std::net::{TcpListener, TcpStream};
+use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::sync::Mutex;
 use std::sync::atomic::AtomicUsize;
 use trillium_tokio::Swansong;
 
 /// A `tool_use` completion calling `name` with `input` (JSON text).
-fn tool_call(id: &str, name: &str, input: &str) -> String {
+pub(super) fn tool_call(id: &str, name: &str, input: &str) -> String {
     let input = serde_json::to_string(input).unwrap();
     events(&[
         r#"{"type":"message_start","message":{"model":"m","usage":{"input_tokens":1,"output_tokens":0}}}"#.to_string(),
@@ -32,7 +33,7 @@ fn tool_call(id: &str, name: &str, input: &str) -> String {
 }
 
 /// A plain end of turn.
-fn end_turn() -> String {
+pub(super) fn end_turn() -> String {
     events(&[
         r#"{"type":"message_start","message":{"model":"m","usage":{"input_tokens":1,"output_tokens":0}}}"#.to_string(),
         r#"{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}"#.to_string(),
@@ -43,7 +44,7 @@ fn end_turn() -> String {
     ])
 }
 
-fn events(data: &[String]) -> String {
+pub(super) fn events(data: &[String]) -> String {
     data.iter()
         .map(|d| {
             let kind: serde_json::Value = serde_json::from_str(d).unwrap();
@@ -53,7 +54,7 @@ fn events(data: &[String]) -> String {
 }
 
 /// One scripted answer.
-enum Answer {
+pub(super) enum Answer {
     /// A 200 event stream with this body.
     Stream(String),
     /// A non-2xx with this JSON body.
@@ -61,12 +62,14 @@ enum Answer {
 }
 
 /// Read one request off a kept-alive connection; `false` once the client closed it.
-fn read_request(reader: &mut BufReader<TcpStream>) -> bool {
+/// Read one request off a kept-alive connection, with its body; `None` once the
+/// client closed it.
+fn read_request(reader: &mut BufReader<TcpStream>) -> Option<String> {
     let mut length = 0;
     loop {
         let mut line = String::new();
         if reader.read_line(&mut line).unwrap_or(0) == 0 {
-            return false;
+            return None;
         }
         if line == "\r\n" {
             break;
@@ -78,22 +81,47 @@ fn read_request(reader: &mut BufReader<TcpStream>) -> bool {
         }
     }
     let mut body = vec![0; length];
-    reader.read_exact(&mut body).is_ok()
+    reader.read_exact(&mut body).ok()?;
+    String::from_utf8(body).ok()
 }
 
 /// A Messages upstream answering request *n* with `script(n)`; `requests` counts
 /// arrivals.
-fn scripted(requests: Arc<AtomicUsize>, script: fn(usize) -> Answer) -> std::net::SocketAddr {
+fn scripted(requests: Arc<AtomicUsize>, script: fn(usize) -> Answer) -> SocketAddr {
+    serve(requests, script, None)
+}
+
+/// [`scripted`] keeping every request body it read, for a test that asserts what the
+/// fork was shown (docs/redaction-fork.md).
+pub(super) fn recording(
+    requests: Arc<AtomicUsize>,
+    script: fn(usize) -> Answer,
+    bodies: &Arc<Mutex<Vec<String>>>,
+) -> SocketAddr {
+    serve(requests, script, Some(Arc::clone(bodies)))
+}
+
+/// The one upstream both harnesses are: `bodies`, when given, collects each request
+/// before it is answered.
+fn serve(
+    requests: Arc<AtomicUsize>,
+    script: fn(usize) -> Answer,
+    bodies: Option<Arc<Mutex<Vec<String>>>>,
+) -> SocketAddr {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
     std::thread::spawn(move || {
         for sock in listener.incoming() {
             let Ok(sock) = sock else { return };
             let requests = Arc::clone(&requests);
+            let bodies = bodies.clone();
             std::thread::spawn(move || {
                 let mut reader = BufReader::new(sock.try_clone().unwrap());
                 let mut sock = sock;
-                while read_request(&mut reader) {
+                while let Some(body) = read_request(&mut reader) {
+                    if let Some(bodies) = &bodies {
+                        bodies.lock().unwrap().push(body);
+                    }
                     let n = requests.fetch_add(1, Ordering::SeqCst);
                     let _ = match script(n) {
                         Answer::Stream(body) => write!(
@@ -117,7 +145,7 @@ fn scripted(requests: Arc<AtomicUsize>, script: fn(usize) -> Answer) -> std::net
     addr
 }
 
-async fn wait_until(what: &str, mut ready: impl FnMut() -> bool) {
+pub(super) async fn wait_until(what: &str, mut ready: impl FnMut() -> bool) {
     tokio::time::timeout(Duration::from_secs(20), async {
         while !ready() {
             tokio::time::sleep(Duration::from_millis(20)).await;
@@ -127,7 +155,7 @@ async fn wait_until(what: &str, mut ready: impl FnMut() -> bool) {
     .unwrap_or_else(|_| panic!("timed out waiting: {what}"));
 }
 
-fn start(addr: std::net::SocketAddr) -> (Swansong, SessionRuntime) {
+pub(super) fn start(addr: std::net::SocketAddr) -> (Swansong, SessionRuntime) {
     use std::hash::{BuildHasher, Hasher, RandomState};
     let nonce = RandomState::new().build_hasher().finish();
     let cwd = std::env::temp_dir().join(format!("efference-upstream-{nonce:016x}"));
@@ -175,12 +203,33 @@ async fn a_gate_without_a_verdict_holds_until_continue() {
     assert_eq!(stall.reason, StallReason::TriageUnavailable);
     assert!(session.running.load(Ordering::SeqCst), "held, not parked");
     assert!(session.is_settled(), "a held gate is a decision point");
+    // The result is durable from the moment it existed, but undecided: the entry is
+    // there to read and projects to nothing, so a request built before the gate's
+    // verdict could not carry half a batch.
+    let captured = session
+        .snapshot()
+        .into_iter()
+        .find_map(|e| match e.payload {
+            Payload::ToolResult { raw, wire, .. } => Some((raw, wire)),
+            _ => None,
+        })
+        .expect("the captured result is on the log while the gate holds");
+    assert!(
+        captured.0.content.contains("hi"),
+        "the output itself survives the hold: {:?}",
+        captured.0.content
+    );
+    assert!(
+        matches!(captured.1, WireState::Pending),
+        "and nothing has decided its wire form yet"
+    );
     assert!(
         !session
-            .snapshot()
+            .project_messages()
             .iter()
-            .any(|e| matches!(e.payload, Payload::ToolResult { .. })),
-        "nothing about the call reaches the log while it is held"
+            .flat_map(|m| m.content.iter())
+            .any(|block| matches!(block, crate::project::ApiBlock::ToolResult { .. })),
+        "nothing about the held call reaches the main wire"
     );
 
     assert_eq!(
@@ -197,15 +246,29 @@ async fn a_gate_without_a_verdict_holds_until_continue() {
         "the recovered hold is not a stall"
     );
     let log = session.snapshot();
-    assert!(log.iter().any(|e| matches!(
-        &e.payload,
-        Payload::ToolResult {
-            wire: WireState::Distilled(_),
-            ..
-        }
-    )));
+    let captured_seq = log
+        .iter()
+        .find_map(|e| match &e.payload {
+            Payload::ToolResult { .. } => Some(e.seq),
+            _ => None,
+        })
+        .expect("the captured result is in the log");
+    assert!(
+        log.iter().any(|e| matches!(
+            &e.payload,
+            Payload::ResultVerdict { for_result, wire: WireState::Distilled(_), .. }
+                if *for_result == captured_seq
+        )),
+        "the verdict names the result it was decided for"
+    );
     assert!(
         !log.iter().any(|e| matches!(
+            &e.payload,
+            Payload::ResultVerdict {
+                wire: WireState::TriageFailed { .. },
+                ..
+            }
+        )) && !log.iter().any(|e| matches!(
             &e.payload,
             Payload::ToolResult {
                 wire: WireState::TriageFailed { .. },
@@ -295,12 +358,30 @@ async fn a_peek_that_never_answers_usably_is_held_as_a_defect() {
     assert_eq!(session.stall().unwrap().reason, StallReason::TriageDefect);
     // The tool call, then three attempts in each fork.
     assert_eq!(requests.load(Ordering::SeqCst), 1 + 3 * PEEK_FORKS);
+    // Every fork is spent and the result is still undecided: durable in the log, since
+    // it was captured before the gate opened, and absent from the wire, since no fork
+    // answered for it.
+    let captured = session
+        .snapshot()
+        .into_iter()
+        .find_map(|e| match e.payload {
+            Payload::ToolResult { raw, wire, .. } => Some((raw, wire)),
+            _ => None,
+        })
+        .expect("the captured result is on the log while the gate holds");
+    assert!(
+        captured.0.content.contains("hi"),
+        "the output itself survives the hold: {:?}",
+        captured.0.content
+    );
+    assert!(matches!(captured.1, WireState::Pending));
     assert!(
         !session
-            .snapshot()
+            .project_messages()
             .iter()
-            .any(|e| matches!(e.payload, Payload::ToolResult { .. })),
-        "nothing about the call reaches the log while it is held"
+            .flat_map(|m| m.content.iter())
+            .any(|block| matches!(block, crate::project::ApiBlock::ToolResult { .. })),
+        "nothing about the held call reaches the main wire"
     );
     host.shut_down().await;
 }

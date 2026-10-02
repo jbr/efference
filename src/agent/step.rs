@@ -26,8 +26,9 @@ pub(super) enum Decision {
         /// Who answered, when the call was an `ask` (docs/supervisor.md).
         reply: Option<Box<Reply>>,
     },
-    /// Payloads to append verbatim — they never reach the gate, because there is no
-    /// world output to curate (`consolidate`) or the call never ran.
+    /// Payloads to append as they stand — they never reach the gate, because there is
+    /// no world output to curate (`consolidate`) or the call never ran. The caller
+    /// appends them, so each is durable before the next call runs.
     Direct(Vec<Payload>),
     /// The operator interrupted while this call ran (docs/control-channel.md): it
     /// finished, but its output stops at the log. Taken *before* the gate, so the
@@ -39,29 +40,41 @@ pub(super) enum Decision {
     Redirect { payload: Payload, message: String },
 }
 
-/// One step of the trajectory: the calls' outcomes, held in order so the loop can append
-/// them after the gate has decided every result's wire form.
+/// One step of the trajectory, in call order: a call's outcome once it is on the log.
+/// A captured result is already durable and waits only for the verdict that names it,
+/// so what a step carries is that verdict's address rather than its output.
 pub(super) enum Step {
-    Direct(Vec<Payload>),
+    /// Nothing left to land: the step's payloads are on the log already, and there is
+    /// no world output for a gate to curate.
+    Direct,
     Ran {
         call: ToolCall,
+        /// The seq the result was captured at, which the verdict it is still waiting
+        /// for names (docs/redaction-fork.md).
+        result_seq: crate::log::Seq,
+        /// What the log holds for that result — masked on the way in (docs/env.md),
+        /// so triage reads the durable bytes rather than the tool's own output.
         result: RawResult,
-        telemetry: Box<ToolTelemetry>,
         handoff: Option<String>,
-        reply: Option<Box<Reply>>,
     },
 }
 
 impl Step {
-    pub(super) fn direct(payload: Payload) -> Self {
-        Step::Direct(vec![payload])
+    /// Append a payload that needs no verdict and record the step that says so.
+    pub(super) fn direct(
+        shared: &Session,
+        turn: Turn,
+        payload: Payload,
+    ) -> Result<Self, std::io::Error> {
+        shared.append(turn, payload)?;
+        Ok(Step::Direct)
     }
 }
 
 /// Take one call through the permission cascade and, if approved, run it
 /// (docs/permissions.md, docs/tools.md). Appends only the audit entries the cascade
 /// itself owns — the `Spot` verdict and any `ConfigEdit` — never the result, which the
-/// caller appends after the gate.
+/// caller captures the moment this returns (docs/redaction-fork.md).
 pub(super) async fn run_call<F: Frontend, S: Spotter>(
     frontend: &mut F,
     shared: &Arc<Session>,

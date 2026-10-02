@@ -293,6 +293,95 @@ async fn an_image_resolves_by_seq_and_index() {
 /// what it cut; `GET /log/:seq` — the dereference address — serves it whole. A result
 /// under the threshold is byte-identical through both, which is the property the
 /// frame ≡ window pin now states (`frames.rs`).
+/// The line counts ride whichever entry decided the result (docs/redaction-fork.md): a
+/// result captured before its triage carries none of its own, and its verdict — which
+/// names the result but holds none of its bytes — carries them, so a client updating
+/// its slot from that one frame states the same numbers.
+#[tokio::test]
+async fn a_captured_result_serves_its_line_counts_on_the_verdict() {
+    let (shared, _turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let content = (1..=40)
+        .map(|i| format!("line {i}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let result_seq = shared
+        .append(
+            1,
+            Payload::tool_result(
+                "toolu_1",
+                crate::log::RawResult::text(&content),
+                crate::log::WireState::Pending,
+            ),
+        )
+        .unwrap();
+    let verdict_seq = shared
+        .append(
+            1,
+            Payload::ResultVerdict {
+                for_result: result_seq,
+                wire: crate::log::WireState::from(crate::log::Distilled::new(
+                    crate::log::Keep::Ranges(vec![(1, 6)]),
+                )),
+            },
+        )
+        .unwrap();
+    let app = test_server(&shared).await;
+
+    let window = app.get("/v1/log").await;
+    window.assert_ok();
+    let entries: Vec<Value> = serde_json::from_str(window.body()).unwrap();
+
+    let captured = &entries[result_seq as usize]["payload"]["ToolResult"];
+    assert_eq!(captured["wire"], "Pending");
+    assert!(
+        captured.get("distillate").is_none(),
+        "an undecided result states no count: {captured}"
+    );
+
+    let verdict = &entries[verdict_seq as usize]["payload"]["ResultVerdict"];
+    assert_eq!(verdict["for_result"], result_seq);
+    assert_eq!(verdict["distillate"]["total_lines"], 40);
+    assert_eq!(verdict["distillate"]["kept_lines"], 6);
+
+    // The same entry by address carries the same counts — the two routes are one view.
+    let by_seq = app.get(&format!("/v1/log/{verdict_seq}")).await;
+    by_seq.assert_ok();
+    by_seq.assert_json_body_with(|entry: &Value| {
+        assert_eq!(entry["payload"], entries[verdict_seq as usize]["payload"]);
+    });
+}
+
+/// A result logged before capture existed carries the counts on its own entry, which
+/// is what every log and fixture written the old way still serves.
+#[tokio::test]
+async fn a_result_logged_with_its_verdict_serves_the_counts_on_itself() {
+    let (shared, _turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let content = (1..=40)
+        .map(|i| format!("line {i}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    shared
+        .append(
+            1,
+            Payload::tool_result(
+                "toolu_1",
+                crate::log::RawResult::text(&content),
+                crate::log::WireState::from(crate::log::Distilled::new(crate::log::Keep::Ranges(
+                    vec![(1, 6)],
+                ))),
+            ),
+        )
+        .unwrap();
+    let app = test_server(&shared).await;
+
+    let window = app.get("/v1/log").await;
+    window.assert_ok();
+    let entries: Vec<Value> = serde_json::from_str(window.body()).unwrap();
+    let result = &entries[0]["payload"]["ToolResult"];
+    assert_eq!(result["distillate"]["total_lines"], 40);
+    assert_eq!(result["distillate"]["kept_lines"], 6);
+}
+
 #[tokio::test]
 async fn an_oversized_result_is_elided_in_the_window_and_whole_by_seq() {
     let (shared, _turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());

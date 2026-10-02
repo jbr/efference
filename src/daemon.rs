@@ -38,7 +38,7 @@ use crate::api::{
 
 use crate::config::{ConfigSource, LoadedConfig, Refreshed};
 use crate::frontend::{Approval, Frontend, Interrupt, SubmittedTurn};
-use crate::log::{CallId, EditState, LogEntry, Payload, Seq, ToolCall, Turn};
+use crate::log::{CallId, EditState, LogEntry, Payload, RawResult, Seq, ToolCall, Turn};
 use crate::persist::Log;
 use crate::project::{
     ApiMessage, ImagePlacement, Retention, WireTurn, project_semantic, project_with,
@@ -968,7 +968,7 @@ impl Session {
         let mut cell = self.retention.lock().unwrap();
         let (cursor, retention) = &mut *cell;
         if let Some(fresh) = entries.get(*cursor..) {
-            retention.fold_all(fresh);
+            retention.fold_all(fresh, entries);
             *cursor = entries.len();
         }
         *retention
@@ -1120,8 +1120,9 @@ impl Session {
 
     /// A clone of the single entry at `seq` (== its index in the log), or `None`
     /// if the log hasn't reached it yet. The `/events` tail reads one entry at a
-    /// time, so it never clones the whole log.
-    fn entry_at(&self, seq: u64) -> Option<LogEntry> {
+    /// time, so it never clones the whole log. The loop reads back the result it
+    /// just captured, to hand triage the bytes the log holds (docs/redaction-fork.md).
+    pub(crate) fn entry_at(&self, seq: u64) -> Option<LogEntry> {
         self.log
             .lock()
             .unwrap()
@@ -1194,7 +1195,7 @@ pub(crate) use watch::refresh_and_emit;
 use approvals::Pending;
 
 use config_edits::{PendingProposal, session_visible_notice};
-use entry_view::EntryView;
+use entry_view::{EntryView, result_raw};
 use errors::{ErrorBody, ErrorCode, fail, respond};
 use frames::{Frame, Topic};
 pub use metrics::{COLD_STREAK_WARN, CacheRead, ColdStart, ColdStreak, RequestOrigin, UsageLine};

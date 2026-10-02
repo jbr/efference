@@ -20,7 +20,7 @@ pub(super) async fn land(
         .iter()
         .filter_map(|s| match s {
             Step::Ran { call, result, .. } => Some(Pending { call, raw: result }),
-            Step::Direct(_) => None,
+            Step::Direct => None,
         })
         .collect();
     // The must-wake notifications this gate first-shows (docs/inbox.md):
@@ -160,41 +160,50 @@ pub(super) async fn land(
     let mut handoffs: Vec<String> = Vec::new();
     for (index, step) in steps.into_iter().enumerate() {
         match step {
-            Step::Direct(payloads) => {
-                for p in payloads {
-                    shared.append(turn, p)?;
-                }
+            Step::Direct => {
+                // Its payloads went down as the step was decided, with a verdict already
+                // in them or none needed (docs/redaction-fork.md).
             }
             Step::Ran {
-                call,
-                result,
-                telemetry,
+                result_seq,
                 handoff,
-                reply,
+                ..
             } => {
-                let Some(verdict) = verdicts.next() else {
-                    continue;
+                // The verdict, appended against the result it decides (docs/redaction-fork.md):
+                // the output is on the log from the moment it existed, so what lands now is
+                // the decision alone and the two can never disagree about it.
+                //
+                // A gate that answered for fewer results than it was offered would leave a
+                // captured result pending forever, which projects to nothing and orphans its
+                // `tool_use` on the next request (docs/README.md). The distiller does not do
+                // that — one result short of a verdict is a `GateFailure`, which holds or
+                // withholds the whole batch — so this is the breach's last line of defence:
+                // withhold the result, the same way an interrupted gate does, and say so in
+                // the log rather than leaving a silent hole.
+                let (wire, origin, raw_keep) = match verdicts.next() {
+                    Some(verdict) => (verdict.wire, verdict.origin, verdict.raw_keep),
+                    None => {
+                        log::error!(
+                            "the gate answered for fewer results than the batch captured; \
+                             one result is withheld from the wire"
+                        );
+                        (WireState::Elided, Origin::Fallback, String::new())
+                    }
                 };
-                let payload = Payload::tool_result(call.id.clone(), result, verdict.wire);
-                // An `ask`'s result is a submitted turn's words, so its entry
-                // names the submission and the submitter like a `User` entry
-                // does (docs/supervisor.md).
-                let result_seq = match reply {
-                    Some(reply) => shared.append_submission(
-                        turn,
-                        payload,
-                        reply.submission_id,
-                        reply.source,
-                    )?,
-                    None => shared.append(turn, payload)?,
-                };
+                shared.append(
+                    turn,
+                    Payload::ResultVerdict {
+                        for_result: result_seq,
+                        wire,
+                    },
+                )?;
                 let last = index == last_ran;
                 shared.append(
                     turn,
                     Payload::Triage(Triage {
                         for_result: Some(result_seq),
-                        origin: verdict.origin,
-                        raw_keep: verdict.raw_keep,
+                        origin,
+                        raw_keep,
                         inbox: if last {
                             std::mem::take(&mut inbox_verdict)
                         } else {
@@ -213,11 +222,6 @@ pub(super) async fn land(
                         },
                     }),
                 )?;
-                // The call's telemetry, after the verdict that describes
-                // the same result (docs/tools.md). It projects to nothing,
-                // so appending it cannot move the wire — which is what
-                // lets it be written unconditionally.
-                shared.append(turn, Payload::ToolTelemetry(*telemetry))?;
                 if let Some(note) = handoff {
                     handoffs.push(note);
                 }

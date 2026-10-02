@@ -203,15 +203,21 @@ async fn an_interrupt_during_the_peek_ends_the_turn_at_the_gate() {
     );
     assert!(!session.interrupt_pending(), "the press was consumed");
     let log = session.snapshot();
+    // Withheld as at the interrupt's after juncture: the raw stays in the log, captured
+    // before the gate, and the verdict that keeps it off the wire names its seq.
+    let captured_seq = log
+        .iter()
+        .find_map(|e| match &e.payload {
+            Payload::ToolResult { .. } => Some(e.seq),
+            _ => None,
+        })
+        .expect("the ran call's result is in the log");
     assert!(
         log.iter().any(|e| matches!(
             &e.payload,
-            Payload::ToolResult {
-                wire: WireState::Elided,
-                ..
-            }
+            Payload::ResultVerdict { for_result, wire: WireState::Elided } if *for_result == captured_seq
         )),
-        "the ran call's result is logged withheld, as at the interrupt's after juncture"
+        "the interrupted gate withholds the result it captured"
     );
 
     host.shut_down().await;

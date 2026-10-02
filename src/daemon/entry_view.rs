@@ -17,12 +17,21 @@
 //!   `content_elided: {kept_bytes, total_bytes}`, so a client reads "content, cut at
 //!   N of M bytes" rather than inferring it from a length.
 //!
-//! And one addition: a distilled result's view carries `distillate: {total_lines,
-//! kept_lines}` — the line arithmetic of the verdict against the whole `content`,
-//! computed here from the same [`distillate`] the wire and the TUI render through,
-//! so a client holding only the truncated prefix still states the count the model's
-//! view had. Derived on every read rather than stored: the log stays the record, and
-//! a counting bug is fixed by a build rather than baked into a session.
+//! And one addition: a result's view carries `distillate: {total_lines, kept_lines}`
+//! — the line arithmetic of the verdict against the whole `content`, computed here
+//! from the same [`distillate`] the wire and the TUI render through, so a client
+//! holding only the truncated prefix still states the count the model's view had.
+//! Derived on every read rather than stored: the log stays the record, and a counting
+//! bug is fixed by a build rather than baked into a session.
+//!
+//! Which entry carries those counts is a property of when triage ran
+//! (docs/redaction-fork.md). A result logged with its own verdict — every log written
+//! before capture, and every fixture — carries them on its own entry. A result
+//! captured first carries them on the [`Payload::ResultVerdict`] that decides it, so a
+//! client updating its slot from one frame gets the same numbers; the result's own
+//! view is `Pending` and carries none. That verdict entry holds no `raw` of its own,
+//! so the caller resolves the result it names and hands the bytes over
+//! ([`EntryView::with_result_raw`]): the view does not reach into the log itself.
 //!
 //! The log file and the wire projection are untouched — both keep everything inline
 //! (docs/log-and-projection.md).
@@ -60,6 +69,9 @@ pub(crate) struct EntryView<'a> {
     /// Whether an oversized result's `content` is truncated. False only for
     /// [`EntryView::full`].
     elide_text: bool,
+    /// The bytes of the result a [`Payload::ResultVerdict`] names, when the caller
+    /// resolved them — the one thing the verdict entry does not carry itself.
+    result_raw: Option<&'a RawResult>,
 }
 
 impl<'a> EntryView<'a> {
@@ -69,6 +81,7 @@ impl<'a> EntryView<'a> {
         Self {
             entry,
             elide_text: true,
+            result_raw: None,
         }
     }
 
@@ -79,7 +92,17 @@ impl<'a> EntryView<'a> {
         Self {
             entry,
             elide_text: false,
+            result_raw: None,
         }
+    }
+
+    /// Attach the bytes of the result a [`Payload::ResultVerdict`] names, so the
+    /// view can count the lines that verdict keeps (docs/redaction-fork.md). The
+    /// caller resolves them from the log — a verdict entry holds none of its own —
+    /// and `None` leaves the view as the log alone describes it.
+    pub(crate) fn with_result_raw(mut self, raw: Option<&'a RawResult>) -> Self {
+        self.result_raw = raw;
+        self
     }
 }
 
@@ -98,14 +121,18 @@ impl Serialize for EntryView<'_> {
         if let Some(source) = &entry.source {
             s.serialize_field("source", source)?;
         }
-        s.serialize_field("payload", &PayloadView(&entry.payload, self.elide_text))?;
+        s.serialize_field(
+            "payload",
+            &PayloadView(&entry.payload, self.elide_text, self.result_raw),
+        )?;
         s.end()
     }
 }
 
 /// Delegates every variant to the derived serialization except `ToolResult`, the one
-/// place a [`ResultImage`] and an oversized `content` live.
-struct PayloadView<'a>(&'a Payload, bool);
+/// place a [`ResultImage`] and an oversized `content` live, and `ResultVerdict`, whose
+/// line counts come from the result it names.
+struct PayloadView<'a>(&'a Payload, bool, Option<&'a RawResult>);
 
 impl Serialize for PayloadView<'_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
@@ -123,8 +150,36 @@ impl Serialize for PayloadView<'_> {
                 }
                 s.end()
             }
+            // The line counts land on whichever entry decided the result, so a client
+            // reading one frame of a captured result's life sees the same numbers at
+            // both ends (docs/redaction-fork.md).
+            Payload::ResultVerdict { for_result, wire } => {
+                let lines = self.2.and_then(|raw| DistillateLines::of(raw, wire));
+                let fields = 2 + usize::from(lines.is_some());
+                let mut s =
+                    serializer.serialize_struct_variant("Payload", 3, "ResultVerdict", fields)?;
+                s.serialize_field("for_result", for_result)?;
+                s.serialize_field("wire", wire)?;
+                if let Some(lines) = lines {
+                    s.serialize_field("distillate", &lines)?;
+                }
+                s.end()
+            }
             other => other.serialize(serializer),
         }
+    }
+}
+
+/// The bytes of the result a [`Payload::ResultVerdict`] names, or `None` for every
+/// other payload — each of those carries everything its own view needs. A `seq` is
+/// the result's own address in the log (docs/README.md).
+pub(crate) fn result_raw<'e>(entry: &LogEntry, log: &'e [LogEntry]) -> Option<&'e RawResult> {
+    let Payload::ResultVerdict { for_result, .. } = &entry.payload else {
+        return None;
+    };
+    match log.get(*for_result as usize)?.payload {
+        Payload::ToolResult { ref raw, .. } => Some(raw),
+        _ => None,
     }
 }
 

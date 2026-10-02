@@ -244,7 +244,11 @@ impl Tail {
             {
                 self.next_log += 1;
                 self.draining_blocks = matches!(entry.payload, Payload::Assistant { .. });
-                return Some(Frame::log(&entry));
+                // A verdict entry names the result it decides but carries no bytes
+                // of it; the frame is built here, so resolving them through the
+                // session's single-entry read is enough.
+                let result_raw = result_raw(&entry, &self.shared);
+                return Some(Frame::log(&entry, result_raw.as_ref()));
             }
 
             if let Some(update) = self.releasable() {
@@ -402,6 +406,19 @@ impl Session {
                 watermark,
             })
             .collect()
+    }
+}
+
+/// The bytes of the result a [`Payload::ResultVerdict`] names, read one entry at a
+/// time — the same lookup [`entry_view::result_raw`] does over a borrowed log, in the
+/// owned form a frame's `data` needs (docs/redaction-fork.md).
+pub(crate) fn result_raw(entry: &LogEntry, shared: &Session) -> Option<RawResult> {
+    let Payload::ResultVerdict { for_result, .. } = &entry.payload else {
+        return None;
+    };
+    match shared.entry_at(*for_result)?.payload {
+        Payload::ToolResult { raw, .. } => Some(raw),
+        _ => None,
     }
 }
 

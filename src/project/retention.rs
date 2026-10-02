@@ -1,10 +1,17 @@
 //! How much of what triage saw survives onto the wire (docs/redaction-fork.md).
 //!
-//! One rule, one place. A [`Payload::ToolResult`] carries both halves of the
-//! question — `raw.content` (what the tool returned) and `wire` (the verdict on it)
-//! — so retention is a fold over results alone, joining nothing. The per-result
-//! split is [`distillate`]'s, so this reports the same line counts the transcript
-//! renders in its gutter rather than a second, drifting definition of "kept".
+//! One rule, one place. What triage saw and what it kept are counted together,
+//! against the same [`distillate`] the transcript renders in its gutter — so these
+//! are the numbers the gutter shows rather than a second, drifting definition of
+//! "kept".
+//!
+//! A result's verdict is not always on the result: a result captured before its
+//! triage carries [`WireState::Pending`] until the [`Payload::ResultVerdict`] entry
+//! that decides it (docs/redaction-fork.md). The fold counts a result from whichever
+//! of the two carries a final wire — its own entry (a result logged before capture
+//! existed, or a fixture) or the verdict naming it — which is the same resolution
+//! [`project`](crate::project::project) makes, so the ratio counts each result once
+//! whichever shape wrote it.
 //!
 //! **Withheld results are not low retention.** A [`WireState::TriageFailed`] result
 //! retained nothing because nothing was *recorded* (docs/redaction-fork.md), not
@@ -12,12 +19,13 @@
 //! read as excellent compression. It counts as [`Retention::withheld`] instead, and
 //! stays out of both sides of the ratio.
 //!
-//! The fold is **monotone**: the log is append-only and a result's `wire` is fixed at
-//! append time, so a caller may consume entries incrementally from a cursor and never
+//! The fold is **monotone**: the log is append-only, and a result is counted once —
+//! by its own entry when that carries a final wire, otherwise by the verdict that
+//! names it — so a caller may consume entries incrementally from a cursor and never
 //! needs to invalidate what it already folded.
 
 use super::distillate;
-use crate::log::{LogEntry, Payload, WireState};
+use crate::log::{LogEntry, Payload, RawResult, WireState};
 
 /// Lines kept vs. lines triage was shown, plus the count of results whose output was
 /// withheld outright. Cumulative over some span of the log.
@@ -38,13 +46,44 @@ pub struct Retention {
 }
 
 impl Retention {
-    /// Fold one log entry. Entries that aren't tool results, and results still
-    /// projecting raw (untriaged — the tail, before its gate runs), contribute
-    /// nothing.
-    pub fn fold(&mut self, entry: &LogEntry) {
-        let Payload::ToolResult { raw, wire, .. } = &entry.payload else {
-            return;
-        };
+    /// Fold one log entry. Entries that aren't a result or a verdict about one, and
+    /// results still projecting raw (untriaged — the tail, before its gate runs),
+    /// contribute nothing. `log` is the whole log: a verdict is counted against the
+    /// bytes at the result's own address, which is the one thing it does not carry.
+    pub fn fold(&mut self, entry: &LogEntry, log: &[LogEntry]) {
+        match &entry.payload {
+            Payload::ToolResult { raw, wire, .. } => self.count(raw, wire),
+            Payload::ResultVerdict { for_result, wire } => {
+                // A verdict decides a captured result, and is ignored for one that
+                // already carries a final wire — as projection ignores it
+                // (docs/log-and-projection.md), so a result is counted once.
+                if let Some(raw) = awaiting_verdict(log, *for_result) {
+                    self.count(raw, wire);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Fold a whole span of entries.
+    pub fn fold_all<'e>(
+        &mut self,
+        entries: impl IntoIterator<Item = &'e LogEntry>,
+        log: &[LogEntry],
+    ) {
+        for entry in entries {
+            self.fold(entry, log);
+        }
+    }
+
+    /// Kept as a fraction of shown, or `None` before the first distilled result —
+    /// which is *unknown*, not zero, and renders as absent rather than as 0%.
+    pub fn ratio(&self) -> Option<f64> {
+        (self.shown_lines > 0).then(|| self.kept_lines as f64 / self.shown_lines as f64)
+    }
+
+    /// Count one result under the wire it was decided with.
+    fn count(&mut self, raw: &RawResult, wire: &WireState) {
         match wire {
             WireState::Distilled(verdict) => {
                 let d = distillate(&raw.content, &verdict.keep);
@@ -57,24 +96,25 @@ impl Retention {
                 self.truncated_lines += d.dropped as u64;
             }
             WireState::TriageFailed { .. } => self.withheld += 1,
-            // Untriaged (the uncommitted tail), bypassed (the known-shape rule,
-            // docs/redaction-fork.md — never shown to triage) and elided results are
-            // not verdicts about line-level relevance, so none of them counts.
+            // Awaiting triage (the captured result's own state until its verdict
+            // lands), bypassed (the known-shape rule, docs/redaction-fork.md — never
+            // shown to triage) and elided results are not verdicts about line-level
+            // relevance, so none of them counts.
             WireState::Pending | WireState::Raw | WireState::Elided => {}
         }
     }
+}
 
-    /// Fold a whole span of entries.
-    pub fn fold_all<'e>(&mut self, entries: impl IntoIterator<Item = &'e LogEntry>) {
-        for entry in entries {
-            self.fold(entry);
-        }
-    }
-
-    /// Kept as a fraction of shown, or `None` before the first distilled result —
-    /// which is *unknown*, not zero, and renders as absent rather than as 0%.
-    pub fn ratio(&self) -> Option<f64> {
-        (self.shown_lines > 0).then(|| self.kept_lines as f64 / self.shown_lines as f64)
+/// The bytes captured at `seq`, while that result is still waiting for its verdict —
+/// where a `seq` is the result's own address in the log (docs/README.md).
+fn awaiting_verdict(log: &[LogEntry], seq: u64) -> Option<&RawResult> {
+    match log.get(seq as usize)?.payload {
+        Payload::ToolResult {
+            wire: WireState::Pending,
+            ref raw,
+            ..
+        } => Some(raw),
+        _ => None,
     }
 }
 

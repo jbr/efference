@@ -48,6 +48,39 @@ The fork's prefix hits cache; only its tail — raw output plus the extraction
 instruction — is fresh. The canonical prefix grows monotonically and is never
 invalidated. What would otherwise be a mutation problem becomes an append problem.
 
+### Capture, then verdict
+
+A result is on the log before anything judges it. The loop appends each call's
+`ToolResult` the moment the call returns (`agent/batch.rs`), with
+`WireState::Pending`, and after the gate decides, appends a
+`Payload::ResultVerdict { for_result, wire }` naming that result's `seq`
+(`agent/landing.rs`). The raw output is written once; the verdict carries only the
+decision. Projection resolves each result through its verdict
+(`log::result_verdicts`: the first non-pending verdict for a pending result wins, and
+a verdict naming a result that already carries a final wire is ignored) and skips a
+result still pending, so the main agent never sees untriaged output and no request
+built during the gate can carry half a batch. A result logged with its final wire, as
+every result was before capture, projects as it always did.
+
+What the capture buys: clients can show a result while its triage runs (the entry is
+on `/events` as soon as it exists), a gate held for minutes holds nothing that exists
+only in memory, and a session that stops mid-gate leaves its results on disk for a
+later resume to triage rather than rerun. Triage reads the result back from the log
+(`Session::entry_at`) rather than from the tool's return value, so it sees the masked
+bytes every other reader sees ([env.md](env.md)).
+
+Every captured result gets exactly one final verdict. A batch that ends in an error
+before its gate resolves what it already captured as `Elided` (`undecided` in
+`agent/batch.rs`), the same verdict an interrupted gate gives; a gate that answered
+for fewer results than it was offered (which the distiller reports as a failure rather
+than returning) is backstopped the same way and logged at error level. A pending result
+with no verdict would project to nothing and orphan its `tool_use`.
+
+Capture adds one entry per result, so results in a batch sit at higher `seq`s than
+they did when the result and its verdict were one entry. The `[seq]` label a result's
+wire text leads with is its own address, so the label moves with it; the bytes of a
+completed batch's wire are otherwise unchanged.
+
 ## Universal, with no small-result exemption
 
 The fork is not an optimisation applied selectively above a threshold. Every tool
@@ -356,7 +389,7 @@ raw. It retries until it has a verdict or the operator stops the turn:
   shape tends to stay there.
 - **Still no verdict** — the upstream schedule ran out or the upstream refused, or
   every fork came back unusable — and the loop **holds** (`agent/gate.rs`). The batch's
-  results stay in the loop, unappended; the session stalls with
+  results are on the log as `Pending` and their verdicts are not; the session stalls with
   `StallReason::TriageUnavailable` (upstream) or `StallReason::TriageDefect` (every
   fork unusable, which is a harness defect and is logged at error level as one) while
   the loop keeps running. The operator's continue runs the gate again from the top;
@@ -449,7 +482,8 @@ never persisted twice, and the structured decision is itself the record.
 
 The fork's bulky transcript — the full line-numbered output plus the `retain`
 instruction — stays throwaway and never enters canonical. That is what protects
-caching. But the fork's *decision* is logged as a `Triage` entry (in `src/log.rs`):
+caching. The decision itself lands as the result's `ResultVerdict` (its `wire`), and
+the fork's audit record of it as a `Triage` entry right after (in `src/log.rs`):
 
 | field | meaning |
 | --- | --- |
@@ -484,12 +518,16 @@ and a count of results whose output a failed gate withheld. `GET /state` reports
 `usage.retention` and the TUI session drawer renders it as `kept  55% · 13k/24k lines`
 ([tui.md](tui.md)).
 
-Two properties make the fold the cheap kind. It reads **only** `ToolResult` entries —
-`raw.content` and `wire` are both on the one entry, so it joins nothing and resolves
-each verdict through the same `distillate` the transcript renders from, rather than
-becoming a second definition of "kept" that can drift from what the gutter shows. And
-it is **monotone**: the log is append-only and a result's `wire` is fixed at append, so
-a caller folds from a cursor and never invalidates. The daemon keeps that cursor, which
+Two properties make the fold the cheap kind. It counts each result once, from
+whichever entry carries its final wire — the `ToolResult` itself for a result logged
+with its verdict, or the `ResultVerdict` naming a captured one, looked up by `seq`
+(an index) for the bytes — and resolves the verdict through the same `distillate` the
+transcript renders from, rather than becoming a second definition of "kept" that can
+drift from what the gutter shows. Its rule for which verdict counts mirrors
+`log::result_verdicts` rather than calling it, because rebuilding that map per entry
+would cost the cursor its point; the two move together. And it is **monotone**: the log
+is append-only and a verdict is never revised, so a caller folds from a cursor and
+never invalidates. The daemon keeps that cursor, which
 is why a resumed session reports the whole session's ratio instead of restarting at
 zero — this is derived from the canonical record, unlike the transport telemetry beside
 it in STATS.

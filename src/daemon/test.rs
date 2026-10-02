@@ -140,6 +140,7 @@ async fn next_event(
 mod approvals;
 mod ask;
 mod background;
+mod capture;
 mod config_edits;
 mod continuation;
 mod events;

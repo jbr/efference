@@ -12,6 +12,59 @@ fn user(text: &str) -> Payload {
     Payload::User(vec![ContentBlock::Text(text.into())])
 }
 
+/// A verdict frame states the line counts of the result it decides, read through the
+/// session the tail already holds — the one entry that carries no bytes of its own.
+/// The bytes a client sees must be the `/log` element's, counts included, or a tail
+/// and a catch-up read would disagree about the same result.
+#[test]
+fn a_verdict_frame_carries_the_counts_of_the_result_it_names() {
+    let mut log = Log::in_memory();
+    let content = (1..=40)
+        .map(|i| format!("line {i}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    log.append(
+        1,
+        Payload::tool_result("toolu_1", RawResult::text(&content), WireState::Pending),
+    )
+    .expect("in-memory append");
+    log.append(
+        1,
+        Payload::ResultVerdict {
+            for_result: 0,
+            wire: WireState::from(crate::log::Distilled::new(crate::log::Keep::Ranges(vec![
+                (1, 6),
+            ]))),
+        },
+    )
+    .expect("in-memory append");
+    let entries = log.entries().to_vec();
+    let (shared, _turns_rx) = Session::new(std::env::current_dir().unwrap(), log);
+
+    // What the tail resolves for this entry, and what the `/log` window serves for it.
+    let resolved = crate::daemon::stream::result_raw(&entries[1], &shared);
+    let frame = Frame::log(&entries[1], resolved.as_ref());
+    let window: Vec<Value> =
+        serde_json::from_str(&shared.log_json(&LogSelect::default())).expect("a JSON array");
+
+    let counts = &window[1]["payload"]["ResultVerdict"]["distillate"];
+    assert_eq!(counts["total_lines"], 40);
+    assert_eq!(counts["kept_lines"], 6);
+    // Byte-identity is with the view the `/log` route serializes; a `Value`
+    // round-trip would re-sort the keys and lose it (entry_view.rs).
+    assert_eq!(
+        frame.data.get(),
+        serde_json::to_string(&EntryView::new(&entries[1]).with_result_raw(resolved.as_ref()))
+            .unwrap(),
+        "a log frame's data is the /log element verbatim"
+    );
+    assert_eq!(
+        serde_json::from_str::<Value>(frame.data.get()).unwrap(),
+        window[1],
+        "the tail and a catch-up read agree about the same result"
+    );
+}
+
 /// The `log` class is the only one carrying a cursor, and its `data` must stay
 /// byte-identical to the corresponding `GET /log` element — the property `sse.rs`
 /// relies on so the tail and the catch-up read agree per entry.
@@ -24,7 +77,7 @@ fn user(text: &str) -> Payload {
 #[test]
 fn log_frames_carry_seq_and_data_matching_the_log_bytes() {
     let entry = one_entry(user("hello"));
-    let frame = Frame::log(&entry);
+    let frame = Frame::log(&entry, None);
 
     assert_eq!(frame.class, Class::Log);
     assert_eq!(frame.kind, "user");
@@ -44,10 +97,10 @@ fn log_frames_carry_seq_and_data_matching_the_log_bytes() {
 fn render_rides_beside_data_and_is_absent_when_unset() {
     let entry = one_entry(user("hello"));
 
-    let bare = Frame::log(&entry).to_json();
+    let bare = Frame::log(&entry, None).to_json();
     assert!(!bare.contains("render"), "no render key when unset: {bare}");
 
-    let rendered = Frame::log(&entry).with_render(&serde_json::json!({"blocks": []}));
+    let rendered = Frame::log(&entry, None).with_render(&serde_json::json!({"blocks": []}));
     assert!(
         !rendered.data.get().contains("render"),
         "render must not leak into data: {}",
@@ -201,7 +254,7 @@ fn a_log_frame_matches_the_window_and_defers_to_the_entry_route_when_oversized()
         RawResult::text("small"),
         WireState::Raw,
     ));
-    let frame = Frame::log(&small);
+    let frame = Frame::log(&small, None);
     assert_eq!(
         frame.data.get(),
         serde_json::to_string(&crate::daemon::entry_view::EntryView::new(&small)).unwrap(),
@@ -219,7 +272,7 @@ fn a_log_frame_matches_the_window_and_defers_to_the_entry_route_when_oversized()
         RawResult::text("z".repeat(MAX_INLINE_RESULT_BYTES * 2)),
         WireState::Raw,
     ));
-    let frame = Frame::log(&big);
+    let frame = Frame::log(&big, None);
     assert_eq!(
         frame.data.get(),
         serde_json::to_string(&crate::daemon::entry_view::EntryView::new(&big)).unwrap(),
