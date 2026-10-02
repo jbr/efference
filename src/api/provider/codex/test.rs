@@ -183,3 +183,16 @@ fn the_listing_route_carries_a_client_version_claim() {
         "{url}"
     );
 }
+
+#[test]
+fn model_description_is_provider_prose() {
+    let rows = parse(
+        r#"{"models":[{"slug":"a","description":"Provider **prose**.\nSecond paragraph."}]}"#,
+    )
+    .unwrap()
+    .rows();
+    assert_eq!(
+        rows[0].description.as_deref(),
+        Some("Provider **prose**.\nSecond paragraph.")
+    );
+}

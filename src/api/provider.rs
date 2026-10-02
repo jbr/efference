@@ -16,6 +16,7 @@ mod listing;
 mod models;
 mod openrouter;
 mod row;
+mod typesafe;
 
 pub use row::{ListedModel, Price};
 

@@ -44,6 +44,9 @@ pub struct ListedModel {
     pub group: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    /// Provider-supplied prose, when nonempty.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
     /// Unix seconds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub created: Option<i64>,
@@ -71,6 +74,14 @@ impl ListedModel {
     pub fn named(mut self, name: &str) -> Self {
         let name = name.trim();
         self.name = (!name.is_empty() && name != self.model).then(|| name.to_string());
+        self
+    }
+
+    /// Provider prose is retained verbatim; whitespace-only text is absent.
+    pub fn described(mut self, description: Option<&str>) -> Self {
+        self.description = description
+            .filter(|text| !text.trim().is_empty())
+            .map(str::to_string);
         self
     }
 }

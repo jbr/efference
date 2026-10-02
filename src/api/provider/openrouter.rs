@@ -31,6 +31,8 @@ struct Entry {
     // `anthropic-version` with (`display_name` instead).
     name: String,
     #[serde(default)]
+    description: Option<String>,
+    #[serde(default)]
     created: Option<i64>,
     #[serde(default)]
     context_length: Option<u64>,
@@ -99,7 +101,9 @@ impl Entry {
                 .architecture
                 .and_then(|a| a.input_modalities)
                 .map(|modalities| modalities.iter().any(|m| m == "image")),
-            ..ListedModel::new(&self.id).named(strip_author(&self.name))
+            ..ListedModel::new(&self.id)
+                .named(strip_author(&self.name))
+                .described(self.description.as_deref())
         }
     }
 }

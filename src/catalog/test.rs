@@ -222,3 +222,20 @@ fn recent_ranks_fold_onto_rows_and_unlisted_picks_become_bare_rows() {
         serde_json::from_str(&serde_json::to_string(&entry).unwrap()).unwrap();
     assert_eq!(back, entry);
 }
+
+#[tokio::test]
+async fn descriptions_survive_storage_and_are_flattened_into_route_rows() {
+    let dir = dir();
+    let path = dir.join("state.db");
+    let row = ListedModel::new("a").described(Some("Provider prose."));
+    Catalog::new(Some(path.clone()))
+        .refresh_with("c", Provider::OpenRouter, DAY, || async { Ok(vec![row]) })
+        .await;
+    let snapshot =
+        Catalog::new(Some(path)).snapshot("c", Provider::OpenRouter, crate::history::now());
+    let entry = assemble("c", Provider::OpenRouter, snapshot, None, &[]);
+    let json = serde_json::to_value(&entry).unwrap();
+    assert_eq!(json["models"][0]["description"], "Provider prose.");
+    assert_eq!(json["models"][0]["connection"], "c");
+    std::fs::remove_dir_all(dir).unwrap();
+}

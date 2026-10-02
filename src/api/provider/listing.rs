@@ -63,6 +63,8 @@ struct Entry {
     #[serde(default)]
     name: Option<String>,
     #[serde(default)]
+    description: Option<String>,
+    #[serde(default)]
     display_name: Option<String>,
     #[serde(default)]
     created: Option<i64>,
@@ -213,7 +215,9 @@ pub(super) fn rows(body: &str) -> Result<Vec<ListedModel>, Error> {
                     created: entry.created.filter(|&created| created > 0),
                     context: entry.context_length.or(entry.max_input_tokens),
                     images,
-                    ..ListedModel::new(&entry.id).named(name)
+                    ..ListedModel::new(&entry.id)
+                        .named(name)
+                        .described(entry.description.as_deref())
                 }
             })
             .collect(),

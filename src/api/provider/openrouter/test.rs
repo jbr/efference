@@ -30,7 +30,7 @@ fn a_full_row_carries_every_declared_fact() {
     let rows = rows(CATALOG).unwrap();
     assert_eq!(
         serde_json::to_string(row(&rows, "z-ai/glm-5.3-prime")).unwrap(),
-        r#"{"model":"z-ai/glm-5.3-prime","group":"z-ai","name":"GLM 5.3 Prime","created":1790199651,"context":1000000,"price":{"input":2.8,"output":8.8},"reasoning":true,"images":false}"#
+        r#"{"model":"z-ai/glm-5.3-prime","group":"z-ai","name":"GLM 5.3 Prime","description":"GLM-5.3-Prime is the high-speed variant of Z.ai's GLM-5.3, inheriting its full capabilities while delivering 1.5–2× the output throughput through inference acceleration. It supports text input and output with a 1M-token...","created":1790199651,"context":1000000,"price":{"input":2.8,"output":8.8},"reasoning":true,"images":false}"#
     );
     let aliased = row(&rows, "~anthropic/claude-opus-latest");
     assert_eq!(aliased.group.as_deref(), Some("anthropic"));
@@ -77,4 +77,13 @@ fn a_bare_entry_has_only_what_it_declares() {
 fn an_anthropic_shaped_body_is_an_error_not_a_listing() {
     assert!(rows(ANTHROPIC_SHAPED).is_err());
     assert!(rows("{}").is_err());
+}
+
+#[test]
+fn model_description_is_provider_prose() {
+    let rows = rows(r#"{"data":[{"id":"a/b","name":"A: B","description":"Provider **prose**.\nSecond paragraph."}]}"#).unwrap();
+    assert_eq!(
+        rows[0].description.as_deref(),
+        Some("Provider **prose**.\nSecond paragraph.")
+    );
 }

@@ -36,3 +36,14 @@ fn a_zero_creation_time_is_no_date() {
         r#"[{"model":"b","created":1790000000},{"model":"a"}]"#
     );
 }
+
+#[test]
+fn model_description_is_provider_prose() {
+    let rows =
+        rows(r#"{"data":[{"id":"a","description":"Provider **prose**.\nSecond paragraph."}]}"#)
+            .unwrap();
+    assert_eq!(
+        rows[0].description.as_deref(),
+        Some("Provider **prose**.\nSecond paragraph.")
+    );
+}

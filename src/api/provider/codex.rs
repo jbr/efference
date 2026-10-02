@@ -59,6 +59,8 @@ pub(super) struct Entry {
     pub slug: String,
     #[serde(default)]
     pub display_name: String,
+    #[serde(default)]
+    pub description: Option<String>,
     /// The window the model works in. `max_context_window` is the ceiling a
     /// configuration override may raise it to, so it stands in only when the
     /// working window is absent.
@@ -101,7 +103,9 @@ impl Entry {
             reasoning: self.efforts().map(|_| true),
             images: (!self.input_modalities.is_empty())
                 .then(|| self.input_modalities.iter().any(|m| m == "image")),
-            ..ListedModel::new(&self.slug).named(&self.display_name)
+            ..ListedModel::new(&self.slug)
+                .named(&self.display_name)
+                .described(self.description.as_deref())
         }
     }
 

@@ -157,8 +157,8 @@ identifier, author when declared, exact context size, separate input/output
 prices per million tokens, model age, declared reasoning/image support, and
 recent-pick status. Undeclared facts are omitted; nonpositive creation timestamps
 do not produce ages. Optional catalog descriptions are shown in full beneath
-the parameters. The frontend accepts descriptions; the host catalog does not
-populate them.
+the parameters. The host supplies provider descriptions through the catalog
+([model-catalog.md](model-catalog.md)).
 
 Search autofocus is limited to hover-capable fine pointers. On devices outside
 that media condition, search waits for intentional focus. Arrow keys activate keyboard

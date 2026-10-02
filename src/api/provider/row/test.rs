@@ -50,3 +50,19 @@ fn absent_facts_do_not_serialize() {
     let row = ListedModel::new("m").named("m");
     assert_eq!(serde_json::to_string(&row).unwrap(), r#"{"model":"m"}"#);
 }
+
+#[test]
+fn descriptions_are_optional_and_nonempty_prose_is_kept_verbatim() {
+    let old: ListedModel = serde_json::from_str(r#"{"model":"a"}"#).unwrap();
+    assert_eq!(old.description, None);
+    for text in [None, Some(""), Some(" \n\t ")] {
+        assert_eq!(
+            serde_json::to_string(&ListedModel::new("a").described(text)).unwrap(),
+            r#"{"model":"a"}"#
+        );
+    }
+    let row = ListedModel::new("a").described(Some("  **Provider prose**\n"));
+    assert_eq!(row.description.as_deref(), Some("  **Provider prose**\n"));
+    let back: ListedModel = serde_json::from_str(&serde_json::to_string(&row).unwrap()).unwrap();
+    assert_eq!(back, row);
+}

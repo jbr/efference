@@ -44,7 +44,12 @@ impl Endpoint {
                     .await?;
                 anthropic::rows(&body)
             }
-            Provider::TypeSafe => Ok(Vec::new()),
+            Provider::TypeSafe => {
+                let url = self
+                    .models_url()
+                    .ok_or("the typesafe provider has no model listing route")?;
+                typesafe::rows(&self.authed_get(&url).await?)
+            }
         }
     }
 

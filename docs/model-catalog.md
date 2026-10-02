@@ -6,7 +6,7 @@ absent from the catalog is still accepted as a typed id, and a listing in no cas
 authorizes or refuses a model. Modules: `src/catalog.rs` (+ `src/catalog/`) for storage,
 age, and refresh; `src/daemon/host/catalog.rs` for the routes; the per-provider
 normalization in `src/api/provider/` (`row.rs`, `openrouter.rs`, `anthropic.rs`,
-`codex.rs`, `listing.rs`), selected in `models.rs`.
+`codex.rs`, `listing.rs`, `typesafe.rs`), selected in `models.rs`.
 
 ## The table
 
@@ -32,13 +32,18 @@ is not retried within a minute of a failure. One read is bounded at 30 seconds.
 
 `connection`, `model` (the provider-native id a draft carries), and whichever of these
 the source declares: `group` (OpenRouter's author, the id prefix before `/`, a leading `~`
-folded), `name`, `created` (unix seconds), `context` (tokens), `price` (`input`/`output`,
-USD per million tokens), `reasoning`, `images` (image input). An undeclared fact is
+folded), `name`, `description` (provider prose), `created` (unix seconds), `context`
+(tokens), `price` (`input`/`output`, USD per million tokens), `reasoning`, `images`
+(image input). An undeclared fact is
 absent. `recent` is added at read time, not stored.
 
 - **Names** lose OpenRouter's author prefix (`Z.ai: GLM 5.3 Flash` becomes `GLM 5.3
   Flash`: everything through the first `": "`). An empty name, or one equal to the id, is
   omitted.
+- **Descriptions** retain the source text verbatim; missing, null, empty, or
+  whitespace-only descriptions are omitted. OpenRouter, Codex, TypeSafe, and described
+  endpoints supply them where declared. The Anthropic and OpenAI platform listings
+  currently supply none; the platform inventory does not borrow Codex descriptions.
 - **Order:** dated rows newest first, then undated rows, each in the source's order among
   equals. Codex dates nothing, so its order is the backend's.
 - **Filtering:** an OpenRouter entry whose `supported_parameters` does not name `tools` is
@@ -50,11 +55,12 @@ absent. `recent` is added at read time, not stored.
 
 | Provider | Source | Facts read |
 |---|---|---|
-| OpenRouter | `GET /api/v1/models` (sent without `anthropic-version`) | name, created, context_length, pricing, `architecture.input_modalities`, `supported_parameters`/`reasoning` |
+| OpenRouter | `GET /api/v1/models` (sent without `anthropic-version`) | name, description, created, context_length, pricing, `architecture.input_modalities`, `supported_parameters`/`reasoning` |
 | Anthropic | `GET /v1/models?limit=100` | display_name, created_at (RFC 3339), max_input_tokens, `capabilities.image_input.supported` |
-| OpenAI Codex | the Codex catalog (also the capability source, [transport.md](transport.md)) | display_name, context window, input modalities, reasoning levels |
+| OpenAI Codex | the Codex catalog (also the capability source, [transport.md](transport.md)) | display_name, description, context window, input modalities, reasoning levels |
+| TypeSafe | `GET /v1/models` | name (model id), description, release_date (RFC 3339) |
 | OpenAI platform | `GET /v1/models` | created |
-| Described endpoint | `GET {base}/models`, read field by field | created, name/display_name, context, image modality |
+| Described endpoint | `GET {base}/models`, read field by field | created, name/display_name, description, context, image modality |
 
 ## Recent ranks
 
