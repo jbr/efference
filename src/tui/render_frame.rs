@@ -194,6 +194,7 @@ impl<'a> InteractiveState<'a> {
         self.viewport.last_painted_scroll = self.viewport.scroll_offset;
 
         self.render_document(doc_area, &mut doc_buf);
+        self.paint_item_hover(&mut doc_buf);
         let buf = frame.buffer_mut();
         for y in 0..doc_area.height {
             for x in 0..doc_area.width {

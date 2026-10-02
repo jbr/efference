@@ -71,6 +71,7 @@ impl<'a> InteractiveState<'a> {
     /// frame flat as the transcript grows (docs/tui.md).
     fn walk_document(&mut self, buf: &mut Buffer) {
         self.render_cache.actions.clear();
+        self.render_cache.items.clear();
         // The block menu is repainted with the focused unit each frame; its click
         // targets are rebuilt alongside the action map (docs/tui.md).
         self.block_menu_hits.clear();
@@ -128,6 +129,7 @@ impl<'a> InteractiveState<'a> {
                         self.render_cache.actions.push((rect, action.clone()));
                     }
                     self.layout.pos.y = end;
+                    self.note_item(idx, start, end);
                     continue;
                 }
             }
@@ -159,6 +161,7 @@ impl<'a> InteractiveState<'a> {
                 actions,
                 level,
             });
+            self.note_item(idx, start, self.layout.pos.y);
         }
 
         self.viewport.cached_layout = Some(DocumentLayoutCache {
@@ -168,5 +171,48 @@ impl<'a> InteractiveState<'a> {
         // Survives the cache's invalidation, so a scroll arriving between a
         // re-projection and the next paint still has a height to reason against.
         self.viewport.last_document_height = self.layout.pos.y;
+    }
+
+    /// Record a foldable item's rows for hover and click (docs/tui.md).
+    fn note_item(&mut self, idx: usize, start: u16, end: u16) {
+        if matches!(
+            self.document.document.nodes.get(idx),
+            Some(DocumentNode::CallItem { .. } | DocumentNode::ThinkingItem { .. })
+        ) {
+            self.render_cache.items.push((start, end));
+        }
+    }
+
+    /// Tint the item under the pointer, painting a surface one step off the
+    /// background across its rows — the terminal's version of the web client's
+    /// hovered call card. Only background-coloured cells change, so a code block's
+    /// own surface keeps its edge. `buf` is the document's own buffer, origin at the
+    /// viewport's first row.
+    pub(super) fn paint_item_hover(&self, buf: &mut Buffer) {
+        let Some(pos) = self.viewport.cursor_pos else {
+            return;
+        };
+        let Some(&(start, end)) = self
+            .render_cache
+            .items
+            .iter()
+            .find(|(start, end)| pos.y >= *start && pos.y < *end)
+        else {
+            return;
+        };
+        let bg = self.theme.document_bg_style.bg.unwrap_or_default();
+        let fg = self.theme.status_style.fg.unwrap_or_default();
+        let tint = super::theme::mix(bg, fg, 0.07);
+        let scroll = self.viewport.scroll_offset;
+        let height = buf.area.height;
+        for row in start.max(scroll)..end.min(scroll.saturating_add(height)) {
+            for x in 0..buf.area.width {
+                if let Some(cell) = buf.cell_mut((x, row - scroll))
+                    && (cell.bg == bg || cell.bg == ratatui::style::Color::Reset)
+                {
+                    cell.bg = tint;
+                }
+            }
+        }
     }
 }

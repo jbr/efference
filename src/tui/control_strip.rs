@@ -11,7 +11,7 @@
 //! when the state flips, and an index-held focus would become a different verb
 //! between the aim and the press.
 
-use ratatui::{buffer::Buffer, layout::Rect};
+use ratatui::{buffer::Buffer, layout::Rect, style::Style};
 
 use super::{InteractiveState, UiMode};
 use crate::bash;
@@ -548,6 +548,21 @@ impl InteractiveState<'_> {
             (self.theme.strip_tail_style, self.theme.strip_tail_style)
         } else {
             (self.theme.strip_item_style, self.theme.strip_hint_style)
+        };
+        // Under the pointer, the button's surface lifts a step toward the text
+        // colour, so a click target reads as one before it is pressed. Focus keeps
+        // its own surface; a greyed slot fires nothing and does not lift.
+        let (body, hint) = if !sel
+            && self.strip_verb_applies(entry.verb)
+            && self.viewport.strip_hover == Some(entry.verb)
+        {
+            let lift = |style: Style| match (style.bg, self.theme.status_style.fg) {
+                (Some(bg), Some(fg)) => style.bg(super::theme::mix(bg, fg, 0.18)),
+                _ => style,
+            };
+            (lift(body), lift(hint))
+        } else {
+            (body, hint)
         };
         let marker = if sel { "▸ " } else { "  " };
         let label = self.strip_item_label(entry);

@@ -8,6 +8,7 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- **TUI hover affordances** (docs/tui.md): a call or thinking item tints as one card under the pointer and a click anywhere on it focuses it; control-strip items lift under the pointer; the pointer becomes a hand over every click target.
 - **TUI detail by recency** (docs/tui.md): as in the web client, the last six transcript items render whole, the next stretch trimmed (results cut at six rows under a dimmed last row, long thinking as a preview) and older ones brief (a call as intent, one-row signature and note; thinking as `Thought · N words`); running, failed and spotter-flagged calls stay whole, and any folded item opens on a click or `⏎`.
 - **TUI calls read like the web client's** (docs/tui.md): a call's intent is its title, then a `› tool(…)` signature laid out at the terminal's width (positional primary arguments, pretty-printer breaking, overlong values pulled below) by a port of the web's signature rules and tests; content arguments sit captioned under it; result headers read `result (raw)` / `result (distilled, kept 3 of 412 lines)`.
 - **TUI header and session drawer** (docs/tui.md): a header row carries the session's name and title, a context meter, cost, and a **session** button with a hover state; the right sidebar becomes a drawer, closed by default at any width and opened by the button or `Tab`, laid out as labelled rows the way the web client's drawer is; the transcript takes the full width, and the status row drops its token readout.

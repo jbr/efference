@@ -74,6 +74,14 @@ impl<'a> super::InteractiveState<'a> {
                 // row clears it, and the pin releases with it.
                 self.viewport.strip_hovered =
                     row == terminal_height.saturating_sub(2 + self.viewport.input_height);
+                self.viewport.strip_hover = if self.viewport.strip_hovered {
+                    self.strip_hits
+                        .iter()
+                        .find(|(x0, x1, _)| column >= *x0 && column < *x1)
+                        .map(|(_, _, verb)| *verb)
+                } else {
+                    None
+                };
 
                 if !in_drawer && row >= top && row < content_bottom {
                     // Mouse in main content area
@@ -305,6 +313,21 @@ impl<'a> super::InteractiveState<'a> {
         self.dirty = true;
     }
 
+    /// The focus action of the item whose rows hold document row `row`: its first
+    /// entry's, the first action recorded inside it.
+    fn item_focus_target(&self, row: u16) -> Option<usize> {
+        let &(start, end) = self
+            .render_cache
+            .items
+            .iter()
+            .find(|(start, end)| row >= *start && row < *end)?;
+        self.render_cache.actions.iter().position(|(rect, action)| {
+            rect.y >= start
+                && rect.y < end
+                && matches!(action, TuiAction::FocusEntry(_) | TuiAction::ExpandItem(_))
+        })
+    }
+
     pub(super) fn handle_click(&mut self) {
         // Handle any clicked action from previous iteration
         if let Some(click_pos) = self.viewport.clicked_position.take() {
@@ -347,6 +370,20 @@ impl<'a> super::InteractiveState<'a> {
                     self.render_cache.actions.get(index),
                     Some((_, TuiAction::FocusEntry(_)))
                 )
+            {
+                self.composing = false;
+                self.viewport.keyboard_cursor = super::state::KeyboardCursor::Focused {
+                    action_index: index,
+                };
+                self.block_menu_focus = 0;
+                return;
+            }
+
+            // A click on any row of a call or thinking item focuses it, as a click
+            // anywhere on the web client's call card acts on the call — not only a
+            // click on its first row (docs/tui.md).
+            if hit.is_none()
+                && let Some(index) = self.item_focus_target(click_pos.y)
             {
                 self.composing = false;
                 self.viewport.keyboard_cursor = super::state::KeyboardCursor::Focused {
@@ -480,7 +517,17 @@ impl<'a> super::InteractiveState<'a> {
                     })
                     .unwrap_or(false);
 
-                let now_hovering = content_hover || scrollbar_hover;
+                // A strip item, the header's button, and a call or thinking item
+                // are all click targets, so the pointer says so over them.
+                let chrome_hover =
+                    self.viewport.strip_hover.is_some() || self.viewport.header_hovered.is_some();
+                let item_hover = self.viewport.cursor_pos.is_some_and(|pos| {
+                    self.render_cache
+                        .items
+                        .iter()
+                        .any(|(start, end)| pos.y >= *start && pos.y < *end)
+                });
+                let now_hovering = content_hover || scrollbar_hover || chrome_hover || item_hover;
 
                 // Update cursor only if state changed
                 if self.loading.was_loading || now_hovering != self.ui.is_hovering || scrollbar_drag

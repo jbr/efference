@@ -352,3 +352,17 @@ fn derive_secondary_accent_fg(settings: &ThemeSettings, accent: Color) -> Color 
 fn derive_code_block_border(settings: &ThemeSettings, muted_fg: Color) -> Color {
     settings.guide.unwrap_or(muted_fg)
 }
+
+/// `bg` moved `t` of the way toward `fg` (0.0 = `bg`, 1.0 = `fg`): a surface a step
+/// off the background in whichever direction the theme's text lies, so a hover
+/// tint reads on light themes and dark alike. Indexed colors, which have no
+/// components to mix, come back unchanged.
+pub(super) fn mix(bg: RatatuiColor, fg: RatatuiColor, t: f32) -> RatatuiColor {
+    match (bg, fg) {
+        (RatatuiColor::Rgb(br, bgc, bb), RatatuiColor::Rgb(fr, fgc, fb)) => {
+            let lerp = |a: u8, b: u8| (a as f32 + (b as f32 - a as f32) * t).round() as u8;
+            RatatuiColor::Rgb(lerp(br, fr), lerp(bgc, fgc), lerp(bb, fb))
+        }
+        _ => bg,
+    }
+}

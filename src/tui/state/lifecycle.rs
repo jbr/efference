@@ -48,6 +48,7 @@ impl<'a> InteractiveState<'a> {
                 cached_layout: None,
                 last_viewport_height: 0,
                 strip_hovered: false,
+                strip_hover: None,
                 scrollbar_hovered: false,
                 scrollbar_dragging: false,
                 keyboard_cursor: KeyboardCursor::VirtualTop,
@@ -66,6 +67,7 @@ impl<'a> InteractiveState<'a> {
             },
             render_cache: RenderCache {
                 actions: Vec::new(),
+                items: Vec::new(),
             },
             layout: LayoutState {
                 pos: Position::default(),

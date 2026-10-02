@@ -277,6 +277,9 @@ pub(super) struct ViewportState {
     /// row; a pointer that leaves the terminal entirely sends no event, and the pin
     /// then persists until keyboard focus or another move resolves it.
     pub strip_hovered: bool,
+    /// The strip item under the pointer, which draws its hover surface. Held by
+    /// verb, as the strip's focus and clicks are.
+    pub strip_hover: Option<super::control_strip::StripVerb>,
     /// Scrollbar hover/drag state
     pub scrollbar_hovered: bool,
     pub scrollbar_dragging: bool,
@@ -321,6 +324,10 @@ pub(super) struct ViewportState {
 #[derive(Debug)]
 pub(super) struct RenderCache<'a> {
     pub actions: Vec<(Rect, TuiAction<'a>)>,
+    /// Each foldable item's document rows `[start, end)` as of the last walk — a
+    /// call with what reads as part of it, a thinking block. The item under the
+    /// pointer is tinted, and a click anywhere in one focuses it (docs/tui.md).
+    pub items: Vec<(u16, u16)>,
 }
 
 /// A stager activation in progress (docs/tui.md): the control-strip verb whose
