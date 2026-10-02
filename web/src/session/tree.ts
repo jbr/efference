@@ -100,7 +100,9 @@ export interface CallNode {
   issued: LogEntry;
   /** The spotter's verdict on this call, once one is logged. */
   spot: Spot | null;
-  /** The `ToolResult` entry, once the call has returned. */
+  /** The `ToolResult` entry, once the call has returned. A result captured
+   * `Pending` is replaced here by a copy carrying its `ResultVerdict`'s wire
+   * when that lands. */
   result: LogEntry | null;
   /** What the dispatch cost and how it came out, once logged. Folded onto the
    * call rather than rendered as a leaf for the same reason `Spot` is: it is a
@@ -142,6 +144,10 @@ export function buildTree(entries: LogEntry[]): TranscriptNode[] {
   const byCall = new Map<CallId, CallNode>();
   // Calls drawn as questions: their results are replies, not tool results.
   const askCalls = new Map<CallId, AskQuestion>();
+  // Results captured `Pending`, by their seq: the slots a `ResultVerdict` may
+  // still decide. The first non-Pending verdict removes its entry, so a later
+  // one is ignored (mirrors `result_verdicts`, src/log/curation.rs).
+  const pending = new Map<Seq, CallNode>();
   const seqs: Seq[] = [];
   let title: string | null = null;
 
@@ -240,7 +246,34 @@ export function buildTree(entries: LogEntry[]): TranscriptNode[] {
         continue;
       }
       const owner = byCall.get(p.ToolResult.call_id);
-      if (owner !== undefined) owner.result = entry;
+      if (owner !== undefined) {
+        owner.result = entry;
+        if (p.ToolResult.wire === "Pending") pending.set(entry.seq, owner);
+      }
+      continue;
+    }
+
+    // A verdict re-renders the slot of the result it names: the slot holds a
+    // copy of that result's entry carrying the verdict's wire and line counts,
+    // at the result's own seq (the address its images and whole content
+    // resolve through). Never a leaf. One naming a result that was not
+    // Pending has no slot in `pending` and is ignored.
+    if ("ResultVerdict" in p) {
+      const owner = pending.get(p.ResultVerdict.for_result);
+      const held = owner?.result?.payload;
+      if (
+        owner !== undefined &&
+        held !== undefined &&
+        "ToolResult" in held &&
+        p.ResultVerdict.wire !== "Pending"
+      ) {
+        const { distillate, wire } = p.ResultVerdict;
+        const result = { ...held.ToolResult, wire, distillate };
+        // A Pending result carries no counts of its own; absent stays absent.
+        if (distillate === undefined) delete result.distillate;
+        owner.result = { ...owner.result!, payload: { ToolResult: result } };
+        pending.delete(p.ResultVerdict.for_result);
+      }
       continue;
     }
 

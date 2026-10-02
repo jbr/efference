@@ -276,3 +276,25 @@ test("the daemon's distillate counts win over a prefix that holds none of the ke
   const local = resultRender("read", prefix, wire);
   expect(local.sizeLabel).toBe("kept 0 of 3 lines");
 });
+
+test("a pending result shows its raw output under an awaiting-triage label", () => {
+  const r = resultRender("bash", ok("a\nb\nc"), "Pending");
+  expect(r.stateWord).toBe("awaiting triage");
+  expect(r.sizeLabel).toBeNull();
+  expect(r.body).toEqual({ kind: "text", text: "a\nb\nc" });
+});
+
+test("the verdict's wire re-renders the same raw with kept counts", () => {
+  const content = "a\nb\nc\nd";
+  const pending = resultRender("bash", ok(content), "Pending");
+  const decided = resultRender(
+    "bash",
+    ok(content),
+    { Distilled: { keep: { Ranges: [[1, 2]] }, note: "n" } },
+    { total_lines: 4, kept_lines: 2 },
+  );
+  expect(pending.stateWord).toBe("awaiting triage");
+  expect(decided.stateWord).toBe("distilled");
+  expect(decided.sizeLabel).toBe("kept 2 of 4 lines");
+  expect(decided.note).toBe("n");
+});

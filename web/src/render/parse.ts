@@ -22,6 +22,7 @@ export interface DiffLine {
 /** The wire state's one-word header label (the TriageFailed case carries
  * its why). */
 export const wireLabel = (wire: WireState) => {
+  if (wire === "Pending") return "awaiting triage";
   if (wire === "Raw") return "raw";
   if (wire === "Elided") return "elided";
   if ("Distilled" in wire) return "distilled";
@@ -236,11 +237,13 @@ export function resultRender(
    * it. Optional so a client of an older daemon still renders. */
   distillate?: DistillateLines,
 ): ResultRender {
-  if (wire === "Raw") {
+  if (wire === "Raw" || wire === "Pending") {
     const body = richRaw(tool, raw);
     return {
       body,
-      stateWord: "raw",
+      // A pending result is its raw output, labelled as not yet triaged
+      // (the TUI's "awaiting triage"); the verdict re-renders the slot.
+      stateWord: wire === "Pending" ? "awaiting triage" : "raw",
       sizeLabel: null,
       note: null,
       elisionLabel: elisionLabel(raw),

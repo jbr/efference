@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { KICKOFF_SOURCE, type LogEntry, type RawResult } from "../api/types.ts";
+import {
+  KICKOFF_SOURCE,
+  type LogEntry,
+  type RawResult,
+  type WireState,
+} from "../api/types.ts";
 import {
   buildTree,
   upstreamFailureWhy,
@@ -108,6 +113,68 @@ describe("the transcript tree", () => {
     expect(call.callId).toBe("toolu_a");
     expect(call.spot?.stance).toBe("clear");
     expect(call.result?.seq).toBe(3);
+  });
+
+  describe("result verdicts", () => {
+    const distilled: WireState = {
+      Distilled: { keep: { Ranges: [[1, 2]] }, note: "n" },
+    };
+    const issued = assistant(1, { calls: [{ id: "a", name: "bash" }] });
+    const pending = entry(2, {
+      ToolResult: { call_id: "a", raw, wire: "Pending" },
+    });
+    const verdict = (seq: number, forResult: number, wire: WireState) =>
+      entry(seq, {
+        ResultVerdict: {
+          for_result: forResult,
+          wire,
+          ...(typeof wire === "object" && "Distilled" in wire
+            ? { distillate: { total_lines: 40, kept_lines: 2 } }
+            : {}),
+        },
+      });
+    const wireOf = (call: CallNode) => {
+      const p = call.result?.payload;
+      return p !== undefined && "ToolResult" in p ? p.ToolResult : null;
+    };
+
+    it("leaves a pending result pending until its verdict lands", () => {
+      const nodes = buildTree([issued, pending]);
+      expect(wireOf(onlyCall(nodes))?.wire).toBe("Pending");
+    });
+
+    it("folds the verdict onto the result's slot, never as a leaf", () => {
+      const nodes = buildTree([issued, pending, verdict(3, 2, distilled)]);
+      expect(nodes).toHaveLength(1);
+      const call = onlyCall(nodes);
+      expect(call.result?.seq).toBe(2);
+      expect(wireOf(call)?.wire).toEqual(distilled);
+      expect(wireOf(call)?.distillate).toEqual({
+        total_lines: 40,
+        kept_lines: 2,
+      });
+    });
+
+    it("keeps the first verdict", () => {
+      const nodes = buildTree([
+        issued,
+        pending,
+        verdict(3, 2, distilled),
+        verdict(4, 2, "Elided"),
+      ]);
+      expect(wireOf(onlyCall(nodes))?.wire).toEqual(distilled);
+    });
+
+    it("ignores a Pending verdict, and a verdict for a decided result", () => {
+      const direct = entry(2, {
+        ToolResult: { call_id: "a", raw, wire: "Raw" },
+      });
+      const nodes = buildTree([issued, direct, verdict(3, 2, "Elided")]);
+      expect(nodes).toHaveLength(1);
+      expect(wireOf(onlyCall(nodes))?.wire).toBe("Raw");
+      const still = buildTree([issued, pending, verdict(3, 2, "Pending")]);
+      expect(wireOf(onlyCall(still))?.wire).toBe("Pending");
+    });
   });
 
   it("attaches tool telemetry to the call it names, never as a leaf", () => {

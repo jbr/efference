@@ -122,9 +122,10 @@ export interface WireViewText {
 /** The wire-projected view of a tool result — what the model saw (minus the
  * `[seq]` addressing prefix), mirroring `tool_result_block`'s per-state
  * dispatch. `null` when the wire state is `Raw`: raw *is* the view, and the
- * caller needs no toggle. */
+ * caller needs no toggle. A `Pending` result has no wire view yet; its raw
+ * is all there is. */
 export function wireView(raw: RawResult, wire: WireState): WireViewText | null {
-  if (wire === "Raw") return null;
+  if (wire === "Raw" || wire === "Pending") return null;
   if (wire === "Elided") return { text: "[elided]", isError: false };
   if ("Distilled" in wire) {
     return {

@@ -8,7 +8,7 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
-- **Results are on the log before their triage** (docs/redaction-fork.md): a call's result is appended as soon as the call returns, awaiting its verdict, and the verdict lands later as its own entry. The main agent sees nothing until then; the TUI shows the result with an "awaiting triage" label and re-renders it when the verdict arrives; a session that stops mid-gate keeps its results on disk.
+- **Results are on the log before their triage** (docs/redaction-fork.md): a call's result is appended as soon as the call returns, awaiting its verdict, and the verdict lands later as its own entry. The main agent sees nothing until then; the TUI and the web client show the result with an "awaiting triage" label and re-renders it when the verdict arrives; a session that stops mid-gate keeps its results on disk.
 - **TUI centred column** (docs/tui.md): on terminals wider than 112 columns the transcript, strip, and composer share a centred column, as the web client's page does.
 - **TUI consolidation marks read like the web client's** (docs/tui.md): `⊙ consolidated through #n · N entries` between rules with the summary rendered as markdown, and the resolved `consolidate` call collapsed to its name instead of repeating the summary.
 - **TUI hover affordances** (docs/tui.md): a call or thinking item tints as one card under the pointer and a click anywhere on it focuses it; control-strip items lift under the pointer; the pointer becomes a hand over every click target.

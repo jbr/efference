@@ -71,6 +71,19 @@ export type Payload =
         distillate?: DistillateLines;
       };
     }
+  | {
+      /** The decision for a result captured as `Pending` (docs/redaction-fork.md
+       * "Capture, then verdict"). The tree folds it onto the result's slot;
+       * it is never an item of its own. */
+      ResultVerdict: {
+        /** The seq of the `ToolResult` this decides. */
+        for_result: Seq;
+        wire: WireState;
+        /** The line arithmetic of a `Distilled` wire, against the result's
+         * whole content — the same keys a directly-logged result carries. */
+        distillate?: DistillateLines;
+      };
+    }
   | { Mark: Mark }
   | { Triage: Triage }
   | { Ambient: Notification }
@@ -199,6 +212,9 @@ export interface ResultImage {
 }
 
 export type WireState =
+  /** Captured, triage not yet decided: the result is its raw output until a
+   * `ResultVerdict` names it (docs/redaction-fork.md). */
+  | "Pending"
   | "Raw"
   | { Distilled: { keep: Keep; note: string | null } }
   | "Elided"

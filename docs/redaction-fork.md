@@ -413,9 +413,9 @@ Why not keep-all: `WireState` is fixed once, so an uncurated result would sit in
 cached prefix for the rest of the session with every later turn paying for it.
 
 A hold is visible to the operator — the `stall` topic, the TUI's status bar, the web
-composer's readout — but the results themselves are not yet, because nothing is on the
-log until the gate decides their wire form (backlog/result-before-triage.md). A host
-that stops during a hold loses them as it would mid-tool.
+composer's readout — and so are the held results: they are on the log as `Pending`
+(see "Capture, then verdict" above), which the TUI and the web client render with an
+"awaiting triage" label. A host that stops during a hold leaves them on disk.
 
 **Every attempt leaves a breadcrumb.** The `Triage` records the attempts it took in
 `retries` — the model's unparseable `retain` input, the tool it called instead, or the

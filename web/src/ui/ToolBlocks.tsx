@@ -17,6 +17,7 @@ import type {
   WireState,
 } from "../api/types.ts";
 import { Code, NumberedCode, StreamingCode } from "./Code.tsx";
+import { PinnedBox } from "./TranscriptItems.tsx";
 import {
   hasStructure,
   partialInput,
@@ -296,7 +297,15 @@ export function ResultBlock({
       <div className="kind result-head">
         {parts.length > 0 ? `result (${label})` : "result"}
       </div>
-      <ResultBody body={body} />
+      {wire === "Pending" ? (
+        // Raw output while triage runs, in the bounded box a running
+        // command's tail uses; the verdict replaces it with the triaged body.
+        <PinnedBox grows={shown.content} className="t-output">
+          <ResultBody body={body} />
+        </PinnedBox>
+      ) : (
+        <ResultBody body={body} />
+      )}
       {(shown.images ?? []).map((image, idx) => (
         // The view carries only the reference (docs/control-api.md); the
         // bytes come from the image route, cookie-authed and

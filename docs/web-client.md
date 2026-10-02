@@ -413,6 +413,18 @@ entry`, which is the right default — a new variant is visible rather than
 silently dropped — but it means every additive log variant needs a decision here.
 `ToolTelemetry` shipped without one and put a raw JSON block after every call.
 
+A result captured before its triage decides (`wire: "Pending"`,
+[redaction-fork.md](redaction-fork.md) "Capture, then verdict") renders its raw
+output at once, in the pinned bounded box a running command's tail uses, under a
+`result (awaiting triage)` head. The `ResultVerdict` entry that decides it is
+folded in `buildTree` onto the slot of the result it names — the slot's entry
+becomes a copy of the `ToolResult` carrying the verdict's wire and line counts,
+at the result's own seq — so the slot re-renders as the triaged result and the
+verdict is never an item of its own. The first non-Pending verdict for a Pending
+result decides it; a verdict naming a result that was not Pending is ignored. The
+fold runs over the entry list, so the initial window and live frames take the
+same path; results logged directly with their final wire render as before.
+
 A result's images render below its body as plain `<img>` elements pointed at
 `GET /v1/log/{seq}/images/{idx}` ([control-api.md](control-api.md)): the entry
 view carries only `{media_type, width, height}` — the attributes that hold the
@@ -941,8 +953,8 @@ triaged result will land — under a `running · N lines` header, in the pinned
 box (`PinnedBox`, `ui/TranscriptItems.tsx`): a fixed height holding the newest
 line, the top fading only while lines are scrolled out above. The triaged
 result replaces it when it commits. Output whose call has not committed yet
-still peeks as its own item below the tail. Tools that do not stream show
-nothing until triage finishes (backlog/result-before-triage.md).
+still peeks as its own item below the tail. Tools that do not stream show their
+result once the call returns, while it awaits triage (below).
 Background-process output is the drawer's tasks section.
 
 **Streaming flows into the committed state without a change of shape.** A call
