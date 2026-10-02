@@ -11,3 +11,4 @@
 # (eval/spotter/README.md); the curated cases.jsonl is committed.
 eval/spotter/candidates.jsonl
 eval/spotter/results*.jsonl
+/tmp/
