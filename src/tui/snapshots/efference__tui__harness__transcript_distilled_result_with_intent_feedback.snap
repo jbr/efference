@@ -8,9 +8,9 @@ expression: self.render()
  0 │ efference                                                             session  │
  1 │ ┃ Look around.                                                                 │
  2 │                                                                                │
- 3 │   ❯ bash · ls                                                                  │
- 4 │   list the directory                                                           │
- 5 │   ✓ 3 lines                                                                    │
+ 3 │   list the directory                                                           │
+ 4 │   › ls                                                                         │
+ 5 │   result                                                                       │
  6 │ ╭──────────────╮                                                               │
  7 │ │ 1 Cargo.toml │                                                               │
  8 │ │ 2 src        │                                                               │

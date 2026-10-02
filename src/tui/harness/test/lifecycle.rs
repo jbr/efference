@@ -64,7 +64,7 @@ fn a_prose_less_generation_phase_is_visible() {
     // The call is named as soon as it opens, before any argument bytes arrive.
     play.calling(0, "toolu_live", "bash");
     assert!(
-        play.find("calling bash").is_some(),
+        play.find("› bash").is_some(),
         "the pending call is named before its input streams"
     );
     assert!(

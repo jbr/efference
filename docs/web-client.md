@@ -611,10 +611,10 @@ shows the prompt in place of the name too, and a multi-line command's first line
 the representation there, so a body would show the change twice; the inspector's args
 tab (`callArgs`, a separate computation) is where the whole input is asked for.
 
-**The TUI renders an older form of this** (`src/tui/projection/tools.rs`'s `call_view`:
-a 48-character inline budget, elided arguments as shapes like `505 lines`, no
-positional arguments, no width-aware layout). The two clients are not mirrors; the
-TUI takes this form up when it is worked on.
+**The TUI renders the same form** (`src/tui/projection/signature.rs`, a port of
+`signature.ts` and `signatureLayout.ts` with their test cases; docs/tui.md). Chips and
+their width allowance are not ported yet, and a streaming call's `…` sits inside the
+parentheses there rather than after them.
 
 Tool **descriptions** stay out of the transcript. They are static per tool, so
 in a run with 55 `ferritin.*` calls the same sentence would render 55 times,

@@ -8,8 +8,8 @@ expression: self.render()
  0 │ efference                                                             session  │
    │^                                                                               │
  1 │                                                                                │
- 2 │   ❯ bash · ls src/tui                                                          │
- 3 │▌  ✓ 20 lines  ▸ raw                                                           ╻│
+ 2 │   › ls src/tui                                                                 │
+ 3 │▌  result (raw)  ▸ raw                                                         ╻│
  4 │▌╭─────────────────────╮                                                       ┃│
  5 │▌│ render_module_01.rs │                                                       ┃│
  6 │▌│ render_module_02.rs │                                                       ┃│

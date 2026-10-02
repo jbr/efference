@@ -10,15 +10,15 @@ expression: self.render()
  2 │                                                                                │
  3 │   Reading both.                                                                │
  4 │                                                                                │
- 5 │   ❯ read_image(path: "mock.png")                                               │
- 6 │   ✓ 1 line                                                                     │
+ 5 │   › read_image("mock.png")                                                     │
+ 6 │   result (raw)                                                                 │
  7 │ ╭─────────────────────────────────────────╮                                    │
  8 │ │ 1200×1140 image/png, 1763 visual tokens │                                    │
  9 │ ╰─────────────────────────────────────────╯                                    │
 10 │                                                                                │
 11 │                                                                                │
-12 │   ❯ read_image(long_edge: 2576, path: "mock-header.png")                       │
-13 │   ✓ 1 line                                                                     │
+12 │   › read_image("mock-header.png", long_edge: 2576)                             │
+13 │   result (raw)                                                                 │
 14 │ ╭─────────────────────────────────────────╮                                    │
 15 │ │ 2576×2449 image/png, 8092 visual tokens │                                    │
 16 │ ╰─────────────────────────────────────────╯                                    │

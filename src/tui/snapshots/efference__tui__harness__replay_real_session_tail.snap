@@ -12,10 +12,10 @@ expression: self.render()
  4 │                                                                                │
  5 │ ┃ Create an empty file at /tmp/efference-smoke-test using the touch command.   │
  6 │                                                                                │
- 7 │   ❯ bash · touch /tmp/efference-smoke-test                                     │
+ 7 │   › touch /tmp/efference-smoke-test                                            │
  8 │   spotter gated · Writing to `/tmp` is outside the repository and outside the  │
  9 │   allowed scope; keep artifacts and tests within the working directory.        │
-10 │   ✓ kept 0 of 1 line                                                           │
+10 │   result (distilled, kept 0 of 1 line)                                         │
 11 │   ⟢ touch command succeeded with no output; file created at                    │
 12 │   /tmp/efference-smoke-test                                                    │
 13 │                                                                                │

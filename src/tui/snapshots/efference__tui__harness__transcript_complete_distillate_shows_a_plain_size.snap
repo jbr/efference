@@ -8,8 +8,8 @@ expression: self.render()
  0 │ efference                                                             session  │
  1 │ ┃ Tail the log.                                                                │
  2 │                                                                                │
- 3 │   ❯ bash · tail -n 3 e.log                                                     │
- 4 │   ✓ 3 lines                                                                    │
+ 3 │   › tail -n 3 e.log                                                            │
+ 4 │   result                                                                       │
  5 │ ╭──────────────╮                                                               │
  6 │ │ 1 line one   │                                                               │
  7 │ │ 2 line two   │                                                               │

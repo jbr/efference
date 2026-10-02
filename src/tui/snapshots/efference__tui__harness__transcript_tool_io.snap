@@ -10,8 +10,8 @@ expression: self.render()
  2 │                                                                                │
  3 │   On it.                                                                       │
  4 │                                                                                │
- 5 │   ❯ bash · grep -n 'fn project' src/project.rs                                 │
- 6 │   ✓ 2 lines                                                                    │
+ 5 │   › grep -n 'fn project' src/project.rs                                        │
+ 6 │   result (raw)                                                                 │
  7 │ ╭──────────────────────────────────────────────────────────╮                   │
  8 │ │ 12:pub fn project(log: &[LogEntry]) -> Vec<ApiMessage> { │                   │
  9 │ │ 88:    fn project_coalesces_tool_results() {             │                   │

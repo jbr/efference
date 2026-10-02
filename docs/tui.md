@@ -43,8 +43,8 @@ The projection emits a **flat** sequence of `Entry { kind, marker, header, block
 | `UserMessage` | what I said | accent gutter down the left margin |
 | `AssistantMessage` | what the agent said | the unmarked default voice |
 | `Thinking` | what the agent thought | `✻ thinking`, dimmed register |
-| `ToolCall` | what the agent did | `❯ tool(arg: …)` |
-| `ToolResult` | what came back | `✓`/`✗` and a size gloss, over the output |
+| `ToolCall` | what the agent did | its intent as a title, then `› tool(arg, key: …)` |
+| `ToolResult` | what came back | `result (…)` naming the wire state, `✗` on failure, over the output |
 | `RunningTool` | what is coming back | `⋯ running · N lines`, over the peek |
 | `Annotation` | what the *harness* says about a call | dim line, no marker |
 
@@ -53,18 +53,21 @@ A tool result occupies a `role: user` block on the wire, but it is the harness s
 A call and its result are **separate entries**, because they are separate blocks on the wire and a result is not part of a call's content. They read as one unit anyway: a `ToolResult` and an `Annotation` do not open a new visual group (`EntryKind::starts_group`), so no blank line separates a call from what the spotter made of it or from what came back.
 
 ```
-❯ bash · echo hi
+Say hello.
+› echo hi
 spotter cleared · reads only, inside the tree
-✓ 2 lines
+result (raw)
 line one
 line two
 ```
 
-The result has no `result #N` / `[seq]` label — it is obviously the response to the call directly above it. Its header row carries the three things that have nowhere else to live: the `✓`/`✗` status (on the entry that actually failed, rather than on the call, which is a call regardless of how it went), the size of what follows, and the `· raw` flag when the distilled default is being overridden. It is also the focus target the raw/distilled verb hangs off.
+The result has no `#N` / `[seq]` label — it is obviously the response to the call directly above it. Its header row is worded as the web client's result head is: `result`, then in parentheses the wire state and what was kept — `result (raw)` (a natural raw result, or the operator's flip), `result (distilled, kept 3 of 412 lines)`, a bare `result` when triage kept every line (the view is everything the model saw), plus `1 image`, the control channel's `16 KiB of 256 KiB shown` cut, and `error`. A failed result also carries the red `✗` marker (on the entry that actually failed, rather than on the call, which is a call regardless of how it went); one that went fine carries none. The header is also the focus target the raw/distilled verb hangs off.
 
-**A call renders as a pseudocode signature** — `read(paths: ["src/log.rs"])`, `check_inbox()`, `write(path: "src/main.rs", contents: 505 lines)`. The form is stated once, canonically, in [web-client.md](web-client.md) ("A call reads as a signature"); `projection/tools.rs`'s `call_view` / `call_spans` are the TUI's half of it, and the two clients are meant to agree. In terminal terms: the `<server>` segment of a namespaced name is a dimmed span ahead of the dot (the `open_world_hint` distinction), the tool name is `FunctionName`, keys are `FieldName`, an inline value is `InlineCode`, and a shape standing in for an elided value is dimmed. A value that did not fit renders as a labelled block under the head — highlighted by the call's declared `language` or the extension of the path it names — except for the edit family, whose diff below *is* the representation. What the signature replaced was a per-tool table over five known tools plus a pretty-printed JSON envelope for everything else, which is how `read(path: "src/log.rs")` came to render as a four-line JSON block.
+**A call reads as its intent, then a pseudocode signature** — the intent as the entry's title row (what it was for, before what it was), then `› read("src/log.rs", from_line: 3)`, `› check_inbox()`, `› write("src/main.rs", overwrite: true)`, or for `bash` the command itself after the prompt (`› cargo test`, tagged `background after 600s` when it asked to be). A call without an intent starts at its signature. The form is stated once, canonically, in [web-client.md](web-client.md) ("A call reads as a signature"); `projection/signature.rs` is a port of the web's `signature.ts` and `signatureLayout.ts`, with their test cases, so the two clients agree: a built-in's primary argument reads positionally (an array spread), a multi-line value is content and renders below the signature captioned by its key (`Captioned`, the caption directly on its block), and the edit family emits no bodies because its diff *is* the representation.
 
-`call_spans` takes `(name, &Value, arriving)` rather than a `ToolCall` so the live block renders through it too, from the settled half of a partly-arrived input; `arriving` puts the `…` *inside* the parentheses, so a signature never reads as closed before it is.
+The signature is a `DocumentNode::Signature` laid out at **render** time, where the width is known: a call that fits is one line; one that does not breaks after `(` with an argument per row, and a collection that still does not fit breaks inside the same way; a lone scalar argument stays hugged by its parentheses; a single value longer than three lines at that width leaves the signature and renders beneath it under its key. A value that runs past the width wraps hung under its own row's start. In terminal terms: the `<server>` segment is a dimmed span ahead of the dot (the `open_world_hint` distinction), the tool name is `FunctionName`, keys are `FieldName`, values and a `bash` command are `InlineCode`, the prompt is the accent colour.
+
+The live block renders through the same `call_view` from the settled half of a partly-arrived input, so a call fills in rather than changing shape when it commits; the intent fills in as the title while it streams, and `arriving` puts the `…` *inside* the parentheses, so a signature never reads as closed before it is (the web appends it after the `)`).
 
 One divergence from the web form, forced by position rather than chosen: **call bodies are not truncated** — the web budgets them at 12 lines, and the TUI's budget for every body is the whole of it (below). Arguments read in **sorted key order** on both clients alike: a committed call's input is a `serde_json::Value` whose object keys sort (the wire's byte stability depends on it — [log-and-projection.md](log-and-projection.md)), and the web parses the same sorted log text.
 
@@ -177,7 +180,7 @@ Four rules:
 
 - **In full, never truncated.** The point is to watch the work as it happens, so everything that has arrived is shown.
 - **Parsed as a prefix, and what may be claimed from it is decided positionally.** A tool call's input mid-stream is a *prefix* of a JSON document, and it is read as one (`jiter`, `PartialMode`): a loose parse keeps the trailing incomplete value, a strict parse drops it, and the one key the first has and the second lacks is exactly the value still in flight. Within an object **only the last key can be incomplete** — the bytes for the earlier ones arrived and closed — so the settled pairs may back an identity claim and the in-flight one may not. `{"path":"src/api.rs","contents":"use st` renders `write(path: "src/api.rs", …)` (true — `path` closed) with the contents as arriving content; a half-arrived `"src/api.r` stays out, because `write(path: "src/api.r")` is well-formed, plausible, and false. Before any pair closes there is nothing to claim and the raw bytes are shown, which claim nothing. See `projection/partial.rs`.
-- **One renderer with the committed call.** The settled arguments go through `call_spans`, which a committed call also renders through, so the header *fills in* as bytes land rather than changing shape at commit. The in-flight value never reaches it. A string value with newlines in it renders as a code block in the language of whatever settled path names it, which is why the identifying argument arriving first is what makes this worth doing — and is why the streamed contents must be *decoded* (a raw JSON input is a single line, its newlines `\n` escapes).
+- **One renderer with the committed call.** The settled arguments go through `call_view` and `call_blocks`, which a committed call also renders through, so the header *fills in* as bytes land rather than changing shape at commit. The in-flight value never reaches it. A string value with newlines in it renders as a code block in the language of whatever settled path names it, which is why the identifying argument arriving first is what makes this worth doing — and is why the streamed contents must be *decoded* (a raw JSON input is a single line, its newlines `\n` escapes).
 - **Prose supersedes the calling lines**, and a committed turn clears them: prose is its own evidence of progress, and the committed entry is the record — which the transcript keeps (below). Prose leads a response's tool calls on the wire, so this drops nothing a turn is still emitting. Thinking is no longer superseded by either.
 
 Without this the window between submitting a turn and the first prose token was blank, and blank is indistinguishable from a hung harness — a risk of interrupting or abandoning a live session on false signal. The daemon's own log has the matching fix: it prints `(generating — turn N)` before blocking on the model, so its last line is no longer a stale `idle`, which reads as *finished*.
@@ -353,7 +356,7 @@ The approval gate is ephemeral control state: the daemon gates *after* appending
 The gate renders **inline at the pending call**, not as a bottom banner. Because the loop appends the assistant `tool_use` before it gates and one tool call runs per turn, the pending call is always the tail call with no result. `project` receives `pending_call` + `pending_reason` and emits the gate beside that call, where the result will land — the spotter's reason (when it gated via the spotter — read from the `Spot` audit entry, see [permissions](permissions.md)), then the affordance carrying the `⏸`:
 
 ```
-❯ bash · rm -rf /tmp/scratch
+› rm -rf /tmp/scratch
 spotter gated · deletes outside the git tree — not reversible
 ⏸ awaiting your approval  ·  ⏎ approve · type to redirect
 ```
@@ -363,7 +366,7 @@ Reading order is call → what the spotter made of it → what to do, so the aff
 When the held call is a session's `sessions__approve`, the gate shows the child's move in place of the id ([permissions](permissions.md)): the logged call line stays as the model wrote it, and an annotation below names which child and what it is holding. The chain joins with `→` when the approval passed through more than one session.
 
 ```
-❯ sessions.approve(call_id: "toolu_c", session: "child")
+› sessions.approve(call_id: "toolu_c", session: "child")
 ⤷ acting on child's bash · rm -rf ./build — clean the build tree
 ⏸ awaiting your approval  ·  ⏎ approve · type to redirect
 ```

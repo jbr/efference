@@ -8,7 +8,7 @@ expression: self.render()
  0 │ efference                                                             session  │
  1 │ ┃ run it                                                                       │
  2 │                                                                                │
- 3 │   ❯ bash · cargo test                                                          │
+ 3 │   › cargo test                                                                 │
  4 │                                                                                │
  5 │                                                                                │
  6 │                                                                                │

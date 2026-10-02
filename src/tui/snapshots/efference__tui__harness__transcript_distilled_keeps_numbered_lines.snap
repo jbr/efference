@@ -10,8 +10,8 @@ expression: self.render()
  2 │                                                                                │
  3 │   Running them.                                                                │
  4 │                                                                                │
- 5 │   ❯ bash · cargo test                                                          │
- 6 │   ✓ kept 3 of 40 lines                                                         │
+ 5 │   › cargo test                                                                 │
+ 6 │   result (distilled, kept 3 of 40 lines)                                       │
  7 │ ╭────────────────────────────────────────────────────╮                         │
  8 │ │  7 test tui::wrap::breaks_on_whitespace ... FAILED │                         │
  9 │ │ 22 test tui::gutter::numbers_are_dimmed ... FAILED │                         │

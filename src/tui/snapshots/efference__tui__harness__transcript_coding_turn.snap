@@ -20,8 +20,8 @@ expression: self.render()
 12 │                                                                                │
 13 │   Let me confirm the current signature before we touch it.                     │
 14 │                                                                                │
-15 │   ❯ bash · grep -n 'fn project' src/project.rs                                 │
-16 │   ✓ 2 lines                                                                    │
+15 │   › grep -n 'fn project' src/project.rs                                        │
+16 │   result (raw)                                                                 │
 17 │ ╭──────────────────────────────────────────────────────────╮                   │
 18 │ │ 12:pub fn project(log: &[LogEntry]) -> Vec<ApiMessage> { │                   │
 19 │ │ 88:    fn project_coalesces_tool_results() {             │                   │

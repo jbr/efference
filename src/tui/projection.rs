@@ -400,33 +400,31 @@ pub(crate) fn tail_nodes(
 /// `✗` of a failed result belongs to the result, and the `⏸` of a held call belongs
 /// to the gate affordance — both are entries of their own (docs/tui.md).
 fn call_entry(call: &ToolCall) -> DocumentNode<'static> {
-    let (header, mut overflow) = call_spans(&call.name, &call.input, false);
-    // The call's `intent` (docs/tools.md) leads the body: the operator reads why
+    let view = signature::call_view(&call.name, &call.input);
+    // The call's `intent` (docs/tools.md) is its title: the operator reads why
     // before what, and it is the one part of a structured call that isn't inferable
     // from the arguments. Absent on calls from before the field, and on any the model
-    // omitted, so it is additive rather than a row that is usually empty.
-    if let Some(intent) = call.intent() {
-        overflow.insert(
-            0,
-            DocumentNode::paragraph(vec![Span {
-                text: intent.to_string().into(),
-                style: SpanStyle::Comment,
-                action: None,
-            }]),
-        );
+    // omitted, and then the signature is the entry's first row.
+    let intent = view.intent.clone();
+    let blocks = call_blocks(view, false);
+    match intent {
+        Some(intent) => {
+            DocumentNode::headed_entry(EntryKind::ToolCall, None, intent_header(&intent), blocks)
+        }
+        None => DocumentNode::entry(EntryKind::ToolCall, blocks),
     }
-    DocumentNode::headed_entry(EntryKind::ToolCall, Some(prompt_span()), header, overflow)
 }
 
 /// What the call returned, as its own entry, rendered **whole** — no line budget
 /// reaches it, because the operator can't perceive what the agent is dealing with
 /// through a summary of it (docs/positions.md).
 ///
-/// The header is a quiet status row: `✓`/`✗` and the size of what came back, plus
-/// the `· raw` flag when the distilled default is being overridden. It carries the
-/// status marker (the entry that failed is the result, not the call, which is a call
-/// regardless of how it went), it is the focus target the raw/distilled verb hangs
-/// off, and it says how much output follows before the reader scrolls it.
+/// The header is a quiet `result (…)` row naming the wire state and how much was
+/// kept, as the web client's result head does: `raw` (natural, or the operator's
+/// flip), `distilled, kept 3 of 412 lines`, nothing when triage kept every line. It
+/// carries the `✗` marker when the call failed (the entry that failed is the result,
+/// not the call, which is a call regardless of how it went), and it is the focus
+/// target the raw/distilled verb hangs off.
 ///
 /// Keyed by `call_id`, which is what carries the raw flip across the re-projection
 /// every streamed token triggers.
@@ -443,7 +441,6 @@ fn result_entry(
     // forced-raw view passes a synthetic `Raw` wire so `result_body` gives it the
     // same rich tool-specific rendering (diff/read) a natural raw result gets.
     let show_raw = view.is_raw(call_id);
-    let overriding = show_raw && !matches!(wire, WireState::Raw);
 
     // A distilled result is built from the *verdict*, not from the wire's rendering
     // of it: the wire says "these lines came from there" as `@@ lines a-b @@` headers
@@ -460,42 +457,52 @@ fn result_entry(
     //
     // The note still shows either way: it is the distiller's account of the output,
     // and it is true regardless of which form of the output is on screen.
-    let (mut body, size) = match wire {
+    // The header names the state and the size, the way the web client's result head
+    // does (docs/web-client.md): `result (distilled, kept 3 of 412 lines)`. When
+    // triage kept every line both go quiet and the head is a bare `result` — the
+    // view is everything the model saw (a third of real results), and nothing may
+    // imply the operator sees less.
+    let mut parts: Vec<String> = Vec::new();
+    let mut body = match wire {
         WireState::Distilled(verdict) if !show_raw => {
             let distillate = crate::project::distillate(&raw.content, &verdict.keep);
             let kept = distillate.numbered_lines();
             let total = distillate.shown.len() + distillate.dropped;
-            let body = distilled_body(call.name.as_str(), raw, &kept);
-            // When triage kept everything, "kept n of n lines" says only that
-            // triage ran — an implementation detail (a third of real results).
-            // The view is everything the model saw, so the header presents it
-            // like any whole result: the size of what follows and nothing else.
-            let size = if kept.len() == total {
-                line_count(&body)
-            } else {
+            if kept.len() != total {
+                parts.push("distilled".to_string());
                 // Verb first, so which number is which is unambiguous — `3 of
                 // 412` alone could be read either way round.
-                format!(
+                parts.push(format!(
                     "kept {} of {total} line{}",
                     kept.len(),
                     if total == 1 { "" } else { "s" }
-                )
-            };
-            (body, size)
+                ));
+            }
+            distilled_body(call.name.as_str(), raw, &kept)
         }
         _ => {
             // A forced-raw view renders the full output, so it passes a synthetic
             // `Raw` wire to get the tool-specific rendering (diff / read) a natural
             // raw result gets.
             let (content, effective_wire) = if show_raw {
+                parts.push("raw".to_string());
                 (raw.content.clone(), &WireState::Raw)
             } else {
                 let content = match wire {
-                    WireState::Raw => raw.content.clone(),
-                    WireState::Elided => "[elided]".to_string(),
+                    WireState::Raw => {
+                        parts.push("raw".to_string());
+                        raw.content.clone()
+                    }
+                    WireState::Elided => {
+                        parts.push("elided".to_string());
+                        "[elided]".to_string()
+                    }
                     // The same message the agent sees on the wire; the operator can
                     // flip to raw — the withheld output is still in the log.
-                    WireState::TriageFailed { why } => crate::project::render_triage_failure(why),
+                    WireState::TriageFailed { why } => {
+                        parts.push(format!("triage failed: {why}"));
+                        crate::project::render_triage_failure(why)
+                    }
                     // Unreachable: a distilled result is handled above unless it is
                     // being shown raw, which this branch already excluded.
                     WireState::Distilled(verdict) => {
@@ -504,9 +511,7 @@ fn result_entry(
                 };
                 (content, wire)
             };
-            let body = result_body(Some(call.name.as_str()), raw, effective_wire, &content);
-            let size = line_count(&body);
-            (body, size)
+            result_body(Some(call.name.as_str()), raw, effective_wire, &content)
         }
     };
 
@@ -524,48 +529,46 @@ fn result_entry(
             image.height,
         ));
     }
-    let size = match raw.images.len() {
-        0 => size,
-        1 => format!("{size} · 1 image"),
-        n => format!("{size} · {n} images"),
-    };
+    match raw.images.len() {
+        0 => {}
+        1 => parts.push("1 image".to_string()),
+        n => parts.push(format!("{n} images")),
+    }
     // The control channel truncates an oversized result's `content` on the window
     // and stream views and tags what it cut (docs/control-api.md). Name the cut in
     // the header: a body that stops mid-output would otherwise read as the whole of
     // what the tool returned. The rest lives at `GET /log/:seq`, which this client
     // does not fetch today — the marker says what is on screen, not that it can be
     // completed.
-    let size = match raw.content_elided {
-        None => size,
-        Some(elision) => format!(
-            "{size} · {} of {} shown",
+    if let Some(elision) = raw.content_elided {
+        parts.push(format!(
+            "{} of {} shown",
             byte_size(elision.kept_bytes),
             byte_size(elision.total_bytes)
-        ),
+        ));
+    }
+    // A withheld-output result is surfaced as an error even when the tool itself
+    // succeeded — the same signal the agent gets on the wire.
+    let failed = raw.is_error || matches!(wire, WireState::TriageFailed { .. });
+    if raw.is_error {
+        parts.push("error".to_string());
+    }
+    let label = if parts.is_empty() {
+        "result".to_string()
+    } else {
+        format!("result ({})", parts.join(", "))
     };
-
-    let mut header = vec![Span {
-        text: size.into(),
+    let header = vec![Span {
+        text: label.into(),
         style: SpanStyle::Comment,
         action: None,
     }];
-    // Flag that the leaner distilled default is being overridden, so the human
-    // sees they're on raw.
-    if overriding {
-        header.push(Span {
-            text: " · raw".into(),
-            style: SpanStyle::Comment,
-            action: None,
-        });
-    }
 
     DocumentNode::headed_entry(
         EntryKind::ToolResult,
-        // A withheld-output result is surfaced as an error even when the tool
-        // itself succeeded — the same signal the agent gets on the wire.
-        Some(status_span(
-            raw.is_error || matches!(wire, WireState::TriageFailed { .. }),
-        )),
+        // Only a failure is marked: the `✗` reads at a glance in the gutter, and a
+        // result that went fine needs no glyph to say so.
+        failed.then(|| status_span(true)),
         header,
         body,
     )
@@ -656,6 +659,7 @@ mod ask;
 mod incremental;
 mod nodes;
 mod partial;
+pub(crate) mod signature;
 mod tail;
 mod tools;
 

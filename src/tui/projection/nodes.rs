@@ -65,12 +65,12 @@ fn attachment_spans(attachments: &[crate::attachments::Arrival]) -> Vec<Span<'st
 /// streamed fragment. What may be claimed from a prefix is decided positionally; see
 /// [`calling_tool_blocks`] and `projection/partial.rs`.
 pub(in crate::tui) fn live_call_entry(call: &LiveCall) -> DocumentNode<'static> {
-    let blocks = calling_tool_blocks(&call.name, &call.input).unwrap_or_else(|| {
+    let entry = calling_tool_entry(&call.name, &call.input).unwrap_or_else(|| {
         // Nothing structural has arrived yet (`{"pa`). Dimmed lines, not a `code_block`:
         // raw characters claim nothing, which is what makes showing them safe, and a box
         // would claim this is a finished thing to read rather than bytes still arriving.
         let mut lines = vec![dim_span(&format!(
-            "❯ calling {}…",
+            "› {}…",
             crate::mcp::display_name(&call.name)
         ))];
         lines.extend(
@@ -78,50 +78,45 @@ pub(in crate::tui) fn live_call_entry(call: &LiveCall) -> DocumentNode<'static> 
                 .lines()
                 .map(|line| dim_span(&format!("  {line}"))),
         );
-        vec![DocumentNode::styled_lines(lines)]
+        DocumentNode::entry(
+            EntryKind::AssistantMessage,
+            vec![DocumentNode::styled_lines(lines)],
+        )
     });
-    DocumentNode::entry(EntryKind::AssistantMessage, blocks).keyed(call.call_id.clone())
+    entry.keyed(call.call_id.clone())
 }
 
 /// A tool call rendered from the part of its input that has arrived (docs/tui.md).
 /// `None` before anything structural has arrived, so the caller falls back to the raw
 /// characters.
 ///
-/// The settled half goes through [`call_spans`], the same function a *committed* call
-/// renders through, so the header fills in as bytes land rather than changing shape at
-/// commit. The in-flight value never reaches it: [`call_spans`] produces an identity
-/// claim (`write(path: "src/api.rs")`), and only a value whose closing quote has
-/// arrived may back one (`projection/partial.rs`).
-fn calling_tool_blocks(name: &str, input: &str) -> Option<Vec<DocumentNode<'static>>> {
+/// The settled half goes through [`call_blocks`], the same function a *committed*
+/// call renders through, so the call fills in as bytes land rather than changing
+/// shape at commit: the intent is the title, then the signature, then the bodies.
+/// The in-flight value never reaches the signature: it produces an identity claim
+/// (`write("src/api.rs")`), and only a value whose closing quote has arrived may back
+/// one (`projection/partial.rs`) — except the intent, which claims nothing about what
+/// the call touches and fills in as the title while it streams.
+fn calling_tool_entry(name: &str, input: &str) -> Option<DocumentNode<'static>> {
     let parsed = PartialInput::parse(input)?;
     if parsed.settled.is_empty() && parsed.arriving.is_none() {
         return None;
     }
-
-    let mut header = vec![dim_span("❯ calling ")];
     let settled = parsed.settled_value();
-    let (signature, mut blocks) = call_spans(name, &settled, true);
-    header.extend(signature);
-
-    // The call's `intent` (docs/tools.md) leads the body, as it does on a committed
-    // call: the operator reads why before what. It settles early — it is emitted
-    // first — so it is readable for the whole time the arguments are still arriving,
-    // which is exactly the window this render exists for.
-    if let Some(intent) = settled
-        .get(crate::tools::INTENT)
-        .and_then(serde_json::Value::as_str)
-        .map(str::trim)
-        .filter(|intent| !intent.is_empty())
-    {
-        blocks.insert(0, DocumentNode::styled_lines([dim_span(intent)]));
-    }
-    blocks.insert(0, DocumentNode::lines(vec![header]));
+    let view = super::signature::call_view(name, &settled);
+    let arriving = parsed.arriving_text();
+    let intent = view.intent.clone().or_else(|| {
+        arriving
+            .filter(|(key, _)| *key == crate::tools::INTENT)
+            .map(|(_, text)| text.to_string())
+    });
+    let mut blocks = call_blocks(view, true);
 
     // The value still arriving, as content. A string with newlines in it is the
     // case worth rendering as a block — a file's contents, a heredoc, a message
     // body — and it is rendered in the language of whatever settled path names it,
     // which is why the path arriving first is what makes this worth doing.
-    if let Some((key, text)) = parsed.arriving_text() {
+    if let Some((key, text)) = arriving.filter(|(key, _)| *key != crate::tools::INTENT) {
         if text.contains('\n') {
             blocks.push(code_block(streaming_lang(&parsed), text));
         } else {
@@ -130,7 +125,15 @@ fn calling_tool_blocks(name: &str, input: &str) -> Option<Vec<DocumentNode<'stat
             ))]));
         }
     }
-    Some(blocks)
+    Some(match intent {
+        Some(intent) => DocumentNode::headed_entry(
+            EntryKind::AssistantMessage,
+            None,
+            intent_header(&intent),
+            blocks,
+        ),
+        None => DocumentNode::entry(EntryKind::AssistantMessage, blocks),
+    })
 }
 
 /// The language to highlight an in-flight value in: taken from whichever settled

@@ -10,17 +10,17 @@ expression: self.render()
  2 │                                                                                │
  3 │   Editing.                                                                     │
  4 │                                                                                │
- 5 │   ❯ edit(file_path: "CHANGELOG.md", operation: "insert_after", anchor: 69      │
- 6 │   chars)                                                                       │
- 7 │   ✓ 4 lines                                                                    │
- 8 │   @@ -12,3 +12,4 @@                                                            │
- 9 │    - In-process MCP tools (fs-mcp, semantic-edit-mcp).                         │
-10 │   +- `read` tool line-range support in `fs-mcp`.                               │
-11 │    - Interactive TUI (`efference tui`).                                        │
-12 │                                                                                │
-13 │                                                                                │
-14 │                                                                                │
-15 │                                                                                │
+ 5 │   › edit(                                                                      │
+ 6 │       "CHANGELOG.md",                                                          │
+ 7 │       anchor: "- In-process MCP tools (fs-mcp, semantic-edit-mcp) reusing the  │
+ 8 │       enums.",                                                                 │
+ 9 │       operation: "insert_after"                                                │
+10 │     )                                                                          │
+11 │   result                                                                       │
+12 │   @@ -12,3 +12,4 @@                                                            │
+13 │    - In-process MCP tools (fs-mcp, semantic-edit-mcp).                         │
+14 │   +- `read` tool line-range support in `fs-mcp`.                               │
+15 │    - Interactive TUI (`efference tui`).                                        │
 16 │                                                                                │
 17 │                                                                                │
 18 │                                                                                │

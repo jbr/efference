@@ -9,7 +9,7 @@ expression: self.render()
    │^                                                                               │
  1 │ ┃ Run the suite.                                                               │
  2 │                                                                                │
- 3 │   ❯ bash · cargo test                                                          │
+ 3 │   › cargo test                                                                 │
  4 │▌  ⋯ running · 15 lines  ▸ peek                                                 │
  5 │▌    line 1                                                                     │
  6 │▌    line 2                                                                     │

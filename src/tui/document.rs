@@ -210,6 +210,25 @@ pub enum DocumentNode<'a> {
         nodes: Vec<DocumentNode<'a>>,
     },
 
+    /// A block with a caption line directly above it and no blank row between —
+    /// a call argument's key over its content (docs/tui.md), the way the web
+    /// client's `<dt>` sits on its `<dd>`.
+    Captioned {
+        caption: Vec<Span<'a>>,
+        nodes: Vec<DocumentNode<'a>>,
+    },
+
+    /// A call's signature (docs/tui.md, after docs/web-client.md "A call reads as a
+    /// signature"): laid out at render time, where the width is known, so it breaks
+    /// across rows the way the web client's does. Arguments too long to sit in it
+    /// at that width render beneath it as labelled text. `arriving` marks a call
+    /// whose input is still streaming: the `…` goes inside the parentheses, so the
+    /// signature never reads as closed before it is.
+    Signature {
+        view: Box<crate::tui::projection::signature::CallView>,
+        arriving: bool,
+    },
+
     /// One transcript entry: the top-level unit of the TUI's transcript, and its
     /// unit of focus (docs/tui.md). The transcript is a **flat** sequence of these,
     /// one per top-level thing on the wire — a message, a thinking block, a tool
@@ -476,6 +495,14 @@ impl<'a> DocumentNode<'a> {
         DocumentNode::NumberedCode {
             lang: lang.map(Into::into),
             lines,
+        }
+    }
+
+    /// A call's signature node (see [`DocumentNode::Signature`]).
+    pub fn signature(view: crate::tui::projection::signature::CallView, arriving: bool) -> Self {
+        DocumentNode::Signature {
+            view: Box::new(view),
+            arriving,
         }
     }
 

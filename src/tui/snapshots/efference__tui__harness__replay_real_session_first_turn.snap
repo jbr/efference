@@ -9,8 +9,8 @@ expression: self.render()
  1 │ ┃ Please run ls to list the files in the current directory, then tell me how  ╻│
  2 │ ┃ many entries there are.                                                     ┃│
  3 │                                                                               ┃│
- 4 │   ❯ bash · ls                                                                 ┃│
- 5 │   ✓ 13 lines                                                                  ┃│
+ 4 │   › ls                                                                        ┃│
+ 5 │   result                                                                      ┃│
  6 │ ╭───────────────────╮                                                         ┃│
  7 │ │  1 assets         │                                                         ┃│
  8 │ │  2 backlog        │                                                         ┃│

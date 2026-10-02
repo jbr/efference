@@ -8,8 +8,8 @@ expression: self.render()
  0 │ efference                                                             session  │
  1 │   Reading the file:                                                            │
  2 │                                                                               ╻│
- 3 │   ❯ read(paths: ["src/tui/state.rs"])                                         ┃│
- 4 │   ✓ 4 lines                                                                   ┃│
+ 3 │   › read("src/tui/state.rs")                                                  ┃│
+ 4 │   result (raw)                                                                ┃│
  5 │ ╭───────────────────────────────❬rust❭─╮                                      ┃│
  6 │ │ pub struct InteractiveState<'a> {    │                                      ┃│
  7 │ │     pub document: DocumentState<'a>, │                                      ┃│
@@ -20,8 +20,8 @@ expression: self.render()
 12 │                                                                               ┃│
 13 │   Now searching:                                                              ┃│
 14 │                                                                               ┃│
-15 │   ❯ search(path: "src", pattern: "fn project")                                ┃│
-16 │   ✓ 3 lines                                                                   ┃│
+15 │   › search("fn project", path: "src")                                         ┃│
+16 │   result (raw)                                                                ┃│
 17 │ ╭──────────────────────────────────────────────────────────────────────────╮  ┃│
 18 │ │ Found 1 match for pattern "fn project":                                  │  ┃│
 19 │ │                                                                          │  ┃│
@@ -31,8 +31,8 @@ expression: self.render()
 23 │                                                                               ┃│
 24 │   And listing:                                                                ┃│
 25 │                                                                               ┃│
-26 │   ❯ list(path: "src/tui")                                                     ┃│
-27 │   ✓ 6 lines                                                                   ┃│
+26 │   › list("src/tui")                                                           ┃│
+27 │   result (raw)                                                                ┃│
 28 │ ╭────────────────────────────────╮                                            ┃│
 29 │ │ All paths relative to src/tui: │                                            ┃│
 30 │ │                                │                                            ┃│

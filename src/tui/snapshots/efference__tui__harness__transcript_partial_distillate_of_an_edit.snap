@@ -10,8 +10,8 @@ expression: self.render()
  2 │                                                                                │
  3 │   Editing.                                                                     │
  4 │                                                                                │
- 5 │   ❯ edit(file_path: "CHANGELOG.md", operation: "insert_after")                 │
- 6 │   ✓ kept 1 of 7 lines                                                          │
+ 5 │   › edit("CHANGELOG.md", operation: "insert_after")                            │
+ 6 │   result (distilled, kept 1 of 7 lines)                                        │
  7 │ ╭─────────────────────────────────────────────────────╮                        │
  8 │ │ 1 Applied insert after — the file has been updated. │                        │
  9 │ ╰─────────────────────────────────────────────────────╯                        │

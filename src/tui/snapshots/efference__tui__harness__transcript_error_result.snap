@@ -10,8 +10,8 @@ expression: self.render()
  2 │                                                                                │
  3 │   Running the full suite now.                                                  │
  4 │                                                                                │
- 5 │   ❯ bash · cargo test                                                          │
- 6 │   ✗ 2 lines                                                                    │
+ 5 │   › cargo test                                                                 │
+ 6 │   ✗ result (raw, error)                                                        │
  7 │ ╭──────────────────────────────────────────────────────────────────────────╮   │
  8 │ │ error[E0599]: no method named `reproject` found for struct               │   │
  9 │ │ `InteractiveState`                                                       │   │

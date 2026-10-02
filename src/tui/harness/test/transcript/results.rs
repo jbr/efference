@@ -165,8 +165,9 @@ fn transcript_read_image_call() {
         "the call renders as a signature, not a JSON envelope:\n{frame}"
     );
     assert!(
-        frame.contains("path: \"mock.png\"") && frame.contains("path: \"mock-header.png\""),
-        "each path inline on its call signature:\n{frame}"
+        frame.contains("read_image(\"mock.png\"")
+            && frame.contains("read_image(\"mock-header.png\""),
+        "each path reads positionally on its call signature:\n{frame}"
     );
     assert!(
         frame.contains("long_edge: 2576"),
@@ -257,8 +258,8 @@ fn transcript_complete_distillate_shows_a_plain_size() {
     let frame = play.render();
     play.snapshot("transcript_complete_distillate_shows_a_plain_size");
     assert!(
-        frame.contains("✓ 3 lines"),
-        "a kept-everything result sizes like any whole one:\n{frame}"
+        frame.contains("result") && !frame.contains("result ("),
+        "a kept-everything result is a bare `result`, like any whole one:\n{frame}"
     );
     assert!(
         !frame.contains("of 3"),
@@ -401,11 +402,10 @@ fn a_complete_distillate_keeps_its_per_tool_rendering() {
         frame.contains("+- `read` tool line-range support"),
         "the added line renders as a diff line:\n{frame}"
     );
-    // The call signature names the file and what was done to it; the anchor is a
-    // shape, not a fragment of text the diff below shows in full anyway.
+    // The call signature names the file, positionally, and what was done to it.
     assert!(
-        frame.contains(r#"edit(file_path: "CHANGELOG.md", operation: "insert_after""#),
-        "the header names the file and the operation:\n{frame}"
+        frame.contains(r#""CHANGELOG.md","#) && frame.contains(r#"operation: "insert_after""#),
+        "the signature names the file and the operation:\n{frame}"
     );
 }
 

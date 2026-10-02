@@ -10,20 +10,20 @@ expression: self.render()
  2 │                                                                                │
  3 │   Here's the reformatted version.                                              │
  4 │                                                                                │
- 5 │   ❯ edit(anchor: "fn is_empty", content: "…", file_path: "src/tui/composer.rs" │
- 6 │   , operation: "replace")                                                      │
- 7 │   ✓ 7 lines                                                                    │
- 8 │        /// True when the buffer holds no non-whitespace text.                  │
- 9 │        pub(super) fn is_empty(&self) -> bool {                                 │
-10 │   -        self.lines.iter().all(|l| l.iter().all(|c| c.is_whitespace()))      │
-11 │   +        self.lines                                                          │
-12 │   +            .iter()                                                         │
-13 │   +            .all(|l| l.iter().all(|c| c.is_whitespace()))                   │
-14 │        }                                                                       │
-15 │                                                                                │
-16 │                                                                                │
-17 │                                                                                │
-18 │                                                                                │
+ 5 │   › edit(                                                                      │
+ 6 │       "src/tui/composer.rs",                                                   │
+ 7 │       anchor: "fn is_empty",                                                   │
+ 8 │       content: "…",                                                            │
+ 9 │       operation: "replace"                                                     │
+10 │     )                                                                          │
+11 │   result (raw)                                                                 │
+12 │        /// True when the buffer holds no non-whitespace text.                  │
+13 │        pub(super) fn is_empty(&self) -> bool {                                 │
+14 │   -        self.lines.iter().all(|l| l.iter().all(|c| c.is_whitespace()))      │
+15 │   +        self.lines                                                          │
+16 │   +            .iter()                                                         │
+17 │   +            .all(|l| l.iter().all(|c| c.is_whitespace()))                   │
+18 │        }                                                                       │
 19 │                                                                                │
 20 │                                                                                │
 21 │                                                                                │

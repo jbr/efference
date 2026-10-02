@@ -10,8 +10,8 @@ expression: self.render()
  2 │                                                                                │
  3 │   Editing.                                                                     │
  4 │                                                                                │
- 5 │   ❯ edit(file_path: "CHANGELOG.md", operation: "insert_after")                 │
- 6 │   ✓ kept 3 of 7 lines                                                          │
+ 5 │   › edit("CHANGELOG.md", operation: "insert_after")                            │
+ 6 │   result (distilled, kept 3 of 7 lines)                                        │
  7 │   @@ -12,3 +12,4 @@                                                            │
  8 │    - In-process MCP tools (fs-mcp, semantic-edit-mcp).                         │
  9 │   +- `read` tool line-range support in `fs-mcp`.                               │

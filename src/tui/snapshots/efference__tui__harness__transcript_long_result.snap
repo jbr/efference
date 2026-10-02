@@ -9,8 +9,8 @@ expression: self.render()
  1 │                                                                               ╻│
  2 │   Here's the directory.                                                       ┃│
  3 │                                                                               ┃│
- 4 │   ❯ bash · ls src/tui                                                         ┃│
- 5 │   ✓ 20 lines                                                                  ┃│
+ 4 │   › ls src/tui                                                                ┃│
+ 5 │   result (raw)                                                                ┃│
  6 │ ╭─────────────────────╮                                                       ┃│
  7 │ │ render_module_01.rs │                                                       ┃│
  8 │ │ render_module_02.rs │                                                       ┃│

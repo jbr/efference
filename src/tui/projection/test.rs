@@ -98,14 +98,30 @@ fn projects_a_flat_sequence_of_entries() {
         ]
     );
 
-    // The call header names the tool, with no role/seq label.
-    let header = header_of(&doc, EntryKind::ToolCall);
-    assert!(header.contains("bash"), "tool name in header: {header}");
-    assert!(!header.contains("result #"), "no result label: {header}");
-    assert!(!header.contains("wants to run"), "call already ran");
+    // The call leads with its signature (no intent here, so no title row): a bash
+    // call is its command, after the prompt, with no role/seq label.
+    let signature = doc
+        .nodes
+        .iter()
+        .find_map(|n| match n {
+            DocumentNode::Entry { kind, blocks, .. } if *kind == EntryKind::ToolCall => {
+                match blocks.first() {
+                    Some(DocumentNode::Signature { view, .. }) => Some(view.clone()),
+                    _ => None,
+                }
+            }
+            _ => None,
+        })
+        .expect("the call's first block is its signature");
+    assert_eq!(signature.tool, "bash");
+    assert_eq!(signature.target.as_deref(), Some("echo hi"));
+    assert!(
+        header_of(&doc, EntryKind::ToolCall).is_empty(),
+        "no title without an intent"
+    );
 
-    // The result entry says how much came back, and holds it.
-    assert_eq!(header_of(&doc, EntryKind::ToolResult), "2 lines");
+    // The result entry names its wire state, and holds the output.
+    assert_eq!(header_of(&doc, EntryKind::ToolResult), "result (raw)");
     let code = collect_code(&doc.nodes);
     assert!(code.contains("line one"), "result body present: {code}");
 }
@@ -184,7 +200,9 @@ fn a_failed_result_is_marked_on_the_result_not_the_call() {
             })
             .unwrap_or_default()
     };
-    assert_eq!(marker(EntryKind::ToolCall), "❯ ");
+    // The call carries no marker at all: the signature's prompt is part of it, and a
+    // call is a call regardless of how it went.
+    assert_eq!(marker(EntryKind::ToolCall), "");
     assert_eq!(marker(EntryKind::ToolResult), "✗ ");
 }
 
@@ -376,9 +394,11 @@ fn renders_transcript_to_a_test_backend() {
     }
     assert!(screen.contains("hello there"), "user prompt on screen");
     assert!(screen.contains("plan"), "assistant prose on screen");
-    // The exchange header names the tool; its result body sits in the (short,
-    // shown) exchange below it.
-    assert!(screen.contains("bash"), "exchange header on screen");
+    // The call reads as its command after the prompt; its result sits below it.
+    assert!(
+        screen.contains("› echo hi"),
+        "the call's signature on screen"
+    );
 }
 
 /// All paragraph/header span text in the tree — for content that isn't a code
@@ -474,7 +494,7 @@ fn an_elided_result_names_the_elision_in_its_header() {
         Gate::default(),
         &[],
     );
-    assert_eq!(header_of(&plain, EntryKind::ToolResult), "2 lines");
+    assert_eq!(header_of(&plain, EntryKind::ToolResult), "result (raw)");
 }
 
 /// The kickoff is part of the session's opening, like the preamble: it is not

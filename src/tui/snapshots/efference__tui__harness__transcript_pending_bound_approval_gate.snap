@@ -10,7 +10,7 @@ expression: self.render()
  2 │                                                                                │
  3 │   Asking the child to remove it.                                               │
  4 │                                                                                │
- 5 │   ❯ sessions.approve(call_id: "toolu_child_gate", session: "child")            │
+ 5 │   › sessions.approve(call_id: "toolu_child_gate", session: "child")            │
  6 │   ⤷ acting on child's bash · rm -rf ./build — clean the build tree             │
  7 │   ⏸ awaiting your approval  ·  ⏎ approve · type to redirect                    │
  8 │                                                                                │

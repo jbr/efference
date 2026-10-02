@@ -10,7 +10,7 @@ expression: self.render()
  2 │                                                                                │
  3 │   Writing it now.                                                              │
  4 │                                                                                │
- 5 │   ❯ bash                                                                       │
+ 5 │                                                                                │
  6 │ ╭────────────────❬bash❭─╮                                                      │
  7 │ │ cat > VERSION <<'EOF' │                                                      │
  8 │ │ 0.1.0                 │                                                      │
@@ -18,7 +18,7 @@ expression: self.render()
 10 │ │ EOF                   │                                                      │
 11 │ ╰───────────────────────╯                                                      │
 12 │                                                                                │
-13 │   ✓ 1 line                                                                     │
+13 │   result (raw)                                                                 │
 14 │ ╭──╮                                                                           │
 15 │ ╰──╯                                                                           │
 16 │                                                                                │

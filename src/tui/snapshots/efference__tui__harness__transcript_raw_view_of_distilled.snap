@@ -10,8 +10,8 @@ expression: self.render()
  2 │                                                                                │
  3 │   Pulling the tree, then I'll distill it.                                      │
  4 │                                                                                │
- 5 │   ❯ bash · cargo tree                                                          │
- 6 │   ✓ 4 lines · raw                                                              │
+ 5 │   › cargo tree                                                                 │
+ 6 │   result (raw)                                                                 │
  7 │ ╭────────────────────╮                                                         │
  8 │ │ efference v0.1.0   │                                                         │
  9 │ │ ├── anyhow v1.0.86 │                                                         │

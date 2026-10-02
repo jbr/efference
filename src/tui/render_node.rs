@@ -347,6 +347,28 @@ impl<'a> InteractiveState<'a> {
                 }
             }
 
+            DocumentNode::Captioned { caption, nodes } => {
+                self.layout.pos.x = self.layout.indent;
+                self.draw_blockquote_markers(buf);
+                for span in caption {
+                    self.render_span(span, buf);
+                }
+                self.layout.pos.y += 1;
+                for (idx, child) in nodes.iter().enumerate() {
+                    if idx > 0 {
+                        self.layout.pos.y += 1;
+                    }
+                    let saved_path = self.layout.node_path;
+                    self.layout.node_path.push(idx);
+                    self.render_node(child, buf);
+                    self.layout.node_path = saved_path;
+                }
+            }
+
+            DocumentNode::Signature { view, arriving } => {
+                self.render_signature(view, *arriving, buf);
+            }
+
             DocumentNode::Entry {
                 kind,
                 marker,
@@ -467,6 +489,89 @@ impl<'a> InteractiveState<'a> {
                 }
                 // Transparent container: no additional spacing
             }
+        }
+    }
+
+    /// A call's signature at the width it has (docs/tui.md): the prompt, then the
+    /// rows [`layout_signature`] breaks it into, continuation rows hung under the
+    /// first. An argument too long to sit in it at this width renders beneath it,
+    /// under its key, as a plain block.
+    fn render_signature(
+        &mut self,
+        view: &crate::tui::projection::signature::CallView,
+        arriving: bool,
+        buf: &mut Buffer,
+    ) {
+        use crate::tui::projection::signature::{TokenKind, layout_signature};
+        const PROMPT: &str = "› ";
+        let hang = PROMPT.chars().count() as u16;
+        let columns = self
+            .layout
+            .area
+            .width
+            .saturating_sub(self.layout.indent + hang + 1) as usize;
+        let layout = layout_signature(view, Some(columns));
+        let span = |text: &str, style: SpanStyle| Span {
+            text: text.to_string().into(),
+            style,
+            action: None,
+        };
+        let row_count = layout.rows.len();
+        for (i, row) in layout.rows.iter().enumerate() {
+            self.layout.pos.x = self.layout.indent;
+            self.draw_blockquote_markers(buf);
+            if i == 0 {
+                self.render_span(&span(PROMPT, SpanStyle::UserAccent), buf);
+            } else {
+                self.layout.pos.x += hang;
+            }
+            self.layout.pos.x += row.indent as u16;
+            // A value that runs past the width wraps hung under its own row's start,
+            // the way the web client's indented row wraps, not back at the margin.
+            let outer_indent = std::mem::replace(&mut self.layout.indent, self.layout.pos.x);
+            let last_row = i + 1 == row_count;
+            let token_count = row.tokens.len();
+            for (j, token) in row.tokens.iter().enumerate() {
+                // Still arriving: the ellipsis goes inside the closing paren.
+                if arriving && last_row && !layout.shell && j + 1 == token_count {
+                    let after_open = j > 0 && row.tokens[j - 1].text == "(";
+                    let ellipsis = if after_open { "…" } else { ", …" };
+                    self.render_span(&span(ellipsis, SpanStyle::Comment), buf);
+                }
+                let (text, style) = match token.kind {
+                    TokenKind::Server => (token.text.clone(), SpanStyle::Comment),
+                    TokenKind::Tool => (token.text.clone(), SpanStyle::FunctionName),
+                    TokenKind::Sep => (token.text.clone(), SpanStyle::Punctuation),
+                    TokenKind::Key => (token.text.clone(), SpanStyle::FieldName),
+                    TokenKind::Value | TokenKind::Target => {
+                        (token.text.clone(), SpanStyle::InlineCode)
+                    }
+                    TokenKind::Tag => (format!("  {}", token.text), SpanStyle::Comment),
+                };
+                self.render_span(&span(&text, style), buf);
+            }
+            if arriving && last_row && layout.shell {
+                self.render_span(&span(" …", SpanStyle::Comment), buf);
+            }
+            self.layout.indent = outer_indent;
+            self.layout.pos.y += 1;
+        }
+        for arg in &layout.pulled {
+            self.layout.pos.y += 1;
+            let text = match &arg.value {
+                serde_json::Value::String(text) => text.clone(),
+                other => crate::tui::projection::signature::flat_value(other),
+            };
+            self.render_node(
+                &DocumentNode::Captioned {
+                    caption: vec![span(&arg.key, SpanStyle::Comment)],
+                    nodes: vec![DocumentNode::CodeBlock {
+                        lang: None,
+                        code: text.into(),
+                    }],
+                },
+                buf,
+            );
         }
     }
 }

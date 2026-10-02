@@ -1,51 +1,10 @@
-//! Rendering a tool call and its result — the call signature, diffs, and read markers.
+//! Rendering a tool call and its result — the call's blocks, diffs, and read markers.
+//! What a call's arguments are and how its signature lays out is `signature.rs`.
 
 use std::borrow::Cow;
 
+use super::signature::CallView;
 use super::*;
-
-/// How wide a rendered value may be and still sit inside the signature.
-const INLINE_BUDGET: usize = 48;
-
-/// One argument as it reads inside the signature.
-#[derive(Debug, PartialEq, Eq)]
-pub(in crate::tui) struct SigArg {
-    pub key: String,
-    /// The value (`"serde"`, `4`, `true`) or, when it did not fit, the shape
-    /// standing in for it (`505 lines`, `{3 keys}`).
-    pub text: String,
-    /// True when `text` is a shape rather than the value.
-    pub elided: bool,
-}
-
-/// A value too big for the signature, rendered below it.
-#[derive(Debug, PartialEq, Eq)]
-pub(in crate::tui) struct CallBody {
-    /// The argument this is the value of; `None` for `bash`'s bare command.
-    pub key: Option<String>,
-    pub lang: Option<String>,
-    pub text: String,
-    /// Rendered as prose rather than as a code block: a body that is a message,
-    /// like a hand-off's brief, not a value.
-    pub prose: bool,
-}
-
-/// A call as pseudocode — the shape both clients render (docs/web-client.md,
-/// "A call reads as a signature"; docs/tui.md).
-#[derive(Debug, PartialEq, Eq)]
-pub(in crate::tui) struct CallView {
-    /// The `<server>` half of a namespaced name; `None` for a built-in.
-    pub server: Option<String>,
-    /// The `<tool>` half, which for a built-in is the whole name.
-    pub tool: String,
-    /// The signature's arguments. Empty renders `check_inbox()`; `None` means the
-    /// call renders bare (the `bash` cases).
-    pub args: Option<Vec<SigArg>>,
-    /// `bash`'s single-line command, rendered after the name unquoted. Set only
-    /// when `args` is `None`.
-    pub target: Option<String>,
-    pub bodies: Vec<CallBody>,
-}
 
 /// Mirrors `mcp::display_name`: the namespace boundary is the *first* `__`, so a
 /// server's own `__`-bearing tool name keeps it. A bare built-in name has no server
@@ -57,165 +16,12 @@ pub(in crate::tui) fn split_tool_name(wire_name: &str) -> (Option<&str>, &str) {
     }
 }
 
-/// Every call as a pseudocode signature — total, schema-free, and so correct for a
-/// tool this client has never heard of, which matters because MCP servers are
-/// user-mountable and their argument shapes are arbitrary. The rules, and the
-/// reasoning behind each, are stated once in docs/web-client.md ("A call reads as a
-/// signature"); this is the TUI's half of them (docs/tui.md).
-///
-/// Takes the name and input rather than a [`ToolCall`] so the **live** block can
-/// render through it too, from the settled half of a partly-arrived input
-/// (`projection/partial.rs`). One function for both is what keeps the streaming
-/// header from jumping when the call commits: it fills in, it doesn't change shape.
-pub(in crate::tui) fn call_view(name: &str, input: &serde_json::Value) -> CallView {
-    let (server, tool) = split_tool_name(name);
-    let base = |args, target, bodies| CallView {
-        server: server.map(str::to_string),
-        tool: tool.to_string(),
-        args,
-        target,
-        bodies,
-    };
-    let serde_json::Value::Object(object) = input else {
-        // Not an object at all: nothing to name, so the value itself is the body.
-        return base(
-            Some(Vec::new()),
-            None,
-            vec![CallBody {
-                key: None,
-                lang: Some("json".to_string()),
-                text: pretty(input),
-                prose: false,
-            }],
-        );
-    };
-    let str_arg = |key: &str| object.get(key).and_then(|v| v.as_str());
-
-    // A hand-off's brief is a message to the session that takes over
-    // (docs/tools.md): labelled with whom it is for and read as prose, so it is not
-    // mistaken for the agent addressing the operator.
-    if name == crate::control_tools::HAND_OFF_WIRE_NAME
-        && let Some(brief) = str_arg("brief")
-    {
-        return base(
-            Some(Vec::new()),
-            None,
-            vec![CallBody {
-                key: Some("to the new session".to_string()),
-                lang: None,
-                text: brief.to_string(),
-                prose: true,
-            }],
-        );
-    }
-
-    if name == crate::bash::NAME
-        && let Some(command) = str_arg("command")
-    {
-        return if command.contains('\n') {
-            base(
-                None,
-                None,
-                vec![CallBody {
-                    key: None,
-                    lang: Some("bash".to_string()),
-                    text: command.to_string(),
-                    prose: false,
-                }],
-            )
-        } else {
-            base(None, Some(command.to_string()), Vec::new())
-        };
-    }
-
-    let lang = blob_lang(name, object);
-    let suppress_bodies = is_diff_tool(name);
-    let mut args: Vec<SigArg> = Vec::new();
-    let mut bodies: Vec<CallBody> = Vec::new();
-    for (key, value) in object {
-        // `intent` is already the call's leading line.
-        if key == crate::tools::INTENT {
-            continue;
-        }
-        if let Some(inline) = inline_value(value) {
-            args.push(SigArg {
-                key: key.clone(),
-                text: inline,
-                elided: false,
-            });
-            continue;
-        }
-        args.push(SigArg {
-            key: key.clone(),
-            text: shape_of(value),
-            elided: true,
-        });
-        if suppress_bodies {
-            continue;
-        }
-        bodies.push(match value {
-            serde_json::Value::String(text) => CallBody {
-                key: Some(key.clone()),
-                lang: lang.clone(),
-                text: text.clone(),
-                prose: false,
-            },
-            other => CallBody {
-                key: Some(key.clone()),
-                lang: Some("json".to_string()),
-                text: pretty(other),
-                prose: false,
-            },
-        });
-    }
-    // Inline arguments first — they are the call's identity. Stable, so the input's
-    // own order still shows within each group.
-    args.sort_by_key(|arg| arg.elided);
-    base(Some(args), None, bodies)
-}
-
-/// The value as it reads inside the signature, or `None` when it does not fit:
-/// strings quoted, every other scalar bare, a collection as compact JSON while that
-/// stays inside [`INLINE_BUDGET`].
-fn inline_value(value: &serde_json::Value) -> Option<String> {
-    match value {
-        serde_json::Value::String(text) => (!text.contains('\n')
-            && text.chars().count() <= INLINE_BUDGET)
-            .then(|| serde_json::Value::String(text.clone()).to_string()),
-        serde_json::Value::Null | serde_json::Value::Bool(_) | serde_json::Value::Number(_) => {
-            Some(value.to_string())
-        }
-        collection => {
-            let compact = collection.to_string();
-            (compact.chars().count() <= INLINE_BUDGET).then_some(compact)
-        }
-    }
-}
-
-fn plural(n: usize, noun: &str) -> String {
-    format!("{n} {noun}{}", if n == 1 { "" } else { "s" })
-}
-
-/// What stands in for an elided value: how much of it there is, and of what.
-fn shape_of(value: &serde_json::Value) -> String {
-    match value {
-        serde_json::Value::String(text) => {
-            let lines = text.lines().count();
-            if lines > 1 {
-                plural(lines, "line")
-            } else {
-                plural(text.chars().count(), "char")
-            }
-        }
-        serde_json::Value::Array(items) => format!("[{}]", plural(items.len(), "item")),
-        serde_json::Value::Object(entries) => format!("{{{}}}", plural(entries.len(), "key")),
-        _ => "…".to_string(),
-    }
-}
-
 /// The language a call's string blobs are in: what it declared, else the extension
 /// of the path it operates on.
-fn blob_lang(name: &str, object: &serde_json::Map<String, serde_json::Value>) -> Option<String> {
+pub(in crate::tui) fn blob_lang(
+    name: &str,
+    object: &serde_json::Map<String, serde_json::Value>,
+) -> Option<String> {
     // A bash command is shell whatever file it touches.
     if name == crate::bash::NAME {
         return Some("bash".to_string());
@@ -229,98 +35,39 @@ fn blob_lang(name: &str, object: &serde_json::Map<String, serde_json::Value>) ->
     })
 }
 
-fn pretty(value: &serde_json::Value) -> String {
-    serde_json::to_string_pretty(value).unwrap_or_else(|_| value.to_string())
-}
-
-/// The signature as header spans, plus the blocks that go under it — what both the
-/// committed call entry and the live one render. `arriving` marks the input as still
-/// streaming, which puts the `…` *inside* the parentheses so the signature never
-/// reads as closed before it is.
-pub(in crate::tui) fn call_spans(
-    name: &str,
-    input: &serde_json::Value,
-    arriving: bool,
-) -> (Vec<Span<'static>>, Vec<DocumentNode<'static>>) {
-    let view = call_view(name, input);
-    let punct = |text: &str| Span {
-        text: text.to_string().into(),
-        style: SpanStyle::Punctuation,
-        action: None,
-    };
-    let mut spans = Vec::new();
-    // The server segment is dimmed, and stays a segment of its own: built-in versus
-    // mounted-server is the `open_world_hint` distinction (docs/web-client.md).
-    if let Some(server) = &view.server {
-        spans.push(Span {
-            text: format!("{server}.").into(),
-            style: SpanStyle::Comment,
-            action: None,
-        });
-    }
-    spans.push(inline_code_styled(
-        view.tool.clone(),
-        SpanStyle::FunctionName,
-    ));
-    match &view.args {
-        Some(args) => {
-            spans.push(punct("("));
-            for (idx, arg) in args.iter().enumerate() {
-                if idx > 0 {
-                    spans.push(punct(", "));
-                }
-                spans.push(inline_code_styled(arg.key.clone(), SpanStyle::FieldName));
-                spans.push(punct(": "));
-                spans.push(if arg.elided {
-                    Span {
-                        text: arg.text.clone().into(),
-                        style: SpanStyle::Comment,
-                        action: None,
-                    }
-                } else {
-                    inline_code(arg.text.clone())
-                });
-            }
-            if arriving {
-                if !args.is_empty() {
-                    spans.push(punct(", "));
-                }
-                spans.push(dim_span("…"));
-            }
-            spans.push(punct(")"));
-        }
-        // `bash`: the command reads better as a shell line than as a quoted argument.
-        None => {
-            if let Some(target) = &view.target {
-                spans.push(Span {
-                    text: " · ".into(),
-                    style: SpanStyle::Comment,
-                    action: None,
-                });
-                spans.push(inline_code(target.clone()));
-            }
-            if arriving {
-                spans.push(dim_span("…"));
-            }
-        }
-    }
-
-    let mut blocks = Vec::new();
-    for body in view.bodies {
-        if let Some(key) = body.key {
-            blocks.push(DocumentNode::styled_lines([dim_span(&format!("{key}:"))]));
-        }
-        if body.prose {
-            blocks.extend(markdown(&body.text));
+/// A call as the blocks under its title: the signature (laid out at render time,
+/// `DocumentNode::Signature`), then each argument that is content rather than an
+/// argument, under its key — what both the committed call entry and the live one
+/// render (docs/tui.md). `arriving` marks the input as still streaming.
+pub(in crate::tui) fn call_blocks(view: CallView, arriving: bool) -> Vec<DocumentNode<'static>> {
+    let bodies = view.bodies.clone();
+    let mut blocks = vec![DocumentNode::signature(view, arriving)];
+    for body in bodies {
+        let content = if body.prose {
+            markdown(&body.text)
         } else {
-            blocks.push(code_block(body.lang.as_deref(), &body.text));
+            vec![code_block(body.lang.as_deref(), &body.text)]
+        };
+        match body.key {
+            Some(key) => blocks.push(DocumentNode::Captioned {
+                caption: vec![dim_span(&key)],
+                nodes: content,
+            }),
+            None => blocks.extend(content),
         }
     }
-    (spans, blocks)
+    blocks
 }
 
-#[cfg(test)]
-mod test;
+/// The call's intent as its title row: what it was for, ahead of what it was
+/// (docs/web-client.md, "Detail by recency").
+pub(in crate::tui) fn intent_header(intent: &str) -> Vec<Span<'static>> {
+    vec![Span {
+        text: intent.to_string().into(),
+        style: SpanStyle::Plain,
+        action: None,
+    }]
+}
 
 /// The body shown under a tool-result header. Known tools get a tool-specific
 /// representation of their raw output — an edit tool's `===DIFF===` becomes a

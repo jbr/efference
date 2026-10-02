@@ -35,9 +35,9 @@ pub(super) fn find_node_at_path<'a, 'b>(
         return Some(node);
     }
     match node {
-        DocumentNode::Section { nodes, .. } | DocumentNode::BlockQuote { nodes } => {
-            find_node_at_path(nodes, rest)
-        }
+        DocumentNode::Section { nodes, .. }
+        | DocumentNode::BlockQuote { nodes }
+        | DocumentNode::Captioned { nodes, .. } => find_node_at_path(nodes, rest),
         DocumentNode::Entry { blocks, .. } => find_node_at_path(blocks, rest),
         DocumentNode::List { items, .. } => {
             let (&item_idx, rest) = rest.split_first()?;
@@ -68,9 +68,9 @@ pub(super) fn find_node_at_path_mut<'a, 'b>(
     // Recurse into children
     let remaining_path = &path[1..];
     match &mut nodes[idx] {
-        DocumentNode::Section { nodes, .. } | DocumentNode::BlockQuote { nodes } => {
-            find_node_at_path_mut(nodes, remaining_path)
-        }
+        DocumentNode::Section { nodes, .. }
+        | DocumentNode::BlockQuote { nodes }
+        | DocumentNode::Captioned { nodes, .. } => find_node_at_path_mut(nodes, remaining_path),
         DocumentNode::Entry { blocks, .. } => find_node_at_path_mut(blocks, remaining_path),
         DocumentNode::List { items, .. } => {
             // Path into list items
