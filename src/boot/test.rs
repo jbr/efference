@@ -449,6 +449,19 @@ async fn concurrent_creations_of_one_name_yield_one_session() {
         "the loser is refused at the mint: {loser}"
     );
     assert!(dir.join(LOG_NAME).is_file(), "the winner's log survives");
+    let recording = crate::persist::load_recording(dir.join(LOG_NAME)).unwrap();
+    let metadata = recording.header.metadata().expect("boot records metadata");
+    assert_eq!(metadata.id, "contested");
+    assert_eq!(metadata.cwd, root.path());
+    assert_eq!(metadata.main.model, winner.model);
+    assert_eq!(
+        metadata.main,
+        *crate::log::recorded_inference(&recording.entries).unwrap()
+    );
+    assert_eq!(
+        recording.entries[0].seq, 0,
+        "the header consumes no sequence"
+    );
     assert!(
         dir.join(CONFIG_NAME).is_file(),
         "the winner's config snapshot survives"

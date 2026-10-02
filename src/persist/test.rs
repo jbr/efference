@@ -3,6 +3,44 @@ use crate::log::{AssistantOutput, ContentBlock, RawResult, ToolCall, WireState};
 use crate::project::project;
 use serde_json::json;
 
+mod header;
+mod read;
+
+/// Line 1 as a reader accepts it carrying no metadata — the header a fixture
+/// persists. Built by hand rather than by a writer so a test can vary one
+/// field of it and leave the rest alone.
+const HEADER: &str = r#"{"format":"efference-session-log","version":1,"metadata":null}"#;
+
+/// One entry line at `seq`, holding the payload a `User` turn writes.
+fn user_entry(seq: u64) -> String {
+    format!(r#"{{"seq":{seq},"turn":0,"at":1,"payload":{{"User":[{{"Text":"hi"}}]}}}}"#)
+}
+
+/// A log path for one test, cleared of the file a previous run left there —
+/// `create` is exclusive, so a leftover would fail the test for the wrong
+/// reason.
+fn temp_path(name: &str) -> std::path::PathBuf {
+    let path = std::env::temp_dir().join(format!("efference-{name}-{}.jsonl", std::process::id()));
+    let _ = std::fs::remove_file(&path);
+    path
+}
+
+/// The file's lines from the second on: what an assertion about *entries*
+/// means, since line 1 is the header (docs/log-and-projection.md).
+fn entry_lines(path: &std::path::Path) -> Vec<String> {
+    std::fs::read_to_string(path)
+        .unwrap()
+        .lines()
+        .skip(1)
+        .map(str::to_string)
+        .collect()
+}
+
+/// The message an invalid file fails with, for an assertion about *why*.
+fn load_error(path: &std::path::Path) -> String {
+    load(path).unwrap_err().to_string()
+}
+
 fn sample(log: &mut Log) {
     log.append(0, Payload::User(vec![ContentBlock::Text("hello".into())]))
         .unwrap();
@@ -31,14 +69,13 @@ fn sample(log: &mut Log) {
 
 /// The headline property: a log written to disk and read back projects to the
 /// exact same wire bytes — persistence is faithful, and reuses the existing
-/// byte-stability guarantee as its oracle.
+/// byte-stability guarantee as its oracle. The header line is on disk and
+/// never in the projection, so it is in neither side of the comparison.
 #[tokio::test]
 async fn disk_roundtrip_projects_identically() {
-    let path =
-        std::env::temp_dir().join(format!("efference-roundtrip-{}.jsonl", std::process::id()));
-    let _ = std::fs::remove_file(&path);
+    let path = temp_path("roundtrip");
 
-    let mut log = Log::create(&path).unwrap();
+    let mut log = Log::create(&path, None).unwrap();
     sample(&mut log);
     let expected = serde_json::to_string(&project(log.entries())).unwrap();
     drop(log); // flush + close.
@@ -100,9 +137,10 @@ fn preamble_snapshots_the_structured_context_listing() {
     }
 }
 
-/// A log line predating the structured listing (bare `{"system": …}`) still loads — the
-/// `#[serde(default)]` on `context` reads it back as an empty `Resolved`, never a parse
-/// error. Old logs must remain replayable.
+/// An entry line predating the structured listing (bare `{"system": …}`) still
+/// deserializes — the `#[serde(default)]` on `context` reads it back as an
+/// empty `Resolved`, never a parse error. This is about an entry's shape; a
+/// file with no header at all is refused for that reason instead (see `header`).
 #[test]
 fn legacy_preamble_without_context_reads_back_empty() {
     let legacy = r#"{"Preamble":{"system":"you are an agent"}}"#;
@@ -121,16 +159,13 @@ fn legacy_preamble_without_context_reads_back_empty() {
 }
 
 /// `submission_id` (docs/control-api.md) survives the jsonl round-trip when
-/// present and is skipped entirely when absent — so a log predating the field
-/// and an entry the loop originated itself serialize byte-identically to
-/// before it existed.
+/// present and is skipped entirely when absent — so an entry whose writer predated
+/// the field and one written now serialize byte-identically.
 #[test]
 fn submission_id_round_trips_and_is_skipped_when_absent() {
-    let path =
-        std::env::temp_dir().join(format!("efference-submission-{}.jsonl", std::process::id()));
-    let _ = std::fs::remove_file(&path);
+    let path = temp_path("submission");
 
-    let mut log = Log::create(&path).unwrap();
+    let mut log = Log::create(&path, None).unwrap();
     log.append_submission(
         0,
         Payload::User(vec![ContentBlock::Text("hi".into())]),
@@ -142,8 +177,7 @@ fn submission_id_round_trips_and_is_skipped_when_absent() {
         .unwrap();
     drop(log);
 
-    let raw = std::fs::read_to_string(&path).unwrap();
-    let lines: Vec<&str> = raw.lines().collect();
+    let lines = entry_lines(&path);
     assert!(lines[0].contains(r#""submission_id":"sub-abc""#));
     assert!(!lines[1].contains("submission_id"));
 
@@ -157,13 +191,12 @@ fn submission_id_round_trips_and_is_skipped_when_absent() {
 /// `source` rides on the entry like `submission_id`, but unlike it is
 /// projected (docs/control-api.md). Written only when a client names itself, so
 /// an operator turn's jsonl is byte-identical to one written before the field
-/// existed; old logs without it load as `None`.
+/// existed; an entry without it reads back as `None`.
 #[test]
 fn source_round_trips_and_is_skipped_when_absent() {
-    let path = std::env::temp_dir().join(format!("efference-source-{}.jsonl", std::process::id()));
-    let _ = std::fs::remove_file(&path);
+    let path = temp_path("source");
 
-    let mut log = Log::create(&path).unwrap();
+    let mut log = Log::create(&path, None).unwrap();
     log.append_submission(
         0,
         Payload::User(vec![ContentBlock::Text("hi".into())]),
@@ -175,8 +208,7 @@ fn source_round_trips_and_is_skipped_when_absent() {
         .unwrap();
     drop(log);
 
-    let raw = std::fs::read_to_string(&path).unwrap();
-    let lines: Vec<&str> = raw.lines().collect();
+    let lines = entry_lines(&path);
     assert!(lines[0].contains(r#""source":"mcp[claude-code]""#));
     assert!(!lines[1].contains("source"));
 
@@ -209,20 +241,6 @@ fn submission_id_never_reaches_the_projection() {
     );
 }
 
-/// Blank lines tolerated; entry count survives.
-#[test]
-fn load_tolerates_blank_lines() {
-    let path = std::env::temp_dir().join(format!("efference-blank-{}.jsonl", std::process::id()));
-    std::fs::write(
-        &path,
-        "{\"seq\":0,\"turn\":0,\"at\":1,\"payload\":{\"User\":[{\"Text\":\"hi\"}]}}\n\n",
-    )
-    .unwrap();
-    let loaded = load(&path).unwrap();
-    assert_eq!(loaded.len(), 1);
-    std::fs::remove_file(&path).unwrap();
-}
-
 /// The fork's recorded reasoning (`Triage.thinking`, docs/redaction-fork.md) survives the
 /// jsonl round-trip, one entry per peek attempt that thought.
 #[test]
@@ -248,8 +266,9 @@ fn triage_thinking_round_trips() {
     }
 }
 
-/// A `Triage` line predating the field still loads — `#[serde(default)]` reads it back as
-/// no recorded reasoning, never a parse error. Old logs must remain replayable.
+/// A `Triage` entry predating the field still deserializes — `#[serde(default)]`
+/// reads it back as no recorded reasoning, never a parse error. As above, this is
+/// about an entry's shape, not about a file lacking its header.
 #[test]
 fn legacy_triage_without_thinking_reads_back_empty() {
     let legacy = r#"{"Triage":{"for_result":7,"origin":"Model","raw_keep":"all","inbox":[]}}"#;

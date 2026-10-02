@@ -132,6 +132,8 @@ EfferenceGuide = { builtin = \"guide\" }
 \"Setting up a project\" = { builtin = \"guide/new-project\" }
 ";
 
+mod metadata;
+
 /// What a session's creator supplies. Paths are absolute; nothing here is read
 /// from the process environment or working directory by `prepare`.
 pub struct SessionRequest {
@@ -230,6 +232,7 @@ async fn prepare_minting(
     request: SessionRequest,
     minted: &mut Minted,
 ) -> Result<SessionBoot<MountedSpotter>, Error> {
+    let mut metadata = metadata::metadata(&request);
     let SessionRequest {
         cwd,
         base_env,
@@ -487,7 +490,8 @@ async fn prepare_minting(
     let env_policy = env_report.policy;
 
     let log_path = session_dir.join(LOG_NAME);
-    let mut log = Log::create(&log_path)?;
+    metadata.effort = effort.clone();
+    let mut log = Log::create(&log_path, Some(metadata))?;
     // In force before the first append — the boot `Preamble` below is the first
     // entry, and its `[context]` exec snapshot is exactly the kind of env capture
     // masking exists for.
@@ -764,12 +768,13 @@ async fn prepare_minting(
 
 /// Create the session dir, refusing a name that already has one (docs/control-channel.md).
 ///
-/// A session does not outlive its process: `Log::create` opens the log for append with an
-/// empty in-memory `entries`, so a second run over the same file restarts `seq` at 0 and the
-/// file ends up with a duplicated seq space — which every offline reader (`view`, `wire`, the
-/// TUI fold) reads as a single sequence. Refusing an occupied dir is what keeps that
-/// unreachable until resumption is designed; when it is, this guard changes with it rather
-/// than gaining exceptions.
+/// A session does not outlive its process: a second run over the same directory would open
+/// the log with an empty in-memory `entries` and restart `seq` at 0 inside a file that
+/// already numbers its entries — which every offline reader (`view`, `wire`, the TUI fold)
+/// reads as a single sequence. Refusing the occupied directory is what keeps that unreachable
+/// until resumption is designed; `Log::create` refusing an existing log file for the same
+/// reason backs it up (docs/log-and-projection.md), and when resumption is, this guard
+/// changes with it rather than gaining exceptions.
 ///
 /// `create_dir` rather than `create_dir_all` on the leaf: the leaf creation is the exclusive
 /// one, so two creations racing the same name cannot both pass the check. The parent

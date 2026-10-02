@@ -132,7 +132,7 @@ async fn wire_rejects_a_recorded_provider_dialect_conflict() {
         efference::api::Provider::Anthropic,
         "claude",
     );
-    let mut log = efference::persist::Log::create(&log_path).unwrap();
+    let mut log = efference::persist::Log::create(&log_path, None).unwrap();
     log.append(
         0,
         efference::log::Payload::Preamble {
@@ -174,7 +174,7 @@ fn write_openrouter_image_log(path: &std::path::Path) {
         efference::api::Provider::OpenRouter,
         "google/gemini-3.7-flash",
     );
-    let mut log = efference::persist::Log::create(path).unwrap();
+    let mut log = efference::persist::Log::create(path, None).unwrap();
     log.append(
         0,
         Payload::Preamble {

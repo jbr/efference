@@ -177,7 +177,7 @@ fn state_reports_cache_telemetry() {
     let _ = std::fs::remove_file(&log_path);
     let (shared, _turns_rx) = Session::new(
         std::env::current_dir().unwrap(),
-        Log::create(&log_path).expect("create log"),
+        Log::create(&log_path, None).expect("create log"),
     );
 
     // No request yet: no `last`, no stamp.

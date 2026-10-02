@@ -305,6 +305,106 @@ and sends — callers never build wire messages.
 
 ---
 
+## Persistence — the log on disk
+
+The log is persisted as **versioned JSONL** (`src/persist.rs`): line 1 is a
+header, and every line after it is one entry. The mechanism — why JSONL at
+all, and why an entry's line is never rewritten — is in `src/persist.rs`;
+this section is the file format and what a reader does with a file that is not
+one.
+
+### The header
+
+```rust
+{"format":"efference-session-log","version":1,"metadata":{…}}
+```
+
+The header is one JSON object and nothing else. It is **not** a `LogEntry`: it
+takes no `seq`, `project` never sees it, and the entries behind it are
+numbered from 0 exactly as they would be without it. Being on disk rather than
+in the projection, it cannot move the cached prefix however it is written.
+
+`format` and `version` are the only values the header type can carry —
+`format` names the file type and `version` the shape of the entries, a
+monotonically increasing integer. Readers **require** the header: a file whose
+first line is an entry is an unversioned log, not a v1 log missing a field, and
+it is refused by name rather than read on the chance that an entry happens to
+parse. A version this build does not know is refused before its entries are
+read, and its metadata is held as a raw value until the version is accepted —
+so a newer file's incompatible metadata reports as the unsupported version it
+is rather than as a field this build happens not to know. There is no
+importer for an unheadered log and no serializer kept for an old shape.
+
+`metadata` is the session boot recorded, in log-owned types
+(`SessionMetadata`, `TriageModel`): the id and working directory, one
+`LoggedInference` per role (main, spotter, and the triage selection when triage
+does not share the main model, with the reasoning settings that inference is
+called with), and the knobs and lineage a reader needs to describe the run —
+temperature, effort, upstream sessions, `created_by`/`succeeds`, `autonomous`,
+`keep_scratch`. These are deliberately **not** the live configuration or
+registry types: those describe what a host will do next, while a header
+records what a past run did, and either side grows fields. Fields with an
+obvious "off" value are skipped when unset, so a file records what was
+configured and nothing else. It may be absent, which is how a fixture
+persists; boot writes it.
+
+### Creating
+
+`Log::create` creates the file **exclusively** and writes and flushes the
+header before returning, so a file that exists is already a readable log and
+an existing file is an error left byte-for-byte untouched. Opening an existing
+log for append while starting from an empty `entries` would restart `seq` at 0
+inside a file that already numbers its entries — every offline reader
+(`view`, `wire`, `peek`, the TUI fold) would read that as one sequence with
+duplicates in it — so the refusal is what keeps that unreachable. The session
+directory is minted exclusively for the same reason.
+
+### Reading
+
+`load_recording` reads a log without touching it and returns the header, the
+entries, and anything left past them; `load` is the entries-only wrapper for
+readers that want just the record. A load has no side effects: it opens for
+reading and writes nothing, whether it succeeds or fails, because the same file
+is read again by inventory, by the offline verbs, and by the TUI. What it
+checks, in the order a reader needs it:
+
+- line 1 is a header of the format and version this build reads;
+- every line after it is one entry — a blank line or an unparseable one is a
+  hard error, because the log is a machine-written journal and a hole in one
+  is something a reader cannot rule out (an older reader stepped over blank
+  lines; nothing does now);
+- `seq` equals the entry's index, so a duplicated or skipped `seq` cannot read
+  as one continuous sequence to a consumer keying on it;
+- bytes after the last complete entry are reported, never repaired.
+
+Every failure carries the path and the line it was found on.
+
+### An interrupted append
+
+A writer interrupted mid-append leaves bytes past the last complete entry.
+Reading stops at the last entry that stands and *reports* the rest
+(`Trailing`), because the two cases need different things and only a read can
+tell them apart:
+
+- `MissingNewline` — the last entry is complete and its `seq` is in order, and
+  only the newline that would have closed it is gone. Every entry is usable;
+  a writer appending there has one line to terminate.
+- `PartialEntry` — an entry that was never finished: the last line in the
+  file, with its bytes and the offset they start at.
+
+The distinction is a parse that *ran out of input*, and only for the final
+unterminated line. A complete object that is not an entry — an unknown payload
+shape, a missing field — is damage rather than a torn write and fails whether
+or not a newline closes it. Lines are read as bytes and decoded one at a time,
+so a tear inside a multi-byte codepoint is reported with the rest instead of
+failing the entries in front of it.
+
+Nothing repairs a reported tail, and no writable path exists for it: reading a
+log and continuing one are separate operations, and only the second has to
+reason about who else may be writing.
+
+---
+
 ## Why byte-determinism is a caching correctness property
 
 Prompt caching is a **prefix match**: any byte change anywhere in the prefix

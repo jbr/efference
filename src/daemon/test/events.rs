@@ -22,7 +22,7 @@ async fn events_replays_then_tails_live() {
 
     let (shared, _turns_rx) = Session::new(
         std::env::current_dir().unwrap(),
-        Log::create(&log_path).expect("create log"),
+        Log::create(&log_path, None).expect("create log"),
     );
     // Two entries present before any client connects (the replay set).
     shared.append(1, user("first")).unwrap();
@@ -126,7 +126,7 @@ async fn the_output_class_carries_ephemeral_deltas() {
 
     let (shared, _turns_rx) = Session::new(
         std::env::current_dir().unwrap(),
-        Log::create(&log_path).expect("create log"),
+        Log::create(&log_path, None).expect("create log"),
     );
     let client = test_client(&shared).await;
     let mut stream = client

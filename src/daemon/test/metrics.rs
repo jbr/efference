@@ -13,7 +13,7 @@ fn keepalive_advances_touch_clock_not_cap_clock() {
     let _ = std::fs::remove_file(&log_path);
     let (shared, _turns_rx) = Session::new(
         std::env::current_dir().unwrap(),
-        Log::create(&log_path).expect("create log"),
+        Log::create(&log_path, None).expect("create log"),
     );
 
     // Nothing to keep warm yet → both clocks absent.
@@ -61,7 +61,7 @@ fn recorded_requests_land_in_the_usage_record() {
     let _ = std::fs::remove_file(&usage_path);
     let (shared, _turns_rx) = Session::new(
         std::env::current_dir().unwrap(),
-        Log::create(&log_path).expect("create log"),
+        Log::create(&log_path, None).expect("create log"),
     );
     shared.attach_usage_log(&usage_path);
 
@@ -230,7 +230,7 @@ fn recorded_requests_move_the_published_cold_streak() {
     let _ = std::fs::remove_file(&log_path);
     let (shared, _turns_rx) = Session::new(
         std::env::current_dir().unwrap(),
-        Log::create(&log_path).expect("create log"),
+        Log::create(&log_path, None).expect("create log"),
     );
     let turn = |read| RequestUsage {
         id: None,

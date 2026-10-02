@@ -1,0 +1,41 @@
+//! Initial session facts recorded in the header (docs/log-and-projection.md).
+
+use super::SessionRequest;
+use crate::log::LoggedInference;
+use crate::persist::{SessionMetadata, TriageModel};
+
+pub(super) fn metadata(request: &SessionRequest) -> SessionMetadata {
+    let selection = |value: &crate::inference::ModelSelection| {
+        LoggedInference::new(&*value.connection, value.provider, &*value.model)
+    };
+    let main = selection(request.inference.main().0);
+    let spotter = selection(request.inference.spotter().0);
+    let triage = match request.inference.triage() {
+        None => TriageModel::Shared,
+        Some((model, _, settings)) => TriageModel::Separate {
+            selection: selection(model),
+            thinking: settings.thinking,
+            auto_choice: settings.auto_choice,
+            effort: settings.effort.clone(),
+        },
+    };
+    let mut metadata = SessionMetadata::new(
+        request
+            .session_dir
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy(),
+        request.cwd.clone(),
+        main,
+        spotter,
+        triage,
+    );
+    metadata.temperature = request.temperature;
+    metadata.effort = request.effort.clone();
+    metadata.upstream = request.upstream.clone();
+    metadata.created_by = request.lineage.created_by.clone();
+    metadata.succeeds = request.lineage.succeeds.clone();
+    metadata.autonomous = request.autonomous;
+    metadata.keep_scratch = request.keep_scratch;
+    metadata
+}

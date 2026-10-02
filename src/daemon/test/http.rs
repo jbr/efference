@@ -12,7 +12,7 @@ async fn review_level_over_the_router() {
 
     let (shared, _turns_rx) = Session::new(
         std::env::current_dir().unwrap(),
-        Log::create(&log_path).expect("create log"),
+        Log::create(&log_path, None).expect("create log"),
     );
     let client = test_client(&shared).await;
     assert_eq!(

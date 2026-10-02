@@ -188,7 +188,7 @@ fn view_resolves_a_path_a_dir_or_a_name() {
 /// via [`Log::create`]/[`Log::append`] (like a real session) so `persist::load`
 /// reads back exactly what `wire` would see.
 pub(crate) fn write_fixture_log(path: &Path) {
-    let mut log = Log::create(path).unwrap();
+    let mut log = Log::create(path, None).unwrap();
     log.append(
         0,
         efference::log::Payload::User(vec![efference::log::ContentBlock::Text("hello".into())]),

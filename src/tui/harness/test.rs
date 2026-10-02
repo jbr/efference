@@ -48,8 +48,9 @@ fn rgb(color: Color) -> (u8, u8, u8) {
     }
 }
 
-/// Load the checked-in replay fixture (`fixtures/replay_session.jsonl`, lifted
-/// verbatim from a real `.efference/` session) through the same `persist::load`
+/// Load the checked-in replay fixture (`fixtures/replay_session.jsonl`, whose
+/// entries are lifted verbatim from a real `.efference/` session under a header
+/// line added to make it a readable log) through the same `persist::load`
 /// a live attach uses. Every state a replay of it produces is reachable *by
 /// construction* — it came off a real daemon, not a test author's hand.
 fn replay_fixture() -> Vec<crate::log::LogEntry> {

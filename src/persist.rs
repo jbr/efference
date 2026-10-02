@@ -12,15 +12,34 @@
 //! *types*. An entry is persisted whole at append and its line is never
 //! rewritten: a later curation decision is its own appended event that replay
 //! folds in (docs/log-and-projection.md).
+//!
+//! A file is a **versioned** log: line 1 is a header carrying the format and
+//! version plus the session metadata boot recorded ([`LogHeader`]), and the
+//! entries follow from index 0. The header is not an entry — it takes no
+//! `seq` and never reaches `project` — and readers require it, so a log
+//! written before the header is refused rather than read on the assumption
+//! that it parses. [`Log::create`] creates its file exclusively and writes
+//! that line before returning, so a file that exists is already a readable
+//! log and a second run over the same path cannot append to a `seq` space
+//! somebody else owns.
+//!
+//! [`header`] holds the header and metadata types, [`read`] the strict
+//! read-only loader.
 
 use std::fs::{File, OpenOptions};
-use std::io::{self, BufRead, BufReader, BufWriter, Write};
+use std::io::{self, BufWriter, Write};
 use std::path::Path;
 
 use std::sync::Arc;
 
 use crate::env_table::Masker;
 use crate::log::{LogEntry, Payload, Seq, Timestamp, Turn};
+
+mod header;
+mod read;
+
+pub use header::{LogHeader, SessionMetadata, TriageModel};
+pub use read::{LoadedRecording, Trailing, load, load_recording};
 
 /// The live append-only log: the in-memory entries plus an optional JSONL sink.
 /// Construction is the only place that touches the clock and `seq` allocation,
@@ -37,13 +56,33 @@ pub struct Log {
 }
 
 impl Log {
-    /// A live log appending to `path` (created if absent; opened for append so a
-    /// re-run never truncates a prior session).
-    pub fn create(path: impl AsRef<Path>) -> io::Result<Self> {
-        let file = OpenOptions::new().create(true).append(true).open(path)?;
+    /// A live log writing to `path`, with `metadata` recorded as its header.
+    ///
+    /// Creation is exclusive: an existing file is an error and is left
+    /// untouched, never truncated and never appended to. Opening an existing
+    /// log for append while starting from an empty `entries` would restart
+    /// `seq` at 0 inside a file that already numbers its entries, which every
+    /// offline reader (`view`, `wire`, `peek`, the TUI fold) sees as one
+    /// sequence with duplicates in it — so the refusal is the only way that
+    /// stays unreachable, and it fails before anything is written.
+    ///
+    /// The header line is written and flushed before returning, so a file that
+    /// exists at any point after this is a log a reader can open.
+    pub fn create(path: impl AsRef<Path>, metadata: Option<SessionMetadata>) -> io::Result<Self> {
+        let path = path.as_ref();
+        let file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(path)
+            .map_err(|error| {
+                io::Error::new(error.kind(), format!("{}: {error}", path.display()))
+            })?;
+        let mut sink = BufWriter::new(file);
+        LogHeader::new(metadata).write_to(&mut sink)?;
+        sink.flush()?;
         Ok(Self {
             entries: Vec::new(),
-            sink: Some(BufWriter::new(file)),
+            sink: Some(sink),
             masker: Arc::default(),
         })
     }
@@ -128,22 +167,6 @@ impl Log {
         self.entries.push(entry);
         Ok(seq)
     }
-}
-
-/// Replay a persisted log back into memory.
-/// Blank lines are tolerated; a malformed line is a hard error — a corrupt
-/// journal should be loud, not silently truncated.
-pub fn load(path: impl AsRef<Path>) -> io::Result<Vec<LogEntry>> {
-    let file = File::open(path)?;
-    let mut entries = Vec::new();
-    for line in BufReader::new(file).lines() {
-        let line = line?;
-        if line.trim().is_empty() {
-            continue;
-        }
-        entries.push(serde_json::from_str(&line).map_err(io::Error::other)?);
-    }
-    Ok(entries)
 }
 
 #[cfg(test)]
