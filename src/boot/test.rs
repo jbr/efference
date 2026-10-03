@@ -31,10 +31,10 @@ fn serve_mints_a_fresh_session_dir_and_refuses_an_existing_one() {
 }
 
 /// A temp project root, removed when the test ends.
-struct Root(PathBuf);
+pub(super) struct Root(PathBuf);
 
 impl Root {
-    fn new(label: &str) -> Self {
+    pub(super) fn new(label: &str) -> Self {
         use std::hash::{BuildHasher, Hasher, RandomState};
         let nonce = RandomState::new().build_hasher().finish();
         let root = std::env::temp_dir().join(format!("efference-boot-{label}-{nonce:016x}"));
@@ -42,11 +42,11 @@ impl Root {
         Self(root.canonicalize().unwrap())
     }
 
-    fn path(&self) -> &Path {
+    pub(super) fn path(&self) -> &Path {
         &self.0
     }
 
-    fn session_dir(&self, id: &str) -> PathBuf {
+    pub(super) fn session_dir(&self, id: &str) -> PathBuf {
         self.0.join(BASE_DIR).join(id)
     }
 }
@@ -59,11 +59,11 @@ impl Drop for Root {
 
 /// `prepare` mints into the shared system temp dir, so the tests that count
 /// scratch dirs there run one at a time.
-static PREPARING: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+pub(super) static PREPARING: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 /// The scratch dirs [`mint_scratch_dir`] could have made: `efference-` plus
 /// exactly sixteen hex digits, which no other temp name in this suite matches.
-fn scratch_dirs() -> std::collections::BTreeSet<PathBuf> {
+pub(super) fn scratch_dirs() -> std::collections::BTreeSet<PathBuf> {
     let Ok(entries) = std::fs::read_dir(std::env::temp_dir()) else {
         return Default::default();
     };
@@ -84,7 +84,39 @@ fn scratch_dirs() -> std::collections::BTreeSet<PathBuf> {
 /// preparation runs to the end without a provider. Each request writes its own
 /// `auth.json` and seeds under its own account id, so tests running in parallel
 /// do not share a catalog entry.
-fn request(root: &Path, id: &str, effort: Option<&str>) -> SessionRequest {
+pub(super) fn request(root: &Path, id: &str, effort: Option<&str>) -> SessionRequest {
+    let registry = codex_registry(root, id);
+    let inference = registry.resolve(Some("oai/gpt-5.6"), None, None).unwrap();
+    SessionRequest {
+        cwd: root.to_path_buf(),
+        base_env: base_env(),
+        session_dir: root.join(BASE_DIR).join(id),
+        config: None,
+        inference,
+        temperature: None,
+        effort: effort.map(str::to_string),
+        upstream: Vec::new(),
+        autonomous: false,
+        reauth: Vec::new(),
+        keep_scratch: false,
+        host: None,
+        lineage: crate::env::Lineage::default(),
+    }
+}
+
+/// The caller environment a test session starts from.
+pub(super) fn base_env() -> crate::env_table::EnvSnapshot {
+    crate::env_table::EnvSnapshot::new(
+        ["HOME", "PATH"]
+            .into_iter()
+            .filter_map(|name| Some((name.to_string(), std::env::var(name).ok()?)))
+            .collect(),
+    )
+    .unwrap()
+}
+
+/// The registry behind [`request`]: one `oai` connection on the seeded Codex catalog.
+pub(super) fn codex_registry(root: &Path, id: &str) -> crate::inference::InferenceRegistry {
     let account = format!("acct-{id}");
     let codex_home = root.join(format!("codex-home-{id}"));
     std::fs::create_dir_all(&codex_home).unwrap();
@@ -114,37 +146,13 @@ auth = { kind = "codex-cache" }
         .collect(),
     )
     .unwrap();
-    let inference = crate::inference::InferenceRegistry::from_config(
+    crate::inference::InferenceRegistry::from_config(
         config,
         Path::new("/host"),
         host_env,
         &std::sync::Arc::new(crate::secrets::Secrets::in_memory()),
     )
     .unwrap()
-    .resolve(Some("oai/gpt-5.6"), None, None)
-    .unwrap();
-    let base_env = crate::env_table::EnvSnapshot::new(
-        ["HOME", "PATH"]
-            .into_iter()
-            .filter_map(|name| Some((name.to_string(), std::env::var(name).ok()?)))
-            .collect(),
-    )
-    .unwrap();
-    SessionRequest {
-        cwd: root.to_path_buf(),
-        base_env,
-        session_dir: root.join(BASE_DIR).join(id),
-        config: None,
-        inference,
-        temperature: None,
-        effort: effort.map(str::to_string),
-        upstream: Vec::new(),
-        autonomous: false,
-        reauth: Vec::new(),
-        keep_scratch: false,
-        host: None,
-        lineage: crate::env::Lineage::default(),
-    }
 }
 
 /// A listing served from a loopback listener, for a connection whose base URL a
@@ -285,7 +293,7 @@ auth = {{ kind = "env", key = "EFFERENCE_BOOT_TEST_KEY" }}
 
 /// The scratch dir a successful boot owns, removed here as the runtime's
 /// teardown would (docs/tools.md).
-fn drop_boot(boot: SessionBoot<MountedSpotter>) {
+pub(super) fn drop_boot(boot: SessionBoot<MountedSpotter>) {
     if let Some(scratch) = boot.toolbox.scratch_dir() {
         let _ = std::fs::remove_dir_all(scratch);
     }
@@ -293,7 +301,7 @@ fn drop_boot(boot: SessionBoot<MountedSpotter>) {
 
 /// The error a preparation that must fail returned, cleaning up after it if it
 /// unexpectedly succeeded. `Result::expect_err` wants a `Debug` boot.
-fn failure(result: Result<SessionBoot<MountedSpotter>, Error>, what: &str) -> Error {
+pub(super) fn failure(result: Result<SessionBoot<MountedSpotter>, Error>, what: &str) -> Error {
     match result {
         Ok(boot) => {
             drop_boot(boot);

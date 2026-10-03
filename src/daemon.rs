@@ -1108,7 +1108,7 @@ impl Session {
     /// attaches to (the fs-watch initiator, which has no loop-turn context,
     /// docs/permissions.md). A `ConfigEdit` projects to nothing, so its turn
     /// is pure audit grouping; attaching it to the in-flight turn is the honest placement.
-    fn latest_turn(&self) -> Turn {
+    pub(crate) fn latest_turn(&self) -> Turn {
         self.log
             .lock()
             .unwrap()

@@ -110,7 +110,8 @@ EfferenceGuide = { builtin = \"guide\" }
 /// per-session snapshot is the live, editable, watched policy — so two sessions sharing an origin
 /// diverge freely, and the session can `cat` its config to see its perimeter and edit it to
 /// request changes. The `else` branch (a snapshot that already exists) is unreachable while
-/// `mint_session_dir` refuses an existing dir; it is what a resumption design would re-enter.
+/// `mint_session_dir` refuses an existing dir; a resume does not come through here, it loads
+/// the existing snapshot with [`load_session_config`].
 pub(super) fn snapshot_config(origin: &LoadedConfig, session_config: &Path) -> Result<(), Error> {
     if !session_config.exists() {
         // The origin was validated above (fail fast on a malformed template, before binding

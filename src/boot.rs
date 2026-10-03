@@ -27,11 +27,13 @@ mod metadata;
 mod mint;
 mod model;
 mod parts;
+mod resume;
 mod scaffold;
 
 use env::resolve_env_values;
 use mint::Minted;
 pub use mint::{mint_scratch_dir, mint_session_dir};
+pub use resume::{ResumeRequest, resume};
 pub use scaffold::CONFIG_SCAFFOLD;
 
 /// The base directory for all session dirs (gitignored). Each session is

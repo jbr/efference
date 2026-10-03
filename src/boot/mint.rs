@@ -51,9 +51,9 @@ impl Minted {
 /// the log with an empty in-memory `entries` and restart `seq` at 0 inside a file that
 /// already numbers its entries — which every offline reader (`view`, `wire`, the TUI fold)
 /// reads as a single sequence. Refusing the occupied directory is what keeps that unreachable
-/// until resumption is designed; `Log::create` refusing an existing log file for the same
-/// reason backs it up (docs/log-and-projection.md), and when resumption is, this guard
-/// changes with it rather than gaining exceptions.
+/// on the create path; resuming is its own entry (`boot::resume`), which reopens the log
+/// with `Log::open` and never mints. `Log::create` refusing an existing log file for the same
+/// reason backs this up (docs/log-and-projection.md).
 ///
 /// `create_dir` rather than `create_dir_all` on the leaf: the leaf creation is the exclusive
 /// one, so two creations racing the same name cannot both pass the check. The parent

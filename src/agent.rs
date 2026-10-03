@@ -164,7 +164,9 @@ pub async fn run<F: Frontend, S: Spotter>(
     // below, not by a `Provider`. Built once from the shared source; the defs are
     // constant `json!`, so `tools[]` stays byte-stable across requests (docs/log-and-projection.md).
     let tools = tool_definitions(&toolbox);
-    let mut turn: Turn = 0;
+    // Continues the log's numbering: `0` for a new session, the last entry's turn for a
+    // resumed one, so a resumed session's new turns do not reuse a recorded number.
+    let mut turn: Turn = shared.latest_turn();
 
     loop {
         // Idle: race the next user turn against a notification wake (docs/supervisor.md —
