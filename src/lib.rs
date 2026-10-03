@@ -27,6 +27,7 @@ pub mod history;
 pub mod http;
 pub mod inbox;
 pub mod inference;
+pub mod inventory;
 pub mod log;
 pub mod mcp;
 pub mod oauth;

@@ -86,6 +86,23 @@ sessions from one process. Its own routes are the listener's, not a session's:
   handshake, and nothing here holds one. A client that wants a session's own
   entries opens that session's `/v1/events` beside this
   (backlog/host-process.md).
+- `GET /sessions?state=archived&cwd=<abs root>` — the dormant sessions: the same
+  collection filtered by the lifecycle word `PATCH /sessions/:id` carries. `state`
+  absent or `active` is the listing above; any other value is `400`. The answer is a
+  JSON array, most recently active first, of
+  `{"id", "cwd", "state": "archived", "title"?, "created_at"?, "last_active_at"?, "problem"?}`
+  — one row per directory under `<cwd>/.efference/`, read from the logs on disk
+  ([log-and-projection.md](log-and-projection.md), "Inventory of dormant sessions").
+  `created_at` and `last_active_at` are epoch milliseconds from entries, and a row
+  carrying a `problem` is a directory that could not be read as a session (no log,
+  an empty one, a header this build does not read, an entry line that does not
+  parse); it keeps whatever was learned and sorts last. Without `cwd` the answer
+  covers every remembered project root once. A session this host is running (same
+  id, same working directory) is not in it. The row is its own shape, not a
+  `SessionSummary`: it has no `status` or `processes`. The answer is always the
+  JSON array, including to a request that also names `text/event-stream`: there is
+  no stream of the archived set. The scan runs off the executor, and the host keeps
+  each root's rows between requests, re-reading only logs whose length changed.
 - `GET /inference` — the host's loaded connection inventory:
   `{"connections":[{"name": …, "provider": …, "available": bool}]}`. Rows are
   sorted by connection name. The response contains configuration status only; it never

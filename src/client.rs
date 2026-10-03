@@ -19,7 +19,9 @@ use trillium_tokio::UnixClientConfig;
 
 use crate::attachments::Arrival;
 pub use crate::catalog::{CatalogModel, ConnectionCatalog, Status as CatalogStatus};
-use crate::daemon::{CreateSession, PatchSession, SessionOptionsRequest, SessionState};
+use crate::daemon::{
+    ArchivedSession, CreateSession, PatchSession, SessionOptionsRequest, SessionState,
+};
 use crate::frontend::{Approval, SubmittedTurn};
 use crate::inference::{ConnectionInventory, ResolvedOptions};
 
@@ -626,6 +628,25 @@ impl Client {
             .await
             .with_context(|| format!("GET {path} on the host socket"))?;
         let body = read_2xx(conn, "GET", path).await?;
+        serde_json::from_str(&body).with_context(|| format!("decoding GET {path}"))
+    }
+
+    /// The dormant sessions under the working root `cwd`
+    /// (`GET /sessions?state=archived&cwd=<root>`, docs/control-api.md), most
+    /// recently active first. Rows with a `problem` are directories the host
+    /// could not read as sessions; a session the host is running is not listed.
+    pub async fn archived_sessions(&self, cwd: &std::path::Path) -> Result<Vec<ArchivedSession>> {
+        let query = trillium_client::url::form_urlencoded::Serializer::new(String::new())
+            .append_pair("state", "archived")
+            .append_pair("cwd", &cwd.to_string_lossy())
+            .finish();
+        let path = format!("/sessions?{query}");
+        let conn = self
+            .http
+            .get(path.clone())
+            .await
+            .with_context(|| format!("GET {path} on the host socket"))?;
+        let body = read_2xx(conn, "GET", &path).await?;
         serde_json::from_str(&body).with_context(|| format!("decoding GET {path}"))
     }
 

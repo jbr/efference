@@ -464,6 +464,26 @@ failing the entries in front of it.
 Nothing repairs a reported tail: reading a log and continuing one are separate
 operations, and only the second has to reason about who else may be writing.
 
+### Inventory of dormant sessions
+
+`src/inventory.rs` lists a working root's sessions from disk without a host: one
+row per directory under `<root>/.efference/` (`GET /sessions?state=archived`,
+[control-api.md](control-api.md)). Per log it reads the header line, the first
+entry, and the last complete entry by seeking from the end, then reads backwards
+in 64 KiB chunks for the last line containing `"Title"` that parses as a
+`Payload::Title`; the log is not loaded whole. `created_at` is the `at` of the
+first entry and `last_active_at` the `at` of the last complete one — file mtime
+is not consulted, since a rewrite moves it without any session being active. A
+torn final line without a newline that does not parse is skipped back over (see
+"An interrupted append"); a first or last line that is complete and does not
+parse, a missing or empty log, and a header refused by the same validation the
+loader applies (`persist::read_header`) are rows with a `problem` string.
+
+`Inventory` caches each row under its log path with the length the scan saw. A
+refresh stats every log and rescans those whose length differs, which suffices
+because logs are append-only; rows for directories that are gone are dropped,
+and a read the filesystem refused is not cached.
+
 ### Continuing a log
 
 `Log::open` is the writable half, and it is the whole of it, in an order where

@@ -51,7 +51,7 @@ mod read;
 pub use error::{LoadError, OpenError};
 pub use header::{LogHeader, SessionMetadata, TriageModel};
 pub use open::{Opened, Repair};
-pub use read::{LoadedRecording, Trailing, load, load_recording};
+pub use read::{LoadedRecording, Trailing, load, load_recording, read_header};
 
 /// Why a writer lock was refused. `Held` is another writer's lock and its
 /// process is still appending; `Io` is the platform refusing for some other

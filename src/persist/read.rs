@@ -220,7 +220,10 @@ fn partial(byte_offset: u64, bytes: &[u8]) -> Trailing {
     }
 }
 
-fn read_header(path: &Path, body: &[u8]) -> Result<LogHeader, LoadError> {
+/// Line 1 of `path` as a header, from the line's bytes without its newline: the
+/// same validation and refusals [`load_recording`] applies, for a reader that
+/// takes the header alone (docs/log-and-projection.md).
+pub fn read_header(path: &Path, body: &[u8]) -> Result<LogHeader, LoadError> {
     let text = std::str::from_utf8(body).map_err(|error| {
         LoadError::corrupt(path, 1, format!("the header line is not utf-8: {error}"))
     })?;

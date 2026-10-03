@@ -6,6 +6,7 @@ use serde_json::Value;
 use std::path::Path;
 use trillium::KnownHeaderName;
 
+mod archived;
 mod creation;
 mod preview;
 mod projects;

@@ -30,6 +30,10 @@ mod resume;
 use resume::patch_session;
 pub use resume::{PatchSession, SessionState};
 
+mod archived;
+pub use archived::ArchivedSession;
+use archived::archived_listing;
+
 mod catalog;
 use catalog::{catalog_all, catalog_one};
 
@@ -51,6 +55,9 @@ pub struct Host {
     /// Written by every successful creation and read by the index route.
     remembered: crate::remembered::Projects,
     sessions: Mutex<BTreeMap<String, Hosted>>,
+    /// Scanned rows of the dormant sessions under each root asked about
+    /// (`archived.rs`, docs/log-and-projection.md).
+    inventory: crate::inventory::Inventory,
     /// The host's own environment, captured once at start (docs/env.md).
     ///
     /// This is the base a session launched without a caller-supplied environment
@@ -117,6 +124,7 @@ impl Host {
                 }),
             inference,
             sessions: Mutex::new(BTreeMap::new()),
+            inventory: crate::inventory::Inventory::new(),
             host_env,
             summary_changed: Notify::new(),
         })
@@ -415,9 +423,11 @@ async fn inference_inventory(conn: Conn) -> Conn {
 /// resource. The `Sse` half negotiates on `Accept`: a request naming
 /// `text/event-stream` subscribes to the listing and receives it whole on every
 /// change, and any other request passes through untouched to the JSON half
-/// below (docs/control-api.md).
+/// below (docs/control-api.md). A `state` query is read first (`archived.rs`):
+/// `archived` answers the dormant listing as JSON whatever the `Accept`.
 fn list_sessions() -> impl trillium::Handler {
     (
+        archived_listing,
         sse(|conn: &mut Conn| match host_of(conn) {
             Some(host) => summary_stream(Arc::downgrade(&host)),
             // Unreachable through the mounted router, which always carries the

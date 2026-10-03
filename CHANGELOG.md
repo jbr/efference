@@ -8,6 +8,7 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- **Archived-session listing** (docs/control-api.md, docs/log-and-projection.md): `GET /sessions?state=archived&cwd=<root>` lists the dormant sessions under a root (or every remembered root) from a seek-based scan of each log's header, first and last entries and last title, cached by log length; `ControlClient::archived_sessions`.
 - **The triage ask identifies itself as the harness** (docs/redaction-fork.md): it opens `⟢ triage`, on the gate's peek and the idle triage view, and the preamble names that block as the harness's one ask, spelling out `retain` and `triage`. A session whose forks failed their first attempt at 46% replayed at 1%.
 - **Results are on the log before their triage** (docs/redaction-fork.md): a call's result is appended as soon as the call returns, awaiting its verdict, and the verdict lands later as its own entry. The main agent sees nothing until then; the TUI and the web client show the result with an "awaiting triage" label and re-renders it when the verdict arrives; a session that stops mid-gate keeps its results on disk.
 - **TUI centred column** (docs/tui.md): on terminals wider than 112 columns the transcript, strip, and composer share a centred column, as the web client's page does.
