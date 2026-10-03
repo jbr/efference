@@ -39,6 +39,14 @@ pub(crate) enum ErrorCode {
     /// state, like [`GateMoved`](Self::GateMoved), and a client acts by showing
     /// the message rather than by retrying.
     NotContinuable,
+    /// The addressed thing exists, but not in the state this request describes:
+    /// `PATCH /sessions/:id {"state": "active"}` naming a session this host is
+    /// already running under a different working root (docs/control-api.md). 409.
+    /// A `404` would tell the client the session is gone and a `400` that it sent
+    /// something malformed; this one tells it to read where the session actually
+    /// is. A session already running under the root the request *names* is not this
+    /// — that is the state it asked for, and it answers 200.
+    StateMismatch,
     /// The daemon failed at something it was supposed to be able to do (a log append,
     /// a config write, absent shared state). 500.
     Internal,
@@ -71,7 +79,7 @@ impl ErrorCode {
             Self::Unauthorized => 401,
             Self::Forbidden => 403,
             Self::NotFound => 404,
-            Self::GateMoved | Self::NotContinuable => 409,
+            Self::GateMoved | Self::NotContinuable | Self::StateMismatch => 409,
             Self::TooLarge => 413,
             Self::UnsupportedContent => 415,
             Self::RateLimited => 429,

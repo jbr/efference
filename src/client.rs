@@ -19,7 +19,7 @@ use trillium_tokio::UnixClientConfig;
 
 use crate::attachments::Arrival;
 pub use crate::catalog::{CatalogModel, ConnectionCatalog, Status as CatalogStatus};
-use crate::daemon::{CreateSession, SessionOptionsRequest};
+use crate::daemon::{CreateSession, PatchSession, SessionOptionsRequest, SessionState};
 use crate::frontend::{Approval, SubmittedTurn};
 use crate::inference::{ConnectionInventory, ResolvedOptions};
 
@@ -511,6 +511,34 @@ impl Client {
         json_field(&read_2xx(conn, "POST", path).await?, "id")
     }
 
+    /// Change one session's state on a host (`PATCH /sessions/:session`,
+    /// docs/control-api.md) and return the state it ended in. The same transition
+    /// as `DELETE /sessions/:session`, spelled as the change it is, so a client
+    /// picks by whether it knows what it wants.
+    ///
+    /// A listener route, not a session's: it addresses the host's own root
+    /// regardless of this client's prefix. The request carries the caller's
+    /// environment; it is written to the wire and to nothing else, and an error
+    /// quotes the response, not the request.
+    pub async fn patch_session(&self, id: &str, request: &PatchSession) -> Result<SessionState> {
+        let body = serde_json::to_string(request).context("encoding the session patch")?;
+        let path = format!("/sessions/{id}");
+        let conn = self
+            .http
+            .patch(path.clone())
+            .with_request_header("content-type", "application/json; charset=utf-8")
+            .with_body(body)
+            .await
+            .with_context(|| format!("PATCH {path} to the host socket"))?;
+        let response = read_2xx(conn, "PATCH", &path).await?;
+        let state = serde_json::from_str::<serde_json::Value>(&response)
+            .ok()
+            .and_then(|value| value.get("state").cloned())
+            .ok_or_else(|| anyhow!("no \"state\" in response: {response}"))?;
+        serde_json::from_value(state).context("reading the patched state")
+    }
+
+    /// Resolve a proposed hosted session (`QUERY /sessions`, docs/control-api.md)
     /// Resolve a proposed hosted session (`QUERY /sessions`, docs/control-api.md)
     /// without creating a directory or starting a runtime: the effective
     /// selections, where each came from, and the issues that would stop creation.

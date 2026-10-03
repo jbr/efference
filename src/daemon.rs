@@ -1223,7 +1223,10 @@ mod paths;
 mod review;
 mod runtime;
 pub mod slug;
-pub use host::{CreateSession, Host, SessionOptionsRequest, SessionSummary, serve_host};
+pub use host::{
+    CreateSession, Host, PatchSession, SessionOptionsRequest, SessionState, SessionSummary,
+    serve_host,
+};
 pub use paths::SessionPaths;
 pub use runtime::{SessionBoot, SessionRuntime};
 

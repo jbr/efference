@@ -9,6 +9,7 @@ use trillium::KnownHeaderName;
 mod creation;
 mod preview;
 mod projects;
+mod resume;
 
 struct Roots(PathBuf);
 

@@ -214,9 +214,20 @@ sessions from one process. Its own routes are the listener's, not a session's:
   taken as stored rather than recomputed from `cwd` and `config`, because
   recomputing re-probes the filesystem and a directory that gained an
   `efference.toml` since its launch resolves to a different key.
-- `DELETE /sessions/:id` — end the session. Answers `200` once its teardown has
-  run (background children reaped, scratch removed); the id leaves the list once
-  the loop has returned. `404` for an id that is not hosted.
+- `PATCH /sessions/:id` — change one session's state, the session resource
+  carrying the change: `{"state": "active"}` reopens a dormant session under its
+  own id, reading its model, effort and configuration from its own header rather
+  than from this request, and `{"state": "archived"}` is `DELETE` below in the
+  spelling of what it does. `active` also needs `cwd`, the root whose
+  `.efference/<id>` holds the session — a host serving several roots cannot tell
+  which one a dormant id belongs to. Answers `200 {"id", "state"}`; `400` naming
+  the reason when the body is malformed, patches nothing, or names a session that
+  cannot be resumed; `404` for an `archived` patch on an id that is not hosted.
+- `DELETE /sessions/:id` — archive the session, which is the same transition as
+  `PATCH {"state": "archived"}`. Answers `200 {"id", "state": "archived"}` once
+  its teardown has run (background children reaped, scratch removed); the id leaves
+  the list once the loop has returned. The directory and log stay, so the session
+  is resumable by patching it `active` again. `404` for an id that is not hosted.
 - `/sessions/:id/v1/…` and, on the web listener, `/sessions/:id/files/…` — that
   session's own routes, unchanged. The host resolves the session into conn state
   and dispatches into the same route table a session bind serves at its root;

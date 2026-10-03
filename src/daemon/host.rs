@@ -22,6 +22,10 @@ mod options;
 pub use options::SessionOptionsRequest;
 use options::preview_session;
 
+mod resume;
+use resume::patch_session;
+pub use resume::{PatchSession, SessionState};
+
 mod catalog;
 use catalog::{catalog_all, catalog_one};
 
@@ -500,6 +504,10 @@ pub(crate) fn host_routes(files: bool) -> impl trillium::Handler {
         .get("/inference/catalog/:connection", catalog_one)
         .with_route(trillium::Method::Query, "/sessions", preview_session)
         .get("/sessions", list_sessions())
+        // Registered before the `/sessions/:session/*` wildcard below, which would
+        // resolve the session into conn state and 404 a patch that is what
+        // makes it live in the first place.
+        .patch("/sessions/:session", patch_session)
         .delete("/sessions/:session", end_session)
         // Where sessions have been started, and forgetting one. Registered
         // before the `/sessions/:session/*` wildcard below, which is a different
@@ -605,9 +613,14 @@ async fn session_files(mut conn: Conn) -> Conn {
     }
 }
 
-/// `DELETE /sessions/:session`: end the session. Answers once teardown has run —
-/// background children reaped, scratch removed — so a client that then lists
-/// sessions or reads the dir sees the finished state.
+/// `DELETE /sessions/:session`: archive the session. The same transition as
+/// `PATCH {"state": "archived"}`, in the imperative spelling, and answering once
+/// teardown has run — background children reaped, scratch removed — so a client
+/// that then lists sessions or reads the dir sees the finished state.
+///
+/// Archiving rather than ending is what it does: the runtime stops, and the
+/// directory and log stay, so the session is resumable by patching it `active`
+/// again (docs/log-and-projection.md).
 async fn end_session(conn: Conn) -> Conn {
     let Some(host) = host_of(&conn) else {
         return missing_host(conn);
@@ -617,7 +630,9 @@ async fn end_session(conn: Conn) -> Conn {
         Some(completion) => {
             completion.await;
             conn.with_status(200)
-                .with_body(serde_json::json!({ "id": id, "state": "ended" }).to_string())
+                .with_body(
+                    serde_json::json!({ "id": id, "state": SessionState::Archived }).to_string(),
+                )
                 .halt()
         }
         None => no_such_session(conn, &id),

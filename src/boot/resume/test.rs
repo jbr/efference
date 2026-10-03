@@ -1,12 +1,26 @@
-use super::super::test::{
-    PREPARING, Root, codex_registry, drop_boot, failure, request, scratch_dirs,
-};
+use super::super::test::{PREPARING, Root, codex_registry, drop_boot, request, scratch_dirs};
 use super::*;
 use crate::boot::{BASE_DIR, prepare};
 use crate::log::{
     AssistantOutput, ContentBlock, ExitOutcome, ProcessEvent, ProcessEventKind, ProcessExit,
     ProcessSpawn, RawResult, Title, TitleAuthor, ToolCall, WireState,
 };
+
+/// The error a resume that must fail returned, cleaning up after it if it
+/// unexpectedly succeeded. Not the shared `failure`, which is typed against the
+/// bare [`SessionBoot`] `prepare` still returns.
+fn failure(
+    result: Result<(SessionBoot<MountedSpotter>, SessionOptions), Error>,
+    what: &str,
+) -> Error {
+    match result {
+        Ok((boot, _)) => {
+            drop_boot(boot);
+            panic!("{what}")
+        }
+        Err(error) => error,
+    }
+}
 
 fn resume_request<'a>(root: &Root, id: &str, registry: &'a InferenceRegistry) -> ResumeRequest<'a> {
     ResumeRequest {
@@ -115,9 +129,19 @@ async fn a_clean_log_resumes_with_its_state() {
         frozen_preamble(&crate::persist::load(dir.join(LOG_NAME)).unwrap()).unwrap();
 
     let registry = codex_registry(root.path(), "clean");
-    let boot = resume(resume_request(&root, "clean", &registry))
+    let (boot, options) = resume(resume_request(&root, "clean", &registry))
         .await
         .expect("a clean log resumes");
+
+    // The selections come back with the boot rather than being supplied to it: a
+    // resumed session has no options to override them with, and one that later
+    // hands its work off has to hand over the model it is actually running.
+    assert_eq!(
+        options.model.as_deref(),
+        Some("gpt-5.6"),
+        "the model the header recorded — the native name it was created with, \
+         not the connection-qualified one a fresh resolution would produce"
+    );
 
     let entries = boot.log.entries();
     let last = entries.last().unwrap();
@@ -220,7 +244,7 @@ async fn a_failed_resume_leaves_the_session_dir_alone() {
 
     // The log is still resumable once the failure is gone.
     let registry = codex_registry(root.path(), "fail");
-    let boot = resume(resume_request(&root, "fail", &registry))
+    let (boot, _) = resume(resume_request(&root, "fail", &registry))
         .await
         .expect("the same directory resumes afterwards");
     drop_boot(boot);
@@ -233,7 +257,7 @@ async fn a_held_log_is_refused() {
     let root = Root::new("resume-held");
     left_behind(&root, "held", |_| {}).await;
     let registry = codex_registry(root.path(), "held");
-    let first = resume(resume_request(&root, "held", &registry))
+    let (first, _) = resume(resume_request(&root, "held", &registry))
         .await
         .unwrap();
     let before = dir_contents(&root.session_dir("held"));

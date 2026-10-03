@@ -47,7 +47,13 @@ pub struct ResumeRequest<'a> {
 /// Reopen a session: [`prepare`](super::prepare)'s counterpart for a directory that
 /// already holds a log. A failure removes and alters nothing under `session_dir`;
 /// what it removes is the scratch dir it made.
-pub async fn resume(request: ResumeRequest<'_>) -> Result<SessionBoot<MountedSpotter>, Error> {
+///
+/// The selections are also returned, inferred from the header rather than supplied
+/// — the caller has no options to give, and a resumed session that later hands its
+/// work off needs to hand over the model it is actually running on.
+pub async fn resume(
+    request: ResumeRequest<'_>,
+) -> Result<(SessionBoot<MountedSpotter>, SessionOptions), Error> {
     let mut minted = Minted::default();
     match resume_minting(request, &mut minted).await {
         Ok(boot) => Ok(boot),
@@ -61,7 +67,7 @@ pub async fn resume(request: ResumeRequest<'_>) -> Result<SessionBoot<MountedSpo
 async fn resume_minting(
     request: ResumeRequest<'_>,
     minted: &mut Minted,
-) -> Result<SessionBoot<MountedSpotter>, Error> {
+) -> Result<(SessionBoot<MountedSpotter>, SessionOptions), Error> {
     let ResumeRequest {
         session_dir,
         base_env,
@@ -187,21 +193,24 @@ async fn resume_minting(
     log.append(turn, Payload::Resumed(resumed))?;
     eprintln!("resumed {}", session_dir.display());
 
-    Ok(SessionBoot {
-        client,
-        toolbox: tools.toolbox,
-        distiller,
-        spotter,
-        log,
-        paths: crate::daemon::SessionPaths::new(cwd, session_dir.canonicalize()?)?,
-        role: loaded,
-        autonomous,
-        capabilities,
-        model: model.to_string(),
-        inference: Some(inference.identity()),
-        env_policy,
-        keep_scratch,
-    })
+    Ok((
+        SessionBoot {
+            client,
+            toolbox: tools.toolbox,
+            distiller,
+            spotter,
+            log,
+            paths: crate::daemon::SessionPaths::new(cwd, session_dir.canonicalize()?)?,
+            role: loaded,
+            autonomous,
+            capabilities,
+            model: model.to_string(),
+            inference: Some(inference.identity()),
+            env_policy,
+            keep_scratch,
+        },
+        options,
+    ))
 }
 
 /// The working directory the session ran in: the header's, else the project root a
