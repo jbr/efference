@@ -149,7 +149,7 @@ async fn a_clean_log_resumes_with_its_state() {
         panic!("the Resumed entry is last: {:?}", last.payload);
     };
     assert_eq!(resumed.lost_processes, vec!["p#2".to_string()]);
-    assert!(resumed.dropped_calls.is_empty());
+    assert_eq!(resumed.resumes_after, None);
     assert_eq!(last.turn, 3, "filed under the log's last turn");
     assert_eq!(entries.len() as u64, last.seq + 1);
 
@@ -170,39 +170,73 @@ async fn a_clean_log_resumes_with_its_state() {
     assert_eq!(frozen_preamble(&reread).unwrap(), preamble_before);
 }
 
-/// A log ending mid-batch is refused with the reason, and refusing writes nothing:
-/// the log, the config, and the directory are as found, and no scratch was made.
+/// A log ending mid-batch resumes from just before the unfinished completion: the
+/// `Resumed` entry names that point, the skipped entries stay on disk, and nothing but
+/// the appended entry changes.
 #[tokio::test]
-async fn a_mid_batch_log_is_refused_untouched() {
+async fn a_mid_batch_log_rolls_back() {
     let _serial = PREPARING.lock().await;
     let root = Root::new("resume-mid");
     left_behind(&root, "mid", |log| {
         log.append(1, Payload::User(vec![ContentBlock::Text("go".into())]))
             .unwrap();
         log.append(1, call_assistant("call_9")).unwrap();
+        log.append(1, spawned(4)).unwrap();
     })
     .await;
     let dir = root.session_dir("mid");
-    let before = dir_contents(&dir);
-    let scratch_before = scratch_dirs();
+    let before = std::fs::read(dir.join(LOG_NAME)).unwrap();
+    let other_files: Vec<_> = dir_contents(&dir)
+        .into_iter()
+        .filter(|(name, _)| name != LOG_NAME)
+        .collect();
+    let user_seq = crate::persist::load(dir.join(LOG_NAME))
+        .unwrap()
+        .iter()
+        .position(|e| matches!(e.payload, Payload::User(_)))
+        .unwrap() as u64;
 
     let registry = codex_registry(root.path(), "mid");
-    let error = failure(
-        resume(resume_request(&root, "mid", &registry)).await,
-        "an unanswered call must refuse the resume",
+    let (boot, _) = resume(resume_request(&root, "mid", &registry))
+        .await
+        .expect("an unfinished batch rolls back");
+    let entries = boot.log.entries();
+    let Payload::Resumed(resumed) = &entries.last().unwrap().payload else {
+        panic!("the Resumed entry is last");
+    };
+    assert_eq!(resumed.resumes_after, Some(user_seq));
+    assert_eq!(
+        resumed.lost_processes,
+        vec!["p#4".to_string()],
+        "a spawn in the skipped range is still a lost process"
     );
-    let text = error.to_string();
-    assert!(
-        text.contains("mid-batch") && text.contains("call_9"),
-        "{text}"
-    );
-    assert_eq!(dir_contents(&dir), before);
-    assert_eq!(scratch_dirs(), scratch_before);
+    assert_eq!(entries.last().unwrap().turn, 1);
+    let notice = crate::project::render_resumed(resumed, entries.last().unwrap().seq);
+    assert!(notice.contains("2 entries after seq"), "{notice}");
+    let wire = serde_json::to_string(&crate::project::project(entries)).unwrap();
+    assert!(!wire.contains("call_9"), "{wire}");
+
+    // The session's turn and process numbering stay above what is on disk.
+    let (session, _turns) = crate::daemon::Session::full(crate::daemon::SessionParts::new(
+        boot.paths.cwd().to_path_buf(),
+        boot.log,
+    ));
+    assert_eq!(session.latest_turn(), 1);
+    drop(session);
+
+    let after = std::fs::read(dir.join(LOG_NAME)).unwrap();
+    assert!(after.starts_with(&before), "the log only grew");
+    let other_after: Vec<_> = dir_contents(&dir)
+        .into_iter()
+        .filter(|(name, _)| name != LOG_NAME)
+        .collect();
+    assert_eq!(other_after, other_files);
 }
 
-/// A result captured but not yet decided is the other unclean end.
+/// A result captured but not yet decided is the other unclean end, and resuming
+/// again after a rollback does not roll back a second time.
 #[tokio::test]
-async fn an_undecided_result_is_refused() {
+async fn an_undecided_result_rolls_back_once() {
     let _serial = PREPARING.lock().await;
     let root = Root::new("resume-pending");
     left_behind(&root, "pending", |log| {
@@ -215,11 +249,66 @@ async fn an_undecided_result_is_refused() {
     })
     .await;
     let registry = codex_registry(root.path(), "pending");
-    let error = failure(
-        resume(resume_request(&root, "pending", &registry)).await,
-        "an undecided result must refuse the resume",
+    let (boot, _) = resume(resume_request(&root, "pending", &registry))
+        .await
+        .expect("an undecided result rolls back");
+    let Payload::Resumed(first) = &boot.log.entries().last().unwrap().payload else {
+        panic!("the Resumed entry is last");
+    };
+    let first_after = first.resumes_after;
+    assert!(first_after.is_some());
+    drop_boot(boot);
+
+    let (boot, _) = resume(resume_request(&root, "pending", &registry))
+        .await
+        .expect("the rolled-back log resumes");
+    let Payload::Resumed(second) = &boot.log.entries().last().unwrap().payload else {
+        panic!("the Resumed entry is last");
+    };
+    assert_eq!(
+        second.resumes_after, None,
+        "the skipped completion is not live"
     );
-    assert!(error.to_string().contains("never decided"), "{error}");
+    drop_boot(boot);
+}
+
+/// The rollback point alone: an earlier unclean completion keeps the walk going, and a
+/// clean log rolls back nowhere.
+#[test]
+fn the_rollback_point_walks_back_to_a_clean_end() {
+    use crate::log::LogEntry;
+    fn at(seq: u64, payload: Payload) -> LogEntry {
+        LogEntry {
+            seq,
+            turn: 1,
+            at: Timestamp(seq),
+            submission_id: None,
+            source: None,
+            payload,
+        }
+    }
+    let user = |seq| at(seq, Payload::User(vec![ContentBlock::Text("hi".into())]));
+    let clean = vec![
+        user(0),
+        at(1, call_assistant("a")),
+        at(
+            2,
+            Payload::tool_result("a", RawResult::text("ok"), WireState::Raw),
+        ),
+    ];
+    assert_eq!(rollback_point(&clean), Ok(None));
+
+    let mut mid = clean.clone();
+    mid.push(at(3, call_assistant("b")));
+    assert_eq!(rollback_point(&mid), Ok(Some(2)));
+
+    // The earlier completion is itself unfinished: the walk continues past it.
+    let mut nested = vec![user(0), at(1, call_assistant("a"))];
+    nested.push(at(2, call_assistant("b")));
+    assert_eq!(rollback_point(&nested), Ok(Some(0)));
+
+    // Nothing before the unfinished completion to continue from.
+    assert!(rollback_point(&[at(0, call_assistant("a"))]).is_err());
 }
 
 /// A failure after the log is read (here, a connection the registry no longer has)

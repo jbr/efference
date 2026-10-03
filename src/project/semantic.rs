@@ -181,7 +181,8 @@ pub struct AskReply<'a> {
 /// Deterministic by construction: a pure function of `log`, with no clock, map
 /// iteration, or other ambient input leaking into the output.
 pub fn project_semantic(log: &[LogEntry]) -> Vec<WireTurn> {
-    let (boundaries, elided) = extract_boundaries(log);
+    let skipped = super::skipped_seqs(log);
+    let (boundaries, elided) = extract_boundaries(log, &skipped);
     let verdicts = crate::log::result_verdicts(log);
     // Each `ask`'s question by call id, so its reply can name it (`render_result`).
     let questions: HashMap<CallId, String> = log
@@ -257,6 +258,7 @@ pub fn project_semantic(log: &[LogEntry]) -> Vec<WireTurn> {
         // own log position (docs/README.md).
         while boundary_cursor < boundaries.len()
             && !elided.contains(&entry.seq)
+            && !skipped.contains(&entry.seq)
             && entry.seq > boundaries[boundary_cursor].upto
         {
             flush(&mut pending, &mut turns);
@@ -264,8 +266,9 @@ pub fn project_semantic(log: &[LogEntry]) -> Vec<WireTurn> {
             boundary_cursor += 1;
         }
 
-        // Skip elided entries (the folded old-task span + the mark itself).
-        if elided.contains(&entry.seq) {
+        // Skip elided entries (the folded old-task span + the mark itself) and the
+        // entries a `Resumed` entry rolled back (docs/resumption.md).
+        if elided.contains(&entry.seq) || skipped.contains(&entry.seq) {
             continue;
         }
 
@@ -358,7 +361,9 @@ pub fn project_semantic(log: &[LogEntry]) -> Vec<WireTurn> {
             // the entry's own position, so it appends to the wire like any later turn.
             Payload::Resumed(resumed) => {
                 flush(&mut pending, &mut turns);
-                turns.push(WireTurn::text(super::render::render_resumed(resumed)));
+                turns.push(WireTurn::text(super::render::render_resumed(
+                    resumed, entry.seq,
+                )));
             }
             // A process lifecycle record (docs/supervisor.md) is audit metadata
             // beside events the wire already carries in prose — the backgrounding

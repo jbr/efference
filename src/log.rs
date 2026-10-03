@@ -287,10 +287,23 @@ pub struct Resumed {
     /// output is no longer captured, and whether they still run is unknown.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub lost_processes: Vec<String>,
-    /// Calls of the last completion that started and never returned a result,
-    /// omitted from the wire from here on so their `tool_use` stays paired.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub dropped_calls: Vec<CallId>,
+    /// Present only when the log ended uncleanly: the seq of the last entry this session
+    /// builds on. Entries after it and before this one stay on disk but are not
+    /// restored, and projection skips them (docs/resumption.md). A log written before the
+    /// field existed reads as `None`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resumes_after: Option<Seq>,
+}
+
+impl Resumed {
+    /// The entries a `Resumed` entry at `at` skips: every seq after `resumes_after`
+    /// and before `at`. Empty when nothing was skipped.
+    pub fn skipped(&self, at: Seq) -> std::ops::Range<Seq> {
+        match self.resumes_after {
+            Some(after) if after + 1 < at => after + 1..at,
+            _ => 0..0,
+        }
+    }
 }
 
 /// One title decision (docs/session-title.md): the text and who wrote it.

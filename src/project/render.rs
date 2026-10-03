@@ -186,9 +186,10 @@ pub(super) fn normalize(ranges: &[(usize, usize)], n: usize) -> Vec<(usize, usiz
 
 /// The restart notice a [`Resumed`](crate::log::Resumed) entry projects
 /// (docs/log-and-projection.md): a harness line saying the session was reopened,
-/// how long it sat, and what the loader set aside. It states what happened and
+/// how long it sat, and what the loader set aside. `at` is the entry's own seq, which
+/// bounds the skipped range. It states what happened and
 /// nothing about what to do next.
-pub fn render_resumed(resumed: &crate::log::Resumed) -> String {
+pub fn render_resumed(resumed: &crate::log::Resumed, at: crate::log::Seq) -> String {
     let secs = resumed.gap_ms / 1000;
     let gap = match secs {
         0..=59 => format!("{secs}s"),
@@ -204,16 +205,18 @@ pub fn render_resumed(resumed: &crate::log::Resumed) -> String {
             resumed.lost_processes.join(", ")
         ));
     }
-    if !resumed.dropped_calls.is_empty() {
-        let ids: Vec<&str> = resumed
-            .dropped_calls
-            .iter()
-            .map(|id| id.0.as_str())
-            .collect();
+    let skipped = resumed.skipped(at);
+    if !skipped.is_empty() {
+        let count = skipped.end - skipped.start;
+        let (noun, were, they) = if count == 1 {
+            ("entry", "was", "it may include a tool call that ran")
+        } else {
+            ("entries", "were", "they may include tool calls that ran")
+        };
         out.push_str(&format!(
-            " Calls that started and never returned a result were dropped; their effects, \
-             if any, stand: {}.",
-            ids.join(", ")
+            " The session did not end cleanly: {count} {noun} after seq {} {were} not \
+             restored, and {they}.",
+            skipped.start - 1
         ));
     }
     out

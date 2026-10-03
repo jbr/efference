@@ -35,10 +35,14 @@ struct Boundary {
 /// When multiple boundaries exist the folds may overlap (each later
 /// consolidation subsumes the earlier ones). The later boundary's summary
 /// wins for any seq covered by both folds.
-fn extract_boundaries(log: &[LogEntry]) -> (Vec<Boundary>, HashSet<Seq>) {
+fn extract_boundaries(log: &[LogEntry], skipped: &HashSet<Seq>) -> (Vec<Boundary>, HashSet<Seq>) {
     let mut boundaries = Vec::new();
     let mut elided = HashSet::new();
     for entry in log {
+        // A mark the session rolled back never took effect.
+        if skipped.contains(&entry.seq) {
+            continue;
+        }
         if let Payload::Mark(Mark {
             kind: MarkKind::Boundary { upto },
             note,
@@ -58,6 +62,19 @@ fn extract_boundaries(log: &[LogEntry]) -> (Vec<Boundary>, HashSet<Seq>) {
         }
     }
     (boundaries, elided)
+}
+
+/// The seqs every `Resumed` entry rolled back (docs/resumption.md): those after its
+/// `resumes_after` and before its own seq. Empty for a log with no skipped range, which
+/// is what leaves such a log's projection untouched.
+pub(crate) fn skipped_seqs(log: &[LogEntry]) -> HashSet<Seq> {
+    log.iter()
+        .filter_map(|entry| match &entry.payload {
+            Payload::Resumed(resumed) => Some(resumed.skipped(entry.seq)),
+            _ => None,
+        })
+        .flatten()
+        .collect()
 }
 
 /// Where a tool result's images land on the wire (docs/log-and-projection.md).

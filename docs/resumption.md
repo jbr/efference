@@ -20,8 +20,8 @@ Resumption reads only the log ([log-and-projection.md](log-and-projection.md)):
   and its decision lands later as a `ResultVerdict`
   ([redaction-fork.md](redaction-fork.md), "Capture, then verdict").
 - **`CallStarted`**, a non-projecting entry appended after the permission cascade clears
-  a call and before the tool runs (never for `ask`). It is what lets a future mid-batch
-  resume tell a call that may have touched the world from one that never ran.
+  a call and before the tool runs (never for `ask`). The rollback rule does not read it;
+  it records which calls may have touched the world.
 
 ## The loader
 
@@ -44,15 +44,36 @@ the ones that mint:
 - **State**: the turn counter continues from the last entry's turn; the title is the
   last `Title`; `p#` handles are minted above the highest one the log mentions.
 
-A log is resumable only at a clean end: its last completion has no calls, or every call
-has a result and every result a verdict. Otherwise the resume is refused, naming the
-call. Ownership is checked twice: `Host::adopt_with` refuses a second hosting of an id,
+**The rollback rule.** A log ends cleanly when its last completion has no calls, or every
+call has a result and every result a verdict; it resumes after its last entry. Otherwise
+the resume continues from just before that completion's assistant entry: `resumes_after`
+is the seq of the last entry before it, and the same check runs on the log up to there,
+walking back until it ends cleanly. Nothing in the skipped batch is kept, rerun or
+re-triaged, and the entries stay on disk. A log with nothing before the unfinished
+completion can't be resumed. The skipped completion was only ever in triage requests,
+so the main wire's cached prefix does not change. Ownership is checked twice: `Host::adopt_with` refuses a second hosting of an id,
 and `Log::open`'s file lock refuses a second writer, in-process included.
 
 The loader appends one **`Resumed`** entry, which projects a one-line restart notice:
 how long the session sat, which background processes are no longer supervised (handles
-with a `Spawned` event and no `Exited`), and which calls were dropped. It gives the agent
-no instructions. The notice stands in for everything a restart may have changed.
+with a `Spawned` event and no `Exited`, over the whole log, skipped entries included),
+and, when entries were skipped, that the session did not end cleanly, that N entries
+after seq S were not restored, and that they may include tool calls that ran. It gives
+the agent no instructions. The notice stands in for everything a restart may have
+changed.
+
+**Skipped entries.** `Resumed.resumes_after` is present only when entries were skipped;
+projection (`project_semantic`, which both wire dialects, the triage and title peeks and
+`dev wire` encode from) drops every entry after it and before the `Resumed` entry, and a
+`Boundary` mark inside the range folds nothing. A log may hold several `Resumed`
+entries, each with its own range; a completion inside an earlier range is not the
+"last completion" at the next resume, so resuming twice does not roll back twice. The
+rest of what the log carries is read whole, so numbering stays monotonic: the turn
+counter continues from the log's last entry, `p#` handles are minted above every
+mention, the title is the latest `Title`, and grants, probes and triage retention fold
+entries that happened whether or not they are on the wire. The TUI transcript, the
+control transcript and the web client still list skipped entries, since they are on disk;
+only the notice marks the range.
 
 ## Nothing runs before the operator's first action
 

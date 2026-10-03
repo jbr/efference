@@ -72,15 +72,17 @@ the prefix only for a session that restarts on the new binary.
 `CallStarted` is appended after the permission cascade clears a call and before the
 tool runs; an `ask` never gets one, since it waits on the operator and touches
 nothing. A call with the marker and no result may have had side effects, which is
-the one state a resumed session can't continue from, so resumption drops such a call
-and reruns one without the marker (backlog/session-resumption.md, "Recovery per
-call").
+the one state a resumed session can't continue from; resumption rolls back past the
+whole unfinished completion instead of reading the marker (resumption.md).
 
 `Resumed` is appended when a later host process reopens the log. It records the gap
-since the last entry, the background handles (`p#<n>`) with no recorded exit, and
-the calls dropped because they started and never returned. It projects as one text
-block at its own position (`render_resumed`), appended to the wire like any later
-turn, so the prefix before it is unchanged.
+since the last entry, the background handles (`p#<n>`) with no recorded exit, and,
+when the log ended uncleanly, `resumes_after`, the seq of the last entry the session
+continues from. It projects as one text block at its own position (`render_resumed`),
+appended to the wire like any later turn, so the prefix before it is unchanged. Entries
+with a seq after `resumes_after` and before the `Resumed` entry are skipped by
+`project_semantic` (`skipped_seqs`); a log with no such range projects exactly as
+before. Each `Resumed` entry skips its own range.
 
 `ToolTelemetry` and `ProcessEvent` are log metadata in the same sense timestamps
 are: both project to nothing, which is what lets them be appended mid-session —

@@ -710,15 +710,124 @@ fn resumed_projects_a_notice_after_the_prefix() {
         Payload::Resumed(crate::log::Resumed {
             gap_ms: 90_000,
             lost_processes: vec!["p#1".into()],
-            dropped_calls: vec![CallId::from("toolu_2")],
+            resumes_after: None,
         }),
     ));
     let after = serde_json::to_string(&project(&log)).unwrap();
     let prefix = before.trim_end_matches(']');
     assert!(after.starts_with(prefix), "{after}");
     assert!(after.contains("session resumed after 1m"), "{after}");
+    assert!(after.contains("p#1"), "{after}");
+    assert!(!after.contains("did not end cleanly"), "{after}");
+}
+
+/// A `Resumed` entry with `resumes_after` drops the entries between: an unpaired
+/// `tool_use` never reaches the wire in either dialect, the bytes before the range are
+/// the bytes projected without it, and the notice names the range. A second
+/// `Resumed` skips its own range independently.
+#[test]
+fn a_rolled_back_range_is_not_projected() {
+    let mut log = sample_log();
+    log.push(entry(
+        3,
+        2,
+        Payload::User(vec![ContentBlock::Text("next".into())]),
+    ));
+    let before = project(&log);
+    let before_bytes = serde_json::to_string(&before).unwrap();
+    let before_turns = project_semantic(&log);
+
+    // seq 4..=5 are the rolled-back range: a call and its undecided result.
+    log.push(entry(
+        4,
+        2,
+        Payload::Assistant {
+            output: AssistantOutput::from_legacy_messages(
+                vec![],
+                vec![],
+                vec![ToolCall::new(
+                    "bash",
+                    "toolu_2",
+                    json!({ "command": "rm x" }),
+                )],
+            ),
+            upstream_failure: None,
+        },
+    ));
+    log.push(entry(
+        5,
+        2,
+        Payload::tool_result("toolu_2", RawResult::text("gone"), WireState::Pending),
+    ));
+    log.push(entry(
+        6,
+        2,
+        Payload::Resumed(crate::log::Resumed {
+            gap_ms: 5_000,
+            lost_processes: vec![],
+            resumes_after: Some(3),
+        }),
+    ));
+    let wire = project(&log);
+    let bytes = serde_json::to_string(&wire).unwrap();
     assert!(
-        after.contains("p#1") && after.contains("toolu_2"),
-        "{after}"
+        !bytes.contains("toolu_2") && !bytes.contains("rm x"),
+        "{bytes}"
+    );
+    assert!(
+        bytes.starts_with(before_bytes.trim_end_matches(']')),
+        "the prefix before the range is byte-identical: {bytes}"
+    );
+    assert!(
+        bytes.contains("2 entries after seq 3 were not restored")
+            && bytes.contains("may include tool calls that ran"),
+        "{bytes}"
+    );
+
+    // Every tool_use is answered in the turn after it, in both dialects' shared fold.
+    let turns = project_semantic(&log);
+    assert_eq!(
+        turns.len(),
+        before_turns.len() + 1,
+        "only the notice is added"
+    );
+    assert_eq!(&turns[..before_turns.len()], &before_turns[..]);
+
+    // A later range skips independently of the first, and a rolled-back mark does not
+    // fold anything.
+    log.push(entry(
+        7,
+        2,
+        Payload::User(vec![ContentBlock::Text("again".into())]),
+    ));
+    log.push(entry(
+        8,
+        3,
+        Payload::Mark(Mark {
+            kind: MarkKind::Boundary { upto: 3 },
+            note: "folded".into(),
+        }),
+    ));
+    log.push(entry(
+        9,
+        3,
+        Payload::Resumed(crate::log::Resumed {
+            gap_ms: 1_000,
+            lost_processes: vec![],
+            resumes_after: Some(7),
+        }),
+    ));
+    let bytes = serde_json::to_string(&project(&log)).unwrap();
+    assert!(
+        bytes.contains("again") && bytes.contains("hello"),
+        "{bytes}"
+    );
+    assert!(
+        !bytes.contains("folded") && !bytes.contains("toolu_2"),
+        "{bytes}"
+    );
+    assert!(
+        bytes.contains("1 entry after seq 7 was not restored"),
+        "{bytes}"
     );
 }

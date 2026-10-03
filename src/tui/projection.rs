@@ -385,7 +385,7 @@ pub(crate) fn entry_nodes(
             Payload::Resumed(resumed) => {
                 nodes.push(annotation_line(
                     "⟢ ",
-                    &crate::project::render_resumed(resumed),
+                    &crate::project::render_resumed(resumed, entry.seq),
                 ));
             }
             // A process lifecycle record (docs/supervisor.md) — the durable half
