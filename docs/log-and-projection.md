@@ -358,6 +358,19 @@ so a newer file's incompatible metadata reports as the unsupported version it
 is rather than as a field this build happens not to know. There is no
 importer for an unheadered log and no serializer kept for an old shape.
 
+Only version 1 exists. An incompatible change to the entries, including a change of
+meaning that leaves their shape intact, increments the version and comes with an
+explicit forward transformation: an older file is converted once before writable use,
+validated whole, written beside the original and atomically swapped in. Mixed versions
+are never appended to one file. Read-only inspection and the inventory never rewrite a
+file. A log from before the header is converted outside the harness (the 2026-10-02
+corpus migration, journal/2026-10-02-resumption-foundation-and-corpus-migration.md).
+
+There is no hash chain over the entries. A chain stored in the file doesn't stop an
+editor from recomputing it or truncating the file, and every migration would have to
+recompute it; tamper evidence would need an independently trusted checkpoint, which is a
+separate concern from parsing and recovery.
+
 `metadata` is the session boot recorded, in log-owned types
 (`SessionMetadata`, `TriageModel`): the id and working directory, one
 `LoggedInference` per role (main, spotter, and the triage selection when triage
