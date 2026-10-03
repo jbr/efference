@@ -1,3 +1,8 @@
+// The `Send` check on the session loop's spawned future (`daemon::runtime`) walks
+// through the whole async call chain, `Toolbox::run` included; its auto-trait
+// recursion reaches the default depth of 128 on that chain.
+#![recursion_limit = "256"]
+
 pub mod agent;
 pub mod api;
 pub mod attachments;

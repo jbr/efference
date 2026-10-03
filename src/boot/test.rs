@@ -1,4 +1,6 @@
+use super::scaffold::self_surface_grants;
 use super::*;
+use std::path::Path;
 
 /// The re-serve guard (docs/control-channel.md): a fresh name mints its dir, and a name whose
 /// dir already exists is refused rather than opening a second seq space into the same log. The

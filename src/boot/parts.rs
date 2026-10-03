@@ -1,0 +1,327 @@
+//! The session's runtime parts: toolbox, preamble, provider client, spotter, and
+//! triage peek. Each is built from resolved config and capabilities and shared
+//! by every way a session boots.
+
+use std::path::Path;
+
+use super::{describe_window, mcp_mount};
+use crate::api::{Client, Endpoint, Error, ModelCapabilities, UNKNOWN_OUTPUT_CAP};
+use crate::config::LoadedConfig;
+use crate::distill::ForkPeek;
+use crate::env_table::EnvPolicy;
+use crate::inference::SessionInference;
+use crate::spotter::MountedSpotter;
+use crate::tools::Toolbox;
+
+/// What [`mount_toolbox`] needs from the boot so far.
+pub(super) struct ToolboxInputs<'a> {
+    pub cwd: &'a Path,
+    pub scratch: &'a Path,
+    pub loaded: &'a LoadedConfig,
+    pub env_policy: &'a EnvPolicy,
+    pub capabilities: &'a ModelCapabilities,
+    pub endpoint: &'a Endpoint,
+    pub host: Option<std::sync::Arc<crate::daemon::Host>>,
+    pub session_id: &'a str,
+    pub reauth: &'a [String],
+}
+
+/// The toolbox, and the preamble section naming what did not mount.
+pub(super) struct MountedTools {
+    pub toolbox: Toolbox,
+    pub unmounted_section: Option<String>,
+}
+
+/// Mount the config-declared connected providers (docs/tools.md) before the
+/// first projection, so the session's tools[] is fixed from turn one — and
+/// before the system prompt is built, because what did *not* mount is part
+/// of what the session must know. A server that answers `401` is authorized
+/// here, which is the one point in the boot that waits for a human
+/// (docs/mcp-auth.md).
+pub(super) async fn mount_toolbox(inputs: ToolboxInputs<'_>) -> Result<MountedTools, Error> {
+    let ToolboxInputs {
+        cwd,
+        scratch,
+        loaded,
+        env_policy,
+        capabilities,
+        endpoint,
+        host,
+        session_id,
+        reauth,
+    } = inputs;
+    let mut toolbox = Toolbox::bash_and_mcps(cwd.to_path_buf(), Some(scratch.to_path_buf()))?
+        .with_bash_limits(loaded.role.bash)
+        .with_child_env(env_policy.child_env())
+        // The image gate (docs/tools.md): what the boot capability lookup said
+        // about this model's image input, so an image-producing tool refuses
+        // clearly instead of attaching bytes the model cannot read.
+        .with_image_input(capabilities.supports_image_input);
+    // The in-session `sessions` provider (docs/tools.md): a session created on
+    // a host reaches its project's sessions directly, with its own id as the
+    // caller. Mounted before the first projection so `tools[]` is fixed from
+    // turn one.
+    if let Some(host) = host {
+        toolbox.mount_sessions(host, session_id.to_string());
+    }
+    // Credentials live in the user's secret store (docs/secrets.md): an
+    // authorization belongs to the operator and the server, not to one session.
+    let store = crate::mcp::auth::store::KeychainStore::new(std::sync::Arc::new(
+        crate::secrets::Secrets::detect()?,
+    ));
+    let unmounted =
+        mcp_mount::mount_all(&mut toolbox, &loaded.role.mcp_servers, cwd, &store, reauth).await?;
+    let unmounted_section = crate::mcp::unmounted_section(&unmounted);
+    // The frozen toolbox against the dialect's name rule (docs/tools.md): a name the
+    // request would reject fails the boot here, by its display name, instead of the
+    // first turn failing with a 400 that names nothing.
+    // Boot's endpoint is the session's main model, which resolution already
+    // refused for a provider that serves no turns (`src/inference/options.rs`).
+    let dialect = endpoint
+        .provider
+        .inference_dialect()
+        .expect("the main model's provider serves turns");
+    let illegal = toolbox.illegal_names(dialect);
+    if !illegal.is_empty() {
+        for problem in &illegal {
+            eprintln!("error: tool name {problem}");
+        }
+        return Err(format!(
+            "{} mounted tool name{} the {} dialect rejects",
+            illegal.len(),
+            if illegal.len() == 1 { "" } else { "s" },
+            dialect
+        )
+        .into());
+    }
+    Ok(MountedTools {
+        toolbox,
+        unmounted_section,
+    })
+}
+
+/// The boot preamble: the frozen system prompt, and the pieces it was built from.
+pub(super) struct FrozenPreamble {
+    pub system: String,
+    pub resolved: crate::context::Resolved,
+    pub context_block: Option<String>,
+}
+
+/// Build the system prompt once, here at startup, and freeze it into the cached
+/// prefix — it must stay byte-stable for the whole session or it would invalidate
+/// the cache every turn (docs/log-and-projection.md). Everything it folds in is resolved
+/// once at boot: the [context] block (files read + exec sections run now, frozen —
+/// docs/context.md; orientation rides here as a config exec entry), the role's
+/// brief, and the config note.
+pub(super) fn freeze_preamble(
+    loaded: &LoadedConfig,
+    cwd: &Path,
+    env_policy: &EnvPolicy,
+    model: &str,
+    session_id: &str,
+    lineage: &crate::env::Lineage,
+    unmounted_section: Option<&str>,
+) -> Result<FrozenPreamble, Error> {
+    let role_section = loaded.role.preamble_section();
+    // The [context] preamble builder (docs/context.md): resolve the operator's listed
+    // files from cwd and fold the rendered block into the frozen prefix. Fail closed — configured
+    // context that can't be read aborts startup rather than silently vanishing.
+    let mut resolved = match crate::context::resolve_with_child_env(
+        &loaded.role.context,
+        cwd,
+        &env_policy.child_env(),
+    ) {
+        Ok(resolved) => resolved,
+        Err(e) => {
+            eprintln!("error: {e}");
+            return Err("could not resolve [context] entries".into());
+        }
+    };
+    // Mask the resolved sections *before* rendering (docs/env.md). The preamble is
+    // the one string that both rides the request's `system` field and is
+    // snapshotted into the log, so masking it at the log's choke point alone would
+    // leave the wire copy unfiltered and the two copies no longer byte-identical —
+    // which is the whole point of the `Preamble` entry (docs/context.md). A
+    // `[context]` exec that prints the environment is the concrete case.
+    env_policy.mask_context(&mut resolved);
+    let context_block = resolved.render();
+    let system = env_policy.mask(&crate::env::system_prompt(
+        model,
+        session_id,
+        lineage,
+        context_block.as_deref(),
+        role_section.as_deref(),
+        unmounted_section,
+    ));
+    Ok(FrozenPreamble {
+        system,
+        resolved,
+        context_block,
+    })
+}
+
+/// The boot-time request settings the agent client carries.
+pub(super) struct ClientSettings {
+    pub temperature: Option<u8>,
+    pub upstream: Vec<String>,
+    pub effort: Option<String>,
+}
+
+/// The agent client, with the upstream pin, stream ceiling, effort, and the
+/// model's capabilities applied.
+pub(super) fn build_client(
+    endpoint: &Endpoint,
+    model: &str,
+    system: String,
+    settings: ClientSettings,
+    loaded: &LoadedConfig,
+    capabilities: &ModelCapabilities,
+) -> Client {
+    let ClientSettings {
+        temperature,
+        upstream,
+        effort,
+    } = settings;
+    // The upstream pin rides the agent client, which the fork peek shares — so
+    // turns and gates route alike. It deliberately does **not** reach the spotter:
+    // endpoint slugs are per-model, the spotter runs a different (Haiku-band)
+    // model, and an order naming endpoints that do not serve it would fail
+    // outright with fallbacks disabled.
+    let upstream = crate::api::Upstream::pinned(upstream);
+    if let Some(pin) = &upstream {
+        eprintln!("upstream: {} (fallbacks disabled)", pin.order.join(", "));
+    }
+    let mut client = Client::new(endpoint.clone(), model, system, temperature)
+        .with_upstream(upstream.clone())
+        // `[transport] stream-ceiling` (docs/transport.md): the bound on a stream
+        // that stays open without finalizing. It rides the agent client, which
+        // the fork peek shares, so both stream surfaces are bounded alike.
+        .with_stream_ceiling(loaded.role.transport.stream_ceiling)
+        // The effort level rides the agent client, so the turn and the fork peek send
+        // one envelope (docs/redaction-fork.md). The spotter's client is built
+        // separately and never carries it; the keepalive omits it by construction.
+        .with_effort(effort)
+        .with_model_reasoning(capabilities.supports_reasoning)
+        // Who places cache-write boundaries (docs/transport.md): the Responses
+        // request reads this to decide whether to send explicit markers.
+        .with_prompt_cache(capabilities.prompt_cache);
+    // The output budget follows the model's reported cap (a reasoning model's
+    // thinking bills against it; the 4096 default starves a long think). No
+    // report → the default stands.
+    // An unreported cap still needs a number, because Messages requires
+    // `max_tokens` (`UNKNOWN_OUTPUT_CAP`, docs/transport.md). Erring high is
+    // deliberate and is made safe by the retry that reads the ceiling out of the
+    // provider's refusal — the `Client`'s own small default would quietly cost a
+    // mandatory-reasoning model its entire response.
+    client = client.with_max_output(capabilities.max_output_tokens.unwrap_or(UNKNOWN_OUTPUT_CAP));
+    // The window the cap is reserved against: each request sends the cap
+    // shrunk to what the window spares after the prompt (`api/reservation.rs`).
+    client = client.with_context_window(capabilities.context_length);
+    client
+}
+
+/// The independent permission rung (docs/permissions.md) has its own connection
+/// and model. It keeps a distinct sticky key even when it shares the main
+/// connection.
+pub(super) async fn mount_spotter(
+    inference: &SessionInference,
+    main_endpoint: &Endpoint,
+    scratch: &Path,
+    cwd: &Path,
+) -> Result<MountedSpotter, Error> {
+    let (spotter_selection, mut spotter_endpoint) = inference.spotter();
+    let spotter_model = spotter_selection.model.clone();
+    eprintln!(
+        "spotter: {}/{} ({})",
+        spotter_selection.connection, spotter_selection.model, spotter_selection.provider
+    );
+    spotter_endpoint.session_id = main_endpoint.session_id.clone();
+    // The spotter's model is validated against *its* provider's metadata source,
+    // not the main model's: a hosted spotter may sit on a different connection and
+    // dialect. Its own capabilities are not applied to its client today — the
+    // spotter sends a short fresh prompt with no thinking, effort, or temperature —
+    // so the lookup is the existence check that fails boot instead of the first
+    // permission decision.
+    //
+    // A decision model has no such metadata: there is no context window, output
+    // cap, or cache policy behind a decisions request (docs/permissions.md), on
+    // either provider that serves one. Its own existence check stands in.
+    let checked =
+        if crate::spotter::jev::is_decision_spotter(spotter_endpoint.provider, &spotter_model) {
+            spotter_endpoint.check_decision_model(&spotter_model).await
+        } else {
+            spotter_endpoint
+                .fetch_capabilities(&spotter_model, &[])
+                .await
+                .map(drop)
+        };
+    if let Err(error) = checked {
+        return Err(format!(
+            "spotter model {spotter_model:?} on {}: {error}",
+            spotter_endpoint.provider
+        )
+        .into());
+    }
+    // Which rung the id names (docs/permissions.md): a decision model reaches a
+    // different API and answers differently, so the choice is made here, once.
+    let spotter = MountedSpotter::mount(
+        spotter_endpoint.for_spotter(),
+        &spotter_model,
+        Some(scratch.to_path_buf()),
+        cwd.to_path_buf(),
+    );
+    eprintln!("spotter rung: {}", spotter.kind());
+    Ok(spotter)
+}
+
+/// The model-driven fork (docs/redaction-fork.md): every tool result is peeked and the
+/// canonical wire keeps only what the model retains.
+///
+/// Sharing is explicit (docs/redaction-fork.md): an omitted triage selection
+/// uses the main client; a configured selection always gets its own endpoint
+/// and retry state, even when it names the same native model.
+pub(super) async fn mount_distiller(
+    inference: &SessionInference,
+    main_endpoint: &Endpoint,
+    model: &str,
+    context_block: Option<&str>,
+    env_policy: &EnvPolicy,
+    loaded: &LoadedConfig,
+) -> Result<ForkPeek, Error> {
+    Ok(match inference.triage() {
+        Some((selection, mut triage_endpoint, triage)) => {
+            triage_endpoint.session_id = main_endpoint.session_id.clone();
+            let system = env_policy.mask(&crate::env::triage_system_prompt(
+                &triage.model,
+                model,
+                context_block,
+            ));
+            let (peek, caps) = ForkPeek::for_triage_model(
+                &triage_endpoint,
+                triage,
+                system,
+                loaded.role.transport.stream_ceiling,
+            )
+            .await
+            .map_err(|error| format!("triage model: {error}"))?;
+            eprintln!(
+                "triage: {}/{} ({}) · context {} · thinking {} · tool choice {}",
+                selection.connection,
+                selection.model,
+                selection.provider,
+                describe_window(caps.context_length),
+                match (&triage.effort, triage.thinking) {
+                    (Some(effort), _) => format!("on, effort {effort}"),
+                    (None, true) => "on".into(),
+                    (None, false) => "off".into(),
+                },
+                if triage.auto_choice { "auto" } else { "forced" }
+            );
+            peek
+        }
+        None => {
+            eprintln!("triage: {model} (shared main client)");
+            ForkPeek::shared()
+        }
+    })
+}

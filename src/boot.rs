@@ -14,16 +14,25 @@
 //! Boot progress is reported on stderr, the host's surface; a hosted creation
 //! will need that report returned instead (backlog/host-process.md).
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
-use crate::api::{Client, Error, UNKNOWN_OUTPUT_CAP};
+use crate::api::Error;
 use crate::daemon::SessionBoot;
-use crate::distill::ForkPeek;
 use crate::persist::Log;
 use crate::spotter::MountedSpotter;
-use crate::tools::Toolbox;
 
+mod env;
 pub mod mcp_mount;
+mod metadata;
+mod mint;
+mod model;
+mod parts;
+mod scaffold;
+
+use env::resolve_env_values;
+use mint::Minted;
+pub use mint::{mint_scratch_dir, mint_session_dir};
+pub use scaffold::CONFIG_SCAFFOLD;
 
 /// The base directory for all session dirs (gitignored). Each session is
 /// `.efference/<id>/`, holding its standard-named socket, log, and config
@@ -33,106 +42,6 @@ pub const BASE_DIR: &str = crate::daemon::SESSION_BASE;
 pub const LOG_NAME: &str = "log.jsonl";
 
 pub const CONFIG_NAME: &str = "config.toml";
-
-/// Layer the harness's self-surface protection over the operator's grants (docs/permissions.md).
-///
-/// The session dir holds this session's control socket, its append-only log, and — under the same
-/// base — every *other* session's dir; all of it sits inside the operator's `.` grant, so nothing
-/// stops the session from writing its own log (corrupting the log) or POSTing to its own control
-/// socket (approving its own gates, injecting a user turn) without this. Deny the whole base dir,
-/// then re-allow read-only on two things of *this* session's:
-///
-/// - its `config.toml` — the sanctioned scope-expansion path: the session reads its own perimeter
-///   and *edits* the file, which is a write the fast-path won't clear, so it gates for the
-///   operator;
-/// - its attachment store — the files the operator attached, which the notice tells the model to
-///   pull with `read` / `read_image` (docs/inbox.md). Without the re-allow, every pull gates.
-///
-/// Inserted after the operator config so an equal-specificity operator key is overridden;
-/// `policy::path_granted`'s longest-prefix rule still lets a strictly deeper operator grant win.
-fn self_surface_grants(
-    paths: &mut std::collections::BTreeMap<String, crate::config::Perms>,
-    session_dir: &Path,
-) {
-    let read_only = crate::config::Perms {
-        read: true,
-        write: false,
-    };
-    paths.insert(BASE_DIR.to_string(), crate::config::Perms::default());
-    for path in [
-        session_dir.join(CONFIG_NAME),
-        crate::attachments::dir_for_session(session_dir),
-    ] {
-        paths.insert(path.to_string_lossy().into_owned(), read_only);
-    }
-}
-
-/// Written into a fresh session's `config.toml` when there's no origin to snapshot — a header that
-/// teaches the schema, plus the one default that isn't empty: an `Environment at boot` `[context]`
-/// exec entry, orientation expressed as config rather than hardcoded (docs/context.md). It's a real,
-/// visible line in the session's own file, so a session that `cat`s its config sees it and an
-/// operator can edit or delete it (docs/permissions.md).
-pub const CONFIG_SCAFFOLD: &str = "\
-# Your session's permissions config. Edit it to request changes — edits are reviewed before they
-# take effect, and a malformed file is rejected wholesale (fail-closed): if an edit doesn't seem to
-# \"take\", check that the file still parses. Unknown keys are rejected. Schema (all keys optional):
-#   scope = \"...\"                       # STRING, top-level — what this session is for (NOT a [scope] table)
-#   watch-for = [\"...\"]                 # hazards the permission spotter should watch for
-#   trust-threshold = 0.5               # where the watch-window/gate cutoffs sit (optional float)
-#   tools = [\"read\", \"list\", \"search\"]  # structured tools you may use
-#   [commands]                          # bash prefixes → clear/watch/gate/deny (true = clear, false = deny),
-#                                       #   e.g. cargo = true, \"git diff\" = true, \"git push\" = \"deny\".
-#                                       #   The longest matching prefix governs, so a broad grant can carry
-#                                       #   carve-outs: git = true with \"git push\" = \"deny\".
-#   [paths]                             # filesystem grants, e.g. \".\" = true or \"/refs\" = { read = true }
-#   [context]                           # knowledge the session boots with (docs/context.md), e.g.
-#                                       #   \"CLAUDE.md\" = true, Label = { exec = \"...\" } (stdout at boot),
-#                                       #   or Label = { builtin = \"guide\" } (the harness's own docs)
-#   [env]                               # per-variable env policy (docs/env.md): strip = keep it out of
-#                                       #   spawned children, mask = never store its value in the log.
-#                                       #   e.g. \"*_KEY\" = { mask = true } or \"CI_*\" = { strip = true }.
-#                                       #   *_KEY/*_SECRET/*_TOKEN/*_PASSWORD/*_CREDENTIALS mask by default.
-#                                       #   An entry may also name the value: RUST_LOG = { value = \"debug\" }
-#                                       #   (literal), SOME_KEY = \"op://Vault/Item/field\" (resolved at boot
-#                                       #   and always masked), or { cmd = \"...\" } for any other vault.
-
-# What this session is for. The permission spotter judges each move against it, so an
-# ordinary look around the project reads as part of the task (docs/permissions.md).
-scope = \"Set this project up for efference: look over the project to learn how it is built and laid out, ask the operator what they want sessions here to be allowed and to know, write efference.toml and AGENTS.md at the project root, and keep efference's files out of version control in .gitignore or .git/info/exclude, as the operator chooses. Stay out of any file the operator asks you to avoid.\"
-
-# The kickoff: in a session that has said nothing yet, the harness sends this as the opening
-# turn, so the agent speaks first (docs/context.md). Like the preamble, it is not shown as a
-# turn; what you see is the reply. Delete the line for a session that waits for you.
-first-turn = \"efference opened this session in a directory with no efference.toml, after the operator chose to set it up. They have not said anything yet.\"
-
-# A session here is setting the project up, which means reading it and writing efference.toml
-# and AGENTS.md into it: the built-in tools and the directory are granted so that work is not
-# a string of approvals. This session's own config (this file) stays review-only, and
-# `.efference/` stays denied, whatever is granted here (docs/permissions.md).
-tools = [\"efference.*\"]
-
-# The one command cleared by name: validating the template the session is about to write
-# (docs/operating.md). Every other command goes through the spotter.
-[commands]
-\"efference check\" = true
-
-[paths]
-\".\" = true
-
-# Orientation as config: this section's stdout is frozen into the session preamble at boot.
-[context]
-\"Environment at boot\" = { exec = 'echo \"working directory: $PWD\"; echo \"platform: $(uname -sm)\"; git rev-parse --is-inside-work-tree >/dev/null 2>&1 && echo \"git: a repository\" || echo \"git: not a repository\"; echo \"top-level entries:\"; ls -A' }
-# The harness's own usage documents, listed as read-on-demand stubs. This is what makes a
-# session with no project config recoverable: it starts knowing how to learn everything
-# else, including how to write this file. Delete the line to stop listing them; the
-# documents stay readable at their paths either way.
-EfferenceGuide = { builtin = \"guide\" }
-# The setup task itself, in full rather than as a stub, so the first turn starts with it in
-# hand. `guide/<slug>` inlines any one document.
-\"Setting up a project\" = { builtin = \"guide/new-project\" }
-";
-
-mod metadata;
 
 /// What a session's creator supplies. Paths are absolute; nothing here is read
 /// from the process environment or working directory by `prepare`.
@@ -165,46 +74,6 @@ pub struct SessionRequest {
     pub lineage: crate::env::Lineage,
 }
 
-/// What this creation attempt minted, for rollback (docs/control-channel.md).
-///
-/// A path is recorded here only after an exclusive `create_dir` returned success,
-/// which is what makes it this attempt's: a dir an existing session or a racing
-/// attempt holds makes the create fail, so it is never recorded and never removed.
-/// A boot that succeeds hands these to the session instead.
-#[derive(Default)]
-struct Minted {
-    session_dir: Option<PathBuf>,
-    scratch: Option<PathBuf>,
-    /// `--keep-scratch`, honored on a failed boot as it is at session end
-    /// (docs/tools.md): the post-mortem artifact survives the rollback.
-    keep_scratch: bool,
-}
-
-impl Minted {
-    /// Remove what this attempt minted, naming anything that resists on stderr —
-    /// the boot report's surface. A failed removal is not escalated: the
-    /// preparation error the caller is already returning is the one that matters.
-    fn roll_back(self) {
-        if let Some(dir) = &self.session_dir
-            && let Err(e) = std::fs::remove_dir_all(dir)
-            && e.kind() != std::io::ErrorKind::NotFound
-        {
-            eprintln!("[session dir: could not remove {}: {e}]", dir.display());
-        }
-        match (&self.scratch, self.keep_scratch) {
-            (Some(scratch), true) => eprintln!("scratch kept: {}", scratch.display()),
-            (Some(scratch), false) => {
-                if let Err(e) = std::fs::remove_dir_all(scratch)
-                    && e.kind() != std::io::ErrorKind::NotFound
-                {
-                    eprintln!("[scratch: could not remove {}: {e}]", scratch.display());
-                }
-            }
-            (None, _) => {}
-        }
-    }
-}
-
 /// Prepare a session: everything from the origin config to the provider client,
 /// in the order the boot report prints it. Fails before minting anything when the
 /// config, a reference, the provider, or the effort level is unusable; a failure
@@ -228,6 +97,13 @@ pub async fn prepare(request: SessionRequest) -> Result<SessionBoot<MountedSpott
 }
 
 /// [`prepare`], recording what it mints as it goes.
+///
+/// The steps a resume shares with a fresh create are the functions called from
+/// here (`model::resolve_capabilities`, `scaffold::load_session_config`,
+/// `scaffold::mint_scratch`, `env::build_env_policy`, and the `parts` builders);
+/// what is written inline is specific to creating: the origin config, the
+/// minted dir and its config snapshot, the log's creation, and the frozen
+/// preamble.
 async fn prepare_minting(
     request: SessionRequest,
     minted: &mut Minted,
@@ -292,78 +168,15 @@ async fn prepare_minting(
     // a provider with sticky routing simply derives a key nothing reads.
     endpoint.session_id = Some(crate::api::sticky_session_id(&session_dir));
 
-    // The required model-metadata lookup (docs/transport.md): capability conditionals
-    // (the context ceiling now; more as they land) must not run on guesses, so a failed
-    // lookup fails serve rather than starting blind.
-    // The `--upstream` pin narrows which endpoints answer the question: a pinned
-    // session's ceilings are the pinned endpoints', not the aggregate across every
-    // upstream serving the slug (docs/transport.md).
-    let capabilities = match endpoint.fetch_capabilities(model, &upstream).await {
-        Ok(caps) => caps,
-        Err(e) => {
-            return Err(format!(
-                "model metadata lookup for {model:?} on {} failed: {e}",
-                endpoint.provider.name()
-            )
-            .into());
-        }
-    };
-    // A model that refuses the parameter fails here rather than on the first
-    // request, where the rejection would read as a transport error.
-    // (`describe_window` is defined below.)
-    if temperature.is_some() && !capabilities.accepts_temperature {
-        return Err(
-            format!("--temperature: {model} does not accept a sampling temperature").into(),
-        );
-    }
-    eprintln!(
-        "model: {model} · context {}{}",
-        describe_window(capabilities.context_length),
-        match capabilities.max_output_tokens {
-            Some(cap) => format!(" · max output {cap}"),
-            // Said as an assumption rather than printed as a fact, so an
-            // unreported cap is visible here instead of surprising later.
-            None => format!(" · max output {UNKNOWN_OUTPUT_CAP} assumed (none reported)"),
-        }
-    );
-
     // The session's effort level (docs/transport.md): the flag if given, else the
     // config's `[transport] effort`, else nothing on the wire at all. Boot-time and
     // frozen — no runtime toggle, because a mid-session change would move the cached
     // prefix. Read from the origin, which the session's snapshot below copies
     // verbatim, so the level is settled before anything is minted.
-    //
-    // The one cross-axis coupling is checked here rather than forwarded as the
-    // provider's 400: `xhigh`/`max` need thinking, which either `EFFERENCE_THINKING=off`
-    // or a model whose turns fall through to explicit `disabled` takes away — the
-    // capability lookup above is what makes the effective answer computable here.
     let effort = effort.or_else(|| origin.role.transport.effort.clone());
-    // Validate before the coupling check: the metadata's list is the level's
-    // only defense, so an unsupported spelling is named first (docs/transport.md).
-    if let Some(effort) = &effort
-        && let Err(why) = capabilities.check_effort(effort, model)
-    {
-        return Err(why.into());
-    }
-    if let Err(why) = crate::api::check_effort_thinking(
-        effort.as_deref(),
-        crate::api::auto_turns_disable_thinking(model, capabilities.supports_reasoning),
-    ) {
-        return Err(why.into());
-    }
-    match (&effort, &capabilities.default_effort) {
-        (Some(effort), _) if capabilities.validates_efforts => eprintln!("effort: {effort}"),
-        // Sent without a check against the model's metadata, which may name no
-        // levels at all: the provider may honor it, refuse it, or drop it
-        // silently, and only the last one leaves no trace (docs/transport.md).
-        (Some(effort), _) => {
-            eprintln!("effort: {effort} · unchecked, the model's metadata does not bound it");
-        }
-        (None, Some(default)) => {
-            eprintln!("effort: unset · provider default {default}");
-        }
-        (None, None) => {}
-    }
+    let capabilities =
+        model::resolve_capabilities(&endpoint, model, &upstream, temperature, effort.as_deref())
+            .await?;
 
     // Everything for this session is colocated in its own dir (gitignored), standard-named since
     // the dir is the unique unit (docs/permissions.md). Minting it is also the guard against
@@ -375,119 +188,13 @@ async fn prepare_minting(
     // path is this attempt's alone, so a later failure may remove it (docs/control-channel.md).
     minted.session_dir = Some(session_dir.clone());
 
-    // Snapshot the origin config into the session's own `config.toml` *once* (a fresh session). The
-    // origin (`--config`/the `efference.toml` probe) is a template consumed at boot; thereafter the
-    // per-session snapshot is the live, editable, watched policy — so two sessions sharing an origin
-    // diverge freely, and the session can `cat` its config to see its perimeter and edit it to
-    // request changes. The `else` branch (a snapshot that already exists) is unreachable while
-    // `mint_session_dir` refuses an existing dir; it is what a resumption design would re-enter.
     let session_config = session_dir.join(CONFIG_NAME);
-    if !session_config.exists() {
-        // The origin was validated above (fail fast on a malformed template, before binding
-        // anything); copy it verbatim (comments intact) — or scaffold an empty config when
-        // there's none.
-        match &origin.source {
-            crate::config::ConfigSource::Path(p) => {
-                std::fs::copy(p, &session_config)?;
-                eprintln!(
-                    "config: snapshot of {} → {}",
-                    p.display(),
-                    session_config.display()
-                );
-            }
-            crate::config::ConfigSource::Default => {
-                std::fs::write(&session_config, CONFIG_SCAFFOLD)?;
-                eprintln!("config: scaffolded {}", session_config.display());
-            }
-        }
-    } else {
-        eprintln!("config: reusing {}", session_config.display());
-    }
+    scaffold::snapshot_config(&origin, &session_config)?;
+    let mut loaded = scaffold::load_session_config(&session_config, &session_dir)?;
 
-    // The per-session snapshot *is* the live config now (a malformed hand-edit on resume fails fast
-    // here). Everything downstream — the preamble, fs-watch, `/state`, persisted config-edits — keys
-    // off this path, not the origin.
-    let mut loaded = match crate::config::load(Some(&session_config)) {
-        Ok(l) => l,
-        Err(e) => {
-            e.eprint();
-            return Err("could not load session config".into());
-        }
-    };
+    let scratch = scaffold::mint_scratch(minted, &mut loaded)?;
 
-    self_surface_grants(&mut loaded.role.paths, &session_dir);
-
-    // The per-session scratch dir (docs/tools.md): minted mkdtemp-style, exported to
-    // every tool child as `$TMPDIR`, and always granted rw — the sanctioned answer
-    // to driven sessions reaching for `/tmp` (the most-repeated gate in the
-    // spotter-log survey). It lives outside `.` and outside the session dir, so it
-    // collides with neither the operator's grants nor the self-surface deny above.
-    let scratch = mint_scratch_dir()?;
-    // Minted by exclusive create under a random name, so — like the session dir — it
-    // belongs to this attempt and a later failure may remove it.
-    minted.scratch = Some(scratch.clone());
-    eprintln!("scratch: {} (exported as $TMPDIR)", scratch.display());
-    loaded.role.paths.insert(
-        scratch.to_string_lossy().into_owned(),
-        crate::config::Perms {
-            read: true,
-            write: true,
-        },
-    );
-
-    // The `[env]` table (docs/env.md), resolved against the caller's captured
-    // environment: the child-env policy every spawn site applies (strip, and the
-    // values the table names), and the session's masker. An unresolvable
-    // precedence tie is a startup config error; a value under the maskability
-    // floor is a warning naming the variable only. The session snapshot is a copy
-    // of the origin, so its references are already in the resolver's cache — no
-    // second vault prompt.
-    let session_values = resolve_env_table(&resolver, &loaded.role.env)?;
-    let host_credentials = inference.credential_variables().to_vec();
-    let withheld: Vec<&String> = host_credentials
-        .iter()
-        .filter(|name| base_env.get(name).is_some())
-        .filter(|name| loaded.role.env.get(*name).and_then(|entry| entry.strip) != Some(false))
-        .collect();
-    if !withheld.is_empty() {
-        eprintln!(
-            "env: withheld from this session's commands — the host's model credentials \
-             ({}); a project that needs one sets `strip = false` for it under [env]",
-            withheld
-                .iter()
-                .map(|name| format!("`{name}`"))
-                .collect::<Vec<_>>()
-                .join(", ")
-        );
-    }
-    let env_report = crate::env_table::EnvPolicy::build_session(
-        &loaded.role.env,
-        &host_credentials,
-        base_env,
-        &session_values,
-        resolver.clone(),
-    );
-    for name in &env_report.forced_mask {
-        eprintln!(
-            "[env: `{name}` resolves from a command, so its value is masked despite \
-             `mask = false` — a value the harness fetched for the session is known to be \
-             a secret]"
-        );
-    }
-    for conflict in &env_report.conflicts {
-        eprintln!("error: [env] {conflict}");
-    }
-    if !env_report.conflicts.is_empty() {
-        return Err("ambiguous [env] table".into());
-    }
-    for name in &env_report.below_floor {
-        eprintln!(
-            "[env: `{name}` is set to fewer than {} characters and will not be masked — \
-             too short a needle would shred unrelated output]",
-            crate::env_table::MASKABILITY_FLOOR
-        );
-    }
-    let env_policy = env_report.policy;
+    let env_policy = env::build_env_policy(&resolver, &loaded.role.env, &inference, base_env)?;
 
     let log_path = session_dir.join(LOG_NAME);
     metadata.effort = effort.clone();
@@ -514,94 +221,37 @@ async fn prepare_minting(
     // once at boot: the [context] block (files read + exec sections run now, frozen —
     // docs/context.md; orientation rides here as a config exec entry), the role's
     // brief, and the config note.
-    // Mount the config-declared connected providers (docs/tools.md) before the
-    // first projection, so the session's tools[] is fixed from turn one — and
-    // before the system prompt is built, because what did *not* mount is part
-    // of what the session must know. A server that answers `401` is authorized
-    // here, which is the one point in the boot that waits for a human
-    // (docs/mcp-auth.md).
-    let mut toolbox = Toolbox::bash_and_mcps(cwd.clone(), Some(scratch.clone()))?
-        .with_bash_limits(loaded.role.bash)
-        .with_child_env(env_policy.child_env())
-        // The image gate (docs/tools.md): what the boot capability lookup said
-        // about this model's image input, so an image-producing tool refuses
-        // clearly instead of attaching bytes the model cannot read.
-        .with_image_input(capabilities.supports_image_input);
-    // The in-session `sessions` provider (docs/tools.md): a session created on
-    // a host reaches its project's sessions directly, with its own id as the
-    // caller. Mounted before the first projection so `tools[]` is fixed from
-    // turn one.
-    if let Some(host) = host {
-        toolbox.mount_sessions(host, session_id.clone());
-    }
-    // Credentials live in the user's secret store (docs/secrets.md): an
-    // authorization belongs to the operator and the server, not to one session.
-    let store = crate::mcp::auth::store::KeychainStore::new(std::sync::Arc::new(
-        crate::secrets::Secrets::detect()?,
-    ));
-    let unmounted = mcp_mount::mount_all(
-        &mut toolbox,
-        &loaded.role.mcp_servers,
-        &cwd,
-        &store,
-        &reauth,
-    )
+    let tools = parts::mount_toolbox(parts::ToolboxInputs {
+        cwd: &cwd,
+        scratch: &scratch,
+        loaded: &loaded,
+        env_policy: &env_policy,
+        capabilities: &capabilities,
+        endpoint: &endpoint,
+        host,
+        session_id: &session_id,
+        reauth: &reauth,
+    })
     .await?;
-    let unmounted_section = crate::mcp::unmounted_section(&unmounted);
-    // The frozen toolbox against the dialect's name rule (docs/tools.md): a name the
-    // request would reject fails the boot here, by its display name, instead of the
-    // first turn failing with a 400 that names nothing.
-    // Boot's endpoint is the session's main model, which resolution already
-    // refused for a provider that serves no turns (`src/inference/options.rs`).
-    let dialect = endpoint
-        .provider
-        .inference_dialect()
-        .expect("the main model's provider serves turns");
-    let illegal = toolbox.illegal_names(dialect);
-    if !illegal.is_empty() {
-        for problem in &illegal {
-            eprintln!("error: tool name {problem}");
-        }
-        return Err(format!(
-            "{} mounted tool name{} the {} dialect rejects",
-            illegal.len(),
-            if illegal.len() == 1 { "" } else { "s" },
-            dialect
-        )
-        .into());
-    }
+    let parts::MountedTools {
+        toolbox,
+        unmounted_section,
+    } = tools;
 
-    let role_section = loaded.role.preamble_section();
-    // The [context] preamble builder (docs/context.md): resolve the operator's listed
-    // files from cwd and fold the rendered block into the frozen prefix. Fail closed — configured
-    // context that can't be read aborts startup rather than silently vanishing.
-    let mut resolved = match crate::context::resolve_with_child_env(
-        &loaded.role.context,
+    let preamble = parts::freeze_preamble(
+        &loaded,
         &cwd,
-        &env_policy.child_env(),
-    ) {
-        Ok(resolved) => resolved,
-        Err(e) => {
-            eprintln!("error: {e}");
-            return Err("could not resolve [context] entries".into());
-        }
-    };
-    // Mask the resolved sections *before* rendering (docs/env.md). The preamble is
-    // the one string that both rides the request's `system` field and is
-    // snapshotted into the log, so masking it at the log's choke point alone would
-    // leave the wire copy unfiltered and the two copies no longer byte-identical —
-    // which is the whole point of the `Preamble` entry (docs/context.md). A
-    // `[context]` exec that prints the environment is the concrete case.
-    env_policy.mask_context(&mut resolved);
-    let context_block = resolved.render();
-    let system = env_policy.mask(&crate::env::system_prompt(
+        &env_policy,
         model,
         &session_id,
         &lineage,
-        context_block.as_deref(),
-        role_section.as_deref(),
         unmounted_section.as_deref(),
-    ));
+    )?;
+    let parts::FrozenPreamble {
+        system,
+        resolved,
+        context_block,
+    } = preamble;
     // Snapshot the rendered boot preamble into the log (docs/context.md): the
     // [context] block folds in file contents that drift on disk, so the preamble is no longer
     // reconstructable from config + current files — this one entry keeps the log the complete
@@ -615,140 +265,36 @@ async fn prepare_minting(
         },
     )?;
 
-    // The upstream pin rides the agent client, which the fork peek shares — so
-    // turns and gates route alike. It deliberately does **not** reach the spotter:
-    // endpoint slugs are per-model, the spotter runs a different (Haiku-band)
-    // model, and an order naming endpoints that do not serve it would fail
-    // outright with fallbacks disabled.
-    let upstream = crate::api::Upstream::pinned(upstream);
-    if let Some(pin) = &upstream {
-        eprintln!("upstream: {} (fallbacks disabled)", pin.order.join(", "));
-    }
-    let mut client = Client::new(endpoint.clone(), model, system, temperature)
-        .with_upstream(upstream.clone())
-        // `[transport] stream-ceiling` (docs/transport.md): the bound on a stream
-        // that stays open without finalizing. It rides the agent client, which
-        // the fork peek shares, so both stream surfaces are bounded alike.
-        .with_stream_ceiling(loaded.role.transport.stream_ceiling)
-        // The effort level rides the agent client, so the turn and the fork peek send
-        // one envelope (docs/redaction-fork.md). The spotter's client is built
-        // separately and never carries it; the keepalive omits it by construction.
-        .with_effort(effort)
-        .with_model_reasoning(capabilities.supports_reasoning)
-        // Who places cache-write boundaries (docs/transport.md): the Responses
-        // request reads this to decide whether to send explicit markers.
-        .with_prompt_cache(capabilities.prompt_cache);
-    // The output budget follows the model's reported cap (a reasoning model's
-    // thinking bills against it; the 4096 default starves a long think). No
-    // report → the default stands.
-    // An unreported cap still needs a number, because Messages requires
-    // `max_tokens` (`UNKNOWN_OUTPUT_CAP`, docs/transport.md). Erring high is
-    // deliberate and is made safe by the retry that reads the ceiling out of the
-    // provider's refusal — the `Client`'s own small default would quietly cost a
-    // mandatory-reasoning model its entire response.
-    client = client.with_max_output(capabilities.max_output_tokens.unwrap_or(UNKNOWN_OUTPUT_CAP));
-    // The window the cap is reserved against: each request sends the cap
-    // shrunk to what the window spares after the prompt (`api/reservation.rs`).
-    client = client.with_context_window(capabilities.context_length);
-    let client = client;
-
-    // The independent permission rung (docs/permissions.md) has its own connection
-    // and model. It keeps a distinct sticky key even when it shares the main
-    // connection.
-    let (spotter_selection, mut spotter_endpoint) = inference.spotter();
-    let spotter_model = spotter_selection.model.clone();
-    eprintln!(
-        "spotter: {}/{} ({})",
-        spotter_selection.connection, spotter_selection.model, spotter_selection.provider
+    let client = parts::build_client(
+        &endpoint,
+        model,
+        system,
+        parts::ClientSettings {
+            temperature,
+            upstream,
+            effort,
+        },
+        &loaded,
+        &capabilities,
     );
-    spotter_endpoint.session_id = endpoint.session_id.clone();
-    // The spotter's model is validated against *its* provider's metadata source,
-    // not the main model's: a hosted spotter may sit on a different connection and
-    // dialect. Its own capabilities are not applied to its client today — the
-    // spotter sends a short fresh prompt with no thinking, effort, or temperature —
-    // so the lookup is the existence check that fails boot instead of the first
-    // permission decision.
-    //
-    // A decision model has no such metadata: there is no context window, output
-    // cap, or cache policy behind a decisions request (docs/permissions.md), on
-    // either provider that serves one. Its own existence check stands in.
-    let checked =
-        if crate::spotter::jev::is_decision_spotter(spotter_endpoint.provider, &spotter_model) {
-            spotter_endpoint.check_decision_model(&spotter_model).await
-        } else {
-            spotter_endpoint
-                .fetch_capabilities(&spotter_model, &[])
-                .await
-                .map(drop)
-        };
-    if let Err(error) = checked {
-        return Err(format!(
-            "spotter model {spotter_model:?} on {}: {error}",
-            spotter_endpoint.provider
-        )
-        .into());
-    }
-    // Which rung the id names (docs/permissions.md): a decision model reaches a
-    // different API and answers differently, so the choice is made here, once.
-    let spotter = MountedSpotter::mount(
-        spotter_endpoint.for_spotter(),
-        &spotter_model,
-        Some(scratch.clone()),
-        cwd.clone(),
-    );
-    eprintln!("spotter rung: {}", spotter.kind());
 
-    // The model-driven fork (docs/redaction-fork.md): every tool result is peeked and the
-    // canonical wire keeps only what the model retains. `Toolbox` is the docs/tools.md tool
-    // layer; mount bash + the in-process MCP servers (fs-mcp + semantic-edit-mcp),
-    // their session cwd seeded to where we're running (resolved once above for [context]).
-    // The scratch dir rides in as bash's `$TMPDIR`; the daemon reads it back off the
-    // toolbox for the expander and background spawns (one source of truth).
+    let spotter = parts::mount_spotter(&inference, &endpoint, &scratch, &cwd).await?;
+
     if autonomous {
         eprintln!(
             "autonomous: no synchronous gate — spotter Watch/Gate redirects the model to its \
              config file; config writes still gate for the orchestrator-above"
         );
     }
-    // Sharing is explicit (docs/redaction-fork.md): an omitted triage selection
-    // uses the main client; a configured selection always gets its own endpoint
-    // and retry state, even when it names the same native model.
-    let distiller = match inference.triage() {
-        Some((selection, mut triage_endpoint, triage)) => {
-            triage_endpoint.session_id = endpoint.session_id.clone();
-            let system = env_policy.mask(&crate::env::triage_system_prompt(
-                &triage.model,
-                model,
-                context_block.as_deref(),
-            ));
-            let (peek, caps) = ForkPeek::for_triage_model(
-                &triage_endpoint,
-                triage,
-                system,
-                loaded.role.transport.stream_ceiling,
-            )
-            .await
-            .map_err(|error| format!("triage model: {error}"))?;
-            eprintln!(
-                "triage: {}/{} ({}) · context {} · thinking {} · tool choice {}",
-                selection.connection,
-                selection.model,
-                selection.provider,
-                describe_window(caps.context_length),
-                match (&triage.effort, triage.thinking) {
-                    (Some(effort), _) => format!("on, effort {effort}"),
-                    (None, true) => "on".into(),
-                    (None, false) => "off".into(),
-                },
-                if triage.auto_choice { "auto" } else { "forced" }
-            );
-            peek
-        }
-        None => {
-            eprintln!("triage: {model} (shared main client)");
-            ForkPeek::shared()
-        }
-    };
+    let distiller = parts::mount_distiller(
+        &inference,
+        &endpoint,
+        model,
+        context_block.as_deref(),
+        &env_policy,
+        &loaded,
+    )
+    .await?;
     Ok(SessionBoot {
         client,
         toolbox,
@@ -764,101 +310,6 @@ async fn prepare_minting(
         env_policy,
         keep_scratch,
     })
-}
-
-/// Create the session dir, refusing a name that already has one (docs/control-channel.md).
-///
-/// A session does not outlive its process: a second run over the same directory would open
-/// the log with an empty in-memory `entries` and restart `seq` at 0 inside a file that
-/// already numbers its entries — which every offline reader (`view`, `wire`, the TUI fold)
-/// reads as a single sequence. Refusing the occupied directory is what keeps that unreachable
-/// until resumption is designed; `Log::create` refusing an existing log file for the same
-/// reason backs it up (docs/log-and-projection.md), and when resumption is, this guard
-/// changes with it rather than gaining exceptions.
-///
-/// `create_dir` rather than `create_dir_all` on the leaf: the leaf creation is the exclusive
-/// one, so two creations racing the same name cannot both pass the check. The parent
-/// (`.efference/`) is still created recursively — it is shared by every session.
-pub fn mint_session_dir(session_dir: &Path) -> Result<(), Error> {
-    if let Some(parent) = session_dir.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    match std::fs::create_dir(session_dir) {
-        Ok(()) => Ok(()),
-        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => Err(format!(
-            "session dir {} already exists — creation mints a new session and does not resume one. \
-             Pick another --name; the existing session's log is intact at {}.",
-            session_dir.display(),
-            session_dir.join(LOG_NAME).display()
-        )
-        .into()),
-        Err(e) => Err(format!(
-            "could not create session dir {}: {e}",
-            session_dir.display()
-        )
-        .into()),
-    }
-}
-
-/// Mint the per-session scratch dir (docs/tools.md): `<system-temp>/efference-<rand>/`,
-/// mkdtemp-style — a random name and create-or-retry (`create_dir` fails if the name
-/// exists, so there is no check-then-create race), mode `0700` so it is private on a
-/// shared-`/tmp` system (macOS `$TMPDIR` is already per-user). `std::env::temp_dir()`
-/// rather than a literal `/tmp`, which on macOS is a symlink and not the real temp dir.
-pub fn mint_scratch_dir() -> std::io::Result<PathBuf> {
-    use std::hash::{BuildHasher, Hasher, RandomState};
-    let base = std::env::temp_dir();
-    for _ in 0..16 {
-        // `RandomState` seeds from OS entropy — an unpredictable-enough name;
-        // create-or-retry (not check-then-create) is what closes the race.
-        let n = RandomState::new().build_hasher().finish();
-        let candidate = base.join(format!("efference-{n:016x}"));
-        let mut builder = std::fs::DirBuilder::new();
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::DirBuilderExt;
-            builder.mode(0o700);
-        }
-        match builder.create(&candidate) {
-            Ok(()) => return Ok(candidate),
-            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
-            Err(e) => return Err(e),
-        }
-    }
-    Err(std::io::Error::other(
-        "could not mint a scratch dir (16 name collisions)",
-    ))
-}
-
-/// Resolve every value the `[env]` table names, failing the boot on the first
-/// unresolvable reference (docs/env.md). Loud rather than silent: a reference
-/// that does not resolve would otherwise surface much later as a tool's opaque
-/// auth error, with nothing connecting the two. The error names the *reference*,
-/// which is a pointer and safe to print.
-fn resolve_env_table(
-    resolver: &crate::env_table::Resolver,
-    table: &std::collections::BTreeMap<String, crate::env_table::EnvEntry>,
-) -> Result<Vec<crate::env_table::ResolvedValue>, Error> {
-    let (values, errors) = resolver.resolve_table(table);
-    for error in &errors {
-        eprintln!("error: [env] {error}");
-    }
-    if !errors.is_empty() {
-        return Err("could not resolve [env] references".into());
-    }
-    Ok(values)
-}
-
-/// [`resolve_env_table`] as a name → value map, for the credential lookup that
-/// runs before the session's policy exists.
-fn resolve_env_values(
-    resolver: &crate::env_table::Resolver,
-    table: &std::collections::BTreeMap<String, crate::env_table::EnvEntry>,
-) -> Result<std::collections::BTreeMap<String, String>, Error> {
-    Ok(resolve_env_table(resolver, table)?
-        .into_iter()
-        .map(|v| (v.name, v.value))
-        .collect())
 }
 
 /// The context window for a boot line: the token count, or a statement that the
