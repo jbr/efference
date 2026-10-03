@@ -65,6 +65,20 @@ pub struct PatchSession {
     pub env: Option<BTreeMap<String, String>>,
 }
 
+impl PatchSession {
+    /// The patch that makes the session under `cwd`'s `.efference` active, with
+    /// the host establishing its environment.
+    pub fn activate(cwd: PathBuf) -> Self {
+        Self {
+            state: Some(SessionState::Active),
+            cwd: Some(cwd),
+            reauth: Vec::new(),
+            detached: false,
+            env: None,
+        }
+    }
+}
+
 impl Host {
     /// Resume a dormant session under its own id: what `PATCH {"state":
     /// "active"}` does (docs/control-api.md).

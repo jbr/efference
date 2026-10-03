@@ -213,3 +213,182 @@ fn a_path_under_home_is_written_with_a_tilde() {
         "/home/someone"
     );
 }
+
+const NOW: u64 = 1_800_000_000_000;
+const HOUR: u64 = 3_600_000;
+
+/// An inventory row as the route and the scan carry it, `ago_ms` before [`NOW`].
+fn row(id: &str, title: Option<&str>, ago_ms: u64, problem: Option<&str>) -> InventoryRow {
+    serde_json::from_value(serde_json::json!({
+        "id": id,
+        "cwd": "/tmp/efference-picker/project",
+        "title": title,
+        "created_at": NOW - ago_ms - HOUR,
+        "last_active_at": NOW - ago_ms,
+        "problem": problem,
+    }))
+    .unwrap()
+}
+
+#[test]
+fn ages_read_in_the_largest_whole_unit() {
+    assert_eq!(age(NOW, NOW - 30_000), "just now");
+    assert_eq!(age(NOW, NOW - 5 * 60_000), "5m ago");
+    assert_eq!(age(NOW, NOW - 3 * HOUR), "3h ago");
+    assert_eq!(age(NOW, NOW - 2 * 24 * HOUR - 1), "2d ago");
+    assert_eq!(age(NOW, NOW + HOUR), "just now");
+}
+
+/// The section as the prompt renders it: live rows, archived rows (title or id,
+/// then age), the create entry last. Rows with a problem are not there.
+#[test]
+fn archived_rows_follow_the_live_ones_and_hide_problems() {
+    let menu = menu(&listings(&[HERE_SESSION]), &here()).with_archived(
+        vec![
+            row(
+                "quiet-heron",
+                Some("tracing the flaky socket test"),
+                3 * HOUR,
+                None,
+            ),
+            row("broken", Some("unreadable"), 4 * HOUR, Some("no log.jsonl")),
+            row("plain-otter", None, 50 * HOUR, None),
+        ],
+        NOW,
+    );
+    let mut script = Script::new(vec![None]);
+    let _ = pick(&mut script, &menu, &here());
+    assert_eq!(
+        script.menus[0],
+        [
+            "pickled-wombat: investigating the cause of the missing radish",
+            "tracing the flaky socket test: archived · 3h ago",
+            "plain-otter: archived · 2d ago",
+            "create a new session: in /tmp/efference-picker/project",
+        ]
+    );
+    assert!(!script.said("more archived"));
+}
+
+#[test]
+fn past_ten_archived_rows_the_rest_are_counted() {
+    let rows: Vec<InventoryRow> = (0..12)
+        .map(|n| row(&format!("old-{n}"), None, (n + 1) * HOUR, None))
+        .chain([row("broken", None, HOUR, Some("no log.jsonl"))])
+        .collect();
+    let menu = menu(&listings(&[]), &here()).with_archived(rows, NOW);
+    assert_eq!(menu.archived.len(), ARCHIVED_SHOWN);
+    assert_eq!(menu.archived_more, 2);
+    let mut script = Script::new(vec![None]);
+    let _ = pick(&mut script, &menu, &here());
+    assert!(script.said("2 more archived sessions here are not listed."));
+    // Ten rows and the create entry.
+    assert_eq!(script.menus[0].len(), 11);
+}
+
+#[test]
+fn picking_an_archived_row_resumes_it() {
+    let menu = menu(&listings(&[HERE_SESSION]), &here()).with_archived(
+        vec![row(
+            "quiet-heron",
+            Some("tracing the flaky socket test"),
+            HOUR,
+            None,
+        )],
+        NOW,
+    );
+    let mut script = Script::new(vec![Some("tracing")]);
+    assert_eq!(
+        pick(&mut script, &menu, &here()).unwrap(),
+        Pick::Resume {
+            id: "quiet-heron".to_string()
+        }
+    );
+}
+
+/// With nothing live here but something archived, the prompt is asked: the
+/// create-only shortcut applies when there is nothing to choose between.
+#[test]
+fn archived_rows_alone_are_still_asked_about() {
+    let menu = menu(&listings(&[]), &here())
+        .with_archived(vec![row("quiet-heron", None, HOUR, None)], NOW);
+    let mut script = Script::new(vec![Some("create")]);
+    assert_eq!(pick(&mut script, &menu, &here()).unwrap(), Pick::Create);
+    assert_eq!(script.menus.len(), 1);
+}
+
+/// Picking an archived row sends the PATCH to the host, with this directory, and
+/// the target it hands back is the revived session on that host.
+#[tokio::test]
+async fn resuming_patches_the_host_and_attaches() {
+    use std::sync::{Arc, Mutex};
+    use trillium::Conn;
+
+    let dir = std::env::current_dir().unwrap().join("tmp");
+    std::fs::create_dir_all(&dir).unwrap();
+    let socket = dir.join(format!("pk-{}.sock", std::process::id()));
+    let _ = std::fs::remove_file(&socket);
+    let seen: Arc<Mutex<Vec<(String, String, String)>>> = Arc::default();
+    let record = Arc::clone(&seen);
+    let swansong = trillium_tokio::Swansong::new();
+    let server = trillium_tokio::config()
+        .with_swansong(swansong.clone())
+        .listeners()
+        .bind_uds(&socket)
+        .unwrap()
+        .spawn(move |mut conn: Conn| {
+            let record = Arc::clone(&record);
+            async move {
+                let body = conn.request_body_string().await.unwrap_or_default();
+                record.lock().unwrap().push((
+                    conn.method().to_string(),
+                    conn.path().to_string(),
+                    body,
+                ));
+                conn.with_status(200).with_body(r#"{"state":"active"}"#)
+            }
+        });
+    server.info().await;
+
+    let target = hosted_target(
+        Pick::Resume {
+            id: "quiet-heron".to_string(),
+        },
+        &socket,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        target,
+        Some(ClientTarget::hosted(socket.clone(), "quiet-heron"))
+    );
+    let seen = seen.lock().unwrap().clone();
+    assert_eq!(seen.len(), 1);
+    assert_eq!(seen[0].0, "PATCH");
+    assert_eq!(seen[0].1, "/sessions/quiet-heron");
+    let body: serde_json::Value = serde_json::from_str(&seen[0].2).unwrap();
+    assert_eq!(body["state"], "active");
+    assert_eq!(
+        body["cwd"],
+        std::env::current_dir().unwrap().to_string_lossy().as_ref()
+    );
+
+    // A live row attaches without a request; the create entry has the form to run.
+    assert_eq!(
+        hosted_target(
+            Pick::Attach {
+                host: socket.clone(),
+                id: "pickled-wombat".to_string()
+            },
+            &socket
+        )
+        .await
+        .unwrap(),
+        Some(ClientTarget::hosted(socket.clone(), "pickled-wombat"))
+    );
+    assert_eq!(hosted_target(Pick::Create, &socket).await.unwrap(), None);
+    assert_eq!(seen.len(), 1);
+
+    swansong.shut_down().await;
+    let _ = std::fs::remove_file(&socket);
+}

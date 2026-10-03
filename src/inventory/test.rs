@@ -26,9 +26,12 @@ impl Root {
         self.dir(id).join(crate::boot::LOG_NAME)
     }
 
-    /// A session with one user entry, written through the production log.
+    /// A resumable session: the boot preamble, then one user entry, written
+    /// through the production log.
     fn session(&self, id: &str) -> Log {
         let mut log = Log::create(self.log(id), None).unwrap();
+        append_preamble(&mut log);
+        tick();
         append_user(&mut log);
         log
     }
@@ -42,6 +45,18 @@ impl Drop for Root {
 
 fn tick() {
     std::thread::sleep(Duration::from_millis(5));
+}
+
+fn append_preamble(log: &mut Log) {
+    log.append(
+        0,
+        Payload::Preamble {
+            system: "system".into(),
+            context: Default::default(),
+            inference: None,
+        },
+    )
+    .unwrap();
 }
 
 fn append_user(log: &mut Log) {
@@ -126,6 +141,26 @@ fn an_untitled_session_has_no_title_and_no_problem() {
     assert_eq!(untitled.title, None);
     assert_eq!(untitled.problem, None);
     assert!(untitled.last_active_at.is_some());
+}
+
+/// Logs that predate the boot preamble parse fine and keep their title and
+/// timestamps, but `boot::resume` refuses them, so the row says so.
+#[test]
+fn a_log_without_a_boot_preamble_is_flagged_and_keeps_its_facts() {
+    let root = Root::new("no-preamble");
+    let mut log = Log::create(root.log("early"), None).unwrap();
+    append_user(&mut log);
+    title(&mut log, "From before preambles");
+    drop(log);
+
+    let rows = Inventory::new().refresh(&root.0);
+    let early = row(&rows, "early");
+    assert!(
+        early.problem.as_deref().unwrap().contains("boot preamble"),
+        "{early:?}"
+    );
+    assert_eq!(early.title.as_deref(), Some("From before preambles"));
+    assert!(early.created_at.unwrap() <= early.last_active_at.unwrap());
 }
 
 #[test]

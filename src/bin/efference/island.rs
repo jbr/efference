@@ -1,5 +1,5 @@
-//! No host running: start a terminal-owned island, create a session here, and
-//! attach (docs/operating.md).
+//! No host running: start a terminal-owned island, create a session here (or
+//! resume one), and attach (docs/operating.md).
 //!
 //! The host is a separate process from birth (`efference host --island`): its own
 //! OS session, so the terminal's Ctrl-C and hangup never reach it; stdout and
@@ -144,6 +144,10 @@ pub(crate) enum Creation {
     /// the same form a running host's picker opens (docs/tui.md), so the model and
     /// its settings are chosen the same way with or without one.
     Form { theme: Option<String> },
+    /// Reopen the dormant session `id` under this directory's `.efference`
+    /// (`PATCH {"state": "active"}`, docs/control-api.md) — the picker's archived
+    /// section with no host running.
+    Resume { id: String },
 }
 
 /// Start an island with `bind` (the browser island's web bind, or none) and
@@ -184,6 +188,12 @@ pub(crate) async fn start(
             efference::tui::session_form::run_hosted(client, theme)
                 .await
                 .map_err(|error| -> CliError { error.to_string().into() })
+        }
+        Creation::Resume { id } => {
+            end_status(true);
+            super::picker::resume_on(&ControlClient::new(island.socket()), &id)
+                .await
+                .map(|()| Some(id))
         }
     };
     match created {

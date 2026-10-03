@@ -13,7 +13,8 @@
 //!
 //! A directory that cannot be listed as a session is a row with a `problem`
 //! rather than an omission — a missing log, an empty one, a header this build
-//! does not read, a first or last line that does not parse. The one line that is
+//! does not read, a first line that is not a boot preamble (`boot::resume`
+//! refuses such a log), a first or last line that does not parse. The one line that is
 //! not a problem is a torn final line without a newline (an interrupted append,
 //! [`crate::persist::Trailing`]): it is skipped back over.
 //!
@@ -220,7 +221,17 @@ fn scan_log(log: &Path, id: &str, root: &Path) -> io::Result<(InventoryRow, u64)
     let first_terminated = line.last() == Some(&b'\n');
     if terminated && !line.is_empty() {
         match parse_entry(&line) {
-            Ok(entry) => row.created_at = Some(entry.at.0),
+            Ok(entry) => {
+                row.created_at = Some(entry.at.0);
+                // `boot::resume` rebuilds the session from the boot preamble;
+                // logs that predate it have none and cannot be reopened.
+                if !matches!(entry.payload, Payload::Preamble { .. }) {
+                    row.problem = Some(
+                        "the log does not begin with a boot preamble, so it cannot be resumed"
+                            .into(),
+                    );
+                }
+            }
             // The only line after the header, cut short: an append that never
             // finished, so there is nothing to date the session by yet.
             Err(_) if !first_terminated => {}

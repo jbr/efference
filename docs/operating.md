@@ -150,24 +150,37 @@ silently ignored.
 A bare `efference tui` — no `--new`, no `--name`, no `--socket` — asks first
 (`src/bin/efference/picker.rs`): an inline prompt in the same style as `efference setup`,
 listing the live hosts' sessions whose cwd is this directory, each with the title the
-triage model keeps for it ([session-title.md](session-title.md)), and one last entry that
-creates a session here. Picking a row is the attach above; picking the last entry opens the
+triage model keeps for it ([session-title.md](session-title.md)), then this directory's
+archived sessions, and one last entry that creates a session here. The archived section is
+the ten most recently active sessions whose logs can be resumed, each as its title (its id
+when it has none) and how long ago it was active (`archived · 3h ago`); when there are more,
+a line above the menu counts them, and there is no paging. A directory whose log cannot be
+resumed — unreadable, or one that predates the boot preamble — is not offered. The rows
+come from `GET /sessions?state=archived` on the first live host, or from the host-free scan
+(`src/inventory.rs`) when none is running ([log-and-projection.md](log-and-projection.md)).
+Picking a live row is the attach above; picking an archived one prints a `resuming <id>…`
+line, revives it with `PATCH /sessions/<id> {"state": "active", "cwd": …}` — which takes
+seconds, since the host re-establishes the environment and mounts the session's MCP
+servers ([control-api.md](control-api.md)) — and attaches the same way; picking the last
+entry opens the
 new-session form ([tui.md](tui.md)) inline where the prompt just was, and attaches to what
 it creates. `tui --new` stays the non-interactive path: it creates from the flags and the
 host's defaults without asking. The prompt appears even when one
 session is the only row, so the other entries stay visible; the cursor starts on the first
 row, so attaching to it is one Enter. Sessions the same hosts hold in other directories are
 counted in a line above the menu rather than listed — attaching from here to a session
-rooted elsewhere would put the TUI's directory and the session's out of step. With no
-session here the prompt is skipped and the form opens directly — its one entry would be
-"create", and the form has its own Esc. With no host listening and no session on its own
-socket, there is nothing to pick: the TUI starts an island and opens the same form against
-it, so a session is configured the same way with or without a running host. The prompt's
+rooted elsewhere would put the TUI's directory and the session's out of step. With no live
+or archived session here the prompt is skipped and the form opens directly — its one entry
+would be "create", and the form has its own Esc. With no host listening and no session on
+its own socket, the prompt lists only the archived sessions and the create entry; an
+archived pick starts an island that resumes that session instead of creating one. With
+nothing archived there is nothing to pick: the TUI starts an island and opens the same form
+against it, so a session is configured the same way with or without a running host. The prompt's
 lines are erased once answered. Esc leaves without attaching.
 
 **Islands** (`src/bin/efference/island.rs`, `src/daemon/island.rs`). A TUI that finds no host
 runs its own: `efference host --island` as a child process, a session created in this
-directory from the host's defaults, and the TUI attached to it. Nothing outlives the TUI.
+directory from the host's defaults (or an archived one resumed, from the picker), and the TUI attached to it. Nothing outlives the TUI.
 The host is a separate process from birth: its own OS session (`setsid`), so the terminal's
 Ctrl-C and hangup never reach it; stdout and stderr to `host.log`, so nothing it prints lands
 over the full-screen UI; and stdin a pipe the TUI holds and never writes. That pipe is the
