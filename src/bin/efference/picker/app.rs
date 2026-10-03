@@ -16,22 +16,10 @@
 use super::*;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use efference::tui::inline::{Inline, Styles, terminal_rows};
-use efference::tui::inline_list::{
-    self, CellStyle, Column, Line, ListFrame, ListInput, ListKey, ListRow, list_key, move_key,
-};
+use efference::tui::inline_list::{self, ListFrame, ListRow, move_key};
+use efference::tui::resume_list::{COLUMNS, ResumeKey, ResumePage};
 use ratatui::{buffer::Buffer, layout::Rect};
 use std::io;
-
-/// Title, id, then status or age. The title has no cap of its own: it is what a
-/// person reads a row by, so it takes the width the terminal has and is cut only
-/// when that runs out.
-const COLUMNS: [Column; 3] = [
-    Column::new(usize::MAX, CellStyle::Primary),
-    Column::new(40, CellStyle::Dim),
-    Column::new(usize::MAX, CellStyle::Dim)
-        .droppable()
-        .unpadded(),
-];
 
 /// The most lines the picker's viewport takes, however many sessions there are.
 const MAX_HEIGHT: u16 = 16;
@@ -67,9 +55,8 @@ pub(super) struct App<'a> {
     page: Page,
     /// The cursor on the top page, among its selectable rows.
     top: usize,
-    query: Line,
-    /// The cursor on the resume page, among the rows the query leaves.
-    selected: usize,
+    /// The resume page, shared with the TUI's session switcher.
+    resume: ResumePage,
 }
 
 impl<'a> App<'a> {
@@ -79,8 +66,7 @@ impl<'a> App<'a> {
             here: tilde(here),
             page: Page::Top,
             top: 0,
-            query: Line::new(""),
-            selected: 0,
+            resume: ResumePage::new(menu.archived.clone()),
         }
     }
 
@@ -91,24 +77,6 @@ impl<'a> App<'a> {
             items.push(Item::Resume);
         }
         items
-    }
-
-    /// The archived sessions whose title or id holds every word of the query.
-    fn matches(&self) -> Vec<&Archived> {
-        let query = self.query.text().to_lowercase();
-        self.menu
-            .archived
-            .iter()
-            .filter(|session| {
-                let haystack = format!(
-                    "{} {}",
-                    session.title.as_deref().unwrap_or_default(),
-                    session.id
-                )
-                .to_lowercase();
-                query.split_whitespace().all(|word| haystack.contains(word))
-            })
-            .collect()
     }
 
     pub(super) fn handle(&mut self, key: KeyEvent) -> Outcome {
@@ -139,8 +107,7 @@ impl<'a> App<'a> {
                 }
                 Item::Resume => {
                     self.page = Page::Resume;
-                    self.query = Line::new("");
-                    self.selected = 0;
+                    self.resume.reset();
                 }
             },
             _ => {
@@ -151,32 +118,17 @@ impl<'a> App<'a> {
     }
 
     fn resume_key(&mut self, key: KeyEvent) -> Outcome {
-        // As in the model picker (docs/tui.md): Esc clears a filter first, and
-        // only an empty one leaves the page.
-        if key.code == KeyCode::Esc {
-            if self.query.text().is_empty() {
-                self.page = Page::Top;
-            } else {
-                self.query = Line::new("");
-                self.selected = 0;
-            }
-            return Outcome::Continue;
-        }
-        let len = self.matches().len();
-        if list_key(&mut self.query, &mut self.selected, len, key) == ListKey::Enter
-            && let Some(session) = self.matches().get(self.selected)
-        {
-            return Outcome::Pick(Pick::Resume {
-                id: session.id.clone(),
-            });
+        match self.resume.handle(key) {
+            ResumeKey::Back => self.page = Page::Top,
+            ResumeKey::Pick(id) => return Outcome::Pick(Pick::Resume { id }),
+            ResumeKey::Continue => {}
         }
         Outcome::Continue
     }
 
     pub(super) fn paste(&mut self, text: &str) {
         if self.page == Page::Resume {
-            self.query.paste(text);
-            self.selected = 0;
+            self.resume.paste(text);
         }
     }
 
@@ -199,27 +151,10 @@ impl<'a> App<'a> {
         rows
     }
 
-    fn resume_rows(&self) -> Vec<ListRow> {
-        self.matches()
-            .into_iter()
-            .map(|session| {
-                let title = session.title.as_deref().unwrap_or(&session.id);
-                ListRow::new(vec![
-                    title.into(),
-                    session.id.clone(),
-                    session.age.clone().unwrap_or_default(),
-                ])
-            })
-            .collect()
-    }
-
     /// Lines the viewport needs for the taller page, within `terminal` lines.
     pub(super) fn viewport_height(&self, terminal: u16) -> u16 {
         let top = inline_list::height_for(self.top_rows().len(), false);
-        let resume = match self.menu.archived.is_empty() {
-            true => 0,
-            false => inline_list::height_for(self.menu.archived.len(), true),
-        };
+        let resume = self.resume.height();
         let bound = usize::from(MAX_HEIGHT.min(terminal.saturating_sub(1)).max(5));
         u16::try_from(top.max(resume).min(bound)).unwrap_or(MAX_HEIGHT)
     }
@@ -247,33 +182,12 @@ impl<'a> App<'a> {
                     styles,
                 );
             }
-            Page::Resume => {
-                let rows = self.resume_rows();
-                let status = match self.query.text().trim().is_empty() {
-                    true => String::new(),
-                    false => format!("{} of {}", rows.len(), self.menu.archived.len()),
-                };
-                inline_list::render(
-                    &ListFrame {
-                        question: &format!("archived sessions in {}", self.here),
-                        input: Some(ListInput {
-                            chips: &[],
-                            query: &self.query,
-                            placeholder: "type to filter by title or id",
-                        }),
-                        columns: &COLUMNS,
-                        rows: &rows,
-                        selected: self.selected,
-                        empty: "nothing matches",
-                        status: &status,
-                        position_replaces_status: true,
-                        keys: "↑↓ move · enter resumes · esc goes back",
-                    },
-                    buf,
-                    area,
-                    styles,
-                );
-            }
+            Page::Resume => self.resume.render(
+                buf,
+                area,
+                styles,
+                &format!("archived sessions in {}", self.here),
+            ),
         }
     }
 }

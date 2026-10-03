@@ -24,6 +24,21 @@ const STAGE_MAX_BYTES: u64 = 64 * 1024 * 1024;
 impl<'a> InteractiveState<'a> {
     /// A bracketed paste from the terminal.
     pub(in crate::tui) fn handle_paste(&mut self, text: String) {
+        if let super::UiMode::Sessions(menu) = &mut self.ui_mode
+            && let Some(page) = &mut menu.resume
+        {
+            page.paste(&text);
+            return;
+        }
+        // The new-session form open over the switcher owns a paste as it owns a
+        // key: its query and editors take it, and the composer underneath never does.
+        if let super::UiMode::Sessions(menu) = &mut self.ui_mode
+            && let Some(form) = &mut menu.form
+        {
+            let action = form.paste(&text);
+            self.apply_form_action(action);
+            return;
+        }
         if text.trim().is_empty() {
             // An image-only clipboard reaches a terminal app as an empty paste, if at all.
             match self.clipboard.paste() {

@@ -20,6 +20,7 @@ use super::*;
 use efference::client::SessionSummary;
 use efference::inventory::InventoryRow;
 use efference::tui::inline;
+use efference::tui::resume_list::{ResumeRow, now_ms};
 
 mod app;
 
@@ -34,15 +35,6 @@ pub(crate) struct Row {
     pub(crate) status: String,
 }
 
-/// One dormant session in this directory the picker offers to resume.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Archived {
-    pub(crate) id: String,
-    pub(crate) title: Option<String>,
-    /// How long ago it was last active, as the row shows it.
-    pub(crate) age: Option<String>,
-}
-
 /// What the live hosts hold, split by whether it belongs to this directory.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct Menu {
@@ -54,7 +46,7 @@ pub(crate) struct Menu {
     pub(crate) elsewhere: usize,
     /// The archived sessions here that can be resumed, most recently active
     /// first.
-    pub(crate) archived: Vec<Archived>,
+    pub(crate) archived: Vec<ResumeRow>,
 }
 
 /// What the person chose.
@@ -98,34 +90,9 @@ impl Menu {
     /// first, as the scan and the route return them). A row with a `problem` is
     /// not offered: it could not be resumed.
     pub(crate) fn with_archived(mut self, rows: Vec<InventoryRow>, now_ms: u64) -> Self {
-        self.archived = rows
-            .into_iter()
-            .filter(|row| row.problem.is_none())
-            .map(|row| Archived {
-                age: row.last_active_at.map(|at| age(now_ms, at)),
-                id: row.id,
-                title: row.title,
-            })
-            .collect();
+        self.archived = ResumeRow::from_inventory(rows, now_ms);
         self
     }
-}
-
-/// `then_ms` as time before `now_ms`, to the largest whole unit: "3h ago".
-pub(crate) fn age(now_ms: u64, then_ms: u64) -> String {
-    let seconds = now_ms.saturating_sub(then_ms) / 1000;
-    match seconds {
-        0..60 => "just now".to_string(),
-        60..3600 => format!("{}m ago", seconds / 60),
-        3600..86_400 => format!("{}h ago", seconds / 3600),
-        _ => format!("{}d ago", seconds / 86_400),
-    }
-}
-
-fn now_ms() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |since| since.as_millis() as u64)
 }
 
 /// A path with the home directory written as `~`, for a prompt line.

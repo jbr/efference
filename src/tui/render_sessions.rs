@@ -21,6 +21,31 @@ impl InteractiveState<'_> {
         // with it — the same rule the theme picker follows.
         self.render_cache.actions.clear();
 
+        // The resume page is a modal over the listing, drawn the way the form is.
+        if let Some(page) = &menu.resume {
+            let width = area.width.min(92);
+            let height = area.height.min(page.height().clamp(5, 16) as u16 + 2);
+            let modal = Rect::new(
+                area.x + (area.width - width) / 2,
+                area.y + (area.height - height) / 2,
+                width,
+                height,
+            );
+            Clear.render(modal, buf);
+            let border = Block::default()
+                .borders(Borders::ALL)
+                .style(self.theme.help_bg_style);
+            let inner = border.inner(modal);
+            border.render(modal, buf);
+            page.render(
+                buf,
+                inner,
+                super::session_form::render::Styles::from(&self.theme),
+                "archived sessions here",
+            );
+            return;
+        }
+
         // The form replaces the listing rather than sitting beside it: it owns
         // every key while it is open, so showing the rows it cannot act on
         // would only advertise keys that no longer do anything.
@@ -85,7 +110,7 @@ impl InteractiveState<'_> {
         let note = menu.note.clone().unwrap_or_default();
         let legend = match menu.confirming {
             Some(_) => " y:archive  any other key:cancel ",
-            None => " ↑/↓:move  ⏎:switch  n:new  a:archive  ⎋:close ",
+            None => " ↑/↓:move ⏎:switch n:new r:resume a:archive ⎋:close ",
         };
         write_row(buf, modal, 3, &note, self.theme.status_hint_style);
         write_row(buf, modal, 2, legend, self.theme.status_hint_style);

@@ -19,7 +19,7 @@ expression: self.render()
 11 │                  │                                                    │                  │
 12 │                  │                                                    │                  │
 13 │                  │                                                    │                  │
-14 │                  │ ↑/↓:move  ⏎:switch  n:new  a:archive  ⎋:close      │                  │
+14 │                  │ ↑/↓:move ⏎:switch n:new r:resume a:archive ⎋:close │                  │
 15 │                  └────────────────────────────────────────────────────┘                  │
 16 │                                                                                          │
 17 │   pace fast     sessions s     theme t     help ?     detach q                           │

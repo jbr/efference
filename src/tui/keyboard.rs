@@ -11,6 +11,35 @@ use crate::tui::composer::ComposerAction;
 use crate::tui::render_context::RenderContext;
 
 impl<'a> InteractiveState<'a> {
+    /// Carry out what the new-session form open over the switcher asked for, from
+    /// a key or a paste: close it, or send the host the request it names.
+    pub(super) fn apply_form_action(&mut self, action: super::session_form::Action) {
+        use super::session_form::Action;
+        match action {
+            Action::Continue => {}
+            Action::Cancel => {
+                if let UiMode::Sessions(menu) = &mut self.ui_mode {
+                    menu.form = None;
+                }
+            }
+            Action::Preview(options) => {
+                let _ = self.host_tx.send(HostCmd::Preview(options));
+            }
+            Action::Create(options) => {
+                let _ = self.host_tx.send(HostCmd::Create(options));
+            }
+            Action::RefreshCatalog {
+                connection,
+                max_age,
+            } => {
+                let _ = self.host_tx.send(HostCmd::Catalog {
+                    connection,
+                    max_age,
+                });
+            }
+        }
+    }
+
     pub(super) fn handle_composer_key(&mut self, key: KeyEvent) -> ComposerAction {
         let super_key = key.modifiers.contains(KeyModifiers::SUPER);
         let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
@@ -56,30 +85,17 @@ impl<'a> InteractiveState<'a> {
         key: KeyEvent,
         terminal: &mut Terminal<impl Backend + Write>,
     ) -> bool {
+        // The resume page owns Esc and Ctrl-C the same way.
+        if matches!(&self.ui_mode, UiMode::Sessions(menu) if menu.resume.is_some()) {
+            self.handle_resume_key(key);
+            return false;
+        }
         // The nested form owns Esc and Ctrl-C: neither reaches the attached loop.
         if let UiMode::Sessions(menu) = &mut self.ui_mode
             && let Some(form) = &mut menu.form
         {
-            use super::session_form::Action;
-            match form.handle(key) {
-                Action::Continue => {}
-                Action::Cancel => menu.form = None,
-                Action::Preview(options) => {
-                    let _ = self.host_tx.send(HostCmd::Preview(options));
-                }
-                Action::Create(options) => {
-                    let _ = self.host_tx.send(HostCmd::Create(options));
-                }
-                Action::RefreshCatalog {
-                    connection,
-                    max_age,
-                } => {
-                    let _ = self.host_tx.send(HostCmd::Catalog {
-                        connection,
-                        max_age,
-                    });
-                }
-            }
+            let action = form.handle(key);
+            self.apply_form_action(action);
             return false;
         }
         // Graduated Esc (docs/tui.md): a state machine, not a press-count, so it is handled

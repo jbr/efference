@@ -286,6 +286,33 @@ fn embedded_cancel_returns_to_sessions_without_quitting() {
     assert!(matches!(&play.state.ui_mode, UiMode::Sessions(menu) if menu.form.is_none()));
 }
 
+/// A paste with the form open over the switcher lands in the form, not in the
+/// composer underneath it.
+#[test]
+fn a_paste_reaches_the_embedded_form_not_the_composer() {
+    let mut play = Screenplay::new(100, 30);
+    play.state.open_sessions();
+    play.event(TuiEvent::Sessions(Ok(Vec::new())));
+    while play.took_host_cmd().is_some() {}
+    play.route_key(KeyCode::Char('n'), KeyModifiers::NONE);
+    play.event(TuiEvent::NewSession(Ok(context())));
+    while play.took_host_cmd().is_some() {}
+    // Enter on the main-model row opens the model picker and its query.
+    play.route_key(KeyCode::Down, KeyModifiers::NONE);
+    play.route_key(KeyCode::Enter, KeyModifiers::NONE);
+    play.state.handle_paste("gpt".to_string());
+    assert!(play.state.composer.text().is_empty());
+    let UiMode::Sessions(menu) = &play.state.ui_mode else {
+        panic!("the switcher closed");
+    };
+    let form = menu.form.as_ref().expect("the form closed");
+    assert!(
+        matches!(&form.page, Page::Picker { query, .. } if query.text() == "gpt"),
+        "{:?}",
+        form.page
+    );
+}
+
 /// A created session is the one the TUI attaches to next, in the working root
 /// the form created it in (docs/inbox.md).
 #[test]

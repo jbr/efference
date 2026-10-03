@@ -208,3 +208,195 @@ fn a_named_successor_is_followed() {
         Some(crate::tui::Exit::Switch { id }) if id == "new-leaf"
     ));
 }
+
+fn archived_row(id: &str, title: Option<&str>, age: &str) -> crate::tui::resume_list::ResumeRow {
+    crate::tui::resume_list::ResumeRow {
+        id: id.into(),
+        title: title.map(Into::into),
+        age: Some(age.into()),
+    }
+}
+
+/// A switcher with two live rows, `r` pressed, and the archived rows landed.
+fn resume_page_open() -> Screenplay<'static> {
+    let mut play = Screenplay::new(100, 24);
+    play.state.open_sessions();
+    let _ = play.took_host_cmd();
+    play.event(crate::tui::TuiEvent::Sessions(Ok(vec![
+        row("alpha", "idle", 0),
+        row("beta", "idle", 0),
+    ])));
+    play.route_key(KeyCode::Char('r'), KeyModifiers::NONE);
+    assert!(matches!(
+        play.took_host_cmd(),
+        Some(crate::tui::HostCmd::Archived)
+    ));
+    play.event(crate::tui::TuiEvent::Archived(Ok(vec![
+        archived_row(
+            "quiet-heron",
+            Some("tracing the flaky socket test"),
+            "16m ago",
+        ),
+        archived_row("plain-otter", None, "2d ago"),
+        archived_row("brisk-newt", Some("porting the radish parser"), "3d ago"),
+    ])));
+    play
+}
+
+fn type_text(play: &mut Screenplay, text: &str) {
+    for c in text.chars() {
+        play.route_key(KeyCode::Char(c), KeyModifiers::NONE);
+    }
+}
+
+/// `r` opens the resume page over the listing at once, says it is reading, and
+/// shows the rows when they land.
+#[test]
+fn r_opens_the_resume_page_and_the_rows_replace_the_reading_line() {
+    let mut play = Screenplay::new(100, 24);
+    play.state.open_sessions();
+    let _ = play.took_host_cmd();
+    play.event(crate::tui::TuiEvent::Sessions(Ok(vec![row(
+        "alpha", "idle", 0,
+    )])));
+    play.route_key(KeyCode::Char('r'), KeyModifiers::NONE);
+    assert!(matches!(
+        play.took_host_cmd(),
+        Some(crate::tui::HostCmd::Archived)
+    ));
+    let screen = play.render();
+    assert!(
+        screen.contains("reading the archived sessions…"),
+        "{screen}"
+    );
+    assert!(
+        !screen.contains("alpha"),
+        "the listing is under the modal: {screen}"
+    );
+    play.event(crate::tui::TuiEvent::Archived(Ok(vec![archived_row(
+        "quiet-heron",
+        Some("tracing the flaky socket test"),
+        "16m ago",
+    )])));
+    let screen = play.render();
+    assert!(
+        screen.contains("❯ tracing the flaky socket test"),
+        "{screen}"
+    );
+    assert!(!screen.contains("reading"), "{screen}");
+}
+
+#[test]
+fn a_failed_read_shows_the_hosts_error_as_the_note() {
+    let mut play = Screenplay::new(100, 24);
+    play.state.open_sessions();
+    let _ = play.took_host_cmd();
+    play.route_key(KeyCode::Char('r'), KeyModifiers::NONE);
+    play.event(crate::tui::TuiEvent::Archived(Err(
+        "listing archived sessions: host said no".into(),
+    )));
+    let screen = play.render();
+    assert!(screen.contains("host said no"), "{screen}");
+    assert!(!screen.contains("reading the archived"), "{screen}");
+}
+
+/// Filter, pick: the PATCH goes out, `resuming <id>…` shows meanwhile, and the
+/// answer switches exactly as `⏎` on a live row does.
+#[test]
+fn picking_a_row_resumes_it_and_a_success_switches() {
+    let mut play = resume_page_open();
+    type_text(&mut play, "radish");
+    play.route_key(KeyCode::Enter, KeyModifiers::NONE);
+    assert!(
+        matches!(play.took_host_cmd(), Some(crate::tui::HostCmd::Resume(id)) if id == "brisk-newt")
+    );
+    let screen = play.render();
+    assert!(screen.contains("resuming brisk-newt…"), "{screen}");
+    // A second Enter while it is out sends nothing.
+    play.route_key(KeyCode::Enter, KeyModifiers::NONE);
+    assert!(play.took_host_cmd().is_none());
+    assert!(play.event_quits(crate::tui::TuiEvent::Resumed(Ok("brisk-newt".into()))));
+    assert_eq!(
+        play.state.switch_to,
+        Some(Exit::Switch {
+            id: "brisk-newt".into()
+        })
+    );
+}
+
+#[test]
+fn a_failed_resume_shows_the_hosts_message_and_stays_on_the_page() {
+    let mut play = resume_page_open();
+    play.route_key(KeyCode::Enter, KeyModifiers::NONE);
+    assert!(
+        matches!(play.took_host_cmd(), Some(crate::tui::HostCmd::Resume(id)) if id == "quiet-heron")
+    );
+    assert!(!play.event_quits(crate::tui::TuiEvent::Resumed(Err(
+        "resuming quiet-heron: the directory is gone".into()
+    ))));
+    assert_eq!(play.state.switch_to, None);
+    let screen = play.render();
+    assert!(screen.contains("the directory is gone"), "{screen}");
+    assert!(screen.contains("quiet-heron"), "{screen}");
+    // The same row can be tried again.
+    play.route_key(KeyCode::Enter, KeyModifiers::NONE);
+    assert!(matches!(
+        play.took_host_cmd(),
+        Some(crate::tui::HostCmd::Resume(_))
+    ));
+}
+
+/// Esc clears a filter first and then closes the page back to the listing; the
+/// switcher is still open under it.
+#[test]
+fn escape_clears_the_filter_then_returns_to_the_listing() {
+    let mut play = resume_page_open();
+    type_text(&mut play, "zzz");
+    play.route_key(KeyCode::Esc, KeyModifiers::NONE);
+    let screen = play.render();
+    assert!(screen.contains("type to filter"), "{screen}");
+    assert!(screen.contains("archived sessions here"), "{screen}");
+    play.route_key(KeyCode::Esc, KeyModifiers::NONE);
+    let screen = play.render();
+    assert!(
+        screen.contains("alpha") && screen.contains("beta"),
+        "{screen}"
+    );
+    assert!(!screen.contains("archived sessions here"), "{screen}");
+    assert!(matches!(
+        &play.state.ui_mode,
+        crate::tui::UiMode::Sessions(menu) if menu.resume.is_none()
+    ));
+}
+
+/// An answer that arrives after the page closed is dropped.
+#[test]
+fn answers_after_the_page_closed_are_ignored() {
+    let mut play = resume_page_open();
+    play.route_key(KeyCode::Enter, KeyModifiers::NONE);
+    let _ = play.took_host_cmd();
+    play.route_key(KeyCode::Esc, KeyModifiers::NONE);
+    assert!(!play.event_quits(crate::tui::TuiEvent::Resumed(Ok("quiet-heron".into()))));
+    assert_eq!(play.state.switch_to, None);
+}
+
+#[test]
+fn the_hint_line_teaches_r() {
+    let mut play = Screenplay::new(100, 24);
+    play.state.open_sessions();
+    let _ = play.took_host_cmd();
+    play.event(crate::tui::TuiEvent::Sessions(Ok(vec![row(
+        "alpha", "idle", 0,
+    )])));
+    assert!(play.render().contains("r:resume"));
+}
+
+#[test]
+fn resume_modal_snapshots() {
+    let mut play = resume_page_open();
+    play.snapshot("session_switcher_resume");
+    type_text(&mut play, "heron");
+    play.route_key(KeyCode::Enter, KeyModifiers::NONE);
+    let _ = play.took_host_cmd();
+    play.snapshot("session_switcher_resuming");
+}

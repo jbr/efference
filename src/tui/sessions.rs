@@ -23,6 +23,9 @@ pub(crate) struct SessionMenu {
     /// The new-session form, while it is open over the listing (docs/tui.md).
     /// It owns every key it is given, including Escape and Ctrl-C.
     pub(super) form: Option<Box<super::session_form::Form>>,
+    /// The resume page, while it is open over the listing (docs/tui.md). Like
+    /// the form it owns every key, Escape and Ctrl-C included.
+    pub(super) resume: Option<Box<super::resume_list::ResumePage>>,
     /// The listing as the host last answered it, sorted by id. Empty while the
     /// first read is out.
     pub rows: Vec<SessionSummary>,
@@ -212,6 +215,71 @@ impl InteractiveState<'_> {
         }
     }
 
+    /// The resume page's rows landed (or the read failed). Dropped when the page
+    /// has been closed since `r` was pressed.
+    pub(super) fn apply_archived(
+        &mut self,
+        rows: Result<Vec<super::resume_list::ResumeRow>, String>,
+    ) {
+        let UiMode::Sessions(menu) = &mut self.ui_mode else {
+            return;
+        };
+        let Some(page) = &mut menu.resume else {
+            return;
+        };
+        match rows {
+            Ok(rows) => page.set_rows(rows),
+            Err(error) => page.read_failed(error),
+        }
+    }
+
+    /// A revive answered. On success the TUI leaves this session's stream for the
+    /// revived one, as `⏎` on a live row does; on failure the page stays, with
+    /// the host's message. Dropped when the page was closed meanwhile.
+    pub(super) fn apply_resumed(&mut self, resumed: Result<String, String>) -> bool {
+        let UiMode::Sessions(menu) = &mut self.ui_mode else {
+            return false;
+        };
+        let Some(page) = &mut menu.resume else {
+            return false;
+        };
+        match resumed {
+            Ok(id) => {
+                self.switch_to = Some(Exit::Switch { id });
+                true
+            }
+            Err(error) => {
+                page.resume_failed(error);
+                false
+            }
+        }
+    }
+
+    /// A key while the resume page is open. Esc on an empty query and Ctrl-C
+    /// close it back to the listing; Enter asks the host to revive the row.
+    pub(super) fn handle_resume_key(&mut self, key: crossterm::event::KeyEvent) {
+        use super::resume_list::ResumeKey;
+        use crossterm::event::{KeyCode, KeyModifiers};
+        let UiMode::Sessions(menu) = &mut self.ui_mode else {
+            return;
+        };
+        let Some(page) = &mut menu.resume else {
+            return;
+        };
+        if key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL) {
+            menu.resume = None;
+            return;
+        }
+        match page.handle(key) {
+            ResumeKey::Continue => {}
+            ResumeKey::Back => menu.resume = None,
+            ResumeKey::Pick(id) => {
+                page.begin_resume(&id);
+                let _ = self.host_tx.send(HostCmd::Resume(id));
+            }
+        }
+    }
+
     /// The switcher's keys. Returns whether the UI loop should end — which a
     /// switch does, with [`switch_to`](Self::switch_to) naming where to go next.
     pub(super) fn handle_sessions_key(&mut self, key: crossterm::event::KeyEvent) -> bool {
@@ -237,6 +305,13 @@ impl InteractiveState<'_> {
             } else {
                 menu.note = None;
             }
+            return false;
+        }
+        // `r` opens the resume page over the listing: archived sessions here,
+        // read from the host. It paints at once with a "reading…" line.
+        if key.code == KeyCode::Char('r') {
+            menu.resume = Some(Box::new(super::resume_list::ResumePage::loading()));
+            let _ = self.host_tx.send(HostCmd::Archived);
             return false;
         }
         match key.code {

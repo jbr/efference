@@ -89,15 +89,6 @@ fn row(id: &str, title: Option<&str>, ago_ms: u64, problem: Option<&str>) -> Inv
     .unwrap()
 }
 
-#[test]
-fn ages_read_in_the_largest_whole_unit() {
-    assert_eq!(age(NOW, NOW - 30_000), "just now");
-    assert_eq!(age(NOW, NOW - 5 * 60_000), "5m ago");
-    assert_eq!(age(NOW, NOW - 3 * HOUR), "3h ago");
-    assert_eq!(age(NOW, NOW - 2 * 24 * HOUR - 1), "2d ago");
-    assert_eq!(age(NOW, NOW + HOUR), "just now");
-}
-
 /// Every resumable archived session is kept, in the order given; a row with a
 /// problem is not offered.
 #[test]

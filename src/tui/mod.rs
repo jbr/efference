@@ -59,6 +59,7 @@ pub(crate) mod render_staged;
 pub(crate) mod render_status_bar;
 pub(crate) mod render_table;
 pub(crate) mod render_theme_picker;
+pub mod resume_list;
 pub(crate) mod senders;
 pub mod session_form;
 pub(crate) mod sessions;
@@ -208,6 +209,12 @@ pub(crate) enum TuiEvent {
     /// `POST /sessions` answered: the new session's id, or why nothing was
     /// minted. On success the TUI leaves this session's stream for that one.
     Created(Result<String, String>),
+    /// `GET /sessions?state=archived` answered: the resume page's rows, or why
+    /// they could not be read (docs/tui.md).
+    Archived(Result<Vec<resume_list::ResumeRow>, String>),
+    /// `PATCH /sessions/:id` answered: the id that was revived, or the host's
+    /// message. On success the TUI switches to it.
+    Resumed(Result<String, String>),
     /// `GET /inference/catalog/:connection` answered: the connection it was asked
     /// for, and its entry or why the read failed. Replaces that connection's
     /// entry in the open form's picker.
@@ -239,6 +246,12 @@ pub(crate) enum HostCmd {
     /// the working root and the environment are the dispatcher's, and never
     /// enter the UI thread (docs/env.md).
     Create(crate::inference::SessionOptions),
+    /// `GET /sessions?state=archived` for the dispatcher's working root — the
+    /// resume page's rows.
+    Archived,
+    /// `PATCH /sessions/:id {"state":"active"}` in the dispatcher's working root,
+    /// reviving an archived session.
+    Resume(String),
     /// `GET /inference/catalog/:connection` — one connection's entry, refreshed
     /// when older than `max_age` seconds. The working root is the dispatcher's,
     /// like preview's, so recent ranks scope to the project creation would run in.

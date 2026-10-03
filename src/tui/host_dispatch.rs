@@ -73,6 +73,45 @@ pub(super) async fn serve(
                 }
                 continue;
             }
+            HostCmd::Archived => {
+                let rows = match origin.as_deref() {
+                    Ok(cwd) => client
+                        .archived_sessions(cwd)
+                        .await
+                        .map(|rows| {
+                            let rows = rows.into_iter().map(|archived| archived.row).collect();
+                            crate::tui::resume_list::ResumeRow::from_inventory(
+                                rows,
+                                crate::tui::resume_list::now_ms(),
+                            )
+                        })
+                        .map_err(|e| format!("listing archived sessions: {e}")),
+                    Err(e) => Err(format!("reading the working directory: {e}")),
+                };
+                if events.send(TuiEvent::Archived(rows)).is_err() {
+                    break;
+                }
+                continue;
+            }
+            // Reviving takes seconds (environment, MCP mounts); the page shows
+            // `resuming…` meanwhile, and the answer is the id to switch to.
+            HostCmd::Resume(id) => {
+                let resumed = match origin.as_deref() {
+                    Ok(cwd) => client
+                        .patch_session(
+                            &id,
+                            &crate::daemon::PatchSession::activate(cwd.to_path_buf()),
+                        )
+                        .await
+                        .map(|_| id.clone())
+                        .map_err(|e| format!("resuming {id}: {e}")),
+                    Err(e) => Err(format!("reading the working directory: {e}")),
+                };
+                if events.send(TuiEvent::Resumed(resumed)).is_err() {
+                    break;
+                }
+                continue;
+            }
             HostCmd::Catalog {
                 connection,
                 max_age,

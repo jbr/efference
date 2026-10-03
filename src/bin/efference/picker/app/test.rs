@@ -156,52 +156,9 @@ fn escape_clears_a_filter_before_it_leaves_the_resume_page() {
     type_str(&mut app, "radish");
     assert_eq!(press(&mut app, KeyCode::Esc), Outcome::Continue);
     assert_eq!(app.page, Page::Resume);
-    assert!(app.query.text().is_empty());
+    assert!(drawn(&app, 100, 8).contains("type to filter"));
     assert_eq!(press(&mut app, KeyCode::Esc), Outcome::Continue);
     assert_eq!(app.page, Page::Top);
-}
-
-#[test]
-fn typing_filters_the_resume_page_on_title_and_id() {
-    let menu = full_menu();
-    let mut app = App::new(&menu, &here());
-    press(&mut app, KeyCode::Up);
-    app.page = Page::Resume;
-    assert_eq!(app.matches().len(), 3);
-    type_str(&mut app, "radish");
-    assert_eq!(app.matches().len(), 1);
-    assert_eq!(
-        press(&mut app, KeyCode::Enter),
-        Outcome::Pick(Pick::Resume {
-            id: "brisk-newt".to_string()
-        })
-    );
-    // The id matches too, and an untitled row is found by it.
-    for _ in 0..6 {
-        press(&mut app, KeyCode::Backspace);
-    }
-    type_str(&mut app, "otter");
-    assert_eq!(
-        press(&mut app, KeyCode::Enter),
-        Outcome::Pick(Pick::Resume {
-            id: "plain-otter".to_string()
-        })
-    );
-    // No match, no pick.
-    type_str(&mut app, "zzz");
-    assert_eq!(press(&mut app, KeyCode::Enter), Outcome::Continue);
-}
-
-#[test]
-fn a_new_query_puts_the_cursor_back_on_the_first_match() {
-    let menu = full_menu();
-    let mut app = App::new(&menu, &here());
-    app.page = Page::Resume;
-    ctrl(&mut app, 'n');
-    ctrl(&mut app, 'n');
-    assert_eq!(app.selected, 2);
-    type_str(&mut app, "o");
-    assert_eq!(app.selected, 0);
 }
 
 #[test]
@@ -279,7 +236,7 @@ fn the_resume_page_aligns_id_and_age_and_an_untitled_row_shows_its_id_twice() {
 #[test]
 fn a_narrow_width_drops_the_status_then_cuts_the_title() {
     let menu = full_menu();
-    let mut app = App::new(&menu, &here());
+    let app = App::new(&menu, &here());
     // 2 gutter + title + 2 + 14-wide id + 2 + 7-wide status = 80 - title ≤ 53.
     let text = drawn(&app, 60, 8);
     println!("{text}");
@@ -288,40 +245,6 @@ fn a_narrow_width_drops_the_status_then_cuts_the_title() {
     assert!(!row.contains("running"), "{row}");
     assert!(row.contains('…'), "{row}");
     assert!(row.chars().count() <= 60, "{row}");
-    app.page = Page::Resume;
-    // Cut titles keep their id column.
-    let text = drawn(&app, 34, 8);
-    let row = text.lines().nth(2).unwrap();
-    assert!(row.contains('…') && row.contains("quiet-heron"), "{row}");
-}
-
-#[test]
-fn a_wide_terminal_shows_a_full_length_title_whole() {
-    let title = "a".repeat(80);
-    let menu =
-        menu(&[], &here()).with_archived(vec![archived("quiet-heron", Some(&title), HOUR)], NOW);
-    let mut app = App::new(&menu, &here());
-    app.page = Page::Resume;
-    let text = drawn(&app, 140, 8);
-    let row = text.lines().nth(2).unwrap();
-    assert!(row.contains(&title) && !row.contains('…'), "{row}");
-}
-
-#[test]
-fn the_window_scrolls_within_a_short_viewport() {
-    let rows: Vec<InventoryRow> = (0..30)
-        .map(|n| archived(&format!("old-{n:02}"), None, (n + 1) * HOUR))
-        .collect();
-    let menu = menu(&[], &here()).with_archived(rows, NOW);
-    let mut app = App::new(&menu, &here());
-    app.page = Page::Resume;
-    for _ in 0..29 {
-        press(&mut app, KeyCode::Down);
-    }
-    let text = drawn(&app, 100, 8);
-    assert!(text.contains("❯ old-29"), "{text}");
-    assert!(text.contains("30/30"), "{text}");
-    assert!(!text.contains("old-00"), "{text}");
 }
 
 #[test]

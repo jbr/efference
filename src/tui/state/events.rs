@@ -273,6 +273,14 @@ impl<'a> InteractiveState<'a> {
                 self.dirty = true;
             }
             TuiEvent::Created(created) => return self.apply_created(created),
+            TuiEvent::Archived(rows) => {
+                self.apply_archived(rows);
+                self.dirty = true;
+            }
+            TuiEvent::Resumed(resumed) => {
+                self.dirty = true;
+                return self.apply_resumed(resumed);
+            }
             TuiEvent::Disconnected => return true,
         }
         false
