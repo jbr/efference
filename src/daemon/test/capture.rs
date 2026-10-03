@@ -48,7 +48,7 @@ fn completion(calls: &[(&str, &str)]) -> String {
 }
 
 /// A `retain` call answering for each label of a multi-result gate.
-fn verdict(keeps: &[&str]) -> String {
+pub(super) fn verdict(keeps: &[&str]) -> String {
     let results: Vec<serde_json::Value> = keeps
         .iter()
         .enumerate()

@@ -293,6 +293,13 @@ pub struct Resumed {
     /// field existed reads as `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resumes_after: Option<Seq>,
+    /// Present only when the session resumed at an unfinished batch rather than past it:
+    /// the calls of the last live completion that have not run (or whose results are
+    /// still undecided), which the operator's next action brings back. The notice
+    /// projects after the batch's results land, not at this entry's position
+    /// (docs/resumption.md). A log written before the field existed reads as empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pending_calls: Vec<CallId>,
 }
 
 impl Resumed {

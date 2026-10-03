@@ -167,6 +167,11 @@ pub async fn run<F: Frontend, S: Spotter>(
     // Continues the log's numbering: `0` for a new session, the last entry's turn for a
     // resumed one, so a resumed session's new turns do not reuse a recorded number.
     let mut turn: Turn = shared.latest_turn();
+    // Turns submitted while a resumed session's pending batch waited for the operator's
+    // first action (docs/resumption.md). Delivered at the seam after the batch, the way a
+    // turn submitted during a live gate is; one still held when the trajectory ends
+    // before that seam starts the next.
+    let mut held: std::collections::VecDeque<SubmittedTurn> = std::collections::VecDeque::new();
 
     loop {
         // Idle: race the next user turn against a notification wake (docs/supervisor.md —
@@ -174,10 +179,19 @@ pub async fn run<F: Frontend, S: Spotter>(
         // normal trajectory; an event wakes a standalone triage that escalates to a
         // trajectory only if it pins something. The first turn arrives here too.
         eprintln!("\n(idle — awaiting a user turn or an event on the control socket)");
-        let next = tokio::select! {
-            line = frontend.read_user_turn() => IdleWake::from_turn(line),
-            _ = shared.inbox_wake() => IdleWake::Event,
-            _ = shared.continue_wake() => IdleWake::Continue,
+        // A resumed session's unfinished batch, derived from the log each time
+        // (docs/resumption.md). While it waits, the wire ends in unanswered `tool_use`
+        // blocks, so no triage may project it: an event stays in the inbox and rides the
+        // batch's own gate.
+        let mut replay = shared.pending_batch();
+        let next = if let Some(submitted) = replay.is_none().then(|| held.pop_front()).flatten() {
+            IdleWake::Turn(submitted)
+        } else {
+            tokio::select! {
+                line = frontend.read_user_turn() => IdleWake::from_turn(line),
+                _ = shared.inbox_wake(), if replay.is_none() => IdleWake::Event,
+                _ = shared.continue_wake() => IdleWake::Continue,
+            }
         };
         match next {
             IdleWake::Shutdown => break, // daemon tearing down.
@@ -201,6 +215,9 @@ pub async fn run<F: Frontend, S: Spotter>(
                 // signal here is what keeps one gesture to one extra turn.
                 shared.take_continue();
             }
+            // The batch comes first: a `User` entry after unanswered `tool_use` blocks
+            // breaks the wire, so the turn waits for the seam after it.
+            IdleWake::Turn(submitted) if replay.is_some() => held.push_back(submitted),
             IdleWake::Turn(submitted) => {
                 turn += 1;
                 shared.append_submission(
@@ -250,6 +267,23 @@ pub async fn run<F: Frontend, S: Spotter>(
             // write can land the condition mid-trajectory. Resolves at once in
             // every other case, which is nearly always.
             shared.await_config_repair().await;
+            // A resumed session's first action brings its pending batch back
+            // (docs/resumption.md): the calls that never ran go through the permission
+            // cascade, and everything captured is triaged with them at one gate, with no
+            // model request first. The next pass round-trips as after any batch.
+            if let Some(pending) = replay.take() {
+                first_step = false;
+                let Batch {
+                    steps,
+                    abort_turn,
+                    redirect,
+                } = replay_batch(frontend, &shared, &spotter, &toolbox, &pending).await?;
+                land(client, &tools, &shared, &distiller, &mut turn, steps).await?;
+                if after_landing(&shared, &mut turn, abort_turn, redirect)? {
+                    break;
+                }
+                continue;
+            }
             if !first_step {
                 shared.pace_at_seam().await;
             }
@@ -261,7 +295,8 @@ pub async fn run<F: Frontend, S: Spotter>(
             // undismissable), which `project` merges into the trailing tool_result message
             // as `[tool_result…, text]`. A turn arriving while the loop is idle still takes
             // the fast path (the outer `select!`); this only catches mid-trajectory ones.
-            for submitted in frontend.drain_injected_turns() {
+            let injected = frontend.drain_injected_turns();
+            for submitted in held.drain(..).chain(injected) {
                 turn += 1;
                 // A user turn lands mid-trajectory: to the upstream that is a new
                 // turn, so its routing token starts over (docs/transport.md).
@@ -522,25 +557,7 @@ pub async fn run<F: Frontend, S: Spotter>(
 
             land(client, &tools, &shared, &distiller, &mut turn, steps).await?;
 
-            if abort_turn {
-                eprintln!("[turn aborted]");
-                break;
-            }
-            if let Some(message) = redirect {
-                // The rejection `tool_result`(s) answer the orphaned call(s); this
-                // user turn carries the steer. Don't break — fall through to the
-                // inner loop so we re-project and let the model respond.
-                turn += 1;
-                shared.append(turn, Payload::User(vec![ContentBlock::Text(message)]))?;
-            }
-            // The juncture after the gate (docs/control-channel.md): an interrupt
-            // pressed during the peek or a held gate ended it with the latch still
-            // set. Consumed here, the turn ends with the results logged withheld;
-            // left set, the next completion's first call would take it, after a
-            // paid request and after any turn the operator queued to explain the
-            // press had already been drained into that request.
-            if shared.take_interrupt() {
-                eprintln!("[turn ended by the operator's interrupt]");
+            if after_landing(&shared, &mut turn, abort_turn, redirect)? {
                 break;
             }
         }
@@ -557,6 +574,7 @@ mod batch;
 mod config_edit;
 mod gate;
 mod landing;
+mod replay;
 mod results;
 mod step;
 mod surface;
@@ -569,6 +587,7 @@ use batch::*;
 use config_edit::*;
 use gate::*;
 use landing::*;
+use replay::*;
 use results::*;
 use step::*;
 pub use surface::{brief, callable_names, tool_catalog, tool_definitions};

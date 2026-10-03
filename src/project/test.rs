@@ -711,6 +711,7 @@ fn resumed_projects_a_notice_after_the_prefix() {
             gap_ms: 90_000,
             lost_processes: vec!["p#1".into()],
             resumes_after: None,
+            pending_calls: vec![],
         }),
     ));
     let after = serde_json::to_string(&project(&log)).unwrap();
@@ -719,6 +720,65 @@ fn resumed_projects_a_notice_after_the_prefix() {
     assert!(after.contains("session resumed after 1m"), "{after}");
     assert!(after.contains("p#1"), "{after}");
     assert!(!after.contains("did not end cleanly"), "{after}");
+}
+
+/// A `Resumed` entry that names pending calls holds its notice behind their results: with
+/// the batch unanswered the wire ends at the `tool_use`, as at a live gate, and once the
+/// results land the notice follows them in the same user turn rather than leading it.
+#[test]
+fn a_pending_batch_notice_follows_its_results() {
+    let call = |id: &str| ToolCall::new("bash", id, json!({ "command": "ls" }));
+    let mut log = vec![
+        entry(0, 1, Payload::User(vec![ContentBlock::Text("go".into())])),
+        entry(
+            1,
+            1,
+            Payload::Assistant {
+                output: AssistantOutput::from_legacy_messages(
+                    vec![],
+                    vec![],
+                    vec![call("a"), call("b")],
+                ),
+                upstream_failure: None,
+            },
+        ),
+        entry(
+            2,
+            1,
+            Payload::tool_result("a", RawResult::text("one"), WireState::Raw),
+        ),
+        entry(
+            3,
+            1,
+            Payload::Resumed(crate::log::Resumed {
+                gap_ms: 5_000,
+                lost_processes: vec![],
+                resumes_after: None,
+                pending_calls: vec!["b".into()],
+            }),
+        ),
+    ];
+    // Still waiting on `b`: the notice is not on the wire.
+    let held = project_semantic(&log);
+    let held_bytes = format!("{held:?}");
+    assert!(!held_bytes.contains("session resumed"), "{held_bytes}");
+    assert!(
+        matches!(held.last(), Some(WireTurn::User(parts)) if parts.len() == 1),
+        "only the answered call's result so far: {held:?}"
+    );
+
+    log.push(entry(
+        4,
+        1,
+        Payload::tool_result("b", RawResult::text("two"), WireState::Raw),
+    ));
+    let bytes = serde_json::to_string(&project(&log)).unwrap();
+    let notice = bytes
+        .find("1 tool call pending")
+        .expect("the notice projects");
+    let last_result = bytes.find("two").unwrap();
+    assert!(last_result < notice, "{bytes}");
+    assert_eq!(bytes.matches("\"role\":\"user\"").count(), 2, "{bytes}");
 }
 
 /// A `Resumed` entry with `resumes_after` drops the entries between: an unpaired
@@ -766,6 +826,7 @@ fn a_rolled_back_range_is_not_projected() {
             gap_ms: 5_000,
             lost_processes: vec![],
             resumes_after: Some(3),
+            pending_calls: vec![],
         }),
     ));
     let wire = project(&log);
@@ -815,6 +876,7 @@ fn a_rolled_back_range_is_not_projected() {
             gap_ms: 1_000,
             lost_processes: vec![],
             resumes_after: Some(7),
+            pending_calls: vec![],
         }),
     ));
     let bytes = serde_json::to_string(&project(&log)).unwrap();

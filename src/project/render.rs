@@ -205,6 +205,18 @@ pub fn render_resumed(resumed: &crate::log::Resumed, at: crate::log::Seq) -> Str
             resumed.lost_processes.join(", ")
         ));
     }
+    if !resumed.pending_calls.is_empty() {
+        let count = resumed.pending_calls.len();
+        let (noun, pronoun) = if count == 1 {
+            ("call", "it")
+        } else {
+            ("calls", "them")
+        };
+        out.push_str(&format!(
+            " The session stopped with {count} tool {noun} pending; the operator's next \
+             action brings {pronoun} back."
+        ));
+    }
     let skipped = resumed.skipped(at);
     if !skipped.is_empty() {
         let count = skipped.end - skipped.start;

@@ -250,6 +250,24 @@ pub fn project_semantic(log: &[LogEntry]) -> Vec<WireTurn> {
         }
     };
     let elided: HashSet<Seq> = elided;
+    // The restart notices of sessions resumed at an unfinished batch (docs/resumption.md),
+    // each with the calls whose results it waits behind. A notice is text, and a `tool_use`'s
+    // results have to lead the user turn that answers it, so it lands in `pending` after the
+    // last of them rather than at its own position. Held at the end of the log when the
+    // batch is still unanswered, it is not projected, which is the wire a live gate has.
+    let mut held_notices: Vec<(Vec<CallId>, String)> = Vec::new();
+    let mut emitted: HashSet<CallId> = HashSet::new();
+    let release = |held: &mut Vec<(Vec<CallId>, String)>,
+                   emitted: &HashSet<CallId>,
+                   pending: &mut Vec<UserPart>| {
+        held.retain(|(waiting, text)| {
+            let ready = waiting.iter().all(|id| emitted.contains(id));
+            if ready {
+                pending.push(UserPart::Text(text.clone()));
+            }
+            !ready
+        });
+    };
 
     for entry in log {
         // Inject the summary just before the first non-elided entry that follows
@@ -336,6 +354,8 @@ pub fn project_semantic(log: &[LogEntry]) -> Vec<WireTurn> {
                         source: entry.source.as_deref(),
                     });
                 pending.push(render_result(entry.seq, call_id, raw, wire, reply));
+                emitted.insert(call_id.clone());
+                release(&mut held_notices, &emitted, &mut pending);
             }
             // Marks are in the elided set (extract_boundaries inserts every
             // Boundary mark's own seq); this arm is only reachable for future
@@ -359,6 +379,13 @@ pub fn project_semantic(log: &[LogEntry]) -> Vec<WireTurn> {
             Payload::CallStarted { .. } => {}
             // The restart notice (docs/log-and-projection.md): one harness text block at
             // the entry's own position, so it appends to the wire like any later turn.
+            Payload::Resumed(resumed) if !resumed.pending_calls.is_empty() => {
+                held_notices.push((
+                    resumed.pending_calls.clone(),
+                    super::render::render_resumed(resumed, entry.seq),
+                ));
+                release(&mut held_notices, &emitted, &mut pending);
+            }
             Payload::Resumed(resumed) => {
                 flush(&mut pending, &mut turns);
                 turns.push(WireTurn::text(super::render::render_resumed(

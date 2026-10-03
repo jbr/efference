@@ -108,6 +108,12 @@ impl Session {
     /// exactly as a submitted turn is. A user-role tail means the model has not
     /// answered the last thing on the wire; an assistant-role tail means it has.
     fn continuable_tail(&self) -> Option<NotContinuable> {
+        // A resumed session's pending batch ends the wire in unanswered `tool_use`
+        // blocks, and the continue is what brings it back (docs/resumption.md): the
+        // loop replays the batch before it builds a request.
+        if self.pending_batch().is_some() {
+            return None;
+        }
         let messages = self.project_messages();
         let Some(last) = messages.last() else {
             return Some(NotContinuable::Empty);
@@ -126,6 +132,13 @@ impl Session {
                 },
             ),
         }
+    }
+
+    /// The last live completion when the log ends at a pending batch — calls that never
+    /// ran, or results awaiting their verdict (docs/resumption.md) — read from the log each
+    /// time rather than from a flag.
+    pub(crate) fn pending_batch(&self) -> Option<crate::recovery::Completion> {
+        crate::recovery::pending_batch(self.log.lock().unwrap().entries())
     }
 
     /// Resolve when a continue is pending (docs/control-channel.md). Raced by the

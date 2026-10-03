@@ -1,0 +1,317 @@
+//! A resumed session's pending batch against a real turn loop and a scripted upstream
+//! (docs/resumption.md): the operator's first action brings the batch back before any
+//! model request, a submitted turn waits behind it, and an event does not replay it.
+
+use super::capture::verdict;
+use super::runtime::boot;
+use super::upstream_hold::{Answer, end_turn, recording, wait_until};
+use super::*;
+use crate::daemon::SessionRuntime;
+use crate::frontend::{Approval, SubmittedTurn};
+use crate::log::{AssistantOutput, CallId, RawResult, Resumed, Spot, Stance, WireState};
+use crate::project::{ApiBlock, Role};
+use crate::spotter::StaticSpotter;
+use std::net::SocketAddr;
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use trillium_tokio::Swansong;
+
+fn call(id: &str, command: &str) -> ToolCall {
+    ToolCall::new(
+        crate::bash::NAME,
+        id,
+        serde_json::json!({ "command": command }),
+    )
+}
+
+/// A log stopped mid-batch: a completion calling `calls`, and what `extra` says happened
+/// to them, then the `Resumed` entry naming `pending`.
+fn stopped_log(calls: Vec<ToolCall>, pending: &[&str], extra: impl FnOnce(&mut Log)) -> Log {
+    let mut log = Log::in_memory();
+    log.append(1, user("go")).unwrap();
+    log.append(
+        1,
+        Payload::Assistant {
+            output: AssistantOutput::from_legacy_messages(vec![], vec![], calls),
+            upstream_failure: None,
+        },
+    )
+    .unwrap();
+    extra(&mut log);
+    log.append(
+        1,
+        Payload::Resumed(Resumed {
+            gap_ms: 60_000,
+            lost_processes: vec![],
+            resumes_after: None,
+            pending_calls: pending.iter().map(|id| CallId((*id).into())).collect(),
+        }),
+    )
+    .unwrap();
+    log
+}
+
+fn captured(log: &mut Log, id: &str, output: &str) -> u64 {
+    log.append(1, Payload::CallStarted { call_id: id.into() })
+        .unwrap();
+    log.append(
+        1,
+        Payload::tool_result(id, RawResult::text(output), WireState::Pending),
+    )
+    .unwrap()
+}
+
+fn gated(log: &mut Log, id: &str) {
+    log.append(
+        1,
+        Payload::Spot(Spot {
+            call_id: id.into(),
+            stance: Stance::Gate,
+            reason: "out of scope".into(),
+            origin: crate::log::Origin::Model,
+            model: None,
+            probed_prefix: None,
+            axes: None,
+        }),
+    )
+    .unwrap();
+}
+
+/// A resumed session whose spotter gates every call, pointed at `addr`.
+fn start(addr: SocketAddr, log: Log) -> (Swansong, SessionRuntime) {
+    use std::hash::{BuildHasher, Hasher, RandomState};
+    let nonce = RandomState::new().build_hasher().finish();
+    let cwd = std::env::temp_dir().join(format!("efference-resumed-{nonce:016x}"));
+    std::fs::create_dir_all(cwd.join("scratch")).unwrap();
+    let mut boot = boot(&cwd.canonicalize().unwrap());
+    boot.client = Client::new(
+        crate::api::Endpoint {
+            provider: crate::api::Provider::Anthropic,
+            url: Some(format!("http://{addr}/v1/messages")),
+            auth_header: "x-api-key".into(),
+            auth_value: "k".into(),
+            session_id: None,
+            extra_headers: Vec::new(),
+            base: None,
+        },
+        "m",
+        "sys",
+        None,
+    );
+    boot.spotter = StaticSpotter {
+        stance: Stance::Gate,
+        reason: "out of scope".into(),
+    };
+    boot.log = log;
+    let host = Swansong::new();
+    let runtime = SessionRuntime::start(boot, &host);
+    (host, runtime)
+}
+
+fn requests_script(
+    script: fn(usize) -> Answer,
+) -> (Arc<AtomicUsize>, Arc<Mutex<Vec<String>>>, SocketAddr) {
+    let requests = Arc::new(AtomicUsize::new(0));
+    let bodies = Arc::new(Mutex::new(Vec::new()));
+    let addr = recording(Arc::clone(&requests), script, &bodies);
+    (requests, bodies, addr)
+}
+
+fn two_verdicts_then_done(n: usize) -> Answer {
+    match n {
+        0 => Answer::Stream(verdict(&["all", "all"])),
+        _ => Answer::Stream(end_turn()),
+    }
+}
+
+/// Ask for the continue until the parked loop takes it.
+async fn continue_when_parked(session: &Session) {
+    wait_until("the loop parks and accepts a continue", || {
+        session.request_continue().is_ok()
+    })
+    .await;
+}
+
+async fn approve_the_gate(session: &Session, id: &str) {
+    wait_until("the gate reappears", || session.pending_gate().is_some()).await;
+    assert!(session.resolve_approval(&CallId(id.into()), Approval::Approve));
+}
+
+fn results_of(log: &[crate::log::LogEntry], id: &str) -> usize {
+    log.iter()
+        .filter(|e| matches!(&e.payload, Payload::ToolResult { call_id, .. } if call_id.0 == id))
+        .count()
+}
+
+/// **A continue replays the batch.** One call captured its result before the stop and one
+/// was held at the gate. Nothing runs until the continue; then the held call is gated
+/// again with no model request first, the captured call does not run again, one peek
+/// triages both results, and the notice follows them on the wire.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_continue_replays_the_batch_through_the_gate() {
+    let log = stopped_log(
+        vec![call("c1", "printf one"), call("c2", "printf two")],
+        &["c1", "c2"],
+        |log| {
+            captured(log, "c1", "one");
+            gated(log, "c2");
+        },
+    );
+    let (requests, bodies, addr) = requests_script(two_verdicts_then_done);
+    let (host, runtime) = start(addr, log);
+    let session = Arc::clone(runtime.session());
+
+    // Opening the session did nothing.
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert_eq!(requests.load(Ordering::SeqCst), 0);
+    assert!(session.pending_gate().is_none());
+
+    continue_when_parked(&session).await;
+    approve_the_gate(&session, "c2").await;
+    wait_until("the turn finishes", || {
+        requests.load(Ordering::SeqCst) >= 2 && !session.running.load(Ordering::SeqCst)
+    })
+    .await;
+    host.shut_down().await;
+
+    let log = session.snapshot();
+    assert_eq!(
+        results_of(&log, "c1"),
+        1,
+        "the captured call did not run again"
+    );
+    assert_eq!(results_of(&log, "c2"), 1);
+    let verdicts = log
+        .iter()
+        .filter(|e| matches!(e.payload, Payload::ResultVerdict { .. }))
+        .count();
+    assert_eq!(verdicts, 2, "both results were decided at the one gate");
+    let peek = bodies.lock().unwrap()[0].clone();
+    assert!(
+        peek.contains("one") && peek.contains("two"),
+        "the first request is the gate's peek over both results: {peek}"
+    );
+
+    // The wire answers both calls, with the notice after the results.
+    let messages = session.project_messages();
+    let answered = &messages[2];
+    assert_eq!(answered.role, Role::User);
+    match &answered.content[..] {
+        [
+            ApiBlock::ToolResult { .. },
+            ApiBlock::ToolResult { .. },
+            ApiBlock::Text { text, .. },
+        ] => assert!(text.contains("stopped with 2 tool calls pending"), "{text}"),
+        other => panic!("expected [result, result, notice], got {other:?}"),
+    }
+}
+
+/// **A captured result gets its verdict at the resumed gate** without its call running
+/// again, and with no approval needed: nothing was left to run.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_captured_result_is_triaged_without_running_again() {
+    let log = stopped_log(vec![call("c1", "printf one")], &["c1"], |log| {
+        captured(log, "c1", "one");
+    });
+    let (requests, bodies, addr) = requests_script(|n| match n {
+        0 => Answer::Stream(verdict(&["all"])),
+        _ => Answer::Stream(end_turn()),
+    });
+    let (host, runtime) = start(addr, log);
+    let session = Arc::clone(runtime.session());
+
+    continue_when_parked(&session).await;
+    wait_until("the turn finishes", || {
+        requests.load(Ordering::SeqCst) >= 2 && !session.running.load(Ordering::SeqCst)
+    })
+    .await;
+    host.shut_down().await;
+
+    let log = session.snapshot();
+    assert_eq!(results_of(&log, "c1"), 1);
+    assert_eq!(
+        log.iter()
+            .filter(|e| matches!(e.payload, Payload::CallStarted { .. }))
+            .count(),
+        1,
+        "the call was not dispatched again"
+    );
+    let captured_at = log
+        .iter()
+        .find(|e| matches!(e.payload, Payload::ToolResult { .. }))
+        .unwrap()
+        .seq;
+    assert!(log.iter().any(|e| matches!(
+        &e.payload,
+        Payload::ResultVerdict { for_result, .. } if *for_result == captured_at
+    )));
+    assert!(bodies.lock().unwrap()[0].contains("one"));
+}
+
+/// **A submitted turn waits behind the batch.** It is not appended before the calls'
+/// results, since a `User` entry after unanswered `tool_use` blocks breaks the wire; it is
+/// delivered at the seam after them, and the gate's peek does not carry it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_submitted_turn_is_delivered_after_the_batch() {
+    let log = stopped_log(
+        vec![call("c1", "printf one"), call("c2", "printf two")],
+        &["c1", "c2"],
+        |log| {
+            captured(log, "c1", "one");
+            gated(log, "c2");
+        },
+    );
+    let (requests, bodies, addr) = requests_script(two_verdicts_then_done);
+    let (host, runtime) = start(addr, log);
+    let session = Arc::clone(runtime.session());
+    wait_until("the loop parks", || session.is_settled()).await;
+
+    session.submit_turn(SubmittedTurn::new("carry on", "s1"));
+    approve_the_gate(&session, "c2").await;
+    wait_until("the turn finishes", || {
+        requests.load(Ordering::SeqCst) >= 2 && !session.running.load(Ordering::SeqCst)
+    })
+    .await;
+    host.shut_down().await;
+
+    let log = session.snapshot();
+    let position = |matcher: fn(&Payload) -> bool| log.iter().rposition(|e| matcher(&e.payload));
+    let said = position(
+        |p| matches!(p, Payload::User(blocks) if format!("{blocks:?}").contains("carry on")),
+    )
+    .expect("the turn is in the log");
+    let last_verdict = position(|p| matches!(p, Payload::ResultVerdict { .. })).unwrap();
+    let last_result = position(|p| matches!(p, Payload::ToolResult { .. })).unwrap();
+    assert!(
+        said > last_verdict && said > last_result,
+        "the turn follows the batch: {said} vs {last_result}, {last_verdict}"
+    );
+    let bodies = bodies.lock().unwrap();
+    assert!(!bodies[0].contains("carry on"), "the peek is not shown it");
+    assert!(
+        bodies[1].contains("carry on"),
+        "the next request carries it"
+    );
+}
+
+/// **An event does not replay the batch.** The notification waits in the inbox, no
+/// triage projects the unanswered wire, and nothing runs.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_event_wake_leaves_the_batch_alone() {
+    let log = stopped_log(vec![call("c1", "printf one")], &["c1"], |log| {
+        gated(log, "c1");
+    });
+    let (requests, _bodies, addr) = requests_script(|_| Answer::Stream(end_turn()));
+    let (host, runtime) = start(addr, log);
+    let session = Arc::clone(runtime.session());
+    wait_until("the loop parks", || session.is_settled()).await;
+
+    session.notify("watcher".into(), "something happened".into(), None, None);
+    tokio::time::sleep(Duration::from_millis(800)).await;
+    host.shut_down().await;
+
+    assert_eq!(requests.load(Ordering::SeqCst), 0, "no request of any kind");
+    assert!(session.pending_gate().is_none(), "no call reached the gate");
+    assert_eq!(results_of(&session.snapshot(), "c1"), 0);
+    assert!(session.has_pending_notifications(), "the event waits");
+}

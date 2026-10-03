@@ -72,14 +72,17 @@ the prefix only for a session that restarts on the new binary.
 `CallStarted` is appended after the permission cascade clears a call and before the
 tool runs; an `ask` never gets one, since it waits on the operator and touches
 nothing. A call with the marker and no result may have had side effects, which is
-the one state a resumed session can't continue from; resumption rolls back past the
-whole unfinished completion instead of reading the marker (resumption.md).
+the one state a resumed session can't continue from, so resumption rolls back past that
+completion. A call without it never ran, and resumption brings it back (resumption.md).
 
 `Resumed` is appended when a later host process reopens the log. It records the gap
 since the last entry, the background handles (`p#<n>`) with no recorded exit, and,
 when the log ended uncleanly, `resumes_after`, the seq of the last entry the session
-continues from. It projects as one text block at its own position (`render_resumed`),
-appended to the wire like any later turn, so the prefix before it is unchanged. Entries
+continues from, or, when the session resumed at an unfinished batch, `pending_calls`, the
+calls still to come back. It projects as one text block at its own position
+(`render_resumed`), appended to the wire like any later turn, so the prefix before it is
+unchanged; with `pending_calls` the block is held until the results of those calls project
+and lands in the same user turn after them (resumption.md). Entries
 with a seq after `resumes_after` and before the `Resumed` entry are skipped by
 `project_semantic` (`skipped_seqs`); a log with no such range projects exactly as
 before. Each `Resumed` entry skips its own range.

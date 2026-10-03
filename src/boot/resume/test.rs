@@ -2,9 +2,10 @@ use super::super::test::{PREPARING, Root, codex_registry, drop_boot, request, sc
 use super::*;
 use crate::boot::{BASE_DIR, prepare};
 use crate::log::{
-    AssistantOutput, ContentBlock, ExitOutcome, ProcessEvent, ProcessEventKind, ProcessExit,
-    ProcessSpawn, RawResult, Title, TitleAuthor, ToolCall, WireState,
+    AssistantOutput, CallId, ContentBlock, ExitOutcome, ProcessEvent, ProcessEventKind,
+    ProcessExit, ProcessSpawn, RawResult, Title, TitleAuthor, ToolCall, WireState,
 };
+use crate::recovery::{CallState, last_live_completion, pending_batch};
 
 /// The error a resume that must fail returned, cleaning up after it if it
 /// unexpectedly succeeded. Not the shared `failure`, which is typed against the
@@ -233,33 +234,35 @@ async fn a_mid_batch_log_rolls_back() {
     assert_eq!(other_after, other_files);
 }
 
-/// A result captured but not yet decided is the other unclean end, and resuming
-/// again after a rollback does not roll back a second time.
+/// A call that started and has no result is the crash case: the log rolls back past its
+/// completion, and resuming again does not roll back a second time.
 #[tokio::test]
-async fn an_undecided_result_rolls_back_once() {
+async fn a_started_call_rolls_back_once() {
     let _serial = PREPARING.lock().await;
-    let root = Root::new("resume-pending");
-    left_behind(&root, "pending", |log| {
+    let root = Root::new("resume-started");
+    left_behind(&root, "started", |log| {
         log.append(1, call_assistant("call_2")).unwrap();
         log.append(
             1,
-            Payload::tool_result("call_2", RawResult::text("out"), WireState::Pending),
+            Payload::CallStarted {
+                call_id: "call_2".into(),
+            },
         )
         .unwrap();
     })
     .await;
-    let registry = codex_registry(root.path(), "pending");
-    let (boot, _) = resume(resume_request(&root, "pending", &registry))
+    let registry = codex_registry(root.path(), "started");
+    let (boot, _) = resume(resume_request(&root, "started", &registry))
         .await
-        .expect("an undecided result rolls back");
+        .expect("a started call rolls back");
     let Payload::Resumed(first) = &boot.log.entries().last().unwrap().payload else {
         panic!("the Resumed entry is last");
     };
-    let first_after = first.resumes_after;
-    assert!(first_after.is_some());
+    assert!(first.resumes_after.is_some());
+    assert!(first.pending_calls.is_empty());
     drop_boot(boot);
 
-    let (boot, _) = resume(resume_request(&root, "pending", &registry))
+    let (boot, _) = resume(resume_request(&root, "started", &registry))
         .await
         .expect("the rolled-back log resumes");
     let Payload::Resumed(second) = &boot.log.entries().last().unwrap().payload else {
@@ -272,43 +275,235 @@ async fn an_undecided_result_rolls_back_once() {
     drop_boot(boot);
 }
 
-/// The rollback point alone: an earlier unclean completion keeps the walk going, and a
+/// A call held at an approval gate never ran, so the session resumes at it: nothing is
+/// skipped, the `Resumed` entry names the pending calls, and the notice projects behind
+/// the batch's results rather than after the unanswered `tool_use`.
+#[tokio::test]
+async fn a_gate_held_log_resumes_at_the_gate() {
+    let _serial = PREPARING.lock().await;
+    let root = Root::new("resume-gate");
+    left_behind(&root, "gate", |log| {
+        log.append(1, Payload::User(vec![ContentBlock::Text("go".into())]))
+            .unwrap();
+        log.append(1, call_assistant("call_5")).unwrap();
+        log.append(1, gate_spot("call_5")).unwrap();
+    })
+    .await;
+    let registry = codex_registry(root.path(), "gate");
+    let (boot, _) = resume(resume_request(&root, "gate", &registry))
+        .await
+        .expect("a gate-held log resumes");
+    let entries = boot.log.entries();
+    let Payload::Resumed(resumed) = &entries.last().unwrap().payload else {
+        panic!("the Resumed entry is last");
+    };
+    assert_eq!(resumed.resumes_after, None, "nothing is rolled back");
+    assert_eq!(resumed.pending_calls, vec![CallId("call_5".into())]);
+    let notice = crate::project::render_resumed(resumed, entries.last().unwrap().seq);
+    assert!(
+        notice.contains("stopped with 1 tool call pending")
+            && notice.contains("operator's next action brings it back"),
+        "{notice}"
+    );
+    // Nothing happens at load: the pending call is still without a result.
+    assert!(
+        entries
+            .iter()
+            .all(|e| !matches!(e.payload, Payload::ToolResult { .. }))
+    );
+    assert!(crate::recovery::pending_batch(entries).is_some());
+    drop_boot(boot);
+}
+
+fn at(seq: u64, payload: Payload) -> crate::log::LogEntry {
+    crate::log::LogEntry {
+        seq,
+        turn: 1,
+        at: Timestamp(seq),
+        submission_id: None,
+        source: None,
+        payload,
+    }
+}
+
+fn user(seq: u64) -> crate::log::LogEntry {
+    at(seq, Payload::User(vec![ContentBlock::Text("hi".into())]))
+}
+
+fn calls_assistant(ids: &[&str]) -> Payload {
+    Payload::Assistant {
+        output: AssistantOutput::from_legacy_messages(
+            vec![],
+            vec![],
+            ids.iter()
+                .map(|id| ToolCall::new("bash", *id, serde_json::json!({"command": "ls"})))
+                .collect(),
+        ),
+        upstream_failure: None,
+    }
+}
+
+fn started(id: &str) -> Payload {
+    Payload::CallStarted { call_id: id.into() }
+}
+
+fn gate_spot(id: &str) -> Payload {
+    Payload::Spot(crate::log::Spot {
+        call_id: id.into(),
+        stance: crate::log::Stance::Gate,
+        reason: "out of scope".into(),
+        origin: crate::log::Origin::Model,
+        model: None,
+        probed_prefix: None,
+        axes: None,
+    })
+}
+
+fn result(id: &str, wire: WireState) -> Payload {
+    Payload::tool_result(id, RawResult::text("out"), wire)
+}
+
+fn states(entries: &[crate::log::LogEntry]) -> Vec<CallState> {
+    last_live_completion(entries)
+        .unwrap()
+        .unwrap()
+        .calls
+        .into_iter()
+        .map(|(_, state)| state)
+        .collect()
+}
+
+/// Each call of the last live completion is decided, captured, never started or started,
+/// and the log's markers change how a resultless call reads.
+#[test]
+fn calls_classify_by_what_the_log_holds() {
+    // Decided (a result with a verdict, and a result that was never pending), captured
+    // (pending, no verdict), never started (no result, no marker), started.
+    let log = vec![
+        user(0),
+        at(1, calls_assistant(&["a", "b", "c", "d", "e"])),
+        at(2, started("a")),
+        at(3, result("a", WireState::Raw)),
+        at(4, started("b")),
+        at(5, result("b", WireState::Pending)),
+        at(
+            6,
+            Payload::ResultVerdict {
+                for_result: 5,
+                wire: WireState::Raw,
+            },
+        ),
+        at(7, started("c")),
+        at(8, result("c", WireState::Pending)),
+        at(9, started("e")),
+    ];
+    assert_eq!(
+        states(&log),
+        vec![
+            CallState::Decided,
+            CallState::Decided,
+            CallState::Captured { result_seq: 8 },
+            CallState::NeverStarted,
+            CallState::Started,
+        ]
+    );
+    // A started call anywhere rolls the whole completion back, past the user turn.
+    assert_eq!(
+        resume_point(&log),
+        Ok(Resumption {
+            resumes_after: Some(0),
+            pending: vec![],
+        })
+    );
+    assert!(pending_batch(&log).is_none());
+
+    // The same log without the started call resumes at the batch, in call order.
+    let held = &log[..9];
+    assert_eq!(
+        resume_point(held),
+        Ok(Resumption {
+            resumes_after: None,
+            pending: vec![CallId("c".into()), CallId("d".into()), CallId("e".into())],
+        })
+    );
+    let batch = pending_batch(held).expect("a pending batch");
+    assert_eq!(batch.seq, 1);
+}
+
+/// A log with no `CallStarted` anywhere predates the marker: a resultless call counts as
+/// never started only when a gating `Spot` names it, and as started otherwise.
+#[test]
+fn a_pre_marker_log_reads_a_gate_spot_as_never_started() {
+    let gated = vec![
+        user(0),
+        at(1, calls_assistant(&["a", "b"])),
+        at(2, result("a", WireState::Raw)),
+        at(3, gate_spot("b")),
+    ];
+    assert_eq!(
+        states(&gated),
+        vec![CallState::Decided, CallState::NeverStarted]
+    );
+    assert_eq!(resume_point(&gated).unwrap().resumes_after, None);
+
+    // No Spot: it may have run.
+    let bare = vec![user(0), at(1, calls_assistant(&["a"]))];
+    assert_eq!(states(&bare), vec![CallState::Started]);
+    assert_eq!(resume_point(&bare).unwrap().resumes_after, Some(0));
+
+    // A clearing Spot is not a gate.
+    let mut cleared = bare.clone();
+    cleared.push(at(
+        2,
+        Payload::Spot(crate::log::Spot {
+            stance: crate::log::Stance::Clear,
+            ..match gate_spot("a") {
+                Payload::Spot(spot) => spot,
+                _ => unreachable!(),
+            }
+        }),
+    ));
+    assert_eq!(states(&cleared), vec![CallState::Started]);
+
+    // With a marker elsewhere in the log, the absence of one is the evidence.
+    let mut marked = gated.clone();
+    marked.insert(1, at(1, calls_assistant(&["z"])));
+    marked.insert(2, at(2, started("z")));
+    marked.insert(3, at(3, result("z", WireState::Raw)));
+    for (index, entry) in marked.iter_mut().enumerate() {
+        entry.seq = index as u64;
+    }
+    assert_eq!(
+        states(&marked),
+        vec![CallState::Decided, CallState::NeverStarted]
+    );
+}
+
+/// The rollback walk alone: an earlier unclean completion keeps the walk going, and a
 /// clean log rolls back nowhere.
 #[test]
-fn the_rollback_point_walks_back_to_a_clean_end() {
-    use crate::log::LogEntry;
-    fn at(seq: u64, payload: Payload) -> LogEntry {
-        LogEntry {
-            seq,
-            turn: 1,
-            at: Timestamp(seq),
-            submission_id: None,
-            source: None,
-            payload,
-        }
-    }
-    let user = |seq| at(seq, Payload::User(vec![ContentBlock::Text("hi".into())]));
+fn the_rollback_walks_back_to_a_clean_end() {
     let clean = vec![
         user(0),
         at(1, call_assistant("a")),
-        at(
-            2,
-            Payload::tool_result("a", RawResult::text("ok"), WireState::Raw),
-        ),
+        at(2, result("a", WireState::Raw)),
     ];
-    assert_eq!(rollback_point(&clean), Ok(None));
+    assert_eq!(resume_point(&clean).unwrap().resumes_after, None);
 
     let mut mid = clean.clone();
     mid.push(at(3, call_assistant("b")));
-    assert_eq!(rollback_point(&mid), Ok(Some(2)));
+    assert_eq!(resume_point(&mid).unwrap().resumes_after, Some(2));
 
     // The earlier completion is itself unfinished: the walk continues past it.
-    let mut nested = vec![user(0), at(1, call_assistant("a"))];
-    nested.push(at(2, call_assistant("b")));
-    assert_eq!(rollback_point(&nested), Ok(Some(0)));
+    let nested = vec![
+        user(0),
+        at(1, call_assistant("a")),
+        at(2, call_assistant("b")),
+    ];
+    assert_eq!(resume_point(&nested).unwrap().resumes_after, Some(0));
 
     // Nothing before the unfinished completion to continue from.
-    assert!(rollback_point(&[at(0, call_assistant("a"))]).is_err());
+    assert!(resume_point(&[at(0, call_assistant("a"))]).is_err());
 }
 
 /// A failure after the log is read (here, a connection the registry no longer has)

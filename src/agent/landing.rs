@@ -266,3 +266,36 @@ pub(super) async fn land(
     *turn_at = turn;
     Ok(())
 }
+
+/// What follows a landed batch (docs/control-channel.md): whether the trajectory ends
+/// (`true`), and the redirect's user turn when it goes on. The caller breaks out of its
+/// loop on `true`.
+pub(super) fn after_landing(
+    shared: &Session,
+    turn: &mut Turn,
+    abort_turn: bool,
+    redirect: Option<String>,
+) -> std::io::Result<bool> {
+    if abort_turn {
+        eprintln!("[turn aborted]");
+        return Ok(true);
+    }
+    if let Some(message) = redirect {
+        // The rejection `tool_result`(s) answer the orphaned call(s); this
+        // user turn carries the steer. The trajectory goes on: re-project and let
+        // the model respond.
+        *turn += 1;
+        shared.append(*turn, Payload::User(vec![ContentBlock::Text(message)]))?;
+    }
+    // The juncture after the gate (docs/control-channel.md): an interrupt
+    // pressed during the peek or a held gate ended it with the latch still
+    // set. Consumed here, the turn ends with the results logged withheld;
+    // left set, the next completion's first call would take it, after a
+    // paid request and after any turn the operator queued to explain the
+    // press had already been drained into that request.
+    if shared.take_interrupt() {
+        eprintln!("[turn ended by the operator's interrupt]");
+        return Ok(true);
+    }
+    Ok(false)
+}

@@ -7,8 +7,10 @@
 //! `parts`), so a resumed session is built by the same code a created one is.
 //!
 //! A log whose last completion is clean (no calls, or every call answered and decided)
-//! resumes after its last entry; any other resumes from just before that completion's
-//! assistant entry ([`rollback_point`]), and the `Resumed` entry records where. The reopen itself is the last fallible
+//! resumes after its last entry, and one with calls that never ran resumes at that batch
+//! (`Resumed.pending_calls`); a call that started and has no result rolls back to just
+//! before the completion ([`resume_point`](crate::recovery::resume_point)), and the
+//! `Resumed` entry records where. The reopen itself is the last fallible
 //! step: everything before it reads the log without writing, so a refusal or a failed boot
 //! leaves the session directory as it was found. The directory is never in [`Minted`]; only
 //! the scratch this attempt makes is.
@@ -26,8 +28,9 @@ use super::{BASE_DIR, CONFIG_NAME, LOG_NAME, env, model, parts, scaffold};
 use crate::api::Error;
 use crate::daemon::SessionBoot;
 use crate::inference::{InferenceRegistry, SessionOptions, TriageChoice};
-use crate::log::{LogEntry, Payload, Resumed, Seq, Timestamp};
+use crate::log::{LogEntry, Payload, Resumed, Timestamp};
 use crate::persist::{LoadedRecording, Log, SessionMetadata, TriageModel};
+use crate::recovery::{Resumption, resume_point};
 use crate::spotter::MountedSpotter;
 
 /// What a resume needs from whoever resumes. The session's working directory, role
@@ -89,7 +92,7 @@ async fn resume_minting(
 
     // Read-only until the reopen below: a refusal here has written nothing.
     let recording = crate::persist::load_recording(&log_path).map_err(std::io::Error::from)?;
-    rollback_point(&recording.entries)
+    resume_point(&recording.entries)
         .map_err(|why| format!("cannot resume {}: {why}", session_dir.display()))?;
     let (system, context_block) = frozen_preamble(&recording.entries).ok_or_else(|| {
         format!(
@@ -187,10 +190,10 @@ async fn resume_minting(
     }
     // The log can have moved between the read-only load and the reopen; the entries the
     // session continues from are the reopened ones.
-    let resumes_after = rollback_point(log.entries())
+    let resumption = resume_point(log.entries())
         .map_err(|why| format!("cannot resume {}: {why}", session_dir.display()))?;
     log.set_masker(env_policy.masker());
-    let (turn, resumed) = resumed_entry(log.entries(), resumes_after);
+    let (turn, resumed) = resumed_entry(log.entries(), resumption);
     log.append(turn, Payload::Resumed(resumed))?;
     eprintln!("resumed {}", session_dir.display());
 
@@ -295,85 +298,11 @@ fn frozen_preamble(entries: &[LogEntry]) -> Option<(String, Option<String>)> {
     })
 }
 
-/// Where the session continues from: `None` when the log ends cleanly (its last live
-/// completion has no calls, or every call has a result and every result a decision),
-/// else `Some(seq)` of the last entry before that completion's assistant entry
-/// (docs/resumption.md). The earlier prefix is checked the same way, and the walk
-/// repeats until it ends cleanly. Entries an earlier `Resumed` skipped are not live: they
-/// are neither the completion nor the rollback point. The error is the reason a log has
-/// nothing to continue from.
-pub(super) fn rollback_point(entries: &[LogEntry]) -> Result<Option<Seq>, String> {
-    let mut end = entries.len();
-    let mut rolled_back = None;
-    loop {
-        let live = &entries[..end];
-        let skipped = crate::project::skipped_seqs(live);
-        let is_live = |e: &LogEntry| !skipped.contains(&e.seq);
-        // A record-only assistant entry (a failed stream) is not a completion.
-        let Some(index) = live.iter().rposition(|e| {
-            is_live(e)
-                && matches!(
-                    &e.payload,
-                    Payload::Assistant {
-                        upstream_failure: None,
-                        ..
-                    }
-                )
-        }) else {
-            return Ok(rolled_back);
-        };
-        if completion_is_clean(
-            &live[index],
-            live[index + 1..].iter().filter(|e| is_live(e)),
-        )? {
-            return Ok(rolled_back);
-        }
-        let Some(before) = live[..index].iter().rposition(is_live) else {
-            return Err("the log ends mid-batch with nothing before it to resume from".into());
-        };
-        rolled_back = Some(live[before].seq);
-        end = before + 1;
-    }
-}
-
-/// Whether every call of the assistant entry `completion` has a result in `after`, and
-/// every result a decision.
-fn completion_is_clean<'a>(
-    completion: &LogEntry,
-    after: impl Iterator<Item = &'a LogEntry> + Clone,
-) -> Result<bool, String> {
-    let Payload::Assistant { output, .. } = &completion.payload else {
-        return Ok(true);
-    };
-    let calls = output
-        .tool_calls()
-        .map_err(|e| format!("the last completion's calls do not parse: {e}"))?;
-    for call in calls {
-        let result = after.clone().find_map(|entry| match &entry.payload {
-            Payload::ToolResult { call_id, wire, .. } if *call_id == call.id => {
-                Some((entry.seq, wire))
-            }
-            _ => None,
-        });
-        let Some((seq, wire)) = result else {
-            return Ok(false);
-        };
-        let decided = !matches!(wire, crate::log::WireState::Pending)
-            || after.clone().any(|entry| {
-                matches!(&entry.payload, Payload::ResultVerdict { for_result, .. } if *for_result == seq)
-            });
-        if !decided {
-            return Ok(false);
-        }
-    }
-    Ok(true)
-}
-
 /// The `Resumed` entry for a log ending at `entries`, and the turn it files under: the
 /// log's last, skipped entries included, so turn numbers never repeat. Lost processes are
 /// the background handles spawned with no recorded exit, over the whole log: a spawn in a
 /// skipped range may have started a process.
-fn resumed_entry(entries: &[LogEntry], resumes_after: Option<Seq>) -> (crate::log::Turn, Resumed) {
+fn resumed_entry(entries: &[LogEntry], resumption: Resumption) -> (crate::log::Turn, Resumed) {
     let last = entries.last();
     let gap_ms = last.map_or(0, |e| Timestamp::now().0.saturating_sub(e.at.0));
     let mut running = BTreeSet::new();
@@ -394,7 +323,8 @@ fn resumed_entry(entries: &[LogEntry], resumes_after: Option<Seq>) -> (crate::lo
         Resumed {
             gap_ms,
             lost_processes: running.into_iter().map(crate::supervisor::handle).collect(),
-            resumes_after,
+            resumes_after: resumption.resumes_after,
+            pending_calls: resumption.pending,
         },
     )
 }

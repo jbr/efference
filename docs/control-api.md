@@ -433,6 +433,10 @@ idling** — a blank submit never lands a `User` entry and never starts a turn.
   next attempt fires at once; after a stall that returned the loop to idle, it
   re-sends the failed request. It can be repeated as often as the operator
   likes.
+
+  On a resumed session stopped at a pending batch, whose wire ends in a `tool_use`,
+  the continue is accepted and the loop replays the batch instead of sending a request
+  ([resumption.md](resumption.md)).
 - `409 not_continuable` — the moment has no continue in it. `message` names
   which case:
   - the loop is already running (and not waiting on the upstream), or a turn is queued
