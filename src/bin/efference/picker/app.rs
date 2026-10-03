@@ -22,9 +22,11 @@ use efference::tui::inline_list::{
 use ratatui::{buffer::Buffer, layout::Rect};
 use std::io;
 
-/// Title, id, then status or age.
+/// Title, id, then status or age. The title has no cap of its own: it is what a
+/// person reads a row by, so it takes the width the terminal has and is cut only
+/// when that runs out.
 const COLUMNS: [Column; 3] = [
-    Column::new(60, CellStyle::Primary),
+    Column::new(usize::MAX, CellStyle::Primary),
     Column::new(40, CellStyle::Dim),
     Column::new(usize::MAX, CellStyle::Dim)
         .droppable()

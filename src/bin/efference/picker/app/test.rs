@@ -296,6 +296,18 @@ fn a_narrow_width_drops_the_status_then_cuts_the_title() {
 }
 
 #[test]
+fn a_wide_terminal_shows_a_full_length_title_whole() {
+    let title = "a".repeat(80);
+    let menu =
+        menu(&[], &here()).with_archived(vec![archived("quiet-heron", Some(&title), HOUR)], NOW);
+    let mut app = App::new(&menu, &here());
+    app.page = Page::Resume;
+    let text = drawn(&app, 140, 8);
+    let row = text.lines().nth(2).unwrap();
+    assert!(row.contains(&title) && !row.contains('…'), "{row}");
+}
+
+#[test]
 fn the_window_scrolls_within_a_short_viewport() {
     let rows: Vec<InventoryRow> = (0..30)
         .map(|n| archived(&format!("old-{n:02}"), None, (n + 1) * HOUR))
