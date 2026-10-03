@@ -753,9 +753,11 @@ billed to a ChatGPT/Codex subscription, so that arm sends exactly what Codex CLI
 sends: the preamble as top-level `instructions` rather than a developer message,
 `include: ["reasoning.encrypted_content"]`, the sticky key on `session-id`, and no
 `max_output_tokens`, `truncation`, `temperature`, or `prompt_cache_options`, and no
-`prompt_cache_breakpoint` markers — the backend rejects each of those with a 400
-`Unsupported parameter` (measured 2026-09-10 on gpt-6-astra and gpt-5.6-luna
-alike, so this is the backend's surface rather than one model's), so the arm's
+`prompt_cache_breakpoint` markers. On 2026-09-10 the backend rejected each of those
+with a 400 `Unsupported parameter`, on gpt-6-astra and gpt-5.6-luna alike, so this is
+the backend's surface rather than one model's. `max_output_tokens` has since been
+accepted and enforced, with a minimum of 16 (probed 2026-10-02 on gpt-6.1-sol,
+gpt-6-luna, gpt-5.6-luna and gpt-5.6-terra); the arm still omits it. The arm's
 capability profile reports implicit caching. Explicit mode is unreachable here,
 and would be worse than unreachable if half-applied: `mode: explicit` with no
 breakpoints disables caching outright. "What Codex CLI sends, and nothing it does
