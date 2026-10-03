@@ -7,6 +7,7 @@
 
 use super::picker_rows::Target;
 use super::*;
+use crate::tui::inline_list::{ListKey, list_key};
 
 impl Form {
     pub(super) fn handle_picker_key(&mut self, key: KeyEvent) -> Action {
@@ -25,12 +26,6 @@ impl Form {
         *selected = (*selected).min(rows.len().saturating_sub(1));
         let current = rows.get(*selected);
         match key.code {
-            KeyCode::Up => *selected = selected.saturating_sub(1),
-            KeyCode::Down => *selected = (*selected + 1).min(rows.len().saturating_sub(1)),
-            KeyCode::Char('p') if ctrl => *selected = selected.saturating_sub(1),
-            KeyCode::Char('n') if ctrl => {
-                *selected = (*selected + 1).min(rows.len().saturating_sub(1))
-            }
             KeyCode::Enter => {
                 let Some(target) = current.map(|row| row.target.clone()) else {
                     return Action::Continue;
@@ -81,10 +76,7 @@ impl Form {
                 *selected = 0;
             }
             _ => {
-                let before = query.text();
-                query.handle_key(key);
-                if query.text() != before {
-                    *selected = 0;
+                if list_key(query, selected, rows.len(), key) == ListKey::Edited {
                     return self.refresh_on_miss();
                 }
             }

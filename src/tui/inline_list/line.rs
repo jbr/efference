@@ -1,4 +1,4 @@
-//! The single-line editor behind the form's typed pages (docs/tui.md).
+//! The single-line editor behind the inline prompts' typed pages (docs/tui.md).
 //!
 //! The composer's editing binds, restricted to one line: the same motion, kill,
 //! and undo keys work here as in the transcript's composer, because they are the
@@ -10,21 +10,21 @@ use crate::tui::composer::{Composer, ComposerAction};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 #[derive(Debug)]
-pub(super) struct Line(Composer);
+pub struct Line(Composer);
 
 impl Line {
-    pub(super) fn new(text: &str) -> Self {
+    pub fn new(text: &str) -> Self {
         let mut composer = Composer::new();
         composer.set_text(text);
         Self(composer)
     }
 
-    pub(super) fn text(&self) -> String {
+    pub fn text(&self) -> String {
         self.0.text()
     }
 
     /// The text with a cursor mark at the caret, for drawing.
-    pub(super) fn with_cursor(&self) -> String {
+    pub fn with_cursor(&self) -> String {
         let text = self.0.text();
         let (before, after) = text.split_at(self.0.cursor());
         format!("{before}▏{after}")
@@ -32,7 +32,7 @@ impl Line {
 
     /// Feed an editing key. Enter, C-j, Alt-Enter and Tab are the caller's or
     /// nobody's; everything else is the composer's binding table.
-    pub(super) fn handle_key(&mut self, key: KeyEvent) {
+    pub fn handle_key(&mut self, key: KeyEvent) {
         let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
         match key.code {
             KeyCode::Enter | KeyCode::Tab | KeyCode::BackTab => {}
@@ -48,7 +48,7 @@ impl Line {
 
     /// Insert pasted text on one line: control characters (newlines included)
     /// are dropped, as the form has always done.
-    pub(super) fn paste(&mut self, text: &str) {
+    pub fn paste(&mut self, text: &str) {
         let text: String = text.chars().filter(|c| !c.is_control()).collect();
         self.0.paste_text(&text);
     }

@@ -1,24 +1,27 @@
 //! `efference tui` with no flags: an inline picker before the full-screen view
 //! (docs/operating.md).
 //!
-//! The rows are the host's sessions whose cwd is this directory — the listing
-//! `GET /sessions` returns, scoped the way every project-local client scopes it
-//! (docs/control-channel.md) — then this directory's archived sessions, then one
-//! entry that creates a session here. The outcomes converge on the paths the
+//! The top page is the entry that creates a session here, then the host's
+//! sessions whose cwd is this directory — the listing `GET /sessions` returns,
+//! scoped the way every project-local client scopes it
+//! (docs/control-channel.md) — then, when this directory has dormant sessions, an
+//! entry that opens the resume page: every resumable archived session here, most
+//! recent first, under a query line. The outcomes converge on the paths the
 //! explicit flags take: a live row is the attach `tui` does, the create entry is
-//! `tui --new`, and an archived row is revived with
-//! `PATCH {"state": "active"}` (docs/control-api.md) and then attached the same
-//! way. The archived section is the [`ARCHIVED_SHOWN`] most recently active
-//! sessions whose logs can be resumed, from `GET /sessions?state=archived` when a
-//! host is running and from the host-free scan in `src/inventory.rs` when none is.
+//! `tui --new`, and an archived row is revived with `PATCH {"state": "active"}`
+//! (docs/control-api.md) and then attached the same way. The archived rows come
+//! from `GET /sessions?state=archived` when a host is running and from the
+//! host-free scan in `src/inventory.rs` when none is.
 //!
-//! The prompts are `efference setup`'s ([`Prompter`]), so the flow is exercised
-//! against a scripted prompter rather than a terminal (`picker/test.rs`).
+//! The pages are ratatui widgets in an inline viewport, the same list and
+//! theme the new-session form draws (`app.rs`, docs/tui.md).
 
 use super::*;
 use efference::client::SessionSummary;
 use efference::inventory::InventoryRow;
-use efference::setup::{Cancelled, Choice, Prompter, Tone, terminal::Terminal};
+use efference::tui::inline;
+
+mod app;
 
 /// One session the picker can attach to, with the host that serves it — a host
 /// per row because a project host and the user's host can both be live.
@@ -27,12 +30,9 @@ pub(crate) struct Row {
     pub(crate) host: PathBuf,
     pub(crate) id: String,
     pub(crate) title: Option<String>,
-    pub(crate) created_by: Option<String>,
+    /// What the session is doing, in the word the listing carries.
+    pub(crate) status: String,
 }
-
-/// How many archived sessions the picker lists. Past that the count says how
-/// many more there are; narrowing them is a search, not a longer list.
-pub(crate) const ARCHIVED_SHOWN: usize = 10;
 
 /// One dormant session in this directory the picker offers to resume.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -52,11 +52,9 @@ pub(crate) struct Menu {
     /// named, not listed: attaching from here to a session rooted elsewhere
     /// would put the TUI's working directory and the session's out of step.
     pub(crate) elsewhere: usize,
-    /// The most recently active archived sessions here that can be resumed, at
-    /// most [`ARCHIVED_SHOWN`].
+    /// The archived sessions here that can be resumed, most recently active
+    /// first.
     pub(crate) archived: Vec<Archived>,
-    /// How many resumable archived sessions are not in `archived`.
-    pub(crate) archived_more: usize,
 }
 
 /// What the person chose.
@@ -85,7 +83,7 @@ pub(crate) fn menu(listings: &[(PathBuf, Vec<SessionSummary>)], here: &Path) -> 
                     host: host.clone(),
                     id: session.id.clone(),
                     title: session.title.clone(),
-                    created_by: session.created_by.clone(),
+                    status: session.status.clone(),
                 });
             } else {
                 menu.elsewhere += 1;
@@ -96,21 +94,19 @@ pub(crate) fn menu(listings: &[(PathBuf, Vec<SessionSummary>)], here: &Path) -> 
 }
 
 impl Menu {
-    /// Add the archived section from inventory rows (most recently active
+    /// Add the archived sessions from inventory rows (most recently active
     /// first, as the scan and the route return them). A row with a `problem` is
     /// not offered: it could not be resumed.
     pub(crate) fn with_archived(mut self, rows: Vec<InventoryRow>, now_ms: u64) -> Self {
-        let mut resumable = rows.into_iter().filter(|row| row.problem.is_none());
-        self.archived = resumable
-            .by_ref()
-            .take(ARCHIVED_SHOWN)
+        self.archived = rows
+            .into_iter()
+            .filter(|row| row.problem.is_none())
             .map(|row| Archived {
                 age: row.last_active_at.map(|at| age(now_ms, at)),
                 id: row.id,
                 title: row.title,
             })
             .collect();
-        self.archived_more = resumable.count();
         self
     }
 }
@@ -130,91 +126,6 @@ fn now_ms() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |since| since.as_millis() as u64)
-}
-
-/// The second clause of a row: the title the triage model keeps current
-/// (docs/session-title.md), and the session that commissioned this one when one
-/// did (docs/tools.md).
-fn detail(row: &Row) -> String {
-    let title = row.title.clone().unwrap_or_else(|| "untitled".to_string());
-    match &row.created_by {
-        Some(by) => format!("{title} · created by {by}"),
-        None => title,
-    }
-}
-
-/// The menu as prompt entries: a row per live session here, a row per archived
-/// one (its title, or its id when it has none, with its age), then the create
-/// entry, which is last so it is always in the same place.
-pub(crate) fn choices(menu: &Menu, here: &Path) -> Vec<Choice> {
-    let mut choices: Vec<Choice> = menu
-        .rows
-        .iter()
-        .map(|row| Choice::new(row.id.clone()).detail(detail(row)))
-        .collect();
-    choices.extend(menu.archived.iter().map(|session| {
-        let label = session.title.as_deref().unwrap_or(&session.id);
-        let detail = match &session.age {
-            Some(age) => format!("archived · {age}"),
-            None => "archived".to_string(),
-        };
-        Choice::new(label).detail(detail)
-    }));
-    choices.push(Choice::new("create a new session").detail(format!("in {}", tilde(here))));
-    choices
-}
-
-/// Ask. The rows come first and the cursor starts on the first one, so a single
-/// session here is one Enter away.
-pub(crate) fn pick<P: Prompter>(
-    prompter: &mut P,
-    menu: &Menu,
-    here: &Path,
-) -> Result<Pick, Cancelled> {
-    let here_label = tilde(here);
-    if menu.elsewhere > 0 {
-        prompter.say(
-            Tone::Plain,
-            &format!(
-                "{} session{} on this host {} in other directories; run `efference` there to see {}.",
-                menu.elsewhere,
-                if menu.elsewhere == 1 { "" } else { "s" },
-                if menu.elsewhere == 1 { "is" } else { "are" },
-                if menu.elsewhere == 1 { "it" } else { "them" }
-            ),
-        );
-    }
-    // With nothing here to attach to or resume, the menu's one entry is
-    // "create", and asking for it is a keystroke that says nothing: the form
-    // comes next.
-    if menu.rows.is_empty() && menu.archived.is_empty() {
-        return Ok(Pick::Create);
-    }
-    if menu.archived_more > 0 {
-        prompter.say(
-            Tone::Plain,
-            &format!(
-                "{} more archived session{} here {} not listed.",
-                menu.archived_more,
-                if menu.archived_more == 1 { "" } else { "s" },
-                if menu.archived_more == 1 { "is" } else { "are" },
-            ),
-        );
-    }
-    let choices = choices(menu, here);
-    let index = prompter.select(&format!("sessions in {here_label}"), &choices)?;
-    Ok(if let Some(row) = menu.rows.get(index) {
-        Pick::Attach {
-            host: row.host.clone(),
-            id: row.id.clone(),
-        }
-    } else if let Some(session) = menu.archived.get(index - menu.rows.len()) {
-        Pick::Resume {
-            id: session.id.clone(),
-        }
-    } else {
-        Pick::Create
-    })
 }
 
 /// A path with the home directory written as `~`, for a prompt line.
@@ -275,25 +186,21 @@ pub(crate) async fn run(
         // Nothing live to pick from: the archived sessions here, read from disk
         // since there is no host to ask, are all the menu can hold.
         let archived = scan_archived(&here).await;
-        let mut terminal = Terminal::open().ok().filter(|_| !archived.is_empty());
-        let creation = match terminal.as_mut() {
-            None => island::Creation::Form {
+        let creation = match archived.is_empty() || !inline::interactive() {
+            true => island::Creation::Form {
                 theme: theme.clone(),
             },
-            Some(terminal) => {
+            false => {
                 let menu = Menu::default().with_archived(archived, now_ms());
-                match pick(terminal, &menu, &here) {
-                    Err(Cancelled) => return Ok(()),
-                    Ok(Pick::Resume { id }) => island::Creation::Resume { id },
-                    Ok(_) => island::Creation::Form {
+                match app::ask(&menu, &here, inline::styles(theme.clone())?)? {
+                    None => return Ok(()),
+                    Some(Pick::Resume { id }) => island::Creation::Resume { id },
+                    Some(_) => island::Creation::Form {
                         theme: theme.clone(),
                     },
                 }
             }
         };
-        if let Some(terminal) = terminal.as_mut() {
-            terminal.erase();
-        }
         // Nowhere to create or resume: start a host owned by this terminal and
         // do it there (docs/operating.md). A `bind` makes it the browser island
         // rather than the TUI.
@@ -314,7 +221,7 @@ pub(crate) async fn run(
     let menu = menu(&listings, &here).with_archived(archived, now_ms());
     // Without a terminal to draw in there is nothing to ask with; resolve the
     // way an explicit target resolves instead.
-    let Ok(mut terminal) = Terminal::open() else {
+    if !inline::interactive() {
         return tui(
             resolve_client_target(None, None).await?,
             theme,
@@ -322,14 +229,10 @@ pub(crate) async fn run(
             frame_cost,
         )
         .await;
+    }
+    let Some(pick) = app::ask(&menu, &here, inline::styles(theme.clone())?)? else {
+        return Ok(());
     };
-    let pick = match pick(&mut terminal, &menu, &here) {
-        Ok(pick) => pick,
-        Err(Cancelled) => return Ok(()),
-    };
-    // Answered: nothing of the question is left behind once the form or the TUI
-    // takes over, as with a terminal island (docs/operating.md).
-    terminal.erase();
     let host = listings[0].0.clone();
     match hosted_target(pick, &host).await? {
         Some(target) => tui(target, theme, images, frame_cost).await,

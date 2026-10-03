@@ -1,72 +1,4 @@
-use std::collections::VecDeque;
-
 use super::*;
-
-/// A scripted [`Prompter`], as `src/setup/test.rs` scripts the setup flow: the
-/// answers are consumed in order and every line said is kept for assertions.
-struct Script {
-    answers: VecDeque<Option<&'static str>>,
-    transcript: Vec<String>,
-    /// The entries of each menu asked, by label.
-    menus: Vec<Vec<String>>,
-}
-
-impl Script {
-    /// `None` is Esc.
-    fn new(answers: Vec<Option<&'static str>>) -> Self {
-        Self {
-            answers: answers.into(),
-            transcript: Vec::new(),
-            menus: Vec::new(),
-        }
-    }
-
-    fn said(&self, needle: &str) -> bool {
-        self.transcript.iter().any(|line| line.contains(needle))
-    }
-}
-
-impl Prompter for Script {
-    fn say(&mut self, tone: Tone, text: &str) {
-        self.transcript.push(format!("{tone:?}: {text}"));
-    }
-
-    fn select(&mut self, question: &str, choices: &[Choice]) -> Result<usize, Cancelled> {
-        self.transcript.push(format!("select: {question}"));
-        self.menus.push(
-            choices
-                .iter()
-                .map(|choice| match &choice.detail {
-                    Some(detail) => format!("{}: {detail}", choice.label),
-                    None => choice.label.clone(),
-                })
-                .collect(),
-        );
-        let answer = self
-            .answers
-            .pop_front()
-            .unwrap_or_else(|| panic!("no scripted answer for {question:?}"));
-        let Some(answer) = answer else {
-            return Err(Cancelled);
-        };
-        choices
-            .iter()
-            .position(|choice| choice.label.starts_with(answer))
-            .ok_or(Cancelled)
-    }
-
-    fn text(&mut self, question: &str, _default: Option<&str>) -> Result<String, Cancelled> {
-        panic!("the picker asks no text question ({question})")
-    }
-
-    fn secret(&mut self, question: &str) -> Result<String, Cancelled> {
-        panic!("the picker asks no secret ({question})")
-    }
-
-    fn confirm(&mut self, question: &str, _default: bool) -> Result<bool, Cancelled> {
-        panic!("the picker asks no confirmation ({question})")
-    }
-}
 
 /// One listing as the wire carries it, decoded the way the client decodes
 /// `GET /sessions`.
@@ -106,6 +38,7 @@ fn rows_are_this_directorys_sessions_and_the_rest_is_a_count() {
     assert_eq!(menu.rows.len(), 1);
     assert_eq!(menu.rows[0].id, "pickled-wombat");
     assert_eq!(menu.rows[0].host, host());
+    assert_eq!(menu.rows[0].status, "idle");
     assert_eq!(menu.elsewhere, 1);
 }
 
@@ -119,80 +52,6 @@ fn a_listing_without_a_cwd_is_kept() {
     );
     assert_eq!(menu.rows.len(), 1);
     assert_eq!(menu.elsewhere, 0);
-}
-
-#[test]
-fn a_row_carries_the_title_and_the_create_entry_is_last() {
-    let menu = menu(&listings(&[HERE_SESSION]), &here());
-    let choices = choices(&menu, &here());
-    assert_eq!(choices[0].label, "pickled-wombat");
-    assert_eq!(
-        choices[0].detail.as_deref(),
-        Some("investigating the cause of the missing radish")
-    );
-    assert_eq!(choices[1].label, "create a new session");
-    assert_eq!(
-        choices[1].detail.as_deref(),
-        Some("in /tmp/efference-picker/project")
-    );
-    assert_eq!(choices.len(), 2);
-}
-
-#[test]
-fn an_untitled_session_says_so_and_names_its_creator() {
-    let menu = menu(
-        &listings(&[
-            r#"{"id": "fresh", "cwd": "/tmp/efference-picker/project", "created_by": "pickled-wombat", "status": "idle"}"#,
-        ]),
-        &here(),
-    );
-    assert_eq!(
-        choices(&menu, &here())[0].detail.as_deref(),
-        Some("untitled · created by pickled-wombat")
-    );
-}
-
-#[test]
-fn picking_a_row_attaches_to_it_on_its_host() {
-    let menu = menu(&listings(&[HERE_SESSION, ELSEWHERE_SESSION]), &here());
-    let mut script = Script::new(vec![Some("pickled-wombat")]);
-    let pick = pick(&mut script, &menu, &here()).unwrap();
-    assert_eq!(
-        pick,
-        Pick::Attach {
-            host: host(),
-            id: "pickled-wombat".to_string()
-        }
-    );
-    assert!(script.said("1 session on this host is in other directories"));
-}
-
-#[test]
-fn picking_the_last_entry_creates_here() {
-    let menu = menu(&listings(&[HERE_SESSION]), &here());
-    let mut script = Script::new(vec![Some("create a new session")]);
-    assert_eq!(pick(&mut script, &menu, &here()).unwrap(), Pick::Create);
-}
-
-/// With nothing here to attach to, the picker asks nothing: its one entry would be
-/// "create", and the new-session form that follows has its own cancel. A running
-/// host and a terminal island then open the same form (docs/tui.md).
-#[test]
-fn the_empty_state_goes_straight_to_create() {
-    let menu = menu(&listings(&[ELSEWHERE_SESSION]), &here());
-    assert!(menu.rows.is_empty());
-    let mut script = Script::new(vec![]);
-    assert_eq!(pick(&mut script, &menu, &here()).unwrap(), Pick::Create);
-    assert!(script.menus.is_empty());
-    // The sessions elsewhere are still pointed at.
-    assert!(script.said("in other directories"));
-}
-
-#[test]
-fn escape_is_cancelled_rather_than_a_pick() {
-    let menu = menu(&listings(&[HERE_SESSION]), &here());
-    let mut script = Script::new(vec![None]);
-    assert_eq!(pick(&mut script, &menu, &here()), Err(Cancelled));
 }
 
 #[test]
@@ -239,82 +98,39 @@ fn ages_read_in_the_largest_whole_unit() {
     assert_eq!(age(NOW, NOW + HOUR), "just now");
 }
 
-/// The section as the prompt renders it: live rows, archived rows (title or id,
-/// then age), the create entry last. Rows with a problem are not there.
+/// Every resumable archived session is kept, in the order given; a row with a
+/// problem is not offered.
 #[test]
-fn archived_rows_follow_the_live_ones_and_hide_problems() {
-    let menu = menu(&listings(&[HERE_SESSION]), &here()).with_archived(
-        vec![
-            row(
-                "quiet-heron",
-                Some("tracing the flaky socket test"),
-                3 * HOUR,
-                None,
-            ),
-            row("broken", Some("unreadable"), 4 * HOUR, Some("no log.jsonl")),
-            row("plain-otter", None, 50 * HOUR, None),
-        ],
-        NOW,
-    );
-    let mut script = Script::new(vec![None]);
-    let _ = pick(&mut script, &menu, &here());
-    assert_eq!(
-        script.menus[0],
-        [
-            "pickled-wombat: investigating the cause of the missing radish",
-            "tracing the flaky socket test: archived · 3h ago",
-            "plain-otter: archived · 2d ago",
-            "create a new session: in /tmp/efference-picker/project",
-        ]
-    );
-    assert!(!script.said("more archived"));
-}
-
-#[test]
-fn past_ten_archived_rows_the_rest_are_counted() {
+fn archived_rows_are_all_kept_and_problems_are_hidden() {
     let rows: Vec<InventoryRow> = (0..12)
         .map(|n| row(&format!("old-{n}"), None, (n + 1) * HOUR, None))
-        .chain([row("broken", None, HOUR, Some("no log.jsonl"))])
+        .chain([row(
+            "broken",
+            Some("unreadable"),
+            HOUR,
+            Some("no log.jsonl"),
+        )])
         .collect();
     let menu = menu(&listings(&[]), &here()).with_archived(rows, NOW);
-    assert_eq!(menu.archived.len(), ARCHIVED_SHOWN);
-    assert_eq!(menu.archived_more, 2);
-    let mut script = Script::new(vec![None]);
-    let _ = pick(&mut script, &menu, &here());
-    assert!(script.said("2 more archived sessions here are not listed."));
-    // Ten rows and the create entry.
-    assert_eq!(script.menus[0].len(), 11);
+    assert_eq!(menu.archived.len(), 12);
+    assert_eq!(menu.archived[0].id, "old-0");
+    assert_eq!(menu.archived[0].age.as_deref(), Some("1h ago"));
+    assert!(menu.archived.iter().all(|a| a.id != "broken"));
 }
 
 #[test]
-fn picking_an_archived_row_resumes_it() {
-    let menu = menu(&listings(&[HERE_SESSION]), &here()).with_archived(
-        vec![row(
-            "quiet-heron",
-            Some("tracing the flaky socket test"),
-            HOUR,
-            None,
-        )],
-        NOW,
+fn the_other_directories_line_counts_and_agrees() {
+    assert_eq!(app::elsewhere_note(0), None);
+    assert!(
+        app::elsewhere_note(1)
+            .unwrap()
+            .starts_with("1 session on this host is in other directories")
     );
-    let mut script = Script::new(vec![Some("tracing")]);
-    assert_eq!(
-        pick(&mut script, &menu, &here()).unwrap(),
-        Pick::Resume {
-            id: "quiet-heron".to_string()
-        }
+    assert!(
+        app::elsewhere_note(3)
+            .unwrap()
+            .starts_with("3 sessions on this host are in other directories")
     );
-}
-
-/// With nothing live here but something archived, the prompt is asked: the
-/// create-only shortcut applies when there is nothing to choose between.
-#[test]
-fn archived_rows_alone_are_still_asked_about() {
-    let menu = menu(&listings(&[]), &here())
-        .with_archived(vec![row("quiet-heron", None, HOUR, None)], NOW);
-    let mut script = Script::new(vec![Some("create")]);
-    assert_eq!(pick(&mut script, &menu, &here()).unwrap(), Pick::Create);
-    assert_eq!(script.menus.len(), 1);
 }
 
 /// Picking an archived row sends the PATCH to the host, with this directory, and

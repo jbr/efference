@@ -148,26 +148,30 @@ session whether it runs on the host or on its own socket. Without `--new`, a ses
 silently ignored.
 
 A bare `efference tui` — no `--new`, no `--name`, no `--socket` — asks first
-(`src/bin/efference/picker.rs`): an inline prompt in the same style as `efference setup`,
-listing the live hosts' sessions whose cwd is this directory, each with the title the
-triage model keeps for it ([session-title.md](session-title.md)), then this directory's
-archived sessions, and one last entry that creates a session here. The archived section is
-the ten most recently active sessions whose logs can be resumed, each as its title (its id
-when it has none) and how long ago it was active (`archived · 3h ago`); when there are more,
-a line above the menu counts them, and there is no paging. A directory whose log cannot be
-resumed — unreadable, or one that predates the boot preamble — is not offered. The rows
-come from `GET /sessions?state=archived` on the first live host, or from the host-free scan
-(`src/inventory.rs`) when none is running ([log-and-projection.md](log-and-projection.md)).
-Picking a live row is the attach above; picking an archived one prints a `resuming <id>…`
-line, revives it with `PATCH /sessions/<id> {"state": "active", "cwd": …}` — which takes
-seconds, since the host re-establishes the environment and mounts the session's MCP
-servers ([control-api.md](control-api.md)) — and attaches the same way; picking the last
-entry opens the
-new-session form ([tui.md](tui.md)) inline where the prompt just was, and attaches to what
-it creates. `tui --new` stays the non-interactive path: it creates from the flags and the
-host's defaults without asking. The prompt appears even when one
-session is the only row, so the other entries stay visible; the cursor starts on the first
-row, so attaching to it is one Enter. Sessions the same hosts hold in other directories are
+(`src/bin/efference/picker/`): an inline ratatui prompt drawn with the same list, theme and
+keys as the new-session form ([tui.md](tui.md)). The top page is the entry that creates a
+session here, then, when the live hosts hold sessions whose cwd is this directory, a
+`running here` separator and a row for each, then, when this directory has resumable
+archived sessions, `resume an archived session…` with their count. The cursor starts on
+the create entry, so `efference` ⏎ ⏎ creates a default session: Enter here, then Enter on
+the form's "start session". That entry opens the resume page: every resumable archived
+session here, most recently active first, under a query line that filters on title and id,
+scrolling within the viewport; Esc returns to the top page, and Esc there cancels. A row is
+one line in one shape wherever it appears: the title (cut with `…` to fit; the id when the
+session has none), the id dimmed, then the status (`idle`, `running`) of a live session or
+the age (`16m ago`, `2d ago`) of an archived one, dimmed. A directory whose log cannot be
+resumed — unreadable, or one that predates the boot preamble — is not offered. The archived
+rows come from `GET /sessions?state=archived` on the first live host, or from the
+host-free scan (`src/inventory.rs`) when none is running
+([log-and-projection.md](log-and-projection.md)); if the host's listing fails, a warning
+prints and the prompt continues without them. Picking a live row is the attach above;
+picking an archived one prints a `resuming <id>…` line, revives it with
+`PATCH /sessions/<id> {"state": "active", "cwd": …}` — which takes seconds, since the host
+re-establishes the environment and mounts the session's MCP servers
+([control-api.md](control-api.md)) — and attaches the same way; picking the create entry
+opens the new-session form ([tui.md](tui.md)) as a second inline viewport where the
+picker's was (the picker's lines are erased first), and attaches to what it creates. `tui --new` stays the non-interactive path: it creates from the flags and
+the host's defaults without asking. Sessions the same hosts hold in other directories are
 counted in a line above the menu rather than listed — attaching from here to a session
 rooted elsewhere would put the TUI's directory and the session's out of step. With no live
 or archived session here the prompt is skipped and the form opens directly — its one entry

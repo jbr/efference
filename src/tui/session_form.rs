@@ -17,7 +17,6 @@
 
 mod draft;
 mod inline;
-mod line;
 mod matcher;
 mod pages;
 mod picker;
@@ -34,8 +33,8 @@ pub(in crate::tui) use draft::{Draft, RoleDraft, TriageDraft};
 
 use crate::client::ConnectionCatalog;
 use crate::inference::{ConnectionInventory, ResolvedOptions, SessionOptions};
+use crate::tui::inline_list::Line;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
-use line::Line;
 use matcher::Chip;
 use std::path::PathBuf;
 

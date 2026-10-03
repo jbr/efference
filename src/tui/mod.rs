@@ -34,6 +34,8 @@ pub(crate) mod harness;
 #[cfg(feature = "dev")]
 mod host_dispatch;
 pub(crate) mod image;
+pub mod inline;
+pub mod inline_list;
 pub(crate) mod keyboard;
 pub(crate) mod markdown;
 pub(crate) mod mouse;

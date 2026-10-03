@@ -553,27 +553,34 @@ Creating switches to the new session, the same one-cursor-per-handshake switch `
 performs. A refused creation keeps the form open with its edits and the host's reason,
 because nothing was minted to reconcile with.
 
-The appearance is `efference setup`'s picker idiom (`setup/terminal.rs`): a `?`-marked
-question naming the working root, a `❯` cursor colouring the selected row rather than a
-highlight bar across it, columns as wide as their widest entry, a dim trailing column, and
-a dim `·`-separated key hint. The two are different rendering stacks — the picker writes
-crossterm directly, the form is ratatui — so what they share is the vocabulary, kept
-aligned deliberately because a bare `efference tui` shows them back to back. What does
-differ between the form's own containers is the surface: inline paints nothing and the
-terminal's background shows through, while the embedded modal paints and borders because a
-transcript is underneath it.
+The appearance is shared with the bare-`efference` session picker
+(docs/operating.md), which is built on the same pieces: `inline.rs` (raw mode, the inline
+viewport, and the TUI theme's foregrounds as the prompts' styles) and `inline_list.rs` (the
+list). A frame is a `?`-marked question, an optional input line (the model picker's chips,
+then a query that filters as it is typed), a window of one-line rows, a status line, and a
+dim `·`-separated key hint. The selected row has a `❯` that colours it rather than a
+highlight bar across it; columns are as wide as the widest entry in the window, up to a
+per-column cap, with `…` marking a cut; trailing columns are dim; when the width runs short
+whole droppable columns go (the later ones first) before the first column is cut. The keys
+every list handles are Up/Down, `C-p`/`C-n`, and query editing; what Enter, Tab and Esc do
+is the page's. `efference setup`'s prompts are a separate, hand-rolled crossterm prompter
+and do not use these yet. What differs between the form's own containers is the surface:
+inline paints nothing and the terminal's background shows through, while the embedded modal
+paints and borders because a transcript is underneath it.
 
 An inline viewport's height is fixed at creation — ratatui's `resize` reads its argument as
-the *terminal* size for `Viewport::Inline` — so the form reports the tallest page it can
-reach (`viewport_height`; the picker's root needs room for five recents and every connection), bounded by the connections this host actually offers rather than
-a constant picked for the worst case. Rows pack to the top so the slack falls below the key
-hint rather than between the fields and it.
+the *terminal* size for `Viewport::Inline` — so a prompt reports the tallest page it can
+reach (the form's `viewport_height`; its model picker's root needs room for five recents and
+every connection, bounded by the connections this host actually offers rather than a
+constant picked for the worst case; the session picker's is its longer page, bounded by the
+terminal). Two prompts in a row each open and close their own viewport, and closing erases
+from the origin down, so the second starts where the first began. Rows pack to the top so
+the slack falls below the key hint rather than between the fields and it.
 
 `session_form.rs` owns the draft, focus, and page transitions; `draft.rs` is the override
 state and its conversion to the request; `pages.rs` is where the editors commit; `picker.rs`,
 `picker_rows.rs`, and `matcher.rs` are the model picker's keys, rows, and matching rule, and
-`picker_render.rs` draws it; `render.rs` renders into a supplied rectangle with supplied styles; `inline.rs` owns raw
-mode and the inline viewport for both the wired and the offline entry points.
+`picker_render.rs` gives it its columns and chips for `inline_list.rs`; `render.rs` renders into a supplied rectangle with supplied styles; `inline.rs` is the wired and the offline entry points (the viewport lifecycle is `tui/inline.rs`).
 `sessions.rs`, `keyboard.rs`, and `render_sessions.rs` are the embedded integration. The form receives Escape and Ctrl-C before the session's handlers and
 blocks mouse events from reaching the transcript; cancelling returns to Sessions without
 touching the attached loop.

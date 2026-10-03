@@ -1,11 +1,10 @@
 //! The form's appearance, shared by both terminal containers (docs/tui.md).
 //!
-//! The visual idiom is `efference setup`'s picker (`setup/terminal.rs`): a
+//! The visual idiom is the shared inline list's (`tui/inline_list.rs`): a
 //! `?`-marked question, a `❯` cursor colouring the selected row rather than a
 //! highlight bar across it, a dim trailing column, and a dim `·`-separated key
-//! hint. The two are different rendering stacks — the picker writes crossterm
-//! directly, this is ratatui — so what they share is the vocabulary, kept aligned
-//! deliberately because `efference tui` shows them back to back.
+//! hint. The form's pages draw with the same [`Styles`] the bare-`efference`
+//! session picker does, so the two look alike when one follows the other.
 //!
 //! Only the surface differs between this form's own two containers, and it has
 //! to: inline over shell scrollback paints nothing, while the embedded modal
@@ -33,7 +32,7 @@ use ratatui::{
 };
 
 #[derive(Clone, Copy)]
-pub(in crate::tui) struct Styles {
+pub struct Styles {
     /// The surface behind the form. `Style::default()` leaves the terminal's own
     /// background showing, which is what the inline container wants; the
     /// embedded modal passes an opaque style because a transcript is under it.
