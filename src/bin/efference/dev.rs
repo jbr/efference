@@ -67,6 +67,21 @@ pub(crate) enum DevCommand {
         #[arg(long, conflicts_with = "session")]
         all: bool,
     },
+    /// Print a session's trajectory digest (docs/digest.md): one line per tool call —
+    /// its tool, paths, intent and distilled note — plus verbatim operator turns and
+    /// the agent's turn-ending replies. A deterministic fold over the log; offline, no
+    /// daemon, no model.
+    Digest {
+        /// Which session to read: a session name (`.efference/<name>/log.jsonl`), a
+        /// session directory, or a path to a `log.jsonl`. Omit to use `--name`.
+        session: Option<String>,
+        /// Fold only entries with seq at or below this one.
+        #[arg(long)]
+        upto: Option<u64>,
+        /// Label each block with the seq of the entry it came from.
+        #[arg(long)]
+        seqs: bool,
+    },
     /// What a configured connection's provider lists, read live with that
     /// connection's credential (docs/transport.md). Resolves the connection as a
     /// session would, GETs the listing route, and prints the status and entries
@@ -426,6 +441,20 @@ pub(crate) async fn run<F: Future<Output = Result<ClientTarget, CliError>>>(
         DevCommand::Open { print, bearer } => open(client_target().await?, print, bearer).await,
         DevCommand::Cache { session, all } => cache_report::cache(session, name, all),
         DevCommand::Stops { session, all } => stop_report::stops_report(session, name, all),
+        DevCommand::Digest {
+            session,
+            upto,
+            seqs,
+        } => {
+            let target = session
+                .or(name)
+                .ok_or_else(|| CliError::from("name a session to digest"))?;
+            let (path, _) = resolve_session_log(&target)?;
+            let entries = efference::persist::load(&path)?;
+            let options = efference::digest::Options { upto, seqs };
+            print!("{}", efference::digest::render(&entries, options));
+            Ok(())
+        }
         DevCommand::Models {
             connection,
             urls,

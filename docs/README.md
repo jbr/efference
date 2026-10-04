@@ -155,6 +155,7 @@ Read top-down; open the subsystem doc you need.
 | Per-result triage — how every tool result is distilled | [redaction-fork.md](redaction-fork.md) | `src/distill.rs`, `src/project.rs` |
 | Tools (in-process `Tool` trait; in-process MCP; per-call telemetry) | [tools.md](tools.md) | `src/tools.rs`, `src/bash.rs`, `src/agent/telemetry.rs` |
 | Trajectory consolidation (compaction as a fold over a span) | [consolidate.md](consolidate.md) | `src/consolidate.rs`, `src/agent.rs` |
+| Trajectory digest (one line per call, the summarization substrate) | [digest.md](digest.md) | `src/digest.rs` |
 | Ambient notifications — the inbox (enqueue then triage), and the attachment store | [inbox.md](inbox.md) | `src/inbox.rs`, `src/daemon/notifications.rs`, `src/attachments.rs`, `src/daemon/attachments.rs` |
 | Session id and title — the minted word-pair address, and the triage-kept one-line title | [session-title.md](session-title.md) | `src/daemon/slug.rs`, `src/agent/title.rs`, `src/distill/title.rs` |
 | Session resumption — reopening a persisted session under its id, and listing the archived ones | [resumption.md](resumption.md) | `src/boot/resume.rs`, `src/daemon/host/resume.rs`, `src/daemon/host/archived.rs`, `src/inventory.rs`, `src/tui/resume_list.rs` |
