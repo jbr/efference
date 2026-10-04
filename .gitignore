@@ -12,3 +12,4 @@
 eval/spotter/candidates.jsonl
 eval/spotter/results*.jsonl
 /tmp/
+__pycache__/
