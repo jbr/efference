@@ -42,7 +42,7 @@ There is no second connection to configure and no summarizer tier in the harness
 A request that fails or returns nothing usable is an error, reported as one. Nothing in
 this path substitutes another summary, another model, or an unsummarized read: whether to
 retry, edit or accept the cost of a cold read is the operator's, and whatever asks for the
-head asks the operator (the cold-turn gate, not yet built, is the intended caller).
+head asks the operator (the cold session's fold, not yet built, is the intended caller; backlog/cold-session.md).
 
 ## The mark
 
@@ -74,6 +74,6 @@ lost context.
 ## What is not here
 
 The trigger (when a head is offered), the operator's accept and edit steps, and the host
-route that appends the mark belong to the cold-turn gate. The planned `efference dev
+route that appends the mark belong to the cold session's fold. The planned `efference dev
 narrate <session> [--upto <seq>]` runs the narrator step over a recorded log and prints the
 head; it appends nothing, since a session's log has one writer, the host.

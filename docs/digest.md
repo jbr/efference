@@ -2,7 +2,7 @@
 
 A session's log folded to a compact text: one line per tool call, plus the turns the
 operator wrote and the replies that ended the agent's turns. It is the substrate for
-summarizing a session without reading its whole context — the cold-turn gate's summary
+summarizing a session without reading its whole context — the cold session's fold summary
 head and the compaction-fidelity evaluation (`eval/compaction/`) both start from it.
 `src/digest.rs` implements it; `efference dev digest <session> [--upto <seq>] [--seqs]`
 prints it.
