@@ -10,7 +10,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use super::{extract_boundaries, render_distilled, render_triage_failure};
+use super::{Reader, extract_boundaries, render_distilled, render_triage_failure};
 use crate::api::WireDialect;
 use crate::context::Item;
 use crate::log::{
@@ -181,8 +181,14 @@ pub struct AskReply<'a> {
 /// Deterministic by construction: a pure function of `log`, with no clock, map
 /// iteration, or other ambient input leaking into the output.
 pub fn project_semantic(log: &[LogEntry]) -> Vec<WireTurn> {
+    project_semantic_for(log, Reader::Main)
+}
+
+/// [`project_semantic`] for one reader (docs/summary-head.md): the same fold, with the
+/// boundary marks addressed to the other reader left out.
+pub fn project_semantic_for(log: &[LogEntry], reader: Reader) -> Vec<WireTurn> {
     let skipped = super::skipped_seqs(log);
-    let (boundaries, elided) = extract_boundaries(log, &skipped);
+    let (boundaries, elided) = extract_boundaries(log, &skipped, reader);
     let verdicts = crate::log::result_verdicts(log);
     // Each `ask`'s question by call id, so its reply can name it (`render_result`).
     let questions: HashMap<CallId, String> = log

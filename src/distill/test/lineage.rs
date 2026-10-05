@@ -91,7 +91,7 @@ fn a_responses_peek_marks_the_shared_frontier_and_the_canonical_wire_carries_onl
     }];
 
     // The peek: prefix, frontier, then the fork-local raw and the ask.
-    let peek = peek_request(&prefix, &pending, &[], &[]);
+    let peek = peek_request(&prefix, Reader::Main, &pending, &[], &[]);
     let peek_input = encode_responses(&peek, "", PromptCachePolicy::Explicit);
     let peek_json: Vec<serde_json::Value> = peek_input
         .iter()
@@ -127,7 +127,7 @@ fn a_responses_peek_marks_the_shared_frontier_and_the_canonical_wire_carries_onl
             WireState::from(Distilled::new(Keep::Ranges(vec![(1, 1)])).with_note("kept the first")),
         ),
     ));
-    let mut canonical = project_semantic(&log);
+    let mut canonical = crate::project::project_semantic(&log);
     canonical.push(WireTurn::Breakpoint);
     let canonical_input = encode_responses(&canonical, "", PromptCachePolicy::Explicit);
     let canonical_json: Vec<serde_json::Value> = canonical_input

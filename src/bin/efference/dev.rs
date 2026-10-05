@@ -451,7 +451,11 @@ pub(crate) async fn run<F: Future<Output = Result<ClientTarget, CliError>>>(
                 .ok_or_else(|| CliError::from("name a session to digest"))?;
             let (path, _) = resolve_session_log(&target)?;
             let entries = efference::persist::load(&path)?;
-            let options = efference::digest::Options { upto, seqs };
+            let options = efference::digest::Options {
+                upto,
+                seqs,
+                ..Default::default()
+            };
             print!("{}", efference::digest::render(&entries, options));
             Ok(())
         }

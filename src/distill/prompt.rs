@@ -527,6 +527,7 @@ pub(super) fn number_lines(lines: &[&str]) -> String {
 /// so the pairing invariant is testable without a live client.
 pub(super) fn peek_messages(
     prefix: &[LogEntry],
+    reader: Reader,
     pending: &[Pending<'_>],
     inbox: &[ShownNotification],
     background: &[BgView],
@@ -557,7 +558,7 @@ pub(super) fn peek_messages(
     // discarded — the canonical lineage never sees raw (docs/redaction-fork.md). The
     // frontier sits before that raw tail: the shared prefix is read, the throwaway
     // suffix is never written.
-    let mut messages = project_semantic(prefix);
+    let mut messages = project_semantic_for(prefix, reader);
     messages.push(WireTurn::Breakpoint);
     // Every call is answered — a call left unpaired makes the request invalid —
     // but a bypassed result answers with a stand-in rather than its output: the harness

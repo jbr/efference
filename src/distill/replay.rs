@@ -58,12 +58,13 @@ impl PeekAttempt {
 /// request on it.
 pub fn peek_request(
     prefix: &[LogEntry],
+    reader: Reader,
     pending: &[Pending<'_>],
     inbox: &[ShownNotification],
     background: &[BgView],
 ) -> Vec<WireTurn> {
     let roster = surfaceable_roster(prefix);
-    peek_messages(prefix, pending, inbox, background, &roster)
+    peek_messages(prefix, reader, pending, inbox, background, &roster)
 }
 
 impl ForkPeek {
@@ -81,14 +82,13 @@ impl ForkPeek {
         inbox: &[ShownNotification],
         background: &[BgView],
     ) -> Result<PeekAttempt, String> {
+        let messages = peek_request(prefix, self.reader(), pending, inbox, background);
         peek_attempt(
             self.client(agent),
             self.tools(agent_tools),
             self.choice(RETAIN),
-            prefix,
+            &messages,
             pending,
-            inbox,
-            background,
         )
         .await
     }
@@ -98,17 +98,14 @@ async fn peek_attempt(
     client: &Client,
     tools: &[Value],
     choice: ToolChoice,
-    prefix: &[LogEntry],
+    messages: &[WireTurn],
     pending: &[Pending<'_>],
-    inbox: &[ShownNotification],
-    background: &[BgView],
 ) -> Result<PeekAttempt, String> {
     let labels = labels(pending);
     let offered = offered_labels(pending);
     let shown_lines = shown_lines(pending, &labels);
-    let messages = peek_request(prefix, pending, inbox, background);
     let completion = client
-        .complete(&messages, tools, choice, |_| {})
+        .complete(messages, tools, choice, |_| {})
         .await
         .map_err(|e| format!("peek request failed: {e}"))?;
     if let Some(why) = completion.upstream_failure() {

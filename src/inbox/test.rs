@@ -1,5 +1,5 @@
 use super::*;
-use crate::log::{Disposition, MarkKind, Notification, Timestamp, Triage};
+use crate::log::{Disposition, Notification, Timestamp, Triage};
 
 fn entry(seq: Seq, payload: Payload) -> LogEntry {
     LogEntry {
@@ -56,13 +56,7 @@ fn active_shown_resolves_pinned_and_dismissed_keeps_left() {
 fn active_shown_ignores_non_ambient_and_unresolved_stay() {
     // A mark and a fresh ambient with no verdict yet: the ambient is active.
     let log = vec![
-        entry(
-            0,
-            Payload::Mark(crate::log::Mark {
-                kind: MarkKind::Boundary { upto: 0 },
-                note: "x".into(),
-            }),
-        ),
+        entry(0, Payload::Mark(crate::log::Mark::boundary(0, "x"))),
         ambient(1, "still pending"),
     ];
     let active = active_shown(&log);

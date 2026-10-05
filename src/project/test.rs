@@ -1,7 +1,7 @@
 use super::*;
 use crate::context::Item;
 use crate::log::{
-    AssistantOutput, CallId, ContentBlock, Disposition, Distilled, Keep, LogEntry, Mark, MarkKind,
+    AssistantOutput, CallId, ContentBlock, Disposition, Distilled, Keep, LogEntry, Mark,
     Notification, Origin, Payload, RawResult, Timestamp, ToolCall, Triage, WireState,
 };
 use serde_json::json;
@@ -861,14 +861,7 @@ fn a_rolled_back_range_is_not_projected() {
         2,
         Payload::User(vec![ContentBlock::Text("again".into())]),
     ));
-    log.push(entry(
-        8,
-        3,
-        Payload::Mark(Mark {
-            kind: MarkKind::Boundary { upto: 3 },
-            note: "folded".into(),
-        }),
-    ));
+    log.push(entry(8, 3, Payload::Mark(Mark::boundary(3, "folded"))));
     log.push(entry(
         9,
         3,

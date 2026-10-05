@@ -84,6 +84,7 @@ fn upto_cuts_and_seqs_label() {
     let options = Options {
         upto: Some(3),
         seqs: true,
+        ..Options::default()
     };
     assert_eq!(
         render(&log, options),
@@ -120,18 +121,40 @@ fn a_verdict_resolves_a_pending_result_and_resumption_skips_are_omitted() {
                 pending_calls: vec![],
             }),
         ),
-        entry(
-            6,
-            Payload::Mark(Mark {
-                kind: MarkKind::Boundary { upto: 3 },
-                note: "summary".into(),
-            }),
-        ),
+        entry(6, Payload::Mark(Mark::boundary(3, "summary"))),
     ];
     assert_eq!(
         render(&log, Options::default()),
         "• [read src/a.rs, src/b.rs] find where the enum is defined\n    → late note\n\
          ### consolidated through 3\nsummary\n\n"
+    );
+}
+
+/// A consolidation mark addressed to the triage reader renders in a digest read for
+/// triage and is left out of one read for the main model (docs/summary-head.md).
+#[test]
+fn a_triage_mark_renders_only_in_a_triage_digest() {
+    use crate::log::Audience;
+    use crate::project::Reader;
+    let log = vec![
+        entry(0, Payload::User(vec![ContentBlock::Text("first".into())])),
+        entry(
+            1,
+            Payload::Mark(Mark::boundary(0, "for triage").for_audience(Audience::Triage)),
+        ),
+    ];
+    let main = render(&log, Options::default());
+    assert!(!main.contains("for triage"), "{main}");
+    let triage = render(
+        &log,
+        Options {
+            reader: Reader::Triage,
+            ..Options::default()
+        },
+    );
+    assert!(
+        triage.contains("### consolidated through 0\nfor triage"),
+        "{triage}"
     );
 }
 

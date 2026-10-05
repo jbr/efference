@@ -2,7 +2,7 @@
 //! bare name, then a rule naming the extent, the summary as markdown, a closing rule.
 
 use super::*;
-use crate::log::{Mark, MarkKind, Payload};
+use crate::log::{Mark, Payload};
 
 #[test]
 fn a_consolidation_reads_as_its_extent_and_summary() {
@@ -18,10 +18,7 @@ fn a_consolidation_reads_as_its_extent_and_summary() {
             json!({"summary": summary, "intent": "fold the reading"}),
         )],
     );
-    play.commit(Payload::Mark(Mark {
-        kind: MarkKind::Boundary { upto: 2 },
-        note: summary.to_string(),
-    }));
+    play.commit(Payload::Mark(Mark::boundary(2, summary.to_string())));
     play.tool_result("toolu_c", "consolidated", false, WireState::Raw);
 
     let frame = play.render();

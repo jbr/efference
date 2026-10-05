@@ -59,7 +59,7 @@ impl ForkPeek {
         prefix: &[LogEntry],
         current: Option<&str>,
     ) -> TitlePeek {
-        let mut messages = project_semantic(prefix);
+        let mut messages = project_semantic_for(prefix, self.reader());
         messages.push(WireTurn::Breakpoint);
         messages.push(WireTurn::text(title_instruction(current)));
         let mut record = PeekRecord::default();

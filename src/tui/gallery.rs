@@ -12,8 +12,8 @@
 pub mod stream;
 
 use crate::log::{
-    AssistantOutput, ContentBlock, Distilled, Keep, LogEntry, Mark, MarkKind, MessagesOutputBlock,
-    Payload, RawResult, Timestamp, ToolCall, WireState,
+    AssistantOutput, ContentBlock, Distilled, Keep, LogEntry, Mark, MessagesOutputBlock, Payload,
+    RawResult, Timestamp, ToolCall, WireState,
 };
 
 /// A committed user turn carrying markdown prose.
@@ -331,10 +331,10 @@ pub(super) fn log() -> Vec<LogEntry> {
         // A consolidation mark (horizontal rule + summary).
         entry(
             16,
-            Payload::Mark(Mark {
-                kind: MarkKind::Boundary { upto: 15 },
-                note: "explored the renderer and confirmed the diff path".into(),
-            }),
+            Payload::Mark(Mark::boundary(
+                15,
+                "explored the renderer and confirmed the diff path",
+            )),
         ),
         // An image result (docs/tui.md): the generated test card rides the entry
         // inline, so the gallery exercises the full decode → encode → paint path

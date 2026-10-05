@@ -36,7 +36,14 @@ fn a_gate_over_a_multi_call_step_answers_every_tool_use() {
         .map(|(call, raw)| Pending { call, raw })
         .collect();
 
-    let messages = wire(&peek_messages(&prefix, &pending, &[], &[], &[]));
+    let messages = wire(&peek_messages(
+        &prefix,
+        Reader::Main,
+        &pending,
+        &[],
+        &[],
+        &[],
+    ));
     let tail = messages.last().expect("a tail message");
     assert_eq!(tail.role, Role::User);
 
@@ -180,7 +187,14 @@ fn a_handle_bearing_result_is_answered_but_never_offered() {
     assert_eq!(labels(&pending), vec![None, Some("r1".to_string())]);
     assert_eq!(offered_labels(&pending), vec!["r1".to_string()]);
 
-    let messages = wire(&peek_messages(&prefix, &pending, &[], &[], &[]));
+    let messages = wire(&peek_messages(
+        &prefix,
+        Reader::Main,
+        &pending,
+        &[],
+        &[],
+        &[],
+    ));
     let tail = messages.last().expect("a tail message");
     let blocks: Vec<(&str, &str)> = tail
         .content
@@ -299,7 +313,14 @@ fn an_ask_reply_is_bypassed_and_still_answered_in_the_peek() {
     );
     assert_eq!(offered_labels(&pending), vec!["r1"]);
 
-    let messages = wire(&peek_messages(&prefix, &pending, &[], &[], &[]));
+    let messages = wire(&peek_messages(
+        &prefix,
+        Reader::Main,
+        &pending,
+        &[],
+        &[],
+        &[],
+    ));
     let tail = messages.last().unwrap();
     let views: Vec<(&str, &str)> = tail
         .content

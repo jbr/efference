@@ -1,6 +1,7 @@
 //! `Mark::Boundary` span folding (docs/consolidate.md).
 
 use super::*;
+use crate::log::{LoggedInference, Writer};
 
 /// A boundary [`Mark`] folds its named span (`seq <= upto`) into a single
 /// summary user message (docs/README.md). The summary message
@@ -63,10 +64,7 @@ fn boundary_mark_folds_span_to_summary() {
         entry(
             5,
             3,
-            Payload::Mark(Mark {
-                kind: MarkKind::Boundary { upto: 2 },
-                note: "summary of old task".into(),
-            }),
+            Payload::Mark(Mark::boundary(2, "summary of old task")),
         ),
         entry(
             6,
@@ -135,14 +133,7 @@ fn multiple_boundary_marks_each_fold_their_own_span() {
             2,
             Payload::User(vec![ContentBlock::Text("task B".into())]),
         ),
-        entry(
-            3,
-            2,
-            Payload::Mark(Mark {
-                kind: MarkKind::Boundary { upto: 1 },
-                note: "summary A".into(),
-            }),
-        ),
+        entry(3, 2, Payload::Mark(Mark::boundary(1, "summary A"))),
         // Task B turns
         entry(
             4,
@@ -162,14 +153,7 @@ fn multiple_boundary_marks_each_fold_their_own_span() {
             4,
             Payload::User(vec![ContentBlock::Text("task C".into())]),
         ),
-        entry(
-            6,
-            4,
-            Payload::Mark(Mark {
-                kind: MarkKind::Boundary { upto: 4 },
-                note: "summary B".into(),
-            }),
-        ),
+        entry(6, 4, Payload::Mark(Mark::boundary(4, "summary B"))),
         // Live task C
         entry(
             7,
@@ -212,14 +196,7 @@ fn multiple_boundary_marks_each_fold_their_own_span() {
 fn boundary_mark_at_tail_injects_summary() {
     let log = vec![
         entry(0, 0, Payload::User(vec![ContentBlock::Text("old".into())])),
-        entry(
-            1,
-            0,
-            Payload::Mark(Mark {
-                kind: MarkKind::Boundary { upto: 0 },
-                note: "tail summary".into(),
-            }),
-        ),
+        entry(1, 0, Payload::Mark(Mark::boundary(0, "tail summary"))),
     ];
     let messages = project(&log);
     assert_eq!(messages.len(), 1);
@@ -257,14 +234,7 @@ fn mark_folds_named_span_and_injects_summary() {
             0,
             Payload::tool_result("a", RawResult::text("out-a"), WireState::Raw),
         ),
-        entry(
-            99,
-            0,
-            Payload::Mark(Mark {
-                kind: MarkKind::Boundary { upto: 1 },
-                note: "folded note".into(),
-            }),
-        ),
+        entry(99, 0, Payload::Mark(Mark::boundary(1, "folded note"))),
         entry(
             2,
             1,
@@ -332,12 +302,10 @@ fn a_responses_boundary_folds_whole_replay_units() {
         entry(
             5,
             1,
-            Payload::Mark(Mark {
-                kind: MarkKind::Boundary {
-                    upto: crate::consolidate::extent(&log_prefix()),
-                },
-                note: "A is done".into(),
-            }),
+            Payload::Mark(Mark::boundary(
+                crate::consolidate::extent(&log_prefix()),
+                "A is done",
+            )),
         ),
         entry(6, 1, result("consolidate_1", "consolidated")),
     ];
@@ -429,14 +397,7 @@ fn a_boundary_inside_a_responses_step_orphans_its_output() {
             0,
             Payload::tool_result("call_x", RawResult::text("out"), WireState::Raw),
         ),
-        entry(
-            3,
-            0,
-            Payload::Mark(Mark {
-                kind: MarkKind::Boundary { upto: 1 },
-                note: "cut".into(),
-            }),
-        ),
+        entry(3, 0, Payload::Mark(Mark::boundary(1, "cut"))),
         entry(4, 1, Payload::User(vec![ContentBlock::Text("on".into())])),
     ];
     assert_eq!(
@@ -456,4 +417,119 @@ fn a_boundary_inside_a_responses_step_orphans_its_output() {
         !items.iter().any(|i| i["type"] == "function_call"),
         "the call folded, the output did not: {items:#?}"
     );
+}
+
+/// A log of two user turns around one tool call, the shape the audience tests fold.
+fn two_turn_log() -> Vec<LogEntry> {
+    vec![
+        entry(
+            0,
+            0,
+            Payload::User(vec![ContentBlock::Text("old task".into())]),
+        ),
+        entry(
+            1,
+            1,
+            Payload::Assistant {
+                output: AssistantOutput::from_legacy_messages(
+                    vec![],
+                    vec![],
+                    vec![ToolCall::new("bash", "t1", json!({}))],
+                ),
+                upstream_failure: None,
+            },
+        ),
+        entry(
+            2,
+            1,
+            Payload::tool_result("t1", RawResult::text("old output"), WireState::Raw),
+        ),
+        entry(
+            3,
+            2,
+            Payload::User(vec![ContentBlock::Text("new task".into())]),
+        ),
+    ]
+}
+
+/// A boundary addressed to the triage reader (docs/summary-head.md) projects to nothing
+/// for the main reader: the main wire is byte-identical to the same log without the
+/// mark, so a fold made for a separate triage client cannot move the cached prefix.
+#[test]
+fn a_triage_mark_leaves_the_main_projection_byte_identical() {
+    let plain = two_turn_log();
+    let mut marked = two_turn_log();
+    marked.push(entry(
+        4,
+        2,
+        Payload::Mark(Mark::boundary(2, "triage-only summary").for_audience(Audience::Triage)),
+    ));
+
+    assert_eq!(
+        serde_json::to_vec(&project(&marked)).unwrap(),
+        serde_json::to_vec(&project(&plain)).unwrap(),
+    );
+    assert_eq!(
+        format!("{:?}", project_semantic(&marked)),
+        format!("{:?}", project_semantic(&plain)),
+    );
+}
+
+/// The same mark folds the span for the triage reader, and an `All` mark folds for both.
+#[test]
+fn a_triage_mark_folds_the_span_for_the_triage_reader_only() {
+    let mut marked = two_turn_log();
+    marked.push(entry(
+        4,
+        2,
+        Payload::Mark(Mark::boundary(2, "triage-only summary").for_audience(Audience::Triage)),
+    ));
+    let text = |turns: Vec<WireTurn>| format!("{turns:?}");
+
+    let triage = text(project_semantic_for(&marked, Reader::Triage));
+    assert!(triage.contains("triage-only summary"), "{triage}");
+    assert!(!triage.contains("old task"), "{triage}");
+    let main = text(project_semantic_for(&marked, Reader::Main));
+    assert!(!main.contains("triage-only summary"), "{main}");
+    assert!(main.contains("old task"), "{main}");
+
+    let mut shared = two_turn_log();
+    shared.push(entry(
+        4,
+        2,
+        Payload::Mark(Mark::boundary(2, "for everyone")),
+    ));
+    for reader in [Reader::Main, Reader::Triage] {
+        let folded = text(project_semantic_for(&shared, reader));
+        assert!(folded.contains("for everyone"), "{reader:?}: {folded}");
+        assert!(!folded.contains("old task"), "{reader:?}: {folded}");
+    }
+}
+
+/// An `All`-audience mark written by the agent serializes as it did before the writer
+/// and audience fields existed, and a mark in that older shape reads back with the
+/// defaults (docs/summary-head.md); a narrated, triage-only mark round-trips.
+#[test]
+fn mark_writer_and_audience_are_additive_in_the_log() {
+    let plain = Mark::boundary(7, "summary");
+    assert_eq!(
+        serde_json::to_value(&plain).unwrap(),
+        json!({"kind": {"Boundary": {"upto": 7}}, "note": "summary"}),
+    );
+    let old: Mark =
+        serde_json::from_value(json!({"kind": {"Boundary": {"upto": 7}}, "note": "summary"}))
+            .unwrap();
+    assert_eq!(old.writer, Writer::Agent);
+    assert_eq!(old.audience, Audience::All);
+
+    let narrated = Mark::boundary(7, "account")
+        .written_by(Writer::Narrator(LoggedInference {
+            connection: "anthropic".into(),
+            provider: crate::api::Provider::Anthropic,
+            model: "claude-opus-5-5".into(),
+        }))
+        .for_audience(Audience::Triage);
+    let back: Mark = serde_json::from_value(serde_json::to_value(&narrated).unwrap()).unwrap();
+    assert_eq!(back.writer, narrated.writer);
+    assert_eq!(back.audience, Audience::Triage);
 }

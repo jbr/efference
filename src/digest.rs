@@ -9,6 +9,7 @@
 //! asks no model anything.
 
 use crate::log::{CallId, ContentBlock, LogEntry, MarkKind, Payload, Seq, ToolCall, WireState};
+use crate::project::Reader;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write as _;
@@ -21,6 +22,9 @@ pub struct Options {
     /// Prefix each block with the seq of the entry it came from, so a reader can
     /// fetch the entry behind a line.
     pub seqs: bool,
+    /// The projection the digest is read for (docs/summary-head.md): a boundary mark
+    /// addressed to the other reader is left out, as it is from that reader's wire.
+    pub reader: Reader,
 }
 
 /// Fold `entries` to the digest text.
@@ -120,6 +124,7 @@ pub fn render(entries: &[LogEntry], options: Options) -> String {
                 };
                 let _ = writeln!(out, "    → {}", outcome(raw.is_error, wire));
             }
+            Payload::Mark(mark) if !options.reader.applies(mark.audience) => {}
             Payload::Mark(mark) => {
                 let MarkKind::Boundary { upto } = mark.kind;
                 heading(

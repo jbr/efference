@@ -25,8 +25,7 @@ use crate::frontend::{Approval, Frontend, SubmittedTurn};
 use crate::inbox::{ShownNotification, active_shown};
 use crate::log::{
     AssistantOutput, ConfigChange, ConfigEdit, ContentBlock, Disposition, EditState, Mark,
-    MarkKind, Notification, Origin, Payload, RawResult, Spot, Stance, ToolCall, Triage, Turn,
-    WireState,
+    Notification, Origin, Payload, RawResult, Spot, Stance, ToolCall, Triage, Turn, WireState,
 };
 use crate::policy::{self, ReviewLevel, Verdict};
 use crate::project::WireTurn;

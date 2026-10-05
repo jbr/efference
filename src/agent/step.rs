@@ -223,10 +223,7 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
                 )]));
             }
             Ok(Decision::Direct(vec![
-                Payload::Mark(Mark {
-                    kind: MarkKind::Boundary { upto },
-                    note,
-                }),
+                Payload::Mark(Mark::boundary(upto, note)),
                 Payload::tool_result(
                     call.id.clone(),
                     RawResult::text("consolidated"),

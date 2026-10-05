@@ -13,7 +13,30 @@ use serde_json::Value;
 
 use std::collections::HashSet;
 
-use crate::log::{Distilled, Keep, LogEntry, Mark, MarkKind, MessagesOutputBlock, Payload, Seq};
+use crate::log::{
+    Audience, Distilled, Keep, LogEntry, Mark, MarkKind, MessagesOutputBlock, Payload, Seq,
+};
+
+/// Which client a projection feeds (docs/summary-head.md). `Main` is the agent's own
+/// wire, and the one a peek that shares the agent's client sends; `Triage` is a
+/// triage model running on its own client. The two differ only in which boundary marks
+/// apply: a mark whose [`Audience`] is `Triage` folds the span for `Triage` and is
+/// absent from `Main`, so the main wire's bytes do not depend on it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Reader {
+    #[default]
+    Main,
+    Triage,
+}
+
+impl Reader {
+    pub(crate) fn applies(self, audience: Audience) -> bool {
+        match audience {
+            Audience::All => true,
+            Audience::Triage => self == Reader::Triage,
+        }
+    }
+}
 
 /// A boundary mark and the summary it contributes, extracted in the pre-pass.
 struct Boundary {
@@ -28,14 +51,19 @@ struct Boundary {
 /// Pre-pass: collect boundary marks so the main loop can elide their spans.
 ///
 /// Returns `(boundaries, elided_seqs)`:
-/// - `boundaries` — one entry per [`MarkKind::Boundary`], in log order.
+/// - `boundaries` — one entry per [`MarkKind::Boundary`] that applies to `reader`, in
+///   log order.
 /// - `elided_seqs` — the set of [`Seq`]s to skip in the main loop; for each
 ///   boundary this is every entry with `seq <= upto` plus the mark itself.
 ///
 /// When multiple boundaries exist the folds may overlap (each later
 /// consolidation subsumes the earlier ones). The later boundary's summary
 /// wins for any seq covered by both folds.
-fn extract_boundaries(log: &[LogEntry], skipped: &HashSet<Seq>) -> (Vec<Boundary>, HashSet<Seq>) {
+fn extract_boundaries(
+    log: &[LogEntry],
+    skipped: &HashSet<Seq>,
+    reader: Reader,
+) -> (Vec<Boundary>, HashSet<Seq>) {
     let mut boundaries = Vec::new();
     let mut elided = HashSet::new();
     for entry in log {
@@ -46,8 +74,14 @@ fn extract_boundaries(log: &[LogEntry], skipped: &HashSet<Seq>) -> (Vec<Boundary
         if let Payload::Mark(Mark {
             kind: MarkKind::Boundary { upto },
             note,
+            audience,
+            ..
         }) = &entry.payload
         {
+            // A mark for the other reader projects to nothing here.
+            if !reader.applies(*audience) {
+                continue;
+            }
             let upto = *upto;
             // Elide the old-task span and the mark itself.
             for e in log {
@@ -169,8 +203,8 @@ mod wire;
 
 pub use messages::encode_messages;
 pub use semantic::{
-    DialectConflict, UserPart, WireTurn, check_dialect, project_semantic, recorded_dialect,
-    render_result,
+    DialectConflict, UserPart, WireTurn, check_dialect, project_semantic, project_semantic_for,
+    recorded_dialect, render_result,
 };
 
 pub use render::{

@@ -42,7 +42,7 @@ use crate::log::{
     AssistantOutput, Disposition, Distilled, Keep, LogEntry, Origin, Payload, RawResult, Seq,
     ToolCall, WireState,
 };
-use crate::project::{PEEK_LINE_CAP, UserPart, WireTurn, project_semantic};
+use crate::project::{PEEK_LINE_CAP, Reader, UserPart, WireTurn, project_semantic_for};
 use crate::supervisor::BgView;
 
 const RETAIN: &str = "retain";
@@ -292,6 +292,17 @@ impl ForkPeek {
         self.own.is_some()
     }
 
+    /// The projection this peek reads (docs/summary-head.md): the triage view on its own
+    /// client, the main view on the agent's. A shared peek reads the agent's cached
+    /// prefix, so it can have no fold the agent's wire does not.
+    pub fn reader(&self) -> Reader {
+        if self.is_own() {
+            Reader::Triage
+        } else {
+            Reader::Main
+        }
+    }
+
     /// The model the peek runs on when it has its own, for the boot line and
     /// `GET /state`.
     pub fn own_model(&self) -> Option<&str> {
@@ -377,7 +388,7 @@ impl ForkPeek {
         let shown_lines = shown_lines(pending, &labels);
 
         let roster = surfaceable_roster(prefix);
-        let messages = peek_messages(prefix, pending, inbox, background, &roster);
+        let messages = peek_messages(prefix, self.reader(), pending, inbox, background, &roster);
 
         let mut record = PeekRecord::default();
         let parsed = peek_with_retries(
@@ -503,7 +514,7 @@ impl ForkPeek {
         view.push_str("\n\n");
         view.push_str(TRIAGE_INSTRUCTION);
 
-        let mut messages = project_semantic(prefix);
+        let mut messages = project_semantic_for(prefix, self.reader());
         messages.push(WireTurn::Breakpoint);
         messages.push(WireTurn::text(view));
 

@@ -12,7 +12,7 @@
 use super::*;
 use efference::distill::{ForkPeek, Pending, ReplayVerdict, TriageModel, peek_request};
 use efference::log::{Keep, Payload, RawResult, ToolCall, WireState};
-use efference::project::distillate;
+use efference::project::{Reader, distillate};
 use std::collections::BTreeSet;
 use std::io::Write;
 
@@ -395,7 +395,13 @@ pub(crate) async fn peek(
                     .zip(&g.raws)
                     .map(|(call, raw)| Pending { call, raw })
                     .collect();
-                tail_chars(&peek_request(&entries[..g.prefix_end], &pending, &[], &[]))
+                tail_chars(&peek_request(
+                    &entries[..g.prefix_end],
+                    Reader::Main,
+                    &pending,
+                    &[],
+                    &[],
+                ))
             })
             .sum();
         println!(
@@ -414,7 +420,7 @@ pub(crate) async fn peek(
             .zip(&g.raws)
             .map(|(call, raw)| Pending { call, raw })
             .collect();
-        let messages = peek_request(&entries[..g.prefix_end], &pending, &[], &[]);
+        let messages = peek_request(&entries[..g.prefix_end], Reader::Main, &pending, &[], &[]);
         eprintln!("note: gate at seq {} · {} result(s)", g.seq, pending.len());
         let messages = efference::project::encode_messages(
             &messages[messages.len() - 1..],
@@ -506,7 +512,13 @@ pub(crate) async fn peek(
             .collect();
         // The fork tail — result blocks, roster, ask — is uncached by construction, so
         // its size is what a gate costs beyond re-reading the prefix, on every tool result.
-        uncached += tail_chars(&peek_request(&entries[..g.prefix_end], &pending, &[], &[])) as u64;
+        uncached += tail_chars(&peek_request(
+            &entries[..g.prefix_end],
+            peek.reader(),
+            &pending,
+            &[],
+            &[],
+        )) as u64;
         let mut passes = 0usize;
         for draw in 1..=repeat {
             // A transport error is this draw's problem, not the sweep's. Propagating it
