@@ -29,7 +29,9 @@ A head is a header followed by an account.
   and is addressed to the agent as "you": the same session continuing.
 
 The narrator's length target (about 1,000 words) is part of the prompt text, not a request
-parameter. The prompt calls the human "the operator", as the session preamble does.
+parameter. The prompt and length are the cheapest variant that rated no differently from
+the others, not a tuned optimum: no measure tried separated prompt variants
+(journal/2026-10-05-compaction-results.md). The prompt calls the human "the operator", as the session preamble does.
 
 ## Who writes it
 
