@@ -16,12 +16,11 @@ A head is a header followed by an account.
 
 - **The header** is written by the harness, from `assets/prompts/summary-header.md`. It
   says the earlier conversation is no longer in view and was replaced because the cache had
-  expired, names the model that wrote the account, says what that model was shown (the
+  expired, says what the writer was shown (the
   operator's messages verbatim, the agent's replies where it handed back, and for each call
   its stated purpose and a one-line note on the result; no file contents, diffs or command
   output), and says the workspace is described as it was when the session went idle. It
-  carries one wording whether or not the writer is the model reading it. The narrator
-  never sees it and cannot soften it.
+  does not name the writing model. The narrator never sees it and cannot soften it.
 - **The account** is written by the narrator from `assets/prompts/narrator.md`: history in
   phases, in the past tense; then a closing section for the present state (in flight, open
   threads, standing direction with the operator's words quoted where the wording matters,
@@ -49,8 +48,8 @@ A `Mark` gains two fields, both defaulted so existing logs deserialize unchanged
 
 - **`writer`** — who wrote the note: `Agent` (a `consolidate` call, the default for every
   mark already in a log) or `Narrator(model)` with the connection, provider and model that
-  wrote it, in the same log-owned shape the boot preamble uses. The header's model name
-  comes from here.
+  wrote it, in the same log-owned shape the boot preamble uses. Nothing reads the model
+  yet; it is a record of which model wrote the note.
 - **`audience`** — which projection the mark applies to: `All` (the default) or `Triage`.
 
 A `Triage` boundary exists for a triage model that runs on its own client
