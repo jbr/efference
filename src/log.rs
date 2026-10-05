@@ -839,8 +839,6 @@ pub enum Writer {
     /// The session's agent, in a `consolidate` call (docs/consolidate.md).
     #[default]
     Agent,
-    /// The trajectory digest itself, with no model involved (docs/digest.md).
-    Digest,
     /// A model that read the digest and wrote an account of it.
     Narrator(LoggedInference),
 }

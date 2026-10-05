@@ -4,8 +4,10 @@ A session's earlier trajectory replaced by an account of it, written by a model 
 trajectory digest ([digest.md](digest.md)) and spliced in as a [`Mark::Boundary`
 ](consolidate.md) note. It is the second producer of that mark. The first, `consolidate`,
 is the agent writing its own summary mid-session; here the harness does the writing, so it
-can happen when the session has gone idle and its cache is gone. `src/narrate.rs` makes the
-account; `src/digest.rs` supplies what it reads; `src/project.rs` folds it in.
+can happen when the session has gone idle and its cache is gone. `src/digest.rs` supplies
+what the narrator reads and `src/project.rs` folds the mark in; the narrator step itself
+(the request and the header fill) is not yet built, and the prompt and header it will use
+are in `assets/prompts/`.
 
 ## What is produced
 
@@ -46,9 +48,9 @@ head asks the operator (the cold-turn gate, not yet built, is the intended calle
 A `Mark` gains two fields, both defaulted so existing logs deserialize unchanged:
 
 - **`writer`** — who wrote the note: `Agent` (a `consolidate` call, the default for every
-  mark already in a log), `Digest` (the raw digest as the head, no model involved), or
-  `Narrator(model)` with the connection, provider and model that wrote it, in the same
-  log-owned shape the boot preamble uses. The header's model name comes from here.
+  mark already in a log) or `Narrator(model)` with the connection, provider and model that
+  wrote it, in the same log-owned shape the boot preamble uses. The header's model name
+  comes from here.
 - **`audience`** — which projection the mark applies to: `All` (the default) or `Triage`.
 
 A `Triage` boundary exists for a triage model that runs on its own client
@@ -64,11 +66,13 @@ any other pair of consolidations (the later `upto` subsumes the earlier span).
 
 `project` takes the reader as an argument beside the image placement; the digest takes it
 as an option, so a digest read for the main model does not render a triage-only summary.
-The operator-facing transcript shows a `Triage` mark as such.
+Nothing constructs a `Triage` mark yet; when something does, the operator-facing transcript
+will need to show one as such, so a triage-only fold does not read as the main model having
+lost context.
 
 ## What is not here
 
 The trigger (when a head is offered), the operator's accept and edit steps, and the host
-route that appends the mark belong to the cold-turn gate. `efference dev narrate
-<session> [--upto <seq>]` runs the narrator step over a recorded log and prints the head;
-it appends nothing, since a session's log has one writer, the host.
+route that appends the mark belong to the cold-turn gate. The planned `efference dev
+narrate <session> [--upto <seq>]` runs the narrator step over a recorded log and prints the
+head; it appends nothing, since a session's log has one writer, the host.

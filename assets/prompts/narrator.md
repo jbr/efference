@@ -6,8 +6,8 @@ the operator's next message, finishing work in progress, or picking up an open q
 Write what it needs for that.
 
 A fixed header will be placed above your account, telling the reader it is a handoff
-summary written by another model from a digest. Do not write your own preamble about
-that; start with the account.
+summary written from a digest. Do not write your own preamble about that; start with the
+account.
 
 ## What you are given
 
