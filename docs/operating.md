@@ -667,7 +667,7 @@ loop goes idle, capped server-side, and is the shape a supervising process shoul
 The inverse condition is a session that looks entirely healthy and is quietly paying full
 price for every turn: `usage.cold_streak` counts consecutive main-loop requests that read
 nothing from the prompt cache with no reason to (docs/log-and-projection.md), and the TUI
-header states it as `⚠ cache cold ×N` beside the context meter. Nothing stalls, so nothing
+header states it as `⚠ cache misses ×N` beside the context meter. Nothing stalls, so nothing
 else says so. `efference dev cache` is the detail view.
 
 ## What the session was already told

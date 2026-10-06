@@ -146,14 +146,14 @@ fn sidebar_warns_on_a_cold_cache_streak() {
     play.event(TuiEvent::Usage(stats(crate::daemon::COLD_STREAK_WARN - 1)));
     let below = play.sidebar_grid();
     assert!(
-        !below.contains("cache cold"),
+        !below.contains("cache misses"),
         "a run of one or two is normal operation, not a warning:\n{below}"
     );
 
     play.event(TuiEvent::Usage(stats(7)));
     let warned = play.sidebar_grid();
     assert!(
-        warned.contains("⚠ cache cold ×7"),
+        warned.contains("⚠ cache misses ×7"),
         "the streak is stated beside the ctx meter:\n{warned}"
     );
     assert!(
@@ -163,7 +163,7 @@ fn sidebar_warns_on_a_cold_cache_streak() {
 
     play.event(TuiEvent::Usage(stats(0)));
     assert!(
-        !play.sidebar_grid().contains("cache cold"),
+        !play.sidebar_grid().contains("cache misses"),
         "a warm read clears it"
     );
 }
@@ -394,4 +394,24 @@ fn background_process_panel() {
         },
     ]));
     play.snapshot("background_process_panel");
+}
+
+/// The `cold` topic in the header (backlog: cold-session.md): stated while the cache is
+/// believed expired, with the fold key, `folding…` while a fold is written, and gone
+/// when the topic clears.
+#[test]
+fn header_states_an_expired_cache() {
+    use crate::tui::TuiEvent;
+    let mut play = Screenplay::new(110, 16);
+    play.user("go");
+    assert!(!play.render().contains("cache expired"));
+
+    play.event(TuiEvent::CacheExpired(Some(false)));
+    assert!(play.render().contains("cache expired · C-o folds"));
+
+    play.event(TuiEvent::CacheExpired(Some(true)));
+    assert!(play.render().contains("cache expired · folding…"));
+
+    play.event(TuiEvent::CacheExpired(None));
+    assert!(!play.render().contains("cache expired"));
 }

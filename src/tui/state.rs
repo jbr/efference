@@ -650,6 +650,10 @@ pub(super) struct InteractiveState<'a> {
     /// finished; set when the loop gave up. Status-bar chrome, never transcript
     /// content.
     pub stall: Option<StallView>,
+    /// The `cold` topic as the header shows it (backlog: cold-session.md): `None`
+    /// while the cache is not believed expired, `Some(true)` while a fold is being
+    /// written.
+    pub cache_expired: Option<bool>,
     /// What this session is — the model and the working directory, from the
     /// `session_identity` topic (docs/control-api.md). `None` until the connect
     /// snapshot lands, and in views that never connect. Sidebar chrome.

@@ -220,7 +220,7 @@ impl<'a> InteractiveState<'a> {
             // every turn simply costs full price. Absent below the threshold, and it
             // clears the moment a warm read arrives (the daemon resets the count).
             if u.cold_streak >= crate::daemon::COLD_STREAK_WARN {
-                rows.push(("", format!("⚠ cache cold ×{}", u.cold_streak), header));
+                rows.push(("", format!("⚠ cache misses ×{}", u.cold_streak), header));
             }
             // Session cost (docs/transport.md): billed dollars from the provider's
             // accounting, absent where no per-request surface exists (direct

@@ -53,12 +53,23 @@ impl<'a> InteractiveState<'a> {
         self.viewport.header_hits.clear();
 
         // Right side first, so the left side knows where it must stop: the session
-        // button, then (leftward) cost, the context meter, and the cold-cache warning.
+        // button, then (leftward) cost, the context meter, the cache-misses warning,
+        // and the expired cache.
         let mut segments: Vec<(String, Style)> = Vec::new();
+        // The cache believed expired (the `cold` topic): the next send pays the
+        // uncached read unless the operator folds (backlog: cold-session.md).
+        if let Some(folding) = self.cache_expired {
+            let note = if folding {
+                "cache expired · folding… "
+            } else {
+                "cache expired · C-o folds "
+            };
+            segments.push((note.to_string(), muted));
+        }
         if let Some(u) = &self.usage {
             if u.cold_streak >= crate::daemon::COLD_STREAK_WARN {
                 segments.push((
-                    format!("⚠ cache cold ×{}", u.cold_streak),
+                    format!("⚠ cache misses ×{}", u.cold_streak),
                     bg.fg(self.theme.status_style.fg.unwrap_or_default())
                         .add_modifier(ratatui::style::Modifier::BOLD),
                 ));

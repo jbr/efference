@@ -168,6 +168,11 @@ impl<'a> InteractiveState<'a> {
                 self.dirty = true;
             }
 
+            TuiEvent::CacheExpired(expired) => {
+                self.cache_expired = expired;
+                self.dirty = true;
+            }
+
             TuiEvent::Stall(stall) => {
                 // Status-bar chrome like the two transport diagnostics above;
                 // `None` means a trajectory is running again.

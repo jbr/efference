@@ -149,6 +149,7 @@ impl<'a> InteractiveState<'a> {
             upstream_failure: None,
             upstream_retry: None,
             stall: None,
+            cache_expired: None,
             session_identity: None,
             policy: None,
 

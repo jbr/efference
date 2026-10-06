@@ -44,7 +44,9 @@ impl NotFoldable {
             Self::Gated => "an approval gate is pending — resolve it first",
             Self::Asking => "a question is pending — answer it first",
             Self::Busy => "the loop is running — fold when it stops",
-            Self::Nothing => "nothing to fold: the history since the last fold fits in the tail",
+            Self::Nothing => {
+                "nothing to fold: the conversation is already shorter than what a fold keeps verbatim"
+            }
         }
     }
 }
