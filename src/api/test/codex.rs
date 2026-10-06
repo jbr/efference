@@ -560,3 +560,71 @@ async fn primer_sends_nothing_without_an_implicit_responses_lineage() {
         "no primer where the harness places explicit breakpoints"
     );
 }
+
+/// The primer wants the write, not the read: a 16-token budget at a call-eliciting
+/// position truncates the model's function call mid-arguments, which marks the
+/// completion without unmaking its input prefix. The primer still plants.
+/// (backlog/separate-triage-cold-prefix.md — observed live before it was pinned.)
+#[tokio::test]
+async fn primer_plants_despite_truncated_output() {
+    use std::io::{Read, Write};
+
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let server = std::thread::spawn(move || {
+        let (mut sock, _) = listener.accept().unwrap();
+        let mut request = Vec::new();
+        let mut buf = vec![0u8; 65536];
+        loop {
+            let n = sock.read(&mut buf).unwrap();
+            request.extend_from_slice(&buf[..n]);
+            let text = String::from_utf8_lossy(&request).to_ascii_lowercase();
+            let Some((head, body)) = text.split_once("\r\n\r\n") else {
+                continue;
+            };
+            let length = head
+                .lines()
+                .find_map(|l| l.strip_prefix("content-length: "))
+                .and_then(|v| v.trim().parse::<usize>().ok())
+                .unwrap_or(0);
+            if n == 0 || body.len() >= length {
+                break;
+            }
+        }
+        let body = "event: response.completed\ndata: {\"type\":\"response.completed\",\
+                    \"response\":{\"id\":\"r\",\"status\":\"completed\",\
+                    \"output\":[{\"type\":\"function_call\",\"call_id\":\"c\",\
+                    \"name\":\"bash\",\"arguments\":\"{not json\"}],\
+                    \"usage\":{\"input_tokens\":1000,\"output_tokens\":16}}}\n\n";
+        sock.write_all(
+            format!(
+                "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\n\
+                 connection: close\r\ncontent-length: {}\r\n\r\n{body}",
+                body.len()
+            )
+            .as_bytes(),
+        )
+        .unwrap();
+        sock.flush().unwrap();
+    });
+
+    let endpoint = Endpoint {
+        provider: Provider::OpenAICodex,
+        url: Some(format!("http://{addr}/backend-api/codex/responses")),
+        auth_header: "authorization".into(),
+        auth_value: "Bearer k".into(),
+        session_id: None,
+        extra_headers: Vec::new(),
+        base: None,
+    };
+    let client = Client::new(endpoint, "gpt-6-luna", "sys", None)
+        .with_prompt_cache(PromptCachePolicy::Implicit);
+    let turns = vec![crate::project::WireTurn::text("hello")];
+    let primer = client
+        .prime(&turns, &[], ToolChoice::auto())
+        .await
+        .expect("an implicit Responses lineage takes a primer")
+        .expect("truncated output still plants where input was processed");
+    assert_eq!(primer.usage.input_tokens, 1000);
+    server.join().unwrap();
+}

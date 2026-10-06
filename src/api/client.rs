@@ -1280,6 +1280,12 @@ impl Client {
     /// read plus the capped output. `None` where no implicit lineage exists to plant
     /// in (anything but Responses-with-implicit-policy), so the caller sends nothing
     /// speculative there; the peek then goes out unprimed, the failure mode being fixed.
+    ///
+    /// The primer wants the write, not the read, so a marked output does not fail it:
+    /// a 16-token budget at a call-eliciting position truncates the model's function
+    /// call mid-arguments, which marks the completion without unmaking its input
+    /// prefix — the provider still processed (and wrote) the whole replayed prefix.
+    /// Only a response with no accounted input is evidence nothing was planted.
     pub(crate) async fn prime(
         &self,
         turns: &[WireTurn],
@@ -1304,10 +1310,15 @@ impl Client {
             Ok(completion) => completion,
             Err(e) => return Some(Err(e)),
         };
-        if let Some(why) = completion.upstream_failure() {
-            return Some(Err(Box::new(std::io::Error::other(why.to_string()))));
+        let usage = completion.request_usage();
+        if usage.usage.input_tokens == 0 {
+            let why = completion
+                .upstream_failure()
+                .unwrap_or("primer response carried no usage")
+                .to_string();
+            return Some(Err(Box::new(std::io::Error::other(why))));
         }
-        Some(Ok(completion.request_usage()))
+        Some(Ok(usage))
     }
 }
 
