@@ -564,7 +564,8 @@ async fn primer_sends_nothing_without_an_implicit_responses_lineage() {
 /// The primer wants the write, not the read: a 16-token budget at a call-eliciting
 /// position truncates the model's function call mid-arguments, which marks the
 /// completion without unmaking its input prefix. The primer still plants.
-/// (backlog/separate-triage-cold-prefix.md — observed live before it was pinned.)
+/// (backlog/separate-triage-cold-prefix.md — pinned after the first live run
+/// showed every primer failing this way.)
 #[tokio::test]
 async fn primer_plants_despite_truncated_output() {
     use std::io::{Read, Write};
