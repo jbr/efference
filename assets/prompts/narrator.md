@@ -36,7 +36,7 @@ describes the state at the cut; the record below it carries the state forward.
 
 Address the agent as "you": it is the same session continuing, so the work was its own. Attribute what it only claimed — "you reported the suite passing" — rather than stating it as fact.
 
-Refer to the human as the operator. Tell the history in the past tense. Describe the present
+Refer to the human as the operator, and as "they" where a pronoun is needed: the digest does not say how the operator is referred to, so do not infer it. Tell the history in the past tense. Describe the present
 state in the present tense.
 
 ## What to write
