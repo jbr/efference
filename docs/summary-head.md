@@ -4,23 +4,22 @@ A session's earlier trajectory replaced by an account of it, written by a model 
 trajectory digest ([digest.md](digest.md)) and spliced in as a [`Mark::Boundary`
 ](consolidate.md) note. It is the second producer of that mark. The first, `consolidate`,
 is the agent writing its own summary mid-session; here the harness does the writing, so it
-can happen when the session has gone idle and its cache is gone. `src/digest.rs` supplies
-what the narrator reads and `src/project.rs` folds the mark in; the narrator step itself
-(the request and the header fill) is not yet built, and the prompt and header it will use
-are in `assets/prompts/`.
+can happen when the session has gone idle and its cache is gone. `src/narrate.rs` makes
+the head, from the prompt and header in `assets/prompts/`; `src/digest.rs` supplies what
+the narrator reads; `src/project.rs` folds the mark in.
 
 ## What is produced
 
 A head is a header followed by an account.
 
-
 - **The header** is written by the harness, from `assets/prompts/summary-header.md`. It
-  says the earlier conversation is no longer in view and was replaced because the cache had
-  expired, says what the writer was shown (the
-  operator's messages verbatim, the agent's replies where it handed back, and for each call
-  its stated purpose and a one-line note on the result; no file contents, diffs or command
-  output), and says the workspace is described as it was when the session went idle. It
-  does not name the writing model. The narrator never sees it and cannot soften it.
+  says the earlier conversation up to a point is no longer in view and was replaced because
+  the cache had expired, that anything after the account is the record verbatim, what the
+  writer was shown (the operator's messages verbatim, the agent's replies where it handed
+  back, and for each call its stated purpose and a one-line note on the result; no file
+  contents, diffs or command output), and that the workspace is described as it was where
+  the account ends. It does not name the writing model. The narrator never sees it and
+  cannot soften it.
 - **The account** is written by the narrator from `assets/prompts/narrator.md`: history in
   phases, in the past tense; then a closing section for the present state (in flight, open
   threads, standing direction with the operator's words quoted where the wording matters,
@@ -31,18 +30,33 @@ A head is a header followed by an account.
 The narrator's length target (about 1,000 words) is part of the prompt text, not a request
 parameter. The prompt and length are the cheapest variant that rated no differently from
 the others, not a tuned optimum: no measure tried separated prompt variants
-(journal/2026-10-05-compaction-results.md). The prompt calls the human "the operator", as the session preamble does.
+(journal/2026-10-05-compaction-results.md). The prompt calls the human "the operator", as
+the session preamble does.
 
 ## Who writes it
 
-The session's own model, through the session's own connection: one request, the narrator
-prompt and the digest, no tools. The user chooses the model by choosing the session's.
-There is no second connection to configure and no summarizer tier in the harness.
+The session's own model, through the session's own connection: one request whose single
+user turn is the digest followed by the narrator prompt, under the session's system prompt
+and `tools[]`. The user chooses the model by choosing the session's. There is no second
+connection to configure and no summarizer tier in the harness. The account is expected as
+text; a tool call in its place is an error, as in the title peek ([session-title.md](session-title.md)).
 
-A request that fails or returns nothing usable is an error, reported as one. Nothing in
+A request that fails, stops at the output cap, calls a tool or returns no text is an
+error, reported as one. Nothing in
 this path substitutes another summary, another model, or an unsummarized read: whether to
 retry, edit or accept the cost of a cold read is the operator's, and whatever asks for the
 head asks the operator (the cold session's fold, not yet built, is the intended caller; backlog/cold-session.md).
+
+## The cut
+
+A fold can leave the most recent payloads on the wire verbatim after the head (the
+mark's `upto` sits before them). The narrator is then given the whole digest with a cut
+line (`digest::CUT`) placed before the first block past the cut, and narrates only up to
+it: the record after the cut follows the account in full, so the account does not retell
+it but covers what it refers back to, and dates "where things stand" to the cut. A cut
+that would separate a call from its result is refused before any request
+(`consolidate::split_calls`), since a boundary there could not project. Choosing the cut
+belongs to the caller (backlog/cold-session.md).
 
 ## The mark
 
@@ -71,9 +85,15 @@ Nothing constructs a `Triage` mark yet; when something does, the operator-facing
 will need to show one as such, so a triage-only fold does not read as the main model having
 lost context.
 
+## Running it by hand
+
+`efference dev narrate <session> [--upto <seq>] [--cut <seq>]` runs the narrator over a
+recorded log and prints the head, with timing and usage on stderr. `--upto` treats the log
+as ending there; `--cut` ends the account early, as a fold with a tail would. The model is
+the one the log recorded at boot, resolved through the current config, under the recorded
+system prompt. It appends nothing, since a session's log has one writer, the host.
+
 ## What is not here
 
-The trigger (when a head is offered), the operator's accept and edit steps, and the host
-route that appends the mark belong to the cold session's fold. The planned `efference dev
-narrate <session> [--upto <seq>]` runs the narrator step over a recorded log and prints the
-head; it appends nothing, since a session's log has one writer, the host.
+The trigger (when a head is offered), the choice of cut, and the host route that appends
+the mark belong to the cold session's fold (backlog/cold-session.md).

@@ -171,6 +171,7 @@ mod control;
 mod dev;
 #[cfg(feature = "dev")]
 mod dev_models;
+mod dev_narrate;
 #[cfg(feature = "dev")]
 mod inference;
 mod island;

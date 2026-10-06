@@ -25,7 +25,14 @@ pub struct Options {
     /// The projection the digest is read for (docs/summary-head.md): a boundary mark
     /// addressed to the other reader is left out, as it is from that reader's wire.
     pub reader: Reader,
+    /// Mark the point a summary's account ends (docs/summary-head.md): [`CUT`] goes
+    /// before the first block from an entry after this seq, and only if one renders.
+    pub cut: Option<Seq>,
 }
+
+/// The line [`Options::cut`] places: everything after it stays on the wire verbatim
+/// after the summary, so the narrator reads it but does not narrate it.
+pub const CUT: &str = "### cut: your account ends here; what follows stays verbatim\n\n";
 
 /// Fold `entries` to the digest text.
 pub fn render(entries: &[LogEntry], options: Options) -> String {
@@ -51,8 +58,10 @@ pub fn render(entries: &[LogEntry], options: Options) -> String {
     let mut out = String::new();
     let mut calls: HashMap<CallId, (Seq, ToolCall)> = HashMap::new();
     let mut asks: HashSet<CallId> = HashSet::new();
+    let mut cut_placed = false;
     for entry in entries.iter().filter(|e| !skipped.contains(&e.seq)) {
         let seq = entry.seq;
+        let before = out.len();
         match &entry.payload {
             Payload::User(blocks) => {
                 let mut text = Vec::new();
@@ -109,20 +118,17 @@ pub fn render(entries: &[LogEntry], options: Options) -> String {
                     } else {
                         let _ = writeln!(out, "(not answered)\n");
                     }
-                    continue;
+                } else if let Some((call_seq, call)) = calls.remove(call_id) {
+                    let wire = verdicts.get(&seq).copied().unwrap_or(wire);
+                    if options.seqs {
+                        let _ = write!(out, "{call_seq} ");
+                    }
+                    let _ = match call.intent() {
+                        Some(intent) => writeln!(out, "• {} {intent}", tag(&call)),
+                        None => writeln!(out, "• {}", tag(&call)),
+                    };
+                    let _ = writeln!(out, "    → {}", outcome(raw.is_error, wire));
                 }
-                let Some((call_seq, call)) = calls.remove(call_id) else {
-                    continue;
-                };
-                let wire = verdicts.get(&seq).copied().unwrap_or(wire);
-                if options.seqs {
-                    let _ = write!(out, "{call_seq} ");
-                }
-                let _ = match call.intent() {
-                    Some(intent) => writeln!(out, "• {} {intent}", tag(&call)),
-                    None => writeln!(out, "• {}", tag(&call)),
-                };
-                let _ = writeln!(out, "    → {}", outcome(raw.is_error, wire));
             }
             Payload::Mark(mark) if !options.reader.applies(mark.audience) => {}
             Payload::Mark(mark) => {
@@ -136,6 +142,13 @@ pub fn render(entries: &[LogEntry], options: Options) -> String {
                 let _ = writeln!(out, "{}\n", mark.note.trim());
             }
             _ => {}
+        }
+        // Placed after the fact, so a tail entry that renders nothing (a verdict, a
+        // record-only failure) cannot leave the marker with nothing under it.
+        let past_cut = options.cut.is_some_and(|cut| seq > cut);
+        if past_cut && !cut_placed && out.len() > before {
+            out.insert_str(before, CUT);
+            cut_placed = true;
         }
     }
     out

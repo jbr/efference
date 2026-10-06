@@ -25,6 +25,13 @@ A digest of the session, in order, with four kinds of block:
 That is all you have. You cannot see file contents, diffs, or command output beyond what
 the notes say.
 
+The digest may contain the line `### cut: your account ends here; what follows stays
+verbatim`. If it does, write your account of everything before that line. Everything
+after it will sit directly below your account, in full, so the reader sees it as it
+happened: do not retell it, but make sure your account covers anything it refers back
+to — a file, a test, a decision, something the operator said. "Where things stand" then
+describes the state at the cut; the record below it carries the state forward.
+
 ## Voice
 
 Address the agent as "you": it is the same session continuing, so the work was its own. Attribute what it only claimed — "you reported the suite passing" — rather than stating it as fact.

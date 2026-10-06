@@ -38,7 +38,9 @@ work they did: a call that read a megabyte contributes one note.
 
 `--upto` folds only entries at or below a seq, so a digest can be cut at any point in a
 recorded session. `--seqs` labels each block with its entry's seq, for a reader that
-expands entries behind the lines it reads.
+expands entries behind the lines it reads. The `cut` option (no flag; the narrator sets it)
+places a marker line before the first block past a seq, for a summary that ends there
+while the record after it stays verbatim ([summary-head.md](summary-head.md)).
 
 ## Determinism
 

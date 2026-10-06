@@ -31,6 +31,7 @@ pub mod inference;
 pub mod inventory;
 pub mod log;
 pub mod mcp;
+pub mod narrate;
 pub mod oauth;
 pub mod persist;
 pub mod policy;

@@ -195,3 +195,39 @@ fn asks_render_as_question_and_reply() {
          ### agent asked\nShip it?\n\n(not answered)\n\n"
     );
 }
+
+#[test]
+fn the_cut_marks_the_first_rendered_block_past_it() {
+    let log = [
+        user(1, "find the enum"),
+        assistant(2, "", vec![read_call("c1")]),
+        distilled(3, "c1", RawResult::text("x"), "Defined in a.rs."),
+        // Past the cut, but renders nothing: the marker waits for the next block.
+        entry(
+            4,
+            Payload::ResultVerdict {
+                for_result: 3,
+                wire: WireState::Distilled(Distilled::new(Keep::All).with_note("Defined in a.rs.")),
+            },
+        ),
+        assistant(5, "It is in a.rs.", vec![]),
+    ];
+    let options = Options {
+        cut: Some(3),
+        ..Default::default()
+    };
+    assert_eq!(
+        render(&log, options),
+        format!(
+            "### operator\nfind the enum\n\n\
+             • [read src/a.rs, src/b.rs] find where the enum is defined\n    → Defined in a.rs.\n\
+             {CUT}### agent\nIt is in a.rs.\n\n"
+        )
+    );
+    // A cut with nothing after it places no marker.
+    let options = Options {
+        cut: Some(5),
+        ..Default::default()
+    };
+    assert!(!render(&log, options).contains(CUT));
+}
