@@ -55,6 +55,10 @@ impl<'a> InteractiveState<'a> {
             // Recall the most recent queued-but-unsent turn into the composer (docs/tui.md).
             self.recall_pending_turn();
             ComposerAction::Consumed
+        } else if char_with('o') && ctrl && !alt && !super_key {
+            // Fold a cold session instead of reading it (backlog: cold-session.md).
+            self.fold_session();
+            ComposerAction::Consumed
         } else if (char_with('y') || char_with('v')) && ctrl && !alt {
             // `C-v` reads the clipboard directly: a terminal's own paste (⌘V) carries text
             // only, and an image-only clipboard reaches the app as nothing at all.

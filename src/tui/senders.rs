@@ -30,6 +30,8 @@ pub(crate) struct Senders {
     /// The zero-token continue (docs/control-api.md). Its one field is the verb's
     /// one field: consent to a cold read (`accept_cold_read`).
     pub continue_loop: UnboundedSender<bool>,
+    /// Fold a cold session (`POST /loop/fold`, docs/control-api.md).
+    pub fold: UnboundedSender<()>,
     pub approve: UnboundedSender<(String, Approval)>,
     pub pace: UnboundedSender<PaceCmd>,
     pub interrupt: UnboundedSender<Interrupt>,
@@ -47,6 +49,7 @@ pub(crate) struct Receivers {
     pub recall: UnboundedReceiver<String>,
     pub attachments: UnboundedReceiver<super::staged::AttachCmd>,
     pub continue_loop: UnboundedReceiver<bool>,
+    pub fold: UnboundedReceiver<()>,
     pub approve: UnboundedReceiver<(String, Approval)>,
     pub pace: UnboundedReceiver<PaceCmd>,
     pub interrupt: UnboundedReceiver<Interrupt>,
@@ -62,6 +65,7 @@ impl Senders {
         let (recall, recall_rx) = unbounded_channel();
         let (attachments, attachments_rx) = unbounded_channel();
         let (continue_loop, continue_rx) = unbounded_channel();
+        let (fold, fold_rx) = unbounded_channel();
         let (approve, approve_rx) = unbounded_channel();
         let (pace, pace_rx) = unbounded_channel();
         let (interrupt, interrupt_rx) = unbounded_channel();
@@ -74,6 +78,7 @@ impl Senders {
                 recall,
                 attachments,
                 continue_loop,
+                fold,
                 approve,
                 pace,
                 interrupt,
@@ -86,6 +91,7 @@ impl Senders {
                 recall: recall_rx,
                 attachments: attachments_rx,
                 continue_loop: continue_rx,
+                fold: fold_rx,
                 approve: approve_rx,
                 pace: pace_rx,
                 interrupt: interrupt_rx,

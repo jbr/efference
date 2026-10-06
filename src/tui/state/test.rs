@@ -230,3 +230,20 @@ fn a_cold_refusal_returns_the_turn_and_arms_consent() {
         "consent is one send"
     );
 }
+
+/// `C-o` asks for a fold, and a pending consent is dropped with it: folding is the
+/// other answer to the same cold refusal (backlog: cold-session.md).
+#[test]
+fn ctrl_o_folds_and_drops_a_pending_consent() {
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    let rc = RenderContext::new();
+    let theme = InteractiveTheme::from_render_context(&rc);
+    let (_etx, erx) = crossbeam_channel::unbounded();
+    let (senders, receivers) = crate::tui::senders::Senders::channels();
+    let mut frx = receivers.fold;
+    let mut s = InteractiveState::new(erx, senders, rc, theme);
+    s.cold_consent = true;
+    s.handle_composer_key(KeyEvent::new(KeyCode::Char('o'), KeyModifiers::CONTROL));
+    assert!(frx.try_recv().is_ok(), "a fold was asked for");
+    assert!(!s.cold_consent);
+}

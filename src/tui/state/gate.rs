@@ -95,6 +95,20 @@ impl<'a> InteractiveState<'a> {
         self.dirty = true;
     }
 
+    /// Ask for a fold (backlog: cold-session.md — `C-o`): the session's own model
+    /// replaces its history with an account instead of the cold read. A pending
+    /// consent is dropped, since folding is the other answer to the same question.
+    /// The daemon's answer comes back as a [`TuiEvent::Notice`].
+    pub(in crate::tui) fn fold_session(&mut self) {
+        self.cold_consent = false;
+        self.ui.debug_message = if self.fold_tx.send(()).is_ok() {
+            "asking for a fold".into()
+        } else {
+            "could not send (daemon gone?)".into()
+        };
+        self.dirty = true;
+    }
+
     /// Pull the most recent queued-but-unsent turn back into the composer (docs/tui.md — the
     /// recall gesture). Nothing has been sent to the model yet: a pending turn sits in the
     /// daemon's queue, unlogged and unprojected, so this is ordinary ephemeral control state.
@@ -177,10 +191,10 @@ impl<'a> InteractiveState<'a> {
         let tokens = refusal.cold["context_tokens"].as_u64();
         self.ui.debug_message = match tokens {
             Some(tokens) => format!(
-                "cache believed cold — ⏎ again to read {}k tokens uncached",
+                "cache believed cold — ⏎ again to read {}k tokens uncached, C-o to fold",
                 (tokens + 500) / 1_000
             ),
-            None => "cache believed cold — ⏎ again to read it uncached".to_string(),
+            None => "cache believed cold — ⏎ again to read it uncached, C-o to fold".to_string(),
         }
         .into();
         self.dirty = true;

@@ -263,6 +263,37 @@ impl Client {
     /// says which case. So is `409 cold`, for a continue that did not carry
     /// `accept_cold_read` on a session whose cache is believed expired. Errors are
     /// reserved for a request that didn't get an answer.
+    /// Fold a cold session's history into an account (`POST /loop/fold`,
+    /// docs/control-api.md). Accepted means the session's model is writing it; the
+    /// mark lands on the log when it is done. A decline (`409 not_foldable`) is a
+    /// normal answer whose message says why.
+    pub async fn fold(&self) -> Result<FoldOutcome> {
+        let path = self.versioned("/loop/fold");
+        let path = path.as_str();
+        let mut conn = self
+            .http
+            .post(path)
+            .await
+            .with_context(|| format!("POST {path} to the control socket"))?;
+        let status = conn.status();
+        let body = conn
+            .response_body()
+            .read_string()
+            .await
+            .with_context(|| format!("reading the response to POST {path}"))?;
+        match status {
+            Some(s) if s.is_success() => Ok(FoldOutcome::Accepted),
+            Some(trillium_client::Status::Conflict) => Ok(FoldOutcome::Declined {
+                message: json_field(&body, "message")
+                    .unwrap_or_else(|_| "the daemon declined the fold".into()),
+            }),
+            other => {
+                let code = other.map_or_else(|| "no status".to_string(), |s| s.code().to_string());
+                Err(anyhow!("POST {path} → {code}: {body}"))
+            }
+        }
+    }
+
     pub async fn continue_loop(&self, accept_cold_read: bool) -> Result<ContinueOutcome> {
         let path = self.versioned("/loop/continue");
         let path = path.as_str();
@@ -858,6 +889,17 @@ pub struct WithdrawnTurn {
 #[derive(serde::Deserialize)]
 struct WithdrawResponse {
     withdrawn: Vec<WithdrawnTurn>,
+}
+
+/// What a `POST /loop/fold` came back with (docs/control-api.md). A decline is a
+/// normal answer: the moment had no fold in it, and the message says which case.
+#[derive(Debug, PartialEq, Eq)]
+pub enum FoldOutcome {
+    /// The session's model is writing the account.
+    Accepted,
+    Declined {
+        message: String,
+    },
 }
 
 /// What a `POST /loop/continue` came back with (docs/control-api.md). A decline

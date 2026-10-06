@@ -70,6 +70,7 @@ async fn attach(
         recall: mut recall_rx,
         attachments: mut attachments_rx,
         continue_loop: mut continue_rx,
+        fold: mut fold_rx,
         approve: mut approve_rx,
         pace: mut pace_rx,
         interrupt: mut interrupt_rx,
@@ -212,6 +213,26 @@ async fn attach(
         }
     });
 
+    // Fold dispatcher (`POST /loop/fold`, docs/control-api.md): like the continue, a
+    // decline is a normal outcome, and acceptance only means the account is being
+    // written — the mark arrives on the log when it lands.
+    let fold_client = client.clone();
+    let fold_events = tx.clone();
+    let folder = tokio::spawn(async move {
+        while fold_rx.recv().await.is_some() {
+            let note = match fold_client.fold().await {
+                Ok(crate::client::FoldOutcome::Accepted) => {
+                    "folding — the session's model is writing the account".to_string()
+                }
+                Ok(crate::client::FoldOutcome::Declined { message }) => message,
+                Err(e) => format!("fold failed: {e}"),
+            };
+            if fold_events.send(TuiEvent::Notice(note)).is_err() {
+                break; // UI thread gone.
+            }
+        }
+    });
+
     // Approval sender: resolve a gate via `PUT /approvals/:call_id`.
     let approve_client = client.clone();
     let approver = tokio::spawn(async move {
@@ -312,6 +333,7 @@ async fn attach(
     attacher.abort();
     clipboard_watcher.abort();
     continuer.abort();
+    folder.abort();
     approver.abort();
     pacer.abort();
     interrupter.abort();

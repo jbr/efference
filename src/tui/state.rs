@@ -542,6 +542,9 @@ pub(super) struct InteractiveState<'a> {
     /// and nothing is appended; the payload is the verb's `accept_cold_read`. A
     /// decline comes back as a [`TuiEvent::Notice`] for the status line.
     pub continue_tx: UnboundedSender<bool>,
+    /// Asks for a fold (`POST /loop/fold`, docs/control-api.md): the operator's
+    /// alternative to consenting to a cold read.
+    pub fold_tx: UnboundedSender<()>,
     /// A `409 cold` came back since the last send (backlog: cold-session.md): the
     /// next submit or continue carries `accept_cold_read`, so sending again is the
     /// operator's consent to the uncached read.

@@ -121,3 +121,16 @@ fn a_fold_needs_a_cold_session() {
     let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
     assert_eq!(shared.request_fold(), Err(NotFoldable::NotCold));
 }
+
+/// The client reads a refusal as a decline with the daemon's message, not an error.
+#[tokio::test]
+async fn the_client_reads_a_fold_refusal_as_a_decline() {
+    let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let client = test_client(&shared).await;
+    assert_eq!(
+        client.fold().await.unwrap(),
+        crate::client::FoldOutcome::Declined {
+            message: NotFoldable::NotCold.message().into()
+        }
+    );
+}
