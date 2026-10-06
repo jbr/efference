@@ -56,6 +56,10 @@ pub struct SubmittedTurn {
     /// (docs/inbox.md). Each lands on the `User` entry as a
     /// [`ContentBlock::Attachment`] after the text.
     pub attachments: Vec<crate::attachments::Arrival>,
+    /// Consent to read the session's cache though it is believed expired
+    /// (`accept_cold_read`, backlog: cold-session.md). A request field: the client
+    /// sends it, and the daemon's route consumes it before the turn is queued.
+    pub accept_cold_read: bool,
 }
 
 impl SubmittedTurn {
@@ -67,7 +71,14 @@ impl SubmittedTurn {
             submission_id: submission_id.into(),
             source: None,
             attachments: Vec::new(),
+            accept_cold_read: false,
         }
+    }
+
+    /// Carry consent to a cold read (`accept_cold_read`).
+    pub fn accepting_cold_read(mut self, accept: bool) -> Self {
+        self.accept_cold_read = accept;
+        self
     }
 
     /// Attribute the turn to a non-operator speaker (docs/control-api.md).

@@ -190,7 +190,7 @@ async fn the_route_accepts_and_declines() {
     let client = test_client(&shared).await;
 
     assert_eq!(
-        client.continue_loop().await.unwrap(),
+        client.continue_loop(false).await.unwrap(),
         ContinueOutcome::Accepted
     );
     shared.take_continue();
@@ -198,7 +198,7 @@ async fn the_route_accepts_and_declines() {
 
     shared.append(1, assistant_text("done")).unwrap();
     assert_eq!(
-        client.continue_loop().await.unwrap(),
+        client.continue_loop(false).await.unwrap(),
         ContinueOutcome::Declined {
             message: "nothing to continue: the last turn completed".into()
         }

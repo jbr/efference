@@ -662,6 +662,7 @@ export interface ErrorEnvelope {
     | "not_found"
     | "gate_moved"
     | "not_continuable"
+    | "cold"
     | "unauthorized"
     | "forbidden"
     | "rate_limited"

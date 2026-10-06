@@ -538,10 +538,14 @@ pub(super) struct InteractiveState<'a> {
     /// took is never spliced back into the composer.
     pub recall_tx: UnboundedSender<String>,
     /// Fires the zero-token continue (`POST /loop/continue`, docs/control-api.md) —
-    /// the empty-composer `⏎` when it is the operator's turn. Carries no payload
-    /// because the verb carries none: nothing is submitted and nothing is appended.
-    /// A decline comes back as a [`TuiEvent::Notice`] for the status line.
-    pub continue_tx: UnboundedSender<()>,
+    /// the empty-composer `⏎` when it is the operator's turn. Nothing is submitted
+    /// and nothing is appended; the payload is the verb's `accept_cold_read`. A
+    /// decline comes back as a [`TuiEvent::Notice`] for the status line.
+    pub continue_tx: UnboundedSender<bool>,
+    /// A `409 cold` came back since the last send (backlog: cold-session.md): the
+    /// next submit or continue carries `accept_cold_read`, so sending again is the
+    /// operator's consent to the uncached read.
+    pub cold_consent: bool,
     /// Asks the tokio side to upload or remove a staged attachment (docs/inbox.md).
     pub attachments_tx: UnboundedSender<crate::tui::staged::AttachCmd>,
     /// The composer's staged attachments: uploaded as they are staged, sent with the next

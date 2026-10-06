@@ -197,3 +197,36 @@ fn a_long_paste_is_staged_and_sent_with_the_next_turn() {
     assert_eq!(sent.attachments, vec![arrival]);
     assert!(s.staged.is_empty(), "sent chips leave the row");
 }
+
+/// A `409 cold` hands the refused turn back to the composer, and sending again
+/// carries `accept_cold_read` — once (backlog: cold-session.md).
+#[test]
+fn a_cold_refusal_returns_the_turn_and_arms_consent() {
+    let rc = RenderContext::new();
+    let theme = InteractiveTheme::from_render_context(&rc);
+    let (_etx, erx) = crossbeam_channel::unbounded();
+    let (senders, receivers) = crate::tui::senders::Senders::channels();
+    let mut srx = receivers.submit;
+    let mut s = InteractiveState::new(erx, senders, rc, theme);
+    s.submit_composer("hello".into());
+    let refused = srx.try_recv().unwrap();
+    assert!(!refused.accept_cold_read);
+
+    s.apply_cold(
+        Some(refused),
+        crate::client::ColdRefusal {
+            message: "cold".into(),
+            cold: serde_json::json!({ "since": 1, "context_tokens": 120_000 }),
+        },
+    );
+    assert!(s.pending_turns.is_empty(), "the echo is withdrawn");
+    assert_eq!(s.composer.text(), "hello");
+
+    s.submit_composer("hello".into());
+    assert!(srx.try_recv().unwrap().accept_cold_read);
+    s.submit_composer("again".into());
+    assert!(
+        !srx.try_recv().unwrap().accept_cold_read,
+        "consent is one send"
+    );
+}

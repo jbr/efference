@@ -17,6 +17,7 @@ pub(super) async fn submit_turn(mut conn: Conn) -> Conn {
             submission_id,
             source,
             attachments,
+            accept_cold_read,
         }) => {
             if submission_id
                 .as_ref()
@@ -58,6 +59,9 @@ pub(super) async fn submit_turn(mut conn: Conn) -> Conn {
                 Ok(attachments) => attachments,
                 Err(message) => return fail(conn, ErrorCode::BadRequest, message),
             };
+            if let Err(body) = cold_gate(&shared, accept_cold_read) {
+                return respond(conn, body);
+            }
             let submission_id = submission_id.unwrap_or_else(mint_submission_id);
             shared.submit_turn(
                 SubmittedTurn::new(text, submission_id.clone())

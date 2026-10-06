@@ -56,7 +56,8 @@ impl<'a> InteractiveState<'a> {
         // can be edited and re-sent.
         let submitted =
             crate::frontend::SubmittedTurn::new(text, crate::daemon::mint_submission_id())
-                .with_attachments(self.staged.ready());
+                .with_attachments(self.staged.ready())
+                .accepting_cold_read(std::mem::take(&mut self.cold_consent));
         if self.submit_tx.send(submitted.clone()).is_ok() {
             self.clear_staged();
             // Echo the message immediately as a pending transcript unit
@@ -81,7 +82,11 @@ impl<'a> InteractiveState<'a> {
     /// the only local effect is the status line and following the tail again.
     /// A daemon decline arrives later as a [`TuiEvent::Notice`].
     pub(in crate::tui) fn continue_trajectory(&mut self) {
-        if self.continue_tx.send(()).is_ok() {
+        if self
+            .continue_tx
+            .send(std::mem::take(&mut self.cold_consent))
+            .is_ok()
+        {
             self.ui.debug_message = "continuing".into();
             self.viewport.stuck_to_bottom = true;
         } else {
@@ -151,6 +156,34 @@ impl<'a> InteractiveState<'a> {
             format!("recalled {}", withdrawn.len()).into()
         };
         self.mark_reproject();
+    }
+
+    /// A send came back `409 cold` (backlog: cold-session.md): nothing was queued. A
+    /// refused turn returns to the composer as a recall would, and the next send — of
+    /// it, or of a continue — carries the consent the refusal asked for.
+    pub(in crate::tui) fn apply_cold(
+        &mut self,
+        turn: Option<crate::frontend::SubmittedTurn>,
+        refusal: crate::client::ColdRefusal,
+    ) {
+        if let Some(turn) = turn {
+            self.apply_recall(vec![crate::client::WithdrawnTurn {
+                submission_id: turn.submission_id,
+                text: turn.text,
+                attachments: turn.attachments,
+            }]);
+        }
+        self.cold_consent = true;
+        let tokens = refusal.cold["context_tokens"].as_u64();
+        self.ui.debug_message = match tokens {
+            Some(tokens) => format!(
+                "cache believed cold — ⏎ again to read {}k tokens uncached",
+                (tokens + 500) / 1_000
+            ),
+            None => "cache believed cold — ⏎ again to read it uncached".to_string(),
+        }
+        .into();
+        self.dirty = true;
     }
 
     /// Take back the turns an `ask` withdrew from the queue, once per ask (docs/tui.md). Only

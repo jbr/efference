@@ -27,9 +27,9 @@ pub(crate) struct Senders {
     /// Upload or remove a staged attachment (docs/inbox.md); an upload's answer
     /// rides home as a [`TuiEvent::Uploaded`](super::TuiEvent::Uploaded).
     pub attachments: UnboundedSender<super::staged::AttachCmd>,
-    /// The zero-token continue (docs/control-api.md): payload-free, because the
-    /// verb is.
-    pub continue_loop: UnboundedSender<()>,
+    /// The zero-token continue (docs/control-api.md). Its one field is the verb's
+    /// one field: consent to a cold read (`accept_cold_read`).
+    pub continue_loop: UnboundedSender<bool>,
     pub approve: UnboundedSender<(String, Approval)>,
     pub pace: UnboundedSender<PaceCmd>,
     pub interrupt: UnboundedSender<Interrupt>,
@@ -46,7 +46,7 @@ pub(crate) struct Receivers {
     pub submit: UnboundedReceiver<SubmittedTurn>,
     pub recall: UnboundedReceiver<String>,
     pub attachments: UnboundedReceiver<super::staged::AttachCmd>,
-    pub continue_loop: UnboundedReceiver<()>,
+    pub continue_loop: UnboundedReceiver<bool>,
     pub approve: UnboundedReceiver<(String, Approval)>,
     pub pace: UnboundedReceiver<PaceCmd>,
     pub interrupt: UnboundedReceiver<Interrupt>,

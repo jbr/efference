@@ -104,6 +104,7 @@ async fn a_non_descendant_mutation_is_refused_but_a_notify_reaches_it() {
         wait: false,
         timeout_s: None,
         source: None,
+        accept_cold_read: false,
         session: Some("peer".into()),
     }
     .execute(control.clone(), RequestContext::default())
@@ -137,6 +138,7 @@ async fn a_descendant_turn_lands_with_the_session_source() {
         wait: false,
         timeout_s: None,
         source: None,
+        accept_cold_read: false,
         session: Some("child".into()),
     }
     .execute(control.clone(), RequestContext::default())

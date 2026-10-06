@@ -18,7 +18,11 @@ import { Store, type Session } from "./store.ts";
 
 export interface SessionActions {
   resolveGate(callId: CallId, decision: Decision): Promise<"applied" | "moved">;
-  submitTurn(text: string, attachments?: Attachment[]): Promise<void>;
+  submitTurn(
+    text: string,
+    attachments?: Attachment[],
+    acceptColdRead?: boolean,
+  ): Promise<void>;
   /** Withdraw the pending suffix from this submission; resolves with the turns
    * actually popped, for the composer to splice and re-stage. */
   recallTurn(id: string): Promise<WithdrawnTurn[]>;
@@ -79,7 +83,8 @@ export function useSession(): {
   const actions = useMemo<SessionActions>(
     () => ({
       resolveGate: (callId, decision) => resolveGate(store, callId, decision),
-      submitTurn: (text, attachments) => submitTurn(store, text, attachments),
+      submitTurn: (text, attachments, acceptColdRead) =>
+        submitTurn(store, text, attachments, acceptColdRead),
       recallTurn: (id) => recallTurn(store, id),
     }),
     [store],

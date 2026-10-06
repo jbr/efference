@@ -32,13 +32,14 @@ export async function submitTurn(
   store: Store,
   text: string,
   attachments: Attachment[] = [],
+  acceptColdRead = false,
 ): Promise<void> {
   const id = crypto.randomUUID();
   // Recorded before the POST: an `ask` can hand this turn back while the 202
   // is still in flight (session/store.ts).
   store.update((s) => mintTurn(s, id));
   try {
-    await postTurn(text, id, attachments);
+    await postTurn(text, id, attachments, acceptColdRead);
   } catch (error) {
     store.update((s) => unmintTurn(s, id));
     throw error;

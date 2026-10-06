@@ -13,7 +13,7 @@ import {
   interruptLoop,
   patchLoop,
 } from "../api/http.ts";
-import type { Ask, Attachment, Pace, Stall } from "../api/types.ts";
+import type { Ask, Attachment, Cold, Pace, Stall } from "../api/types.ts";
 import { replyHint } from "./askMark.ts";
 import { turnState } from "./turnState.ts";
 import { useDockOffset } from "./float.ts";
@@ -44,7 +44,11 @@ export function Composer({
   gatePending,
   ask,
 }: {
-  submit: (text: string, attachments: Attachment[]) => Promise<void>;
+  submit: (
+    text: string,
+    attachments: Attachment[],
+    acceptColdRead: boolean,
+  ) => Promise<void>;
   /** A turn a recall pulled back out of the daemon's queue, to prepend to the
    * draft (docs/web-client.md). */
   recalled: Recalled | null;
@@ -64,6 +68,9 @@ export function Composer({
 }) {
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
+  // A `409 cold` came back (docs/control-api.md): the next send carries the
+  // consent it asked for, so sending again is the operator's yes.
+  const [coldConsent, setColdConsent] = useState(false);
   const attachments = useStagedAttachments();
   const { stage, restore } = attachments;
   // A file dragged anywhere over the page is headed here: the composer is the
@@ -178,24 +185,40 @@ export function Composer({
     // loop takes another turn on the wire it already has. A decline is a normal
     // answer — the moment had no continue in it — so its message renders on its
     // own rather than as a thrown-error string. Attachments alone are a turn.
+    const acceptColdRead = coldConsent;
+    setColdConsent(false);
     if (!text && attachments.ready.length === 0) {
       try {
-        await continueLoop();
+        await continueLoop(acceptColdRead);
         setError(null);
       } catch (e) {
-        setError(e instanceof ApiError ? e.message : `${e}`);
+        if (!refusedCold(e))
+          setError(e instanceof ApiError ? e.message : `${e}`);
       }
       return;
     }
     try {
-      await send(text, attachments.ready);
+      await send(text, attachments.ready, acceptColdRead);
       attachments.clear();
       setDraft("");
       setError(null);
       setExpanded(false);
     } catch (e) {
-      setError(`${e}`);
+      if (!refusedCold(e)) setError(`${e}`);
     }
+  }
+
+  // Nothing was queued and the draft is untouched: say what sending again costs.
+  function refusedCold(e: unknown): boolean {
+    if (!(e instanceof ApiError) || e.code !== "cold") return false;
+    const tokens = (e.detail as Cold | null)?.context_tokens;
+    setColdConsent(true);
+    setError(
+      tokens
+        ? `cache believed cold — send again to read ${Math.round(tokens / 1000)}k tokens uncached`
+        : "cache believed cold — send again to read it uncached",
+    );
+    return true;
   }
 
   const turn = turnState(running, stall, retrying);

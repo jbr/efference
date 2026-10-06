@@ -50,6 +50,68 @@ impl Session {
     }
 }
 
+impl Session {
+    /// Consent to one cold read (`accept_cold_read`, docs/control-api.md). Recorded only
+    /// while the session is believed cold, so a client that sends the flag on every
+    /// turn leaves nothing behind for a later cold moment it never saw; wakes a loop
+    /// parked at the cold check and a held inbox wake.
+    pub(crate) fn grant_cold_read(&self) {
+        if self.cold_since().is_some() {
+            self.cold_consent.store(true, Ordering::SeqCst);
+            self.cold_signal.notify_waiters();
+        }
+    }
+
+    pub(crate) fn cold_parked(&self) -> bool {
+        self.cold_parked.load(Ordering::SeqCst)
+    }
+
+    /// The loop's cold check, before any request on the main prefix: returns at once
+    /// while the cache is believed warm, consumes a granted consent when it is not,
+    /// and otherwise parks — a decision point, so `?wait` answers — until consent
+    /// arrives. Consent left over from a cold moment that has since passed is dropped.
+    pub(crate) async fn await_warm_or_consent(&self) {
+        loop {
+            let notified = self.cold_signal.notified();
+            tokio::pin!(notified);
+            notified.as_mut().enable();
+            if self.cold_since().is_none() {
+                self.cold_consent.store(false, Ordering::SeqCst);
+                return self.unpark_cold();
+            }
+            if self.cold_consent.swap(false, Ordering::SeqCst) {
+                return self.unpark_cold();
+            }
+            if !self.cold_parked.swap(true, Ordering::SeqCst) {
+                eprintln!("(cold — waiting for consent to read the expired cache, or a fold)");
+                self.settle_changed.notify_waiters();
+                self.touch_state();
+            }
+            notified.await;
+        }
+    }
+
+    fn unpark_cold(&self) {
+        if self.cold_parked.swap(false, Ordering::SeqCst) {
+            self.settle_changed.notify_waiters();
+            self.touch_state();
+        }
+    }
+
+    /// [`Self::inbox_wake`], held while the cache is believed cold: an idle triage is a
+    /// request on the main prefix, so a notification waits in the inbox until a turn
+    /// with consent (or a fold) makes the session warm again.
+    pub(crate) async fn inbox_wake_while_warm(&self) {
+        loop {
+            self.inbox_wake().await;
+            if self.cold_since().is_none() {
+                return;
+            }
+            self.cold_signal.notified().await;
+        }
+    }
+}
+
 /// Publish the `cold` topic's transitions: re-read the belief every [`COLD_CHECK`] and
 /// signal the topic differ when it changes. Spawned beside the keepalive for a model
 /// with a cache.

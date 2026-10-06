@@ -40,6 +40,13 @@ pub struct Turn {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[arg(long)]
     pub source: Option<String>,
+    /// Consent to read the session's prompt cache though it is believed expired.
+    /// Without it a session whose cache has gone cold refuses the turn (`409 cold`),
+    /// queueing nothing, because the next request would pay for the whole context
+    /// uncached; send again with this set to pay it.
+    #[serde(default)]
+    #[arg(long)]
+    pub accept_cold_read: bool,
     /// Drive this session by id (see `sessions`). Required unless the server was started with `--name`/`--socket`; then it overrides that session for this call.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[arg(long)]
@@ -76,15 +83,19 @@ impl Tool<Control> for Turn {
                 // command line's RequestContext is empty, so `efference control turn`
                 // submits as the operator unless told otherwise.
                 let source = turn_source(self.source, &context);
+                let options = crate::client::TurnOptions {
+                    source: source.as_deref(),
+                    accept_cold_read: self.accept_cold_read,
+                };
                 if !self.wait {
-                    client.turn_sourced(&text, source.as_deref()).await?;
+                    client.turn_with(&text, options).await?;
                     return Ok("accepted".into());
                 }
                 let settled = state
                     .settle_within(
                         &client,
                         self.timeout_s,
-                        client.turn_wait_sourced(&text, source.as_deref()),
+                        client.turn_wait_with(&text, options),
                     )
                     .await?;
                 Ok(settled.to_text())
@@ -102,9 +113,15 @@ impl Tool<Control> for Turn {
                 // A turn a session submits is attributed to it (docs/tools.md),
                 // beside the `mcp[<name>]` shape an external mount uses.
                 let source = format!("session[{}]", state.caller);
-                state
-                    .resolve_mutating(self.session.as_deref())?
-                    .submit_turn(crate::frontend::SubmittedTurn::new(text, crate::daemon::mint_submission_id()).sourced(Some(source)));
+                let target = state.resolve_mutating(self.session.as_deref())?;
+                // The same consent the route asks for (backlog: cold-session.md).
+                if let Err(refused) = crate::daemon::cold_gate(&target, self.accept_cold_read) {
+                    return Err(anyhow!("{}", refused.message));
+                }
+                target.submit_turn(
+                    crate::frontend::SubmittedTurn::new(text, crate::daemon::mint_submission_id())
+                        .sourced(Some(source)),
+                );
                 Ok("accepted".into())
             }
         }

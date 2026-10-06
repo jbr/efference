@@ -123,6 +123,7 @@ impl<'a> InteractiveState<'a> {
             clipboard_image: false,
             owns_host: false,
             continue_tx,
+            cold_consent: false,
             pending_turns: Vec::new(),
             ask_restored: None,
             ask: None,

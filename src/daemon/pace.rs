@@ -219,6 +219,8 @@ impl Session {
             // A pending `ask` is the loop waiting on the operator (docs/supervisor.md).
             || self.asking().is_some()
             || self.stall().is_some()
+            // Parked at the cold check, waiting for consent (backlog: cold-session.md).
+            || self.cold_parked()
             || (!self.running.load(Ordering::SeqCst)
                 && self.queue.lock().unwrap().is_empty()
                 // An accepted `POST /loop/continue` (docs/control-api.md) is a turn

@@ -291,7 +291,7 @@ decoupled from inference. While an `ask` is pending (the `ask` topic below), a
 non-blank turn is instead that ask's reply: it becomes the call's result, never a
 `User` entry, and never appears in `queued` ([supervisor.md](supervisor.md)).
 
-- Body: `{ "text": "<string>", "submission_id": "<string, optional>", "source": "<string, optional>", "attachments": ["<name>", …] }` —
+- Body: `{ "text": "<string>", "submission_id": "<string, optional>", "source": "<string, optional>", "attachments": ["<name>", …], "accept_cold_read": <bool, optional> }` —
   `submission_id` identifies this submission: adopted when the client minted
   one (1–128 bytes), daemon-minted otherwise, and recorded on the resulting
   `User` entry as its `submission_id` (log metadata, never projected). A
@@ -309,6 +309,13 @@ non-blank turn is instead that ask's reply: it becomes the call's result, never 
   entry as an `Attachment` block after the text ([inbox.md](inbox.md)); a turn
   with attachments and blank text is still a turn. A name the store does not
   hold is a `400` and nothing is queued.
+- `accept_cold_read: true` consents to reading the session's prompt cache though
+  it is believed expired (the `cold` topic, below): the next request pays for the
+  whole context uncached. Without it a cold session answers `409 cold` and
+  nothing is queued, so the client keeps the draft and re-sends it with the flag
+  if that is the operator's choice. The consent is one request's: it is consumed
+  by the loop's next cold check, and dropped if the session is warm when it
+  arrives.
 - `202 {"status":"accepted","submission_id":"<string>"}` — enqueued; watch
   `/events` (or `/state`) for the result. The echoed id is informational: any
   effect of a request — including the `User` entry carrying this id — may
@@ -318,6 +325,8 @@ non-blank turn is instead that ask's reply: it becomes the call's result, never 
 - `?wait` — hold the connection until the daemon **settles** (the turn reaches a
   gate or completes), then return the `/state` snapshot (`200`) instead of `202`.
 - `400 bad_request` — unparseable body, or a `submission_id` outside 1–128 bytes
+- `409 cold` — the cache is believed expired and the body did not carry
+  `accept_cold_read`; `detail` is the `cold` topic
 
 #### `DELETE /turns/:submission_id`
 **Recall** — withdraw the pending-queue **suffix** beginning at this submission,
@@ -417,7 +426,8 @@ wire it already has. Nothing is submitted, nothing is appended, and the
 projection does not move — the next request re-sends a byte-identical prefix, so
 this costs no input tokens beyond the turn it triggers. A verb-route on the loop
 resource for the same reason as `/loop/interrupt`: it signals the loop rather
-than creating or editing a resource. No body.
+than creating or editing a resource. The body is optional:
+`{ "accept_cold_read": <bool> }`, the same consent `POST /turns` takes.
 
 Distinct from a `POST /turns` carrying `""`, which is reserved for **keep
 idling** — a blank submit never lands a `User` entry and never starts a turn.
@@ -437,6 +447,10 @@ idling** — a blank submit never lands a `User` entry and never starts a turn.
   On a resumed session stopped at a pending batch, whose wire ends in a `tool_use`,
   the continue is accepted and the loop replays the batch instead of sending a request
   ([resumption.md](resumption.md)).
+- `409 cold` — the cache is believed expired and the body did not carry
+  `accept_cold_read`; `detail` is the `cold` topic. A loop that parked mid-turn
+  at its cold check (a tool outlived the cache) is resumed by a continue that
+  carries the flag.
 - `409 not_continuable` — the moment has no continue in it. `message` names
   which case:
   - the loop is already running (and not waiting on the upstream), or a turn is queued
@@ -1225,6 +1239,7 @@ returning the same code cannot disagree about the status:
 | `not_found` | 404 | no such notification id, proposal `seq`, process id, or mounted tool name |
 | `gate_moved` | 409 | `PUT /approvals/:call_id` whose id is not the pending gate; `detail` carries the current gate |
 | `not_continuable` | 409 | `POST /loop/continue` at a moment with no continue in it — running, gated, or a wire tail that means nothing to re-prompt |
+| `cold` | 409 | `POST /turns` or `POST /loop/continue` on a session whose prompt cache is believed expired, without `accept_cold_read`; `detail` carries the `cold` topic |
 | `too_large` | 413 | `/files` was asked for a file past the view limit ([web-bind.md](web-bind.md)) |
 | `unsupported_content` | 415 | `/files` was asked for something it does not serve as text — today, a file that is not valid UTF-8 |
 | `internal` | 500 | a log append or config write failed; absent shared state |

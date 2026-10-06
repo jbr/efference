@@ -174,6 +174,12 @@ pub(crate) enum TuiEvent {
     /// dequeued the turn first — because the server's answer is authoritative; the composer
     /// splices exactly this and nothing else.
     Recalled(Vec<crate::client::WithdrawnTurn>),
+    /// A send came back `409 cold` (backlog: cold-session.md): the refused turn,
+    /// or `None` for a continue, and the daemon's refusal.
+    Cold {
+        turn: Option<crate::frontend::SubmittedTurn>,
+        refusal: crate::client::ColdRefusal,
+    },
     /// The `ask` topic (docs/control-api.md): `None` while no question is pending. Its
     /// `recalled` turns are the queue the daemon withdrew when the question began, for the
     /// composer to take back (docs/tui.md).

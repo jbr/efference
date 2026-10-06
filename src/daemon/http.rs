@@ -23,6 +23,36 @@ pub(crate) struct TurnBody {
     /// otherwise, so a message never lands claiming a file that is not there.
     #[serde(default)]
     pub(crate) attachments: Vec<String>,
+    /// Consent to read the session's cache though it is believed expired
+    /// (backlog: cold-session.md). Without it a cold session answers `409 cold`.
+    #[serde(default)]
+    pub(crate) accept_cold_read: bool,
+}
+
+/// The optional `POST /loop/continue` body: the same consent a turn carries.
+#[derive(Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ContinueBody {
+    #[serde(default)]
+    pub(crate) accept_cold_read: bool,
+}
+
+/// Refuse a request on a cold session that did not consent to the read, or record the
+/// consent when it did (backlog: cold-session.md). `Err` carries the `409 cold` to send.
+pub(crate) fn cold_gate(shared: &Session, accept_cold_read: bool) -> Result<(), ErrorBody> {
+    if accept_cold_read {
+        shared.grant_cold_read();
+        return Ok(());
+    }
+    if shared.cold_since().is_none() {
+        return Ok(());
+    }
+    Err(ErrorBody::new(
+        ErrorCode::Cold,
+        "the session's prompt cache is believed expired; send again with \
+         accept_cold_read to pay the uncached read",
+    )
+    .with_detail(shared.topic_json(Topic::Cold)))
 }
 
 /// Cap on a client-minted submission id: long enough for any uuid-ish scheme,

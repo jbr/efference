@@ -104,14 +104,12 @@ impl Client {
     /// daemon answers 202 immediately — submission is decoupled from inference, so
     /// the caller watches the stream (or `/log`) for the response.
     pub async fn turn(&self, text: &str) -> Result<()> {
-        self.turn_sourced(text, None).await
+        self.turn_with(text, TurnOptions::default()).await
     }
 
-    /// [`turn`](Self::turn) carrying a `source` label (docs/control-api.md) — the
-    /// client's self-chosen name for who is speaking (`web`, `mcp[<name>]`,
-    /// `agent[<id>]`). `None` submits as the operator, who renders no prefix.
-    pub async fn turn_sourced(&self, text: &str, source: Option<&str>) -> Result<()> {
-        let body = Self::turn_body(text, None, source);
+    /// [`turn`](Self::turn) with the body's optional fields ([`TurnOptions`]).
+    pub async fn turn_with(&self, text: &str, options: TurnOptions<'_>) -> Result<()> {
+        let body = Self::turn_body(text, None, options);
         self.post("/turns", body).await.map(drop)
     }
 
@@ -121,10 +119,14 @@ impl Client {
     /// body, so the caller can reconcile delivery by exact key rather than
     /// content.
     pub async fn submit(&self, turn: &SubmittedTurn) -> Result<String> {
+        let options = TurnOptions {
+            source: turn.source.as_deref(),
+            accept_cold_read: turn.accept_cold_read,
+        };
         let mut body: serde_json::Value = serde_json::from_str(&Self::turn_body(
             &turn.text,
             Some(&turn.submission_id),
-            turn.source.as_deref(),
+            options,
         ))?;
         if !turn.attachments.is_empty() {
             body["attachments"] = turn
@@ -136,16 +138,19 @@ impl Client {
         self.post("/turns", body.to_string()).await
     }
 
-    /// The `POST /turns` body: `text`, plus `submission_id` and `source` when
-    /// present. Field order is fixed here so the body is the same bytes every
-    /// call for the same inputs.
-    fn turn_body(text: &str, submission_id: Option<&str>, source: Option<&str>) -> String {
+    /// The `POST /turns` body: `text`, plus `submission_id`, `source` and
+    /// `accept_cold_read` when present. Field order is fixed here so the body is the
+    /// same bytes every call for the same inputs.
+    fn turn_body(text: &str, submission_id: Option<&str>, options: TurnOptions<'_>) -> String {
         let mut body = serde_json::json!({ "text": text });
         if let Some(submission_id) = submission_id {
             body["submission_id"] = serde_json::Value::from(submission_id);
         }
-        if let Some(source) = source {
+        if let Some(source) = options.source {
             body["source"] = serde_json::Value::from(source);
+        }
+        if options.accept_cold_read {
+            body["accept_cold_read"] = serde_json::Value::Bool(true);
         }
         body.to_string()
     }
@@ -197,13 +202,12 @@ impl Client {
     /// "act → poll `/state` in a loop → read" into one round-trip
     /// (docs/permissions.md).
     pub async fn turn_wait(&self, text: &str) -> Result<String> {
-        self.turn_wait_sourced(text, None).await
+        self.turn_wait_with(text, TurnOptions::default()).await
     }
 
-    /// [`turn_wait`](Self::turn_wait) carrying a `source` label
-    /// (docs/control-api.md).
-    pub async fn turn_wait_sourced(&self, text: &str, source: Option<&str>) -> Result<String> {
-        let body = Self::turn_body(text, None, source);
+    /// [`turn_wait`](Self::turn_wait) with the body's optional fields ([`TurnOptions`]).
+    pub async fn turn_wait_with(&self, text: &str, options: TurnOptions<'_>) -> Result<String> {
+        let body = Self::turn_body(text, None, options);
         self.post("/turns?wait", body).await
     }
 
@@ -256,14 +260,21 @@ impl Client {
     ///
     /// A decline (`409 not_continuable`) is a normal answer, not a transport
     /// failure: the moment simply had no continue in it, and the daemon's message
-    /// says which case. Errors are reserved for a request that didn't get an
-    /// answer.
-    pub async fn continue_loop(&self) -> Result<ContinueOutcome> {
+    /// says which case. So is `409 cold`, for a continue that did not carry
+    /// `accept_cold_read` on a session whose cache is believed expired. Errors are
+    /// reserved for a request that didn't get an answer.
+    pub async fn continue_loop(&self, accept_cold_read: bool) -> Result<ContinueOutcome> {
         let path = self.versioned("/loop/continue");
         let path = path.as_str();
-        let mut conn = self
-            .http
-            .post(path)
+        let request = self.http.post(path);
+        let request = if accept_cold_read {
+            request
+                .with_request_header("content-type", "application/json; charset=utf-8")
+                .with_body(r#"{"accept_cold_read":true}"#)
+        } else {
+            request
+        };
+        let mut conn = request
             .await
             .with_context(|| format!("POST {path} to the control socket"))?;
         let status = conn.status();
@@ -274,6 +285,11 @@ impl Client {
             .with_context(|| format!("reading the response to POST {path}"))?;
         match status {
             Some(s) if s.is_success() => Ok(ContinueOutcome::Accepted),
+            Some(trillium_client::Status::Conflict)
+                if let Some(cold) = ColdRefusal::parse(&body) =>
+            {
+                Ok(ContinueOutcome::Cold(cold))
+            }
             Some(trillium_client::Status::Conflict) => Ok(ContinueOutcome::Declined {
                 message: json_field(&body, "message")
                     .unwrap_or_else(|_| "the daemon declined the continue".into()),
@@ -854,7 +870,53 @@ pub enum ContinueOutcome {
     /// The moment had no continue in it — the loop is running or gated, or the
     /// wire ends where re-prompting it means nothing.
     Declined { message: String },
+    /// The session's cache is believed expired and the continue carried no
+    /// `accept_cold_read`; sending it again with the flag pays the read.
+    Cold(ColdRefusal),
 }
+
+/// The options a `POST /turns` body carries beside its text (docs/control-api.md).
+#[derive(Clone, Copy, Debug, Default)]
+pub struct TurnOptions<'a> {
+    /// Who is submitting, when it is not the operator: the client's self-chosen
+    /// label (`web`, `mcp[<name>]`, `agent[<id>]`). `None` submits as the
+    /// operator, who renders no prefix.
+    pub source: Option<&'a str>,
+    /// Consent to read the session's cache though it is believed expired
+    /// (backlog: cold-session.md).
+    pub accept_cold_read: bool,
+}
+
+/// A `409 cold` (docs/control-api.md): the session's prompt cache is believed
+/// expired and the request did not carry `accept_cold_read`, so nothing was
+/// queued. Returned as the error of a turn verb — `downcast_ref` finds it — and as
+/// [`ContinueOutcome::Cold`]; the caller asks the operator and re-sends with the
+/// flag.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ColdRefusal {
+    pub message: String,
+    /// The `cold` topic as it read when the request was refused.
+    pub cold: serde_json::Value,
+}
+
+impl ColdRefusal {
+    /// A `cold` error body, or `None` for any other.
+    fn parse(body: &str) -> Option<Self> {
+        let body: serde_json::Value = serde_json::from_str(body).ok()?;
+        (body["code"] == "cold").then(|| Self {
+            message: body["message"].as_str().unwrap_or_default().to_string(),
+            cold: body["detail"].clone(),
+        })
+    }
+}
+
+impl std::fmt::Display for ColdRefusal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for ColdRefusal {}
 
 /// Pull one string field out of a JSON body — the `/auth/*` responses are all a
 /// single-field object.
@@ -909,6 +971,10 @@ async fn read_2xx(mut conn: trillium_client::Conn, method: &str, path: &str) -> 
         .with_context(|| format!("reading the response to {method} {path}"))?;
     if ok {
         Ok(body)
+    } else if code == "409"
+        && let Some(cold) = ColdRefusal::parse(&body)
+    {
+        Err(cold.into())
     } else {
         Err(anyhow!("{method} {path} → {code}: {body}"))
     }

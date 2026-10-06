@@ -91,7 +91,13 @@ async fn turn_source_reaches_the_queued_turn() {
     let client = test_client(&shared).await;
 
     client
-        .turn_sourced("hi from a script", Some("agent[abc]"))
+        .turn_with(
+            "hi from a script",
+            crate::client::TurnOptions {
+                source: Some("agent[abc]"),
+                ..Default::default()
+            },
+        )
         .await
         .unwrap();
     let queued = turns_rx.recv().await.unwrap();
@@ -109,13 +115,25 @@ async fn the_kickoff_source_is_reserved() {
     let (shared, mut turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
     let client = test_client(&shared).await;
     let err = client
-        .turn_sourced("hidden", Some(crate::frontend::KICKOFF_SOURCE))
+        .turn_with(
+            "hidden",
+            crate::client::TurnOptions {
+                source: Some(crate::frontend::KICKOFF_SOURCE),
+                ..Default::default()
+            },
+        )
         .await
         .unwrap_err()
         .to_string();
     assert!(err.contains("reserved"), "{err}");
     let err = client
-        .turn_sourced("hidden", Some("handoff[someone]"))
+        .turn_with(
+            "hidden",
+            crate::client::TurnOptions {
+                source: Some("handoff[someone]"),
+                ..Default::default()
+            },
+        )
         .await
         .unwrap_err()
         .to_string();

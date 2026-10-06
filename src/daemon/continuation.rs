@@ -79,6 +79,10 @@ impl Session {
             return Err(NotContinuable::Asking);
         }
         let running = self.running.load(Ordering::SeqCst);
+        // Parked at the cold check: the route already granted the consent that wakes it.
+        if running && self.cold_parked() {
+            return Ok(());
+        }
         if running && (self.upstream_retry.get().is_some() || self.stall().is_some()) {
             self.upstream_retry.hurry();
             return Ok(());

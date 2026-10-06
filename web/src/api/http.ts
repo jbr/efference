@@ -90,10 +90,13 @@ export const fetchLogTail = (n: number) => get<LogEntry[]>(`/v1/log?tail=${n}`);
 // elide (a truncated result's `content`, docs/control-api.md). ETag-validated, so
 // a second look is a 304.
 export const fetchLogEntry = (seq: Seq) => get<LogEntry>(`/v1/log/${seq}`);
+// `acceptColdRead` is the consent a `409 cold` asks for (docs/control-api.md):
+// the session's cache is believed expired, so the turn pays an uncached read.
 export const submitTurn = (
   text: string,
   submissionId: string,
   attachments: Attachment[] = [],
+  acceptColdRead = false,
 ) =>
   post<{ status: string; submission_id: string }>("/v1/turns", {
     text,
@@ -104,6 +107,7 @@ export const submitTurn = (
     ...(attachments.length > 0
       ? { attachments: attachments.map((a) => a.name) }
       : {}),
+    ...(acceptColdRead ? { accept_cold_read: true } : {}),
   });
 // Withdraw the pending-queue suffix beginning at this submission (docs/control-api.md —
 // recall). The answer is authoritative: the loop may have dequeued the turn already, so
@@ -179,9 +183,13 @@ export const interruptLoop = () =>
 // another turn on the wire it already has — nothing is submitted and nothing is
 // appended, so this is not a turn with empty text. A moment with no continue in
 // it answers `409 not_continuable`, which arrives here as an `ApiError` whose
-// `message` names the case.
-export const continueLoop = () =>
-  post<{ status: string }>("/v1/loop/continue", {});
+// `message` names the case; a session whose cache is believed expired answers
+// `409 cold` unless the continue carries `acceptColdRead`.
+export const continueLoop = (acceptColdRead = false) =>
+  post<{ status: string }>(
+    "/v1/loop/continue",
+    acceptColdRead ? { accept_cold_read: true } : {},
+  );
 // `background: true` on the foreground process is the handoff — expect 202,
 // the flip lands at the detach race (docs/control-api.md); `note` rides it as
 // the next user message. `muted` is the dismiss toggle.

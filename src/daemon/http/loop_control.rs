@@ -21,10 +21,28 @@ pub(super) async fn interrupt(conn: Conn) -> Conn {
 /// `/loop/interrupt`, for the same reason: it signals the loop rather than
 /// creating or editing a resource. Declined with `409 not_continuable` when
 /// the moment has no continue in it.
-pub(super) async fn continue_loop(conn: Conn) -> Conn {
+pub(super) async fn continue_loop(mut conn: Conn) -> Conn {
     let Some(shared) = shared_of(&conn) else {
         return missing_state(conn);
     };
+    let body = conn.request_body_string().await.unwrap_or_default();
+    let body = if body.trim().is_empty() {
+        ContinueBody::default()
+    } else {
+        match serde_json::from_str::<ContinueBody>(&body) {
+            Ok(body) => body,
+            Err(e) => {
+                return fail(
+                    conn,
+                    ErrorCode::BadRequest,
+                    format!("bad /loop/continue body: {e}"),
+                );
+            }
+        }
+    };
+    if let Err(body) = cold_gate(&shared, body.accept_cold_read) {
+        return respond(conn, body);
+    }
     match shared.request_continue() {
         Ok(()) => conn
             .with_status(202)

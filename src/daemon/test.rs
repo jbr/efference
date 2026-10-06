@@ -141,6 +141,7 @@ mod approvals;
 mod ask;
 mod background;
 mod capture;
+mod cold;
 mod config_edits;
 mod continuation;
 mod events;

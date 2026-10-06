@@ -188,7 +188,7 @@ pub async fn run<F: Frontend, S: Spotter>(
         } else {
             tokio::select! {
                 line = frontend.read_user_turn() => IdleWake::from_turn(line),
-                _ = shared.inbox_wake(), if replay.is_none() => IdleWake::Event,
+                _ = shared.inbox_wake_while_warm(), if replay.is_none() => IdleWake::Event,
                 _ = shared.continue_wake() => IdleWake::Continue,
             }
         };
@@ -294,6 +294,11 @@ pub async fn run<F: Frontend, S: Spotter>(
             // undismissable), which `project` merges into the trailing tool_result message
             // as `[tool_result…, text]`. A turn arriving while the loop is idle still takes
             // the fast path (the outer `select!`); this only catches mid-trajectory ones.
+            // The cold check (backlog: cold-session.md): no request reads a cache
+            // believed expired without the operator's consent. Parks here, a decision
+            // point, until `accept_cold_read` arrives; before the drain, so a turn sent
+            // with that consent lands at this seam.
+            shared.await_warm_or_consent().await;
             let injected = frontend.drain_injected_turns();
             for submitted in held.drain(..).chain(injected) {
                 turn += 1;

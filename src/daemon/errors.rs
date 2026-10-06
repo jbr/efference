@@ -39,6 +39,11 @@ pub(crate) enum ErrorCode {
     /// state, like [`GateMoved`](Self::GateMoved), and a client acts by showing
     /// the message rather than by retrying.
     NotContinuable,
+    /// The session's prompt cache is believed expired and the request did not carry
+    /// `accept_cold_read` (backlog: cold-session.md). **409**, with the `cold` topic in
+    /// `detail`; nothing was queued. A client acts by asking the operator, then
+    /// re-sending with the flag or folding.
+    Cold,
     /// The addressed thing exists, but not in the state this request describes:
     /// `PATCH /sessions/:id {"state": "active"}` naming a session this host is
     /// already running under a different working root (docs/control-api.md). 409.
@@ -79,7 +84,7 @@ impl ErrorCode {
             Self::Unauthorized => 401,
             Self::Forbidden => 403,
             Self::NotFound => 404,
-            Self::GateMoved | Self::NotContinuable | Self::StateMismatch => 409,
+            Self::GateMoved | Self::NotContinuable | Self::Cold | Self::StateMismatch => 409,
             Self::TooLarge => 413,
             Self::UnsupportedContent => 415,
             Self::RateLimited => 429,

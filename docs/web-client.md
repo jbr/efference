@@ -1084,6 +1084,12 @@ turn submitted, nothing appended — instead of the earlier silent no-op. A
 `409 not_continuable` is a normal answer, so the daemon's `message` renders
 in the composer's error slot on its own rather than as a thrown-error string.
 
+**Sending again is consent to a cold read.** A send or continue on a session
+whose cache is believed expired comes back `409 cold`, with nothing queued
+([control-api.md](control-api.md)). The draft stays, the error slot says what a
+second send costs (the `cold` topic's `context_tokens`), and the composer's
+next send — turn or continue — carries `accept_cold_read`, once.
+
 The input is inset into the dock rather than floating on it: the composer
 band shares the dock's surface color, and the box is near-square (2px) in
 the chrome's flat language. The field auto-grows with the draft
