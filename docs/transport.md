@@ -1556,9 +1556,11 @@ than it saves.
 the cached prefix may go untouched before the ping. Absent, it is four fifths of the
 provider's cache lifetime (`Provider::cache_ttl`, `daemon::keepalive_interval`): 240
 seconds against the five minutes Anthropic documents and the conservative reading for
-providers that document nothing, 16 minutes on OpenAI's two arms, whose documented 30
-minutes since the last write or reuse is reported elsewhere as 20–30
-(journal/2026-10-05-cache-lifetime-corpus.md has what the corpus saw). No provider
+providers that document nothing, 8 minutes on OpenAI's two arms. OpenAI documents 30
+minutes since the last write or reuse, but a gpt-5.6-luna ping 16 minutes after its
+last request read cold and the corpus has the 5.6 family mixed past 7 minutes
+(journal/2026-10-05-cache-lifetime-corpus.md), so those arms assume 10. A late ping pays
+the full read; an early one costs a cached read. No provider
 exposes the lifetime to query, so a set value is the override. **Zero turns the
 keepalive off**, which is the honest spelling for that intent — a separate
 boolean could disagree with the interval sitting beside it. The poll period
