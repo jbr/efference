@@ -500,6 +500,8 @@ export interface UpstreamFailure {
 export interface Cold {
   since: number;
   context_tokens: number | null;
+  // A fold in progress, or the last one's failure (`POST /loop/fold`).
+  fold: { state: "writing" } | { state: "failed"; error: string } | null;
 }
 
 // A retry in flight (docs/transport.md). Level-triggered: `null` is the

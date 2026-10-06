@@ -45,6 +45,9 @@ pub(crate) fn cold_gate(shared: &Session, accept_cold_read: bool) -> Result<(), 
         return Ok(());
     }
     if shared.cold_since().is_none() {
+        // A loop parked at its cold check before a fold resumes on the operator's next
+        // turn or continue, which needs no consent now (`daemon/fold.rs`).
+        shared.wake_cold_check();
         return Ok(());
     }
     Err(ErrorBody::new(
@@ -212,6 +215,7 @@ pub(crate) fn control_routes_with_heartbeat(heartbeat: Duration) -> Router {
         .put("/v1/approvals/:call_id", turns::resolve_approval)
         .post("/v1/loop/interrupt", loop_control::interrupt)
         .post("/v1/loop/continue", loop_control::continue_loop)
+        .post("/v1/loop/fold", loop_control::fold)
         .get("/v1/loop", loop_control::read_loop)
         .patch("/v1/loop", loop_control::patch_loop)
         .get("/v1/processes", processes::list_processes)

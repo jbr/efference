@@ -145,6 +145,7 @@ mod cold;
 mod config_edits;
 mod continuation;
 mod events;
+mod fold;
 mod http;
 mod in_session;
 mod interrupt;

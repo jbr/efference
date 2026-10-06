@@ -183,6 +183,12 @@ impl SessionRuntime {
         if cacheable {
             session.set_cache_ttl(client.endpoint().provider.cache_ttl());
             tokio::spawn(swansong.interrupt(super::cold::cold_watch(Arc::clone(&session))));
+            // The fold writes on the session's own client (docs/summary-head.md).
+            tokio::spawn(swansong.interrupt(super::fold::fold_loop(
+                Arc::clone(&client),
+                Arc::clone(&session),
+                tools.clone(),
+            )));
         }
         if cacheable && !ping_at.is_zero() {
             tokio::spawn(swansong.interrupt(keepalive_loop(

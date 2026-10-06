@@ -215,6 +215,10 @@ impl Session {
     /// running, no gate, no stall — is *not* settled. The predicate behind `/settle` and the
     /// `?wait` flag (docs/permissions.md).
     pub(super) fn is_settled(&self) -> bool {
+        // A fold being written is work in progress, whatever else holds.
+        if self.folding() {
+            return false;
+        }
         self.pending.lock().unwrap().is_some()
             // A pending `ask` is the loop waiting on the operator (docs/supervisor.md).
             || self.asking().is_some()

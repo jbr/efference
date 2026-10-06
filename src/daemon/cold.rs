@@ -24,14 +24,24 @@ impl Session {
 
     /// From when the cache is believed expired, or `None` while it is believed warm,
     /// before the first request on the main prefix, and on a model with no cache.
+    ///
+    /// Only a request on the current prefix counts: after a fold nothing has sent the
+    /// new one, which is the state of a session that has made no request at all.
     pub(crate) fn cold_since(&self) -> Option<Timestamp> {
         let ttl = *self.cache_ttl.get()?;
-        let last_touch = self.metrics.lock().unwrap().last_request_wall;
+        let folded = self.last_fold_at();
+        let last_touch = self
+            .metrics
+            .lock()
+            .unwrap()
+            .last_request_wall
+            .filter(|touch| folded.is_none_or(|fold| touch.0 > fold.0));
         believed_cold_since(last_touch, Timestamp::now(), ttl)
     }
 
-    /// The `cold` topic: `{since, context_tokens}`, or `null`. `context_tokens` is the
-    /// last turn's prompt — what reading the context unfolded would cost, in tokens.
+    /// The `cold` topic: `{since, context_tokens, fold}`, or `null`. `context_tokens` is
+    /// the last turn's prompt — what reading the context unfolded would cost, in tokens;
+    /// `fold` is a fold in progress or the last one's failure.
     pub(super) fn cold_json(&self) -> Value {
         let Some(since) = self.cold_since() else {
             return Value::Null;
@@ -46,6 +56,7 @@ impl Session {
         serde_json::json!({
             "since": since,
             "context_tokens": context_tokens,
+            "fold": self.fold_state(),
         })
     }
 }
@@ -58,6 +69,14 @@ impl Session {
     pub(crate) fn grant_cold_read(&self) {
         if self.cold_since().is_some() {
             self.cold_consent.store(true, Ordering::SeqCst);
+            self.cold_signal.notify_waiters();
+        }
+    }
+
+    /// Let a parked cold check look again, without consent: after a fold the session
+    /// is no longer cold, and the operator's next turn or continue resumes it.
+    pub(crate) fn wake_cold_check(&self) {
+        if self.cold_parked() {
             self.cold_signal.notify_waiters();
         }
     }

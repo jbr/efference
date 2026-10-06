@@ -233,6 +233,10 @@ pub struct Session {
     cold_parked: AtomicBool,
     /// Wakes the cold check and the held inbox wake when consent is granted.
     cold_signal: Notify,
+    /// The fold in progress or its last failure (`daemon/fold.rs`).
+    fold_state: Mutex<Option<fold::FoldState>>,
+    /// Wakes the fold task when a fold is asked for.
+    fold_signal: Notify,
     /// The loop appends under this lock; handlers snapshot it for `GET /log`.
     /// The lock is only ever held across the
     /// synchronous `project`/append — never an `await`.
@@ -763,6 +767,8 @@ impl Session {
             cold_consent: AtomicBool::new(false),
             cold_parked: AtomicBool::new(false),
             cold_signal: Notify::new(),
+            fold_state: Mutex::new(None),
+            fold_signal: Notify::new(),
             log: Mutex::new(log),
             image_placement,
             turns_tx,
@@ -1169,6 +1175,7 @@ mod cold;
 mod config_edits;
 mod continuation;
 mod entry_view;
+mod fold;
 // The typed error envelope (docs/control-api.md) — every non-2xx body the router
 // answers with.
 pub(crate) mod errors;

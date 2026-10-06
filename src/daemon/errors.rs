@@ -44,6 +44,10 @@ pub(crate) enum ErrorCode {
     /// `detail`; nothing was queued. A client acts by asking the operator, then
     /// re-sending with the flag or folding.
     Cold,
+    /// `POST /loop/fold` at a moment with no fold in it: the cache is not believed
+    /// expired, a gate or question is pending, a request is in flight, or everything
+    /// since the last fold fits in the verbatim tail (backlog: cold-session.md). 409.
+    NotFoldable,
     /// The addressed thing exists, but not in the state this request describes:
     /// `PATCH /sessions/:id {"state": "active"}` naming a session this host is
     /// already running under a different working root (docs/control-api.md). 409.
@@ -84,7 +88,11 @@ impl ErrorCode {
             Self::Unauthorized => 401,
             Self::Forbidden => 403,
             Self::NotFound => 404,
-            Self::GateMoved | Self::NotContinuable | Self::Cold | Self::StateMismatch => 409,
+            Self::GateMoved
+            | Self::NotContinuable
+            | Self::Cold
+            | Self::NotFoldable
+            | Self::StateMismatch => 409,
             Self::TooLarge => 413,
             Self::UnsupportedContent => 415,
             Self::RateLimited => 429,

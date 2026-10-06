@@ -52,6 +52,25 @@ pub(super) async fn continue_loop(mut conn: Conn) -> Conn {
     }
 }
 
+/// Fold the cold session's history into a summary (backlog: cold-session.md): 202 while
+/// the session's model writes it, its progress on the `cold` topic's `fold`; `?wait`
+/// answers once it has landed or failed. Declined with `409 not_foldable` when the
+/// moment has no fold in it.
+pub(super) async fn fold(conn: Conn) -> Conn {
+    let Some(shared) = shared_of(&conn) else {
+        return missing_state(conn);
+    };
+    let wait = wants_wait(conn.querystring());
+    match shared.request_fold() {
+        Ok(()) if wait => settle_and_state(&shared, conn).await,
+        Ok(()) => conn
+            .with_status(202)
+            .with_body(r#"{"status":"folding"}"#)
+            .halt(),
+        Err(why) => fail(conn, ErrorCode::NotFoldable, why.message()),
+    }
+}
+
 /// The turn engine's operator dials as one resource (docs/control-channel.md):
 /// `pace`, `review_level`, and the read-only `running` — named exactly as their
 /// state topics, since they are that resource's fields.

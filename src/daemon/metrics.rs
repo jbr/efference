@@ -79,6 +79,9 @@ pub enum RequestOrigin {
     Spot,
     /// A cache keepalive ping (docs/log-and-projection.md).
     Keepalive,
+    /// The narrator writing a fold's account (docs/summary-head.md): its own prompt,
+    /// so it does not touch the main prefix.
+    Narrate,
     /// A retried attempt the loop recorded and re-sent — an unfinalized stream
     /// (all-zero usage) or one that finalized unparseable (real usage;
     /// docs/transport.md). Persisted as its own origin so it is not read as a
@@ -479,10 +482,17 @@ impl Session {
     /// clocks. The first decides *when* to ping (the cache is nearing its TTL); the
     /// second enforces the *cap* (a ping doesn't reset it, so unbounded idle still
     /// stops). Both `None` until the first real turn — nothing to keep warm yet.
+    ///
+    /// A fold since the last touch empties the first: the prefix that request read no
+    /// longer exists, and nothing has sent the new one, so there is no entry to keep.
     pub(super) fn keepalive_clocks(&self) -> (Option<Duration>, Option<Duration>) {
+        let folded = self.last_fold_at();
         let m = self.metrics.lock().unwrap();
+        let touched = m
+            .last_request_wall
+            .filter(|touch| folded.is_none_or(|fold| touch.0 > fold.0));
         (
-            m.last_request_at.map(|t| t.elapsed()),
+            touched.and(m.last_request_at).map(|t| t.elapsed()),
             m.last_real_turn_at.map(|t| t.elapsed()),
         )
     }
