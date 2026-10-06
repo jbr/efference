@@ -64,8 +64,8 @@ pub(super) struct RawBash {
 }
 
 /// The `[transport]` table (docs/transport.md). The two durations are seconds,
-/// like `[bash]`'s knobs; absent → [`crate::api::DEFAULT_STREAM_CEILING`] and
-/// [`crate::daemon::DEFAULT_KEEPALIVE_INTERVAL`].
+/// like `[bash]`'s knobs; absent → [`crate::api::DEFAULT_STREAM_CEILING`] and the
+/// provider's derived keepalive interval ([`crate::daemon::keepalive_interval`]).
 #[derive(Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 pub(super) struct RawTransport {
@@ -402,10 +402,7 @@ pub(super) fn validate(raw: RawConfig) -> Result<Config, ValidationError> {
                 .transport
                 .stream_ceiling
                 .map_or(crate::api::DEFAULT_STREAM_CEILING, Duration::from_secs),
-            keepalive_interval: raw.transport.keepalive_interval.map_or(
-                crate::daemon::DEFAULT_KEEPALIVE_INTERVAL,
-                Duration::from_secs,
-            ),
+            keepalive_interval: raw.transport.keepalive_interval.map(Duration::from_secs),
         },
     })
 }

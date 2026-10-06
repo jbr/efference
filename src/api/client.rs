@@ -650,6 +650,21 @@ impl Client {
         turns: &[WireTurn],
         tools: &[Value],
         tool_choice: ToolChoice,
+        on_delta: impl FnMut(Streamed),
+    ) -> Result<Completion, Error> {
+        self.send(turns, tools, tool_choice, None, on_delta).await
+    }
+
+    /// [`Self::complete`], with the output cap fixed at `cap` instead of reserved
+    /// against the window when one is given. A fixed cap is sent as-is, also on the
+    /// Codex profile that otherwise omits it, and a refusal of it is not retried at
+    /// another value: the caller chose it (the Responses keepalive, docs/transport.md).
+    async fn send(
+        &self,
+        turns: &[WireTurn],
+        tools: &[Value],
+        tool_choice: ToolChoice,
+        cap: Option<u32>,
         mut on_delta: impl FnMut(Streamed),
     ) -> Result<Completion, Error> {
         // A turn list recorded in the other dialect never becomes a request: the
@@ -685,7 +700,7 @@ impl Client {
                 Encoded::Responses(input) => serde_json::to_vec(input)?.len(),
             }
             + serde_json::to_vec(tools)?.len();
-        let mut max_tokens = self.reserve(body_bytes);
+        let mut max_tokens = cap.unwrap_or_else(|| self.reserve(body_bytes));
         // The credential re-read below happens at most once per call: a source
         // that yields a working token yields it the first time, and a second
         // pass would only re-read the same bytes.
@@ -736,6 +751,7 @@ impl Client {
                     tools,
                     &tool_choice,
                     max_tokens,
+                    cap.is_some(),
                 ))?,
             };
             log::debug!(
@@ -780,15 +796,18 @@ impl Client {
                     // undershot and the provider named the overrun, so halve
                     // the reservation and go again — once per halving, down to
                     // the floor. Any other open failure stays terminal.
-                    let overran = status == Some(Status::BadRequest) && is_window_overflow(&detail);
+                    let overran = cap.is_none()
+                        && status == Some(Status::BadRequest)
+                        && is_window_overflow(&detail);
                     // The other reservation 400: the cap itself is above what the
                     // model accepts, which is what an *unreported* cap
                     // (`UNKNOWN_OUTPUT_CAP`) risks. Where the provider names its
                     // ceiling the retry goes straight there; where it does not,
                     // the same halving applies.
-                    let rejected = (status == Some(Status::BadRequest) && !overran)
-                        .then(|| output_cap_rejection(&detail))
-                        .flatten();
+                    let rejected =
+                        (cap.is_none() && status == Some(Status::BadRequest) && !overran)
+                            .then(|| output_cap_rejection(&detail))
+                            .flatten();
                     // A statement rather than a condition, so the reservation
                     // guard is released here: the `continue` below re-enters the
                     // request path, which reads the reservation again.
@@ -1016,6 +1035,7 @@ impl Client {
         tools: &[Value],
         tool_choice: &ToolChoice,
         max_output_tokens: u32,
+        capped: bool,
     ) -> responses::ResponsesRequest<'a> {
         let reasoning = self.model_reasoning.then(|| responses::Reasoning {
             effort: self.effort.clone(),
@@ -1054,7 +1074,9 @@ impl Client {
                 store: false,
                 include: Some(vec!["reasoning.encrypted_content"]),
                 truncation: None,
-                max_output_tokens: None,
+                // Omitted as Codex CLI omits it, except where a caller fixed the cap:
+                // the backend enforces one with a minimum of 16 (docs/transport.md).
+                max_output_tokens: capped.then_some(max_output_tokens),
                 reasoning,
                 temperature: None,
                 prompt_cache_key: self.prompt_cache_key(),
@@ -1144,20 +1166,17 @@ impl Client {
     /// takes the caller's `messages` / `tools` / `tool_choice` (the loop's
     /// `auto()`) and reuses the client's own `system`, rather than reconstructing
     /// any of them.
+    ///
+    /// On the Responses dialect the ping is an ordinary streamed request with the
+    /// output capped at [`RESPONSES_KEEPALIVE_CAP`] ([`Self::responses_keepalive`]).
     pub async fn keepalive(
         &self,
         turns: &[WireTurn],
         tools: &[Value],
         tool_choice: ToolChoice,
     ) -> Result<RequestUsage, KeepaliveError> {
-        // Responses has no `max_tokens: 0` read primitive established
-        // (backlog: openai-provider/validation.md); the daemon does not start the
-        // loop on that dialect, so this is a guard, not a path.
         if self.dialect() == WireDialect::Responses {
-            return Err(KeepaliveError::Status {
-                status: Some(400),
-                body: "keepalive is not supported on the Responses dialect".to_string(),
-            });
+            return self.responses_keepalive(turns, tools, tool_choice).await;
         }
         let messages = encode_messages(turns, self.image_placement(), self.breakpoint_placement());
         let messages = &messages;
@@ -1219,7 +1238,45 @@ impl Client {
             usage: parsed.usage,
         })
     }
+
+    /// The Responses keepalive (docs/transport.md): the turn's own envelope, streamed,
+    /// with the output capped at [`RESPONSES_KEEPALIVE_CAP`]. The dialect has no
+    /// `max_tokens: 0`, and the Codex backend resumes a cached prefix only where an
+    /// earlier request ended, so the ping re-sends the last request's input whole —
+    /// what the keepalive loop's lopped projection is — and pays a cached read plus
+    /// the capped output.
+    async fn responses_keepalive(
+        &self,
+        turns: &[WireTurn],
+        tools: &[Value],
+        tool_choice: ToolChoice,
+    ) -> Result<RequestUsage, KeepaliveError> {
+        let completion = self
+            .send(
+                turns,
+                tools,
+                tool_choice,
+                Some(RESPONSES_KEEPALIVE_CAP),
+                |_| {},
+            )
+            .await
+            .map_err(|e| match e.downcast_ref::<OpenError>() {
+                Some(open) => KeepaliveError::Status {
+                    status: open.status(),
+                    body: open.to_string(),
+                },
+                None => KeepaliveError::Other(e),
+            })?;
+        if let Some(why) = completion.upstream_failure() {
+            return Err(KeepaliveError::other(why.to_string()));
+        }
+        Ok(completion.request_usage())
+    }
 }
+
+/// The output cap on a Responses keepalive: the Codex backend's minimum
+/// (`max_output_tokens` below 16 is refused; probed 2026-10-02, docs/transport.md).
+pub const RESPONSES_KEEPALIVE_CAP: u32 = 16;
 
 /// One request's encoded conversation, per dialect.
 enum Encoded {

@@ -156,16 +156,16 @@ fn parses_the_transport_keepalive_interval() {
             keepalive-interval = 45
             "#,
     );
-    assert_eq!(role.transport.keepalive_interval, Duration::from_secs(45));
     assert_eq!(
-        parse_str("").transport.keepalive_interval,
-        crate::daemon::DEFAULT_KEEPALIVE_INTERVAL
+        role.transport.keepalive_interval,
+        Some(Duration::from_secs(45))
     );
+    assert_eq!(parse_str("").transport.keepalive_interval, None);
     assert!(
         parse_str("[transport]\nkeepalive-interval = 0\n")
             .transport
             .keepalive_interval
-            .is_zero()
+            .is_some_and(|interval| interval.is_zero())
     );
 }
 

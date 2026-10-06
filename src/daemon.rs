@@ -1209,7 +1209,7 @@ use topics::{StateUpdate, watch_topics};
 use attachments::attachments_watch_loop;
 use http::LogSelect;
 pub use http::mint_submission_id;
-pub use keepalive::DEFAULT_KEEPALIVE_INTERVAL;
+pub use keepalive::keepalive_interval;
 use keepalive::keepalive_loop;
 use watch::config_watch_loop;
 

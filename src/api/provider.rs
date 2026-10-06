@@ -268,6 +268,22 @@ impl Provider {
     }
 
     /// The Responses request shape, for providers on that dialect.
+    /// How long this provider's prompt cache keeps an entry after its last write or
+    /// read, as far as anything says (docs/transport.md): the keepalive's cadence
+    /// derives from it. OpenAI documents 30 minutes since the last write or reuse for
+    /// GPT-5.6+ and other sources say 20–30, so its two arms take the low end;
+    /// Anthropic's default is 5 minutes. Everything else documents nothing, and
+    /// OpenRouter's endpoint metadata carries no lifetime, so 5 minutes stands as
+    /// the conservative reading.
+    pub fn cache_ttl(&self) -> std::time::Duration {
+        match self {
+            Self::OpenAI | Self::OpenAICodex => std::time::Duration::from_secs(20 * 60),
+            Self::Anthropic | Self::OpenRouter | Self::TypeSafe | Self::Custom(_) => {
+                std::time::Duration::from_secs(5 * 60)
+            }
+        }
+    }
+
     pub fn responses_profile(&self) -> ResponsesProfile {
         match self {
             Self::OpenAICodex => ResponsesProfile::Codex,

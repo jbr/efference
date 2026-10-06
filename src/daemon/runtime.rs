@@ -75,7 +75,11 @@ impl SessionRuntime {
         let swansong = parent.child();
         // The keepalive interval, read off the config before it moves into `Session`
         // (docs/transport.md).
-        let ping_at = role.role.transport.keepalive_interval;
+        let ping_at = role
+            .role
+            .transport
+            .keepalive_interval
+            .unwrap_or_else(|| keepalive_interval(client.endpoint().provider.cache_ttl()));
         // The kickoff (docs/context.md), read before the config moves into `Session`.
         let first_turn = role.role.first_turn.clone();
         let scratch = toolbox.scratch_dir().map(std::path::Path::to_path_buf);
@@ -113,11 +117,7 @@ impl SessionRuntime {
         session.set_autonomous(autonomous);
         // Whether this model has a prompt cache to keep warm at all
         // (docs/transport.md) — read before the capabilities move into `Session`.
-        // The keepalive is a Messages-dialect primitive (`max_tokens: 0`); Responses has
-        // no established cheap read (backlog: openai-provider/validation.md), so the
-        // loop never starts there and the boot line says so.
-        let cacheable = capabilities.prompt_cache.is_supported()
-            && client.dialect() == crate::api::WireDialect::Messages;
+        let cacheable = capabilities.prompt_cache.is_supported();
         // The boot-fetched model capabilities (docs/transport.md) — the caller already
         // treated a failed lookup as fatal, so by here the value always exists.
         session.set_capabilities(capabilities);
@@ -185,8 +185,6 @@ impl SessionRuntime {
                 tools,
                 ping_at,
             )));
-        } else if client.dialect() == crate::api::WireDialect::Responses {
-            eprintln!("[keepalive off: no established refresh primitive on the Responses dialect]");
         } else if !cacheable {
             eprintln!(
                 "[keepalive off: {} reports no prompt cache behind this model]",

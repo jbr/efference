@@ -112,6 +112,7 @@ pub fn classify_body(body: &str) -> FailureClass {
 pub struct OpenError {
     message: String,
     class: FailureClass,
+    status: Option<u16>,
 }
 
 impl OpenError {
@@ -131,7 +132,16 @@ impl OpenError {
             },
             Some(_) => FailureClass::Terminal,
         };
-        Self { message, class }
+        Self {
+            message,
+            class,
+            status,
+        }
+    }
+
+    /// The HTTP status the upstream answered with; `None` when no response arrived.
+    pub fn status(&self) -> Option<u16> {
+        self.status
     }
 }
 

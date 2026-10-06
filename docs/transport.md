@@ -828,9 +828,14 @@ guide lists explicit breakpoints as a GPT-5.6-family feature on the platform, so
 is the backend, not the model, that is presumed to refuse them (backlog:
 openai-provider/validation.md).
 
-**Not on this dialect.** The `max_tokens: 0` keepalive is a Messages primitive; the
-daemon never starts the loop on Responses (backlog: openai-provider/validation.md).
-OpenAI exposes no per-generation cost endpoint, so cost tracking stays off. The
+**The keepalive on this dialect** has no `max_tokens: 0`: its ping is the turn's own
+streamed envelope with `max_output_tokens` fixed at 16, the Codex backend's minimum
+(`RESPONSES_KEEPALIVE_CAP`), sent on the Codex profile too though a turn there omits the
+field. The backend resumes a cached prefix only where an earlier request ended
+(backlog: separate-triage-cold-prefix.md), and the keepalive loop's lopped projection is
+exactly the last request's input, so the ping reads it whole and refreshes it: a cached
+read plus 16 output tokens. A capped request that the upstream refuses is not retried at
+another cap. OpenAI exposes no per-generation cost endpoint, so cost tracking stays off. The
 spotter model must be one its connection's metadata source knows: with no
 `[defaults].spotter` and no connection reaching jev, the main connection's cheap band applies
 (`Provider::default_spotter_model`, gpt-5.6-luna here, claude-haiku-4-5 on
@@ -1548,11 +1553,13 @@ input rate every interval, which is the one way this mechanism can cost more
 than it saves.
 
 `[transport] keepalive-interval` (seconds, `config::TransportLimits`) is how long
-the cached prefix may go untouched before the ping. The default is **240** — a
-margin under Anthropic's five-minute ephemeral TTL — and it is a default rather
-than a constant because the TTL is a provider fact the harness reads nowhere: a
-provider with a shorter window needs a shorter interval to stay warm, and one
-with a longer window is paying for pings it does not need. **Zero turns the
+the cached prefix may go untouched before the ping. Absent, it is four fifths of the
+provider's cache lifetime (`Provider::cache_ttl`, `daemon::keepalive_interval`): 240
+seconds against the five minutes Anthropic documents and the conservative reading for
+providers that document nothing, 16 minutes on OpenAI's two arms, whose documented 30
+minutes since the last write or reuse is reported elsewhere as 20–30
+(journal/2026-10-05-cache-lifetime-corpus.md has what the corpus saw). No provider
+exposes the lifetime to query, so a set value is the override. **Zero turns the
 keepalive off**, which is the honest spelling for that intent — a separate
 boolean could disagree with the interval sitting beside it. The poll period
 follows the interval (a quarter of it, capped at 20s) so the ping lands near the

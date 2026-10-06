@@ -331,3 +331,87 @@ async fn a_codex_request_carries_its_headers_and_no_anthropic_version() {
     assert!(!head.contains("anthropic-version"), "{head}");
     assert!(head.contains("content-type: application/json"), "{head}");
 }
+
+/// The Responses keepalive (docs/transport.md) is the turn's own envelope with the
+/// output capped at the backend's minimum, which the Codex profile otherwise omits;
+/// a turn still sends no cap. Its usage comes back as the ping's, cached read
+/// included.
+#[tokio::test]
+async fn codex_keepalive_caps_output_where_a_turn_sends_no_cap() {
+    use std::io::{Read, Write};
+
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let server = std::thread::spawn(move || {
+        let mut requests = Vec::new();
+        for _ in 0..2 {
+            let (mut sock, _) = listener.accept().unwrap();
+            // Head and body can arrive in separate reads: read to the body's length.
+            let mut request = Vec::new();
+            let mut buf = vec![0u8; 65536];
+            loop {
+                let n = sock.read(&mut buf).unwrap();
+                request.extend_from_slice(&buf[..n]);
+                let text = String::from_utf8_lossy(&request).to_ascii_lowercase();
+                let Some((head, body)) = text.split_once("\r\n\r\n") else {
+                    continue;
+                };
+                let length = head
+                    .lines()
+                    .find_map(|l| l.strip_prefix("content-length: "))
+                    .and_then(|v| v.trim().parse::<usize>().ok())
+                    .unwrap_or(0);
+                if n == 0 || body.len() >= length {
+                    break;
+                }
+            }
+            requests.push(String::from_utf8_lossy(&request).to_string());
+            let body = "event: response.completed\ndata: {\"type\":\"response.completed\",\
+                        \"response\":{\"id\":\"r\",\"status\":\"completed\",\"output\":[],\
+                        \"usage\":{\"input_tokens\":1000,\"input_tokens_details\":\
+                        {\"cached_tokens\":900},\"output_tokens\":16}}}\n\n";
+            sock.write_all(
+                format!(
+                    "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\n\
+                     connection: close\r\ncontent-length: {}\r\n\r\n{body}",
+                    body.len()
+                )
+                .as_bytes(),
+            )
+            .unwrap();
+            sock.flush().unwrap();
+        }
+        requests
+    });
+
+    let endpoint = Endpoint {
+        provider: Provider::OpenAICodex,
+        url: Some(format!("http://{addr}/backend-api/codex/responses")),
+        auth_header: "authorization".into(),
+        auth_value: "Bearer k".into(),
+        session_id: None,
+        extra_headers: Vec::new(),
+        base: None,
+    };
+    let client = Client::new(endpoint, "gpt-6.1-sol", "sys", None);
+    client
+        .complete(&[], &[], ToolChoice::auto(), |_| {})
+        .await
+        .unwrap();
+    let ping = client
+        .keepalive(&[], &[], ToolChoice::auto())
+        .await
+        .unwrap();
+    assert_eq!(ping.usage.cache_read_input_tokens, 900);
+    assert_eq!(ping.usage.output_tokens, 16);
+
+    let requests = server.join().unwrap();
+    assert!(
+        !requests[0].contains("max_output_tokens"),
+        "a turn sends no cap"
+    );
+    assert!(
+        requests[1].contains(r#""max_output_tokens":16"#),
+        "the ping caps its output"
+    );
+}

@@ -117,12 +117,11 @@ pub struct TransportLimits {
     /// loop stops waiting on it.
     pub stream_ceiling: Duration,
     /// How long the cached prefix may go untouched at idle before the keepalive
-    /// pings it (docs/transport.md). The default sits under Anthropic's
-    /// five-minute ephemeral TTL; a provider with a shorter one needs a shorter
-    /// interval, and one with a longer one is being pinged more often than it
-    /// needs. **Zero turns the keepalive off** — the honest spelling for "do not
-    /// ping", rather than a separate boolean that could disagree with it.
-    pub keepalive_interval: Duration,
+    /// pings it (docs/transport.md). `None` derives it from the provider's cache
+    /// lifetime ([`crate::api::Provider::cache_ttl`]), so a set value is an override.
+    /// **Zero turns the keepalive off** — the honest spelling for "do not ping",
+    /// rather than a separate boolean that could disagree with it.
+    pub keepalive_interval: Option<Duration>,
     /// How much effort the model spends per turn (docs/transport.md) — the level
     /// axis beside the thinking type. Held as the configured string verbatim:
     /// the vocabulary is the model's metadata, not a local enum, so a level the
@@ -139,7 +138,7 @@ impl Default for TransportLimits {
     fn default() -> Self {
         Self {
             stream_ceiling: crate::api::DEFAULT_STREAM_CEILING,
-            keepalive_interval: crate::daemon::DEFAULT_KEEPALIVE_INTERVAL,
+            keepalive_interval: None,
             effort: None,
         }
     }

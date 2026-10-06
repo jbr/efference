@@ -3,10 +3,12 @@
 use super::*;
 
 /// How long the cached prefix may go untouched before the keepalive pings it,
-/// absent a `[transport] keepalive-interval` (docs/transport.md). A default
-/// rather than a constant because the TTL is a provider fact the harness reads
-/// nowhere.
-pub const DEFAULT_KEEPALIVE_INTERVAL: Duration = Duration::from_secs(240);
+/// absent a `[transport] keepalive-interval` (docs/transport.md): four fifths of the
+/// provider's cache lifetime, so a ping lands with a margin before the entry it
+/// refreshes would expire. Four minutes against a five-minute cache.
+pub fn keepalive_interval(cache_ttl: Duration) -> Duration {
+    cache_ttl * 4 / 5
+}
 
 /// How many prefix tokens must stand behind each token the ping discards for the
 /// ping to still be worth sending (docs/transport.md). A `max_tokens: 0` ping is
