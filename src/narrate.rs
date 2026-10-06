@@ -8,7 +8,7 @@
 
 use crate::api::{Client, RequestUsage, ToolChoice};
 use crate::digest;
-use crate::log::{LogEntry, Seq};
+use crate::log::{Audience, LogEntry, Mark, MarkKind, Payload, Seq};
 use crate::project::WireTurn;
 use serde_json::Value;
 
@@ -45,11 +45,15 @@ pub enum Error {
     Empty,
 }
 
-/// The request's one user turn: the digest of `entries`, with the cut marked when
-/// there is one, then the narrator's instructions.
+/// The request's one user turn: the accounts earlier folds left, when there are any;
+/// the digest of what came after the latest of them, with the cut marked when there is
+/// one; then the narrator's instructions.
 ///
-/// The digest comes first and the instructions after it, the order the eval narrated
-/// in (eval/compaction/README.md).
+/// The earlier accounts are context, not material: the projection keeps each fold's
+/// account in order (docs/summary-head.md), so the reader already has them above the
+/// new one, and narrating them again would summarize a summary. The digest comes first
+/// and the instructions after it, the order the eval narrated in
+/// (eval/compaction/README.md).
 pub fn request(entries: &[LogEntry], cut: Option<Seq>) -> Result<Vec<WireTurn>, Error> {
     if let Some(cut) = cut {
         let calls = crate::consolidate::split_calls(entries, cut);
@@ -57,15 +61,36 @@ pub fn request(entries: &[LogEntry], cut: Option<Seq>) -> Result<Vec<WireTurn>, 
             return Err(Error::SplitsCall { cut, calls });
         }
     }
+    let mut earlier = String::new();
+    let mut covered = None;
+    for entry in entries {
+        if let Payload::Mark(Mark {
+            kind: MarkKind::Boundary { upto },
+            note,
+            audience: Audience::All,
+            ..
+        }) = &entry.payload
+        {
+            earlier.push_str(EARLIER);
+            earlier.push_str(account_of(note));
+            earlier.push_str("\n\n");
+            covered = Some(covered.map_or(*upto, |c: Seq| c.max(*upto)));
+        }
+    }
+    let after: Vec<LogEntry> = entries
+        .iter()
+        .filter(|e| covered.is_none_or(|c| e.seq > c) && !matches!(e.payload, Payload::Mark(_)))
+        .cloned()
+        .collect();
     let digest = digest::render(
-        entries,
+        &after,
         digest::Options {
             cut,
             ..Default::default()
         },
     );
     Ok(vec![WireTurn::text(format!(
-        "{}\n\n---\n\n{}",
+        "{earlier}{}\n\n---\n\n{}",
         digest.trim_end(),
         PROMPT.trim_end()
     ))])
@@ -111,9 +136,18 @@ fn account(completion: &crate::api::Completion) -> Result<String, Error> {
     Ok(account)
 }
 
+/// The heading over an earlier fold's account in the narrator's request.
+pub const EARLIER: &str = "### earlier account: already in the reader's context, above yours\n";
+
 /// The harness's header above the narrator's account.
 pub fn head(account: &str) -> String {
     format!("{}\n\n{}", HEADER.trim_end(), account.trim())
+}
+
+/// A head's account without the harness's header: what an earlier fold told the
+/// reader, for the next narrator to read as context.
+fn account_of(note: &str) -> &str {
+    note.strip_prefix(HEADER.trim_end()).unwrap_or(note).trim()
 }
 
 #[cfg(test)]

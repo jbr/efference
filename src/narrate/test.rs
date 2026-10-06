@@ -120,3 +120,32 @@ fn the_head_is_the_header_then_the_account() {
     assert!(head.starts_with("This is a handoff summary"));
     assert!(head.ends_with("---\n\nThe account."));
 }
+
+/// A second fold reads the first one's account as context and narrates only what came
+/// after it: the account leads under its heading, without the harness's header, and
+/// the digest starts past the earlier fold's `upto`.
+#[test]
+fn a_second_fold_reads_the_first_account_and_narrates_only_after_it() {
+    let mut entries = log();
+    entries.insert(
+        4,
+        entry(
+            7,
+            Payload::Mark(Mark::boundary(3, head("The first account."))),
+        ),
+    );
+    let turns = request(&entries, None).unwrap();
+    let text = text(&turns);
+    assert!(
+        text.starts_with(&format!("{EARLIER}The first account.\n\n")),
+        "{text}"
+    );
+    let after: Vec<LogEntry> = log().into_iter().filter(|e| e.seq > 3).collect();
+    let digest = digest::render(&after, digest::Options::default());
+    assert!(text.contains(digest.trim_end()), "{text}");
+    assert_eq!(
+        text.matches("find the enum").count(),
+        0,
+        "the operator turn before the earlier fold is not re-narrated"
+    );
+}

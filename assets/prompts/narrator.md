@@ -25,6 +25,12 @@ A digest of the session, in order, with four kinds of block:
 That is all you have. You cannot see file contents, diffs, or command output beyond what
 the notes say.
 
+The session may have been summarized before. Each earlier account comes first, under
+`### earlier account: already in the reader's context, above yours`, and the digest
+after them starts where they end. The reader keeps those accounts and reads yours after
+them: write the account of the digest only, starting where the last earlier account
+stops, and do not retell what they say. Refer back to them when it helps.
+
 The digest may contain the line `### cut: your account ends here; what follows stays
 verbatim`. If it does, write your account of everything before that line. Everything
 after it will sit directly below your account, in full, so the reader sees it as it

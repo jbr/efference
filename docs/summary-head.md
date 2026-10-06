@@ -59,6 +59,15 @@ that would separate a call from its result is refused before any request
 (`consolidate::split_calls`), since a boundary there could not project. Choosing the cut
 belongs to the caller (backlog/cold-session.md).
 
+## A session folded more than once
+
+The projection keeps every boundary's account, in order, ahead of the entries after the
+latest one, so a later fold adds an account rather than replacing the earlier ones. Its
+narrator is given the earlier accounts first, under `narrate::EARLIER` and without
+their headers, as what the reader already has, then a digest of only the entries past
+the latest fold's `upto`. It narrates from where the last account stops and does not
+retell it: an account of an account would compound the losses of both.
+
 ## The mark
 
 A `Mark` gains two fields, both defaulted so existing logs deserialize unchanged:
