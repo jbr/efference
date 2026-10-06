@@ -178,6 +178,12 @@ impl SessionRuntime {
         // there is an entry to read. **Interval zero**: the operator turned it off.
         // The runtime tripwire inside the loop stays as well; it catches the endpoint
         // that claims a cache and reasons on the ping anyway (docs/transport.md).
+        // The cold state (backlog: cold-session.md) exists only where there is a cache
+        // to lose; its watcher publishes the moment the belief turns.
+        if cacheable {
+            session.set_cache_ttl(client.endpoint().provider.cache_ttl());
+            tokio::spawn(swansong.interrupt(super::cold::cold_watch(Arc::clone(&session))));
+        }
         if cacheable && !ping_at.is_zero() {
             tokio::spawn(swansong.interrupt(keepalive_loop(
                 Arc::clone(&client),

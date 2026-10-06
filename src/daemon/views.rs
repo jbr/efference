@@ -32,6 +32,7 @@ impl Session {
             Topic::Stall => self.stall_json(),
             Topic::UpstreamFailure => self.upstream_failure_json(),
             Topic::UpstreamRetry => self.upstream_retry_json(),
+            Topic::Cold => self.cold_json(),
             Topic::ConfigRepair => self.config_repair_json(),
             Topic::SessionIdentity => self.session_identity_json(),
         }

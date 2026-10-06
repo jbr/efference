@@ -121,6 +121,10 @@ pub(crate) enum Topic {
     /// A retry in flight — which surface, which attempt, of what budget
     /// (docs/transport.md). `null` when nothing is being retried.
     UpstreamRetry,
+    /// The session's prompt cache is believed to have expired (backlog:
+    /// cold-session.md): `{since, context_tokens}`, `null` while it is believed warm,
+    /// before the first request, and on a model with no cache.
+    Cold,
     /// The config file on disk does not parse and could not be restored, so the
     /// loop is parked until a human repairs it (docs/permissions.md). `null`
     /// whenever the file parses — which is nearly always, since a bad edit is
@@ -139,7 +143,7 @@ impl Topic {
     /// walking it, so a topic added here reaches both surfaces or neither — which is
     /// what keeps `GET /state` equal to the fold of every state frame
     /// (docs/control-api.md).
-    pub(crate) const ALL: [Topic; 17] = [
+    pub(crate) const ALL: [Topic; 18] = [
         Self::Gate,
         Self::Ask,
         Self::Processes,
@@ -155,6 +159,7 @@ impl Topic {
         Self::Stall,
         Self::UpstreamFailure,
         Self::UpstreamRetry,
+        Self::Cold,
         Self::ConfigRepair,
         Self::SessionIdentity,
     ];
@@ -184,6 +189,7 @@ impl Topic {
             Self::Stall => "stall",
             Self::UpstreamFailure => "upstream_failure",
             Self::UpstreamRetry => "upstream_retry",
+            Self::Cold => "cold",
             Self::ConfigRepair => "config_repair",
             Self::SessionIdentity => "session_identity",
         }

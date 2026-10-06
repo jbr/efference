@@ -299,7 +299,8 @@ impl Session {
 
     /// Set the clocks from a `usage.jsonl` written before this process: the touch clock
     /// from the last request on the main prefix, the real-turn clock from the last
-    /// request that was not a ping. A line that does not parse is skipped.
+    /// request that was not a ping, and the last turn's usage. A line that does not parse
+    /// is skipped.
     fn seed_clocks(&self, record: &str) {
         let lines: Vec<UsageLine> = record
             .lines()
@@ -324,6 +325,15 @@ impl Session {
         }
         if let Some(at_ms) = last(|o| o != RequestOrigin::Keepalive) {
             m.last_real_turn_at = instant(at_ms);
+        }
+        // The context readout and the cold topic's size read the last turn's prompt.
+        if let Some(turn) = lines.iter().rfind(|l| l.origin == RequestOrigin::Turn) {
+            m.last_turn_usage = Some(Usage {
+                input_tokens: turn.input,
+                output_tokens: turn.output,
+                cache_read_input_tokens: turn.cache_read,
+                cache_creation_input_tokens: turn.cache_write,
+            });
         }
     }
 

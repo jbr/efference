@@ -718,3 +718,38 @@ fn state_reports_plan_windows_under_usage() {
         })
     );
 }
+
+/// The `cold` topic (backlog: cold-session.md): `null` on a model with no cache and
+/// while warm; once the last turn is older than the cache lifetime, the instant the
+/// belief began and the context a cold read would pay for. A restarted host reads both
+/// from `usage.jsonl`.
+#[test]
+fn cold_topic_reports_an_expired_cache() {
+    let usage_path = std::env::temp_dir().join("efference-cold-topic-test-usage.jsonl");
+    let at = crate::log::Timestamp::now().0 - 10 * 60_000;
+    std::fs::write(
+        &usage_path,
+        format!(
+            "{{\"at_ms\":{at},\"origin\":\"turn\",\"input\":40,\"cache_read\":9000,\"cache_write\":960}}\n"
+        ),
+    )
+    .unwrap();
+    let cold = |ttl: Option<Duration>| {
+        let (shared, _turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+        shared.attach_usage_log(&usage_path);
+        if let Some(ttl) = ttl {
+            shared.set_cache_ttl(ttl);
+        }
+        let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
+        v["cold"].clone()
+    };
+    assert!(cold(None).is_null(), "no cache, no cold state");
+    assert!(
+        cold(Some(Duration::from_secs(20 * 60))).is_null(),
+        "still warm"
+    );
+    assert_eq!(
+        cold(Some(Duration::from_secs(5 * 60))),
+        serde_json::json!({ "since": at + 5 * 60_000, "context_tokens": 10_000 })
+    );
+}

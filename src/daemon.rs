@@ -223,6 +223,9 @@ pub struct Session {
     /// binds, never to a session (docs/web-client.md) — and read by the push
     /// sender: a notification opens this path (docs/web-push.md).
     web_path: std::sync::OnceLock<String>,
+    /// The provider's cache lifetime, set at boot only when the model has a prompt
+    /// cache; the `cold` topic reads it (`daemon/cold.rs`).
+    cache_ttl: std::sync::OnceLock<Duration>,
     /// The loop appends under this lock; handlers snapshot it for `GET /log`.
     /// The lock is only ever held across the
     /// synchronous `project`/append — never an `await`.
@@ -749,6 +752,7 @@ impl Session {
             storage_base: std::sync::OnceLock::new(),
             attachment_store: std::sync::OnceLock::new(),
             web_path: std::sync::OnceLock::new(),
+            cache_ttl: std::sync::OnceLock::new(),
             log: Mutex::new(log),
             image_placement,
             turns_tx,
@@ -1151,6 +1155,7 @@ mod approvals;
 mod ask;
 mod attachments;
 mod background;
+mod cold;
 mod config_edits;
 mod continuation;
 mod entry_view;

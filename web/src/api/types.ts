@@ -495,6 +495,13 @@ export interface UpstreamFailure {
   count: number;
 }
 
+// The session's prompt cache is believed expired (docs/control-api.md). `null`
+// while it is believed warm. `since` is absolute Unix millis.
+export interface Cold {
+  since: number;
+  context_tokens: number | null;
+}
+
 // A retry in flight (docs/transport.md). Level-triggered: `null` is the
 // all-clear — the attempt that finalized, or exhaustion.
 export interface UpstreamRetry {
@@ -595,6 +602,7 @@ export interface StateTopics {
   stall?: Stall | null;
   upstream_failure?: UpstreamFailure | null;
   upstream_retry?: UpstreamRetry | null;
+  cold?: Cold | null;
   session_identity?: SessionIdentity | null;
 }
 

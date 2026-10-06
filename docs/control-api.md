@@ -725,6 +725,14 @@ not a topic — it is the log's cursor rather than control state, and sits outsi
     "message": "attempt 2 of 12 failed upstream, retrying",  // leads with what is happening
     "detail": "upstream SSE stream failed mid-stream: connection reset"
   },
+  "cold": {                        // null while the prompt cache is believed warm, before
+                                   //   the first turn, and on a model with no cache
+    "since": 1754300300000,        // absolute Unix millis: the last turn or keepalive
+                                   //   ping plus the provider's cache lifetime
+                                   //   (transport.md; backlog: cold-session.md)
+    "context_tokens": 48210        // the last turn's prompt: what a cold read would pay,
+                                   //   or null before a turn's usage is known
+  },
   "config_repair": {               // null whenever the config file parses (permissions.md)
     "path": "/repo/.efference/work/config.toml",  // the file a human has to fix
     "at": 1754300000000,           // absolute Unix millis at which the loop parked
