@@ -7,6 +7,7 @@ use super::*;
 async fn cold_session() -> (Arc<Session>, mpsc::UnboundedReceiver<SubmittedTurn>) {
     let (shared, rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
     shared.set_cache_ttl(Duration::ZERO);
+    append_foldable_history(&shared);
     shared.record_request(
         RequestOrigin::Turn,
         crate::api::RequestUsage {
@@ -106,4 +107,25 @@ async fn the_client_names_a_cold_refusal_and_carries_consent() {
         .await
         .unwrap();
     assert!(shared.cold_consent.load(Ordering::SeqCst));
+}
+
+/// A session with nothing to fold is not cold: with one answer there is no question to
+/// put, so its next send goes through without consent.
+#[tokio::test]
+async fn nothing_to_fold_is_not_cold() {
+    let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    shared.set_cache_ttl(Duration::ZERO);
+    shared
+        .append(1, Payload::User(vec![ContentBlock::Text("hi".into())]))
+        .unwrap();
+    shared.record_request(
+        RequestOrigin::Turn,
+        crate::api::RequestUsage {
+            id: None,
+            model: None,
+            usage: crate::api::Usage::default(),
+        },
+    );
+    tokio::time::sleep(Duration::from_millis(5)).await;
+    assert_eq!(shared.cold_since(), None);
 }

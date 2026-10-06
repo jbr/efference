@@ -737,6 +737,7 @@ fn cold_topic_reports_an_expired_cache() {
     let cold = |ttl: Option<Duration>| {
         let (shared, _turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
         shared.attach_usage_log(&usage_path);
+        append_foldable_history(&shared);
         if let Some(ttl) = ttl {
             shared.set_cache_ttl(ttl);
         }

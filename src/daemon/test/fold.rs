@@ -92,9 +92,7 @@ fn nothing_to_fold_when_the_tail_holds_it_all() {
 async fn a_fold_resets_the_cold_belief_and_the_keepalive() {
     let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
     shared.set_cache_ttl(Duration::ZERO);
-    shared
-        .append(1, Payload::User(vec![ContentBlock::Text("hi".into())]))
-        .unwrap();
+    append_foldable_history(&shared);
     shared.record_request(
         RequestOrigin::Turn,
         crate::api::RequestUsage {
@@ -108,7 +106,7 @@ async fn a_fold_resets_the_cold_belief_and_the_keepalive() {
     assert!(shared.keepalive_clocks().0.is_some());
 
     shared
-        .append(1, Payload::Mark(Mark::boundary(1, "account")))
+        .append(1, Payload::Mark(Mark::boundary(0, "account")))
         .unwrap();
     assert_eq!(shared.cold_since(), None);
     assert_eq!(shared.keepalive_clocks().0, None);

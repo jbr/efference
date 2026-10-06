@@ -761,7 +761,9 @@ not a topic — it is the log's cursor rather than control state, and sits outsi
     "detail": "upstream SSE stream failed mid-stream: connection reset"
   },
   "cold": {                        // null while the prompt cache is believed warm, before
-                                   //   the first turn, and on a model with no cache
+                                   //   the first turn, on a model with no cache, and when
+                                   //   there is nothing to fold (the only answer is the
+                                   //   read, so nothing is asked)
     "since": 1754300300000,        // absolute Unix millis: the last turn or keepalive
                                    //   ping plus the provider's cache lifetime
                                    //   (transport.md; backlog: cold-session.md)

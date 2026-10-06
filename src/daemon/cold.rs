@@ -27,6 +27,10 @@ impl Session {
     ///
     /// Only a request on the current prefix counts: after a fold nothing has sent the
     /// new one, which is the state of a session that has made no request at all.
+    ///
+    /// A session with nothing to fold is not cold either. Cold is a question put to the
+    /// operator — pay the read, or fold — and where everything since the last fold
+    /// fits in the verbatim tail there is only one answer, so nothing is asked.
     pub(crate) fn cold_since(&self) -> Option<Timestamp> {
         let ttl = *self.cache_ttl.get()?;
         let folded = self.last_fold_at();
@@ -36,7 +40,10 @@ impl Session {
             .unwrap()
             .last_request_wall
             .filter(|touch| folded.is_none_or(|fold| touch.0 > fold.0));
-        believed_cold_since(last_touch, Timestamp::now(), ttl)
+        let since = believed_cold_since(last_touch, Timestamp::now(), ttl)?;
+        let log = self.log.lock().unwrap();
+        super::fold::fold_cut(log.entries(), super::fold::FOLD_TAIL_TOKENS)?;
+        Some(since)
     }
 
     /// The `cold` topic: `{since, context_tokens, fold}`, or `null`. `context_tokens` is

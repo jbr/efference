@@ -71,10 +71,14 @@ pub(crate) fn fold_cut(entries: &[LogEntry], budget: usize) -> Option<Seq> {
     }
     // Something besides earlier folds' own marks has to lie between the last fold and
     // the cut, or there is nothing new for an account to cover.
-    let covered = last_fold_upto(entries).unwrap_or(0);
+    let covered = last_fold_upto(entries);
     entries
         .iter()
-        .any(|e| e.seq > covered && e.seq <= cut && !matches!(e.payload, Payload::Mark(_)))
+        .any(|e| {
+            covered.is_none_or(|c| e.seq > c)
+                && e.seq <= cut
+                && !matches!(e.payload, Payload::Mark(_))
+        })
         .then_some(cut)
 }
 
