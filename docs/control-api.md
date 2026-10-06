@@ -669,7 +669,7 @@ not a topic — it is the log's cursor rather than control state, and sits outsi
     "last": { "input_tokens": …, "output_tokens": …,
               "cache_read_input_tokens": …, "cache_creation_input_tokens": … },
     "cumulative": { …same four fields… },
-    "last_request_at": 1754300000000,       // absolute Unix millis, or null before the first request
+    "last_request_at": 1754300000000,       // absolute Unix millis of the last turn or keepalive ping (persists across a host restart), or null before the first
     "context": {                            // null when no capabilities were fetched
       "limit": 200000,                      // the boot-fetched context window (transport.md)
       "used": 9578                          // last request's total prompt tokens; null before the first

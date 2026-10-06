@@ -10,6 +10,21 @@ pub fn keepalive_interval(cache_ttl: Duration) -> Duration {
     cache_ttl * 4 / 5
 }
 
+/// From when the session's cache is believed to have expired (backlog: cold-session.md):
+/// the last request on the main prefix plus the provider's cache lifetime, once `now`
+/// is past it. `None` while it is believed warm, and for a session with no such request
+/// yet, which has nothing cached to lose. A belief, not a measurement: no provider says
+/// whether an entry is still held, so this errs toward cold.
+pub fn believed_cold_since(
+    last_touch: Option<crate::log::Timestamp>,
+    now: crate::log::Timestamp,
+    cache_ttl: Duration,
+) -> Option<crate::log::Timestamp> {
+    let ttl_ms = u64::try_from(cache_ttl.as_millis()).unwrap_or(u64::MAX);
+    let expires = crate::log::Timestamp(last_touch?.0.saturating_add(ttl_ms));
+    (now.0 > expires.0).then_some(expires)
+}
+
 /// How many prefix tokens must stand behind each token the ping discards for the
 /// ping to still be worth sending (docs/transport.md). A `max_tokens: 0` ping is
 /// supposed to generate nothing, but a mandatory-reasoning endpoint reasons anyway

@@ -138,3 +138,22 @@ fn permanent_classification() {
     );
     assert!(!KeepaliveError::other("connection reset").is_permanent());
 }
+
+/// Believed cold from the last main-prefix request plus the cache lifetime, and not
+/// before it; a session that has sent nothing has nothing to lose.
+#[test]
+fn believed_cold_from_last_touch_plus_lifetime() {
+    use crate::daemon::keepalive::believed_cold_since;
+    use crate::log::Timestamp;
+    let ttl = Duration::from_secs(300);
+    let touch = Timestamp(1_000_000);
+    assert_eq!(believed_cold_since(None, Timestamp(9_999_999), ttl), None);
+    assert_eq!(
+        believed_cold_since(Some(touch), Timestamp(1_300_000), ttl),
+        None
+    );
+    assert_eq!(
+        believed_cold_since(Some(touch), Timestamp(1_300_001), ttl),
+        Some(Timestamp(1_300_000))
+    );
+}

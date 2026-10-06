@@ -251,3 +251,66 @@ fn recorded_requests_move_the_published_cold_streak() {
     shared.record_request(RequestOrigin::Turn, turn(9_000));
     assert_eq!(shared.cold_streak(), 0, "a warm read clears the warning");
 }
+
+/// Only turns and keepalive pings stamp the cache-touch clock: a spotter assessment
+/// or a peek may have read some other prefix, and counting it would keep the main
+/// cache looking warm after it expired.
+#[test]
+fn only_main_prefix_requests_stamp_the_touch_clock() {
+    let log_path = std::env::temp_dir().join("efference-touch-origin-test.jsonl");
+    let _ = std::fs::remove_file(&log_path);
+    let (shared, _turns_rx) = Session::new(
+        std::env::current_dir().unwrap(),
+        Log::create(&log_path, None).expect("create log"),
+    );
+    let request = || RequestUsage {
+        id: None,
+        model: None,
+        usage: Usage::default(),
+    };
+    shared.record_request(RequestOrigin::Spot, request());
+    shared.record_request(RequestOrigin::Peek, request());
+    let (touch, turn) = shared.keepalive_clocks();
+    assert_eq!(touch, None, "side requests leave the touch clock alone");
+    assert!(turn.is_some(), "but they are activity for the give-up cap");
+    shared.record_request(RequestOrigin::Turn, request());
+    assert!(shared.keepalive_clocks().0.is_some());
+}
+
+/// A restarted host reads its clocks back from `usage.jsonl`: the touch clock from the
+/// last turn or ping, the real-turn clock from the last request that was not a ping.
+#[test]
+fn attaching_the_usage_record_seeds_the_clocks() {
+    let dir = std::env::temp_dir();
+    let log_path = dir.join("efference-seed-clocks-test.jsonl");
+    let usage_path = dir.join("efference-seed-clocks-test-usage.jsonl");
+    let _ = std::fs::remove_file(&log_path);
+    let now = crate::log::Timestamp::now().0 as u128;
+    let minutes_ago = |m: u128| now - m * 60_000;
+    let lines = [
+        (minutes_ago(30), "turn"),
+        (minutes_ago(20), "keepalive"),
+        (minutes_ago(10), "spot"),
+        (minutes_ago(9), "not-an-origin-this-build-knows"),
+    ];
+    let record: String = lines
+        .iter()
+        .map(|(at, origin)| format!("{{\"at_ms\":{at},\"origin\":\"{origin}\"}}\n"))
+        .chain(std::iter::once("not json\n".to_string()))
+        .collect();
+    std::fs::write(&usage_path, record).unwrap();
+    let (shared, _turns_rx) = Session::new(
+        std::env::current_dir().unwrap(),
+        Log::create(&log_path, None).expect("create log"),
+    );
+    shared.attach_usage_log(&usage_path);
+
+    let (touch, turn) = shared.keepalive_clocks();
+    let minutes = |d: Option<Duration>| d.unwrap().as_secs() / 60;
+    assert_eq!(minutes(touch), 20, "the ping is the last main-prefix touch");
+    assert_eq!(
+        minutes(turn),
+        9,
+        "the last non-ping request is the last activity"
+    );
+}

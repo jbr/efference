@@ -1209,8 +1209,8 @@ use topics::{StateUpdate, watch_topics};
 use attachments::attachments_watch_loop;
 use http::LogSelect;
 pub use http::mint_submission_id;
-pub use keepalive::keepalive_interval;
 use keepalive::keepalive_loop;
+pub use keepalive::{believed_cold_since, keepalive_interval};
 use watch::config_watch_loop;
 
 #[cfg(test)]

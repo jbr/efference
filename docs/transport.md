@@ -1650,8 +1650,11 @@ a deadline; the wall stamp is what clients read. Neither reaches the projection.
 a field that ticks with the clock would make the level-triggered `usage` topic
 re-emit forever (docs/control-api.md). Clients subtract from their own clock.
 
-The fork peek's usage is folded into the metrics cell because the fork reads the
-shared canonical prefix and therefore slides the cache TTL.
+The fork peek's usage is folded into the metrics cell's totals. It does not stamp the
+cache-touch clock: `usage.jsonl` records a peek the same way whether it ran on the
+agent's client or a separate triage client with its own prefix, so only turns and
+keepalive pings count as touching the main prefix (`RequestOrigin::touches_main_prefix`).
+Leaving shared peeks out can only make the cache look colder than it is.
 
 ### keepalive_loop: two clocks
 
@@ -1660,10 +1663,17 @@ cache nears eviction at idle.
 
 Two clocks keep this correct:
 
-- **Cache-touch clock** — stamped by `record_request` (real turns and the fork
-  peek) and by `record_keepalive`. Tracks when the cache was last read.
+- **Cache-touch clock** — stamped by `record_request` for real turns and by
+  `record_keepalive`. Tracks when the main prefix was last read; the cache is
+  believed cold once it is older than the provider's cache lifetime
+  (`keepalive::believed_cold_since`, backlog: cold-session.md).
 - **Real-turn clock** — stamped only by `record_request`. Tracks when a real
   turn last occurred.
+
+Both are seeded from `usage.jsonl` when a session's host attaches the record, from
+the last turn or ping and the last request that was not a ping. A restarted host
+therefore keeps pinging a cache its predecessor kept warm, and a resumed session's
+cache is judged by when it was last read, not by when the host started.
 
 A keepalive refreshes the TTL (`record_keepalive` stamps the touch clock) but
 does not reset the give-up deadline (the real-turn clock is untouched). This

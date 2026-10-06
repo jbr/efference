@@ -26,8 +26,10 @@ pub(super) struct Metrics {
     /// belongs in the cumulative totals and the cost, which is why this is a
     /// second field rather than a filter on the first.
     pub(super) last_turn_usage: Option<Usage>,
-    /// Stamped by **any** request — real turn, fork peek, or keepalive ping. The
-    /// cache-touch clock: decides when to ping.
+    /// Stamped by requests on the main prefix — real turns and keepalive pings
+    /// ([`RequestOrigin::touches_main_prefix`]). The cache-touch clock: decides when to
+    /// ping, and when the session is believed cold (docs/transport.md). Seeded from
+    /// `usage.jsonl` when the record is attached, so a restarted host keeps it.
     pub(super) last_request_at: Option<Instant>,
     /// The same event as [`Metrics::last_request_at`], on the wall clock, for the wire.
     pub(super) last_request_wall: Option<crate::log::Timestamp>,
@@ -90,6 +92,16 @@ pub enum RequestOrigin {
     /// rather than the original one if ever re-serialized).
     #[serde(other)]
     Unknown,
+}
+
+impl RequestOrigin {
+    /// Whether a request of this origin read the main loop's own cached prefix, and so
+    /// refreshed it. Turns and keepalive pings do. A peek, title or triage request may
+    /// run on a separate triage client with a prefix of its own, and `usage.jsonl` does
+    /// not say which; leaving them out can only make the cache look colder than it is.
+    pub fn touches_main_prefix(self) -> bool {
+        matches!(self, Self::Turn | Self::Keepalive)
+    }
 }
 
 /// How long the main-loop prefix may go untouched before a cold read on the next
@@ -268,7 +280,13 @@ impl Session {
     /// Open (append) the per-request usage record at `path`. Not opening one — tests,
     /// offline verbs — just drops the lines; a failure to open is reported and
     /// likewise degrades to in-memory telemetry only, never a dead daemon.
+    ///
+    /// The record already on disk seeds the cache-touch and real-turn clocks
+    /// ([`Self::seed_clocks`]): the provider's cache does not know the host restarted.
     pub fn attach_usage_log(&self, path: &std::path::Path) {
+        if let Ok(text) = std::fs::read_to_string(path) {
+            self.seed_clocks(&text);
+        }
         match std::fs::OpenOptions::new()
             .create(true)
             .append(true)
@@ -276,6 +294,36 @@ impl Session {
         {
             Ok(file) => *self.usage_log.lock().unwrap() = Some(io::BufWriter::new(file)),
             Err(e) => eprintln!("[usage record: could not open {}: {e}]", path.display()),
+        }
+    }
+
+    /// Set the clocks from a `usage.jsonl` written before this process: the touch clock
+    /// from the last request on the main prefix, the real-turn clock from the last
+    /// request that was not a ping. A line that does not parse is skipped.
+    fn seed_clocks(&self, record: &str) {
+        let lines: Vec<UsageLine> = record
+            .lines()
+            .filter_map(|l| serde_json::from_str(l).ok())
+            .collect();
+        let last = |keep: fn(RequestOrigin) -> bool| {
+            lines
+                .iter()
+                .filter(|l| keep(l.origin))
+                .map(|l| l.at_ms)
+                .max()
+        };
+        let now = wall_millis();
+        let instant = |at_ms: u128| {
+            let ago = u64::try_from(now.saturating_sub(at_ms)).unwrap_or(u64::MAX);
+            Instant::now().checked_sub(Duration::from_millis(ago))
+        };
+        let mut m = self.metrics.lock().unwrap();
+        if let Some(at_ms) = last(RequestOrigin::touches_main_prefix) {
+            m.last_request_at = instant(at_ms);
+            m.last_request_wall = Some(crate::log::Timestamp(at_ms as u64));
+        }
+        if let Some(at_ms) = last(|o| o != RequestOrigin::Keepalive) {
+            m.last_real_turn_at = instant(at_ms);
         }
     }
 
@@ -332,6 +380,9 @@ impl Session {
             request.usage.cache_read_input_tokens,
         );
         Self::fold_usage(&mut m, request.usage);
+        if origin.touches_main_prefix() {
+            Self::stamp_touch(&mut m, at_ms);
+        }
         m.last_real_turn_at = Some(Instant::now());
     }
 
@@ -353,6 +404,13 @@ impl Session {
             request.usage.cache_read_input_tokens,
         );
         Self::fold_usage(&mut m, request.usage);
+        Self::stamp_touch(&mut m, at_ms);
+    }
+
+    /// Stamp the cache-touch clock, on both clocks, for a request on the main prefix.
+    fn stamp_touch(m: &mut Metrics, at_ms: u128) {
+        m.last_request_at = Some(Instant::now());
+        m.last_request_wall = Some(crate::log::Timestamp(at_ms as u64));
     }
 
     /// Price one recorded request off the provider's accounting endpoint
@@ -397,8 +455,6 @@ impl Session {
         m.total_output += usage.output_tokens;
         m.total_cache_read += usage.cache_read_input_tokens;
         m.total_cache_creation += usage.cache_creation_input_tokens;
-        m.last_request_at = Some(Instant::now());
-        m.last_request_wall = Some(crate::log::Timestamp::now());
         m.last_usage = Some(usage);
     }
 
