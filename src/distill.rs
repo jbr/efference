@@ -251,6 +251,36 @@ struct OwnPeek {
 /// prompt. Generous enough for a thinking triage model's reasoning.
 pub const PEEK_MAX_OUTPUT: u64 = 16_384;
 
+/// Everything the triage-lineage primer replays (backlog/separate-triage-cold-prefix.md):
+/// the completion's own input, borrowed — byte-identical to the main request by
+/// construction rather than by re-projection (which, built after the assistant turn
+/// landed, would end on an unanswered call and be refused).
+pub struct TriagePrimerInput<'a> {
+    /// The fork peek whose own client carries the triage lineage.
+    pub distiller: &'a ForkPeek,
+    /// The main request's turns, through the breakpoint it sent.
+    pub turns: &'a [WireTurn],
+    /// The main request's `tools[]`.
+    pub tools: &'a [Value],
+}
+
+/// What the triage-lineage primer did before its gate (backlog/separate-triage-cold-prefix.md).
+pub struct TriagePrimerOutcome {
+    /// The primer request's usage, when the backend answered one. `None` when the
+    /// lineage needed no planting or the send failed (warned at the send site) —
+    /// either way the peek goes out unprimed, the failure mode being fixed.
+    pub usage: Option<RequestUsage>,
+    /// Milliseconds the primer request spent in flight.
+    pub send_ms: u64,
+    /// When the primer resolved, for the serial residue the gate path paid.
+    pub done_at: std::time::Instant,
+    /// Milliseconds of the primer's flight still unfinished when the batch's tools
+    /// were all done — the floor the gate path paid. Zero when tool runtime covered
+    /// it; the distribution of this number says whether a speculative (pre-execution)
+    /// primer is ever worth building.
+    pub residue_ms: u64,
+}
+
 impl ForkPeek {
     /// Make the own-model peek's reads answer to the operator's interrupt
     /// (docs/control-channel.md); the shared peek already rides the agent client.
@@ -316,6 +346,31 @@ impl ForkPeek {
         if let Some(own) = &self.own {
             own.client.begin_turn();
         }
+    }
+
+    /// Send the triage-lineage primer over the own client
+    /// (backlog/separate-triage-cold-prefix.md): the turn's input replayed, capped,
+    /// so the gate's peek extends a request that ended where the main one did. `None`
+    /// on the shared peek — it rides the agent lineage, which the main request
+    /// already warmed — or where the own client has no implicit lineage to plant in;
+    /// a failed send warns and resolves unprimed rather than failing the batch.
+    pub async fn prime(&self, turns: &[WireTurn], tools: &[Value]) -> Option<TriagePrimerOutcome> {
+        let own = self.own.as_ref()?;
+        let started = std::time::Instant::now();
+        let result = own.client.prime(turns, tools, ToolChoice::auto()).await?;
+        let send_ms = started.elapsed().as_millis().try_into().unwrap_or(u64::MAX);
+        Some(TriagePrimerOutcome {
+            usage: match result {
+                Ok(usage) => Some(usage),
+                Err(e) => {
+                    log::warn!("triage primer failed, the peek goes out unprimed: {e}");
+                    None
+                }
+            },
+            send_ms,
+            done_at: std::time::Instant::now(),
+            residue_ms: 0,
+        })
     }
 
     /// The client a peek sends through: the own one when set, else the agent's.

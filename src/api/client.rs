@@ -1272,6 +1272,43 @@ impl Client {
         }
         Ok(completion.request_usage())
     }
+
+    /// The triage-lineage primer (backlog/separate-triage-cold-prefix.md): the turn's
+    /// own input replayed so a later peek extends a request that ended where the main
+    /// one did. Shaped exactly like the keepalive's Responses ping — the turn envelope
+    /// with the backend-minimum output cap — because it is the same write: a cached
+    /// read plus the capped output. `None` where no implicit lineage exists to plant
+    /// in (anything but Responses-with-implicit-policy), so the caller sends nothing
+    /// speculative there; the peek then goes out unprimed, the failure mode being fixed.
+    pub(crate) async fn prime(
+        &self,
+        turns: &[WireTurn],
+        tools: &[Value],
+        tool_choice: ToolChoice,
+    ) -> Option<Result<RequestUsage, Error>> {
+        if self.dialect() != WireDialect::Responses
+            || self.prompt_cache != PromptCachePolicy::Implicit
+        {
+            return None;
+        }
+        let completion = match self
+            .send(
+                turns,
+                tools,
+                tool_choice,
+                Some(RESPONSES_KEEPALIVE_CAP),
+                |_| {},
+            )
+            .await
+        {
+            Ok(completion) => completion,
+            Err(e) => return Some(Err(e)),
+        };
+        if let Some(why) = completion.upstream_failure() {
+            return Some(Err(Box::new(std::io::Error::other(why.to_string()))));
+        }
+        Some(Ok(completion.request_usage()))
+    }
 }
 
 /// The output cap on a Responses keepalive: the Codex backend's minimum

@@ -9,18 +9,75 @@ pub(super) struct Batch {
     pub steps: Vec<Step>,
     pub abort_turn: bool,
     pub redirect: Option<String>,
+    /// What the triage-lineage primer did while the tools ran
+    /// (backlog/separate-triage-cold-prefix.md), when one was armed.
+    pub primer: Option<TriagePrimerOutcome>,
+    /// When the last tool resolved, for the primer's serial residue.
+    pub tools_end: std::time::Instant,
 }
 
 /// Run every call of a completion, capturing each result as it exists (docs/redaction-fork.md)
 /// so one gate can triage them together. Once a call aborts or redirects, the rest are paired
 /// with stand-ins rather than run.
-pub(super) async fn run_batch<F: Frontend, S: Spotter>(
+///
+/// When `primer` is armed, its send is fired at the first execution start and runs
+/// against the batch's tools: the peek's warmup hides behind tool runtime instead of
+/// landing on the gate path (backlog/separate-triage-cold-prefix.md). The sender rides
+/// inside the batch future, so every exit — including an early `?` — drops it and lets
+/// an unfired primer resolve to nothing sent.
+pub(super) async fn run_batch<'a, F: Frontend, S: Spotter>(
     frontend: &mut F,
     shared: &Arc<Session>,
     spotter: &S,
     toolbox: &Toolbox,
     turn: Turn,
     calls: &[ToolCall],
+    primer: Option<TriagePrimerInput<'a>>,
+) -> Result<Batch, Error> {
+    let (primer_go, mut primer_rx) = tokio::sync::watch::channel(false);
+    let primer_fut = async {
+        if primer_rx.wait_for(|fired| *fired).await.is_err() {
+            return None;
+        }
+        let input = primer.as_ref()?;
+        input.distiller.prime(input.turns, input.tools).await
+    };
+    let batch_fut = async move {
+        run_calls(
+            frontend,
+            shared,
+            spotter,
+            toolbox,
+            turn,
+            calls,
+            Some(&primer_go),
+        )
+        .await
+    };
+    let (batch, primer) = tokio::join!(batch_fut, primer_fut);
+    let mut batch = batch?;
+    if let Some(mut outcome) = primer {
+        outcome.residue_ms = outcome
+            .done_at
+            .saturating_duration_since(batch.tools_end)
+            .as_millis()
+            .try_into()
+            .unwrap_or(u64::MAX);
+        batch.primer = Some(outcome);
+    }
+    Ok(batch)
+}
+
+/// The calls loop of [`run_batch`], factored so the batch future can own the primer's
+/// go-signal: dropping it on any exit resolves an unfired primer to nothing sent.
+async fn run_calls<F: Frontend, S: Spotter>(
+    frontend: &mut F,
+    shared: &Arc<Session>,
+    spotter: &S,
+    toolbox: &Toolbox,
+    turn: Turn,
+    calls: &[ToolCall],
+    primer_go: Option<&tokio::sync::watch::Sender<bool>>,
 ) -> Result<Batch, Error> {
     let mut abort_turn = false;
     let mut redirect: Option<String> = None;
@@ -66,7 +123,11 @@ pub(super) async fn run_batch<F: Frontend, S: Spotter>(
             }
         };
         let at = AskPosition::of_call(calls, index);
-        let decision = match run_call(frontend, shared, spotter, toolbox, turn, running, at).await {
+        let decision = match run_call(
+            frontend, shared, spotter, toolbox, turn, running, at, primer_go,
+        )
+        .await
+        {
             Ok(decision) => decision,
             // A call that could not finish ends the batch, so nothing triages what
             // earlier calls already captured. Resolve those here rather than leaving
@@ -156,6 +217,8 @@ pub(super) async fn run_batch<F: Frontend, S: Spotter>(
         steps,
         abort_turn,
         redirect,
+        primer: None,
+        tools_end: std::time::Instant::now(),
     })
 }
 

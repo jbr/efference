@@ -317,6 +317,7 @@ async fn a_call_naming_no_tool_is_answered_ahead_of_the_cascade() {
         1,
         &call,
         AskPosition { n: 1, of: 1 },
+        None,
     )
     .await
     .expect("the check answers rather than erroring");

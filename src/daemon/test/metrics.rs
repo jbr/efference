@@ -314,3 +314,65 @@ fn attaching_the_usage_record_seeds_the_clocks() {
         "the last non-ping request is the last activity"
     );
 }
+
+/// A primer plants a resume point on the triage lineage, not the loop's: it neither
+/// counts as prefix evidence nor stamps the touch clock, so the main prefix still
+/// reads evicted after an idle gap (backlog/separate-triage-cold-prefix.md).
+#[test]
+fn primer_neither_counts_nor_touches_the_main_prefix() {
+    let mut streak = ColdStreak::default();
+    let t = 1_800_000_000_000u128;
+    let m = Some("claude-haiku-4-5");
+
+    streak.observe(RequestOrigin::Turn, t, m, 5_000);
+    assert_eq!(
+        streak.observe(RequestOrigin::TriagePrimer, t + 390_000, m, 5_000),
+        None
+    );
+    assert_eq!(
+        streak.observe(RequestOrigin::Turn, t + 400_000, m, 0),
+        Some(CacheRead::ColdStart(ColdStart::Idle)),
+        "a primer is not a main-prefix touch, so eviction still explains the cold read"
+    );
+}
+
+/// Primer spend lands in the usage record under its own origin so `dev cache` prices
+/// the warmup separately from the peeks it warms.
+#[test]
+fn primer_requests_land_in_the_usage_record_as_triage_primer() {
+    let dir = std::env::temp_dir();
+    let log_path = dir.join("efference-usage-primer-test.jsonl");
+    let usage_path = dir.join("efference-usage-primer-test-usage.jsonl");
+    let _ = std::fs::remove_file(&log_path);
+    let _ = std::fs::remove_file(&usage_path);
+    let (shared, _turns_rx) = Session::new(
+        std::env::current_dir().unwrap(),
+        Log::create(&log_path, None).expect("create log"),
+    );
+    shared.attach_usage_log(&usage_path);
+
+    shared.record_request(
+        RequestOrigin::TriagePrimer,
+        RequestUsage {
+            id: None,
+            model: None,
+            usage: Usage {
+                input_tokens: 140_000,
+                output_tokens: 16,
+                cache_creation_input_tokens: 0,
+                cache_read_input_tokens: 130_000,
+            },
+        },
+    );
+
+    let lines: Vec<Value> = std::fs::read_to_string(&usage_path)
+        .expect("usage record exists")
+        .lines()
+        .map(|l| serde_json::from_str(l).expect("each line is JSON"))
+        .collect();
+    let [primer] = lines.as_slice() else {
+        panic!("one line for the primer request: {lines:?}");
+    };
+    assert_eq!(primer["origin"], "triage_primer");
+    assert_eq!(primer["output"], 16);
+}

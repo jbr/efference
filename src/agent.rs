@@ -20,7 +20,9 @@ use crate::bash;
 use crate::config::Refreshed;
 use crate::consolidate;
 use crate::daemon::{RequestOrigin, Session, Stall, StallReason, StreamDelta};
-use crate::distill::{BgVerdict, ForkPeek, Pending, is_peek_tool};
+use crate::distill::{
+    BgVerdict, ForkPeek, Pending, TriagePrimerInput, TriagePrimerOutcome, is_peek_tool,
+};
 use crate::frontend::{Approval, Frontend, SubmittedTurn};
 use crate::inbox::{ShownNotification, active_shown};
 use crate::log::{
@@ -276,8 +278,13 @@ pub async fn run<F: Frontend, S: Spotter>(
                     steps,
                     abort_turn,
                     redirect,
+                    primer,
+                    ..
                 } = replay_batch(frontend, &shared, &spotter, &toolbox, &pending).await?;
-                land(client, &tools, &shared, &distiller, &mut turn, steps).await?;
+                land(
+                    client, &tools, &shared, &distiller, &mut turn, steps, primer,
+                )
+                .await?;
                 if after_landing(&shared, &mut turn, abort_turn, redirect)? {
                     break;
                 }
@@ -553,13 +560,28 @@ pub async fn run<F: Frontend, S: Spotter>(
             // here, holding the results, and triage them together at one gate below. Triaging between calls would build
             // a fork request whose trailing assistant message still carries unanswered
             // `tool_use` blocks, which the API rejects (docs/redaction-fork.md).
+            // The triage-lineage primer replays this completion's input on the own
+            // peek's client (backlog/separate-triage-cold-prefix.md). Borrowed, so the
+            // primer is byte-identical to the request above; armed only on the own
+            // peek, whose lineage the main request never warms. Shared peeks skip it
+            // without spending a request.
+            let primer = distiller.is_own().then(|| TriagePrimerInput {
+                distiller: &distiller,
+                turns: &turns,
+                tools: &tools,
+            });
             let Batch {
                 steps,
                 abort_turn,
                 redirect,
-            } = run_batch(frontend, &shared, &spotter, &toolbox, turn, &calls).await?;
+                primer,
+                ..
+            } = run_batch(frontend, &shared, &spotter, &toolbox, turn, &calls, primer).await?;
 
-            land(client, &tools, &shared, &distiller, &mut turn, steps).await?;
+            land(
+                client, &tools, &shared, &distiller, &mut turn, steps, primer,
+            )
+            .await?;
 
             if after_landing(&shared, &mut turn, abort_turn, redirect)? {
                 break;

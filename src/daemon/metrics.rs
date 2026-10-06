@@ -79,6 +79,11 @@ pub enum RequestOrigin {
     Spot,
     /// A cache keepalive ping (docs/log-and-projection.md).
     Keepalive,
+    /// A triage-lineage primer (backlog/separate-triage-cold-prefix.md): the turn's own
+    /// input replayed on the own peek's client so the result-triage peek resumes where
+    /// the main request ended. Never main-prefix evidence: it plants a resume point on
+    /// the triage lineage, not the loop's.
+    TriagePrimer,
     /// The narrator writing a fold's account (docs/summary-head.md): its own prompt,
     /// so it does not touch the main prefix.
     Narrate,

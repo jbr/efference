@@ -234,6 +234,7 @@ async fn run_call_skips_the_cascade_and_carries_the_reply() {
                 1,
                 &ask_call("ask_1", "Proceed?"),
                 ONE,
+                None,
             )
             .await
             .unwrap()
@@ -266,6 +267,7 @@ async fn run_call_skips_the_cascade_and_carries_the_reply() {
                 2,
                 &ask_call("ask_2", "Proceed?"),
                 ONE,
+                None,
             )
             .await
             .unwrap()

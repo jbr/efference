@@ -75,6 +75,7 @@ impl Step {
 /// (docs/permissions.md, docs/tools.md). Appends only the audit entries the cascade
 /// itself owns — the `Spot` verdict and any `ConfigEdit` — never the result, which the
 /// caller captures the moment this returns (docs/redaction-fork.md).
+#[allow(clippy::too_many_arguments)] // each is a distinct party to the one call
 pub(super) async fn run_call<F: Frontend, S: Spotter>(
     frontend: &mut F,
     shared: &Arc<Session>,
@@ -83,6 +84,7 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
     turn: Turn,
     call: &ToolCall,
     ask_at: AskPosition,
+    primer_go: Option<&tokio::sync::watch::Sender<bool>>,
 ) -> Result<Decision, Error> {
     // An un-asked peek tool (docs/redaction-fork.md) never enters the cascade — there
     // is nothing to judge or run; the paired nudge result tells the model to carry on.
@@ -107,6 +109,12 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
     // world to authorize, so it skips the cascade, and the wait for the reply is the
     // call. The interrupt's *after* juncture applies as for any call.
     if call.name == supervisor::ASK {
+        // An answered ask lands in the gate, so its triage is certain short of an
+        // interrupt — fire the primer over the operator's deliberation window
+        // (backlog/separate-triage-cold-prefix.md).
+        if let Some(go) = primer_go {
+            let _ = go.send(true);
+        }
         let started = std::time::Instant::now();
         let (result, reply) = ask_result(shared, call, ask_at).await;
         let result = cap_tool_result(call, result);
@@ -241,6 +249,12 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
                     call_id: call.id.clone(),
                 },
             )?;
+            // Approved, so a result the gate triages will follow short of an
+            // interrupt — fire the primer over the execution window
+            // (backlog/separate-triage-cold-prefix.md).
+            if let Some(go) = primer_go {
+                let _ = go.send(true);
+            };
             // Acquire the result. A backgrounded bash spawn returns immediately — the child
             // runs on under the supervisor and its output surfaces at later gates
             // (docs/supervisor.md); everything else runs to completion through the toolbox.

@@ -835,7 +835,18 @@ field. The backend resumes a cached prefix only where an earlier request ended
 (backlog: separate-triage-cold-prefix.md), and the keepalive loop's lopped projection is
 exactly the last request's input, so the ping reads it whole and refreshes it: a cached
 read plus 16 output tokens. A capped request that the upstream refuses is not retried at
-another cap. OpenAI exposes no per-generation cost endpoint, so cost tracking stays off. The
+another cap. OpenAI exposes no per-generation cost endpoint, so cost tracking stays off.
+
+**The triage primer is the same write on the triage lineage.** Where the peek runs on
+its own model (`ForkPeek::own`), the batch fires the turn's own input on the triage
+client at the first execution start — post-approval, so nothing speculative is ever
+sent — capped at the same backend minimum (`Client::prime`, Responses with an
+implicit policy only). The gate's peek then extends a triage-lineage request that
+ended where the main one did, and reads everything before the current calls from
+cache. A primer the upstream refuses, or a lineage with no implicit cache, resolves
+unprimed and the peek goes out as before. Primer spend records under its own
+`triage_primer` usage origin, with one log line per gate carrying the send time, the
+serial residue the gate path paid, and whether a gate followed. The
 spotter model must be one its connection's metadata source knows: with no
 `[defaults].spotter` and no connection reaching jev, the main connection's cheap band applies
 (`Provider::default_spotter_model`, gpt-5.6-luna here, claude-haiku-4-5 on

@@ -415,3 +415,148 @@ async fn codex_keepalive_caps_output_where_a_turn_sends_no_cap() {
         "the ping caps its output"
     );
 }
+
+/// The triage primer (backlog/separate-triage-cold-prefix.md) replays the turn's own
+/// envelope with the backend-minimum cap: its input bytes match the turn's exactly,
+/// so the Codex backend resumes where the main request ended.
+#[tokio::test]
+async fn codex_primer_replays_the_turn_envelope_capped() {
+    use std::io::{Read, Write};
+
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let server = std::thread::spawn(move || {
+        let mut requests = Vec::new();
+        for _ in 0..2 {
+            let (mut sock, _) = listener.accept().unwrap();
+            let mut request = Vec::new();
+            let mut buf = vec![0u8; 65536];
+            loop {
+                let n = sock.read(&mut buf).unwrap();
+                request.extend_from_slice(&buf[..n]);
+                let text = String::from_utf8_lossy(&request).to_ascii_lowercase();
+                let Some((head, body)) = text.split_once("\r\n\r\n") else {
+                    continue;
+                };
+                let length = head
+                    .lines()
+                    .find_map(|l| l.strip_prefix("content-length: "))
+                    .and_then(|v| v.trim().parse::<usize>().ok())
+                    .unwrap_or(0);
+                if n == 0 || body.len() >= length {
+                    break;
+                }
+            }
+            requests.push(String::from_utf8_lossy(&request).to_string());
+            let body = "event: response.completed\ndata: {\"type\":\"response.completed\",\
+                        \"response\":{\"id\":\"r\",\"status\":\"completed\",\"output\":[],\
+                        \"usage\":{\"input_tokens\":1000,\"input_tokens_details\":\
+                        {\"cached_tokens\":900},\"output_tokens\":16}}}\n\n";
+            sock.write_all(
+                format!(
+                    "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\n\
+                     connection: close\r\ncontent-length: {}\r\n\r\n{body}",
+                    body.len()
+                )
+                .as_bytes(),
+            )
+            .unwrap();
+            sock.flush().unwrap();
+        }
+        requests
+    });
+
+    let endpoint = Endpoint {
+        provider: Provider::OpenAICodex,
+        url: Some(format!("http://{addr}/backend-api/codex/responses")),
+        auth_header: "authorization".into(),
+        auth_value: "Bearer k".into(),
+        session_id: None,
+        extra_headers: Vec::new(),
+        base: None,
+    };
+    let client = Client::new(endpoint, "gpt-6.1-sol", "sys", None)
+        .with_prompt_cache(PromptCachePolicy::Implicit);
+    let turns = vec![crate::project::WireTurn::text("hello")];
+    let tools = vec![serde_json::json!({"type": "function", "name": "x"})];
+    client
+        .complete(&turns, &tools, ToolChoice::auto(), |_| {})
+        .await
+        .unwrap();
+    let primer = client
+        .prime(&turns, &tools, ToolChoice::auto())
+        .await
+        .expect("an implicit Responses lineage takes a primer")
+        .expect("the mock backend answers the primer");
+    assert_eq!(primer.usage.cache_read_input_tokens, 900);
+    assert_eq!(primer.usage.output_tokens, 16);
+
+    let requests = server.join().unwrap();
+    let body_of = |request: &str| {
+        let (_, body) = request.split_once("\r\n\r\n").unwrap();
+        serde_json::from_str::<serde_json::Value>(body).unwrap()
+    };
+    let turn_body = body_of(&requests[0]);
+    let mut primer_body = body_of(&requests[1]);
+    assert!(
+        !turn_body.to_string().contains("max_output_tokens"),
+        "a turn sends no cap"
+    );
+    assert_eq!(
+        primer_body.get("max_output_tokens"),
+        Some(&serde_json::json!(16)),
+        "the primer caps its output at the backend minimum"
+    );
+    primer_body
+        .as_object_mut()
+        .unwrap()
+        .remove("max_output_tokens");
+    assert_eq!(
+        primer_body, turn_body,
+        "the primer replays the turn's input byte-for-byte apart from the cap"
+    );
+}
+
+/// The primer plants only where an implicit cache exists behind a Responses lineage:
+/// Messages dialects and explicit policies resolve to no primer without sending.
+#[tokio::test]
+async fn primer_sends_nothing_without_an_implicit_responses_lineage() {
+    let messages = Client::new(
+        Endpoint {
+            provider: Provider::Anthropic,
+            url: None,
+            auth_header: "x".into(),
+            auth_value: "y".into(),
+            session_id: None,
+            extra_headers: Vec::new(),
+            base: None,
+        },
+        "claude-haiku-4-5",
+        "sys",
+        None,
+    );
+    assert!(
+        messages.prime(&[], &[], ToolChoice::auto()).await.is_none(),
+        "no primer on a Messages lineage"
+    );
+
+    let explicit = Client::new(
+        Endpoint {
+            provider: Provider::OpenAICodex,
+            url: None,
+            auth_header: "x".into(),
+            auth_value: "y".into(),
+            session_id: None,
+            extra_headers: Vec::new(),
+            base: None,
+        },
+        "gpt-6.1-sol",
+        "sys",
+        None,
+    )
+    .with_prompt_cache(PromptCachePolicy::Explicit);
+    assert!(
+        explicit.prime(&[], &[], ToolChoice::auto()).await.is_none(),
+        "no primer where the harness places explicit breakpoints"
+    );
+}

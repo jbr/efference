@@ -12,6 +12,7 @@ pub(super) async fn land(
     distiller: &ForkPeek,
     turn_at: &mut Turn,
     steps: Vec<Step>,
+    primer: Option<TriagePrimerOutcome>,
 ) -> Result<(), Error> {
     let mut turn = *turn_at;
     // The gate (docs/redaction-fork.md): one peek over every result this
@@ -87,6 +88,7 @@ pub(super) async fn land(
             }
         })
     };
+    let gated = !pending.is_empty();
     drop(pending);
 
     // The gate's usage: each fork request reads the shared canonical prefix
@@ -95,6 +97,23 @@ pub(super) async fn land(
         for u in &g.usage {
             shared.record_request(RequestOrigin::Peek, u.clone());
         }
+    }
+    // The primer's usage and timing (backlog/separate-triage-cold-prefix.md): its own
+    // origin so `dev cache` prices the warmup separately, and one log line per gate
+    // carrying the floor the gate paid (`residue_ms`) plus whether the spend had a
+    // gate to warm. The residue distribution is what says if a speculative
+    // (pre-execution) primer is ever worth building.
+    if let Some(outcome) = primer {
+        let primed = outcome.usage.is_some();
+        if let Some(usage) = outcome.usage {
+            shared.record_request(RequestOrigin::TriagePrimer, usage);
+        }
+        log::info!(
+            "triage primer: send {}ms, residue {}ms, primed {primed}, gated {}",
+            outcome.send_ms,
+            outcome.residue_ms,
+            gated
+        );
     }
     // Apply the background verdicts before writing the `Triage`s: a `Pin`
     // snapshots the process's current tail into an `Ambient` and folds a `Pin`

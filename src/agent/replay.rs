@@ -27,7 +27,18 @@ pub(super) async fn replay_batch<F: Frontend, S: Spotter>(
         steps: ran,
         abort_turn,
         redirect,
-    } = run_batch(frontend, shared, spotter, toolbox, pending.turn, &never).await?;
+        primer,
+        tools_end,
+    } = run_batch(
+        frontend,
+        shared,
+        spotter,
+        toolbox,
+        pending.turn,
+        &never,
+        None,
+    )
+    .await?;
     let mut ran = ran.into_iter();
     let mut steps = Vec::new();
     for (call, state) in &pending.calls {
@@ -56,5 +67,7 @@ pub(super) async fn replay_batch<F: Frontend, S: Spotter>(
         steps,
         abort_turn,
         redirect,
+        primer,
+        tools_end,
     })
 }
