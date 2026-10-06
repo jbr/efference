@@ -8,6 +8,7 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- **Fold a cold session** (docs/control-api.md, docs/summary-head.md): `POST /loop/fold` has the session's own model replace its history up to a cut with an account, keeping the last ~15k tokens of payloads verbatim; the session then counts as never-sent (no keepalive, not cold) until its next request.
 - **No cold read without consent** (docs/control-api.md): a session whose prompt cache is believed expired answers `POST /turns` and `POST /loop/continue` with `409 cold` (nothing queued) unless the request carries `accept_cold_read`; the loop parks before a main-prefix request on a cold cache and holds inbox wakes. `efference control turn --accept-cold-read` and the MCP `turn` flag send it; in the TUI and web composer, sending again after the refusal is the consent.
 - **Keepalive on the Responses dialect, paced by the provider's cache lifetime** (docs/transport.md): Codex and OpenAI sessions keep their prefix warm with a ping that re-sends the last request's input capped at 16 output tokens, and the ping interval now derives from a per-provider cache lifetime (4 minutes against a 5-minute cache, 8 on OpenAI's arms) unless `[transport] keepalive-interval` overrides it.
 - **Summary head narrator** (docs/summary-head.md): `efference dev narrate <session> [--upto <seq>] [--cut <seq>]` has the session's own model write the head a fold would splice in — harness header, then an account of the digest up to the cut — and prints it, appending nothing.

@@ -6,7 +6,8 @@ trajectory digest ([digest.md](digest.md)) and spliced in as a [`Mark::Boundary`
 is the agent writing its own summary mid-session; here the harness does the writing, so it
 can happen when the session has gone idle and its cache is gone. `src/narrate.rs` makes
 the head, from the prompt and header in `assets/prompts/`; `src/digest.rs` supplies what
-the narrator reads; `src/project.rs` folds the mark in.
+the narrator reads; `src/daemon/fold.rs` chooses the cut and appends the mark
+(`POST /loop/fold`, docs/control-api.md); `src/project.rs` folds it in.
 
 ## What is produced
 
@@ -95,5 +96,5 @@ system prompt. It appends nothing, since a session's log has one writer, the hos
 
 ## What is not here
 
-The trigger (when a head is offered), the choice of cut, and the host route that appends
-the mark belong to the cold session's fold (backlog/cold-session.md).
+When a fold is offered, and the clients' controls for it, belong to the cold session
+(backlog/cold-session.md).
