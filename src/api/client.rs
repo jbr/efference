@@ -1275,7 +1275,7 @@ impl Client {
 }
 
 /// The output cap on a Responses keepalive: the Codex backend's minimum
-/// (`max_output_tokens` below 16 is refused; probed 2026-10-02, docs/transport.md).
+/// (`max_output_tokens` below 16 is refused; docs/transport.md).
 pub const RESPONSES_KEEPALIVE_CAP: u32 = 16;
 
 /// One request's encoded conversation, per dialect.
