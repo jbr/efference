@@ -15,33 +15,35 @@ export function ArchivedCard({
       <header className="card-head">
         <span className="card-status-line">
           <span className="card-id">{session.id}</span>
-          {session.last_active_at && (
-            <span className="card-status">
-              {" "}
-              · archived <RelativeTime date={session.last_active_at} />
-            </span>
-          )}
+          <span className="card-status"> is archived</span>
         </span>
-        <span className="spacer" />
+      </header>
+
+      <h3 className="card-title">
         <button
-          className="resume-action-button"
+          className="card-link"
           onClick={onResume}
           disabled={resuming}
           aria-label={`Resume session ${session.id}`}
         >
-          {resuming ? "Resuming…" : "Resume"}
-        </button>
-      </header>
-
-      <h3 className="card-title">
-        <span className="card-title-text">
           {session.title ?? <span className="card-title-new">Untitled</span>}
-        </span>
+        </button>
       </h3>
 
-      <div className="card-archived-meta">
-        <span className="dim">Archived session</span>
-      </div>
+      <footer className="card-meta">
+        <div className="card-line">
+          <span className="card-archived-age">
+            {session.last_active_at ? (
+              <>
+                active <RelativeTime date={session.last_active_at} />
+              </>
+            ) : null}
+          </span>
+          <span className="resume-hint">
+            {resuming ? "resuming…" : "resume ›"}
+          </span>
+        </div>
+      </footer>
     </article>
   );
 }

@@ -11,7 +11,7 @@ export function AppHeader({
   innerClassName = "top-bar-inner",
   ref,
 }: {
-  children: ReactNode;
+  children?: ReactNode;
   homeHref?: string | null;
   onHome?: () => void;
   className?: string;

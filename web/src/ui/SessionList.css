@@ -444,21 +444,30 @@
   white-space: normal;
 }
 
-/* Band 2 & 3: Archived styles on overview */
+/* Band 2 & 3: sessions archived within the last week. A dormant card is a
+   live card's sibling in the same grid — same head, title and footer voices —
+   with a dashed edge and the inset surface in place of the live surface. Band 3
+   is one bordered list beneath it: a row per session, its "more" link the last
+   row. Both use the global button rather than a control of their own. */
 .card.card-archived {
+  min-height: 0;
   border-style: dashed;
-  border-color: var(--border);
   background: var(--bg-inset);
-  opacity: 0.85;
 }
 
 .card.card-archived:hover {
-  border-color: var(--border-control);
-  opacity: 1;
+  border-color: var(--border-strong);
+  box-shadow: none;
 }
 
 .card.card-archived .card-status {
-  color: var(--fg-dim);
+  color: var(--fg-faint);
+}
+
+.card.card-archived .card-title {
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  color: var(--fg);
 }
 
 .card.card-archived.resuming {
@@ -466,76 +475,141 @@
   pointer-events: none;
 }
 
-.card-archived-meta {
-  margin-top: auto;
-  font-size: var(--card-meta);
-  font-family: var(--font-mono);
-  color: var(--fg-dim);
+.card.card-archived .card-line {
+  justify-content: space-between;
 }
 
-.resume-action-button {
+.card-archived-age {
+  font-family: var(--font-prose);
+  font-size: var(--card-body);
+}
+
+/* The title is a button rather than a link, stretched over the card by the
+   same rule as a live card's. */
+button.card-link {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: none;
+  border-radius: inherit;
+  background: none;
   font: inherit;
-  font-size: 0.8rem;
-  font-weight: 500;
-  padding: 0.2rem 0.55rem;
-  border-radius: 4px;
-  border: 1px solid var(--border-control);
-  background: var(--bg-chip);
-  color: var(--fg-bright);
+  text-align: left;
   cursor: pointer;
 }
 
-.resume-action-button:hover:not(:disabled) {
-  border-color: var(--accent);
-  background: var(--bg-surface);
+button.card-link:hover:not(:disabled) {
+  color: inherit;
 }
 
-.resume-action-button:disabled {
-  opacity: 0.5;
-  cursor: default;
+/* What a click on the row or card does, said at its trailing edge. Hover and
+   focus raise it; a touch screen has no hover, so the card keeps its hint
+   showing and the list rows go without one. */
+.resume-hint {
+  flex: none;
+  font-family: var(--font-prose);
+  font-size: 0.95rem;
+  color: var(--fg-faint);
+  text-align: right;
+  transition: color 120ms;
+}
+
+.card-archived:hover .resume-hint,
+.card-archived:has(.card-link:focus-visible) .resume-hint {
+  color: var(--fg-bright);
 }
 
 .archived-workspace-section {
-  margin-top: 1.25rem;
-  padding-top: 0.75rem;
+  padding-bottom: 1rem;
+}
+
+/* The label sits on a hairline that runs out to the edge, as the live
+   cards' meta rule does inside a card. */
+.archived-workspace-head {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.6rem;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--fg-faint);
+}
+
+.archived-workspace-head::after {
+  content: "";
+  flex: 1;
   border-top: 1px solid var(--border-subtle);
 }
 
-.archived-workspace-head {
-  margin-bottom: 0.5rem;
-}
-
-.archived-workspace-label {
-  font-size: 0.8rem;
-  font-family: var(--font-mono);
-  color: var(--fg-dim);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
 .archived-table {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
 }
 
 .archived-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 140px 80px 80px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 9rem) 6.5rem;
   align-items: center;
-  gap: 0.75rem;
-  padding: 0.4rem 0.6rem;
-  border-radius: 5px;
-  font-size: 0.85rem;
-  transition: background 100ms ease;
+  gap: 1rem;
+  width: 100%;
+  padding: 0.6rem 0.9rem;
+  border: none;
+  border-radius: 0;
+  background: none;
+  font: inherit;
+  font-size: 0.75rem;
+  text-align: left;
+  transition: background-color 100ms;
 }
 
-.archived-row:hover {
-  background: var(--bg-raised);
+/* The hint takes the age's cell: hovering the row trades one for the other. */
+.archived-row-age,
+.archived-row .resume-hint {
+  grid-column: 3;
+  grid-row: 1;
+}
+
+.archived-row .resume-hint {
+  opacity: 0;
+  transition:
+    opacity 120ms,
+    color 120ms;
+}
+
+.archived-row:hover:not(:disabled) .resume-hint,
+.archived-row:focus-visible .resume-hint,
+.archived-row:disabled .resume-hint {
+  opacity: 1;
+  color: var(--fg-bright);
+}
+
+.archived-row:hover:not(:disabled) .archived-row-age,
+.archived-row:focus-visible .archived-row-age,
+.archived-row:disabled .archived-row-age {
+  opacity: 0;
+}
+
+.archived-row:focus-visible {
+  outline-offset: -2px;
+}
+
+.archived-row:disabled {
+  opacity: 0.6;
+}
+
+.archived-row + .archived-row,
+.archived-row + .archived-more-button {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.archived-row:hover:not(:disabled) {
+  background: var(--bg-surface);
 }
 
 .archived-row-title {
   font-family: var(--font-prose);
+  font-size: 0.95rem;
   color: var(--fg-bright);
   white-space: nowrap;
   overflow: hidden;
@@ -547,55 +621,44 @@
   font-style: italic;
 }
 
-.archived-row-id {
-  font-family: var(--font-mono);
-  color: var(--fg-dim);
+.archived-row-id,
+.archived-row-age {
+  color: var(--fg-faint);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.archived-row-age {
+/* An identifier is mono; a time is a phrase, set as the title is. */
+.archived-row-id {
   font-family: var(--font-mono);
-  color: var(--fg-dim);
+}
+
+.archived-row-age {
+  font-family: var(--font-prose);
+  font-size: 0.95rem;
+}
+
+.archived-row-age {
   text-align: right;
-  white-space: nowrap;
-}
-
-.archived-row-resume {
-  font: inherit;
-  font-size: 0.8rem;
-  font-weight: 500;
-  padding: 0.2rem 0.5rem;
-  border-radius: 4px;
-  border: 1px solid var(--border-control);
-  background: var(--bg-chip);
-  color: var(--fg-bright);
-  cursor: pointer;
-  text-align: center;
-}
-
-.archived-row-resume:hover:not(:disabled) {
-  border-color: var(--accent);
-  background: var(--bg-surface);
+  transition: opacity 120ms;
 }
 
 .archived-more-button {
-  font: inherit;
-  font-size: 0.85rem;
-  background: none;
+  display: block;
+  width: 100%;
+  padding: 0.6rem 0.9rem;
   border: none;
+  border-radius: 0;
+  background: none;
+  font-family: var(--font-prose);
+  font-size: 0.95rem;
   color: var(--fg-dim);
-  cursor: pointer;
-  padding: 0.5rem 0.6rem;
-  margin-top: 0.25rem;
   text-align: left;
-  display: inline-block;
-  border-radius: 4px;
 }
 
-.archived-more-button:hover {
-  color: var(--accent);
+.archived-more-button:hover:not(:disabled) {
+  color: var(--fg-bright);
   background: var(--bg-surface);
 }
 
@@ -609,8 +672,17 @@
   }
 
   .archived-row {
-    grid-template-columns: minmax(0, 1fr) auto auto;
-    gap: 0.5rem;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.6rem;
+    padding-inline: 0.7rem;
+  }
+
+  .archived-row .resume-hint {
+    display: none;
+  }
+
+  .archived-row:disabled .resume-hint {
+    display: block;
   }
 
   .archived-row-id {

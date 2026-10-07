@@ -20,15 +20,19 @@ export function ArchivedList({
 
   return (
     <div className="archived-workspace-section">
-      <div className="archived-workspace-head">
-        <span className="archived-workspace-label">Recent</span>
-      </div>
+      <div className="archived-workspace-head">recent</div>
       <div className="archived-table">
         {sessions.map((session) => {
           const isResuming = resuming === session.id;
 
           return (
-            <div className="archived-row" key={session.id}>
+            <button
+              className="archived-row"
+              key={session.id}
+              onClick={() => onResume(session.id)}
+              disabled={isResuming}
+              aria-label={`Resume ${session.id}`}
+            >
               <span
                 className="archived-row-title"
                 title={session.title ?? session.id}
@@ -43,24 +47,19 @@ export function ArchivedList({
                   <RelativeTime date={session.last_active_at} />
                 ) : null}
               </span>
-              <button
-                className="archived-row-resume"
-                onClick={() => onResume(session.id)}
-                disabled={isResuming}
-                aria-label={`Resume ${session.id}`}
-              >
-                {isResuming ? "Resuming…" : "Resume"}
-              </button>
-            </div>
+              <span className="resume-hint">
+                {isResuming ? "resuming…" : "resume ›"}
+              </span>
+            </button>
           );
         })}
+        {remainderCount > 0 && (
+          <button className="archived-more-button" onClick={onOpenPicker}>
+            › {remainderCount} more archived{" "}
+            {remainderCount === 1 ? "session" : "sessions"}…
+          </button>
+        )}
       </div>
-      {remainderCount > 0 && (
-        <button className="archived-more-button" onClick={onOpenPicker}>
-          › {remainderCount} more archived{" "}
-          {remainderCount === 1 ? "session" : "sessions"}…
-        </button>
-      )}
     </div>
   );
 }

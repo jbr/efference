@@ -6,22 +6,6 @@
   color: var(--fg-base);
 }
 
-.resume-header-cancel {
-  font: inherit;
-  font-size: 0.95rem;
-  background: none;
-  border: none;
-  color: var(--fg-dim);
-  cursor: pointer;
-  padding: 0.4rem 0.8rem;
-  border-radius: 6px;
-}
-
-.resume-header-cancel:hover {
-  background: var(--bg-chip);
-  color: var(--fg-bright);
-}
-
 .resume-page-body {
   max-width: 900px;
   width: 100%;
@@ -70,31 +54,33 @@
   margin-bottom: 1.25rem;
 }
 
-.resume-count-badge {
-  font-family: var(--font-mono);
-  font-size: 0.85rem;
-  color: var(--fg-dim);
-}
-
 .resume-search-bar {
   margin-bottom: 1rem;
 }
 
-.resume-search-input {
+/* Scoped under the bar to outrank the global input rule's font and padding. */
+.resume-search-bar .resume-search-input {
   width: 100%;
   box-sizing: border-box;
-  padding: 0.75rem 1rem;
-  font-family: inherit;
-  font-size: 1rem;
+  padding: 0.7rem 1rem;
+  font-family: var(--font-prose);
+  font-size: 1.05rem;
   background: var(--bg-surface);
   border: 1px solid var(--border-control);
   border-radius: 8px;
   color: var(--fg-bright);
-  outline: none;
   transition: border-color 150ms ease;
 }
 
-.resume-search-input:focus {
+.resume-search-bar .resume-search-input::placeholder {
+  color: var(--fg-faint);
+}
+
+/* The accent border is the focus indicator; the global outline and glow
+   would draw a second ring around it. */
+.resume-search-bar .resume-search-input:focus-visible {
+  outline: none;
+  box-shadow: none;
   border-color: var(--accent);
 }
 
@@ -110,7 +96,7 @@
 
 .resume-result-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 140px 80px 90px;
+  grid-template-columns: minmax(0, 1fr) 9rem 7rem;
   align-items: center;
   gap: 1rem;
   padding: 0.75rem 1rem;
@@ -126,10 +112,6 @@
 .resume-result-row:hover,
 .resume-result-row.selected {
   background: var(--bg-raised);
-}
-
-.resume-result-row.selected {
-  outline: 1px solid var(--accent);
 }
 
 .resume-result-row.resuming {
@@ -156,42 +138,35 @@
 }
 
 .resume-result-age {
-  font-family: var(--font-mono);
-  font-size: 0.85rem;
+  font-family: var(--font-prose);
+  font-size: 0.95rem;
   color: var(--fg-dim);
   text-align: right;
   white-space: nowrap;
 }
 
-.resume-result-btn {
-  font: inherit;
-  font-size: 0.85rem;
-  font-weight: 500;
-  padding: 0.35rem 0.75rem;
-  border-radius: 5px;
-  border: 1px solid var(--border-control);
-  background: var(--bg-chip);
+/* The row is the control: the hint at its edge names the key on the
+   selected row and is otherwise quiet. */
+/* The hint takes the age's cell on the selected row. */
+.resume-result-age,
+.resume-result-row .resume-hint {
+  grid-column: 3;
+  grid-row: 1;
+}
+
+.resume-result-row .resume-hint {
+  opacity: 0;
+}
+
+.resume-result-row.selected .resume-result-age,
+.resume-result-row.resuming .resume-result-age {
+  opacity: 0;
+}
+
+.resume-result-row.selected .resume-hint,
+.resume-result-row.resuming .resume-hint {
+  opacity: 1;
   color: var(--fg-bright);
-  cursor: pointer;
-  text-align: center;
-}
-
-.resume-result-btn:hover:not(:disabled) {
-  border-color: var(--accent);
-  background: var(--bg-surface);
-}
-
-.resume-result-btn:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
-.resume-hints {
-  display: flex;
-  gap: 0.5rem;
-  font-size: 0.8rem;
-  margin-top: 0.85rem;
-  justify-content: center;
 }
 
 .resume-loading,
@@ -204,15 +179,15 @@
 
 @media (max-width: 700px) {
   .resume-result-row {
-    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-columns: minmax(0, 1fr) auto;
     gap: 0.5rem;
   }
 
-  .resume-result-id {
+  .resume-result-row .resume-hint {
     display: none;
   }
 
-  .resume-hints {
+  .resume-result-id {
     display: none;
   }
 }

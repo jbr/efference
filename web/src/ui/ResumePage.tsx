@@ -31,12 +31,17 @@ export function ResumePage({
   const pickerCwd = route.stage === "picker" ? route.cwd : null;
   const [sessions, setSessions] = useState<ArchivedSession[] | null>(null);
   const [query, setQuery] = useState("");
-  const [selectedIndex, setSelectedIndex] = useState(0);
+  // None until the arrow keys or the pointer pick one; typing clears it again.
+  const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [resumingId, setResumingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const searchInputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  // Where the pointer last was. A list that changes under a still pointer makes
+  // the browser re-dispatch hover to whatever row is now beneath it; only
+  // actual movement selects, so typing in the filter keeps its reset.
+  const pointer = useRef<{ x: number; y: number } | null>(null);
 
   // Load remembered projects for the location picker
   useEffect(() => {
@@ -91,45 +96,42 @@ export function ResumePage({
     }
   };
 
-  // Keyboard navigation inside the picker
+  // Arrow keys move the selection and Enter resumes it; nothing on the page
+  // says so, since the rows are plain click targets first.
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (route.stage !== "picker") return;
 
     if (e.key === "ArrowDown") {
       e.preventDefault();
       setSelectedIndex((prev) =>
-        filtered.length > 0 ? (prev + 1) % filtered.length : 0,
+        filtered.length === 0
+          ? null
+          : prev === null
+            ? 0
+            : (prev + 1) % filtered.length,
       );
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       setSelectedIndex((prev) =>
-        filtered.length > 0
-          ? (prev - 1 + filtered.length) % filtered.length
-          : 0,
+        filtered.length === 0
+          ? null
+          : prev === null
+            ? filtered.length - 1
+            : (prev - 1 + filtered.length) % filtered.length,
       );
     } else if (e.key === "Enter") {
       e.preventDefault();
-      const target = filtered[selectedIndex];
+      const target =
+        selectedIndex === null ? undefined : filtered[selectedIndex];
       if (target && !resumingId) {
         void handleResume(target.id, route.cwd);
-      }
-    } else if (e.key === "Escape") {
-      e.preventDefault();
-      if (query) {
-        setQuery("");
-      } else {
-        onClose();
       }
     }
   };
 
   return (
     <div className="resume-page" onKeyDown={handleKeyDown}>
-      <AppHeader onHome={onClose}>
-        <button onClick={onClose} className="resume-header-cancel">
-          Cancel
-        </button>
-      </AppHeader>
+      <AppHeader onHome={onClose} />
 
       <main className="resume-page-body">
         {error && <div className="resume-error">{error}</div>}
@@ -177,10 +179,6 @@ export function ResumePage({
                       <span>{name}</span>
                     </span>
                   </h1>
-                  <span className="resume-count-badge">
-                    {filtered.length} of{" "}
-                    {sessions ? sessions.filter((s) => !s.problem).length : 0}
-                  </span>
                 </div>
               );
             })()}
@@ -190,11 +188,11 @@ export function ResumePage({
                 ref={searchInputRef}
                 type="text"
                 className="resume-search-input"
-                placeholder="type to filter by title or id"
+                placeholder="Filter by title or id"
                 value={query}
                 onChange={(e) => {
                   setQuery(e.target.value);
-                  setSelectedIndex(0);
+                  setSelectedIndex(null);
                 }}
                 aria-label="Filter archived sessions"
               />
@@ -221,7 +219,13 @@ export function ResumePage({
                       aria-selected={isSelected}
                       className={`resume-result-row${isSelected ? " selected" : ""}${isResuming ? " resuming" : ""}`}
                       onClick={() => void handleResume(item.id, route.cwd)}
-                      onMouseEnter={() => setSelectedIndex(idx)}
+                      onMouseMove={(e) => {
+                        const last = pointer.current;
+                        pointer.current = { x: e.clientX, y: e.clientY };
+                        if (last?.x !== e.clientX || last.y !== e.clientY) {
+                          setSelectedIndex(idx);
+                        }
+                      }}
                     >
                       <span
                         className="resume-result-title"
@@ -235,29 +239,14 @@ export function ResumePage({
                           <RelativeTime date={item.last_active_at} />
                         ) : null}
                       </span>
-                      <button
-                        className="resume-result-btn"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          void handleResume(item.id, route.cwd);
-                        }}
-                        disabled={isResuming}
-                      >
-                        {isResuming ? "Resuming…" : "Resume"}
-                      </button>
+                      <span className="resume-hint">
+                        {isResuming ? "resuming…" : "resume ›"}
+                      </span>
                     </div>
                   );
                 })}
               </div>
             )}
-
-            <div className="resume-hints dim">
-              <span>↑↓ move</span>
-              <span>•</span>
-              <span>enter resumes</span>
-              <span>•</span>
-              <span>esc goes back</span>
-            </div>
           </div>
         )}
       </main>
