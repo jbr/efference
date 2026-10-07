@@ -846,11 +846,13 @@ ended where the main one did, and reads everything before the current calls from
 cache. A primer the upstream refuses, or a lineage with no implicit cache, resolves
 unprimed and the peek goes out as before. Primer spend records under its own
 `triage_primer` usage origin, with one log line per gate carrying the send time, the
-serial residue the gate path paid, and whether a gate followed. The primer keeps the
-turn's `auto` choice byte-identical to the measured shape and tolerates the
-truncated output: a 16-token budget at a call-eliciting position cuts the model's
-function call mid-arguments, which marks the completion without unmaking its input
-prefix, and only a response with no accounted input counts as nothing planted. The
+serial residue the gate path paid, and whether a gate followed. The primer forces
+`retain` rather than the turn's `auto`: the backend keys the resume on
+`tool_choice`, so the plant must match the peek's head, not the main request it
+replays. It tolerates the truncated output: a 16-token budget at a call-eliciting
+position cuts the model's function call mid-arguments, which marks the completion
+without unmaking its input prefix, and only a response with no accounted input
+counts as nothing planted. The
 spotter model must be one its connection's metadata source knows: with no
 `[defaults].spotter` and no connection reaching jev, the main connection's cheap band applies
 (`Provider::default_spotter_model`, gpt-5.6-luna here, claude-haiku-4-5 on

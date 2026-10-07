@@ -354,10 +354,20 @@ impl ForkPeek {
     /// on the shared peek — it rides the agent lineage, which the main request
     /// already warmed — or where the own client has no implicit lineage to plant in;
     /// a failed send warns and resolves unprimed rather than failing the batch.
+    ///
+    /// The primer forces `retain`, matching the peek's head rather than the main
+    /// request it replays: the backend keys the resume on `tool_choice`, so an
+    /// `auto` primer plants points no forced peek resumes (the title-0 row shows
+    /// the head itself is choice-keyed). Forcing costs nothing here — the primer's
+    /// output is discarded — and the peek keeps its own forced choice, so the
+    /// anti-invented-call guard stays where it belongs.
     pub async fn prime(&self, turns: &[WireTurn], tools: &[Value]) -> Option<TriagePrimerOutcome> {
         let own = self.own.as_ref()?;
         let started = std::time::Instant::now();
-        let result = own.client.prime(turns, tools, ToolChoice::auto()).await?;
+        let result = own
+            .client
+            .prime(turns, tools, ToolChoice::force(RETAIN))
+            .await?;
         let send_ms = started.elapsed().as_millis().try_into().unwrap_or(u64::MAX);
         Some(TriagePrimerOutcome {
             usage: match result {

@@ -418,7 +418,9 @@ async fn codex_keepalive_caps_output_where_a_turn_sends_no_cap() {
 
 /// The triage primer (backlog/separate-triage-cold-prefix.md) replays the turn's own
 /// envelope with the backend-minimum cap: its input bytes match the turn's exactly,
-/// so the Codex backend resumes where the main request ended.
+/// so the Codex backend resumes where the main request ended. Its `tool_choice`
+/// differs on purpose — forced `retain`, matching the peek's head rather than the
+/// turn's `auto`, since the backend keys the resume on it.
 #[tokio::test]
 async fn codex_primer_replays_the_turn_envelope_capped() {
     use std::io::{Read, Write};
@@ -484,7 +486,7 @@ async fn codex_primer_replays_the_turn_envelope_capped() {
         .await
         .unwrap();
     let primer = client
-        .prime(&turns, &tools, ToolChoice::auto())
+        .prime(&turns, &tools, ToolChoice::force("retain"))
         .await
         .expect("an implicit Responses lineage takes a primer")
         .expect("the mock backend answers the primer");
@@ -496,7 +498,7 @@ async fn codex_primer_replays_the_turn_envelope_capped() {
         let (_, body) = request.split_once("\r\n\r\n").unwrap();
         serde_json::from_str::<serde_json::Value>(body).unwrap()
     };
-    let turn_body = body_of(&requests[0]);
+    let mut turn_body = body_of(&requests[0]);
     let mut primer_body = body_of(&requests[1]);
     assert!(
         !turn_body.to_string().contains("max_output_tokens"),
@@ -507,13 +509,23 @@ async fn codex_primer_replays_the_turn_envelope_capped() {
         Some(&serde_json::json!(16)),
         "the primer caps its output at the backend minimum"
     );
-    primer_body
-        .as_object_mut()
-        .unwrap()
-        .remove("max_output_tokens");
+    assert_eq!(
+        primer_body.get("tool_choice"),
+        Some(&serde_json::json!({"type": "function", "name": "retain"})),
+        "the primer forces retain, matching the peek's head rather than the turn's auto"
+    );
+    assert_eq!(
+        primer_body.get("parallel_tool_calls"),
+        Some(&serde_json::json!(false)),
+        "forcing retain disables parallel calls, as the peek sends it"
+    );
+    for field in ["max_output_tokens", "tool_choice", "parallel_tool_calls"] {
+        primer_body.as_object_mut().unwrap().remove(field);
+        turn_body.as_object_mut().unwrap().remove(field);
+    }
     assert_eq!(
         primer_body, turn_body,
-        "the primer replays the turn's input byte-for-byte apart from the cap"
+        "the primer replays the turn's input byte-for-byte apart from cap and choice"
     );
 }
 
