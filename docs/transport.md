@@ -1433,7 +1433,9 @@ automatic caches reward — foreign providers simply ignore the `cache_control`
 blocks (or translate them, as OpenRouter does for OpenAI). What's lost off the
 Anthropic path is control over breakpoint *placement*
 ([log-and-projection.md](log-and-projection.md) — the placement is
-provider-conditional and the portable one leaves a trailing tool suffix unmarked)
+provider-conditional: the portable one leaves a trailing tool suffix unmarked, and
+Gemini slugs on OpenRouter send no marker, because a marker there pins the read
+to a Gemini explicit cache that a tool loop never advances)
 and the `1h` TTL; the short foreign TTLs keep the keepalive relevant, though
 whether a `max_tokens: 0` ping refreshes a non-Anthropic cache is unverified —
 which is why the keepalive is gated on the model reporting a cache at all and

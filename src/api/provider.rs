@@ -395,13 +395,29 @@ impl Provider {
     /// marker for the upstream serving the slug, and a non-text carrier is the
     /// shape that translation does not survive on OpenAI-ish endpoints.
     ///
-    /// Fixed at boot from the provider, exactly like [`Self::image_placement`],
-    /// so projection-plus-placement is deterministic within a session.
-    pub fn breakpoint_placement(&self) -> crate::project::BreakpointPlacement {
+    /// `anthropic/` slugs on OpenRouter take the native `TrailingBlock`: the
+    /// marker passes through to Anthropic, whose cache reads only up to a
+    /// marker, so a text-block marker froze the read for a whole tool loop
+    /// while a trailing one advanced it every round (docs/log-and-projection.md).
+    ///
+    /// Gemini slugs on OpenRouter take no marker at all
+    /// ([`BreakpointPlacement::None`](crate::project::BreakpointPlacement::None)):
+    /// a marker there becomes a Gemini explicit cache that a tool loop cannot
+    /// advance, while Gemini's implicit cache tracks the growing prefix unmarked
+    /// (docs/transport.md).
+    ///
+    /// Fixed at boot from the provider and slug, exactly like
+    /// [`Self::image_placement`], so projection-plus-placement is deterministic
+    /// within a session.
+    pub fn breakpoint_placement(&self, model: &str) -> crate::project::BreakpointPlacement {
         match self {
             // Responses places its own marker (`api/responses.rs`); the Messages
             // placement is unused there.
             Self::Anthropic | Self::OpenAI | Self::OpenAICodex => {
+                crate::project::BreakpointPlacement::TrailingBlock
+            }
+            Self::OpenRouter if is_gemini(model) => crate::project::BreakpointPlacement::None,
+            Self::OpenRouter if is_anthropic_slug(model) => {
                 crate::project::BreakpointPlacement::TrailingBlock
             }
             Self::OpenRouter => crate::project::BreakpointPlacement::LastTextBlock,
@@ -1553,6 +1569,12 @@ pub(super) fn parse_generation_cost(body: &str) -> Result<f64, Error> {
 /// and the like. Matched on the author prefix plus the family, so a
 /// `google/`-authored non-Gemini slug is not swept in
 /// (docs/transport.md).
+/// An Anthropic model routed by slug (`anthropic/claude-…`), whose marker
+/// OpenRouter passes through unchanged (docs/log-and-projection.md).
+fn is_anthropic_slug(model: &str) -> bool {
+    model.trim().to_ascii_lowercase().starts_with("anthropic/")
+}
+
 fn is_gemini(model: &str) -> bool {
     let model = model.trim().to_ascii_lowercase();
     let slug = model.strip_prefix("google/").unwrap_or(&model);

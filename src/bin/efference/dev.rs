@@ -745,7 +745,7 @@ fn wire_placements(
         .map(|selection| {
             (
                 selection.provider.image_placement(&selection.model),
-                selection.provider.breakpoint_placement(),
+                selection.provider.breakpoint_placement(&selection.model),
             )
         })
         .unwrap_or_default()

@@ -145,12 +145,28 @@ fn placement_moves_the_marker_without_adding_one() {
 fn placements_are_derived_from_the_declared_provider() {
     use crate::api::Provider;
     assert_eq!(
-        Provider::Anthropic.breakpoint_placement(),
+        Provider::Anthropic.breakpoint_placement("claude-sonnet-5"),
         BreakpointPlacement::TrailingBlock
     );
     assert_eq!(
-        Provider::OpenRouter.breakpoint_placement(),
+        Provider::OpenRouter.breakpoint_placement("stealth/ox-alpha"),
         BreakpointPlacement::LastTextBlock
+    );
+    // A Gemini slug on OpenRouter sends no marker: a marker there freezes the
+    // read at it for the whole tool loop (docs/transport.md).
+    assert_eq!(
+        Provider::OpenRouter.breakpoint_placement("google/gemini-3.8-flash"),
+        BreakpointPlacement::None
+    );
+    assert_eq!(
+        Provider::OpenRouter.breakpoint_placement("google/gemma-3-27b"),
+        BreakpointPlacement::LastTextBlock
+    );
+    // An Anthropic slug on OpenRouter takes the native trailing marker: the
+    // text-block marker froze its read across a tool loop.
+    assert_eq!(
+        Provider::OpenRouter.breakpoint_placement("anthropic/claude-haiku-4.5"),
+        BreakpointPlacement::TrailingBlock
     );
     assert_eq!(
         Provider::Anthropic.image_placement("claude-sonnet-5"),
@@ -174,6 +190,34 @@ fn placements_are_derived_from_the_declared_provider() {
     assert_eq!(
         Provider::OpenRouter.image_placement("google/gemma-3-27b"),
         ImagePlacement::FollowingUserBlock
+    );
+}
+
+/// `None` leaves every block unmarked, including a breakpoint a user turn
+/// carries inside itself — any `cache_control` would become a Gemini explicit
+/// cache and freeze the read there (docs/log-and-projection.md).
+#[test]
+fn none_placement_marks_nothing() {
+    let mut messages = project(&sample_log());
+    place_trailing_cache_breakpoint(&mut messages, BreakpointPlacement::None);
+    assert!(
+        !serde_json::to_string(&messages)
+            .unwrap()
+            .contains("cache_control")
+    );
+    let turns = [
+        WireTurn::User(vec![UserPart::Text("hello".into()), UserPart::Breakpoint]),
+        WireTurn::Breakpoint,
+    ];
+    let encoded = super::super::messages::encode_messages(
+        &turns,
+        ImagePlacement::FollowingUserBlock,
+        BreakpointPlacement::None,
+    );
+    assert!(
+        !serde_json::to_string(&encoded)
+            .unwrap()
+            .contains("cache_control")
     );
 }
 

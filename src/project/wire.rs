@@ -201,6 +201,13 @@ pub enum BreakpointPlacement {
     /// re-billed at the input rate until a text block reappears — bounded, and
     /// cheaper than a cache that never reads.
     LastTextBlock,
+    /// No marker anywhere; the upstream's implicit cache is the only cache.
+    /// Gemini through OpenRouter: a marker becomes a Gemini explicit cache of
+    /// the prefix up to it, a request carrying one reads only that cache, and a
+    /// marker on a `tool_result` creates none — so `LastTextBlock` freezes the
+    /// read at the last text block for a whole tool loop, while the implicit
+    /// cache follows the growing prefix on its own.
+    None,
 }
 
 /// Place the single trailing cache breakpoint (docs/log-and-projection.md): walk back
@@ -229,6 +236,9 @@ pub fn place_trailing_cache_breakpoint(
     messages: &mut [ApiMessage],
     placement: BreakpointPlacement,
 ) {
+    if placement == BreakpointPlacement::None {
+        return;
+    }
     for message in messages.iter_mut().rev() {
         for block in message.content.iter_mut().rev() {
             let cache_control = match (block, placement) {

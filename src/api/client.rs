@@ -322,7 +322,7 @@ impl Client {
     /// The provider-derived cache-breakpoint placement this session must use
     /// (docs/log-and-projection.md).
     pub fn breakpoint_placement(&self) -> crate::project::BreakpointPlacement {
-        self.endpoint.provider.breakpoint_placement()
+        self.endpoint.provider.breakpoint_placement(&self.model)
     }
 
     pub fn new(

@@ -349,7 +349,7 @@ pub(crate) async fn peek(
         .map(|p| p.image_placement(placement_model))
         .unwrap_or_default();
     let breakpoint = provider
-        .map(|p| p.breakpoint_placement())
+        .map(|p| p.breakpoint_placement(placement_model))
         .unwrap_or_default();
     let all = gates(&entries);
     let mut selected: Vec<&Gate> = match seq {

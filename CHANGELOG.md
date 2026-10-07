@@ -12,6 +12,7 @@ behind a change, see [`journal/`](journal/).
 - **`C-o` folds a cold session from the TUI** (docs/tui.md): the alternative to `⏎`-again's cold read, named in the cold notice.
 
 ### Fixed
+- **Cache marker per slug on OpenRouter** (docs/log-and-projection.md): the last-text-block marker froze the cached read for a whole tool loop on Gemini and Claude; Gemini slugs now send no marker (its implicit cache follows the prefix, and the `read N · write N` explicit-cache creation rows go away), and `anthropic/` slugs mark the trailing block as on the native API.
 - **Deterministic TUI wrap-linearity regression test:** it counts bounded-width grapheme measurements rather than elapsed time, so load cannot fail a pre-commit run.
 - **Fold a cold session** (docs/control-api.md, docs/summary-head.md): `POST /loop/fold` has the session's own model replace its history up to a cut with an account, keeping the last ~15k tokens of payloads verbatim; the session then counts as never-sent (no keepalive, not cold) until its next request.
 - **No cold read without consent** (docs/control-api.md): a session whose prompt cache is believed expired answers `POST /turns` and `POST /loop/continue` with `409 cold` (nothing queued) unless the request carries `accept_cold_read`; the loop parks before a main-prefix request on a cold cache and holds inbox wakes. `efference control turn --accept-cold-read` and the MCP `turn` flag send it; in the TUI and web composer, sending again after the refusal is the consent.

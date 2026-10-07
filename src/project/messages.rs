@@ -24,7 +24,7 @@ pub fn encode_messages(
     let mut messages = Vec::new();
     for turn in turns {
         match turn {
-            WireTurn::User(parts) => encode_user(parts, placement, &mut messages),
+            WireTurn::User(parts) => encode_user(parts, placement, breakpoint, &mut messages),
             WireTurn::Assistant(AssistantOutput::Messages(blocks)) => messages.push(ApiMessage {
                 role: Role::Assistant,
                 content: blocks.iter().map(messages_block_to_api).collect(),
@@ -39,7 +39,12 @@ pub fn encode_messages(
     messages
 }
 
-fn encode_user(parts: &[UserPart], placement: ImagePlacement, messages: &mut Vec<ApiMessage>) {
+fn encode_user(
+    parts: &[UserPart],
+    placement: ImagePlacement,
+    breakpoint: BreakpointPlacement,
+    messages: &mut Vec<ApiMessage>,
+) {
     let mut content: Vec<ApiBlock> = Vec::new();
     // Images held out of the user message under `AfterInterposedTurn`, with the
     // `seq` of each result they came from for the interposed turn's text. Empty
@@ -69,7 +74,9 @@ fn encode_user(parts: &[UserPart], placement: ImagePlacement, messages: &mut Vec
                 }
             }
             UserPart::Breakpoint => {
-                if let Some(block) = content.last_mut() {
+                if let Some(block) = content.last_mut()
+                    && breakpoint != BreakpointPlacement::None
+                {
                     *block.cache_control_mut() = Some(CacheControl::Ephemeral);
                 }
             }

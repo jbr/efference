@@ -626,6 +626,28 @@ so:
   portable placement is that the unmarked suffix re-bills at the input rate each
   request until a text block (a user turn, a pinned notification, a
   surfaced-context reminder) reappears.
+- `TrailingBlock` also for **`anthropic/` slugs on OpenRouter**: the marker
+  passes through to Anthropic, whose cache reads only up to it. Probed
+  2026-10-07 on `anthropic/claude-haiku-4.5`: under `LastTextBlock` the read held
+  at 7,592 tokens across a six-round tool loop while uncached input grew ~1.2k a
+  round; trailing, the read advanced every round and each request wrote only its
+  own delta.
+- `None` (**OpenRouter, Gemini slugs**) — no marker at all, chosen from the slug
+  the way `ImagePlacement` picks its Gemini arm. OpenRouter turns a marker into a
+  Gemini explicit cache of the prefix up to it; a request carrying a marker reads
+  only that cache, and a marker on a `tool_result` (or on text nested inside
+  one) creates none. Under `LastTextBlock` the read therefore froze at the last
+  text block for a whole tool loop while the uncached tail grew by each round.
+  Unmarked, Gemini's implicit cache follows the prefix in coarse steps (~4k
+  tokens, with an occasional full miss); over a 15-round probe loop that cost
+  less than half the frozen placement (2026-10-07). Each explicit-cache creation
+  also reported `input 0 · cache_read N · cache_write N` and billed about 1.25×
+  an uncached prompt; OpenRouter's generation record counts the written tokens
+  in both `native_tokens_prompt` and `native_tokens_cached`, which reads as the
+  prompt billed twice.
+  Creations followed every marker move and every switch of the upstream
+  provider (`Google` ↔ `Google AI Studio`), since explicit caches do not cross
+  providers; with no marker there is no creation.
 
 On the Responses dialect the marker is `prompt_cache_breakpoint: {"mode":"explicit"}`
 on an `input_text` / `input_image` part, sent only when the model's cache policy is

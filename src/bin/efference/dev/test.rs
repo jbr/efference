@@ -108,7 +108,7 @@ fn wire_placements_follow_the_recorded_provider_and_model() {
         wire_placements(Some(&identity)),
         (
             efference::project::ImagePlacement::AfterInterposedTurn,
-            efference::project::BreakpointPlacement::LastTextBlock,
+            efference::project::BreakpointPlacement::None,
         )
     );
     assert_eq!(
@@ -225,7 +225,7 @@ fn write_openrouter_image_log(path: &std::path::Path) {
 
 /// The lean command path must apply the recorded OpenRouter/Gemini placements,
 /// not merely expose them through a helper: the output carries the interposed
-/// assistant turn and puts the breakpoint on its text block.
+/// assistant turn and carries no breakpoint.
 #[tokio::test]
 async fn wire_messages_renders_recorded_openrouter_placements_end_to_end() {
     let log_path = std::env::temp_dir().join(format!(
@@ -253,14 +253,11 @@ async fn wire_messages_renders_recorded_openrouter_placements_end_to_end() {
             .is_some_and(|text| text.contains("receiving the image from [3]")),
         "AfterInterposedTurn text is missing: {rendered}"
     );
-    assert_eq!(
-        messages[3]["content"][0]["cache_control"]["type"].as_str(),
-        Some("ephemeral"),
-        "LastTextBlock must mark the interposed text: {rendered}"
-    );
+    // A Gemini slug takes no marker; the default placement would have marked
+    // the tail image, so its absence shows the recorded slug was used.
     assert!(
-        messages[2]["content"][0].get("cache_control").is_none(),
-        "the tool result must remain behind the text breakpoint: {rendered}"
+        !rendered.contains("cache_control"),
+        "a Gemini replay carries no breakpoint: {rendered}"
     );
     assert_eq!(messages[4]["content"][0]["type"], "image");
 
@@ -304,10 +301,9 @@ async fn wire_full_uses_recorded_identity_without_loading_config() {
             .is_some_and(|text| text.contains("receiving the image from [3]")),
         "the full envelope must retain the recorded OpenRouter placement: {request}"
     );
-    assert_eq!(
-        messages[3]["content"][0]["cache_control"]["type"].as_str(),
-        Some("ephemeral"),
-        "the full envelope must retain the recorded text breakpoint: {request}"
+    assert!(
+        !rendered.contains("cache_control"),
+        "the full envelope must retain the recorded no-marker placement: {request}"
     );
 
     let _ = std::fs::remove_file(&log_path);
