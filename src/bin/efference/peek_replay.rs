@@ -257,7 +257,7 @@ fn pct(n: usize, d: usize) -> String {
 /// The session's own model, off the recorded preamble's identity line. The line
 /// carries the session's id in a second sentence (docs/context.md), so the model
 /// is the first sentence's body, not the whole line.
-fn session_model(system: &str) -> Option<String> {
+pub(crate) fn session_model(system: &str) -> Option<String> {
     let line = system.lines().next()?.strip_prefix("You are ")?;
     let model = line.split_once(". ").map_or(line, |(first, _)| first);
     model.strip_suffix('.').unwrap_or(model).to_string().into()

@@ -556,3 +556,12 @@ fn a_completion_with_no_results_opens_no_gate() {
     )];
     assert!(gates(&log).is_empty());
 }
+
+#[test]
+fn ladder_gaps_parse_comma_separated_seconds() {
+    assert_eq!(
+        crate::primer_ladder::parse_gaps("0,120,300,480").unwrap(),
+        vec![0, 120, 300, 480]
+    );
+    assert!(crate::primer_ladder::parse_gaps("60, banana").is_err());
+}

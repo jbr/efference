@@ -238,6 +238,50 @@ pub(crate) enum DevCommand {
         #[arg(long, default_value = "15")]
         table: usize,
     },
+    /// Plant triage primers at controlled gaps against one recorded gate and replay
+    /// the recorded peek per rung, reporting cache reads
+    /// (backlog/separate-triage-cold-prefix.md). Decides eviction vs
+    /// write-visibility lag vs envelope keying: a back-to-back primer pair that
+    /// chains proves truncated primers plant; a gapped pair that misses bounds the
+    /// lifetime; a peek after a forced primer is the v1.1 verdict live. Sends real
+    /// requests unless `--dry-run`. An experiment verb; remove it once the question
+    /// it answers is settled.
+    PrimerLadder {
+        /// Path to a session dir or a `log.jsonl` holding the gate to plant before.
+        path: PathBuf,
+        /// Plant before the gate triaging this result `seq`. Omit for the deepest
+        /// gate, where a cold prefix hurts most.
+        #[arg(long)]
+        seq: Option<u64>,
+        /// Seconds between primer pairs per ladder rung, comma-separated.
+        #[arg(long, default_value = "0,120,300,480")]
+        gaps: String,
+        /// Print the planned arms instead of sending them.
+        #[arg(long)]
+        dry_run: bool,
+        /// Model to replay against. Match the session's own model or the numbers
+        /// aren't comparable to its record.
+        #[arg(long, default_value = "claude-haiku-4-5")]
+        model: String,
+        /// The separate triage model whose lineage the ladder plants: this model on
+        /// its own client, the same shape `--triage-model` boots. Required — the
+        /// ladder is meaningless on a shared peek.
+        #[arg(long)]
+        triage_model: Option<String>,
+        /// With --triage-model: let it think.
+        #[arg(long)]
+        triage_thinking: bool,
+        /// With --triage-model: `tool_choice: auto` on the replayed peek instead of
+        /// forcing the peek tool.
+        #[arg(long)]
+        triage_auto_choice: bool,
+        /// With --triage-model: its reasoning level (implies thinking on).
+        #[arg(long, value_name = "LEVEL")]
+        triage_effort: Option<String>,
+        /// Write every report line as JSON to this file instead of stdout.
+        #[arg(long)]
+        out: Option<PathBuf>,
+    },
     /// Point it at a session JSONL log and print the wire request — the deterministic projection
     /// the assistant actually sees. Reconstructs the full envelope (`system` +
     /// `tools` + `messages`) exactly as a real turn POSTs it: `project(log)` with
@@ -537,6 +581,26 @@ pub(crate) async fn run<F: Future<Output = Result<ClientTarget, CliError>>>(
                 path, seq, repeat, limit, dry_run, &model, triage, out, table,
             )
             .await
+        }
+        DevCommand::PrimerLadder {
+            path,
+            seq,
+            gaps,
+            dry_run,
+            model,
+            triage_model,
+            triage_thinking,
+            triage_auto_choice,
+            triage_effort,
+            out,
+        } => {
+            let triage = triage_model.map(|model| efference::distill::TriageModel {
+                model,
+                thinking: triage_thinking,
+                auto_choice: triage_auto_choice,
+                effort: triage_effort,
+            });
+            primer_ladder::ladder(path, seq, &gaps, dry_run, &model, triage, out).await
         }
         DevCommand::Spotter {
             scope,

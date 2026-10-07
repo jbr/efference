@@ -362,12 +362,22 @@ impl ForkPeek {
     /// output is discarded — and the peek keeps its own forced choice, so the
     /// anti-invented-call guard stays where it belongs.
     pub async fn prime(&self, turns: &[WireTurn], tools: &[Value]) -> Option<TriagePrimerOutcome> {
+        self.prime_with(turns, tools, ToolChoice::force(RETAIN))
+            .await
+    }
+
+    /// `prime` with an explicit choice: the ladder verb's `auto` arm replays v1
+    /// as it shipped, against the forced choice live gates send now
+    /// (backlog/separate-triage-cold-prefix.md). Live code always uses `prime`.
+    pub async fn prime_with(
+        &self,
+        turns: &[WireTurn],
+        tools: &[Value],
+        choice: ToolChoice,
+    ) -> Option<TriagePrimerOutcome> {
         let own = self.own.as_ref()?;
         let started = std::time::Instant::now();
-        let result = own
-            .client
-            .prime(turns, tools, ToolChoice::force(RETAIN))
-            .await?;
+        let result = own.client.prime(turns, tools, choice).await?;
         let send_ms = started.elapsed().as_millis().try_into().unwrap_or(u64::MAX);
         Some(TriagePrimerOutcome {
             usage: match result {

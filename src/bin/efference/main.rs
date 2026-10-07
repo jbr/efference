@@ -181,6 +181,8 @@ mod paint;
 #[cfg(feature = "dev")]
 mod peek_replay;
 mod picker;
+#[cfg(feature = "dev")]
+mod primer_ladder;
 mod serve;
 mod setup;
 #[cfg(feature = "dev")]
