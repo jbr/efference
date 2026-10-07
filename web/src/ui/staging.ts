@@ -92,9 +92,10 @@ export function useStagedAttachments() {
   const stage = useCallback((file: File, pastedText?: string) => {
     const key = nextKey();
     const label = pastedName(file);
-    const preview = file.type.startsWith("image/")
-      ? URL.createObjectURL(file)
-      : null;
+    const isImg =
+      file.type.startsWith("image/") ||
+      /\.(png|jpe?g|gif|webp|svg|bmp|ico)$/i.test(file.name);
+    const preview = isImg ? URL.createObjectURL(file) : null;
     setStaged((all) => [
       ...all,
       { key, label, preview, status: "uploading", pastedText },
@@ -107,7 +108,18 @@ export function useStagedAttachments() {
         }
         setStaged((all) =>
           all.map((s) =>
-            s.key === key ? { ...s, status: "ready", attachment } : s,
+            s.key === key
+              ? {
+                  ...s,
+                  status: "ready",
+                  attachment,
+                  preview:
+                    s.preview ??
+                    (isImage(attachment.kind)
+                      ? attachmentUrl(attachment.name)
+                      : null),
+                }
+              : s,
           ),
         );
       },

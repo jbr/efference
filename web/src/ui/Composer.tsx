@@ -20,6 +20,7 @@ import { useDockOffset } from "./float.ts";
 import { useNarrow } from "./useNarrow.ts";
 import { StagedAttachments } from "./Attachments.tsx";
 import { pastesAsFile, useStagedAttachments } from "./staging.ts";
+import { useDragToDismiss } from "./useDragToDismiss.ts";
 
 /** What a recall handed back: the text to prepend and the attachments to stage
  * again. `nonce` is what makes a repeat splice — recalling the same turn twice is
@@ -86,6 +87,8 @@ export function Composer({
   const field = useRef<HTMLTextAreaElement>(null);
   const fabBottom = useDockOffset();
   const collapsed = narrow && !expanded;
+  const { sheet: dragSheet, handlers: dragHandlers } =
+    useDragToDismiss<HTMLFormElement>(() => setExpanded(false));
   useEffect(() => {
     if (narrow && expanded) field.current?.focus();
   }, [narrow, expanded]);
@@ -234,6 +237,7 @@ export function Composer({
         </button>
       )}
       <form
+        ref={dragSheet}
         className={dragging ? "composer dragging" : "composer"}
         hidden={collapsed}
         onSubmit={(event) => {
@@ -242,6 +246,16 @@ export function Composer({
         }}
       >
         <div className="col composer-inner">
+          {narrow && (
+            <div
+              className="composer-drag-handle"
+              {...dragHandlers}
+              title="drag down to collapse"
+              aria-label="drag down to collapse"
+            >
+              <span className="composer-grabber" aria-hidden />
+            </div>
+          )}
           {error && <div className="error">{error}</div>}
           <StagedAttachments
             staged={attachments.staged}
@@ -249,94 +263,139 @@ export function Composer({
             onInline={inline}
           />
           <div className="composer-input">
-            <span className="prompt">›</span>
-            <textarea
-              ref={field}
-              value={draft}
-              onChange={(event) => setDraft(event.target.value)}
-              onPaste={onPaste}
-              onKeyDown={(event) => {
-                // On a phone there is no shift-enter, so intercepting Enter
-                // would make multi-line drafts impossible: return inserts a
-                // newline and the send button sends.
-                if (!narrow && event.key === "Enter" && !event.shiftKey) {
-                  event.preventDefault();
-                  void submit();
-                }
-                if (narrow && event.key === "Escape") setExpanded(false);
-              }}
-              placeholder={
-                ask !== null
-                  ? replyHint(ask)
-                  : narrow
-                    ? "send a turn"
-                    : "send a turn (enter to send, shift-enter for newline)"
-              }
-              rows={3}
-            />
-            {narrow && (
-              <button
-                type="button"
-                className="linkish"
-                title="put the composer away; the draft keeps"
-                onClick={() => setExpanded(false)}
-              >
-                ⌄
-              </button>
-            )}
-            {/* The picker is the phone's way in: there is no drag, and a
-                paste carries no file. */}
-            <input
-              ref={picker}
-              type="file"
-              multiple
-              hidden
-              onChange={(event) => {
-                for (const file of event.target.files ?? []) stage(file);
-                event.target.value = "";
-              }}
-            />
-            <button
-              type="button"
-              className="linkish"
-              title="attach files (or paste, or drop them anywhere)"
-              onClick={() => picker.current?.click()}
-            >
-              attach
-            </button>
-            <button disabled={attachments.uploading}>send</button>
+            <div className="composer-text-row">
+              <textarea
+                ref={field}
+                value={draft}
+                onChange={(event) => setDraft(event.target.value)}
+                onPaste={onPaste}
+                onKeyDown={(event) => {
+                  // On a phone there is no shift-enter, so intercepting Enter
+                  // would make multi-line drafts impossible: return inserts a
+                  // newline and the send button sends.
+                  if (!narrow && event.key === "Enter" && !event.shiftKey) {
+                    event.preventDefault();
+                    void submit();
+                  }
+                  if (narrow && event.key === "Escape") setExpanded(false);
+                }}
+                placeholder={ask !== null ? replyHint(ask) : "send a turn…"}
+                rows={3}
+              />
+            </div>
+            <div className="composer-toolbar">
+              <div className="composer-toolbar-left">
+                {/* The picker is the phone's way in: there is no drag, and a
+                    paste carries no file. */}
+                <input
+                  ref={picker}
+                  type="file"
+                  multiple
+                  hidden
+                  onChange={(event) => {
+                    for (const file of event.target.files ?? []) stage(file);
+                    event.target.value = "";
+                  }}
+                />
+                <button
+                  type="button"
+                  className="attach-btn"
+                  title="attach files (or paste, or drop them anywhere)"
+                  aria-label="attach files"
+                  onClick={() => picker.current?.click()}
+                >
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+                  </svg>
+                  <span>attach</span>
+                </button>
+                <span
+                  className={
+                    turn.kind === "running"
+                      ? "turn-state dim"
+                      : turn.kind === "stalled"
+                        ? "turn-state stalled"
+                        : "turn-state your-turn"
+                  }
+                  title={turn.title}
+                >
+                  {turn.text}
+                </span>
+              </div>
+              <div className="composer-toolbar-right">
+                {running && (
+                  <button
+                    type="button"
+                    className="interrupt-btn"
+                    onClick={() => act(interruptLoop())}
+                  >
+                    interrupt
+                  </button>
+                )}
+                {(pace?.held ?? false) && (
+                  <button
+                    type="button"
+                    className="resume-btn"
+                    onClick={() => act(patchLoop({ held: false }))}
+                  >
+                    resume
+                  </button>
+                )}
+                {!narrow && (
+                  <span className="composer-hint">shift-enter for newline</span>
+                )}
+                <button
+                  disabled={attachments.uploading}
+                  className="send-btn primary"
+                >
+                  <span>send</span>
+                  {!narrow && <kbd className="send-kbd">↵</kbd>}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </form>
-      {/* The status bar: the dock's outermost row, at the window edge below
-          the composer. Turn state at the left; at the right only the controls
-          that apply now — interrupt while a turn runs, resume while held.
-          The rest of the loop's dials are the drawer's (ui/Drawer.tsx). */}
-      <div className="status-bar">
-        <span
-          className={
-            turn.kind === "running"
-              ? "turn-state dim"
-              : turn.kind === "stalled"
-                ? "turn-state stalled"
-                : "turn-state your-turn"
-          }
-          title={turn.title}
-        >
-          {turn.text}
-        </span>
-        <span className="spacer" />
-        {running && (
-          <button type="button" onClick={() => act(interruptLoop())}>
-            interrupt
-          </button>
-        )}
-        {(pace?.held ?? false) && (
-          <button type="button" onClick={() => act(patchLoop({ held: false }))}>
-            resume
-          </button>
-        )}
-      </div>
+      {collapsed && (
+        <div className="status-bar">
+          <span
+            className={
+              turn.kind === "running"
+                ? "turn-state dim"
+                : turn.kind === "stalled"
+                  ? "turn-state stalled"
+                  : "turn-state your-turn"
+            }
+            title={turn.title}
+          >
+            {turn.text}
+          </span>
+          <span className="spacer" />
+          {running && (
+            <button type="button" onClick={() => act(interruptLoop())}>
+              interrupt
+            </button>
+          )}
+          {(pace?.held ?? false) && (
+            <button
+              type="button"
+              onClick={() => act(patchLoop({ held: false }))}
+            >
+              resume
+            </button>
+          )}
+        </div>
+      )}
     </>
   );
 }

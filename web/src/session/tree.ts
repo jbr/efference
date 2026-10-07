@@ -309,6 +309,10 @@ export function buildTree(entries: LogEntry[]): TranscriptNode[] {
     // entry it is should read as empty rather than as a collapsed block.
     if ("Preamble" in p) continue;
 
+    // A dispatch marker (Payload::CallStarted) appended before tool dispatch;
+    // projects to nothing on the transcript.
+    if ("CallStarted" in p) continue;
+
     // A title entry is appended even when the peek kept the previous text
     // (docs/session-title.md); only a change is something to read.
     if ("Title" in p) {

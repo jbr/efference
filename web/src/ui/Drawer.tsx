@@ -8,7 +8,7 @@
 // A section with nothing in it is not drawn: "no processes" and "nothing
 // pending" were placeholders a reader had to open to learn nothing from.
 
-import { type PointerEvent, type ReactNode, useRef, useState } from "react";
+import { type ReactNode, useState } from "react";
 import { patchLoop } from "../api/http.ts";
 import type {
   Pace,
@@ -22,6 +22,7 @@ import type {
 } from "../api/types.ts";
 import { homeRelative } from "./identity.ts";
 import { Inbox, Interface, Policy, Tasks } from "./Panel.tsx";
+import { useDragToDismiss } from "./useDragToDismiss.ts";
 import { useNarrow } from "./useNarrow.ts";
 import "./Drawer.css";
 
@@ -177,67 +178,6 @@ function RunControls({
  * of its release velocity. iOS projects a released sheet's momentum and
  * settles on the side of the midpoint the projection lands on; this is that
  * rule with a constant deceleration window. */
-const PROJECTION_MS = 180;
-
-/** Only the last stretch of a drag is its release velocity: a drag that sped
- * up and then slowed to a stop was not a flick. */
-const VELOCITY_WINDOW_MS = 80;
-
-/** Drag the phone sheet down by its header to dismiss it — the grabber's
- * promise. The sheet follows the finger; on release it closes if where its
- * momentum would carry it is past half its height, and otherwise springs
- * back. The transform is set on the element directly so a drag re-renders
- * nothing. */
-function useDragToDismiss(onClose: () => void) {
-  const sheet = useRef<HTMLElement>(null);
-  const drag = useRef<{ y: number; samples: [number, number][] } | null>(null);
-  const offset = (event: PointerEvent) =>
-    Math.max(0, event.clientY - (drag.current?.y ?? event.clientY));
-  const onPointerDown = (event: PointerEvent) => {
-    if ((event.target as HTMLElement).closest("button")) return;
-    drag.current = { y: event.clientY, samples: [[event.timeStamp, 0]] };
-    (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
-    if (sheet.current) sheet.current.style.transition = "none";
-  };
-  const onPointerMove = (event: PointerEvent) => {
-    if (!drag.current || !sheet.current) return;
-    const dy = offset(event);
-    const samples = drag.current.samples;
-    samples.push([event.timeStamp, dy]);
-    // Above its resting place the sheet stretches with resistance rather
-    // than stopping dead, the way an iOS sheet does when pushed back up.
-    const raw = event.clientY - drag.current.y;
-    const shown = raw < 0 ? -Math.sqrt(-raw) * 2 : dy;
-    while (
-      samples.length > 2 &&
-      event.timeStamp - samples[0][0] > VELOCITY_WINDOW_MS
-    ) {
-      samples.shift();
-    }
-    sheet.current.style.transform = `translateY(${shown}px)`;
-  };
-  const onPointerUp = (event: PointerEvent) => {
-    const state = drag.current;
-    const element = sheet.current;
-    const dy = offset(event);
-    drag.current = null;
-    if (!state || !element) return;
-    const [t0, y0] = state.samples[0];
-    const velocity = (dy - y0) / Math.max(1, event.timeStamp - t0);
-    element.style.transition = "";
-    element.style.transform = "";
-    if (dy + velocity * PROJECTION_MS > element.offsetHeight / 2) onClose();
-  };
-  return {
-    sheet,
-    handlers: {
-      onPointerDown,
-      onPointerMove,
-      onPointerUp,
-      onPointerCancel: onPointerUp,
-    },
-  };
-}
 
 export function Drawer({
   closing,

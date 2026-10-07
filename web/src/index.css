@@ -742,6 +742,29 @@ pre {
   padding-bottom: 0.6rem;
 }
 
+.composer-drag-handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 1.1rem;
+  margin-top: -0.3rem;
+  margin-bottom: -0.1rem;
+  touch-action: none;
+  cursor: grab;
+}
+
+.composer-drag-handle:active {
+  cursor: grabbing;
+}
+
+.composer-grabber {
+  display: block;
+  width: 2.25rem;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border-strong);
+}
+
 .panel-body {
   overflow: hidden;
 }
@@ -952,51 +975,49 @@ pre {
    soft without reading as "rounded". */
 .composer-input {
   display: flex;
-  gap: 0.7rem;
-  align-items: flex-start;
+  flex-direction: column;
+  gap: 0.4rem;
   background: var(--bg-inset);
   border: 1px solid var(--border-control);
   border-radius: 2px;
   padding: 0.6rem 0.9rem;
 }
 
-.composer-input .prompt {
-  padding-top: 0.1rem;
+.composer-text-row {
+  display: flex;
+  width: 100%;
 }
 
-/* The block cursor is the native caret: `caret-shape` shipped in Chromium
-   (verified Chrome 151); a browser without it falls back to the accent bar.
-   The mirror-div overlay this avoids is the version that would need its own
-   pass — don't build it.
-
-   `field-sizing: content` replaces the manual resize grip: the field grows
-   with the draft between 3 and 10 lines (Chrome 123+; elsewhere it stays at
-   `rows`). The 1ch right padding is caret room — a block caret at the wrap
-   column is one character wide, and with zero padding the padding-box edge
-   clipped it to a sliver. */
-.composer-input textarea {
-  font: inherit;
-  line-height: 1.5;
-  /* A definite basis, not `flex: 1` (basis 0%): WebKit's `field-sizing:
-     content` shrink-wraps the inline axis when the basis is indefinite,
-     which collapsed the field to ~1ch on phone widths. */
+.composer-text-row textarea {
+  font-family: var(--font-prose);
+  font-size: 1.125rem;
+  line-height: 1.55;
   flex: 1 1 100%;
   min-width: 0;
   border: none;
   background: none;
   color: var(--fg);
-  padding: 0 1ch 0 0;
+  padding: 0.1rem 0.5rem 0.1rem 0;
   resize: none;
   field-sizing: content;
   min-height: 3lh;
   max-height: 10lh;
   caret-color: var(--accent);
-  caret-shape: block;
 }
 
-.composer-input textarea:focus {
+.composer-text-row textarea:focus {
   outline: none;
   box-shadow: none;
+}
+
+.composer-dismiss {
+  font-size: 0.82rem;
+  color: var(--fg-dim);
+  padding: 0.2rem 0.4rem;
+}
+
+.composer-dismiss:hover {
+  color: var(--fg);
 }
 
 /* The box is the focus affordance, not the borderless textarea inside it. */
@@ -1005,14 +1026,127 @@ pre {
   box-shadow: 0 0 10px var(--accent-glow);
 }
 
-.composer-input textarea::placeholder {
+.composer-text-row textarea::placeholder {
   color: var(--fg-faint);
 }
 
-/* Send sits inside the input box, bottom-right — the mock has no send
-   button at all, but touch needs one; flat and out of the way. */
-.composer-input button {
-  align-self: flex-end;
+/* Dedicated toolbar row underneath the text entry */
+.composer-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.7rem;
+  padding-top: 0.35rem;
+  border-top: 1px solid var(--border-subtle);
+  margin-top: 0.2rem;
+}
+
+.composer-toolbar-left,
+.composer-toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+}
+
+.composer-toolbar .turn-state {
+  font-family: var(--font-prose);
+  font-style: italic;
+  font-size: 0.95rem;
+  color: var(--fg-dim);
+  margin-left: 0.35rem;
+  user-select: none;
+}
+
+.composer-toolbar .turn-state.stalled {
+  color: var(--warn);
+}
+
+.composer-toolbar .interrupt-btn {
+  font-family: var(--font-ui);
+  font-size: 0.8rem;
+  padding: 0.2rem 0.65rem;
+  border-radius: 4px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-control);
+  color: var(--fg-dim);
+  cursor: pointer;
+}
+
+.composer-toolbar .interrupt-btn:hover {
+  border-color: var(--border-strong);
+  color: var(--fg-bright);
+}
+
+.composer-toolbar .resume-btn {
+  font-family: var(--font-ui);
+  font-size: 0.8rem;
+  padding: 0.2rem 0.65rem;
+  border-radius: 4px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-control);
+  color: var(--fg);
+  cursor: pointer;
+}
+
+.composer-toolbar .resume-btn:hover {
+  border-color: var(--border-strong);
+  color: var(--fg-bright);
+}
+
+.composer-hint {
+  font-family: var(--font-prose);
+  font-style: italic;
+  font-size: 0.85rem;
+  color: var(--fg-faint);
+  user-select: none;
+}
+
+.send-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.25rem 0.75rem;
+  font-size: 0.82rem;
+  border-radius: 4px;
+}
+
+.send-btn.primary .send-kbd {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  background: rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: inherit;
+  padding: 0 0.25rem;
+  border-radius: 2px;
+  line-height: 1.25;
+}
+
+.composer-toolbar button.attach-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-control);
+  padding: 0.22rem 0.65rem;
+  border-radius: 4px;
+  font-family: var(--font-ui);
+  font-size: 0.8rem;
+  color: var(--fg-dim);
+  cursor: pointer;
+}
+
+.composer-toolbar button.attach-btn svg {
+  display: block;
+  opacity: 0.75;
+}
+
+.composer-toolbar button.attach-btn:hover {
+  color: var(--fg-bright);
+  border-color: var(--border-strong);
+}
+
+.composer-toolbar button.attach-btn:hover svg {
+  opacity: 1;
 }
 
 /* Attachment chips (ui/Attachments.tsx): the composer's staged row above the
