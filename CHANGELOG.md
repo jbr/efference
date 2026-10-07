@@ -8,6 +8,7 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- **Triage-lineage primer on Codex** (docs/transport.md): each batch replays the turn's input on the own triage client at execution start, capped at 16 output tokens with the peek's tools and forced choice, so result-triage peeks read warm instead of re-reading the transcript.
 - **`C-o` folds a cold session from the TUI** (docs/tui.md): the alternative to `⏎`-again's cold read, named in the cold notice.
 - **Fold a cold session** (docs/control-api.md, docs/summary-head.md): `POST /loop/fold` has the session's own model replace its history up to a cut with an account, keeping the last ~15k tokens of payloads verbatim; the session then counts as never-sent (no keepalive, not cold) until its next request.
 - **No cold read without consent** (docs/control-api.md): a session whose prompt cache is believed expired answers `POST /turns` and `POST /loop/continue` with `409 cold` (nothing queued) unless the request carries `accept_cold_read`; the loop parks before a main-prefix request on a cold cache and holds inbox wakes. `efference control turn --accept-cold-read` and the MCP `turn` flag send it; in the TUI and web composer, sending again after the refusal is the consent.
