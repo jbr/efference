@@ -9,9 +9,12 @@ export function AppHeader({
   onHome,
   className = "top-bar",
   innerClassName = "top-bar-inner",
+  below,
   ref,
 }: {
   children?: ReactNode;
+  /** A row under the bar's own, inside the same sticky header. */
+  below?: ReactNode;
   homeHref?: string | null;
   onHome?: () => void;
   className?: string;
@@ -48,6 +51,7 @@ export function AppHeader({
         )}
         {children}
       </div>
+      {below}
     </header>
   );
 }

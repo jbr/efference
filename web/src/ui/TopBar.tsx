@@ -13,6 +13,7 @@ import type {
 } from "../api/types.ts";
 import { upstreamChip } from "./upstream.ts";
 import { AppHeader } from "./AppHeader.tsx";
+import { SessionSwitcher } from "./SessionSwitcher.tsx";
 
 const tokens = (n: number) =>
   n >= 1_000_000
@@ -101,7 +102,15 @@ export function TopBar({
   const chip = upstreamChip(upstreamFailure, upstreamRetry);
   const context = usage?.context ?? null;
   return (
-    <AppHeader homeHref={listHref}>
+    <AppHeader
+      homeHref={listHref}
+      below={
+        // Only under a host are there other sessions to switch to.
+        listHref !== null && identity !== null ? (
+          <SessionSwitcher currentId={identity.id} />
+        ) : undefined
+      }
+    >
       {identity !== null && (
         <span className="session-name" title={identity.id}>
           {identity.title ?? identity.id}

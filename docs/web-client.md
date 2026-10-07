@@ -1008,6 +1008,24 @@ their own. The **Session** control carries a count when anything in the drawer
 asks for attention — pending notifications, policy proposals, running
 processes (`ui/drawerAttention.ts`).
 
+**The session switcher** (`ui/SessionSwitcher.tsx`) is a second row inside the sticky
+header, present only under a host and only while another session is live. It lists the
+*other* live sessions on the host, from the same listing subscription the overview holds
+(`api/sessions.ts`), so it adds one connection at rest. A tab is a status dot and a title
+(the id before one is written); the dot is read from the listing alone through `cardModel`:
+a gated session is an accent dot with a halo, a session whose turn ended or that is asking
+is the accent dot without one — a finished turn waits on the operator until the session is
+archived — a stalled one is the warn colour, a running one pulses faintly, and a session
+never started is a hollow ring. Hovering or focusing a tab opens a card with the overview
+card's status line, title, activity line and context meter; that opens the session's own
+state stream and log tail (`openSessionCard`, `presence=off`) only while the card shows.
+Tabs run most recently visited first, from visit times in `localStorage`
+(`ui/switcherOrder.ts`) — switching is a page load, so nothing else survives it — and
+sessions never visited here follow in the host's id order. Tabs are measured against the
+row, and those that do not fit are listed in a `+N` menu whose button carries an accent dot
+when a session in it is waiting on the operator; attention does not reorder tabs. Entering
+a session from a tab is a navigation, as from a card.
+
 It also carries one warn-tinted chip left of the meter, fed by the two
 transport topics through `ui/upstream.ts` (a pure function of the pair, so the
 component holds no endpoint or clock logic). While `upstream_retry` is set the

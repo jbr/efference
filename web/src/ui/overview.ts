@@ -103,6 +103,17 @@ export function gatePreview(input: unknown): string {
   return JSON.stringify(input);
 }
 
+/** The predicate the card's top line completes after the session's id —
+ * "amber-lattice needs approval" — or nothing: working is the default state and
+ * needs no words, and a new session's title already says it. */
+export function statusPhrase(card: CardModel): string | null {
+  if (card.status === "gated") return "needs approval";
+  if (card.status === "asking") return "has a question";
+  if (card.status === "stalled") return "has stalled";
+  if (card.attention === "your_turn") return "is waiting for you";
+  return null;
+}
+
 export function cardModel(
   entry: SessionEntry,
   all: SessionEntry[],

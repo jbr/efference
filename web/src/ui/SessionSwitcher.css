@@ -1,0 +1,319 @@
+/* The quick session switcher (ui/SessionSwitcher.tsx, docs/web-client.md):
+   a slim second row in the top bar, and the card a tab opens. */
+
+.switcher {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+  /* The tabs' own side padding is taken off the left so the first dot lines
+     up under the wordmark. */
+  padding: 0 0.9rem 0.1rem calc(0.9rem - 0.55rem);
+}
+
+/* The fit is measured from this strip, which is laid out at natural width and
+   never seen: zero-sized and clipped, so it adds no scrollable overflow. */
+.switcher-measure {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  visibility: hidden;
+  display: flex;
+  gap: 0.15rem;
+}
+
+.switcher-measure > * {
+  flex: none;
+}
+
+.switcher .visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* A slot holds a tab and, while it is showing, the card under it. */
+.switcher-slot {
+  position: relative;
+  flex: none;
+  display: flex;
+}
+
+.switcher-tab {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0 0.55rem;
+  line-height: 1.5;
+  border-radius: 999px;
+  color: var(--fg-dim);
+  text-decoration: none;
+  transition:
+    background 120ms,
+    color 120ms;
+}
+
+.switcher-tab:hover,
+.switcher-tab:focus-visible {
+  background: var(--bg-chip);
+  color: var(--fg-bright);
+}
+
+.switcher-label {
+  min-width: 0;
+  max-width: 11rem;
+  font-family: var(--font-prose);
+  font-size: 1.05em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.switcher-dot {
+  flex: none;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  box-sizing: border-box;
+}
+
+.dot-idle .switcher-dot {
+  border: 1px solid var(--fg-faint);
+}
+
+.dot-working .switcher-dot {
+  background: var(--fg-faint);
+  animation: switcher-pulse 2.4s ease-in-out infinite;
+}
+
+.dot-needs .switcher-dot {
+  background: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.dot-turn .switcher-dot {
+  background: var(--accent);
+}
+
+.dot-needs,
+.dot-turn {
+  color: var(--fg);
+}
+
+.dot-stalled .switcher-dot {
+  background: var(--warn);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--warn) 22%, transparent);
+}
+
+@keyframes switcher-pulse {
+  50% {
+    opacity: 0.3;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dot-working .switcher-dot {
+    animation: none;
+  }
+}
+
+/* The hover card. The slot's padding-top is the bridge the pointer crosses
+   from tab to card, so the card does not close under it. */
+.switcher-pop {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 4;
+  width: 19rem;
+  max-width: calc(100vw - 1.8rem);
+  padding-top: 0.45rem;
+  font-size: 1.25em; /* the bar is 0.8em; the card is read at body size */
+}
+
+.switcher-card {
+  --attention: var(--fg-faint);
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.8rem 0.95rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-surface);
+  box-shadow: 0 6px 22px rgb(0 0 0 / 0.12);
+  color: inherit;
+  text-decoration: none;
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
+
+.switcher-card.attention-blocked {
+  --attention: var(--accent);
+  border-color: color-mix(in srgb, var(--attention) 55%, var(--border));
+}
+
+.switcher-card.attention-blocked.status-stalled {
+  --attention: var(--warn);
+}
+
+.switcher-card-head {
+  color: var(--fg-dim);
+}
+
+.switcher-card .card-status {
+  font-family: var(--font-prose);
+  font-size: 0.95rem;
+  font-style: italic;
+  color: var(--attention);
+}
+
+.switcher-card.attention-your_turn .card-status {
+  color: var(--fg-bright);
+}
+
+.switcher-card-title {
+  font-family: var(--font-prose);
+  font-size: 1.1rem;
+  line-height: 1.25;
+  color: var(--fg-bright);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.switcher-card .card-activity {
+  margin: 0;
+  font-family: var(--font-prose);
+  font-size: 0.95rem;
+  line-height: 1.4;
+  color: var(--fg-muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.switcher-card .card-activity-gate {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+}
+
+.switcher-card .card-activity-gate code {
+  display: block;
+  padding: 0.2rem 0.5rem;
+  border-radius: 5px;
+  background: var(--bg-inset);
+  color: var(--fg-bright);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.switcher-card .card-activity-ask,
+.switcher-card .card-activity-stall {
+  color: var(--fg);
+}
+
+.switcher-card-usage {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--fg-dim);
+}
+
+/* The overflow: a `⋯` button, with the count of spilled sessions that are
+   waiting on the operator, opening a list of the rest. */
+.switcher-more-wrap {
+  position: relative;
+  flex: none;
+}
+
+.switcher-more {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0 0.55rem;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--fg-dim);
+  line-height: 1.5;
+}
+
+.switcher-more:hover,
+.switcher-more.open {
+  background: var(--bg-chip);
+  color: var(--fg-bright);
+}
+
+.switcher-more .more-dot {
+  background: var(--accent);
+}
+
+.switcher-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 4;
+  min-width: 15rem;
+  max-width: calc(100vw - 1.8rem);
+  margin-top: 0.3rem;
+  padding: 0.3rem;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-surface);
+  box-shadow: 0 6px 22px rgb(0 0 0 / 0.12);
+}
+
+.switcher-menu-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.3rem 0.5rem;
+  border-radius: 6px;
+  color: var(--fg-dim);
+  text-decoration: none;
+}
+
+.switcher-menu-row:hover,
+.switcher-menu-row:focus-visible {
+  background: var(--bg-chip);
+  color: var(--fg-bright);
+}
+
+.switcher-menu-row .switcher-label {
+  flex: 1;
+}
+
+.switcher-menu-status {
+  flex: none;
+  font-size: 0.9em;
+  color: var(--fg-faint);
+}
+
+.switcher-menu-all {
+  margin-top: 0.2rem;
+  border-top: 1px solid var(--border-subtle);
+  border-radius: 0 0 6px 6px;
+  padding-top: 0.45rem;
+}
+
+/* On a phone the labels go and the dots stay: the dot is the at-a-glance
+   reading, the card is for a pointer. */
+@media (max-width: 40rem) {
+  .switcher-label {
+    max-width: 6rem;
+  }
+}
