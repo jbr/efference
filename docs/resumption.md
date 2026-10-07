@@ -159,6 +159,11 @@ sessions"). A directory that can't be resumed is listed with a `problem`.
   island ([operating.md](operating.md)).
 - **The TUI's session switcher**: `r` opens the same page (`src/tui/resume_list.rs`) as a
   modal, and a pick switches to the revived session ([tui.md](tui.md)).
+- **Web client**: dormant sessions surface on the overview across four continuum bands:
+  active cards, recently archived cards (< 1h, capped), compact listed rows (< 1w),
+  and a full-screen filterable picker (`?resume=picker&cwd=...`). A top-bar `Resume…`
+  action opens workspace selection (`?resume=location`) before landing on the picker
+  ([web-client.md](web-client.md)).
 - **Scripts** send the PATCH over HTTP. There is no `resume` control tool: the control
   tool set is also mounted into every session's `tools[]`, and reviving a session is not
   a step the main agent needs.

@@ -18,6 +18,7 @@
     "check": "pnpm run typecheck && pnpm run lint && pnpm run format:check && pnpm run test"
   },
   "dependencies": {
+    "@github/relative-time-element": "^5.3.1",
     "@shikijs/engine-javascript": "^4.4.3",
     "@shikijs/langs": "^4.4.3",
     "@shikijs/langs-precompiled": "^4.4.3",

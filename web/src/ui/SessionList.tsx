@@ -18,6 +18,18 @@ import { NewSessionForm } from "./NewSessionForm.tsx";
 import { AppHeader } from "./AppHeader.tsx";
 import { archiveWarning } from "./sessionRow.ts";
 import type { Draft } from "./sessionForm.ts";
+import { ArchivedCard } from "./ArchivedCard.tsx";
+import { ArchivedList } from "./ArchivedList.tsx";
+import { ResumePage } from "./ResumePage.tsx";
+import { useResumeNavigation } from "./resumeNavigation.ts";
+import { partitionArchived } from "./resume.ts";
+import { useNarrow } from "./useNarrow.ts";
+import {
+  fetchArchivedSessions,
+  resumeSession,
+  type ArchivedSession,
+} from "../api/http.ts";
+import { sessionHref } from "../api/base.ts";
 import "./SessionList.css";
 
 interface Feed {
@@ -117,12 +129,18 @@ export function SessionList({
   const [draft, setDraft] = useState<Draft | null>(null);
   const [requested, setRequested] = useState<string | null>(null);
   const launch = useLaunchNavigation();
+  const resume = useResumeNavigation();
+  const narrow = useNarrow();
+  const [archivedByCwd, setArchivedByCwd] = useState<
+    Map<string, ArchivedSession[]>
+  >(new Map());
+  const [resuming, setResuming] = useState<string | null>(null);
   const feeds = useSessionFeeds(sessions);
   const {
     page,
     bar,
     height: barHeight,
-  } = useTopBarHeight(launch.page === null);
+  } = useTopBarHeight(launch.page === null && resume.route === null);
 
   useEffect(() => {
     const handle = openSessions(
@@ -134,6 +152,28 @@ export function SessionList({
     );
     return () => handle.close();
   }, []);
+
+  // Fetch archived sessions from the host
+  useEffect(() => {
+    let unmounted = false;
+    fetchArchivedSessions()
+      .then((items) => {
+        if (unmounted) return;
+        const byCwd = new Map<string, ArchivedSession[]>();
+        for (const item of items) {
+          const list = byCwd.get(item.cwd);
+          if (list) list.push(item);
+          else byCwd.set(item.cwd, [item]);
+        }
+        setArchivedByCwd(byCwd);
+      })
+      .catch(() => {
+        // Archived listing failure is non-fatal for active session overview
+      });
+    return () => {
+      unmounted = true;
+    };
+  }, [sessions]);
 
   const groups = useMemo(() => {
     const cards = sessions.map((entry) => {
@@ -162,6 +202,17 @@ export function SessionList({
     }
   }
 
+  async function revive(id: string, cwd: string) {
+    setResuming(id);
+    try {
+      await resumeSession(id, cwd);
+      window.location.assign(sessionHref(id));
+    } catch (failure) {
+      setError(`Resuming ${id}: ${String(failure)}`);
+      setResuming(null);
+    }
+  }
+
   if (launch.page !== null)
     return (
       <NewSessionForm
@@ -175,10 +226,26 @@ export function SessionList({
       />
     );
 
+  if (resume.route !== null)
+    return (
+      <ResumePage
+        route={resume.route}
+        onNavigate={resume.navigate}
+        onClose={resume.close}
+      />
+    );
+
   return (
     <div className="app overview" ref={page}>
       <AppHeader ref={bar}>
         <span className="spacer" />
+        <button
+          onClick={() => {
+            resume.navigate({ stage: "location" });
+          }}
+        >
+          Resume…
+        </button>
         <button
           className="primary"
           onClick={() => {
@@ -219,19 +286,46 @@ export function SessionList({
                   +
                 </button>
               </header>
-              <div className="card-grid">
-                {group.cards.map((card) => (
-                  <SessionCard
-                    key={card.id}
-                    card={card}
-                    warning={archiveWarning(
-                      sessions.find((s) => s.id === card.id)!,
-                    )}
-                    archiving={archiving === card.id}
-                    onArchive={() => void end(card.id)}
-                  />
-                ))}
-              </div>
+              {(() => {
+                const archivedList = archivedByCwd.get(group.cwd) ?? [];
+                const { recentCards, listedRows, remainderCount } =
+                  partitionArchived(archivedList, Date.now(), narrow);
+
+                return (
+                  <>
+                    <div className="card-grid">
+                      {group.cards.map((card) => (
+                        <SessionCard
+                          key={card.id}
+                          card={card}
+                          warning={archiveWarning(
+                            sessions.find((s) => s.id === card.id)!,
+                          )}
+                          archiving={archiving === card.id}
+                          onArchive={() => void end(card.id)}
+                        />
+                      ))}
+                      {recentCards.map((item) => (
+                        <ArchivedCard
+                          key={item.id}
+                          session={item}
+                          resuming={resuming === item.id}
+                          onResume={() => void revive(item.id, group.cwd)}
+                        />
+                      ))}
+                    </div>
+                    <ArchivedList
+                      sessions={listedRows}
+                      remainderCount={remainderCount}
+                      resuming={resuming}
+                      onResume={(id) => void revive(id, group.cwd)}
+                      onOpenPicker={() => {
+                        resume.navigate({ stage: "picker", cwd: group.cwd });
+                      }}
+                    />
+                  </>
+                );
+              })()}
             </section>
           ))
         )}

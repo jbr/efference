@@ -275,6 +275,16 @@ export interface SessionEntry {
   processes: number;
 }
 
+export interface ArchivedSession {
+  id: string;
+  cwd: string;
+  title?: string;
+  created_at?: number;
+  last_active_at?: number;
+  problem?: string;
+  state: "archived";
+}
+
 // A host's one endpoint of its own (docs/web-client.md), at its root rather than
 // under the base — a client asking "which sessions are there" is asking the
 // listener, not a session. A session daemon serves no such route, which is how
@@ -290,3 +300,20 @@ export const archiveSession = (id: string) =>
     "DELETE",
     `/sessions/${encodeURIComponent(id)}`,
   );
+
+// Fetch archived sessions from the host (docs/control-api.md). When cwd is provided,
+// scopes the listing to that working root; otherwise returns archived sessions across
+// remembered roots.
+export const fetchArchivedSessions = (cwd?: string) => {
+  const query = cwd
+    ? `?state=archived&cwd=${encodeURIComponent(cwd)}`
+    : "?state=archived";
+  return requestAt<ArchivedSession[]>("GET", `/sessions${query}`);
+};
+
+// Resume an archived session by patching its state to active (docs/resumption.md).
+export const resumeSession = (id: string, cwd: string) =>
+  requestAt<{ state: string }>("PATCH", `/sessions/${encodeURIComponent(id)}`, {
+    state: "active",
+    cwd,
+  });

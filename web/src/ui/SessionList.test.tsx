@@ -55,4 +55,5 @@ test("a card links into the session and carries its status", () => {
 test("an empty listing says so rather than showing an empty grid", () => {
   const markup = renderToStaticMarkup(<SessionList sessions={[]} />);
   expect(markup).toContain("No active sessions");
+  expect(markup).toContain("Resume…");
 });

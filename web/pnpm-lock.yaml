@@ -109,6 +109,9 @@ importers:
 
   .:
     dependencies:
+      '@github/relative-time-element':
+        specifier: ^5.3.1
+        version: 5.3.1
       '@shikijs/engine-javascript':
         specifier: ^4.4.3
         version: 4.4.3
@@ -350,6 +353,9 @@ packages:
     peerDependenciesMeta:
       '@noble/hashes':
         optional: true
+
+  '@github/relative-time-element@5.3.1':
+    resolution: {integrity: sha512-f++QCIXxGH7rMbpTASRfLyCyPydd4HqwOmATBb/sAUCq72HEZN0MX9znmJSp7NKYxuQxF8j0Mv3ez9P32c70vw==}
 
   '@humanfs/core@0.19.2':
     resolution: {integrity: sha512-UhXNm+CFMWcbChXywFwkmhqjs3PRCmcSa/hfBgLIb7oQ5HNb1wS0icWsGtSAUNgefHeI+eBrA8I1fxmbHsGdvA==}
@@ -1993,6 +1999,8 @@ snapshots:
       levn: 0.4.1
 
   '@exodus/bytes@1.15.1': {}
+
+  '@github/relative-time-element@5.3.1': {}
 
   '@humanfs/core@0.19.2':
     dependencies:

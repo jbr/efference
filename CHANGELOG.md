@@ -8,6 +8,7 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- **Session resumption in the web client** (docs/resumption.md, docs/web-client.md): four-band continuum on the overview (active cards, recently archived cards, listed compact rows, and full-screen searchable archive picker), with live auto-updating relative timestamps and top-level workspace selection.
 - **Triage-lineage primer on Codex** (docs/transport.md): each batch replays the turn's input on the own triage client at execution start, capped at 16 output tokens with the peek's tools and forced choice, so result-triage peeks read warm instead of re-reading the transcript.
 - **`C-o` folds a cold session from the TUI** (docs/tui.md): the alternative to `⏎`-again's cold read, named in the cold notice.
 

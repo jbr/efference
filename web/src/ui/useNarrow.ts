@@ -10,15 +10,27 @@ import { useSyncExternalStore } from "react";
 // `window` while loading cannot be imported by a DOM-free test, and the
 // components that read this are rendered to static markup in one.
 let media: MediaQueryList | null = null;
-const query = (): MediaQueryList =>
-  (media ??= window.matchMedia("(max-width: 700px)"));
+const query = (): MediaQueryList | null => {
+  if (
+    typeof window === "undefined" ||
+    typeof window.matchMedia !== "function"
+  ) {
+    return null;
+  }
+  return (media ??= window.matchMedia("(max-width: 700px)"));
+};
 
 function subscribe(onChange: () => void): () => void {
   const list = query();
+  if (!list) return () => {};
   list.addEventListener("change", onChange);
   return () => list.removeEventListener("change", onChange);
 }
 
 export function useNarrow(): boolean {
-  return useSyncExternalStore(subscribe, () => query().matches);
+  return useSyncExternalStore(
+    subscribe,
+    () => query()?.matches ?? false,
+    () => false,
+  );
 }

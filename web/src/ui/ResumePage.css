@@ -1,0 +1,218 @@
+.resume-page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-page);
+  color: var(--fg-base);
+}
+
+.resume-header-cancel {
+  font: inherit;
+  font-size: 0.95rem;
+  background: none;
+  border: none;
+  color: var(--fg-dim);
+  cursor: pointer;
+  padding: 0.4rem 0.8rem;
+  border-radius: 6px;
+}
+
+.resume-header-cancel:hover {
+  background: var(--bg-chip);
+  color: var(--fg-bright);
+}
+
+.resume-page-body {
+  max-width: 900px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 2rem 1.5rem;
+  box-sizing: border-box;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.resume-error {
+  background: color-mix(in srgb, var(--diff-del) 12%, var(--bg-surface));
+  border: 1px solid var(--diff-del);
+  color: var(--fg-bright);
+  padding: 0.75rem 1rem;
+  border-radius: 6px;
+  margin-bottom: 1.5rem;
+  font-size: 0.9rem;
+}
+
+.resume-title {
+  font-family: var(--font-prose);
+  font-size: 1.5rem;
+  font-weight: 500;
+  margin: 0 0 0.5rem;
+  color: var(--fg-bright);
+}
+
+.resume-subtitle {
+  color: var(--fg-dim);
+  margin: 0 0 1.5rem;
+  font-size: 0.95rem;
+}
+
+.resume-locations-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.resume-picker-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 1.25rem;
+}
+
+.resume-count-badge {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  color: var(--fg-dim);
+}
+
+.resume-search-bar {
+  margin-bottom: 1rem;
+}
+
+.resume-search-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.75rem 1rem;
+  font-family: inherit;
+  font-size: 1rem;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-control);
+  border-radius: 8px;
+  color: var(--fg-bright);
+  outline: none;
+  transition: border-color 150ms ease;
+}
+
+.resume-search-input:focus {
+  border-color: var(--accent);
+}
+
+.resume-results-list {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-surface);
+  overflow-y: auto;
+  max-height: 60vh;
+}
+
+.resume-result-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 140px 80px 90px;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border-subtle);
+  cursor: pointer;
+  transition: background 100ms ease;
+}
+
+.resume-result-row:last-child {
+  border-bottom: none;
+}
+
+.resume-result-row:hover,
+.resume-result-row.selected {
+  background: var(--bg-raised);
+}
+
+.resume-result-row.selected {
+  outline: 1px solid var(--accent);
+}
+
+.resume-result-row.resuming {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.resume-result-title {
+  font-family: var(--font-prose);
+  font-size: 0.95rem;
+  color: var(--fg-bright);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.resume-result-id {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  color: var(--fg-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.resume-result-age {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  color: var(--fg-dim);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.resume-result-btn {
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 500;
+  padding: 0.35rem 0.75rem;
+  border-radius: 5px;
+  border: 1px solid var(--border-control);
+  background: var(--bg-chip);
+  color: var(--fg-bright);
+  cursor: pointer;
+  text-align: center;
+}
+
+.resume-result-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--bg-surface);
+}
+
+.resume-result-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.resume-hints {
+  display: flex;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+  margin-top: 0.85rem;
+  justify-content: center;
+}
+
+.resume-loading,
+.resume-empty {
+  padding: 2rem;
+  text-align: center;
+  color: var(--fg-dim);
+  font-size: 0.95rem;
+}
+
+@media (max-width: 700px) {
+  .resume-result-row {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    gap: 0.5rem;
+  }
+
+  .resume-result-id {
+    display: none;
+  }
+
+  .resume-hints {
+    display: none;
+  }
+}
