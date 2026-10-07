@@ -10,6 +10,9 @@ behind a change, see [`journal/`](journal/).
 ### Added
 - **Triage-lineage primer on Codex** (docs/transport.md): each batch replays the turn's input on the own triage client at execution start, capped at 16 output tokens with the peek's tools and forced choice, so result-triage peeks read warm instead of re-reading the transcript.
 - **`C-o` folds a cold session from the TUI** (docs/tui.md): the alternative to `⏎`-again's cold read, named in the cold notice.
+
+### Fixed
+- **Deterministic TUI wrap-linearity regression test:** it counts bounded-width grapheme measurements rather than elapsed time, so load cannot fail a pre-commit run.
 - **Fold a cold session** (docs/control-api.md, docs/summary-head.md): `POST /loop/fold` has the session's own model replace its history up to a cut with an account, keeping the last ~15k tokens of payloads verbatim; the session then counts as never-sent (no keepalive, not cold) until its next request.
 - **No cold read without consent** (docs/control-api.md): a session whose prompt cache is believed expired answers `POST /turns` and `POST /loop/continue` with `409 cold` (nothing queued) unless the request carries `accept_cold_read`; the loop parks before a main-prefix request on a cold cache and holds inbox wakes. `efference control turn --accept-cold-read` and the MCP `turn` flag send it; in the TUI and web composer, sending again after the refusal is the consent.
 - **Keepalive on the Responses dialect, paced by the provider's cache lifetime** (docs/transport.md): Codex and OpenAI sessions keep their prefix warm with a ping that re-sends the last request's input capped at 16 output tokens, and the ping interval now derives from a per-provider cache lifetime (4 minutes against a 5-minute cache, 8 on OpenAI's arms) unless `[transport] keepalive-interval` overrides it.

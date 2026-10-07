@@ -1,4 +1,4 @@
-use super::{display_width, width_upto, wrap_points};
+use super::{display_width, take_width_upto_graphemes, width_upto, wrap_points};
 
 /// Split `text` at the byte boundaries `wrap_points` reports, for legible
 /// assertions on the visual rows.
@@ -82,15 +82,10 @@ fn a_bounded_width_agrees_with_the_full_one_below_its_cap() {
 
 /// **Wrapping one long line is linear in its length, not quadratic.**
 ///
-/// `wrap_points` emits a row at a time and each row's decision compares against
-/// something no wider than the row, so a row costs the row — not the rest of the
-/// line. Measuring the whole remainder per row is quadratic instead: a 16k-column
-/// line (a tool call's JSON input mid-stream, a minified file, a base64 blob) costs
-/// ~300 ms per wrap in release that way, repeated every frame while it streams.
-///
-/// A ratio rather than a duration, so it says the same thing on any machine. The
-/// margin is wide because the defect it guards against is not: eight times the
-/// length costs eight times as much when linear and sixty-four when quadratic.
+/// `wrap_points` emits a row at a time and each row's bounded-width check examines
+/// no more than that row. Measuring the whole remaining suffix instead would revisit
+/// each grapheme once per emitted row: an eight-times-longer input would take about
+/// sixty-four times as many measurements rather than eight.
 #[test]
 fn wrapping_a_long_line_is_linear_in_its_length() {
     fn line(chars: usize) -> String {
@@ -100,23 +95,18 @@ fn wrapping_a_long_line_is_linear_in_its_length() {
             .take(chars)
             .collect()
     }
-    // Best-of, so an unlucky scheduling slice can't manufacture a failure.
-    fn cost(text: &str) -> std::time::Duration {
-        (0..5)
-            .map(|_| {
-                let start = std::time::Instant::now();
-                std::hint::black_box(wrap_points(std::hint::black_box(text), 76));
-                start.elapsed()
-            })
-            .min()
-            .expect("five samples")
+    fn measured_graphemes(text: &str) -> usize {
+        take_width_upto_graphemes();
+        wrap_points(text, 76);
+        take_width_upto_graphemes()
     }
 
     let (short, long) = (line(2_000), line(16_000));
-    cost(&short); // warm the allocator and the instruction cache
-    let ratio = cost(&long).as_secs_f64() / cost(&short).as_secs_f64();
+    let short_work = measured_graphemes(&short);
+    let long_work = measured_graphemes(&long);
     assert!(
-        ratio < 24.0,
-        "8× the line length cost {ratio:.1}× the wrap — linear is 8×, quadratic is 64×"
+        long_work < short_work * 24,
+        "8× the line length measured {long_work} graphemes after {short_work}; \
+         bounded checks should scale linearly, not quadratically"
     );
 }

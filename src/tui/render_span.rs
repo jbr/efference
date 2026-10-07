@@ -262,6 +262,17 @@ pub(super) fn display_width(text: &str) -> usize {
         .sum()
 }
 
+#[cfg(test)]
+std::thread_local! {
+    static WIDTH_UPTO_GRAPHEMES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// Returns and resets the graphemes inspected by [`width_upto`] on this test thread.
+#[cfg(test)]
+pub(super) fn take_width_upto_graphemes() -> usize {
+    WIDTH_UPTO_GRAPHEMES.with(|count| count.replace(0))
+}
+
 /// [`display_width`], measured no further than `cap` columns: the exact width when
 /// it is at most `cap`, and `cap + 1` (meaning "wider than `cap`") as soon as it is
 /// not.
@@ -278,6 +289,9 @@ fn width_upto(text: &str, cap: usize) -> usize {
 
     let mut total = 0;
     for grapheme in text.graphemes(true) {
+        #[cfg(test)]
+        WIDTH_UPTO_GRAPHEMES.with(|count| count.set(count.get() + 1));
+
         total += if grapheme == "\t" {
             4
         } else {
