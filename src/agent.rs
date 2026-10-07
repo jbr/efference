@@ -568,7 +568,6 @@ pub async fn run<F: Frontend, S: Spotter>(
             let primer = distiller.is_own().then(|| TriagePrimerInput {
                 distiller: &distiller,
                 turns: &turns,
-                tools: &tools,
             });
             let Batch {
                 steps,

@@ -263,7 +263,7 @@ fn the_idle_triage_rides_the_agent_lineage_whatever_the_triage_model() {
 #[tokio::test]
 async fn the_shared_peek_takes_no_primer() {
     assert!(
-        ForkPeek::shared().prime(&[], &[]).await.is_none(),
+        ForkPeek::shared().prime(&[]).await.is_none(),
         "a shared peek never primes"
     );
 }

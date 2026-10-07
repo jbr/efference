@@ -260,8 +260,6 @@ pub struct TriagePrimerInput<'a> {
     pub distiller: &'a ForkPeek,
     /// The main request's turns, through the breakpoint it sent.
     pub turns: &'a [WireTurn],
-    /// The main request's `tools[]`.
-    pub tools: &'a [Value],
 }
 
 /// What the triage-lineage primer did before its gate (backlog/separate-triage-cold-prefix.md).
@@ -279,6 +277,10 @@ pub struct TriagePrimerOutcome {
     /// it; the distribution of this number says whether a speculative (pre-execution)
     /// primer is ever worth building.
     pub residue_ms: u64,
+    /// The send failure, when the primer recorded no usage because the send failed
+    /// (as opposed to a lineage that needed no planting, which resolves to no
+    /// outcome at all). Text, so offline callers without a logger still see it.
+    pub error: Option<String>,
 }
 
 impl ForkPeek {
@@ -361,8 +363,14 @@ impl ForkPeek {
     /// the head itself is choice-keyed). Forcing costs nothing here — the primer's
     /// output is discarded — and the peek keeps its own forced choice, so the
     /// anti-invented-call guard stays where it belongs.
-    pub async fn prime(&self, turns: &[WireTurn], tools: &[Value]) -> Option<TriagePrimerOutcome> {
-        self.prime_with(turns, tools, ToolChoice::force(RETAIN))
+    ///
+    /// It also sends the peek's own `tools[]`, not the agent's: the ladder showed
+    /// an identical-input primer planting nothing for the peek while same-envelope
+    /// primers chain, so the plant must match the peek's full envelope (tools and
+    /// choice) and share only the input prefix. The output is discarded either way.
+    pub async fn prime(&self, turns: &[WireTurn]) -> Option<TriagePrimerOutcome> {
+        let own = self.own.as_ref()?;
+        self.prime_with(turns, &own.tools, ToolChoice::force(RETAIN))
             .await
     }
 
@@ -379,17 +387,21 @@ impl ForkPeek {
         let started = std::time::Instant::now();
         let result = own.client.prime(turns, tools, choice).await?;
         let send_ms = started.elapsed().as_millis().try_into().unwrap_or(u64::MAX);
+        let mut error = None;
+        let usage = match result {
+            Ok(usage) => Some(usage),
+            Err(e) => {
+                log::warn!("triage primer failed, the peek goes out unprimed: {e}");
+                error = Some(e.to_string());
+                None
+            }
+        };
         Some(TriagePrimerOutcome {
-            usage: match result {
-                Ok(usage) => Some(usage),
-                Err(e) => {
-                    log::warn!("triage primer failed, the peek goes out unprimed: {e}");
-                    None
-                }
-            },
+            usage,
             send_ms,
             done_at: std::time::Instant::now(),
             residue_ms: 0,
+            error,
         })
     }
 

@@ -41,8 +41,12 @@ async fn plant(
 ) -> Option<Result<efference::api::RequestUsage, efference::api::Error>> {
     let outcome = peek.prime_with(turns, tools, choice).await?;
     Some(outcome.usage.ok_or_else(|| {
-        Box::new(std::io::Error::other("primer sent but recorded no usage"))
-            as efference::api::Error
+        Box::new(std::io::Error::other(
+            outcome
+                .error
+                .as_deref()
+                .unwrap_or("primer sent but recorded no usage"),
+        )) as efference::api::Error
     }))
 }
 
@@ -100,9 +104,11 @@ pub(crate) async fn ladder(
     let tools = efference::agent::tool_definitions(&toolbox);
 
     // The primer input: the main request's turns through this gate's calls, borrowed
-    // the way the live loop borrows them — byte-identical by construction.
+    // the way the live loop borrows them — byte-identical by construction. Through
+    // the assistant turn's *callers*, not its calls: the live input ends before the
+    // calls it produced, and replaying them without their results is refused.
     let prefix = &entries[..gate.prefix_end];
-    let mut turns = efference::project::project_semantic(prefix);
+    let mut turns = efference::project::project_semantic(&entries[..gate.calls_at]);
     turns.push(efference::project::WireTurn::Breakpoint);
     let pending: Vec<Pending<'_>> = gate
         .calls
@@ -123,7 +129,10 @@ pub(crate) async fn ladder(
         pending.len()
     ));
     if dry_run {
-        emit("dry run: A auto/auto · B ladder · C auto→peek · D forced→peek".into());
+        emit(
+            "dry run: A auto/auto · B ladder · C auto→peek · D forced→peek · E peek-tools→peek"
+                .into(),
+        );
         return Ok(());
     }
 
@@ -184,7 +193,7 @@ pub(crate) async fn ladder(
         }
     }
     // Arms C and D: the recorded peek after an auto primer (v1 as shipped) and
-    // after a forced primer (the fix). First attempt only — the measurement.
+    // after a forced primer (the choice fix). First attempt only — the measurement.
     for (label, choice) in [
         ("C auto→peek", efference::api::ToolChoice::auto()),
         ("D forced→peek", efference::api::ToolChoice::force("retain")),
@@ -202,6 +211,32 @@ pub(crate) async fn ladder(
         {
             Ok(attempt) => emit(line(&format!("{label} peek"), &attempt.usage)),
             Err(e) => emit(format!("{label} peek              DEFECT {e}")),
+        }
+    }
+    // Arm E: the recorded peek after a primer sending the peek's own envelope —
+    // peek tools plus forced choice, sharing only the input prefix. If the backend
+    // keys the full envelope, this is the plant the peek resumes.
+    {
+        use efference::distill::{retain_tool, triage_tool};
+        let peek_tools = vec![retain_tool(), triage_tool()];
+        match plant(
+            &peek,
+            &turns,
+            &peek_tools,
+            efference::api::ToolChoice::force("retain"),
+        )
+        .await
+        {
+            Some(Ok(usage)) => emit(line("E peek-tools→peek plant", &usage)),
+            Some(Err(e)) => emit(format!("E peek-tools→peek plant   ERROR {e}")),
+            None => emit("E peek-tools→peek plant   SKIPPED no implicit lineage".into()),
+        }
+        match peek
+            .attempt(&client, &tools, prefix, &pending, &[], &[])
+            .await
+        {
+            Ok(attempt) => emit(line("E peek-tools→peek peek", &attempt.usage)),
+            Err(e) => emit(format!("E peek-tools→peek peek     DEFECT {e}")),
         }
     }
 

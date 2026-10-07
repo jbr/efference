@@ -25,6 +25,11 @@ use std::io::Write;
 pub(crate) struct Gate {
     /// Index into the log of the first result this gate carries — the prefix boundary.
     pub(crate) prefix_end: usize,
+    /// Index into the log of the assistant turn whose calls this gate triages. A
+    /// primer replays the main request's input, which ends *before* those calls —
+    /// including them without their results is an unanswered `tool_use` the API
+    /// rejects — so primer turns project `entries[..calls_at]`, not the peek prefix.
+    pub(crate) calls_at: usize,
     /// The `seq` of the first result, which is how `--seq` addresses a gate and how the
     /// recorded `Triage.for_result` names it.
     pub(crate) seq: u64,
@@ -99,6 +104,7 @@ pub(crate) fn gates(entries: &[efference::log::LogEntry]) -> Vec<Gate> {
             });
         gates.push(Gate {
             prefix_end,
+            calls_at: i,
             seq,
             calls: kept_calls,
             raws,

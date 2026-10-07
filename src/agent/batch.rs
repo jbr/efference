@@ -40,7 +40,7 @@ pub(super) async fn run_batch<'a, F: Frontend, S: Spotter>(
             return None;
         }
         let input = primer.as_ref()?;
-        input.distiller.prime(input.turns, input.tools).await
+        input.distiller.prime(input.turns).await
     };
     let batch_fut = async move {
         run_calls(
