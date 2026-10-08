@@ -154,9 +154,9 @@ fn decode_frame(
             // (docs/transport.md).
             "stall" => Some(send(TuiEvent::Stall(parse::parse_stall(data)))),
             // Level-triggered: `null` clears the header's expired-cache segment.
-            "cold" => Some(send(TuiEvent::CacheExpired(
-                (!data.is_null()).then(|| data["fold"]["state"] == "writing"),
-            ))),
+            "cold" => Some(send(TuiEvent::CacheExpired(!data.is_null()))),
+            // Level-triggered: a fold being written, from the `fold` topic.
+            "fold" => Some(send(TuiEvent::Folding(data["state"] == "writing"))),
             // Static per session today, so this arrives once on the connect
             // snapshot; forwarded through the same path as anything else that
             // could move (docs/control-api.md).

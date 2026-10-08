@@ -175,3 +175,11 @@ test("with no topic an open question is only asked", () => {
   expect(html).not.toContain("answering ·");
   expect(html).not.toContain("next");
 });
+
+test("a restart is a notice, not an unknown entry", () => {
+  const html = render([entry(7, { Resumed: { gap_ms: 303_060 } })]);
+  expect(html).toContain(
+    "session resumed after 5m: the host process restarted.",
+  );
+  expect(html).not.toContain("unknown entry");
+});

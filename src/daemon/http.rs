@@ -37,6 +37,15 @@ pub(crate) struct ContinueBody {
     pub(crate) accept_cold_read: bool,
 }
 
+/// The optional `POST /loop/fold` body: `warm` is the operator's choice to fold a
+/// session whose cache is not believed expired (docs/control-api.md).
+#[derive(Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct FoldBody {
+    #[serde(default)]
+    pub(crate) warm: bool,
+}
+
 /// Refuse a request on a cold session that did not consent to the read, or record the
 /// consent when it did (backlog: cold-session.md). `Err` carries the `409 cold` to send.
 pub(crate) fn cold_gate(shared: &Session, accept_cold_read: bool) -> Result<(), ErrorBody> {

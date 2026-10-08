@@ -169,6 +169,7 @@ impl Session {
     /// would re-continue at every return to idle.
     pub fn take_continue(&self) {
         self.running.store(true, Ordering::SeqCst);
+        self.clear_failed_fold();
         self.continue_pending.store(false, Ordering::SeqCst);
     }
 

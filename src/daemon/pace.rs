@@ -102,6 +102,7 @@ impl Session {
                 Some(pos) => {
                     if mark_running {
                         self.running.store(true, Ordering::SeqCst);
+                        self.clear_failed_fold();
                     }
                     q.remove(pos);
                     true

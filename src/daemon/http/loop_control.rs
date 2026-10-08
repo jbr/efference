@@ -56,12 +56,27 @@ pub(super) async fn continue_loop(mut conn: Conn) -> Conn {
 /// the session's model writes it, its progress on the `cold` topic's `fold`; `?wait`
 /// answers once it has landed or failed. Declined with `409 not_foldable` when the
 /// moment has no fold in it.
-pub(super) async fn fold(conn: Conn) -> Conn {
+pub(super) async fn fold(mut conn: Conn) -> Conn {
     let Some(shared) = shared_of(&conn) else {
         return missing_state(conn);
     };
+    let body = conn.request_body_string().await.unwrap_or_default();
+    let body = if body.trim().is_empty() {
+        FoldBody::default()
+    } else {
+        match serde_json::from_str::<FoldBody>(&body) {
+            Ok(body) => body,
+            Err(e) => {
+                return fail(
+                    conn,
+                    ErrorCode::BadRequest,
+                    format!("bad /loop/fold body: {e}"),
+                );
+            }
+        }
+    };
     let wait = wants_wait(conn.querystring());
-    match shared.request_fold() {
+    match shared.request_fold(body.warm) {
         Ok(()) if wait => settle_and_state(&shared, conn).await,
         Ok(()) => conn
             .with_status(202)

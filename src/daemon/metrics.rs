@@ -33,6 +33,10 @@ pub(super) struct Metrics {
     pub(super) last_request_at: Option<Instant>,
     /// The same event as [`Metrics::last_request_at`], on the wall clock, for the wire.
     pub(super) last_request_wall: Option<crate::log::Timestamp>,
+    /// How many main-loop requests ([`RequestOrigin::Turn`]) this session has made, not
+    /// counting keepalive pings. A fold compares it before and after writing its
+    /// account to tell whether a turn read the cache meanwhile.
+    pub(super) turn_requests: u64,
     /// Stamped by real loop turns (incl. the fork) but **not** keepalive pings, so
     /// it measures genuine idle and a ping can't reset its own deadline. Gates the
     /// keepalive cap (docs/log-and-projection.md).
@@ -389,6 +393,7 @@ impl Session {
         }
         let mut m = self.metrics.lock().unwrap();
         if origin == RequestOrigin::Turn {
+            m.turn_requests += 1;
             m.last_turn_usage = Some(request.usage.clone());
         }
         m.cold_streak.observe(

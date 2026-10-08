@@ -136,7 +136,9 @@ pub(crate) enum TuiEvent {
     /// The session's cache is believed expired, or no longer (the `cold` topic,
     /// backlog: cold-session.md). Level-triggered: `None` is warm or never-sent.
     /// `Some(true)` while a fold is being written.
-    CacheExpired(Option<bool>),
+    CacheExpired(bool),
+    /// A fold is being written (the `fold` topic), on a cold or a warm session.
+    Folding(bool),
     /// A retry in flight changed (the `upstream_retry` topic, docs/transport.md).
     /// Level-triggered: `None` is the all-clear. Ephemeral transport diagnostic,
     /// rendered in the status bar.

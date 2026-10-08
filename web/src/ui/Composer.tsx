@@ -10,10 +10,13 @@ import { useEffect, useRef, useState } from "react";
 import {
   ApiError,
   continueLoop,
+  foldLoop,
   interruptLoop,
   patchLoop,
 } from "../api/http.ts";
-import type { Ask, Attachment, Cold, Pace, Stall } from "../api/types.ts";
+import type { Ask, Attachment, Cold, Fold, Pace, Stall } from "../api/types.ts";
+import { FoldNotice } from "./FoldNotice.tsx";
+import { foldOffer } from "./fold.ts";
 import { replyHint } from "./askMark.ts";
 import { turnState } from "./turnState.ts";
 import { useDockOffset } from "./float.ts";
@@ -44,6 +47,8 @@ export function Composer({
   retrying,
   gatePending,
   ask,
+  cold,
+  fold,
 }: {
   submit: (
     text: string,
@@ -66,6 +71,10 @@ export function Composer({
   gatePending: boolean;
   /** The pending `ask`: the placeholder says which question a send answers. */
   ask: Pick<Ask, "n" | "of"> | null;
+  /** The `cold` and `fold` topics (docs/web-client.md): a cold refusal offers
+   * a fold beside the uncached read, and a fold's progress and failure show. */
+  cold: Cold | null;
+  fold: Fold | null;
 }) {
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -214,17 +223,26 @@ export function Composer({
   // Nothing was queued and the draft is untouched: say what sending again costs.
   function refusedCold(e: unknown): boolean {
     if (!(e instanceof ApiError) || e.code !== "cold") return false;
-    const tokens = (e.detail as Cold | null)?.context_tokens;
+    // The notice below states the choice: send again, or fold instead.
     setColdConsent(true);
-    setError(
-      tokens
-        ? `cache believed cold — send again to read ${Math.round(tokens / 1000)}k tokens uncached`
-        : "cache believed cold — send again to read it uncached",
-    );
+    setError(null);
     return true;
   }
 
-  const turn = turnState(running, stall, retrying);
+  // The fold is the other answer to a cold refusal (docs/web-client.md); its
+  // progress arrives on the `fold` topic, so success changes nothing here.
+  const offer = foldOffer(cold, fold, running, gatePending, ask !== null);
+  // The refusal is stale once the session is no longer believed cold (a fold
+  // landed, or a request warmed it): dropped during render, so it cannot come
+  // back at a later cold moment the operator never saw.
+  if (cold === null && coldConsent) setColdConsent(false);
+  function startFold() {
+    foldLoop(offer.warm)
+      .then(() => setError(null))
+      .catch((e) => setError(e instanceof ApiError ? e.message : `${e}`));
+  }
+
+  const turn = turnState(running, stall, retrying, offer.kind === "writing");
   return (
     <>
       {collapsed && !gatePending && (
@@ -255,6 +273,15 @@ export function Composer({
             >
               <span className="composer-grabber" aria-hidden />
             </div>
+          )}
+          {(coldConsent || fold !== null) && (
+            <FoldNotice
+              cold={cold}
+              consent={coldConsent}
+              fold={fold}
+              offer={offer}
+              onFold={startFold}
+            />
           )}
           {error && <div className="error">{error}</div>}
           <StagedAttachments

@@ -46,9 +46,9 @@ impl Session {
         Some(since)
     }
 
-    /// The `cold` topic: `{since, context_tokens, fold}`, or `null`. `context_tokens` is
-    /// the last turn's prompt — what reading the context unfolded would cost, in tokens;
-    /// `fold` is a fold in progress or the last one's failure.
+    /// The `cold` topic: `{since, context_tokens}`, or `null`. `context_tokens` is
+    /// the last turn's prompt — what reading the context unfolded would cost, in tokens.
+    /// A fold's progress is the separate `fold` topic.
     pub(super) fn cold_json(&self) -> Value {
         let Some(since) = self.cold_since() else {
             return Value::Null;
@@ -63,7 +63,6 @@ impl Session {
         serde_json::json!({
             "since": since,
             "context_tokens": context_tokens,
-            "fold": self.fold_state(),
         })
     }
 }

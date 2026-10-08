@@ -40,7 +40,9 @@ pub(crate) enum NotFoldable {
 impl NotFoldable {
     pub(crate) fn message(self) -> &'static str {
         match self {
-            Self::NotCold => "nothing to fold: the cache is not believed expired",
+            Self::NotCold => {
+                "nothing to fold: the cache is not believed expired (a fold of a warm session is asked for with warm: true)"
+            }
             Self::Gated => "an approval gate is pending — resolve it first",
             Self::Asking => "a question is pending — answer it first",
             Self::Busy => "the loop is running — fold when it stops",
@@ -121,13 +123,33 @@ impl Session {
         self.fold_state.lock().unwrap().clone()
     }
 
+    /// The `fold` topic: `{state: "writing"}` while an account is being written,
+    /// `{state: "failed", error}` after one failed until the next turn or fold, else
+    /// `null`. Independent of the `cold` topic: a fold can run on a warm session.
+    pub(super) fn fold_json(&self) -> Value {
+        serde_json::to_value(self.fold_state()).unwrap_or(Value::Null)
+    }
+
+    /// Drop a failed fold's report once the session moves on: a turn starting makes
+    /// the failure stale. A fold still writing is left alone.
+    pub(super) fn clear_failed_fold(&self) {
+        let mut state = self.fold_state.lock().unwrap();
+        if matches!(*state, Some(FoldState::Failed { .. })) {
+            *state = None;
+            drop(state);
+            self.touch_state();
+        }
+    }
+
     pub(crate) fn folding(&self) -> bool {
         self.fold_state() == Some(FoldState::Writing)
     }
 
     /// Ask for a fold (`POST /loop/fold`), or say why it cannot run. A fold already
-    /// writing is accepted again, as one request.
-    pub(crate) fn request_fold(&self) -> Result<(), NotFoldable> {
+    /// writing is accepted again, as one request. `warm` is the operator's explicit
+    /// choice to fold a session whose cache is not believed expired, giving up the
+    /// cached prefix; without it a warm session declines.
+    pub(crate) fn request_fold(&self, warm: bool) -> Result<(), NotFoldable> {
         if self.folding() {
             return Ok(());
         }
@@ -140,7 +162,7 @@ impl Session {
         if self.running.load(Ordering::SeqCst) && !self.cold_parked() {
             return Err(NotFoldable::Busy);
         }
-        if self.cold_since().is_none() {
+        if !warm && self.cold_since().is_none() {
             return Err(NotFoldable::NotCold);
         }
         if fold_cut(&self.snapshot(), FOLD_TAIL_TOKENS).is_none() {
@@ -180,14 +202,15 @@ async fn fold_once(client: &Client, session: &Session, tools: &[Value]) -> Resul
     let entries = session.snapshot();
     let cut = fold_cut(&entries, FOLD_TAIL_TOKENS)
         .ok_or_else(|| NotFoldable::Nothing.message().to_string())?;
-    let touched = session.metrics.lock().unwrap().last_request_wall;
+    let turns_before = session.metrics.lock().unwrap().turn_requests;
     let narration = crate::narrate::narrate(client, tools, &entries, Some(cut))
         .await
         .map_err(|e| e.to_string())?;
     session.record_request(RequestOrigin::Narrate, narration.usage);
-    // A request that reached the cache while the account was being written (the operator
-    // consented to the full read meanwhile) makes the fold moot.
-    if session.metrics.lock().unwrap().last_request_wall != touched {
+    // A turn that reached the cache while the account was being written (the operator
+    // consented to the full read meanwhile) makes the fold moot. A keepalive ping does
+    // not: on a warm fold it is the cache being kept, not read for a turn.
+    if session.metrics.lock().unwrap().turn_requests != turns_before {
         return Err("superseded: a request read the cache while the account was written".into());
     }
     let now = session.snapshot();

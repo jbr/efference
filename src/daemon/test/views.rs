@@ -751,6 +751,6 @@ fn cold_topic_reports_an_expired_cache() {
     );
     assert_eq!(
         cold(Some(Duration::from_secs(5 * 60))),
-        serde_json::json!({ "since": at + 5 * 60_000, "context_tokens": 10_000, "fold": null })
+        serde_json::json!({ "since": at + 5 * 60_000, "context_tokens": 10_000 })
     );
 }

@@ -4,7 +4,8 @@
 // short (docs/transport.md). A stall is the one `running` alone cannot say — a
 // stalled session and a finished one are the same `false`, and a triage gate
 // held on the upstream is stalled while still `true` — so the `stall` topic
-// decides it. Both the retry wait and the stall name the recovery: an empty
+// decides it. A fold in flight (the `fold` topic) reads as running: the loop is
+// idle, but the session is busy writing its summary. Both the retry wait and the stall name the recovery: an empty
 // send, which the daemon takes as "retry now".
 
 import type { Stall } from "../api/types.ts";
@@ -27,12 +28,20 @@ export function turnState(
   running: boolean,
   stall: Stall | null,
   retrying = false,
+  folding = false,
 ): TurnState {
   if (stall !== null) {
     return {
       text: `${stall.message} · send to retry`,
       title: stall.detail,
       kind: "stalled",
+    };
+  }
+  if (folding) {
+    return {
+      text: "summarizing the history…",
+      title: "the session's model is writing the summary",
+      kind: "running",
     };
   }
   if (running && retrying) {

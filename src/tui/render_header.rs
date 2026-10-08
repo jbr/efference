@@ -58,12 +58,13 @@ impl<'a> InteractiveState<'a> {
         let mut segments: Vec<(String, Style)> = Vec::new();
         // The cache believed expired (the `cold` topic): the next send pays the
         // uncached read unless the operator folds (backlog: cold-session.md).
-        if let Some(folding) = self.cache_expired {
-            let note = if folding {
-                "cache expired · folding… "
-            } else {
-                "cache expired · C-o folds "
-            };
+        let note = match (self.cache_expired, self.folding) {
+            (true, true) => Some("cache expired · folding… "),
+            (true, false) => Some("cache expired · C-o folds "),
+            (false, true) => Some("folding… "),
+            (false, false) => None,
+        };
+        if let Some(note) = note {
             segments.push((note.to_string(), muted));
         }
         if let Some(u) = &self.usage {

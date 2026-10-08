@@ -172,6 +172,10 @@ impl<'a> InteractiveState<'a> {
                 self.cache_expired = expired;
                 self.dirty = true;
             }
+            TuiEvent::Folding(folding) => {
+                self.folding = folding;
+                self.dirty = true;
+            }
 
             TuiEvent::Stall(stall) => {
                 // Status-bar chrome like the two transport diagnostics above;

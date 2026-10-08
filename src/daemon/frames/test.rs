@@ -220,6 +220,7 @@ fn topic_wire_names_are_pinned() {
         Topic::UpstreamFailure,
         Topic::UpstreamRetry,
         Topic::Cold,
+        Topic::Fold,
         Topic::SessionIdentity,
     ]
     .iter()
@@ -241,6 +242,7 @@ fn topic_wire_names_are_pinned() {
             "upstream_failure",
             "upstream_retry",
             "cold",
+            "fold",
             "session_identity",
         ]
     );

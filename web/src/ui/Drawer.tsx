@@ -11,6 +11,8 @@
 import { type ReactNode, useState } from "react";
 import { patchLoop } from "../api/http.ts";
 import type {
+  Cold,
+  Fold,
   Pace,
   PendingNotification,
   Process,
@@ -21,6 +23,7 @@ import type {
   Usage,
 } from "../api/types.ts";
 import { homeRelative } from "./identity.ts";
+import { FoldControl } from "./FoldControl.tsx";
 import { Inbox, Interface, Policy, Tasks } from "./Panel.tsx";
 import { useDragToDismiss } from "./useDragToDismiss.ts";
 import { useNarrow } from "./useNarrow.ts";
@@ -191,6 +194,11 @@ export function Drawer({
   proposals,
   processes,
   notifications,
+  cold,
+  fold,
+  running,
+  gatePending,
+  asking,
   processOutput,
   processLost,
 }: {
@@ -206,6 +214,11 @@ export function Drawer({
   proposals: Proposal[];
   processes: Process[];
   notifications: PendingNotification[];
+  cold: Cold | null;
+  fold: Fold | null;
+  running: boolean;
+  gatePending: boolean;
+  asking: boolean;
   processOutput: Record<number, string>;
   processLost: Record<number, number>;
 }) {
@@ -259,6 +272,15 @@ export function Drawer({
             <SessionFacts identity={identity} usage={usage} />
             <RunControls pace={pace} reviewLevel={reviewLevel} act={act} />
           </section>
+          <Section title="Context">
+            <FoldControl
+              cold={cold}
+              fold={fold}
+              running={running}
+              gatePending={gatePending}
+              asking={asking}
+            />
+          </Section>
           {(role !== null || proposals.length > 0) && (
             <Section title="Policy">
               <Policy role={role} proposals={proposals} act={act} />

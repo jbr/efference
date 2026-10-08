@@ -22,6 +22,7 @@ import { assistantView } from "../session/assistant.ts";
 import type { CallId } from "../api/types.ts";
 import { askMarkText, askStanding } from "./askMark.ts";
 import { Markdown } from "./Markdown.tsx";
+import { resumedLine } from "./resumed.ts";
 import { SentAttachments } from "./Attachments.tsx";
 import { CallBlock, LiveCallBlock, ResultBlock } from "./ToolBlocks.tsx";
 import { useFollowTail } from "./useFollowTail.ts";
@@ -257,6 +258,13 @@ function Leaf({
           Title updated to{" "}
           <span className="title-change-text">{p.Title.text}</span>
         </p>
+      </Entry>
+    );
+  }
+  if ("Resumed" in p) {
+    return (
+      <Entry label="resumed" as="ambient">
+        {resumedLine(p.Resumed, node.entry.seq)}
       </Entry>
     );
   }

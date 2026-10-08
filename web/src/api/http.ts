@@ -320,3 +320,12 @@ export const resumeSession = (id: string, cwd: string) =>
     state: "active",
     cwd,
   });
+
+// Replace the session's earlier history with an account its own model writes
+// (docs/control-api.md). Accepted means the model is writing it: progress is the
+// `fold` topic, and the Boundary mark landing in the log is the result. A cold
+// session folds by default; `warm` is the explicit choice to fold one whose
+// cache is believed live, giving up the cached prefix. A moment with no fold in
+// it answers `409 not_foldable` with a message naming the case.
+export const foldLoop = (warm = false) =>
+  post<{ status: string }>("/v1/loop/fold", warm ? { warm: true } : {});

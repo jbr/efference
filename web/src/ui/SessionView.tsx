@@ -311,6 +311,11 @@ export function SessionView() {
           proposals={proposals}
           processes={processes}
           notifications={notifications}
+          cold={session.topics.cold ?? null}
+          fold={session.topics.fold ?? null}
+          running={session.topics.running ?? false}
+          gatePending={gate != null}
+          asking={(session.topics.ask ?? null) !== null}
           processOutput={session.streaming.processOutput}
           processLost={session.streaming.processLost}
         />
@@ -325,6 +330,8 @@ export function SessionView() {
           retrying={(session.topics.upstream_retry ?? null) !== null}
           gatePending={gate != null}
           ask={session.topics.ask ?? null}
+          cold={session.topics.cold ?? null}
+          fold={session.topics.fold ?? null}
         />
       </div>
     </div>

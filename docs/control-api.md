@@ -479,25 +479,31 @@ identical wire produces anything but "I'm done" is an open question, and the
 daemon declines rather than spending a round-trip on it.
 
 #### `POST /loop/fold`
-Replace a cold session's earlier history with an account its own model writes
-([summary-head.md](summary-head.md); backlog: cold-session.md), instead of paying the
-uncached read. The account covers everything up to a cut; the most recent payloads
+Replace a session's earlier history with an account its own model writes
+([summary-head.md](summary-head.md); backlog: cold-session.md) — for a cold session,
+instead of paying the uncached read; for a warm one, at the operator's request. The account covers everything up to a cut; the most recent payloads
 after it (about 15k tokens, the cut moved earlier so no call is separated from its
 result) stay verbatim. The fold appends one boundary mark and starts no request: an
 idle session stays idle, and a loop parked at its cold check stays parked until the
 next turn or continue, which then needs no `accept_cold_read`. After a fold the
 session is neither warm nor cold: nothing has sent the new prefix, so the keepalive
 has nothing to ping and the `cold` topic is `null` until a request ages past the
-cache lifetime. No body.
+cache lifetime.
+
+Optional body `{"warm": true}`: fold a session whose cache is not believed expired,
+giving up the cached prefix (the next request writes the shorter context uncached).
+Without it a warm session declines, so a client that only means the cold alternative
+cannot throw a live cache away by accident.
 
 - `202 {"status":"folding"}` — the session's model is writing the account; progress is
-  the `cold` topic's `fold` (`writing`, then `null` once the mark lands, or `failed`
-  with the error). A failure changes nothing: fold again, or consent to the read.
-  An account written while a request reached the cache anyway is discarded as
-  superseded.
+  the `fold` topic (`writing`, then `null` once the mark lands, or `failed` with the
+  error, which stays until the next turn or fold). A failure changes nothing: fold
+  again, or consent to the read. An account written while a turn read the cache anyway
+  is discarded as superseded; a keepalive ping does not count as one.
 - `?wait` — hold until the fold lands or fails, then return `/state`.
-- `409 not_foldable` — the cache is not believed expired, a gate or question is
-  pending, a request is in flight, or everything since the last fold fits in the tail.
+- `409 not_foldable` — the cache is not believed expired and the body did not say
+  `warm`, a gate or question is pending, a request is in flight, or everything since
+  the last fold fits in the tail.
 
 #### `POST /loop/interrupt`
 Stop what the loop is doing now: a running tool is signalled (the SIGINT
@@ -773,11 +779,13 @@ not a topic — it is the log's cursor rather than control state, and sits outsi
     "since": 1754300300000,        // absolute Unix millis: the last turn or keepalive
                                    //   ping plus the provider's cache lifetime
                                    //   (transport.md; backlog: cold-session.md)
-    "context_tokens": 48210,       // the last turn's prompt: what a cold read would pay,
+    "context_tokens": 48210        // the last turn's prompt: what a cold read would pay,
                                    //   or null before a turn's usage is known
-    "fold": null                   // {"state":"writing"} while POST /loop/fold runs, or
-                                   //   {"state":"failed","error":"…"} after one failed
   },
+  "fold": null,                    // {"state":"writing"} while POST /loop/fold runs, or
+                                   //   {"state":"failed","error":"…"} after one failed
+                                   //   (until the next turn or fold); independent of
+                                   //   `cold`, since a fold can be asked of a warm session
   "config_repair": {               // null whenever the config file parses (permissions.md)
     "path": "/repo/.efference/work/config.toml",  // the file a human has to fix
     "at": 1754300000000,           // absolute Unix millis at which the loop parked

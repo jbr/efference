@@ -117,7 +117,50 @@ async fn a_fold_resets_the_cold_belief_and_the_keepalive() {
 #[test]
 fn a_fold_needs_a_cold_session() {
     let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
-    assert_eq!(shared.request_fold(), Err(NotFoldable::NotCold));
+    assert_eq!(shared.request_fold(false), Err(NotFoldable::NotCold));
+}
+
+/// `warm: true` is the operator's explicit request to fold a session whose cache is
+/// not believed expired; the progress shows on the `fold` topic, not the `cold` one.
+#[tokio::test]
+async fn a_warm_fold_is_accepted_on_request_and_reports_on_the_fold_topic() {
+    let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    shared.set_cache_ttl(Duration::from_secs(3_600));
+    append_foldable_history(&shared);
+    assert_eq!(shared.cold_since(), None);
+    assert_eq!(shared.request_fold(false), Err(NotFoldable::NotCold));
+    assert_eq!(shared.topic_json(Topic::Fold), Value::Null);
+
+    assert_eq!(shared.request_fold(true), Ok(()));
+    assert_eq!(
+        shared.topic_json(Topic::Fold),
+        serde_json::json!({"state": "writing"})
+    );
+    assert_eq!(shared.topic_json(Topic::Cold), Value::Null);
+}
+
+/// A warm fold with nothing past the tail still declines: warm lifts only the cache
+/// guard.
+#[test]
+fn a_warm_fold_still_needs_something_to_fold() {
+    let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    shared.set_cache_ttl(Duration::from_secs(3_600));
+    assert_eq!(shared.request_fold(true), Err(NotFoldable::Nothing));
+}
+
+/// A failed fold is reported until a turn starts, then dropped.
+#[test]
+fn a_failed_fold_clears_when_a_turn_starts() {
+    let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    *shared.fold_state.lock().unwrap() = Some(crate::daemon::fold::FoldState::Failed {
+        error: "boom".into(),
+    });
+    assert_eq!(
+        shared.topic_json(Topic::Fold),
+        serde_json::json!({"state": "failed", "error": "boom"})
+    );
+    shared.take_continue();
+    assert_eq!(shared.topic_json(Topic::Fold), Value::Null);
 }
 
 /// The client reads a refusal as a decline with the daemon's message, not an error.

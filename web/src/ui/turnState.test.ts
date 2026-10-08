@@ -27,6 +27,12 @@ describe("the turn-state readout", () => {
     expect(turnState(true, stall).kind).toBe("stalled");
   });
 
+  it("reads a fold in flight as running, over an idle loop", () => {
+    const state = turnState(false, null, false, true);
+    expect(state.kind).toBe("running");
+    expect(state.text).toBe("summarizing the history…");
+  });
+
   it("says a retry wait can be cut short by an empty send", () => {
     const state = turnState(true, null, true);
     expect(state.kind).toBe("running");

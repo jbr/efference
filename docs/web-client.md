@@ -939,7 +939,10 @@ lands at the tail rather than the top of the log. **The preamble is not
 rendered**: the system prompt is audit data rather than conversation, and a new
 session whose only entry it is reads as empty. **A title change** renders as
 one quiet line, `Title updated to …`, and only when the text changed — the log
-appends a title entry even when the peek kept the previous one.
+appends a title entry even when the peek kept the previous one. **A restart**
+(`Resumed`) renders as the notice the model reads for it, in an ambient entry
+(`ui/resumed.ts`, a port of `render_resumed`): the gap, lost background
+processes, calls left pending, and entries skipped after an unclean end.
 
 **Density toggles** (`ui/viewSettings.ts`, persisted like the theme): two
 switches hide thinking and ambient entries. Hiding is display-only — the
@@ -1139,9 +1142,22 @@ in the composer's error slot on its own rather than as a thrown-error string.
 
 **Sending again is consent to a cold read.** A send or continue on a session
 whose cache is believed expired comes back `409 cold`, with nothing queued
-([control-api.md](control-api.md)). The draft stays, the error slot says what a
-second send costs (the `cold` topic's `context_tokens`), and the composer's
-next send — turn or continue — carries `accept_cold_read`, once.
+([control-api.md](control-api.md)). The draft stays, a notice above the field says
+what a second send costs (the `cold` topic's `context_tokens`) and offers the
+other answer — *summarize instead* — and the composer's next send — turn or
+continue — carries `accept_cold_read`, once. The refusal is dropped when the
+`cold` topic clears, so it cannot outlive the moment it was made in.
+
+**Summarizing is the fold** (`POST /loop/fold`, [control-api.md](control-api.md);
+`ui/fold.ts`, `ui/FoldNotice.tsx`, `ui/FoldControl.tsx`). Two entry points, one
+rule (`foldOffer`): the cold notice's button, which runs the fold at once, and a
+*Context* section in the drawer, available whether or not the session is cold,
+which asks for confirmation first — a fold has no undo yet — saying whether it
+spends a live cache. Both are held back, with the reason shown, while a gate or
+question is pending or a warm loop is running; a loop parked at its cold check may
+fold. Progress is the `fold` topic: the turn-state readout and the drawer say
+`summarizing the history…`, a failure shows its error with a retry, and the
+account lands as the consolidation mark in the transcript.
 
 The input is inset into the dock rather than floating on it: the composer
 band shares the dock's surface color, and the box is near-square (2px) in

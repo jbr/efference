@@ -92,7 +92,20 @@ export type Payload =
   | { ToolTelemetry: ToolTelemetry }
   | { ProcessEvent: ProcessEvent }
   | { Preamble: { system: string; context: unknown } }
-  | { Title: Title };
+  | { Title: Title }
+  | { Resumed: Resumed };
+
+/** A session reopened by a later host process (docs/resumption.md). */
+export interface Resumed {
+  gap_ms: number;
+  /** Background handles (`p#<n>`) spawned with no recorded exit. */
+  lost_processes?: string[];
+  /** Present only when the log ended uncleanly: the last seq the session builds
+   * on. Entries between it and this one are skipped. */
+  resumes_after?: Seq;
+  /** Calls of the last batch that had not run when the session stopped. */
+  pending_calls?: CallId[];
+}
 
 /** One title decision (docs/session-title.md). Log metadata: appended even when
  * the peek kept the previous text, so consecutive entries can repeat. */
@@ -500,9 +513,12 @@ export interface UpstreamFailure {
 export interface Cold {
   since: number;
   context_tokens: number | null;
-  // A fold in progress, or the last one's failure (`POST /loop/fold`).
-  fold: { state: "writing" } | { state: "failed"; error: string } | null;
 }
+
+// A fold — the session's history replaced by an account its own model writes —
+// in progress, or the last one's failure (`POST /loop/fold`, docs/control-api.md).
+// `null` otherwise. Independent of `cold`: a fold can be asked of a warm session.
+export type Fold = { state: "writing" } | { state: "failed"; error: string };
 
 // A retry in flight (docs/transport.md). Level-triggered: `null` is the
 // all-clear — the attempt that finalized, or exhaustion.
@@ -605,6 +621,7 @@ export interface StateTopics {
   upstream_failure?: UpstreamFailure | null;
   upstream_retry?: UpstreamRetry | null;
   cold?: Cold | null;
+  fold?: Fold | null;
   session_identity?: SessionIdentity | null;
 }
 
@@ -664,6 +681,7 @@ export interface ErrorEnvelope {
     | "not_found"
     | "gate_moved"
     | "not_continuable"
+    | "not_foldable"
     | "cold"
     | "unauthorized"
     | "forbidden"

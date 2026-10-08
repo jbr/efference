@@ -125,6 +125,10 @@ pub(crate) enum Topic {
     /// cold-session.md): `{since, context_tokens}`, `null` while it is believed warm,
     /// before the first request, and on a model with no cache.
     Cold,
+    /// A fold in progress, or the last one's failure (docs/control-api.md): `{state:
+    /// "writing"}`, `{state: "failed", error}`, or `null`. Separate from
+    /// [`Cold`](Self::Cold) because a fold can be asked of a warm session.
+    Fold,
     /// The config file on disk does not parse and could not be restored, so the
     /// loop is parked until a human repairs it (docs/permissions.md). `null`
     /// whenever the file parses — which is nearly always, since a bad edit is
@@ -143,7 +147,7 @@ impl Topic {
     /// walking it, so a topic added here reaches both surfaces or neither — which is
     /// what keeps `GET /state` equal to the fold of every state frame
     /// (docs/control-api.md).
-    pub(crate) const ALL: [Topic; 18] = [
+    pub(crate) const ALL: [Topic; 19] = [
         Self::Gate,
         Self::Ask,
         Self::Processes,
@@ -160,6 +164,7 @@ impl Topic {
         Self::UpstreamFailure,
         Self::UpstreamRetry,
         Self::Cold,
+        Self::Fold,
         Self::ConfigRepair,
         Self::SessionIdentity,
     ];
@@ -190,6 +195,7 @@ impl Topic {
             Self::UpstreamFailure => "upstream_failure",
             Self::UpstreamRetry => "upstream_retry",
             Self::Cold => "cold",
+            Self::Fold => "fold",
             Self::ConfigRepair => "config_repair",
             Self::SessionIdentity => "session_identity",
         }
