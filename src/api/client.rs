@@ -694,6 +694,9 @@ impl Client {
                 };
                 Encoded::Responses(encode_responses(turns, preamble, self.prompt_cache))
             }
+            WireDialect::SystemOne => {
+                unreachable!("a client is only built on a provider that serves turns")
+            }
         };
         // The prompt's variable parts, sized before `max_tokens` is chosen: the
         // reservation is a function of how much of the window the prompt takes
@@ -884,6 +887,9 @@ impl Client {
         let mut assembler = match self.dialect() {
             WireDialect::Messages => AnyAssembler::Messages(Assembler::new()),
             WireDialect::Responses => AnyAssembler::Responses(ResponsesAssembler::new()),
+            WireDialect::SystemOne => {
+                unreachable!("a client is only built on a provider that serves turns")
+            }
         };
         // The response the stream opened on, read off the executed conn before the
         // first event. Only the empty-finalized path keeps it (docs/transport.md) —
@@ -1005,6 +1011,9 @@ impl Client {
                 conn.with_request_header("anthropic-version", ANTHROPIC_VERSION)
             }
             WireDialect::Responses => conn,
+            WireDialect::SystemOne => {
+                unreachable!("a client is only built on a provider that serves turns")
+            }
         };
         let conn = self
             .endpoint

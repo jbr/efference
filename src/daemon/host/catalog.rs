@@ -2,7 +2,7 @@
 //! every connection's normalized listing with recent picks folded in.
 
 use super::{ErrorCode, Host, fail, host_of, missing_host};
-use crate::catalog::{ConnectionCatalog, Recent, assemble};
+use crate::catalog::{ConnectionCatalog, ModelRole, Recent, assemble};
 use crate::inference::ConnectionInventory;
 use std::time::Duration;
 use trillium::Conn;
@@ -38,6 +38,17 @@ fn recents(host: &Host, query: &str) -> Vec<(String, Recent)> {
             )
         })
         .collect()
+}
+
+/// The role a request names, if any: `Ok(None)` for no `role` parameter, an
+/// error message for one that is not a role.
+fn role_of(query: &str) -> Result<Option<ModelRole>, String> {
+    match crate::daemon::http::query_value(query, "role") {
+        None => Ok(None),
+        Some(name) => ModelRole::from_name(&name).map(Some).ok_or_else(|| {
+            format!("role is `main`, `triage`, or `spotter`, not {name:?}, e.g. ?role=spotter")
+        }),
+    }
 }
 
 /// One connection's entry. With `wait`, a copy older than that is refreshed and
@@ -76,29 +87,47 @@ async fn entry(
     assemble(&row.name, row.provider, snapshot, unavailable, &recents)
 }
 
-/// `GET /inference/catalog?cwd=<root>&config=<path>`: every configured
+/// `GET /inference/catalog?cwd=<root>&config=<path>&role=<role>`: every configured
 /// connection's stored listing, its age, and its status. Never waits on a
 /// provider: a missing or stale copy starts a background refresh and is served
 /// as it stands. `cwd` (+ optional `config`) scopes the recent ranks; without
-/// `cwd` no row carries one.
+/// `cwd` no row carries one. With `role` (`main`, `triage`, or `spotter`) the
+/// answer holds only what that role may choose: no decision models for a role
+/// that runs turns, and no connection that serves none. Without it nothing is
+/// filtered.
 pub(super) async fn catalog_all(conn: Conn) -> Conn {
     let Some(host) = host_of(&conn) else {
         return missing_host(conn);
     };
+    let role = match role_of(conn.querystring()) {
+        Ok(role) => role,
+        Err(message) => return fail(conn, ErrorCode::BadRequest, message),
+    };
     let picks = recents(&host, conn.querystring());
     let mut connections = Vec::new();
     for row in host.inference.inventory() {
-        connections.push(entry(&host, &row, &picks, None).await);
+        if role.is_some_and(|role| !role.accepts_provider(row.provider)) {
+            continue;
+        }
+        let listed = entry(&host, &row, &picks, None).await;
+        connections.push(match role {
+            Some(role) => match listed.for_role(role) {
+                Some(listed) => listed,
+                None => continue,
+            },
+            None => listed,
+        });
     }
     conn.with_status(200)
         .with_body(serde_json::json!({ "connections": connections }).to_string())
         .halt()
 }
 
-/// `GET /inference/catalog/:connection?max_age=<secs>&cwd=&config=`: one
+/// `GET /inference/catalog/:connection?max_age=<secs>&cwd=&config=&role=`: one
 /// connection's entry, refreshed and awaited when its copy is older than
 /// `max_age` (default the catalog TTL, floor one minute). A failed read answers
-/// with the old copy, if any, and `status: "failed"`.
+/// with the old copy, if any, and `status: "failed"`. `role` filters as on the
+/// whole catalog; naming a role the connection cannot serve at all is a 400.
 pub(super) async fn catalog_one(conn: Conn) -> Conn {
     let Some(host) = host_of(&conn) else {
         return missing_host(conn);
@@ -117,6 +146,22 @@ pub(super) async fn catalog_one(conn: Conn) -> Conn {
         );
     };
     let query = conn.querystring();
+    let role = match role_of(query) {
+        Ok(role) => role,
+        Err(message) => return fail(conn, ErrorCode::BadRequest, message),
+    };
+    if let Some(role) = role
+        && !role.accepts_provider(row.provider)
+    {
+        return fail(
+            conn,
+            ErrorCode::BadRequest,
+            format!(
+                "connection {name:?} serves no turns, so it cannot back the {} role",
+                role.name()
+            ),
+        );
+    }
     let max_age = match crate::daemon::http::query_value(query, "max_age") {
         Some(text) => match text.parse::<u64>() {
             Ok(secs) => Duration::from_secs(secs),
@@ -131,7 +176,10 @@ pub(super) async fn catalog_one(conn: Conn) -> Conn {
         None => crate::catalog::CATALOG_TTL,
     };
     let picks = recents(&host, query);
-    let answer = entry(&host, &row, &picks, Some(max_age)).await;
+    let mut answer = entry(&host, &row, &picks, Some(max_age)).await;
+    if let Some(role) = role {
+        answer.retain_for_role(role);
+    }
     conn.with_status(200)
         .with_body(serde_json::to_string(&answer).unwrap_or_default())
         .halt()

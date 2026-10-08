@@ -51,46 +51,6 @@ fn stance(axes: &Axes, probe: bool) -> Stance {
     combine(axes, &Thresholds::default(), probe).0
 }
 
-/// The two ways to reach this rung (docs/permissions.md): a provider that serves
-/// nothing else, or the family's id on a provider that serves both.
-#[test]
-fn either_the_provider_or_the_id_selects_the_decision_rung() {
-    use crate::api::Provider;
-    // On the first-party connection the id is bare, so the provider is the
-    // whole answer — and every model there is a decision model.
-    assert!(is_decision_spotter(Provider::TypeSafe, "jev-latest"));
-    assert!(is_decision_spotter(
-        Provider::TypeSafe,
-        "whatever-comes-next"
-    ));
-    // On a provider that serves turns too, the id decides.
-    assert!(is_decision_spotter(
-        Provider::OpenRouter,
-        "typesafe/jev-1.13"
-    ));
-    assert!(!is_decision_spotter(
-        Provider::OpenRouter,
-        "anthropic/claude-haiku-4-5"
-    ));
-    assert!(!is_decision_spotter(
-        Provider::Anthropic,
-        "claude-haiku-4-5"
-    ));
-}
-
-#[test]
-fn the_model_id_is_the_whole_switch() {
-    assert!(is_decision_model("typesafe/jev-1.13"));
-    assert!(is_decision_model("typesafe/jev"));
-    // The alias form OpenRouter serves the family under.
-    assert!(is_decision_model("~typesafe/jev-latest"));
-    // A different author's similarly-named model is not this rung.
-    assert!(!is_decision_model("someone/jev-1.13"));
-    assert!(!is_decision_model("anthropic/claude-haiku-4-5"));
-    // Nor is a different TypeSafe model, when there is one.
-    assert!(!is_decision_model("typesafe/something-else"));
-}
-
 #[test]
 fn a_clean_move_clears() {
     assert_eq!(stance(&clean(), false), Stance::Clear);

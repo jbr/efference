@@ -24,9 +24,21 @@ fn names_are_model_ids_and_release_dates_order_the_rows() {
 #[test]
 fn missing_facts_stay_absent_and_invalid_dates_do_not_drop_models() {
     let rows = rows(r#"{"models":[{"name":"bare"},{"name":"other","release_date":"unknown","description":"  "}]}"#).unwrap();
-    assert_eq!(
-        rows,
-        vec![ListedModel::new("bare"), ListedModel::new("other")]
+    let decision = |id| ListedModel {
+        kind: ModelKind::Decisions,
+        ..ListedModel::new(id)
+    };
+    assert_eq!(rows, vec![decision("bare"), decision("other")]);
+}
+
+/// Everything this provider lists answers questions rather than producing turns.
+#[test]
+fn every_listed_model_is_a_decision_model() {
+    assert!(
+        rows(CATALOG)
+            .unwrap()
+            .iter()
+            .all(|row| row.kind == ModelKind::Decisions)
     );
 }
 

@@ -449,6 +449,73 @@ async fn a_hosted_sessions_files_are_served_under_its_prefix() {
         .assert_status(404);
 }
 
+/// `?role=` narrows the catalog to what a role may choose (docs/model-catalog.md):
+/// a connection that serves no turns drops out for main and triage and stays for
+/// the spotter. Both connections are disabled, so no refresh leaves the process.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_catalog_role_filter_drops_decision_only_connections_for_turn_roles() {
+    use crate::client::ModelRole;
+    let roots = Roots::new();
+    let cwd = roots.0.join("one");
+    let config = crate::inference::InferenceConfig::from_toml(
+        r#"
+[connections.text]
+provider = "openrouter"
+auth = { kind = "env", key = "TEST_KEY" }
+disabled = true
+
+[connections.decisions]
+provider = "typesafe"
+auth = { kind = "env", key = "TEST_KEY" }
+disabled = true
+"#,
+    )
+    .unwrap();
+    let env = crate::env_table::EnvSnapshot::new(
+        [("TEST_KEY".to_string(), "test-secret".to_string())].into(),
+    )
+    .unwrap();
+    let host = Host::new(
+        crate::inference::InferenceRegistry::from_config(
+            config,
+            Path::new("/host"),
+            env,
+            &std::sync::Arc::new(crate::secrets::Secrets::in_memory()),
+        )
+        .unwrap(),
+        baseline_env(),
+    );
+    let client = host_client(&host, "one").await.with_prefix("");
+    let names = |entries: Vec<crate::client::ConnectionCatalog>| -> Vec<String> {
+        let mut names: Vec<String> = entries.into_iter().map(|e| e.connection).collect();
+        names.sort();
+        names
+    };
+    let all = client.catalog(&cwd, None, None).await.unwrap();
+    assert_eq!(names(all), ["decisions", "text"]);
+    for role in [ModelRole::Main, ModelRole::Triage] {
+        let turns = client.catalog(&cwd, None, Some(role)).await.unwrap();
+        assert_eq!(names(turns), ["text"], "{role:?}");
+    }
+    let spotter = client
+        .catalog(&cwd, None, Some(ModelRole::Spotter))
+        .await
+        .unwrap();
+    assert_eq!(names(spotter), ["decisions", "text"]);
+
+    // One connection: a role it cannot serve is refused by name, one it can is read.
+    let refused = client
+        .catalog_connection("decisions", &cwd, None, None, Some(ModelRole::Main))
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(refused.contains("serves no turns"), "{refused}");
+    client
+        .catalog_connection("decisions", &cwd, None, None, Some(ModelRole::Spotter))
+        .await
+        .expect("the spotter may use a decision-only connection");
+}
+
 /// `GET /inference/catalog` and `/inference/catalog/:connection`
 /// (docs/model-catalog.md): a connection that cannot be read reports why without
 /// a provider read, and a recent pick for it still arrives as a bare row. Only a
@@ -491,7 +558,10 @@ disabled = true
         baseline_env(),
     );
     let client = host_client(&host, "one").await.with_prefix("");
-    let all = client.catalog(&cwd, None).await.expect("read the catalog");
+    let all = client
+        .catalog(&cwd, None, None)
+        .await
+        .expect("read the catalog");
     assert_eq!(all.len(), 1);
     assert_eq!(all[0].status, crate::client::CatalogStatus::Unavailable);
     assert!(all[0].error.as_deref().unwrap().contains("disabled"));
@@ -500,13 +570,13 @@ disabled = true
         r#"[{"connection":"off","model":"z-ai/glm-5.3","group":"z-ai","recent":1}]"#
     );
     let one = client
-        .catalog_connection("off", &cwd, None, Some(300))
+        .catalog_connection("off", &cwd, None, Some(300), None)
         .await
         .expect("read one connection");
     assert_eq!(one, all[0]);
     assert!(
         client
-            .catalog_connection("nope", &cwd, None, None)
+            .catalog_connection("nope", &cwd, None, None, None)
             .await
             .is_err()
     );

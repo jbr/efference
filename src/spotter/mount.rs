@@ -4,20 +4,19 @@
 //! model, [`JevSpot`] against a decision model — and they are not
 //! interchangeable at the model layer: the decisions route is a different API
 //! with a different request shape and a different kind of answer. The selection
-//! is therefore made once, at mount, from the spotter model id alone
-//! ([`jev::is_decision_model`]), and the loop holds the result behind the
-//! [`Spotter`] trait as it always did.
+//! is therefore made once, at mount, from the [`ModelKind`] the provider reports
+//! for the spotter model (`Endpoint::spotter_kind`), and the loop holds the
+//! result behind the [`Spotter`] trait as it always did.
 //!
-//! The id is the whole switch on purpose. A second flag saying "and it is a
-//! decision model" would be a second thing to keep consistent with the first,
-//! and every way they could disagree is a misconfiguration that the id alone
-//! cannot have.
+//! The kind is the provider's own statement about the model — a decision model
+//! declares its output modality — rather than a naming convention, so a model
+//! released after this build is classified correctly.
 //!
 //! An enum rather than a boxed trait object because the trait is not object-safe
 //! (its method returns an `impl Future`) and needn't be: one rung is mounted per
 //! session, chosen once.
 
-use crate::api::Endpoint;
+use crate::api::{Endpoint, ModelKind};
 use crate::config::Config;
 use crate::log::ToolCall;
 use crate::tools::ToolBrief;
@@ -46,12 +45,13 @@ impl MountedSpotter {
     pub fn mount(
         endpoint: Endpoint,
         model: &str,
+        kind: ModelKind,
         scratch: Option<std::path::PathBuf>,
         cwd: impl Into<std::path::PathBuf>,
     ) -> Self {
-        let mounted = match super::jev::is_decision_spotter(endpoint.provider, model) {
-            true => MountedSpotter::Jev(JevSpot::new(endpoint, model)),
-            false => MountedSpotter::Fork(ForkSpot::new(endpoint, model)),
+        let mounted = match kind {
+            ModelKind::Decisions => MountedSpotter::Jev(JevSpot::new(endpoint, model)),
+            ModelKind::Text => MountedSpotter::Fork(ForkSpot::new(endpoint, model)),
         };
         mounted.with_scratch(scratch).with_cwd(cwd)
     }
@@ -63,12 +63,10 @@ impl MountedSpotter {
     pub fn mount_with_persona(
         endpoint: Endpoint,
         model: &str,
+        kind: ModelKind,
         persona: Option<String>,
     ) -> Result<Self, crate::api::Error> {
-        match (
-            super::jev::is_decision_spotter(endpoint.provider, model),
-            persona,
-        ) {
+        match (kind == ModelKind::Decisions, persona) {
             (true, Some(_)) => Err(format!(
                 "spotter model {model:?} is a decision model, which takes no persona: it \
                  answers fixed questions and has no prompt to replace. Its tuning knob is \

@@ -137,9 +137,17 @@ export interface CatalogModel {
   price?: { input: number; output: number };
   reasoning?: boolean;
   images?: boolean;
+  /** Absent for a text model. A `decisions` model answers typed questions about
+   * a state and produces no turn, so only the spotter can use it. */
+  kind?: "decisions";
   /** Rank of the matching recent pick, 1 first, counted across connections. */
   recent?: number;
 }
+
+/** The role a model is being chosen for. The host narrows the catalog to what
+ * the role may use: no decision models, and no connection that serves none, for
+ * `main` or `triage`; everything for `spotter`. */
+export type ModelRole = "main" | "triage" | "spotter";
 
 /** Every configured connection's stored listing, most recent picks folded in.
  *
@@ -147,11 +155,16 @@ export interface CatalogModel {
  * background refresh and is served as stored, and a `failed` one keeps its old
  * copy. `cwd` (+ optional `config`) names the project scope whose recent picks
  * count; without one no row has a `recent`. */
-export const fetchCatalog = (cwd: string, config: string | null) =>
+export const fetchCatalog = (
+  cwd: string,
+  config: string | null,
+  role: ModelRole,
+) =>
   requestAt<{ connections: CatalogEntry[] }>(
     "GET",
     `/inference/catalog?cwd=${encodeURIComponent(cwd)}` +
-      (config === null ? "" : `&config=${encodeURIComponent(config)}`),
+      (config === null ? "" : `&config=${encodeURIComponent(config)}`) +
+      `&role=${role}`,
   );
 
 /** One connection's entry, refreshed and awaited when its stored copy is
@@ -161,6 +174,7 @@ export const fetchConnection = (
   connection: string,
   cwd: string,
   config: string | null,
+  role: ModelRole,
   maxAge?: number,
 ) =>
   requestAt<CatalogEntry>(
@@ -168,6 +182,7 @@ export const fetchConnection = (
     `/inference/catalog/${encodeURIComponent(connection)}` +
       `?cwd=${encodeURIComponent(cwd)}` +
       (config === null ? "" : `&config=${encodeURIComponent(config)}`) +
+      `&role=${role}` +
       (maxAge === undefined ? "" : `&max_age=${maxAge}`),
   );
 

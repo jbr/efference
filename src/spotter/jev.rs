@@ -30,7 +30,7 @@
 //! Fail-closed is unchanged: any transport error, any missing answer, and the
 //! rung returns [`Origin::Fallback`] + [`Stance::Gate`](crate::log::Stance::Gate).
 
-use crate::api::{Endpoint, Provider};
+use crate::api::Endpoint;
 use crate::config::Config;
 use crate::log::{Origin, ToolCall};
 use crate::tools::ToolBrief;
@@ -42,34 +42,6 @@ mod questions;
 mod state;
 
 pub use questions::{Axes, Band, Thresholds};
-
-/// Whether a spotter selection reaches the decisions route
-/// (docs/permissions.md) — the switch between this rung and the prose one.
-///
-/// Two ways to be one, because the family is reachable two ways:
-///
-/// - **The provider serves no inference at all** (`typesafe`). Every model there
-///   is a decision model, and the id is spelled bare (`jev-latest`), so the
-///   provider is the whole answer.
-/// - **The id names the family on a provider that serves both** (OpenRouter
-///   fronts it at `typesafe/jev-1.13`). Matched on the author plus the family so
-///   the check survives a version bump without catching some other author's
-///   model that happens to be called jev.
-///
-/// Nothing beyond the connection and the model id selects this — there is no
-/// separate flag that could disagree with them.
-pub fn is_decision_spotter(provider: Provider, model: &str) -> bool {
-    !provider.serves_inference() || is_decision_model(model)
-}
-
-/// Whether a model id names the jev family on a provider that also serves turns.
-pub fn is_decision_model(model: &str) -> bool {
-    let slug = model.trim().trim_start_matches('~');
-    let Some(rest) = slug.strip_prefix("typesafe/") else {
-        return false;
-    };
-    rest == "jev" || rest.starts_with("jev-")
-}
 
 /// The decision-model spotter. Holds the [`Endpoint`] rather than a
 /// [`Client`](crate::api::Client): the decisions route is one JSON POST with no

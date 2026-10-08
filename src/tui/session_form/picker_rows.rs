@@ -118,13 +118,24 @@ impl Form {
     }
 
     /// The whole tree in list order: each connection, its groups by name, then
-    /// its models as the catalog ordered them.
-    pub(super) fn tree(&self) -> (Vec<Node>, Vec<Extra<'_>>) {
+    /// its models as the catalog ordered them — only those `role` may choose
+    /// (`ModelRole`, the same rule the host's `?role=` filter applies).
+    pub(super) fn tree(&self, role: Role) -> (Vec<Node>, Vec<Extra<'_>>) {
+        let role = role.model_role();
         let mut nodes = Vec::new();
         let mut extra = Vec::new();
-        for inventory in self.connections() {
+        for inventory in self
+            .connections()
+            .iter()
+            .filter(|inventory| role.accepts_provider(inventory.provider))
+        {
             let entry = self.catalog_entry(&inventory.name);
-            let models = entry.map(|entry| entry.models.as_slice()).unwrap_or(&[]);
+            let models: Vec<&CatalogModel> = entry
+                .map(|entry| entry.models.iter())
+                .into_iter()
+                .flatten()
+                .filter(|model| role.accepts(model.row.kind))
+                .collect();
             let (trailer, dim) = match (self.connection_unavailable(&inventory.name), entry) {
                 (true, _) => ("unavailable", true),
                 (false, Some(entry)) => match entry.status {
@@ -150,7 +161,7 @@ impl Form {
                 dim,
             });
             let mut groups: std::collections::BTreeMap<&str, usize> = Default::default();
-            for model in models {
+            for model in &models {
                 if let Some(group) = &model.row.group {
                     *groups.entry(group).or_default() += 1;
                 }
@@ -244,7 +255,7 @@ impl Form {
         };
         let recents = *role == Role::Main;
         let text = query.text();
-        let (nodes, extra) = self.tree();
+        let (nodes, extra) = self.tree(*role);
         let order = match text.trim().is_empty() {
             true => Self::browse(&nodes, path, recents),
             false => rank(&nodes, path, &text, recents),

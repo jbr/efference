@@ -887,7 +887,7 @@ discriminator on its own.
 
 ```toml
 [connections.meta]
-dialect = "messages"                      # or "responses"
+dialect = "messages"                      # or "responses", or "systemone"
 base-url = "https://api.meta.ai/v1"
 auth = { kind = "env", key = "META_API_KEY" }
 ```
@@ -904,6 +904,17 @@ metadata and credential-check routes are the turn route's *siblings*, not its
 suffixes) — or derived from the dialect: `{base}/messages` or `{base}/responses`
 for turns, `{base}/models` for both the capability lookup and the credential check,
 and a trailing slash on the base is optional.
+
+`dialect = "systemone"` is the odd one: it is not a turn dialect. It names the System One
+contract (the decisions route, below), which TypeSafe, Upstage, Liquid, Perplexity and Cloudflare serve at routes
+that differ in path (`/v1/systemone`, `/decisions/v1/systemone`, `/v1/decisions`, a per-model run
+URL). So for this dialect `base-url` is the request URL **whole** — nothing is appended — and the
+connection has no listing, no capability lookup, and no key check: the typed model id is the
+menu, and a misspelled id fails closed at the first gated call rather than at boot.
+`Provider::inference_dialect` is `None` for it, so main and triage refuse it exactly as they
+refuse `typesafe`, and only the spotter can use it. (OpenAI's own Decisions API is a different
+wire — `input`, an array of `predicate`/`choice`/`score` questions — and would be a separate
+dialect.)
 
 **Every per-provider quirk takes its conservative arm, derived from the dialect
 rather than inherited from a named provider that speaks the same one.** A sticky
@@ -1033,6 +1044,9 @@ the answering side, and is spelled as the wire spells it. Answers are parsed
 leniently — a shape this harness does not model yet yields `None` for that
 question rather than failing the response away, and the caller's `None` handling
 is the same fail-closed path a transport error takes.
+
+A connection declared `dialect = "systemone"` posts the same body to its configured URL
+and sends nothing beyond `authorization: Bearer` (no `session_id`, no attribution).
 
 Two providers front the same models and the request differs slightly between them:
 OpenRouter documents `session_id`/`user`/`trace` alongside the three required

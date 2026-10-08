@@ -226,7 +226,8 @@ pub(crate) async fn spotter_eval(
     let (model, endpoint) = crate::inference::spotter_endpoint(Some(&model))?;
     // Reject a persona against a decision model before spending anything: the
     // per-case mount below then cannot fail.
-    MountedSpotter::mount_with_persona(endpoint.clone(), &model, persona.clone())?;
+    let kind = endpoint.spotter_kind(&model).await?;
+    MountedSpotter::mount_with_persona(endpoint.clone(), &model, kind, persona.clone())?;
     // Briefs come from the same lookup a live gate uses; connected-server tools
     // in recorded cases have no mount here and run brief-less, which matches
     // how most were recorded.
@@ -301,12 +302,13 @@ pub(crate) async fn spotter_eval(
                             "toolu_spotter_eval",
                             case.call.input.clone(),
                         );
-                        // Which rung the model id names (docs/permissions.md).
+                        // Which rung the model is (docs/permissions.md).
                         // The persona/model mismatch was rejected before the
                         // first request, so this cannot fail here.
                         let spot = MountedSpotter::mount_with_persona(
                             endpoint.clone(),
                             &model,
+                            kind,
                             persona.clone(),
                         )
                         .expect("the rung was validated before the runs began")

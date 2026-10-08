@@ -5,7 +5,7 @@
 //! the source for an endpoint. Storage, age, and refresh are the catalog's
 //! (`src/catalog.rs`).
 
-use super::row::ListedModel;
+use super::row::{ListedModel, ModelKind};
 use super::*;
 
 impl Endpoint {
@@ -18,11 +18,17 @@ impl Endpoint {
                 let url = self
                     .models_url()
                     .ok_or("the openrouter provider has no model catalog route")?;
+                // The default listing is text models only; decision models are
+                // a separate output modality, asked for by name alongside it.
+                let url = format!("{url}?output_modalities=text,decisions");
                 openrouter::rows(&self.authed_get(&url).await?)
             }
             // A described endpoint's listing is the same route the credential
             // check and the capability lookup use, so one shape reads all three
             // (`provider/listing.rs`).
+            // A System One endpoint publishes no listing: its URL is its one route,
+            // so the typed id is the whole menu.
+            Provider::Custom(WireDialect::SystemOne) => Ok(Vec::new()),
             Provider::Custom(_) => {
                 let url = self.provider.capabilities_url(self.base.as_deref(), "")?;
                 listing::rows(&self.authed_get(&url).await?)
@@ -50,6 +56,30 @@ impl Endpoint {
                     .ok_or("the typesafe provider has no model listing route")?;
                 typesafe::rows(&self.authed_get(&url).await?)
             }
+        }
+    }
+
+    /// What a spotter model is, from what its provider says about it
+    /// (docs/permissions.md) — the one place the choice between the prose rung and
+    /// the decision rung is made, so no id convention stands in for it. Also the
+    /// existence check for a decision model, which has no capabilities to look up:
+    ///
+    /// - A provider that serves no turns lists only decision models; the id is
+    ///   checked against its listing where it has one.
+    /// - OpenRouter's per-model metadata route answers 2xx for an id it serves and
+    ///   declares the output modality, so one GET is both the check and the kind.
+    /// - Any other provider serves text models only.
+    pub async fn spotter_kind(&self, model: &str) -> Result<ModelKind, Error> {
+        if !self.provider.serves_inference() {
+            self.check_decision_model(model).await?;
+            return Ok(ModelKind::Decisions);
+        }
+        match self.provider {
+            Provider::OpenRouter => {
+                let url = self.provider.capabilities_url(None, model)?;
+                openrouter::kind_of_endpoints(&self.authed_get(&url).await?)
+            }
+            _ => Ok(ModelKind::Text),
         }
     }
 

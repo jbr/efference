@@ -2,7 +2,7 @@
 //! connection with its status, age, and rows, with recent picks folded in.
 
 use super::{CATALOG_TTL, Snapshot};
-use crate::api::{ListedModel, Provider};
+use crate::api::{ListedModel, ModelKind, Provider};
 use serde::{Deserialize, Serialize};
 
 /// Where a connection's listing stands.
@@ -20,6 +20,54 @@ pub enum Status {
     /// The connection has no usable credential (or is disabled), so no read
     /// was attempted.
     Unavailable,
+}
+
+/// The role a model is being chosen for. The one place the rule for which models
+/// a role may be offered lives, so the host's `?role=` filter and the TUI's
+/// pickers cannot differ on it (docs/model-catalog.md).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModelRole {
+    Main,
+    Triage,
+    Spotter,
+}
+
+impl ModelRole {
+    pub fn from_name(name: &str) -> Option<Self> {
+        match name {
+            "main" => Some(Self::Main),
+            "triage" => Some(Self::Triage),
+            "spotter" => Some(Self::Spotter),
+            _ => None,
+        }
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Main => "main",
+            Self::Triage => "triage",
+            Self::Spotter => "spotter",
+        }
+    }
+
+    /// Whether a model of `kind` can back this role. Main and triage run turns,
+    /// which a decision model produces none of; the spotter runs either rung
+    /// (docs/permissions.md).
+    pub fn accepts(self, kind: ModelKind) -> bool {
+        match self {
+            Self::Main | Self::Triage => kind.is_text(),
+            Self::Spotter => true,
+        }
+    }
+
+    /// Whether a connection on `provider` can hold any model for this role: a
+    /// provider that serves no turns has none to offer a role that runs them.
+    pub fn accepts_provider(self, provider: Provider) -> bool {
+        match self {
+            Self::Main | Self::Triage => provider.serves_inference(),
+            Self::Spotter => true,
+        }
+    }
 }
 
 /// One row as a client receives it: the stored row, the connection it belongs
@@ -102,6 +150,12 @@ pub fn assemble(
                 connection: connection.to_string(),
                 row: ListedModel {
                     group: provider.group_of(&recent.model),
+                    // Nothing was listed to say, so the connection does: a provider
+                    // that serves no turns serves only decision models.
+                    kind: match provider.serves_inference() {
+                        true => ModelKind::Text,
+                        false => ModelKind::Decisions,
+                    },
                     ..ListedModel::new(&recent.model)
                 },
                 recent: Some(recent.rank),
@@ -115,5 +169,23 @@ pub fn assemble(
         age: snapshot.age,
         error,
         models,
+    }
+}
+
+impl ConnectionCatalog {
+    /// This entry as `role` may be offered it, or `None` when the connection
+    /// holds nothing the role can use. A connection that could serve the role but
+    /// lists no model for it stays, empty: a typed id is still possible on it.
+    pub fn for_role(mut self, role: ModelRole) -> Option<Self> {
+        if !role.accepts_provider(self.provider) {
+            return None;
+        }
+        self.retain_for_role(role);
+        Some(self)
+    }
+
+    /// Drop the models `role` may not choose, keeping the connection.
+    pub fn retain_for_role(&mut self, role: ModelRole) {
+        self.models.retain(|model| role.accepts(model.row.kind));
     }
 }

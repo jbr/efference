@@ -18,7 +18,7 @@ use trillium_client::{Client as HttpClient, Connector};
 use trillium_tokio::UnixClientConfig;
 
 use crate::attachments::Arrival;
-pub use crate::catalog::{CatalogModel, ConnectionCatalog, Status as CatalogStatus};
+pub use crate::catalog::{CatalogModel, ConnectionCatalog, ModelRole, Status as CatalogStatus};
 use crate::daemon::{
     ArchivedSession, CreateSession, PatchSession, SessionOptionsRequest, SessionState,
 };
@@ -29,6 +29,7 @@ fn catalog_query(
     cwd: &std::path::Path,
     config: Option<&std::path::Path>,
     max_age: Option<u64>,
+    role: Option<ModelRole>,
 ) -> String {
     let mut query = trillium_client::url::form_urlencoded::Serializer::new(String::new());
     query.append_pair("cwd", &cwd.to_string_lossy());
@@ -37,6 +38,9 @@ fn catalog_query(
     }
     if let Some(max_age) = max_age {
         query.append_pair("max_age", &max_age.to_string());
+    }
+    if let Some(role) = role {
+        query.append_pair("role", role.name());
     }
     query.finish()
 }
@@ -613,17 +617,23 @@ impl Client {
     /// the project at `cwd` (`GET /inference/catalog`). Never waits on a provider:
     /// an entry's `status` says whether its copy is fresh, stale, missing, or
     /// failed, and a missing or stale one is being refreshed in the host
-    /// (docs/model-catalog.md). A listener route, so it addresses the socket root.
+    /// (docs/model-catalog.md). `role` narrows the answer to what that role may
+    /// choose; `None` is every model, which is what the spotter may choose. A
+    /// listener route, so it addresses the socket root.
     pub async fn catalog(
         &self,
         cwd: &std::path::Path,
         config: Option<&std::path::Path>,
+        role: Option<ModelRole>,
     ) -> Result<Vec<ConnectionCatalog>> {
         #[derive(serde::Deserialize)]
         struct Catalog {
             connections: Vec<ConnectionCatalog>,
         }
-        let path = format!("/inference/catalog?{}", catalog_query(cwd, config, None));
+        let path = format!(
+            "/inference/catalog?{}",
+            catalog_query(cwd, config, None, role)
+        );
         let body = self.get_unversioned(&path).await?;
         let catalog: Catalog =
             serde_json::from_str(&body).with_context(|| format!("decoding GET {path}"))?;
@@ -639,12 +649,13 @@ impl Client {
         cwd: &std::path::Path,
         config: Option<&std::path::Path>,
         max_age: Option<u64>,
+        role: Option<ModelRole>,
     ) -> Result<ConnectionCatalog> {
         let name =
             percent_encoding::utf8_percent_encode(connection, percent_encoding::NON_ALPHANUMERIC);
         let path = format!(
             "/inference/catalog/{name}?{}",
-            catalog_query(cwd, config, max_age)
+            catalog_query(cwd, config, max_age, role)
         );
         let body = self.get_unversioned(&path).await?;
         serde_json::from_str(&body).with_context(|| format!("decoding GET {path}"))

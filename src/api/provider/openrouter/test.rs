@@ -3,6 +3,9 @@ use super::*;
 /// A trimmed real `GET /api/v1/models` body.
 const CATALOG: &str = include_str!("catalog.json");
 
+/// A trimmed real `GET /api/v1/models?output_modalities=decisions` body.
+const DECISIONS: &str = include_str!("decisions.json");
+
 /// What the same route answered when the request carried `anthropic-version`:
 /// Anthropic's listing shape, 20 rows, `display_name` instead of `name`.
 const ANTHROPIC_SHAPED: &str = include_str!("anthropic_shaped.json");
@@ -86,4 +89,50 @@ fn model_description_is_provider_prose() {
         rows[0].description.as_deref(),
         Some("Provider **prose**.\nSecond paragraph.")
     );
+}
+
+/// Decision models declare `decisions` as their output modality and no supported
+/// parameters, so the `tools` filter must not drop them.
+#[test]
+fn decision_models_are_listed_with_their_kind() {
+    let rows = rows(DECISIONS).unwrap();
+    assert_eq!(rows.len(), 5);
+    assert!(rows.iter().all(|r| r.kind == ModelKind::Decisions));
+    let alias = row(&rows, "~typesafe/jev-latest");
+    assert_eq!(alias.group.as_deref(), Some("typesafe"));
+    assert_eq!(alias.name.as_deref(), Some("Jev Latest"));
+    assert_eq!(
+        row(&rows, "perplexity/pplx-decider-v1.1-27b").images,
+        Some(true)
+    );
+    assert_eq!(
+        row(&rows, "inception/mercury-decide:free")
+            .price
+            .unwrap()
+            .input,
+        0.0
+    );
+    // `context_length: 0` is a window the entry does not state, not an empty one.
+    assert_eq!(row(&rows, "respan/span-01").context, None);
+}
+
+#[test]
+fn a_text_model_has_the_text_kind_and_serializes_without_one() {
+    let rows = rows(CATALOG).unwrap();
+    assert!(rows.iter().all(|r| r.kind == ModelKind::Text));
+    let json = serde_json::to_string(row(&rows, "z-ai/glm-5.3-prime")).unwrap();
+    assert!(!json.contains("kind"), "{json}");
+    let decision =
+        serde_json::to_string(row(&super::rows(DECISIONS).unwrap(), "respan/span-01")).unwrap();
+    assert!(decision.contains(r#""kind":"decisions""#), "{decision}");
+}
+
+#[test]
+fn the_metadata_route_declares_the_output_modality() {
+    let decisions = r#"{"data":{"id":"a/b","architecture":{"output_modalities":["decisions"]},"endpoints":[]}}"#;
+    let text =
+        r#"{"data":{"id":"a/c","architecture":{"output_modalities":["text"]},"endpoints":[]}}"#;
+    assert_eq!(kind_of_endpoints(decisions).unwrap(), ModelKind::Decisions);
+    assert_eq!(kind_of_endpoints(text).unwrap(), ModelKind::Text);
+    assert!(kind_of_endpoints("{}").is_err());
 }

@@ -686,8 +686,8 @@ fn resolve_declaration(
         (None, None) => {
             return Err(format!(
                 "connection {name:?}: name a `provider`, or give a `dialect` \
-                 (`messages` or `responses`) and a `base-url` to describe an endpoint \
-                 this build knows no name for (docs/transport.md)"
+                 (`messages`, `responses`, or `systemone`) and a `base-url` to describe \
+                 an endpoint this build knows no name for (docs/transport.md)"
             ));
         }
     };

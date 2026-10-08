@@ -278,10 +278,11 @@ pub(crate) async fn spotter_check(
     // Credentials are resolved after the config, the mount, and the brief, so a typo'd
     // tool name or an unreachable server fails on its own terms rather than behind a
     // missing key. They come before the preview because what gets previewed depends on
-    // which rung the model id names: the prose spotter reads a rendered move block, the
+    // which rung the model is: the prose spotter reads a rendered move block, the
     // decision model reads a JSON state (docs/permissions.md).
     let (model, endpoint) = crate::inference::spotter_endpoint(model)?;
-    let spotter = MountedSpotter::mount(endpoint, &model, None, cwd.clone());
+    let kind = endpoint.spotter_kind(&model).await?;
+    let spotter = MountedSpotter::mount(endpoint, &model, kind, None, cwd.clone());
     if show_move || tool.is_some() {
         let preview = match &spotter {
             MountedSpotter::Jev(_) => efference::spotter::jev::preview_state(

@@ -33,6 +33,27 @@ impl Price {
     }
 }
 
+/// What a listed model does (docs/model-catalog.md): produce a turn, or answer
+/// typed questions about a state without producing one (a decision model, which
+/// only the spotter can use — docs/permissions.md).
+///
+/// A row inherits its kind from where it was listed: a connection whose provider
+/// serves no turns lists only decision models, and OpenRouter declares it per
+/// entry in `architecture.output_modalities`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ModelKind {
+    #[default]
+    Text,
+    Decisions,
+}
+
+impl ModelKind {
+    pub fn is_text(&self) -> bool {
+        matches!(self, Self::Text)
+    }
+}
+
 /// One model a connection lists. `connection` is not part of the stored row: the
 /// catalog keys rows by it (`catalog.rs`).
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -60,6 +81,9 @@ pub struct ListedModel {
     /// Image input.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub images: Option<bool>,
+    /// Absent on the wire for a text model, the common case.
+    #[serde(default, skip_serializing_if = "ModelKind::is_text")]
+    pub kind: ModelKind,
 }
 
 impl ListedModel {

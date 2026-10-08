@@ -298,9 +298,10 @@ project. The prompts draw on `/dev/tty` when stdout is a pipe, which is what
 **An endpoint with no name in this build.** The provider menu's last entry is
 "Something else", for an endpoint speaking a dialect efference already has an
 encoder for at a URL the provider enum does not know
-([transport.md](transport.md)). It asks the dialect — Anthropic Messages or OpenAI
-Responses — then the base URL, and refuses a base URL that is not one at the
-prompt rather than at host launch. Both are asked *before* the name, because the
+([transport.md](transport.md)). It asks the dialect — Anthropic Messages, OpenAI
+Responses, or System One decisions — then the base URL (for System One, the whole
+request URL, since providers spell that route differently), and refuses a URL that
+is not one at the prompt rather than at host launch. Both are asked *before* the name, because the
 endpoint's host is a better name suggestion than anything the flow could derive
 otherwise: `https://api.meta.ai/v1` suggests the connection `meta`, which in turn
 suggests `META_API_KEY` for the environment variable, so the two questions with no

@@ -55,12 +55,32 @@ absent. `recent` is added at read time, not stored.
 
 | Provider | Source | Facts read |
 |---|---|---|
-| OpenRouter | `GET /api/v1/models` (sent without `anthropic-version`) | name, description, created, context_length, pricing, `architecture.input_modalities`, `supported_parameters`/`reasoning` |
+| OpenRouter | `GET /api/v1/models?output_modalities=text,decisions` (sent without `anthropic-version`) | name, description, created, context_length (`0` reads as absent), pricing, `architecture.input_modalities`/`output_modalities`, `supported_parameters`/`reasoning` |
 | Anthropic | `GET /v1/models?limit=100` | display_name, created_at (RFC 3339), max_input_tokens, `capabilities.image_input.supported` |
 | OpenAI Codex | the Codex catalog (also the capability source, [transport.md](transport.md)) | display_name, description, context window, input modalities, reasoning levels |
-| TypeSafe | `GET /v1/models` | name (model id), description, release_date (RFC 3339) |
+| TypeSafe | `GET /v1/models` | name (model id), description, release_date (RFC 3339); every row `decisions` |
 | OpenAI platform | `GET /v1/models` | created |
 | Described endpoint | `GET {base}/models`, read field by field | created, name/display_name, description, context, image modality |
+| Described `systemone` endpoint | none | none — an empty catalog |
+
+## Kind and role
+
+A row has a `kind`: `text` (absent on the wire) or `decisions`, a model that answers typed
+questions about a state and produces no turn — only the spotter can use one
+([permissions.md](permissions.md)). A row inherits it from where it was listed: every row of
+a provider that serves no turns is `decisions`, and an OpenRouter entry declares it in
+`architecture.output_modalities`. OpenRouter's catalog read asks for
+`output_modalities=text,decisions`, because its default listing holds text models only, and
+an entry with the `decisions` modality skips the `tools` filter (it declares no supported
+parameters at all).
+
+`ModelRole` (`src/catalog/view.rs`) is the one statement of which role may be offered what:
+`main` and `triage` take text rows on connections whose provider serves turns, `spotter`
+takes every row. The catalog routes apply it as `?role=` ([control-api.md](control-api.md));
+the terminal form reads the unfiltered catalog once and applies the same function per
+picker, and the web picker passes its role. A connection declared `dialect = "systemone"`
+publishes no listing, so for the spotter it appears with no rows and the typed id is the whole
+menu.
 
 ## Recent ranks
 
@@ -69,7 +89,7 @@ history store keys on (`cwd`, optional `config`) and fold the ranked picks of
 `recent_all` (up to 20, counted across connections, project picks first) onto the
 matching (connection, model) row as `recent`. A pick the listing does not name — a typed
 id — becomes a row with only `connection`, `model`, the OpenRouter `group` derived from
-the id, and `recent`. The catalog routes are the only source of recents: the terminal
+the id, `recent`, and a `kind` taken from the connection. The catalog routes are the only source of recents: the terminal
 picker ([tui.md](tui.md)) ranks its root and connection views from them.
 
 ## Routes

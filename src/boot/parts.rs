@@ -244,29 +244,36 @@ pub(super) async fn mount_spotter(
     // permission decision.
     //
     // A decision model has no such metadata: there is no context window, output
-    // cap, or cache policy behind a decisions request (docs/permissions.md), on
-    // either provider that serves one. Its own existence check stands in.
-    let checked =
-        if crate::spotter::jev::is_decision_spotter(spotter_endpoint.provider, &spotter_model) {
-            spotter_endpoint.check_decision_model(&spotter_model).await
-        } else {
-            spotter_endpoint
-                .fetch_capabilities(&spotter_model, &[])
-                .await
-                .map(drop)
-        };
-    if let Err(error) = checked {
+    // cap, or cache policy behind a decisions request (docs/permissions.md). The
+    // provider's own statement about the model says which kind it is, and for a
+    // decision model that lookup doubles as the existence check.
+    let kind = match spotter_endpoint.spotter_kind(&spotter_model).await {
+        Ok(kind) => kind,
+        Err(error) => {
+            return Err(format!(
+                "spotter model {spotter_model:?} on {}: {error}",
+                spotter_endpoint.provider
+            )
+            .into());
+        }
+    };
+    if kind == crate::api::ModelKind::Text
+        && let Err(error) = spotter_endpoint
+            .fetch_capabilities(&spotter_model, &[])
+            .await
+    {
         return Err(format!(
             "spotter model {spotter_model:?} on {}: {error}",
             spotter_endpoint.provider
         )
         .into());
     }
-    // Which rung the id names (docs/permissions.md): a decision model reaches a
+    // Which rung the model is (docs/permissions.md): a decision model reaches a
     // different API and answers differently, so the choice is made here, once.
     let spotter = MountedSpotter::mount(
         spotter_endpoint.for_spotter(),
         &spotter_model,
+        kind,
         Some(scratch.to_path_buf()),
         cwd.to_path_buf(),
     );

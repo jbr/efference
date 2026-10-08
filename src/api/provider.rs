@@ -18,7 +18,7 @@ mod openrouter;
 mod row;
 mod typesafe;
 
-pub use row::{ListedModel, Price};
+pub use row::{ListedModel, ModelKind, Price};
 
 /// The spotter model a bare session uses on either OpenAI arm when the
 /// connection names none of its own (docs/permissions.md). A single default
@@ -89,6 +89,12 @@ pub enum WireDialect {
     /// OpenAI Responses: `input[]` items, ordered output items, SSE
     /// `response.created` … `response.completed`.
     Responses,
+    /// The System One contract (docs/transport.md): one POST of
+    /// `{model, state, questions}` answered with a probability per question.
+    /// Not a turn dialect — it has no assistant output to encode or assemble —
+    /// so [`Provider::inference_dialect`] never returns it, and a connection
+    /// speaking it can back the spotter role only.
+    SystemOne,
 }
 
 impl WireDialect {
@@ -99,6 +105,8 @@ impl WireDialect {
         match self {
             Self::Messages => 128,
             Self::Responses => 64,
+            // No tools ride a System One request; the limit is never consulted.
+            Self::SystemOne => 0,
         }
     }
 
@@ -127,6 +135,7 @@ impl WireDialect {
         match self {
             Self::Messages => "messages",
             Self::Responses => "responses",
+            Self::SystemOne => "systemone",
         }
     }
 
@@ -137,10 +146,11 @@ impl WireDialect {
         match value.trim() {
             "messages" => Ok(Self::Messages),
             "responses" => Ok(Self::Responses),
+            "systemone" => Ok(Self::SystemOne),
             other => Err(format!(
                 "dialect {other:?} not recognized: valid values are `messages` \
-                 (Anthropic Messages) and `responses` (OpenAI Responses) \
-                 (docs/transport.md)"
+                 (Anthropic Messages), `responses` (OpenAI Responses), and \
+                 `systemone` (System One decision models) (docs/transport.md)"
             )
             .into()),
         }
@@ -152,6 +162,7 @@ impl std::fmt::Display for WireDialect {
         f.write_str(match self {
             Self::Messages => "Messages",
             Self::Responses => "Responses",
+            Self::SystemOne => "System One",
         })
     }
 }
@@ -255,6 +266,7 @@ impl Provider {
         match self {
             Self::Anthropic | Self::OpenRouter => Some(WireDialect::Messages),
             Self::OpenAI | Self::OpenAICodex => Some(WireDialect::Responses),
+            Self::Custom(WireDialect::SystemOne) => None,
             Self::Custom(dialect) => Some(*dialect),
             Self::TypeSafe => None,
         }
@@ -385,7 +397,9 @@ impl Provider {
             // with no inference dialect never has one encoded for it. The arm
             // exists because the match is exhaustive, not because the value means
             // anything here.
-            Self::TypeSafe => crate::project::ImagePlacement::InToolResult,
+            Self::TypeSafe | Self::Custom(WireDialect::SystemOne) => {
+                crate::project::ImagePlacement::InToolResult
+            }
         }
     }
 
@@ -431,7 +445,9 @@ impl Provider {
             }
             // Unreachable for the same reason as `image_placement`'s arm: nothing
             // projects a turn for a provider that serves none.
-            Self::TypeSafe => crate::project::BreakpointPlacement::TrailingBlock,
+            Self::TypeSafe | Self::Custom(WireDialect::SystemOne) => {
+                crate::project::BreakpointPlacement::TrailingBlock
+            }
         }
     }
 
@@ -451,6 +467,7 @@ impl Provider {
             // is what `GET /state` and the boot line report.
             Self::Custom(WireDialect::Messages) => "custom-messages",
             Self::Custom(WireDialect::Responses) => "custom-responses",
+            Self::Custom(WireDialect::SystemOne) => "custom-systemone",
         }
     }
     /// Map the session's 0–100 integer temperature to this provider's native
@@ -490,6 +507,9 @@ impl Provider {
                 Some("https://chatgpt.com/backend-api/codex/responses".to_string())
             }
             Self::TypeSafe => None,
+            // A System One endpoint has no turns route; its one route is
+            // [`Self::decisions_url`].
+            Self::Custom(WireDialect::SystemOne) => None,
             // The dialect picks the path: these two are the conventional routes,
             // and an endpoint that serves the dialect on a different path is a
             // base URL that includes it.
@@ -504,16 +524,20 @@ impl Provider {
     /// probability per question, not a Messages or Responses request — so a
     /// provider either serves it or the spotter band that uses it is unreachable
     /// there.
-    pub(super) fn decisions_url(&self) -> Option<&'static str> {
+    pub(super) fn decisions_url(&self, base: Option<&str>) -> Option<String> {
         match self {
-            Self::TypeSafe => Some("https://api.typesafe.ai/v1/systemone"),
+            Self::TypeSafe => Some("https://api.typesafe.ai/v1/systemone".to_string()),
             // OpenRouter fronts the same models on its own alpha route, which is
             // how this rung was reachable before first-party access existed.
-            Self::OpenRouter => Some("https://openrouter.ai/api/alpha/decisions"),
+            Self::OpenRouter => Some("https://openrouter.ai/api/alpha/decisions".to_string()),
             Self::Anthropic | Self::OpenAI | Self::OpenAICodex => None,
-            // A decisions route is a distinct API, not a dialect, so a custom
-            // endpoint declaring a turn dialect has said nothing about serving one.
-            Self::Custom(_) => None,
+            // The configured URL is the route, whole. Providers that adopted the
+            // contract spell its path differently (`/v1/systemone`,
+            // `/decisions/v1/systemone`, `/v1/decisions`, a per-model run URL),
+            // so appending a conventional segment would be wrong for most of them.
+            Self::Custom(WireDialect::SystemOne) => base.map(str::to_string),
+            // A turn dialect says nothing about serving the System One contract.
+            Self::Custom(WireDialect::Messages | WireDialect::Responses) => None,
         }
     }
 
@@ -652,7 +676,7 @@ impl Provider {
     /// the value sent is the same one either way.
     pub(super) fn prompt_cache_key_field(&self) -> bool {
         match self {
-            Self::Anthropic | Self::TypeSafe => false,
+            Self::Anthropic | Self::TypeSafe | Self::Custom(WireDialect::SystemOne) => false,
             Self::OpenRouter | Self::OpenAI | Self::OpenAICodex => true,
             // The field is an OpenAI-dialect one, and an unrecognized top-level key
             // is a 400 on Messages — the same reason this is gated for Anthropic.
@@ -700,6 +724,9 @@ impl Provider {
             // capabilities at all it does so there, and the same response answers
             // the credential check and the model menu (`provider/listing.rs`). The
             // model is found within it rather than addressed by URL.
+            Self::Custom(WireDialect::SystemOne) => Err("a System One connection publishes no \
+                                                       model metadata"
+                .into()),
             Self::Custom(_) => Ok(join(
                 base.ok_or_else(|| -> Error { "a custom connection has no base URL".into() })?,
                 "models",
@@ -748,6 +775,7 @@ impl Provider {
             // A described endpoint's listing is the route its credential check
             // and capability lookup already use, whatever dialect it speaks
             // (`Provider::capabilities_url`).
+            Self::Custom(WireDialect::SystemOne) => return None,
             Self::Custom(_) => join(base?, "models"),
         })
     }
@@ -766,8 +794,12 @@ impl Provider {
             Self::OpenAICodex => None,
             // Both dialects converge on this route, and an endpoint serving
             // neither a listing nor a key check is one whose credential is first
-            // tested by a turn.
-            Self::Custom(_) => Some(join(base?, "models")),
+            // tested by a turn. A System One endpoint's URL is the one route it
+            // has: it publishes no sibling listing to read a key check from.
+            Self::Custom(WireDialect::SystemOne) => None,
+            Self::Custom(WireDialect::Messages | WireDialect::Responses) => {
+                Some(join(base?, "models"))
+            }
         }
     }
 
@@ -1455,6 +1487,21 @@ impl Endpoint {
             .provider
             .capabilities_url(self.base.as_deref(), model)?;
         let body = self.authed_get(&url).await?;
+        // OpenRouter lists decision models beside text ones. One answers typed
+        // questions about a state and produces no turn, so a role that runs turns
+        // refuses it here, before a Messages request would 4xx on it.
+        if self.provider == Provider::OpenRouter
+            && matches!(
+                openrouter::kind_of_endpoints(&body),
+                Ok(ModelKind::Decisions)
+            )
+        {
+            return Err(format!(
+                "{model} is a decision model: it answers typed questions about a state and \
+                 produces no turn, so it can back the spotter only (docs/transport.md)"
+            )
+            .into());
+        }
         let mut capabilities = self
             .provider
             .parse_capabilities(&body, model, upstream)

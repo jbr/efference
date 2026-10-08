@@ -5,6 +5,7 @@ use super::*;
 
 const MESSAGES: Provider = Provider::Custom(WireDialect::Messages);
 const RESPONSES: Provider = Provider::Custom(WireDialect::Responses);
+const SYSTEM_ONE: Provider = Provider::Custom(WireDialect::SystemOne);
 
 /// The bare OpenAI-shaped listing, as Meta's Model API answers it: an id and
 /// nothing a capability consumer can use.
@@ -186,7 +187,7 @@ fn a_custom_endpoint_is_sent_no_vendor_specific_extras() {
         assert_eq!(provider.routing_hint_header(), None);
         assert_eq!(provider.attribution(), &[]);
         assert!(!provider.reports_plan_windows());
-        assert_eq!(provider.decisions_url(), None);
+        assert_eq!(provider.decisions_url(Some("https://x.example")), None);
         assert!(provider.serves_inference());
         // 0..1 is the range both scales accept, so no value sent is out of range.
         assert_eq!(provider.map_temperature(100), 1.0);
@@ -254,9 +255,41 @@ fn the_dialect_name_vocabulary_is_closed() {
         WireDialect::from_name(" responses ").unwrap(),
         WireDialect::Responses
     );
+    assert_eq!(
+        WireDialect::from_name("systemone").unwrap(),
+        WireDialect::SystemOne
+    );
+    assert_eq!(WireDialect::SystemOne.config_name(), "systemone");
     let error = WireDialect::from_name("completions")
         .unwrap_err()
         .to_string();
     assert!(error.contains("completions"), "{error}");
     assert!(error.contains("messages"), "{error}");
+}
+
+/// A custom `systemone` connection speaks the decision-model contract on the URL
+/// it was given, whole: providers that adopted the contract spell its path
+/// differently, so no segment is appended. It has no turns route, no listing, and
+/// no capability or key-check route, and serves no inference.
+#[test]
+fn a_custom_system_one_endpoint_posts_to_its_url_whole() {
+    let url = "https://api.cloudflare.example/client/v4/accounts/a1/ai/run/@cf/cloudflare/clef";
+    assert_eq!(SYSTEM_ONE.decisions_url(Some(url)).as_deref(), Some(url));
+    assert_eq!(SYSTEM_ONE.decisions_url(None), None);
+    assert_eq!(SYSTEM_ONE.name(), "custom-systemone");
+    assert_eq!(SYSTEM_ONE.inference_dialect(), None);
+    assert!(!SYSTEM_ONE.serves_inference());
+    assert_eq!(SYSTEM_ONE.messages_url(Some(url)), None);
+    assert_eq!(SYSTEM_ONE.models_url(Some(url)), None);
+    assert_eq!(SYSTEM_ONE.key_check_url(Some(url)), None);
+    assert!(SYSTEM_ONE.capabilities_url(Some(url), "clef").is_err());
+    // Vendor-specific extras stay withheld, as for the turn dialects.
+    assert_eq!(SYSTEM_ONE.auth_header_value("k"), "Bearer k");
+    assert!(!SYSTEM_ONE.decisions_takes_session_id());
+    assert_eq!(SYSTEM_ONE.attribution(), &[]);
+
+    let endpoint =
+        Endpoint::from_credentials(SYSTEM_ONE, "tok".into(), None, Some(url.into())).unwrap();
+    assert_eq!(endpoint.url, None);
+    assert_eq!(endpoint.base.as_deref(), Some(url));
 }

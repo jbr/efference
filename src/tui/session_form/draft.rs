@@ -20,6 +20,15 @@ impl Role {
     /// How the role reads in both the form row and the picker question.
     /// Lower-case, because the whole surface speaks in the picker's voice
     /// (`session_form/render.rs`) and one spelling keeps the two in step.
+    /// The role as the catalog's model rule knows it.
+    pub(in crate::tui) fn model_role(self) -> crate::client::ModelRole {
+        match self {
+            Self::Main => crate::client::ModelRole::Main,
+            Self::Spotter => crate::client::ModelRole::Spotter,
+            Self::Triage => crate::client::ModelRole::Triage,
+        }
+    }
+
     pub(in crate::tui) fn label(self) -> &'static str {
         match self {
             Self::Main => "main model",

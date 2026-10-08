@@ -683,6 +683,19 @@ base-url = "https://api.example.com/v1""#,
     );
     assert!(inventory[0].available);
 
+    // A System One endpoint is declared the same way, and loads as a connection
+    // that can back the spotter only.
+    let inventory = declare(
+        r#"dialect = "systemone"
+base-url = "https://api.example.com/v1/systemone""#,
+    )
+    .unwrap();
+    assert_eq!(
+        inventory[0].provider,
+        Provider::Custom(WireDialect::SystemOne)
+    );
+    assert!(inventory[0].available);
+
     // Neither spelling: the message names both ways out rather than only the one
     // the reader happened to be closer to.
     let neither = declare("").unwrap_err();

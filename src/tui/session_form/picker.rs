@@ -154,7 +154,7 @@ impl Form {
         {
             return Action::Continue;
         }
-        let (nodes, _) = self.tree();
+        let (nodes, _) = self.tree(*role);
         if !matcher::rank(&nodes, path, &text, *role == Role::Main).is_empty() {
             return Action::Continue;
         }

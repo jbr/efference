@@ -200,20 +200,19 @@ pub(super) fn listed_decision_models(body: &str) -> Result<Vec<String>, Error> {
 }
 
 impl Endpoint {
-    /// Boot's existence check for a decision model (docs/permissions.md). A
-    /// decision model has no context window or output cap, so the capability
-    /// lookup that checks an inference model cannot check it; without this a
-    /// misspelled id boots clean and then fails every gate closed.
-    ///
-    /// On OpenRouter the model's endpoints route answers 2xx for an id it serves
-    /// (the `~typesafe/jev-latest` alias included) and 404 otherwise. The
-    /// first-party provider has no such route; its listing names every id,
-    /// aliases included, and the listing GET is authenticated, so it is the
-    /// credential check too.
+    /// The existence check for a model on a provider that serves only decision
+    /// models (docs/permissions.md). A decision model has no context window or
+    /// output cap, so the capability lookup that checks an inference model cannot
+    /// check it; without this a misspelled id boots clean and then fails every
+    /// gated call closed. The first-party listing names every id, aliases
+    /// included, and the listing GET is authenticated, so it is the credential
+    /// check too. OpenRouter's check is [`Endpoint::spotter_kind`].
     pub async fn check_decision_model(&self, model: &str) -> Result<(), Error> {
-        if self.provider == Provider::OpenRouter {
-            let url = self.provider.capabilities_url(None, model)?;
-            return self.authed_get(&url).await.map(drop);
+        // A described System One endpoint publishes no listing and no per-model
+        // route, so there is nothing to check an id against; a misspelled one
+        // fails closed at the first gated call.
+        if self.provider == Provider::Custom(WireDialect::SystemOne) {
+            return Ok(());
         }
         let url = self.models_url().ok_or_else(|| -> Error {
             format!("provider {} publishes no model listing", self.provider).into()
@@ -243,14 +242,17 @@ impl Endpoint {
         state: &Value,
         questions: &BTreeMap<String, Question>,
     ) -> Result<Decisions, Error> {
-        let url = self.provider.decisions_url().ok_or_else(|| -> Error {
-            format!(
-                "provider {} serves no decisions route, so it cannot run a decision model \
-                 (docs/permissions.md)",
-                self.provider
-            )
-            .into()
-        })?;
+        let url = self
+            .provider
+            .decisions_url(self.base.as_deref())
+            .ok_or_else(|| -> Error {
+                format!(
+                    "provider {} serves no decisions route, so it cannot run a decision \
+                     model (docs/permissions.md)",
+                    self.provider
+                )
+                .into()
+            })?;
         let body = serde_json::to_string(&DecisionsRequest {
             model,
             state,
@@ -264,7 +266,7 @@ impl Endpoint {
         let http = crate::http::client().with_handler(decisions_retry());
         let auth = self.auth_value.current().await;
         let conn = http
-            .post(url)
+            .post(url.as_str())
             .with_request_header(self.auth_header.clone(), auth)
             .with_request_header("content-type", "application/json")
             .with_body(body);

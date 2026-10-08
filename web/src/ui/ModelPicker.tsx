@@ -119,7 +119,7 @@ export function ModelPicker({
     let live = true;
     // Stored copies first: this never waits on a provider, so the picker opens
     // on whatever the host already has.
-    fetchCatalog(cwd, config)
+    fetchCatalog(cwd, config, role)
       .then((answer) => {
         if (!live) return;
         setEntries(answer.connections);
@@ -129,7 +129,7 @@ export function ModelPicker({
           if (entry.status === "fresh" || entry.status === "unavailable") {
             continue;
           }
-          fetchConnection(entry.connection, cwd, config)
+          fetchConnection(entry.connection, cwd, config, role)
             .then((fresh) => live && replace(entry.connection, fresh))
             .catch(() => {});
         }
@@ -138,7 +138,7 @@ export function ModelPicker({
     return () => {
       live = false;
     };
-  }, [cwd, config, replace]);
+  }, [cwd, config, role, replace]);
 
   const nodes = useMemo(() => catalogNodes(entries ?? []), [entries]);
   const list_ = useMemo(
@@ -162,10 +162,10 @@ export function ModelPicker({
       return;
     }
     refreshed.current.add(connection);
-    fetchConnection(connection, cwd, config, MISS_MAX_AGE)
+    fetchConnection(connection, cwd, config, role, MISS_MAX_AGE)
       .then((entry) => replace(connection, entry))
       .catch(() => {});
-  }, [entries, list_, chips, query, cwd, config, replace]);
+  }, [entries, list_, chips, query, cwd, config, role, replace]);
 
   /** Set the query and return the selection to the first row (docs/tui.md): the
    * highlight is otherwise left over rows the new query does not have. Done at

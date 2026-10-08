@@ -15,7 +15,7 @@
 //! `tools` but is a batch route, which does not serve an interactive loop. Both
 //! stay reachable as a typed id.
 
-use super::row::{ListedModel, Price, arrange};
+use super::row::{ListedModel, ModelKind, Price, arrange};
 use super::*;
 
 #[derive(Deserialize)]
@@ -58,6 +58,8 @@ struct Pricing {
 struct Architecture {
     #[serde(default)]
     input_modalities: Option<Vec<String>>,
+    #[serde(default)]
+    output_modalities: Option<Vec<String>>,
 }
 
 /// The author an id belongs to, alias marker removed. `None` for an id with no
@@ -74,9 +76,27 @@ fn strip_author(name: &str) -> &str {
 }
 
 impl Entry {
+    /// A decision model declares `decisions` as an output modality and no
+    /// supported parameters at all, so it is told apart before the `tools` test.
+    fn kind(&self) -> ModelKind {
+        let decisions = self
+            .architecture
+            .as_ref()
+            .and_then(|a| a.output_modalities.as_ref())
+            .is_some_and(|modalities| modalities.iter().any(|m| m == "decisions"));
+        if decisions {
+            ModelKind::Decisions
+        } else {
+            ModelKind::Text
+        }
+    }
+
     fn offered(&self) -> bool {
         if self.id.ends_with(":batch") {
             return false;
+        }
+        if self.kind() == ModelKind::Decisions {
+            return true;
         }
         self.supported_parameters
             .as_ref()
@@ -89,10 +109,13 @@ impl Entry {
             (_, Some(parameters)) => Some(parameters.iter().any(|p| p == "reasoning")),
             _ => None,
         };
+        let kind = self.kind();
         ListedModel {
             group: author_of(&self.id).map(str::to_string),
             created: self.created,
-            context: self.context_length,
+            kind,
+            // Some listings report `0` for a window they do not state.
+            context: self.context_length.filter(|context| *context > 0),
             price: self.pricing.as_ref().and_then(|pricing| {
                 Price::from_per_token(pricing.prompt.as_deref()?, pricing.completion.as_deref()?)
             }),
@@ -106,6 +129,32 @@ impl Entry {
                 .described(self.description.as_deref())
         }
     }
+}
+
+/// What one model does, from its `GET /api/v1/models/{author}/{slug}/endpoints`
+/// body: `data.architecture.output_modalities` names `decisions` for a decision
+/// model and `text` for a generative one.
+pub(super) fn kind_of_endpoints(body: &str) -> Result<ModelKind, Error> {
+    #[derive(Deserialize)]
+    struct Body {
+        data: Data,
+    }
+    #[derive(Deserialize)]
+    struct Data {
+        architecture: Architecture,
+    }
+    let body: Body = serde_json::from_str(body)
+        .map_err(|e| -> Error { format!("model metadata is not model metadata: {e}").into() })?;
+    let decisions = body
+        .data
+        .architecture
+        .output_modalities
+        .is_some_and(|modalities| modalities.iter().any(|m| m == "decisions"));
+    Ok(if decisions {
+        ModelKind::Decisions
+    } else {
+        ModelKind::Text
+    })
 }
 
 /// The rows of a `GET /api/v1/models` body, filtered and ordered.

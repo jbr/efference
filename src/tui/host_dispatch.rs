@@ -173,7 +173,7 @@ pub(in crate::tui) fn spawn_catalog_reads(
         let (client, cwd, events) = (client.clone(), cwd.to_path_buf(), events.clone());
         tokio::spawn(async move {
             let result = client
-                .catalog_connection(&connection, &cwd, None, max_age)
+                .catalog_connection(&connection, &cwd, None, max_age, None)
                 .await
                 .map_err(|e| format!("reading {connection}'s models: {e}"));
             let _ = events.send(TuiEvent::Catalog { connection, result });
@@ -199,7 +199,10 @@ pub(in crate::tui) async fn new_session_context(
     // The stored copies, never waiting on a provider. A failed read is an empty
     // catalog, not a form that never opens: the picker still offers every
     // connection and the typed-id path.
-    let catalog = client.catalog(&cwd, None).await.unwrap_or_default();
+    // No role: the whole listing, which is what the spotter may choose. Each
+    // picker narrows it to its own role (`Form::tree`, `ModelRole`), so one read
+    // serves all three.
+    let catalog = client.catalog(&cwd, None, None).await.unwrap_or_default();
     Ok(crate::tui::session_form::NewSessionContext {
         cwd,
         connections,

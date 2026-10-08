@@ -181,14 +181,26 @@ fn describe_endpoint<P: Prompter>(prompter: &mut P) -> Result<(WireDialect, Stri
     let dialects = [
         Choice::new("Anthropic Messages").detail("POST <base>/messages, as Anthropic's API"),
         Choice::new("OpenAI Responses").detail("POST <base>/responses, as OpenAI's API"),
+        Choice::new("System One decisions").detail(
+            "a decision model (jev and kin) — backs the spotter only; POST to the URL as given",
+        ),
     ];
     let dialect = match prompter.select("Which API does it speak?", &dialects)? {
         0 => WireDialect::Messages,
-        _ => WireDialect::Responses,
+        1 => WireDialect::Responses,
+        _ => WireDialect::SystemOne,
+    };
+    // A System One provider's route is whatever its docs say (`/v1/systemone`,
+    // `/decisions/v1/systemone`, a per-model run URL), so the URL is taken whole.
+    let (label, example) = match dialect {
+        WireDialect::SystemOne => ("Request URL", "https://api.example.com/v1/systemone"),
+        WireDialect::Messages | WireDialect::Responses => {
+            ("Base URL", "https://api.example.com/v1")
+        }
     };
     let base = loop {
         let base = prompter
-            .text("Base URL", Some("https://api.example.com/v1"))?
+            .text(label, Some(example))?
             .trim()
             .trim_end_matches('/')
             .to_string();

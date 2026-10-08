@@ -443,6 +443,10 @@ impl AssistantOutput {
         match dialect {
             crate::api::WireDialect::Messages => Self::Messages(Vec::new()),
             crate::api::WireDialect::Responses => Self::Responses(Vec::new()),
+            // A System One request produces no turn, so no record of one exists.
+            crate::api::WireDialect::SystemOne => {
+                unreachable!("a System One connection serves no turns")
+            }
         }
     }
 

@@ -493,20 +493,25 @@ instead — the first-party listing, or OpenRouter's per-model endpoints route, 
 ### Two rungs behind one trait
 
 `Spotter::assess` has two implementations, and which one a session mounts is decided once
-at boot by `MountedSpotter::mount` (`src/spotter/mount.rs`) from the spotter selection
-alone:
+at boot by `MountedSpotter::mount` (`src/spotter/mount.rs`) from the `ModelKind` that
+`Endpoint::spotter_kind` reports for the spotter selection:
 
 - **`ForkSpot`** — the prose rung, described in the rest of this section. A generative
   model reads a rendered persona + scope + move and answers with a stance and a sentence.
 - **`JevSpot`** (`src/spotter/jev.rs`) — the **decision** rung. A decision model reads a
   JSON state and answers a fixed set of boolean questions with a probability each
-  ([transport.md](transport.md): the decisions route). Selected when the spotter's provider
-  serves no inference (`typesafe`, where every model is one) or its model id names the
-  family on a provider that serves both (`typesafe/jev-1.13` on OpenRouter).
+  ([transport.md](transport.md): the decisions route). Selected when the spotter model is a
+  decision model.
 
-The connection and the model id are the whole switch. A separate flag saying "and it is a
-decision model" would be a second thing to keep consistent with the first, and every way
-they could disagree is a misconfiguration the id alone cannot have.
+The kind comes from what the provider says about the model, not from its id. A provider that
+serves no turns (`typesafe`, a connection declared `dialect = "systemone"`) lists only decision
+models. OpenRouter's per-model metadata route (`GET /api/v1/models/{author}/{slug}/endpoints`)
+declares `architecture.output_modalities` — `decisions` for a decision model, `text` otherwise —
+and that one GET is also the existence check, so any decision model OpenRouter lists mounts
+this rung, `typesafe/jev-1.13` and `upstage/solar-decide` alike, and a model released after
+this build needs no new code. Every other provider serves text models only. The same fact keeps
+a decision model out of the turn roles: main and triage refuse it at boot with a message naming
+the spotter as the role it can back.
 
 Three things change with the rung, and they are why it is a second implementation rather
 than a model swap:

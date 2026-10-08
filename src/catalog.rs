@@ -21,7 +21,7 @@ use std::time::Duration;
 
 mod store;
 mod view;
-pub use view::{CatalogModel, ConnectionCatalog, Recent, Status, assemble};
+pub use view::{CatalogModel, ConnectionCatalog, ModelRole, Recent, Status, assemble};
 
 /// How long a stored listing stands before a read starts refreshing it. A
 /// listing changes when a lab ships a model, not within a day.

@@ -239,3 +239,64 @@ async fn descriptions_survive_storage_and_are_flattened_into_route_rows() {
     assert_eq!(json["models"][0]["connection"], "c");
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+/// The rule for which models a role may be offered: turn roles take text rows
+/// only, and a provider that serves no turns has none to give them.
+#[test]
+fn a_role_is_offered_only_the_models_it_can_run() {
+    use crate::api::ModelKind;
+    let decision = |id: &str| ListedModel {
+        kind: ModelKind::Decisions,
+        ..ListedModel::new(id)
+    };
+    let snapshot = Snapshot {
+        rows: Some(vec![
+            ListedModel::new("anthropic/claude-haiku"),
+            decision("upstage/solar-decide"),
+        ]),
+        age: Some(0),
+        failure: None,
+    };
+    let entry = assemble("or", Provider::OpenRouter, snapshot, None, &[]);
+    let models = |role: ModelRole| -> Vec<String> {
+        entry
+            .clone()
+            .for_role(role)
+            .unwrap()
+            .models
+            .into_iter()
+            .map(|m| m.row.model)
+            .collect()
+    };
+    assert_eq!(models(ModelRole::Main), ["anthropic/claude-haiku"]);
+    assert_eq!(models(ModelRole::Triage), ["anthropic/claude-haiku"]);
+    assert_eq!(
+        models(ModelRole::Spotter),
+        ["anthropic/claude-haiku", "upstage/solar-decide"]
+    );
+
+    let typesafe = assemble(
+        "ts",
+        Provider::TypeSafe,
+        Snapshot {
+            rows: None,
+            age: None,
+            failure: None,
+        },
+        None,
+        &[Recent {
+            model: "jev-latest".into(),
+            rank: 1,
+        }],
+    );
+    // A pick the listing does not name inherits the connection's kind.
+    assert_eq!(typesafe.models[0].row.kind, ModelKind::Decisions);
+    assert!(typesafe.clone().for_role(ModelRole::Main).is_none());
+    assert_eq!(
+        typesafe.for_role(ModelRole::Spotter).unwrap().models.len(),
+        1
+    );
+
+    assert_eq!(ModelRole::from_name("spotter"), Some(ModelRole::Spotter));
+    assert_eq!(ModelRole::from_name("judge"), None);
+}

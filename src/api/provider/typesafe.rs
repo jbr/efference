@@ -1,6 +1,6 @@
 //! TypeSafe's model listing, normalized (docs/model-catalog.md).
 
-use super::row::{ListedModel, arrange, unix_from_rfc3339};
+use super::row::{ListedModel, ModelKind, arrange, unix_from_rfc3339};
 use super::*;
 
 #[derive(Deserialize)]
@@ -26,6 +26,7 @@ pub(super) fn rows(body: &str) -> Result<Vec<ListedModel>, Error> {
             .into_iter()
             .map(|entry| ListedModel {
                 created: entry.release_date.as_deref().and_then(unix_from_rfc3339),
+                kind: ModelKind::Decisions,
                 ..ListedModel::new(entry.name).described(entry.description.as_deref())
             })
             .collect(),

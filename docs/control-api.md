@@ -108,7 +108,7 @@ sessions from one process. Its own routes are the listener's, not a session's:
   sorted by connection name. The response contains configuration status only; it never
   exposes endpoint URLs, credential sources, credentials, or environment values. It is
   available on authenticated Unix and TCP host listeners.
-- `GET /inference/catalog?cwd=<root>&config=<path>` — every configured connection's
+- `GET /inference/catalog?cwd=<root>&config=<path>&role=<role>` — every configured connection's
   model listing (docs/model-catalog.md):
   `{"connections":[{"connection", "provider", "status", "age"?, "error"?, "models":[…]}]}`,
   sorted by connection name. `status` is `fresh`, `stale`, `missing`, `failed`, or
@@ -117,14 +117,20 @@ sessions from one process. Its own routes are the listener's, not a session's:
   provider: a `missing` or `stale` connection starts a background refresh and is
   served as stored; a `failed` one keeps its old copy in `models`. `cwd` (+ optional
   `config`) names the project scope whose recent picks fold in as `recent`; without
-  `cwd` no row has one.
-- `GET /inference/catalog/:connection?max_age=<secs>&cwd=&config=` — one connection's
+  `cwd` no row has one. `role` is `main`, `triage`, or `spotter` and narrows the answer to
+  what that role may choose: a decision model answers questions about a state and produces
+  no turn, so `main` and `triage` get no decision rows and no connection that serves none,
+  while `spotter` gets everything. With no `role` nothing is filtered; any other value is
+  `400`.
+- `GET /inference/catalog/:connection?max_age=<secs>&cwd=&config=&role=` — one connection's
   entry in the same shape, refreshed and awaited when its stored copy is missing or
   older than `max_age` (default 24 hours; values under 60 are raised to 60). A failed
   read answers `200` with `status: "failed"` and the old copy; an unknown connection
-  is `404`; a non-numeric `max_age` is `400`.
+  is `404`; a non-numeric `max_age` is `400`, and so is a `role` the connection cannot
+  serve at all (a decision-only connection asked for as `main`).
   A row is `{"connection", "model", "group"?, "name"?, "created"?, "context"?,
-  "price"?: {"input","output"}, "reasoning"?, "images"?, "recent"?}`. `model` is the
+  "price"?: {"input","output"}, "reasoning"?, "images"?, "kind"?, "recent"?}`. `kind` is
+  `"decisions"` for a decision model and absent for a text one. `model` is the
   provider-native id a draft carries; `created` is unix seconds; `context` is
   tokens; `price` is USD per million tokens; `recent` is the rank (1 first) of the
   matching recent pick, counted across connections. A field the source did not
