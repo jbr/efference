@@ -8,6 +8,7 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- **Any tool-calling model as the spotter or triage model** (docs/transport.md): a forced `tool_choice` refused with a 400 (Sonnet 5.5, Opus 5.5, Fable) is retried as `auto` with a line naming the tool and thinking off, and the client sends that form from then on.
 - **Thinking and effort from the model's metadata** (docs/transport.md): Anthropic's `capabilities.thinking.types` and `capabilities.effort` decide adaptive vs off and validate `--effort` at boot, replacing the Claude-name allowlist (Haiku 5.5 now thinks, and `xhigh` works on it); off is spelled `between_tools` where a model refuses `disabled`; the keepalive sends the turn's own thinking and effort, so a Claude ping refreshes the cache instead of writing a fresh entry. `EFFERENCE_THINKING` is removed.
 - **Summarize from the web** (docs/web-client.md, docs/control-api.md): the composer's cold notice offers *summarize instead* beside the uncached read, and the drawer's *Context* section folds on request (confirmed) — warm sessions included, via `POST /loop/fold {"warm": true}`; fold progress is its own `fold` topic (no longer `cold.fold`), shown in the web turn-state and the TUI header.
 - **Restart notices in the web transcript**: a `Resumed` entry renders as its notice instead of "unknown entry".

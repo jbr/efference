@@ -163,6 +163,13 @@ pub fn error_class(error: &super::Error) -> FailureClass {
         .map_or(FailureClass::Terminal, |open| open.class)
 }
 
+/// The HTTP status of a request the upstream refused, when it answered at all.
+pub fn error_status(error: &super::Error) -> Option<u16> {
+    error
+        .downcast_ref::<OpenError>()
+        .and_then(OpenError::status)
+}
+
 #[cfg(test)]
 mod test {
     use super::*;

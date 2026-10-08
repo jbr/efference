@@ -283,11 +283,10 @@ pub struct Client {
     /// `None` for clients nothing interrupts (the spotter, the dev verbs).
     abort: Option<Arc<tokio::sync::Notify>>,
     /// The session's effort level, when one is set (docs/transport.md). Rides
-    /// the shared envelope only — [`Self::complete`], which both the turn loop
-    /// and the fork peek call, so the peek's prefix still matches the agent
-    /// lineage's (docs/redaction-fork.md). The keepalive deliberately omits it
-    /// (`max_tokens: 0` sends thinking disabled), and the spotter's client never
-    /// sets it.
+    /// every request this client makes — the turn loop and the fork peek, so the
+    /// peek's prefix still matches the agent lineage's (docs/redaction-fork.md),
+    /// and the keepalive, which sends the turn's envelope. The spotter's client
+    /// never sets it.
     effort: Option<String>,
     /// Which upstream serves this session, when pinned (docs/transport.md).
     upstream: Option<Upstream>,
@@ -297,6 +296,11 @@ pub struct Client {
     /// sends neither. Messages ignores it — its marker is unconditional.
     prompt_cache: PromptCachePolicy,
     upstream_failure: UpstreamFailureState,
+    /// Set once the model has answered a forced `tool_choice` with a 400
+    /// (docs/transport.md): every later forced request from this client, and its
+    /// clones, goes as `auto` with [`forced_choice_instruction`] instead. Shared
+    /// across clones, so the lesson is learned once per client.
+    forced_choice_refused: Arc<std::sync::atomic::AtomicBool>,
     /// A retry in flight, written by both retry loops (docs/transport.md). It
     /// rides on the client because the fork peek retries with a `Client` and no
     /// `Session` in scope.
@@ -313,6 +317,11 @@ pub struct Client {
     /// response handler that fills it and read by the daemon's `usage` topic.
     /// Allocated for every client; only the Codex arm's handler ever writes it.
     plan: PlanState,
+}
+
+/// The user line a forced call sent as `auto` ends with (docs/transport.md).
+pub(crate) fn forced_choice_instruction(tool: &str) -> String {
+    format!("Answer by calling the `{tool}` tool, and only that tool.")
 }
 
 impl Client {
@@ -414,6 +423,7 @@ impl Client {
             prompt_cache: PromptCachePolicy::None,
             upstream_failure,
             upstream_retry: upstream_retry_state(),
+            forced_choice_refused: Arc::default(),
             upstream_attempts,
             turn_routing,
             plan,
@@ -635,14 +645,69 @@ impl Client {
     /// body off it — Anthropic's 4xx carry a JSON `error.message` naming exactly what
     /// was malformed (e.g. an oversized request that exceeds the input limit), which is
     /// what makes such failures diagnosable.
+    ///
+    /// A forced `tool_choice` the model refuses with a 400 is retried once as
+    /// `auto`, with a user line naming the tool and thinking kept off as the forced
+    /// call had it (docs/transport.md). Some models refuse forced choice outright
+    /// and their metadata does not say so; the retry is how the client learns it.
+    /// When the retry succeeds, the client remembers, and later forced requests go
+    /// straight to the fallback. When it fails too, the 400 had another cause: the
+    /// first error is returned and nothing is learned.
     pub async fn complete(
         &self,
         turns: &[WireTurn],
         tools: &[Value],
         tool_choice: ToolChoice,
+        mut on_delta: impl FnMut(Streamed),
+    ) -> Result<Completion, Error> {
+        use std::sync::atomic::Ordering;
+        let Some(forced) = tool_choice.forced() else {
+            return self.send(turns, tools, tool_choice, None, on_delta).await;
+        };
+        if self.forced_choice_refused.load(Ordering::Relaxed) {
+            return self
+                .send_unforced(turns, tools, forced, &mut on_delta)
+                .await;
+        }
+        let refusal = match self
+            .send(turns, tools, tool_choice, None, &mut on_delta)
+            .await
+        {
+            Err(e) if error_status(&e) == Some(400) => e,
+            answered => return answered,
+        };
+        match self
+            .send_unforced(turns, tools, forced, &mut on_delta)
+            .await
+        {
+            Ok(completion) => {
+                log::warn!(
+                    "{} refused a forced tool_choice ({refusal}); this client sends `auto` \
+                     with an instruction from here on",
+                    self.model
+                );
+                self.forced_choice_refused.store(true, Ordering::Relaxed);
+                Ok(completion)
+            }
+            Err(_) => Err(refusal),
+        }
+    }
+
+    /// A forced call sent as `auto`: the turns plus [`forced_choice_instruction`],
+    /// with thinking off, which is what the forced request would have sent.
+    async fn send_unforced(
+        &self,
+        turns: &[WireTurn],
+        tools: &[Value],
+        forced: &str,
         on_delta: impl FnMut(Streamed),
     ) -> Result<Completion, Error> {
-        self.send(turns, tools, tool_choice, None, on_delta).await
+        let mut turns = turns.to_vec();
+        turns.push(WireTurn::text(forced_choice_instruction(forced)));
+        self.clone()
+            .without_thinking()
+            .send(&turns, tools, ToolChoice::auto(), None, on_delta)
+            .await
     }
 
     /// [`Self::complete`], with the output cap fixed at `cap` instead of reserved

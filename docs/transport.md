@@ -155,10 +155,20 @@ peek sends thinking off unless `--triage-thinking` or `--triage-effort` — for 
 per-result peeks only; the idle triage rides the agent's client and thinks as the
 agent does ([redaction-fork.md](redaction-fork.md)). Where off is omitted on
 OpenRouter, a client built `without_thinking` sends OpenRouter's own
-`reasoning: {enabled: false}` beside it. Some models refuse a forced
-`tool_choice` outright, whatever the thinking (Sonnet 5.5: `type "tool" and "any"
-are not supported for this model`); the metadata does not say which, and the
-spotter's and the own-model peek's forced calls fail on them today.
+`reasoning: {enabled: false}` beside it.
+
+Some models refuse a forced `tool_choice` outright, whatever the thinking (Sonnet
+5.5: `type "tool" and "any" are not supported for this model`), and the metadata
+does not say which. `Client::complete` learns it by retrying: a forced request
+answered with a 400 is sent once more as `auto`, with a final user line naming the
+tool (`forced_choice_instruction`) and thinking off, as the forced request had it.
+If that succeeds, the client — and its clones, which share the flag — sends every
+later forced request in that form, so the spotter and the own-model triage peek
+work on any model that can call a tool. If it fails too, the 400 had another cause:
+the first error is returned and nothing is learned. A caller's parse already
+treats a reply without the asked-for call as unusable, so an `auto` answer that
+skips the tool fails the way a malformed forced answer does. The switch writes one
+fresh cache entry, since `tool_choice` is part of the cached envelope.
 
 The keepalive sends the turn's own thinking and effort: on Anthropic a ping whose
 thinking differs from the turn's misses the message-level cache and writes a
