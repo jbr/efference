@@ -264,9 +264,6 @@ export function SessionList({
           // readable by the offline verbs, and is not listed here.
           <div className="overview-empty">
             <p className="overview-empty-title">No active sessions</p>
-            <p className="dim">
-              Start one with <code>efference tui</code>
-            </p>
           </div>
         ) : (
           groups.map((group) => (
