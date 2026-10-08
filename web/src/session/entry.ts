@@ -15,6 +15,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { apiBase } from "../api/base.ts";
+import { lastListing } from "./listing.ts";
 import { ApiError, fetchSessions, type SessionEntry } from "../api/http.ts";
 
 export type Entry =
@@ -40,12 +41,30 @@ export async function resolveEntry(): Promise<Entry> {
 
 /** The binding, once known; `null` while the probe is out. `resolve` re-runs it
  * — what the login view calls once a credential exists, and what a list reload
- * is. */
-export function useEntry(): { entry: Entry | null; resolve: () => void } {
-  const [entry, setEntry] = useState<Entry | null>(null);
+ * is.
+ *
+ * `base` is the page's current base, which navigation changes without a load
+ * (ui/route.ts): under a prefix the binding is a session's view and is known at
+ * once; at the root the probe's last answer stays up while the next one is out,
+ * so returning to the list from a session paints the list it left. */
+export function useEntry(base: string): {
+  entry: Entry | null;
+  resolve: () => void;
+} {
+  const [root, setRoot] = useState<Entry | null>(null);
   const resolve = useCallback(() => {
-    void resolveEntry().then(setEntry);
+    void resolveEntry().then(setRoot);
   }, []);
-  useEffect(resolve, [resolve]);
-  return { entry, resolve };
+  useEffect(() => {
+    if (base === "") resolve();
+  }, [base, resolve]);
+  // Before any probe has answered, a listing some session's switcher heard is
+  // as good a seed for the list as the probe's own.
+  const heard = lastListing();
+  const seeded: Entry | null =
+    heard === null ? null : { kind: "list", sessions: heard };
+  return {
+    entry: base === "" ? (root ?? seeded) : { kind: "session" },
+    resolve,
+  };
 }

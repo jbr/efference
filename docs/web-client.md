@@ -221,14 +221,48 @@ something, or that holds processes an end would reap, confirms in the menu namin
 which; an idle session with nothing running ends on the first click. The top bar's
 "New session" and each workspace's `+` open the new-session form below.
 
-**Entering a session is a navigation, not client-side state.** A card's title is an `<a href>`
-to `/sessions/<id>/`, and the back affordance in the top bar is the wordmark, a link to
-`/` only when the base is non-empty. The base changes with the URL, so a client-side
-transition would have to rebuild every fetch, the stream, and the fold against a
-different endpoint — which is a page load with extra steps. A card is an article whose title link is stretched over it, so the whole card opens
-the session while the supervisor links and the menu stay separately clickable. The one
-client route besides `/` is `/tree`, and it is `/sessions/<id>/tree` under a host: the same route
-with the base in front of it, which is why the route is read with the base removed.
+**Entering a session is a client-side navigation, and each session keeps its own state.** A
+card's title is an `<a href>` to `/sessions/<id>/`, and the back affordance in the top bar is
+the wordmark, a link to `/` only when the base is non-empty. `ui/route.ts` installs one click
+listener on the document: a plain primary-button click on an anchor whose target is the list
+or a session's own view is a `pushState` and a re-render, and every other click (a modified
+one, a `target`, `/tree`, `/auth/…`) is left to the browser — so the links stay real anchors.
+`popstate` re-renders the same way. A card is an article whose title link is stretched over it,
+so the whole card opens the session while the supervisor links and the menu stay separately
+clickable. The one client route besides `/` is `/tree`, and it is `/sessions/<id>/tree` under
+a host: the same route with the base in front of it, which is why the route is read with the
+base removed.
+
+What makes a switch safe is that a session's base is fixed for the life of its view. The api
+layer derives the base from `location` on every call (`api/base.ts`), so `connect` captures it
+when a view mounts and passes it to the catch-up read and the stream (`fetchLogTail`,
+`openStream`), whose reconnects must reach the session they began on even after the page has
+moved. `ui/App.tsx` keys the session view by base, so inspector selection, the open file, the
+drawer, the file tree and the composer's local state are per session, and a pop between
+sessions is a remount.
+
+**Warm sessions.** A session's `Store` comes from `session/registry.ts`, which retains the
+stores of the last `WARM_SESSIONS` sessions viewed. Leaving a session closes its connection
+and keeps its snapshot; returning renders that snapshot on the first frame, and the connection
+resumes from the cursor — a tail read merged into what the store holds (`reseed`, so the
+scrolled-through window is not replaced) and the stream from `lastSeq + 1`. A retained store
+has no connection of its own: an open stream would count as someone watching and suppress that
+session's push notifications (`web-push.md`), so a session that is not on screen costs nothing.
+The banner for a non-live connection is delayed by CSS for the first 0.8 s, so a resume that
+lands quickly does not shift the transcript. The first visit to a session in a page's lifetime
+is cold unless its tab was hovered or focused first: that starts one tail read
+(`prefetchStore`, no stream, applied only to a store nobody has touched since, so a late read
+cannot move a cursor back) into a small separate pool, from which a visit promotes it; without
+one, the store starts empty and fills from the tail read on arrival. The switcher's tab row and the
+header's title are seeded from the last listing any view heard (`session/listing.ts`) rather
+than from the session's own `session_identity` topic, which a cold store does not have yet.
+
+History: the overlay entries (`ui/overlayHistory.ts`) belong to the view that pushed them. A
+view's pop handler stands down once the page is on another session's base, and a view that
+mounts onto an overlay entry an earlier view left consumes it with one `history.back()`, so
+Back from a session switched to with an overlay open lands on the previous page rather than a
+phantom overlay. The new-session and resume pages (`?new=`, `?resume=`) belong to the list and
+are unmounted with it.
 
 `ui/App.tsx` is only this choice — list, login, or session. The session view is
 `ui/SessionView.tsx`, which is the component the rest of this document means when it
@@ -1020,11 +1054,12 @@ never started is a hollow ring. Hovering or focusing a tab opens a card with the
 card's status line, title, activity line and context meter; that opens the session's own
 state stream and log tail (`openSessionCard`, `presence=off`) only while the card shows.
 Tabs run most recently visited first, from visit times in `localStorage`
-(`ui/switcherOrder.ts`) — switching is a page load, so nothing else survives it — and
+(`ui/switcherOrder.ts`), and
+
 sessions never visited here follow in the host's id order. Tabs are measured against the
 row, and those that do not fit are listed in a `+N` menu whose button carries an accent dot
 when a session in it is waiting on the operator; attention does not reorder tabs. Entering
-a session from a tab is a navigation, as from a card.
+a session from a tab is a client-side navigation, as from a card.
 
 It also carries one warn-tinted chip left of the meter, fed by the two
 transport topics through `ui/upstream.ts` (a pure function of the pair, so the

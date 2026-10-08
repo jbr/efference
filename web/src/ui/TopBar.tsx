@@ -11,6 +11,8 @@ import type {
   UpstreamRetry,
   Usage,
 } from "../api/types.ts";
+import { sessionId } from "../api/base.ts";
+import { listedTitle } from "../session/listing.ts";
 import { upstreamChip } from "./upstream.ts";
 import { AppHeader } from "./AppHeader.tsx";
 import { SessionSwitcher } from "./SessionSwitcher.tsx";
@@ -100,20 +102,26 @@ export function TopBar({
   onDrawer: () => void;
 }) {
   const chip = upstreamChip(upstreamFailure, upstreamRetry);
+  const routeId = sessionId();
   const context = usage?.context ?? null;
   return (
     <AppHeader
       homeHref={listHref}
       below={
         // Only under a host are there other sessions to switch to.
-        listHref !== null && identity !== null ? (
-          <SessionSwitcher currentId={identity.id} />
+        // The page's own session, not the identity topic's: that is absent
+        // from a session's first paint, and the row should not wait for it.
+        listHref !== null && routeId !== null ? (
+          <SessionSwitcher currentId={routeId} />
         ) : undefined
       }
     >
-      {identity !== null && (
-        <span className="session-name" title={identity.id}>
-          {identity.title ?? identity.id}
+      {(identity !== null || routeId !== null) && (
+        <span className="session-name" title={identity?.id ?? routeId ?? ""}>
+          {identity?.title ??
+            (routeId !== null ? listedTitle(routeId) : null) ??
+            identity?.id ??
+            routeId}
         </span>
       )}
       <span className="spacer" />

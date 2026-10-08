@@ -232,6 +232,21 @@ const settlePendingTurns = (
     ? pending
     : pending.filter((p) => p.id !== entry.submission_id);
 
+/** Catch up a session that already holds entries, from a fresh `GET /log?tail=`
+ * read: when the read reaches back to the cursor, the entries held below it
+ * are kept and the read replaces the rest, so a warm store resuming does not
+ * lose what it had scrolled through. A read that does not reach (the gap is
+ * longer than the window) is a plain re-seed. */
+export function reseed(session: Session, tail: LogEntry[]): Session {
+  const first = tail[0];
+  if (first === undefined) return session;
+  if (session.lastSeq === null || first.seq > session.lastSeq + 1) {
+    return seed(session, tail);
+  }
+  const kept = session.entries.filter((entry) => entry.seq < first.seq);
+  return seed(session, [...kept, ...tail]);
+}
+
 /** Seed the transcript window from a `GET /log?tail=` read, settling any
  * pending turn whose `User` entry the window absorbed — a re-seed (retry
  * after login, a fresh catch-up read) arrives outside `applyLog`, and must

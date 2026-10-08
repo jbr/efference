@@ -30,6 +30,7 @@ import {
   type ArchivedSession,
 } from "../api/http.ts";
 import { sessionHref } from "../api/base.ts";
+import { navigate } from "./route.ts";
 import "./SessionList.css";
 
 interface Feed {
@@ -206,7 +207,7 @@ export function SessionList({
     setResuming(id);
     try {
       await resumeSession(id, cwd);
-      window.location.assign(sessionHref(id));
+      navigate(sessionHref(id));
     } catch (failure) {
       setError(`Resuming ${id}: ${String(failure)}`);
       setResuming(null);

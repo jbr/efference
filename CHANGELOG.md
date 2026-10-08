@@ -9,6 +9,7 @@ behind a change, see [`journal/`](journal/).
 
 ### Added
 - **Session switcher in the web client** (docs/web-client.md): under a host, a second header row lists the other live sessions as tabs — status dot, title, most recently visited first — with a hover card of the overview card's facts, attention dots for gated, asking and finished-turn sessions, and a `+N` menu for tabs that do not fit.
+- **Switching sessions in the web client without a page load** (docs/web-client.md): links to the list and to sessions navigate client-side; the last six sessions viewed keep their snapshot, so returning to one paints its transcript at once and resumes the stream from its cursor, and hovering or focusing a switcher tab reads that session's tail ahead of the click.
 - **Session resumption in the web client** (docs/resumption.md, docs/web-client.md): four-band continuum on the overview (active cards, recently archived cards, listed compact rows, and full-screen searchable archive picker), with live auto-updating relative timestamps and top-level workspace selection.
 - **Triage-lineage primer on Codex** (docs/transport.md): each batch replays the turn's input on the own triage client at execution start, capped at 16 output tokens with the peek's tools and forced choice, so result-triage peeks read warm instead of re-reading the transcript.
 - **`C-o` folds a cold session from the TUI** (docs/tui.md): the alternative to `⏎`-again's cold read, named in the cold notice.

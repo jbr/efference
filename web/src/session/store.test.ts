@@ -6,6 +6,7 @@ import {
   emptySession,
   mintTurn,
   pushPendingTurn,
+  reseed,
   seed,
   seedProcessOutput,
   Store,
@@ -52,6 +53,31 @@ describe("the log fold", () => {
       entry(42, { User: [{ Text: "b" }] }),
     ]);
     expect(s.lastSeq).toBe(42);
+  });
+
+  it("keeps what a warm store holds below a tail that reaches its cursor", () => {
+    const held = seed(
+      emptySession,
+      [1, 2, 3, 4].map((n) => entry(n, { User: [{ Text: `m${n}` }] })),
+    );
+    const caught = reseed(
+      held,
+      [3, 4, 5].map((n) => entry(n, { User: [{ Text: `m${n}` }] })),
+    );
+    expect(caught.entries.map((e) => e.seq)).toEqual([1, 2, 3, 4, 5]);
+    expect(caught.lastSeq).toBe(5);
+  });
+
+  it("replaces a warm store's entries when the tail does not reach its cursor", () => {
+    const held = seed(
+      emptySession,
+      [1, 2].map((n) => entry(n, { User: [{ Text: `m${n}` }] })),
+    );
+    const caught = reseed(
+      held,
+      [9, 10].map((n) => entry(n, { User: [{ Text: `m${n}` }] })),
+    );
+    expect(caught.entries.map((e) => e.seq)).toEqual([9, 10]);
   });
 });
 

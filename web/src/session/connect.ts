@@ -4,12 +4,14 @@
 // stream reader replays by cursor; a 401 anywhere parks the session as
 // unauthenticated until Login mints a cookie and calls retry().
 
+import { apiBase } from "../api/base.ts";
 import type { Frame } from "../api/types.ts";
 import { ApiError, fetchLogTail } from "../api/http.ts";
 import { openStream, type StreamHandle } from "../api/stream.ts";
-import { applyFrame, seed, type Store } from "./store.ts";
+import { applyFrame, reseed, type Store } from "./store.ts";
 
-const TAIL = 200;
+/** How much of the log's end the catch-up read asks for. */
+export const CATCH_UP_TAIL = 200;
 
 /**
  * How long a hidden tab keeps its stream before dropping it, in ms.
@@ -45,7 +47,11 @@ export interface FrameTap {
   frame(frame: Frame): void;
 }
 
-export function connect(store: Store, tap?: FrameTap): Connector {
+export function connect(
+  store: Store,
+  tap?: FrameTap,
+  base: string = apiBase(),
+): Connector {
   const sink: FrameTap = tap ?? {
     reset: () => {},
     frame: (frame) => store.update((s) => applyFrame(s, frame)),
@@ -78,9 +84,9 @@ export function connect(store: Store, tap?: FrameTap): Connector {
     stream = null;
     store.update((s) => ({ ...s, connection: "connecting" }));
     try {
-      const entries = await fetchLogTail(TAIL);
+      const entries = await fetchLogTail(CATCH_UP_TAIL, base);
       if (closed) return;
-      store.update((s) => seed(s, entries));
+      store.update((s) => reseed(s, entries));
     } catch (error) {
       if (closed) return;
       if (error instanceof ApiError && error.status === 401) {
@@ -93,12 +99,16 @@ export function connect(store: Store, tap?: FrameTap): Connector {
     }
     sink.reset();
     const since = store.snapshot().lastSeq;
-    stream = openStream(since === null ? 0 : since + 1, {
-      onFrame: (frame) => sink.frame(frame),
-      onConnect: () => store.update((s) => ({ ...s, connection: "live" })),
-      onDisconnect: () =>
-        store.update((s) => ({ ...s, connection: "reconnecting" })),
-    });
+    stream = openStream(
+      since === null ? 0 : since + 1,
+      {
+        onFrame: (frame) => sink.frame(frame),
+        onConnect: () => store.update((s) => ({ ...s, connection: "live" })),
+        onDisconnect: () =>
+          store.update((s) => ({ ...s, connection: "reconnecting" })),
+      },
+      base,
+    );
   }
 
   /** Drop the stream a hidden tab has stopped earning. Nothing else is torn down:

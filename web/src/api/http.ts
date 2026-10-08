@@ -5,7 +5,7 @@
 // Every non-2xx carries the standard error envelope; it surfaces as a thrown
 // ApiError so callers branch on `code`, not status prose.
 
-import { join } from "./base.ts";
+import { apiBase, join } from "./base.ts";
 import type {
   Attachment,
   CallId,
@@ -85,7 +85,10 @@ export const del = <T>(path: string, body?: unknown) =>
 // ---- the routes the client uses today; grows with the ui ----
 
 export const fetchState = () => get<StateSnapshot>("/v1/state");
-export const fetchLogTail = (n: number) => get<LogEntry[]>(`/v1/log?tail=${n}`);
+// `base` pins the read to one session regardless of where the page has since
+// moved (api/stream.ts: the connection's own base).
+export const fetchLogTail = (n: number, base: string = apiBase()) =>
+  requestAt<LogEntry[]>("GET", `${base}/v1/log?tail=${n}`);
 // One entry by seq — the dereference address for what the window and the stream
 // elide (a truncated result's `content`, docs/control-api.md). ETag-validated, so
 // a second look is a 304.

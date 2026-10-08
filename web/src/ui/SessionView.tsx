@@ -25,6 +25,7 @@ import { Inspector } from "./Inspector.tsx";
 import { JumpToLatest } from "./JumpToLatest.tsx";
 import { Login } from "./Login.tsx";
 import { useOverlayHistory } from "./overlayHistory.ts";
+import { navigate } from "./route.ts";
 import { TopBar } from "./TopBar.tsx";
 import { Transcript } from "./Transcript.tsx";
 
@@ -57,7 +58,7 @@ export function SessionView() {
   // `replace`, so Back does not return to the archived predecessor.
   const follow = successorHref(session.topics.session_identity, sessionHref);
   useEffect(() => {
-    if (follow !== null) window.location.replace(follow);
+    if (follow !== null) navigate(follow, "replace");
   }, [follow]);
   // The gated call's slot in the transcript, where the gate's decision
   // renders (ui/Gate.tsx); null until that call is on screen.

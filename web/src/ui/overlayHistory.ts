@@ -10,11 +10,21 @@
 // inspected call again) converges without touching history itself — the
 // reconciler notices the count dropped and consumes the stale entry with
 // history.back(), whose popstate the handler recognizes as already settled.
+//
+// Sessions share one page (ui/route.ts), so an overlay entry can outlive the
+// view that pushed it: switching sessions with an overlay open leaves its entry
+// behind. A pop onto it is the new view's to settle — the view that pushed it is
+// already on its way out, and its handler stands down once the page has moved to
+// another session — and a view that mounts on such an entry consumes it, since
+// nothing says which overlay it stood for.
 
 import { useEffect, useRef } from "react";
+import { apiBase } from "../api/base.ts";
 
 export function useOverlayHistory(openCount: number, closeTop: () => void) {
   const pushed = useRef(0);
+  const owner = useRef(apiBase());
+  const consumedStale = useRef(false);
   const count = useRef(openCount);
   const close = useRef(closeTop);
   useEffect(() => {
@@ -23,7 +33,15 @@ export function useOverlayHistory(openCount: number, closeTop: () => void) {
   });
 
   useEffect(() => {
+    // Mounting onto an entry some earlier view pushed. `consumedStale` keeps
+    // StrictMode's second effect run from stepping back twice.
+    const mounted = history.state as { efOverlay?: boolean } | null;
+    if (mounted?.efOverlay === true && !consumedStale.current) {
+      consumedStale.current = true;
+      history.back();
+    }
     const onPop = (event: PopStateEvent) => {
+      if (apiBase() !== owner.current) return;
       const state = event.state as { efOverlay?: boolean } | null;
       if (state?.efOverlay === true) {
         // Forward navigation onto an overlay entry. Which overlay it stood

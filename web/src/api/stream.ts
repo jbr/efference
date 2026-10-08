@@ -11,7 +11,7 @@
 // and `id:` SSE fields redundant for this parser: only `data:` lines matter,
 // and `:` heartbeat comments fall out of the grammar for free.
 
-import { join } from "./base.ts";
+import { apiBase } from "./base.ts";
 import type { Frame, Seq } from "./types.ts";
 
 export interface StreamHandle {
@@ -29,10 +29,13 @@ export interface StreamCallbacks {
  * Open the stream from `since`, dispatching every frame, reconnecting with a
  * capped backoff. The resume cursor advances to `seq + 1` past each log frame
  * (the durable subset; docs/control-api.md), so a reconnect replays exactly.
+ * `base` is the session the stream belongs to, fixed when it opens: a reconnect
+ * after the page has moved to another session must still reach this one.
  */
 export function openStream(
   since: Seq,
   callbacks: StreamCallbacks,
+  base: string = apiBase(),
 ): StreamHandle {
   let cursor = since;
   let closed = false;
@@ -43,7 +46,7 @@ export function openStream(
     while (!closed) {
       controller = new AbortController();
       try {
-        const response = await fetch(join(`/v1/events?since=${cursor}`), {
+        const response = await fetch(`${base}/v1/events?since=${cursor}`, {
           headers: { accept: "text/event-stream" },
           signal: controller.signal,
         });

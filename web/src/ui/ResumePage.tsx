@@ -9,6 +9,7 @@ import {
 } from "../api/http.ts";
 import { fetchProjects, type ProjectEntry } from "../api/sessionForm.ts";
 import { sessionHref } from "../api/base.ts";
+import { navigate } from "./route.ts";
 import { filterArchived } from "./resume.ts";
 import type { ResumeRoute } from "./resumeNavigation.ts";
 import { homeRelative } from "./identity.ts";
@@ -89,7 +90,7 @@ export function ResumePage({
     try {
       await resumeSession(id, cwd);
       // Navigate to the newly activated session
-      window.location.assign(sessionHref(id));
+      navigate(sessionHref(id));
     } catch (e) {
       setError(`Resuming session ${id}: ${String(e)}`);
       setResumingId(null);

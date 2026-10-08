@@ -2,8 +2,9 @@
 // top bar listing the *other* live sessions on the host, most recently visited
 // first. At rest a tab is a status dot and a title; hovering or focusing one
 // opens a card — the facts the overview card carries, less its settings —
-// without leaving the page. Switching is a navigation, as it is from the list:
-// the base changes, so the page loads against another session's endpoint.
+// without leaving the page. Switching is a client-side navigation, as it is
+// from the list (ui/route.ts): the tabs are plain links, so a modified click
+// still opens another tab.
 //
 // Tabs that do not fit the row spill into a `⋯` menu, which carries a count
 // when a session in it is waiting on the operator. At rest it costs one
@@ -22,6 +23,8 @@ import {
   type ReactNode,
 } from "react";
 import { apiBase, sessionHref } from "../api/base.ts";
+import { prefetchStore } from "../session/registry.ts";
+import { lastListing, rememberListing } from "../session/listing.ts";
 import type { SessionEntry } from "../api/http.ts";
 import { openSessionCard, openSessions } from "../api/sessions.ts";
 import type { StateSnapshot } from "../api/types.ts";
@@ -40,10 +43,15 @@ import "./SessionSwitcher.css";
 /** The host's live sessions, followed; `null` until the first listing, and
  * always `null` where the page has no host behind it. */
 function useLiveSessions(): SessionEntry[] | null {
-  const [sessions, setSessions] = useState<SessionEntry[] | null>(null);
+  const [sessions, setSessions] = useState<SessionEntry[] | null>(
+    lastListing(),
+  );
   useEffect(() => {
     if (apiBase() === "") return;
-    const handle = openSessions(setSessions);
+    const handle = openSessions((listing) => {
+      rememberListing(listing);
+      setSessions(listing);
+    });
     return () => handle.close();
   }, []);
   return sessions;
@@ -137,10 +145,16 @@ export function SessionSwitcher({ currentId }: { currentId: string }) {
           key={card.id}
           className="switcher-slot"
           onPointerEnter={(event) => {
-            if (event.pointerType === "mouse") schedule(card.id, OPEN_DELAY_MS);
+            if (event.pointerType !== "mouse") return;
+            // Ahead of the card's own delay: the read has the whole hover to land in.
+            prefetchStore(`/sessions/${card.id}`);
+            schedule(card.id, OPEN_DELAY_MS);
           }}
           onPointerLeave={() => schedule(null, CLOSE_DELAY_MS)}
-          onFocus={() => schedule(card.id, 0)}
+          onFocus={() => {
+            prefetchStore(`/sessions/${card.id}`);
+            schedule(card.id, 0);
+          }}
           onBlur={() => schedule(null, CLOSE_DELAY_MS)}
           onKeyDown={(event) => {
             if (event.key === "Escape") schedule(null, 0);

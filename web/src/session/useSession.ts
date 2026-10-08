@@ -4,17 +4,20 @@
 // effect, and an effect-owned connector is what survives StrictMode's
 // mount → cleanup → remount cycle (close() is permanent on a Connector, so
 // the remount must build a fresh one — the store fold tolerates the re-seed).
-// The returned connector is a stable facade over whichever connector is
+// The store itself comes from the warm registry (registry.ts): it outlives the
+// component, the connection does not. The returned connector is a stable facade over whichever connector is
 // currently live; actions are the session-layer verbs bound to this store.
 // Everything below this hook is framework-free.
 
 import { useEffect, useMemo, useRef, useSyncExternalStore } from "react";
 import type { Attachment, CallId, Decision } from "../api/types.ts";
 import type { WithdrawnTurn } from "../api/http.ts";
+import { apiBase } from "../api/base.ts";
 import { recallTurn, resolveGate, submitTurn } from "./actions.ts";
 import { connect, type Connector } from "./connect.ts";
 import { ProcessSeeder } from "./processSeed.ts";
-import { Store, type Session } from "./store.ts";
+import { acquireStore } from "./registry.ts";
+import type { Session } from "./store.ts";
 
 export interface SessionActions {
   resolveGate(callId: CallId, decision: Decision): Promise<"applied" | "moved">;
@@ -33,7 +36,10 @@ export function useSession(): {
   connector: Connector;
   actions: SessionActions;
 } {
-  const store = useMemo(() => new Store(), []);
+  // The base is read once per mount: the view is keyed by session, so a page
+  // that has moved to another session is a different mount (ui/App.tsx).
+  const base = useMemo(() => apiBase(), []);
+  const store = useMemo(() => acquireStore(base), [base]);
   const live = useRef<Connector | null>(null);
   useEffect(() => {
     // A dev build interposes the scrubber (record.ts) between the stream and
@@ -47,7 +53,7 @@ export function useSession(): {
       let cancelled = false;
       void import("./record.ts").then(({ record }) => {
         const installed = record(store);
-        connector = connect(store, installed.tap);
+        connector = connect(store, installed.tap, base);
         recorder = installed;
         // The import resolves after StrictMode's cleanup has already run, so
         // checking `cancelled` *before* building would leak a connection the
@@ -66,13 +72,13 @@ export function useSession(): {
         recorder?.close();
       };
     }
-    const connector = connect(store);
+    const connector = connect(store, undefined, base);
     live.current = connector;
     return () => {
       live.current = null;
       connector.close();
     };
-  }, [store]);
+  }, [store, base]);
   const connector = useMemo<Connector>(
     () => ({
       retry: () => live.current?.retry(),

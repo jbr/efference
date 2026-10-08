@@ -10,6 +10,7 @@ import {
   previewSession,
 } from "../api/sessionForm.ts";
 import { sessionHref } from "../api/base.ts";
+import { navigate } from "./route.ts";
 import {
   type Answered,
   type Draft,
@@ -219,7 +220,7 @@ export function NewSessionForm({
       const created = await createSession(sessionRequest(draft));
       // A navigation, like opening a card: the base changes, so the page loads
       // again against the new session's control endpoint (api/base.ts).
-      window.location.assign(sessionHref(created.id));
+      navigate(sessionHref(created.id));
     } catch (failure) {
       // Nothing was minted, so every edit stays and only the reason is added.
       setCreating(false);
