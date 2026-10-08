@@ -8,6 +8,7 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- **Title ask at every gate** (docs/session-title.md): the cadence predicate runs wherever the loop pauses with a warm cache — at each user turn's landing (turn start or mid-trajectory seam) and at every trajectory exit, however it ends — and each ask is a detached task the loop never waits on, so a title lands mid-run within seconds of the message that changed the scope instead of after the whole task; the ask states a six-word budget the parse enforces at eight.
 - **Session switcher in the web client** (docs/web-client.md): under a host, a second header row lists the other live sessions as tabs — status dot, title, most recently visited first — with a hover card of the overview card's facts, attention dots for gated, asking and finished-turn sessions, and a `+N` menu for tabs that do not fit.
 - **Switching sessions in the web client without a page load** (docs/web-client.md): links to the list and to sessions navigate client-side; the last six sessions viewed keep their snapshot, so returning to one paints its transcript at once and resumes the stream from its cursor, and hovering or focusing a switcher tab reads that session's tail ahead of the click.
 - **Session resumption in the web client** (docs/resumption.md, docs/web-client.md): four-band continuum on the overview (active cards, recently archived cards, listed compact rows, and full-screen searchable archive picker), with live auto-updating relative timestamps and top-level workspace selection.

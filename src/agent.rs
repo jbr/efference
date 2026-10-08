@@ -165,6 +165,9 @@ pub async fn run<F: Frontend, S: Spotter>(
     // below, not by a `Provider`. Built once from the shared source; the defs are
     // constant `json!`, so `tools[]` stays byte-stable across requests (docs/log-and-projection.md).
     let tools = tool_definitions(&toolbox);
+    // The title ask's owned request surface, built once; each gate hands its
+    // detached task a clone (docs/session-title.md).
+    let title_ask = TitleAsk::new(client, &tools, &distiller);
     // Continues the log's numbering: `0` for a new session, the last entry's turn for a
     // resumed one, so a resumed session's new turns do not reuse a recorded number.
     let mut turn: Turn = shared.latest_turn();
@@ -290,6 +293,7 @@ pub async fn run<F: Frontend, S: Spotter>(
                 }
                 continue;
             }
+            let first_step_of_turn = first_step;
             if !first_step {
                 shared.pace_at_seam().await;
             }
@@ -307,7 +311,9 @@ pub async fn run<F: Frontend, S: Spotter>(
             // with that consent lands at this seam.
             shared.await_warm_or_consent().await;
             let injected = frontend.drain_injected_turns();
+            let mut landed = 0;
             for submitted in held.drain(..).chain(injected) {
+                landed += 1;
                 turn += 1;
                 // A user turn lands mid-trajectory: to the upstream that is a new
                 // turn, so its routing token starts over (docs/transport.md).
@@ -319,6 +325,13 @@ pub async fn run<F: Frontend, S: Spotter>(
                     submitted.submission_id,
                     submitted.source,
                 )?;
+            }
+            // A user turn just landed — at the turn's start, or drained here at
+            // the seam: the moment the title peek reads the message and the
+            // prefix behind it (docs/session-title.md). Detached, so the ask
+            // never delays the response to the message.
+            if first_step_of_turn || landed > 0 {
+                solicit_title_detached(&shared, &title_ask);
             }
             // Project, then place the single trailing cache breakpoint just before
             // sending — projection stays pure; the breakpoint walks the tail each
@@ -492,6 +505,10 @@ pub async fn run<F: Frontend, S: Spotter>(
             // the record-only entries), or a failed request (docs/transport.md).
             client.upstream_retry().clear(RetrySurface::Turn);
             let Some(completion) = completion else {
+                // The trajectory is ending without an answer (a stall, a
+                // refusal, retries exhausted): the same title moment as the
+                // clean end (docs/session-title.md).
+                solicit_title_detached(&shared, &title_ask);
                 break;
             };
             turn += 1;
@@ -547,12 +564,10 @@ pub async fn run<F: Frontend, S: Spotter>(
 
             if calls.is_empty() {
                 // The trajectory is ending: the moment the title peek reads the
-                // whole of it (docs/session-title.md). Off the prefix this turn
-                // just cached, so it costs one warm read; presentation only, so
-                // it never blocks or fails the loop.
-                if should_solicit_title(&shared.snapshot()) {
-                    solicit_title(client, &tools, &shared, &distiller).await;
-                }
+                // whole of it (docs/session-title.md). Detached: the loop breaks
+                // and re-arms at once, and the peek reads the prefix this turn
+                // just cached while the loop idles.
+                solicit_title_detached(&shared, &title_ask);
                 break; // model is done with this turn → wait for the next.
             }
 
@@ -583,6 +598,9 @@ pub async fn run<F: Frontend, S: Spotter>(
             .await?;
 
             if after_landing(&shared, &mut turn, abort_turn, redirect)? {
+                // An aborted trajectory ends without an answer: the same title
+                // moment as the clean end (docs/session-title.md).
+                solicit_title_detached(&shared, &title_ask);
                 break;
             }
         }

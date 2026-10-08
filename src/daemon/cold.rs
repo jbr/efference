@@ -88,6 +88,23 @@ impl Session {
         }
     }
 
+    /// Hold until the cache is believed warm, without consent (docs/session-title.md):
+    /// for a detached side task that would read the main prefix — the title ask —
+    /// waiting is the polite move where the loop's own check would ask the operator.
+    /// The session's next main request makes it warm and wakes the waiter; a task
+    /// left waiting dies with the session's runtime.
+    pub(crate) async fn wait_until_warm(&self) {
+        loop {
+            let notified = self.cold_signal.notified();
+            tokio::pin!(notified);
+            notified.as_mut().enable();
+            if self.cold_since().is_none() {
+                return;
+            }
+            notified.await;
+        }
+    }
+
     pub(crate) fn cold_parked(&self) -> bool {
         self.cold_parked.load(Ordering::SeqCst)
     }

@@ -50,10 +50,10 @@ The title is asked of the triage model, not the agent: the agent is not given a
 tool for it (every tool on the main session is noise for the work it is doing),
 and the ask never enters its transcript. The peek is the fork's shape
 ([redaction-fork.md](redaction-fork.md)) with a different tail: the log projected
-through the trajectory that just ended, a cache breakpoint, and a user-role ask
-for one line under eighty characters saying what the session is for as a whole,
-with the standing title quoted and an instruction to keep it verbatim unless the
-purpose actually changed. The answer is the completion's **text**, not a tool
+through whatever has landed, a cache breakpoint, and a user-role ask for one
+line of at most six words saying what the session is for as a whole, with the
+standing title quoted and an instruction to keep it verbatim unless the purpose
+changed or the title outgrew the budget. The answer is the completion's **text**, not a tool
 call. A tool would have to ride the shared `tools[]`, which the agent turn also
 sends, so the agent would see a schema that is never for it and the envelope pin
 would move for a job unrelated to results; a text answer leaves the request shape
@@ -63,24 +63,40 @@ lineage forces its tool choice on result peeks, so a title ask is a differently
 keyed messages read there, which the rarity of the ask makes affordable.
 
 The first non-empty line comes back with wrapping quotes, backticks, a trailing
-period, or a `Title:` label removed. A tool call, no text, or a line over
-`TITLE_MAX_CHARS` is unusable and retried in-fork on the fork's attempt budget
-with a renewal sentence; exhaustion records nothing, so the next trajectory end
-asks again. Requests are recorded under the `title` usage origin, so the cache
-report shows them on their own row.
+period, or a `Title:` label removed. A tool call, no text, a line over
+`TITLE_MAX_WORDS`, or a line over `TITLE_MAX_CHARS` is unusable and retried
+in-fork on the fork's attempt budget with a renewal sentence; exhaustion
+records nothing, so the next gate asks again. Requests are recorded under the
+`title` usage origin, so the cache report shows them on their own row.
+
+The ask states the length in words because a model cannot count characters —
+it generates in tokens, and words are the unit it can actually aim at — while
+the parse still holds a character ceiling for the runaway case. Six words is
+the `<title>` register the surfaces want: the sidebar, the top bar, and the
+session list all truncate longer lines.
 
 ## When it runs
 
-`agent/title.rs` holds one predicate, `should_solicit_title`, checked when a
-trajectory ends cleanly (the model answered without calling a tool). It says yes:
+`agent/title.rs` holds one predicate, `should_solicit_title`, checked at every
+gate the turn loop passes — the junctures where a main request's cache is
+already warm. They are: when a user turn lands (a turn's start, or drained at a
+mid-trajectory seam), and when a trajectory ends, however it ends — the model
+answered, gave up, or the turn was aborted. It says yes:
 
 - when no title has been written;
 - when a `User` entry landed after the last title — purpose moves with the
-  user's turns, so each is answered once, after the response to it;
+  user's turns, so each is answered once, at the moment it lands;
 - when `TITLE_FALLBACK_TRAJECTORIES` assistant turns have ended since the last
   title without one, for an autonomous run whose purpose drifts with nobody
   typing.
 
-A trajectory that ends in a stall, an abort, or an escalated event with no pin
-is not followed by a peek. The predicate is the one place to tune cadence; the
-expectation is that titles change rarely and that a re-ask mostly confirms.
+Each ask runs as a detached task on the loop's runtime: the loop never waits
+for it, the peek reads the prefix the last request cached while the loop moves
+on, and the `Title` entry lands mid-trajectory when the answer comes back. A
+task that wakes with the cache believed cold holds the way the idle triage
+holds — waiting for the session's own next read rather than reading an expired
+prefix without consent. Two asks overlapping are harmless: the last title
+written wins, and the entry is presentation only.
+
+The predicate is the one place to tune cadence; the expectation is that titles
+change rarely and that a re-ask mostly confirms.

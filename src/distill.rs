@@ -226,6 +226,11 @@ pub struct InboxTriage {
 ///   system prompt, and session key) and a `tools[]` of just the peek tools. Its
 ///   prefix is the same canonical projection, so it has its own warm lineage, but it
 ///   shares nothing with the agent's.
+///
+/// `Clone` hands the peek's surface to a detached task (the title ask,
+/// docs/session-title.md): a `Client` clone shares the Arc-backed live states,
+/// and the rest is configuration.
+#[derive(Clone)]
 pub struct ForkPeek {
     /// The triage model's client and tools when the peek runs on its own model;
     /// `None` borrows the agent turn's.
@@ -234,6 +239,7 @@ pub struct ForkPeek {
 
 /// The separate-model peek's request surface: everything cache-keyed that the shared
 /// configuration would have borrowed from the agent turn.
+#[derive(Clone)]
 struct OwnPeek {
     client: Client,
     tools: Vec<Value>,

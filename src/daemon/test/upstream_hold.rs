@@ -53,6 +53,12 @@ pub(super) fn events(data: &[String]) -> String {
         .collect()
 }
 
+/// The title ask, recognizable by the one phrase no other request carries
+/// (docs/session-title.md): the peek's tail instruction.
+pub(super) fn is_title_ask(body: &str) -> bool {
+    body.contains("say what this session is for")
+}
+
 /// One scripted answer.
 pub(super) enum Answer {
     /// A 200 event stream with this body.
@@ -119,6 +125,22 @@ fn serve(
                 let mut reader = BufReader::new(sock.try_clone().unwrap());
                 let mut sock = sock;
                 while let Some(body) = read_request(&mut reader) {
+                    // The title ask rides its own detached task (docs/session-title.md)
+                    // and lands between the scripted requests: answered out of band,
+                    // before the script, and not counted — the scripts and their
+                    // count assertions describe the main and fork traffic only.
+                    // `end_turn` answers it; the peek's parse takes the text line.
+                    if is_title_ask(&body) {
+                        let body = end_turn();
+                        let _ = write!(
+                            sock,
+                            "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\n\
+                             content-length: {}\r\n\r\n{body}",
+                            body.len()
+                        );
+                        let _ = sock.flush();
+                        continue;
+                    }
                     if let Some(bodies) = &bodies {
                         bodies.lock().unwrap().push(body);
                     }

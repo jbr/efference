@@ -2,6 +2,7 @@
 //! (docs/control-channel.md).
 
 use super::runtime::boot;
+use super::upstream_hold::is_title_ask;
 use super::*;
 use crate::daemon::SessionRuntime;
 use crate::frontend::SubmittedTurn;
@@ -70,13 +71,14 @@ fn chunk(sock: &mut TcpStream, events: &[(&str, &str)]) {
     sock.flush().unwrap();
 }
 
-/// Read one request off a kept-alive connection; `false` once the client closed it.
-fn read_request(reader: &mut BufReader<TcpStream>) -> bool {
+/// Read one request off a kept-alive connection — its body, `None` once the
+/// client closed it.
+fn read_request(reader: &mut BufReader<TcpStream>) -> Option<String> {
     let mut length = 0;
     loop {
         let mut line = String::new();
         if reader.read_line(&mut line).unwrap_or(0) == 0 {
-            return false;
+            return None;
         }
         if line == "\r\n" {
             break;
@@ -88,7 +90,8 @@ fn read_request(reader: &mut BufReader<TcpStream>) -> bool {
         }
     }
     let mut body = vec![0; length];
-    reader.read_exact(&mut body).is_ok()
+    reader.read_exact(&mut body).ok()?;
+    Some(String::from_utf8_lossy(&body).into_owned())
 }
 
 /// A Messages upstream that answers by arrival order: request 0 calls a tool,
@@ -113,7 +116,18 @@ fn scripted_upstream(
             std::thread::spawn(move || {
                 let mut reader = BufReader::new(sock.try_clone().unwrap());
                 let mut sock = sock;
-                while read_request(&mut reader) {
+                while let Some(body) = read_request(&mut reader) {
+                    // The title ask rides its own detached task
+                    // (docs/session-title.md) and lands between the scripted
+                    // requests: answered out of band, before the script, and not
+                    // counted — the arrival indexing describes the main and fork
+                    // traffic only.
+                    if is_title_ask(&body) {
+                        chunk(&mut sock, END_TURN);
+                        let _ = write!(sock, "0\r\n\r\n");
+                        let _ = sock.flush();
+                        continue;
+                    }
                     let n = requests.fetch_add(1, Ordering::SeqCst);
                     while n == 1 && !open.load(Ordering::SeqCst) {
                         std::thread::sleep(Duration::from_millis(5));

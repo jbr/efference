@@ -238,6 +238,11 @@ pub(super) fn response_meta(conn: &Conn) -> ResponseMeta {
 /// session, so it stays in the cached prefix (docs/log-and-projection.md); the
 /// fork (docs/redaction-fork.md) shares the same endpoint and system, so its
 /// prefix matches and hits cache.
+///
+/// `Clone` is a cheap hand-off of *the same* client: the Arc-backed live states
+/// (reservation, upstream retry and failure) are shared, so a clone observes and
+/// joins the same retry story the original does.
+#[derive(Clone)]
 pub struct Client {
     http: HttpClient,
     endpoint: Endpoint,

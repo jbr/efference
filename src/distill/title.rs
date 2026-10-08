@@ -10,8 +10,16 @@
 
 use super::*;
 
-/// Titles longer than this are rejected as unusable and the peek retried: the
-/// title is a sidebar line and a list row, not a summary.
+/// The word budget the ask states and the parse enforces with slack: the title
+/// is a sidebar line and a list row — an HTML `<title>`, not a summary. The ask
+/// says six words because a model cannot count characters (tokenization) but
+/// generates in words, so a word budget is one it can actually hit; the
+/// enforced ceiling leaves room for articles and counting fuzz. Titles longer
+/// than this are rejected as unusable and the peek retried.
+pub const TITLE_MAX_WORDS: usize = 8;
+
+/// The runaway guard under the word budget: one long "word" (a URL) must still
+/// be rejected.
 pub const TITLE_MAX_CHARS: usize = 120;
 
 /// The ask, appended after the breakpoint. `current` is the standing title, so
@@ -19,18 +27,19 @@ pub const TITLE_MAX_CHARS: usize = 120;
 /// change when the work changes, not when the wording could be improved.
 pub(super) fn title_instruction(current: Option<&str>) -> String {
     let mut ask = String::from(
-        "You're between tasks. In one line, under 80 characters, say what this session is \
-         for — the work as a whole, as its author would answer \"what are you working \
-         on?\", not what the last few steps were doing. Reply with the line only: no \
-         quotes, no label, no tool call.",
+        "In one line, at most six words, say what this session is for — the work as a \
+         whole, as its author would answer \"what are you working on?\", not what the \
+         last few steps were doing. Reply with the line only: no quotes, no label, no \
+         tool call.",
     );
     match current {
         Some(current) => {
             ask.push_str("\n\nThe current title is: ");
             ask.push_str(current);
             ask.push_str(
-                "\nKeep it verbatim unless the session's purpose has actually changed since \
-                 it was written; a rewording is not a change.",
+                "\nKeep it verbatim unless the session's purpose has changed since it was \
+                 written, or it is longer than the length above; don't reword a title \
+                 that fits.",
             );
         }
         None => ask.push_str("\n\nThere is no title yet."),
@@ -39,7 +48,8 @@ pub(super) fn title_instruction(current: Option<&str>) -> String {
 }
 
 /// The renewal sentence a non-compliant title attempt gets.
-pub(super) const TITLE_RENEW: &str = "Reply with the one-line title now, as text.";
+pub(super) const TITLE_RENEW: &str =
+    "Reply with the title now: one line, at most six words, as text.";
 
 /// What a title peek came back with: the accepted line, or `None` after the
 /// attempts were spent, and the peek's usage and retry breadcrumbs either way.
@@ -115,6 +125,9 @@ pub(super) fn parse_title(completion: &Completion) -> Result<String, String> {
         .map_or(line, str::trim);
     if line.is_empty() {
         return Err("the line was empty once unwrapped".into());
+    }
+    if line.split_whitespace().count() > TITLE_MAX_WORDS {
+        return Err(format!("the line is over {TITLE_MAX_WORDS} words"));
     }
     if line.chars().count() > TITLE_MAX_CHARS {
         return Err(format!("the line is over {TITLE_MAX_CHARS} characters"));
