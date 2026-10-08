@@ -165,7 +165,7 @@ pub async fn run<F: Frontend, S: Spotter>(
     // below, not by a `Provider`. Built once from the shared source; the defs are
     // constant `json!`, so `tools[]` stays byte-stable across requests (docs/log-and-projection.md).
     let tools = tool_definitions(&toolbox);
-    // The title ask's owned request surface, built once; each gate hands its
+    // The title ask's owned request surface, built once; each title check hands its
     // detached task a clone (docs/session-title.md).
     let title_ask = TitleAsk::new(client, &tools, &distiller);
     // Continues the log's numbering: `0` for a new session, the last entry's turn for a
@@ -506,8 +506,8 @@ pub async fn run<F: Frontend, S: Spotter>(
             client.upstream_retry().clear(RetrySurface::Turn);
             let Some(completion) = completion else {
                 // The trajectory is ending without an answer (a stall, a
-                // refusal, retries exhausted): the same title moment as the
-                // clean end (docs/session-title.md).
+                // refusal, retries exhausted): a title check, as at the clean
+                // end (docs/session-title.md).
                 solicit_title_detached(&shared, &title_ask);
                 break;
             };
@@ -563,8 +563,8 @@ pub async fn run<F: Frontend, S: Spotter>(
             }
 
             if calls.is_empty() {
-                // The trajectory is ending: the moment the title peek reads the
-                // whole of it (docs/session-title.md). Detached: the loop breaks
+                // The trajectory is ending: a title check, the moment the title
+                // peek reads the whole of it (docs/session-title.md). Detached: the loop breaks
                 // and re-arms at once, and the peek reads the prefix this turn
                 // just cached while the loop idles.
                 solicit_title_detached(&shared, &title_ask);
@@ -598,8 +598,8 @@ pub async fn run<F: Frontend, S: Spotter>(
             .await?;
 
             if after_landing(&shared, &mut turn, abort_turn, redirect)? {
-                // An aborted trajectory ends without an answer: the same title
-                // moment as the clean end (docs/session-title.md).
+                // An aborted trajectory ends without an answer: a title check, as
+                // at the clean end (docs/session-title.md).
                 solicit_title_detached(&shared, &title_ask);
                 break;
             }

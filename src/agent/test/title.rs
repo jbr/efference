@@ -1,6 +1,6 @@
-//! Tests for the title ask at the loop's gates (docs/session-title.md): the
-//! detached task appends the answer whenever it lands, and the gate's predicate
-//! stays silent while the standing title answers it.
+//! Tests for the title check (docs/session-title.md): the detached task appends
+//! the answer whenever it lands, and the predicate stays silent while the
+//! standing title answers it.
 
 use super::*;
 use crate::api::{Endpoint, Provider};
@@ -115,10 +115,10 @@ fn titles(shared: &Session) -> Vec<String> {
         .collect()
 }
 
-/// A user turn lands at a gate with an over-budget standing title: the detached
+/// A user turn lands at a title check with an over-budget standing title: the detached
 /// ask runs against the mock and the compressed answer lands as a new entry.
 #[tokio::test]
-async fn the_title_ask_compresses_an_over_budget_title_at_a_gate() {
+async fn the_title_ask_compresses_an_over_budget_title() {
     let shared = session();
     shared
         .set_title(Title {
@@ -149,10 +149,10 @@ async fn the_title_ask_compresses_an_over_budget_title_at_a_gate() {
     panic!("the title ask never landed: {:?}", titles(&shared));
 }
 
-/// A standing title with nothing after it answers the gate: no ask may run,
+/// A standing title with nothing after it answers the title check: no ask may run,
 /// even though the mock would answer one.
 #[tokio::test]
-async fn the_title_ask_stays_silent_while_the_title_answers_the_gate() {
+async fn the_title_ask_stays_silent_while_the_title_answers_the_check() {
     let shared = session();
     shared
         .set_title(Title {
@@ -169,7 +169,7 @@ async fn the_title_ask_stays_silent_while_the_title_answers_the_gate() {
     assert_eq!(
         titles(&shared).len(),
         1,
-        "a gate answered by the standing title spawned an ask"
+        "a title check answered by the standing title spawned an ask"
     );
 }
 
@@ -195,12 +195,12 @@ fn user_turn(shared: &Session, text: &str) {
         .unwrap();
 }
 
-/// Two gates before the first ask lands — a turn's start and its trajectory's
-/// end on a one-turn session — spend one peek: the second gate's predicate still
+/// Two title checks before the first ask lands — a turn's start and its trajectory's
+/// end on a one-turn session — spend one peek: the second check's predicate still
 /// says yes, since no `Title` exists yet, and only the in-flight guard stops a
 /// second ask.
 #[tokio::test]
-async fn gates_during_an_ask_in_flight_spend_one_peek() {
+async fn title_checks_during_an_ask_in_flight_spend_one_peek() {
     use std::sync::atomic::Ordering;
     let shared = session();
     user_turn(&shared, "start");

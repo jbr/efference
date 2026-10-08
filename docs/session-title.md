@@ -66,7 +66,7 @@ The first non-empty line comes back with wrapping quotes, backticks, a trailing
 period, or a `Title:` label removed. A tool call, no text, a line over
 `TITLE_MAX_WORDS`, or a line over `TITLE_MAX_CHARS` is unusable and retried
 in-fork on the fork's attempt budget with a renewal sentence; exhaustion
-records nothing, so the next gate asks again. Requests are recorded under the
+records nothing, so the next title check asks again. Requests are recorded under the
 `title` usage origin, so the cache report shows them on their own row.
 
 The ask states the length in words because a model cannot count characters —
@@ -77,11 +77,11 @@ session list all truncate longer lines.
 
 ## When it runs
 
-`agent/title.rs` holds one predicate, `should_solicit_title`, checked at every
-gate the turn loop passes — the junctures where a main request's cache is
-already warm. They are: when a user turn lands (a turn's start, or drained at a
-mid-trajectory seam), and when a trajectory ends, however it ends — the model
-answered, gave up, or the turn was aborted. It says yes:
+`agent/title.rs` holds one predicate, `should_solicit_title`. The **title check**
+tests it at each turn start, each seam-drain (a user turn delivered between a
+completion's results and the next request), and each trajectory end, however it
+ends — the model answered, gave up, or the turn was aborted. Those are junctures
+where a main request's cache is already warm. It says yes:
 
 - when no title has been written;
 - when a `User` entry landed after the last title — purpose moves with the
@@ -97,7 +97,7 @@ task that wakes with the cache believed cold holds the way the idle triage
 holds — waiting for the session's own next read rather than reading an expired
 prefix without consent.
 
-One ask is in flight per session. A gate that fires while one runs — a
+One ask is in flight per session. A title check that passes while one runs — a
 one-turn session reaches its trajectory's end before the ask from the turn's
 start has written anything, so the predicate still says yes — marks a rerun
 instead of spawning a second peek, and the task re-checks the predicate when its

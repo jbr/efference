@@ -1,7 +1,7 @@
 //! The title peek (docs/session-title.md): ask the triage model, off the cached
-//! prefix, for one line saying what the session is for. The check runs at every
-//! gate the turn loop passes and the ask runs as a detached task, so the loop
-//! never waits for it.
+//! prefix, for one line saying what the session is for. The title check runs at
+//! each turn start, seam-drain, and trajectory end, and the ask runs as a
+//! detached task, so the loop never waits for it.
 
 use super::*;
 use crate::log::{LogEntry, Title, TitleAuthor, latest_title};
@@ -11,7 +11,7 @@ use std::sync::Arc;
 /// between: an autonomous run's purpose can drift without anyone typing.
 pub(super) const TITLE_FALLBACK_TRAJECTORIES: usize = 12;
 
-/// Whether the gate that just passed should be followed by a title peek
+/// Whether a title check should be followed by a title peek
 /// (docs/session-title.md). Yes when no title exists; when a `User` entry landed
 /// after the last title — purpose moves with the user's turns, so each is
 /// answered once, at the moment it lands; and when [`TITLE_FALLBACK_TRAJECTORIES`]
@@ -54,8 +54,8 @@ pub(super) struct TitleAsk {
 struct Flight {
     /// An ask task is running.
     running: bool,
-    /// A gate's predicate said yes while the task ran; the task runs again when
-    /// its ask ends, re-checking the predicate.
+    /// A title check said yes while the task ran; the task runs again when its
+    /// ask ends, re-checking the predicate.
     rerun: bool,
 }
 
@@ -70,14 +70,15 @@ impl TitleAsk {
     }
 }
 
-/// Check the cadence and, when it asks, run the title peek as a detached task
-/// (docs/session-title.md). The loop calls this at its gates and never waits:
+/// The title check: test the cadence and, when it asks, run the title peek as a
+/// detached task (docs/session-title.md). The loop calls this at each turn
+/// start, seam-drain, and trajectory end, and never waits:
 /// the task owns the session handle and the request surface, holds while the
 /// cache is believed cold the way the idle triage holds, and appends the answer
 /// whenever it lands.
 ///
-/// One ask is in flight per session. A gate that fires while one runs marks a
-/// rerun instead of spawning: the predicate reads the log, and the in-flight ask
+/// One ask is in flight per session. A title check that passes while one runs
+/// marks a rerun instead of spawning: the predicate reads the log, and the in-flight ask
 /// has not written its `Title` yet, so a second task would pass the same check
 /// and spend a second peek on the same question.
 pub(super) fn solicit_title_detached(shared: &Arc<Session>, ask: &TitleAsk) {
@@ -111,7 +112,7 @@ pub(super) fn solicit_title_detached(shared: &Arc<Session>, ask: &TitleAsk) {
 
 /// Run the title peek over the log as it stands and record the answer as a
 /// `Title` entry (docs/session-title.md). A peek with no usable answer records
-/// nothing, so the next gate asks again. Never fails anything: the title is
+/// nothing, so the next title check asks again. Never fails anything: the title is
 /// presentation, and a failure here is logged and dropped.
 ///
 /// `force` skips the predicate. Returns whether a `User` entry landed after the
@@ -121,7 +122,7 @@ pub(super) fn solicit_title_detached(shared: &Arc<Session>, ask: &TitleAsk) {
 async fn solicit_title(shared: &Session, ask: &TitleAsk, force: bool) -> bool {
     shared.wait_until_warm().await;
     let entries = shared.snapshot();
-    // A title may have landed between the gate's check and this task's run;
+    // A title may have landed between the title check and this task's run;
     // re-check rather than spend a redundant peek.
     if !force && !should_solicit_title(&entries) {
         return false;
