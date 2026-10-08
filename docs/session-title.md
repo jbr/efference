@@ -95,8 +95,16 @@ for it, the peek reads the prefix the last request cached while the loop moves
 on, and the `Title` entry lands mid-trajectory when the answer comes back. A
 task that wakes with the cache believed cold holds the way the idle triage
 holds — waiting for the session's own next read rather than reading an expired
-prefix without consent. Two asks overlapping are harmless: the last title
-written wins, and the entry is presentation only.
+prefix without consent.
+
+One ask is in flight per session. A gate that fires while one runs — a
+one-turn session reaches its trajectory's end before the ask from the turn's
+start has written anything, so the predicate still says yes — marks a rerun
+instead of spawning a second peek, and the task re-checks the predicate when its
+ask ends. A `User` entry that landed after the ask read the log and before its
+`Title` was appended sits before that title, where the predicate counts it as
+answered though the peek never saw it; the rerun then skips the predicate and
+asks again.
 
 The predicate is the one place to tune cadence; the expectation is that titles
 change rarely and that a re-ask mostly confirms.

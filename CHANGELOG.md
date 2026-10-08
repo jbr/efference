@@ -20,6 +20,7 @@ behind a change, see [`journal/`](journal/).
 - **`C-o` folds a cold session from the TUI** (docs/tui.md): the alternative to `⏎`-again's cold read, named in the cold notice.
 
 ### Fixed
+- **One title ask in flight per session** (docs/session-title.md): a gate that fires while an ask runs marks a rerun instead of spending a second peek on the same question, and a user turn that lands mid-peek is asked about again.
 - **Cache marker per slug on OpenRouter** (docs/log-and-projection.md): the last-text-block marker froze the cached read for a whole tool loop on Gemini and Claude; Gemini slugs now send no marker (its implicit cache follows the prefix, and the `read N · write N` explicit-cache creation rows go away), and `anthropic/` slugs mark the trailing block as on the native API.
 - **Deterministic TUI wrap-linearity regression test:** it counts bounded-width grapheme measurements rather than elapsed time, so load cannot fail a pre-commit run.
 - **Fold a cold session** (docs/control-api.md, docs/summary-head.md): `POST /loop/fold` has the session's own model replace its history up to a cut with an account, keeping the last ~15k tokens of payloads verbatim; the session then counts as never-sent (no keepalive, not cold) until its next request.

@@ -33,18 +33,43 @@ fn session() -> Arc<Session> {
 /// answer (the codex tests' mock, pointed at a message output item). Two
 /// accepts so a test asserting *no* peek fired fails loudly if one does.
 fn mock_client(line: &str) -> Client {
+    mock(line, None).0
+}
+
+/// [`mock_client`] with a count of the requests it has read, and, when `hold` is
+/// given, each answer held until the test sends on it — so a peek can be kept in
+/// flight while the test moves the log.
+fn mock(
+    line: &str,
+    hold: Option<std::sync::mpsc::Receiver<()>>,
+) -> (Client, Arc<std::sync::atomic::AtomicUsize>) {
     use std::io::{Read, Write};
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
     let line = line.to_string();
+    let requests = Arc::new(AtomicUsize::new(0));
+    let counted = requests.clone();
     std::thread::spawn(move || {
-        for _ in 0..2 {
+        let mut served = 0;
+        while served < 2 {
             let Ok((mut sock, _)) = listener.accept() else {
                 break;
             };
             let mut buf = vec![0u8; 65536];
-            let _ = sock.read(&mut buf).unwrap();
+            let read = sock.read(&mut buf).unwrap_or(0);
+            // A port the kernel hands out is reused once its test drops it, so a
+            // client from another test still retrying against its own dead mock
+            // can connect here. Only a title ask is answered and counted.
+            if !String::from_utf8_lossy(&buf[..read]).contains("say what this session is for") {
+                continue;
+            }
+            served += 1;
+            counted.fetch_add(1, Ordering::SeqCst);
+            if let Some(hold) = &hold {
+                let _ = hold.recv();
+            }
             let item = format!(
                 "{{\"type\":\"message\",\"id\":\"m1\",\"role\":\"assistant\",\
                  \"status\":\"completed\",\"content\":[{{\"type\":\"output_text\",\
@@ -76,7 +101,7 @@ fn mock_client(line: &str) -> Client {
         extra_headers: Vec::new(),
         base: None,
     };
-    Client::new(endpoint, "m", "sys", None)
+    (Client::new(endpoint, "m", "sys", None), requests)
 }
 
 fn titles(shared: &Session) -> Vec<String> {
@@ -146,4 +171,71 @@ async fn the_title_ask_stays_silent_while_the_title_answers_the_gate() {
         1,
         "a gate answered by the standing title spawned an ask"
     );
+}
+
+/// Wait up to five seconds for `done`, polling the way the tests above do.
+async fn eventually(done: impl Fn() -> bool) -> bool {
+    for _ in 0..200 {
+        if done() {
+            return true;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+    }
+    done()
+}
+
+fn user_turn(shared: &Session, text: &str) {
+    shared
+        .append_submission(
+            1,
+            Payload::User(vec![ContentBlock::Text(text.into())]),
+            "sub".into(),
+            None,
+        )
+        .unwrap();
+}
+
+/// Two gates before the first ask lands — a turn's start and its trajectory's
+/// end on a one-turn session — spend one peek: the second gate's predicate still
+/// says yes, since no `Title` exists yet, and only the in-flight guard stops a
+/// second ask.
+#[tokio::test]
+async fn gates_during_an_ask_in_flight_spend_one_peek() {
+    use std::sync::atomic::Ordering;
+    let shared = session();
+    user_turn(&shared, "start");
+    let (release, hold) = std::sync::mpsc::channel();
+    let (client, requests) = mock("Fix title cadence", Some(hold));
+    let ask = TitleAsk::new(&client, &[], &ForkPeek::shared());
+    solicit_title_detached(&shared, &ask);
+    assert!(eventually(|| requests.load(Ordering::SeqCst) == 1).await);
+    solicit_title_detached(&shared, &ask);
+    release.send(()).unwrap();
+    assert!(eventually(|| titles(&shared).len() == 1).await);
+    for _ in 0..20 {
+        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+    }
+    assert_eq!(requests.load(Ordering::SeqCst), 1, "{:?}", titles(&shared));
+    assert_eq!(titles(&shared), ["Fix title cadence"]);
+}
+
+/// A user turn that lands while the peek is in flight sits before that peek's
+/// `Title` in the log, where the predicate counts it as answered; the ask runs
+/// again so the turn the peek never saw is read.
+#[tokio::test]
+async fn a_user_turn_during_the_peek_is_asked_about_again() {
+    use std::sync::atomic::Ordering;
+    let shared = session();
+    user_turn(&shared, "start");
+    let (release, hold) = std::sync::mpsc::channel();
+    let (client, requests) = mock("Fix title cadence", Some(hold));
+    let ask = TitleAsk::new(&client, &[], &ForkPeek::shared());
+    solicit_title_detached(&shared, &ask);
+    assert!(eventually(|| requests.load(Ordering::SeqCst) == 1).await);
+    user_turn(&shared, "new scope");
+    solicit_title_detached(&shared, &ask);
+    release.send(()).unwrap();
+    assert!(eventually(|| requests.load(Ordering::SeqCst) == 2).await);
+    release.send(()).unwrap();
+    assert!(eventually(|| titles(&shared).len() == 2).await);
 }
