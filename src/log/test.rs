@@ -116,18 +116,18 @@ fn latest_title_latest_entry_wins() {
 fn a_spot_carries_the_decision_axes_and_old_entries_still_read() {
     let axes = crate::spotter::jev::Axes {
         in_scope: 0.94,
-        reversible: 0.97,
         path_outside: 0.19,
+        sketch: Some(vec![0.9, 0.05, 0.03, 0.01, 0.01]),
         ..Default::default()
     };
     let spot = Spot {
         call_id: CallId("c1".into()),
         stance: Stance::Clear,
-        reason: "in scope (94%) and reversible (97%).".into(),
+        reason: "routine (level 0).".into(),
         origin: Origin::Model,
         model: Some("jev-1.13.0".into()),
         probed_prefix: None,
-        axes: Some(axes),
+        axes: Some(axes.clone()),
     };
     let json = serde_json::to_string(&spot).unwrap();
     assert!(json.contains(r#""axes":{"in_scope":0.94,"#), "{json}");

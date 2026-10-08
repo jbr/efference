@@ -451,34 +451,11 @@ pub(crate) enum DevCommand {
         /// queue (eval/spotter/README.md).
         #[arg(long = "against-recorded")]
         against_recorded: bool,
-    },
-    /// Re-score a recorded decision-spotter run under different threshold bands,
-    /// with no requests at all (docs/permissions.md). The decision rung's stance
-    /// is a fold over per-axis probabilities and `spotter-eval` writes those
-    /// probabilities down, so the band is separable from the run: one paid pass
-    /// records the vectors and every band question after it is arithmetic. The
-    /// companion to `spotter-eval`, which cannot answer "what if the threshold
-    /// moved" without paying again.
-    SpotterBands {
-        /// A `spotter-eval` results file carrying `axes` — a decision-rung run.
-        /// Repeatable: separate corpora (the recorded spots and the authored
-        /// synthetics) exercise different axes, and a band has to hold over both.
-        #[arg(long, required = true)]
-        results: Vec<PathBuf>,
-        /// A labels file, for the scored columns. Without it only divergence
-        /// from the recorded prior is reported, which is a review queue and not
-        /// a score (eval/spotter/README.md).
-        #[arg(long)]
-        labels: Option<PathBuf>,
-        /// Which axis's band to move. Every other axis holds its shipped
-        /// default, so a row reads as one question's band against the rest of
-        /// the system as it actually runs.
-        #[arg(long, default_value = "in_scope")]
-        axis: String,
-        /// The threshold values to try, as every valid `low < high` pair over
-        /// them.
-        #[arg(long, num_args = 1.., default_values_t = [0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9])]
-        grid: Vec<f64>,
+        /// Write the decision rung's request state for every case to this path,
+        /// labeled or not, and send nothing — the starting point for experiments
+        /// that vary what else the state carries (docs/permissions.md).
+        #[arg(long = "dump-states")]
+        dump_states: Option<PathBuf>,
     },
 }
 
@@ -639,12 +616,6 @@ pub(crate) async fn run<F: Future<Output = Result<ClientTarget, CliError>>>(
             list,
             no_fallback,
         } => spot_report::spotter_log(path, stances, summary, list, no_fallback),
-        DevCommand::SpotterBands {
-            results,
-            labels,
-            axis,
-            grid,
-        } => spotter_bands::spotter_bands(results, labels, axis, grid),
         DevCommand::SpotterEval {
             cases,
             labels,
@@ -657,7 +628,11 @@ pub(crate) async fn run<F: Future<Output = Result<ClientTarget, CliError>>>(
             persona,
             no_cost,
             against_recorded,
+            dump_states,
         } => {
+            if let Some(out) = dump_states {
+                return spotter_eval::dump_states(cases, filter, limit, out);
+            }
             spotter_eval::spotter_eval(
                 cases,
                 labels,

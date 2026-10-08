@@ -58,9 +58,13 @@ pub(super) fn decisions_retry() -> RetryHandler {
         .with_max_retry_after(DECIDE_MAX_ELAPSED)
 }
 
-/// One question in a decisions request. Boolean-only today because that is what
-/// the spotter asks (docs/permissions.md); the route also defines `choice` and
-/// `score` question types, which land here when something asks one.
+/// One question in a decisions request (docs/permissions.md). The route defines
+/// three types: a boolean (`noul`), a `score` over ordered levels, and a `choice`
+/// among named options.
+///
+/// `instructions` is a string or an object ([`Instructions`]); an object lets a
+/// question carry the text it is about (an earlier call, say) beside the question
+/// itself, without a state field per candidate.
 #[derive(Serialize, Debug, Clone)]
 #[serde(tag = "type")]
 pub enum Question {
@@ -69,8 +73,25 @@ pub enum Question {
     /// where the calibration comes from, so neither side is optional here either.
     #[serde(rename = "noul")]
     Boolean {
-        instructions: String,
+        instructions: Instructions,
         criteria: BooleanCriteria,
+    },
+    /// A question answered with a position on an ordered scale. `criteria` is one
+    /// description per level, lowest first; the answer's `probabilities` are keyed
+    /// by the level's index.
+    #[serde(rename = "score")]
+    Score {
+        instructions: Instructions,
+        criteria: Vec<String>,
+    },
+    /// A question answered with one of several named options. `criteria` maps each
+    /// option to its description, and the order they are sent in is part of the
+    /// question: the model favors the first option, so a caller that wants a
+    /// position-free reading asks twice with the options reversed.
+    #[serde(rename = "choice")]
+    Choice {
+        instructions: Instructions,
+        criteria: OptionCriteria,
     },
 }
 
@@ -83,19 +104,117 @@ impl Question {
         when_false: impl Into<String>,
     ) -> Self {
         Question::Boolean {
-            instructions: instructions.into(),
+            instructions: Instructions::Text(instructions.into()),
             criteria: BooleanCriteria {
                 r#true: when_true.into(),
                 r#false: when_false.into(),
             },
         }
     }
+
+    /// A score question from what is being asked and its levels, lowest first.
+    pub fn score<L: Into<String>>(
+        instructions: impl Into<Instructions>,
+        levels: impl IntoIterator<Item = L>,
+    ) -> Self {
+        Question::Score {
+            instructions: instructions.into(),
+            criteria: levels.into_iter().map(Into::into).collect(),
+        }
+    }
+
+    /// A choice question from what is being asked and its `(option, description)`
+    /// pairs, in the order they go on the wire.
+    pub fn choice<K: Into<String>, V: Into<String>>(
+        instructions: impl Into<Instructions>,
+        options: impl IntoIterator<Item = (K, V)>,
+    ) -> Self {
+        Question::Choice {
+            instructions: instructions.into(),
+            criteria: OptionCriteria(
+                options
+                    .into_iter()
+                    .map(|(option, description)| (option.into(), description.into()))
+                    .collect(),
+            ),
+        }
+    }
+}
+
+/// What a question asks: a string, or an object of named strings. The object keeps
+/// the order it was built in on the wire, for the same reason [`OptionCriteria`]
+/// does: the model reads the fields in sequence, so which comes first is part of
+/// the prompt.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Instructions {
+    Text(String),
+    Fields(Vec<(String, String)>),
+}
+
+impl Instructions {
+    /// An object of `(name, text)` fields, in the order they go on the wire.
+    pub fn fields<K: Into<String>, V: Into<String>>(
+        fields: impl IntoIterator<Item = (K, V)>,
+    ) -> Self {
+        Instructions::Fields(
+            fields
+                .into_iter()
+                .map(|(name, text)| (name.into(), text.into()))
+                .collect(),
+        )
+    }
+}
+
+impl From<&str> for Instructions {
+    fn from(text: &str) -> Self {
+        Instructions::Text(text.to_string())
+    }
+}
+
+impl From<String> for Instructions {
+    fn from(text: String) -> Self {
+        Instructions::Text(text)
+    }
+}
+
+impl Serialize for Instructions {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Instructions::Text(text) => serializer.serialize_str(text),
+            Instructions::Fields(fields) => ordered_map(serializer, fields),
+        }
+    }
+}
+
+fn ordered_map<S: serde::Serializer>(
+    serializer: S,
+    pairs: &[(String, String)],
+) -> Result<S::Ok, S::Error> {
+    use serde::ser::SerializeMap;
+    let mut map = serializer.serialize_map(Some(pairs.len()))?;
+    for (key, value) in pairs {
+        map.serialize_entry(key, value)?;
+    }
+    map.end()
 }
 
 #[derive(Serialize, Debug, Clone)]
 pub struct BooleanCriteria {
     pub r#true: String,
     pub r#false: String,
+}
+
+/// A choice's options with their descriptions, serialized as a JSON object in the
+/// order held. `serde_json::Map` sorts its keys here (the determinism rule in
+/// docs/log-and-projection.md depends on that), so the order is carried as pairs
+/// and written entry by entry.
+#[derive(Debug, Clone, PartialEq)]
+pub struct OptionCriteria(pub Vec<(String, String)>);
+
+impl Serialize for OptionCriteria {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        ordered_map(serializer, &self.0)
+    }
 }
 
 /// One question's answer, read leniently. Every field beyond `type` is optional
@@ -113,6 +232,9 @@ pub struct Answer {
     pub noul: Option<f64>,
     pub choice: Option<String>,
     pub score: Option<f64>,
+    /// A `choice` or `score` answer's distribution: option name (or level index,
+    /// as a string) to probability.
+    pub probabilities: Option<BTreeMap<String, f64>>,
     pub confidence: Option<f64>,
 }
 
@@ -147,6 +269,12 @@ impl Decisions {
     /// unanswered or came back as some other shape.
     pub fn probability(&self, question: &str) -> Option<f64> {
         self.answers.get(question)?.noul
+    }
+
+    /// The distribution a `choice` or `score` question answered with, or `None`
+    /// when the question went unanswered or came back as some other shape.
+    pub fn probabilities(&self, question: &str) -> Option<&BTreeMap<String, f64>> {
+        self.answers.get(question)?.probabilities.as_ref()
     }
 
     /// This request's spend, in the shape every other request reports

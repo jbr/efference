@@ -1,6 +1,6 @@
 use super::*;
 use crate::log::Stance;
-use questions::{Deciding, combine};
+use questions::{Reading, decide, level_of};
 use serde_json::json;
 
 /// Parse a config from TOML for a test that needs one as an *input* — the
@@ -9,242 +9,371 @@ fn role(toml: &str) -> Config {
     Config::from_toml(toml).expect("valid config")
 }
 
-/// All axes clean: in scope, reversible, nothing else tripped.
+/// A sketch distribution putting 0.8 on `level` and the rest spread evenly.
+fn sketch_at(level: usize) -> Vec<f64> {
+    (0..5)
+        .map(|i| if i == level { 0.8 } else { 0.05 })
+        .collect()
+}
+
+/// Answers for a plainly routine move: sketch level 0, every axis clean.
 fn clean() -> Axes {
     Axes {
         in_scope: 0.95,
-        reversible: 0.95,
-        sanctioned: 0.05,
         path_outside: 0.02,
         path_denied: 0.01,
         exposes_secrets: 0.01,
-        watch_for_hit: None,
-        prefix_safe: None,
+        sketch: Some(sketch_at(0)),
+        ..Axes::default()
     }
 }
 
-/// The shipped bands are a tuning result, not a guess (the sweep of 2026-09-18,
-/// backlog/decision-spotter-tuning.md). Pinned because the thing they encode is
-/// that the axes do **not** share a scale: a single pair cannot sit above
-/// `path_outside`'s 0.19 floor and below `exposes_secrets`'s 0.03 one, and the
-/// pair that tried gated 42% of a corpus that is 78% approve. A future edit that
-/// collapses them back toward each other should have to break this first.
+fn at_level(level: usize) -> Axes {
+    Axes {
+        sketch: Some(sketch_at(level)),
+        ..clean()
+    }
+}
+
+fn readings(candidates: usize, same: usize, wider: usize) -> Option<Reading> {
+    Some(Reading {
+        candidates,
+        same,
+        wider,
+    })
+}
+
+/// The fold table: level, precedents found, and the stance that results. Level 0
+/// and 1 clear alone, level 2 needs one same-action precedent, level 3 needs two,
+/// level 4 is never cleared by history.
 #[test]
-fn the_axes_do_not_share_a_scale() {
-    let t = Thresholds::default();
-    // The measured background: a flat "no" reads ~0.19 on `path_outside` and
-    // ~0.03 on `exposes_secrets`. One `low` would have to sit above the first
-    // and below the second, which is not a number.
-    assert!(
-        t.path_outside.low > 0.19 && t.exposes_secrets.low < 0.19,
-        "the two floors ({} and {}) straddle path_outside's measured \
-         background — a single band could cover them, which the sweep says it cannot",
-        t.path_outside.low,
-        t.exposes_secrets.low
+fn the_fold_requires_precedent_by_level() {
+    let cases: [(&str, Axes, Option<Reading>, Stance); 12] = [
+        ("level 0, no history", at_level(0), None, Stance::Clear),
+        ("level 1, no history", at_level(1), None, Stance::Clear),
+        (
+            "level 2, none found",
+            at_level(2),
+            readings(1, 0, 0),
+            Stance::Gate,
+        ),
+        ("level 2, relation failed", at_level(2), None, Stance::Gate),
+        (
+            "level 2, one found",
+            at_level(2),
+            readings(1, 1, 0),
+            Stance::Clear,
+        ),
+        (
+            "level 3, one of two",
+            at_level(3),
+            readings(3, 1, 0),
+            Stance::Gate,
+        ),
+        (
+            "level 3, two found",
+            at_level(3),
+            readings(3, 2, 0),
+            Stance::Clear,
+        ),
+        (
+            "level 4, many found",
+            at_level(4),
+            readings(10, 10, 0),
+            Stance::Gate,
+        ),
+        (
+            "level 2, only wider",
+            at_level(2),
+            readings(2, 0, 2),
+            Stance::Gate,
+        ),
+        (
+            "outside the grants raises level 0 to 2",
+            Axes {
+                path_outside: 0.62,
+                ..clean()
+            },
+            readings(1, 0, 0),
+            Stance::Gate,
+        ),
+        (
+            "outside the grants, precedent found",
+            Axes {
+                path_outside: 0.62,
+                ..clean()
+            },
+            readings(1, 1, 0),
+            Stance::Clear,
+        ),
+        (
+            "secrets gate even with precedents",
+            Axes {
+                exposes_secrets: 0.5,
+                ..clean()
+            },
+            readings(5, 5, 0),
+            Stance::Gate,
+        ),
+    ];
+    for (what, axes, reading, expected) in cases {
+        assert_eq!(decide(&axes, reading, false).stance, expected, "{what}");
+    }
+}
+
+/// The level is the sketch's most probable level, raised (never lowered) by a
+/// tripped axis; the thresholds are strict where the replay's are.
+#[test]
+fn bumps_raise_the_level_to_the_axis_floor() {
+    let level = |axes: Axes| level_of(&axes).0;
+    assert_eq!(level(at_level(1)), 1);
+    assert_eq!(level(at_level(4)), 4);
+    assert_eq!(
+        level(Axes {
+            path_denied: 0.26,
+            ..clean()
+        }),
+        3
     );
-    // And the in_scope band lives entirely above every other axis's floor: its
-    // "no" is a low probability of being in scope, not a high one of trouble.
-    assert!(t.in_scope.high > t.path_outside.high);
-}
-
-fn stance(axes: &Axes, probe: bool) -> Stance {
-    combine(axes, &Thresholds::default(), probe).0
-}
-
-#[test]
-fn a_clean_move_clears() {
-    assert_eq!(stance(&clean(), false), Stance::Clear);
-}
-
-/// Each disqualifying axis, in the order the fold reads them. `high`/`low` are
-/// the default band; a value inside it is uncertain, not clean.
-#[test]
-fn a_disqualifying_axis_gates() {
-    let cases: [(&str, Axes, Stance); 5] = [
-        (
-            "exposed secret",
-            Axes {
-                exposes_secrets: 0.9,
-                ..clean()
-            },
-            Stance::Gate,
-        ),
-        (
-            "names a path outside the grants",
-            Axes {
-                path_outside: 0.9,
-                ..clean()
-            },
-            Stance::Gate,
-        ),
-        (
-            "names a path under a denied carve-out",
-            Axes {
-                path_denied: 0.9,
-                ..clean()
-            },
-            Stance::Gate,
-        ),
-        (
-            "out of scope",
-            Axes {
-                in_scope: 0.1,
-                ..clean()
-            },
-            Stance::Gate,
-        ),
-        (
-            "unsanctioned one-way move",
-            Axes {
-                reversible: 0.05,
-                sanctioned: 0.05,
-                ..clean()
-            },
-            Stance::Gate,
-        ),
-    ];
-    for (what, axes, expected) in cases {
-        assert_eq!(stance(&axes, false), expected, "{what}");
-    }
-}
-
-/// The error weighting for this rung is asymmetric (backlog/spotter-eval.md): a
-/// wrong clear costs more than a wrong gate, so the uncertain middle resolves
-/// toward the human on every axis rather than toward auto-approval.
-#[test]
-fn the_uncertain_middle_never_clears() {
-    let middling = [
-        Axes {
-            exposes_secrets: 0.5,
+    assert_eq!(
+        level(Axes {
+            path_denied: 0.25,
             ..clean()
-        },
-        Axes {
-            path_outside: 0.5,
+        }),
+        0
+    );
+    assert_eq!(
+        level(Axes {
+            exposes_secrets: 0.16,
             ..clean()
-        },
-        Axes {
-            path_denied: 0.5,
+        }),
+        3
+    );
+    assert_eq!(
+        level(Axes {
+            watch_for_hit: Some(0.3),
             ..clean()
-        },
-        Axes {
-            in_scope: 0.5,
+        }),
+        3
+    );
+    assert_eq!(
+        level(Axes {
+            watch_for_hit: Some(0.2),
             ..clean()
-        },
-        Axes {
-            reversible: 0.5,
-            sanctioned: 0.1,
+        }),
+        0
+    );
+    assert_eq!(
+        level(Axes {
+            path_outside: 0.36,
             ..clean()
-        },
-        Axes {
-            watch_for_hit: Some(0.5),
+        }),
+        2
+    );
+    assert_eq!(
+        level(Axes {
+            path_outside: 0.35,
             ..clean()
-        },
-    ];
-    for axes in middling {
-        assert!(
-            matches!(stance(&axes, false), Stance::Watch | Stance::Gate),
-            "an uncertain axis cleared: {axes:?}"
-        );
-    }
+        }),
+        0
+    );
+    // Scope bumps when it reads as false, at the edge inclusive.
+    assert_eq!(
+        level(Axes {
+            in_scope: 0.30,
+            ..clean()
+        }),
+        2
+    );
+    assert_eq!(
+        level(Axes {
+            in_scope: 0.31,
+            ..clean()
+        }),
+        0
+    );
+    // A bump never lowers a level the sketch already put higher.
+    assert_eq!(
+        level(Axes {
+            path_outside: 0.9,
+            ..at_level(3)
+        }),
+        3
+    );
 }
 
-/// Scope sanction is what rescues a one-way move — silence is not sanction
-/// (docs/permissions.md: the reversibility default).
+/// `wider` is evidence the move goes further than what was approved, never a
+/// precedent: the count that clears is `same` alone.
 #[test]
-fn a_sanctioned_one_way_move_clears() {
-    let axes = Axes {
-        reversible: 0.02,
-        sanctioned: 0.93,
-        ..clean()
-    };
-    assert_eq!(stance(&axes, false), Stance::Clear);
+fn wider_does_not_count_as_precedent() {
+    let decision = decide(&at_level(2), readings(3, 1, 2), false);
+    assert_eq!(decision.stance, Stance::Clear);
+    let decision = decide(&at_level(2), readings(3, 0, 3), false);
+    assert_eq!(decision.stance, Stance::Gate);
+    assert_eq!(decision.required, Some(1));
 }
 
-/// A watch-for is the operator naming the thing in advance; a clear hit stops.
+/// The promotion safe-vote rides a clear and takes the strict reading: only a
+/// confident yes with a probe riding promotes, and a hold never promotes.
 #[test]
-fn a_watch_for_hit_gates() {
-    let axes = Axes {
-        watch_for_hit: Some(0.9),
-        ..clean()
-    };
-    assert_eq!(stance(&axes, false), Stance::Gate);
-    // Clearly not a hit leaves the move to the other axes.
-    let axes = Axes {
-        watch_for_hit: Some(0.02),
-        ..clean()
-    };
-    assert_eq!(stance(&axes, false), Stance::Clear);
-}
-
-/// The promotion safe-vote rides the stance and takes the strict reading: only an
-/// explicit, confident yes promotes, and it can never outrank a non-clear stance.
-#[test]
-fn only_a_confident_prefix_vote_promotes() {
+fn only_a_confident_prefix_vote_on_a_clear_promotes() {
     let vouched = Axes {
         prefix_safe: Some(0.95),
         ..clean()
     };
-    assert_eq!(stance(&vouched, true), Stance::ClearAlways);
+    assert_eq!(decide(&vouched, None, true).stance, Stance::ClearAlways);
     // The same answers with no probe riding along are an ordinary clear.
-    assert_eq!(stance(&vouched, false), Stance::Clear);
-    // Unsure about the prefix clears the move without vouching for the prefix.
+    assert_eq!(decide(&vouched, None, false).stance, Stance::Clear);
     let unsure = Axes {
-        prefix_safe: Some(0.6),
+        prefix_safe: Some(0.79),
         ..clean()
     };
-    assert_eq!(stance(&unsure, true), Stance::Clear);
-    // A gated move never promotes, however safe the prefix reads.
-    let gated = Axes {
-        in_scope: 0.05,
+    assert_eq!(decide(&unsure, None, true).stance, Stance::Clear);
+    let edge = Axes {
+        prefix_safe: Some(0.8),
+        ..clean()
+    };
+    assert_eq!(decide(&edge, None, true).stance, Stance::ClearAlways);
+    // A held move never promotes, however safe the prefix reads.
+    let held = Axes {
         prefix_safe: Some(0.99),
-        ..clean()
+        ..at_level(3)
     };
-    assert_eq!(stance(&gated, true), Stance::Gate);
+    assert_eq!(decide(&held, readings(1, 0, 0), true).stance, Stance::Gate);
 }
 
-/// The reason is the whole of what the session and the human read, and the model
-/// wrote none of it — so it names the deciding axis and carries its figure
-/// rather than asserting a conclusion the numbers don't show.
+/// This rung's dial is how many precedents a level needs (backlog trust dial), so
+/// it has no middle stance to return.
 #[test]
-fn the_reason_names_the_deciding_axis_with_its_figure() {
-    let axes = Axes {
-        in_scope: 0.07,
-        ..clean()
-    };
-    let (stance, deciding) = combine(&axes, &Thresholds::default(), false);
-    assert_eq!(deciding, Deciding::Scope);
-    let reason = questions::reason(stance, deciding, &axes);
-    assert!(reason.contains("7%"), "no figure in {reason:?}");
-    assert!(reason.contains("scope"), "no axis named in {reason:?}");
+fn the_fold_never_returns_watch() {
+    let probabilities = [0.0, 0.1, 0.3, 0.5, 0.7, 0.99];
+    for level in 0..5 {
+        for p in probabilities {
+            for same in 0..3 {
+                let axes = Axes {
+                    in_scope: p,
+                    path_outside: p,
+                    path_denied: p,
+                    exposes_secrets: p,
+                    watch_for_hit: Some(p),
+                    prefix_safe: Some(p),
+                    ..at_level(level)
+                };
+                for probe in [false, true] {
+                    let stance = decide(&axes, readings(3, same, 0), probe).stance;
+                    assert_ne!(stance, Stance::Watch, "{axes:?}");
+                }
+            }
+        }
+    }
 }
 
-/// The grants question is two questions (backlog/decision-spotter-tuning.md), and
-/// the fold names the more specific one: "under a deliberate carve-out" tells the
-/// reader something "outside the grants" does not.
 #[test]
-fn a_denied_carve_out_is_named_as_itself() {
-    let axes = Axes {
-        path_denied: 0.9,
-        path_outside: 0.02,
-        ..clean()
-    };
-    let (stance, deciding) = combine(&axes, &Thresholds::default(), false);
-    assert_eq!(stance, Stance::Gate);
-    assert_eq!(deciding, Deciding::DeniedPath);
-    let reason = questions::reason(stance, deciding, &axes);
-    assert!(reason.contains("denied"), "{reason:?}");
-
-    // And it outranks the broader finding when both trip, since a path can be
-    // both outside a grant and under a carve-out.
-    let both = Axes {
-        path_denied: 0.9,
-        path_outside: 0.9,
+fn the_reason_reads_as_designed() {
+    let reason = |axes: &Axes, reading| decide(axes, reading, false).reason;
+    assert_eq!(reason(&clean(), None), "routine (level 0).");
+    assert_eq!(
+        reason(&clean(), readings(2, 2, 0)),
+        "routine (level 0); matches 2 earlier calls the operator approved."
+    );
+    assert_eq!(
+        reason(
+            &Axes {
+                path_outside: 0.62,
+                ..clean()
+            },
+            readings(1, 0, 0)
+        ),
+        "level 2 (outside the grants, 62%): needs 1 approved call like it, found none."
+    );
+    assert_eq!(
+        reason(&at_level(3), readings(3, 1, 0)),
+        "level 3 (sketch, 80%): needs 2 approved calls like it, found 1."
+    );
+    assert_eq!(
+        reason(&at_level(4), readings(3, 3, 0)),
+        "level 4 (sketch, 80%): no number of approved calls clears this level."
+    );
+    assert_eq!(
+        reason(
+            &Axes {
+                path_outside: 0.62,
+                ..clean()
+            },
+            readings(2, 0, 2)
+        ),
+        "level 2 (outside the grants, 62%): needs 1 approved call like it, found none; \
+         goes further than 2 calls the operator approved."
+    );
+    assert_eq!(
+        reason(
+            &Axes {
+                exposes_secrets: 0.91,
+                ..clean()
+            },
+            readings(4, 4, 0)
+        ),
+        "this looks like it would expose secret material (91% confidence) — no earlier \
+         approval clears that, so it stops here."
+    );
+    let vouched = Axes {
+        prefix_safe: Some(0.9),
         ..clean()
     };
     assert_eq!(
-        combine(&both, &Thresholds::default(), false).1,
-        Deciding::DeniedPath
+        decide(&vouched, None, true).reason,
+        "routine (level 0); the offered prefix reads safe for any argument (90%)."
     );
+}
+
+/// The record carries the sketch and the precedent reading, and omits what was
+/// not asked.
+#[test]
+fn the_record_carries_the_sketch_and_the_precedent() {
+    let axes = Axes {
+        precedent: Some(Precedent {
+            candidates: 3,
+            same: 1,
+            wider: 1,
+            required: Some(2),
+        }),
+        ..clean()
+    };
+    assert_eq!(
+        serde_json::to_value(&axes).expect("serializes"),
+        json!({
+            "in_scope": 0.95,
+            "path_outside": 0.02,
+            "path_denied": 0.01,
+            "exposes_secrets": 0.01,
+            "sketch": [0.8, 0.05, 0.05, 0.05, 0.05],
+            "precedent": { "candidates": 3, "same": 1, "wider": 1, "required": 2 },
+        })
+    );
+    let bare = serde_json::to_value(clean()).expect("serializes");
+    assert!(bare.get("precedent").is_none());
+    assert!(bare.get("watch_for_hit").is_none());
+}
+
+/// A `Spot` recorded before the sketch fold carries `reversible` and `sanctioned`
+/// and neither new field; it must still parse.
+#[test]
+fn an_entry_recorded_with_the_old_axes_still_parses() {
+    let old = json!({
+        "in_scope": 0.93,
+        "reversible": 0.88,
+        "sanctioned": 0.04,
+        "path_outside": 0.19,
+        "path_denied": 0.02,
+        "exposes_secrets": 0.03,
+        "prefix_safe": 0.9,
+    });
+    let axes: Axes = serde_json::from_value(old).expect("old shape parses");
+    assert_eq!(axes.in_scope, 0.93);
+    assert_eq!(axes.prefix_safe, Some(0.9));
+    assert_eq!(axes.watch_for_hit, None);
+    assert_eq!(axes.sketch, None);
+    assert_eq!(axes.precedent, None);
 }
 
 /// Both halves of the split are asked on every call: a corpus case with no
@@ -255,6 +384,40 @@ fn both_halves_of_the_grants_question_are_always_asked() {
     let bare = ask::questions(false, false);
     assert!(bare.contains_key(questions::PATH_OUTSIDE));
     assert!(bare.contains_key(questions::PATH_DENIED));
+}
+
+/// The cold request asks the sketch and the shipping axes, and neither of the two
+/// the fold no longer reads.
+#[test]
+fn the_cold_questions_are_the_sketch_and_the_shipping_axes() {
+    let bare = ask::questions(false, false);
+    let mut keys: Vec<&str> = bare.keys().map(String::as_str).collect();
+    keys.sort_unstable();
+    assert_eq!(
+        keys,
+        [
+            "exposes_secrets",
+            "in_scope",
+            "path_denied",
+            "path_outside",
+            "sketch"
+        ]
+    );
+    assert!(!bare.contains_key("reversible"));
+    assert!(!bare.contains_key("sanctioned"));
+    let sketch = serde_json::to_value(&bare[questions::SKETCH]).expect("serializes");
+    assert_eq!(sketch["type"], json!("score"));
+    assert_eq!(sketch["criteria"].as_array().map(Vec::len), Some(5));
+    assert!(
+        sketch["criteria"][0]
+            .as_str()
+            .is_some_and(|l| l.starts_with("Routine:"))
+    );
+    assert!(
+        sketch["criteria"][4]
+            .as_str()
+            .is_some_and(|l| l.starts_with("Severe:"))
+    );
 }
 
 /// The conditional axes are asked only when the state carries the thing they are
@@ -272,34 +435,50 @@ fn conditional_questions_are_asked_only_when_they_apply() {
     assert!(full.contains_key(questions::PREFIX_SAFE));
 }
 
+fn answered(answers: serde_json::Value) -> crate::api::Decisions {
+    serde_json::from_value(json!({ "answers": answers, "usage": {} })).expect("parses")
+}
+
+fn cold_answers() -> serde_json::Value {
+    json!({
+        "sketch": {
+            "type": "score",
+            "score": 0.1,
+            "probabilities": { "0": 0.6, "1": 0.2, "2": 0.1, "3": 0.07, "4": 0.03 }
+        },
+        "in_scope": { "type": "noul", "noul": 0.9 },
+        "path_outside": { "type": "noul", "noul": 0.1 },
+        "path_denied": { "type": "noul", "noul": 0.1 },
+        "exposes_secrets": { "type": "noul", "noul": 0.1 },
+    })
+}
+
 /// An asked-but-unanswered axis is a failure; a never-asked one is `None`. The
 /// fold reads `None` as "nothing to weigh", which would be wrong for the first.
 #[test]
 fn a_missing_answer_for_an_asked_question_fails_rather_than_reading_as_absent() {
-    let answered = |answers: serde_json::Value| -> crate::api::Decisions {
-        serde_json::from_value(json!({ "answers": answers, "usage": {} })).expect("parses")
-    };
-    let full = json!({
-        "in_scope": { "type": "noul", "noul": 0.9 },
-        "reversible": { "type": "noul", "noul": 0.9 },
-        "sanctioned": { "type": "noul", "noul": 0.1 },
-        "path_outside": { "type": "noul", "noul": 0.1 },
-        "path_denied": { "type": "noul", "noul": 0.1 },
-        "exposes_secrets": { "type": "noul", "noul": 0.1 },
-    });
+    let full = cold_answers();
     // Not asked: the axis is absent and the read succeeds.
-    assert_eq!(
-        read_axes(&answered(full.clone()), false, false)
-            .expect("the unconditional set is complete")
-            .watch_for_hit,
-        None
-    );
+    let axes = read_axes(&answered(full.clone()), false, false)
+        .expect("the unconditional set is complete");
+    assert_eq!(axes.watch_for_hit, None);
+    assert_eq!(axes.sketch, Some(vec![0.6, 0.2, 0.1, 0.07, 0.03]));
     // Asked and unanswered: no verdict.
     assert!(read_axes(&answered(full.clone()), true, false).is_none());
     // One unconditional axis missing: no verdict.
-    let mut fewer = full;
-    fewer.as_object_mut().expect("object").remove("reversible");
+    let mut fewer = full.clone();
+    fewer.as_object_mut().expect("object").remove("path_denied");
     assert!(read_axes(&answered(fewer), false, false).is_none());
+    // The sketch missing a level, or missing altogether: no verdict.
+    let mut short = full.clone();
+    short["sketch"]["probabilities"]
+        .as_object_mut()
+        .expect("object")
+        .remove("4");
+    assert!(read_axes(&answered(short), false, false).is_none());
+    let mut none = full;
+    none.as_object_mut().expect("object").remove("sketch");
+    assert!(read_axes(&answered(none), false, false).is_none());
 }
 
 #[test]

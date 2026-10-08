@@ -1,16 +1,16 @@
 //! The decision-model spotter (docs/permissions.md).
 //!
 //! Same rung, different machine. [`ForkSpot`](super::ForkSpot) asks a generative
-//! model for a stance and a sentence; this asks a **decision model** — an LLM with
-//! generation replaced by a classifier head — a fixed set of boolean questions and
-//! gets a calibrated probability for each. It answers in tens of milliseconds for
+//! model for a stance and a sentence; this asks a **decision model** (an LLM with
+//! generation replaced by a classifier head) fixed questions and gets a
+//! calibrated probability for each. It answers in tens of milliseconds for
 //! a fraction of a cent, and it cannot be talked to: there is no system prompt to
 //! shape and no prose to read, only questions and numbers.
 //!
 //! ```text
-//!   state (the config + the move, as JSON)  ──▶  P(in_scope), P(reversible), …
-//!                                                        │
-//!                                          thresholds ───┴──▶  Stance + reason
+//!   cold request:      state (config + move, as JSON) ──▶ sketch, P(in_scope), …
+//!   relation request:  the move + earlier approved calls ──▶ same | wider | different
+//!                                      folded in code ──▶ Stance + reason
 //! ```
 //!
 //! The consequences are the interesting part, and they are why this is a separate
@@ -18,17 +18,21 @@
 //!
 //! - **The judgement is decomposed.** No single question can be "what is your
 //!   stance?", because the stance is a policy over several considerations. The
-//!   axes are asked separately and folded in code (`questions.rs`).
+//!   cold axes and the operator's approved history are read separately and
+//!   folded in code (`questions.rs`).
 //! - **The reason is synthesized.** The model emits no prose, so the one line the
-//!   acting session and the human gate read is written here from the deciding axis
-//!   and its figure — what the model actually reported, not a sentence it wrote.
+//!   acting session and the human gate read is written here from the level, what
+//!   raised it, and the precedents found — what the model actually reported, not
+//!   a sentence it wrote.
 //! - **Nothing caches.** The route has no cache-control and the model's endpoint
 //!   reports none, so every call pays full input. At this price that is not a
 //!   cost question, but it does mean the persona/scope prefix economics that shape
 //!   `ForkSpot` have no analogue here.
 //!
-//! Fail-closed is unchanged: any transport error, any missing answer, and the
-//! rung returns [`Origin::Fallback`] + [`Stance::Gate`](crate::log::Stance::Gate).
+//! Fail-closed holds for the cold request: any transport error or missing answer,
+//! and the rung returns [`Origin::Fallback`] +
+//! [`Stance::Gate`](crate::log::Stance::Gate). A failed relation request degrades
+//! to no precedents instead, so it holds only what needed one.
 
 use crate::api::Endpoint;
 use crate::config::Config;
@@ -39,9 +43,10 @@ use super::{Read, Spotter, Spotting};
 
 mod ask;
 mod questions;
+mod relation;
 mod state;
 
-pub use questions::{Axes, Band, Thresholds};
+pub use questions::{Axes, Precedent};
 
 /// The decision-model spotter. Holds the [`Endpoint`] rather than a
 /// [`Client`](crate::api::Client): the decisions route is one JSON POST with no
@@ -58,7 +63,6 @@ pub struct JevSpot {
     /// process's: the offline eval replays cases recorded in other checkouts
     /// (docs/permissions.md). `None` falls back to the process cwd.
     cwd: Option<std::path::PathBuf>,
-    thresholds: Thresholds,
 }
 
 impl JevSpot {
@@ -68,7 +72,6 @@ impl JevSpot {
             model: model.into(),
             scratch: None,
             cwd: None,
-            thresholds: Thresholds::default(),
         }
     }
 
@@ -81,14 +84,6 @@ impl JevSpot {
         self.cwd = Some(cwd.into());
         self
     }
-
-    /// Replace the decision band — the offline eval's tuning knob, the analogue of
-    /// `ForkSpot::with_persona` (docs/permissions.md). Production always boots the
-    /// default; nothing routes a substitute band into a live session.
-    pub fn with_thresholds(mut self, thresholds: Thresholds) -> Self {
-        self.thresholds = thresholds;
-        self
-    }
 }
 
 impl Spotter for JevSpot {
@@ -99,6 +94,7 @@ impl Spotter for JevSpot {
         brief: Option<&ToolBrief<'_>>,
         chain: &[String],
         probe: Option<&str>,
+        precedents: &[ToolCall],
     ) -> Spotting {
         let cwd = self.cwd.clone().or_else(|| std::env::current_dir().ok());
         let state = state::state(
@@ -113,19 +109,52 @@ impl Spotter for JevSpot {
         let watch_for = role.watch_for.iter().any(|w| !w.trim().is_empty());
         let questions = ask::questions(watch_for, probe.is_some());
 
-        let decisions = match self.endpoint.decide(&self.model, &state, &questions).await {
+        // The relation request rides beside the cold one, only when the session
+        // has consented calls of the move's family to compare against.
+        let candidates = relation::candidates(call, precedents);
+        let relation_state = relation::state(call, cwd.as_deref());
+        let relation_questions = relation::questions(&candidates);
+        let cold = self.endpoint.decide(&self.model, &state, &questions);
+        let relation = async {
+            match candidates.is_empty() {
+                true => None,
+                false => Some(
+                    self.endpoint
+                        .decide(&self.model, &relation_state, &relation_questions)
+                        .await,
+                ),
+            }
+        };
+        let (cold, relation) = futures_lite::future::zip(cold, relation).await;
+
+        let decisions = match cold {
             Ok(decisions) => decisions,
             Err(error) => {
                 log::warn!("spotter decisions request failed: {error}");
                 return Spotting::fail_closed(None);
             }
         };
-        let usage = Some(decisions.request_usage());
+        let mut usage = decisions.request_usage();
+
+        // A relation failure means no precedents, not no verdict: the move holds
+        // or clears on its level alone.
+        let reading = match relation {
+            None => Some(questions::Reading::default()),
+            Some(Ok(answered)) => {
+                add_usage(&mut usage, answered.request_usage());
+                Some(relation::read(&answered, candidates.len()))
+            }
+            Some(Err(error)) => {
+                log::warn!("spotter relation request failed: {error}");
+                None
+            }
+        };
+        let usage = Some(usage);
 
         // Every unconditional axis must have come back. A partial answer set is
         // not a partial verdict — the fold reads all of them — so it fails closed
         // exactly as an unparseable `spot` call does.
-        let Some(axes) = read_axes(&decisions, watch_for, probe.is_some()) else {
+        let Some(mut axes) = read_axes(&decisions, watch_for, probe.is_some()) else {
             log::warn!(
                 "spotter decisions response answered {:?}, which is not the asked set",
                 decisions.answers.keys().collect::<Vec<_>>()
@@ -133,11 +162,17 @@ impl Spotter for JevSpot {
             return Spotting::fail_closed(usage);
         };
 
-        let (stance, deciding) = questions::combine(&axes, &self.thresholds, probe.is_some());
+        let decision = questions::decide(&axes, reading, probe.is_some());
+        axes.precedent = reading.map(|r| Precedent {
+            candidates: r.candidates,
+            same: r.same,
+            wider: r.wider,
+            required: decision.required,
+        });
         Spotting {
             read: Read {
-                stance,
-                reason: questions::reason(stance, deciding, &axes),
+                stance: decision.stance,
+                reason: decision.reason,
             },
             origin: Origin::Model,
             usage,
@@ -146,13 +181,19 @@ impl Spotter for JevSpot {
     }
 }
 
+/// Fold the relation request's billing into the cold request's, so the spot is
+/// one entry in the ledger with the whole cost. The id and model stay the cold
+/// request's.
+fn add_usage(total: &mut crate::api::RequestUsage, extra: crate::api::RequestUsage) {
+    total.usage.input_tokens += extra.usage.input_tokens;
+    total.usage.output_tokens += extra.usage.output_tokens;
+}
+
 /// Pull the asked axes out of the response. `None` when an unconditional axis is
 /// missing or came back as something other than a boolean answer.
 fn read_axes(decisions: &crate::api::Decisions, watch_for: bool, probe: bool) -> Option<Axes> {
     Some(Axes {
         in_scope: decisions.probability(questions::IN_SCOPE)?,
-        reversible: decisions.probability(questions::REVERSIBLE)?,
-        sanctioned: decisions.probability(questions::SANCTIONED)?,
         path_outside: decisions.probability(questions::PATH_OUTSIDE)?,
         path_denied: decisions.probability(questions::PATH_DENIED)?,
         exposes_secrets: decisions.probability(questions::EXPOSES_SECRETS)?,
@@ -161,6 +202,8 @@ fn read_axes(decisions: &crate::api::Decisions, watch_for: bool, probe: bool) ->
         // "nothing to weigh", which is wrong if the question was in fact posed.
         watch_for_hit: conditional(decisions, questions::WATCH_FOR_HIT, watch_for)?,
         prefix_safe: conditional(decisions, questions::PREFIX_SAFE, probe)?,
+        sketch: Some(sketch(decisions)?),
+        precedent: None,
     })
 }
 
@@ -174,19 +217,13 @@ fn conditional(decisions: &crate::api::Decisions, key: &str, asked: bool) -> Opt
     }
 }
 
-/// Replay a recorded [`Axes`] through a band, without a request
-/// (docs/permissions.md).
-///
-/// This is the whole point of folding in code rather than in the model: the
-/// stance is a pure function of numbers the eval already wrote down, so moving a
-/// threshold is re-scored against a whole corpus for free. One paid pass records
-/// the vectors; every band question after it is arithmetic.
-///
-/// `probe` says whether a promotion probe rode the original call — the recorded
-/// `prefix_safe` already answers that, but the fold needs to know whether the
-/// question was asked at all.
-pub fn replay(axes: &Axes, thresholds: &Thresholds, probe: bool) -> crate::log::Stance {
-    questions::combine(axes, thresholds, probe).0
+/// The sketch distribution as five probabilities, level 0 first. `None` when the
+/// answer is missing a level.
+fn sketch(decisions: &crate::api::Decisions) -> Option<Vec<f64>> {
+    let answered = decisions.probabilities(questions::SKETCH)?;
+    (0..questions::LEVELS)
+        .map(|level| answered.get(&level.to_string()).copied())
+        .collect()
 }
 
 /// The exact state a request would carry for this call, pretty-printed — what the

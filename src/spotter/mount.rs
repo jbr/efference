@@ -70,7 +70,7 @@ impl MountedSpotter {
             (true, Some(_)) => Err(format!(
                 "spotter model {model:?} is a decision model, which takes no persona: it \
                  answers fixed questions and has no prompt to replace. Its tuning knob is \
-                 the threshold band (docs/permissions.md)."
+                 the sketch and precedent fold (docs/permissions.md)."
             )
             .into()),
             (true, None) => Ok(MountedSpotter::Jev(JevSpot::new(endpoint, model))),
@@ -121,10 +121,17 @@ impl Spotter for MountedSpotter {
         brief: Option<&ToolBrief<'_>>,
         chain: &[String],
         probe: Option<&str>,
+        precedents: &[ToolCall],
     ) -> Spotting {
         match self {
-            MountedSpotter::Fork(fork) => fork.assess(role, call, brief, chain, probe).await,
-            MountedSpotter::Jev(jev) => jev.assess(role, call, brief, chain, probe).await,
+            MountedSpotter::Fork(fork) => {
+                fork.assess(role, call, brief, chain, probe, precedents)
+                    .await
+            }
+            MountedSpotter::Jev(jev) => {
+                jev.assess(role, call, brief, chain, probe, precedents)
+                    .await
+            }
         }
     }
 }

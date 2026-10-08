@@ -16,6 +16,74 @@ fn a_boolean_question_serializes_as_the_route_documents() {
     );
 }
 
+/// A score question carries its levels as an ordered array, lowest first.
+#[test]
+fn a_score_question_serializes_its_levels_in_order() {
+    let question = Question::score("How concerning?", ["Routine.", "Mild.", "Severe."]);
+    assert_eq!(
+        serde_json::to_string(&question).expect("serializes"),
+        r#"{"type":"score","instructions":"How concerning?","criteria":["Routine.","Mild.","Severe."]}"#
+    );
+}
+
+/// A choice's options go out in the order given, not sorted: the model favors the
+/// first option, so the order is part of what is asked. Pinned as bytes because a
+/// parsed `Value` would sort the keys and hide the difference.
+#[test]
+fn a_choice_question_keeps_its_option_order() {
+    let forward = Question::choice(
+        "Which?",
+        [("same", "S."), ("wider", "W."), ("different", "D.")],
+    );
+    assert_eq!(
+        serde_json::to_string(&forward).expect("serializes"),
+        r#"{"type":"choice","instructions":"Which?","criteria":{"same":"S.","wider":"W.","different":"D."}}"#
+    );
+    let reversed = Question::choice(
+        "Which?",
+        [("different", "D."), ("wider", "W."), ("same", "S.")],
+    );
+    assert_eq!(
+        serde_json::to_string(&reversed).expect("serializes"),
+        r#"{"type":"choice","instructions":"Which?","criteria":{"different":"D.","wider":"W.","same":"S."}}"#
+    );
+}
+
+/// `instructions` accepts an object as well as a string, and the object's fields
+/// keep their order.
+#[test]
+fn instructions_may_be_an_object() {
+    let question = Question::choice(
+        Instructions::fields([
+            ("question", "How does it relate?"),
+            ("earlier_call", "$ ls"),
+        ]),
+        [("same", "S.")],
+    );
+    assert_eq!(
+        serde_json::to_string(&question).expect("serializes"),
+        r#"{"type":"choice","instructions":{"question":"How does it relate?","earlier_call":"$ ls"},"criteria":{"same":"S."}}"#
+    );
+}
+
+/// A choice or score answer's distribution reads through `probabilities`; a
+/// boolean answer has none.
+#[test]
+fn a_distribution_reads_as_probabilities() {
+    let decisions = response(serde_json::json!({
+        "sketch": {
+            "type": "score",
+            "score": 0.4,
+            "probabilities": { "0": 0.7, "1": 0.2, "2": 0.1 }
+        },
+        "in_scope": { "type": "noul", "noul": 0.9 },
+    }));
+    let sketch = decisions.probabilities("sketch").expect("answered");
+    assert_eq!(sketch.get("0"), Some(&0.7));
+    assert_eq!(decisions.probabilities("in_scope"), None);
+    assert_eq!(decisions.probabilities("absent"), None);
+}
+
 fn response(answers: serde_json::Value) -> Decisions {
     serde_json::from_value(serde_json::json!({
         "id": "gen-1",

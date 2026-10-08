@@ -21,6 +21,7 @@ use serde_json::{Value, json};
 
 pub mod jev;
 mod mount;
+pub mod precedent;
 
 pub use mount::MountedSpotter;
 
@@ -66,8 +67,8 @@ pub struct Spotting {
     /// judges inside the model and has no intermediate to report, and from the
     /// fail-closed path, which never asked.
     ///
-    /// Recorded so a threshold sweep replays a corpus of real assessments without
-    /// re-requesting any of them (backlog/spotter-eval.md).
+    /// Recorded on the `Spot` entry (docs/permissions.md), so the figures behind a
+    /// verdict can be read back without re-requesting anything.
     pub axes: Option<jev::Axes>,
 }
 
@@ -109,6 +110,11 @@ pub trait Spotter {
     /// directly-targeted child down to the session holding the leaf. The move
     /// presented is the child's action, and the chain names the approvers it
     /// passed through. Empty for an ordinary move.
+    ///
+    /// `precedents` are the earlier calls in this session that ran with the
+    /// operator's consent (`precedent::consented`), oldest first; empty for a bound
+    /// leaf, whose history is the child's. The decision rung weighs them, the
+    /// prose rung ignores them.
     fn assess(
         &self,
         role: &Config,
@@ -116,6 +122,7 @@ pub trait Spotter {
         brief: Option<&ToolBrief<'_>>,
         chain: &[String],
         probe: Option<&str>,
+        precedents: &[ToolCall],
     ) -> impl Future<Output = Spotting> + Send;
 }
 
@@ -199,6 +206,7 @@ impl Spotter for ForkSpot {
         brief: Option<&ToolBrief<'_>>,
         chain: &[String],
         probe: Option<&str>,
+        _precedents: &[ToolCall],
     ) -> Spotting {
         // Cached block: the per-session-stable scope + watch-for. Fresh
         // block: the move (plus the optional promotion probe — it rides the fresh tail, so it never
@@ -291,6 +299,7 @@ impl Spotter for StaticSpotter {
         _brief: Option<&ToolBrief<'_>>,
         _chain: &[String],
         _probe: Option<&str>,
+        _precedents: &[ToolCall],
     ) -> Spotting {
         Spotting {
             read: Read {

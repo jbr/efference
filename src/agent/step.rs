@@ -562,8 +562,22 @@ pub(super) async fn judge<F: Frontend, S: Spotter>(
             // when bound, so the spotter reads the child's tool.
             let brief = super::brief(toolbox, &judged.name);
             let chain: &[String] = bound.map(|b| b.chain.as_slice()).unwrap_or(&[]);
+            // A bound leaf's history is the child's, not this log's, so it has no
+            // precedents here (docs/permissions.md).
+            let precedents = if bound.is_none() {
+                shared.consented_calls()
+            } else {
+                Vec::new()
+            };
             let spotting = spotter
-                .assess(&role, judged, brief.as_ref(), chain, probe.as_deref())
+                .assess(
+                    &role,
+                    judged,
+                    brief.as_ref(),
+                    chain,
+                    probe.as_deref(),
+                    &precedents,
+                )
                 .await;
             // What actually answered, read off the response rather than the
             // configured id (docs/permissions.md). Taken before the usage moves

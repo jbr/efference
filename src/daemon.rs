@@ -1150,6 +1150,13 @@ impl Session {
             .get(seq as usize)
             .cloned()
     }
+
+    /// The calls that ran with the operator's consent, folded under the log lock so
+    /// the whole log is never cloned (docs/permissions.md). The decision rung's
+    /// precedent evidence.
+    pub(crate) fn consented_calls(&self) -> Vec<crate::log::ToolCall> {
+        crate::spotter::precedent::consented(self.log.lock().unwrap().entries())
+    }
 }
 
 /// Cap on a `/settle` (or `?wait`) long-poll: past this, return the current state regardless, so a

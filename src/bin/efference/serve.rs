@@ -302,7 +302,7 @@ pub(crate) async fn spotter_check(
         println!("{preview}\n");
     }
     let spotting = spotter
-        .assess(&role, &call, sent, &[], probe.as_deref())
+        .assess(&role, &call, sent, &[], probe.as_deref(), &[])
         .await;
     println!("stance: {:?}", spotting.read.stance);
     println!("reason: {}", spotting.read.reason);
@@ -311,17 +311,7 @@ pub(crate) async fn spotter_check(
     // one. Iterating on a question's wording means reading all of them, so the
     // tester prints the whole vector.
     if let Some(axes) = &spotting.axes {
-        let show = |label: &str, p: f64| format!("{label} {p:.2}");
-        let mut line = vec![
-            show("in_scope", axes.in_scope),
-            show("reversible", axes.reversible),
-            show("sanctioned", axes.sanctioned),
-            show("path_outside", axes.path_outside),
-            show("path_denied", axes.path_denied),
-            show("exposes_secrets", axes.exposes_secrets),
-        ];
-        line.extend(axes.watch_for_hit.map(|p| show("watch_for_hit", p)));
-        line.extend(axes.prefix_safe.map(|p| show("prefix_safe", p)));
+        let line = axes.summary();
         println!("axes:   {}", line.join(" · "));
     }
     if let Some(prefix) = &probe {

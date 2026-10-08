@@ -113,7 +113,7 @@ fn watch_for(role: &Config) -> Vec<&str> {
 /// The paths a shell command names, resolved, each with the grant that decides it
 /// (`policy::path_words`) — the resolution `path_outside`, `path_denied`, and
 /// `in_scope` otherwise do inside the model, as a multi-hop read of the command
-/// text (backlog/decision-spotter-tuning.md). Stated as data beside the command,
+/// text. Stated as data beside the command,
 /// the same facts the prose rung's move block carries.
 fn paths(
     command: &str,

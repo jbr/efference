@@ -124,8 +124,8 @@ struct Attempt {
     #[serde(skip_serializing_if = "Option::is_none")]
     recorded: Option<RecordedIn>,
     /// The per-axis probabilities a decision rung reported, absent for the prose
-    /// rung. Written out so a threshold sweep replays this run's answers without
-    /// re-requesting any of them (backlog/spotter-eval.md).
+    /// rung. Written out so the figures behind each verdict can be read back
+    /// without re-requesting any of them.
     #[serde(skip_serializing_if = "Option::is_none")]
     axes: Option<efference::spotter::jev::Axes>,
 }
@@ -153,6 +153,85 @@ fn stance_name(stance: Stance) -> &'static str {
 /// mkdtemp-ephemeral and unrecoverable, and the spotter only ever renders the
 /// path into the `$TMPDIR` alias line.
 const SCRATCH_PLACEHOLDER: &str = "/var/folders/xx/efference-eval/T/efference-scratch";
+
+/// The config a case is judged against: its recorded scope, watch-fors, and grants.
+fn role(case: &CaseIn) -> efference::config::Config {
+    efference::config::Config {
+        scope: case.scope.clone(),
+        watch_for: case.watch_for.clone(),
+        paths: case
+            .paths
+            .iter()
+            .map(|(p, perms)| {
+                (
+                    p.clone(),
+                    Perms {
+                        read: perms.read,
+                        write: perms.write,
+                    },
+                )
+            })
+            .collect(),
+        ..Default::default()
+    }
+}
+
+/// Write the decision rung's request `state` for every case, one `{id, state}`
+/// line each, and send nothing (docs/permissions.md). The state carries the
+/// resolved `move.paths` only this code computes, so an experiment that varies
+/// what *else* the state holds — history, precedent — starts from the shipping
+/// state rather than a re-implementation of it. Labels are not required: every
+/// case is dumped.
+pub(crate) fn dump_states(
+    cases_files: Vec<PathBuf>,
+    filter: Option<String>,
+    limit: Option<usize>,
+    out: PathBuf,
+) -> CliResult {
+    let toolbox = Toolbox::bash_and_mcps(std::env::current_dir()?, None)?;
+    let mut lines = String::new();
+    let mut n = 0usize;
+    for path in &cases_files {
+        for line in std::fs::read_to_string(path)?.lines() {
+            if line.trim().is_empty() {
+                continue;
+            }
+            let case: CaseIn = serde_json::from_str(line)
+                .map_err(|e| format!("{}: bad case line: {e}", path.display()))?;
+            if filter
+                .as_ref()
+                .is_some_and(|f| !case.id.contains(f.as_str()))
+            {
+                continue;
+            }
+            if limit.is_some_and(|l| n >= l) {
+                break;
+            }
+            let call = efference::log::ToolCall::new(
+                case.call.name.clone(),
+                "toolu_spotter_eval",
+                case.call.input.clone(),
+            );
+            let brief = efference::agent::brief(&toolbox, &call.name);
+            let scratch = case.scratch.then(|| PathBuf::from(SCRATCH_PLACEHOLDER));
+            let state = efference::spotter::jev::preview_state(
+                &role(&case),
+                &call,
+                brief.as_ref(),
+                None,
+                case.cwd.as_deref().map(std::path::Path::new),
+                scratch.as_deref(),
+            );
+            let state: Value = serde_json::from_str(&state)?;
+            lines.push_str(&serde_json::json!({ "id": case.id, "state": state }).to_string());
+            lines.push('\n');
+            n += 1;
+        }
+    }
+    std::fs::write(&out, lines)?;
+    eprintln!("{n} states -> {}", out.display());
+    Ok(())
+}
 
 #[allow(clippy::too_many_arguments)] // a dev tester: every knob is one flag
 pub(crate) async fn spotter_eval(
@@ -280,24 +359,7 @@ pub(crate) async fn spotter_eval(
                     for run in 1..=runs {
                         let _permit = semaphore.acquire().await.expect("semaphore never closes");
                         let (case, expected, bucket) = &cases[case_index];
-                        let role = efference::config::Config {
-                            scope: case.scope.clone(),
-                            watch_for: case.watch_for.clone(),
-                            paths: case
-                                .paths
-                                .iter()
-                                .map(|(p, perms)| {
-                                    (
-                                        p.clone(),
-                                        Perms {
-                                            read: perms.read,
-                                            write: perms.write,
-                                        },
-                                    )
-                                })
-                                .collect(),
-                            ..Default::default()
-                        };
+                        let role = role(case);
                         let call = efference::log::ToolCall::new(
                             case.call.name.clone(),
                             "toolu_spotter_eval",
@@ -324,7 +386,9 @@ pub(crate) async fn spotter_eval(
                         };
                         let brief = efference::agent::brief(&toolbox, &call.name);
                         let start = Instant::now();
-                        let spotting = spot.assess(&role, &call, brief.as_ref(), &[], None).await;
+                        let spotting = spot
+                            .assess(&role, &call, brief.as_ref(), &[], None, &[])
+                            .await;
                         let ms = start.elapsed().as_millis() as u64;
                         let (stance, verdict, ok) = match spotting.origin {
                             Origin::Model => {
@@ -521,16 +585,7 @@ fn print_divergences(attempts: &[Attempt], out: &std::path::Path) {
         );
         println!("  now      {:<12} {}", a.stance, a.reason);
         if let Some(x) = &a.axes {
-            let mut parts = vec![
-                format!("in_scope {:.2}", x.in_scope),
-                format!("reversible {:.2}", x.reversible),
-                format!("sanctioned {:.2}", x.sanctioned),
-                format!("path_outside {:.2}", x.path_outside),
-                format!("path_denied {:.2}", x.path_denied),
-                format!("exposes_secrets {:.2}", x.exposes_secrets),
-            ];
-            parts.extend(x.watch_for_hit.map(|w| format!("watch_for_hit {w:.2}")));
-            parts.extend(x.prefix_safe.map(|p| format!("prefix_safe {p:.2}")));
+            let parts = x.summary();
             println!("  axes     {}", parts.join(" · "));
         }
         println!();

@@ -37,6 +37,7 @@ impl Spotter for NeverAsked {
         _brief: Option<&crate::tools::ToolBrief<'_>>,
         _chain: &[String],
         _probe: Option<&str>,
+        _precedents: &[ToolCall],
     ) -> crate::spotter::Spotting {
         panic!("a call naming no tool reached the spotter: {}", call.name)
     }
@@ -82,6 +83,7 @@ impl Spotter for RecordingSpotter {
         _brief: Option<&crate::tools::ToolBrief<'_>>,
         chain: &[String],
         _probe: Option<&str>,
+        _precedents: &[ToolCall],
     ) -> crate::spotter::Spotting {
         self.seen
             .lock()

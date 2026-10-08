@@ -1065,11 +1065,23 @@ probability per question, no stream, no assistant output, no text.
 { "answers": { "in_scope": { "type": "noul", "noul": 0.91 } }, "usage": { "input_tokens": 1081 } }
 ```
 
-`noul` is the API's own name for the boolean question type, on both the asking and
-the answering side, and is spelled as the wire spells it. Answers are parsed
-leniently — a shape this harness does not model yet yields `None` for that
-question rather than failing the response away, and the caller's `None` handling
-is the same fail-closed path a transport error takes.
+Three question types: `noul` (the API's own name for yes/no, spelled as the wire spells
+it, answered as P(yes)), `choice` (one of named options, answered with the chosen option
+and a probability per option), and `score` (a position among ordered, described levels,
+answered with an expected level and a probability per level). A question's `instructions`
+is a string or a JSON object, which is how a question carries data of its own — the
+spotter inlines the earlier call it is comparing against rather than pointing into the
+state. A choice's options are sent **in the order given**: a decision model leans toward
+the first option, so the spotter asks each choice in both orders, and the request type
+preserves order on the wire for that reason.
+
+Answers are parsed leniently — a shape this harness does not model yet yields `None` for
+that question rather than failing the response away, and the caller's `None` handling is
+the same fail-closed path a transport error takes. The reverse does not hold on the
+provider side: a model that declines one question (OpenAI's decision model refuses some
+questions about what an operator would want) fails the **whole** request with a 502, so a
+question whose answer the caller can do without does not share a request with one it
+cannot.
 
 A connection declared `dialect = "systemone"` posts the same body to its configured URL
 and sends nothing beyond `authorization: Bearer` (no `session_id`, no attribution).

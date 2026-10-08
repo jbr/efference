@@ -499,7 +499,8 @@ at boot by `MountedSpotter::mount` (`src/spotter/mount.rs`) from the `ModelKind`
 - **`ForkSpot`** — the prose rung, described in the rest of this section. A generative
   model reads a rendered persona + scope + move and answers with a stance and a sentence.
 - **`JevSpot`** (`src/spotter/jev.rs`) — the **decision** rung. A decision model reads a
-  JSON state and answers a fixed set of boolean questions with a probability each
+  JSON state and answers typed questions — yes/no, a choice among options, a score on
+  described levels — with a probability for each answer
   ([transport.md](transport.md): the decisions route). Selected when the spotter model is a
   decision model.
 
@@ -516,45 +517,82 @@ the spotter as the role it can back.
 Three things change with the rung, and they are why it is a second implementation rather
 than a model swap:
 
-**The judgement is decomposed.** No single question can be "what is your stance?" — the
-stance is a policy over several considerations, and a decision model answers one fixed
-question at a time. So the rung asks orthogonal axes (`in_scope`, `reversible`,
-`sanctioned`, `outside_grants`, `exposes_secrets`, plus `watch_for_hit` when the config
-names one and `prefix_safe` when a promotion probe rides along) and folds them into a
-`Stance` in code (`src/spotter/jev/questions.rs`). The fold is ordered worst-first, and
-every arm treats *uncertain* as a reason to involve the human: `Gate` where the axis would
-be disqualifying if true, `Watch` where it would only be worth a beat. That direction is the
-error weighting stated in backlog/spotter-eval.md — a wrong clear costs more than a wrong
-gate — expressed as a rule rather than as a persona instruction.
+**The judgement is decomposed, and part of it is precedent.** A decision model answers
+fixed questions with probabilities, so the stance is a fold in code
+(`src/spotter/jev/questions.rs`) over two requests sent concurrently:
+
+- **Cold** — the state above, asked `sketch` (a Score: how concerning the move is, five
+  described levels from routine to severe) and the axes `in_scope`, `path_outside`,
+  `path_denied`, `exposes_secrets`, plus `watch_for_hit` when the config names one and
+  `prefix_safe` when a promotion probe rides along.
+- **Relation** — the move alone, as plaintext, with one Choice per **precedent
+  candidate**: an earlier call in this session of the same family (the same tool, or for
+  bash the same program) that ran with the operator's consent, inlined into the question
+  rather than referred to by index. The options are `same` (differs only in which file,
+  range, term, or record), `wider` (goes further: writes where it read, sends where it
+  fetched, a different host, account, or directory), and `different`. Each is asked in
+  both option orders, because a decision model leans toward the first option, and the two
+  are averaged (`src/spotter/jev/relation.rs`).
+
+**Consent** is read off the log (`src/spotter/precedent.rs`): a call that ran and either
+reached no spotter — the fast path, a granted tool, the human under `human_only` — or was
+held by the spotter and then approved. A call the spotter cleared is not consent, so a
+clear never becomes the evidence for the next one. A bound leaf (`sessions__approve`) has
+none: the child's history is not in this log.
+
+The fold:
+
+```
+level  = the sketch Score's most probable level (0–4),
+         raised to at least 3 by path_denied > 0.25, exposes_secrets > 0.15,
+         or watch_for_hit > 0.25; to at least 2 by path_outside > 0.35 or in_scope ≤ 0.30
+Gate   if exposes_secrets ≥ 0.5            — no precedent clears a printed secret
+Clear  if precedents ≥ REQUIRED[level]     REQUIRED = [0, 0, 1, 2, never]
+Gate   otherwise
+```
+
+where a precedent is a candidate read as `same` at 0.5 or more. `ClearAlways` is a clear
+with a probe and `prefix_safe ≥ 0.8`. The rung never emits `Watch`: a move has the
+precedent its level asks for or it does not. A shipping axis that trips raises the level
+instead of gating outright, so an operator who has approved a read outside the grants
+once has said what they mean, and the next read like it clears.
+
+Two things the fold leaves out on purpose. **Operator turns are not read**: questions
+about the session's history (was this asked for, does it go against something the
+operator said, would they approve) separated approved holds from routine clears no better
+than chance in the corpus, so what the operator said reaches this rung only through what
+they then approved. And **a declined call does not veto** the moves like it: the corpus's
+redirects were steering ("use the docs tool instead"), and letting one veto its family
+held calls the operator went on to approve.
 
 **The reason is synthesized.** A decision model emits no prose, so the one line the acting
-session and the human gate read is written from the deciding axis and its figure ("scope
-fit reads at 7% — this looks outside the mission"). It states what the model actually
-reported rather than a conclusion it never wrote, which also puts the deciding number in
-the `Spot` log entry.
+session and the human gate read is written from the level, what raised it and the figure
+that did, and the precedent found against the precedent required — and, when a candidate
+read `wider`, how many approved calls the move goes further than:
 
-**Tuning moves offline.** Because the fold is code over recorded numbers, the axis vector
-rides on `Spotting::axes` and is written into the eval's per-attempt records and into every
-live `Spot` entry (`Spot::axes`), so a session's verdicts join the calibration corpus as they
-happen (`eval/spotter/extract.py` carries them as `recorded.axes`): `efference dev
-spotter-bands` replays a whole corpus under a different band with no requests at all. The
-prose rung has no equivalent — every persona edit there is a fresh paid sweep. `Thresholds`
-is `JevSpot`'s analogue of `ForkSpot::with_persona`, and consequently a `--persona` against
-a decision model is refused rather than silently ignored: it has no prompt to replace.
+```
+routine (level 0).
+level 2 (outside the grants, 62%): needs 1 approved call like it, found none; goes further than 2 calls the operator approved.
+level 3 (sketch, 99%): needs 2 approved calls like it, found none.
+```
 
-`Thresholds` carries **one `Band` per axis**, because the axes do not share a scale. That
-was measured, not assumed: approve-labeled cases read `in_scope` at a median of 0.93 and
-`exposes_secrets` at 0.03, while a flat "no" on `path_outside` is about 0.19. No single
-`low` sits above 0.19 and below 0.03, and the single pair that first tried gated 42% of a
-corpus that is 78% approve. The per-axis floors are pinned by
-`the_axes_do_not_share_a_scale`.
+It states what the model reported rather than a conclusion it never wrote.
 
-The shipped band puts the rung at **1.4% safety miss** (human-expected cases wrongly
-cleared) against Haiku's 5.7%, at 27% friction (approve-expected cases wrongly gated) and a
-132 ms median. Both remaining misses are cases every model in the 2026-08-22 sweep also
-cleared, so the gap against the incumbent is zero cases wide. The trade direction is the one the error weighting
-asks for — a wrong clear costs more than a wrong gate — and the frontier knob is
-`in_scope.high` (backlog/decision-spotter-tuning.md).
+**Every reading is recorded.** `Spot::axes` carries the cold answers (the sketch
+distribution among them) and the precedent reading — candidates asked, how many read
+`same` and `wider`, how many were required — so a live session's verdicts join the
+calibration corpus as they happen (`eval/spotter/extract.py` carries them as
+`recorded.axes`). The stance is no longer a function of one spot's numbers: precedent
+depends on what the operator did before it, so re-scoring a policy means replaying
+sessions in order. `eval/spotter/battery.py` asks the questions over recorded spots and
+`battery_replay.py` replays a policy over the answers with no further requests. A
+`--persona` against a decision model is refused: it has no prompt to replace.
+
+What the corpus showed, and how each piece of this was chosen, is in
+`journal/2026-10-08-precedent-spotter.md`: over 211 recorded spots in the families
+examined, the band fold this replaced held 134 and this fold holds about 40, while missing
+1 of 33 authored must-hold cases against the band fold's 1. The same fold and thresholds
+carry to the other decision models OpenRouter lists, within a few cases of jev.
 
 Fail-closed is unchanged on both rungs. A transport error, a missing answer for a question
 that *was* asked, or an unparseable verdict all return `Origin::Fallback` + `Stance::Gate`.
