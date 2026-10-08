@@ -336,6 +336,7 @@ fn the_record_carries_the_sketch_and_the_precedent() {
             same: 1,
             wider: 1,
             required: Some(2),
+            compared: Vec::new(),
         }),
         ..clean()
     };
@@ -386,8 +387,8 @@ fn both_halves_of_the_grants_question_are_always_asked() {
     assert!(bare.contains_key(questions::PATH_DENIED));
 }
 
-/// The cold request asks the sketch and the shipping axes, and neither of the two
-/// the fold no longer reads.
+/// The cold request asks the sketch and the shipping axes, and not `reversible`
+/// or `sanctioned`, which the fold does not read.
 #[test]
 fn the_cold_questions_are_the_sketch_and_the_shipping_axes() {
     let bare = ask::questions(false, false);

@@ -104,13 +104,27 @@ impl Axes {
 /// What the relation request read: of the `candidates` earlier calls asked about,
 /// how many the model read as the `same` action and how many as `wider`, with the
 /// number the move's level required.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Precedent {
     pub candidates: usize,
     pub same: usize,
     pub wider: usize,
     /// `None` when no number of precedents clears the level.
     pub required: Option<usize>,
+    /// Each candidate's reading, in the order asked. The counts above are these
+    /// under the fold's cut; recording the figures is what lets a different cut be
+    /// replayed, and a surprising clear be traced to the approved call it matched.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub compared: Vec<Compared>,
+}
+
+/// One candidate's reading: the earlier call, by id, and the mean of its two
+/// askings for `same` and for `wider`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Compared {
+    pub call_id: crate::log::CallId,
+    pub same: f64,
+    pub wider: f64,
 }
 
 /// The relation request's reading, before the fold has said how many were needed.

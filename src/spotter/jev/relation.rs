@@ -22,7 +22,7 @@ use crate::api::{Decisions, Instructions, Question};
 use crate::bash;
 use crate::log::ToolCall;
 
-use super::questions::{RELATION_COUNTS, Reading};
+use super::questions::{Compared, RELATION_COUNTS, Reading};
 
 /// How many consented same-family calls are asked about, most recent first.
 const CANDIDATES_MAX: usize = 10;
@@ -188,6 +188,19 @@ fn mean(decisions: &Decisions, index: usize, option: &str) -> f64 {
         (Some(a), Some(b)) => (a + b) / 2.0,
         _ => 0.0,
     }
+}
+
+/// Each candidate's figures, in the order asked, for the record.
+pub(super) fn compared(decisions: &Decisions, candidates: &[&ToolCall]) -> Vec<Compared> {
+    candidates
+        .iter()
+        .enumerate()
+        .map(|(i, call)| Compared {
+            call_id: call.id.clone(),
+            same: mean(decisions, i, "same"),
+            wider: mean(decisions, i, "wider"),
+        })
+        .collect()
 }
 
 /// Count the candidates read as the `same` action and as `wider`.

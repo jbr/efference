@@ -580,7 +580,9 @@ It states what the model reported rather than a conclusion it never wrote.
 
 **Every reading is recorded.** `Spot::axes` carries the cold answers (the sketch
 distribution among them) and the precedent reading — candidates asked, how many read
-`same` and `wider`, how many were required — so a live session's verdicts join the
+`same` and `wider`, how many were required, and each candidate's call id with its two
+figures, so a clear can be traced to the approved call it matched and a different cut
+replayed — so a live session's verdicts join the
 calibration corpus as they happen (`eval/spotter/extract.py` carries them as
 `recorded.axes`). The stance is no longer a function of one spot's numbers: precedent
 depends on what the operator did before it, so re-scoring a policy means replaying

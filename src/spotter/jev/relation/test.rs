@@ -166,3 +166,23 @@ fn wider_is_counted_apart_from_same() {
     let reading = read(&decisions, 1);
     assert_eq!((reading.same, reading.wider), (0, 1));
 }
+
+/// The record keeps each candidate's figures under its call id, so a clear can be
+/// traced to the approved call it matched and a different cut replayed.
+#[test]
+fn compared_names_each_candidate_with_its_means() {
+    let first = ToolCall::new("bash", "call_a", json!({"command": "cargo test"}));
+    let second = ToolCall::new("bash", "call_b", json!({"command": "cargo build"}));
+    // The second candidate was answered in one order only, so it reads as zero.
+    let decisions = relation_answers(0.9, 0.7);
+    let compared = compared(&decisions, &[&first, &second]);
+    assert_eq!(
+        compared
+            .iter()
+            .map(|c| c.call_id.0.as_str())
+            .collect::<Vec<_>>(),
+        ["call_a", "call_b"]
+    );
+    assert!((compared[0].same - 0.8).abs() < 1e-9);
+    assert_eq!(compared[1].same, 0.0);
+}

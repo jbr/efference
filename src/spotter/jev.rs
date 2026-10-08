@@ -138,15 +138,18 @@ impl Spotter for JevSpot {
 
         // A relation failure means no precedents, not no verdict: the move holds
         // or clears on its level alone.
-        let reading = match relation {
-            None => Some(questions::Reading::default()),
+        let (reading, compared) = match relation {
+            None => (Some(questions::Reading::default()), Vec::new()),
             Some(Ok(answered)) => {
                 add_usage(&mut usage, answered.request_usage());
-                Some(relation::read(&answered, candidates.len()))
+                (
+                    Some(relation::read(&answered, candidates.len())),
+                    relation::compared(&answered, &candidates),
+                )
             }
             Some(Err(error)) => {
                 log::warn!("spotter relation request failed: {error}");
-                None
+                (None, Vec::new())
             }
         };
         let usage = Some(usage);
@@ -168,6 +171,7 @@ impl Spotter for JevSpot {
             same: r.same,
             wider: r.wider,
             required: decision.required,
+            compared,
         });
         Spotting {
             read: Read {
