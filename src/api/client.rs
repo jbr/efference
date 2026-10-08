@@ -1185,8 +1185,8 @@ impl Client {
             tool_choice,
             // The turn's own thinking and effort (docs/transport.md): on Anthropic a
             // ping whose thinking differs from the turn's misses the message-level
-            // cache and writes a fresh entry instead of refreshing the live one
-            // (probed 2026-10-08). `max_tokens: 0` takes thinking on and any effort.
+            // cache and writes a fresh entry instead of refreshing the live one.
+            // `max_tokens: 0` takes thinking on and any effort.
             thinking,
             reasoning: self.reasoning_off(thinking),
             output_config: self.effort.clone().map(|effort| OutputConfig { effort }),

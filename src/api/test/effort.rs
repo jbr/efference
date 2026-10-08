@@ -5,7 +5,7 @@
 use super::*;
 
 /// Anthropic's `GET /v1/models/{id}` declares the `thinking` types and the
-/// effort levels a model takes (docs/transport.md). Live bodies, 2026-10-08:
+/// effort levels a model takes (docs/transport.md). Live API bodies:
 /// Haiku 5.5 takes adaptive and `disabled` and every level; Sonnet 5.5 refuses
 /// `disabled` (its 400 names `between_tools`); Haiku 4.5 takes no adaptive and no
 /// effort at all.
@@ -349,7 +349,7 @@ fn auto_turns_send_thinking_off_only_without_adaptive_and_when_spelled() {
 /// thinking and the same effort, differing only in `max_tokens` and `stream`
 /// (docs/transport.md). On Anthropic a ping whose thinking differs from the
 /// turn's misses the message-level cache and writes a fresh entry instead of
-/// refreshing the live one (probed 2026-10-08).
+/// refreshing the live one.
 ///
 /// A client that was never given an effort — the spotter's — sends the field on
 /// neither path, which the second half asserts.

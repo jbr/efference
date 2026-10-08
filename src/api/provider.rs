@@ -1018,7 +1018,7 @@ impl Provider {
     /// Only the OpenRouter fetch reaches this: Anthropic names its levels in the
     /// capabilities response (`effort_levels_url` returns `None` there).
     /// `mandatory` decides how thinking off is spelled ([`ThinkingOff`]);
-    /// `default_enabled` is observed in live metadata but unused.
+    /// `default_enabled` has no consumer.
     pub(super) fn parse_model_entry(&self, body: &str) -> Result<EffortLevels, Error> {
         match self {
             // Unreachable: `effort_levels_url` answers `None`, so nothing fetches a
