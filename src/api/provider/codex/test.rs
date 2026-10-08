@@ -69,7 +69,7 @@ fn an_entry_reports_its_window_levels_and_modalities() {
         Some(&["low", "medium", "ultra"].map(String::from)[..])
     );
     assert_eq!(caps.default_effort.as_deref(), Some("medium"));
-    assert!(caps.supports_reasoning);
+    assert!(caps.thinking.adaptive);
     assert!(caps.supports_image_input);
     // The levels are reported, not enforced: the catalog lists Codex CLI's modes
     // rather than the wire's values, so no configured level is refused here.
@@ -92,7 +92,7 @@ fn an_entry_reports_its_window_levels_and_modalities() {
     assert_eq!(caps.prompt_cache, PromptCachePolicy::Implicit);
     assert_eq!(caps.max_output_tokens, None);
     assert!(caps.accepts_temperature);
-    assert_eq!(caps.reasoning_mandatory, None);
+    assert_eq!(caps.thinking.off, ThinkingOff::Omit);
 
     // A text-only entry claims no image input, and reports its levels without
     // enforcing any of them.

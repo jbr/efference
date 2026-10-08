@@ -14,7 +14,7 @@ use crate::api::auth_value::Reloaded;
 use crate::api::failure::{FailureClass, OpenError, classify_body};
 use crate::api::plan::{PlanState, plan_from_headers, plan_state};
 use crate::api::responses::assembler::ResponsesAssembler;
-use crate::api::thinking::ThinkingOff;
+use crate::api::thinking::ThinkingSupport;
 use crate::log::is_captured_header;
 use crate::project::{WireTurn, encode_messages};
 
@@ -249,17 +249,15 @@ pub struct Client {
     model: String,
     system: String,
     temperature: Option<u8>,
-    /// The boot-time capability lookup's answer to "does this model take
-    /// OpenRouter's normalized `reasoning`" (`ModelCapabilities::supports_reasoning`)
-    /// — one input to the thinking matrix (`Thinking::for_request`). `false` when no
-    /// lookup ran (the spotter's client), which only ever omits the field.
-    model_reasoning: bool,
+    /// The capability lookup's answer to how this model takes `thinking`
+    /// (`ModelCapabilities::thinking`) — the input to `Thinking::for_request`, and
+    /// on Responses whether the `reasoning` object is sent at all.
+    /// [`ThinkingSupport::UNKNOWN`] until [`Self::with_thinking`] sets it.
+    thinking: ThinkingSupport,
     /// Never think, whatever the model would do on its own (docs/redaction-fork.md):
     /// the separate-model fork peek's default, where the peek's reasoning is
-    /// discarded with the tail and costs latency and tokens on every gate. Feeds
-    /// `Thinking::for_request` on Messages; on Responses it is subsumed by
-    /// `model_reasoning`, which that dialect's `reasoning` object already gates on.
-    pub(super) thinking_off: ThinkingOff,
+    /// discarded with the tail and costs latency and tokens on every gate.
+    pub(super) thinking_off: bool,
     /// The per-turn output cap. Defaults to the pre-reasoning-era 4096;
     /// [`Self::with_max_output`] raises it to the model's reported cap — a
     /// reasoning model's thinking bills against this budget, and a long think
@@ -404,8 +402,8 @@ impl Client {
             model: model.into(),
             system: system.into(),
             temperature,
-            model_reasoning: false,
-            thinking_off: ThinkingOff::No,
+            thinking: ThinkingSupport::UNKNOWN,
+            thinking_off: false,
             max_tokens: MAX_TOKENS,
             context_length: None,
             reservation: reservation_state(),
@@ -555,11 +553,10 @@ impl Client {
         self
     }
 
-    /// Record the capability lookup's reasoning answer
-    /// (`ModelCapabilities::supports_reasoning`) — an input to the thinking matrix
-    /// ([`Thinking::for_request`]).
-    pub fn with_model_reasoning(mut self, model_reasoning: bool) -> Self {
-        self.model_reasoning = model_reasoning;
+    /// Record the capability lookup's thinking answer
+    /// (`ModelCapabilities::thinking`), which [`Thinking::for_request`] reads.
+    pub fn with_thinking(mut self, thinking: ThinkingSupport) -> Self {
+        self.thinking = thinking;
         self
     }
 
@@ -568,28 +565,16 @@ impl Client {
     /// field omitted, so the switch this client asked for has to be said in
     /// OpenRouter's own word. `None` everywhere else, which serializes nothing.
     pub(super) fn reasoning_off(&self, thinking: Thinking) -> Option<ReasoningOff> {
-        (self.thinking_off != ThinkingOff::No
-            && thinking.is_omit()
-            && self.endpoint.provider == Provider::OpenRouter)
+        (self.thinking_off && thinking.is_omit() && self.endpoint.provider == Provider::OpenRouter)
             .then_some(ReasoningOff { enabled: false })
     }
 
-    /// Send every request with thinking off, whatever the model family's default
-    /// (docs/redaction-fork.md): the separate-model fork peek's default. The
-    /// keepalive already sends thinking off, so this changes only `complete`.
-    /// `reasoning_mandatory` is the capability lookup's answer
-    /// (`ModelCapabilities::reasoning_mandatory`): a model that can be told not to
-    /// reason gets the explicit `disabled`; one that cannot gets the field omitted.
-    /// `None` — a source that declares nothing — takes the omitted spelling too,
-    /// because the explicit one is an assertion and a mandatory-reasoning endpoint
-    /// rejects it. Claude is unaffected either way: `api/thinking.rs`'s family rule
-    /// sends it explicit `disabled` whichever spelling arrives here.
-    pub fn without_thinking(mut self, reasoning_mandatory: Option<bool>) -> Self {
-        self.thinking_off = match reasoning_mandatory {
-            Some(false) => ThinkingOff::Disable,
-            Some(true) | None => ThinkingOff::Omit,
-        };
-        self.model_reasoning = false;
+    /// Send every request with thinking off, whatever the model would do on its
+    /// own (docs/redaction-fork.md): the separate-model fork peek's default. Spelled
+    /// the way the model's metadata says ([`ThinkingSupport::off`]), so set the
+    /// capability answer with [`Self::with_thinking`] as well.
+    pub fn without_thinking(mut self) -> Self {
+        self.thinking_off = true;
         self
     }
 
@@ -729,12 +714,8 @@ impl Client {
         let mut events = loop {
             let body = match &encoded {
                 Encoded::Messages(messages) => {
-                    let thinking = Thinking::for_request(
-                        &self.model,
-                        &tool_choice,
-                        self.model_reasoning,
-                        self.thinking_off,
-                    );
+                    let thinking =
+                        Thinking::for_request(&tool_choice, self.thinking, self.thinking_off);
                     let request = Request {
                         model: &self.model,
                         max_tokens,
@@ -1051,10 +1032,11 @@ impl Client {
         max_output_tokens: u32,
         capped: bool,
     ) -> responses::ResponsesRequest<'a> {
-        let reasoning = self.model_reasoning.then(|| responses::Reasoning {
-            effort: self.effort.clone(),
-            summary: "auto",
-        });
+        let reasoning =
+            (self.thinking.adaptive && !self.thinking_off).then(|| responses::Reasoning {
+                effort: self.effort.clone(),
+                summary: "auto",
+            });
         match self.endpoint.provider.responses_profile() {
             ResponsesProfile::Platform => responses::ResponsesRequest {
                 model: &self.model,
@@ -1194,19 +1176,20 @@ impl Client {
         }
         let messages = encode_messages(turns, self.image_placement(), self.breakpoint_placement());
         let messages = &messages;
+        let thinking = Thinking::for_request(&tool_choice, self.thinking, self.thinking_off);
         let request = Request {
             model: &self.model,
             max_tokens: 0,
             system: &self.system,
             tools,
             tool_choice,
-            thinking: Thinking::for_keepalive(&self.model),
-            reasoning: None,
-            // No effort: this ping sends thinking disabled/omitted (`max_tokens: 0`
-            // rejects thinking-on), and `xhigh`/`max` with thinking off is a 400.
-            // Its envelope therefore differs from a turn's by this field whenever a
-            // session sets one — the watch-item in docs/transport.md.
-            output_config: None,
+            // The turn's own thinking and effort (docs/transport.md): on Anthropic a
+            // ping whose thinking differs from the turn's misses the message-level
+            // cache and writes a fresh entry instead of refreshing the live one
+            // (probed 2026-10-08). `max_tokens: 0` takes thinking on and any effort.
+            thinking,
+            reasoning: self.reasoning_off(thinking),
+            output_config: self.effort.clone().map(|effort| OutputConfig { effort }),
             temperature: self
                 .temperature
                 .map(|t| self.endpoint.provider.map_temperature(t)),

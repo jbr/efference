@@ -40,11 +40,10 @@ fn a_bare_listing_declares_no_capabilities() {
     assert_eq!(caps.supported_efforts, None);
     // Unknown asserts nothing on either axis that would otherwise make the
     // harness send something: temperature passes through to the endpoint's own
-    // validation, and the reasoning requirement stays unstated so thinking is
-    // omitted rather than explicitly disabled.
+    // validation, and thinking off is said by omission rather than an explicit
+    // value a mandatory-reasoning endpoint would refuse.
     assert!(caps.accepts_temperature);
-    assert_eq!(caps.reasoning_mandatory, None);
-    assert!(!caps.supports_reasoning);
+    assert_eq!(caps.thinking, ThinkingSupport::UNKNOWN);
 }
 
 /// Every field a rich listing declares is read, from the spellings a real endpoint

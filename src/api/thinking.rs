@@ -5,14 +5,16 @@ use super::*;
 /// The `thinking` field (docs/transport.md). `Adaptive` lets the model decide
 /// when and how much to think; `display: "summarized"` captures a readable
 /// model-authored summary into the log at the same token cost as omitting it.
-/// `Omit` is distinct from `Disabled`: it leaves the field off the request
-/// entirely (via the `Request` field's `skip_serializing_if`), which is the only
-/// safe spelling for foreign models, where an explicit `disabled` is rejected
-/// outright by mandatory-reasoning endpoints.
-#[derive(Serialize, Clone, Copy)]
+/// `Disabled` and `BetweenTools` are the two spellings of thinking off a
+/// model's metadata can call for ([`ThinkingOff`]). `Omit` leaves the field off
+/// the request entirely (via the `Request` field's `skip_serializing_if`), the
+/// spelling for a source that declares nothing, where an explicit value is an
+/// assertion a mandatory-reasoning endpoint rejects.
+#[derive(Serialize, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub(super) enum Thinking {
     Disabled,
+    BetweenTools,
     Adaptive {
         #[serde(skip_serializing_if = "Option::is_none")]
         display: Option<&'static str>,
@@ -26,55 +28,89 @@ impl Thinking {
         matches!(self, Self::Omit)
     }
 
-    /// The thinking matrix over `tool_choice`, the model family, and the boot
-    /// capability lookup (docs/transport.md). The one asymmetry to hold onto
-    /// while reading the `match`: Claude falls through to explicit `disabled`,
-    /// foreign models fall through to `Omit` — a mandatory-reasoning endpoint
-    /// rejects an explicit disable outright, so the two non-adaptive answers are
-    /// not interchangeable.
+    /// The `thinking` a request carries, from the model's [`ThinkingSupport`],
+    /// the `tool_choice`, and whether the client asked for thinking off
+    /// (`Client::without_thinking`). An `auto` turn thinks adaptively where the
+    /// model accepts it; everything else — a forced choice (Anthropic answers
+    /// forced choice with thinking on with a 400), a client built without
+    /// thinking, a model without adaptive — takes the model's spelling of off.
     ///
-    /// An explicit `EFFERENCE_THINKING` overrides the `auto`-turn decision either way.
+    /// The keepalive calls this too, with the turn's own `tool_choice`: a ping
+    /// whose thinking differs from the turn's misses the message-level cache on
+    /// Anthropic and writes a fresh entry instead of refreshing the live one.
     pub(super) fn for_request(
-        model: &str,
         tool_choice: &ToolChoice,
-        model_reasoning: bool,
-        off: ThinkingOff,
+        support: ThinkingSupport,
+        thinking_off: bool,
     ) -> Self {
-        // `off` is the client-level switch (`Client::without_thinking`). Claude
-        // always takes explicit `disabled`; a foreign model takes it only when its
-        // reasoning is optional (`ThinkingOff::Disable`), since a mandatory-reasoning
-        // endpoint rejects the explicit form, and omits the field otherwise.
-        let adaptive = off == ThinkingOff::No && adaptive_on_auto(model, model_reasoning);
-        match tool_choice.kind {
-            "auto" if adaptive => THINKING_ADAPTIVE,
-            _ if is_claude_family(model) || off == ThinkingOff::Disable => THINKING_DISABLED,
-            _ => Thinking::Omit,
-        }
-    }
-
-    /// The keepalive's thinking (docs/transport.md): explicit `disabled` on Claude,
-    /// since `max_tokens: 0` rejects thinking-on, and the field omitted for foreign
-    /// models — the same "never `disabled` off-family" rule as [`Self::for_request`].
-    pub(super) fn for_keepalive(model: &str) -> Self {
-        if is_claude_family(model) {
-            THINKING_DISABLED
+        if tool_choice.kind == "auto" && !thinking_off && support.adaptive {
+            THINKING_ADAPTIVE
         } else {
-            Thinking::Omit
+            support.off.wire()
         }
     }
 }
 
-/// A client's request to send thinking off, and in which spelling
-/// (`Client::without_thinking`, docs/transport.md). `Disable` is the explicit
-/// `thinking: {type: disabled}`, right for Claude and for a foreign model whose
-/// reasoning is optional; `Omit` leaves the field off for a model whose reasoning
-/// is mandatory, where the explicit form is a 400 — OpenRouter's own
-/// `reasoning.enabled: false` is sent beside it there.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+/// What a model's metadata says about the `thinking` field (docs/transport.md):
+/// whether an `auto` turn may think adaptively, and how to say "don't think".
+/// One answer per model, taken from the capability lookup at boot and never
+/// changed, so a session's thinking never moves its cached prefix.
+///
+/// Anthropic reads `capabilities.thinking.types`; OpenRouter reads whether every
+/// serving endpoint lists `reasoning` and the model entry's `reasoning.mandatory`;
+/// a source that declares nothing is [`Self::UNKNOWN`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct ThinkingSupport {
+    /// The model accepts `thinking: {type: adaptive}`.
+    pub adaptive: bool,
+    /// How a request says thinking off.
+    pub off: ThinkingOff,
+}
+
+impl ThinkingSupport {
+    /// A source that declares nothing: no adaptive, and thinking off by
+    /// omission, the one spelling that asserts nothing.
+    pub const UNKNOWN: Self = Self {
+        adaptive: false,
+        off: ThinkingOff::Omit,
+    };
+
+    /// Whether an `auto` turn on this model sends an explicit thinking-off — the
+    /// input to [`check_effort_thinking`]. `Omit` leaves the endpoint to decide,
+    /// so effort there is the provider's to answer, not this check's.
+    pub fn auto_turns_send_thinking_off(&self) -> bool {
+        !self.adaptive && self.off != ThinkingOff::Omit
+    }
+}
+
+/// How a request says thinking off, per the model's metadata (docs/transport.md).
+///
+/// `Disabled` is `{type: disabled}`: Anthropic's `thinking.types.disabled`, or an
+/// OpenRouter model whose reasoning is optional. `BetweenTools` is
+/// `{type: between_tools}`, for an Anthropic model whose metadata refuses
+/// `disabled`: the 400 such a model answers `disabled` with names it as the
+/// replacement, and the model's short updates between tool calls come back as
+/// thinking blocks. The metadata does not list `between_tools` as a type, so the
+/// refusal of `disabled` is the signal. `Omit` leaves the field off, for a source
+/// that declares nothing or an OpenRouter model whose reasoning is mandatory,
+/// where any explicit value is a 400 (OpenRouter's own `reasoning: {enabled:
+/// false}` rides beside it when a client asked for thinking off).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ThinkingOff {
-    No,
-    Disable,
+    Disabled,
+    BetweenTools,
     Omit,
+}
+
+impl ThinkingOff {
+    fn wire(self) -> Thinking {
+        match self {
+            Self::Disabled => Thinking::Disabled,
+            Self::BetweenTools => Thinking::BetweenTools,
+            Self::Omit => Thinking::Omit,
+        }
+    }
 }
 
 /// The `output_config` object (docs/transport.md) — present on the request only
@@ -96,76 +132,31 @@ pub struct OutputConfig {
 /// that cannot know it.
 ///
 /// One coupling with the thinking axis: these levels are legal only with
-/// thinking enabled, and Anthropic answers the pairing with a 400 —
-/// [`check_effort_thinking`] rejects it at boot instead. A level beyond these
-/// two spellings has no known coupling and passes through.
+/// thinking on, and Anthropic answers the pairing with a 400 — `between_tools`
+/// counts as off — so [`check_effort_thinking`] rejects it at boot instead. A
+/// level beyond these two spellings has no known coupling and passes through.
 pub const EFFORTS_REQUIRING_THINKING: [&str; 2] = ["xhigh", "max"];
 
 /// The boot check for the one coupling between the two axes (docs/transport.md):
 /// `xhigh`/`max` with thinking off is a 400 from Anthropic, so a session
 /// configured that way is refused at startup with a message naming both halves
-/// rather than failing on its first turn. Pure in `thinking_off` so the caller
-/// supplies the session's effective answer — which is
-/// [`auto_turns_disable_thinking`], covering both routes to disabled: the
-/// `EFFERENCE_THINKING=off` override, and a Claude-family model whose turns fall
-/// through to explicit `disabled` (Haiku, or any model the capability lookup
-/// denies reasoning).
-pub fn check_effort_thinking(effort: Option<&str>, thinking_off: bool) -> Result<(), String> {
+/// rather than failing on its first turn. `thinking_off` is the session's
+/// effective answer, [`ThinkingSupport::auto_turns_send_thinking_off`].
+pub fn check_effort_thinking(
+    effort: Option<&str>,
+    model: &str,
+    thinking_off: bool,
+) -> Result<(), String> {
     match effort {
         Some(effort) if thinking_off && EFFORTS_REQUIRING_THINKING.contains(&effort) => {
             Err(format!(
-                "effort `{effort}` requires thinking, but this session's turns send thinking \
-                 disabled (EFFERENCE_THINKING=off, or a model that doesn't get adaptive \
-                 thinking) — the provider answers that pairing with a 400. Use a lower \
-                 level, or enable thinking."
+                "effort `{effort}` requires thinking, but {model}'s metadata offers no \
+                 adaptive thinking, so this session's turns send thinking off — the provider \
+                 answers that pairing with a 400. Use a lower level."
             ))
         }
         _ => Ok(()),
     }
-}
-
-/// Whether the session's turns will carry thinking **disabled** — the effective
-/// answer [`check_effort_thinking`] needs, mirroring [`Thinking::for_request`]'s
-/// `auto` arm through the shared [`adaptive_on_auto`]: not adaptive, on a
-/// Claude-family model (the fall-through to explicit `disabled`). A foreign model
-/// without adaptive gets the field *omitted*, not disabled — the endpoint decides,
-/// so effort there is the unverified-translation watch-item (docs/transport.md),
-/// not this check's business.
-pub fn auto_turns_disable_thinking(model: &str, model_reasoning: bool) -> bool {
-    !adaptive_on_auto(model, model_reasoning) && is_claude_family(model)
-}
-
-/// Whether an `auto`-choice turn thinks: the `EFFERENCE_THINKING` override when
-/// set, else the recognized-adaptive-Claude rule or the capability lookup's
-/// reasoning grant. The one place this is decided — [`Thinking::for_request`] and
-/// [`auto_turns_disable_thinking`] both read it, so the boot check cannot drift
-/// from what the turns actually send.
-fn adaptive_on_auto(model: &str, model_reasoning: bool) -> bool {
-    THINKING_OVERRIDE.unwrap_or_else(|| is_recognized_adaptive_claude(model) || model_reasoning)
-}
-
-/// A Claude-family model id — direct (`claude-…`) or provider-scoped
-/// (`anthropic/…`). These speak the Anthropic `thinking` block natively, so an
-/// explicit `disabled` is safe and, with forced tool choice, required. Everything
-/// else gets the field omitted rather than disabled.
-pub(super) fn is_claude_family(model: &str) -> bool {
-    model.contains("claude") || model.contains("anthropic")
-}
-
-/// The Claude half of [`Thinking::for_request`]'s `auto` default: a Claude family
-/// model (direct id or `anthropic/…` slug) that isn't Haiku. Foreign models
-/// (`openai/…`, `google/…`, …) fall outside it and are governed by the capability
-/// lookup instead.
-///
-/// Adaptive thinking (`{type:"adaptive"}`) is a Claude **4.6+** feature; earlier
-/// tiers speak the older `{type:"enabled", budget_tokens}` API and **400 on
-/// adaptive**. This substring rule deliberately does not encode that version floor
-/// — parsing a version out of both `claude-opus-4-8` and `anthropic/claude-opus-4.1`
-/// is its own fragile problem — so it assumes the Claude generation efference
-/// serves. [`Thinking`] cannot express budgeted thinking at all, so an older Claude
-/// wants thinking off: `EFFERENCE_THINKING=off` covers that case.
-pub(super) fn is_recognized_adaptive_claude(model: &str) -> bool {
-    (model.contains("claude") || model.contains("anthropic")) && !model.contains("haiku")
 }
 
 /// The `tool_choice` field. `auto()` lets the model decide whether to call a

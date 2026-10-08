@@ -119,34 +119,53 @@ assistant turn; `project` renders the blocks in that same order, signatures
 preserved verbatim because the API rejects a modified block on replay. Same-model replay only ever happens (the model is locked per session),
 so a signature always returns to the model that minted it.
 
-The `thinking` **request** field rides on `tool_choice`, the model family, and
-the boot capability lookup (`Thinking::for_request`). On Claude the one illegal
-pairing is unrepresentable: forced `tool_choice` is incompatible with thinking
-(400), so a forced choice → `disabled`, `auto` → `adaptive`
-(`display: "summarized"`) on the recognized tiers (not Haiku). **Foreign models
-never get `disabled`** — a mandatory-reasoning endpoint rejects an explicit
-disable outright (probed live, 2026-08-21) — they get `adaptive` on `auto` when
-the metadata grants `reasoning` (the foreign-provider section below), and the
-field **omitted** otherwise, forced choice included: probed, a
-mandatory-reasoning endpoint thinks and then honors the forced call. The main
-agent turn and the fork peek both send `auto` —
+The `thinking` **request** field rides on `tool_choice` and the model's own
+metadata (`Thinking::for_request` over `ModelCapabilities::thinking`, an
+`api::ThinkingSupport`). No model id is consulted. The metadata answers two
+questions: whether the model takes `{type: adaptive}`, and how a request says
+thinking off (`ThinkingOff`):
+
+- **Anthropic** (`GET /v1/models/{id}`, `capabilities.thinking.types`):
+  `adaptive.supported` is the first answer. Off is `disabled` where
+  `disabled.supported`, and `between_tools` where it is not — the 400 a model
+  that refuses `disabled` answers with names `between_tools` as the way to turn
+  thinking off, and the metadata does not list that type, so the refusal is the
+  signal (Sonnet 5.5, Opus 5.5, Fable 5/5.1, probed 2026-10-08). Under
+  `between_tools` the model does not think before responding; its short updates
+  between tool calls come back as thinking blocks.
+- **OpenRouter**: adaptive when every endpoint serving the slug lists `reasoning`
+  (the foreign-provider section below); off is the explicit `disabled` when the
+  model entry's `reasoning.mandatory` is false, and the field **omitted**
+  otherwise — a mandatory-reasoning endpoint rejects an explicit disable outright
+  (probed live, 2026-08-21), and with the field omitted it thinks and then honors
+  a forced call.
+- **Every other source** declares nothing (`ThinkingSupport::UNKNOWN`): no
+  adaptive, off by omission, the one spelling that asserts nothing.
+
+An `auto` turn sends `adaptive` (`display: "summarized"`) where the model takes
+it. Everything else sends the model's spelling of off: a forced `tool_choice`
+(Anthropic answers forced choice with thinking on with a 400), a model without
+adaptive, and a client built `without_thinking`. The main agent turn and the
+fork peek both send `auto` —
 the shared envelope ([redaction-fork.md](redaction-fork.md)): identical
 `tool_choice` and thinking are part of what lets the peek read the agent lineage's
 cache — so both may think (the fork's thinking is discarded with its throwaway
-tail); the spotter still forces its `spot` tool → thinking off (`disabled` on
-Claude, omitted foreign); a separate-model peek sends thinking off the same way
-unless `--triage-thinking` or `--triage-effort` — for the per-result peeks only; the
-idle triage rides the agent's client and thinks as the agent does
-([redaction-fork.md](redaction-fork.md)) (`Client::without_thinking`: explicit
-`disabled` for a foreign model whose metadata says reasoning is optional, the field
-omitted plus OpenRouter's `reasoning: {enabled: false}` for one whose reasoning is
-mandatory *or whose source declares nothing* — `ModelCapabilities::reasoning_mandatory`
-is three-state, `Some(false)`/`Some(true)`/`None`, from the model entry's
-`reasoning.mandatory` where a source has one. `None` shares the mandatory spelling
-because the explicit `disabled` is an assertion and a mandatory endpoint answers it
-with a 400, so silence is the only spelling that is safe without knowing;
-[redaction-fork.md](redaction-fork.md)); the keepalive follows the same family split
-independently (`max_tokens: 0` rejects thinking-on). Toggling thinking
+tail); the spotter still forces its `spot` tool → thinking off; a separate-model
+peek sends thinking off unless `--triage-thinking` or `--triage-effort` — for the
+per-result peeks only; the idle triage rides the agent's client and thinks as the
+agent does ([redaction-fork.md](redaction-fork.md)). Where off is omitted on
+OpenRouter, a client built `without_thinking` sends OpenRouter's own
+`reasoning: {enabled: false}` beside it. Some models refuse a forced
+`tool_choice` outright, whatever the thinking (Sonnet 5.5: `type "tool" and "any"
+are not supported for this model`); the metadata does not say which, and the
+spotter's and the own-model peek's forced calls fail on them today.
+
+The keepalive sends the turn's own thinking and effort: on Anthropic a ping whose
+thinking differs from the turn's misses the message-level cache and writes a
+fresh entry instead of refreshing the live one (probed 2026-10-08: a `disabled`
+ping after an `adaptive` write created 23k tokens of cache, an `adaptive` ping
+read them), while a differing effort does not split the cache. `max_tokens: 0`
+takes thinking on and any effort on every Claude model probed. Toggling thinking
 keeps the tools+system cache tier valid (see
 [log-and-projection.md](log-and-projection.md)), and it's set once per
 call-type and never flipped turn-to-turn, so it stays out of the cached
@@ -188,9 +207,12 @@ it set a knob that did nothing (a model whose `default_effort` is already `max`
 makes `--effort max` a no-op by coincidence). A model whose entry names no levels is not refused: 137 of 459
 OpenRouter models name none, `openai/o4-mini` among them, and o4-mini honors effort
 all the same (2,752 reasoning tokens at `low`, the 6,000-token cap at `high`,
-2026-09-25). Anthropic's metadata names no levels, and a Codex catalog entry names
-Codex CLI's modes rather than the request's values (above), so neither is checked,
-and a misspelled level is the provider's own 400 on the first turn.
+2026-09-25). Anthropic's `capabilities.effort` names the levels a model takes in
+`output_config.effort`'s own spellings, so a level outside them is refused at boot;
+a model whose effort capability is unsupported (Haiku 4.5) declares the empty list
+and refuses every level. A Codex catalog entry names Codex CLI's modes rather than
+the request's values (above), so it is not checked, and a misspelled level is the
+provider's own 400 on the first turn.
 
 The boot line prints `effort: {level}` for a checked level, `effort: {level} ·
 unchecked, the model's metadata does not bound it` for one sent without a check —
@@ -199,29 +221,21 @@ the case where a provider may drop it silently, which nothing else would show �
 which answers what an unset knob will do without a probe.
 
 **The one coupling between the axes**: the levels in `EFFORTS_REQUIRING_THINKING`
-(`xhigh`, `max`) require thinking enabled, and the pairing is a 400 from
-Anthropic. `EFFERENCE_THINKING=off` is what can take thinking away for a whole
-session, so that combination is refused at boot (`api::check_effort_thinking`,
-called from boot) rather than forwarded as a provider error on the first
-turn. A level outside those two spellings has no known coupling and passes
-through.
+(`xhigh`, `max`) require thinking on, and the pairing with thinking off is a 400
+from Anthropic — `between_tools` counts as off. A model whose metadata offers no
+adaptive thinking, with off spelled explicitly, sends thinking off on every turn,
+so that combination is refused at boot (`api::check_effort_thinking`, fed by
+`ThinkingSupport::auto_turns_send_thinking_off`) rather than forwarded as a
+provider error on the first turn. A level outside those two spellings has no
+known coupling and passes through.
 
-**Which envelopes carry it.** The effort rides the agent `Client`, so it reaches
-`Client::complete` only — the main turn and the fork peek, which is the shared
-envelope ([redaction-fork.md](redaction-fork.md)): if one carried it and the
-other didn't, the peek would stop reading the agent lineage's cache. The spotter
-forces its tool, disables thinking, and runs on its own client, which is never
-given an effort. The keepalive omits it by construction — `max_tokens: 0` rejects
-thinking-on, so the ping sends thinking disabled/omitted, and `xhigh`/`max` with
-thinking off is the 400 above.
-
-**Watch-item (keepalive).** That last omission means a session with an effort set
-sends a keepalive envelope that differs from its turns' by exactly this key.
-Whether that splits the cache key on Anthropic — so that the ping refreshes a
-different entry than the turns read — is unverified. The symptom is readable in
-`usage.jsonl`: a keepalive's `cache_read_input_tokens` dropping to only the
-tools+system tier while the turns keep reading the full prefix. Not solved here;
-watched.
+**Which envelopes carry it.** The effort rides the agent `Client`, so every
+request that client makes carries it — the main turn and the fork peek, which is
+the shared envelope ([redaction-fork.md](redaction-fork.md)): if one carried it
+and the other didn't, the peek would stop reading the agent lineage's cache — and
+the keepalive, which sends the turn's envelope (above). The spotter forces its
+tool, sends thinking off, and runs on its own client, which is never given an
+effort.
 
 **Foreign slugs, unverified.** OpenRouter's docs show `output_config.effort`
 honored on the Messages skin for Anthropic models. Whether the skin *translates*
@@ -1343,7 +1357,7 @@ here would abort boot with a message about `context_length` that names the wrong
 problem.
 
 The parsed `ModelCapabilities` (`context_length`, `max_output_tokens`,
-`supports_reasoning`, `supports_image_input`, `prompt_cache`,
+`thinking`, `supports_image_input`, `prompt_cache`,
 `supported_efforts`, `default_effort`; grown
 one field per consumer) is transport-only — held
 in `Session`, never logged or projected. `max_output_tokens` sets the
@@ -1456,15 +1470,13 @@ which is why the keepalive is gated on the model reporting a cache at all and
 capped by the runtime tripwire.
 
 **Thinking.** A foreign model's `auto`-turn adaptive is granted by the
-capability lookup: `ModelCapabilities::supports_reasoning` — conservative like
+capability lookup (`ModelCapabilities::thinking.adaptive`) — conservative like
 `max_output_tokens` and not like `context_length`, since `thinking` is not a
 routing filter: every endpoint currently serving the model must list
-`reasoning` in `supported_parameters` — sends the same `thinking:{type:adaptive}` block, which
-OpenRouter's compat layer translates to its normalized `reasoning`. A foreign
-model not granted it gets no `thinking` field at all — omission, never
-`disabled`, which mandatory-reasoning endpoints reject outright.
-`EFFERENCE_THINKING=adaptive|off|auto` still overrides the `auto`-turn decision
-per session.
+`reasoning` in `supported_parameters` — and sends the same `thinking:{type:adaptive}` block, which
+OpenRouter's compat layer translates to its normalized `reasoning`. Off is the
+explicit `disabled` only where the model entry says reasoning is optional, and
+omission otherwise, which mandatory-reasoning endpoints require.
 
 This reverses an earlier position, on re-probed evidence (2026-08-21, three
 foreign models through `/api/v1/messages`): `stealth/ox-alpha` (reasoning
@@ -1634,7 +1646,8 @@ reasoning tokens while a small prefix absorbs none and a runaway generation fail
 at any size — which is what keeps a mandatory-reasoning endpoint usable instead of
 disabling keepalive on its first ping. Pinging with thinking disabled is not an
 escape: changing thinking parameters invalidates message-level cache on Anthropic,
-so that ping would refresh nothing.
+so that ping would refresh nothing — which is why the ping sends the turn's own
+thinking (above).
 
 A failed ping is classified by HTTP status (`api::KeepaliveError`, which carries
 the status structurally rather than in its message). An invalid-request-class 4xx

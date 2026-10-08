@@ -1,25 +1,81 @@
-//! Tests for declared effort levels, the effort/thinking coupling checks,
-//! the thinking matrix, the thinking-off switch, and that only the shared
-//! turn envelope carries the effort.
+//! Tests for declared effort levels and thinking types, the effort/thinking
+//! coupling checks, the thinking matrix, the thinking-off switch, and that the
+//! keepalive sends the turn's thinking and effort.
 
 use super::*;
 
-/// The Anthropic metadata path declares no effort levels — not on its single
-/// route, and there is no second route — so a configured level passes through
-/// to the provider's own validation (docs/transport.md).
+/// Anthropic's `GET /v1/models/{id}` declares the `thinking` types and the
+/// effort levels a model takes (docs/transport.md). Live bodies, 2026-10-08:
+/// Haiku 5.5 takes adaptive and `disabled` and every level; Sonnet 5.5 refuses
+/// `disabled` (its 400 names `between_tools`); Haiku 4.5 takes no adaptive and no
+/// effort at all.
 #[test]
-fn anthropic_declares_no_effort_levels() {
-    let body = r#"{
-        "id": "claude-haiku-4-5",
-        "display_name": "Claude Haiku 4.5",
-        "max_input_tokens": 200000,
-        "max_tokens": 64000
-    }"#;
+fn anthropic_metadata_declares_thinking_and_effort() {
+    use super::thinking::ThinkingOff;
+    let haiku_5_5 = r#"{"type":"model","id":"claude-haiku-5-5","display_name":"Claude Haiku 5.5","created_at":"2026-10-07T18:00:00Z","line":"haiku","max_input_tokens":1000000,"max_tokens":128000,"capabilities":{"batch":{"supported":true},"citations":{"supported":true},"code_execution":{"supported":true},"context_management":{"supported":true,"clear_tool_uses_20250919":{"supported":true},"clear_thinking_20251015":{"supported":true},"compact_20260112":{"supported":true}},"effort":{"supported":true,"low":{"supported":true},"medium":{"supported":true},"high":{"supported":true},"xhigh":{"supported":true},"max":{"supported":true}},"image_input":{"supported":true},"pdf_input":{"supported":true},"server_tools":{"supported":true,"code_execution":{"supported":true},"web_search":{"supported":true}},"structured_outputs":{"supported":true},"thinking":{"supported":true,"types":{"enabled":{"supported":false},"adaptive":{"supported":true},"disabled":{"supported":true}}}},"lifecycle":"active","deprecated_at":null,"retires_at":null}"#;
     let caps = Provider::Anthropic
-        .parse_capabilities(body, "m", &[])
+        .parse_capabilities(haiku_5_5, "claude-haiku-5-5", &[])
         .unwrap();
+    assert_eq!(
+        caps.thinking,
+        ThinkingSupport {
+            adaptive: true,
+            off: ThinkingOff::Disabled
+        }
+    );
+    // In the request's own order, whatever order the keys arrived in.
+    assert_eq!(
+        caps.supported_efforts.as_deref(),
+        Some(&["low", "medium", "high", "xhigh", "max"].map(String::from)[..])
+    );
+    assert!(caps.validates_efforts);
+    assert!(caps.check_effort("xhigh", "claude-haiku-5-5").is_ok());
+    assert!(caps.check_effort("ultra", "claude-haiku-5-5").is_err());
+
+    let sonnet_5_5 = r#"{"id":"claude-sonnet-5-5","max_input_tokens":1000000,"max_tokens":128000,
+        "capabilities":{"effort":{"supported":true,"low":{"supported":true},"medium":{"supported":true},
+        "high":{"supported":true},"xhigh":{"supported":true},"max":{"supported":true}},
+        "thinking":{"supported":true,"types":{"enabled":{"supported":false},
+        "adaptive":{"supported":true},"disabled":{"supported":false}}}}}"#;
+    let caps = Provider::Anthropic
+        .parse_capabilities(sonnet_5_5, "claude-sonnet-5-5", &[])
+        .unwrap();
+    assert_eq!(
+        caps.thinking,
+        ThinkingSupport {
+            adaptive: true,
+            off: ThinkingOff::BetweenTools
+        }
+    );
+
+    let haiku_4_5 = r#"{"id":"claude-haiku-4-5-20251001","max_input_tokens":200000,"max_tokens":64000,
+        "capabilities":{"effort":{"supported":false,"low":{"supported":false},"medium":{"supported":false},
+        "high":{"supported":false},"xhigh":null,"max":{"supported":false}},
+        "thinking":{"supported":true,"types":{"enabled":{"supported":true},
+        "adaptive":{"supported":false},"disabled":{"supported":true}}}}}"#;
+    let caps = Provider::Anthropic
+        .parse_capabilities(haiku_4_5, "claude-haiku-4-5", &[])
+        .unwrap();
+    assert_eq!(
+        caps.thinking,
+        ThinkingSupport {
+            adaptive: false,
+            off: ThinkingOff::Disabled
+        }
+    );
+    // Declared, and empty: every configured level is refused at boot.
+    assert_eq!(caps.supported_efforts, Some(vec![]));
+    let why = caps.check_effort("high", "claude-haiku-4-5").unwrap_err();
+    assert!(why.contains("takes no effort level"), "{why}");
+
+    // No `capabilities` object declares nothing on either axis.
+    let bare = r#"{"id":"m","max_input_tokens":200000,"max_tokens":64000}"#;
+    let caps = Provider::Anthropic
+        .parse_capabilities(bare, "m", &[])
+        .unwrap();
+    assert_eq!(caps.thinking, ThinkingSupport::UNKNOWN);
     assert_eq!(caps.supported_efforts, None);
-    assert_eq!(caps.default_effort, None);
+    assert!(!caps.validates_efforts);
     assert_eq!(
         Provider::Anthropic
             .effort_levels_url("claude-haiku-4-5")
@@ -28,68 +84,66 @@ fn anthropic_declares_no_effort_levels() {
     );
 }
 
-/// The thinking matrix (docs/transport.md): Claude keeps the Anthropic pairings
-/// (adaptive on `auto` for recognized tiers, explicit `disabled` on forced choice
-/// and Haiku); foreign models never see `disabled` — adaptive on `auto` when the
-/// capability lookup grants `reasoning`, the field omitted otherwise, forced
-/// choice included. A mandatory-reasoning endpoint 400s on an explicit disable
-/// but thinks and then honors a forced call with the field omitted.
+/// The thinking a request carries comes from the model's metadata alone
+/// (docs/transport.md): an `auto` turn thinks adaptively where the model takes
+/// it; a forced choice, a model without adaptive, and a client built without
+/// thinking all take the model's spelling of off. No model id is consulted.
 #[test]
-fn thinking_matrix_never_disables_foreign_models() {
-    use super::thinking::Thinking;
+fn thinking_follows_the_models_metadata() {
+    use super::thinking::{Thinking, ThinkingOff};
     let auto = ToolChoice::auto();
     let forced = ToolChoice::force("retain");
-    let m = |model: &str, choice: &ToolChoice, reasoning: bool| {
-        Thinking::for_request(model, choice, reasoning, ThinkingOff::No)
-    };
-    assert!(matches!(
-        m("claude-fable-5", &auto, false),
-        Thinking::Adaptive { .. }
-    ));
-    assert!(matches!(
-        m("claude-fable-5", &forced, false),
-        Thinking::Disabled
-    ));
-    assert!(matches!(
-        m("claude-haiku-4-5-20251001", &auto, false),
-        Thinking::Disabled
-    ));
-    assert!(matches!(
-        m("stealth/ox-alpha", &auto, true),
-        Thinking::Adaptive { .. }
-    ));
-    assert!(matches!(
-        m("stealth/ox-alpha", &forced, true),
+    let support = |adaptive, off| ThinkingSupport { adaptive, off };
+    for off in [
+        ThinkingOff::Disabled,
+        ThinkingOff::BetweenTools,
+        ThinkingOff::Omit,
+    ] {
+        let spelled = match off {
+            ThinkingOff::Disabled => Thinking::Disabled,
+            ThinkingOff::BetweenTools => Thinking::BetweenTools,
+            ThinkingOff::Omit => Thinking::Omit,
+        };
+        assert!(matches!(
+            Thinking::for_request(&auto, support(true, off), false),
+            Thinking::Adaptive { .. }
+        ));
+        assert_eq!(
+            Thinking::for_request(&forced, support(true, off), false),
+            spelled
+        );
+        assert_eq!(
+            Thinking::for_request(&auto, support(true, off), true),
+            spelled
+        );
+        assert_eq!(
+            Thinking::for_request(&auto, support(false, off), false),
+            spelled
+        );
+    }
+    assert_eq!(
+        Thinking::for_request(&auto, ThinkingSupport::UNKNOWN, false),
         Thinking::Omit
-    ));
-    assert!(matches!(
-        m("deepseek/deepseek-chat", &auto, false),
-        Thinking::Omit
-    ));
-    assert!(matches!(
-        m("deepseek/deepseek-chat", &forced, false),
-        Thinking::Omit
-    ));
-    assert!(matches!(
-        Thinking::for_keepalive("claude-haiku-4-5-20251001"),
-        Thinking::Disabled
-    ));
-    assert!(matches!(
-        Thinking::for_keepalive("stealth/ox-alpha"),
-        Thinking::Omit
-    ));
+    );
 }
 
-/// An `Omit` never reaches the wire: the request body carries no `thinking` key
-/// at all, where a Claude request carries the adaptive block.
+/// The wire spellings: `between_tools` is its own type, and an `Omit` never
+/// reaches the wire — the offline dev view, which has no metadata to consult,
+/// renders the request with no `thinking` key at all.
 #[test]
-fn omitted_thinking_is_absent_from_the_request_body() {
-    let foreign =
-        render_request_pretty("deepseek/deepseek-chat", "", &[], ToolChoice::auto(), &[]).unwrap();
-    assert!(!foreign.contains("thinking"), "{foreign}");
-    let claude = render_request_pretty("claude-fable-5", "", &[], ToolChoice::auto(), &[]).unwrap();
-    assert!(claude.contains("\"thinking\""), "{claude}");
-    assert!(claude.contains("adaptive"), "{claude}");
+fn thinking_spellings_on_the_wire() {
+    use super::thinking::Thinking;
+    assert_eq!(
+        serde_json::to_string(&Thinking::BetweenTools).unwrap(),
+        r#"{"type":"between_tools"}"#
+    );
+    assert_eq!(
+        serde_json::to_string(&Thinking::Disabled).unwrap(),
+        r#"{"type":"disabled"}"#
+    );
+    let offline =
+        render_request_pretty("claude-fable-5", "", &[], ToolChoice::auto(), &[]).unwrap();
+    assert!(!offline.contains("thinking"), "{offline}");
 }
 
 /// The OpenRouter model entry's `reasoning` block is the effort metadata.
@@ -177,22 +231,6 @@ fn effort_levels_url_per_provider() {
     );
 }
 
-/// The `auto` thinking default is a Claude allowlist, not "everything but haiku":
-/// foreign models (reached via OpenRouter) never get an Anthropic `thinking` block,
-/// while direct ids and `anthropic/…` slugs do — except Haiku.
-#[test]
-fn adaptive_thinking_allowlist_is_claude_non_haiku() {
-    assert!(is_recognized_adaptive_claude("claude-opus-4-8"));
-    assert!(is_recognized_adaptive_claude("claude-sonnet-5"));
-    assert!(is_recognized_adaptive_claude("anthropic/claude-opus-4.1"));
-    assert!(is_recognized_adaptive_claude("claude-fable-5"));
-    assert!(!is_recognized_adaptive_claude("claude-haiku-4-5-20251001"));
-    assert!(!is_recognized_adaptive_claude("anthropic/claude-haiku-4.5"));
-    assert!(!is_recognized_adaptive_claude("openai/gpt-5.6"));
-    assert!(!is_recognized_adaptive_claude("google/gemini-2.5-pro"));
-    assert!(!is_recognized_adaptive_claude("deepseek/deepseek-chat"));
-}
-
 /// The levels that are legal only with thinking on: exactly the two spellings
 /// in [`EFFORTS_REQUIRING_THINKING`], known because the provider answers the
 /// pairing with a 400. Any other spelling has no known coupling.
@@ -211,20 +249,18 @@ fn the_two_spellings_requiring_thinking_are_those_two() {
 /// level with no known coupling — passes.
 #[test]
 fn thinking_off_rejects_the_two_levels_that_need_thinking() {
-    let why = crate::api::check_effort_thinking(Some("max"), true).unwrap_err();
+    use crate::api::check_effort_thinking as check;
+    let why = check(Some("max"), "m", true).unwrap_err();
     assert!(why.contains("max"), "names the level: {why}");
-    assert!(
-        why.contains("EFFERENCE_THINKING"),
-        "names one route to thinking-off: {why}"
-    );
-    assert!(crate::api::check_effort_thinking(Some("xhigh"), true).is_err());
-    assert!(crate::api::check_effort_thinking(Some("high"), true).is_ok());
+    assert!(why.contains("m's metadata"), "names the model: {why}");
+    assert!(check(Some("xhigh"), "m", true).is_err());
+    assert!(check(Some("high"), "m", true).is_ok());
     // A spelling outside the known vocabulary rides through — its coupling,
     // if any, is the provider's to answer, not a local list's to guess.
-    assert!(crate::api::check_effort_thinking(Some("xmax"), true).is_ok());
-    assert!(crate::api::check_effort_thinking(None, true).is_ok());
+    assert!(check(Some("xmax"), "m", true).is_ok());
+    assert!(check(None, "m", true).is_ok());
     for effort in ["low", "medium", "high"] {
-        assert!(crate::api::check_effort_thinking(Some(effort), false).is_ok());
+        assert!(check(Some(effort), "m", false).is_ok());
     }
 }
 
@@ -285,54 +321,40 @@ fn caps_with_effort_levels(
 ) -> crate::api::ModelCapabilities {
     crate::api::ModelCapabilities {
         context_length: Some(200_000),
-        max_output_tokens: None,
-        supports_reasoning: true,
-        accepts_temperature: true,
-        supports_image_input: false,
         prompt_cache: PromptCachePolicy::Explicit,
         supported_efforts: levels.map(|l| l.iter().map(|s| s.to_string()).collect()),
         default_effort: default.map(String::from),
         // A fixture that declares levels is a source that declared them, which
         // is what makes the boot check apply.
         validates_efforts: levels.is_some(),
-        reasoning_mandatory: None,
+        ..crate::api::ModelCapabilities::unknown()
     }
 }
 
-/// The boot check's `thinking_off` input covers *both* routes to disabled, not
-/// just the env override: a Claude model outside the adaptive rule whose
-/// capability lookup denies reasoning (Haiku is the concrete case) falls through
-/// to explicit `disabled` on every auto turn, so `--effort max` there must refuse
-/// at boot rather than 400 on the first turn. Assumes `EFFERENCE_THINKING` is
-/// unset in the test environment, like every other test of the thinking matrix.
+/// The boot check's `thinking_off` input: an `auto` turn sends an explicit off
+/// exactly when the model takes no adaptive and its off is spelled explicitly.
+/// Omission leaves the endpoint to decide, so the check stays out of it.
 #[test]
-fn the_capability_route_to_thinking_off_is_covered() {
-    use crate::api::auto_turns_disable_thinking as off;
-    // Haiku: Claude family, not recognized-adaptive, no reasoning grant → disabled.
-    assert!(off("claude-haiku-4-5", false));
-    assert!(off("anthropic/claude-haiku-4.5", false));
-    // Adaptive Claude thinks; a reasoning grant rescues an unrecognized Claude.
-    assert!(!off("claude-opus-4-8", false));
-    assert!(!off("claude-haiku-4-5", true));
-    // A foreign model without reasoning gets `Omit`, not `disabled` — the
-    // endpoint decides, so the boot check stays out of it.
-    assert!(!off("deepseek/deepseek-v4-flash", false));
+fn auto_turns_send_thinking_off_only_without_adaptive_and_when_spelled() {
+    use super::thinking::ThinkingOff;
+    let support = |adaptive, off| ThinkingSupport { adaptive, off };
+    assert!(support(false, ThinkingOff::Disabled).auto_turns_send_thinking_off());
+    assert!(support(false, ThinkingOff::BetweenTools).auto_turns_send_thinking_off());
+    assert!(!support(false, ThinkingOff::Omit).auto_turns_send_thinking_off());
+    assert!(!support(true, ThinkingOff::Disabled).auto_turns_send_thinking_off());
+    assert!(!support(true, ThinkingOff::BetweenTools).auto_turns_send_thinking_off());
 }
 
-/// Which envelopes carry the effort, over a real socket: the turn (and the fork
-/// peek, which is the same `complete` on the same client) sends it; the keepalive
-/// on that same client does not (docs/transport.md). The keepalive sends thinking
-/// disabled — `max_tokens: 0` rejects thinking-on — and `xhigh`/`max` are illegal
-/// with thinking off, so the ping cannot carry the field the turns do. Its
-/// envelope therefore differs from a turn's by exactly this key whenever a session
-/// sets an effort; whether that splits the provider's cache key is the watch-item
-/// in docs/transport.md, read off `usage.jsonl`.
+/// The keepalive sends the turn's envelope, over a real socket: the same
+/// thinking and the same effort, differing only in `max_tokens` and `stream`
+/// (docs/transport.md). On Anthropic a ping whose thinking differs from the
+/// turn's misses the message-level cache and writes a fresh entry instead of
+/// refreshing the live one (probed 2026-10-08).
 ///
-/// A client that was never given an effort — the spotter's, built by
-/// `spotter::ForkSpot` with a bare `Client::new` — sends the field on neither
-/// path, which the second half asserts.
+/// A client that was never given an effort — the spotter's — sends the field on
+/// neither path, which the second half asserts.
 #[tokio::test]
-async fn only_the_shared_turn_envelope_carries_the_effort() {
+async fn the_keepalive_sends_the_turns_thinking_and_effort() {
     use std::io::{Read, Write};
 
     /// One request/response over a fresh socket; returns the request bytes the
@@ -400,6 +422,10 @@ async fn only_the_shared_turn_envelope_carries_the_effort() {
             base: None,
         };
         let client = Client::new(endpoint, "claude-opus-5", "sys", None)
+            .with_thinking(ThinkingSupport {
+                adaptive: true,
+                off: super::thinking::ThinkingOff::Disabled,
+            })
             .with_effort(effort.map(String::from));
         if sse {
             client
@@ -415,89 +441,80 @@ async fn only_the_shared_turn_envelope_carries_the_effort() {
         server.join().unwrap()
     }
 
+    /// The request body as JSON, without the two keys a ping differs by.
+    fn envelope(request: &str) -> Value {
+        let (_, body) = request.split_once("\r\n\r\n").unwrap();
+        let mut body: Value = serde_json::from_str(body).unwrap();
+        let object = body.as_object_mut().unwrap();
+        object.remove("max_tokens");
+        object.remove("stream");
+        body
+    }
     let turn = round_trip(Some("max"), true).await;
     assert!(
         turn.contains(r#""output_config":{"effort":"max"}"#),
         "the turn envelope carries it: {turn}"
     );
+    assert!(turn.contains(r#""type":"adaptive""#), "{turn}");
     let ping = round_trip(Some("max"), false).await;
-    assert!(
-        !ping.contains("output_config"),
-        "the keepalive does not: {ping}"
-    );
+    assert_eq!(envelope(&ping), envelope(&turn));
 
     // The shape of the spotter's client: never given an effort, so neither path
-    // carries one — including with the forced tool choice that disables thinking.
+    // carries one.
     let turn = round_trip(None, true).await;
     assert!(!turn.contains("output_config"), "{turn}");
     let ping = round_trip(None, false).await;
     assert!(!ping.contains("output_config"), "{ping}");
 }
 
-/// `Client::without_thinking` on an `auto` turn: explicit `disabled` on Claude
-/// either way; a foreign model gets the explicit form when its reasoning is
-/// optional and the field omitted when it is mandatory — even one the lookup
-/// granted reasoning (docs/redaction-fork.md, docs/transport.md).
+/// `Client::without_thinking` takes the model's spelling of off on every turn,
+/// adaptive or not (docs/redaction-fork.md, docs/transport.md), and on OpenRouter
+/// an omitted `thinking` is said in OpenRouter's own word, `reasoning: {enabled:
+/// false}`. A client that never asked sends nothing extra.
 #[test]
-fn thinking_off_switch_disables_claude_and_optional_foreign_and_omits_mandatory() {
-    use super::thinking::Thinking;
-    let auto = ToolChoice::auto();
-    assert!(matches!(
-        Thinking::for_request("claude-fable-5", &auto, false, ThinkingOff::Omit),
-        Thinking::Disabled
-    ));
-    assert!(matches!(
-        Thinking::for_request("qwen/qwen3.8-flash", &auto, true, ThinkingOff::Disable),
-        Thinking::Disabled
-    ));
-    assert!(matches!(
-        Thinking::for_request("stealth/ox-alpha", &auto, true, ThinkingOff::Omit),
-        Thinking::Omit
-    ));
-    assert!(matches!(
-        Thinking::for_request("claude-fable-5", &auto, false, ThinkingOff::No),
-        Thinking::Adaptive { .. }
-    ));
-}
-
-/// `without_thinking` reaches a foreign model on OpenRouter as `reasoning.enabled:
-/// false`, since `thinking` is omitted there; a Claude model gets `thinking:
-/// disabled` and no `reasoning`; Anthropic never sees the field; and a client
-/// that never asked sends nothing (docs/redaction-fork.md).
-#[test]
-fn thinking_off_reaches_a_foreign_openrouter_model_as_reasoning_disabled() {
-    use super::thinking::Thinking;
+fn thinking_off_takes_the_models_spelling() {
+    use super::thinking::{Thinking, ThinkingOff};
     let openrouter =
         Endpoint::from_credentials(Provider::OpenRouter, "sk-or-v1-abc".into(), None, None)
             .unwrap();
     let anthropic =
         Endpoint::from_credentials(Provider::Anthropic, "sk-ant-xyz".into(), None, None).unwrap();
     let auto = ToolChoice::auto();
-    let field = |client: &Client| {
-        let thinking = Thinking::for_request(client.model(), &auto, false, client.thinking_off);
-        client
-            .reasoning_off(thinking)
-            .map(|r| serde_json::to_string(&r).unwrap())
+    let support = |off| ThinkingSupport {
+        adaptive: true,
+        off,
     };
-    // Mandatory reasoning: `thinking` is omitted, so OpenRouter's own switch rides.
-    let mandatory =
-        Client::new(openrouter.clone(), "ibm/granite", "sys", None).without_thinking(Some(true));
-    assert_eq!(field(&mandatory).as_deref(), Some(r#"{"enabled":false}"#));
-    // Optional reasoning: explicit `thinking: disabled` says it, nothing else needed.
-    let optional = Client::new(openrouter.clone(), "qwen/qwen3.8-flash", "sys", None)
-        .without_thinking(Some(false));
-    assert_eq!(field(&optional), None);
-    let claude = Client::new(openrouter.clone(), "anthropic/claude-opus-5", "sys", None)
-        .without_thinking(Some(false));
-    assert_eq!(field(&claude), None);
-    let direct = Client::new(anthropic, "claude-opus-5", "sys", None).without_thinking(Some(false));
-    assert_eq!(field(&direct), None);
-    // Unknown reasoning requirement takes the mandatory spelling: the field is
-    // omitted and OpenRouter's own switch rides, because the explicit
-    // `thinking: disabled` is an assertion a mandatory endpoint would reject.
-    let unknown =
-        Client::new(openrouter.clone(), "ibm/granite", "sys", None).without_thinking(None);
-    assert_eq!(field(&unknown).as_deref(), Some(r#"{"enabled":false}"#));
-    let unasked = Client::new(openrouter, "ibm/granite", "sys", None);
-    assert_eq!(field(&unasked), None);
+    let sent = |client: &Client, off| {
+        let thinking = Thinking::for_request(&auto, support(off), client.thinking_off);
+        let reasoning = client
+            .reasoning_off(thinking)
+            .map(|r| serde_json::to_string(&r).unwrap());
+        (thinking, reasoning)
+    };
+    let off =
+        |endpoint: &Endpoint| Client::new(endpoint.clone(), "m", "sys", None).without_thinking();
+    // Mandatory or undeclared reasoning on OpenRouter: omitted, and the switch rides.
+    assert_eq!(
+        sent(&off(&openrouter), ThinkingOff::Omit),
+        (Thinking::Omit, Some(r#"{"enabled":false}"#.into()))
+    );
+    // An explicit spelling says it alone.
+    assert_eq!(
+        sent(&off(&openrouter), ThinkingOff::Disabled),
+        (Thinking::Disabled, None)
+    );
+    assert_eq!(
+        sent(&off(&anthropic), ThinkingOff::BetweenTools),
+        (Thinking::BetweenTools, None)
+    );
+    // Anthropic has no `reasoning` field to send.
+    assert_eq!(
+        sent(&off(&anthropic), ThinkingOff::Omit),
+        (Thinking::Omit, None)
+    );
+    let unasked = Client::new(openrouter, "m", "sys", None);
+    assert!(matches!(
+        sent(&unasked, ThinkingOff::Omit),
+        (Thinking::Adaptive { .. }, None)
+    ));
 }

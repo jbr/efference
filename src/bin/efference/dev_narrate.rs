@@ -40,7 +40,7 @@ pub(crate) async fn narrate(target: &str, upto: Option<u64>, cut: Option<u64>) -
     // would end the account early.
     let caps = endpoint.fetch_capabilities(&model, &[]).await?;
     let client = Client::new(endpoint, &model, system, None)
-        .with_model_reasoning(caps.supports_reasoning)
+        .with_thinking(caps.thinking)
         .with_prompt_cache(caps.prompt_cache)
         .with_max_output(caps.max_output_tokens.unwrap_or(UNKNOWN_OUTPUT_CAP))
         .with_context_window(caps.context_length);

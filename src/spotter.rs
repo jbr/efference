@@ -162,6 +162,13 @@ impl ForkSpot {
         }
     }
 
+    /// Apply the model's thinking answer: the forced `spot` call sends thinking
+    /// off, spelled as the model's metadata says (docs/transport.md).
+    pub fn with_thinking(mut self, thinking: crate::api::ThinkingSupport) -> Self {
+        self.client = self.client.with_thinking(thinking);
+        self
+    }
+
     /// Name the session scratch dir so the scope block can render the `$TMPDIR`
     /// alias (docs/tools.md).
     pub fn with_scratch(mut self, scratch: Option<std::path::PathBuf>) -> Self {

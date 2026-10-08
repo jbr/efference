@@ -2,8 +2,7 @@ use std::collections::BTreeMap;
 
 use super::assembler::ResponseMeta;
 use super::client::record_upstream_failure;
-use super::thinking::ThinkingOff;
-use super::thinking::is_recognized_adaptive_claude;
+use super::thinking::ThinkingSupport;
 use super::*;
 use crate::log::{CallId, FRAME_CAPTURE_CAP, is_captured_header};
 use crate::project::ApiBlock;

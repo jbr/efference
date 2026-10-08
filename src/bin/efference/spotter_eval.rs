@@ -228,6 +228,7 @@ pub(crate) async fn spotter_eval(
     // per-case mount below then cannot fail.
     let kind = endpoint.spotter_kind(&model).await?;
     MountedSpotter::mount_with_persona(endpoint.clone(), &model, kind, persona.clone())?;
+    let thinking = endpoint.spotter_thinking(&model, kind).await?;
     // Briefs come from the same lookup a live gate uses; connected-server tools
     // in recorded cases have no mount here and run brief-less, which matches
     // how most were recorded.
@@ -312,6 +313,7 @@ pub(crate) async fn spotter_eval(
                             persona.clone(),
                         )
                         .expect("the rung was validated before the runs began")
+                        .with_thinking(thinking)
                         .with_scratch(case.scratch.then(|| PathBuf::from(SCRATCH_PLACEHOLDER)));
                         // A case without a recorded cwd keeps the pre-existing
                         // behavior (the process cwd, via the rung's fallback);

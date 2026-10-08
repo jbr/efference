@@ -55,11 +55,10 @@ impl ForkPeek {
             .with_stream_ceiling(stream_ceiling)
             .with_prompt_cache(caps.prompt_cache)
             .with_effort(triage.effort.clone());
-        client = if triage.thinking || triage.effort.is_some() {
-            client.with_model_reasoning(caps.supports_reasoning)
-        } else {
-            client.without_thinking(caps.reasoning_mandatory)
-        };
+        client = client.with_thinking(caps.thinking);
+        if !triage.thinking && triage.effort.is_none() {
+            client = client.without_thinking();
+        }
         // A verdict is one small call: cap the reservation at the peek's size, not
         // the model's, so it never crowds the window (`PEEK_MAX_OUTPUT`).
         let cap = caps

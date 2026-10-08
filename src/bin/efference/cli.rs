@@ -410,8 +410,8 @@ pub(crate) struct SessionFlags {
     /// provider's own default stands (the boot line prints it when the
     /// metadata names one). Boot-time only — there is no runtime toggle, since
     /// changing a thinking parameter mid-session invalidates the message-tier
-    /// cache. `xhigh`/`max` require thinking, so pairing either with
-    /// EFFERENCE_THINKING=off is refused at startup.
+    /// cache. `xhigh`/`max` require thinking, so pairing either with a model
+    /// that offers no adaptive thinking is refused at startup.
     #[arg(long, value_name = "LEVEL")]
     pub(crate) effort: Option<String>,
     /// Pin which upstream endpoint serves the model, for an OpenRouter session.

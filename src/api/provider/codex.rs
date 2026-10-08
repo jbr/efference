@@ -134,7 +134,10 @@ impl Entry {
         let efforts = self.efforts();
         ModelCapabilities {
             context_length: self.context_window.or(self.max_context_window),
-            supports_reasoning: efforts.is_some(),
+            thinking: ThinkingSupport {
+                adaptive: efforts.is_some(),
+                off: ThinkingOff::Omit,
+            },
             // An entry that lists no modality accepts no image: the upload would
             // spend itself on a rejection, and the tool reports success either
             // way (docs/tools.md).

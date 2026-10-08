@@ -254,14 +254,9 @@ fn state_reports_context_occupancy_against_the_boot_limit() {
     shared.set_capabilities(crate::api::ModelCapabilities {
         context_length: Some(200_000),
         max_output_tokens: Some(64_000),
-        supports_reasoning: false,
-        accepts_temperature: true,
         supports_image_input: true,
         prompt_cache: crate::api::PromptCachePolicy::Explicit,
-        supported_efforts: None,
-        default_effort: None,
-        validates_efforts: false,
-        reasoning_mandatory: None,
+        ..crate::api::ModelCapabilities::unknown()
     });
     let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
     assert_eq!(v["usage"]["context"]["limit"], 200_000);
@@ -319,14 +314,9 @@ fn context_occupancy_ignores_side_channel_requests() {
     shared.set_capabilities(crate::api::ModelCapabilities {
         context_length: Some(200_000),
         max_output_tokens: Some(64_000),
-        supports_reasoning: false,
-        accepts_temperature: true,
         supports_image_input: true,
         prompt_cache: crate::api::PromptCachePolicy::Explicit,
-        supported_efforts: None,
-        default_effort: None,
-        validates_efforts: false,
-        reasoning_mandatory: None,
+        ..crate::api::ModelCapabilities::unknown()
     });
     let usage = |input, read| RequestUsage {
         id: None,

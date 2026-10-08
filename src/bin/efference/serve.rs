@@ -282,7 +282,9 @@ pub(crate) async fn spotter_check(
     // decision model reads a JSON state (docs/permissions.md).
     let (model, endpoint) = crate::inference::spotter_endpoint(model)?;
     let kind = endpoint.spotter_kind(&model).await?;
-    let spotter = MountedSpotter::mount(endpoint, &model, kind, None, cwd.clone());
+    let thinking = endpoint.spotter_thinking(&model, kind).await?;
+    let spotter =
+        MountedSpotter::mount(endpoint, &model, kind, None, cwd.clone()).with_thinking(thinking);
     if show_move || tool.is_some() {
         let preview = match &spotter {
             MountedSpotter::Jev(_) => efference::spotter::jev::preview_state(

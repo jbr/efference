@@ -803,14 +803,11 @@ impl Provider {
         }
     }
 
-    /// The URL whose response names the model's effort levels, where a
-    /// provider has one: OpenRouter's singular model entry
+    /// The URL of a second metadata response naming the model's effort levels,
+    /// where a provider has one: OpenRouter's singular model entry
     /// (`GET /api/v1/model/{author}/{slug}`), whose `reasoning` block carries
-    /// `supported_efforts` and `default_effort` (docs/transport.md).
-    /// Anthropic's single metadata response names no efforts and there is no
-    /// second route to ask — `None`, which leaves
-    /// `ModelCapabilities::supported_efforts` unset and a configured level
-    /// passes through to the provider's own validation.
+    /// `supported_efforts` and `default_effort` (docs/transport.md). Anthropic
+    /// names its levels in the capabilities response itself, so `None` there.
     pub(super) fn effort_levels_url(&self, model: &str) -> Result<Option<String>, Error> {
         match self {
             Self::Anthropic
@@ -852,68 +849,7 @@ impl Provider {
                 Err("OpenAI capabilities come from the compiled catalog".into())
             }
             Self::TypeSafe => Err("typesafe publishes no inference capabilities".into()),
-            Self::Anthropic => {
-                // `GET /v1/models/{id}`: `max_input_tokens` is the context
-                // window, `max_tokens` the output cap. Unknown fields are
-                // ignored until a consumer needs them;
-                // `capabilities.image_input.supported` is the one that has one.
-                #[derive(Deserialize)]
-                struct Model {
-                    max_input_tokens: Option<u64>,
-                    max_tokens: Option<u64>,
-                    #[serde(default)]
-                    capabilities: Option<Capabilities>,
-                }
-                #[derive(Deserialize)]
-                struct Capabilities {
-                    #[serde(default)]
-                    image_input: Option<Supported>,
-                }
-                #[derive(Deserialize)]
-                struct Supported {
-                    #[serde(default)]
-                    supported: Option<bool>,
-                }
-                let model: Model = serde_json::from_str(body)?;
-                let context_length = model.max_input_tokens.ok_or_else(|| -> Error {
-                    "Anthropic model metadata carried no max_input_tokens".into()
-                })?;
-                Ok(ModelCapabilities {
-                    context_length: Some(context_length),
-                    max_output_tokens: model.max_tokens,
-                    // Claude thinking is governed by the tier allowlist
-                    // (`api::thinking`), not this bit — `supports_reasoning`
-                    // describes OpenRouter's normalized `reasoning` parameter.
-                    supports_reasoning: false,
-                    // Absent defaults to **true**, unlike the ceilings above,
-                    // which error on absence. The ceilings have no safe default
-                    // (a guessed number is silently wrong); this one does — the
-                    // Messages API has accepted image blocks on every Claude
-                    // model since it shipped, so a metadata response that stops
-                    // carrying the field must not disable a working tool.
-                    accepts_temperature: true,
-                    supports_image_input: model
-                        .capabilities
-                        .and_then(|c| c.image_input)
-                        .and_then(|i| i.supported)
-                        .unwrap_or(true),
-                    // Anthropic's `cache_control` markers let the harness choose
-                    // the write frontier (docs/transport.md).
-                    prompt_cache: PromptCachePolicy::Explicit,
-                    // No effort levels anywhere in Anthropic's metadata — not
-                    // on this route and no second route to ask
-                    // (`effort_levels_url`). A configured level passes through
-                    // unvalidated; the provider's own 400 is the feedback.
-                    supported_efforts: None,
-                    default_effort: None,
-                    validates_efforts: false,
-                    // Anthropic's metadata names no reasoning block. Claude's
-                    // spelling is decided by the family rule in `api/thinking.rs`
-                    // regardless, so this is `None` as a statement about the
-                    // source, not a claim about the model.
-                    reasoning_mandatory: None,
-                })
-            }
+            Self::Anthropic => anthropic::capabilities(body),
             Self::OpenRouter => {
                 // `GET /api/v1/models/{author}/{slug}/endpoints`: one entry per
                 // upstream currently serving the model, each with its own
@@ -1019,7 +955,7 @@ impl Provider {
                 // reason: routing is unpinned and a `thinking` block is not a
                 // routing filter, so it is sent only if *every* endpoint
                 // currently serving the model lists `reasoning`.
-                let supports_reasoning = endpoints
+                let adaptive = endpoints
                     .iter()
                     .all(|e| e.supported_parameters.iter().any(|p| p == "reasoning"));
                 // Does a prompt cache exist behind this slug at all — the
@@ -1042,7 +978,13 @@ impl Provider {
                 Ok(ModelCapabilities {
                     context_length: Some(context_length),
                     max_output_tokens,
-                    supports_reasoning,
+                    // How to say thinking off comes from the model entry's
+                    // `reasoning.mandatory`, merged in by `fetch_capabilities`;
+                    // until then, omission, which asserts nothing.
+                    thinking: ThinkingSupport {
+                        adaptive,
+                        off: ThinkingOff::Omit,
+                    },
                     // Model-level, not per-endpoint: one slug has one modality
                     // set whichever upstream serves it. An empty list (a
                     // response with no `architecture`) reads as text-only, which
@@ -1064,7 +1006,6 @@ impl Provider {
                     supported_efforts: None,
                     default_effort: None,
                     validates_efforts: false,
-                    reasoning_mandatory: None,
                 })
             }
         }
@@ -1074,16 +1015,18 @@ impl Provider {
     /// `reasoning.default_effort`. An absent block, an absent field, or an
     /// empty list all read as `None` — the metadata declares no levels, and
     /// [`EffortLevels`]'s boot rule refuses a configured effort against that.
-    /// Only the OpenRouter fetch reaches this: Anthropic names no efforts and
-    /// has no model-entry route (`effort_levels_url` returns `None` there).
-    /// The block's `mandatory` and `default_enabled` fields are observed in
-    /// live metadata but unused — no consumer yet.
+    /// Only the OpenRouter fetch reaches this: Anthropic names its levels in the
+    /// capabilities response (`effort_levels_url` returns `None` there).
+    /// `mandatory` decides how thinking off is spelled ([`ThinkingOff`]);
+    /// `default_enabled` is observed in live metadata but unused.
     pub(super) fn parse_model_entry(&self, body: &str) -> Result<EffortLevels, Error> {
         match self {
             // Unreachable: `effort_levels_url` answers `None`, so nothing fetches a
             // model entry to parse. The arm exists because the match is exhaustive.
             Self::Custom(_) => Err("a custom endpoint publishes no model entry".into()),
-            Self::Anthropic => Err("Anthropic metadata names no effort levels".into()),
+            Self::Anthropic => {
+                Err("Anthropic effort levels come from the capabilities response".into())
+            }
             Self::OpenAI | Self::OpenAICodex => {
                 Err("OpenAI effort levels come from the model catalog".into())
             }
@@ -1248,12 +1191,16 @@ pub struct ModelCapabilities {
     /// `max_tokens` is shrunk from (`api/reservation.rs`) — and routing skips
     /// endpoints that cannot produce a response that long (docs/transport.md).
     pub max_output_tokens: Option<u64>,
-    /// Whether every endpoint currently serving the model lists OpenRouter's
-    /// normalized `reasoning` in `supported_parameters` — the foreign-model input
-    /// to the thinking matrix (`api::thinking`; docs/transport.md). Always `false`
-    /// from the Anthropic provider, whose thinking is governed by the Claude tier
-    /// allowlist instead.
-    pub supports_reasoning: bool,
+    /// How the model takes the `thinking` field: whether an `auto` turn may think
+    /// adaptively, and how a request says thinking off (`api::thinking`,
+    /// docs/transport.md). Anthropic: `capabilities.thinking.types`. OpenRouter:
+    /// adaptive only when every endpoint currently serving the model lists
+    /// `reasoning` in `supported_parameters` — conservative like
+    /// `max_output_tokens`, since `thinking` is not a routing filter — and off
+    /// spelled from the model entry's `reasoning.mandatory`. Codex: adaptive when
+    /// the catalog entry names reasoning levels. Every other source:
+    /// [`ThinkingSupport::UNKNOWN`].
+    pub thinking: ThinkingSupport,
     /// Whether the model accepts image blocks. Anthropic:
     /// `capabilities.image_input.supported`, defaulting to `true` when the field
     /// is absent (every Claude model on Messages takes images). OpenRouter:
@@ -1280,49 +1227,32 @@ pub struct ModelCapabilities {
     pub prompt_cache: PromptCachePolicy,
     /// The effort levels the model's metadata declares (docs/transport.md).
     /// OpenRouter: the model entry's `reasoning.supported_efforts`, with an
-    /// absent or empty list normalized to `None` (`EffortLevels`). The
-    /// consumer is the boot check: a configured `--effort`/`[transport]
-    /// effort` is sent only when this list names it, because OpenRouter maps
-    /// an unsupported level to the nearest one silently — a session could
-    /// otherwise believe it set a knob that did nothing. `None` refuses every
-    /// configured level. Anthropic: `None` — its metadata names no efforts,
-    /// and a configured level passes through to the provider's own validation.
+    /// absent or empty list normalized to `None` (`EffortLevels`). Anthropic:
+    /// the levels `capabilities.effort` marks supported, an empty list when the
+    /// model takes no effort at all. The consumer is the boot check: a
+    /// configured `--effort`/`[transport] effort` is sent only when this list
+    /// names it, where [`Self::validates_efforts`] says the list binds.
     pub supported_efforts: Option<Vec<String>>,
     /// The effort level the model's metadata says it defaults to — OpenRouter
     /// `reasoning.default_effort` — printed on the boot line even when no
     /// effort is configured, which answers "what will the knob actually do"
-    /// in one glance (docs/transport.md). Never sent. Anthropic: `None`.
+    /// in one glance (docs/transport.md). Never sent. Anthropic's metadata names
+    /// no default: `None`.
     pub default_effort: Option<String>,
     /// Whether a configured effort level is checked against `supported_efforts`
-    /// at all (docs/transport.md). True only where the source declares the same
-    /// values the request carries — which today is OpenRouter's model entry, and
-    /// only because it maps an unsupported level to the nearest supported one
-    /// silently, so a session could otherwise believe it set a knob that did
-    /// nothing.
+    /// at all (docs/transport.md). True where the source declares the same
+    /// values the request carries: OpenRouter's model entry, which matters
+    /// because OpenRouter maps an unsupported level to the nearest supported one
+    /// silently, and Anthropic's `capabilities.effort`, whose keys are
+    /// `output_config.effort`'s own spellings.
     ///
     /// False where a source names levels that are not the request's values, or
-    /// names none. Anthropic's metadata names none, and the provider's own 400
-    /// on the first turn is the feedback for a misspelled one. A custom
-    /// endpoint's listing declares none. A Codex catalog entry lists what Codex
-    /// CLI offers — a set that includes a delegation mode the Responses API
-    /// rejects and omits values it accepts — so its levels are reported and not
-    /// enforced (`api/provider/codex.rs`). An unvalidated level passes through and
-    /// the provider answers, naming every value it accepts.
+    /// names none. A custom endpoint's listing declares none. A Codex catalog
+    /// entry lists what Codex CLI offers — a set that includes a delegation mode
+    /// the Responses API rejects and omits values it accepts — so its levels are
+    /// reported and not enforced (`api/provider/codex.rs`). An unvalidated level
+    /// passes through and the provider answers, naming every value it accepts.
     pub validates_efforts: bool,
-    /// OpenRouter `reasoning.mandatory`: the model always reasons and refuses
-    /// an explicit `thinking: disabled` (docs/transport.md). Decides how a
-    /// client built `without_thinking` says so: explicit `disabled` for a model
-    /// whose reasoning is optional, the field omitted for one whose reasoning is
-    /// mandatory.
-    ///
-    /// `None` is **not** a synonym for `Some(false)`, and the distinction is the
-    /// reason this is three-state: `Some(false)` makes the harness *assert*
-    /// something (the explicit `disabled` spelling), which a mandatory-reasoning
-    /// endpoint answers with a 400. So a source that declares nothing reads as
-    /// `None` and takes the same silent spelling `Some(true)` does — asserting
-    /// nothing is what "unknown" can honestly do. Only OpenRouter's metadata
-    /// declares this field; every other source leaves it `None`.
-    pub reasoning_mandatory: Option<bool>,
 }
 
 impl ModelCapabilities {
@@ -1337,7 +1267,7 @@ impl ModelCapabilities {
         Self {
             context_length: None,
             max_output_tokens: None,
-            supports_reasoning: false,
+            thinking: ThinkingSupport::UNKNOWN,
             supports_image_input: false,
             accepts_temperature: true,
             prompt_cache: PromptCachePolicy::None,
@@ -1345,7 +1275,6 @@ impl ModelCapabilities {
             default_effort: None,
             // Nothing declared the levels, so nothing is checked: see the field.
             validates_efforts: false,
-            reasoning_mandatory: None,
         }
     }
 
@@ -1369,10 +1298,14 @@ impl ModelCapabilities {
         }
         match &self.supported_efforts {
             Some(levels) if levels.iter().any(|level| level == effort) => Ok(()),
+            Some(levels) if levels.is_empty() => Err(format!(
+                "effort `{effort}`: {model}'s metadata says it takes no effort level. \
+                 Leave effort unset."
+            )),
             Some(levels) => Err(format!(
-                "effort `{effort}` is not among the levels {model} reports ({}) — \
-                 OpenRouter maps unsupported levels to the nearest silently; pick one of \
-                 those or leave effort unset{}",
+                "effort `{effort}` is not among the levels {model} reports ({}) — a \
+                 provider may map an unsupported level to the nearest one silently; pick \
+                 one of those or leave effort unset{}",
                 levels.join(", "),
                 self.default_effort
                     .as_deref()
@@ -1526,7 +1459,13 @@ impl Endpoint {
             capabilities.validates_efforts = efforts.supported.is_some();
             capabilities.supported_efforts = efforts.supported;
             capabilities.default_effort = efforts.default;
-            capabilities.reasoning_mandatory = Some(efforts.mandatory);
+            // Optional reasoning takes the explicit `disabled`; mandatory reasoning
+            // refuses it, so off is said by omission there (docs/transport.md).
+            capabilities.thinking.off = if efforts.mandatory {
+                ThinkingOff::Omit
+            } else {
+                ThinkingOff::Disabled
+            };
         }
         Ok(capabilities)
     }

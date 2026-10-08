@@ -88,6 +88,15 @@ impl MountedSpotter {
         }
     }
 
+    /// Apply the model's thinking answer (`ModelCapabilities::thinking`) to the
+    /// prose rung's client; a decision model sends no `thinking` field.
+    pub fn with_thinking(self, thinking: crate::api::ThinkingSupport) -> Self {
+        match self {
+            MountedSpotter::Fork(fork) => MountedSpotter::Fork(fork.with_thinking(thinking)),
+            jev @ MountedSpotter::Jev(_) => jev,
+        }
+    }
+
     pub fn with_cwd(self, cwd: impl Into<std::path::PathBuf>) -> Self {
         match self {
             MountedSpotter::Fork(fork) => MountedSpotter::Fork(fork.with_cwd(cwd)),

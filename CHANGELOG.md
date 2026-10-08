@@ -8,6 +8,7 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- **Thinking and effort from the model's metadata** (docs/transport.md): Anthropic's `capabilities.thinking.types` and `capabilities.effort` decide adaptive vs off and validate `--effort` at boot, replacing the Claude-name allowlist (Haiku 5.5 now thinks, and `xhigh` works on it); off is spelled `between_tools` where a model refuses `disabled`; the keepalive sends the turn's own thinking and effort, so a Claude ping refreshes the cache instead of writing a fresh entry. `EFFERENCE_THINKING` is removed.
 - **Summarize from the web** (docs/web-client.md, docs/control-api.md): the composer's cold notice offers *summarize instead* beside the uncached read, and the drawer's *Context* section folds on request (confirmed) — warm sessions included, via `POST /loop/fold {"warm": true}`; fold progress is its own `fold` topic (no longer `cold.fold`), shown in the web turn-state and the TUI header.
 - **Restart notices in the web transcript**: a `Resumed` entry renders as its notice instead of "unknown entry".
 - **Any decision model as the spotter** (docs/model-catalog.md, docs/transport.md): OpenRouter's decision models (`output_modalities=decisions`) are listed and mount the decision rung by their declared modality instead of a `typesafe/jev` id match; catalog rows carry a `kind`, the catalog routes take `?role=main|triage|spotter` so turn roles are never offered a decision model, and `dialect = "systemone"` lets a custom connection speak the System One contract at a URL used whole.

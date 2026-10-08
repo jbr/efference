@@ -1,7 +1,7 @@
 //! Human-readable renderings of an outbound request — the `wire` dev verb's output.
 
 use super::*;
-use crate::api::thinking::ThinkingOff;
+use crate::api::thinking::ThinkingSupport;
 
 /// Render the full request envelope as pretty JSON — the dev `wire` view (the
 /// `efference dev wire` subcommand) of exactly what [`Client::complete`] POSTs for a
@@ -27,10 +27,12 @@ pub fn render_request_pretty(
         system,
         tools,
         tool_choice,
-        thinking: Thinking::for_request(model, &tool_choice, false, ThinkingOff::No),
+        // The dev views render the shape a turn sends offline. The model's thinking
+        // support and the session's effort come from the boot-time metadata lookup,
+        // which these helpers do not make, so thinking renders as a source that
+        // declares nothing (omitted) and effort as unset.
+        thinking: Thinking::for_request(&tool_choice, ThinkingSupport::UNKNOWN, false),
         reasoning: None,
-        // The dev views render the shape a turn sends; the session's effort is a
-        // boot-time value these helpers are not given, so they show none.
         output_config: None,
         temperature: None,
         upstream: None,
@@ -143,10 +145,12 @@ pub(super) fn request_value(
         system,
         tools,
         tool_choice,
-        thinking: Thinking::for_request(model, &tool_choice, false, ThinkingOff::No),
+        // The dev views render the shape a turn sends offline. The model's thinking
+        // support and the session's effort come from the boot-time metadata lookup,
+        // which these helpers do not make, so thinking renders as a source that
+        // declares nothing (omitted) and effort as unset.
+        thinking: Thinking::for_request(&tool_choice, ThinkingSupport::UNKNOWN, false),
         reasoning: None,
-        // The dev views render the shape a turn sends; the session's effort is a
-        // boot-time value these helpers are not given, so they show none.
         output_config: None,
         temperature: None,
         upstream: None,

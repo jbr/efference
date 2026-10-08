@@ -77,18 +77,17 @@ struct Request<'a> {
     /// keys serialize sorted, so it is.
     tools: &'a [Value],
     tool_choice: ToolChoice,
-    /// Extended thinking (docs/transport.md). The matrix over `tool_choice`, the
-    /// model family, and the capability lookup is [`Thinking::for_request`]; the
-    /// three-way adaptive/disabled/omitted split is why this is not a `bool`. Set
-    /// once per call-type and never flipped turn-to-turn, so it stays out of the
-    /// cached prefix's way.
+    /// Extended thinking (docs/transport.md). Chosen by [`Thinking::for_request`]
+    /// from `tool_choice` and the model's metadata ([`ThinkingSupport`]); the
+    /// model-dependent spellings of off are why this is not a `bool`. Set once per
+    /// call-type and never flipped turn-to-turn, so it stays out of the cached
+    /// prefix's way.
     #[serde(skip_serializing_if = "Thinking::is_omit")]
     thinking: Thinking,
     /// OpenRouter's normalized reasoning switch, sent as `{"enabled": false}` only
-    /// by a client built `without_thinking` on OpenRouter for a foreign model
-    /// (docs/redaction-fork.md, docs/transport.md): `thinking` is omitted there
-    /// rather than `disabled`, and OpenRouter's default for a reasoning model is
-    /// on. A per-client constant, and `None` skips serialization, so no existing
+    /// by a client built `without_thinking` on OpenRouter where `thinking` is
+    /// omitted (docs/redaction-fork.md, docs/transport.md): a model whose
+    /// reasoning is mandatory or undeclared, whose default is on. A per-client constant, and `None` skips serialization, so no existing
     /// session's bytes move.
     #[serde(skip_serializing_if = "Option::is_none")]
     reasoning: Option<ReasoningOff>,
@@ -134,34 +133,9 @@ struct ReasoningOff {
     enabled: bool,
 }
 
-const THINKING_DISABLED: Thinking = Thinking::Disabled;
 const THINKING_ADAPTIVE: Thinking = Thinking::Adaptive {
     display: Some("summarized"),
 };
-
-/// Per-process override for adaptive thinking, read once from `EFFERENCE_THINKING`:
-/// `adaptive` forces it on, `off`/`disabled` forces it off, `auto` (or unset) defers
-/// to the Claude allowlist and the capability lookup. Read once — env is process-stable and thinking must not
-/// flip turn-to-turn or it would perturb the cached prefix (docs/transport.md). An
-/// unrecognized value warns once and falls back to `auto`.
-static THINKING_OVERRIDE: std::sync::LazyLock<Option<bool>> = std::sync::LazyLock::new(|| {
-    match std::env::var("EFFERENCE_THINKING")
-        .ok()
-        .as_deref()
-        .map(str::trim)
-    {
-        Some("adaptive") => Some(true),
-        Some("off" | "disabled") => Some(false),
-        None | Some("" | "auto") => None,
-        Some(other) => {
-            log::warn!(
-                "EFFERENCE_THINKING={other:?} not understood (use adaptive|off|auto); \
-                 falling back to the per-model default"
-            );
-            None
-        }
-    }
-});
 
 /// The Anthropic `usage` object (docs/transport.md). `Default` seeds the
 /// [`Assembler`] before `message_start` arrives.
@@ -396,7 +370,7 @@ pub use reservation::{
     output_cap_rejection, reservation_state,
 };
 pub use responses::encode_responses;
-pub use thinking::{ToolChoice, auto_turns_disable_thinking, check_effort_thinking};
+pub use thinking::{ThinkingOff, ThinkingSupport, ToolChoice, check_effort_thinking};
 
 use assembler::Assembler;
 use thinking::{OutputConfig, Thinking};

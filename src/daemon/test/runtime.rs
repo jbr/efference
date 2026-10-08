@@ -1,7 +1,7 @@
 //! Session runtimes stop independently inside one process (docs/control-channel.md).
 
 use super::*;
-use crate::api::{Endpoint, ModelCapabilities, PromptCachePolicy, Provider};
+use crate::api::{Endpoint, ModelCapabilities, Provider};
 use crate::daemon::{SessionBoot, SessionRuntime};
 use crate::distill::ForkPeek;
 use crate::log::Stance;
@@ -56,15 +56,7 @@ pub(super) fn boot(cwd: &Path) -> SessionBoot<StaticSpotter> {
         autonomous: false,
         capabilities: ModelCapabilities {
             context_length: Some(200_000),
-            max_output_tokens: None,
-            supports_reasoning: false,
-            accepts_temperature: true,
-            supports_image_input: false,
-            prompt_cache: PromptCachePolicy::None,
-            supported_efforts: None,
-            default_effort: None,
-            validates_efforts: false,
-            reasoning_mandatory: None,
+            ..ModelCapabilities::unknown()
         },
         model: "m".into(),
         inference: None,

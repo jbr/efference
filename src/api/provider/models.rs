@@ -83,6 +83,22 @@ impl Endpoint {
         }
     }
 
+    /// How a spotter model takes `thinking` (`ModelCapabilities::thinking`): the
+    /// prose rung forces its `spot` call, which sends thinking off, spelled as the
+    /// model's metadata says (docs/transport.md). The lookup doubles as a text
+    /// model's existence check. A decision model sends no `thinking` field, so it
+    /// is not asked.
+    pub async fn spotter_thinking(
+        &self,
+        model: &str,
+        kind: ModelKind,
+    ) -> Result<ThinkingSupport, Error> {
+        match kind {
+            ModelKind::Text => Ok(self.fetch_capabilities(model, &[]).await?.thinking),
+            ModelKind::Decisions => Ok(ThinkingSupport::UNKNOWN),
+        }
+    }
+
     /// `(id, display name)` pairs for a flat prompt, in the listing's order. An
     /// OpenRouter connection answers none here: its catalog is a few hundred
     /// rows, which a line prompt does not serve.

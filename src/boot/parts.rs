@@ -201,7 +201,7 @@ pub(super) fn build_client(
         // one envelope (docs/redaction-fork.md). The spotter's client is built
         // separately and never carries it; the keepalive omits it by construction.
         .with_effort(effort)
-        .with_model_reasoning(capabilities.supports_reasoning)
+        .with_thinking(capabilities.thinking)
         // Who places cache-write boundaries (docs/transport.md): the Responses
         // request reads this to decide whether to send explicit markers.
         .with_prompt_cache(capabilities.prompt_cache);
@@ -238,10 +238,11 @@ pub(super) async fn mount_spotter(
     spotter_endpoint.session_id = main_endpoint.session_id.clone();
     // The spotter's model is validated against *its* provider's metadata source,
     // not the main model's: a hosted spotter may sit on a different connection and
-    // dialect. Its own capabilities are not applied to its client today — the
-    // spotter sends a short fresh prompt with no thinking, effort, or temperature —
-    // so the lookup is the existence check that fails boot instead of the first
-    // permission decision.
+    // dialect. The lookup is the existence check that fails boot instead of the
+    // first permission decision, and its thinking answer is the one capability the
+    // spotter's client applies: its forced tool call sends thinking off, and how
+    // off is spelled is the model's (docs/transport.md). It sends no effort or
+    // temperature.
     //
     // A decision model has no such metadata: there is no context window, output
     // cap, or cache policy behind a decisions request (docs/permissions.md). The
@@ -257,17 +258,19 @@ pub(super) async fn mount_spotter(
             .into());
         }
     };
-    if kind == crate::api::ModelKind::Text
-        && let Err(error) = spotter_endpoint
-            .fetch_capabilities(&spotter_model, &[])
-            .await
+    let thinking = match spotter_endpoint
+        .spotter_thinking(&spotter_model, kind)
+        .await
     {
-        return Err(format!(
-            "spotter model {spotter_model:?} on {}: {error}",
-            spotter_endpoint.provider
-        )
-        .into());
-    }
+        Ok(thinking) => thinking,
+        Err(error) => {
+            return Err(format!(
+                "spotter model {spotter_model:?} on {}: {error}",
+                spotter_endpoint.provider
+            )
+            .into());
+        }
+    };
     // Which rung the model is (docs/permissions.md): a decision model reaches a
     // different API and answers differently, so the choice is made here, once.
     let spotter = MountedSpotter::mount(
@@ -276,7 +279,8 @@ pub(super) async fn mount_spotter(
         kind,
         Some(scratch.to_path_buf()),
         cwd.to_path_buf(),
-    );
+    )
+    .with_thinking(thinking);
     eprintln!("spotter rung: {}", spotter.kind());
     Ok(spotter)
 }

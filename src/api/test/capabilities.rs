@@ -64,7 +64,7 @@ fn openrouter_capabilities_aggregate_ceilings_in_opposite_directions() {
     assert_eq!(caps.context_length, Some(200000));
     assert_eq!(caps.max_output_tokens, Some(48000));
     // No endpoint above lists `supported_parameters` at all → not granted.
-    assert!(!caps.supports_reasoning);
+    assert!(!caps.thinking.adaptive);
 }
 
 /// The output-cap min skips endpoints below `OUTPUT_FLOOR` (docs/transport.md):
@@ -110,7 +110,7 @@ fn openrouter_output_cap_skips_endpoints_below_the_floor() {
     assert_eq!(cap(&[None, None]), None);
 }
 
-/// `supports_reasoning` is min-style like the ceilings: granted only when every
+/// Adaptive thinking is min-style like the ceilings: granted only when every
 /// endpoint serving the model lists `reasoning` — routing is unpinned, so a
 /// `thinking` block must be safe on whichever endpoint the request lands on.
 #[test]
@@ -123,7 +123,8 @@ fn openrouter_reasoning_capability_requires_every_endpoint() {
         Provider::OpenRouter
             .parse_capabilities(all, "m", &[])
             .unwrap()
-            .supports_reasoning
+            .thinking
+            .adaptive
     );
     let mixed = r#"{"data": {"endpoints": [
         {"context_length": 1000000, "supported_parameters": ["reasoning", "tools"]},
@@ -133,7 +134,8 @@ fn openrouter_reasoning_capability_requires_every_endpoint() {
         !Provider::OpenRouter
             .parse_capabilities(mixed, "m", &[])
             .unwrap()
-            .supports_reasoning
+            .thinking
+            .adaptive
     );
 }
 

@@ -207,10 +207,10 @@ drops the parts of it that only served that:
 - **Thinking off** (`Client::without_thinking`) unless `--triage-thinking` or
   `--triage-effort`: the peek's reasoning is discarded with the tail, so it is latency
   and tokens per gate. How "off" is spelled follows the model's metadata
-  (`ModelCapabilities::reasoning_mandatory`, [transport.md](transport.md)): a model
-  whose reasoning is optional gets the explicit `thinking: disabled`; one whose
-  reasoning is mandatory — or whose capability source declares nothing either way —
-  has the field omitted and, on OpenRouter, `reasoning: {enabled: false}` beside it. `--triage-effort <level>` turns the model down instead
+  (`ModelCapabilities::thinking`, [transport.md](transport.md)): `thinking: disabled`
+  where the model takes it, `between_tools` for an Anthropic model that refuses
+  `disabled`, and the field omitted where reasoning is mandatory or the source
+  declares nothing — with, on OpenRouter, `reasoning: {enabled: false}` beside it. `--triage-effort <level>` turns the model down instead
   of off, validated against its declared levels like `--effort`.
 - **A peek-sized output cap** (`PEEK_MAX_OUTPUT`, 16k, or the model's cap if
   smaller): a verdict is one small call, and reserving the model's whole cap against

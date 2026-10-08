@@ -120,8 +120,7 @@ impl Entry {
             // A listing carries no reasoning support or requirement. OpenRouter
             // puts them on its singular model entry, a route a custom endpoint is
             // not assumed to have.
-            supports_reasoning: false,
-            reasoning_mandatory: None,
+            thinking: ThinkingSupport::UNKNOWN,
             // Unknown modalities read as no image input: sending image bytes to a
             // model that cannot read them spends the upload on a 400 or on
             // content the model ignores, and the tool reports success either way

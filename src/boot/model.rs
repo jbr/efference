@@ -50,9 +50,9 @@ pub(super) async fn resolve_capabilities(
     );
 
     // The one cross-axis coupling is checked here rather than forwarded as the
-    // provider's 400: `xhigh`/`max` need thinking, which either `EFFERENCE_THINKING=off`
-    // or a model whose turns fall through to explicit `disabled` takes away — the
-    // capability lookup above is what makes the effective answer computable here.
+    // provider's 400: `xhigh`/`max` need thinking, which a model whose metadata
+    // offers no adaptive thinking takes away — the capability lookup above is what
+    // makes the effective answer computable here.
     // Validate before the coupling check: the metadata's list is the level's
     // only defense, so an unsupported spelling is named first (docs/transport.md).
     if let Some(effort) = effort
@@ -62,7 +62,8 @@ pub(super) async fn resolve_capabilities(
     }
     if let Err(why) = crate::api::check_effort_thinking(
         effort,
-        crate::api::auto_turns_disable_thinking(model, capabilities.supports_reasoning),
+        model,
+        capabilities.thinking.auto_turns_send_thinking_off(),
     ) {
         return Err(why.into());
     }
