@@ -158,7 +158,7 @@ const SCRATCH_PLACEHOLDER: &str = "/var/folders/xx/efference-eval/T/efference-sc
 pub(crate) async fn spotter_eval(
     cases_files: Vec<PathBuf>,
     labels_file: Option<PathBuf>,
-    model: String,
+    model: Option<String>,
     runs: usize,
     out: Option<PathBuf>,
     limit: Option<usize>,
@@ -223,7 +223,7 @@ pub(crate) async fn spotter_eval(
         Some(path) => Some(std::fs::read_to_string(&path)?),
         None => None,
     };
-    let (model, endpoint) = crate::inference::spotter_endpoint(Some(&model))?;
+    let (model, endpoint) = crate::inference::spotter_endpoint(model.as_deref())?;
     // Reject a persona against a decision model before spending anything: the
     // per-case mount below then cannot fail.
     let kind = endpoint.spotter_kind(&model).await?;

@@ -415,9 +415,11 @@ pub(crate) enum DevCommand {
         /// rows that carry no inline label.
         #[arg(long)]
         labels: Option<PathBuf>,
-        /// Spotter model under test.
-        #[arg(long, default_value = "claude-haiku-4-5")]
-        model: String,
+        /// Spotter model under test, as `<connection>/<native model>`. Defaults to
+        /// the spotter a session would get: `[defaults].spotter`, else the chain
+        /// ending in the newest model in the main connection's cheap band.
+        #[arg(long)]
+        model: Option<String>,
         /// Attempts per case — the spotter is sampled behavior, so per-case
         /// consistency (the flip rate) is its own quality axis.
         #[arg(long, default_value_t = 3)]

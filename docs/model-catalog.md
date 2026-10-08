@@ -73,8 +73,10 @@ on Anthropic, the newest row by `created` whose `line` is `haiku` and whose
 `lifecycle` is `active`. Anthropic's docs say not to infer the line from the id, so
 nothing here parses one. Resolution reads only what is held: a listing not yet
 fetched, a copy stored before rows carried `line`, or a provider whose listing names
-no lines falls back to the compiled-in `Provider::default_spotter_model`. So do the
-CLI and the offline verbs, whose registry holds no catalog. The next read of the
+no lines falls back to the compiled-in `Provider::default_spotter_model`. The
+offline verbs' registry (`src/bin/efference/inference.rs`) opens the same stored
+catalog, so `dev spotter` and `dev spotter-eval` default to what a host session
+would get. The next read of the
 listing (the picker's, or any past [`CATALOG_TTL`](#age-and-refresh)) brings the
 answer up to date.
 

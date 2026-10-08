@@ -940,3 +940,40 @@ async fn the_borrowed_spotter_default_reads_the_catalog() {
         Some("claude-haiku-4-5")
     );
 }
+
+/// The spotter verbs resolve the spotter alone: a config with no main default runs
+/// them with a named spotter or `[defaults].spotter`, and refuses only when the
+/// spotter would have fallen through to main's cheap band.
+#[test]
+fn the_spotter_role_resolves_without_a_main_model() {
+    let (named, _) = one_connection()
+        .resolve_spotter_role(Some("main/claude-sonnet-5-5"))
+        .unwrap();
+    assert_eq!(named.model, "claude-sonnet-5-5");
+
+    let defaulted = registry(
+        r#"
+[defaults]
+spotter = "main/claude-haiku-5-5"
+
+[connections.main]
+provider = "anthropic"
+auth = { kind = "env", key = "ANTHROPIC_KEY" }
+"#,
+    );
+    let (selection, _) = defaulted.resolve_spotter_role(None).unwrap();
+    assert_eq!(selection.model, "claude-haiku-5-5");
+
+    let why = one_connection()
+        .resolve_spotter_role(None)
+        .unwrap_err()
+        .to_string();
+    assert!(why.contains("[defaults].spotter"), "{why}");
+
+    // A spotter field's own issue still refuses, named as the spotter's.
+    let why = one_connection()
+        .resolve_spotter_role(Some("nowhere/m"))
+        .unwrap_err()
+        .to_string();
+    assert!(why.starts_with("spotter: "), "{why}");
+}

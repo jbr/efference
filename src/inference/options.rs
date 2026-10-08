@@ -679,6 +679,42 @@ impl InferenceRegistry {
         })
     }
 
+    /// The spotter role alone, for a verb that runs only the spotter (`efference
+    /// dev spotter`, `dev spotter-eval`): `spotter` names it, else the same
+    /// default chain a session takes. Main is resolved only as that chain's last
+    /// link needs it, so a config with no main default refuses only when the
+    /// spotter would have fallen through to main's cheap band.
+    pub fn resolve_spotter_role(
+        &self,
+        spotter: Option<&str>,
+    ) -> Result<(ModelSelection, crate::api::Endpoint), Error> {
+        let resolved = self.resolve_options(
+            &SessionOptions {
+                spotter_model: spotter.map(str::to_string),
+                ..Default::default()
+            },
+            None,
+            None,
+        );
+        if let Some(issue) = resolved
+            .issues
+            .iter()
+            .find(|issue| issue.field == "spotter_model")
+        {
+            return Err(match &issue.detail {
+                Some(detail) => format!("spotter: {}: {detail}", issue.message),
+                None => format!("spotter: {}", issue.message),
+            }
+            .into());
+        }
+        let selection = resolved.effective.spotter.value.ok_or(
+            "no spotter resolved: name one (`connection/model`), or set [defaults].spotter \
+             in ~/.efference/config.toml",
+        )?;
+        let role = self.attach(selection, "spotter")?;
+        Ok((role.selection, role.endpoint))
+    }
+
     /// Clone the credential material for an already-selected role.
     fn attach(&self, selection: ModelSelection, role: &str) -> Result<ResolvedRole, Error> {
         let credential = self
