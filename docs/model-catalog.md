@@ -34,7 +34,8 @@ is not retried within a minute of a failure. One read is bounded at 30 seconds.
 the source declares: `group` (OpenRouter's author, the id prefix before `/`, a leading `~`
 folded), `name`, `description` (provider prose), `created` (unix seconds), `context`
 (tokens), `price` (`input`/`output`, USD per million tokens), `reasoning`, `images`
-(image input). An undeclared fact is
+(image input), `line` (the model line the provider files it under) and `lifecycle`
+(`active`, `deprecated`, `retired`). An undeclared fact is
 absent. `recent` is added at read time, not stored.
 
 - **Names** lose OpenRouter's author prefix (`Z.ai: GLM 5.3 Flash` becomes `GLM 5.3
@@ -56,12 +57,26 @@ absent. `recent` is added at read time, not stored.
 | Provider | Source | Facts read |
 |---|---|---|
 | OpenRouter | `GET /api/v1/models?output_modalities=text,decisions` (sent without `anthropic-version`) | name, description, created, context_length (`0` reads as absent), pricing, `architecture.input_modalities`/`output_modalities`, `supported_parameters`/`reasoning` |
-| Anthropic | `GET /v1/models?limit=100` | display_name, created_at (RFC 3339), max_input_tokens, `capabilities.image_input.supported` |
+| Anthropic | `GET /v1/models?limit=100` | display_name, created_at (RFC 3339), max_input_tokens, `capabilities.image_input.supported`, `line`, `lifecycle` |
 | OpenAI Codex | the Codex catalog (also the capability source, [transport.md](transport.md)) | display_name, description, context window, input modalities, reasoning levels |
 | TypeSafe | `GET /v1/models` | name (model id), description, release_date (RFC 3339); every row `decisions` |
 | OpenAI platform | `GET /v1/models` | created |
 | Described endpoint | `GET {base}/models`, read field by field | created, name/display_name, description, context, image modality |
 | Described `systemone` endpoint | none | none — an empty catalog |
+
+## The spotter default
+
+Where a session's spotter falls through to the main connection's cheap band
+([permissions.md](permissions.md)), resolution reads the connection's held listing
+first (`Provider::newest_spotter_model`, through `InferenceRegistry::with_catalog`):
+on Anthropic, the newest row by `created` whose `line` is `haiku` and whose
+`lifecycle` is `active`. Anthropic's docs say not to infer the line from the id, so
+nothing here parses one. Resolution reads only what is held: a listing not yet
+fetched, a copy stored before rows carried `line`, or a provider whose listing names
+no lines falls back to the compiled-in `Provider::default_spotter_model`. So do the
+CLI and the offline verbs, whose registry holds no catalog. The next read of the
+listing (the picker's, or any past [`CATALOG_TTL`](#age-and-refresh)) brings the
+answer up to date.
 
 ## Kind and role
 

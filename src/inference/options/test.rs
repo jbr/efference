@@ -898,3 +898,45 @@ auth = {{ kind = "env", key = "ANTHROPIC_KEY" }}
     assert_eq!(own.source, Some(SelectionSource::MainProvider));
     assert_eq!(own.value.unwrap().model, "claude-haiku-4-5");
 }
+
+/// With the host's catalog holding the provider's listing, the borrowed spotter
+/// default is the newest `active` model on the `haiku` line; without it, the
+/// compiled-in default (docs/model-catalog.md).
+#[tokio::test]
+async fn the_borrowed_spotter_default_reads_the_catalog() {
+    let catalog = crate::catalog::Catalog::new(None);
+    let haiku = |id: &str, created: i64| crate::api::ListedModel {
+        created: Some(created),
+        line: Some("haiku".into()),
+        lifecycle: Some("active".into()),
+        ..crate::api::ListedModel::new(id)
+    };
+    catalog
+        .refresh_with(
+            "main",
+            crate::api::Provider::Anthropic,
+            crate::catalog::CATALOG_TTL,
+            || async {
+                Ok(vec![
+                    haiku("claude-haiku-4-5", 1),
+                    haiku("claude-haiku-5-5", 2),
+                ])
+            },
+        )
+        .await;
+    let resolved =
+        one_connection()
+            .with_catalog(catalog)
+            .resolve_options(&main_options(), None, None);
+    assert_eq!(
+        resolved.effective.spotter.value.map(|s| s.model).as_deref(),
+        Some("claude-haiku-5-5")
+    );
+    let unheld = one_connection()
+        .with_catalog(crate::catalog::Catalog::new(None))
+        .resolve_options(&main_options(), None, None);
+    assert_eq!(
+        unheld.effective.spotter.value.map(|s| s.model).as_deref(),
+        Some("claude-haiku-4-5")
+    );
+}

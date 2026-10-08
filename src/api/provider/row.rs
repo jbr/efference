@@ -84,6 +84,14 @@ pub struct ListedModel {
     /// Absent on the wire for a text model, the common case.
     #[serde(default, skip_serializing_if = "ModelKind::is_text")]
     pub kind: ModelKind,
+    /// The model line the provider files it under (Anthropic `line`: `haiku`,
+    /// `sonnet`, …), read rather than inferred from the id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line: Option<String>,
+    /// The provider's lifecycle stage (Anthropic `lifecycle`: `active`,
+    /// `deprecated`, `retired`), verbatim.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lifecycle: Option<String>,
 }
 
 impl ListedModel {

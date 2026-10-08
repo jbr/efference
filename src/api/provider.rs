@@ -319,6 +319,9 @@ impl Provider {
     /// not knowable, and guessing a slug would fail at the metadata lookup with a
     /// message about a model nobody chose. Resolution asks for `[defaults].spotter`
     /// instead (`inference/options.rs`).
+    ///
+    /// Compiled in, so it ages with the build; where the host holds the
+    /// provider's listing, resolution asks [`Self::newest_spotter_model`] first.
     pub fn default_spotter_model(&self) -> Option<&'static str> {
         match self {
             Self::Anthropic => Some("claude-haiku-4-5"),
@@ -331,6 +334,33 @@ impl Provider {
             // entry point and the API takes it directly.
             Self::TypeSafe => Some("jev-latest"),
             Self::Custom(_) => None,
+        }
+    }
+
+    /// The default spotter read from this provider's cached listing, where the
+    /// listing says which models form the cheap band: Anthropic files each model
+    /// under a `line`, so the answer is the newest `active` model on the `haiku`
+    /// line, by `created_at` (docs/model-catalog.md). `None` where the listing
+    /// names no lines, or holds no such model; the caller then takes
+    /// [`Self::default_spotter_model`].
+    pub fn newest_spotter_model(&self, rows: &[ListedModel]) -> Option<String> {
+        match self {
+            Self::Anthropic => rows
+                .iter()
+                .filter(|row| {
+                    row.line.as_deref() == Some("haiku")
+                        && row
+                            .lifecycle
+                            .as_deref()
+                            .is_none_or(|stage| stage == "active")
+                })
+                .max_by_key(|row| row.created)
+                .map(|row| row.model.clone()),
+            Self::OpenRouter
+            | Self::OpenAI
+            | Self::OpenAICodex
+            | Self::TypeSafe
+            | Self::Custom(_) => None,
         }
     }
 

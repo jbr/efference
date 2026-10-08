@@ -879,8 +879,10 @@ without unmaking its input prefix, and only a response with no accounted input
 counts as nothing planted. The
 spotter model must be one its connection's metadata source knows: with no
 `[defaults].spotter` and no connection reaching jev, the main connection's cheap band applies
-(`Provider::default_spotter_model`, gpt-5.6-luna here, claude-haiku-4-5 on
-Anthropic and its `anthropic/` slug on OpenRouter), and an explicit `--spotter-model` passes its own provider's
+(on Anthropic, the newest active `haiku`-line model in the held listing,
+[model-catalog.md](model-catalog.md); else `Provider::default_spotter_model`,
+gpt-5.6-luna here, claude-haiku-4-5 on Anthropic and its `anthropic/` slug on
+OpenRouter), and an explicit `--spotter-model` passes its own provider's
 check. Model capabilities on this dialect come from the provider's catalog, not
 from the build (**OpenAI capabilities**, under Providers below).
 

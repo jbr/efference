@@ -187,7 +187,7 @@ impl Catalog {
         .await
     }
 
-    async fn refresh_with<F, Fut>(
+    pub(crate) async fn refresh_with<F, Fut>(
         &self,
         connection: &str,
         provider: Provider,

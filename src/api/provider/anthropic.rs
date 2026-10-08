@@ -26,6 +26,10 @@ struct Entry {
     max_input_tokens: Option<u64>,
     #[serde(default)]
     capabilities: Option<Capabilities>,
+    #[serde(default)]
+    line: Option<String>,
+    #[serde(default)]
+    lifecycle: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -173,6 +177,8 @@ pub(super) fn rows(body: &str) -> Result<Vec<ListedModel>, Error> {
                     .capabilities
                     .and_then(|c| c.image_input)
                     .and_then(|i| i.supported),
+                line: entry.line,
+                lifecycle: entry.lifecycle,
                 ..ListedModel::new(&entry.id).named(&entry.display_name)
             })
             .collect(),

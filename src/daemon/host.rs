@@ -109,11 +109,12 @@ impl Host {
         inference: crate::inference::InferenceRegistry,
         host_env: crate::env_table::EnvSnapshot,
     ) -> Arc<Self> {
+        let catalog =
+            crate::catalog::Catalog::new(inference.history().state_path().map(ToOwned::to_owned));
+        let inference = inference.with_catalog(catalog.clone());
         Arc::new(Self {
             swansong: Swansong::new(),
-            catalog: crate::catalog::Catalog::new(
-                inference.history().state_path().map(ToOwned::to_owned),
-            ),
+            catalog,
             // The same file as the catalog and the picks, and disabled with them:
             // a config that named no home directory names no place to remember.
             remembered: inference

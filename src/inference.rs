@@ -227,6 +227,11 @@ pub struct InferenceRegistry {
     /// omitted-branch default and the recent menus. Opened from the config
     /// file's own directory, so a test config names no store.
     history: crate::history::History,
+    /// The host's model catalog, when this registry serves one
+    /// ([`Self::with_catalog`]): where the spotter default reads the newest model
+    /// in a provider's cheap band (docs/model-catalog.md). `None` for the CLI and
+    /// the offline verbs, which take the compiled-in default.
+    catalog: Option<crate::catalog::Catalog>,
     /// The configured `env_hook`, retained as written (docs/env.md). User-wide
     /// because the command that reconstructs an operator's shell environment is
     /// a property of the operator, not of any one project; it travels with the
@@ -354,6 +359,28 @@ impl InferenceRegistry {
         self
     }
 
+    /// Read the spotter default from the host's catalog (docs/model-catalog.md).
+    pub fn with_catalog(mut self, catalog: crate::catalog::Catalog) -> Self {
+        self.catalog = Some(catalog);
+        self
+    }
+
+    /// The spotter a session on `main` gets when nothing names one: the newest
+    /// model in the provider's cheap band per its cached listing, else the
+    /// compiled-in default (`Provider::newest_spotter_model`). A listing not yet
+    /// fetched answers nothing here; the picker's read fetches it.
+    pub(crate) fn default_spotter(&self, main: &ModelSelection) -> Option<String> {
+        self.catalog
+            .as_ref()
+            .and_then(|catalog| {
+                catalog
+                    .snapshot(&main.connection, main.provider, crate::history::now())
+                    .rows
+            })
+            .and_then(|rows| main.provider.newest_spotter_model(&rows))
+            .or_else(|| main.provider.default_spotter_model().map(str::to_string))
+    }
+
     pub fn from_config(
         config: InferenceConfig,
         host_cwd: &Path,
@@ -416,6 +443,7 @@ impl InferenceRegistry {
             defaults,
             credential_variables,
             history: crate::history::History::disabled(),
+            catalog: None,
             env_hook: config.env_hook,
         })
     }
@@ -503,6 +531,7 @@ impl InferenceRegistry {
             defaults: ResolvedDefaults::default(),
             credential_variables: BTreeSet::new(),
             history: crate::history::History::disabled(),
+            catalog: None,
             env_hook: None,
         }
     }

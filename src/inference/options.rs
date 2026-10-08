@@ -397,11 +397,8 @@ impl InferenceRegistry {
                                 .map(|selection| (selection, SelectionSource::DecisionConnection))
                         })
                         .or_else(|| {
-                            main.provider.default_spotter_model().map(|model| {
-                                (
-                                    main_selection(main, model.to_string()),
-                                    SelectionSource::MainProvider,
-                                )
+                            self.default_spotter(main).map(|model| {
+                                (main_selection(main, model), SelectionSource::MainProvider)
                             })
                         }) {
                         Some((selection, source)) => Effective::resolved(selection, source),
