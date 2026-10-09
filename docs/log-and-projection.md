@@ -155,6 +155,7 @@ grouped `thinking` / `text` / `calls` fields:
 enum AssistantOutput {
     Messages(Vec<MessagesOutputBlock>),    // Anthropic Messages content blocks, provider order
     Responses(Vec<ResponsesOutputItem>),   // OpenAI Responses output items, provider order
+    Completions(CompletionsMessage),       // one Chat Completions assistant message, as received
 }
 enum MessagesOutputBlock { Text(String), Thinking { text, signature }, RedactedThinking { data }, ToolUse(ToolCall) }
 enum ResponsesOutputItem { Reasoning { id, status, summary, encrypted_content },
@@ -163,7 +164,7 @@ enum ResponsesOutputItem { Reasoning { id, status, summary, encrypted_content },
                            Unsupported(Value) }
 ```
 
-Both wires return an ordered array, and a provider may interleave freely (text before
+Messages and Responses return an ordered array, and a provider may interleave freely (text before
 thinking, several messages around one call). Keeping that order makes projection a copy
 of provider-authored structure rather than a reconstruction: `project` maps each
 `MessagesOutputBlock` to its wire block in place. The dialect sits outside the item vector
@@ -177,6 +178,18 @@ Consumers that do not care about the wire read the semantic accessors — `text(
 surface through it. For a Responses function call the exact `arguments` string is the
 replay authority; `tool_calls()` parses it on demand into a normalized `ToolCall` keyed by
 `call_id` (the execution/result join key), never by the output item's own `id`.
+
+A Completions turn has no item vocabulary of its own to type, because vendors put
+reasoning in different places (`reasoning_content`, `reasoning` / `reasoning_details`,
+`thinking` content parts). `CompletionsMessage` (`log/completions.rs`) is the
+assistant message as the stream assembled it, an object of every key under its arrival
+name. Assembly drops `null` values, `role` (the encoder writes it), and each tool
+call's `index`. The object replays as stored. The accessors read the keys the dialect
+defines (`content`, `tool_calls`, `refusal`); `reasoning_text()` reads every other key
+by a display heuristic (a flat string value, or else the strings under `text`,
+`summary`, `content`, and `thinking`), which never reaches the wire. The secret mask
+([env.md](env.md)) rewrites `content`, `refusal`, and call arguments, and leaves the
+opaque keys alone, as it leaves Messages thinking: they may be signed.
 
 Logs written before this shape (grouped fields) are not read back; they were rewritten
 once by a throwaway script under `scripts/`, which emits the old group order

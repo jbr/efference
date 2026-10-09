@@ -194,7 +194,7 @@ fn describe_endpoint<P: Prompter>(prompter: &mut P) -> Result<(WireDialect, Stri
     // `/decisions/v1/systemone`, a per-model run URL), so the URL is taken whole.
     let (label, example) = match dialect {
         WireDialect::SystemOne => ("Request URL", "https://api.example.com/v1/systemone"),
-        WireDialect::Messages | WireDialect::Responses => {
+        WireDialect::Messages | WireDialect::Responses | WireDialect::Completions => {
             ("Base URL", "https://api.example.com/v1")
         }
     };

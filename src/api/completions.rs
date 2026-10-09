@@ -1,21 +1,21 @@
 //! The Chat Completions request: semantic turns → `messages[]`, plus the envelope
-//! (docs/transport.md). No client sends it yet; the `wire --dialect completions`
-//! dev view renders a recorded session in this shape, and the user / tool-result
-//! half here is the one the dialect's encoder will use.
+//! (docs/transport.md). Assistant turns recorded in this dialect replay as
+//! received; the `wire --dialect completions` dev view also translates turns
+//! recorded in Messages.
 
 use serde::Serialize;
 use serde_json::{Map, Value};
 
 use super::MAX_TOKENS;
 use super::thinking::ToolChoice;
-use crate::log::{AssistantOutput, MessagesOutputBlock, ResultImage};
+use crate::log::{AssistantOutput, CompletionsMessage, MessagesOutputBlock, ResultImage};
 use crate::project::{UserPart, WireTurn};
 
 #[cfg(test)]
 mod test;
 
 /// The request body. Field order is pinned by
-/// `completions_view_matches_expected_wire_bytes`.
+/// `completions_envelope_matches_expected_wire_bytes`.
 #[derive(Serialize)]
 struct CompletionsRequest<'a> {
     model: &'a str,
@@ -46,7 +46,9 @@ pub enum Message {
     User {
         content: UserContent,
     },
-    Assistant(AssistantMessage),
+    /// Every key the message arrived with, under its arrival name; `role` is the
+    /// tag, so the stored message does not carry it.
+    Assistant(CompletionsMessage),
     /// A tool result. Carries text only: a result's images ride the `user`
     /// message after the run of tool messages ([`encode_user`]). Completions has
     /// no error flag, so `is_error` does not reach this wire, as on Responses.
@@ -78,34 +80,6 @@ pub struct ImageUrl {
     pub url: String,
 }
 
-/// An assistant message. `extra` holds every key besides `content` and
-/// `tool_calls` — reasoning, in whichever vendor's spelling — so the translated
-/// view and the verbatim replay the dialect will store share one shape.
-#[derive(Serialize, Debug, Clone, PartialEq)]
-pub struct AssistantMessage {
-    pub content: Value,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub tool_calls: Vec<FunctionCall>,
-    #[serde(flatten)]
-    pub extra: Map<String, Value>,
-}
-
-#[derive(Serialize, Debug, Clone, PartialEq)]
-pub struct FunctionCall {
-    pub id: String,
-    #[serde(rename = "type")]
-    pub kind: &'static str,
-    pub function: FunctionCallBody,
-}
-
-#[derive(Serialize, Debug, Clone, PartialEq)]
-pub struct FunctionCallBody {
-    pub name: String,
-    /// The input as a JSON string. Translated from a Messages `tool_use`, it is
-    /// the compact serialization of a `Value`, whose keys are sorted.
-    pub arguments: String,
-}
-
 /// `tool_choice` in the Completions spelling.
 fn tool_choice_value(choice: &ToolChoice) -> Value {
     match choice.forced() {
@@ -132,29 +106,44 @@ fn tool_definitions(tools: &[Value]) -> Vec<Value> {
         .collect()
 }
 
-/// The `format` tag OpenRouter's `reasoning_details` carries for a signature's
-/// origin. A Messages log records no vendor, so the view infers one from the model
-/// id: Gemini models through OpenRouter, Anthropic otherwise. View-only — the
-/// dialect replays stored keys and never writes this tag.
-fn reasoning_format(model: &str) -> &'static str {
-    if model.starts_with("google/") || model.starts_with("gemini") {
-        "google-gemini-v1"
-    } else {
-        "anthropic-claude-v1"
-    }
+/// Encode semantic turns as Completions `messages`, the preamble leading as a
+/// `system` message. Assistant turns recorded in this dialect replay as stored;
+/// another dialect's turns are skipped, which `project::check_dialect` makes
+/// unreachable for a live request. Breakpoints place nothing: this wire has no
+/// per-part cache marker.
+pub fn encode_completions(turns: &[WireTurn], preamble: &str) -> Vec<Message> {
+    encode(turns, preamble, |output| match output {
+        AssistantOutput::Completions(message) => Ok(Some(message.clone())),
+        AssistantOutput::Messages(_) | AssistantOutput::Responses(_) => Ok(None),
+    })
+    .expect("the replaying encoder refuses nothing")
 }
 
-/// Translate turns recorded in Messages into Completions `messages`, the preamble
-/// leading as a `system` message. Assistant thinking becomes OpenRouter's
-/// `reasoning_details`, tagged by [`reasoning_format`] of `model`. Breakpoints place nothing: this
-/// wire has no per-part cache marker. Refuses a Responses-recorded turn, which
-/// this view does not translate.
+/// [`encode_completions`] for the `wire --dialect completions` view, which also
+/// translates turns recorded in Messages: thinking becomes OpenRouter's
+/// `reasoning_details`, tagged by [`reasoning_format`] of `model`. Refuses a
+/// Responses-recorded turn, which it does not translate.
 pub fn translate_completions(
     turns: &[WireTurn],
     preamble: &str,
     model: &str,
 ) -> Result<Vec<Message>, super::Error> {
     let format = reasoning_format(model);
+    encode(turns, preamble, |output| match output {
+        AssistantOutput::Completions(message) => Ok(Some(message.clone())),
+        AssistantOutput::Messages(blocks) => Ok(Some(translate_assistant(blocks, format))),
+        AssistantOutput::Responses(_) => Err("the Completions view translates sessions \
+                                              recorded in the Messages dialect; this one \
+                                              is recorded in Responses"
+            .into()),
+    })
+}
+
+fn encode(
+    turns: &[WireTurn],
+    preamble: &str,
+    assistant: impl Fn(&AssistantOutput) -> Result<Option<CompletionsMessage>, super::Error>,
+) -> Result<Vec<Message>, super::Error> {
     let mut messages = Vec::new();
     if !preamble.is_empty() {
         messages.push(Message::System {
@@ -164,13 +153,8 @@ pub fn translate_completions(
     for turn in turns {
         match turn {
             WireTurn::User(parts) => encode_user(parts, &mut messages),
-            WireTurn::Assistant(AssistantOutput::Messages(blocks)) => {
-                messages.push(translate_assistant(blocks, format));
-            }
-            WireTurn::Assistant(AssistantOutput::Responses(_)) => {
-                return Err("the Completions view translates sessions recorded in the \
-                            Messages dialect; this one is recorded in Responses"
-                    .into());
+            WireTurn::Assistant(output) => {
+                messages.extend(assistant(output)?.map(Message::Assistant));
             }
             WireTurn::Breakpoint => {}
         }
@@ -187,33 +171,32 @@ pub fn render_completions_request_pretty(
     tool_choice: ToolChoice,
     turns: &[WireTurn],
 ) -> Result<String, super::Error> {
+    let messages = translate_completions(turns, system, model)?;
     Ok(serde_json::to_string_pretty(&completions_request(
         model,
-        system,
+        messages,
         tools,
         tool_choice,
-        turns,
-    )?)?)
+    ))?)
 }
 
 fn completions_request<'a>(
     model: &'a str,
-    system: &str,
+    messages: Vec<Message>,
     tools: &[Value],
     tool_choice: ToolChoice,
-    turns: &[WireTurn],
-) -> Result<CompletionsRequest<'a>, super::Error> {
-    Ok(CompletionsRequest {
+) -> CompletionsRequest<'a> {
+    CompletionsRequest {
         model,
         max_tokens: MAX_TOKENS,
-        messages: translate_completions(turns, system, model)?,
+        messages,
         tools: tool_definitions(tools),
         tool_choice: tool_choice_value(&tool_choice),
         stream: true,
         stream_options: StreamOptions {
             include_usage: true,
         },
-    })
+    }
 }
 
 /// A user turn: one `tool` message per result, in order, then one `user` message
@@ -258,10 +241,22 @@ fn image_part(image: &ResultImage) -> ContentPart {
     }
 }
 
+/// The `format` tag OpenRouter's `reasoning_details` carries for a signature's
+/// origin. A Messages log records no vendor, so the view infers one from the model
+/// id: Gemini models through OpenRouter, Anthropic otherwise. View-only — the
+/// dialect replays stored keys and never writes this tag.
+fn reasoning_format(model: &str) -> &'static str {
+    if model.starts_with("google/") || model.starts_with("gemini") {
+        "google-gemini-v1"
+    } else {
+        "anthropic-claude-v1"
+    }
+}
+
 /// A Messages assistant turn in Completions shape: text blocks joined by newlines
 /// into `content` (empty when there are none), `tool_use` blocks as `tool_calls`,
 /// and thinking as `reasoning_details` entries indexed in block order.
-fn translate_assistant(blocks: &[MessagesOutputBlock], reasoning_format: &str) -> Message {
+fn translate_assistant(blocks: &[MessagesOutputBlock], format: &str) -> CompletionsMessage {
     let mut text = Vec::new();
     let mut tool_calls = Vec::new();
     let mut reasoning = Vec::new();
@@ -276,33 +271,30 @@ fn translate_assistant(blocks: &[MessagesOutputBlock], reasoning_format: &str) -
                 "text": thinking,
                 "signature": (!signature.is_empty()).then_some(signature),
                 "id": null,
-                "format": reasoning_format,
+                "format": format,
                 "index": reasoning.len(),
             })),
             MessagesOutputBlock::RedactedThinking { data } => reasoning.push(serde_json::json!({
                 "type": "reasoning.encrypted",
                 "data": data,
                 "id": null,
-                "format": reasoning_format,
+                "format": format,
                 "index": reasoning.len(),
             })),
-            MessagesOutputBlock::ToolUse(call) => tool_calls.push(FunctionCall {
-                id: call.id.0.clone(),
-                kind: "function",
-                function: FunctionCallBody {
-                    name: call.name.clone(),
-                    arguments: call.input.to_string(),
-                },
-            }),
+            MessagesOutputBlock::ToolUse(call) => tool_calls.push(serde_json::json!({
+                "id": call.id.0,
+                "type": "function",
+                "function": {"name": call.name, "arguments": call.input.to_string()},
+            })),
         }
     }
-    let mut extra = Map::new();
-    if !reasoning.is_empty() {
-        extra.insert("reasoning_details".into(), Value::Array(reasoning));
+    let mut message = Map::new();
+    message.insert("content".into(), Value::String(text.join("\n")));
+    if !tool_calls.is_empty() {
+        message.insert("tool_calls".into(), Value::Array(tool_calls));
     }
-    Message::Assistant(AssistantMessage {
-        content: Value::String(text.join("\n")),
-        tool_calls,
-        extra,
-    })
+    if !reasoning.is_empty() {
+        message.insert("reasoning_details".into(), Value::Array(reasoning));
+    }
+    CompletionsMessage::from_map(message)
 }

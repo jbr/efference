@@ -20,6 +20,15 @@ fn png() -> ResultImage {
     }
 }
 
+fn completions_turn(message: Value) -> WireTurn {
+    let Value::Object(message) = message else {
+        panic!("a message is an object");
+    };
+    WireTurn::Assistant(AssistantOutput::Completions(
+        CompletionsMessage::from_assembled(message),
+    ))
+}
+
 fn messages_turn() -> WireTurn {
     WireTurn::Assistant(AssistantOutput::Messages(vec![
         MessagesOutputBlock::Thinking {
@@ -38,16 +47,31 @@ fn messages_turn() -> WireTurn {
     ]))
 }
 
-/// The whole view envelope, byte for byte. Nothing sends it yet, so no cache
-/// depends on these bytes; the pin is what notices the translation drifting from
-/// the projection it mirrors (backlog/completions-dialect/wire-view.md).
+/// The whole request, byte for byte — the Completions analogue of
+/// `request_envelope_matches_expected_wire_bytes`. A reorder or rename here moves
+/// the production cache, so it must break this first. The assistant turn is a
+/// Mistral-shaped one, thinking parts included, and replays exactly as stored
+/// apart from what assembly drops (`null`, `role`, `index`).
 #[test]
-fn completions_view_matches_expected_wire_bytes() {
+fn completions_envelope_matches_expected_wire_bytes() {
     let turns = vec![
         WireTurn::text("hello"),
-        messages_turn(),
+        completions_turn(serde_json::json!({
+            "role": "assistant",
+            "content": [
+                {"type": "thinking", "thinking": [{"type": "text", "text": "look"}], "closed": true},
+                {"type": "text", "text": "on it"},
+            ],
+            "tool_calls": [{
+                "index": 0,
+                "id": "8ufwVNVUd",
+                "type": "function",
+                "function": {"name": "bash", "arguments": "{\"command\": \"ls\"}"},
+            }],
+            "refusal": null,
+        })),
         WireTurn::User(vec![
-            result("toolu_1", "[3] a.txt", vec![png()]),
+            result("8ufwVNVUd", "[3] a.txt", vec![png()]),
             UserPart::Text("and then?".into()),
         ]),
         WireTurn::Breakpoint,
@@ -57,20 +81,23 @@ fn completions_view_matches_expected_wire_bytes() {
         "description": "run",
         "input_schema": {"type": "object"},
     })];
-    let request =
-        completions_request("model-x", "PRE", &tools, ToolChoice::auto(), &turns).unwrap();
+    let request = completions_request(
+        "model-x",
+        encode_completions(&turns, "PRE"),
+        &tools,
+        ToolChoice::auto(),
+    );
     assert_eq!(
         serde_json::to_string(&request).unwrap(),
         concat!(
             r#"{"model":"model-x","max_tokens":4096,"messages":["#,
             r#"{"role":"system","content":"PRE"},"#,
             r#"{"role":"user","content":"hello"},"#,
-            r#"{"role":"assistant","content":"on it","#,
-            r#""tool_calls":[{"id":"toolu_1","type":"function","function":{"name":"bash","arguments":"{\"command\":\"ls\",\"description\":\"list\"}"}}],"#,
-            r#""reasoning_details":["#,
-            r#"{"format":"anthropic-claude-v1","id":null,"index":0,"signature":"SIG","text":"look first","type":"reasoning.text"},"#,
-            r#"{"data":"OPAQUE","format":"anthropic-claude-v1","id":null,"index":1,"type":"reasoning.encrypted"}]},"#,
-            r#"{"role":"tool","tool_call_id":"toolu_1","content":"[3] a.txt"},"#,
+            r#"{"role":"assistant","content":["#,
+            r#"{"closed":true,"thinking":[{"text":"look","type":"text"}],"type":"thinking"},"#,
+            r#"{"text":"on it","type":"text"}],"#,
+            r#""tool_calls":[{"function":{"arguments":"{\"command\": \"ls\"}","name":"bash"},"id":"8ufwVNVUd","type":"function"}]},"#,
+            r#"{"role":"tool","tool_call_id":"8ufwVNVUd","content":"[3] a.txt"},"#,
             r#"{"role":"user","content":[{"type":"image_url","image_url":{"url":"data:image/png;base64,AAAA"}},{"type":"text","text":"and then?"}]}],"#,
             r#""tools":[{"function":{"description":"run","name":"bash","parameters":{"type":"object"}},"type":"function"}],"#,
             r#""tool_choice":"auto","stream":true,"stream_options":{"include_usage":true}}"#,
@@ -78,42 +105,57 @@ fn completions_view_matches_expected_wire_bytes() {
     );
 }
 
-/// A run of results with no images and no prose leaves no trailing `user`
-/// message, and an empty signature is sent as `null` rather than `""`.
+/// The view's translation of a Messages turn, byte for byte. Nothing sends it, so
+/// no cache depends on these bytes; the pin is what notices the translation
+/// drifting from the projection it mirrors.
 #[test]
-fn results_alone_add_no_user_message() {
-    let turns = vec![
-        WireTurn::Assistant(AssistantOutput::Messages(vec![
-            MessagesOutputBlock::Thinking {
-                text: "t".into(),
-                signature: String::new(),
-            },
-            MessagesOutputBlock::ToolUse(ToolCall::new("bash", "a", serde_json::json!({}))),
-            MessagesOutputBlock::ToolUse(ToolCall::new("bash", "b", serde_json::json!({}))),
-        ])),
-        WireTurn::User(vec![
-            result("a", "one", Vec::new()),
-            result("b", "two", Vec::new()),
-        ]),
-    ];
-    let messages = translate_completions(&turns, "", "google/gemini-3-pro").unwrap();
+fn translated_messages_turn_matches_expected_bytes() {
+    let turns = vec![WireTurn::text("hello"), messages_turn()];
+    let messages = translate_completions(&turns, "", "claude-haiku-4-5").unwrap();
     assert_eq!(
         serde_json::to_string(&messages).unwrap(),
         concat!(
-            r#"[{"role":"assistant","content":"","tool_calls":["#,
-            r#"{"id":"a","type":"function","function":{"name":"bash","arguments":"{}"}},"#,
-            r#"{"id":"b","type":"function","function":{"name":"bash","arguments":"{}"}}],"#,
-            r#""reasoning_details":[{"format":"google-gemini-v1","id":null,"index":0,"signature":null,"text":"t","type":"reasoning.text"}]},"#,
-            r#"{"role":"tool","tool_call_id":"a","content":"one"},"#,
+            r#"[{"role":"user","content":"hello"},"#,
+            r#"{"role":"assistant","content":"on it","#,
+            r#""reasoning_details":["#,
+            r#"{"format":"anthropic-claude-v1","id":null,"index":0,"signature":"SIG","text":"look first","type":"reasoning.text"},"#,
+            r#"{"data":"OPAQUE","format":"anthropic-claude-v1","id":null,"index":1,"type":"reasoning.encrypted"}],"#,
+            r#""tool_calls":[{"function":{"arguments":"{\"command\":\"ls\",\"description\":\"list\"}","name":"bash"},"id":"toolu_1","type":"function"}]}]"#,
+        )
+    );
+}
+
+/// A run of results with no images and no prose leaves no trailing `user`
+/// message.
+#[test]
+fn results_alone_add_no_user_message() {
+    let turns = vec![WireTurn::User(vec![
+        result("a", "one", Vec::new()),
+        result("b", "two", Vec::new()),
+    ])];
+    assert_eq!(
+        serde_json::to_string(&encode_completions(&turns, "")).unwrap(),
+        concat!(
+            r#"[{"role":"tool","tool_call_id":"a","content":"one"},"#,
             r#"{"role":"tool","tool_call_id":"b","content":"two"}]"#,
         )
     );
 }
 
+/// The live encoder skips another dialect's turns (`check_dialect` keeps them
+/// out of a live request); the view translates Messages and refuses Responses.
 #[test]
-fn a_responses_recorded_session_is_refused() {
-    let turns = vec![WireTurn::Assistant(AssistantOutput::Responses(Vec::new()))];
-    assert!(translate_completions(&turns, "", "claude-haiku-4-5").is_err());
+fn foreign_turns_are_skipped_translated_or_refused() {
+    let messages = vec![messages_turn()];
+    assert!(encode_completions(&messages, "").is_empty());
+    assert_eq!(
+        translate_completions(&messages, "", "claude-haiku-4-5")
+            .unwrap()
+            .len(),
+        1
+    );
+    let responses = vec![WireTurn::Assistant(AssistantOutput::Responses(Vec::new()))];
+    assert!(translate_completions(&responses, "", "claude-haiku-4-5").is_err());
 }
 
 #[test]

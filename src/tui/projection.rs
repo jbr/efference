@@ -241,6 +241,16 @@ pub(crate) fn entry_nodes(
                         })
                         .collect(),
                     AssistantOutput::Responses(_) => Vec::new(),
+                    // Completions reasoning has no signature the TUI could show;
+                    // the readable text is the display heuristic's.
+                    AssistantOutput::Completions(message) => message
+                        .reasoning_text()
+                        .into_iter()
+                        .map(|text| ContentBlock::Thinking {
+                            text: text.to_string(),
+                            signature: String::new(),
+                        })
+                        .collect(),
                 };
                 if let Some(node) = thinking_entry(&thinking) {
                     // One foldable item, keyed by the entry it came from (docs/tui.md,

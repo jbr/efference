@@ -336,6 +336,19 @@ fn assistant(output: &AssistantOutput) -> (Vec<String>, Vec<ToolCall>) {
                 }
             }
         }
+        AssistantOutput::Completions(message) => {
+            prose.extend(
+                message
+                    .text()
+                    .into_iter()
+                    .map(str::trim)
+                    .filter(|text| !text.is_empty())
+                    .map(str::to_string),
+            );
+            // A call whose arguments do not parse shows no calls rather than a
+            // partial list; such a turn is record-only and never dispatched.
+            calls.extend(message.tool_calls().unwrap_or_default());
+        }
     }
     (prose, calls)
 }

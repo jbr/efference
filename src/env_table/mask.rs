@@ -193,6 +193,24 @@ impl Masker {
         }
     }
 
+    /// A call's argument string, which is the replay authority
+    /// (docs/transport.md): parse, mask the values, and re-serialize only when a
+    /// value changed, so the common call keeps the provider's exact bytes. A
+    /// string that does not parse is scanned as text: it is record-only, never
+    /// dispatched, and still must not carry the secret to disk.
+    fn mask_arguments(&self, arguments: &mut String) {
+        match serde_json::from_str::<Value>(arguments) {
+            Ok(original) => {
+                let mut masked = original.clone();
+                self.mask_json(&mut masked);
+                if masked != original {
+                    *arguments = masked.to_string();
+                }
+            }
+            Err(_) => self.mask_in_place(arguments),
+        }
+    }
+
     fn mask_json(&self, value: &mut Value) {
         match value {
             Value::String(text) => self.mask_in_place(text),
@@ -275,18 +293,41 @@ impl Masker {
                                 // record-only, never dispatched, and still must not
                                 // carry the secret to disk.
                                 ResponsesOutputItem::FunctionCall { arguments, .. } => {
-                                    match serde_json::from_str::<Value>(arguments) {
-                                        Ok(original) => {
-                                            let mut masked = original.clone();
-                                            self.mask_json(&mut masked);
-                                            if masked != original {
-                                                *arguments = masked.to_string();
-                                            }
-                                        }
-                                        Err(_) => self.mask_in_place(arguments),
-                                    }
+                                    self.mask_arguments(arguments)
                                 }
                                 ResponsesOutputItem::Unsupported(value) => self.mask_json(value),
+                            }
+                        }
+                    }
+                    // The defined keys only. Every other key is opaque and may be
+                    // signed reasoning, left unmasked for the reason Messages
+                    // thinking is (above).
+                    AssistantOutput::Completions(message) => {
+                        let message = message.as_map_mut();
+                        match message.get_mut("content") {
+                            Some(Value::String(text)) => self.mask_in_place(text),
+                            Some(Value::Array(parts)) => {
+                                for part in parts.iter_mut().filter(|part| {
+                                    part.get("type").and_then(Value::as_str) == Some("text")
+                                }) {
+                                    if let Some(Value::String(text)) = part.get_mut("text") {
+                                        self.mask_in_place(text);
+                                    }
+                                }
+                            }
+                            _ => {}
+                        }
+                        if let Some(Value::String(refusal)) = message.get_mut("refusal") {
+                            self.mask_in_place(refusal);
+                        }
+                        if let Some(Value::Array(calls)) = message.get_mut("tool_calls") {
+                            for call in calls {
+                                if let Some(Value::String(arguments)) = call
+                                    .get_mut("function")
+                                    .and_then(|function| function.get_mut("arguments"))
+                                {
+                                    self.mask_arguments(arguments);
+                                }
                             }
                         }
                     }

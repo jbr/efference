@@ -29,10 +29,12 @@ pub fn encode_messages(
                 role: Role::Assistant,
                 content: blocks.iter().map(messages_block_to_api).collect(),
             }),
-            // Responses output has its own request dialect and never enters the
-            // Messages wire (docs/transport.md). Unreachable while provider routing
-            // pins one dialect per session.
-            WireTurn::Assistant(AssistantOutput::Responses(_)) => {}
+            // Responses and Completions output have their own request dialects and
+            // never enter the Messages wire (docs/transport.md). Unreachable while
+            // provider routing pins one dialect per session.
+            WireTurn::Assistant(
+                AssistantOutput::Responses(_) | AssistantOutput::Completions(_),
+            ) => {}
             WireTurn::Breakpoint => place_trailing_cache_breakpoint(&mut messages, breakpoint),
         }
     }

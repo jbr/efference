@@ -12,6 +12,7 @@ mod curation;
 pub use curation::result_verdicts;
 
 mod cold;
+mod completions;
 mod process;
 mod push;
 mod request;
@@ -22,6 +23,7 @@ mod worktree;
 #[cfg(test)]
 mod test;
 pub use cold::{ColdEvent, ColdReason, ReleasedBy, UnparkCause};
+pub use completions::CompletionsMessage;
 pub use process::{ExitOutcome, ProcessEvent, ProcessEventKind, ProcessExit, ProcessSpawn};
 pub use push::{
     AttentiveClient, DeliveryOutcome, DeviceDelivery, MomentKind, PushCancel, PushEvent, PushRecord,
@@ -449,6 +451,8 @@ pub enum AssistantOutput {
     Messages(Vec<MessagesOutputBlock>),
     /// The top-level `output` items of one OpenAI Responses result, in provider order.
     Responses(Vec<ResponsesOutputItem>),
+    /// One Chat Completions assistant message, as the stream assembled it.
+    Completions(CompletionsMessage),
 }
 
 impl AssistantOutput {
@@ -487,6 +491,7 @@ impl AssistantOutput {
         match dialect {
             crate::api::WireDialect::Messages => Self::Messages(Vec::new()),
             crate::api::WireDialect::Responses => Self::Responses(Vec::new()),
+            crate::api::WireDialect::Completions => Self::Completions(Default::default()),
             // A System One request produces no turn, so no record of one exists.
             crate::api::WireDialect::SystemOne => {
                 unreachable!("a System One connection serves no turns")
@@ -499,13 +504,14 @@ impl AssistantOutput {
         match self {
             Self::Messages(_) => crate::api::WireDialect::Messages,
             Self::Responses(_) => crate::api::WireDialect::Responses,
+            Self::Completions(_) => crate::api::WireDialect::Completions,
         }
     }
 
     pub fn messages(&self) -> Option<&[MessagesOutputBlock]> {
         match self {
             Self::Messages(blocks) => Some(blocks),
-            Self::Responses(_) => None,
+            Self::Responses(_) | Self::Completions(_) => None,
         }
     }
 
@@ -531,6 +537,7 @@ impl AssistantOutput {
                     ResponsesMessageContent::Refusal { refusal } => refusal.as_str(),
                 })
                 .collect(),
+            Self::Completions(message) => message.text(),
         }
     }
 
@@ -553,6 +560,7 @@ impl AssistantOutput {
                 })
                 .map(|summary| summary.text.as_str())
                 .collect(),
+            Self::Completions(message) => message.reasoning_text(),
         }
     }
 
@@ -586,6 +594,7 @@ impl AssistantOutput {
                     ))
                 })
                 .collect(),
+            Self::Completions(message) => message.tool_calls(),
         }
     }
 }

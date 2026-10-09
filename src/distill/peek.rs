@@ -276,6 +276,7 @@ pub(super) fn extend_with_retry(
     let empty = match output {
         AssistantOutput::Messages(blocks) => blocks.is_empty(),
         AssistantOutput::Responses(items) => items.is_empty(),
+        AssistantOutput::Completions(message) => message.is_empty(),
     };
     if empty {
         return false;

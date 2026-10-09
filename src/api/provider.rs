@@ -91,6 +91,10 @@ pub enum WireDialect {
     /// OpenAI Responses: `input[]` items, ordered output items, SSE
     /// `response.created` … `response.completed`.
     Responses,
+    /// Chat Completions: `messages[]` with `role: "tool"` results, assistant
+    /// messages replayed as received, SSE `choices[0].delta` chunks ending in
+    /// `[DONE]` (backlog/completions-dialect/dialect.md until it is served).
+    Completions,
     /// The System One contract (docs/transport.md): one POST of
     /// `{model, state, questions}` answered with a probability per question.
     /// Not a turn dialect — it has no assistant output to encode or assemble —
@@ -107,6 +111,9 @@ impl WireDialect {
         match self {
             Self::Messages => 128,
             Self::Responses => 64,
+            // OpenAI's function-name limit, which the other Completions servers
+            // inherit or exceed.
+            Self::Completions => 64,
             // No tools ride a System One request; the limit is never consulted.
             Self::SystemOne => 0,
         }
@@ -137,6 +144,7 @@ impl WireDialect {
         match self {
             Self::Messages => "messages",
             Self::Responses => "responses",
+            Self::Completions => "completions",
             Self::SystemOne => "systemone",
         }
     }
@@ -164,6 +172,7 @@ impl std::fmt::Display for WireDialect {
         f.write_str(match self {
             Self::Messages => "Messages",
             Self::Responses => "Responses",
+            Self::Completions => "Chat Completions",
             Self::SystemOne => "System One",
         })
     }
@@ -293,7 +302,7 @@ impl Provider {
         match self {
             Self::Anthropic | Self::TypeSafe => 0,
             Self::OpenRouter | Self::OpenAI | Self::OpenAICodex => 16,
-            Self::Custom(WireDialect::Responses) => 16,
+            Self::Custom(WireDialect::Responses | WireDialect::Completions) => 16,
             Self::Custom(_) => 0,
         }
     }
@@ -442,6 +451,11 @@ impl Provider {
                 crate::project::ImagePlacement::FollowingUserBlock
             }
             Self::Custom(WireDialect::Responses) => crate::project::ImagePlacement::InToolResult,
+            // Completions places a result's images itself, in the `user` message
+            // after the run of `tool` messages (`api/completions.rs`).
+            Self::Custom(WireDialect::Completions) => {
+                crate::project::ImagePlacement::FollowingUserBlock
+            }
             // Projection placement is read while encoding a turn, and a provider
             // with no inference dialect never has one encoded for it. The arm
             // exists because the match is exhaustive, not because the value means
@@ -492,6 +506,9 @@ impl Provider {
             Self::Custom(WireDialect::Responses) => {
                 crate::project::BreakpointPlacement::TrailingBlock
             }
+            // Completions has no per-part cache marker; servers cache the prefix
+            // implicitly.
+            Self::Custom(WireDialect::Completions) => crate::project::BreakpointPlacement::None,
             // Unreachable for the same reason as `image_placement`'s arm: nothing
             // projects a turn for a provider that serves none.
             Self::TypeSafe | Self::Custom(WireDialect::SystemOne) => {
@@ -516,6 +533,7 @@ impl Provider {
             // is what `GET /state` and the boot line report.
             Self::Custom(WireDialect::Messages) => "custom-messages",
             Self::Custom(WireDialect::Responses) => "custom-responses",
+            Self::Custom(WireDialect::Completions) => "custom-completions",
             Self::Custom(WireDialect::SystemOne) => "custom-systemone",
         }
     }
@@ -564,6 +582,7 @@ impl Provider {
             // base URL that includes it.
             Self::Custom(WireDialect::Messages) => Some(join(base?, "messages")),
             Self::Custom(WireDialect::Responses) => Some(join(base?, "responses")),
+            Self::Custom(WireDialect::Completions) => Some(join(base?, "chat/completions")),
         }
     }
 
@@ -586,7 +605,9 @@ impl Provider {
             // so appending a conventional segment would be wrong for most of them.
             Self::Custom(WireDialect::SystemOne) => base.map(str::to_string),
             // A turn dialect says nothing about serving the System One contract.
-            Self::Custom(WireDialect::Messages | WireDialect::Responses) => None,
+            Self::Custom(
+                WireDialect::Messages | WireDialect::Responses | WireDialect::Completions,
+            ) => None,
         }
     }
 
@@ -731,6 +752,10 @@ impl Provider {
             // is a 400 on Messages — the same reason this is gated for Anthropic.
             Self::Custom(WireDialect::Messages) => false,
             Self::Custom(WireDialect::Responses) => true,
+            // Not every Completions server tolerates an unknown top-level key; one
+            // that keys its cache on this field takes it through the connection's
+            // static body.
+            Self::Custom(WireDialect::Completions) => false,
         }
     }
 
@@ -846,9 +871,9 @@ impl Provider {
             // tested by a turn. A System One endpoint's URL is the one route it
             // has: it publishes no sibling listing to read a key check from.
             Self::Custom(WireDialect::SystemOne) => None,
-            Self::Custom(WireDialect::Messages | WireDialect::Responses) => {
-                Some(join(base?, "models"))
-            }
+            Self::Custom(
+                WireDialect::Messages | WireDialect::Responses | WireDialect::Completions,
+            ) => Some(join(base?, "models")),
         }
     }
 

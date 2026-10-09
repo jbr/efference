@@ -822,6 +822,9 @@ impl Client {
                 };
                 Encoded::Responses(encode_responses(turns, preamble, self.prompt_cache))
             }
+            // No configuration names the dialect until its client lands
+            // (`WireDialect::from_name`).
+            WireDialect::Completions => unreachable!("the Completions dialect is not served yet"),
             WireDialect::SystemOne => {
                 unreachable!("a client is only built on a provider that serves turns")
             }
@@ -1020,6 +1023,9 @@ impl Client {
         let mut assembler = match self.dialect() {
             WireDialect::Messages => AnyAssembler::Messages(Assembler::new()),
             WireDialect::Responses => AnyAssembler::Responses(ResponsesAssembler::new()),
+            // No configuration names the dialect until its client lands
+            // (`WireDialect::from_name`).
+            WireDialect::Completions => unreachable!("the Completions dialect is not served yet"),
             WireDialect::SystemOne => {
                 unreachable!("a client is only built on a provider that serves turns")
             }
@@ -1151,6 +1157,9 @@ impl Client {
                 conn.with_request_header("anthropic-version", ANTHROPIC_VERSION)
             }
             WireDialect::Responses => conn,
+            // No configuration names the dialect until its client lands
+            // (`WireDialect::from_name`).
+            WireDialect::Completions => unreachable!("the Completions dialect is not served yet"),
             WireDialect::SystemOne => {
                 unreachable!("a client is only built on a provider that serves turns")
             }

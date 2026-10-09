@@ -125,9 +125,11 @@ pub fn encode_responses(
             WireTurn::Assistant(AssistantOutput::Responses(items)) => {
                 input.extend(items.iter().filter_map(item_to_wire));
             }
-            // Messages output belongs to the other dialect (docs/transport.md).
-            // Unreachable while provider routing pins one dialect per session.
-            WireTurn::Assistant(AssistantOutput::Messages(_)) => {}
+            // Messages and Completions output belong to other dialects
+            // (docs/transport.md). Unreachable while provider routing pins one
+            // dialect per session.
+            WireTurn::Assistant(AssistantOutput::Messages(_) | AssistantOutput::Completions(_)) => {
+            }
             WireTurn::Breakpoint => {
                 if explicit {
                     mark_trailing(&mut input);
