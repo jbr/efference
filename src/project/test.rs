@@ -774,10 +774,10 @@ fn push_records_project_to_identical_bytes() {
 }
 
 /// Cold-check records (docs/control-api.md) are bookkeeping about the park and the
-/// consents: inserted anywhere, they change no projected byte.
+/// person actions that release it: inserted anywhere, they change no projected byte.
 #[test]
 fn cold_records_project_to_identical_bytes() {
-    use crate::log::{ColdEvent, ColdReason, ConsentSource, Timestamp, UnparkCause};
+    use crate::log::{ColdEvent, ColdReason, ReleasedBy, Timestamp, UnparkCause};
     let without = serde_json::to_string(&project(&sample_log())).unwrap();
     let without_semantic = format!("{:?}", project_semantic(&sample_log()));
     let events = [
@@ -786,11 +786,11 @@ fn cold_records_project_to_identical_bytes() {
             since: Timestamp(1_754_300_000_000),
             context_tokens: Some(120_000),
         },
-        ColdEvent::Consented {
-            source: ConsentSource::Approval,
+        ColdEvent::Released {
+            by: ReleasedBy::Approval,
         },
         ColdEvent::Unparked {
-            cause: UnparkCause::Consent,
+            cause: UnparkCause::Person,
         },
     ];
     for at in [0, 1, 2, 3] {

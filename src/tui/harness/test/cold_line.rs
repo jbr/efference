@@ -1,5 +1,5 @@
-//! The cold line at a gate and at an `ask` (docs/tui.md): a decision carries
-//! `accept_cold_read` only when the line was on screen to be read.
+//! The cold line at a gate, at an `ask` and at the composer (docs/tui.md): it states
+//! what the next action reads uncached, and the action goes through unchanged.
 
 use super::*;
 use crate::frontend::Approval;
@@ -25,22 +25,22 @@ fn cold(tokens: Option<u64>) -> TuiEvent {
     }))
 }
 
-/// A gate on a cold session states what approving reads, and approving sends the consent.
+/// A gate on a cold session states what approving reads, and approving sends the decision.
 #[test]
-fn a_gate_on_a_cold_session_shows_the_cost_and_approving_consents() {
+fn a_gate_on_a_cold_session_shows_the_cost_and_approving_decides() {
     let mut play = Screenplay::new(100, 14);
     gated(&mut play);
     play.event(cold(Some(120_400)));
     assert!(
         play.render()
-            .contains("cache believed cold — approving or redirecting reads ~120k tokens uncached"),
+            .contains("cache expired — approving or redirecting reads ~120k tokens uncached"),
         "{}",
         play.render()
     );
     play.route_key(KeyCode::Enter, KeyModifiers::NONE);
     assert_eq!(
         play.took_approval(),
-        Some(("toolu_1".to_string(), Approval::Approve, true))
+        Some(("toolu_1".to_string(), Approval::Approve))
     );
 }
 
@@ -56,42 +56,41 @@ fn the_cold_line_without_a_known_cost() {
     );
 }
 
-/// A gate with no cold line is not consent: warm, the decision carries no flag, and
-/// once the topic clears the line is gone.
+/// A warm gate has no cold line, and once the topic clears the line is gone.
 #[test]
-fn a_gate_without_the_cold_line_sends_no_consent() {
+fn a_gate_without_the_cold_line() {
     let mut play = Screenplay::new(100, 14);
     gated(&mut play);
-    assert!(!play.render().contains("cache believed cold"));
+    assert!(!play.render().contains("cache expired"));
     play.route_key(KeyCode::Enter, KeyModifiers::NONE);
     assert_eq!(
         play.took_approval(),
-        Some(("toolu_1".to_string(), Approval::Approve, false))
+        Some(("toolu_1".to_string(), Approval::Approve))
     );
 
     let mut play = Screenplay::new(100, 14);
     gated(&mut play);
     play.event(cold(Some(1_000)));
     play.event(TuiEvent::CacheExpired(None));
-    assert!(!play.render().contains("cache believed cold"));
+    assert!(!play.render().contains("cache expired"));
 }
 
-/// An abort is not a consent to anything further.
+/// An abort on a cold gate is sent as it is.
 #[test]
-fn aborting_a_cold_gate_sends_no_consent() {
+fn aborting_a_cold_gate() {
     let mut play = Screenplay::new(100, 14);
     gated(&mut play);
     play.event(cold(Some(120_000)));
     play.state.abort_gate();
     assert_eq!(
         play.took_approval(),
-        Some(("toolu_1".to_string(), Approval::Abort, false))
+        Some(("toolu_1".to_string(), Approval::Abort))
     );
 }
 
-/// An `ask` on a cold session shows the line, and the answer carries the consent.
+/// An `ask` on a cold session shows the line, and the answer is an ordinary turn.
 #[test]
-fn an_answer_to_an_ask_on_a_cold_session_consents() {
+fn an_answer_to_an_ask_on_a_cold_session_shows_the_cost() {
     let mut play = Screenplay::new(100, 14);
     play.event(TuiEvent::Ask(Some(PendingAsk {
         call_id: "toolu_ask".into(),
@@ -102,23 +101,27 @@ fn an_answer_to_an_ask_on_a_cold_session_consents() {
     play.event(cold(Some(48_000)));
     assert!(
         play.render()
-            .contains("cache believed cold — your answer reads ~48k tokens uncached")
+            .contains("cache expired — your answer reads ~48k tokens uncached")
     );
     play.type_str("yes");
     play.route_key(KeyCode::Enter, KeyModifiers::NONE);
     let sent = play.took_submission().expect("the answer was sent");
     assert_eq!(sent.text, "yes");
-    assert!(sent.accept_cold_read);
 }
 
-/// With no pending decision there is no cold line: a plain turn on a cold session
-/// still earns its `409 cold` and the "⏎ again" consent.
+/// With nothing pending the composer states what a send reads, and a send goes
+/// through on the first `⏎`.
 #[test]
-fn a_cold_session_with_nothing_pending_shows_no_line() {
+fn the_composer_on_a_cold_session_shows_the_cost_and_sends() {
     let mut play = Screenplay::new(100, 14);
     play.event(cold(Some(48_000)));
-    assert!(!play.render().contains("cache believed cold"));
+    assert!(
+        play.render()
+            .contains("cache expired — a send reads ~48k tokens uncached"),
+        "{}",
+        play.render()
+    );
     play.type_str("hello");
     play.route_key(KeyCode::Enter, KeyModifiers::NONE);
-    assert!(!play.took_submission().unwrap().accept_cold_read);
+    assert_eq!(play.took_submission().unwrap().text, "hello");
 }

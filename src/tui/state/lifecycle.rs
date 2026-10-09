@@ -126,7 +126,6 @@ impl<'a> InteractiveState<'a> {
             owns_host: false,
             continue_tx,
             fold_tx,
-            cold_consent: false,
             pending_turns: Vec::new(),
             ask_restored: None,
             ask: None,

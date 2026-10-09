@@ -79,7 +79,7 @@ impl Session {
             return Err(NotContinuable::Asking);
         }
         let running = self.running.load(Ordering::SeqCst);
-        // Parked at the cold check: the route already granted the consent that wakes it.
+        // Parked at the cold check: the route already noted the person's action that wakes it.
         if running && self.cold_parked() {
             return Ok(());
         }

@@ -14,6 +14,10 @@ use serde::{Deserialize, Serialize};
 /// While the session is asking a question (`state` shows it under `ask`), the message
 /// is the answer to it rather than a new turn.
 ///
+/// While `state` shows `cold`, the session's prompt cache is believed expired and the
+/// next request reads the whole context uncached (about `cold.context_tokens`); the turn
+/// is accepted either way, and a parked session resumes.
+///
 /// This is the interrupting channel: it becomes a user message the model answers.
 /// For something that can wait for a natural break, use `notify`.
 #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema, clap::Args)]
@@ -40,13 +44,6 @@ pub struct Turn {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[arg(long)]
     pub source: Option<String>,
-    /// Consent to read the session's prompt cache though it is believed expired.
-    /// Without it a session whose cache has gone cold refuses the turn (`409 cold`),
-    /// queueing nothing, because the next request would pay for the whole context
-    /// uncached; send again with this set to pay it.
-    #[serde(default)]
-    #[arg(long)]
-    pub accept_cold_read: bool,
     /// Drive this session by id (see `sessions`). Required unless the server was started with `--name`/`--socket`; then it overrides that session for this call.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[arg(long)]
@@ -85,7 +82,6 @@ impl Tool<Control> for Turn {
                 let source = turn_source(self.source, &context);
                 let options = crate::client::TurnOptions {
                     source: source.as_deref(),
-                    accept_cold_read: self.accept_cold_read,
                 };
                 if !self.wait {
                     client.turn_with(&text, options).await?;
@@ -114,14 +110,8 @@ impl Tool<Control> for Turn {
                 // beside the `mcp[<name>]` shape an external mount uses.
                 let source = format!("session[{}]", state.caller);
                 let target = state.resolve_mutating(self.session.as_deref())?;
-                // The same consent the route asks for (backlog: cold-session.md).
-                if let Err(refused) = crate::daemon::cold_gate(
-                    &target,
-                    self.accept_cold_read,
-                    target.turn_consent_source(),
-                ) {
-                    return Err(anyhow!("{}", refused.message));
-                }
+                // The same person action the route notes (docs/control-api.md).
+                target.person_acted(target.turn_released_by());
                 target.submit_turn(
                     crate::frontend::SubmittedTurn::new(text, crate::daemon::mint_submission_id())
                         .sourced(Some(source)),

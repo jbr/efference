@@ -249,7 +249,6 @@ impl<'a> InteractiveState<'a> {
                 self.dirty = true;
             }
             TuiEvent::Recalled(withdrawn) => self.apply_recall(withdrawn),
-            TuiEvent::Cold { turn, refusal } => self.apply_cold(turn, refusal),
             TuiEvent::Ask(ask) => self.apply_ask(ask),
             TuiEvent::Uploaded { key, result } => self.upload_landed(key, result),
             TuiEvent::ClipboardImage(found) => {

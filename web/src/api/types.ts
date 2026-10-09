@@ -107,10 +107,10 @@ export type ColdEvent =
       context_tokens: number | null;
     }
   | {
-      event: "consented";
-      source: "turn" | "approval" | "ask" | "continue";
+      event: "released";
+      by: "turn" | "approval" | "ask" | "continue";
     }
-  | { event: "unparked"; cause: "consent" | "warm" };
+  | { event: "unparked"; cause: "person" | "warm" };
 
 /** One stage of one upstream request (docs/log-and-projection.md). Telemetry:
  * the transcript does not draw it; the `current_operations` topic folds it. */
@@ -424,20 +424,15 @@ export interface ConfigEdit {
 
 // ---- approval decisions (the PUT /v1/approvals/:call_id body) ----
 
-//
-// `accept_cold_read` consents to the uncached read the turn's next request makes on a
-// session believed cold. It is set only when the client showed the operator that the
-// session is cold (`ui/coldConsent.ts`, docs/control-api.md).
 export type Decision =
-  | { decision: "approve"; accept_cold_read?: boolean }
+  | { decision: "approve" }
   | { decision: "abort" }
-  | { decision: "redirect"; message: string; accept_cold_read?: boolean }
+  | { decision: "redirect"; message: string }
   // Allow-with-prefix: approve and persist the change (docs/permissions.md).
   | {
       decision: "config_edit";
       change: ConfigChange;
       note?: string;
-      accept_cold_read?: boolean;
     };
 
 // ---- state topics (the GET /state snapshot ≡ the fold of `state` frames) ----
@@ -597,10 +592,10 @@ export interface Cold {
 }
 
 // The loop is stopped at its cold check mid-turn (docs/control-api.md); `null`
-// otherwise, including an idle cold session, which asks at the next send.
-// `expired`: waiting for consent to the uncached read, or a fold. `folded`: a fold
-// summarized the history while parked, so `cold` is null and a turn or continue
-// resumes the loop with no consent.
+// otherwise, including an idle cold session.
+// `expired`: waiting for a person to act before the uncached read, or for a fold.
+// `folded`: a fold summarized the history while parked, so `cold` is null and a
+// turn or continue resumes the loop.
 export type Park =
   | { reason: "expired"; since: number; context_tokens: number | null }
   | { reason: "folded" };

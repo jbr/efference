@@ -35,9 +35,9 @@ pub(crate) enum SessionStatus {
     },
     /// The last trajectory gave up (docs/transport.md).
     Stalled { message: String },
-    /// The loop stopped at its cold check mid-turn and waits for the operator's consent
-    /// to read the expired cache, or a fold (backlog: cold-session.md); after a fold it
-    /// waits for the next turn or continue, which needs no consent. The `park` topic.
+    /// The loop stopped at its cold check mid-turn and waits for a person to act
+    /// before it reads the expired cache, or for a fold (backlog: cold-session.md); after a fold it
+    /// waits for the next turn or continue. The `park` topic.
     Parked { reason: super::cold::ParkReason },
     /// The runtime returned cleanly.
     Ended,
@@ -150,8 +150,7 @@ impl Session {
                 reason: super::cold::ParkReason::Folded,
             } => format!(
                 "{id} is parked mid-turn ({at}): its history was summarized while it waited \
-                 on a cold cache. No consent is needed; a sessions__turn or a continue \
-                 resumes it."
+                 on a cold cache. A sessions__turn or a continue resumes it."
             ),
             SessionStatus::Parked {
                 reason: super::cold::ParkReason::Expired { context_tokens, .. },
@@ -162,9 +161,8 @@ impl Session {
                 };
                 format!(
                     "{id} is parked mid-turn ({at}): its prompt cache is believed expired, so \
-                     continuing reads {cost}. Nothing runs until a sessions__turn or a continue \
-                     carrying accept_cold_read consents; a fold summarizes the history \
-                     instead."
+                     continuing reads {cost}. Nothing runs until a sessions__turn, a continue or a decision \
+                     releases it; a fold summarizes the history instead."
                 )
             }
             SessionStatus::Ended => format!("{id} ended ({at}); its log stays on disk."),

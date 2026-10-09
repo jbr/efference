@@ -241,7 +241,7 @@ impl Screenplay<'_> {
     /// The approval decision a gate action sent since the last check (`call_id`,
     /// decision), if any — drains the channel the UI would have resolved
     /// `PUT /approvals/:call_id` over.
-    pub(crate) fn took_approval(&mut self) -> Option<(String, Approval, bool)> {
+    pub(crate) fn took_approval(&mut self) -> Option<(String, Approval)> {
         self.receivers.approve.try_recv().ok()
     }
 

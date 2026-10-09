@@ -95,7 +95,6 @@ async fn turn_source_reaches_the_queued_turn() {
             "hi from a script",
             crate::client::TurnOptions {
                 source: Some("agent[abc]"),
-                ..Default::default()
             },
         )
         .await
@@ -119,7 +118,6 @@ async fn the_kickoff_source_is_reserved() {
             "hidden",
             crate::client::TurnOptions {
                 source: Some(crate::frontend::KICKOFF_SOURCE),
-                ..Default::default()
             },
         )
         .await
@@ -131,7 +129,6 @@ async fn the_kickoff_source_is_reserved() {
             "hidden",
             crate::client::TurnOptions {
                 source: Some("handoff[someone]"),
-                ..Default::default()
             },
         )
         .await

@@ -125,7 +125,6 @@ impl Client {
     pub async fn submit(&self, turn: &SubmittedTurn) -> Result<String> {
         let options = TurnOptions {
             source: turn.source.as_deref(),
-            accept_cold_read: turn.accept_cold_read,
         };
         let mut body: serde_json::Value = serde_json::from_str(&Self::turn_body(
             &turn.text,
@@ -142,8 +141,8 @@ impl Client {
         self.post("/turns", body.to_string()).await
     }
 
-    /// The `POST /turns` body: `text`, plus `submission_id`, `source` and
-    /// `accept_cold_read` when present. Field order is fixed here so the body is the
+    /// The `POST /turns` body: `text`, plus `submission_id` and `source`
+    /// when present. Field order is fixed here so the body is the
     /// same bytes every call for the same inputs.
     fn turn_body(text: &str, submission_id: Option<&str>, options: TurnOptions<'_>) -> String {
         let mut body = serde_json::json!({ "text": text });
@@ -152,9 +151,6 @@ impl Client {
         }
         if let Some(source) = options.source {
             body["source"] = serde_json::Value::from(source);
-        }
-        if options.accept_cold_read {
-            body["accept_cold_read"] = serde_json::Value::Bool(true);
         }
         body.to_string()
     }
@@ -219,35 +215,19 @@ impl Client {
     /// same four-valued [`Approval`] the loop consumes (docs/control-channel.md).
     /// The id is a precondition: addressing anything but the pending gate answers
     /// 409 `gate_moved`, with the current gate in the error's `detail`.
-    /// `accept_cold_read` consents to the uncached read the decision's next request
-    /// makes on a session whose cache is believed expired; send it only when the
-    /// operator was shown that the session is cold (docs/control-api.md).
-    pub async fn approve(
-        &self,
-        call_id: &str,
-        decision: &Approval,
-        accept_cold_read: bool,
-    ) -> Result<()> {
-        self.put(
-            &format!("/approvals/{call_id}"),
-            approval_body(decision, accept_cold_read),
-        )
-        .await
-        .map(drop)
+    pub async fn approve(&self, call_id: &str, decision: &Approval) -> Result<()> {
+        self.put(&format!("/approvals/{call_id}"), approval_body(decision))
+            .await
+            .map(drop)
     }
 
     /// Resolve a gate and **block until the daemon settles** (`PUT /approvals/{id}?wait`) — the
     /// turn reaches its next gate or completes — returning the resulting `/state` JSON. The
     /// "approve → read state" half of synchronous driving (docs/permissions.md).
-    pub async fn approve_wait(
-        &self,
-        call_id: &str,
-        decision: &Approval,
-        accept_cold_read: bool,
-    ) -> Result<String> {
+    pub async fn approve_wait(&self, call_id: &str, decision: &Approval) -> Result<String> {
         self.put(
             &format!("/approvals/{call_id}?wait"),
-            approval_body(decision, accept_cold_read),
+            approval_body(decision),
         )
         .await
     }
@@ -280,8 +260,7 @@ impl Client {
     ///
     /// A decline (`409 not_continuable`) is a normal answer, not a transport
     /// failure: the moment simply had no continue in it, and the daemon's message
-    /// says which case. So is `409 cold`, for a continue that did not carry
-    /// `accept_cold_read` on a session whose cache is believed expired. Errors are
+    /// says which case. Errors are
     /// reserved for a request that didn't get an answer.
     /// Fold a cold session's history into an account (`POST /loop/fold`,
     /// docs/control-api.md). Accepted means the session's model is writing it; the
@@ -314,18 +293,12 @@ impl Client {
         }
     }
 
-    pub async fn continue_loop(&self, accept_cold_read: bool) -> Result<ContinueOutcome> {
+    pub async fn continue_loop(&self) -> Result<ContinueOutcome> {
         let path = self.versioned("/loop/continue");
         let path = path.as_str();
-        let request = self.http.post(path);
-        let request = if accept_cold_read {
-            request
-                .with_request_header("content-type", "application/json; charset=utf-8")
-                .with_body(r#"{"accept_cold_read":true}"#)
-        } else {
-            request
-        };
-        let mut conn = request
+        let mut conn = self
+            .http
+            .post(path)
             .await
             .with_context(|| format!("POST {path} to the control socket"))?;
         let status = conn.status();
@@ -336,11 +309,6 @@ impl Client {
             .with_context(|| format!("reading the response to POST {path}"))?;
         match status {
             Some(s) if s.is_success() => Ok(ContinueOutcome::Accepted),
-            Some(trillium_client::Status::Conflict)
-                if let Some(cold) = ColdRefusal::parse(&body) =>
-            {
-                Ok(ContinueOutcome::Cold(cold))
-            }
             Some(trillium_client::Status::Conflict) => Ok(ContinueOutcome::Declined {
                 message: json_field(&body, "message")
                     .unwrap_or_else(|_| "the daemon declined the continue".into()),
@@ -968,9 +936,6 @@ pub enum ContinueOutcome {
     /// The moment had no continue in it — the loop is running or gated, or the
     /// wire ends where re-prompting it means nothing.
     Declined { message: String },
-    /// The session's cache is believed expired and the continue carried no
-    /// `accept_cold_read`; sending it again with the flag pays the read.
-    Cold(ColdRefusal),
 }
 
 /// The options a `POST /turns` body carries beside its text (docs/control-api.md).
@@ -980,41 +945,7 @@ pub struct TurnOptions<'a> {
     /// label (`web`, `mcp[<name>]`, `agent[<id>]`). `None` submits as the
     /// operator, who renders no prefix.
     pub source: Option<&'a str>,
-    /// Consent to read the session's cache though it is believed expired
-    /// (backlog: cold-session.md).
-    pub accept_cold_read: bool,
 }
-
-/// A `409 cold` (docs/control-api.md): the session's prompt cache is believed
-/// expired and the request did not carry `accept_cold_read`, so nothing was
-/// queued. Returned as the error of a turn verb — `downcast_ref` finds it — and as
-/// [`ContinueOutcome::Cold`]; the caller asks the operator and re-sends with the
-/// flag.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ColdRefusal {
-    pub message: String,
-    /// The `cold` topic as it read when the request was refused.
-    pub cold: serde_json::Value,
-}
-
-impl ColdRefusal {
-    /// A `cold` error body, or `None` for any other.
-    fn parse(body: &str) -> Option<Self> {
-        let body: serde_json::Value = serde_json::from_str(body).ok()?;
-        (body["code"] == "cold").then(|| Self {
-            message: body["message"].as_str().unwrap_or_default().to_string(),
-            cold: body["detail"].clone(),
-        })
-    }
-}
-
-impl std::fmt::Display for ColdRefusal {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.message)
-    }
-}
-
-impl std::error::Error for ColdRefusal {}
 
 /// Pull one string field out of a JSON body — the `/auth/*` responses are all a
 /// single-field object.
@@ -1037,8 +968,8 @@ impl Client {
 
 /// The JSON body for an approval decision — the four-valued [`Approval`] the loop consumes
 /// (docs/control-channel.md). Shared by the blocking and non-blocking `approve` verbs.
-fn approval_body(decision: &Approval, accept_cold_read: bool) -> String {
-    let mut body = match decision {
+fn approval_body(decision: &Approval) -> String {
+    let body = match decision {
         Approval::Approve => serde_json::json!({ "decision": "approve" }),
         Approval::Abort => serde_json::json!({ "decision": "abort" }),
         Approval::Redirect(message) => {
@@ -1050,9 +981,6 @@ fn approval_body(decision: &Approval, accept_cold_read: bool) -> String {
             "note": note,
         }),
     };
-    if accept_cold_read {
-        body["accept_cold_read"] = serde_json::Value::Bool(true);
-    }
     body.to_string()
 }
 
@@ -1072,10 +1000,6 @@ async fn read_2xx(mut conn: trillium_client::Conn, method: &str, path: &str) -> 
         .with_context(|| format!("reading the response to {method} {path}"))?;
     if ok {
         Ok(body)
-    } else if code == "409"
-        && let Some(cold) = ColdRefusal::parse(&body)
-    {
-        Err(cold.into())
     } else {
         Err(anyhow!("{method} {path} → {code}: {body}"))
     }

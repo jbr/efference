@@ -50,7 +50,7 @@ describe("the turn-state readout", () => {
     ).toContain("the whole context");
   });
 
-  it("reads a park after a fold as resuming without consent", () => {
+  it("reads a park after a fold as resuming", () => {
     const state = turnState(true, null, false, false, { reason: "folded" });
     expect(state.kind).toBe("parked");
     expect(state.text).toBe("paused: summarized · send to continue");

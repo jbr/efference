@@ -317,8 +317,8 @@ export function buildTree(entries: LogEntry[]): TranscriptNode[] {
     // conversation.
     if ("Push" in p) continue;
 
-    // A cold-check record (docs/control-api.md): the park, a consent, the
-    // resume. The `park` topic is the live state; this is the trail.
+    // A cold-check record (docs/control-api.md): the park, the person
+    // action that released it, the resume. The `park` topic is the live state; this is the trail.
     if ("Cold" in p) continue;
 
     // A dispatch marker (Payload::CallStarted) appended before tool dispatch;

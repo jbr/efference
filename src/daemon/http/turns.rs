@@ -17,7 +17,6 @@ pub(super) async fn submit_turn(mut conn: Conn) -> Conn {
             submission_id,
             source,
             attachments,
-            accept_cold_read,
         }) => {
             if submission_id
                 .as_ref()
@@ -59,9 +58,7 @@ pub(super) async fn submit_turn(mut conn: Conn) -> Conn {
                 Ok(attachments) => attachments,
                 Err(message) => return fail(conn, ErrorCode::BadRequest, message),
             };
-            if let Err(body) = cold_gate(&shared, accept_cold_read, shared.turn_consent_source()) {
-                return respond(conn, body);
-            }
+            shared.person_acted(shared.turn_released_by());
             let submission_id = submission_id.unwrap_or_else(mint_submission_id);
             shared.submit_turn(
                 SubmittedTurn::new(text, submission_id.clone())
@@ -151,7 +148,6 @@ pub(super) async fn resolve_approval(mut conn: Conn) -> Conn {
             );
         }
     };
-    let accept_cold_read = decision.accept_cold_read;
     let approval = match decision.decision.as_str() {
         "approve" => Approval::Approve,
         "abort" => Approval::Abort,
@@ -180,7 +176,7 @@ pub(super) async fn resolve_approval(mut conn: Conn) -> Conn {
             );
         }
     };
-    if shared.resolve_approval(&id, approval, accept_cold_read) {
+    if shared.resolve_approval(&id, approval) {
         // `?wait`: hold until the turn reaches its *next* gate or completes — so a
         // multi-gate turn is driven as a clean "approve → read state" loop.
         if wait {

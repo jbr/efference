@@ -8,20 +8,21 @@
 //! wakes the differ anyway.
 
 use super::*;
-use crate::log::{ColdEvent, ColdReason, ConsentSource, Timestamp, UnparkCause};
+use crate::log::{ColdEvent, ColdReason, ReleasedBy, Timestamp, UnparkCause};
 
 /// Why the loop is stopped at its cold check mid-turn (the `park` topic,
 /// docs/control-api.md).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum ParkReason {
-    /// The cache is believed expired: continuing pays `context_tokens` uncached unless
-    /// the operator consents, or folds instead.
+    /// The cache is believed expired: continuing pays `context_tokens` uncached. The
+    /// loop waits for a person to act (a turn, a continue, a decision, an answer), or a
+    /// fold.
     Expired {
         since: Timestamp,
         context_tokens: Option<u64>,
     },
     /// A fold summarized the history while the loop was parked, so the belief is gone and
-    /// the next turn or continue resumes the loop with no consent.
+    /// the next turn or continue resumes the loop.
     Folded,
 }
 
@@ -118,26 +119,30 @@ impl Session {
 }
 
 impl Session {
-    /// Consent to one cold read (`accept_cold_read`, docs/control-api.md). Recorded only
-    /// while the session is believed cold, so a client that sends the flag on every
-    /// turn leaves nothing behind for a later cold moment it never saw; wakes a loop
-    /// parked at the cold check and a held inbox wake. `source` is the gesture that
-    /// carried the flag, kept in the log beside the park it answers.
-    pub(crate) fn grant_cold_read(&self, source: ConsentSource) {
+    /// A person acted (docs/control-api.md): a turn, a continue, a decision at a gate,
+    /// an answer to an `ask`. While the session is believed cold it is recorded and
+    /// releases a loop parked at the cold check, or the next check the loop reaches, and
+    /// lets a held inbox wake through; `by` is the action, kept in the log beside the
+    /// park it releases. Nothing is left behind when the session is warm, so an action
+    /// taken before a cold moment does not release a later one. A loop parked since
+    /// before a fold, with the belief gone, is woken the same way.
+    pub(crate) fn person_acted(&self, by: ReleasedBy) {
         if self.cold_since().is_some() {
-            self.record_cold(ColdEvent::Consented { source });
-            self.cold_consent.store(true, Ordering::SeqCst);
+            self.record_cold(ColdEvent::Released { by });
+            self.person_acted.store(true, Ordering::SeqCst);
             self.cold_signal.notify_waiters();
+        } else {
+            self.wake_cold_check();
         }
     }
 
-    /// Where a turn's consent came from: an answer when an `ask` is pending (the turn
-    /// resolves it instead of opening a user turn, `submit_turn`), otherwise a turn.
-    pub(crate) fn turn_consent_source(&self) -> ConsentSource {
+    /// Which action a turn is: an answer when an `ask` is pending (the turn resolves it
+    /// instead of opening a user turn, `submit_turn`), otherwise a turn.
+    pub(crate) fn turn_released_by(&self) -> ReleasedBy {
         if self.asking().is_some() {
-            ConsentSource::Ask
+            ReleasedBy::Ask
         } else {
-            ConsentSource::Turn
+            ReleasedBy::Turn
         }
     }
 
@@ -150,17 +155,17 @@ impl Session {
         }
     }
 
-    /// Let a parked cold check look again, without consent: after a fold the session
-    /// is no longer cold, and the operator's next turn or continue resumes it.
+    /// Let a parked cold check look again: after a fold the session is no longer cold,
+    /// and the operator's next turn or continue resumes it.
     pub(crate) fn wake_cold_check(&self) {
         if self.cold_parked() {
             self.cold_signal.notify_waiters();
         }
     }
 
-    /// Hold until the cache is believed warm, without consent (docs/session-title.md):
+    /// Hold until the cache is believed warm (docs/session-title.md):
     /// for a detached side task that would read the main prefix — the title ask —
-    /// waiting is the polite move where the loop's own check would ask the operator.
+    /// waiting is the polite move where the loop's own check would wait for a person.
     /// The session's next main request makes it warm and wakes the waiter; a task
     /// left waiting dies with the session's runtime.
     pub(crate) async fn wait_until_warm(&self) {
@@ -180,24 +185,26 @@ impl Session {
     }
 
     /// The loop's cold check, before any request on the main prefix: returns at once
-    /// while the cache is believed warm, consumes a granted consent when it is not,
-    /// and otherwise parks — a decision point, so `?wait` answers — until consent
-    /// arrives. Consent left over from a cold moment that has since passed is dropped.
-    pub(crate) async fn await_warm_or_consent(&self) {
+    /// while the cache is believed warm, consumes a person's action when it is not,
+    /// and otherwise parks — a decision point, so `?wait` answers — until a person
+    /// acts. An action left over from a cold moment that has since passed is dropped.
+    pub(crate) async fn await_warm_or_person(&self) {
         loop {
             let notified = self.cold_signal.notified();
             tokio::pin!(notified);
             notified.as_mut().enable();
             let believed_cold = self.cold_since();
             let Some(since) = believed_cold else {
-                self.cold_consent.store(false, Ordering::SeqCst);
+                self.person_acted.store(false, Ordering::SeqCst);
                 return self.unpark_cold(UnparkCause::Warm);
             };
-            if self.cold_consent.swap(false, Ordering::SeqCst) {
-                return self.unpark_cold(UnparkCause::Consent);
+            if self.person_acted.swap(false, Ordering::SeqCst) {
+                return self.unpark_cold(UnparkCause::Person);
             }
             if !self.cold_parked.swap(true, Ordering::SeqCst) {
-                eprintln!("(cold — waiting for consent to read the expired cache, or a fold)");
+                eprintln!(
+                    "(cold — waiting for a person before reading the expired cache, or a fold)"
+                );
                 self.record_cold(ColdEvent::Parked {
                     reason: ColdReason::Expired,
                     since,
@@ -219,8 +226,8 @@ impl Session {
     }
 
     /// [`Self::inbox_wake`], held while the cache is believed cold: an idle triage is a
-    /// request on the main prefix, so a notification waits in the inbox until a turn
-    /// with consent (or a fold) makes the session warm again.
+    /// request on the main prefix, so a notification waits in the inbox until a person
+    /// acts (or a fold makes the session warm again).
     pub(crate) async fn inbox_wake_while_warm(&self) {
         loop {
             self.inbox_wake().await;

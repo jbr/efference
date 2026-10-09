@@ -13,6 +13,10 @@ use serde::{Deserialize, Serialize};
 /// The call id defaults to the one pending gate, which is what `state` reports; a
 /// session runs one call at a time, so naming it is only needed to be sure the gate
 /// has not moved since you read it.
+///
+/// While `state` shows `cold`, the session's prompt cache is believed expired and the
+/// request after an approval reads the whole context uncached (about
+/// `cold.context_tokens`); the decision is taken either way.
 #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema, clap::Args)]
 #[serde(rename = "approve")]
 pub struct Approve {
@@ -28,14 +32,6 @@ pub struct Approve {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[arg(long)]
     pub redirect: Option<String>,
-    /// Consent to the uncached read the session's next request makes when its prompt
-    /// cache is believed expired (the `cold` topic in `state`; the `turn` tool's flag of
-    /// the same name). Without it a cold session parks after the approved call runs and
-    /// waits for consent again. Set it only after reading from `state` that the session is
-    /// cold, with the cost; it is ignored while the cache is warm and by `abort`.
-    #[serde(default)]
-    #[arg(long)]
-    pub accept_cold_read: bool,
     /// Block until the session settles again — its next gate, or the turn completing
     /// — and answer with its state. This is how a multi-gate turn is driven as a
     /// clean approve-then-read loop.
@@ -88,16 +84,14 @@ impl Tool<Control> for Approve {
                     (false, None) => Approval::Approve,
                 };
                 if !self.wait {
-                    client
-                        .approve(&call_id, &decision, self.accept_cold_read)
-                        .await?;
+                    client.approve(&call_id, &decision).await?;
                     return Ok(format!("resolved {call_id}"));
                 }
                 let settled = state
                     .settle_within(
                         &client,
                         self.timeout_s,
-                        client.approve_wait(&call_id, &decision, self.accept_cold_read),
+                        client.approve_wait(&call_id, &decision),
                     )
                     .await?;
                 Ok(settled.to_text())
@@ -123,11 +117,7 @@ impl Tool<Control> for Approve {
                     (false, Some(message)) => Approval::Redirect(message),
                     (false, None) => Approval::Approve,
                 };
-                if !session.resolve_approval(
-                    &crate::log::CallId(call_id.clone()),
-                    decision,
-                    self.accept_cold_read,
-                ) {
+                if !session.resolve_approval(&crate::log::CallId(call_id.clone()), decision) {
                     return Err(anyhow!(
                         "no pending gate {call_id:?} in that session — it may have moved"
                     ));

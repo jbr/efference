@@ -74,10 +74,9 @@ impl<'a> InteractiveState<'a> {
             format!("{}  {base}", indicators.join("  "))
         };
 
-        // While a gate or an `ask` waits on a session believed cold, the cold line leads
-        // in the warning weight: a decision made now carries the consent it describes
-        // (`cold_decision_line`, docs/tui.md).
-        let lead = self.cold_decision_line();
+        // While the session is believed cold, the cold line leads in the warning weight:
+        // what a send, an approval or an answer reads uncached (`cold_line`, docs/tui.md).
+        let lead = self.cold_line();
         let lead_len = lead.as_ref().map_or(0, |l| l.chars().count());
         let text = match &lead {
             Some(lead) => format!("{lead}  {text}"),

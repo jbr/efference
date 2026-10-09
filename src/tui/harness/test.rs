@@ -61,7 +61,7 @@ fn replay_fixture() -> Vec<crate::log::LogEntry> {
 
 mod ask;
 mod attachments;
-mod cold_decision;
+mod cold_line;
 mod hover;
 mod lifecycle;
 mod navigation;

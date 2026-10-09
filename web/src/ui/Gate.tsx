@@ -11,7 +11,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { Cold, Decision, Gate, Spot } from "../api/types.ts";
-import { coldDecisionLine, decisionWithConsent } from "./coldConsent.ts";
+import { coldLine as coldLineFor } from "./coldLine.ts";
 import { callView } from "./signature.ts";
 import { flatSignature } from "./signatureLayout.ts";
 import { jumpToTail, useDockOffset } from "./float.ts";
@@ -62,7 +62,7 @@ function GateControls({
   redirect,
 }: {
   busy: boolean;
-  /** The cold line (ui/coldConsent.ts), while the session is believed cold. */
+  /** The cold line (ui/coldLine.ts), while the session is believed cold. */
   coldLine: string | null;
   steer: string;
   setSteer: (text: string) => void;
@@ -160,8 +160,8 @@ export function GateSurface({
   /** The gated call's own slot in the transcript (Transcript.tsx), when it is
    * mounted: the decision renders there, inside the call it is about. */
   slot: HTMLDivElement | null;
-  /** The `cold` topic: while set, the controls carry the cold line, and a decision
-   * made then carries `accept_cold_read` (ui/coldConsent.ts). */
+  /** The `cold` topic: while set, the controls carry the cold line
+   * (ui/coldLine.ts). */
   cold: Cold | null;
   resolve: (decision: Decision) => Promise<"applied" | "moved">;
 }) {
@@ -225,15 +225,13 @@ export function GateSurface({
     return () => observer.disconnect();
   }, [surface]);
 
-  const coldLine = coldDecisionLine(cold, "approving or redirecting");
+  const coldLine = coldLineFor(cold, "approving or redirecting");
 
   async function send(decision: Decision) {
     setBusy(true);
     setNotice(null);
     try {
-      if (
-        (await resolve(decisionWithConsent(decision, coldLine))) === "applied"
-      ) {
+      if ((await resolve(decision)) === "applied") {
         setResolvedHere(true);
       } else {
         setNotice({

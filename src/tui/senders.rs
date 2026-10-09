@@ -28,14 +28,12 @@ pub(crate) struct Senders {
     /// Upload or remove a staged attachment (docs/inbox.md); an upload's answer
     /// rides home as a [`TuiEvent::Uploaded`](super::TuiEvent::Uploaded).
     pub attachments: UnboundedSender<super::staged::AttachCmd>,
-    /// The zero-token continue (docs/control-api.md). Its one field is the verb's
-    /// one field: consent to a cold read (`accept_cold_read`).
-    pub continue_loop: UnboundedSender<bool>,
+    /// The zero-token continue (docs/control-api.md).
+    pub continue_loop: UnboundedSender<()>,
     /// Fold a cold session (`POST /loop/fold`, docs/control-api.md).
     pub fold: UnboundedSender<()>,
-    /// A gate decision: the call, the decision, and whether it carries
-    /// `accept_cold_read` (set only when the gate was shown with the cold line).
-    pub approve: UnboundedSender<(String, Approval, bool)>,
+    /// A gate decision: the call and the decision.
+    pub approve: UnboundedSender<(String, Approval)>,
     pub pace: UnboundedSender<PaceCmd>,
     pub interrupt: UnboundedSender<Interrupt>,
     pub sidebar: UnboundedSender<SidebarCmd>,
@@ -53,9 +51,9 @@ pub(crate) struct Receivers {
     pub submit: UnboundedReceiver<SubmittedTurn>,
     pub recall: UnboundedReceiver<String>,
     pub attachments: UnboundedReceiver<super::staged::AttachCmd>,
-    pub continue_loop: UnboundedReceiver<bool>,
+    pub continue_loop: UnboundedReceiver<()>,
     pub fold: UnboundedReceiver<()>,
-    pub approve: UnboundedReceiver<(String, Approval, bool)>,
+    pub approve: UnboundedReceiver<(String, Approval)>,
     pub pace: UnboundedReceiver<PaceCmd>,
     pub interrupt: UnboundedReceiver<Interrupt>,
     pub sidebar: UnboundedReceiver<SidebarCmd>,

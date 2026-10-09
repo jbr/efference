@@ -220,7 +220,7 @@ async fn a_childs_gate_wakes_the_parent_and_is_pinned_whatever_the_peek_says() {
     })
     .await;
 
-    assert!(child.resolve_approval(&CallId("toolu_leaf".into()), Approval::Abort, false));
+    assert!(child.resolve_approval(&CallId("toolu_leaf".into()), Approval::Abort));
     wait_until("the idle reached the parent", || {
         heard(&parent, |source, body, slot| {
             source == "child"

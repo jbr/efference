@@ -91,8 +91,7 @@ async fn attach(
 
     // Turn sender: each composer submission is POSTed as a user turn. A refusal
     // (an attachment no longer in the store) comes home as a notice, since the
-    // pending echo alone would read as "still queued" forever; a `409 cold` comes
-    // home with the turn, for the composer to take back.
+    // pending echo alone would read as "still queued" forever.
     let turn_client = client.clone();
     let turn_events = tx.clone();
     let sender = tokio::spawn(async move {
@@ -100,14 +99,10 @@ async fn attach(
             let Err(e) = turn_client.submit(&turn).await else {
                 continue;
             };
-            let event = match e.downcast::<crate::client::ColdRefusal>() {
-                Ok(refusal) => TuiEvent::Cold {
-                    turn: Some(turn),
-                    refusal,
-                },
-                Err(e) => TuiEvent::Notice(format!("send failed: {e}")),
-            };
-            if turn_events.send(event).is_err() {
+            if turn_events
+                .send(TuiEvent::Notice(format!("send failed: {e}")))
+                .is_err()
+            {
                 break; // UI thread gone.
             }
         }
@@ -197,16 +192,12 @@ async fn attach(
     let continue_client = client.clone();
     let continue_events = tx.clone();
     let continuer = tokio::spawn(async move {
-        while let Some(accept_cold_read) = continue_rx.recv().await {
-            let event = match continue_client.continue_loop(accept_cold_read).await {
+        while continue_rx.recv().await.is_some() {
+            let event = match continue_client.continue_loop().await {
                 Ok(crate::client::ContinueOutcome::Accepted) => continue,
                 Ok(crate::client::ContinueOutcome::Declined { message }) => {
                     TuiEvent::Notice(message)
                 }
-                Ok(crate::client::ContinueOutcome::Cold(refusal)) => TuiEvent::Cold {
-                    turn: None,
-                    refusal,
-                },
                 Err(e) => TuiEvent::Notice(format!("continue failed: {e}")),
             };
             if continue_events.send(event).is_err() {
@@ -238,10 +229,8 @@ async fn attach(
     // Approval sender: resolve a gate via `PUT /approvals/:call_id`.
     let approve_client = client.clone();
     let approver = tokio::spawn(async move {
-        while let Some((call_id, decision, accept_cold_read)) = approve_rx.recv().await {
-            let _ = approve_client
-                .approve(&call_id, &decision, accept_cold_read)
-                .await;
+        while let Some((call_id, decision)) = approve_rx.recv().await {
+            let _ = approve_client.approve(&call_id, &decision).await;
         }
     });
 

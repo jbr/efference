@@ -1,26 +1,19 @@
 // The composer's notice about the session's history (docs/web-client.md): shown
-// after a `409 cold` refusal, and after a fold failed. It is where the second
-// answer to a cold session sits beside the first — send again to pay the
-// uncached read, or fold the history into a summary instead — and where a fold's
-// progress and failure are stated. The standing, confirmed fold is the drawer's.
+// while the cache is believed expired, and after a fold failed. It states what a
+// send reads uncached and offers the fold beside it — summarize the history
+// instead — and it is where a fold's progress and failure are stated. The
+// standing, confirmed fold is the drawer's.
 
 import type { Cold, Fold } from "../api/types.ts";
 import { type FoldOffer, kilotokens } from "./fold.ts";
 
 export function FoldNotice({
   cold,
-  consent,
-  parked,
   fold,
   offer,
   onFold,
 }: {
   cold: Cold | null;
-  /** A cold refusal is waiting for the operator's answer. */
-  consent: boolean;
-  /** The loop is stopped at its cold check (the `park` topic): the same choice, offered
-   * without a refusal first, so it is "send", not "send again". */
-  parked: boolean;
   fold: Fold | null;
   offer: FoldOffer;
   onFold: () => void;
@@ -35,8 +28,8 @@ export function FoldNotice({
   const tokens = cold?.context_tokens ?? null;
   const read =
     tokens !== null
-      ? `read ${kilotokens(tokens)} tokens uncached`
-      : "read it uncached";
+      ? `~${kilotokens(tokens)} tokens uncached`
+      : "the context uncached";
   const action =
     offer.kind === "ready" ? (
       <button type="button" className="fold-btn" onClick={onFold}>
@@ -52,10 +45,9 @@ export function FoldNotice({
       {fold?.state === "failed" && (
         <div className="error">summary failed: {fold.error}</div>
       )}
-      {(consent || parked) && cold !== null ? (
+      {cold !== null ? (
         <>
-          cache believed cold — send{consent ? " again" : ""} to {read}, or{" "}
-          {action}
+          cache expired — a send reads {read}, or {action}
         </>
       ) : (
         fold?.state === "failed" && action

@@ -23,18 +23,6 @@ pub(crate) struct TurnBody {
     /// otherwise, so a message never lands claiming a file that is not there.
     #[serde(default)]
     pub(crate) attachments: Vec<String>,
-    /// Consent to read the session's cache though it is believed expired
-    /// (backlog: cold-session.md). Without it a cold session answers `409 cold`.
-    #[serde(default)]
-    pub(crate) accept_cold_read: bool,
-}
-
-/// The optional `POST /loop/continue` body: the same consent a turn carries.
-#[derive(Deserialize, Default)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct ContinueBody {
-    #[serde(default)]
-    pub(crate) accept_cold_read: bool,
 }
 
 /// The optional `POST /loop/fold` body: `warm` is the operator's choice to fold a
@@ -44,32 +32,6 @@ pub(crate) struct ContinueBody {
 pub(crate) struct FoldBody {
     #[serde(default)]
     pub(crate) warm: bool,
-}
-
-/// Refuse a request on a cold session that did not consent to the read, or record the
-/// consent when it did (backlog: cold-session.md). `Err` carries the `409 cold` to send.
-/// `source` is the gesture that carried the flag, for the log's record of the consent.
-pub(crate) fn cold_gate(
-    shared: &Session,
-    accept_cold_read: bool,
-    source: crate::log::ConsentSource,
-) -> Result<(), ErrorBody> {
-    if accept_cold_read {
-        shared.grant_cold_read(source);
-        return Ok(());
-    }
-    if shared.cold_since().is_none() {
-        // A loop parked at its cold check before a fold resumes on the operator's next
-        // turn or continue, which needs no consent now (`daemon/fold.rs`).
-        shared.wake_cold_check();
-        return Ok(());
-    }
-    Err(ErrorBody::new(
-        ErrorCode::Cold,
-        "the session's prompt cache is believed expired; send again with \
-         accept_cold_read to pay the uncached read",
-    )
-    .with_detail(shared.topic_json(Topic::Cold)))
 }
 
 /// Cap on a client-minted submission id: long enough for any uuid-ish scheme,
@@ -126,12 +88,6 @@ pub(crate) struct DecisionBody {
     pub(crate) change: Option<crate::log::ConfigChange>,
     #[serde(default)]
     pub(crate) note: Option<String>,
-    /// Consent to the cold read the decision's next request makes (docs/control-api.md):
-    /// honored for `approve`, `redirect` and `config_edit`, which let the turn go on, and
-    /// recorded only while the session is believed cold. A client sends it only when it
-    /// showed the operator that the session is cold.
-    #[serde(default)]
-    pub(crate) accept_cold_read: bool,
 }
 
 /// Body of `PATCH /loop` (docs/control-channel.md): the operator dials, each

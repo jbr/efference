@@ -1153,35 +1153,27 @@ turn submitted, nothing appended — instead of the earlier silent no-op. A
 `409 not_continuable` is a normal answer, so the daemon's `message` renders
 in the composer's error slot on its own rather than as a thrown-error string.
 
-**Sending again is consent to a cold read.** A send or continue on a session
-whose cache is believed expired comes back `409 cold`, with nothing queued
-([control-api.md](control-api.md)). The draft stays, a notice above the field says
-what a second send costs (the `cold` topic's `context_tokens`) and offers the
-other answer — *summarize instead* — and the composer's next send — turn or
-continue — carries `accept_cold_read`, once. The refusal is dropped when the
-`cold` topic clears, so it cannot outlive the moment it was made in.
-
-**A gate or an `ask` on a cold session says so, and only then consents**
-(`ui/coldConsent.ts`). While the `cold` topic is set, the gate's controls and the
-composer of a pending `ask` carry one line in the warn colour: `cache believed cold —
+**A cold session says what the next action reads** (`ui/coldLine.ts`). While the
+`cold` topic is set, a notice above the composer says `cache expired — a send
+reads ~120k tokens uncached` (the topic's `context_tokens`) and offers the
+alternative — *summarize instead*. The send goes through on the first press: the host
+takes a turn or continue on a cold session like any other
+([control-api.md](control-api.md)), and the notice is information. A pending gate or
+`ask` carries its own line, so the composer's notice yields to it. The gate's controls
+and the composer of a pending `ask` carry one line in the warn colour: `cache expired —
 approving or redirecting reads ~120k tokens uncached` at a gate (the decision that
 lets the turn go on, a redirect included, because its message is read against the same
-cache), `cache believed cold — your answer reads ~120k tokens uncached` at an `ask`
+cache), `cache expired — your answer reads ~120k tokens uncached` at an `ask`
 (`kilotokens` of the topic's `context_tokens`; `the context uncached` when it is
-unknown). The line is also the condition for the consent: `decisionWithConsent` adds
-`accept_cold_read` to an approve, redirect or grant, and the ask's send passes it to
-`submitTurn`, exactly when the line was on screen for that decision; an abort never
-carries it. A gate or answer with no cold line is not consent, so a session that went
-cold while the decision was on screen asks again rather than being read on a decision
-that did not say so. Without the flag the call runs and the loop parks at its cold
-check, as before ([control-api.md](control-api.md)).
+unknown). A decision or answer is sent as it is whether or not the line showed; the
+host records it as the person action that releases a parked loop
+([control-api.md](control-api.md)).
 
 A loop parked mid-turn at its cold check (the `park` topic) is `running` to the turn
 state, so `turnState` reads it first and says `paused: cache expired · send to continue
-(reads 120k tokens uncached)` in the warn colour; the composer shows the same cold
-notice as after a refusal, without the refusal, with the same *summarize instead*
-button. After a fold the park stays and `cold` is null; the readout says `paused:
-summarized · send to continue`, with no notice, since no consent is asked.
+(reads 120k tokens uncached)` in the warn colour; the composer shows the cold notice
+with the same *summarize instead* button. After a fold the park stays and `cold` is
+null; the readout says `paused: summarized · send to continue`, with no notice.
 
 **Summarizing is the fold** (`POST /loop/fold`, [control-api.md](control-api.md);
 `ui/fold.ts`, `ui/FoldNotice.tsx`, `ui/FoldControl.tsx`). Two entry points, one

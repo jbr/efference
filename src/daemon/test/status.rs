@@ -47,7 +47,7 @@ fn a_gate_outranks_a_stall_which_outranks_running() {
         }
     );
 
-    assert!(shared.resolve_approval(&CallId("toolu_1".into()), Approval::Abort, false));
+    assert!(shared.resolve_approval(&CallId("toolu_1".into()), Approval::Abort));
     shared.clear_stall();
     shared.running.store(false, Ordering::SeqCst);
     assert_eq!(shared.status(), SessionStatus::Idle);

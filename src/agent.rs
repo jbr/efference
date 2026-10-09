@@ -306,10 +306,10 @@ pub async fn run<F: Frontend, S: Spotter>(
             // as `[tool_result…, text]`. A turn arriving while the loop is idle still takes
             // the fast path (the outer `select!`); this only catches mid-trajectory ones.
             // The cold check (backlog: cold-session.md): no request reads a cache
-            // believed expired without the operator's consent. Parks here, a decision
-            // point, until `accept_cold_read` arrives; before the drain, so a turn sent
-            // with that consent lands at this seam.
-            shared.await_warm_or_consent().await;
+            // believed expired until a person has acted. Parks here, a decision
+            // point, until a turn, continue, decision or answer arrives; before the
+            // drain, so a turn sent meanwhile lands at this seam.
+            shared.await_warm_or_person().await;
             let injected = frontend.drain_injected_turns();
             let mut landed = 0;
             for submitted in held.drain(..).chain(injected) {

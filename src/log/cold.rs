@@ -1,6 +1,6 @@
 //! The durable record of the cold check (docs/transport.md, docs/control-api.md): when
-//! the loop parked because the cache is believed expired, when a consent arrived and
-//! from which gesture, and when the park ended.
+//! the loop parked because the cache is believed expired, when a person's action
+//! released it and which one, and when the park ended.
 //!
 //! None of it reaches the wire: [`Payload::Cold`] projects to nothing, like
 //! [`Payload::Push`], and the entry's own `at` is the time of each step.
@@ -20,10 +20,11 @@ pub enum ColdReason {
     Expired,
 }
 
-/// The gesture that carried `accept_cold_read`.
+/// The person action that released a park (or would have: it is recorded whenever a
+/// person acts while the session is believed cold).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum ConsentSource {
+pub enum ReleasedBy {
     /// `POST /turns` (or the `turn` tool) with no `ask` pending.
     Turn,
     /// `PUT /approvals/:call_id`: the decision at an approval gate.
@@ -38,8 +39,8 @@ pub enum ConsentSource {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum UnparkCause {
-    /// A consent was taken and the request went out.
-    Consent,
+    /// A person acted and the request went out.
+    Person,
     /// The belief ended without one (a fold, or another request warmed the cache).
     Warm,
 }
@@ -56,8 +57,8 @@ pub enum ColdEvent {
         /// What the read would cost uncached, when a turn has reported it.
         context_tokens: Option<u64>,
     },
-    /// A consent was recorded while the session was believed cold.
-    Consented { source: ConsentSource },
+    /// A person acted while the session was believed cold.
+    Released { by: ReleasedBy },
     /// The loop left the cold check.
     Unparked { cause: UnparkCause },
 }

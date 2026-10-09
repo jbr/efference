@@ -225,11 +225,11 @@ enforceable, and they are enforced by the executor rather than by config:
   reads (`sessions`, `state`, `transcript`, `entries`, `image`) reach any session
   in the caller's project.
 
-`approve` and `turn` both take `accept_cold_read`, the consent to the uncached read a
-session believed cold makes next ([control-api.md](control-api.md)). A driver sets it
-only after reading in `state` that the session is cold (the `cold` topic, with
-`context_tokens`); `approve` honors it for the decisions that let the turn go on and
-ignores it for `abort`, and a session whose cache is warm records nothing.
+While `state` shows the `cold` topic, a `turn` or an `approve` (other than `abort`) is
+followed by a request that reads the whole context uncached (`context_tokens`). Both go
+through; a driver that would rather not pay can fold first (`POST /loop/fold`). A turn
+or decision is also the person action that releases a loop parked at its cold check
+([control-api.md](control-api.md)).
 
 `created_by` is per-session host control state: never logged, never projected, and
 absent on a human root. It is also what the child's identity line names as its

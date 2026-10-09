@@ -3,31 +3,27 @@
 use super::*;
 
 impl<'a> InteractiveState<'a> {
-    /// The cold line while a decision is pending on a session believed cold: an approval
-    /// gate or an `ask` the operator is about to answer (docs/tui.md). The status bar
-    /// draws it for as long as this is `Some`, and a decision made meanwhile carries
-    /// `accept_cold_read` — the operator was shown what the next request reads. `None`
-    /// means no consent rides on the decision.
-    pub(in crate::tui) fn cold_decision_line(&self) -> Option<String> {
+    /// The cold line while the session is believed cold (docs/tui.md): what the next
+    /// action reads uncached — an approval at a gate, an answer to an `ask`, or a send
+    /// from the composer. The status bar draws it for as long as this is `Some`. It is
+    /// information: the action goes through either way.
+    pub(in crate::tui) fn cold_line(&self) -> Option<String> {
         let cold = self.cold?;
         let subject = if self.pending_gate.is_some() {
             "approving or redirecting"
         } else if self.ask.is_some() {
             "your answer"
         } else {
-            return None;
+            "a send"
         };
         let cost = match cold.context_tokens {
             Some(tokens) => format!("~{}k tokens uncached", (tokens + 500) / 1_000),
             None => "the context uncached".to_string(),
         };
-        Some(format!("cache believed cold — {subject} reads {cost}"))
+        Some(format!("cache expired — {subject} reads {cost}"))
     }
 
     pub(in crate::tui) fn submit_composer(&mut self, text: String) {
-        // The cold line is on screen for exactly as long as this is true; a decision made
-        // while it is carries the consent it describes (docs/tui.md).
-        let cold_shown = self.cold_decision_line().is_some();
         if let Some(gate) = self.pending_gate.take() {
             let trimmed = text.trim();
             let decision = if trimmed.is_empty() {
@@ -61,7 +57,7 @@ impl<'a> InteractiveState<'a> {
                 // exhaustive so a future grant-capable client labels cleanly.
                 Approval::ConfigEdit { .. } => "granted".to_string(),
             };
-            let _ = self.approve_tx.send((gate.call_id, decision, cold_shown));
+            let _ = self.approve_tx.send((gate.call_id, decision));
             self.composer.clear();
             self.ui.debug_message = label.into();
             self.viewport.stuck_to_bottom = true;
@@ -80,8 +76,7 @@ impl<'a> InteractiveState<'a> {
         // can be edited and re-sent.
         let submitted =
             crate::frontend::SubmittedTurn::new(text, crate::daemon::mint_submission_id())
-                .with_attachments(self.staged.ready())
-                .accepting_cold_read(std::mem::take(&mut self.cold_consent) || cold_shown);
+                .with_attachments(self.staged.ready());
         if self.submit_tx.send(submitted.clone()).is_ok() {
             self.clear_staged();
             // Echo the message immediately as a pending transcript unit
@@ -106,11 +101,7 @@ impl<'a> InteractiveState<'a> {
     /// the only local effect is the status line and following the tail again.
     /// A daemon decline arrives later as a [`TuiEvent::Notice`].
     pub(in crate::tui) fn continue_trajectory(&mut self) {
-        if self
-            .continue_tx
-            .send(std::mem::take(&mut self.cold_consent))
-            .is_ok()
-        {
+        if self.continue_tx.send(()).is_ok() {
             self.ui.debug_message = "continuing".into();
             self.viewport.stuck_to_bottom = true;
         } else {
@@ -120,11 +111,9 @@ impl<'a> InteractiveState<'a> {
     }
 
     /// Ask for a fold (backlog: cold-session.md — `C-o`): the session's own model
-    /// replaces its history with an account instead of the cold read. A pending
-    /// consent is dropped, since folding is the other answer to the same question.
+    /// replaces its history with an account instead of the cold read.
     /// The daemon's answer comes back as a [`TuiEvent::Notice`].
     pub(in crate::tui) fn fold_session(&mut self) {
-        self.cold_consent = false;
         self.ui.debug_message = if self.fold_tx.send(()).is_ok() {
             "asking for a fold".into()
         } else {
@@ -196,34 +185,6 @@ impl<'a> InteractiveState<'a> {
         self.mark_reproject();
     }
 
-    /// A send came back `409 cold` (backlog: cold-session.md): nothing was queued. A
-    /// refused turn returns to the composer as a recall would, and the next send — of
-    /// it, or of a continue — carries the consent the refusal asked for.
-    pub(in crate::tui) fn apply_cold(
-        &mut self,
-        turn: Option<crate::frontend::SubmittedTurn>,
-        refusal: crate::client::ColdRefusal,
-    ) {
-        if let Some(turn) = turn {
-            self.apply_recall(vec![crate::client::WithdrawnTurn {
-                submission_id: turn.submission_id,
-                text: turn.text,
-                attachments: turn.attachments,
-            }]);
-        }
-        self.cold_consent = true;
-        let tokens = refusal.cold["context_tokens"].as_u64();
-        self.ui.debug_message = match tokens {
-            Some(tokens) => format!(
-                "cache believed cold — ⏎ again to read {}k tokens uncached, C-o to fold",
-                (tokens + 500) / 1_000
-            ),
-            None => "cache believed cold — ⏎ again to read it uncached, C-o to fold".to_string(),
-        }
-        .into();
-        self.dirty = true;
-    }
-
     /// Take back the turns an `ask` withdrew from the queue, once per ask (docs/tui.md). Only
     /// those this client submitted come back — a submission id in `pending_turns` — so a
     /// restarted client, or another client's queue, restores nothing. What comes back goes
@@ -289,11 +250,8 @@ impl<'a> InteractiveState<'a> {
     /// this leaves any drafted text in place (the draft may be a redirect the
     /// operator decided against sending).
     pub(in crate::tui) fn approve_gate(&mut self) {
-        let cold_shown = self.cold_decision_line().is_some();
         if let Some(gate) = self.pending_gate.take() {
-            let _ = self
-                .approve_tx
-                .send((gate.call_id, Approval::Approve, cold_shown));
+            let _ = self.approve_tx.send((gate.call_id, Approval::Approve));
             self.ui.debug_message = "approved".into();
             self.viewport.stuck_to_bottom = true;
         }
@@ -303,7 +261,7 @@ impl<'a> InteractiveState<'a> {
     /// `.abort` sentinel produces, draft likewise left in place.
     pub(in crate::tui) fn abort_gate(&mut self) {
         if let Some(gate) = self.pending_gate.take() {
-            let _ = self.approve_tx.send((gate.call_id, Approval::Abort, false));
+            let _ = self.approve_tx.send((gate.call_id, Approval::Abort));
             self.ui.debug_message = "aborted".into();
             self.viewport.stuck_to_bottom = true;
         }

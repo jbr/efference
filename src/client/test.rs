@@ -101,11 +101,7 @@ async fn verbs_round_trip_over_the_unix_connector() {
 
     client.turn("hello world").await.unwrap();
     client
-        .approve(
-            "toolu_7",
-            &Approval::Redirect("try the other file".into()),
-            false,
-        )
+        .approve("toolu_7", &Approval::Redirect("try the other file".into()))
         .await
         .unwrap();
     client.interrupt().await.unwrap();
@@ -168,7 +164,7 @@ async fn non_2xx_surfaces_the_daemon_error_body() {
 
     // The stub answers /approvals/missing with a 404 + JSON error body.
     let err = client
-        .approve("missing", &Approval::Approve, false)
+        .approve("missing", &Approval::Approve)
         .await
         .unwrap_err();
     let msg = format!("{err}");

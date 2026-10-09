@@ -226,12 +226,12 @@ pub struct Session {
     /// The provider's cache lifetime, set at boot only when the model has a prompt
     /// cache; the `cold` topic reads it (`daemon/cold.rs`).
     cache_ttl: std::sync::OnceLock<Duration>,
-    /// A one-shot consent to read a cold cache (`accept_cold_read`), consumed by the
-    /// loop's next cold check (`daemon/cold.rs`).
-    cold_consent: AtomicBool,
-    /// The loop is parked at its cold check, waiting for consent: a decision point.
+    /// A person acted while the session was believed cold (a turn, continue, decision or
+    /// answer), consumed by the loop's next cold check (`daemon/cold.rs`).
+    person_acted: AtomicBool,
+    /// The loop is parked at its cold check, waiting for a person: a decision point.
     cold_parked: AtomicBool,
-    /// Wakes the cold check and the held inbox wake when consent is granted.
+    /// Wakes the cold check and the held inbox wake when a person acts.
     cold_signal: Notify,
     /// The fold in progress or its last failure (`daemon/fold.rs`).
     fold_state: Mutex<Option<fold::FoldState>>,
@@ -767,7 +767,7 @@ impl Session {
             attachment_store: std::sync::OnceLock::new(),
             web_path: std::sync::OnceLock::new(),
             cache_ttl: std::sync::OnceLock::new(),
-            cold_consent: AtomicBool::new(false),
+            person_acted: AtomicBool::new(false),
             cold_parked: AtomicBool::new(false),
             cold_signal: Notify::new(),
             fold_state: Mutex::new(None),
@@ -1230,7 +1230,6 @@ mod watch;
 /// exercise a real request/response cycle without binding anything.
 pub use handler::{App, Transport, handler};
 
-pub(crate) use http::cold_gate;
 pub(crate) use watch::refresh_and_emit;
 
 use approvals::Pending;

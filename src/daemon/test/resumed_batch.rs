@@ -134,7 +134,7 @@ async fn continue_when_parked(session: &Session) {
 
 async fn approve_the_gate(session: &Session, id: &str) {
     wait_until("the gate reappears", || session.pending_gate().is_some()).await;
-    assert!(session.resolve_approval(&CallId(id.into()), Approval::Approve, false));
+    assert!(session.resolve_approval(&CallId(id.into()), Approval::Approve));
 }
 
 fn results_of(log: &[crate::log::LogEntry], id: &str) -> usize {

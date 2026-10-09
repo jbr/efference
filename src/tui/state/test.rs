@@ -5,7 +5,7 @@ use tokio::sync::mpsc::UnboundedReceiver;
 /// A state with one pending gate, plus the receiver the decision lands on.
 fn state_with_gate() -> (
     InteractiveState<'static>,
-    UnboundedReceiver<(String, Approval, bool)>,
+    UnboundedReceiver<(String, Approval)>,
 ) {
     let rc = RenderContext::new();
     let theme = InteractiveTheme::from_render_context(&rc);
@@ -27,7 +27,7 @@ fn state_with_gate() -> (
 fn empty_submit_approves_the_gate() {
     let (mut s, mut arx) = state_with_gate();
     s.submit_composer(String::new());
-    let (id, dec, _) = arx.try_recv().expect("a decision was sent");
+    let (id, dec) = arx.try_recv().expect("a decision was sent");
     assert_eq!(id, "toolu_1");
     assert!(matches!(dec, Approval::Approve));
     assert!(s.pending_gate.is_none(), "gate cleared after resolving");
@@ -37,7 +37,7 @@ fn empty_submit_approves_the_gate() {
 fn abort_sentinel_aborts_the_gate() {
     let (mut s, mut arx) = state_with_gate();
     s.submit_composer(".abort".into());
-    let (_id, dec, _) = arx.try_recv().unwrap();
+    let (_id, dec) = arx.try_recv().unwrap();
     assert!(matches!(dec, Approval::Abort));
 }
 
@@ -198,43 +198,9 @@ fn a_long_paste_is_staged_and_sent_with_the_next_turn() {
     assert!(s.staged.is_empty(), "sent chips leave the row");
 }
 
-/// A `409 cold` hands the refused turn back to the composer, and sending again
-/// carries `accept_cold_read` — once (backlog: cold-session.md).
+/// `C-o` asks for a fold (backlog: cold-session.md).
 #[test]
-fn a_cold_refusal_returns_the_turn_and_arms_consent() {
-    let rc = RenderContext::new();
-    let theme = InteractiveTheme::from_render_context(&rc);
-    let (_etx, erx) = crossbeam_channel::unbounded();
-    let (senders, receivers) = crate::tui::senders::Senders::channels();
-    let mut srx = receivers.submit;
-    let mut s = InteractiveState::new(erx, senders, rc, theme);
-    s.submit_composer("hello".into());
-    let refused = srx.try_recv().unwrap();
-    assert!(!refused.accept_cold_read);
-
-    s.apply_cold(
-        Some(refused),
-        crate::client::ColdRefusal {
-            message: "cold".into(),
-            cold: serde_json::json!({ "since": 1, "context_tokens": 120_000 }),
-        },
-    );
-    assert!(s.pending_turns.is_empty(), "the echo is withdrawn");
-    assert_eq!(s.composer.text(), "hello");
-
-    s.submit_composer("hello".into());
-    assert!(srx.try_recv().unwrap().accept_cold_read);
-    s.submit_composer("again".into());
-    assert!(
-        !srx.try_recv().unwrap().accept_cold_read,
-        "consent is one send"
-    );
-}
-
-/// `C-o` asks for a fold, and a pending consent is dropped with it: folding is the
-/// other answer to the same cold refusal (backlog: cold-session.md).
-#[test]
-fn ctrl_o_folds_and_drops_a_pending_consent() {
+fn ctrl_o_asks_for_a_fold() {
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     let rc = RenderContext::new();
     let theme = InteractiveTheme::from_render_context(&rc);
@@ -242,10 +208,8 @@ fn ctrl_o_folds_and_drops_a_pending_consent() {
     let (senders, receivers) = crate::tui::senders::Senders::channels();
     let mut frx = receivers.fold;
     let mut s = InteractiveState::new(erx, senders, rc, theme);
-    s.cold_consent = true;
     s.handle_composer_key(KeyEvent::new(KeyCode::Char('o'), KeyModifiers::CONTROL));
     assert!(frx.try_recv().is_ok(), "a fold was asked for");
-    assert!(!s.cold_consent);
 }
 
 /// The operation text shows only while the loop is running, follows the topic, and

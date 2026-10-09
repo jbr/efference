@@ -208,7 +208,7 @@ async fn fold_once(client: &Client, session: &Session, tools: &[Value]) -> Resul
         .map_err(|e| e.to_string())?;
     session.record_request(RequestOrigin::Narrate, narration.usage);
     // A turn that reached the cache while the account was being written (the operator
-    // consented to the full read meanwhile) makes the fold moot. A keepalive ping does
+    // paid the full read meanwhile) makes the fold moot. A keepalive ping does
     // not: on a warm fold it is the cache being kept, not read for a turn.
     if session.metrics.lock().unwrap().turn_requests != turns_before {
         return Err("superseded: a request read the cache while the account was written".into());

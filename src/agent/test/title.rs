@@ -138,15 +138,12 @@ async fn the_title_ask_compresses_an_over_budget_title() {
     let client = mock_client("Fix title cadence");
     let ask = TitleAsk::new(&client, &[], &ForkPeek::shared());
     solicit_title_detached(&shared, &ask);
-    for _ in 0..200 {
-        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
-        let titles = titles(&shared);
-        if titles.len() > 1 {
-            assert_eq!(titles[1], "Fix title cadence");
-            return;
-        }
-    }
-    panic!("the title ask never landed: {:?}", titles(&shared));
+    assert!(
+        eventually(|| titles(&shared).len() > 1).await,
+        "the title ask never landed: {:?}",
+        titles(&shared)
+    );
+    assert_eq!(titles(&shared)[1], "Fix title cadence");
 }
 
 /// A standing title with nothing after it answers the title check: no ask may run,
@@ -173,9 +170,11 @@ async fn the_title_ask_stays_silent_while_the_title_answers_the_check() {
     );
 }
 
-/// Wait up to five seconds for `done`, polling the way the tests above do.
+/// Wait for `done`, polling every 25 ms. The bound is generous on purpose: a passing
+/// test returns at the first true poll, so only a real failure waits it out, while a
+/// tight bound failed these tests on a loaded machine (module runtime 2–8 s).
 async fn eventually(done: impl Fn() -> bool) -> bool {
-    for _ in 0..200 {
+    for _ in 0..1200 {
         if done() {
             return true;
         }

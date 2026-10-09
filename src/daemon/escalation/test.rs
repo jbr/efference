@@ -116,7 +116,7 @@ async fn deciding_a_gate_cancels() {
         );
         let _gate = shared.register_pending(&call, None);
         assert!(shared.pending_escalation().is_some());
-        shared.resolve_approval(&call.id, decision, false);
+        shared.resolve_approval(&call.id, decision);
         assert_eq!(titles(&shared), None);
     }
 }
@@ -299,7 +299,7 @@ async fn each_cancel_cause_is_recorded() {
         serde_json::json!({"command": "ls"}),
     );
     let _gate = shared.register_pending(&call, None);
-    shared.resolve_approval(&call.id, Approval::Approve, false);
+    shared.resolve_approval(&call.id, Approval::Approve);
     assert_eq!(cancelled(&shared), vec![PushCancel::GateDecided]);
 
     // An ask that ends.

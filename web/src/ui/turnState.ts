@@ -59,7 +59,7 @@ export function turnState(
       return {
         text: "paused: summarized · send to continue",
         title:
-          "the history was summarized while the loop was stopped; a send or an empty send resumes it, with no consent needed",
+          "the history was summarized while the loop was stopped; a send or an empty send resumes it",
         kind: "parked",
       };
     }
@@ -70,7 +70,7 @@ export function turnState(
     return {
       text: `paused: cache expired · send to continue (reads ${read} uncached)`,
       title:
-        "the loop stopped before a request that would read the expired cache; send to consent, or summarize instead",
+        "the loop stopped before a request that would read the expired cache; send to continue, or summarize instead",
       kind: "parked",
     };
   }

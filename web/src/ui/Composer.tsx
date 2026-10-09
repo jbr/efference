@@ -26,7 +26,7 @@ import type {
 } from "../api/types.ts";
 import { FoldNotice } from "./FoldNotice.tsx";
 import { foldOffer } from "./fold.ts";
-import { coldDecisionLine, consentsWhenShown } from "./coldConsent.ts";
+import { coldLine } from "./coldLine.ts";
 import { replyHint } from "./askMark.ts";
 import { type TurnState, turnState } from "./turnState.ts";
 import { useDockOffset } from "./float.ts";
@@ -64,11 +64,7 @@ export function Composer({
   operations,
   model,
 }: {
-  submit: (
-    text: string,
-    attachments: Attachment[],
-    acceptColdRead: boolean,
-  ) => Promise<void>;
+  submit: (text: string, attachments: Attachment[]) => Promise<void>;
   /** A turn a recall pulled back out of the daemon's queue, to prepend to the
    * draft (docs/web-client.md). */
   recalled: Recalled | null;
@@ -85,8 +81,9 @@ export function Composer({
   gatePending: boolean;
   /** The pending `ask`: the placeholder says which question a send answers. */
   ask: Pick<Ask, "n" | "of"> | null;
-  /** The `cold` and `fold` topics (docs/web-client.md): a cold refusal offers
-   * a fold beside the uncached read, and a fold's progress and failure show. */
+  /** The `cold` and `fold` topics (docs/web-client.md): a cold session states
+   * what a send reads and offers a fold beside it, and a fold's progress and
+   * failure show. */
   cold: Cold | null;
   /** The `park` topic: the loop stopped at its cold check. */
   park: Park | null;
@@ -98,9 +95,6 @@ export function Composer({
 }) {
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
-  // A `409 cold` came back (docs/control-api.md): the next send carries the
-  // consent it asked for, so sending again is the operator's yes.
-  const [coldConsent, setColdConsent] = useState(false);
   const attachments = useStagedAttachments();
   const { stage, restore } = attachments;
   // A file dragged anywhere over the page is headed here: the composer is the
@@ -207,8 +201,7 @@ export function Composer({
     void call.then(() => setError(null)).catch((e) => setError(`${e}`));
 
   // The cold line for the pending question: what answering reads uncached.
-  const askColdLine =
-    ask !== null ? coldDecisionLine(cold, "your answer") : null;
+  const askColdLine = ask !== null ? coldLine(cold, "your answer") : null;
 
   async function submit() {
     const text = draft.trim();
@@ -221,53 +214,33 @@ export function Composer({
     // loop takes another turn on the wire it already has. A decline is a normal
     // answer — the moment had no continue in it — so its message renders on its
     // own rather than as a thrown-error string. Attachments alone are a turn.
-    // A send that answers an `ask` consents when the cold line was showing for it
-    // (ui/coldConsent.ts); the continue below answers nothing, so it does not.
-    const acceptColdRead = coldConsent;
-    setColdConsent(false);
     if (!text && attachments.ready.length === 0) {
       try {
-        await continueLoop(acceptColdRead);
+        await continueLoop();
         setError(null);
       } catch (e) {
-        if (!refusedCold(e))
-          setError(e instanceof ApiError ? e.message : `${e}`);
+        setError(e instanceof ApiError ? e.message : `${e}`);
       }
       return;
     }
     try {
-      await send(
-        text,
-        attachments.ready,
-        acceptColdRead || consentsWhenShown(askColdLine),
-      );
+      await send(text, attachments.ready);
       attachments.clear();
       setDraft("");
       setError(null);
       setExpanded(false);
     } catch (e) {
-      if (!refusedCold(e)) setError(`${e}`);
+      setError(`${e}`);
     }
   }
 
-  // Nothing was queued and the draft is untouched: say what sending again costs.
-  function refusedCold(e: unknown): boolean {
-    if (!(e instanceof ApiError) || e.code !== "cold") return false;
-    // The notice below states the choice: send again, or fold instead.
-    setColdConsent(true);
-    setError(null);
-    return true;
-  }
-
-  // The fold is the other answer to a cold refusal (docs/web-client.md); its
+  // The fold is the alternative to the uncached read (docs/web-client.md); its
   // progress arrives on the `fold` topic, so success changes nothing here.
-  // Only an expired-cache park has a choice to offer; a folded one just resumes.
-  const parked = running && park?.reason === "expired";
   const offer = foldOffer(cold, fold, running, gatePending, ask !== null);
-  // The refusal is stale once the session is no longer believed cold (a fold
-  // landed, or a request warmed it): dropped during render, so it cannot come
-  // back at a later cold moment the operator never saw.
-  if (cold === null && coldConsent) setColdConsent(false);
+  // The ask and the gate carry their own cold lines; the composer's notice is for
+  // a send that opens a turn, or a fold's progress.
+  const noticeShown =
+    fold !== null || (cold !== null && ask === null && !gatePending);
   function startFold() {
     foldLoop(offer.warm)
       .then(() => setError(null))
@@ -315,11 +288,9 @@ export function Composer({
               <span className="composer-grabber" aria-hidden />
             </div>
           )}
-          {(coldConsent || parked || fold !== null) && (
+          {noticeShown && (
             <FoldNotice
               cold={cold}
-              consent={coldConsent}
-              parked={parked}
               fold={fold}
               offer={offer}
               onFold={startFold}

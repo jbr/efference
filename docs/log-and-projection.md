@@ -54,7 +54,7 @@ enum Payload {
     Preamble { system: String, context: Resolved, inference: Option<LoggedInference> },  // boot record — replay/audit only (see context.md)
     Title(Title),      // the session's one-line title — presentation only, never projected (see session-title.md)
     RequestStage(RequestStage),  // one stage of one upstream request — telemetry, never projected
-    Cold(ColdEvent),  // one step of the cold check (parked, consented, unparked) — never projected (see control-api.md)
+    Cold(ColdEvent),  // one step of the cold check (parked, released, unparked) — never projected (see control-api.md)
     Push(PushRecord),  // one step of a moment's push (decided, held, escalated, cancelled, delivered) — never projected (see web-push.md)
     // Anticipated, not yet built: a frozen cache-breakpoint boundary (`Commit`)
     // for compaction. Kept here as a forward marker — types land ahead of the
@@ -126,9 +126,9 @@ push services' per-device answers). It projects to nothing, like `RequestStage`
 
 `Cold` records the cold check ([control-api.md](control-api.md)): `parked {reason,
 since, context_tokens}` when the loop stops before a request on the main prefix,
-`consented {source}` when an `accept_cold_read` is recorded while the session is believed
-cold (`source`: `turn`, `approval`, `ask`, `continue`), and `unparked {cause}` when the park
-ends (`consent`, or `warm` when a fold or another request ended the belief). It projects
+`released {by}` when a person acts while the session is believed cold (`by`: `turn`,
+`approval`, `ask`, `continue`), and `unparked {cause}` when the park ends (`person`, or
+`warm` when a fold or another request ended the belief). It projects
 to nothing (`cold_records_project_to_identical_bytes`).
 
 The stages are written from one seam, `Client::send` in `api/client.rs` (and the

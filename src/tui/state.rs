@@ -540,16 +540,12 @@ pub(super) struct InteractiveState<'a> {
     pub recall_tx: UnboundedSender<String>,
     /// Fires the zero-token continue (`POST /loop/continue`, docs/control-api.md) —
     /// the empty-composer `⏎` when it is the operator's turn. Nothing is submitted
-    /// and nothing is appended; the payload is the verb's `accept_cold_read`. A
+    /// and nothing is appended. A
     /// decline comes back as a [`TuiEvent::Notice`] for the status line.
-    pub continue_tx: UnboundedSender<bool>,
+    pub continue_tx: UnboundedSender<()>,
     /// Asks for a fold (`POST /loop/fold`, docs/control-api.md): the operator's
-    /// alternative to consenting to a cold read.
+    /// alternative to reading a cold cache uncached.
     pub fold_tx: UnboundedSender<()>,
-    /// A `409 cold` came back since the last send (backlog: cold-session.md): the
-    /// next submit or continue carries `accept_cold_read`, so sending again is the
-    /// operator's consent to the uncached read.
-    pub cold_consent: bool,
     /// Asks the tokio side to upload or remove a staged attachment (docs/inbox.md).
     pub attachments_tx: UnboundedSender<crate::tui::staged::AttachCmd>,
     /// The composer's staged attachments: uploaded as they are staged, sent with the next
@@ -577,7 +573,7 @@ pub(super) struct InteractiveState<'a> {
     pub pending_gate: Option<PendingGate>,
     /// Sends an approval decision (`call_id`, decision) to the tokio side, which
     /// resolves it via `PUT /approvals/:call_id`.
-    pub approve_tx: UnboundedSender<(String, Approval, bool)>,
+    pub approve_tx: UnboundedSender<(String, Approval)>,
     /// Sends a pace command (`speed_ms`, `held`) to the tokio side, which issues
     /// `PATCH /loop {pace}` (docs/tui.md).
     pub pace_tx: UnboundedSender<PaceCmd>,

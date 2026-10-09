@@ -1770,8 +1770,8 @@ clock as a turn does; a peek on a separate triage client has a prefix of its own
 does not. Turns and keepalive pings always touch the main prefix
 (`RequestOrigin::touches_main_prefix`); a shared peek's `usage.jsonl` line carries
 `main_prefix: true` (omitted when false) so a restarted host and `efference dev cache`
-make the same call. Without the stamp, a cold read consented to at a shared peek
-leaves the clock on the earlier turn, and the next turn's cold check asks again.
+make the same call. Without the stamp, a cold read paid at a shared peek
+leaves the clock on the earlier turn, and the next turn's cold check parks again.
 
 ### keepalive_loop: two clocks
 

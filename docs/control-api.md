@@ -70,7 +70,7 @@ sessions from one process. Its own routes are the listener's, not a session's:
   mid-turn (the `park` topic, below): it ranks after `gated`, `asking` and
   `stalled` and before `running`, which stays true while the loop waits, so a list
   surface does not read it as working. A status subscriber is told once, with the
-  cold-read size and that a consenting turn or a fold ends it; after a fold the
+  cold-read size and that a person's action (a turn, a continue, a decision) or a fold ends it; after a fold the
   body says the history was summarized and a turn or continue resumes it unasked. Those two are what a list surface can show
   without one `GET /sessions/<id>/v1/state` per row, and what a client's
   destructive affordance reads before it asks: ending a session that is doing
@@ -311,7 +311,7 @@ decoupled from inference. While an `ask` is pending (the `ask` topic below), a
 non-blank turn is instead that ask's reply: it becomes the call's result, never a
 `User` entry, and never appears in `queued` ([supervisor.md](supervisor.md)).
 
-- Body: `{ "text": "<string>", "submission_id": "<string, optional>", "source": "<string, optional>", "attachments": ["<name>", …], "accept_cold_read": <bool, optional> }` —
+- Body: `{ "text": "<string>", "submission_id": "<string, optional>", "source": "<string, optional>", "attachments": ["<name>", …] }` —
   `submission_id` identifies this submission: adopted when the client minted
   one (1–128 bytes), daemon-minted otherwise, and recorded on the resulting
   `User` entry as its `submission_id` (log metadata, never projected). A
@@ -329,20 +329,16 @@ non-blank turn is instead that ask's reply: it becomes the call's result, never 
   entry as an `Attachment` block after the text ([inbox.md](inbox.md)); a turn
   with attachments and blank text is still a turn. A name the store does not
   hold is a `400` and nothing is queued.
-- `accept_cold_read: true` consents to reading the session's prompt cache though
-  it is believed expired (the `cold` topic, below): the next request pays for the
-  whole context uncached. Without it a cold session answers `409 cold` and
-  nothing is queued, so the client keeps the draft and re-sends it with the flag
-  if that is the operator's choice. The consent is one request's: it is consumed
-  by the loop's next cold check, and dropped if the session is warm when it
-  arrives.
+- **A turn on a cold session is accepted like any other.** While the `cold` topic
+  (below) is set, the next request pays for the whole context uncached; the host
+  does not ask first. Showing that is the client's job (the cold line,
+  [web-client.md](web-client.md), [tui.md](tui.md)). The turn is a person's action:
+  while the session is believed cold it is recorded as a `released` step of the
+  cold check (`by: turn`) and releases a loop parked at its cold check, or the next
+  check the loop reaches. It is dropped if the session is warm when it arrives.
 - **An answer to an `ask`** is this same route: while an `ask` is pending the
-  turn resolves it instead of opening a user turn ([supervisor.md](supervisor.md)),
-  and `accept_cold_read` carries the consent of the answer. A client sends it only
-  when it had already shown the operator, clearly, that the session is cold (with
-  the `context_tokens` of the `cold` topic where known) — an answer given with no
-  cold notice on screen is not consent, because a cold wait looks like a slow tool.
-  The consent is logged with source `ask` rather than `turn`.
+  turn resolves it instead of opening a user turn ([supervisor.md](supervisor.md)).
+  The release is logged with `by: ask` rather than `turn`.
 - `202 {"status":"accepted","submission_id":"<string>"}` — enqueued; watch
   `/events` (or `/state`) for the result. The echoed id is informational: any
   effect of a request — including the `User` entry carrying this id — may
@@ -352,8 +348,6 @@ non-blank turn is instead that ask's reply: it becomes the call's result, never 
 - `?wait` — hold the connection until the daemon **settles** (the turn reaches a
   gate or completes), then return the `/state` snapshot (`200`) instead of `202`.
 - `400 bad_request` — unparseable body, or a `submission_id` outside 1–128 bytes
-- `409 cold` — the cache is believed expired and the body did not carry
-  `accept_cold_read`; `detail` is the `cold` topic
 
 #### `DELETE /turns/:submission_id`
 **Recall** — withdraw the pending-queue **suffix** beginning at this submission,
@@ -408,18 +402,13 @@ only if that call is still the pending gate.
     `"note"`. The daemon writes the change to the session's config file, folds
     it into the effective policy, and **re-classifies the gated call** against
     the new policy. A failed write fails the grant.
-  - `"accept_cold_read": true` (optional, any decision) consents to the uncached
-    read the turn's next request makes when the session's cache is believed
-    expired (the `cold` topic): without it, the call runs and the loop then parks
-    at its cold check and asks again. It is honored for `approve`, `redirect` and
-    `config_edit` — the decisions that let the turn go on; `abort` ignores it —
-    and granted only when the id is the pending gate, before the decision reaches
-    the loop, with the same semantics as on `POST /turns` (recorded only while
-    cold; one request's consent). A client sends it only when it had already
-    shown the operator that the session is cold, with the cost where known; a gate
-    shown with no cold notice is not consent. A `redirect` is honored because its
-    message becomes the next user message and the next request reads the cache
-    just as an approval's does.
+  - While the session is believed cold (the `cold` topic), a decision that lets
+    the turn go on — `approve`, `redirect`, `config_edit` — is a person's action,
+    noted when the id is the pending gate and before the decision reaches the loop
+    (recorded as `released`, `by: approval`; one request's worth), so the cold
+    check that follows does not park. `abort` makes no further request and is not
+    one. A `redirect` counts because its message becomes the next user message and
+    the next request reads the cache just as an approval's does.
 - `200 {"status":"resolved"}`
 - `?wait` — hold until the turn's *next* gate or completion, then return `/state`.
 - `409 gate_moved` — that id is not the pending gate (already resolved, or the
@@ -465,8 +454,9 @@ wire it already has. Nothing is submitted, nothing is appended, and the
 projection does not move — the next request re-sends a byte-identical prefix, so
 this costs no input tokens beyond the turn it triggers. A verb-route on the loop
 resource for the same reason as `/loop/interrupt`: it signals the loop rather
-than creating or editing a resource. The body is optional:
-`{ "accept_cold_read": <bool> }`, the same consent `POST /turns` takes.
+than creating or editing a resource. It takes no body. On a cold session it is a
+person's action like a turn (`released`, `by: continue`); a loop parked at its cold
+check is resumed by it.
 
 Distinct from a `POST /turns` carrying `""`, which is reserved for **keep
 idling** — a blank submit never lands a `User` entry and never starts a turn.
@@ -486,10 +476,6 @@ idling** — a blank submit never lands a `User` entry and never starts a turn.
   On a resumed session stopped at a pending batch, whose wire ends in a `tool_use`,
   the continue is accepted and the loop replays the batch instead of sending a request
   ([resumption.md](resumption.md)).
-- `409 cold` — the cache is believed expired and the body did not carry
-  `accept_cold_read`; `detail` is the `cold` topic. A loop that parked mid-turn
-  at its cold check (a tool outlived the cache) is resumed by a continue that
-  carries the flag.
 - `409 not_continuable` — the moment has no continue in it. `message` names
   which case:
   - the loop is already running (and not waiting on the upstream), or a turn is queued
@@ -518,7 +504,7 @@ instead of paying the uncached read; for a warm one, at the operator's request. 
 after it (about 15k tokens, the cut moved earlier so no call is separated from its
 result) stay verbatim. The fold appends one boundary mark and starts no request: an
 idle session stays idle, and a loop parked at its cold check stays parked until the
-next turn or continue, which then needs no `accept_cold_read`. After a fold the
+next turn or continue. After a fold the
 session is neither warm nor cold: nothing has sent the new prefix, so the keepalive
 has nothing to ping and the `cold` topic is `null` until a request ages past the
 cache lifetime.
@@ -531,7 +517,7 @@ cannot throw a live cache away by accident.
 - `202 {"status":"folding"}` — the session's model is writing the account; progress is
   the `fold` topic (`writing`, then `null` once the mark lands, or `failed` with the
   error, which stays until the next turn or fold). A failure changes nothing: fold
-  again, or consent to the read. An account written while a turn read the cache anyway
+  again, or send and read the cache uncached. An account written while a turn read the cache anyway
   is discarded as superseded; a keepalive ping does not count as one.
 - `?wait` — hold until the fold lands or fails, then return `/state`.
 - `409 not_foldable` — the cache is not believed expired and the body did not say
@@ -825,15 +811,17 @@ not a topic — it is the log's cursor rather than control state, and sits outsi
   },
   "park": null,                    // the loop stopped at its cold check mid-turn, or null.
                                    //   {"reason":"expired","since":…,"context_tokens":…}:
-                                   //   waiting for consent to the uncached read, or a fold.
+                                   //   waiting for a person to act (a turn, a continue,
+                                   //   a decision, an answer) before the uncached read,
+                                   //   or for a fold.
                                    //   {"reason":"folded"}: a fold summarized the history
                                    //   while parked, so `cold` is null again and the next
-                                   //   turn or continue resumes the loop with no consent.
+                                   //   turn or continue resumes the loop.
                                    //   `running` stays true while parked, so this is how a
                                    //   session view tells a park from a slow request. Its
                                    //   own topic because `cold` is null in the folded case
                                    //   and is also set for an idle session that is not
-                                   //   parked (it asks at the next send)
+                                   //   parked
   "fold": null,                    // {"state":"writing"} while POST /loop/fold runs, or
                                    //   {"state":"failed","error":"…"} after one failed
                                    //   (until the next turn or fold); independent of
@@ -1351,7 +1339,6 @@ returning the same code cannot disagree about the status:
 | `not_found` | 404 | no such notification id, proposal `seq`, process id, or mounted tool name |
 | `gate_moved` | 409 | `PUT /approvals/:call_id` whose id is not the pending gate; `detail` carries the current gate |
 | `not_continuable` | 409 | `POST /loop/continue` at a moment with no continue in it — running, gated, or a wire tail that means nothing to re-prompt |
-| `cold` | 409 | `POST /turns` or `POST /loop/continue` on a session whose prompt cache is believed expired, without `accept_cold_read`; `detail` carries the `cold` topic. (`PUT /approvals/:call_id` never answers it: without the flag the call runs and the loop parks) |
 | `too_large` | 413 | `/files` was asked for a file past the view limit ([web-bind.md](web-bind.md)) |
 | `unsupported_content` | 415 | `/files` was asked for something it does not serve as text — today, a file that is not valid UTF-8 |
 | `internal` | 500 | a log append or config write failed; absent shared state |

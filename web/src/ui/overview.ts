@@ -141,7 +141,7 @@ export function cardModel(
   const attention: Attention =
     entry.status === "gated" ||
     entry.status === "stalled" ||
-    // Parked at the cold check: the loop waits on the operator's consent, as at a gate.
+    // Parked at the cold check: the loop waits on a person, as at a gate.
     entry.status === "parked"
       ? "blocked"
       : entry.status === "running"
@@ -173,7 +173,7 @@ export function cardModel(
                 kind: "park",
                 detail:
                   park?.reason === "folded"
-                    ? "send or continue to resume; no consent needed"
+                    ? "send or continue to resume"
                     : parkDetail(
                         park?.reason === "expired" ? park.context_tokens : null,
                       ),

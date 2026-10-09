@@ -40,7 +40,7 @@ pub(super) async fn land(
         // across the distiller's await). A peek on the agent's client reads the
         // main prefix, so it waits at the cold check like a turn's request.
         if !distiller.is_own() {
-            shared.await_warm_or_consent().await;
+            shared.await_warm_or_person().await;
         }
         let entries = shared.snapshot();
         // Open the triage gate (docs/inbox.md): re-show the still-active

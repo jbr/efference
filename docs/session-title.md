@@ -93,9 +93,9 @@ where a main request's cache is already warm. It says yes:
 Each ask runs as a detached task on the loop's runtime: the loop never waits
 for it, the peek reads the prefix the last request cached while the loop moves
 on, and the `Title` entry lands mid-trajectory when the answer comes back. A
-task that wakes with the cache believed cold holds the way the idle triage
+task that wakes with the cache expired holds the way the idle triage
 holds — waiting for the session's own next read rather than reading an expired
-prefix without consent.
+prefix before a person has acted.
 
 One ask is in flight per session. A title check that passes while one runs — a
 one-turn session reaches its trajectory's end before the ask from the turn's
