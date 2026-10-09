@@ -27,11 +27,15 @@ pub struct SessionSummary {
     pub id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
-    /// The session's working directory, so a client can keep to its own
+    /// The session's project directory, so a client can keep to its own
     /// project's sessions on a host that serves several
     /// (docs/control-channel.md).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cwd: Option<String>,
+    /// The session's working directory, when it is not the project: a session in
+    /// a git worktree (docs/worktrees.md).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub working: Option<String>,
     /// The session that commissioned this one, when a session did
     /// (docs/tools.md). Absent for a human root.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -70,9 +74,12 @@ impl Host {
             .filter_map(|id| {
                 let session = self.session(&id)?;
                 let identity = session.identity();
+                let directories = session.directories();
                 Some(SessionSummary {
                     title: identity.as_ref().and_then(|i| i.title.clone()),
-                    cwd: identity.map(|i| i.cwd),
+                    cwd: Some(directories.project().to_string_lossy().into_owned()),
+                    working: (directories.working() != directories.project())
+                        .then(|| directories.working().to_string_lossy().into_owned()),
                     created_by: self.created_by(&id),
                     status: status_word(&session.status()).to_string(),
                     processes: session

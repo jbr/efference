@@ -139,3 +139,22 @@ async fn a_session_without_a_worktree_answers_without_the_field() {
     assert!(json(&body).get("worktree").is_none(), "{body}");
     host.swansong().shut_down().await;
 }
+
+/// The listing places a worktree session in its project, so a client scoping to
+/// the project's sessions finds it, and names the worktree as `working`.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_worktree_session_lists_under_its_project() {
+    let roots = Roots::new();
+    repository(&roots);
+    let host = Host::new(one_connection_registry(), baseline_env());
+    let path = hosting_worktree(&roots, &host, "wt-lister");
+
+    let row = host
+        .summaries()
+        .into_iter()
+        .find(|row| row.id == "wt-lister")
+        .expect("listed");
+    assert_eq!(row.cwd.as_deref(), Some(roots.0.to_str().unwrap()));
+    assert_eq!(row.working.as_deref(), Some(path.to_str().unwrap()));
+    host.swansong().shut_down().await;
+}

@@ -7,6 +7,7 @@ fn row(id: &str, status: &str, processes: usize) -> SessionSummary {
         id: id.into(),
         title: Some(format!("{id}'s work")),
         cwd: Some("/work".into()),
+        working: None,
         created_by: None,
         status: status.into(),
         processes,

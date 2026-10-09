@@ -53,6 +53,7 @@ fn a_hosts_listing_is_scoped_to_this_directory() {
         id: id.into(),
         title: None,
         cwd: cwd.map(str::to_string),
+        working: None,
         created_by: None,
         status: "idle".into(),
         processes: 0,

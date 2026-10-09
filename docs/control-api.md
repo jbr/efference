@@ -57,10 +57,11 @@ the two SSE streams (`text/event-stream`).
 sessions from one process. Its own routes are the listener's, not a session's:
 
 - `GET /sessions` — the listing:
-  `[{"id": …, "cwd": …, "title"?: …, "created_by"?: …, "status": …, "processes": n}, …]`,
-  the hosted sessions sorted by id, each with its working directory (what a
+  `[{"id": …, "cwd": …, "working"?: …, "title"?: …, "created_by"?: …, "status": …, "processes": n}, …]`,
+  the hosted sessions sorted by id, each with its project directory as `cwd` (what a
   client scopes the listing to its own project by,
-  [control-channel.md](control-channel.md)), its current title once one has been
+  [control-channel.md](control-channel.md)), its working directory as `working` when
+  that differs — a session in a git worktree ([worktrees.md](worktrees.md)) — its current title once one has been
   written ([session-title.md](session-title.md)) and, when a session created it,
   the calling session's id as `created_by`. `created_by` is host control state —
   the creation tree — never logged or projected; a human-created root omits it
