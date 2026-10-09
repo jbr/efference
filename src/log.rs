@@ -301,6 +301,15 @@ pub enum Payload {
     ///
     /// [`Push`]: Payload::Push
     Cold(ColdEvent),
+    /// The endpoint refused a request carrying images, and the same request with
+    /// them withheld succeeded (docs/transport.md). From here the session's requests
+    /// carry a placeholder in each image's place and the tool layer refuses new
+    /// images; a resumed session reads this entry back to restore both. `refusal`
+    /// is the provider's error. Projects to nothing, like [`Cold`]: the placeholder
+    /// is the client's encoding, not this entry's projection.
+    ///
+    /// [`Cold`]: Payload::Cold
+    ImagesRefused { refusal: String },
 }
 
 /// A session reopened from its log (docs/log-and-projection.md): what the loader

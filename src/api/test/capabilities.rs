@@ -339,14 +339,12 @@ fn each_arm_names_its_own_default_spotter() {
 }
 
 /// Image input, per provider (docs/tools.md). OpenRouter states it in
-/// `architecture.input_modalities`, and its absence is read as text-only — the
-/// fail-closed direction for a field whose job is to stop bytes a model cannot
-/// read. Anthropic states it in `capabilities.image_input.supported`, and its
-/// **absence** is read as supported: the Messages API has taken image blocks on
-/// every Claude model since it shipped, so a metadata response that stops
-/// carrying the field must not disable a working tool.
+/// `architecture.input_modalities`; Anthropic in `capabilities.image_input.supported`.
+/// Only a declared no closes the gate: an absent field reads as capable on both,
+/// since the client recovers from a refusal and a closed gate gives no signal
+/// (docs/transport.md).
 #[test]
-fn image_input_is_read_per_provider_with_opposite_defaults() {
+fn image_input_is_false_only_where_declared() {
     let openrouter = |modalities: &str| {
         Provider::OpenRouter
             .parse_capabilities(
@@ -363,7 +361,7 @@ fn image_input_is_read_per_provider_with_opposite_defaults() {
     assert!(openrouter(r#"["text", "image"]"#));
     assert!(!openrouter(r#"["text"]"#));
     assert!(
-        !Provider::OpenRouter
+        Provider::OpenRouter
             .parse_capabilities(
                 r#"{"data": {"endpoints": [{"context_length": 1}]}}"#,
                 "m",
@@ -371,7 +369,7 @@ fn image_input_is_read_per_provider_with_opposite_defaults() {
             )
             .unwrap()
             .supports_image_input,
-        "no architecture at all reads as text-only"
+        "no architecture at all declares nothing"
     );
 
     let anthropic = |body: &str| {

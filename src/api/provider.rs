@@ -1050,15 +1050,14 @@ impl Provider {
                     },
                     // Model-level, not per-endpoint: one slug has one modality
                     // set whichever upstream serves it. An empty list (a
-                    // response with no `architecture`) reads as text-only, which
-                    // is the fail-closed direction for a field whose whole job is
-                    // to stop bytes a model cannot read.
+                    // response with no `architecture`) declares nothing, and
+                    // unknown reads as capable: a refusal is recovered from,
+                    // a gate left closed gives no signal (docs/transport.md).
                     accepts_temperature: true,
-                    supports_image_input: data
-                        .architecture
-                        .input_modalities
-                        .iter()
-                        .any(|m| m == "image"),
+                    supports_image_input: {
+                        let modalities = &data.architecture.input_modalities;
+                        modalities.is_empty() || modalities.iter().any(|m| m == "image")
+                    },
                     prompt_cache,
                     // The endpoints listing carries no effort levels — those
                     // come from the model entry, which `fetch_capabilities`
@@ -1265,17 +1264,21 @@ pub struct ModelCapabilities {
     /// the catalog entry names reasoning levels. Every other source:
     /// [`ThinkingSupport::UNKNOWN`].
     pub thinking: ThinkingSupport,
-    /// Whether the model accepts image blocks. Anthropic:
-    /// `capabilities.image_input.supported`, defaulting to `true` when the field
-    /// is absent (every Claude model on Messages takes images). OpenRouter:
-    /// `architecture.input_modalities` contains `image`, defaulting to `false`
-    /// when the listing carries no modalities.
+    /// Whether the model accepts image blocks: `false` only where a source
+    /// declares it. Anthropic: `capabilities.image_input.supported`, defaulting to
+    /// `true` when the field is absent (every Claude model on Messages takes
+    /// images). OpenRouter: `architecture.input_modalities` contains `image`, or
+    /// the list is empty. A described endpoint's listing: its modalities, `true`
+    /// when it names none.
     ///
-    /// The consumer is the tool layer (docs/tools.md): `read_image` refuses
-    /// before it decodes anything, and an MCP result's image blocks are replaced
-    /// by a placeholder naming why. Sending image bytes to a model that reports
-    /// no image input spends the upload on a 400 or on content the model cannot
-    /// read, and the tool's own success message says it worked.
+    /// Unknown reads as capable because the two errors differ in what they
+    /// show (docs/transport.md): a model sent an image it cannot read answers
+    /// with a 400 the client recovers from by withholding images, while a gate
+    /// left closed on a capable model gives no signal at all.
+    ///
+    /// The consumer is the tool layer (docs/tools.md): where this is `false`,
+    /// `read_image` refuses before it decodes anything, and an MCP result's image
+    /// blocks are replaced by a placeholder naming why.
     pub supports_image_input: bool,
     /// Whether the model takes a sampling `temperature` (docs/transport.md).
     /// The compiled OpenAI catalog names the models that reject the parameter
@@ -1340,7 +1343,8 @@ impl ModelCapabilities {
             context_length: None,
             max_output_tokens: None,
             thinking: ThinkingSupport::UNKNOWN,
-            supports_image_input: false,
+            // Unknown reads as capable: see the field.
+            supports_image_input: true,
             accepts_temperature: true,
             prompt_cache: PromptCachePolicy::None,
             supported_efforts: None,

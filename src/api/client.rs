@@ -19,6 +19,8 @@ use crate::api::thinking::ThinkingSupport;
 use crate::log::{RequestOrigin, is_captured_header};
 use crate::project::{WireTurn, encode_messages};
 
+mod images;
+
 /// Retry policy for requests that did not receive a successful response
 /// (docs/transport.md). Every upstream request is a replay-safe POST carrying
 /// an owned `String` body. Bounded by attempt count alone: there is no elapsed
@@ -309,6 +311,14 @@ pub struct Client {
     /// clones, goes as `auto` with [`forced_choice_instruction`] instead. Shared
     /// across clones, so the lesson is learned once per client.
     forced_choice_refused: Arc<std::sync::atomic::AtomicBool>,
+    /// The endpoint's refusal, set once it refused a request carrying images and
+    /// the same request without them succeeded (docs/transport.md): every later
+    /// request from this client and its clones goes with its images replaced by a
+    /// placeholder.
+    images_refused: Arc<std::sync::OnceLock<String>>,
+    /// Set once a request carrying images has succeeded, which ends the recovery
+    /// above: the model reads images, so a later 400 has another cause.
+    images_accepted: Arc<std::sync::atomic::AtomicBool>,
     /// A retry in flight, written by both retry loops (docs/transport.md). It
     /// rides on the client because the fork peek retries with a `Client` and no
     /// `Session` in scope.
@@ -442,6 +452,8 @@ impl Client {
             upstream_failure,
             upstream_retry: upstream_retry_state(),
             forced_choice_refused: Arc::default(),
+            images_refused: Arc::default(),
+            images_accepted: Arc::default(),
             upstream_attempts,
             turn_routing,
             plan,
@@ -750,7 +762,8 @@ impl Client {
     /// against the window when one is given. A fixed cap is sent as-is, also on the
     /// Codex profile that otherwise omits it, and a refusal of it is not retried at
     /// another value: the caller chose it (the Responses keepalive, docs/transport.md).
-    async fn send(
+    /// Reached through [`Self::send`], which handles an image refusal.
+    async fn send_request(
         &self,
         turns: &[WireTurn],
         tools: &[Value],

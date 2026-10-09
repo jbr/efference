@@ -44,6 +44,7 @@ mod effort;
 mod endpoint;
 mod envelope;
 mod forced_choice;
+mod images;
 mod live;
 mod partials;
 mod retry;

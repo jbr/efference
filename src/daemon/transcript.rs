@@ -234,6 +234,10 @@ fn lines(
         | Payload::Cold(_) => {
             vec![]
         }
+        Payload::ImagesRefused { refusal } => vec![line(
+            "images",
+            format!("withheld from here on: the endpoint refused them ({refusal})"),
+        )],
         Payload::Resumed(resumed) => vec![line(
             "resumed",
             crate::project::render_resumed(resumed, entry.seq),

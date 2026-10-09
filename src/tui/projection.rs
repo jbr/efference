@@ -397,6 +397,9 @@ pub(crate) fn entry_nodes(
             // operation text through the `current_operations` topic; they draw
             // nothing in the transcript.
             Payload::RequestStage(_) | Payload::Push(_) | Payload::Cold(_) => {}
+            // Read through the transcript view; the placeholder in each result
+            // already says what was withheld.
+            Payload::ImagesRefused { .. } => {}
             // The boot preamble snapshot (docs/context.md) — session boot record,
             // not conversation; the human inspects it via `efference dev wire`, not the transcript.
             Payload::Preamble { .. } => {}

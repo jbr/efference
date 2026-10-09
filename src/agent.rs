@@ -158,8 +158,9 @@ pub async fn run<F: Frontend, S: Spotter>(
     shared: Arc<Session>,
     distiller: ForkPeek,
     spotter: S,
-    toolbox: Toolbox,
+    mut toolbox: Toolbox,
 ) -> Result<(), Error> {
+    restore_image_refusal(&shared, client, &mut toolbox);
     // World-facing tools plus the harness tools (`consolidate`, the
     // supervisor/inbox tools (docs/supervisor.md)) handled structurally in the loop
     // below, not by a `Provider`. Built once from the shared source; the defs are
@@ -385,6 +386,7 @@ pub async fn run<F: Frontend, S: Spotter>(
                 // failed HTTP attempts on the way here; each gets its own durable
                 // record before the outcome is judged (docs/transport.md).
                 record_absorbed_attempts(&shared, client, &mut turn)?;
+                record_image_refusal(&shared, client, &mut toolbox, turn)?;
                 // A failed attempt, in either of its two shapes, becomes the same
                 // three things: its words, whether the provider named it as one no
                 // retry can change, and the stall reason if that ends the trajectory.
@@ -617,6 +619,7 @@ mod ask;
 mod batch;
 mod config_edit;
 mod gate;
+mod images;
 mod landing;
 mod replay;
 mod results;
@@ -630,6 +633,7 @@ use ask::*;
 use batch::*;
 use config_edit::*;
 use gate::*;
+use images::*;
 use landing::*;
 use replay::*;
 use results::*;

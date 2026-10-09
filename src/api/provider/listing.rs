@@ -121,11 +121,9 @@ impl Entry {
             // puts them on its singular model entry, a route a custom endpoint is
             // not assumed to have.
             thinking: ThinkingSupport::UNKNOWN,
-            // Unknown modalities read as no image input: sending image bytes to a
-            // model that cannot read them spends the upload on a 400 or on
-            // content the model ignores, and the tool reports success either way
-            // (docs/tools.md).
-            supports_image_input: images.unwrap_or(false),
+            // Unknown modalities read as image input: a refusal is recovered
+            // from, while a gate left closed gives no signal (docs/transport.md).
+            supports_image_input: images.unwrap_or(true),
             // Unknown parameters read as temperature accepted, which asserts
             // nothing: the value passes through and the endpoint's own validation
             // answers for it.

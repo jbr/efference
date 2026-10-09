@@ -56,6 +56,7 @@ enum Payload {
     RequestStage(RequestStage),  // one stage of one upstream request — telemetry, never projected
     Cold(ColdEvent),  // one step of the cold check (parked, released, unparked) — never projected (see control-api.md)
     Push(PushRecord),  // one step of a moment's push (decided, held, escalated, cancelled, delivered) — never projected (see web-push.md)
+    ImagesRefused { refusal: String },  // the endpoint refused images; the client withholds them from here — never projected (see transport.md)
     // Anticipated, not yet built: a frozen cache-breakpoint boundary (`Commit`)
     // for compaction. Kept here as a forward marker — types land ahead of the
     // feature that constructs them — not present in the code today.

@@ -408,6 +408,9 @@ pub fn project_semantic_for(log: &[LogEntry], reader: Reader) -> Vec<WireTurn> {
             // tool's: it projects to nothing, so it can be appended at every stage
             // of every request without moving the cached prefix.
             Payload::RequestStage(_) | Payload::Push(_) | Payload::Cold(_) => {}
+            // The client withholds images in its encoding (docs/transport.md);
+            // the entry itself is the audit record.
+            Payload::ImagesRefused { .. } => {}
             // A grant (docs/permissions.md) is audit-only too — its *effect* reaches
             // the model through the classifier (the policy fold), never the
             // transcript. So it projects to nothing, and appending one cannot perturb

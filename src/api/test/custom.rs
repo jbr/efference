@@ -35,7 +35,9 @@ fn a_bare_listing_declares_no_capabilities() {
     let caps = caps(BARE, "muse-spark-1.3");
     assert_eq!(caps.context_length, None);
     assert_eq!(caps.max_output_tokens, None);
-    assert!(!caps.supports_image_input);
+    // Unknown image input reads as capable: a refusal is recovered from by the
+    // client, a closed gate gives no signal (docs/transport.md).
+    assert!(caps.supports_image_input);
     assert_eq!(caps.prompt_cache, PromptCachePolicy::None);
     assert_eq!(caps.supported_efforts, None);
     // Unknown asserts nothing on either axis that would otherwise make the

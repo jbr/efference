@@ -10,13 +10,15 @@ use std::io::{Read, Write};
 const REFUSAL: &str = r#"{"type":"error","error":{"type":"invalid_request_error","message":"tool_choice: type \"tool\" and \"any\" are not supported for this model."}}"#;
 
 /// An empty stream that assembles into a completion.
-const STREAM: &str = "event: message_start\ndata: {\"message\":{\"id\":\"msg-1\",\
+pub(super) const STREAM: &str = "event: message_start\ndata: {\"message\":{\"id\":\"msg-1\",\
      \"model\":\"m\",\"usage\":{\"input_tokens\":0,\"output_tokens\":0}}}\n\n\
      event: data\ndata: [DONE]\n\n";
 
 /// Serve `replies` in order, one connection each, as `(status, body)`; the
 /// returned handle yields the request bodies received.
-fn scripted(replies: Vec<(u16, &'static str)>) -> (Client, std::thread::JoinHandle<Vec<Value>>) {
+pub(super) fn scripted(
+    replies: Vec<(u16, &'static str)>,
+) -> (Client, std::thread::JoinHandle<Vec<Value>>) {
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
     let server = std::thread::spawn(move || {

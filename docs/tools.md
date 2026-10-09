@@ -395,7 +395,10 @@ errors. A well-formed search that finds nothing is an empty success.
 
 Whether a session's model accepts images is `ModelCapabilities::supports_image_input`
 ([transport.md](transport.md)), fetched at boot and handed to the toolbox
-(`Toolbox::with_image_input`). It is applied at `Toolbox::run` — the one seam
+(`Toolbox::with_image_input`). It is `false` only where the metadata declares no
+image input; unknown reads as capable, and an endpoint that then refuses an image
+closes the gate mid-session (`Toolbox::refuse_images`, from the client's refusal
+recovery in transport.md). It is applied at `Toolbox::run` — the one seam
 every call passes through — rather than inside the image-producing tools,
 because two unrelated backends produce images (`read_image`, and any MCP server
 whose result carries an image block) and the gate must answer alike for both.

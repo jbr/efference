@@ -652,6 +652,18 @@ impl Toolbox {
         self
     }
 
+    /// Whether image-producing tools attach their images (docs/tools.md).
+    pub fn image_input(&self) -> bool {
+        self.image_input
+    }
+
+    /// Close the image gate mid-session: the client learned that the endpoint
+    /// refuses image input (docs/transport.md). The gate does not shape `tools[]`,
+    /// so this moves nothing in the cached prefix.
+    pub fn refuse_images(&mut self) {
+        self.image_input = false;
+    }
+
     /// Just bash — no MCP mounts, for tests and the dev views.
     pub fn bash_only() -> Self {
         Self::new(vec![Provider::Bash(Bash::default())])
@@ -896,7 +908,7 @@ impl Toolbox {
 /// model reports no image input (docs/tools.md). Addressed to the model, and
 /// says what *would* work — the sentence a model reads after a refusal decides
 /// whether it retries the same call.
-const NO_IMAGE_INPUT_REFUSAL: &str = "this session's model reports no image input, so an image \
+const NO_IMAGE_INPUT_REFUSAL: &str = "this session's model takes no image input, so an image \
      cannot be added to the transcript. read the file's text some other way, or ask the operator \
      to serve a model that takes images.";
 
@@ -919,7 +931,7 @@ fn strip_unreadable_images(outcome: Outcome, image_input: bool) -> Outcome {
     let dropped = result.images.len();
     result.images.clear();
     result.content.push_str(&format!(
-        "\n\n[{dropped} image block(s) withheld: this session's model reports no image input]"
+        "\n\n[{dropped} image block(s) withheld: this session's model takes no image input]"
     ));
     Outcome::Done(result)
 }
