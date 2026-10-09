@@ -1,0 +1,8 @@
+data: {"id": "chatcmpl-63feb02a-f058-40c2-b235-c15c0f683b57", "object": "chat.completion.chunk", "created": 1791579934, "model": "mercury-2", "choices": [{"index": 0, "delta": {"content": null, "role": "assistant", "tool_calls": [{"index": 0, "id": "call_909573df3ee703b7", "type": "function", "function": {"name": "bash", "arguments": "{\n  \"command\": \"ls -la /tmp\"\n}"}}]}, "finish_reason": "tool_calls"}], "reasoning_summary": null}
+
+data: {"id": "chatcmpl-63feb02a-f058-40c2-b235-c15c0f683b57", "object": "chat.completion.chunk", "created": 1791579934, "model": "mercury-2", "choices": [{"index": 0, "delta": {}, "finish_reason": "tool_calls"}]}
+
+data: {"id": "chatcmpl-63feb02a-f058-40c2-b235-c15c0f683b57", "object": "chat.completion.chunk", "created": 1791579934, "model": "mercury-2", "choices": [], "usage": {"prompt_tokens": 67, "completion_tokens": 71, "total_tokens": 138, "prompt_tokens_details": {"cached_tokens": 5}, "completion_tokens_details": {"reasoning_tokens": 57}}, "server_timing": {"server_latency_ms": 336.84}}
+
+data: [DONE]
+

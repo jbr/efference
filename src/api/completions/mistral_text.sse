@@ -1,0 +1,12 @@
+data: {"id":"624a12275b55448ab6cce7274d2359d5","object":"chat.completion.chunk","created":1791580075,"model":"mistral-small-latest","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}
+
+data: {"id":"624a12275b55448ab6cce7274d2359d5","object":"chat.completion.chunk","created":1791580075,"model":"mistral-small-latest","choices":[{"index":0,"delta":{"content":"Hello"},"finish_reason":null}],"p":"abcdefghijkl"}
+
+data: {"id":"624a12275b55448ab6cce7274d2359d5","object":"chat.completion.chunk","created":1791580075,"model":"mistral-small-latest","choices":[{"index":0,"delta":{"content":" there"},"finish_reason":null}],"p":"abcdefghijklmnopqrs"}
+
+data: {"id":"624a12275b55448ab6cce7274d2359d5","object":"chat.completion.chunk","created":1791580075,"model":"mistral-small-latest","choices":[{"index":0,"delta":{"content":"! How"},"finish_reason":null}],"p":"abcdefghijkl"}
+
+data: {"id":"624a12275b55448ab6cce7274d2359d5","object":"chat.completion.chunk","created":1791580075,"model":"mistral-small-latest","choices":[{"index":0,"delta":{"content":" are you?"},"finish_reason":"stop"}],"usage":{"prompt_tokens":21,"total_tokens":29,"completion_tokens":8,"prompt_tokens_details":{"cached_tokens":0},"service_tier":"standard"},"p":"abcdefghijklmnopqrstuvwxyz"}
+
+data: [DONE]
+

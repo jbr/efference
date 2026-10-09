@@ -1,0 +1,8 @@
+data: {"id": "chatcmpl-7051c249-85d7-4929-a2c4-d751b97b9e12", "object": "chat.completion.chunk", "created": 1791579934, "model": "mercury-2", "choices": [{"index": 0, "delta": {"content": "Hello, how are you today?", "role": "assistant", "tool_calls": null}, "finish_reason": null}], "reasoning_summary": null}
+
+data: {"id": "chatcmpl-7051c249-85d7-4929-a2c4-d751b97b9e12", "object": "chat.completion.chunk", "created": 1791579934, "model": "mercury-2", "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]}
+
+data: {"id": "chatcmpl-7051c249-85d7-4929-a2c4-d751b97b9e12", "object": "chat.completion.chunk", "created": 1791579934, "model": "mercury-2", "choices": [], "usage": {"prompt_tokens": 9, "completion_tokens": 122, "total_tokens": 131, "prompt_tokens_details": {"cached_tokens": 3}, "completion_tokens_details": {"reasoning_tokens": 112}}, "server_timing": {"server_latency_ms": 700.34}}
+
+data: [DONE]
+

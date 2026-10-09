@@ -1,0 +1,6 @@
+data: {"id":"5fe0921d91b04ea286e01cd1c4064ef5","object":"chat.completion.chunk","created":1791580078,"model":"mistral-small-latest","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}
+
+data: {"id":"5fe0921d91b04ea286e01cd1c4064ef5","object":"chat.completion.chunk","created":1791580078,"model":"mistral-small-latest","choices":[{"index":0,"delta":{"tool_calls":[{"id":"8ufwVNVUd","type":"function","function":{"name":"bash","arguments":"{\"command\": \"ls -l /tmp\"}"},"index":0},{"id":"bjAcfMBPM","type":"function","function":{"name":"bash","arguments":"{\"command\": \"ls -l /var\"}"},"index":1}]},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":91,"total_tokens":118,"completion_tokens":27,"prompt_tokens_details":{"cached_tokens":0},"service_tier":"standard"},"p":"abcdefghijklmn"}
+
+data: [DONE]
+
