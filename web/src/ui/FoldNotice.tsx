@@ -10,6 +10,7 @@ import { type FoldOffer, kilotokens } from "./fold.ts";
 export function FoldNotice({
   cold,
   consent,
+  parked,
   fold,
   offer,
   onFold,
@@ -17,6 +18,9 @@ export function FoldNotice({
   cold: Cold | null;
   /** A cold refusal is waiting for the operator's answer. */
   consent: boolean;
+  /** The loop is stopped at its cold check (the `park` topic): the same choice, offered
+   * without a refusal first, so it is "send", not "send again". */
+  parked: boolean;
   fold: Fold | null;
   offer: FoldOffer;
   onFold: () => void;
@@ -48,9 +52,10 @@ export function FoldNotice({
       {fold?.state === "failed" && (
         <div className="error">summary failed: {fold.error}</div>
       )}
-      {consent && cold !== null ? (
+      {(consent || parked) && cold !== null ? (
         <>
-          cache believed cold — send again to {read}, or {action}
+          cache believed cold — send{consent ? " again" : ""} to {read}, or{" "}
+          {action}
         </>
       ) : (
         fold?.state === "failed" && action

@@ -65,8 +65,13 @@ sessions from one process. Its own routes are the listener's, not a session's:
   the calling session's id as `created_by`. `created_by` is host control state —
   the creation tree — never logged or projected; a human-created root omits it
   ([tools.md](tools.md)). `status` is one word — `running`, `idle`, `gated`,
-  `asking`, `stalled` — and `processes` counts the background processes the session holds
-  ([supervisor.md](supervisor.md)). Those two are what a list surface can show
+  `asking`, `stalled`, `parked` — and `processes` counts the background processes the session holds
+  ([supervisor.md](supervisor.md)). `parked` is a loop stopped at its cold check
+  mid-turn (the `park` topic, below): it ranks after `gated`, `asking` and
+  `stalled` and before `running`, which stays true while the loop waits, so a list
+  surface does not read it as working. A status subscriber is told once, with the
+  cold-read size and that a consenting turn or a fold ends it; after a fold the
+  body says the history was summarized and a turn or continue resumes it unasked. Those two are what a list surface can show
   without one `GET /sessions/<id>/v1/state` per row, and what a client's
   destructive affordance reads before it asks: ending a session that is doing
   something, or that holds processes an end would reap, is confirmed
@@ -799,6 +804,17 @@ not a topic — it is the log's cursor rather than control state, and sits outsi
     "context_tokens": 48210        // the last turn's prompt: what a cold read would pay,
                                    //   or null before a turn's usage is known
   },
+  "park": null,                    // the loop stopped at its cold check mid-turn, or null.
+                                   //   {"reason":"expired","since":…,"context_tokens":…}:
+                                   //   waiting for consent to the uncached read, or a fold.
+                                   //   {"reason":"folded"}: a fold summarized the history
+                                   //   while parked, so `cold` is null again and the next
+                                   //   turn or continue resumes the loop with no consent.
+                                   //   `running` stays true while parked, so this is how a
+                                   //   session view tells a park from a slow request. Its
+                                   //   own topic because `cold` is null in the folded case
+                                   //   and is also set for an idle session that is not
+                                   //   parked (it asks at the next send)
   "fold": null,                    // {"state":"writing"} while POST /loop/fold runs, or
                                    //   {"state":"failed","error":"…"} after one failed
                                    //   (until the next turn or fold); independent of

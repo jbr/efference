@@ -33,6 +33,37 @@ describe("the turn-state readout", () => {
     expect(state.text).toBe("summarizing the history…");
   });
 
+  it("reads a loop parked at the cold check as waiting on the operator", () => {
+    const cold = {
+      reason: "expired" as const,
+      since: 1,
+      context_tokens: 120_400,
+    };
+    const state = turnState(true, null, false, false, cold);
+    expect(state.kind).toBe("parked");
+    expect(state.text).toBe(
+      "paused: cache expired · send to continue (reads 120k tokens uncached)",
+    );
+    expect(
+      turnState(true, null, false, false, { ...cold, context_tokens: null })
+        .text,
+    ).toContain("the whole context");
+  });
+
+  it("reads a park after a fold as resuming without consent", () => {
+    const state = turnState(true, null, false, false, { reason: "folded" });
+    expect(state.kind).toBe("parked");
+    expect(state.text).toBe("paused: summarized · send to continue");
+  });
+
+  it("does not read an unparked session, or a fold over a park, as parked", () => {
+    expect(turnState(false, null, false, false, null).kind).toBe("idle");
+    expect(turnState(true, null, false, false, null).kind).toBe("running");
+    expect(turnState(true, null, false, true, { reason: "folded" }).text).toBe(
+      "summarizing the history…",
+    );
+  });
+
   it("says a retry wait can be cut short by an empty send", () => {
     const state = turnState(true, null, true);
     expect(state.kind).toBe("running");

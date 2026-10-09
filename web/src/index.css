@@ -1057,7 +1057,8 @@ pre {
   user-select: none;
 }
 
-.composer-toolbar .turn-state.stalled {
+.composer-toolbar .turn-state.stalled,
+.composer-toolbar .turn-state.parked {
   color: var(--warn);
 }
 

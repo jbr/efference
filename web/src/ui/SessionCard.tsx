@@ -33,6 +33,10 @@ export function Activity({ card }: { card: CardModel }) {
       return (
         <p className="card-activity card-activity-stall">{activity.detail}</p>
       );
+    case "park":
+      return (
+        <p className="card-activity card-activity-park">{activity.detail}</p>
+      );
     case "intent":
       return <p className="card-activity">{activity.detail}</p>;
     case "reply":
@@ -132,7 +136,7 @@ export function SessionCard({
   const phrase = archiving ? "is archiving…" : statusPhrase(card);
   return (
     <article
-      className={`card attention-${card.attention}${card.status === "stalled" ? " status-stalled" : ""}${archiving ? " archiving" : ""}`}
+      className={`card attention-${card.attention}${card.status === "stalled" || card.status === "parked" ? ` status-${card.status}` : ""}${archiving ? " archiving" : ""}`}
     >
       <header className="card-head">
         <span className="card-status-line">

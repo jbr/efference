@@ -194,13 +194,13 @@ impl Session {
         self.touch_state();
     }
 
-    /// The loop is parking (about to await the next user turn): mark not-running and wake any
+    /// The loop is going idle (about to await the next user turn): mark not-running and wake any
     /// `/settle` waiter. If a turn is already queued, `recv` resolves at once and [`claim_turn`]
     /// re-sets running, so a transient `running == false` with a non-empty queue still reads as
     /// busy.
     ///
     /// [`claim_turn`]: Session::claim_turn
-    pub(super) fn parking(&self) {
+    pub(super) fn going_idle(&self) {
         // The swap is what distinguishes the two ways the loop arrives here: a turn
         // just ended (`running` was true) or the daemon booted and has never run one.
         // Only the first is worth a push (docs/web-push.md) — a settle notification on
@@ -215,7 +215,7 @@ impl Session {
 
     /// Whether the daemon is at a **decision point** a client can act on: a gate is pending, the
     /// loop is stalled (a triage gate held on the upstream waits on the operator's continue,
-    /// docs/redaction-fork.md), or the loop is idle (parked with nothing queued). Mid-turn —
+    /// docs/redaction-fork.md), or the loop is idle with nothing queued. Mid-turn —
     /// running, no gate, no stall — is *not* settled. The predicate behind `/settle` and the
     /// `?wait` flag (docs/permissions.md).
     pub(super) fn is_settled(&self) -> bool {
@@ -238,7 +238,7 @@ impl Session {
 
     /// Block until [`is_settled`]. Uses `Notified::enable` to register the waiter **before** the
     /// condition check: `settle_changed` is a `notify_waiters` (no stored permit), so a
-    /// `parking`/`register_pending` that fires between the check and the await would otherwise be
+    /// `going_idle`/`register_pending` that fires between the check and the await would otherwise be
     /// lost. With the waiter pre-registered, the wake is delivered to the pending future.
     ///
     /// [`is_settled`]: Session::is_settled

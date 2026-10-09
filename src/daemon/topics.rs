@@ -101,7 +101,7 @@ pub(crate) async fn watch_topics(shared: Arc<Session>) {
         // duplicating a ping beside an existing `notify_waiters` would be a second thing
         // to remember at each site: `appended` covers the log-derived topics (and the
         // telemetry that always accompanies a request), `settle_changed` covers the gate
-        // appearing and the loop parking — `gate` and `running` exactly — and
+        // appearing and the loop going idle — `gate` and `running` exactly — and
         // `state_changed` is for the mutations with no existing signal of their own.
         let changed = shared.state_changed.notified();
         let appended = shared.appended.notified();

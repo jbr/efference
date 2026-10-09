@@ -248,7 +248,9 @@ as a notification (docs/inbox.md) with the session's id as `source` and the slot
 than a pile. The statuses posted are the decision points: **gated** (the held tool,
 its intent, the spotter's reason, the `call_id`, and that `sessions__approve`
 resolves it), **idle** after a turn completed (with the turn's closing prose,
-truncated), **stalled** (docs/transport.md), and **ended** or **failed** once the
+truncated), **stalled** (docs/transport.md), **parked** (the loop stopped at its cold
+check mid-turn: the cache is believed expired, so continuing pays the context uncached,
+and a fold summarizes instead; docs/control-api.md), and **ended** or **failed** once the
 runtime has returned. `running` is observed to detect the transitions and never
 posted; the boot idle is not posted either. Every body says where the target's log
 stands, so the subscriber pulls the transcript from where it last read. The status

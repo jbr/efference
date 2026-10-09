@@ -32,6 +32,8 @@ export interface CardModel {
   /** The one line of what is happening: the gate's ask, the stall's message,
    * the running call's intent, or the last reply. `null` when none is known. */
   activity: Activity | null;
+  /** Why a `parked` session is parked (the `park` topic); `null` when not known. */
+  park: "expired" | "folded" | null;
   context: { used: number | null; limit: number | null } | null;
   costUsd: number | null;
   /** `triage` is `null` when it is the main model — the default. */
@@ -42,6 +44,7 @@ export type Activity =
   | { kind: "gate"; tool: string; detail: string }
   | { kind: "ask"; detail: string }
   | { kind: "stall"; detail: string }
+  | { kind: "park"; detail: string }
   | { kind: "intent"; detail: string }
   | { kind: "reply"; detail: string };
 
@@ -110,8 +113,21 @@ export function statusPhrase(card: CardModel): string | null {
   if (card.status === "gated") return "needs approval";
   if (card.status === "asking") return "has a question";
   if (card.status === "stalled") return "has stalled";
+  if (card.status === "parked") {
+    return card.park === "folded"
+      ? "is paused: summarized, waiting for you to continue"
+      : "is paused: its cache expired";
+  }
   if (card.attention === "your_turn") return "is waiting for you";
   return null;
+}
+
+/** What continuing a session parked on an expired cache costs, in the card's
+ * activity line. */
+export function parkDetail(contextTokens: number | null): string {
+  return contextTokens === null
+    ? "continuing reads the whole context uncached"
+    : `continuing reads ${tokens(contextTokens)} tokens uncached`;
 }
 
 export function cardModel(
@@ -123,7 +139,10 @@ export function cardModel(
   const usage = state?.usage ?? null;
   const lastActivityAt = usage?.last_request_at ?? null;
   const attention: Attention =
-    entry.status === "gated" || entry.status === "stalled"
+    entry.status === "gated" ||
+    entry.status === "stalled" ||
+    // Parked at the cold check: the loop waits on the operator's consent, as at a gate.
+    entry.status === "parked"
       ? "blocked"
       : entry.status === "running"
         ? "working"
@@ -137,6 +156,7 @@ export function cardModel(
   const gate = state?.gate ?? null;
   const stall = state?.stall ?? null;
   const ask = state?.ask ?? null;
+  const park = state?.park ?? null;
   const activity: Activity | null =
     gate !== null
       ? {
@@ -148,11 +168,21 @@ export function cardModel(
         ? { kind: "ask", detail: ask.question }
         : stall !== null
           ? { kind: "stall", detail: stall.message }
-          : entry.status === "running" && recent.intent !== undefined
-            ? { kind: "intent", detail: recent.intent }
-            : recent.lastReply !== undefined
-              ? { kind: "reply", detail: recent.lastReply }
-              : null;
+          : entry.status === "parked"
+            ? {
+                kind: "park",
+                detail:
+                  park?.reason === "folded"
+                    ? "send or continue to resume; no consent needed"
+                    : parkDetail(
+                        park?.reason === "expired" ? park.context_tokens : null,
+                      ),
+              }
+            : entry.status === "running" && recent.intent !== undefined
+              ? { kind: "intent", detail: recent.intent }
+              : recent.lastReply !== undefined
+                ? { kind: "reply", detail: recent.lastReply }
+                : null;
 
   const inference = state?.session_identity?.inference;
   return {
@@ -167,6 +197,7 @@ export function cardModel(
       .filter((other) => other.created_by === entry.id)
       .map((other) => other.id),
     activity,
+    park: entry.status === "parked" ? (park?.reason ?? null) : null,
     context: usage?.context ?? null,
     costUsd: usage?.cost?.usd ?? null,
     models: inference

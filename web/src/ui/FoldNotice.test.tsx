@@ -13,7 +13,10 @@ vi.hoisted(() => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 });
 
-const cold: Cold = { since: 1_754_300_000_000, context_tokens: 120_400 };
+const cold: Cold = {
+  since: 1_754_300_000_000,
+  context_tokens: 120_400,
+};
 
 function render(element: React.ReactElement): HTMLElement {
   const host = document.createElement("div");
@@ -22,12 +25,29 @@ function render(element: React.ReactElement): HTMLElement {
   return host;
 }
 
+test("a parked loop offers the same choice without asking to send again", () => {
+  const parked = cold;
+  const host = render(
+    <FoldNotice
+      cold={parked}
+      consent={false}
+      parked
+      fold={null}
+      offer={foldOffer(parked, null, true, false, false)}
+      onFold={vi.fn()}
+    />,
+  );
+  expect(host.textContent).toContain("send to read 120k tokens uncached");
+  expect(host.textContent).not.toContain("send again");
+});
+
 test("a cold refusal offers the summary beside the read, and the button folds", () => {
   const onFold = vi.fn();
   const host = render(
     <FoldNotice
       cold={cold}
       consent
+      parked={false}
       fold={null}
       offer={foldOffer(cold, null, false, false, false)}
       onFold={onFold}
@@ -46,6 +66,7 @@ test("a fold in flight replaces the choice with its progress", () => {
     <FoldNotice
       cold={cold}
       consent
+      parked={false}
       fold={fold}
       offer={foldOffer(cold, fold, false, false, false)}
       onFold={() => {}}
@@ -61,6 +82,7 @@ test("a failure states its error and offers another try", () => {
     <FoldNotice
       cold={cold}
       consent
+      parked={false}
       fold={fold}
       offer={foldOffer(cold, fold, false, false, false)}
       onFold={() => {}}
@@ -77,6 +99,7 @@ test("a blocked fold gives the reason instead of a button", () => {
     <FoldNotice
       cold={cold}
       consent
+      parked={false}
       fold={null}
       offer={foldOffer(cold, null, false, true, false)}
       onFold={() => {}}

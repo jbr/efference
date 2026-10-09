@@ -82,12 +82,14 @@ function useCardFeed(id: string | null): Feed | null {
  * session, so it is loudest; a session whose turn ended — idle, or asking —
  * is waiting on the operator until archived, so it carries the same colour
  * without the halo; running is a faint pulse; a session never started is
- * quiet. */
+ * quiet. A session parked at the cold check waits on the operator like a stall
+ * and takes its colour. */
 function dotKind(
   card: CardModel,
-): "needs" | "turn" | "stalled" | "working" | "idle" {
+): "needs" | "turn" | "stalled" | "parked" | "working" | "idle" {
   if (card.status === "gated") return "needs";
   if (card.status === "stalled") return "stalled";
+  if (card.status === "parked") return "parked";
   if (card.status === "running") return "working";
   return card.attention === "your_turn" ? "turn" : "idle";
 }
@@ -95,7 +97,12 @@ function dotKind(
 /** Whether a session is asking for the operator, for the `⋯` badge. */
 const wantsOperator = (card: CardModel) => {
   const kind = dotKind(card);
-  return kind === "needs" || kind === "turn" || kind === "stalled";
+  return (
+    kind === "needs" ||
+    kind === "turn" ||
+    kind === "stalled" ||
+    kind === "parked"
+  );
 };
 
 const OPEN_DELAY_MS = 180;
@@ -384,7 +391,7 @@ function HoverCard({ card }: { card: CardModel }) {
   return (
     <div className="switcher-pop" ref={pop}>
       <a
-        className={`switcher-card attention-${card.attention}${card.status === "stalled" ? " status-stalled" : ""}`}
+        className={`switcher-card attention-${card.attention}${card.status === "stalled" || card.status === "parked" ? ` status-${card.status}` : ""}`}
         href={sessionHref(card.id)}
         tabIndex={-1}
       >

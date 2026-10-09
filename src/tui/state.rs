@@ -12,6 +12,7 @@ use ratatui::layout::{Position, Rect};
 use std::borrow::Cow;
 use std::time::Instant;
 
+use super::ParkReason;
 use super::control_strip::{StripItem, StripVerb};
 use super::theme::InteractiveTheme;
 use super::utils::{find_node_at_path_mut, supports_cursor_shape};
@@ -653,6 +654,8 @@ pub(super) struct InteractiveState<'a> {
     /// The `cold` topic as the header shows it (backlog: cold-session.md): whether
     /// the cache is believed expired.
     pub cache_expired: bool,
+    /// The loop is parked mid-turn at the cold check (the `park` topic).
+    pub park: Option<ParkReason>,
     /// The `fold` topic as the header shows it: a fold is being written, whether the
     /// session is cold or the operator asked for it warm.
     pub folding: bool,

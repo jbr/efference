@@ -107,7 +107,8 @@
   color: var(--fg);
 }
 
-.dot-stalled .switcher-dot {
+.dot-stalled .switcher-dot,
+.dot-parked .switcher-dot {
   background: var(--warn);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--warn) 22%, transparent);
 }
@@ -158,7 +159,8 @@
   border-color: color-mix(in srgb, var(--attention) 55%, var(--border));
 }
 
-.switcher-card.attention-blocked.status-stalled {
+.switcher-card.attention-blocked.status-stalled,
+.switcher-card.attention-blocked.status-parked {
   --attention: var(--warn);
 }
 
@@ -220,7 +222,8 @@
 }
 
 .switcher-card .card-activity-ask,
-.switcher-card .card-activity-stall {
+.switcher-card .card-activity-stall,
+.switcher-card .card-activity-park {
   color: var(--fg);
 }
 

@@ -84,6 +84,15 @@ use state::{InteractiveState, UiMode};
 /// values from `log` frames, the ephemeral deltas from `output` frames (folded into
 /// the live tail until their committed entry lands), and the chrome below from
 /// `state` frames — each a whole-topic replacement.
+/// Why the loop is parked at its cold check (the `park` topic's `reason`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ParkReason {
+    /// Waiting for consent to an uncached read, or a fold.
+    Expired,
+    /// A fold summarized the history while parked; a send resumes it, no consent.
+    Folded,
+}
+
 #[derive(Debug)]
 pub(crate) enum TuiEvent {
     /// A committed log entry (a `log` frame — the durable class).
@@ -135,9 +144,11 @@ pub(crate) enum TuiEvent {
     /// finished from one that gave up.
     Stall(Option<StallView>),
     /// The session's cache is believed expired, or no longer (the `cold` topic,
-    /// backlog: cold-session.md). Level-triggered: `None` is warm or never-sent.
-    /// `Some(true)` while a fold is being written.
+    /// backlog: cold-session.md). Level-triggered: `false` is warm or never-sent.
     CacheExpired(bool),
+    /// The loop is stopped at its cold check mid-turn (the `park` topic,
+    /// docs/control-api.md), and why. Level-triggered: `None` is not parked.
+    Park(Option<ParkReason>),
     /// A fold is being written (the `fold` topic), on a cold or a warm session.
     Folding(bool),
     /// A retry in flight changed (the `upstream_retry` topic, docs/transport.md).

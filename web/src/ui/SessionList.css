@@ -13,7 +13,8 @@
   --attention: var(--accent);
 }
 
-.attention-blocked.status-stalled {
+.attention-blocked.status-stalled,
+.attention-blocked.status-parked {
   --attention: var(--warn);
 }
 
@@ -303,7 +304,8 @@
 }
 
 .card-activity-ask,
-.card-activity-stall {
+.card-activity-stall,
+.card-activity-park {
   color: var(--fg);
 }
 

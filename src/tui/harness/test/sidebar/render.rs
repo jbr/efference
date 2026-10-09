@@ -454,12 +454,25 @@ fn header_states_an_expired_cache() {
     play.event(TuiEvent::CacheExpired(true));
     assert!(play.render().contains("cache expired · C-o folds"));
 
+    play.event(TuiEvent::Park(Some(crate::tui::ParkReason::Expired)));
+    assert!(
+        play.render()
+            .contains("paused: cache expired · ⏎ to continue · C-o folds")
+    );
+    play.event(TuiEvent::Park(None));
+
     play.event(TuiEvent::Folding(true));
     assert!(play.render().contains("cache expired · folding…"));
 
     play.event(TuiEvent::CacheExpired(false));
     assert!(!play.render().contains("cache expired"));
     assert!(play.render().contains("folding…"), "a warm fold shows too");
+
+    // A fold at a park ends the belief, not the park: a send resumes it unasked.
+    play.event(TuiEvent::Folding(false));
+    play.event(TuiEvent::Park(Some(crate::tui::ParkReason::Folded)));
+    assert!(play.render().contains("paused: summarized · ⏎ to continue"));
+    play.event(TuiEvent::Park(None));
 
     play.event(TuiEvent::Folding(false));
     assert!(!play.render().contains("folding…"));

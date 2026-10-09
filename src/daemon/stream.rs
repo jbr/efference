@@ -15,7 +15,7 @@
 //!   below.
 //! - **Coherence** — the state a client holds is true *as of the last `log` frame it
 //!   received*. Not free. It is what [`Tail::releasable`] enforces, and it is what makes
-//!   the spot→gate and parking→final-entry pairs render correctly rather than merely
+//!   the spot→gate and going-idle→final-entry pairs render correctly rather than merely
 //!   settle correctly.
 //!
 //! Coherence is the whole reason for one connection. Across three, a client could see the

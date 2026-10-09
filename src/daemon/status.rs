@@ -15,7 +15,7 @@ use super::*;
 pub(crate) enum SessionStatus {
     /// Executing a turn.
     Running,
-    /// Parked with nothing queued.
+    /// Waiting with nothing queued.
     Idle,
     /// Holding a call for a decision (docs/permissions.md).
     Gated {
@@ -35,6 +35,10 @@ pub(crate) enum SessionStatus {
     },
     /// The last trajectory gave up (docs/transport.md).
     Stalled { message: String },
+    /// The loop stopped at its cold check mid-turn and waits for the operator's consent
+    /// to read the expired cache, or a fold (backlog: cold-session.md); after a fold it
+    /// waits for the next turn or continue, which needs no consent. The `park` topic.
+    Parked { reason: super::cold::ParkReason },
     /// The runtime returned cleanly.
     Ended,
     /// The runtime returned with an error.
@@ -44,7 +48,8 @@ pub(crate) enum SessionStatus {
 impl Session {
     /// The session's status now. A gate outranks a stall — nothing runs while a
     /// call is held — and a stall outranks the running flag, since the loop sets
-    /// the stall before it parks.
+    /// the stall before it parks. A cold park ranks after those three and before the
+    /// running flag, which stays set while the loop waits.
     pub(crate) fn status(&self) -> SessionStatus {
         if let Some(pending) = self.pending.lock().unwrap().as_ref() {
             let intent = pending
@@ -72,6 +77,9 @@ impl Session {
             return SessionStatus::Stalled {
                 message: stall.message,
             };
+        }
+        if let Some(reason) = self.park_reason() {
+            return SessionStatus::Parked { reason };
         }
         if self.running.load(Ordering::SeqCst) {
             SessionStatus::Running
@@ -138,6 +146,27 @@ impl Session {
                 )
             }
             SessionStatus::Stalled { message } => format!("{id} stalled {at}: {message}"),
+            SessionStatus::Parked {
+                reason: super::cold::ParkReason::Folded,
+            } => format!(
+                "{id} is parked mid-turn ({at}): its history was summarized while it waited \
+                 on a cold cache. No consent is needed; a sessions__turn or a continue \
+                 resumes it."
+            ),
+            SessionStatus::Parked {
+                reason: super::cold::ParkReason::Expired { context_tokens, .. },
+            } => {
+                let cost = match context_tokens {
+                    Some(tokens) => format!("~{tokens} tokens uncached"),
+                    None => "the whole context uncached".to_string(),
+                };
+                format!(
+                    "{id} is parked mid-turn ({at}): its prompt cache is believed expired, so \
+                     continuing reads {cost}. Nothing runs until a sessions__turn or a continue \
+                     carrying accept_cold_read consents; a fold summarizes the history \
+                     instead."
+                )
+            }
             SessionStatus::Ended => format!("{id} ended ({at}); its log stays on disk."),
             SessionStatus::Failed { error } => {
                 format!("{id} ended with an error ({at}): {error}")

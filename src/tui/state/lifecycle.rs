@@ -151,6 +151,7 @@ impl<'a> InteractiveState<'a> {
             upstream_retry: None,
             stall: None,
             cache_expired: false,
+            park: None,
             folding: false,
             session_identity: None,
             policy: None,

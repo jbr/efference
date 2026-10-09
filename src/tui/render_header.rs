@@ -8,6 +8,7 @@
 
 use ratatui::{buffer::Buffer, layout::Rect, style::Style};
 
+use super::ParkReason;
 use super::render_sidebar::num;
 use super::state::InteractiveState;
 use super::write_text::fold_control;
@@ -58,8 +59,16 @@ impl<'a> InteractiveState<'a> {
         let mut segments: Vec<(String, Style)> = Vec::new();
         // The cache believed expired (the `cold` topic): the next send pays the
         // uncached read unless the operator folds (backlog: cold-session.md).
+        // A parked loop is stopped mid-turn and waits on the operator, so it says so.
         let note = match (self.cache_expired, self.folding) {
             (true, true) => Some("cache expired · folding… "),
+            (true, false) if self.park == Some(ParkReason::Expired) => {
+                Some("paused: cache expired · ⏎ to continue · C-o folds ")
+            }
+            // A fold ended the belief but not the park; a send resumes it unasked.
+            (false, false) if self.park == Some(ParkReason::Folded) => {
+                Some("paused: summarized · ⏎ to continue ")
+            }
             (true, false) => Some("cache expired · C-o folds "),
             (false, true) => Some("folding… "),
             (false, false) => None,

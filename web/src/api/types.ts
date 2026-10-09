@@ -515,6 +515,15 @@ export interface Cold {
   context_tokens: number | null;
 }
 
+// The loop is stopped at its cold check mid-turn (docs/control-api.md); `null`
+// otherwise, including an idle cold session, which asks at the next send.
+// `expired`: waiting for consent to the uncached read, or a fold. `folded`: a fold
+// summarized the history while parked, so `cold` is null and a turn or continue
+// resumes the loop with no consent.
+export type Park =
+  | { reason: "expired"; since: number; context_tokens: number | null }
+  | { reason: "folded" };
+
 // A fold — the session's history replaced by an account its own model writes —
 // in progress, or the last one's failure (`POST /loop/fold`, docs/control-api.md).
 // `null` otherwise. Independent of `cold`: a fold can be asked of a warm session.
@@ -621,6 +630,7 @@ export interface StateTopics {
   upstream_failure?: UpstreamFailure | null;
   upstream_retry?: UpstreamRetry | null;
   cold?: Cold | null;
+  park?: Park | null;
   fold?: Fold | null;
   session_identity?: SessionIdentity | null;
 }

@@ -25,6 +25,7 @@ behind a change, see [`journal/`](journal/).
 - **`C-o` folds a cold session from the TUI** (docs/tui.md): the alternative to `⏎`-again's cold read, named in the cold notice.
 
 ### Fixed
+- **A session parked at the cold check no longer reads as working** (docs/control-api.md): the listing and `status` subscribers say `parked`, a `park` topic marks it in `/state` (including a park that outlived a fold), and the web card, switcher dot, turn state and TUI header say it is paused on an expired cache.
 - **Web push works on a dev-proxy host, and a lost subscription store re-fills** (docs/web-push.md): the dev build registers a non-caching service worker instead of unregistering it, the app re-sends the browser's subscription on every open, the worker handles `pushsubscriptionchange`, and the opt-in says when no service worker is available instead of staying disabled.
 - **OpenRouter keepalive pings are capped** (docs/transport.md): OpenRouter reads `max_tokens: 0` as unset, so a ping on a reasoning model generated thousands of tokens; it now sends a cap of 16, which every honouring upstream bounds exactly and which still reads the cached prefix.
 - **The keepalive judges each ping against the prefix as it stands** (docs/transport.md): an expensive ping skips the next tick instead of ending the keepalive for the session, the threshold is priced from the model's listed prices (completion cost under half the cold-read premium), and only a permanent upstream rejection stops it.

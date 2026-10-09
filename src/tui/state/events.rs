@@ -168,6 +168,10 @@ impl<'a> InteractiveState<'a> {
                 self.dirty = true;
             }
 
+            TuiEvent::Park(park) => {
+                self.park = park;
+                self.dirty = true;
+            }
             TuiEvent::CacheExpired(expired) => {
                 self.cache_expired = expired;
                 self.dirty = true;

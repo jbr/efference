@@ -34,7 +34,7 @@ fn settle_predicate_tracks_the_loop_lifecycle() {
     assert!(!shared.is_settled(), "post-gate, mid-turn is busy");
 
     // The loop parks — idle, settled.
-    shared.parking();
+    shared.going_idle();
     assert!(
         shared.is_settled(),
         "a parked loop with nothing queued is settled"
@@ -42,7 +42,7 @@ fn settle_predicate_tracks_the_loop_lifecycle() {
 }
 
 /// `await_settled` blocks while the loop is busy and returns the moment it parks — and the
-/// `enable()`-before-check ordering means a `parking()` racing the registration isn't lost.
+/// `enable()`-before-check ordering means a `going_idle()` racing the registration isn't lost.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn await_settled_returns_when_the_loop_parks() {
     let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
@@ -61,10 +61,10 @@ async fn await_settled_returns_when_the_loop_parks() {
     );
 
     // Parking settles it; the waiter wakes and returns.
-    shared.parking();
+    shared.going_idle();
     tokio::time::timeout(Duration::from_secs(2), waiter)
         .await
-        .expect("await_settled should return promptly after parking")
+        .expect("await_settled should return promptly after going idle")
         .expect("waiter task panicked");
 }
 

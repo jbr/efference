@@ -11,6 +11,7 @@ import {
   gatePreview,
   plainFirstParagraph,
   splitPath,
+  statusPhrase,
   workspaces,
 } from "./overview.ts";
 
@@ -54,6 +55,29 @@ test("idle is the operator's turn once a turn has run, and new before", () => {
   );
   expect(cardModel(entry({ status: "running" }), one, null).attention).toBe(
     "working",
+  );
+});
+
+test("a parked session is blocked, says why, and names the cold read", () => {
+  const one = [entry({ status: "parked" })];
+  const park = { reason: "expired", since: 1, context_tokens: 120_000 };
+  const card = cardModel(one[0], one, { park } as StateSnapshot);
+  expect(card.attention).toBe("blocked");
+  expect(statusPhrase(card)).toBe("is paused: its cache expired");
+  expect(card.activity).toEqual({
+    kind: "park",
+    detail: "continuing reads 120k tokens uncached",
+  });
+  expect(cardModel(one[0], one, null).activity).toEqual({
+    kind: "park",
+    detail: "continuing reads the whole context uncached",
+  });
+  const folded = cardModel(one[0], one, {
+    park: { reason: "folded" },
+  } as StateSnapshot);
+  expect(folded.attention).toBe("blocked");
+  expect(statusPhrase(folded)).toBe(
+    "is paused: summarized, waiting for you to continue",
   );
 });
 

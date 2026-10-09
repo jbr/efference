@@ -331,6 +331,7 @@ export function SessionView() {
           gatePending={gate != null}
           ask={session.topics.ask ?? null}
           cold={session.topics.cold ?? null}
+          park={session.topics.park ?? null}
           fold={session.topics.fold ?? null}
         />
       </div>

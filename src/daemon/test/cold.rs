@@ -1,6 +1,8 @@
 //! Tests for `cold.rs` and the cold gate on the write routes (backlog: cold-session.md).
 
 use super::*;
+use crate::daemon::cold::ParkReason;
+use crate::log::Mark;
 
 /// A session whose cache is already believed cold: a zero lifetime and one turn on
 /// the record, a moment ago.
@@ -98,13 +100,72 @@ async fn the_cold_check_parks_until_consent() {
     .expect("parks");
     assert!(shared.is_settled());
 
+    // The park is its own status, ranked ahead of the running flag, and rides the
+    // `cold` topic so a session view can tell it from a slow request.
+    shared.running.store(true, Ordering::SeqCst);
+    let crate::daemon::status::SessionStatus::Parked {
+        reason: ParkReason::Expired { since, .. },
+    } = shared.status()
+    else {
+        panic!("a parked loop is not running: {:?}", shared.status());
+    };
+    assert_eq!(Some(since), shared.cold_since());
+    let state: serde_json::Value = serde_json::from_str(&shared.state_json()).unwrap();
+    assert_eq!(state["park"]["reason"], "expired");
+    assert_eq!(state["park"]["since"], state["cold"]["since"]);
+    assert!(
+        shared
+            .status_body("s1", &shared.status())
+            .contains("parked mid-turn")
+    );
+    shared.running.store(false, Ordering::SeqCst);
+
     shared.grant_cold_read();
     tokio::time::timeout(Duration::from_secs(2), check)
         .await
         .expect("released")
         .unwrap();
     assert!(!shared.cold_parked());
+    assert_eq!(shared.status(), crate::daemon::status::SessionStatus::Idle);
     assert!(!shared.cold_consent.load(Ordering::SeqCst), "consumed");
+}
+
+/// A fold at a mid-turn park ends the cold belief but not the park: the loop waits for
+/// the next turn or continue, and the `park` topic says so while `cold` is null.
+#[tokio::test]
+async fn a_fold_leaves_the_park_folded() {
+    let (shared, _rx) = cold_session().await;
+    let check = tokio::spawn({
+        let shared = Arc::clone(&shared);
+        async move { shared.await_warm_or_consent().await }
+    });
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while !shared.cold_parked() {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("parks");
+    shared
+        .append(1, Payload::Mark(Mark::boundary(0, "account")))
+        .unwrap();
+    assert_eq!(shared.topic_json(Topic::Cold), Value::Null);
+    assert_eq!(
+        shared.topic_json(Topic::Park),
+        serde_json::json!({ "reason": "folded" })
+    );
+    assert_eq!(
+        shared.status(),
+        crate::daemon::status::SessionStatus::Parked {
+            reason: ParkReason::Folded
+        }
+    );
+    shared.wake_cold_check();
+    tokio::time::timeout(Duration::from_secs(2), check)
+        .await
+        .expect("released")
+        .unwrap();
+    assert_eq!(shared.topic_json(Topic::Park), Value::Null);
 }
 
 /// Consent is recorded only while the session is cold: a warm session (no request

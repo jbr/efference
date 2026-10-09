@@ -68,7 +68,7 @@ fn an_escalated_trajectory_reads_as_running_until_it_parks() {
         "mid-trajectory is not a decision point"
     );
 
-    shared.parking();
+    shared.going_idle();
     assert_eq!(shared.status(), SessionStatus::Idle);
     assert!(shared.is_settled());
 }

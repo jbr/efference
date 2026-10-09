@@ -66,7 +66,7 @@ fn continuable_tail_is_a_question_about_the_wire() {
     shared.append(1, user("hello")).unwrap();
     assert!(shared.request_continue().is_ok());
     shared.take_continue();
-    shared.parking();
+    shared.going_idle();
 
     // A finished turn declines.
     shared.append(1, assistant_text("done")).unwrap();
@@ -194,7 +194,7 @@ async fn the_route_accepts_and_declines() {
         ContinueOutcome::Accepted
     );
     shared.take_continue();
-    shared.parking();
+    shared.going_idle();
 
     shared.append(1, assistant_text("done")).unwrap();
     assert_eq!(

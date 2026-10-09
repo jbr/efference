@@ -2,7 +2,7 @@
 //!
 //! Three moments mean the session is waiting on a person: an approval gate opened
 //! ([`Session::register_pending`]), an `ask` was posed ([`Session::begin_ask`]), and
-//! a turn ended with the loop parking ([`Session::parking`]). Each calls
+//! a turn ended with the loop going idle ([`Session::going_idle`]). Each calls
 //! [`Session::push`], which sends or schedules the send and returns — the turn
 //! loop never waits on a push service, and a failed send is a log line rather
 //! than anything the session notices.

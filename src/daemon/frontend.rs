@@ -17,7 +17,7 @@ pub struct RemoteFrontend {
 impl Frontend for RemoteFrontend {
     async fn read_user_turn(&mut self) -> Option<SubmittedTurn> {
         // Mark the loop parked so `/settle` reports idle while we wait (and wake any waiter).
-        self.shared.parking();
+        self.shared.going_idle();
         loop {
             // Blocks until a `POST /turns` arrives. `None` (all senders dropped) only
             // happens once the daemon is tearing down, which ends the loop cleanly.

@@ -308,10 +308,10 @@ pub struct Session {
     /// `queue`.
     ask: Mutex<Option<ask::AskState>>,
     /// Pinged whenever the daemon may have reached a **settled** state — a gate appeared
-    /// ([`register_pending`]) or the loop parked ([`parking`]). The `/settle` long-poll waits on it.
+    /// ([`register_pending`]) or the loop went idle ([`going_idle`]). The `/settle` long-poll waits on it.
     ///
     /// [`register_pending`]: Session::register_pending
-    /// [`parking`]: Session::parking
+    /// [`going_idle`]: Session::going_idle
     settle_changed: Notify,
     /// A `POST /loop/continue` awaiting the loop (docs/control-api.md): the operator
     /// handed control back with no input, so the loop takes another turn on the wire

@@ -178,13 +178,16 @@ material. "Docked" is an `IntersectionObserver` (`useStuckHeadings`) because Saf
 no `scroll-state` container query.
 
 **A card says where the operator's attention stands, in words.** `attention` is one of
-`blocked` (gated or stalled: nothing moves until someone acts), `your_turn` (idle after
+`blocked` (gated, stalled or parked at the cold check: nothing moves until someone acts), `your_turn` (idle after
 a turn — waiting on a reply or an end, not "less important"), `working`, and `new`
 (never made a request and has no title). The top line is one sentence with the id as
 its subject — `amber-lattice needs approval`, `hollow-birch is waiting for you`,
-`tidal-cipher has stalled` — and working and new say nothing, working being the
+`tidal-cipher has stalled`, `amber-lattice is paused: its cache expired` (status
+`parked`; the activity line says `continuing reads 120k tokens uncached`, and after a
+fold `is paused: summarized, waiting for you to continue`) — and working and new say nothing, working being the
 default. There are no status dots. Colors keep the meanings the session view gives
-them: a gate is `--accent` (and tints the card), a stall `--warn`.
+them: a gate is `--accent` (and tints the card), a stall or a park `--warn`; the
+switcher dot follows.
 
 Two voices, three sizes: prose — the title, the status predicate, the activity line —
 in the serif; identifiers — id, models, a command, usage — in mono. The title is the
@@ -1147,6 +1150,13 @@ what a second send costs (the `cold` topic's `context_tokens`) and offers the
 other answer — *summarize instead* — and the composer's next send — turn or
 continue — carries `accept_cold_read`, once. The refusal is dropped when the
 `cold` topic clears, so it cannot outlive the moment it was made in.
+
+A loop parked mid-turn at its cold check (the `park` topic) is `running` to the turn
+state, so `turnState` reads it first and says `paused: cache expired · send to continue
+(reads 120k tokens uncached)` in the warn colour; the composer shows the same cold
+notice as after a refusal, without the refusal, with the same *summarize instead*
+button. After a fold the park stays and `cold` is null; the readout says `paused:
+summarized · send to continue`, with no notice, since no consent is asked.
 
 **Summarizing is the fold** (`POST /loop/fold`, [control-api.md](control-api.md);
 `ui/fold.ts`, `ui/FoldNotice.tsx`, `ui/FoldControl.tsx`). Two entry points, one

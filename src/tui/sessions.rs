@@ -11,7 +11,7 @@
 //! Ending is destructive and irreversible from the client's side — the host
 //! reaps the session's background processes and removes its scratch — so it
 //! asks first when there is something to lose. [`needs_confirm`] is the whole
-//! rule: a session mid-turn, holding a call at a gate, asking a question, stalled, or holding
+//! rule: a session mid-turn, holding a call at a gate, asking a question, stalled, parked at the cold check, or holding
 //! background processes is confirmed; an idle one with nothing running is not.
 
 use super::*;
@@ -61,6 +61,7 @@ pub(crate) fn needs_confirm(row: &SessionSummary) -> Option<String> {
         "gated" => Some("is holding a call at a gate"),
         "stalled" => Some("stalled and has not been answered"),
         "asking" => Some("is waiting on your answer to a question"),
+        "parked" => Some("is paused on an expired cache, waiting for you"),
         _ => None,
     };
     match (doing, row.processes) {

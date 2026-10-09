@@ -14,11 +14,19 @@ import {
   interruptLoop,
   patchLoop,
 } from "../api/http.ts";
-import type { Ask, Attachment, Cold, Fold, Pace, Stall } from "../api/types.ts";
+import type {
+  Ask,
+  Attachment,
+  Cold,
+  Fold,
+  Pace,
+  Park,
+  Stall,
+} from "../api/types.ts";
 import { FoldNotice } from "./FoldNotice.tsx";
 import { foldOffer } from "./fold.ts";
 import { replyHint } from "./askMark.ts";
-import { turnState } from "./turnState.ts";
+import { type TurnState, turnState } from "./turnState.ts";
 import { useDockOffset } from "./float.ts";
 import { useNarrow } from "./useNarrow.ts";
 import { StagedAttachments } from "./Attachments.tsx";
@@ -48,6 +56,7 @@ export function Composer({
   gatePending,
   ask,
   cold,
+  park,
   fold,
 }: {
   submit: (
@@ -74,6 +83,8 @@ export function Composer({
   /** The `cold` and `fold` topics (docs/web-client.md): a cold refusal offers
    * a fold beside the uncached read, and a fold's progress and failure show. */
   cold: Cold | null;
+  /** The `park` topic: the loop stopped at its cold check. */
+  park: Park | null;
   fold: Fold | null;
 }) {
   const [draft, setDraft] = useState("");
@@ -231,6 +242,8 @@ export function Composer({
 
   // The fold is the other answer to a cold refusal (docs/web-client.md); its
   // progress arrives on the `fold` topic, so success changes nothing here.
+  // Only an expired-cache park has a choice to offer; a folded one just resumes.
+  const parked = running && park?.reason === "expired";
   const offer = foldOffer(cold, fold, running, gatePending, ask !== null);
   // The refusal is stale once the session is no longer believed cold (a fold
   // landed, or a request warmed it): dropped during render, so it cannot come
@@ -242,7 +255,13 @@ export function Composer({
       .catch((e) => setError(e instanceof ApiError ? e.message : `${e}`));
   }
 
-  const turn = turnState(running, stall, retrying, offer.kind === "writing");
+  const turn = turnState(
+    running,
+    stall,
+    retrying,
+    offer.kind === "writing",
+    park,
+  );
   return (
     <>
       {collapsed && !gatePending && (
@@ -274,10 +293,11 @@ export function Composer({
               <span className="composer-grabber" aria-hidden />
             </div>
           )}
-          {(coldConsent || fold !== null) && (
+          {(coldConsent || parked || fold !== null) && (
             <FoldNotice
               cold={cold}
               consent={coldConsent}
+              parked={parked}
               fold={fold}
               offer={offer}
               onFold={startFold}
@@ -346,16 +366,7 @@ export function Composer({
                   </svg>
                   <span>attach</span>
                 </button>
-                <span
-                  className={
-                    turn.kind === "running"
-                      ? "turn-state dim"
-                      : turn.kind === "stalled"
-                        ? "turn-state stalled"
-                        : "turn-state your-turn"
-                  }
-                  title={turn.title}
-                >
+                <span className={turnClass(turn.kind)} title={turn.title}>
                   {turn.text}
                 </span>
               </div>
@@ -395,16 +406,7 @@ export function Composer({
       </form>
       {collapsed && (
         <div className="status-bar">
-          <span
-            className={
-              turn.kind === "running"
-                ? "turn-state dim"
-                : turn.kind === "stalled"
-                  ? "turn-state stalled"
-                  : "turn-state your-turn"
-            }
-            title={turn.title}
-          >
+          <span className={turnClass(turn.kind)} title={turn.title}>
             {turn.text}
           </span>
           <span className="spacer" />
@@ -425,4 +427,18 @@ export function Composer({
       )}
     </>
   );
+}
+
+/** The turn-state readout's class: the warn colour is a stall or a cold park. */
+function turnClass(kind: TurnState["kind"]): string {
+  switch (kind) {
+    case "running":
+      return "turn-state dim";
+    case "stalled":
+      return "turn-state stalled";
+    case "parked":
+      return "turn-state parked";
+    case "idle":
+      return "turn-state your-turn";
+  }
 }

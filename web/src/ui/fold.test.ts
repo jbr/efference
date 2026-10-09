@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import type { Cold } from "../api/types.ts";
 import { foldOffer, foldWarning, kilotokens } from "./fold.ts";
 
-const cold: Cold = { since: 1_754_300_000_000, context_tokens: 120_000 };
+const cold: Cold = {
+  since: 1_754_300_000_000,
+  context_tokens: 120_000,
+};
 
 describe("the fold offer", () => {
   it("is ready on an idle session, warm or cold", () => {

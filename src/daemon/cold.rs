@@ -10,6 +10,21 @@
 use super::*;
 use crate::log::Timestamp;
 
+/// Why the loop is stopped at its cold check mid-turn (the `park` topic,
+/// docs/control-api.md).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum ParkReason {
+    /// The cache is believed expired: continuing pays `context_tokens` uncached unless
+    /// the operator consents, or folds instead.
+    Expired {
+        since: Timestamp,
+        context_tokens: Option<u64>,
+    },
+    /// A fold summarized the history while the loop was parked, so the belief is gone and
+    /// the next turn or continue resumes the loop with no consent.
+    Folded,
+}
+
 /// How often [`cold_watch`] re-reads the belief: the topic turns at most this late.
 const COLD_CHECK: Duration = Duration::from_secs(15);
 
@@ -48,22 +63,57 @@ impl Session {
 
     /// The `cold` topic: `{since, context_tokens}`, or `null`. `context_tokens` is
     /// the last turn's prompt — what reading the context unfolded would cost, in tokens.
+    /// Whether the loop is stopped at its cold check is the separate `park` topic.
     /// A fold's progress is the separate `fold` topic.
     pub(super) fn cold_json(&self) -> Value {
         let Some(since) = self.cold_since() else {
             return Value::Null;
         };
-        let context_tokens = self
-            .metrics
+        serde_json::json!({
+            "since": since,
+            "context_tokens": self.cold_context_tokens(),
+        })
+    }
+
+    /// Why the loop is parked at its cold check, or `None` when it is not.
+    pub(super) fn park_reason(&self) -> Option<ParkReason> {
+        if !self.cold_parked() {
+            return None;
+        }
+        Some(match self.cold_since() {
+            Some(since) => ParkReason::Expired {
+                since,
+                context_tokens: self.cold_context_tokens(),
+            },
+            None => ParkReason::Folded,
+        })
+    }
+
+    /// The `park` topic: `{reason: "expired", since, context_tokens}`,
+    /// `{reason: "folded"}`, or `null` when the loop is not parked at its cold check.
+    pub(super) fn park_json(&self) -> Value {
+        match self.park_reason() {
+            None => Value::Null,
+            Some(ParkReason::Expired {
+                since,
+                context_tokens,
+            }) => serde_json::json!({
+                "reason": "expired",
+                "since": since,
+                "context_tokens": context_tokens,
+            }),
+            Some(ParkReason::Folded) => serde_json::json!({ "reason": "folded" }),
+        }
+    }
+
+    /// The last turn's prompt in tokens: what reading the context unfolded would cost.
+    pub(super) fn cold_context_tokens(&self) -> Option<u64> {
+        self.metrics
             .lock()
             .unwrap()
             .last_turn_usage
             .as_ref()
-            .map(Usage::prompt_tokens);
-        serde_json::json!({
-            "since": since,
-            "context_tokens": context_tokens,
-        })
+            .map(Usage::prompt_tokens)
     }
 }
 
