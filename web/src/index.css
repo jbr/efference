@@ -2185,6 +2185,14 @@ select {
   margin-bottom: 0.25rem;
 }
 
+/* The cold line at a gate and at an `ask` (docs/web-client.md): one line in the warn
+   colour beside the decision's own controls. */
+.cold-line {
+  font-family: var(--font-ui);
+  font-size: 0.85rem;
+  color: var(--warn);
+}
+
 .fold-btn {
   font-family: var(--font-ui);
   font-size: 0.8rem;

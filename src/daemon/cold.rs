@@ -8,7 +8,7 @@
 //! wakes the differ anyway.
 
 use super::*;
-use crate::log::Timestamp;
+use crate::log::{ColdEvent, ColdReason, ConsentSource, Timestamp, UnparkCause};
 
 /// Why the loop is stopped at its cold check mid-turn (the `park` topic,
 /// docs/control-api.md).
@@ -121,11 +121,32 @@ impl Session {
     /// Consent to one cold read (`accept_cold_read`, docs/control-api.md). Recorded only
     /// while the session is believed cold, so a client that sends the flag on every
     /// turn leaves nothing behind for a later cold moment it never saw; wakes a loop
-    /// parked at the cold check and a held inbox wake.
-    pub(crate) fn grant_cold_read(&self) {
+    /// parked at the cold check and a held inbox wake. `source` is the gesture that
+    /// carried the flag, kept in the log beside the park it answers.
+    pub(crate) fn grant_cold_read(&self, source: ConsentSource) {
         if self.cold_since().is_some() {
+            self.record_cold(ColdEvent::Consented { source });
             self.cold_consent.store(true, Ordering::SeqCst);
             self.cold_signal.notify_waiters();
+        }
+    }
+
+    /// Where a turn's consent came from: an answer when an `ask` is pending (the turn
+    /// resolves it instead of opening a user turn, `submit_turn`), otherwise a turn.
+    pub(crate) fn turn_consent_source(&self) -> ConsentSource {
+        if self.asking().is_some() {
+            ConsentSource::Ask
+        } else {
+            ConsentSource::Turn
+        }
+    }
+
+    /// Append one step of the cold check to the log (docs/control-api.md). A failed
+    /// write is reported and dropped: the record must not fail what it describes.
+    fn record_cold(&self, event: ColdEvent) {
+        let turn = self.latest_turn();
+        if let Err(e) = self.append(turn, Payload::Cold(event)) {
+            eprintln!("[cold record: append failed: {e}]");
         }
     }
 
@@ -167,15 +188,21 @@ impl Session {
             let notified = self.cold_signal.notified();
             tokio::pin!(notified);
             notified.as_mut().enable();
-            if self.cold_since().is_none() {
+            let believed_cold = self.cold_since();
+            let Some(since) = believed_cold else {
                 self.cold_consent.store(false, Ordering::SeqCst);
-                return self.unpark_cold();
-            }
+                return self.unpark_cold(UnparkCause::Warm);
+            };
             if self.cold_consent.swap(false, Ordering::SeqCst) {
-                return self.unpark_cold();
+                return self.unpark_cold(UnparkCause::Consent);
             }
             if !self.cold_parked.swap(true, Ordering::SeqCst) {
                 eprintln!("(cold — waiting for consent to read the expired cache, or a fold)");
+                self.record_cold(ColdEvent::Parked {
+                    reason: ColdReason::Expired,
+                    since,
+                    context_tokens: self.cold_context_tokens(),
+                });
                 self.settle_changed.notify_waiters();
                 self.touch_state();
             }
@@ -183,8 +210,9 @@ impl Session {
         }
     }
 
-    fn unpark_cold(&self) {
+    fn unpark_cold(&self, cause: UnparkCause) {
         if self.cold_parked.swap(false, Ordering::SeqCst) {
+            self.record_cold(ColdEvent::Unparked { cause });
             self.settle_changed.notify_waiters();
             self.touch_state();
         }

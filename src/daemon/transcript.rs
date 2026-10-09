@@ -230,7 +230,8 @@ fn lines(
         Payload::ToolTelemetry(_)
         | Payload::CallStarted { .. }
         | Payload::RequestStage(_)
-        | Payload::Push(_) => {
+        | Payload::Push(_)
+        | Payload::Cold(_) => {
             vec![]
         }
         Payload::Resumed(resumed) => vec![line(

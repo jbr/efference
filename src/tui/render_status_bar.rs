@@ -74,12 +74,23 @@ impl<'a> InteractiveState<'a> {
             format!("{}  {base}", indicators.join("  "))
         };
 
-        for (col, ch) in (BASELINE_LEFT_MARGIN..).zip(text.chars()) {
+        // While a gate or an `ask` waits on a session believed cold, the cold line leads
+        // in the warning weight: a decision made now carries the consent it describes
+        // (`cold_decision_line`, docs/tui.md).
+        let lead = self.cold_decision_line();
+        let lead_len = lead.as_ref().map_or(0, |l| l.chars().count());
+        let text = match &lead {
+            Some(lead) => format!("{lead}  {text}"),
+            None => text,
+        };
+        let warn = style.add_modifier(ratatui::style::Modifier::BOLD);
+        for (i, (col, ch)) in (BASELINE_LEFT_MARGIN..).zip(text.chars()).enumerate() {
             if col >= area.width {
                 break;
             }
             if let Some(cell) = buf.cell_mut((col, area.y)) {
-                cell.set_char(ch).set_style(style);
+                cell.set_char(ch)
+                    .set_style(if i < lead_len { warn } else { style });
             }
         }
     }

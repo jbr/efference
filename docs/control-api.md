@@ -336,6 +336,13 @@ non-blank turn is instead that ask's reply: it becomes the call's result, never 
   if that is the operator's choice. The consent is one request's: it is consumed
   by the loop's next cold check, and dropped if the session is warm when it
   arrives.
+- **An answer to an `ask`** is this same route: while an `ask` is pending the
+  turn resolves it instead of opening a user turn ([supervisor.md](supervisor.md)),
+  and `accept_cold_read` carries the consent of the answer. A client sends it only
+  when it had already shown the operator, clearly, that the session is cold (with
+  the `context_tokens` of the `cold` topic where known) — an answer given with no
+  cold notice on screen is not consent, because a cold wait looks like a slow tool.
+  The consent is logged with source `ask` rather than `turn`.
 - `202 {"status":"accepted","submission_id":"<string>"}` — enqueued; watch
   `/events` (or `/state`) for the result. The echoed id is informational: any
   effect of a request — including the `User` entry carrying this id — may
@@ -401,6 +408,18 @@ only if that call is still the pending gate.
     `"note"`. The daemon writes the change to the session's config file, folds
     it into the effective policy, and **re-classifies the gated call** against
     the new policy. A failed write fails the grant.
+  - `"accept_cold_read": true` (optional, any decision) consents to the uncached
+    read the turn's next request makes when the session's cache is believed
+    expired (the `cold` topic): without it, the call runs and the loop then parks
+    at its cold check and asks again. It is honored for `approve`, `redirect` and
+    `config_edit` — the decisions that let the turn go on; `abort` ignores it —
+    and granted only when the id is the pending gate, before the decision reaches
+    the loop, with the same semantics as on `POST /turns` (recorded only while
+    cold; one request's consent). A client sends it only when it had already
+    shown the operator that the session is cold, with the cost where known; a gate
+    shown with no cold notice is not consent. A `redirect` is honored because its
+    message becomes the next user message and the next request reads the cache
+    just as an approval's does.
 - `200 {"status":"resolved"}`
 - `?wait` — hold until the turn's *next* gate or completion, then return `/state`.
 - `409 gate_moved` — that id is not the pending gate (already resolved, or the
@@ -1332,7 +1351,7 @@ returning the same code cannot disagree about the status:
 | `not_found` | 404 | no such notification id, proposal `seq`, process id, or mounted tool name |
 | `gate_moved` | 409 | `PUT /approvals/:call_id` whose id is not the pending gate; `detail` carries the current gate |
 | `not_continuable` | 409 | `POST /loop/continue` at a moment with no continue in it — running, gated, or a wire tail that means nothing to re-prompt |
-| `cold` | 409 | `POST /turns` or `POST /loop/continue` on a session whose prompt cache is believed expired, without `accept_cold_read`; `detail` carries the `cold` topic |
+| `cold` | 409 | `POST /turns` or `POST /loop/continue` on a session whose prompt cache is believed expired, without `accept_cold_read`; `detail` carries the `cold` topic. (`PUT /approvals/:call_id` never answers it: without the flag the call runs and the loop parks) |
 | `too_large` | 413 | `/files` was asked for a file past the view limit ([web-bind.md](web-bind.md)) |
 | `unsupported_content` | 415 | `/files` was asked for something it does not serve as text — today, a file that is not valid UTF-8 |
 | `internal` | 500 | a log append or config write failed; absent shared state |

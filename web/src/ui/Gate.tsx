@@ -10,7 +10,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import type { Decision, Gate, Spot } from "../api/types.ts";
+import type { Cold, Decision, Gate, Spot } from "../api/types.ts";
+import { coldDecisionLine, decisionWithConsent } from "./coldConsent.ts";
 import { callView } from "./signature.ts";
 import { flatSignature } from "./signatureLayout.ts";
 import { jumpToTail, useDockOffset } from "./float.ts";
@@ -53,6 +54,7 @@ function SteerField({
  * say what to do instead) and, less prominently, stopping the turn. */
 function GateControls({
   busy,
+  coldLine,
   steer,
   setSteer,
   approve,
@@ -60,6 +62,8 @@ function GateControls({
   redirect,
 }: {
   busy: boolean;
+  /** The cold line (ui/coldConsent.ts), while the session is believed cold. */
+  coldLine: string | null;
   steer: string;
   setSteer: (text: string) => void;
   approve: () => void;
@@ -69,6 +73,11 @@ function GateControls({
   const [declining, setDeclining] = useState(false);
   return (
     <div className="gate-controls">
+      {coldLine !== null && (
+        <div className="cold-line" role="status">
+          {coldLine}
+        </div>
+      )}
       <div className="gate-actions">
         <button className="primary" disabled={busy} onClick={approve}>
           Allow
@@ -139,6 +148,7 @@ export function GateSurface({
   spot,
   covered,
   slot,
+  cold,
   resolve,
 }: {
   gate: Gate;
@@ -150,6 +160,9 @@ export function GateSurface({
   /** The gated call's own slot in the transcript (Transcript.tsx), when it is
    * mounted: the decision renders there, inside the call it is about. */
   slot: HTMLDivElement | null;
+  /** The `cold` topic: while set, the controls carry the cold line, and a decision
+   * made then carries `accept_cold_read` (ui/coldConsent.ts). */
+  cold: Cold | null;
   resolve: (decision: Decision) => Promise<"applied" | "moved">;
 }) {
   const [steer, setSteer] = useState("");
@@ -212,11 +225,15 @@ export function GateSurface({
     return () => observer.disconnect();
   }, [surface]);
 
+  const coldLine = coldDecisionLine(cold, "approving or redirecting");
+
   async function send(decision: Decision) {
     setBusy(true);
     setNotice(null);
     try {
-      if ((await resolve(decision)) === "applied") {
+      if (
+        (await resolve(decisionWithConsent(decision, coldLine))) === "applied"
+      ) {
         setResolvedHere(true);
       } else {
         setNotice({
@@ -241,6 +258,7 @@ export function GateSurface({
       )}
       <GateControls
         busy={busy}
+        coldLine={coldLine}
         steer={steer}
         setSteer={setSteer}
         approve={() => void send({ decision: "approve" })}

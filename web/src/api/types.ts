@@ -92,9 +92,25 @@ export type Payload =
   | { ToolTelemetry: ToolTelemetry }
   | { ProcessEvent: ProcessEvent }
   | { RequestStage: RequestStage }
+  | { Cold: ColdEvent }
   | { Preamble: { system: string; context: unknown } }
   | { Title: Title }
   | { Resumed: Resumed };
+
+/** One step of the cold check (docs/control-api.md). Not drawn: the `park`
+ * topic is the live state. */
+export type ColdEvent =
+  | {
+      event: "parked";
+      reason: "expired";
+      since: number;
+      context_tokens: number | null;
+    }
+  | {
+      event: "consented";
+      source: "turn" | "approval" | "ask" | "continue";
+    }
+  | { event: "unparked"; cause: "consent" | "warm" };
 
 /** One stage of one upstream request (docs/log-and-projection.md). Telemetry:
  * the transcript does not draw it; the `current_operations` topic folds it. */
@@ -408,12 +424,21 @@ export interface ConfigEdit {
 
 // ---- approval decisions (the PUT /v1/approvals/:call_id body) ----
 
+//
+// `accept_cold_read` consents to the uncached read the turn's next request makes on a
+// session believed cold. It is set only when the client showed the operator that the
+// session is cold (`ui/coldConsent.ts`, docs/control-api.md).
 export type Decision =
-  | { decision: "approve" }
+  | { decision: "approve"; accept_cold_read?: boolean }
   | { decision: "abort" }
-  | { decision: "redirect"; message: string }
+  | { decision: "redirect"; message: string; accept_cold_read?: boolean }
   // Allow-with-prefix: approve and persist the change (docs/permissions.md).
-  | { decision: "config_edit"; change: ConfigChange; note?: string };
+  | {
+      decision: "config_edit";
+      change: ConfigChange;
+      note?: string;
+      accept_cold_read?: boolean;
+    };
 
 // ---- state topics (the GET /state snapshot ≡ the fold of `state` frames) ----
 

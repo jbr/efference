@@ -152,7 +152,7 @@ impl<'a> InteractiveState<'a> {
             operations: None,
             operation_text: None,
             stall: None,
-            cache_expired: false,
+            cold: None,
             park: None,
             folding: false,
             session_identity: None,

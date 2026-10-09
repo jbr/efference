@@ -5,7 +5,7 @@ use tokio::sync::mpsc::UnboundedReceiver;
 /// A state with one pending gate, plus the receiver the decision lands on.
 fn state_with_gate() -> (
     InteractiveState<'static>,
-    UnboundedReceiver<(String, Approval)>,
+    UnboundedReceiver<(String, Approval, bool)>,
 ) {
     let rc = RenderContext::new();
     let theme = InteractiveTheme::from_render_context(&rc);
@@ -27,7 +27,7 @@ fn state_with_gate() -> (
 fn empty_submit_approves_the_gate() {
     let (mut s, mut arx) = state_with_gate();
     s.submit_composer(String::new());
-    let (id, dec) = arx.try_recv().expect("a decision was sent");
+    let (id, dec, _) = arx.try_recv().expect("a decision was sent");
     assert_eq!(id, "toolu_1");
     assert!(matches!(dec, Approval::Approve));
     assert!(s.pending_gate.is_none(), "gate cleared after resolving");
@@ -37,7 +37,7 @@ fn empty_submit_approves_the_gate() {
 fn abort_sentinel_aborts_the_gate() {
     let (mut s, mut arx) = state_with_gate();
     s.submit_composer(".abort".into());
-    let (_id, dec) = arx.try_recv().unwrap();
+    let (_id, dec, _) = arx.try_recv().unwrap();
     assert!(matches!(dec, Approval::Abort));
 }
 

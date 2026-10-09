@@ -11,6 +11,7 @@ use serde_json::Value;
 mod curation;
 pub use curation::result_verdicts;
 
+mod cold;
 mod process;
 mod push;
 mod request;
@@ -19,6 +20,7 @@ mod upstream;
 
 #[cfg(test)]
 mod test;
+pub use cold::{ColdEvent, ColdReason, ConsentSource, UnparkCause};
 pub use process::{ExitOutcome, ProcessEvent, ProcessEventKind, ProcessExit, ProcessSpawn};
 pub use push::{
     AttentiveClient, DeliveryOutcome, DeviceDelivery, MomentKind, PushCancel, PushEvent, PushRecord,
@@ -293,6 +295,12 @@ pub enum Payload {
     /// push services' answers (docs/web-push.md). Projects to nothing, like
     /// [`RequestStage`]; the entry's `at` is the step's time.
     Push(PushRecord),
+    /// One step of the cold check: the loop parked, a consent arrived, the park ended
+    /// (docs/control-api.md). Projects to nothing, like [`Push`]; the entry's `at` is the
+    /// step's time.
+    ///
+    /// [`Push`]: Payload::Push
+    Cold(ColdEvent),
 }
 
 /// A session reopened from its log (docs/log-and-projection.md): what the loader

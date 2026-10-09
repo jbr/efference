@@ -451,7 +451,9 @@ fn header_states_an_expired_cache() {
     play.user("go");
     assert!(!play.render().contains("cache expired"));
 
-    play.event(TuiEvent::CacheExpired(true));
+    play.event(TuiEvent::CacheExpired(
+        Some(crate::tui::ColdView::default()),
+    ));
     assert!(play.render().contains("cache expired · C-o folds"));
 
     play.event(TuiEvent::Park(Some(crate::tui::ParkReason::Expired)));
@@ -464,7 +466,7 @@ fn header_states_an_expired_cache() {
     play.event(TuiEvent::Folding(true));
     assert!(play.render().contains("cache expired · folding…"));
 
-    play.event(TuiEvent::CacheExpired(false));
+    play.event(TuiEvent::CacheExpired(None));
     assert!(!play.render().contains("cache expired"));
     assert!(play.render().contains("folding…"), "a warm fold shows too");
 

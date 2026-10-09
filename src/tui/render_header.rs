@@ -60,7 +60,7 @@ impl<'a> InteractiveState<'a> {
         // The cache believed expired (the `cold` topic): the next send pays the
         // uncached read unless the operator folds (backlog: cold-session.md).
         // A parked loop is stopped mid-turn and waits on the operator, so it says so.
-        let note = match (self.cache_expired, self.folding) {
+        let note = match (self.cold.is_some(), self.folding) {
             (true, true) => Some("cache expired · folding… "),
             (true, false) if self.park == Some(ParkReason::Expired) => {
                 Some("paused: cache expired · ⏎ to continue · C-o folds ")

@@ -3,7 +3,31 @@
 use super::*;
 
 impl<'a> InteractiveState<'a> {
+    /// The cold line while a decision is pending on a session believed cold: an approval
+    /// gate or an `ask` the operator is about to answer (docs/tui.md). The status bar
+    /// draws it for as long as this is `Some`, and a decision made meanwhile carries
+    /// `accept_cold_read` — the operator was shown what the next request reads. `None`
+    /// means no consent rides on the decision.
+    pub(in crate::tui) fn cold_decision_line(&self) -> Option<String> {
+        let cold = self.cold?;
+        let subject = if self.pending_gate.is_some() {
+            "approving or redirecting"
+        } else if self.ask.is_some() {
+            "your answer"
+        } else {
+            return None;
+        };
+        let cost = match cold.context_tokens {
+            Some(tokens) => format!("~{}k tokens uncached", (tokens + 500) / 1_000),
+            None => "the context uncached".to_string(),
+        };
+        Some(format!("cache believed cold — {subject} reads {cost}"))
+    }
+
     pub(in crate::tui) fn submit_composer(&mut self, text: String) {
+        // The cold line is on screen for exactly as long as this is true; a decision made
+        // while it is carries the consent it describes (docs/tui.md).
+        let cold_shown = self.cold_decision_line().is_some();
         if let Some(gate) = self.pending_gate.take() {
             let trimmed = text.trim();
             let decision = if trimmed.is_empty() {
@@ -37,7 +61,7 @@ impl<'a> InteractiveState<'a> {
                 // exhaustive so a future grant-capable client labels cleanly.
                 Approval::ConfigEdit { .. } => "granted".to_string(),
             };
-            let _ = self.approve_tx.send((gate.call_id, decision));
+            let _ = self.approve_tx.send((gate.call_id, decision, cold_shown));
             self.composer.clear();
             self.ui.debug_message = label.into();
             self.viewport.stuck_to_bottom = true;
@@ -57,7 +81,7 @@ impl<'a> InteractiveState<'a> {
         let submitted =
             crate::frontend::SubmittedTurn::new(text, crate::daemon::mint_submission_id())
                 .with_attachments(self.staged.ready())
-                .accepting_cold_read(std::mem::take(&mut self.cold_consent));
+                .accepting_cold_read(std::mem::take(&mut self.cold_consent) || cold_shown);
         if self.submit_tx.send(submitted.clone()).is_ok() {
             self.clear_staged();
             // Echo the message immediately as a pending transcript unit
@@ -265,8 +289,11 @@ impl<'a> InteractiveState<'a> {
     /// this leaves any drafted text in place (the draft may be a redirect the
     /// operator decided against sending).
     pub(in crate::tui) fn approve_gate(&mut self) {
+        let cold_shown = self.cold_decision_line().is_some();
         if let Some(gate) = self.pending_gate.take() {
-            let _ = self.approve_tx.send((gate.call_id, Approval::Approve));
+            let _ = self
+                .approve_tx
+                .send((gate.call_id, Approval::Approve, cold_shown));
             self.ui.debug_message = "approved".into();
             self.viewport.stuck_to_bottom = true;
         }
@@ -276,7 +303,7 @@ impl<'a> InteractiveState<'a> {
     /// `.abort` sentinel produces, draft likewise left in place.
     pub(in crate::tui) fn abort_gate(&mut self) {
         if let Some(gate) = self.pending_gate.take() {
-            let _ = self.approve_tx.send((gate.call_id, Approval::Abort));
+            let _ = self.approve_tx.send((gate.call_id, Approval::Abort, false));
             self.ui.debug_message = "aborted".into();
             self.viewport.stuck_to_bottom = true;
         }

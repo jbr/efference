@@ -94,9 +94,21 @@ impl Session {
 
     /// Deliver a client's decision to the waiting loop. Clears the gate so
     /// `GET /state` reflects the resolution immediately. `false` → no such gate.
-    pub(crate) fn resolve_approval(&self, id: &CallId, decision: Approval) -> bool {
+    /// `accept_cold_read` is the cold read's consent (docs/control-api.md): granted once the
+    /// gate is known to be this one and before the decision reaches the loop, so the cold
+    /// check that follows finds it. Only a decision that lets the turn go on carries it:
+    /// `abort` makes no further request.
+    pub(crate) fn resolve_approval(
+        &self,
+        id: &CallId,
+        decision: Approval,
+        accept_cold_read: bool,
+    ) -> bool {
         let sender = self.approvals.lock().unwrap().remove(id);
         let Some(tx) = sender else { return false };
+        if accept_cold_read && !matches!(decision, Approval::Abort) {
+            self.grant_cold_read(crate::log::ConsentSource::Approval);
+        }
         // The gate's push has nothing left to announce (docs/web-push.md).
         self.cancel_escalation(crate::log::PushCancel::GateDecided);
         {

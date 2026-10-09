@@ -773,6 +773,44 @@ fn push_records_project_to_identical_bytes() {
     }
 }
 
+/// Cold-check records (docs/control-api.md) are bookkeeping about the park and the
+/// consents: inserted anywhere, they change no projected byte.
+#[test]
+fn cold_records_project_to_identical_bytes() {
+    use crate::log::{ColdEvent, ColdReason, ConsentSource, Timestamp, UnparkCause};
+    let without = serde_json::to_string(&project(&sample_log())).unwrap();
+    let without_semantic = format!("{:?}", project_semantic(&sample_log()));
+    let events = [
+        ColdEvent::Parked {
+            reason: ColdReason::Expired,
+            since: Timestamp(1_754_300_000_000),
+            context_tokens: Some(120_000),
+        },
+        ColdEvent::Consented {
+            source: ConsentSource::Approval,
+        },
+        ColdEvent::Unparked {
+            cause: UnparkCause::Consent,
+        },
+    ];
+    for at in [0, 1, 2, 3] {
+        let mut with = sample_log();
+        for (i, event) in events.iter().cloned().enumerate() {
+            with.insert(at, entry(90 + i as u64, 1, Payload::Cold(event)));
+        }
+        assert_eq!(
+            without,
+            serde_json::to_string(&project(&with)).unwrap(),
+            "cold records inserted at index {at} must not perturb the projected wire"
+        );
+        assert_eq!(
+            without_semantic,
+            format!("{:?}", project_semantic(&with)),
+            "nor the dialect-neutral fold"
+        );
+    }
+}
+
 /// The boot preamble snapshot is replay/audit only: appending one anywhere in the log
 /// must not change a single projected byte — the system prompt is carried by the
 /// request's `system` field, never the `messages` array (docs/context.md).

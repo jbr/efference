@@ -238,8 +238,10 @@ async fn attach(
     // Approval sender: resolve a gate via `PUT /approvals/:call_id`.
     let approve_client = client.clone();
     let approver = tokio::spawn(async move {
-        while let Some((call_id, decision)) = approve_rx.recv().await {
-            let _ = approve_client.approve(&call_id, &decision).await;
+        while let Some((call_id, decision, accept_cold_read)) = approve_rx.recv().await {
+            let _ = approve_client
+                .approve(&call_id, &decision, accept_cold_read)
+                .await;
         }
     });
 

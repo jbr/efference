@@ -79,11 +79,6 @@ pub(crate) mod write_text;
 use senders::{Receivers, Senders};
 use state::{InteractiveState, UiMode};
 
-/// One inbound message to the UI thread, decoded by the bridge from the unified
-/// control stream's frames (docs/control-api.md): durable [`Entry`](TuiEvent::Entry)
-/// values from `log` frames, the ephemeral deltas from `output` frames (folded into
-/// the live tail until their committed entry lands), and the chrome below from
-/// `state` frames — each a whole-topic replacement.
 /// Why the loop is parked at its cold check (the `park` topic's `reason`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ParkReason {
@@ -93,6 +88,19 @@ pub enum ParkReason {
     Folded,
 }
 
+/// The `cold` topic as the UI reads it: the cache is believed expired, and what reading
+/// the context uncached would cost.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ColdView {
+    /// The last turn's prompt in tokens, when a turn has reported it.
+    pub context_tokens: Option<u64>,
+}
+
+/// One inbound message to the UI thread, decoded by the bridge from the unified
+/// control stream's frames (docs/control-api.md): durable [`Entry`](TuiEvent::Entry)
+/// values from `log` frames, the ephemeral deltas from `output` frames (folded into
+/// the live tail until their committed entry lands), and the chrome below from
+/// `state` frames — each a whole-topic replacement.
 #[derive(Debug)]
 pub(crate) enum TuiEvent {
     /// A committed log entry (a `log` frame — the durable class).
@@ -144,8 +152,8 @@ pub(crate) enum TuiEvent {
     /// finished from one that gave up.
     Stall(Option<StallView>),
     /// The session's cache is believed expired, or no longer (the `cold` topic,
-    /// backlog: cold-session.md). Level-triggered: `false` is warm or never-sent.
-    CacheExpired(bool),
+    /// backlog: cold-session.md). Level-triggered: `None` is warm or never-sent.
+    CacheExpired(Option<ColdView>),
     /// The loop is stopped at its cold check mid-turn (the `park` topic,
     /// docs/control-api.md), and why. Level-triggered: `None` is not parked.
     Park(Option<ParkReason>),

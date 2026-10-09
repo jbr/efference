@@ -120,7 +120,7 @@ async fn the_cold_check_parks_until_consent() {
     );
     shared.running.store(false, Ordering::SeqCst);
 
-    shared.grant_cold_read();
+    shared.grant_cold_read(crate::log::ConsentSource::Turn);
     tokio::time::timeout(Duration::from_secs(2), check)
         .await
         .expect("released")
@@ -174,7 +174,7 @@ async fn a_fold_leaves_the_park_folded() {
 async fn consent_on_a_warm_session_is_not_kept() {
     let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
     shared.set_cache_ttl(Duration::ZERO);
-    shared.grant_cold_read();
+    shared.grant_cold_read(crate::log::ConsentSource::Turn);
     assert!(!shared.cold_consent.load(Ordering::SeqCst));
 }
 
@@ -218,4 +218,186 @@ async fn nothing_to_fold_is_not_cold() {
     );
     tokio::time::sleep(Duration::from_millis(5)).await;
     assert_eq!(shared.cold_since(), None);
+}
+
+/// The `Cold` records in the log, in order.
+fn cold_records(shared: &Session) -> Vec<crate::log::ColdEvent> {
+    shared
+        .log
+        .lock()
+        .unwrap()
+        .entries()
+        .iter()
+        .filter_map(|e| match &e.payload {
+            Payload::Cold(event) => Some(event.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+/// An approval that carries `accept_cold_read` while the session is cold grants the
+/// consent before the decision reaches the loop, so the cold check after the approved call
+/// does not park (docs/control-api.md). The log records the consent and no park.
+#[tokio::test]
+async fn an_approval_with_the_flag_consents_and_no_park_follows() {
+    let (shared, _rx) = cold_session().await;
+    let server = test_server(&shared).await;
+    let call = bash_call("cargo build");
+    let _gate = shared.register_pending(&call, None);
+
+    let conn = server
+        .put(&format!("/v1/approvals/{}", call.id.0))
+        .with_body(r#"{"decision":"approve","accept_cold_read":true}"#)
+        .await;
+    conn.assert_status(200);
+    assert!(shared.cold_consent.load(Ordering::SeqCst));
+
+    tokio::time::timeout(Duration::from_secs(2), shared.await_warm_or_consent())
+        .await
+        .expect("the consent releases the check at once");
+    assert!(!shared.cold_parked());
+    assert_eq!(
+        cold_records(&shared),
+        vec![
+            crate::log::ColdEvent::Consented {
+                source: crate::log::ConsentSource::Approval
+            },
+            // Nothing parked, so nothing unparked.
+        ]
+    );
+}
+
+/// An approval without the flag behaves as it always did: the call runs and the loop
+/// then parks at the cold check, which the log records.
+#[tokio::test]
+async fn an_approval_without_the_flag_still_parks() {
+    let (shared, _rx) = cold_session().await;
+    let server = test_server(&shared).await;
+    let call = bash_call("cargo build");
+    let _gate = shared.register_pending(&call, None);
+
+    let conn = server
+        .put(&format!("/v1/approvals/{}", call.id.0))
+        .with_body(r#"{"decision":"approve"}"#)
+        .await;
+    conn.assert_status(200);
+    assert!(!shared.cold_consent.load(Ordering::SeqCst));
+
+    let check = tokio::spawn({
+        let shared = Arc::clone(&shared);
+        async move { shared.await_warm_or_consent().await }
+    });
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while !shared.cold_parked() {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("parks");
+
+    // The second question gets its answer; the log reads park, consent, resume.
+    shared.grant_cold_read(crate::log::ConsentSource::Continue);
+    tokio::time::timeout(Duration::from_secs(2), check)
+        .await
+        .expect("released")
+        .unwrap();
+    let records = cold_records(&shared);
+    assert!(matches!(
+        records[0],
+        crate::log::ColdEvent::Parked {
+            reason: crate::log::ColdReason::Expired,
+            ..
+        }
+    ));
+    assert_eq!(
+        records[1..],
+        [
+            crate::log::ColdEvent::Consented {
+                source: crate::log::ConsentSource::Continue
+            },
+            crate::log::ColdEvent::Unparked {
+                cause: crate::log::UnparkCause::Consent
+            },
+        ]
+    );
+}
+
+/// The flag on a warm session records nothing, and `abort` ignores it; a redirect, which
+/// lets the turn go on, honors it.
+#[tokio::test]
+async fn the_flag_is_recorded_only_while_cold_and_not_for_an_abort() {
+    let (warm, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    warm.set_cache_ttl(Duration::from_secs(300));
+    let server = test_server(&warm).await;
+    let call = bash_call("ls");
+    let _gate = warm.register_pending(&call, None);
+    server
+        .put(&format!("/v1/approvals/{}", call.id.0))
+        .with_body(r#"{"decision":"approve","accept_cold_read":true}"#)
+        .await
+        .assert_status(200);
+    assert!(!warm.cold_consent.load(Ordering::SeqCst));
+    assert!(cold_records(&warm).is_empty());
+
+    let (shared, _rx) = cold_session().await;
+    let server = test_server(&shared).await;
+    let call = bash_call("ls");
+    let _gate = shared.register_pending(&call, None);
+    server
+        .put(&format!("/v1/approvals/{}", call.id.0))
+        .with_body(r#"{"decision":"abort","accept_cold_read":true}"#)
+        .await
+        .assert_status(200);
+    assert!(!shared.cold_consent.load(Ordering::SeqCst), "abort");
+
+    let call = bash_call("pwd");
+    let _gate = shared.register_pending(&call, None);
+    server
+        .put(&format!("/v1/approvals/{}", call.id.0))
+        .with_body(r#"{"decision":"redirect","message":"no","accept_cold_read":true}"#)
+        .await
+        .assert_status(200);
+    assert!(shared.cold_consent.load(Ordering::SeqCst), "redirect");
+}
+
+/// A decision on a gate that has moved on grants nothing.
+#[tokio::test]
+async fn a_moved_gate_grants_no_consent() {
+    let (shared, _rx) = cold_session().await;
+    let server = test_server(&shared).await;
+    server
+        .put("/v1/approvals/toolu_gone")
+        .with_body(r#"{"decision":"approve","accept_cold_read":true}"#)
+        .await
+        .assert_status(409);
+    assert!(!shared.cold_consent.load(Ordering::SeqCst));
+    assert!(cold_records(&shared).is_empty());
+}
+
+/// An answer to an `ask` carries the consent the same way a turn does, recorded as an
+/// answer; the turn route already took the flag, and the source tells the two apart.
+#[tokio::test]
+async fn an_answer_to_an_ask_with_the_flag_consents() {
+    let (shared, _rx) = cold_session().await;
+    let server = test_server(&shared).await;
+    let mut wait = shared.begin_ask("ask_1", "Proceed?".into(), 1, 1);
+
+    server
+        .post("/v1/turns")
+        .with_body(r#"{"text":"yes"}"#)
+        .await
+        .assert_status(409);
+    server
+        .post("/v1/turns")
+        .with_body(r#"{"text":"yes","accept_cold_read":true}"#)
+        .await
+        .assert_status(202);
+    assert_eq!(wait.reply().await.unwrap().text, "yes");
+    assert!(shared.cold_consent.load(Ordering::SeqCst));
+    assert_eq!(
+        cold_records(&shared),
+        vec![crate::log::ColdEvent::Consented {
+            source: crate::log::ConsentSource::Ask
+        }]
+    );
 }

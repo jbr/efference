@@ -396,7 +396,7 @@ pub(crate) fn entry_nodes(
             // Request stages (docs/log-and-projection.md) feed the header's
             // operation text through the `current_operations` topic; they draw
             // nothing in the transcript.
-            Payload::RequestStage(_) | Payload::Push(_) => {}
+            Payload::RequestStage(_) | Payload::Push(_) | Payload::Cold(_) => {}
             // The boot preamble snapshot (docs/context.md) — session boot record,
             // not conversation; the human inspects it via `efference dev wire`, not the transcript.
             Payload::Preamble { .. } => {}

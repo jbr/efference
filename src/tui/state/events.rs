@@ -172,8 +172,8 @@ impl<'a> InteractiveState<'a> {
                 self.park = park;
                 self.dirty = true;
             }
-            TuiEvent::CacheExpired(expired) => {
-                self.cache_expired = expired;
+            TuiEvent::CacheExpired(cold) => {
+                self.cold = cold;
                 self.dirty = true;
             }
             TuiEvent::Folding(folding) => {

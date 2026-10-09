@@ -219,19 +219,35 @@ impl Client {
     /// same four-valued [`Approval`] the loop consumes (docs/control-channel.md).
     /// The id is a precondition: addressing anything but the pending gate answers
     /// 409 `gate_moved`, with the current gate in the error's `detail`.
-    pub async fn approve(&self, call_id: &str, decision: &Approval) -> Result<()> {
-        self.put(&format!("/approvals/{call_id}"), approval_body(decision))
-            .await
-            .map(drop)
+    /// `accept_cold_read` consents to the uncached read the decision's next request
+    /// makes on a session whose cache is believed expired; send it only when the
+    /// operator was shown that the session is cold (docs/control-api.md).
+    pub async fn approve(
+        &self,
+        call_id: &str,
+        decision: &Approval,
+        accept_cold_read: bool,
+    ) -> Result<()> {
+        self.put(
+            &format!("/approvals/{call_id}"),
+            approval_body(decision, accept_cold_read),
+        )
+        .await
+        .map(drop)
     }
 
     /// Resolve a gate and **block until the daemon settles** (`PUT /approvals/{id}?wait`) — the
     /// turn reaches its next gate or completes — returning the resulting `/state` JSON. The
     /// "approve → read state" half of synchronous driving (docs/permissions.md).
-    pub async fn approve_wait(&self, call_id: &str, decision: &Approval) -> Result<String> {
+    pub async fn approve_wait(
+        &self,
+        call_id: &str,
+        decision: &Approval,
+        accept_cold_read: bool,
+    ) -> Result<String> {
         self.put(
             &format!("/approvals/{call_id}?wait"),
-            approval_body(decision),
+            approval_body(decision, accept_cold_read),
         )
         .await
     }
@@ -1021,8 +1037,8 @@ impl Client {
 
 /// The JSON body for an approval decision — the four-valued [`Approval`] the loop consumes
 /// (docs/control-channel.md). Shared by the blocking and non-blocking `approve` verbs.
-fn approval_body(decision: &Approval) -> String {
-    match decision {
+fn approval_body(decision: &Approval, accept_cold_read: bool) -> String {
+    let mut body = match decision {
         Approval::Approve => serde_json::json!({ "decision": "approve" }),
         Approval::Abort => serde_json::json!({ "decision": "abort" }),
         Approval::Redirect(message) => {
@@ -1033,8 +1049,11 @@ fn approval_body(decision: &Approval) -> String {
             "change": change,
             "note": note,
         }),
+    };
+    if accept_cold_read {
+        body["accept_cold_read"] = serde_json::Value::Bool(true);
     }
-    .to_string()
+    body.to_string()
 }
 
 /// Read a finished client conn's body, mapping a non-2xx status into an error that

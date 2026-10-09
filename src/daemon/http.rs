@@ -48,9 +48,14 @@ pub(crate) struct FoldBody {
 
 /// Refuse a request on a cold session that did not consent to the read, or record the
 /// consent when it did (backlog: cold-session.md). `Err` carries the `409 cold` to send.
-pub(crate) fn cold_gate(shared: &Session, accept_cold_read: bool) -> Result<(), ErrorBody> {
+/// `source` is the gesture that carried the flag, for the log's record of the consent.
+pub(crate) fn cold_gate(
+    shared: &Session,
+    accept_cold_read: bool,
+    source: crate::log::ConsentSource,
+) -> Result<(), ErrorBody> {
     if accept_cold_read {
-        shared.grant_cold_read();
+        shared.grant_cold_read(source);
         return Ok(());
     }
     if shared.cold_since().is_none() {
@@ -121,6 +126,12 @@ pub(crate) struct DecisionBody {
     pub(crate) change: Option<crate::log::ConfigChange>,
     #[serde(default)]
     pub(crate) note: Option<String>,
+    /// Consent to the cold read the decision's next request makes (docs/control-api.md):
+    /// honored for `approve`, `redirect` and `config_edit`, which let the turn go on, and
+    /// recorded only while the session is believed cold. A client sends it only when it
+    /// showed the operator that the session is cold.
+    #[serde(default)]
+    pub(crate) accept_cold_read: bool,
 }
 
 /// Body of `PATCH /loop` (docs/control-channel.md): the operator dials, each

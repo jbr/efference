@@ -154,7 +154,7 @@ fn decode_frame(
             // (docs/transport.md).
             "stall" => Some(send(TuiEvent::Stall(parse::parse_stall(data)))),
             // Level-triggered: `null` clears the header's expired-cache segment.
-            "cold" => Some(send(TuiEvent::CacheExpired(!data.is_null()))),
+            "cold" => Some(send(TuiEvent::CacheExpired(parse::parse_cold(data)))),
             // Level-triggered: the loop stopped at its cold check, and why.
             "park" => Some(send(TuiEvent::Park(match data["reason"].as_str() {
                 Some("expired") => Some(ParkReason::Expired),

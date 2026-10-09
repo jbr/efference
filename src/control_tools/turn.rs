@@ -115,7 +115,11 @@ impl Tool<Control> for Turn {
                 let source = format!("session[{}]", state.caller);
                 let target = state.resolve_mutating(self.session.as_deref())?;
                 // The same consent the route asks for (backlog: cold-session.md).
-                if let Err(refused) = crate::daemon::cold_gate(&target, self.accept_cold_read) {
+                if let Err(refused) = crate::daemon::cold_gate(
+                    &target,
+                    self.accept_cold_read,
+                    target.turn_consent_source(),
+                ) {
                     return Err(anyhow!("{}", refused.message));
                 }
                 target.submit_turn(

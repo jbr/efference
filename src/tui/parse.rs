@@ -82,6 +82,16 @@ pub(super) fn parse_ask(ask: &serde_json::Value) -> Option<PendingAsk> {
     })
 }
 
+/// Parse the `cold` topic: `null` is warm.
+pub(super) fn parse_cold(data: &serde_json::Value) -> Option<super::ColdView> {
+    if data.is_null() {
+        return None;
+    }
+    Some(super::ColdView {
+        context_tokens: data["context_tokens"].as_u64(),
+    })
+}
+
 /// Parse the `gate` topic's object into a [`PendingGate`]. `null` — the topic's
 /// cleared value — is no gate.
 pub(super) fn parse_pending_gate(pending: &serde_json::Value) -> Option<PendingGate> {

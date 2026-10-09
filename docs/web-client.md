@@ -1161,6 +1161,21 @@ other answer — *summarize instead* — and the composer's next send — turn o
 continue — carries `accept_cold_read`, once. The refusal is dropped when the
 `cold` topic clears, so it cannot outlive the moment it was made in.
 
+**A gate or an `ask` on a cold session says so, and only then consents**
+(`ui/coldConsent.ts`). While the `cold` topic is set, the gate's controls and the
+composer of a pending `ask` carry one line in the warn colour: `cache believed cold —
+approving or redirecting reads ~120k tokens uncached` at a gate (the decision that
+lets the turn go on, a redirect included, because its message is read against the same
+cache), `cache believed cold — your answer reads ~120k tokens uncached` at an `ask`
+(`kilotokens` of the topic's `context_tokens`; `the context uncached` when it is
+unknown). The line is also the condition for the consent: `decisionWithConsent` adds
+`accept_cold_read` to an approve, redirect or grant, and the ask's send passes it to
+`submitTurn`, exactly when the line was on screen for that decision; an abort never
+carries it. A gate or answer with no cold line is not consent, so a session that went
+cold while the decision was on screen asks again rather than being read on a decision
+that did not say so. Without the flag the call runs and the loop parks at its cold
+check, as before ([control-api.md](control-api.md)).
+
 A loop parked mid-turn at its cold check (the `park` topic) is `running` to the turn
 state, so `turnState` reads it first and says `paused: cache expired · send to continue
 (reads 120k tokens uncached)` in the warn colour; the composer shows the same cold

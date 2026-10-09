@@ -338,7 +338,7 @@ fn strip_gate_set_leads_with_approve() {
     assert!(
         matches!(
             play.took_approval(),
-            Some((id, crate::frontend::Approval::Approve)) if id == "toolu_g"
+            Some((id, crate::frontend::Approval::Approve, _)) if id == "toolu_g"
         ),
         "…with an Approve decision"
     );
@@ -361,7 +361,7 @@ fn strip_abort_sends_abort_and_keeps_the_draft() {
     assert!(
         matches!(
             play.took_approval(),
-            Some((_, crate::frontend::Approval::Abort))
+            Some((_, crate::frontend::Approval::Abort, _))
         ),
         "⏎ on abort sends Abort"
     );
@@ -406,7 +406,7 @@ fn allow_stager_prefills_commits_and_restores_the_draft() {
     play.type_str(" log"); // widen the prefix: `git` → `git log`
     play.route_key(KeyCode::Enter, NONE); // commit
     match play.took_approval() {
-        Some((id, Approval::ConfigEdit { change, .. })) => {
+        Some((id, Approval::ConfigEdit { change, .. }, _)) => {
             assert_eq!(id, "toolu_g");
             assert_eq!(
                 change,

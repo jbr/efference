@@ -225,6 +225,12 @@ enforceable, and they are enforced by the executor rather than by config:
   reads (`sessions`, `state`, `transcript`, `entries`, `image`) reach any session
   in the caller's project.
 
+`approve` and `turn` both take `accept_cold_read`, the consent to the uncached read a
+session believed cold makes next ([control-api.md](control-api.md)). A driver sets it
+only after reading in `state` that the session is cold (the `cold` topic, with
+`context_tokens`); `approve` honors it for the decisions that let the turn go on and
+ignores it for `abort`, and a session whose cache is warm records nothing.
+
 `created_by` is per-session host control state: never logged, never projected, and
 absent on a human root. It is also what the child's identity line names as its
 creator, so a delegated session has its return address without being told one in

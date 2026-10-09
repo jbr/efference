@@ -26,6 +26,7 @@ import type {
 } from "../api/types.ts";
 import { FoldNotice } from "./FoldNotice.tsx";
 import { foldOffer } from "./fold.ts";
+import { coldDecisionLine, consentsWhenShown } from "./coldConsent.ts";
 import { replyHint } from "./askMark.ts";
 import { type TurnState, turnState } from "./turnState.ts";
 import { useDockOffset } from "./float.ts";
@@ -205,6 +206,10 @@ export function Composer({
   const act = (call: Promise<unknown>) =>
     void call.then(() => setError(null)).catch((e) => setError(`${e}`));
 
+  // The cold line for the pending question: what answering reads uncached.
+  const askColdLine =
+    ask !== null ? coldDecisionLine(cold, "your answer") : null;
+
   async function submit() {
     const text = draft.trim();
     // A send waits for its files: a chip still uploading has no name to send.
@@ -216,6 +221,8 @@ export function Composer({
     // loop takes another turn on the wire it already has. A decline is a normal
     // answer — the moment had no continue in it — so its message renders on its
     // own rather than as a thrown-error string. Attachments alone are a turn.
+    // A send that answers an `ask` consents when the cold line was showing for it
+    // (ui/coldConsent.ts); the continue below answers nothing, so it does not.
     const acceptColdRead = coldConsent;
     setColdConsent(false);
     if (!text && attachments.ready.length === 0) {
@@ -229,7 +236,11 @@ export function Composer({
       return;
     }
     try {
-      await send(text, attachments.ready, acceptColdRead);
+      await send(
+        text,
+        attachments.ready,
+        acceptColdRead || consentsWhenShown(askColdLine),
+      );
       attachments.clear();
       setDraft("");
       setError(null);
@@ -313,6 +324,11 @@ export function Composer({
               offer={offer}
               onFold={startFold}
             />
+          )}
+          {askColdLine !== null && (
+            <div className="cold-line" role="status">
+              {askColdLine}
+            </div>
           )}
           {error && <div className="error">{error}</div>}
           <StagedAttachments

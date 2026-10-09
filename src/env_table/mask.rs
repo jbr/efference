@@ -344,6 +344,9 @@ impl Masker {
             // ids, and per-device answers whose free text has the endpoint
             // replaced before it is logged. Nothing from the environment.
             Payload::Push(_) => {}
+            // A cold-check record: a reason, instants, a token count, and a gesture
+            // name. Nothing from the environment.
+            Payload::Cold(_) => {}
             // A gap, handle ids, and call ids: nothing from the environment.
             Payload::Resumed(_) => {}
             // A process lifecycle record (docs/supervisor.md) carries one piece

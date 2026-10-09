@@ -246,6 +246,7 @@ async fn the_reviewer_resolves_the_routed_gate_through_approve() {
         call_id: Some("toolu_leaf".into()),
         abort: false,
         redirect: None,
+        accept_cold_read: false,
         wait: false,
         timeout_s: None,
         session: Some("child".into()),

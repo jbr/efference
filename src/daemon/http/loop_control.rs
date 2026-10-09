@@ -40,7 +40,11 @@ pub(super) async fn continue_loop(mut conn: Conn) -> Conn {
             }
         }
     };
-    if let Err(body) = cold_gate(&shared, body.accept_cold_read) {
+    if let Err(body) = cold_gate(
+        &shared,
+        body.accept_cold_read,
+        crate::log::ConsentSource::Continue,
+    ) {
         return respond(conn, body);
     }
     match shared.request_continue() {

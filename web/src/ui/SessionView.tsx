@@ -294,6 +294,7 @@ export function SessionView() {
             spot={spotFor(session.entries, gate.call_id)}
             covered={shownFile !== null}
             slot={gateSlot}
+            cold={session.topics.cold ?? null}
             resolve={(decision) => actions.resolveGate(gate.call_id, decision)}
           />
         </div>

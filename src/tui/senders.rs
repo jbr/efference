@@ -33,7 +33,9 @@ pub(crate) struct Senders {
     pub continue_loop: UnboundedSender<bool>,
     /// Fold a cold session (`POST /loop/fold`, docs/control-api.md).
     pub fold: UnboundedSender<()>,
-    pub approve: UnboundedSender<(String, Approval)>,
+    /// A gate decision: the call, the decision, and whether it carries
+    /// `accept_cold_read` (set only when the gate was shown with the cold line).
+    pub approve: UnboundedSender<(String, Approval, bool)>,
     pub pace: UnboundedSender<PaceCmd>,
     pub interrupt: UnboundedSender<Interrupt>,
     pub sidebar: UnboundedSender<SidebarCmd>,
@@ -53,7 +55,7 @@ pub(crate) struct Receivers {
     pub attachments: UnboundedReceiver<super::staged::AttachCmd>,
     pub continue_loop: UnboundedReceiver<bool>,
     pub fold: UnboundedReceiver<()>,
-    pub approve: UnboundedReceiver<(String, Approval)>,
+    pub approve: UnboundedReceiver<(String, Approval, bool)>,
     pub pace: UnboundedReceiver<PaceCmd>,
     pub interrupt: UnboundedReceiver<Interrupt>,
     pub sidebar: UnboundedReceiver<SidebarCmd>,

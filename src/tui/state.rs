@@ -12,10 +12,10 @@ use ratatui::layout::{Position, Rect};
 use std::borrow::Cow;
 use std::time::Instant;
 
-use super::ParkReason;
 use super::control_strip::{StripItem, StripVerb};
 use super::theme::InteractiveTheme;
 use super::utils::{find_node_at_path_mut, supports_cursor_shape};
+use super::{ColdView, ParkReason};
 use crate::frontend::{Approval, Interrupt, SubmittedTurn};
 use crate::log::{LogEntry, Payload};
 use crate::tui::clipboard::TextClipboard;
@@ -577,7 +577,7 @@ pub(super) struct InteractiveState<'a> {
     pub pending_gate: Option<PendingGate>,
     /// Sends an approval decision (`call_id`, decision) to the tokio side, which
     /// resolves it via `PUT /approvals/:call_id`.
-    pub approve_tx: UnboundedSender<(String, Approval)>,
+    pub approve_tx: UnboundedSender<(String, Approval, bool)>,
     /// Sends a pace command (`speed_ms`, `held`) to the tokio side, which issues
     /// `PATCH /loop {pace}` (docs/tui.md).
     pub pace_tx: UnboundedSender<PaceCmd>,
@@ -653,7 +653,7 @@ pub(super) struct InteractiveState<'a> {
     pub stall: Option<StallView>,
     /// The `cold` topic as the header shows it (backlog: cold-session.md): whether
     /// the cache is believed expired.
-    pub cache_expired: bool,
+    pub cold: Option<ColdView>,
     /// The loop is parked mid-turn at the cold check (the `park` topic).
     pub park: Option<ParkReason>,
     /// The `fold` topic as the header shows it: a fold is being written, whether the
