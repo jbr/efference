@@ -122,6 +122,24 @@ fn mistral_thinking_parts_continue_and_the_answer_becomes_a_text_part() {
     assert!(live.iter().any(|s| matches!(s, Streamed::Text { .. })));
 }
 
+/// Reasoning and a call in one turn: the thinking part is the whole `content`,
+/// and the call beside it. Mistral accepted this message replayed verbatim and
+/// counted the thinking in the prompt (backlog/completions-dialect/dialect.md).
+#[test]
+fn mistral_thinking_beside_a_tool_call() {
+    let (completion, _) = assemble(include_str!("../mistral_reasoning_tool.sse"));
+    let stored = message(&completion);
+    let parts = stored.as_map()["content"].as_array().unwrap();
+    assert_eq!(parts.len(), 1);
+    assert_eq!(parts[0]["type"], "thinking");
+    assert!(!stored.reasoning_text().is_empty());
+    assert_eq!(stored.tool_calls().unwrap().len(), 1);
+    assert_eq!(
+        completion.finish.as_ref().map(|f| &f.reason),
+        Some(&FinishReason::ToolCalls)
+    );
+}
+
 /// Two parallel calls whole in one chunk; usage rides the same chunk.
 #[test]
 fn mistral_parallel_calls_in_one_chunk() {
