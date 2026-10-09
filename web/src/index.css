@@ -1062,6 +1062,10 @@ pre {
   color: var(--warn);
 }
 
+.composer-toolbar .turn-state.waiting {
+  color: var(--accent);
+}
+
 .composer-toolbar .interrupt-btn {
   font-family: var(--font-ui);
   font-size: 0.8rem;

@@ -360,6 +360,18 @@ impl<'a> InteractiveState<'a> {
         changed
     }
 
+    /// The status bar's operation slot: while the loop is running, a pending gate or `ask`
+    /// reads as the operator being waited on, ahead of whatever request or tool is open (docs/tui.md).
+    pub(crate) fn status_operation_text(&self) -> Option<String> {
+        let pending = crate::tui::operations::pending_text(
+            self.loop_running && self.pending_gate.is_some(),
+            self.loop_running && self.ask.is_some(),
+        );
+        pending
+            .map(str::to_string)
+            .or_else(|| self.operation_text.clone())
+    }
+
     /// Re-derive the status bar's operation text from the topic, the session's model,
     /// and the clock. Shown only while the loop is running: an idle triage or a
     /// keepalive ping is not something the operator is waiting on. Returns whether

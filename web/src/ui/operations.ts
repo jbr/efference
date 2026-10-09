@@ -6,6 +6,7 @@ import type {
   CurrentOperations,
   OpenRequest,
   RequestOrigin,
+  RunningTool,
 } from "../api/types.ts";
 
 /** Which request or tool leads when several are open: the turn's own request,
@@ -81,9 +82,29 @@ export function operationText(
   }
   const tool = operations.tools.at(0);
   if (tool !== undefined) {
-    const what = tool.intent ?? "";
-    const label = what.length > 48 ? `${what.slice(0, 47)}…` : what;
-    return `${tool.tool}${label === "" ? "" : `: ${label}`} · ${elapsed(now - tool.since)}`;
+    return `${toolLabel(tool)} · ${elapsed(now - tool.since)}`;
   }
   return lead === undefined ? null : requestText(lead, model, now);
+}
+
+/** A running tool's name and what it is doing: a bash call's command, which
+ * says more than the intent's sentence in less room, else the intent. */
+function toolLabel(tool: RunningTool): string {
+  const what = tool.command ?? tool.intent ?? "";
+  const label = what.length > 48 ? `${what.slice(0, 47)}…` : what;
+  return `${tool.tool}${label === "" ? "" : `: ${label}`}`;
+}
+
+/** Hover text for the readout while a bash call leads: the intent the label
+ * gave up for the command. Null when the label already is the intent. */
+export function operationTitle(
+  operations: CurrentOperations | null,
+): string | undefined {
+  if (operations === null) return undefined;
+  const leadsWithTurn = operations.requests.some((r) => r.origin === "turn");
+  const tool = operations.tools.at(0);
+  if (leadsWithTurn || tool === undefined || tool.command === undefined) {
+    return undefined;
+  }
+  return tool.intent ?? undefined;
 }

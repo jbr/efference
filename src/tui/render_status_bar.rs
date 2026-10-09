@@ -54,7 +54,8 @@ impl<'a> InteractiveState<'a> {
             super::state::pace_indicator(self.pace),
             // What the loop is waiting on (the `current_operations` topic): it leads
             // the transport chips, which qualify it.
-            self.operation_text.clone(),
+            // A pending gate or `ask` owns the slot: the operator is what the loop waits on.
+            self.status_operation_text(),
             // The retry leads the failure chip: it is the live state, and it says what
             // is being done about the status the chip names (docs/transport.md).
             super::state::upstream_retry_indicator(self.upstream_retry.as_ref()),

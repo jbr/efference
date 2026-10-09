@@ -180,7 +180,8 @@ fn a_started_call_is_running_until_its_result() {
     let ops = fold(started.clone());
     assert_eq!(
         ops.json()["tools"],
-        json!([{"call_id": "t1", "tool": "bash", "intent": "run the suite", "since": 20}])
+        json!([{"call_id": "t1", "tool": "bash", "intent": "run the suite",
+                "command": "cargo test", "since": 20}])
     );
 
     let mut finished = started;
@@ -189,6 +190,24 @@ fn a_started_call_is_running_until_its_result() {
         Payload::tool_result("t1", RawResult::text("ok"), WireState::Raw),
     ));
     assert_eq!(fold(finished).json(), Value::Null);
+}
+
+/// Only `bash` carries a `command`; another tool's input is not echoed.
+#[test]
+fn only_a_bash_call_carries_its_command() {
+    let ops = fold(vec![
+        (
+            10,
+            assistant_calling(ToolCall::new("read", "t1", json!({"command": "x"}))),
+        ),
+        (
+            20,
+            Payload::CallStarted {
+                call_id: "t1".into(),
+            },
+        ),
+    ]);
+    assert!(ops.json()["tools"][0].get("command").is_none());
 }
 
 /// A call approved but not yet started (waiting at a gate) is not running.

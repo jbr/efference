@@ -272,3 +272,30 @@ fn the_operation_text_follows_the_topic_while_running() {
     assert!(!s.handle_event(TuiEvent::Operations(None)));
     assert_eq!(s.operation_text, None);
 }
+
+/// A pending gate (or `ask`) owns the status bar's operation slot: a side request
+/// open beside it is not what the operator is being waited on for (docs/tui.md).
+#[test]
+fn a_pending_gate_or_ask_leads_the_operation_text() {
+    let (mut s, _arx) = state_with_gate();
+    let now = crate::log::Timestamp::now().0;
+    let topic = serde_json::json!({
+        "requests": [{"request": 0, "origin": "title", "stage": "sent", "since": now}],
+        "tools": [],
+    });
+    s.handle_event(TuiEvent::Running(true));
+    s.handle_event(TuiEvent::Operations(
+        crate::tui::operations::parse_current_operations(&topic),
+    ));
+    assert!(s.pending_gate.is_some());
+    assert_eq!(
+        s.status_operation_text().as_deref(),
+        Some("waiting for your approval")
+    );
+
+    s.pending_gate = None;
+    assert_eq!(
+        s.status_operation_text().as_deref(),
+        Some("writing a title · 0s")
+    );
+}

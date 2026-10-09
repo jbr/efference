@@ -271,6 +271,7 @@ export function Composer({
     offer.kind === "writing",
     park,
     { operations, model, now },
+    gatePending ? "gate" : ask !== null ? "ask" : null,
   );
   return (
     <>
@@ -439,7 +440,8 @@ export function Composer({
   );
 }
 
-/** The turn-state readout's class: the warn colour is a stall or a cold park. */
+/** The turn-state readout's class: the warn colour is a stall or a cold park; the accent is a gate or
+ * `ask` waiting on the operator. */
 function turnClass(kind: TurnState["kind"]): string {
   switch (kind) {
     case "running":
@@ -448,6 +450,8 @@ function turnClass(kind: TurnState["kind"]): string {
       return "turn-state stalled";
     case "parked":
       return "turn-state parked";
+    case "waiting":
+      return "turn-state waiting";
     case "idle":
       return "turn-state your-turn";
   }

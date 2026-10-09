@@ -4,14 +4,14 @@
 // short (docs/transport.md). A stall is the one `running` alone cannot say — a
 // stalled session and a finished one are the same `false`, and a triage gate
 // held on the upstream is stalled while still `true` — so the `stall` topic
-// decides it. A loop parked at the cold check (the `park` topic) is `running` too, and
+// decides it. A pending gate or ask reads as `waiting`, after those two. A loop parked at the cold check (the `park` topic) is `running` too, and
 // reads as its own condition: it waits on the operator. A fold in flight (the `fold` topic) reads as running: the loop is
 // idle, but the session is busy writing its summary. Both the retry wait and the stall name the recovery: an empty
 // send, which the daemon takes as "retry now".
 
 import type { CurrentOperations, Park, Stall } from "../api/types.ts";
 import { kilotokens } from "./fold.ts";
-import { operationText } from "./operations.ts";
+import { operationText, operationTitle } from "./operations.ts";
 
 /** The `current_operations` topic with what naming it needs: the session's
  * model, and the client's clock (the topic carries absolute instants). */
@@ -27,7 +27,7 @@ export interface TurnState {
   /** Hover text: the upstream's own words for a stall, nothing otherwise. */
   title?: string;
   /** Which condition, for the dot and the styling. */
-  kind: "running" | "idle" | "stalled" | "parked";
+  kind: "running" | "idle" | "stalled" | "parked" | "waiting";
 }
 
 /**
@@ -43,6 +43,7 @@ export function turnState(
   folding = false,
   park: Park | null = null,
   view: OperationsView | null = null,
+  pending: "gate" | "ask" | null = null,
 ): TurnState {
   if (stall !== null) {
     return {
@@ -73,6 +74,17 @@ export function turnState(
       kind: "parked",
     };
   }
+  // An open gate or `ask` is what the operator must act on, ahead of any
+  // request or tool the loop has open beside it.
+  if (running && !folding && pending !== null) {
+    return {
+      text:
+        pending === "gate"
+          ? "waiting for your approval"
+          : "waiting for your answer",
+      kind: "waiting",
+    };
+  }
   if (folding) {
     return {
       text: "summarizing the history…",
@@ -91,7 +103,11 @@ export function turnState(
       view === null
         ? null
         : operationText(view.operations, view.model, view.now);
-    return { text: operation ?? "running…", kind: "running" };
+    return {
+      text: operation ?? "running…",
+      title: view === null ? undefined : operationTitle(view.operations),
+      kind: "running",
+    };
   }
   return { text: "your turn", kind: "idle" };
 }

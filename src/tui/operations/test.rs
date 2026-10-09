@@ -74,3 +74,30 @@ fn the_turn_leads_then_a_tool_then_side_requests() {
         Some("writing a title · 1s")
     );
 }
+
+#[test]
+fn a_bash_call_is_named_by_its_command_with_the_intent_as_fallback() {
+    let topic = json!({"requests": [], "tools": [
+        {"call_id": "t1", "tool": "bash", "intent": "Operator asked for a foreground UI test",
+         "command": "sleep 25 && echo done", "since": NOW - 15_000}
+    ]});
+    assert_eq!(
+        text(topic).as_deref(),
+        Some("bash: sleep 25 && echo done · 15s")
+    );
+    let long = "x".repeat(60);
+    let topic = json!({"requests": [], "tools": [
+        {"call_id": "t1", "tool": "bash", "intent": "why", "command": long, "since": NOW - 1_000}
+    ]});
+    assert_eq!(
+        text(topic).as_deref(),
+        Some(format!("bash: {}… · 1s", "x".repeat(47)).as_str())
+    );
+}
+
+#[test]
+fn a_pending_gate_outranks_an_ask_and_nothing_pending_is_none() {
+    assert_eq!(pending_text(true, true), Some("waiting for your approval"));
+    assert_eq!(pending_text(false, true), Some("waiting for your answer"));
+    assert_eq!(pending_text(false, false), None);
+}

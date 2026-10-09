@@ -848,6 +848,7 @@ not a topic — it is the log's cursor rather than control state, and sits outsi
     }],
     "tools": [{                    // calls dispatched and not yet resulted
       "call_id": "toolu_1", "tool": "bash", "intent": "run the suite",  // intent may be null
+      "command": "cargo test",     // bash calls only: the command, read from the call's input
       "since": 1754300040000
     }]
   }

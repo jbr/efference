@@ -4,8 +4,8 @@
 //! Two kinds of thing are open at a time. **Requests**: every upstream request that
 //! has a `Sent` stage and no closing one (`RequestStage`, docs/log-and-projection.md),
 //! each with the stage it is in and when that stage began. **Tools**: calls with a
-//! `CallStarted` entry and no result yet, with the tool name and `intent` the
-//! assistant entry carried. Parked waits (a gate, an `ask`, a park, a stall) have
+//! `CallStarted` entry and no result yet, with the tool name, `intent`, and (for
+//! `bash`) `command` the assistant entry carried. Parked waits (a gate, an `ask`, a park, a stall) have
 //! their own topics and are not repeated here.
 //!
 //! The fold is kept incrementally: [`Session::append`] feeds each new entry to
@@ -53,7 +53,17 @@ struct RunningTool {
     call_id: CallId,
     tool: String,
     intent: Option<String>,
+    /// The shell command, for a `bash` call; `None` for any other tool.
+    command: Option<String>,
     since: u64,
+}
+
+/// What the assistant entry said about one issued call.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct IssuedCall {
+    tool: String,
+    intent: Option<String>,
+    command: Option<String>,
 }
 
 /// The open requests and running tools, as of the last entry observed.
@@ -62,7 +72,7 @@ pub(crate) struct Operations {
     requests: Vec<OpenRequest>,
     tools: Vec<RunningTool>,
     /// The latest completion's calls by id, so `CallStarted` can name the tool.
-    issued: HashMap<CallId, (String, Option<String>)>,
+    issued: HashMap<CallId, IssuedCall>,
     /// The next request id to mint: past every id the log has used.
     next_request: u64,
 }
@@ -98,17 +108,27 @@ impl Operations {
                     .into_iter()
                     .map(|call| {
                         let intent = call.intent().map(str::to_string);
-                        (call.id, (call.name, intent))
+                        let command = (call.name == crate::bash::NAME)
+                            .then(|| call.input.get("command").and_then(Value::as_str))
+                            .flatten()
+                            .map(str::to_string);
+                        let issued = IssuedCall {
+                            tool: call.name,
+                            intent,
+                            command,
+                        };
+                        (call.id, issued)
                     })
                     .collect();
             }
             Payload::User(_) => self.tools.clear(),
             Payload::CallStarted { call_id } => {
-                if let Some((tool, intent)) = self.issued.get(call_id) {
+                if let Some(issued) = self.issued.get(call_id) {
                     self.tools.push(RunningTool {
                         call_id: call_id.clone(),
-                        tool: tool.clone(),
-                        intent: intent.clone(),
+                        tool: issued.tool.clone(),
+                        intent: issued.intent.clone(),
+                        command: issued.command.clone(),
                         since: at,
                     });
                 }
@@ -192,12 +212,16 @@ impl Operations {
             .tools
             .iter()
             .map(|tool| {
-                json!({
+                let mut value = json!({
                     "call_id": tool.call_id,
                     "tool": tool.tool,
                     "intent": tool.intent,
                     "since": tool.since,
-                })
+                });
+                if let Some(command) = &tool.command {
+                    value["command"] = json!(command);
+                }
+                value
             })
             .collect();
         json!({ "requests": requests, "tools": tools })

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { CurrentOperations, Stall } from "../api/types.ts";
+import type { CurrentOperations, Park, Stall } from "../api/types.ts";
 import { turnState } from "./turnState.ts";
 
 const stall: Stall = {
@@ -166,6 +166,32 @@ describe("the turn-state readout", () => {
       ).toBe("bash: run the suite · 45s");
     });
 
+    it("names a bash call by its command, with the intent as the hover title", () => {
+      const tool = {
+        call_id: "t1",
+        tool: "bash",
+        intent: "Operator asked for a foreground UI test",
+        command: "sleep 25 && echo done",
+        since: now - 15_000,
+      };
+      const state = turnState(
+        true,
+        null,
+        false,
+        false,
+        null,
+        view(ops([], [tool])),
+      );
+      expect(state.text).toBe("bash: sleep 25 && echo done · 15s");
+      expect(state.title).toBe("Operator asked for a foreground UI test");
+      const long = { ...tool, command: "x".repeat(60) };
+      expect(text(ops([], [long]))).toBe(`bash: ${"x".repeat(47)}… · 15s`);
+      const plain = { ...tool, tool: "read", command: undefined };
+      expect(text(ops([], [plain]))).toBe(
+        "read: Operator asked for a foreground UI test · 15s",
+      );
+    });
+
     it("leads with the turn's request, then a tool, then side requests", () => {
       const side = {
         request: 4,
@@ -226,5 +252,28 @@ describe("the turn-state readout", () => {
         ).text,
       ).toBe("your turn");
     });
+  });
+
+  it("reads a pending gate or ask as waiting on the operator, over any operation", () => {
+    const operations: CurrentOperations = {
+      requests: [{ request: 4, origin: "title", stage: "sent", since: 1 }],
+      tools: [],
+    };
+    const view = { operations, model: "m", now: 26_000 };
+    const gate = turnState(true, null, false, false, null, view, "gate");
+    expect(gate).toEqual({
+      text: "waiting for your approval",
+      kind: "waiting",
+    });
+    const ask = turnState(true, null, false, false, null, view, "ask");
+    expect(ask.text).toBe("waiting for your answer");
+    // A stall and a park still come first.
+    expect(turnState(true, stall, false, false, null, view, "gate").kind).toBe(
+      "stalled",
+    );
+    const park: Park = { reason: "folded" };
+    expect(turnState(true, null, false, false, park, view, "gate").kind).toBe(
+      "parked",
+    );
   });
 });

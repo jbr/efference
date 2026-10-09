@@ -26,6 +26,8 @@ pub(crate) struct OpenRequestView {
 pub(crate) struct RunningToolView {
     pub tool: String,
     pub intent: Option<String>,
+    /// The shell command of a `bash` call; it labels the tool in place of the intent.
+    pub command: Option<String>,
     pub since: u64,
 }
 
@@ -63,6 +65,7 @@ pub(super) fn parse_current_operations(value: &Value) -> Option<OperationsView> 
             Some(RunningToolView {
                 tool: t.get("tool")?.as_str()?.to_string(),
                 intent: t.get("intent").and_then(Value::as_str).map(str::to_string),
+                command: t.get("command").and_then(Value::as_str).map(str::to_string),
                 since: t.get("since")?.as_u64()?,
             })
         })
@@ -132,6 +135,18 @@ fn request_text(request: &OpenRequestView, model: &str, now: u64) -> String {
     }
 }
 
+/// What a pending gate or `ask` says in place of the operation text: the operator
+/// is the one being waited on (docs/tui.md).
+pub(crate) fn pending_text(gate: bool, ask: bool) -> Option<&'static str> {
+    if gate {
+        Some("waiting for your approval")
+    } else if ask {
+        Some("waiting for your answer")
+    } else {
+        None
+    }
+}
+
 /// One line for the leading open operation, or `None` when none is open.
 pub(crate) fn operation_text(view: &OperationsView, model: &str, now: u64) -> Option<String> {
     let lead = view
@@ -144,11 +159,16 @@ pub(crate) fn operation_text(view: &OperationsView, model: &str, now: u64) -> Op
         return Some(request_text(lead, model, now));
     }
     if let Some(tool) = view.tools.first() {
-        let intent = tool.intent.as_deref().unwrap_or("");
-        let label: String = if intent.chars().count() > 48 {
-            format!("{}…", intent.chars().take(47).collect::<String>())
+        // The command says more than the intent's sentence, in less room.
+        let what = tool
+            .command
+            .as_deref()
+            .or(tool.intent.as_deref())
+            .unwrap_or("");
+        let label: String = if what.chars().count() > 48 {
+            format!("{}…", what.chars().take(47).collect::<String>())
         } else {
-            intent.to_string()
+            what.to_string()
         };
         let colon = if label.is_empty() { "" } else { ": " };
         return Some(format!(

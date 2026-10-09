@@ -146,6 +146,8 @@ export interface RunningTool {
   call_id: CallId;
   tool: string;
   intent: string | null;
+  /** The shell command, present for a `bash` call. */
+  command?: string;
   since: number;
 }
 

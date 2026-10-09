@@ -1101,15 +1101,20 @@ moves (`retrying the upstream · send to retry now` while an `upstream_retry`
 pause runs; while a request or tool is open, the `current_operations` topic's
 leading operation with its elapsed time on the client's clock — `waiting on
 <model> · 2m 10s` before the first byte, `<model> streaming` after it, `triage peek
-· waiting 40s`, `spotter judging · 3s`, `bash: <intent> · 45s`, `retrying upstream ·
+· waiting 40s`, `spotter judging · 3s`, `bash: <command> · 45s`, `retrying upstream ·
 attempt 2 (429) · 8s`; the turn's own request leads, then a running tool, then the
-side requests, in `ui/operations.ts`), and the daemon's own sentence plus `· send to retry` in the warn
+side requests, in `ui/operations.ts`; a `bash` call is labelled by its `command`, cut
+at 48 characters with an ellipsis, and its `intent` is the hover title, while other
+tools are labelled by the intent), `waiting for your approval` or `waiting for
+your answer` in the accent color while a gate or an `ask` is pending (it outranks
+the operation text, since the operator is what the loop waits on; a stall and a
+park still come first), and the daemon's own sentence plus `· send to retry` in the warn
 color when the `stall` topic is set — a trajectory that stopped short, or a
 triage gate held with the loop still running ([transport.md](transport.md)),
 which `running` alone cannot say; the upstream's words ride along as the hover
 title. An empty send is the continue, which retries either wait. The choice is
 `ui/turnState.ts`, a pure function of `running`, `stall`, whether a retry
-is waiting, and the operations view (the topic, the model, and the clock), so the component holds no branching of its own. The span between state and controls is
+is waiting, a pending gate or ask, and the operations view (the topic, the model, and the clock), so the component holds no branching of its own. The span between state and controls is
 reserved for the key-hint strip (binds are deferred to interactive
 suggestions; [backlog/web/README.md](../backlog/web/README.md)). The input
 carries no hint about mid-trajectory injection
