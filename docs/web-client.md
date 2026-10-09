@@ -1552,9 +1552,15 @@ bindings; the shell routes are matched the same way, so a session-prefixed
 navigation falls back to the same cached shell. A transcript or a file's bytes served from cache would be a stale claim
 about what the agent did, and saying what the agent did is what this page is
 for. What is cached is the build's own hashed assets (cache-first, because the
-hash is the version) and the shell routes. Registration is production-only
-(`src/pwa.ts`); on the dev path it unregisters instead, since a cached asset is
-what HMR must not get. Push — the worker's third job, and the "receive
+hash is the version) and the shell routes. Registration
+(`src/pwa.ts`) is `/sw.js` in production and `/sw.js?dev=1` under Vite. In dev
+mode the worker installs no cache, answers no `fetch`, and deletes every
+`efference-shell-*` cache on activation, so a cached asset never reaches HMR and
+a production worker left on the same origin is replaced (its script URL differs)
+and leaves nothing behind; the push handlers are the only live part, which is
+what lets a dev-proxy host hold a push subscription. The daemon routes by path,
+so the query reaches the same file in the embedded build and under the proxy.
+Push — the worker's third job, and the "receive
 notifications" opt-in in the Interface tab — is [web-push.md](web-push.md).
 
 ## The gate surface

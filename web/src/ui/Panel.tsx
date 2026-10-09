@@ -19,6 +19,7 @@ import type {
   Proposal,
   Role,
 } from "../api/types.ts";
+import { readPushState, type PushState } from "../push.ts";
 import { policyRows } from "./policy.ts";
 import { setThemeChoice, themeChoice, type ThemeChoice } from "./theme.ts";
 import {
@@ -277,20 +278,18 @@ function pushObstacle(): string | null {
  * or a cleared site. The prompt and the subscribe run only from the click,
  * which is what Safari requires and what Chrome quiet-prompts without. */
 function Notifications() {
-  const [subscribed, setSubscribed] = useState<boolean | null>(null);
+  const [state, setState] = useState<PushState>("pending");
+  const subscribed = state === "subscribed";
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let live = true;
-    void navigator.serviceWorker.ready
-      .then((registration) => registration.pushManager.getSubscription())
-      .then((subscription) => {
-        if (live) setSubscribed(subscription !== null);
-      })
-      .catch(() => {
-        if (live) setSubscribed(false);
-      });
+    void readPushState(
+      "serviceWorker" in navigator ? navigator.serviceWorker : undefined,
+    ).then((next) => {
+      if (live) setState(next);
+    });
     return () => {
       live = false;
     };
@@ -317,7 +316,7 @@ function Notifications() {
           applicationServerKey: decodeKey(key),
         });
         await subscribePush(subscription.toJSON());
-        setSubscribed(true);
+        setState("subscribed");
       } else {
         // Both sides, in the order that leaves nothing sending to a dead
         // endpoint: the daemon forgets it, then the browser drops it.
@@ -326,7 +325,7 @@ function Notifications() {
           await unsubscribePush(subscription.endpoint);
           await subscription.unsubscribe();
         }
-        setSubscribed(false);
+        setState("unsubscribed");
       }
     } catch (e) {
       setError(`${e}`);
@@ -340,13 +339,21 @@ function Notifications() {
       <label>
         <input
           type="checkbox"
-          checked={subscribed === true}
-          disabled={busy || obstacle !== null || subscribed === null}
+          checked={subscribed}
+          disabled={
+            busy ||
+            obstacle !== null ||
+            state === "pending" ||
+            state === "unavailable"
+          }
           onChange={(event) => void toggle(event.target.checked)}
         />
         receive notifications
       </label>
       {obstacle !== null && <span className="dim"> — {obstacle}</span>}
+      {obstacle === null && state === "unavailable" && (
+        <span className="dim"> — no service worker on this page</span>
+      )}
       {error !== null && <span className="error"> — {error}</span>}
     </div>
   );

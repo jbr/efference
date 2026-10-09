@@ -17,6 +17,15 @@
 
 const CACHE = "efference-shell-v2";
 
+/** Dev mode: `src/pwa.ts` registers `/sw.js?dev=1` when the page is served by
+ * Vite. The worker then caches nothing and answers no fetch, so HMR always
+ * reaches the dev server; only the push handlers below are live. */
+const DEV = new URL(self.location.href).searchParams.has("dev");
+
+/** Prefix shared by every cache this worker has ever named, so dev mode can
+ * clear a production worker's leftovers whatever version wrote them. */
+const CACHE_PREFIX = "efference-shell-";
+
 /** Client routes the index answers, relative to the client's base — mirrors
  * `SPA_ROUTES` (src/daemon/tcp.rs). */
 const SHELL_ROUTES = ["/", "/tree"];
@@ -61,6 +70,10 @@ const isCacheable = (pathname) =>
   SHELL_ASSETS.includes(pathname);
 
 self.addEventListener("install", (event) => {
+  if (DEV) {
+    self.skipWaiting();
+    return;
+  }
   event.waitUntil(
     caches
       .open(CACHE)
@@ -78,7 +91,11 @@ self.addEventListener("activate", (event) => {
       .keys()
       .then((keys) =>
         Promise.all(
-          keys.filter((key) => key !== CACHE).map((key) => caches.delete(key)),
+          keys
+            .filter((key) =>
+              DEV ? key.startsWith(CACHE_PREFIX) : key !== CACHE,
+            )
+            .map((key) => caches.delete(key)),
         ),
       )
       .then(() => self.clients.claim()),
@@ -86,6 +103,7 @@ self.addEventListener("activate", (event) => {
 });
 
 self.addEventListener("fetch", (event) => {
+  if (DEV) return;
   const request = event.request;
   if (request.method !== "GET") return;
   const url = new URL(request.url);
@@ -205,3 +223,66 @@ self.addEventListener("notificationclick", (event) => {
       }),
   );
 });
+
+// A push service can expire or rotate a subscription; the browser then fires
+// this with the old one (when it still has it) and expects a new one. The new
+// subscription goes to the daemon here, and the page's resubscribe-on-open
+// (web/src/push.ts) covers whatever this misses.
+self.addEventListener("pushsubscriptionchange", (event) => {
+  event.waitUntil(resubscribe(event.oldSubscription ?? null));
+});
+
+/** The control base to post to. The worker has no page of its own, so it reads
+ * the base off an open window (`/sessions/<id>` under a host, mirroring
+ * `deriveBase` in src/api/base.ts); with none open it uses the root, which a
+ * session daemon answers and a host does not — that case is repaired by the
+ * next app open. */
+async function controlBase() {
+  const windows = await self.clients.matchAll({
+    type: "window",
+    includeUncontrolled: true,
+  });
+  for (const client of windows) {
+    const match = /^\/sessions\/[A-Za-z0-9._-]+(?=\/|$)/.exec(
+      new URL(client.url).pathname,
+    );
+    if (match) return match[0];
+  }
+  return "";
+}
+
+async function resubscribe(old) {
+  try {
+    const base = await controlBase();
+    let key = old?.options?.applicationServerKey ?? null;
+    if (!key) {
+      const response = await fetch(`${base}/v1/push`);
+      if (!response.ok) return;
+      const { key: b64 } = await response.json();
+      const padded = b64
+        .replace(/-/g, "+")
+        .replace(/_/g, "/")
+        .padEnd(Math.ceil(b64.length / 4) * 4, "=");
+      key = Uint8Array.from(self.atob(padded), (c) => c.charCodeAt(0));
+    }
+    const subscription = await self.registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: key,
+    });
+    // Same-origin, so the session cookie rides along (credentials default).
+    await fetch(`${base}/v1/push/subscriptions`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(subscription.toJSON()),
+    });
+    if (old && old.endpoint !== subscription.endpoint) {
+      await fetch(`${base}/v1/push/subscriptions`, {
+        method: "DELETE",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ endpoint: old.endpoint }),
+      });
+    }
+  } catch (error) {
+    self.console.warn("pushsubscriptionchange:", error);
+  }
+}

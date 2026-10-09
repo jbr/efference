@@ -1,6 +1,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { registerServiceWorker } from "./pwa.ts";
+import { resubscribeOnOpen } from "./push.ts";
 import { App } from "./ui/App.tsx";
 import { installLinkNavigation } from "./ui/route.ts";
 import { initTheme } from "./ui/theme.ts";
@@ -9,6 +10,9 @@ import "./index.css";
 initTheme();
 installLinkNavigation();
 registerServiceWorker();
+void resubscribeOnOpen(
+  "serviceWorker" in navigator ? navigator.serviceWorker : undefined,
+);
 if (
   import.meta.env.DEV &&
   new URLSearchParams(location.search).has("overflow")

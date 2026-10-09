@@ -287,8 +287,8 @@ impl Provider {
     /// below 16). OpenRouter treats 0 as unset and lets the model generate to
     /// `end_turn`, but honours a positive cap on most upstreams, and OpenAI models
     /// behind it floor the cap at 16, so 16 is the smallest cap that costs the same
-    /// everywhere. An upstream that ignores every cap (observed: x-ai/grok-4.7,
-    /// qwen/qwen3.8-omni-flash) is left to the keepalive's affordability check.
+    /// everywhere. An upstream that ignores every cap is left to the keepalive's
+    /// affordability check (the measured models are in docs/transport.md).
     pub fn keepalive_output_cap(&self) -> u32 {
         match self {
             Self::Anthropic | Self::TypeSafe => 0,

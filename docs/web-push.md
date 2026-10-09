@@ -17,7 +17,7 @@ credential does ([web-bind.md](web-bind.md), `src/auth.rs`): HKDF under
 valid P-256 scalar (a uniform string exceeds the group order with probability ~2⁻³²;
 the loop is deterministic per root). Every daemon under one root derives the identical
 key with no coordination. Rotating the root rotates the key, which
-strands existing subscriptions until the service worker resubscribes on its next page
+strands existing subscriptions until the page resubscribes on its next
 open — the same blast radius the cookie/bearer/TOTP family already has.
 
 ## The subscription store
@@ -98,6 +98,29 @@ without. Unchecking unsubscribes both sides, daemon first. A denied permission r
 as "blocked in browser settings" (JS cannot re-prompt); iOS outside the
 home-screen-installed app explains itself (iOS delivers push only to the installed
 app); a browser without `PushManager` shows nothing.
+
+## Self-healing subscriptions
+
+A browser holds its subscription independently of the daemon's store, so the two
+can disagree after a store loss, a pruned row, or a rotated root. On every app
+open, once the worker is ready, the page reads `pushManager.getSubscription()`
+and, if one exists, POSTs it to the subscribe route (`web/src/push.ts`); the
+route is an upsert on the endpoint, so a row that exists is rewritten
+unchanged and a missing one is restored. Failures are logged and not shown.
+
+The worker also handles `pushsubscriptionchange`: it subscribes again with the
+old subscription's `applicationServerKey` (or the key route when the browser did
+not keep the old one), POSTs the new subscription, and DELETEs the old
+endpoint. The request is same-origin, so the session cookie authenticates it.
+A worker has no page to read its control base from; it takes `/sessions/<id>`
+from an open window's URL and otherwise posts at the root, which a host does not
+serve — the next app open then repairs it.
+
+The worker is registered on the dev path too (`/sw.js?dev=1`, which caches
+nothing; [web-client.md](web-client.md)), so a dev-proxy host can hold
+subscriptions. The checkbox has four states: pending, subscribed, unsubscribed,
+and unavailable — no worker became ready within a few seconds — which renders
+"no service worker on this page" beside the disabled box.
 
 ## No push while someone is watching
 
