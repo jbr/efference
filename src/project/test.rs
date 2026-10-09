@@ -717,6 +717,62 @@ fn request_stages_project_to_identical_bytes() {
     }
 }
 
+/// Push records (docs/web-push.md) are notification bookkeeping: inserted anywhere,
+/// they change no projected byte.
+#[test]
+fn push_records_project_to_identical_bytes() {
+    use crate::log::{
+        DeliveryOutcome, DeviceDelivery, MomentKind, PushCancel, PushEvent, PushRecord,
+    };
+    let without = serde_json::to_string(&project(&sample_log())).unwrap();
+    let without_semantic = format!("{:?}", project_semantic(&sample_log()));
+    let events = [
+        PushEvent::Sent,
+        PushEvent::Held {
+            delay_secs: 120,
+            attentive: vec![],
+        },
+        PushEvent::Escalated,
+        PushEvent::Cancelled {
+            cause: PushCancel::Superseded,
+        },
+        PushEvent::Delivery {
+            devices: vec![DeviceDelivery {
+                host: "push.example.net".into(),
+                device: "0badc0de".into(),
+                outcome: DeliveryOutcome::Gone { status: 410 },
+            }],
+        },
+    ];
+    for at in [0, 1, 2, 3] {
+        let mut with = sample_log();
+        for (i, event) in events.iter().cloned().enumerate() {
+            with.insert(
+                at,
+                entry(
+                    90 + i as u64,
+                    1,
+                    Payload::Push(PushRecord {
+                        moment: 1,
+                        kind: MomentKind::Gate,
+                        event,
+                    }),
+                ),
+            );
+        }
+        assert_eq!(
+            without,
+            serde_json::to_string(&project(&with)).unwrap(),
+            "push records inserted at index {at} must not perturb the projected wire"
+        );
+        assert_eq!(
+            without_semantic,
+            format!("{:?}", project_semantic(&with)),
+            "nor the dialect-neutral fold"
+        );
+    }
+}
+
 /// The boot preamble snapshot is replay/audit only: appending one anywhere in the log
 /// must not change a single projected byte — the system prompt is carried by the
 /// request's `system` field, never the `messages` array (docs/context.md).

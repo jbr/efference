@@ -313,6 +313,10 @@ export function buildTree(entries: LogEntry[]): TranscriptNode[] {
     // `current_operations` topic, not something the session said or did.
     if ("RequestStage" in p) continue;
 
+    // A push record (docs/web-push.md) is the notification trail, not
+    // conversation.
+    if ("Push" in p) continue;
+
     // A dispatch marker (Payload::CallStarted) appended before tool dispatch;
     // projects to nothing on the transcript.
     if ("CallStarted" in p) continue;

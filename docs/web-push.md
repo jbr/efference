@@ -101,6 +101,38 @@ as "blocked in browser settings" (JS cannot re-prompt); iOS outside the
 home-screen-installed app explains itself (iOS delivers push only to the installed
 app); a browser without `PushManager` shows nothing.
 
+## The push record
+
+Every step of a moment's push is appended to the session's log as a
+`Payload::Push` entry (`src/log/push.rs`), which projects to nothing and which
+transcripts and clients skip. Each entry carries `moment` (a number unique within the
+session), `kind` (`gate`, `ask`, `settle`), and an `event`:
+
+- `sent`: nobody was attending, so the push went out at once.
+- `held {delay_secs, attentive}`: someone was attending; `attentive` lists up to eight
+  `{client, session}` pairs, the reason it was held.
+- `escalated`: the delay ended with the moment still standing.
+- `cancelled {cause}`: `gate_decided`, `ask_ended`, `turn_submitted`, `archived`,
+  `seen {client}`, or `superseded` (a newer moment replaced it).
+- `delivery {devices}`: one element per stored subscription, `{host, device, outcome}`.
+  `host` is the endpoint's host (`web.push.apple.com`), `device` the first eight hex
+  digits of a SHA-256 of the endpoint (the endpoint's path is a secret and is not
+  logged), and `outcome` is `delivered {status}`, `gone {status}` (404/410, the row is
+  pruned), or `failed {status?, reason}` (the reason has the endpoint removed and is
+  cut to 120 characters). An empty `devices` means nothing was subscribed.
+
+`crate::push::send` returns the per-device answers; the spawned send task appends them
+through a weak handle on the session. The same answers go to the host's stderr
+(`log::info!`, with `warn!` for prune failures). A `sent` or `escalated` with no
+`delivery` after it means the host had no root installed (no binding), so it could not
+send.
+
+To answer "why did I get this": find the moment's `held`/`sent` entry (who was
+attending, or that nobody was), then `escalated` and `delivery`. "Why didn't I": a
+`held` followed by `cancelled` names the cause; a `delivery` with `devices: []` means
+no device was subscribed, and a `failed` or `gone` names the device that did not
+receive it. In tests, a session's `set_push_transport` stands in for the push services.
+
 ## Self-healing subscriptions
 
 A browser holds its subscription independently of the daemon's store, so the two

@@ -42,17 +42,27 @@ fn a_report_parses_and_a_malformed_one_is_rejected() {
 fn any_active_unlapsed_client_is_attentive() {
     let attention = Attention::default();
     let t0 = Instant::now();
-    assert!(!attention.attentive_at(t0), "no reports, no attention");
+    assert!(
+        attention.attentive_at(t0).is_empty(),
+        "no reports, no attention"
+    );
 
     attention.report_at(&report("a", None, false), t0);
-    assert!(!attention.attentive_at(t0), "an inactive client is not");
+    assert!(
+        attention.attentive_at(t0).is_empty(),
+        "an inactive client is not"
+    );
 
     attention.report_at(&report("b", Some("s"), true), t0);
-    assert!(attention.attentive_at(t0));
+    assert!(!attention.attentive_at(t0).is_empty());
 
     // The latest report from a client replaces its earlier one.
     attention.report_at(&report("b", Some("s"), false), t0 + Duration::from_secs(1));
-    assert!(!attention.attentive_at(t0 + Duration::from_secs(1)));
+    assert!(
+        attention
+            .attentive_at(t0 + Duration::from_secs(1))
+            .is_empty()
+    );
 }
 
 /// A client whose reports stop lapses after [`LAPSE`]; a fresh report revives it.
@@ -61,11 +71,19 @@ fn a_client_lapses_when_its_reports_stop() {
     let attention = Attention::default();
     let t0 = Instant::now();
     attention.report_at(&report("a", None, true), t0);
-    assert!(attention.attentive_at(t0 + LAPSE - Duration::from_secs(1)));
-    assert!(!attention.attentive_at(t0 + LAPSE));
+    assert!(
+        !attention
+            .attentive_at(t0 + LAPSE - Duration::from_secs(1))
+            .is_empty()
+    );
+    assert!(attention.attentive_at(t0 + LAPSE).is_empty());
 
     attention.report_at(&report("a", None, true), t0 + LAPSE);
-    assert!(attention.attentive_at(t0 + LAPSE + Duration::from_secs(1)));
+    assert!(
+        !attention
+            .attentive_at(t0 + LAPSE + Duration::from_secs(1))
+            .is_empty()
+    );
 }
 
 /// Lapsed clients are dropped when the next report arrives, so the table does not

@@ -11,6 +11,7 @@
 //! and where it is kept), `encrypt` (RFC 8291 payload encryption), and `vapid`
 //! (RFC 8292 self-identification). [`send`] is the RFC 8030 request that carries them.
 
+use crate::log::{DeliveryOutcome, DeviceDelivery};
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD as B64;
 use serde::{Deserialize, Serialize};
@@ -186,18 +187,51 @@ impl Store {
     }
 }
 
-/// What a push service said about one subscription.
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
-enum Outcome {
-    Delivered,
-    /// The push service says the subscription no longer exists (404 or 410,
-    /// RFC 8030 §7.3). The entry is pruned: it will never deliver again, and the
-    /// browser resubscribes on its own next page open.
-    Gone,
-    /// Anything else — a transient service error, a network failure, a rejected
-    /// token. Logged and dropped: a push is a courtesy, and no retry schedule
-    /// would make it more timely than the next event.
-    Failed,
+/// A short, stable name for a subscription that does not carry its secret: the
+/// endpoint's host and the first eight hex digits of a SHA-256 over the whole
+/// endpoint. The host says which vendor's service answered; the hash tells two
+/// browser profiles on one vendor apart (docs/web-push.md).
+pub fn device_label(endpoint: &str) -> (String, String) {
+    use sha2::Digest;
+    let host = vapid::audience(endpoint)
+        .and_then(|audience| audience.split_once("://").map(|(_, host)| host.to_string()))
+        .unwrap_or_else(|| "unparsed".to_string());
+    let digest = sha2::Sha256::digest(endpoint.as_bytes());
+    let hash = digest[..4].iter().map(|b| format!("{b:02x}")).collect();
+    (host, hash)
+}
+
+/// The most characters of a failure reason the log keeps.
+const REASON_MAX_CHARS: usize = 120;
+
+/// A failure reason fit for the log: the endpoint (whose path is a secret) is
+/// replaced and the text is cut short.
+fn log_reason(reason: &str, endpoint: &str) -> String {
+    let reason = reason.replace(endpoint, "<endpoint>");
+    reason.chars().take(REASON_MAX_CHARS).collect()
+}
+
+fn failed(reason: impl AsRef<str>, endpoint: &str) -> DeliveryOutcome {
+    DeliveryOutcome::Failed {
+        status: None,
+        reason: log_reason(reason.as_ref(), endpoint),
+    }
+}
+
+/// What a status code from a push service means (RFC 8030 §7.3): 2xx delivered,
+/// 404 and 410 gone (the subscription is pruned; the browser resubscribes on its
+/// own next page open), anything else a failure that is logged and dropped — a
+/// push is a courtesy, and no retry schedule would make it more timely than the
+/// next event.
+fn classify(status: u16) -> DeliveryOutcome {
+    match status {
+        200..300 => DeliveryOutcome::Delivered { status },
+        404 | 410 => DeliveryOutcome::Gone { status },
+        _ => DeliveryOutcome::Failed {
+            status: Some(status),
+            reason: format!("status {status}"),
+        },
+    }
 }
 
 /// Send one message to one subscription (RFC 8030). `now` is a parameter so the
@@ -207,30 +241,27 @@ async fn send_one(
     subscription: &Subscription,
     message: &Message,
     now: u64,
-) -> Outcome {
-    let Some(audience) = vapid::audience(&subscription.endpoint) else {
-        log::warn!("push endpoint is not a URL: {}", subscription.endpoint);
-        return Outcome::Failed;
+) -> DeliveryOutcome {
+    let endpoint = subscription.endpoint.as_str();
+    let Some(audience) = vapid::audience(endpoint) else {
+        return failed("endpoint is not a URL", endpoint);
     };
     let (Ok(p256dh), Ok(auth)) = (
         B64.decode(&subscription.p256dh),
         B64.decode(&subscription.auth),
     ) else {
-        log::warn!("push subscription keys are not base64url: {audience}");
-        return Outcome::Failed;
+        return failed("subscription keys are not base64url", endpoint);
     };
     let Ok(ua_public) = p256::PublicKey::from_sec1_bytes(&p256dh) else {
-        log::warn!("push subscription p256dh is not a P-256 point: {audience}");
-        return Outcome::Failed;
+        return failed("p256dh is not a P-256 point", endpoint);
     };
     let payload = serde_json::to_vec(message).expect("a Message serializes");
     let Ok(body) = encrypt::encrypt(&ua_public, &auth, &payload) else {
-        log::warn!("push payload encryption failed for {audience}");
-        return Outcome::Failed;
+        return failed("payload encryption failed", endpoint);
     };
 
     let result = crate::http::client()
-        .post(subscription.endpoint.as_str())
+        .post(endpoint)
         .with_request_header("ttl", TTL_SECS.to_string())
         .with_request_header("content-encoding", "aes128gcm")
         // Both events are the session waiting on a person, which is what
@@ -243,40 +274,41 @@ async fn send_one(
         .with_body(body)
         .await;
     match result {
-        Ok(conn) => match conn.status().map_or(0, u16::from) {
-            200..300 => Outcome::Delivered,
-            404 | 410 => Outcome::Gone,
-            status => {
-                log::warn!("push to {audience} returned {status}");
-                Outcome::Failed
-            }
-        },
-        Err(e) => {
-            log::warn!("push to {audience} failed: {e}");
-            Outcome::Failed
-        }
+        Ok(conn) => classify(conn.status().map_or(0, u16::from)),
+        Err(e) => failed(e.to_string(), endpoint),
     }
 }
 
 /// Send one message to every stored subscription, pruning the ones the push
-/// service reports gone. Never returns an error: the caller is a spawned task
-/// beside the turn loop, and a push that does not go out is not a session
-/// failure.
-pub async fn send(store: &Store, key: &p256::SecretKey, message: Message) {
+/// service reports gone, and return each device's answer (empty when nothing is
+/// subscribed). Never fails: the caller is a spawned task beside the turn loop,
+/// and a push that does not go out is not a session failure. The caller records
+/// the answers in the session log (docs/web-push.md).
+pub async fn send(store: &Store, key: &p256::SecretKey, message: Message) -> Vec<DeviceDelivery> {
     let subscriptions = store.load();
-    if subscriptions.is_empty() {
-        return;
-    }
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |d| d.as_secs());
+    let mut devices = Vec::with_capacity(subscriptions.len());
     for subscription in subscriptions {
-        if send_one(key, &subscription, &message, now).await == Outcome::Gone
+        let outcome = send_one(key, &subscription, &message, now).await;
+        let (host, device) = device_label(&subscription.endpoint);
+        log::info!("push to {host} ({device}): {outcome:?}");
+        if matches!(outcome, DeliveryOutcome::Gone { .. })
             && let Err(e) = store.remove(&subscription.endpoint)
         {
             log::warn!("could not prune a gone push subscription: {e}");
         }
+        devices.push(DeviceDelivery {
+            host,
+            device,
+            outcome,
+        });
     }
+    if devices.is_empty() {
+        log::info!("push has no subscribed devices");
+    }
+    devices
 }
 
 /// The `applicationServerKey` a browser needs before it can subscribe: the

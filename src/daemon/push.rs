@@ -8,12 +8,59 @@
 //! than anything the session notices.
 
 use super::*;
-use crate::log::{LogEntry, Payload};
+use crate::log::{
+    DeviceDelivery, LogEntry, MomentKind, Payload, PushCancel, PushEvent, PushRecord,
+};
+use std::future::Future;
+use std::sync::Weak;
+use std::sync::atomic::AtomicU64;
 
 /// The most a notification body carries. A lock screen shows about four lines;
 /// past that the text is truncated by the platform anyway, and the full turn is
 /// one tap away.
 const BODY_MAX_CHARS: usize = 200;
+
+/// How a push reaches the push services: the real one reads the stored
+/// subscriptions; tests install a stub that answers for a pretend device list.
+pub(crate) type PushTransport = Arc<
+    dyn Fn(crate::push::Message) -> Pin<Box<dyn Future<Output = Vec<DeviceDelivery>> + Send>>
+        + Send
+        + Sync,
+>;
+
+/// The session's push bookkeeping: its own handle (the spawned timer and send
+/// tasks append to the log through it), the moment counter, and the optional
+/// stand-in for the push services.
+pub(super) struct PushState {
+    me: Weak<Session>,
+    next: AtomicU64,
+    transport: std::sync::OnceLock<PushTransport>,
+}
+
+impl PushState {
+    pub(super) fn new(me: Weak<Session>) -> Self {
+        Self {
+            me,
+            next: AtomicU64::new(1),
+            transport: std::sync::OnceLock::new(),
+        }
+    }
+
+    pub(super) fn me(&self) -> Weak<Session> {
+        self.me.clone()
+    }
+}
+
+impl MomentKind {
+    /// What a notification is titled for this kind of moment. An `ask` and a
+    /// settle share a title: either is the session saying something to a person.
+    fn title(self) -> &'static str {
+        match self {
+            Self::Gate => "Gate",
+            Self::Ask | Self::Settle => "Message",
+        }
+    }
+}
 
 impl Session {
     /// What a notification is titled: the event and the session's working
@@ -30,43 +77,87 @@ impl Session {
 
     /// Notify about one moment, in the background (docs/web-push.md).
     ///
-    /// When no client is attending the host ([`Session::someone_is_attentive`]) the
+    /// When no client is attending the host ([`Session::attentive_clients`]) the
     /// push is sent now. Otherwise it is held for [`ESCALATION_DELAY`] and sent
     /// only if neither resolution nor a sighting cancelled it
     /// ([`Session::cancel_escalation`]) — a push that fires is one nobody
     /// attended to. The decision lives here rather than at the call sites, so a
-    /// gate, an `ask`, and a settle escalate identically.
-    pub(super) fn push(&self, event: &str, body: String) {
-        let mut message = crate::push::Message::new(self.push_title(event), body);
+    /// gate, an `ask`, and a settle escalate identically. Each step is appended
+    /// to the log as a [`Payload::Push`].
+    pub(super) fn push(&self, kind: MomentKind, body: String) {
+        let moment = self.pushes.next.fetch_add(1, Ordering::Relaxed);
+        let mut message = crate::push::Message::new(self.push_title(kind.title()), body);
         // The notification opens this session, not the bind's root: the path
         // the web client addresses this session by (docs/web-push.md).
         message.path = self.web_path().to_string();
-        if self.someone_is_attentive() {
-            self.schedule_escalation(message);
-        } else {
+        let attentive = self.attentive_clients();
+        if attentive.is_empty() {
             // A newer moment supersedes a pending older one, sent or not.
-            self.cancel_escalation();
-            send_in_background(message);
+            self.cancel_escalation(PushCancel::Superseded);
+            self.record_push(moment, kind, PushEvent::Sent);
+            self.send_in_background(moment, kind, message);
+        } else {
+            self.schedule_escalation(moment, kind, message, attentive);
         }
     }
-}
 
-/// Spawn the actual send, or do nothing in the two contexts where there is
-/// nothing to do: no root is installed (push credentials derive from it, and
-/// only a binding host installs one — tests, offline verbs, and a socket-only
-/// host look alike here), and no tokio runtime is running. Both checks happen
-/// before the store is touched.
-pub(super) fn send_in_background(message: crate::push::Message) {
-    let Some(root) = crate::auth::Root::installed() else {
-        return;
-    };
-    let Ok(handle) = tokio::runtime::Handle::try_current() else {
-        return;
-    };
-    handle.spawn(async move {
-        let store = crate::push::Store::machine_scoped();
-        crate::push::send(&store, &root.vapid_key(), message).await;
-    });
+    /// Append one step of a moment's push to the log. A failed write is
+    /// reported and dropped: the record must not fail what it describes.
+    pub(super) fn record_push(&self, moment: u64, kind: MomentKind, event: PushEvent) {
+        let turn = self.latest_turn();
+        let record = PushRecord {
+            moment,
+            kind,
+            event,
+        };
+        if let Err(e) = self.append(turn, Payload::Push(record)) {
+            eprintln!("[push record: append failed: {e}]");
+        }
+    }
+
+    /// Spawn the actual send and record the push services' answers when they
+    /// arrive, or do nothing in the two contexts where there is nothing to do:
+    /// no root is installed (push credentials derive from it, and only a binding
+    /// host installs one — tests, offline verbs, and a socket-only host look
+    /// alike here), and no tokio runtime is running. Both checks happen before
+    /// the store is touched. A [`PushEvent::Sent`] or [`PushEvent::Escalated`]
+    /// with no [`PushEvent::Delivery`] after it is the first case.
+    pub(super) fn send_in_background(
+        &self,
+        moment: u64,
+        kind: MomentKind,
+        message: crate::push::Message,
+    ) {
+        let Ok(handle) = tokio::runtime::Handle::try_current() else {
+            return;
+        };
+        let send: Pin<Box<dyn Future<Output = Vec<DeviceDelivery>> + Send>> =
+            match self.pushes.transport.get() {
+                Some(transport) => transport(message),
+                None => {
+                    let Some(root) = crate::auth::Root::installed() else {
+                        return;
+                    };
+                    Box::pin(async move {
+                        let store = crate::push::Store::machine_scoped();
+                        crate::push::send(&store, &root.vapid_key(), message).await
+                    })
+                }
+            };
+        let me = self.pushes.me();
+        handle.spawn(async move {
+            let devices = send.await;
+            if let Some(session) = me.upgrade() {
+                session.record_push(moment, kind, PushEvent::Delivery { devices });
+            }
+        });
+    }
+
+    /// Replace the push services with a stub.
+    #[cfg(test)]
+    pub(crate) fn set_push_transport(&self, transport: PushTransport) {
+        let _ = self.pushes.transport.set(transport);
+    }
 }
 
 /// A path with the home directory abbreviated to `~`, as a prompt would print it.

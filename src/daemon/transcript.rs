@@ -227,7 +227,10 @@ fn lines(
         }
         // Request stages (docs/log-and-projection.md) are telemetry for the
         // `current_operations` topic, not something the session said or did.
-        Payload::ToolTelemetry(_) | Payload::CallStarted { .. } | Payload::RequestStage(_) => {
+        Payload::ToolTelemetry(_)
+        | Payload::CallStarted { .. }
+        | Payload::RequestStage(_)
+        | Payload::Push(_) => {
             vec![]
         }
         Payload::Resumed(resumed) => vec![line(

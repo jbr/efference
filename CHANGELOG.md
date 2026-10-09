@@ -8,6 +8,7 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- **The session log records every push** (docs/web-push.md): each gate, `ask`, and settle logs whether its push was sent or held (with who was attending), whether a held push escalated or was cancelled (and why), and each device's answer from its push service (vendor host plus a short endpoint hash), including a send to zero devices; the entries project to nothing.
 - **Say what the loop is waiting on** (docs/control-api.md, docs/log-and-projection.md): every upstream request records its stages (`sent`, a refused attempt, `first_byte`, `ended`/`failed`) as log entries that project to nothing, a `current_operations` topic lists the open requests and executing tools with the instant each stage began, and the web turn state and TUI status bar read "waiting on <model> · 2m 10s", "triage peek · waiting 40s", "bash: <intent> · 45s" instead of "running".
 - **The TUI reports attention** (docs/web-push.md): focused with a key or mouse event in the last 5 minutes counts as attending through `POST /attention`, so a person in the terminal is not pushed at immediately.
 - **Inline cost from OpenRouter** (docs/transport.md): a response's `usage.cost` prices the request directly, and the generation lookup runs only when a response carries none; `usage.jsonl` records each request's `cost_usd` and the upstream that served it (`served_by`).

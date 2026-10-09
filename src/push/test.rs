@@ -108,3 +108,59 @@ fn message_payload_shape() {
         })
     );
 }
+
+/// A device is named by the endpoint's host and a stable short hash, and the
+/// endpoint's secret path appears in neither.
+#[test]
+fn a_device_label_hides_the_endpoint_path() {
+    let (host, hash) = device_label("https://web.push.apple.com/QGsecretpath123");
+    assert_eq!(host, "web.push.apple.com");
+    assert_eq!(hash.len(), 8);
+    assert!(!hash.contains("secret"));
+    assert_eq!(
+        device_label("https://web.push.apple.com/QGsecretpath123").1,
+        hash,
+        "stable"
+    );
+    assert_ne!(
+        device_label("https://web.push.apple.com/other").1,
+        hash,
+        "two endpoints on one vendor differ"
+    );
+    assert_eq!(device_label("not a url").0, "unparsed");
+}
+
+#[test]
+fn statuses_classify_as_delivered_gone_or_failed() {
+    assert_eq!(classify(201), DeliveryOutcome::Delivered { status: 201 });
+    assert_eq!(classify(404), DeliveryOutcome::Gone { status: 404 });
+    assert_eq!(classify(410), DeliveryOutcome::Gone { status: 410 });
+    assert_eq!(
+        classify(429),
+        DeliveryOutcome::Failed {
+            status: Some(429),
+            reason: "status 429".into()
+        }
+    );
+}
+
+/// A failure reason never carries the endpoint, and is bounded.
+#[test]
+fn a_failure_reason_drops_the_endpoint_and_is_cut() {
+    let endpoint = "https://push.example.net/secret";
+    let reason = log_reason(&format!("connect to {endpoint} refused"), endpoint);
+    assert_eq!(reason, "connect to <endpoint> refused");
+    assert_eq!(
+        log_reason(&"x".repeat(500), endpoint).len(),
+        REASON_MAX_CHARS
+    );
+}
+
+/// With nothing subscribed, a send answers with an empty list (the record's
+/// "zero devices").
+#[tokio::test]
+async fn a_send_with_no_subscriptions_answers_empty() {
+    let store = temp_store("send-empty");
+    let key = p256::SecretKey::from_slice(&[7u8; 32]).unwrap();
+    assert!(send(&store, &key, Message::new("t", "b")).await.is_empty());
+}

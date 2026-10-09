@@ -20,7 +20,7 @@ impl Session {
     pub(crate) fn submit_turn(&self, turn: SubmittedTurn) {
         // A turn from a client is an answer to whatever moment was waiting on a
         // person, whichever kind it was (docs/web-push.md).
-        self.cancel_escalation();
+        self.cancel_escalation(crate::log::PushCancel::TurnSubmitted);
         // A pending `ask` takes the turn as its reply instead (docs/supervisor.md). The
         // ask lock is held through the queue push below, so a turn cannot slip in between
         // an ask starting and recalling the queue.
@@ -209,7 +209,7 @@ impl Session {
         self.settle_changed.notify_waiters();
         if a_turn_just_ended {
             let body = super::push::settle_body(self.log.lock().unwrap().entries());
-            self.push("Message", body);
+            self.push(crate::log::MomentKind::Settle, body);
         }
     }
 

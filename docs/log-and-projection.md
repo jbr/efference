@@ -54,6 +54,7 @@ enum Payload {
     Preamble { system: String, context: Resolved, inference: Option<LoggedInference> },  // boot record — replay/audit only (see context.md)
     Title(Title),      // the session's one-line title — presentation only, never projected (see session-title.md)
     RequestStage(RequestStage),  // one stage of one upstream request — telemetry, never projected
+    Push(PushRecord),  // one step of a moment's push (decided, held, escalated, cancelled, delivered) — never projected (see web-push.md)
     // Anticipated, not yet built: a frozen cache-breakpoint boundary (`Commit`)
     // for compaction. Kept here as a forward marker — types land ahead of the
     // feature that constructs them — not present in the code today.
@@ -95,6 +96,14 @@ cached prefix. `ProcessEvent` is the durable answer to "what was `p#3`" for a
 reader with no daemon ([supervisor.md](supervisor.md)); metadata only, since a
 process's output belongs to the registry's bounded best-effort capture.
 
+These payloads are the log's telemetry: events the session went through that the model
+never reads. They are timestamped by the entry's `at`, replayed by `GET /log` and
+`/events` like any entry, skipped by the transcripts, and excluded from `project`, so
+appending one mid-session leaves the cached prefix byte-identical (each has a test
+pinning that). An event is recorded this way when a reader after the fact needs it
+to explain what the session did; what streams per token stays on the ephemeral
+`output` class instead.
+
 `RequestStage` records where one upstream request is: `{request, origin, stage}`.
 `request` is an id minted by the host when the request starts, unique within the
 session and continued past the log's highest after a restart (the provider's
@@ -108,6 +117,11 @@ re-send), `first_byte` (the first stream event), `ended` (the stream finalized),
 finished; the reason is capped at 160 characters and passes the `[env]` masker). The
 entry's own `at` is the stage's time. Streaming sub-stages (thinking, text, a tool
 call) are not recorded; the ephemeral `output` class distinguishes them.
+
+`Push` records one step of a moment's push (decided, held, escalated, cancelled, or the
+push services' per-device answers). It projects to nothing, like `RequestStage`
+(`push_records_project_to_identical_bytes`); its fields are specified in
+[web-push.md](web-push.md).
 
 The stages are written from one seam, `Client::send` in `api/client.rs` (and the
 Messages keepalive beside it), into a `StageSink` the session installs on the agent

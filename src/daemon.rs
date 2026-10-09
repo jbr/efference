@@ -292,6 +292,10 @@ pub struct Session {
     /// attending when its moment fired (`escalation.rs`, docs/web-push.md). At most
     /// one; resolution and sightings of the moment empty it.
     escalation: escalation::EscalationSlot,
+    /// The push bookkeeping (`push.rs`): the session's own handle for the tasks
+    /// that append push records, the moment counter, and the test stand-in for
+    /// the push services.
+    pushes: push::PushState,
     /// Whether the loop is **executing a turn** (vs. parked awaiting one). Together with
     /// `queued`, this drives the `/settle` long-poll's "at a decision point?" predicate
     /// ([`Session::is_settled`], docs/permissions.md). The loop owns it:
@@ -756,7 +760,8 @@ impl Session {
             },
             ConfigSource::Default => None,
         };
-        let shared = Arc::new(Self {
+        let shared = Arc::new_cyclic(|me| Self {
+            pushes: push::PushState::new(me.clone()),
             cwd,
             storage_base: std::sync::OnceLock::new(),
             attachment_store: std::sync::OnceLock::new(),

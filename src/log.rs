@@ -12,6 +12,7 @@ mod curation;
 pub use curation::result_verdicts;
 
 mod process;
+mod push;
 mod request;
 pub mod stops;
 mod upstream;
@@ -19,6 +20,9 @@ mod upstream;
 #[cfg(test)]
 mod test;
 pub use process::{ExitOutcome, ProcessEvent, ProcessEventKind, ProcessExit, ProcessSpawn};
+pub use push::{
+    AttentiveClient, DeliveryOutcome, DeviceDelivery, MomentKind, PushCancel, PushEvent, PushRecord,
+};
 pub use request::{RequestOrigin, RequestStage, RequestStageKind};
 pub use stops::Stop;
 pub use upstream::{
@@ -285,6 +289,10 @@ pub enum Payload {
     ///
     /// [`ToolTelemetry`]: Payload::ToolTelemetry
     RequestStage(RequestStage),
+    /// One step of a moment's push: decided, held, escalated, cancelled, or the
+    /// push services' answers (docs/web-push.md). Projects to nothing, like
+    /// [`RequestStage`]; the entry's `at` is the step's time.
+    Push(PushRecord),
 }
 
 /// A session reopened from its log (docs/log-and-projection.md): what the loader

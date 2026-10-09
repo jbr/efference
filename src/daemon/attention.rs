@@ -12,6 +12,7 @@
 //! says so and stops counting at once.
 
 use super::*;
+use crate::log::{AttentiveClient, PushCancel};
 
 /// How long after its last report a client still counts. The web client
 /// heartbeats about every 20 seconds while active, so two missed beats lapse it:
@@ -24,6 +25,9 @@ pub(crate) const LAPSE: Duration = Duration::from_secs(45);
 /// The longest client id or session id a report may carry. Both are short
 /// identifiers; the cap keeps a malformed client from filling the table.
 const MAX_ID_LEN: usize = 128;
+
+/// The most attentive clients a push record names.
+const MAX_NAMED: usize = 8;
 
 /// One client's report, as `POST /attention` receives it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -65,6 +69,7 @@ impl AttentionReport {
 
 struct Latest {
     active: bool,
+    session: Option<String>,
     at: Instant,
 }
 
@@ -83,21 +88,31 @@ impl Attention {
             report.client.clone(),
             Latest {
                 active: report.active,
+                session: report.session.clone(),
                 at: now,
             },
         );
     }
 
-    /// Whether any unlapsed client's last report was `active`, judged at `now`.
-    pub(crate) fn attentive_at(&self, now: Instant) -> bool {
-        self.clients
-            .lock()
-            .unwrap()
-            .values()
-            .any(|latest| latest.active && now.duration_since(latest.at) < LAPSE)
+    /// The unlapsed clients whose last report was `active`, judged at `now`,
+    /// ordered by client id and capped at [`MAX_NAMED`] — what a held push
+    /// records as the reason it was held (docs/web-push.md).
+    pub(crate) fn attentive_at(&self, now: Instant) -> Vec<AttentiveClient> {
+        let clients = self.clients.lock().unwrap();
+        let mut attentive: Vec<AttentiveClient> = clients
+            .iter()
+            .filter(|(_, latest)| latest.active && now.duration_since(latest.at) < LAPSE)
+            .map(|(client, latest)| AttentiveClient {
+                client: client.clone(),
+                session: latest.session.clone(),
+            })
+            .collect();
+        attentive.sort_by(|a, b| a.client.cmp(&b.client));
+        attentive.truncate(MAX_NAMED);
+        attentive
     }
 
-    pub(crate) fn attentive(&self) -> bool {
+    pub(crate) fn attentive(&self) -> Vec<AttentiveClient> {
         self.attentive_at(Instant::now())
     }
 }
@@ -112,7 +127,9 @@ impl Host {
             && let Some(id) = &report.session
             && let Some(session) = self.session(id)
         {
-            session.cancel_escalation();
+            session.cancel_escalation(PushCancel::Seen {
+                client: report.client.clone(),
+            });
         }
     }
 }
@@ -124,9 +141,13 @@ impl Session {
         let _ = self.attention.set(attention);
     }
 
-    /// Whether any client is attending, per the host's table.
-    pub(super) fn someone_is_attentive(&self) -> bool {
-        self.attention.get().is_some_and(|a| a.attentive())
+    /// The clients attending, per the host's table; empty for a session outside
+    /// a host.
+    pub(super) fn attentive_clients(&self) -> Vec<AttentiveClient> {
+        self.attention
+            .get()
+            .map(|a| a.attentive())
+            .unwrap_or_default()
     }
 }
 

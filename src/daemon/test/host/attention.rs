@@ -3,6 +3,7 @@
 //! escalation (docs/web-push.md).
 
 use super::*;
+use crate::log::MomentKind;
 
 fn body(client: &str, session: Option<&str>, active: bool) -> String {
     serde_json::json!({ "client": client, "session": session, "active": active }).to_string()
@@ -19,7 +20,7 @@ async fn the_route_accepts_a_report_and_rejects_a_malformed_one() {
         .with_body(body("c1", None, true))
         .await
         .assert_status(204);
-    assert!(host.attention.attentive());
+    assert!(!host.attention.attentive().is_empty());
 
     for bad in [
         "not json".to_string(),
@@ -67,7 +68,7 @@ async fn only_an_active_report_viewing_the_session_cancels_its_escalation() {
 
     // Attended, so the moment is held.
     report(None, true).await;
-    session.push("Gate", "body".into());
+    session.push(MomentKind::Gate, "body".into());
     assert!(session.pending_escalation().is_some());
 
     report(Some("one"), false).await;
@@ -79,10 +80,22 @@ async fn only_an_active_report_viewing_the_session_cancels_its_escalation() {
 
     report(Some("one"), true).await;
     assert!(session.pending_escalation().is_none(), "seen");
+    let seen = session.log.lock().unwrap().entries().iter().any(|e| {
+        matches!(
+            &e.payload,
+            crate::log::Payload::Push(crate::log::PushRecord {
+                event: crate::log::PushEvent::Cancelled {
+                    cause: crate::log::PushCancel::Seen { client },
+                },
+                ..
+            }) if client == "c1"
+        )
+    });
+    assert!(seen, "the sighting is recorded with the client");
 
     // A report that predates a moment does not cancel the next one: nothing is
     // remembered, only what is pending is cancelled.
-    session.push("Gate", "again".into());
+    session.push(MomentKind::Gate, "again".into());
     assert!(session.pending_escalation().is_some());
 
     host.swansong().shut_down().await;

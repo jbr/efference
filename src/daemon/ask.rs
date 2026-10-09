@@ -55,7 +55,8 @@ impl Drop for AskWait<'_> {
         }
         // However the ask ended, its push has nothing left to announce
         // (docs/web-push.md).
-        self.session.cancel_escalation();
+        self.session
+            .cancel_escalation(crate::log::PushCancel::AskEnded);
         // A reply that landed as the ask ended (an interrupt won the race) is not lost:
         // it opens the next turn, as a submission with nothing pending would.
         if let Ok(turn) = self.rx.try_recv() {
@@ -96,7 +97,10 @@ impl Session {
         self.touch_state();
         // The session is waiting on a person, as it is when a turn ends
         // (docs/web-push.md); the message is the question.
-        self.push("Message", super::push::ask_body(&question_for_push));
+        self.push(
+            crate::log::MomentKind::Ask,
+            super::push::ask_body(&question_for_push),
+        );
         AskWait {
             session: self,
             call_id: call_id.to_string(),

@@ -340,6 +340,10 @@ impl Masker {
                     self.mask_in_place(reason);
                 }
             }
+            // A push record (docs/web-push.md) is a moment number, a kind, client
+            // ids, and per-device answers whose free text has the endpoint
+            // replaced before it is logged. Nothing from the environment.
+            Payload::Push(_) => {}
             // A gap, handle ids, and call ids: nothing from the environment.
             Payload::Resumed(_) => {}
             // A process lifecycle record (docs/supervisor.md) carries one piece

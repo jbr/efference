@@ -88,7 +88,7 @@ impl Session {
         self.settle_changed.notify_waiters();
         // …and one of the two moments worth a push (docs/web-push.md). Spawned, so
         // the loop reaches its `rx.await` without waiting on a push service.
-        self.push("Gate", push_body);
+        self.push(crate::log::MomentKind::Gate, push_body);
         rx
     }
 
@@ -98,7 +98,7 @@ impl Session {
         let sender = self.approvals.lock().unwrap().remove(id);
         let Some(tx) = sender else { return false };
         // The gate's push has nothing left to announce (docs/web-push.md).
-        self.cancel_escalation();
+        self.cancel_escalation(crate::log::PushCancel::GateDecided);
         {
             let mut pending = self.pending.lock().unwrap();
             if pending.as_ref().is_some_and(|p| p.call_id == id.0) {
