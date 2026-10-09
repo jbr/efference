@@ -7,8 +7,8 @@ edition = "2024"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = { version = "1.0.151", features = ["raw_value"] }
 # In-process MCP tool servers consumed as lib crates (DESIGN §5), not subprocesses.
-fs-mcp = { path = "../fs-mcp" }
-semantic-edit-mcp = { path = "../semantic-edit-mcp" }
+fs-mcp = { path = "/Users/jbr/code/fs-mcp" }
+semantic-edit-mcp = { path = "/Users/jbr/code/semantic-edit-mcp" }
 # `client` is the transport-agnostic client protocol (docs/tools.md); the
 # in-process servers above bring the `server` half through their own dependency.
 # `cli` adds the `tools!` macro's clap derive and the stdio serve loop, which is
@@ -262,4 +262,4 @@ syntect = { version = "5.3", default-features = false, features = [
 
 # Proving out the async mcplease before it is released.
 [patch.crates-io]
-mcplease = { path = "../mcplease" }
+mcplease = { path = "/Users/jbr/code/mcplease" }
