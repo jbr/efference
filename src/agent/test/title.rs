@@ -57,12 +57,22 @@ fn mock(
             let Ok((mut sock, _)) = listener.accept() else {
                 break;
             };
-            let mut buf = vec![0u8; 65536];
-            let read = sock.read(&mut buf).unwrap_or(0);
             // A port the kernel hands out is reused once its test drops it, so a
             // client from another test still retrying against its own dead mock
-            // can connect here. Only a title ask is answered and counted.
-            if !String::from_utf8_lossy(&buf[..read]).contains("say what this session is for") {
+            // can connect here. Only a title ask is answered and counted. The
+            // marker is in the body, which a loaded machine may deliver after the
+            // headers, so read until it arrives or the client stops sending.
+            const MARKER: &str = "say what this session is for";
+            let _ = sock.set_read_timeout(Some(std::time::Duration::from_secs(5)));
+            let mut request = Vec::new();
+            let mut buf = vec![0u8; 65536];
+            while !String::from_utf8_lossy(&request).contains(MARKER) {
+                match sock.read(&mut buf) {
+                    Ok(0) | Err(_) => break,
+                    Ok(read) => request.extend_from_slice(&buf[..read]),
+                }
+            }
+            if !String::from_utf8_lossy(&request).contains(MARKER) {
                 continue;
             }
             served += 1;
