@@ -1,4 +1,4 @@
-//! The durable record of a session's worktree life (docs/control-channel.md,
+//! The durable record of a session's worktree life (docs/worktrees.md,
 //! docs/log-and-projection.md): its creation, its re-creation on resume, and its
 //! removal or retention on archive.
 //!

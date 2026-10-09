@@ -16,15 +16,18 @@ Ephemeral control state — a pending approval, current status, live process tai
 
 ## Session: session state and control
 
-Every `Session` constructor requires an absolute working directory, stored
-immutably and exposed by `cwd()`. Policy classification, config-write checks,
-missing-grant diagnosis, probe-ledger replay, and foreground/background bash spawning use
-that root rather than the process cwd. `Toolbox::bash_and_mcps` supplies the same
-root to `Bash`; a foreground child keeps it when adopted into the supervisor.
-Relative config-source paths are joined to it before the live config file is
-opened. The CLI captures cwd before bootstrap:
-config loading, reference commands, MCP credentials, tools, and context resolution
-use that same root. No session changes the process working directory.
+Every `Session` carries two absolute directories, stored immutably as a
+`policy::Directories`: its **project** (config, the session dir, grant keys,
+`[context]`) and its **working directory** (tools, the paths a call names, the
+directory a child inherits), exposed by `directories()` and `cwd()`. They are the same
+directory unless the session works in a git worktree ([worktrees.md](worktrees.md)).
+Policy classification, config-write checks, missing-grant diagnosis, probe-ledger
+replay, and foreground/background bash spawning use them rather than the process cwd.
+`Toolbox::bash_and_mcps` supplies the working directory to `Bash`; a foreground child
+keeps it when adopted into the supervisor. Relative config-source paths are joined to
+the project before the live config file is opened. The host derives both from the
+creation request's `cwd` before bootstrap. No session changes the process working
+directory.
 
 Boot also captures an in-memory base environment for provider lookup, reference
 commands, the session's `EnvPolicy`, and every child spawn. Config edits reuse that

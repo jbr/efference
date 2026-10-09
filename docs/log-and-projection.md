@@ -55,6 +55,7 @@ enum Payload {
     Title(Title),      // the session's one-line title — presentation only, never projected (see session-title.md)
     RequestStage(RequestStage),  // one stage of one upstream request — telemetry, never projected
     Cold(ColdEvent),  // one step of the cold check (parked, released, unparked) — never projected (see control-api.md)
+    Worktree(WorktreeEvent),  // the session's git worktree added, restored, removed, or kept — never projected (see worktrees.md)
     Push(PushRecord),  // one step of a moment's push (decided, held, escalated, cancelled, delivered) — never projected (see web-push.md)
     ImagesRefused { refusal: String },  // the endpoint refused images; the client withholds them from here — never projected (see transport.md)
     // Anticipated, not yet built: a frozen cache-breakpoint boundary (`Commit`)

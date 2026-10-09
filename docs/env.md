@@ -75,7 +75,10 @@ It is invoked directly, with the chosen directory set on the subprocess, so
 nothing interpolates a `cd` or changes the host's own working directory. Shell
 syntax requires a shell in the array, and the harness neither discovers one nor
 chooses login/interactive flags. `env_hook = []` is refused rather than read as
-"no hook", which would make a typo look like a deliberate choice.
+"no hook", which would make a typo look like a deliberate choice. The chosen
+directory is the session's project, on creation and on resume alike, so a session
+working in a git worktree gets the environment its project gets
+([worktrees.md](worktrees.md)).
 
 The hook inherits the host environment, so a host started as a service — with
 whatever environment its service manager gave it — can still reach `mise`,

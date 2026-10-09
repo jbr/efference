@@ -160,6 +160,7 @@ Read top-down; open the subsystem doc you need.
 | Ambient notifications — the inbox (enqueue then triage), and the attachment store | [inbox.md](inbox.md) | `src/inbox.rs`, `src/daemon/notifications.rs`, `src/attachments.rs`, `src/daemon/attachments.rs` |
 | Session id and title — the minted word-pair address, and the triage-kept one-line title | [session-title.md](session-title.md) | `src/daemon/slug.rs`, `src/agent/title.rs`, `src/distill/title.rs` |
 | Session resumption — reopening a persisted session under its id, and listing the archived ones | [resumption.md](resumption.md) | `src/boot/resume.rs`, `src/daemon/host/resume.rs`, `src/daemon/host/archived.rs`, `src/inventory.rs`, `src/tui/resume_list.rs` |
+| Worktree sessions — a session's own git checkout, and the project/working directory pair | [worktrees.md](worktrees.md) | `src/worktree.rs`, `src/policy/directories.rs`, `src/boot.rs`, `src/daemon/host.rs` |
 | Background processes — the supervisor | [supervisor.md](supervisor.md) | `src/supervisor.rs`, `src/bash.rs`, `src/daemon/background.rs` |
 | Control channel & the `Frontend` trait (HTTP over a Unix socket) | [control-channel.md](control-channel.md) | `src/daemon.rs` (+ `src/daemon/`), `src/client.rs`, `src/frontend.rs`, `src/agent.rs` |
 | Permissions — role config & the approval fast-path | [permissions.md](permissions.md) | `src/config.rs`, `src/policy.rs`, `src/agent.rs`, `src/daemon/config_edits.rs` |

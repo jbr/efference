@@ -427,3 +427,27 @@ fn a_public_url_is_an_https_origin_when_the_host_terminates_tls() {
     assert!(serve::checked_public_url("https://box.example.ts.net/app", false).is_err());
     assert!(serve::checked_public_url("box.example.ts.net", false).is_err());
 }
+
+/// `--worktree` is a session flag: it sets the flag, and counts as a given flag so
+/// a plain `tui` refuses it rather than dropping it.
+#[test]
+fn worktree_is_a_session_flag() {
+    use clap::Parser;
+    let parse = |argv: &[&str]| Cli::try_parse_from(argv);
+    let Command::Tui { new, session, .. } = parse(&["efference", "tui", "--new", "--worktree"])
+        .unwrap()
+        .command
+        .unwrap()
+    else {
+        panic!("tui")
+    };
+    assert!(new && session.worktree && session.any_given());
+    let Command::Tui { session, .. } = parse(&["efference", "tui", "--new"])
+        .unwrap()
+        .command
+        .unwrap()
+    else {
+        panic!("tui")
+    };
+    assert!(!session.worktree);
+}

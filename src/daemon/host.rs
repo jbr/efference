@@ -383,7 +383,7 @@ impl Host {
     }
 }
 
-/// Retire the worktree `session` made for itself (docs/control-channel.md), if it did:
+/// Retire the worktree `session` made for itself (docs/worktrees.md), if it did:
 /// its working directory is the one [`crate::worktree::path`] names for its id. A
 /// session that inherited a worktree works inside one it did not make and leaves it.
 /// Git runs on a blocking thread; the outcome is appended to the session's log, which

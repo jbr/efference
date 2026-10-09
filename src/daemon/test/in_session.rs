@@ -373,6 +373,7 @@ async fn a_create_outside_the_project_is_refused() {
         autonomous: false,
         upstream: Vec::new(),
         detached: false,
+        worktree: false,
     };
     let err = create("../b")
         .execute(control.clone(), RequestContext::default())
@@ -391,6 +392,16 @@ async fn a_create_outside_the_project_is_refused() {
     );
 
     let err = create("./sub/..")
+        .execute(control.clone(), RequestContext::default())
+        .await
+        .err()
+        .expect("the empty registry refuses the model")
+        .to_string();
+    assert!(!err.contains("outside this project"), "{err}");
+
+    // A cwd inside one of the project's worktrees belongs to the project, as it does
+    // for a caller working in one (docs/worktrees.md).
+    let err = create("./.efference/worktrees/w/src")
         .execute(control.clone(), RequestContext::default())
         .await
         .err()

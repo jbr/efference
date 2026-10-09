@@ -388,6 +388,12 @@ carve-out is a **mistake-guardrail, not access control**: a symlink or a `cat ./
 bash reaches around it, so a deny here keeps a well-intentioned session out of a directory and
 claims nothing more.
 
+**Two anchors.** Grant keys are written in the project's `efference.toml` and resolve
+against the project; the paths a call names resolve against the session's working
+directory (`policy::Directories`). The two differ only for a session in a git
+worktree, and a target inside any worktree is judged as the same path in the project,
+so every worktree carries exactly the project's grants ([worktrees.md](worktrees.md)).
+
 **No privileged client, enforced by reachability.** A session must never hand-roll
 control-channel HTTP from bash; every legitimate control interaction is a tool. The deny
 layers above are what enforce that, and the rule is written to cover a session's *own*

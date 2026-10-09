@@ -25,7 +25,7 @@ impl Host {
     ) -> std::result::Result<String, String> {
         // The session is rooted at its project and works in the directory the client
         // sent: they differ when that directory is inside a worktree
-        // (docs/control-channel.md).
+        // (docs/worktrees.md).
         let project = crate::worktree::project_of(&body.cwd).unwrap_or_else(|| body.cwd.clone());
         let directories = crate::policy::Directories::new(project.clone(), body.cwd.clone());
         // The session base is what an unnamed id must be free in, on disk and in
@@ -192,7 +192,7 @@ pub struct CreateSession {
     pub name: Option<String>,
     /// The directory the session works in. Absolute, always sent. The session's
     /// project is this directory, or the project whose worktree it is inside
-    /// (docs/control-channel.md).
+    /// (docs/worktrees.md).
     pub cwd: PathBuf,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub config: Option<PathBuf>,
@@ -209,8 +209,8 @@ pub struct CreateSession {
     pub reauth: Vec<String>,
     #[serde(default)]
     pub keep_scratch: bool,
-    /// Create the session its own worktree and start it there
-    /// (docs/control-channel.md).
+    /// Give the session its own git worktree and start it there
+    /// (docs/worktrees.md).
     #[serde(default)]
     pub worktree: bool,
     /// Outlive the session that creates this one (docs/tools.md). Meaningful only

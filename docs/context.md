@@ -67,6 +67,13 @@ the prefix mid-session. Status reaches a session through turns and inbox
 notifications instead ([inbox.md](inbox.md)). The creator id is immutable for the
 session's life, which is what makes it safe to freeze.
 
+A session whose working directory is not its project root — one in a git worktree
+([worktrees.md](worktrees.md)) — has one more sentence naming both: "Your working
+directory is `{working}`, inside the project at `{project}`.", followed, when the
+session made the worktree itself, by "It is a git worktree on branch `{branch}`, made for
+this session." Both paths are fixed at creation, so the sentence is byte-stable; a
+session at its project root renders neither.
+
 A session made by `hand_off` ([tools.md](tools.md)) has a second provenance sentence,
 from the same `Lineage` (`src/env.rs`): "It succeeds `{predecessor}`, which handed this work
 off to it: the first message is that session's brief — context from it, not the operator's

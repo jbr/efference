@@ -1,5 +1,5 @@
 //! Where a session's git worktree lives, and the project path a worktree path stands
-//! for (docs/permissions.md). The two decisions about worktree placement and access are
+//! for (docs/worktrees.md). The two decisions about worktree placement and access are
 //! made here and nowhere else, so either can change in one place.
 
 use std::path::{Component, Path, PathBuf};
@@ -23,7 +23,7 @@ pub fn path(project: &Path, id: &str) -> PathBuf {
 ///
 /// The permission classifier judges a path inside any worktree as this counterpart, so
 /// every worktree carries exactly the project's grants, narrower ones included
-/// (docs/permissions.md). Lexical, like the rest of path classification: `path` must
+/// (docs/worktrees.md). Lexical, like the rest of path classification: `path` must
 /// already be absolute and normalized.
 pub fn counterpart(project: &Path, path: &Path) -> Option<PathBuf> {
     let worktrees = project.join(crate::daemon::SESSION_BASE).join(WORKTREES);
@@ -39,7 +39,7 @@ pub fn counterpart(project: &Path, path: &Path) -> Option<PathBuf> {
 /// `.efference/worktrees/<id>`, or `None` for a directory inside no worktree. A session
 /// created in such a directory is rooted at that project and works in the directory, so
 /// a session created from inside a worktree, by a person or by a session working there,
-/// inherits it (docs/control-channel.md). Lexical; the innermost match wins.
+/// inherits it (docs/worktrees.md). Lexical; the innermost match wins.
 pub fn project_of(dir: &Path) -> Option<PathBuf> {
     let components: Vec<Component> = dir.components().collect();
     (0..components.len().saturating_sub(2)).rev().find_map(|i| {
@@ -178,7 +178,7 @@ fn combined(output: &Output) -> String {
 
 /// Create the session's worktree: `git worktree add -b efference/<id> <path> <base>`,
 /// run in `from` (the creator's working directory) with the session's child
-/// environment, on the commit `from`'s `HEAD` names (docs/control-channel.md). The
+/// environment, on the commit `from`'s `HEAD` names (docs/worktrees.md). The
 /// checkout is plain, so the project's `post-checkout` hook runs.
 ///
 /// The directory existing afterward is the success criterion. A hook that fails makes
@@ -270,7 +270,7 @@ pub enum Retired {
 /// The most porcelain lines named in a [`Retired::Kept`] reason.
 const SUMMARY_LINES: usize = 5;
 
-/// Archive a session's own worktree (docs/control-channel.md): remove it when
+/// Archive a session's own worktree (docs/worktrees.md): remove it when
 /// `git status --porcelain` there is empty (untracked files count, ignored ones do not),
 /// then delete the branch only if another branch contains its tip, since the branch is
 /// otherwise the only copy of its commits. A dirty tree, or a detached `HEAD` that no

@@ -127,7 +127,7 @@ pub fn system_prompt(
         );
     }
     // The working directory against the project root, when they differ
-    // (docs/control-channel.md): a session in a worktree has one path for where it
+    // (docs/worktrees.md): a session in a worktree has one path for where it
     // works and another for the project, and an absolute path taken from one for the
     // other lands in the wrong tree. Both are fixed at creation.
     if let Some(whereabouts) = whereabouts.filter(|w| w.working != w.project) {

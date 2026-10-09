@@ -66,7 +66,7 @@ pub struct SessionRequest {
     pub autonomous: bool,
     pub reauth: Vec<String>,
     pub keep_scratch: bool,
-    /// Create the session's own git worktree and start it there (docs/control-channel.md).
+    /// Create the session's own git worktree and start it there (docs/worktrees.md).
     pub worktree: bool,
     /// The host this session is created on, when it is: the in-session
     /// `sessions` mount reaches it directly (docs/tools.md). `None` for a

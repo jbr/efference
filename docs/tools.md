@@ -234,7 +234,9 @@ or decision is also the person action that releases a loop parked at its cold ch
 `created_by` is per-session host control state: never logged, never projected, and
 absent on a human root. It is also what the child's identity line names as its
 creator, so a delegated session has its return address without being told one in
-the task text ([context.md](context.md)). `create` from a session runs in the caller's cwd, takes the
+the task text ([context.md](context.md)). `create` from a session runs in the caller's
+working directory — the caller's worktree, when it has one — unless `worktree: true`
+gives the child its own checkout and branch ([worktrees.md](worktrees.md)); it takes the
 caller's child environment as the new session's base, records the caller as the
 child's `created_by`, subscribes the caller to the child's status (below), and defaults the child's review level to `upstream` — so a call the child's spotter holds comes back to the caller as a gate to answer with `approve` ([permissions.md](permissions.md)). Reach is the project: `sessions` lists, and every target
 resolves, only among sessions whose `.efference/` storage base is the caller's, so
@@ -295,7 +297,8 @@ outlive its creator. The human sees every session in `sessions` either way.
 
 ##### Hand-off: a successor in the caller's place
 
-`hand_off { brief }` gives the caller's work to a new session in the caller's own directory,
+`hand_off { brief }` gives the caller's work to a new session in the caller's own working
+directory (its worktree, if it has one; a successor never gets a new one),
 which resolves the project's config afresh — its grants, its preamble, its MCP servers — and
 takes the caller's place (`Host::hand_off`, `src/daemon/host.rs`). It is `create` with the
 placement changed rather than a `create` flag, because nearly everything that makes a child a

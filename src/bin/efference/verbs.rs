@@ -46,6 +46,7 @@ pub(crate) async fn create_here(
         autonomous,
         reauth,
         keep_scratch,
+        worktree,
         ..
     } = flags;
     let request = efference::daemon::CreateSession {
@@ -64,7 +65,7 @@ pub(crate) async fn create_here(
         autonomous,
         reauth,
         keep_scratch,
-        worktree: false,
+        worktree,
         // A human root has no creator to end with (docs/tools.md).
         detached: false,
         env: Some(env),

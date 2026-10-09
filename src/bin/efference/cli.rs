@@ -447,6 +447,12 @@ pub(crate) struct SessionFlags {
     /// Keep the per-session `$TMPDIR` scratch directory on exit, for post-mortem analysis.
     #[arg(long)]
     pub(crate) keep_scratch: bool,
+    /// Start the session in its own git worktree at `.efference/worktrees/<id>`, on a new branch `efference/<id>` from the current HEAD.
+    ///
+    /// Archiving the session removes the worktree when it is clean; resuming restores it.
+    /// The project must be a git repository.
+    #[arg(long)]
+    pub(crate) worktree: bool,
 }
 
 impl SessionFlags {

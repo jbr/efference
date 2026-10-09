@@ -57,6 +57,10 @@ pub struct Create {
     #[serde(default)]
     #[arg(long)]
     pub detached: bool,
+    /// Give the new session its own checkout and branch to commit on, so its edits do not land in your tree. Without it the session works where you work (in your worktree, if you have one).
+    #[serde(default)]
+    #[arg(long)]
+    pub worktree: bool,
 }
 
 impl ToolMeta for Create {
@@ -125,7 +129,7 @@ impl Tool<Control> for Create {
                     autonomous: self.autonomous,
                     reauth: Vec::new(),
                     keep_scratch: false,
-                    worktree: false,
+                    worktree: self.worktree,
                     detached: self.detached,
                     env: Some(env),
                 };
@@ -147,8 +151,12 @@ impl Tool<Control> for Create {
                 // target only under the caller's `.efference/` base, so a child
                 // minted anywhere else could never be supervised or ended by the
                 // session that commissioned it. Refused here, before anything is
-                // minted, rather than discovered at the first `state` call.
-                let base = cwd.join(crate::daemon::SESSION_BASE);
+                // minted, rather than discovered at the first `state` call. The
+                // child's project is resolved as the host will resolve it: a `cwd`
+                // inside a worktree belongs to that worktree's project
+                // (docs/worktrees.md).
+                let child_project = crate::worktree::project_of(&cwd).unwrap_or_else(|| cwd.clone());
+                let base = child_project.join(crate::daemon::SESSION_BASE);
                 let project = caller
                     .storage_base()
                     .map(crate::policy::lexical_normalize)
@@ -178,7 +186,7 @@ impl Tool<Control> for Create {
                     autonomous: self.autonomous,
                     reauth: Vec::new(),
                     keep_scratch: false,
-                    worktree: false,
+                    worktree: self.worktree,
                     detached: self.detached,
                     env: Some(env),
                 };

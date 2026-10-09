@@ -370,3 +370,22 @@ fn create_temperature_schema_matches_documented_range() {
     assert_eq!(temperature["minimum"], serde_json::json!(0));
     assert_eq!(temperature["maximum"], serde_json::json!(100));
 }
+
+/// `worktree` is advertised on `create` and defaults to off, so an existing
+/// caller's request body still parses.
+#[test]
+fn create_advertises_worktree_defaulting_off() {
+    let tool = Tools::tools_list()
+        .into_iter()
+        .find(|tool| tool.name == "create")
+        .expect("create is mounted");
+    assert_eq!(
+        tool.input_schema["properties"]["worktree"]["type"],
+        "boolean"
+    );
+    let create: super::create::Create = serde_json::from_value(serde_json::json!({})).unwrap();
+    assert!(!create.worktree);
+    let create: super::create::Create =
+        serde_json::from_value(serde_json::json!({"worktree": true})).unwrap();
+    assert!(create.worktree);
+}
