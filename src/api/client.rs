@@ -834,15 +834,12 @@ impl Client {
         // reservation is a function of how much of the window the prompt takes
         // (`api/reservation.rs`), estimated from these bytes against the last
         // response's exact count.
-        let body_bytes = self.system.len()
-            + match &encoded {
-                Encoded::Messages(messages) => serde_json::to_vec(messages)?.len(),
-                Encoded::Responses(input) => serde_json::to_vec(input)?.len(),
-                // The preamble is inside the encoded messages; `system` above
-                // counts it once more, which only overstates the prompt.
-                Encoded::Completions(messages) => serde_json::to_vec(messages)?.len(),
-            }
-            + serde_json::to_vec(tools)?.len();
+        let body_bytes = match &encoded {
+            Encoded::Messages(messages) => self.system.len() + serde_json::to_vec(messages)?.len(),
+            Encoded::Responses(input) => self.system.len() + serde_json::to_vec(input)?.len(),
+            // The preamble is the first encoded message.
+            Encoded::Completions(messages) => serde_json::to_vec(messages)?.len(),
+        } + serde_json::to_vec(tools)?.len();
         let mut max_tokens = cap.unwrap_or_else(|| self.reserve(body_bytes));
         // The credential re-read below happens at most once per call: a source
         // that yields a working token yields it the first time, and a second
@@ -1132,10 +1129,27 @@ impl Client {
         if operator_abort && let Ok(completion) = &mut completion {
             completion.failure_class = FailureClass::Aborted;
         }
+        // A server that read far fewer prompt tokens than the request's text could
+        // encode to cut the prompt and said nothing (`api/truncation.rs`). Its
+        // answer is to a conversation the model did not see, so the turn is
+        // record-only, and a retry would be cut the same way.
+        if let Ok(completion) = &mut completion
+            && completion.upstream_failure().is_none()
+            && let Some(why) = truncation::truncated(
+                completion.usage.prompt_tokens(),
+                truncation::text_bytes(&self.system, tools, turns),
+            )
+        {
+            log::warn!("{why}");
+            completion.fail_terminal(why);
+        }
         // Anchor the next estimate to this response's exact prompt count
         // (`api/reservation.rs`). An attempt that died with zero usage
-        // counted nothing and teaches nothing.
-        if let Ok(completion) = &completion {
+        // counted nothing and teaches nothing, and a truncated one counted the
+        // wrong thing.
+        if let Ok(completion) = &completion
+            && completion.terminal_failure().is_none()
+        {
             let prompt_tokens = completion.usage.prompt_tokens();
             if prompt_tokens > 0 {
                 self.reservation

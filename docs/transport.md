@@ -922,6 +922,26 @@ OpenRouter), and an explicit `--spotter-model` passes its own provider's
 check. Model capabilities on this dialect come from the provider's catalog, not
 from the build (**OpenAI capabilities**, under Providers below).
 
+## A prompt the server cut short
+
+A server whose context window is smaller than the request may drop part of the
+prompt and answer 200, saying nothing (Ollama at its default `num_ctx`). The model
+then answers a conversation it never saw, and a spotter on that server clears calls
+against a scope it never read. The only evidence is the response's own usage, so
+`Client::complete` checks it on every dialect (`api/truncation.rs`). The request's
+text is bounded from below by what every server must read: the preamble, the tool
+definitions, user prose, tool results, and the assistant's visible text and call
+arguments. Images and reasoning are left out, since an image costs far fewer tokens
+than its base64 and a provider may drop earlier reasoning from the count. A response
+whose reported prompt is under one token per 8 bytes of that text is marked a
+terminal, record-only failure naming both numbers, and the loop stalls with it rather
+than committing the answer or retrying a request that would be cut the same way. The
+calibration the reservation keeps skips it. 8 bytes per token is about twice the
+densest tokenizer measured (3.5–4.4); the measured Ollama truncation read ~19.7.
+Requests under 8 KB of text and reported prompts under 1,024 tokens are not judged:
+no server this harness runs on has a window that small, and test doubles report a
+token or two.
+
 ## The Chat Completions dialect
 
 `WireDialect::Completions`, spelled `dialect = "completions"` on a described connection

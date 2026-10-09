@@ -371,6 +371,18 @@ impl Completion {
         }
     }
 
+    /// Mark a completion that streamed cleanly as one no retry can repair: its turn
+    /// becomes record-only, and the loop stalls with `why`.
+    pub(crate) fn fail_terminal(&mut self, why: String) {
+        if let Payload::Assistant {
+            upstream_failure, ..
+        } = &mut self.assistant
+        {
+            *upstream_failure = Some(why.into());
+        }
+        self.failure_class = FailureClass::Terminal;
+    }
+
     /// The failure `upstream_failure` reports, when the provider named it as one
     /// a retry cannot change (docs/transport.md).
     pub fn terminal_failure(&self) -> Option<&str> {
@@ -453,6 +465,7 @@ mod reservation;
 pub(crate) mod responses;
 mod stages;
 mod thinking;
+mod truncation;
 
 pub use auth_value::{AuthValue, Reload, Reloaded, Reread, sync_reload};
 pub use client::{Client, DEFAULT_STREAM_CEILING, KeepaliveError};
