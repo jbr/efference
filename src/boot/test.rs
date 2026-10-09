@@ -408,7 +408,7 @@ async fn a_late_failure_rolls_back_what_it_minted() {
     mint_session_dir(&dir).expect("the name is free for a corrected retry");
 }
 
-fn git_in(dir: &Path, args: &[&str]) {
+pub(super) fn git_in(dir: &Path, args: &[&str]) {
     let mut cmd = std::process::Command::new("git");
     cmd.args(args).current_dir(dir);
     crate::worktree::unset_repository_env(&mut cmd);

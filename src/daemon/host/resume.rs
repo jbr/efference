@@ -285,15 +285,14 @@ pub(super) async fn patch_session(mut conn: Conn) -> Conn {
         // not-hosted one rather than a bad request.
         SessionState::Archived => match host.end(&id) {
             Some(completion) => {
-                completion.await;
-                conn.with_status(200)
-                    .with_body(
-                        serde_json::json!({
-                            "id": id, "state": state, "resumed": false,
-                        })
-                        .to_string(),
-                    )
-                    .halt()
+                let retired = completion.await;
+                let mut body = serde_json::json!({
+                    "id": id, "state": state, "resumed": false,
+                });
+                if let Some(worktree) = retired.and_then(|retired| retired.response()) {
+                    body["worktree"] = worktree;
+                }
+                conn.with_status(200).with_body(body.to_string()).halt()
             }
             None => no_such_session(conn, &id),
         },

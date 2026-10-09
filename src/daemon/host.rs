@@ -355,12 +355,57 @@ impl Host {
         self.sessions.lock().unwrap().get(id).cloned()
     }
 
-    /// Initiate shutdown of one session; resolves when its teardown has run.
-    /// `None` when no session has that id. The map entry is removed by the
+    /// Archive one session: shut it down, then retire its own worktree when it made
+    /// one (docs/control-api.md). Resolves when teardown has run, with what became of
+    /// the worktree (`None` when the session had none, or its directory was already
+    /// gone). `None` when no session has that id. The map entry is removed by the
     /// watcher [`adopt`](Self::adopt) spawned, once the loop has returned.
-    pub fn end(&self, id: &str) -> Option<impl std::future::Future<Output = ()>> {
-        self.hosted(id).map(|h| h.swansong.shut_down())
+    ///
+    /// This is the archive path only. A host shutdown stops sessions without it and
+    /// leaves every worktree in place, including through the cascade that ends a
+    /// stopped session's children: those reach here with the host already shutting
+    /// down, and retire nothing.
+    pub fn end(
+        &self,
+        id: &str,
+    ) -> Option<impl std::future::Future<Output = Option<crate::worktree::Retired>>> {
+        let hosted = self.hosted(id)?;
+        let id = id.to_string();
+        let archiving = self.swansong.state().is_running();
+        Some(async move {
+            hosted.swansong.shut_down().await;
+            if archiving {
+                retire_worktree(&hosted.session, &id).await
+            } else {
+                None
+            }
+        })
     }
+}
+
+/// Retire the worktree `session` made for itself (docs/control-channel.md), if it did:
+/// its working directory is the one [`crate::worktree::path`] names for its id. A
+/// session that inherited a worktree works inside one it did not make and leaves it.
+/// Git runs on a blocking thread; the outcome is appended to the session's log, which
+/// outlives the runtime's shutdown because the `Session` owns it.
+async fn retire_worktree(session: &Arc<Session>, id: &str) -> Option<crate::worktree::Retired> {
+    let directories = session.directories();
+    let project = directories.project().to_path_buf();
+    if directories.working() != crate::worktree::path(&project, id) {
+        return None;
+    }
+    let env = session.child_env();
+    let (git_project, git_id) = (project.clone(), id.to_string());
+    let retired =
+        tokio::task::spawn_blocking(move || crate::worktree::retire(&git_project, &git_id, &env))
+            .await
+            .unwrap_or_else(|e| crate::worktree::Retired::Failed(format!("worktree task: {e}")));
+    if let Some(event) = retired.clone().into_event(&project, id)
+        && let Err(e) = session.append(0, crate::log::Payload::Worktree(event))
+    {
+        eprintln!("session {id}: could not log the worktree outcome: {e}");
+    }
+    (retired != crate::worktree::Retired::Absent).then_some(retired)
 }
 
 /// The host's routes (docs/control-api.md). `POST /sessions` is mounted on every
@@ -520,15 +565,21 @@ async fn end_session(conn: Conn) -> Conn {
     let id = conn.param("session").unwrap_or_default().to_string();
     match host.end(&id) {
         Some(completion) => {
-            completion.await;
-            conn.with_status(200)
-                .with_body(
-                    serde_json::json!({ "id": id, "state": SessionState::Archived }).to_string(),
-                )
-                .halt()
+            let retired = completion.await;
+            archived(conn, &id, retired)
         }
         None => no_such_session(conn, &id),
     }
+}
+
+/// The `200` an archive answers with, carrying `worktree` when the session had its own
+/// (docs/control-api.md).
+fn archived(conn: Conn, id: &str, retired: Option<crate::worktree::Retired>) -> Conn {
+    let mut body = serde_json::json!({ "id": id, "state": SessionState::Archived });
+    if let Some(worktree) = retired.and_then(|retired| retired.response()) {
+        body["worktree"] = worktree;
+    }
+    conn.with_status(200).with_body(body.to_string()).halt()
 }
 
 fn no_such_session(conn: Conn, id: &str) -> Conn {

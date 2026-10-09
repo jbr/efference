@@ -307,16 +307,7 @@ async fn prepare_minting(
     )?;
 
     if let Some(added) = worktree_added {
-        log.append(
-            0,
-            crate::log::Payload::Worktree(crate::log::WorktreeAdded {
-                path: added.path,
-                branch: added.branch,
-                base: added.base,
-                exit_code: added.exit_code,
-                output: added.output,
-            }),
-        )?;
+        log.append(0, crate::log::Payload::Worktree(added.into_event(false)))?;
     }
 
     let client = parts::build_client(

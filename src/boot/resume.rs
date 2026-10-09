@@ -102,11 +102,20 @@ async fn resume_minting(
     })?;
     let metadata = recording.header.metadata();
     let directories = session_directories(metadata, &session_dir)?;
+    let session_id = session_dir
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    // A session's own worktree that archiving removed is re-created below, once the
+    // child environment exists; any other missing directory refuses here. A working
+    // directory inside another session's worktree is not this session's to re-create.
+    let restores_worktree = !directories.working().is_dir()
+        && directories.working() == crate::worktree::path(directories.project(), &session_id);
     for (what, dir) in [
         ("project directory", directories.project()),
         ("working directory", directories.working()),
     ] {
-        if !dir.is_dir() {
+        if !dir.is_dir() && !(restores_worktree && what == "working directory") {
             return Err(format!(
                 "cannot resume {}: its {what} {} is gone",
                 session_dir.display(),
@@ -147,10 +156,32 @@ async fn resume_minting(
     let env_policy = env::build_env_policy(&resolver, &loaded.role.env, &inference, base_env)?;
     inference.absorb_secrets(&env_policy.masker());
 
-    let session_id = session_dir
-        .file_name()
-        .map(|name| name.to_string_lossy().into_owned())
-        .unwrap_or_default();
+    // Before the toolbox mounts on the working directory. The path and branch are the
+    // ones the frozen preamble names. Git runs the project's `post-checkout` hook, so
+    // this is on a blocking thread. A later refusal leaves the worktree in place: it
+    // is the directory this session was already entitled to.
+    let restored = if restores_worktree {
+        let (project, id, child_env) = (
+            directories.project().to_path_buf(),
+            session_id.clone(),
+            env_policy.child_env(),
+        );
+        let added = tokio::task::spawn_blocking(move || {
+            crate::worktree::restore(&project, &id, &child_env)
+        })
+        .await
+        .map_err(|e| format!("worktree restore task failed: {e}"))?
+        .map_err(|e| {
+            format!(
+                "cannot resume {}: could not re-create its worktree: {e}",
+                session_dir.display()
+            )
+        })?;
+        Some(added)
+    } else {
+        None
+    };
+
     let tools = parts::mount_toolbox(parts::ToolboxInputs {
         cwd: directories.working(),
         scratch: &scratch,
@@ -200,6 +231,10 @@ async fn resume_minting(
     log.set_masker(env_policy.masker());
     let (turn, resumed) = resumed_entry(log.entries(), resumption);
     log.append(turn, Payload::Resumed(resumed))?;
+    // After `Resumed`, so the gap and turn it records still read the log as it was left.
+    if let Some(added) = restored {
+        log.append(turn, Payload::Worktree(added.into_event(true)))?;
+    }
     eprintln!("resumed {}", session_dir.display());
 
     Ok((

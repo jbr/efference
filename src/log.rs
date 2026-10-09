@@ -32,7 +32,7 @@ pub use upstream::{
     CAPTURED_HEADERS, FRAME_CAPTURE_CAP, StreamDiagnostics, UpstreamFailureRecord,
     is_captured_header,
 };
-pub use worktree::WorktreeAdded;
+pub use worktree::{Checkout, WorktreeEvent, WorktreeEventKind};
 
 /// Monotonic per-entry sequence number; the address space [`project`] reads over.
 ///
@@ -309,7 +309,7 @@ pub enum Payload {
     /// right after the boot [`Preamble`].
     ///
     /// [`Preamble`]: Payload::Preamble
-    Worktree(WorktreeAdded),
+    Worktree(WorktreeEvent),
     /// The endpoint refused a request carrying images, and the same request with
     /// them withheld succeeded (docs/transport.md). From here the session's requests
     /// carry a placeholder in each image's place and the tool layer refuses new

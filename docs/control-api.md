@@ -251,11 +251,21 @@ sessions from one process. Its own routes are the listener's, not a session's:
   which one a dormant id belongs to. Answers `200 {"id", "state"}`; `400` naming
   the reason when the body is malformed, patches nothing, or names a session that
   cannot be resumed; `404` for an `archived` patch on an id that is not hosted.
+  An `archived` patch answers as `DELETE` does, including the `worktree` field
+  below; resuming a session that made its own worktree re-creates the worktree at
+  its original path, from the kept branch when there is one.
 - `DELETE /sessions/:id` — archive the session, which is the same transition as
   `PATCH {"state": "archived"}`. Answers `200 {"id", "state": "archived"}` once
   its teardown has run (background children reaped, scratch removed); the id leaves
   the list once the loop has returned. The directory and log stay, so the session
   is resumable by patching it `active` again. `404` for an id that is not hosted.
+  A session that made its own git worktree also gets a `worktree` field: its
+  directory is removed when `git status --porcelain` there is empty, answering
+  `{"removed": true, "branch_deleted": <bool>}` (the branch is deleted only when
+  another branch contains its tip), and kept untouched otherwise, answering
+  `{"kept": "<reason>"}`, or `{"failed": "<git's error>"}` when git could not
+  remove it. Each outcome is logged as a `worktree` entry. A host
+  shutdown archives nothing and leaves worktrees in place.
 - `POST /attention` — a client reports whether a person is attending
   ([web-push.md](web-push.md)). The body is `{"client", "session", "active"}`:
   `client` a per-page-load (web) or per-process (TUI) id the client mints (1 to 128 characters), `session` the

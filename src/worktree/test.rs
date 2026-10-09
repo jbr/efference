@@ -157,6 +157,140 @@ fn add_ignores_a_git_dir_in_the_environment() {
     std::fs::remove_dir_all(&other).unwrap();
 }
 
+fn commit_in(dir: &Path, message: &str) {
+    git_in(
+        dir,
+        &[
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@t",
+            "commit",
+            "-q",
+            "--allow-empty",
+            "-m",
+            message,
+        ],
+    );
+}
+
+/// A repository with one commit and a session worktree `quiet-fox` on its own branch.
+fn project_with_worktree() -> (PathBuf, Added) {
+    let project = temp_dir("retire");
+    git_in(&project, &["init", "-q"]);
+    commit_in(&project, "one");
+    let env = crate::env_table::ChildEnv::default();
+    let added = add(&project, "quiet-fox", &project, &env).unwrap();
+    (project, added)
+}
+
+fn branches(project: &Path) -> String {
+    git_in(project, &["branch", "--format=%(refname:short)"])
+}
+
+#[test]
+fn retire_removes_a_clean_worktree_and_a_branch_with_no_unique_commits() {
+    let (project, added) = project_with_worktree();
+    let env = crate::env_table::ChildEnv::default();
+    // An ignored file does not make the tree dirty.
+    std::fs::write(project.join(".git/info/exclude"), "target/\n").unwrap();
+    std::fs::create_dir(added.path.join("target")).unwrap();
+    std::fs::write(added.path.join("target/artifact"), "x").unwrap();
+
+    assert_eq!(
+        retire(&project, "quiet-fox", &env),
+        Retired::Removed {
+            branch_deleted: true
+        }
+    );
+    assert!(!added.path.exists());
+    assert!(!branches(&project).contains("efference/quiet-fox"));
+    assert_eq!(retire(&project, "quiet-fox", &env), Retired::Absent);
+    std::fs::remove_dir_all(&project).unwrap();
+}
+
+#[test]
+fn retire_keeps_a_branch_holding_a_unique_commit() {
+    let (project, added) = project_with_worktree();
+    let env = crate::env_table::ChildEnv::default();
+    commit_in(&added.path, "only here");
+
+    assert_eq!(
+        retire(&project, "quiet-fox", &env),
+        Retired::Removed {
+            branch_deleted: false
+        }
+    );
+    assert!(!added.path.exists());
+    assert!(branches(&project).contains("efference/quiet-fox"));
+    std::fs::remove_dir_all(&project).unwrap();
+}
+
+#[test]
+fn retire_keeps_a_dirty_worktree_untouched() {
+    let (project, added) = project_with_worktree();
+    let env = crate::env_table::ChildEnv::default();
+    std::fs::write(added.path.join("scratch.txt"), "work").unwrap();
+
+    let Retired::Kept { reason } = retire(&project, "quiet-fox", &env) else {
+        panic!("a dirty worktree is kept");
+    };
+    assert!(reason.contains("scratch.txt"), "{reason}");
+    assert!(added.path.join("scratch.txt").is_file());
+    assert!(branches(&project).contains("efference/quiet-fox"));
+    std::fs::remove_dir_all(&project).unwrap();
+}
+
+#[test]
+fn restore_re_adds_from_the_kept_branch() {
+    let (project, added) = project_with_worktree();
+    let env = crate::env_table::ChildEnv::default();
+    commit_in(&added.path, "only here");
+    let tip = git_in(&added.path, &["rev-parse", "HEAD"]);
+    retire(&project, "quiet-fox", &env);
+    assert!(!added.path.exists());
+
+    let restored = restore(&project, "quiet-fox", &env).unwrap();
+    assert_eq!(restored.path, added.path);
+    assert_eq!(restored.branch, "efference/quiet-fox");
+    assert_eq!(restored.base, tip);
+    assert_eq!(git_in(&restored.path, &["rev-parse", "HEAD"]), tip);
+    assert_eq!(
+        git_in(&restored.path, &["rev-parse", "--abbrev-ref", "HEAD"]),
+        "efference/quiet-fox"
+    );
+    std::fs::remove_dir_all(&project).unwrap();
+}
+
+#[test]
+fn restore_starts_a_fresh_branch_when_the_branch_is_gone() {
+    let (project, added) = project_with_worktree();
+    let env = crate::env_table::ChildEnv::default();
+    let head = git_in(&project, &["rev-parse", "HEAD"]);
+    retire(&project, "quiet-fox", &env);
+    assert!(!branches(&project).contains("efference/quiet-fox"));
+
+    let restored = restore(&project, "quiet-fox", &env).unwrap();
+    assert_eq!(restored.path, added.path);
+    assert_eq!(restored.base, head);
+    assert_eq!(
+        git_in(&restored.path, &["rev-parse", "--abbrev-ref", "HEAD"]),
+        "efference/quiet-fox"
+    );
+    std::fs::remove_dir_all(&project).unwrap();
+}
+
+#[test]
+fn restore_recovers_a_directory_deleted_by_hand() {
+    let (project, added) = project_with_worktree();
+    let env = crate::env_table::ChildEnv::default();
+    std::fs::remove_dir_all(&added.path).unwrap();
+
+    let restored = restore(&project, "quiet-fox", &env).unwrap();
+    assert!(restored.path.is_dir());
+    std::fs::remove_dir_all(&project).unwrap();
+}
+
 #[test]
 fn add_outside_a_git_work_tree_is_refused() {
     let dir = temp_dir("plain");

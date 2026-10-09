@@ -534,6 +534,70 @@ async fn a_failed_resume_leaves_the_session_dir_alone() {
     drop_boot(boot);
 }
 
+/// A session whose own worktree archiving removed resumes with the worktree back at
+/// the same path on the same branch, the frozen preamble unchanged, and the re-creation
+/// logged after `Resumed`.
+#[tokio::test]
+async fn an_archived_worktree_is_restored_on_resume() {
+    use super::super::test::git_in;
+    let _serial = PREPARING.lock().await;
+    let root = Root::new("resume-worktree");
+    git_in(root.path(), &["init", "-q"]);
+    git_in(
+        root.path(),
+        &[
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@t",
+            "commit",
+            "-q",
+            "--allow-empty",
+            "-m",
+            "one",
+        ],
+    );
+    let mut req = request(root.path(), "wt-fox", None);
+    req.worktree = true;
+    let boot = prepare(req).await.unwrap();
+    let worktree = crate::worktree::path(root.path(), "wt-fox");
+    assert!(worktree.is_dir());
+    drop_boot(boot);
+    let dir = root.session_dir("wt-fox");
+    let preamble_before =
+        frozen_preamble(&crate::persist::load(dir.join(LOG_NAME)).unwrap()).unwrap();
+
+    let env = crate::env_table::ChildEnv::default();
+    assert!(matches!(
+        crate::worktree::retire(root.path(), "wt-fox", &env),
+        crate::worktree::Retired::Removed { .. }
+    ));
+    assert!(!worktree.exists());
+
+    let registry = codex_registry(root.path(), "wt-fox");
+    let (boot, _) = resume(resume_request(&root, "wt-fox", &registry))
+        .await
+        .expect("a removed own worktree is re-created");
+    assert!(worktree.is_dir());
+    assert_eq!(boot.paths.working(), worktree);
+    let entries = boot.log.entries();
+    assert!(matches!(
+        &entries[entries.len() - 2].payload,
+        Payload::Resumed(_)
+    ));
+    let Payload::Worktree(event) = &entries.last().unwrap().payload else {
+        panic!("the restore is logged last: {:?}", entries.last());
+    };
+    assert_eq!(event.branch, "efference/wt-fox");
+    assert!(matches!(
+        event.kind,
+        crate::log::WorktreeEventKind::Restored(_)
+    ));
+    drop_boot(boot);
+    let reread = crate::persist::load(dir.join(LOG_NAME)).unwrap();
+    assert_eq!(frozen_preamble(&reread).unwrap(), preamble_before);
+}
+
 /// A second resume of a log a live session holds is refused by the writer lock.
 #[tokio::test]
 async fn a_held_log_is_refused() {

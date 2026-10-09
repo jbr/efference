@@ -348,8 +348,17 @@ impl Masker {
             // name. Nothing from the environment.
             Payload::Cold(_) => {}
             // Git's output, including whatever the project's `post-checkout` hook
-            // printed: free text that may quote the environment.
-            Payload::Worktree(added) => self.mask_in_place(&mut added.output),
+            // printed, and its error and status text: free text that may quote the
+            // environment.
+            Payload::Worktree(event) => match &mut event.kind {
+                crate::log::WorktreeEventKind::Added(checkout)
+                | crate::log::WorktreeEventKind::Restored(checkout) => {
+                    self.mask_in_place(&mut checkout.output)
+                }
+                crate::log::WorktreeEventKind::Kept { reason } => self.mask_in_place(reason),
+                crate::log::WorktreeEventKind::RemoveFailed { error } => self.mask_in_place(error),
+                crate::log::WorktreeEventKind::Removed { .. } => {}
+            },
             // The provider's error text, which may quote the request back.
             Payload::ImagesRefused { refusal } => self.mask_in_place(refusal),
             // A gap, handle ids, and call ids: nothing from the environment.
