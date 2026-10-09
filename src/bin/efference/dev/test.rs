@@ -57,6 +57,7 @@ async fn wire_messages_skips_the_unparseable_config() {
         log_path.clone(),
         false,
         WireFormat::Json,
+        None,
         Some(bad_config.clone()),
     )
     .await;
@@ -69,6 +70,7 @@ async fn wire_messages_skips_the_unparseable_config() {
         log_path.clone(),
         true,
         WireFormat::Json,
+        None,
         Some(bad_config.clone()),
     )
     .await;
@@ -153,9 +155,15 @@ async fn wire_rejects_a_recorded_provider_dialect_conflict() {
     drop(log);
 
     for messages_only in [true, false] {
-        let error = wire(log_path.clone(), messages_only, WireFormat::Json, None)
-            .await
-            .expect_err("the recorded provider must be dialect-checked");
+        let error = wire(
+            log_path.clone(),
+            messages_only,
+            WireFormat::Json,
+            None,
+            None,
+        )
+        .await
+        .expect_err("the recorded provider must be dialect-checked");
         let text = error.to_string();
         assert!(text.contains("recorded in the Responses dialect"), "{text}");
         assert!(text.contains("speaks Messages"), "{text}");
@@ -235,7 +243,7 @@ async fn wire_messages_renders_recorded_openrouter_placements_end_to_end() {
     let _ = std::fs::remove_file(&log_path);
     write_openrouter_image_log(&log_path);
 
-    let rendered = wire(log_path.clone(), true, WireFormat::Json, None)
+    let rendered = wire(log_path.clone(), true, WireFormat::Json, None, None)
         .await
         .expect("the recorded OpenRouter fixture should render");
     let messages: serde_json::Value = serde_json::from_str(&rendered).unwrap();
@@ -264,6 +272,49 @@ async fn wire_messages_renders_recorded_openrouter_placements_end_to_end() {
     let _ = std::fs::remove_file(&log_path);
 }
 
+/// `--dialect completions` translates the same recorded session end to end: the
+/// result's text answers its call as a `tool` message, and its image rides the
+/// `user` message after it, since a `tool` message cannot carry one.
+#[tokio::test]
+async fn wire_messages_translates_to_completions_end_to_end() {
+    let log_path = std::env::temp_dir().join(format!(
+        "efference-wire-completions-{}.jsonl",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&log_path);
+    write_openrouter_image_log(&log_path);
+
+    let rendered = wire(
+        log_path.clone(),
+        true,
+        WireFormat::Json,
+        Some(ViewDialect::Completions),
+        None,
+    )
+    .await
+    .expect("the recorded OpenRouter fixture should translate");
+    let messages: serde_json::Value = serde_json::from_str(&rendered).unwrap();
+    let roles: Vec<_> = messages
+        .as_array()
+        .expect("messages is an array")
+        .iter()
+        .map(|message| message["role"].as_str().unwrap())
+        .collect();
+    let tool = roles
+        .iter()
+        .position(|role| *role == "tool")
+        .expect("a tool message");
+    assert_eq!(roles[tool - 1], "assistant", "{rendered}");
+    assert_eq!(roles[tool + 1], "user", "{rendered}");
+    assert_eq!(
+        messages[tool + 1]["content"][0]["type"],
+        "image_url",
+        "{rendered}"
+    );
+
+    let _ = std::fs::remove_file(&log_path);
+}
+
 /// An identity-bearing full envelope is reconstructed from the log even when
 /// the supplied config is malformed; only a legacy pre-preamble log needs the
 /// current role config to rebuild its system prompt.
@@ -285,6 +336,7 @@ async fn wire_full_uses_recorded_identity_without_loading_config() {
         log_path.clone(),
         false,
         WireFormat::Json,
+        None,
         Some(bad_config.clone()),
     )
     .await

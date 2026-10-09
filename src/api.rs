@@ -431,6 +431,7 @@ mod test;
 pub(crate) mod assembler;
 mod auth_value;
 mod client;
+pub(crate) mod completions;
 mod decisions;
 mod diagnostics;
 mod endpoint;
@@ -445,6 +446,7 @@ mod thinking;
 
 pub use auth_value::{AuthValue, Reload, Reloaded, Reread, sync_reload};
 pub use client::{Client, DEFAULT_STREAM_CEILING, KeepaliveError};
+pub use completions::{render_completions_request_pretty, translate_completions};
 pub use decisions::{Answer, Decisions, DecisionsUsage, Instructions, Question};
 pub use diagnostics::{
     RetrySurface, TurnRoutingState, UpstreamAttemptFailure, UpstreamAttemptQueue, UpstreamFailure,

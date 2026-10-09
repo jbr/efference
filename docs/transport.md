@@ -737,6 +737,21 @@ provider against the assistant turns before rendering. A list with no assistant 
 belongs to no dialect and encodes on either. A same-dialect provider or model
 selected for a replay is a separate rendering choice, not a live session change.
 
+`efference dev wire --dialect completions` is the one rendering that crosses dialects
+on purpose (`api/completions.rs`). It skips the check and translates a
+Messages-recorded session into Chat Completions; nothing sends it. Its uses are as a
+second rendering of the same conversation, for when an upstream's answers stop being
+reproducible in one dialect, and as the user/tool-result half of the Completions
+dialect's future encoder. The preamble leads as a `system` message. Each tool result is
+a `role: "tool"` message with string content, in result order. A `tool` message cannot
+carry an image, so the turn's result images and prose follow as one `user` message
+after the run of results. Its content is a bare string when it is one text part, parts
+otherwise. Assistant text joins into `content`, `tool_use` becomes `tool_calls` (the
+input's compact, key-sorted serialization as `arguments`), and thinking and redacted
+thinking become OpenRouter `reasoning_details`, whose `format` tag is inferred from the
+model id. Breakpoints place nothing. A Responses-recorded session is refused.
+`completions_view_matches_expected_wire_bytes` pins the envelope.
+
 **Request** (`api/responses.rs`, `ResponsesRequest`; field order pinned by
 `responses_envelope_matches_expected_wire_bytes`). `input[]` is the encoded turn
 list: the preamble as a leading developer message (a breakpoint-eligible carrier,

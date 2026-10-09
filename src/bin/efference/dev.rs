@@ -306,6 +306,12 @@ pub(crate) enum DevCommand {
         /// readability — not parseable back).
         #[arg(long, value_enum, default_value = "json")]
         format: WireFormat,
+        /// Render in another dialect than the one the session was recorded in.
+        /// `completions` translates a Messages-recorded session into Chat
+        /// Completions (thinking as `reasoning_details`); the view sends nothing,
+        /// and always renders JSON. Omit to render the recorded dialect.
+        #[arg(long, value_enum)]
+        dialect: Option<ViewDialect>,
 
         /// Config file to fold into the reconstructed preamble, same resolution as
         /// boot (defaults to probing `efference.toml`). The config file isn't recorded
@@ -530,9 +536,10 @@ pub(crate) async fn run<F: Future<Output = Result<ClientTarget, CliError>>>(
             path,
             messages,
             format,
+            dialect,
             config,
         } => {
-            let rendered = wire(path, messages, format, config).await?;
+            let rendered = wire(path, messages, format, dialect, config).await?;
             println!("{rendered}");
             Ok(())
         }
@@ -683,6 +690,13 @@ pub(crate) enum WireFormat {
     Yaml,
 }
 
+/// A dialect the `wire` view can translate a recorded session into.
+#[derive(Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub(crate) enum ViewDialect {
+    /// Chat Completions (backlog/completions-dialect/wire-view.md).
+    Completions,
+}
+
 /// Parse a `--path` grant spec for the spotter tester into a `[paths]` map entry: `<path>:rw`
 /// (read+write), `<path>:r` (read), or a bare `<path>` (no access — the honest default). The
 /// perm suffix is matched by the letters it contains.
@@ -747,6 +761,7 @@ pub(crate) async fn wire(
     path: PathBuf,
     messages_only: bool,
     format: WireFormat,
+    view_dialect: Option<ViewDialect>,
     config: Option<PathBuf>,
 ) -> WireResult {
     let entries = efference::persist::load(&path)?;
@@ -772,8 +787,11 @@ pub(crate) async fn wire(
 
     // Check the recorded provider once, before either rendering path. A legacy log
     // has already been checked by `recorded_dialect`; with an identity, this is the
-    // only provider whose dialect the offline view accepts.
-    if let Some(provider) = recorded_provider
+    // only provider whose dialect the offline view accepts. A translated view skips
+    // it: rendering in another dialect is its point, and the translation refuses
+    // what it cannot carry.
+    if view_dialect.is_none()
+        && let Some(provider) = recorded_provider
         && let Some(dialect) = provider.inference_dialect()
     {
         efference::project::check_dialect(&turns, dialect)?;
@@ -793,12 +811,18 @@ pub(crate) async fn wire(
             entries.len(),
             messages.len()
         );
-        let rendered = match (dialect, format) {
-            (efference::api::WireDialect::Responses, _) => {
+        let rendered = match (view_dialect, dialect, format) {
+            (Some(ViewDialect::Completions), _, _) => {
+                let model = wire_model(identity.as_ref());
+                serde_json::to_string_pretty(&efference::api::translate_completions(
+                    &turns, "", &model,
+                )?)?
+            }
+            (None, efference::api::WireDialect::Responses, _) => {
                 serde_json::to_string_pretty(&efference::api::encode_responses(&turns, "", cache))?
             }
-            (_, WireFormat::Json) => efference::api::render_messages_pretty(&messages)?,
-            (_, WireFormat::Yaml) => efference::api::render_messages_yaml(&messages)?,
+            (None, _, WireFormat::Json) => efference::api::render_messages_pretty(&messages)?,
+            (None, _, WireFormat::Yaml) => efference::api::render_messages_yaml(&messages)?,
         };
         return Ok(rendered);
     }
@@ -885,16 +909,21 @@ pub(crate) async fn wire(
     let tools = efference::agent::tool_definitions(&toolbox);
 
     let choice = efference::api::ToolChoice::auto();
-    let rendered = match (dialect, format) {
-        (efference::api::WireDialect::Responses, _) => {
+    let rendered = match (view_dialect, dialect, format) {
+        (Some(ViewDialect::Completions), _, _) => {
+            efference::api::render_completions_request_pretty(
+                &model, &system, &tools, choice, &turns,
+            )?
+        }
+        (None, efference::api::WireDialect::Responses, _) => {
             efference::api::render_responses_request_pretty(
                 &model, &system, &tools, choice, &turns, cache,
             )?
         }
-        (_, WireFormat::Json) => {
+        (None, _, WireFormat::Json) => {
             efference::api::render_request_pretty(&model, &system, &tools, choice, &messages)?
         }
-        (_, WireFormat::Yaml) => {
+        (None, _, WireFormat::Yaml) => {
             efference::api::render_request_yaml(&model, &system, &tools, choice, &messages)?
         }
     };
