@@ -246,6 +246,24 @@ export const resolveProposal = (
 // Web push (docs/web-push.md). The key is the daemon's derived VAPID public
 // key, base64url of an uncompressed P-256 point — `applicationServerKey` wants
 // the raw bytes, so the caller decodes it before subscribing.
+/** One client's report of whether a person is attending, and which session it
+ * has open (docs/web-push.md). The host's own surface, at the listener's root
+ * under either binding; answered `204`, so nothing is parsed. `keepalive` lets
+ * the report that says the page is leaving outlive it. */
+export async function sendAttention(report: {
+  client: string;
+  viewing: string | null;
+  active: boolean;
+}): Promise<void> {
+  const response = await fetch("/attention", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(report),
+    keepalive: true,
+  });
+  await throwIfFailed(response);
+}
+
 export const fetchPushKey = () => get<{ key: string }>("/v1/push");
 // The browser's `PushSubscription.toJSON()` shape is what the daemon accepts,
 // so this forwards it unreshaped. An upsert on the endpoint: a page that

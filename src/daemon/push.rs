@@ -1,10 +1,11 @@
 //! When the daemon sends push, and what it says (docs/web-push.md).
 //!
-//! Two moments mean the session is waiting on a person: an approval gate opened
-//! ([`Session::register_pending`]) and a turn ended with the loop parking
-//! ([`Session::parking`]). Both call [`Session::push`], which spawns the send and
-//! returns — the turn loop never waits on a push service, and a failed send is a
-//! log line rather than anything the session notices.
+//! Three moments mean the session is waiting on a person: an approval gate opened
+//! ([`Session::register_pending`]), an `ask` was posed ([`Session::begin_ask`]), and
+//! a turn ended with the loop parking ([`Session::parking`]). Each calls
+//! [`Session::push`], which sends or schedules the send and returns — the turn
+//! loop never waits on a push service, and a failed send is a log line rather
+//! than anything the session notices.
 
 use super::*;
 use crate::log::{LogEntry, Payload};
@@ -27,104 +28,46 @@ impl Session {
         }
     }
 
-    /// Fire one push, in the background.
+    /// Notify about one moment, in the background (docs/web-push.md).
     ///
-    /// When someone is watching the session ([`Session::watched`],
-    /// docs/web-push.md), the message is not sent but **stashed** — see
-    /// [`Session::replay_suppressed`] for when a stashed message goes out after
-    /// all. The watched check is an atomic load and goes first, so a session
-    /// that never enabled push pays almost nothing per gate.
-    ///
-    /// Suppression lives here rather than at either call site, so a gate and a
-    /// settle suppress identically: both are notifications, enabled and disabled
-    /// together, and no caller can grow its own exception.
+    /// When no client is attending the host ([`Session::someone_is_attentive`]) the
+    /// push is sent now. Otherwise it is held for [`ESCALATION_DELAY`] and sent
+    /// only if neither resolution nor a sighting cancelled it
+    /// ([`Session::cancel_escalation`]) — a push that fires is one nobody
+    /// attended to. The decision lives here rather than at the call sites, so a
+    /// gate, an `ask`, and a settle escalate identically.
     pub(super) fn push(&self, event: &str, body: String) {
         let mut message = crate::push::Message::new(self.push_title(event), body);
         // The notification opens this session, not the bind's root: the path
         // the web client addresses this session by (docs/web-push.md).
         message.path = self.web_path().to_string();
-        if self.watched() {
-            *self.suppressed.lock().unwrap() = Some(Suppressed {
-                at: std::time::Instant::now(),
-                message,
-            });
-            // The last watcher may have been reaped between the check and the
-            // stash; its guard's drop saw nothing to replay, so re-check here or
-            // the message is stranded.
-            if !self.watched() {
-                self.replay_suppressed();
-            }
-            return;
+        if self.someone_is_attentive() {
+            self.schedule_escalation(message);
+        } else {
+            // A newer moment supersedes a pending older one, sent or not.
+            self.cancel_escalation();
+            send_in_background(message);
         }
-        self.spawn_send(message);
-    }
-
-    /// Send a suppressed message after all, if the last watcher just left and the
-    /// suppression was recent.
-    ///
-    /// Called by the [`Watching`](super::presence::Watching) guard whose drop takes
-    /// the watched count to zero. The daemon learns a connection died only when a
-    /// write to it fails — the next event or heartbeat, up to
-    /// [`EVENTS_HEARTBEAT`](super::http) later — so an event can be suppressed on
-    /// the strength of a connection whose client already closed it, and nobody ever
-    /// saw the gate. Within [`REPLAY_WINDOW`] of the suppression, "watched it
-    /// happen" and "fired into a dead connection" are indistinguishable from here,
-    /// and a possible duplicate notification beats a gate nobody was told about;
-    /// past the window, the operator demonstrably had the event on screen, and an
-    /// event already seen is not re-notified (docs/web-push.md).
-    pub(super) fn replay_suppressed(&self) {
-        if let Some(message) = self.take_replayable() {
-            self.spawn_send(message);
-        }
-    }
-
-    /// Take the stashed message if it is still worth sending. Split from
-    /// [`Session::replay_suppressed`] so the window arithmetic is testable without
-    /// observing a send.
-    pub(super) fn take_replayable(&self) -> Option<crate::push::Message> {
-        let suppressed = self.suppressed.lock().unwrap().take()?;
-        (suppressed.at.elapsed() <= REPLAY_WINDOW).then_some(suppressed.message)
-    }
-
-    /// Spawn the actual send, or do nothing in the two contexts where there is
-    /// nothing to do: no root is installed (push credentials derive from it, and
-    /// only a binding host installs one — tests, offline verbs, and a socket-only
-    /// host look alike here), and no tokio runtime is running. Both checks happen
-    /// before the store is touched.
-    fn spawn_send(&self, message: crate::push::Message) {
-        let Some(root) = crate::auth::Root::installed() else {
-            return;
-        };
-        let Ok(handle) = tokio::runtime::Handle::try_current() else {
-            return;
-        };
-        handle.spawn(async move {
-            let store = crate::push::Store::machine_scoped();
-            crate::push::send(&store, &root.vapid_key(), message).await;
-        });
     }
 }
 
-/// A push that was suppressed because the session looked watched, kept so the
-/// guard that reaps the last watcher can send it after all
-/// ([`Session::replay_suppressed`]). Only the latest is kept: a newer suppressed
-/// event supersedes an older one the same way a newer notification would.
-pub(super) struct Suppressed {
-    at: std::time::Instant,
-    message: crate::push::Message,
+/// Spawn the actual send, or do nothing in the two contexts where there is
+/// nothing to do: no root is installed (push credentials derive from it, and
+/// only a binding host installs one — tests, offline verbs, and a socket-only
+/// host look alike here), and no tokio runtime is running. Both checks happen
+/// before the store is touched.
+pub(super) fn send_in_background(message: crate::push::Message) {
+    let Some(root) = crate::auth::Root::installed() else {
+        return;
+    };
+    let Ok(handle) = tokio::runtime::Handle::try_current() else {
+        return;
+    };
+    handle.spawn(async move {
+        let store = crate::push::Store::machine_scoped();
+        crate::push::send(&store, &root.vapid_key(), message).await;
+    });
 }
-
-/// How recent a suppression must be for the reap of the last watcher to send it
-/// after all. The bound is the daemon's blindness to a closed connection: the
-/// client lingers a few seconds after the tab hides (`HIDDEN_LINGER_MS`,
-/// web/src/session/connect.ts), and a close after that is unnoticed until the
-/// next write — up to one `/events` heartbeat (15s). Suppression older than
-/// their sum was watched by a connection that demonstrably outlived the
-/// blindness, i.e. by a person.
-const REPLAY_WINDOW: std::time::Duration = std::time::Duration::from_secs(20);
-
-#[cfg(test)]
-mod test;
 
 /// A path with the home directory abbreviated to `~`, as a prompt would print it.
 fn tildify(path: &str) -> String {

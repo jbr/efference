@@ -251,6 +251,15 @@ sessions from one process. Its own routes are the listener's, not a session's:
   its teardown has run (background children reaped, scratch removed); the id leaves
   the list once the loop has returned. The directory and log stay, so the session
   is resumable by patching it `active` again. `404` for an id that is not hosted.
+- `POST /attention` — a client reports whether a person is attending
+  ([web-push.md](web-push.md)). The body is `{"client", "viewing", "active"}`:
+  `client` a per-page-load id the client mints (1 to 128 characters), `viewing` the
+  id of the session the client has open or `null` (an absent key reads as `null`),
+  `active` a boolean. Unknown keys are refused. `204` with no body; `400
+  bad_request` naming the problem for a malformed body. Host state, not a
+  session's: the host keeps each client's latest report and lets a client lapse 45
+  seconds after its last one. A lone session bind serves no such table and
+  answers `404`.
 - `/sessions/:id/v1/…` and, on the web listener, `/sessions/:id/files/…` — that
   session's own routes, unchanged. The host resolves the session into conn state
   and dispatches into the same route table a session bind serves at its root;
@@ -1094,7 +1103,7 @@ A client renders them as plain text, never markdown, and attributes them to
 
 ### Reads (streamed, SSE)
 
-#### `GET /events?include=<spec>&since=<seq>&presence=<on|off>`
+#### `GET /events?include=<spec>&since=<seq>`
 The control stream: **one** connection carrying everything that changes, as a
 discriminated envelope so a client writes one frame parser rather than one per
 stream.
@@ -1129,15 +1138,6 @@ gets neither the token firehose nor the whole effective config.
   `state:gaet` would yield a stream that never delivers a gate — indistinguishable
   from a daemon that never gated. The cost is that an old daemon rejects a newer
   client, which is the right direction: the client learns.
-
-**`?presence=`** is `on` (the default) or `off`. A live connection is what tells
-the daemon someone is watching the session, which suppresses push
-([web-push.md](web-push.md)); `off` excludes this connection from that count, for a
-consumer that is not a person — an observer agent, a logging pipe. It is read at
-open and never changes for the life of the connection. Any other value is a
-`400 bad_request`, on the same rule as an unknown `include` token: a client that
-meant to opt out and misspelled it would be counted as a watcher and would suppress
-the notifications it connected to observe.
 
 **`state` is level-triggered, and a frame is a whole-topic replacement — never a
 patch.** Every subscribed topic is sent on connect, then a topic's entire value is

@@ -53,6 +53,9 @@ impl Drop for AskWait<'_> {
                 *ask = None;
             }
         }
+        // However the ask ended, its push has nothing left to announce
+        // (docs/web-push.md).
+        self.session.cancel_escalation();
         // A reply that landed as the ask ended (an interrupt won the race) is not lost:
         // it opens the next turn, as a submission with nothing pending would.
         if let Ok(turn) = self.rx.try_recv() {

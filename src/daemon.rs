@@ -281,19 +281,14 @@ pub struct Session {
     detach_note: Mutex<Option<String>>,
     /// Pinged on each log append; the `GET /events` tail wakes on it.
     appended: Notify,
-    /// How many live `GET /events` connections are watching (docs/web-push.md) —
-    /// every stream connection except those opened with `?presence=off`. Moved only
-    /// by [`Session::watch`] and the guard it hands back, whose `Drop` runs when the
-    /// connection's stream is dropped, so the count follows connection lifetime
-    /// exactly (`presence.rs`). Read by [`Session::push`] to suppress a notification
-    /// for a session someone is already looking at.
-    watchers: std::sync::atomic::AtomicUsize,
-    /// The most recent push suppressed because `watchers` was nonzero, kept so
-    /// the guard reaping the last watcher can send it after all if the
-    /// suppression was recent — the daemon may have been counting a connection
-    /// whose client had already closed it ([`Session::replay_suppressed`],
-    /// docs/web-push.md).
-    suppressed: Mutex<Option<push::Suppressed>>,
+    /// The host's attention table, handed over at adopt (`attention.rs`,
+    /// docs/web-push.md). Unset for a session outside a host, which treats nobody
+    /// as attentive.
+    attention: std::sync::OnceLock<Arc<attention::Attention>>,
+    /// The push waiting out [`escalation::ESCALATION_DELAY`] because a client was
+    /// attending when its moment fired (`escalation.rs`, docs/web-push.md). At most
+    /// one; resolution and sightings of the moment empty it.
+    escalation: escalation::EscalationSlot,
     /// Whether the loop is **executing a turn** (vs. parked awaiting one). Together with
     /// `queued`, this drives the `/settle` long-poll's "at a decision point?" predicate
     /// ([`Session::is_settled`], docs/permissions.md). The loop owns it:
@@ -780,8 +775,8 @@ impl Session {
             detach: Notify::new(),
             detach_note: Mutex::new(None),
             appended: Notify::new(),
-            watchers: std::sync::atomic::AtomicUsize::new(0),
-            suppressed: Mutex::new(None),
+            attention: std::sync::OnceLock::new(),
+            escalation: Arc::default(),
             running: AtomicBool::new(false),
             queue: Mutex::new(std::collections::VecDeque::new()),
             ask: Mutex::new(None),
@@ -1202,9 +1197,10 @@ mod notifications;
 mod pace;
 mod status;
 mod subscriptions;
-// Whether anyone is watching (docs/web-push.md) — the live stream-connection count
-// push suppression reads.
-mod presence;
+// Whether any client is attending the host (docs/web-push.md), and how a moment's
+// push waits on it.
+pub(crate) mod attention;
+mod escalation;
 mod push;
 mod stream;
 pub(crate) mod tcp;
@@ -1232,7 +1228,6 @@ pub use metrics::{COLD_STREAK_WARN, CacheRead, ColdStart, ColdStreak, RequestOri
 use metrics::{CostCell, Metrics};
 use notifications::Inbox;
 use pace::Pace;
-use presence::Presence;
 use stream::{Include, control_stream};
 use topics::{StateUpdate, watch_topics};
 

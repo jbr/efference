@@ -79,33 +79,13 @@ fn include_parses_classes_and_topics() {
     assert!(Include::parse(Some("")).is_err());
 }
 
-/// A connection is a watcher for exactly as long as its stream exists, and one opened
-/// `?presence=off` never counts (docs/web-push.md). The stream value *is* the claim:
-/// nothing else has to be told the connection ended.
-#[test]
-fn a_live_stream_is_what_makes_a_session_watched() {
-    let (shared, _turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
-    assert!(!shared.watched());
-
-    let watcher = control_stream(Arc::clone(&shared), Include::default(), 0, Presence::On);
-    assert!(shared.watched());
-
-    let observer = control_stream(Arc::clone(&shared), Include::default(), 0, Presence::Off);
-    assert_eq!(shared.watcher_count(), 1);
-    drop(observer);
-    assert!(shared.watched());
-
-    drop(watcher);
-    assert!(!shared.watched());
-}
-
 /// The SSE fields a client switches on before parsing anything: `event:` is the frame's
 /// kind, and `id:` is the resume cursor — set on the durable class and nowhere else, so
 /// `EventSource`'s Last-Event-ID tracks `seq` and is never corrupted by an ephemeral frame.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn sse_fields_carry_the_kind_and_the_cursor() {
     let (shared, _turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
-    let mut stream = control_stream(Arc::clone(&shared), Include::default(), 0, Presence::On);
+    let mut stream = control_stream(Arc::clone(&shared), Include::default(), 0);
     shared.append(1, user("hello")).unwrap();
     shared.publish_delta(StreamDelta::AssistantText {
         index: 0,
@@ -149,7 +129,6 @@ async fn a_connection_opens_with_a_state_snapshot() {
         Arc::clone(&shared),
         Include::parse(Some("state")).unwrap(),
         0,
-        Presence::On,
     );
 
     let seen = collect(&mut stream).await;
@@ -174,7 +153,6 @@ async fn the_fold_of_state_frames_equals_get_state() {
         Arc::clone(&shared),
         Include::parse(Some("state")).unwrap(),
         0,
-        Presence::On,
     );
 
     // Move several topics, through the same methods the routes call.
@@ -223,7 +201,7 @@ async fn no_state_frame_arrives_before_the_log_it_reflects() {
 
     // Open at the *start* of that history, the worst case for ordering: every state
     // frame's watermark sits at the far end of a replay the connection has not sent yet.
-    let mut stream = control_stream(Arc::clone(&shared), Include::default(), 0, Presence::On);
+    let mut stream = control_stream(Arc::clone(&shared), Include::default(), 0);
 
     shared.set_review_level(crate::policy::ReviewLevel::HumanOnly);
 
@@ -269,7 +247,6 @@ async fn state_only_subscribers_are_not_gated_on_the_log() {
         Arc::clone(&shared),
         Include::parse(Some("state:review_level")).unwrap(),
         0,
-        Presence::On,
     );
     shared.set_review_level(crate::policy::ReviewLevel::Autonomous);
 
@@ -303,7 +280,6 @@ async fn an_update_arriving_while_parked_is_not_dropped() {
         Arc::clone(&shared),
         Include::parse(Some("state:review_level")).unwrap(),
         0,
-        Presence::On,
     );
 
     // Drain the connect snapshot until quiet, leaving the stream parked in its wait.
@@ -330,7 +306,6 @@ async fn a_delta_arriving_while_parked_is_not_dropped() {
         Arc::clone(&shared),
         Include::parse(Some("output")).unwrap(),
         0,
-        Presence::On,
     );
 
     collect(&mut stream).await;
@@ -357,7 +332,6 @@ async fn the_durable_class_is_drained_first() {
         Arc::clone(&shared),
         Include::parse(Some("log,output")).unwrap(),
         0,
-        Presence::On,
     );
 
     // Publish deltas first, then append: the durable entry must still lead.
@@ -403,7 +377,6 @@ async fn a_committed_entry_preempts_the_deltas_describing_it() {
         Arc::clone(&shared),
         Include::parse(Some("log,output")).unwrap(),
         0,
-        Presence::On,
     );
 
     // Queued before the commit, and still unread when the log frame goes out.
@@ -450,7 +423,6 @@ async fn block_deltas_flow_again_after_the_next_entry() {
         Arc::clone(&shared),
         Include::parse(Some("log,output")).unwrap(),
         0,
-        Presence::On,
     );
 
     shared.append(1, assistant("first answer")).unwrap();

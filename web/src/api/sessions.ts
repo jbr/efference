@@ -98,10 +98,8 @@ export interface CardFeed {
  * and the log (docs/control-api.md, "opening cold"). `onFeed` hears the
  * accumulated state and each batch of new log entries.
  *
- * `presence=off`: an overview glancing at a session is not someone watching
- * it, so it must not suppress that session's push notifications
- * (docs/web-push.md). One of these per card until the host serves an overview
- * stream (backlog/host-overview-stream.md).
+ * One of these per card until the host serves an overview stream
+ * (backlog/host-overview-stream.md).
  */
 export function openSessionCard(
   id: string,
@@ -131,7 +129,7 @@ export function openSessionCard(
           onFeed({ state: { ...state }, entries });
         }
         const response = await fetch(
-          `${base}/events?include=${include}&since=${cursor}&presence=off`,
+          `${base}/events?include=${include}&since=${cursor}`,
           {
             headers: { accept: "text/event-stream" },
             signal: controller.signal,

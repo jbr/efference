@@ -1,8 +1,8 @@
 # Web push — the daemon notifies a pocketed phone
 
-Two moments mean a session is waiting on a person: an approval gate opened, and a turn
-settled. Both happen inside a live daemon, so each daemon sends push for its own events
-— there is no watcher process.
+Three moments mean a session is waiting on a person: an approval gate opened, an `ask`
+was posed, and a turn settled. All happen inside a live daemon, so each session sends
+push for its own events — there is no watcher process.
 Delivery is the Web Push triangle (RFC 8030): the browser's push service holds an
 opaque endpoint per subscription, and the daemon POSTs an encrypted payload to it;
 nothing ever connects inbound. Crash and stall notices are out of scope by design — a
@@ -50,16 +50,18 @@ would make it more timely than the next event.
 
 ## When it fires, and what it says
 
-`src/daemon/push.rs`. `Session::push` short-circuits when no root is installed
-(only a binding host installs one — tests, offline verbs, and a socket-only host look
-alike) or no runtime is running, then spawns the send so the turn loop never waits
-on a push service.
+`src/daemon/push.rs`. `Session::push` decides whether to send now or hold the
+message ([below](#no-push-while-someone-is-attending)); sending short-circuits when
+no root is installed (only a binding host installs one — tests, offline verbs, and a
+socket-only host look alike) or no runtime is running, and spawns the send so the turn
+loop never waits on a push service.
 
 - **Gate** — the end of `register_pending` (`src/daemon/approvals.rs`). Body: the
   call's name and its `intent` — the model's own statement of purpose
   ([tools.md](tools.md)) — falling back to the spotter's reason (the risk, less useful
   at a glance than the purpose) and then to a plain waiting line, since no reader may
   assume `intent` is present.
+- **Ask** — `begin_ask` (`src/daemon/ask.rs`). Body: the question, truncated.
 - **Settle** — `parking()` (`src/daemon/pace.rs`), where `running.swap(false)`
   distinguishes a turn that just ended from boot idle; only the former fires. Body: the
   tail `Assistant` entry's prose, truncated to 200 characters. Only the tail entry is
@@ -122,59 +124,60 @@ subscriptions. The checkbox has four states: pending, subscribed, unsubscribed,
 and unavailable — no worker became ready within a few seconds — which renders
 "no service worker on this page" beside the disabled box.
 
-## No push while someone is watching
+## No push while someone is attending
 
-A notification about a session the operator is already looking at is noise, so
-`Session::push` returns without sending when the session is **watched**: the count of
-live `GET /events` connections is nonzero (`src/daemon/presence.rs`). The check sits
-in `push` rather than at either call site, so a gate and a settle suppress
-identically — they are one notification setting, enabled and disabled together — and
-it is an atomic load, so it runs before the root and runtime checks above.
+A notification about a moment the operator is already at the screen for is noise, and
+one nobody attended to is the point of the feature. The host decides between the two
+from what clients report, not from what they have open.
 
-The count is connection lifetime, nothing else. It is incremented when a stream is
-built and decremented by an RAII guard the stream holds, so it moves only with
-connections and cannot drift: there is no presence report to send, no connection id
-to name, and no per-connection visibility state to reconcile if a client dies
-holding it.
+**Attention.** Clients report `{client, viewing, active}` to the host-level
+`POST /attention` ([control-api.md](control-api.md)): `client` a per-page-load id,
+`viewing` the session the page shows (`null` on the session list), `active` whether a
+person is attending. The host keeps the latest report per client with its arrival time
+(`src/daemon/attention.rs`). A client **lapses** 45 seconds after its last report
+(`LAPSE`): the web client heartbeats about every 20 seconds while active, so two missed
+beats lapse it, and a client that dies holding `active` stops counting within the
+minute with nothing to clean up. Someone is **attentive** when any unlapsed client's
+last report was active. The table is host-wide: the host hands one `Arc` to every
+session it adopts, so a push for any session reads what every client has said. A
+session outside a host has no table and nobody is attentive.
 
-The daemon learns a connection died only when a **write** to it fails — the next
-event or heartbeat, up to one `/events` heartbeat interval after the client closed
-(trillium-sse's write loop never polls the read half;
-[../backlog/sse-close-detection.md](../backlog/sse-close-detection.md)). So an event
-can be suppressed on the strength of a connection whose client already left, and the
-event's own frame is what reaps it — one write too late, every time. The backstop:
-a suppressed push is **stashed** rather than discarded, and the guard whose drop
-takes the count to zero sends the stash after all if the suppression was recent
-(`REPLAY_WINDOW`, sized to the client's hidden-tab linger plus one heartbeat).
-Within that window, "the operator watched it happen" and "it fired into a dead
-connection" are indistinguishable from the daemon, and a possible duplicate
-notification beats a gate nobody was told about. Past the window, the suppressing
-connection demonstrably outlived the daemon's blindness — a person had the event on
-screen — and an event already seen is not re-notified.
+**Escalation.** `Session::push` sends at once when nobody is attentive. Otherwise it
+holds the message for `ESCALATION_DELAY` (two minutes, one value for every moment) on
+a task on the host's runtime (`src/daemon/escalation.rs`), and sends it if the moment
+is still standing when the delay ends. A moment stops standing when it
+**resolves** or is **seen**:
 
-What makes the count mean *watched* rather than merely *connected* is that clients
-who are not being looked at drop their connections:
+- *Resolves:* the gate is decided (`resolve_approval`, whichever decision), the `ask`
+  ends (`AskWait` drop), a turn is submitted to the session (`submit_turn`, which also
+  carries an `ask`'s reply and ends a settle), or the session is archived (the host's
+  teardown).
+- *Seen:* an active report arrives from a client whose `viewing` is this session
+  (`Host::report_attention`). An active report requires recent input, so this reads as
+  the operator opening that session and doing something. A report for another
+  session, an inactive report, and a report that arrived before the moment do not
+  cancel it.
 
-- **The web client** (`web/src/session/connect.ts`) drops its stream on
-  `visibilitychange` to hidden, after a few seconds' linger that debounces a tab
-  flip; becoming visible cancels a pending linger, or else reconnects through the
-  same `?since=<cursor>` resume path a network loss already uses — hidden and
-  offline repair identically, with no second reconnect. A tab restored in the
-  background reads its initial visibility the same way, since no event fires for it.
-- **The TUI** never drops its stream, so a connected TUI is always watched. Terminal
-  focus is knowable, but occlusion is not, and an unfocused-but-visible terminal is
-  a normal watching posture.
-- **A non-human consumer** — an observer agent, a logging pipe — opens with
-  `?presence=off` ([control-api.md](control-api.md)) and is excluded from the count.
-  Static and open-time only: a stream does not become a human mid-connection.
+Each session holds one pending escalation. A newer moment replaces an older one (the
+older timer is aborted), and a moment that sends at once drops a held one: the newer
+push names the same session. A timer claims its own slot entry by task identity, so a
+cancel that races the delay leaves nothing to fire. A push that fires is therefore one
+nobody attended to, and the service worker shows every push it receives.
 
-**The service worker skips a notification a visible window would duplicate.** At
-push-receive, `web/public/sw.js` reads `clients.matchAll()` and shows nothing when a
-visible window is on the payload's path or under it (a prefix match, so any route
-inside the session counts and a different session on the same host does not). That
-covers the races the sender cannot see — the linger window, and a tab that has just
-become visible and not yet reconnected. Chrome exempts this case from the penalty
-for a push that shows nothing.
+What breaks if this changes: reading *connected* or *visible* as *attending* silences a
+desktop window nobody is at, and any one attentive device silences every device; with
+escalation, a wrong attention report costs a two-minute delay and never a missed
+notification.
 
-Watched is internal state, not a client-visible topic: any stream client that could
-render it is itself a watcher, so it would read true by construction.
+**The web client** (`web/src/attention.ts`) reports `active` when the page is visible,
+focused, and has seen pointer, key, wheel, scroll, or touch input within 60 seconds.
+It reports at once on a change of `active` or of `viewing` (client-side navigation
+between sessions included), sends an inactive report on hide or blur so the host need
+not wait for the lapse, and heartbeats every 20 seconds while active. A change to
+active is throttled to one per 10 seconds. A check every 5 seconds notices the input
+window expiring, since idleness fires no event. Failures are logged and not shown; a
+`404` (a lone session bind) stops reporting. The stream is not tied to attention: a
+hidden tab keeps its `/events` connection.
+
+**The TUI** does not report yet, so it is never an attentive client: a person working
+in a terminal gets the push at once.

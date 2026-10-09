@@ -8,7 +8,6 @@ struct EventsRequest {
     shared: Arc<Session>,
     include: Include,
     since: u64,
-    presence: Presence,
 }
 
 /// Live tail of the append-only log (docs/README.md — the log *is* the event
@@ -32,8 +31,7 @@ pub(super) fn events(heartbeat: Duration) -> impl trillium::Handler {
                 shared,
                 include,
                 since,
-                presence,
-            }) => control_stream(shared, include, since, presence),
+            }) => control_stream(shared, include, since),
             // Unreachable: the validating half halts before this runs.
             None => Box::pin(futures_lite::stream::empty()),
         })
@@ -47,15 +45,9 @@ async fn validate(conn: Conn) -> Conn {
     let Some(shared) = shared_of(&conn) else {
         return missing_state(conn);
     };
-    let parsed = Include::parse(parse_param(conn.querystring(), "include")).and_then(|include| {
-        // A non-human consumer opts out of the watched count
-        // (docs/web-push.md); an unspelled value is rejected the
-        // same way an unknown `include` token is.
-        let presence = Presence::parse(parse_param(conn.querystring(), "presence"))?;
-        Ok((include, presence))
-    });
+    let parsed = Include::parse(parse_param(conn.querystring(), "include"));
     match parsed {
-        Ok((include, presence)) => {
+        Ok(include) => {
             // `?since` past the head is a *wait*, not an error — the
             // natural reading of a cursor on an append-only log, and
             // the heartbeat is what keeps that wait distinguishable
@@ -65,7 +57,6 @@ async fn validate(conn: Conn) -> Conn {
                 shared,
                 include,
                 since,
-                presence,
             })
         }
         Err(message) => fail(conn, ErrorCode::BadRequest, message),

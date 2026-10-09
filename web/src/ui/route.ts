@@ -14,7 +14,8 @@ import { deriveRoute } from "../api/base.ts";
 const listeners = new Set<() => void>();
 const notify = () => listeners.forEach((listener) => listener());
 
-function subscribe(listener: () => void): () => void {
+/** Hear every client-side navigation and history pop. */
+export function subscribe(listener: () => void): () => void {
   listeners.add(listener);
   window.addEventListener("popstate", listener);
   return () => {

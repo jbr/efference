@@ -75,6 +75,10 @@ pub struct Host {
     /// watcher. Every listing subscriber recomputes and diffs for itself, so
     /// this carries no value and an extra ping costs a comparison.
     summary_changed: Notify,
+    /// What every client has last said about whether anyone is attending
+    /// (`attention.rs`, docs/web-push.md). Shared with each adopted session, so
+    /// a push for any of them reads one table.
+    pub(super) attention: Arc<super::attention::Attention>,
 }
 
 /// What the host keeps per session: the state handlers read, the child
@@ -128,6 +132,7 @@ impl Host {
             inventory: crate::inventory::Inventory::new(),
             host_env,
             summary_changed: Notify::new(),
+            attention: Arc::default(),
         })
     }
 
@@ -161,6 +166,7 @@ impl Host {
         // The web client addresses an adopted session under the host's own
         // mount, and a push notification opens that path (docs/web-push.md).
         session.set_web_path(format!("/sessions/{id}/"));
+        session.set_attention(Arc::clone(&self.attention));
         let hosted = Hosted {
             files: Files::rooted_at(session.cwd()),
             session: Arc::clone(&session),
@@ -227,6 +233,8 @@ impl Host {
             // The end is the last status the subscribers hear; then the
             // session's own subscriptions and its non-detached children go
             // with it (docs/tools.md).
+            // An archived session has nothing left to announce.
+            session.cancel_escalation();
             host.post_status(&id, &session, &status);
             host.drop_subscriptions_of(&id);
             for child in host.cascade_of(&id) {
@@ -376,6 +384,8 @@ pub(crate) fn host_routes(files: bool) -> impl trillium::Handler {
         // before the `/sessions/:session/*` wildcard below, which is a different
         // prefix but the same reader of a path's first segment.
         .get("/projects", list_projects)
+        // Clients report whether a person is attending (`attention.rs`).
+        .post("/attention", report_attention)
         .delete("/projects", forget_project)
         // The wildcard remainder becomes the conn's path, so the control routes
         // match `/v1/…` exactly as they do at a session bind's root.
@@ -414,6 +424,23 @@ async fn inference_inventory(conn: Conn) -> Conn {
             .with_body(serde_json::json!({ "connections": host.inference.inventory() }).to_string())
             .halt(),
         None => missing_host(conn),
+    }
+}
+
+/// `POST /attention`: one client's report of whether a person is attending, and
+/// which session it has open (`attention.rs`, docs/web-push.md). `204` on
+/// success; a malformed body is a `400` naming the problem.
+async fn report_attention(mut conn: Conn) -> Conn {
+    let Some(host) = host_of(&conn) else {
+        return missing_host(conn);
+    };
+    let body = conn.request_body_string().await.unwrap_or_default();
+    match super::attention::AttentionReport::parse(&body) {
+        Ok(report) => {
+            host.report_attention(&report);
+            conn.with_status(204).halt()
+        }
+        Err(message) => fail(conn, ErrorCode::BadRequest, message),
     }
 }
 

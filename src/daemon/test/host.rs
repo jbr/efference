@@ -7,6 +7,7 @@ use std::path::Path;
 use trillium::KnownHeaderName;
 
 mod archived;
+mod attention;
 mod creation;
 mod preview;
 mod projects;

@@ -204,8 +204,8 @@ than working with the session that created it.
 **Each card follows its session on one connection** (`openSessionCard`): a cold
 `GET /log?tail=12`, then `/v1/events` from just past it carrying the log and the card's
 state topics (`gate`, `stall`, `running`, `usage`, `session_identity`,
-`upstream_retry`), with `presence=off` — glancing at the overview is not watching a
-session, so it must not suppress that session's push ([web-push.md](web-push.md)).
+`upstream_retry`). Glancing at the overview reports nothing: attention is what the
+page's own report says ([web-push.md](web-push.md)), not what it has open.
 `foldRecent` reads the latest intent and reply off the log; a user entry retires the
 reply it answers, and a record-only assistant entry says nothing. That is N
 connections and the whole log for a card that reads two fields, accepted while
@@ -1055,7 +1055,7 @@ is the accent dot without one — a finished turn waits on the operator until th
 archived — a stalled one is the warn colour, a running one pulses faintly, and a session
 never started is a hollow ring. Hovering or focusing a tab opens a card with the overview
 card's status line, title, activity line and context meter; that opens the session's own
-state stream and log tail (`openSessionCard`, `presence=off`) only while the card shows.
+state stream and log tail (`openSessionCard`) only while the card shows.
 Tabs run most recently visited first, from visit times in `localStorage`
 (`ui/switcherOrder.ts`), and
 

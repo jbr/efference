@@ -97,6 +97,8 @@ impl Session {
     pub(crate) fn resolve_approval(&self, id: &CallId, decision: Approval) -> bool {
         let sender = self.approvals.lock().unwrap().remove(id);
         let Some(tx) = sender else { return false };
+        // The gate's push has nothing left to announce (docs/web-push.md).
+        self.cancel_escalation();
         {
             let mut pending = self.pending.lock().unwrap();
             if pending.as_ref().is_some_and(|p| p.call_id == id.0) {

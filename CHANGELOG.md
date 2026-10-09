@@ -386,7 +386,7 @@ behind a change, see [`journal/`](journal/).
 
 - **Web push on gate and settle** (docs/web-push.md): each live daemon notifies subscribed devices when an approval gate opens (body: the call's `intent`) or a turn settles (body: the turn's closing prose) — VAPID key derived from the machine root, subscriptions in one machine-scoped store, opt-in checkbox in the web client's Interface tab.
 
-- **No push while the session is watched** (docs/web-push.md): a live `/events` connection suppresses gate and settle notifications; the web client drops its stream a few seconds after the tab goes hidden and resumes from its cursor when it returns, `?presence=off` opts a non-human consumer out of the count, and the service worker skips a notification a visible window would duplicate.
+- **Push escalates instead of being suppressed** (docs/web-push.md, docs/control-api.md): web clients report attention to `POST /attention` (visible, focused, recent input; lapses after 45 s), a moment's push goes out at once when no client is attentive and otherwise after 2 minutes unless the moment resolves or an active client views that session; replaces the `/events` watched count, `?presence=off`, the replay stash, the hidden-tab stream drop, and the service worker's visible-window skip.
 
 ### Fixed
 - **A distilled result's `kept N of M lines` is right when the transcript holds only its 16 KiB prefix** (docs/control-api.md): the entry view carries `distillate: {total_lines, kept_lines}` computed by the daemon over the whole content, and the web client labels from it; a body whose kept lines all lie past the prefix says so.

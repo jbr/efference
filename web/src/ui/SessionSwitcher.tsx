@@ -9,8 +9,7 @@
 // Tabs that do not fit the row spill into a `⋯` menu, which carries a count
 // when a session in it is waiting on the operator. At rest it costs one
 // connection, the host's listing stream; a session's own state and log tail
-// are opened only while its card is showing, and read with `presence=off` so
-// glancing never suppresses that session's push notifications. With no other
+// are opened only while its card is showing. With no other
 // live session — or at a session daemon's root, where there is no host to
 // list — it renders nothing and the row is absent.
 

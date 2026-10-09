@@ -44,8 +44,7 @@ export function acquireStore(base: string): Store {
 
 /**
  * Read a session's log tail ahead of a visit, so that entering it paints a
- * transcript instead of an empty page: one `GET /log?tail=`, no stream, so the
- * session is not counted as watched (docs/web-push.md). Does nothing for a
+ * transcript instead of an empty page: one `GET /log?tail=`, no stream. Does nothing for a
  * session already held. The read is applied only to a store nobody has touched
  * since — a visit that began while it was out has its own catch-up, whose
  * cursor a late tail must not move backwards.

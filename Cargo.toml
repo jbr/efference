@@ -228,6 +228,10 @@ dev = []
 dev-proxy = ["trillium-frontend/dev-proxy"]
 
 [dev-dependencies]
+# Paused time (`start_paused`) for the escalation timer's tests: a two-minute
+# delay is advanced, not slept.
+tokio = { version = "1.53.1", features = ["test-util"] }
+
 # Snapshot the TUI as plain-text character grids (DESIGN: "playwright for TUIs").
 # File snapshots land in src/tui/snapshots/*.snap — committed, diffable, and
 # readable without running anything. `cargo insta review` / `accept` to update.

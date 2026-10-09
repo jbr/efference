@@ -156,14 +156,23 @@ fn continue_is_declined_while_asking() {
 }
 
 /// An ask pushes like a turn end does: the session is waiting on a person, and the
-/// message is the question. A watched session stashes it instead of sending, which is
-/// how the test observes it.
-#[test]
-fn an_ask_sends_a_push_carrying_the_question() {
+/// message is the question. With a client attending the host the push is held for
+/// the escalation delay, which is how the test observes it.
+#[tokio::test]
+async fn an_ask_sends_a_push_carrying_the_question() {
     let shared = session();
-    let _watching = shared.watch(crate::daemon::presence::Presence::On);
+    let attention = Arc::new(crate::daemon::attention::Attention::default());
+    attention.report_at(
+        &crate::daemon::attention::AttentionReport {
+            client: "c1".into(),
+            viewing: None,
+            active: true,
+        },
+        std::time::Instant::now(),
+    );
+    shared.set_attention(attention);
     let _wait = shared.begin_ask("ask_1", "Which branch?".into(), 1, 1);
-    let message = shared.take_replayable().expect("the ask pushed");
+    let message = shared.pending_escalation().expect("the ask pushed");
     assert!(message.title.starts_with("Message"), "{}", message.title);
     assert_eq!(message.body, "Which branch?");
 }

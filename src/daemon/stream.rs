@@ -23,7 +23,6 @@
 //! the entries that finished the turn — the second answering "is it done?" wrong, in the
 //! direction a human acts on.
 
-use super::presence::Watching;
 use super::*;
 use std::collections::BTreeMap;
 
@@ -130,11 +129,6 @@ struct Tail {
     /// `ToolResult` or a `User` turn always intervenes — so the drain cannot swallow
     /// the start of the next response.
     draining_blocks: bool,
-    /// This connection's claim on the watched count (`presence.rs`,
-    /// docs/web-push.md). Held for the life of the stream and released by `Drop`,
-    /// which is what makes "watched" mean "a connection is open" with nothing to keep
-    /// in sync. Inert for a `?presence=off` connection.
-    _watching: Watching,
 }
 
 /// Whether a delta describes a content block of the response now in flight — the
@@ -361,12 +355,10 @@ pub(crate) fn control_stream(
     shared: Arc<Session>,
     include: Include,
     since: u64,
-    presence: Presence,
 ) -> Pin<Box<dyn Stream<Item = FrameEvent> + Send + Sync + 'static>> {
     let mut tail = Tail {
         state_rx: shared.subscribe_state(),
         output_rx: shared.subscribe_stream(),
-        _watching: shared.watch(presence),
         shared,
         include,
         next_log: since,
