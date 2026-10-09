@@ -160,11 +160,13 @@ OpenRouter, a client built `without_thinking` sends OpenRouter's own
 Some models refuse a forced `tool_choice` outright, whatever the thinking (Sonnet
 5.5: `type "tool" and "any" are not supported for this model`), and the metadata
 does not say which. `Client::complete` learns it by retrying: a forced request
-answered with a 400 is sent once more as `auto`, with a final user line naming the
+answered with a request rejection — any 4xx except 401, 403, 408, and 429, the
+statuses about the caller rather than the content (`is_request_rejection`) — is
+sent once more as `auto`, with a final user line naming the
 tool (`forced_choice_instruction`) and thinking off, as the forced request had it.
 If that succeeds, the client — and its clones, which share the flag — sends every
 later forced request in that form, so the spotter and the own-model triage peek
-work on any model that can call a tool. If it fails too, the 400 had another cause:
+work on any model that can call a tool. If it fails too, the rejection had another cause:
 the first error is returned and nothing is learned. A caller's parse already
 treats a reply without the asked-for call as unusable, so an `auto` answer that
 skips the tool fails the way a malformed forced answer does. The switch writes one
@@ -172,18 +174,21 @@ fresh cache entry, since `tool_choice` is part of the cached envelope.
 
 Image input is learned the same way (`api/client/images.rs`). Where a model's
 metadata says nothing about images, `supports_image_input` reads `true`: a model
-sent an image it cannot read answers with a 400 that can be recovered from, while
-a gate left closed on a capable model gives no signal. A 400 on a request whose
+sent an image it cannot read answers with a refusal that can be recovered from,
+while a gate left closed on a capable model gives no signal. A request rejection on
+a request whose
 tool results carry image blocks is sent once more with each result's images
 replaced by a one-line placeholder. If that succeeds, the client and its clones
 withhold images from every later request, the agent loop closes the tool layer's
 image gate ([tools.md](tools.md)) and appends `Payload::ImagesRefused` with the
 provider's error, and a resumed session reads that entry back before its first
 request. If it fails too, the images were not the cause and nothing is learned.
-Error body text is not read: its wording is as vendor-specific as parameter
-spelling, and the retry diagnoses without it. The recovery stops once any request
-carrying images has succeeded on the client — the model reads images, a later 400
-has another cause, and stripping images from history the provider has cached
+Neither the error's wording nor its exact status is read: both are as
+vendor-specific as parameter spelling (OpenRouter answers an image sent to a
+text-only model with a 404, `No endpoints found that support image input`; a
+direct endpoint with a 400), and the retry diagnoses without them. The recovery stops once any request
+carrying images has succeeded on the client — the model reads images, a later
+rejection has another cause, and stripping images from history the provider has cached
 would move the prefix. Before that point no request carrying an image has
 succeeded, so withholding them moves nothing cached. What this does not catch is
 an endpoint that answers 200 and drops the image unread.

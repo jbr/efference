@@ -104,6 +104,39 @@ async fn a_400_after_images_were_accepted_is_not_retried() {
     assert_eq!(client.images_refused(), None);
 }
 
+/// OpenRouter's answer to an image sent to a text-only model, captured 2026-10-09:
+/// a 404, not a 400. Any request rejection is retried, whatever its status.
+#[tokio::test]
+async fn openrouters_404_for_an_unroutable_image_is_recovered_from() {
+    const NO_ENDPOINTS: &str = r#"{"type":"error","error":{"type":"not_found_error","message":"No endpoints found that support image input","error_type":"not_found"}}"#;
+    let (client, server) = scripted(vec![(404, NO_ENDPOINTS), (200, STREAM)]);
+    client
+        .complete(&with_image(), &[], ToolChoice::auto(), |_| {})
+        .await
+        .unwrap();
+    assert!(
+        client
+            .images_refused()
+            .is_some_and(|r| r.contains("No endpoints"))
+    );
+    assert!(!carries_image(&server.join().unwrap()[1]));
+}
+
+/// A rate limit is about the caller, not the content: nothing is withheld.
+#[tokio::test]
+async fn a_429_is_not_a_reason_to_withhold_images() {
+    let limited = r#"{"type":"error","error":{"type":"rate_limit_error","message":"slow down"}}"#;
+    let (client, server) = scripted(vec![(429, limited); 6]);
+    assert!(
+        client
+            .complete(&with_image(), &[], ToolChoice::auto(), |_| {})
+            .await
+            .is_err()
+    );
+    assert_eq!(client.images_refused(), None);
+    drop(server);
+}
+
 /// A 400 on a request with no images has nothing to withhold.
 #[tokio::test]
 async fn a_400_without_images_is_not_retried() {

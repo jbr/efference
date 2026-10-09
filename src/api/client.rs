@@ -306,7 +306,8 @@ pub struct Client {
     /// sends neither. Messages ignores it — its marker is unconditional.
     prompt_cache: PromptCachePolicy,
     upstream_failure: UpstreamFailureState,
-    /// Set once the model has answered a forced `tool_choice` with a 400
+    /// Set once the model has answered a forced `tool_choice` with a request
+    /// rejection ([`is_request_rejection`])
     /// (docs/transport.md): every later forced request from this client, and its
     /// clones, goes as `auto` with [`forced_choice_instruction`] instead. Shared
     /// across clones, so the lesson is learned once per client.
@@ -317,7 +318,7 @@ pub struct Client {
     /// placeholder.
     images_refused: Arc<std::sync::OnceLock<String>>,
     /// Set once a request carrying images has succeeded, which ends the recovery
-    /// above: the model reads images, so a later 400 has another cause.
+    /// above: the model reads images, so a later rejection has another cause.
     images_accepted: Arc<std::sync::atomic::AtomicBool>,
     /// A retry in flight, written by both retry loops (docs/transport.md). It
     /// rides on the client because the fork peek retries with a `Client` and no
@@ -694,12 +695,13 @@ impl Client {
     /// was malformed (e.g. an oversized request that exceeds the input limit), which is
     /// what makes such failures diagnosable.
     ///
-    /// A forced `tool_choice` the model refuses with a 400 is retried once as
+    /// A forced `tool_choice` the model rejects ([`is_request_rejection`]) is
+    /// retried once as
     /// `auto`, with a user line naming the tool and thinking kept off as the forced
     /// call had it (docs/transport.md). Some models refuse forced choice outright
     /// and their metadata does not say so; the retry is how the client learns it.
     /// When the retry succeeds, the client remembers, and later forced requests go
-    /// straight to the fallback. When it fails too, the 400 had another cause: the
+    /// straight to the fallback. When it fails too, the rejection had another cause: the
     /// first error is returned and nothing is learned.
     pub async fn complete(
         &self,
@@ -721,7 +723,7 @@ impl Client {
             .send(turns, tools, tool_choice, None, &mut on_delta)
             .await
         {
-            Err(e) if error_status(&e) == Some(400) => e,
+            Err(e) if is_request_rejection(&e) => e,
             answered => return answered,
         };
         match self

@@ -1,5 +1,6 @@
 //! Image input learned from the endpoint's refusal (docs/transport.md). A model
-//! whose metadata says nothing about images is sent them; a 400 on a request that
+//! whose metadata says nothing about images is sent them; a request rejection
+//! ([`is_request_rejection`]) on a request that
 //! carries image blocks is retried once with every image replaced by a text
 //! placeholder, and when that retry succeeds the client withholds images from then
 //! on. Error body text is not read: the retry is the diagnosis.
@@ -34,7 +35,7 @@ impl Client {
     /// [`Self::send_request`], with image refusal learned on the way
     /// (docs/transport.md). The recovery runs only while no request carrying images
     /// has succeeded on this client: once one has, the model reads images, a later
-    /// 400 has another cause, and stripping the history's images would move a
+    /// rejection has another cause, and stripping the history's images would move a
     /// prefix the provider has already cached.
     pub(super) async fn send(
         &self,
@@ -58,10 +59,7 @@ impl Client {
             .send_request(turns, tools, tool_choice, cap, &mut on_delta)
             .await
         {
-            Err(e)
-                if error_status(&e) == Some(400)
-                    && !self.images_accepted.load(Ordering::Relaxed) =>
-            {
+            Err(e) if is_request_rejection(&e) && !self.images_accepted.load(Ordering::Relaxed) => {
                 e
             }
             answered => {

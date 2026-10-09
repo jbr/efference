@@ -170,6 +170,18 @@ pub fn error_status(error: &super::Error) -> Option<u16> {
         .and_then(OpenError::status)
 }
 
+/// Whether the upstream refused something the request carries, so the same
+/// request without an optional part might succeed: any 4xx except the four about
+/// the caller rather than the content (401, 403, 408, 429). The fallbacks that
+/// drop a part and retry (a forced `tool_choice`, image blocks — docs/transport.md)
+/// read this rather than one status: OpenRouter answers an image sent to a
+/// text-only model with a 404, a direct endpoint with a 400. The retry is the
+/// diagnosis, so a 4xx with another cause costs one request and teaches nothing.
+pub fn is_request_rejection(error: &super::Error) -> bool {
+    error_status(error)
+        .is_some_and(|s| (400..500).contains(&s) && ![401, 403, 408, 429].contains(&s))
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -254,6 +266,19 @@ mod test {
         assert_eq!(error_class(&e), FailureClass::Terminal);
         let other: crate::api::Error = "dialect mismatch".into();
         assert_eq!(error_class(&other), FailureClass::Terminal);
+    }
+
+    #[test]
+    fn a_request_rejection_is_a_4xx_not_about_the_caller() {
+        let status =
+            |s| -> crate::api::Error { OpenError::new(Some(s), s.to_string(), "x").into() };
+        for s in [400, 404, 413, 415, 422] {
+            assert!(is_request_rejection(&status(s)), "{s}");
+        }
+        for s in [401, 403, 408, 429, 500, 503] {
+            assert!(!is_request_rejection(&status(s)), "{s}");
+        }
+        assert!(!is_request_rejection(&"dialect mismatch".into()));
     }
 
     #[test]
