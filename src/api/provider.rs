@@ -156,11 +156,13 @@ impl WireDialect {
         match value.trim() {
             "messages" => Ok(Self::Messages),
             "responses" => Ok(Self::Responses),
+            "completions" => Ok(Self::Completions),
             "systemone" => Ok(Self::SystemOne),
             other => Err(format!(
                 "dialect {other:?} not recognized: valid values are `messages` \
-                 (Anthropic Messages), `responses` (OpenAI Responses), and \
-                 `systemone` (System One decision models) (docs/transport.md)"
+                 (Anthropic Messages), `responses` (OpenAI Responses), `completions` \
+                 (Chat Completions), and `systemone` (System One decision models) \
+                 (docs/transport.md)"
             )
             .into()),
         }
@@ -244,6 +246,7 @@ impl<'de> Deserialize<'de> for Provider {
         match name.as_str() {
             "custom-messages" => Ok(Self::Custom(WireDialect::Messages)),
             "custom-responses" => Ok(Self::Custom(WireDialect::Responses)),
+            "custom-completions" => Ok(Self::Custom(WireDialect::Completions)),
             _ => Self::from_name(&name).map_err(serde::de::Error::custom),
         }
     }

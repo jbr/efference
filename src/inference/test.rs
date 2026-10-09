@@ -706,11 +706,11 @@ base-url = "https://api.example.com/v1/systemone""#,
     assert!(no_base.contains("needs a `base-url`"), "{no_base}");
 
     let bad_dialect = declare(
-        r#"dialect = "completions"
+        r#"dialect = "generate"
 base-url = "https://api.example.com/v1""#,
     )
     .unwrap_err();
-    assert!(bad_dialect.contains("completions"), "{bad_dialect}");
+    assert!(bad_dialect.contains("generate"), "{bad_dialect}");
 
     // A base URL that is not a URL fails at load rather than at the first
     // request, where a relative path would read as a transport error.

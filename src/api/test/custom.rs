@@ -260,11 +260,13 @@ fn the_dialect_name_vocabulary_is_closed() {
         WireDialect::from_name("systemone").unwrap(),
         WireDialect::SystemOne
     );
+    assert_eq!(
+        WireDialect::from_name("completions").unwrap(),
+        WireDialect::Completions
+    );
     assert_eq!(WireDialect::SystemOne.config_name(), "systemone");
-    let error = WireDialect::from_name("completions")
-        .unwrap_err()
-        .to_string();
-    assert!(error.contains("completions"), "{error}");
+    let error = WireDialect::from_name("generate").unwrap_err().to_string();
+    assert!(error.contains("generate"), "{error}");
     assert!(error.contains("messages"), "{error}");
 }
 

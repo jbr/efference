@@ -39,6 +39,7 @@ mod assembly;
 mod blocks;
 mod capabilities;
 mod codex;
+mod completions;
 mod custom;
 mod effort;
 mod endpoint;

@@ -11,6 +11,7 @@ use trillium_client_retry::RetryHandler;
 
 use crate::api::assembler::ResponseMeta;
 use crate::api::auth_value::Reloaded;
+use crate::api::completions::assembler::CompletionsAssembler;
 use crate::api::failure::{FailureClass, OpenError, classify_body};
 use crate::api::plan::{PlanState, plan_from_headers, plan_state};
 use crate::api::responses::assembler::ResponsesAssembler;
@@ -822,9 +823,9 @@ impl Client {
                 };
                 Encoded::Responses(encode_responses(turns, preamble, self.prompt_cache))
             }
-            // No configuration names the dialect until its client lands
-            // (`WireDialect::from_name`).
-            WireDialect::Completions => unreachable!("the Completions dialect is not served yet"),
+            WireDialect::Completions => {
+                Encoded::Completions(completions::encode_completions(turns, &self.system))
+            }
             WireDialect::SystemOne => {
                 unreachable!("a client is only built on a provider that serves turns")
             }
@@ -837,6 +838,9 @@ impl Client {
             + match &encoded {
                 Encoded::Messages(messages) => serde_json::to_vec(messages)?.len(),
                 Encoded::Responses(input) => serde_json::to_vec(input)?.len(),
+                // The preamble is inside the encoded messages; `system` above
+                // counts it once more, which only overstates the prompt.
+                Encoded::Completions(messages) => serde_json::to_vec(messages)?.len(),
             }
             + serde_json::to_vec(tools)?.len();
         let mut max_tokens = cap.unwrap_or_else(|| self.reserve(body_bytes));
@@ -891,6 +895,17 @@ impl Client {
                     max_tokens,
                     cap.is_some(),
                 ))?,
+                Encoded::Completions(messages) => {
+                    serde_json::to_string(&completions::completions_request(
+                        &self.model,
+                        messages.clone(),
+                        tools,
+                        tool_choice,
+                        max_tokens,
+                        self.temperature
+                            .map(|t| self.endpoint.provider.map_temperature(t)),
+                    ))?
+                }
             };
             log::debug!(
                 "POST {}: {} turns, {} request bytes, max_tokens {max_tokens}",
@@ -1023,9 +1038,7 @@ impl Client {
         let mut assembler = match self.dialect() {
             WireDialect::Messages => AnyAssembler::Messages(Assembler::new()),
             WireDialect::Responses => AnyAssembler::Responses(ResponsesAssembler::new()),
-            // No configuration names the dialect until its client lands
-            // (`WireDialect::from_name`).
-            WireDialect::Completions => unreachable!("the Completions dialect is not served yet"),
+            WireDialect::Completions => AnyAssembler::Completions(CompletionsAssembler::new()),
             WireDialect::SystemOne => {
                 unreachable!("a client is only built on a provider that serves turns")
             }
@@ -1157,9 +1170,7 @@ impl Client {
                 conn.with_request_header("anthropic-version", ANTHROPIC_VERSION)
             }
             WireDialect::Responses => conn,
-            // No configuration names the dialect until its client lands
-            // (`WireDialect::from_name`).
-            WireDialect::Completions => unreachable!("the Completions dialect is not served yet"),
+            WireDialect::Completions => conn,
             WireDialect::SystemOne => {
                 unreachable!("a client is only built on a provider that serves turns")
             }
@@ -1332,18 +1343,22 @@ impl Client {
     /// `auto()`) and reuses the client's own `system`, rather than reconstructing
     /// any of them.
     ///
-    /// On the Responses dialect the ping is an ordinary streamed request with the
-    /// output capped at [`Provider::keepalive_output_cap`] ([`Self::responses_keepalive`]).
+    /// On the Responses and Completions dialects the ping is an ordinary streamed
+    /// request with the output capped at [`Provider::keepalive_output_cap`]
+    /// ([`Self::streamed_keepalive`]).
     pub async fn keepalive(
         &self,
         turns: &[WireTurn],
         tools: &[Value],
         tool_choice: ToolChoice,
     ) -> Result<RequestUsage, KeepaliveError> {
-        if self.dialect() == WireDialect::Responses {
+        if matches!(
+            self.dialect(),
+            WireDialect::Responses | WireDialect::Completions
+        ) {
             return self
                 .with_origin(RequestOrigin::Keepalive)
-                .responses_keepalive(turns, tools, tool_choice)
+                .streamed_keepalive(turns, tools, tool_choice)
                 .await;
         }
         let messages = encode_messages(turns, self.image_placement(), self.breakpoint_placement());
@@ -1418,13 +1433,13 @@ impl Client {
             .map_err(KeepaliveError::other)
     }
 
-    /// The Responses keepalive (docs/transport.md): the turn's own envelope, streamed,
-    /// with the output capped at [`Provider::keepalive_output_cap`]. The dialect has no
-    /// `max_tokens: 0`, and the Codex backend resumes a cached prefix only where an
+    /// The streamed keepalive (docs/transport.md): the turn's own envelope, streamed,
+    /// with the output capped at [`Provider::keepalive_output_cap`]. Neither Responses
+    /// nor Completions has a `max_tokens: 0`, and the Codex backend resumes a cached prefix only where an
     /// earlier request ended, so the ping re-sends the last request's input whole —
     /// what the keepalive loop's lopped projection is — and pays a cached read plus
     /// the capped output.
-    async fn responses_keepalive(
+    async fn streamed_keepalive(
         &self,
         turns: &[WireTurn],
         tools: &[Value],
@@ -1506,12 +1521,14 @@ impl Client {
 enum Encoded {
     Messages(Vec<ApiMessage>),
     Responses(Vec<responses::wire::InputItem>),
+    Completions(Vec<completions::Message>),
 }
 
 /// The per-dialect stream folder behind one read loop.
 enum AnyAssembler {
     Messages(Assembler),
     Responses(ResponsesAssembler),
+    Completions(CompletionsAssembler),
 }
 
 impl AnyAssembler {
@@ -1519,6 +1536,7 @@ impl AnyAssembler {
         match self {
             Self::Messages(a) => a.observed_response(response),
             Self::Responses(a) => a.observed_response(response),
+            Self::Completions(a) => a.observed_response(response),
         }
     }
 
@@ -1526,6 +1544,7 @@ impl AnyAssembler {
         match self {
             Self::Messages(a) => a.fail(why),
             Self::Responses(a) => a.fail(why),
+            Self::Completions(a) => a.fail(why),
         }
     }
 
@@ -1533,6 +1552,7 @@ impl AnyAssembler {
         match self {
             Self::Messages(a) => a.apply(event_type, data),
             Self::Responses(a) => a.apply(event_type, data),
+            Self::Completions(a) => a.apply(event_type, data),
         }
     }
 
@@ -1540,6 +1560,7 @@ impl AnyAssembler {
         match self {
             Self::Messages(a) => a.finish(),
             Self::Responses(a) => a.finish(),
+            Self::Completions(a) => a.finish(),
         }
     }
 }

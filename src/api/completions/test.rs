@@ -86,6 +86,8 @@ fn completions_envelope_matches_expected_wire_bytes() {
         encode_completions(&turns, "PRE"),
         &tools,
         ToolChoice::auto(),
+        MAX_TOKENS,
+        None,
     );
     assert_eq!(
         serde_json::to_string(&request).unwrap(),

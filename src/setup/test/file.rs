@@ -210,8 +210,8 @@ auth = { kind = "vault" }
         // A described endpoint is as repairable as a named one, so an unreadable
         // dialect says so rather than dropping the row from the list.
         (
-            "[connections.a]\ndialect = \"completions\"\nbase-url = \"https://x/v1\"\nauth = { kind = \"env\", key = \"K\" }\n",
-            "completions",
+            "[connections.a]\ndialect = \"generate\"\nbase-url = \"https://x/v1\"\nauth = { kind = \"env\", key = \"K\" }\n",
+            "generate",
         ),
         (
             "[connections.a]\ndialect = 7\nauth = { kind = \"env\", key = \"K\" }\n",

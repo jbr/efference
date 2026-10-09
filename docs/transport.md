@@ -717,9 +717,10 @@ a login to redo, naming `efference setup`; a transport failure or 5xx is not.
 
 ## The Responses dialect
 
-A provider speaks one of two wire dialects (`api::WireDialect`), fixed by the
+A provider speaks one of three turn dialects (`api::WireDialect`), fixed by the
 declared provider: Anthropic and OpenRouter speak **Messages** (everything above);
-OpenAI speaks **Responses** (`POST /v1/responses`). There is no independent knob —
+OpenAI speaks **Responses** (`POST /v1/responses`); a described connection may also
+speak **Chat Completions** (below). There is no independent knob —
 one session projects and assembles in exactly one dialect, and `Client::complete`
 dispatches on it after encoding the shared semantic turns
 ([log-and-projection.md](log-and-projection.md)).
@@ -748,27 +749,6 @@ creation and recorded in its boot Preamble; an offline reader checks that record
 provider against the assistant turns before rendering. A list with no assistant turn
 belongs to no dialect and encodes on either. A same-dialect provider or model
 selected for a replay is a separate rendering choice, not a live session change.
-
-**Chat Completions** (`api/completions.rs`, `WireDialect::Completions`) is encoded but
-not yet served: no configuration accepts `dialect = "completions"` until its stream
-assembler and client dispatch land (backlog/completions-dialect/dialect.md).
-`encode_completions` replays each recorded `CompletionsMessage` as stored, and
-`completions_envelope_matches_expected_wire_bytes` pins the request.
-
-`efference dev wire --dialect completions` is the one rendering that crosses dialects
-on purpose. It skips the check and translates a Messages-recorded session into Chat
-Completions; nothing sends it. Its uses are as a
-second rendering of the same conversation, for when an upstream's answers stop being
-reproducible in one dialect, and as the user/tool-result half of the Completions
-dialect's future encoder. The preamble leads as a `system` message. Each tool result is
-a `role: "tool"` message with string content, in result order. A `tool` message cannot
-carry an image, so the turn's result images and prose follow as one `user` message
-after the run of results. Its content is a bare string when it is one text part, parts
-otherwise. Assistant text joins into `content`, `tool_use` becomes `tool_calls` (the
-input's compact, key-sorted serialization as `arguments`), and thinking and redacted
-thinking become OpenRouter `reasoning_details`, whose `format` tag is inferred from the
-model id. Breakpoints place nothing. A Responses-recorded session is refused.
-`translated_messages_turn_matches_expected_bytes` pins the translation.
 
 **Request** (`api/responses.rs`, `ResponsesRequest`; field order pinned by
 `responses_envelope_matches_expected_wire_bytes`). `input[]` is the encoded turn
@@ -941,6 +921,101 @@ gpt-5.6-luna here, claude-haiku-4-5 on Anthropic and its `anthropic/` slug on
 OpenRouter), and an explicit `--spotter-model` passes its own provider's
 check. Model capabilities on this dialect come from the provider's catalog, not
 from the build (**OpenAI capabilities**, under Providers below).
+
+## The Chat Completions dialect
+
+`WireDialect::Completions`, spelled `dialect = "completions"` on a described connection
+(`Provider::Custom`; there is no named provider for it). Turns go to
+`{base}/chat/completions` with a bearer credential; `{base}/models` is the capability
+lookup and credential check, as for the other described dialects. Most hosted
+inference services outside Anthropic and OpenAI serve it, as does every common local
+server. The encoder is `api/completions.rs`, the assembler
+`api/completions/assembler.rs`, and the stored turn `log/completions.rs`.
+
+**Reasoning is only received.** The harness never generates reasoning; it stores it,
+sends it back, and shows it. Vendors disagree on where it arrives:
+`reasoning_content` (DeepSeek), `reasoning` and `reasoning_details` (OpenRouter), and
+`thinking` parts inside `content` (Mistral). So the dialect models none of them. The
+assistant message is stored as the stream assembled it, every key under its arrival
+name (`CompletionsMessage`, [log-and-projection.md](log-and-projection.md)), and
+replayed under the same keys. Replaying verbatim keeps signature-bearing reasoning
+valid across turns: Gemini's thought signature through OpenRouter arrives as a
+`reasoning.encrypted` detail
+(journal/2026-08-28-gemini-image-thought-signature.md). Display reads the opaque keys
+by a heuristic that never reaches the wire.
+
+**Stream assembly is one merge rule** over each chunk's `choices[0].delta`
+(`assembler::merge`):
+
+- `null` is absent and never overwrites what has arrived;
+- strings concatenate, except under the identity keys `id`, `type`, `role`,
+  `format`, and `index`, where the last value wins;
+- objects merge key by key;
+- an array element with `index` merges into the element with the same `index` and a
+  matching `type` (a fragment without `type` matches), and otherwise appends; an
+  element without `index` continues the last element when that one has none either
+  and the same `type`, and otherwise appends;
+- `content` is a string or a parts array, a string being one `text` part: when the two
+  meet, the string becomes a part, and an empty one is dropped;
+- any other value: the last wins.
+
+Each clause was measured on 2026-10-09 against captures now kept as test fixtures
+(`src/api/completions/*.sse`), and the assembler tests run each one:
+
+- OpenRouter repeats `role` in every delta and `type` / `format` in every
+  `reasoning_details` fragment, which concatenation would turn into
+  `assistantassistant…`.
+- Inception and DeepSeek send `"content": null` and `"tool_calls": null` beside real
+  values.
+- OpenRouter/Gemini sends `reasoning.text` and then the `reasoning.encrypted`
+  signature detail at the **same** `index`, so merging on `index` alone would fold
+  the signature into the text. Its later argument fragments carry `index` and no
+  `type`.
+- Mistral sends reasoning as `content` parts with no `index`
+  (`{"type":"thinking","thinking":[{"type":"text","text":…}]}`, ending
+  `"closed": true`), then the answer as plain-string deltas; assembled, that is
+  `[{thinking…}, {text…}]`. Reasoning there is opt-in (`reasoning_effort`).
+- OpenRouter and DeepSeek stream `arguments` in fragments; Mistral and Inception send
+  each call whole in one chunk, Mistral two parallel calls in one.
+- Keys outside `delta` are ignored except `id`, `model`, `usage`, `provider` (the
+  upstream that served, as on OpenRouter's Messages skin), and an `error` object.
+  Mistral pads every chunk with a `p` string; Inception adds `reasoning_summary` and
+  `server_timing`.
+
+Assembly drops `null` values, `role`, and each call's `index` from the stored
+message. The live view gets one `Streamed` event per chunk at fixed indices (thinking
+0, text 1, call `i` at 2 + `i`), the first non-empty kind in the order call,
+reasoning, prose; a chunk carrying two parallel calls starts only the first live.
+`finish_reason` maps through `Finish::completions`. Usage arrives under
+`stream_options: {include_usage: true}`: `prompt_tokens` is the whole prompt, so
+`input_tokens = prompt_tokens − cached_tokens`. Mistral puts usage on the last content
+chunk; OpenRouter, DeepSeek, and Inception send a separate chunk with empty `choices`.
+All four reported `prompt_tokens_details.cached_tokens`, and OpenRouter's carries
+inline `cost`.
+
+**Request.** The preamble leads as a `system` message, and assistant turns replay as
+stored. A tool result is a `role: "tool"` message with string content. A `tool`
+message cannot carry an image, so the turn's result images and prose follow as one
+`user` message after the run of results. Its content is a bare string when it is one
+text part (some local servers accept only that form), parts with `data:` URLs
+otherwise. Tools are `{type: "function", function: {name, description, parameters}}`,
+`tool_choice` is `"auto"` or `{type: "function", function: {name}}`, and the body
+carries `max_tokens`, `temperature` when set, `stream: true`, and
+`stream_options.include_usage`. The dialect has no per-part cache marker, so
+breakpoints place nothing, and no `parallel_tool_calls` or `prompt_cache_key` is sent,
+since not every server accepts them. The keepalive is the streamed ping Responses
+uses, capped at 16 output tokens. `completions_envelope_matches_expected_wire_bytes`
+pins the request body.
+
+`efference dev wire --dialect completions` is the one rendering that crosses dialects
+on purpose. It skips the check and translates a Messages-recorded session into Chat
+Completions; nothing sends it. Its use is a second rendering of the same
+conversation, for when an upstream's answers stop being reproducible in one dialect.
+It encodes the user half as above. Assistant text joins into `content`, `tool_use` becomes `tool_calls` (the
+input's compact, key-sorted serialization as `arguments`), and thinking and redacted
+thinking become OpenRouter `reasoning_details`, whose `format` tag is inferred from the
+model id. A Responses-recorded session is refused.
+`translated_messages_turn_matches_expected_bytes` pins the translation.
 
 ## Providers
 

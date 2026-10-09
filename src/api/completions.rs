@@ -18,7 +18,7 @@ mod test;
 /// The request body. Field order is pinned by
 /// `completions_envelope_matches_expected_wire_bytes`.
 #[derive(Serialize)]
-struct CompletionsRequest<'a> {
+pub(super) struct CompletionsRequest<'a> {
     model: &'a str,
     /// Spelled `max_completion_tokens` by OpenAI's own endpoint; `max_tokens` is
     /// what the other servers accept (backlog/completions-dialect/dialect.md).
@@ -26,6 +26,8 @@ struct CompletionsRequest<'a> {
     messages: Vec<Message>,
     tools: Vec<Value>,
     tool_choice: Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    temperature: Option<f64>,
     stream: bool,
     stream_options: StreamOptions,
 }
@@ -178,21 +180,27 @@ pub fn render_completions_request_pretty(
         messages,
         tools,
         tool_choice,
+        MAX_TOKENS,
+        None,
     ))?)
 }
 
-fn completions_request<'a>(
+/// The request body a turn sends (`Client::complete`).
+pub(super) fn completions_request<'a>(
     model: &'a str,
     messages: Vec<Message>,
     tools: &[Value],
     tool_choice: ToolChoice,
+    max_tokens: u32,
+    temperature: Option<f64>,
 ) -> CompletionsRequest<'a> {
     CompletionsRequest {
         model,
-        max_tokens: MAX_TOKENS,
+        max_tokens,
         messages,
         tools: tool_definitions(tools),
         tool_choice: tool_choice_value(&tool_choice),
+        temperature,
         stream: true,
         stream_options: StreamOptions {
             include_usage: true,

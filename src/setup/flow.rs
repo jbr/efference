@@ -181,6 +181,8 @@ fn describe_endpoint<P: Prompter>(prompter: &mut P) -> Result<(WireDialect, Stri
     let dialects = [
         Choice::new("Anthropic Messages").detail("POST <base>/messages, as Anthropic's API"),
         Choice::new("OpenAI Responses").detail("POST <base>/responses, as OpenAI's API"),
+        Choice::new("Chat Completions")
+            .detail("POST <base>/chat/completions, as most other hosted and local servers"),
         Choice::new("System One decisions").detail(
             "a decision model (jev and kin) — backs the spotter only; POST to the URL as given",
         ),
@@ -188,6 +190,7 @@ fn describe_endpoint<P: Prompter>(prompter: &mut P) -> Result<(WireDialect, Stri
     let dialect = match prompter.select("Which API does it speak?", &dialects)? {
         0 => WireDialect::Messages,
         1 => WireDialect::Responses,
+        2 => WireDialect::Completions,
         _ => WireDialect::SystemOne,
     };
     // A System One provider's route is whatever its docs say (`/v1/systemone`,
