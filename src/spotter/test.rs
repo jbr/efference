@@ -12,6 +12,7 @@ fn role(toml: &str) -> Config {
 
 fn spot_completion(name: &str, input: Value) -> Completion {
     Completion {
+        receipt: Default::default(),
         assistant: Payload::Assistant {
             output: crate::log::AssistantOutput::from_legacy_messages(
                 vec![],

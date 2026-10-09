@@ -55,6 +55,7 @@ fn a_retry_tail_answers_every_wrong_call_and_renews_the_ask() {
 #[test]
 fn a_prose_only_response_retries_with_just_the_renewed_ask() {
     let completion = Completion {
+        receipt: Default::default(),
         assistant: Payload::Assistant {
             output: AssistantOutput::from_legacy_messages(
                 vec![],

@@ -155,6 +155,7 @@ pub(super) fn capabilities(body: &str) -> Result<ModelCapabilities, Error> {
         // frontier (docs/transport.md).
         prompt_cache: PromptCachePolicy::Explicit,
         validates_efforts: supported_efforts.is_some(),
+        prices: None,
         supported_efforts,
         // The metadata names which levels a model takes, not which one it
         // defaults to.

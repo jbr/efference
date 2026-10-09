@@ -25,20 +25,9 @@ fn keepalive_advances_touch_clock_not_cap_clock() {
         cache_creation_input_tokens: 0,
         cache_read_input_tokens: 100,
     };
-    shared.record_request(
-        RequestOrigin::Turn,
-        RequestUsage {
-            id: None,
-            model: None,
-            usage: usage.clone(),
-        },
-    ); // real turn → stamps both clocks
+    shared.record_request(RequestOrigin::Turn, RequestUsage::new(usage.clone())); // real turn → stamps both clocks
     std::thread::sleep(Duration::from_millis(5));
-    shared.record_keepalive(RequestUsage {
-        id: None,
-        model: None,
-        usage,
-    }); // ping → advances the touch clock only
+    shared.record_keepalive(RequestUsage::new(usage)); // ping → advances the touch clock only
 
     let (touch, turn) = shared.keepalive_clocks();
     let (touch, turn) = (touch.unwrap(), turn.unwrap());
@@ -73,17 +62,9 @@ fn recorded_requests_land_in_the_usage_record() {
     };
     shared.record_request(
         RequestOrigin::Peek,
-        RequestUsage {
-            id: Some("gen-abc123".into()),
-            model: None,
-            usage: usage.clone(),
-        },
+        RequestUsage::new(usage.clone()).with_id("gen-abc123"),
     );
-    shared.record_keepalive(RequestUsage {
-        id: None,
-        model: None,
-        usage,
-    });
+    shared.record_keepalive(RequestUsage::new(usage));
 
     let lines: Vec<Value> = std::fs::read_to_string(&usage_path)
         .expect("usage record exists")
@@ -232,15 +213,14 @@ fn recorded_requests_move_the_published_cold_streak() {
         std::env::current_dir().unwrap(),
         Log::create(&log_path, None).expect("create log"),
     );
-    let turn = |read| RequestUsage {
-        id: None,
-        model: Some("claude-haiku-4-5".into()),
-        usage: Usage {
+    let turn = |read| {
+        RequestUsage::new(Usage {
             input_tokens: 1,
             output_tokens: 1,
             cache_creation_input_tokens: 0,
             cache_read_input_tokens: read,
-        },
+        })
+        .with_model("claude-haiku-4-5")
     };
 
     shared.record_request(RequestOrigin::Turn, turn(0)); // boot — explained
@@ -263,11 +243,7 @@ fn only_main_prefix_requests_stamp_the_touch_clock() {
         std::env::current_dir().unwrap(),
         Log::create(&log_path, None).expect("create log"),
     );
-    let request = || RequestUsage {
-        id: None,
-        model: None,
-        usage: Usage::default(),
-    };
+    let request = || RequestUsage::new(Usage::default());
     shared.record_request(RequestOrigin::Spot, request());
     shared.record_request(RequestOrigin::Peek, request());
     let (touch, turn) = shared.keepalive_clocks();
@@ -315,6 +291,72 @@ fn attaching_the_usage_record_seeds_the_clocks() {
     );
 }
 
+/// A shared peek's usage line says so (`main_prefix`), and a restarted host seeds the
+/// touch clock from it; the same peek without the flag, and the flag's absence on old
+/// lines, leave the clock on the earlier turn.
+#[test]
+fn a_shared_peek_line_seeds_the_touch_clock() {
+    let dir = std::env::temp_dir();
+    let usage_path = dir.join("efference-seed-peek-test-usage.jsonl");
+    let _ = std::fs::remove_file(&usage_path);
+    let request = || RequestUsage::new(Usage::default());
+    let new_session = || Session::new(std::env::current_dir().unwrap(), Log::in_memory()).0;
+    let first = new_session();
+    first.attach_usage_log(&usage_path);
+    first.record_peek(false, request());
+    first.record_peek(true, request());
+    drop(first);
+
+    let lines: Vec<Value> = std::fs::read_to_string(&usage_path)
+        .unwrap()
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    assert!(lines[0].get("main_prefix").is_none(), "omitted when false");
+    assert_eq!(lines[1]["main_prefix"], true);
+
+    // Backdate the record so the seeded clock is distinguishable from a fresh stamp.
+    let now = crate::log::Timestamp::now().0 as u128;
+    let minutes_ago = |m: u128| now - m * 60_000;
+    let record = format!(
+        "{{\"at_ms\":{},\"origin\":\"turn\"}}\n{{\"at_ms\":{},\"origin\":\"peek\"}}\n",
+        minutes_ago(30),
+        minutes_ago(20),
+    );
+    std::fs::write(&usage_path, &record).unwrap();
+    let old = new_session();
+    old.attach_usage_log(&usage_path);
+    assert_eq!(old.keepalive_clocks().0.unwrap().as_secs() / 60, 30);
+
+    let flagged = format!(
+        "{record}{{\"at_ms\":{},\"origin\":\"peek\",\"main_prefix\":true}}\n",
+        minutes_ago(10),
+    );
+    std::fs::write(&usage_path, flagged).unwrap();
+    let seeded = new_session();
+    seeded.attach_usage_log(&usage_path);
+    assert_eq!(seeded.keepalive_clocks().0.unwrap().as_secs() / 60, 10);
+}
+
+/// A peek on the agent's client refreshes the idle window the streak measures from; one
+/// on a separate triage client does not.
+#[test]
+fn only_a_shared_peek_touches_the_streaks_idle_window() {
+    let t = 1_800_000_000_000u128;
+    let m = Some("claude-haiku-4-5");
+    let cold_after_gap = |main_prefix: bool| {
+        let mut streak = ColdStreak::default();
+        streak.observe(RequestOrigin::Turn, t, m, 5_000);
+        streak.observe_touching(RequestOrigin::Peek, main_prefix, t + 390_000, m, 5_000);
+        streak.observe(RequestOrigin::Turn, t + 400_000, m, 0)
+    };
+    assert_eq!(cold_after_gap(true), Some(CacheRead::Cold));
+    assert_eq!(
+        cold_after_gap(false),
+        Some(CacheRead::ColdStart(ColdStart::Idle))
+    );
+}
+
 /// A primer plants a resume point on the triage lineage, not the loop's: it neither
 /// counts as prefix evidence nor stamps the touch clock, so the main prefix still
 /// reads evicted after an idle gap (backlog/separate-triage-cold-prefix.md).
@@ -353,16 +395,12 @@ fn primer_requests_land_in_the_usage_record_as_triage_primer() {
 
     shared.record_request(
         RequestOrigin::TriagePrimer,
-        RequestUsage {
-            id: None,
-            model: None,
-            usage: Usage {
-                input_tokens: 140_000,
-                output_tokens: 16,
-                cache_creation_input_tokens: 0,
-                cache_read_input_tokens: 130_000,
-            },
-        },
+        RequestUsage::new(Usage {
+            input_tokens: 140_000,
+            output_tokens: 16,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 130_000,
+        }),
     );
 
     let lines: Vec<Value> = std::fs::read_to_string(&usage_path)
@@ -375,4 +413,64 @@ fn primer_requests_land_in_the_usage_record_as_triage_primer() {
     };
     assert_eq!(primer["origin"], "triage_primer");
     assert_eq!(primer["output"], 16);
+}
+
+/// A request whose response carried its cost inline adds it to the session total and
+/// is not queued for the generation lookup; one without falls through to the lookup
+/// (docs/transport.md). Both land on the `usage.jsonl` line, and a line written before
+/// the fields existed still parses.
+#[test]
+fn inline_cost_prices_a_request_and_is_recorded() {
+    use crate::api::{InlineCost, Receipt};
+    let dir = std::env::temp_dir();
+    let usage_path = dir.join("efference-inline-cost-test-usage.jsonl");
+    let _ = std::fs::remove_file(&usage_path);
+    let (shared, _turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    shared.attach_usage_log(&usage_path);
+    // Armed, so the request without an inline cost would be queued for the lookup
+    // (not run here: no runtime). The first two must reach the total by themselves.
+    shared.enable_cost_tracking(crate::api::Endpoint {
+        provider: crate::api::Provider::OpenRouter,
+        url: Some("http://127.0.0.1:9/api/v1/messages".into()),
+        auth_header: "authorization".into(),
+        auth_value: "Bearer test".into(),
+        session_id: None,
+        extra_headers: Vec::new(),
+        base: None,
+    });
+    let request = |cost: Option<f64>| {
+        RequestUsage::new(Usage::default())
+            .with_id("gen-1")
+            .with_receipt(Receipt {
+                served_by: cost.map(|_| "InferenceNet".to_string()),
+                cost: cost.map(|total_usd| InlineCost {
+                    total_usd,
+                    prompt_usd: None,
+                    completion_usd: None,
+                }),
+            })
+    };
+    shared.record_request(RequestOrigin::Turn, request(Some(0.25)));
+    shared.record_keepalive(request(Some(0.5)));
+    shared.record_request(RequestOrigin::Turn, request(None));
+    {
+        let cell = shared.cost.lock().unwrap();
+        assert_eq!(cell.total_usd, 0.75);
+        assert_eq!(cell.unpriced, 0);
+    }
+    let lines: Vec<Value> = std::fs::read_to_string(&usage_path)
+        .unwrap()
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    assert_eq!(lines[0]["cost_usd"], 0.25);
+    assert_eq!(lines[0]["served_by"], "InferenceNet");
+    assert_eq!(lines[1]["cost_usd"], 0.5);
+    assert!(lines[2].get("cost_usd").is_none() && lines[2].get("served_by").is_none());
+    for line in &lines {
+        let parsed: UsageLine = serde_json::from_value(line.clone()).unwrap();
+        assert_eq!(serde_json::to_value(&parsed).unwrap(), *line);
+    }
+    let old: UsageLine = serde_json::from_str(r#"{"at_ms":1,"origin":"turn","input":3}"#).unwrap();
+    assert_eq!((old.cost_usd, old.served_by), (None, None));
 }

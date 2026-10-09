@@ -15,9 +15,11 @@ mod codex;
 mod listing;
 mod models;
 mod openrouter;
+mod prices;
 mod row;
 mod typesafe;
 
+pub use prices::TokenPrices;
 pub use row::{ListedModel, ModelKind, Price};
 
 /// The spotter model a bare session uses on either OpenAI arm when the
@@ -277,6 +279,23 @@ impl Provider {
     /// about a state and never produces a turn.
     pub fn serves_inference(&self) -> bool {
         self.inference_dialect().is_some()
+    }
+
+    /// The output cap a cache-keepalive ping sends (docs/transport.md). Anthropic
+    /// honours `max_tokens: 0`, which reads the prefix and generates nothing. The
+    /// Responses dialect has no zero (the Codex backend refuses `max_output_tokens`
+    /// below 16). OpenRouter treats 0 as unset and lets the model generate to
+    /// `end_turn`, but honours a positive cap on most upstreams, and OpenAI models
+    /// behind it floor the cap at 16, so 16 is the smallest cap that costs the same
+    /// everywhere. An upstream that ignores every cap (observed: x-ai/grok-4.7,
+    /// qwen/qwen3.8-omni-flash) is left to the keepalive's affordability check.
+    pub fn keepalive_output_cap(&self) -> u32 {
+        match self {
+            Self::Anthropic | Self::TypeSafe => 0,
+            Self::OpenRouter | Self::OpenAI | Self::OpenAICodex => 16,
+            Self::Custom(WireDialect::Responses) => 16,
+            Self::Custom(_) => 0,
+        }
     }
 
     /// The Responses request shape, for providers on that dialect.
@@ -929,6 +948,13 @@ impl Provider {
                     /// has an explicit prompt cache at all.
                     #[serde(default)]
                     input_cache_read: Option<String>,
+                    /// Decimal USD per token, like `input_cache_read` where that is
+                    /// a price at all; they feed the keepalive's affordability
+                    /// check (`prices::conservative`).
+                    #[serde(default)]
+                    prompt: Option<String>,
+                    #[serde(default)]
+                    completion: Option<String>,
                 }
                 let body: Body = serde_json::from_str(body)?;
                 let data = body.data;
@@ -1005,6 +1031,13 @@ impl Provider {
                     .any(|e| e.pricing.input_cache_read.is_some());
                 let prompt_cache =
                     PromptCachePolicy::from_support(has_explicit_cache, has_implicit_cache);
+                // The same pinned set, so a pinned session is priced by the
+                // upstreams it can reach.
+                let prices = prices::conservative(endpoints.iter().map(|e| prices::ListedPrices {
+                    prompt: e.pricing.prompt.as_deref(),
+                    completion: e.pricing.completion.as_deref(),
+                    cache_read: e.pricing.input_cache_read.as_deref(),
+                }));
                 Ok(ModelCapabilities {
                     context_length: Some(context_length),
                     max_output_tokens,
@@ -1036,6 +1069,7 @@ impl Provider {
                     supported_efforts: None,
                     default_effort: None,
                     validates_efforts: false,
+                    prices,
                 })
             }
         }
@@ -1283,6 +1317,14 @@ pub struct ModelCapabilities {
     /// reported and not enforced (`api/provider/codex.rs`). An unvalidated level
     /// passes through and the provider answers, naming every value it accepts.
     pub validates_efforts: bool,
+    /// The prices the keepalive's affordability check weighs a ping's output
+    /// against (docs/transport.md), when the source lists them for an endpoint
+    /// that prices cache reads. OpenRouter only, aggregated conservatively over the
+    /// endpoints the session can reach ([`TokenPrices`], `prices::conservative`);
+    /// `None` elsewhere, where the check uses its token-ratio rule. Transport-only:
+    /// never serialized, logged, or projected.
+    #[serde(skip)]
+    pub prices: Option<TokenPrices>,
 }
 
 impl ModelCapabilities {
@@ -1305,6 +1347,7 @@ impl ModelCapabilities {
             default_effort: None,
             // Nothing declared the levels, so nothing is checked: see the field.
             validates_efforts: false,
+            prices: None,
         }
     }
 

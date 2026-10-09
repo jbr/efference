@@ -173,6 +173,9 @@ impl Session {
             // model change, not idle past the TTL). A number, not a flag, so the
             // threshold stays a client decision; 0 whenever the last turn read warm.
             "cold_streak": metrics.cold_streak.streak(),
+            // The keepalive's stance when it is not pinging on schedule, or
+            // null while it is or was never armed (docs/transport.md).
+            "keepalive_skipped": metrics.keepalive_skipped,
             // The Codex backend's subscription windows (docs/transport.md): the
             // plan and its two usage windows as of the last response that named
             // them, resets as absolute millis. null on every other provider.

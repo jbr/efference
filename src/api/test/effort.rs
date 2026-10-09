@@ -360,7 +360,7 @@ async fn the_keepalive_sends_the_turns_thinking_and_effort() {
     /// One request/response over a fresh socket; returns the request bytes the
     /// client sent. `sse` picks the canned reply: an empty stream for `complete`,
     /// a usage-only JSON body for `keepalive`.
-    async fn round_trip(effort: Option<&str>, sse: bool) -> String {
+    async fn round_trip(provider: Provider, effort: Option<&str>, sse: bool) -> String {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = listener.local_addr().unwrap();
         let server = std::thread::spawn(move || {
@@ -413,7 +413,7 @@ async fn the_keepalive_sends_the_turns_thinking_and_effort() {
         });
 
         let endpoint = Endpoint {
-            provider: Provider::Anthropic,
+            provider,
             url: Some(format!("http://{addr}/v1/messages")),
             auth_header: "x-api-key".into(),
             auth_value: "k".into(),
@@ -450,21 +450,31 @@ async fn the_keepalive_sends_the_turns_thinking_and_effort() {
         object.remove("stream");
         body
     }
-    let turn = round_trip(Some("max"), true).await;
+    let turn = round_trip(Provider::Anthropic, Some("max"), true).await;
     assert!(
         turn.contains(r#""output_config":{"effort":"max"}"#),
         "the turn envelope carries it: {turn}"
     );
     assert!(turn.contains(r#""type":"adaptive""#), "{turn}");
-    let ping = round_trip(Some("max"), false).await;
+    let ping = round_trip(Provider::Anthropic, Some("max"), false).await;
     assert_eq!(envelope(&ping), envelope(&turn));
 
     // The shape of the spotter's client: never given an effort, so neither path
     // carries one.
-    let turn = round_trip(None, true).await;
+    let turn = round_trip(Provider::Anthropic, None, true).await;
     assert!(!turn.contains("output_config"), "{turn}");
-    let ping = round_trip(None, false).await;
+    let ping = round_trip(Provider::Anthropic, None, false).await;
     assert!(!ping.contains("output_config"), "{ping}");
+
+    // The output cap is the provider's (docs/transport.md): Anthropic honours zero;
+    // OpenRouter reads zero as unset, so its ping sends a positive cap.
+    let max_tokens = |request: &str| {
+        let (_, body) = request.split_once("\r\n\r\n").unwrap();
+        serde_json::from_str::<Value>(body).unwrap()["max_tokens"].clone()
+    };
+    assert_eq!(max_tokens(&ping), 0);
+    let ping = round_trip(Provider::OpenRouter, None, false).await;
+    assert_eq!(max_tokens(&ping), 16);
 }
 
 /// `Client::without_thinking` takes the model's spelling of off on every turn,

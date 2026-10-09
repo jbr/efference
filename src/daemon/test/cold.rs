@@ -10,15 +10,48 @@ async fn cold_session() -> (Arc<Session>, mpsc::UnboundedReceiver<SubmittedTurn>
     append_foldable_history(&shared);
     shared.record_request(
         RequestOrigin::Turn,
-        crate::api::RequestUsage {
-            id: None,
-            model: None,
-            usage: crate::api::Usage::default(),
-        },
+        crate::api::RequestUsage::new(crate::api::Usage::default()),
     );
     tokio::time::sleep(Duration::from_millis(5)).await;
     assert!(shared.cold_since().is_some());
     (shared, rx)
+}
+
+fn no_usage() -> crate::api::RequestUsage {
+    crate::api::RequestUsage::new(crate::api::Usage::default())
+}
+
+/// A peek on the agent's own client reads the main prefix, so it ends the session's
+/// cold belief like a turn; a peek on a separate triage client does not.
+#[test]
+fn a_shared_peek_refreshes_the_cold_belief_and_an_own_peek_does_not() {
+    let usage_path = std::env::temp_dir().join("efference-cold-peek-test-usage.jsonl");
+    let stale = crate::log::Timestamp::now().0 - 35 * 60_000;
+    std::fs::write(
+        &usage_path,
+        format!("{{\"at_ms\":{stale},\"origin\":\"turn\"}}\n"),
+    )
+    .unwrap();
+    let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    shared.set_cache_ttl(Duration::from_secs(300));
+    append_foldable_history(&shared);
+    shared.attach_usage_log(&usage_path);
+    assert!(
+        shared.cold_since().is_some(),
+        "the 35-minute-old turn is stale"
+    );
+
+    shared.record_peek(false, no_usage());
+    assert!(
+        shared.cold_since().is_some(),
+        "a peek on a separate triage client leaves the main prefix as it was"
+    );
+    shared.record_peek(true, no_usage());
+    assert_eq!(
+        shared.cold_since(),
+        None,
+        "a shared peek re-warmed the prefix"
+    );
 }
 
 /// A cold session refuses a turn without consent — `409 cold` with the topic in
@@ -120,11 +153,7 @@ async fn nothing_to_fold_is_not_cold() {
         .unwrap();
     shared.record_request(
         RequestOrigin::Turn,
-        crate::api::RequestUsage {
-            id: None,
-            model: None,
-            usage: crate::api::Usage::default(),
-        },
+        crate::api::RequestUsage::new(crate::api::Usage::default()),
     );
     tokio::time::sleep(Duration::from_millis(5)).await;
     assert_eq!(shared.cold_since(), None);

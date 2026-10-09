@@ -219,6 +219,9 @@ pub struct Completion {
     pub model: String,
     pub stop_reason: Option<String>,
     pub usage: Usage,
+    /// What the response said about who served it and what it billed
+    /// ([`Receipt`]); empty on providers that do not say.
+    pub receipt: Receipt,
     /// How the failure `upstream_failure` reports should be retried
     /// (docs/transport.md): `Terminal` when the provider named a condition no
     /// retry can change, `Transient` for everything else, including a stream
@@ -238,6 +241,102 @@ pub struct RequestUsage {
     /// (docs/log-and-projection.md). Optional defensively, like `id`.
     pub model: Option<String>,
     pub usage: Usage,
+    pub receipt: Receipt,
+}
+
+impl RequestUsage {
+    /// A request's token counts with no id, model, or receipt — the fields a test or a
+    /// route with nothing to report leaves unset. Adding a field to the struct changes
+    /// this constructor, not its callers.
+    pub fn new(usage: Usage) -> Self {
+        Self {
+            id: None,
+            model: None,
+            usage,
+            receipt: Receipt::default(),
+        }
+    }
+
+    pub fn with_id(mut self, id: impl Into<String>) -> Self {
+        self.id = Some(id.into());
+        self
+    }
+
+    pub fn with_model(mut self, model: impl Into<String>) -> Self {
+        self.model = Some(model.into());
+        self
+    }
+
+    pub fn with_receipt(mut self, receipt: Receipt) -> Self {
+        self.receipt = receipt;
+        self
+    }
+}
+
+/// What a response reports about its own provenance and price, beside its token
+/// counts (docs/transport.md). Kept off [`Usage`] so that type stays the token
+/// counts both dialects share; the fields here come from an aggregator
+/// (OpenRouter's Messages endpoint) and are absent on Anthropic direct and most
+/// other providers.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Receipt {
+    /// The upstream that served the request, as the message's `provider` field
+    /// names it. Not [`Provider`] (efference's own provider enum) and not the
+    /// `--upstream` routing pin, which is the request-side preference this reports
+    /// the outcome of.
+    pub served_by: Option<String>,
+    /// The cost the response billed inline.
+    pub cost: Option<InlineCost>,
+}
+
+/// The billed cost an aggregator returns inside `usage` (`usage.cost` and
+/// `usage.cost_details`), in USD. Distinct from the generation-lookup price
+/// (docs/transport.md), which is the fallback when a response carries none.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct InlineCost {
+    pub total_usd: f64,
+    /// The prompt share (`cost_details.upstream_inference_prompt_cost`), when reported.
+    pub prompt_usd: Option<f64>,
+    /// The completion share (`cost_details.upstream_inference_completions_cost`).
+    pub completion_usd: Option<f64>,
+}
+
+/// The cost-bearing fields of a `usage` object, read alongside [`Usage`] from the
+/// same JSON. Null and absent both read as no cost.
+#[derive(Deserialize, Default)]
+pub(crate) struct UsageCost {
+    #[serde(default)]
+    cost: Option<f64>,
+    #[serde(default)]
+    cost_details: Option<CostDetails>,
+}
+
+#[derive(Deserialize, Default)]
+struct CostDetails {
+    #[serde(default)]
+    upstream_inference_prompt_cost: Option<f64>,
+    #[serde(default)]
+    upstream_inference_completions_cost: Option<f64>,
+}
+
+impl UsageCost {
+    pub(crate) fn into_inline(self) -> Option<InlineCost> {
+        let details = self.cost_details.unwrap_or_default();
+        Some(InlineCost {
+            total_usd: self.cost?,
+            prompt_usd: details.upstream_inference_prompt_cost,
+            completion_usd: details.upstream_inference_completions_cost,
+        })
+    }
+}
+
+/// A `usage` object read as its token counts and its inline cost together.
+#[derive(Deserialize)]
+pub(crate) struct UsageWithCost {
+    #[serde(flatten)]
+    pub(crate) usage: Usage,
+    #[serde(flatten)]
+    pub(crate) cost: UsageCost,
 }
 
 impl Completion {
@@ -284,6 +383,7 @@ impl Completion {
             id: self.id.clone(),
             model: Some(self.model.clone()),
             usage: self.usage.clone(),
+            receipt: self.receipt.clone(),
         }
     }
 }
@@ -359,7 +459,7 @@ pub use plan::{PlanLimit, PlanSnapshot, PlanState, PlanWindow, plan_state};
 pub(crate) use provider::seed_codex_catalog;
 pub use provider::{
     ListedModel, ModelCapabilities, ModelKind, OUTPUT_FLOOR, Price, PromptCachePolicy, Provider,
-    ResponsesProfile, WireDialect,
+    ResponsesProfile, TokenPrices, WireDialect,
 };
 pub use render::{
     render_messages_pretty, render_messages_yaml, render_request_pretty, render_request_yaml,

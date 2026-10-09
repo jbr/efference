@@ -89,6 +89,7 @@ fn a_cut_between_a_call_and_its_result_is_refused() {
 
 fn completion(text: &str, calls: Vec<ToolCall>, stop_reason: Option<&str>) -> Completion {
     Completion {
+        receipt: Default::default(),
         assistant: assistant(text, calls),
         id: None,
         model: "test".into(),

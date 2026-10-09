@@ -112,8 +112,9 @@ pub(crate) fn fold_sessions(sessions: &[(String, Vec<UsageLine>)]) -> CacheRepor
                     tally.warm += 1;
                 }
             }
-            let verdict = streak.observe(
+            let verdict = streak.observe_touching(
                 line.origin,
+                line.touches_main_prefix(),
                 line.at_ms,
                 line.model.as_deref(),
                 line.cache_read,

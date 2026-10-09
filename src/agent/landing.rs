@@ -81,10 +81,12 @@ pub(super) async fn land(
                 .await
             {
                 Ok(outcome) => break carried.onto(outcome),
-                Err(failure) => match hold(shared, client, failure, &mut carried).await {
-                    Held::Retry => continue,
-                    Held::Interrupted => break carried.interrupted(pending.len()),
-                },
+                Err(failure) => {
+                    match hold(shared, client, !distiller.is_own(), failure, &mut carried).await {
+                        Held::Retry => continue,
+                        Held::Interrupted => break carried.interrupted(pending.len()),
+                    }
+                }
             }
         })
     };
@@ -95,7 +97,7 @@ pub(super) async fn land(
     // (sliding its TTL), so it belongs in the docs/log-and-projection.md telemetry.
     if let Some(g) = &gate {
         for u in &g.usage {
-            shared.record_request(RequestOrigin::Peek, u.clone());
+            shared.record_peek(!distiller.is_own(), u.clone());
         }
     }
     // The primer's usage and timing (backlog/separate-triage-cold-prefix.md): its own

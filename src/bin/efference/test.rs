@@ -261,6 +261,9 @@ fn cache_report_separates_explained_cold_reads_from_the_streak() {
         output: 20,
         cache_read,
         cache_write: 0,
+        main_prefix: false,
+        served_by: None,
+        cost_usd: None,
     };
     use efference::daemon::RequestOrigin::{Keepalive, Spot, Turn};
     let t = 1_800_000_000_000u128;
@@ -313,6 +316,9 @@ fn cache_report_does_not_join_streaks_across_sessions() {
         output: 1,
         cache_read: 0,
         cache_write: 0,
+        main_prefix: false,
+        served_by: None,
+        cost_usd: None,
     };
     let t = 1_800_000_000_000u128;
     let report = cache_report::fold_sessions(&[

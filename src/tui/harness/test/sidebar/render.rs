@@ -45,6 +45,7 @@ fn sidebar_shows_processes_and_stats() {
         withheld_results: 0,
         // The cache is being read (`cache_read_input_tokens` above), so no streak.
         cold_streak: 0,
+        keepalive_note: None,
     }));
     play.open_drawer();
     play.snapshot("sidebar_processes_and_stats");
@@ -95,6 +96,7 @@ fn sidebar_retention_before_any_triage_and_after_a_failed_gate() {
         shown_lines: shown,
         withheld_results: withheld,
         cold_streak: 0,
+        keepalive_note: None,
     };
 
     let mut play = Screenplay::new(110, 16);
@@ -139,6 +141,7 @@ fn sidebar_warns_on_a_cold_cache_streak() {
         shown_lines: 0,
         withheld_results: 0,
         cold_streak,
+        keepalive_note: None,
     };
 
     let mut play = Screenplay::new(110, 16);
@@ -166,6 +169,48 @@ fn sidebar_warns_on_a_cold_cache_streak() {
         !play.sidebar_grid().contains("cache misses"),
         "a warm read clears it"
     );
+}
+
+/// The keepalive's stance beside the cache readout (docs/transport.md): stated only
+/// while the loop skips its pings or the upstream rejected them, parsed from the
+/// `usage.keepalive_skipped` field, and gone once pings resume.
+#[test]
+fn sidebar_states_the_keepalive_stance() {
+    use crate::tui::TuiEvent;
+    let usage = |skipped: serde_json::Value| {
+        serde_json::json!({
+            "cumulative": {
+                "input_tokens": 100, "output_tokens": 50,
+                "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0,
+            },
+            "context": {"limit": 200_000, "used": 14_106},
+            "keepalive_skipped": skipped,
+        })
+    };
+    let mut play = Screenplay::new(110, 16);
+    play.user("go");
+    let event = |value| TuiEvent::Usage(crate::tui::parse::parse_usage(&value).unwrap());
+
+    play.event(event(usage(serde_json::Value::Null)));
+    assert!(!play.sidebar_grid().contains("keepalive"));
+
+    play.event(event(usage(serde_json::json!({
+        "reason": "discard", "at": 1, "output_tokens": 10_000,
+        "completion_usd": 0.005, "prefix_tokens": 5_000, "premium_usd": null,
+    }))));
+    let paused = play.sidebar_grid();
+    assert!(
+        paused.contains("keepalive paused: 10k out ($0.0050)"),
+        "{paused}"
+    );
+
+    play.event(event(usage(serde_json::json!({
+        "reason": "rejected", "at": 2, "detail": "400",
+    }))));
+    assert!(play.sidebar_grid().contains("keepalive off: ping rejected"));
+
+    play.event(event(usage(serde_json::Value::Null)));
+    assert!(!play.sidebar_grid().contains("keepalive"));
 }
 
 /// The SESSION section names the model and the working directory, from the

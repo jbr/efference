@@ -47,10 +47,12 @@ pub(super) enum Held {
 
 /// Hold a gate that produced no verdict until the operator retries or interrupts.
 /// Records the failed attempts' usage, carries their breadcrumbs, and publishes the
-/// hold as a stall while it lasts.
+/// hold as a stall while it lasts. `on_agent_client` is whether the failed peeks ran on
+/// the agent's own client, as the gate's successful ones did.
 pub(super) async fn hold(
     shared: &Arc<Session>,
     client: &Client,
+    on_agent_client: bool,
     failure: GateFailure,
     carried: &mut Carried,
 ) -> Held {
@@ -61,7 +63,7 @@ pub(super) async fn hold(
         thinking,
     } = failure;
     for u in usage {
-        shared.record_request(RequestOrigin::Peek, u);
+        shared.record_peek(on_agent_client, u);
     }
     carried.retries.extend(retries);
     carried.thinking.extend(thinking);

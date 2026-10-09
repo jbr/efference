@@ -1218,8 +1218,9 @@ impl Client {
     }
 
     /// A cache-keepalive ping (docs/transport.md): a **non-streaming**
-    /// `max_tokens: 0` round-trip over the same prefix a real turn would send.
-    /// Returns only the `usage`; the log is never touched.
+    /// round-trip over the same prefix a real turn would send, capped at
+    /// [`Provider::keepalive_output_cap`] (`max_tokens: 0` on Anthropic, 16 on
+    /// OpenRouter, which reads 0 as unset). Returns only the `usage`; the log is never touched.
     ///
     /// Non-streaming because `max_tokens: 0` is rejected with `stream: true`. The
     /// prefix bytes must match a real request's **exactly** or the ping writes a
@@ -1229,7 +1230,7 @@ impl Client {
     /// any of them.
     ///
     /// On the Responses dialect the ping is an ordinary streamed request with the
-    /// output capped at [`RESPONSES_KEEPALIVE_CAP`] ([`Self::responses_keepalive`]).
+    /// output capped at [`Provider::keepalive_output_cap`] ([`Self::responses_keepalive`]).
     pub async fn keepalive(
         &self,
         turns: &[WireTurn],
@@ -1244,7 +1245,7 @@ impl Client {
         let thinking = Thinking::for_request(&tool_choice, self.thinking, self.thinking_off);
         let request = Request {
             model: &self.model,
-            max_tokens: 0,
+            max_tokens: self.endpoint.provider.keepalive_output_cap(),
             system: &self.system,
             tools,
             tool_choice,
@@ -1284,25 +1285,13 @@ impl Client {
             .read_string()
             .await
             .map_err(KeepaliveError::other)?;
-        #[derive(Deserialize)]
-        struct KeepaliveResponse {
-            #[serde(default)]
-            id: Option<String>,
-            #[serde(default)]
-            model: Option<String>,
-            usage: Usage,
-        }
-        let parsed: KeepaliveResponse =
-            serde_json::from_str(&text).map_err(KeepaliveError::other)?;
-        Ok(RequestUsage {
-            id: parsed.id,
-            model: parsed.model,
-            usage: parsed.usage,
-        })
+        serde_json::from_str::<KeepaliveResponse>(&text)
+            .map(KeepaliveResponse::into_request_usage)
+            .map_err(KeepaliveError::other)
     }
 
     /// The Responses keepalive (docs/transport.md): the turn's own envelope, streamed,
-    /// with the output capped at [`RESPONSES_KEEPALIVE_CAP`]. The dialect has no
+    /// with the output capped at [`Provider::keepalive_output_cap`]. The dialect has no
     /// `max_tokens: 0`, and the Codex backend resumes a cached prefix only where an
     /// earlier request ended, so the ping re-sends the last request's input whole —
     /// what the keepalive loop's lopped projection is — and pays a cached read plus
@@ -1318,7 +1307,7 @@ impl Client {
                 turns,
                 tools,
                 tool_choice,
-                Some(RESPONSES_KEEPALIVE_CAP),
+                Some(self.endpoint.provider.keepalive_output_cap()),
                 |_| {},
             )
             .await
@@ -1364,7 +1353,7 @@ impl Client {
                 turns,
                 tools,
                 tool_choice,
-                Some(RESPONSES_KEEPALIVE_CAP),
+                Some(self.endpoint.provider.keepalive_output_cap()),
                 |_| {},
             )
             .await
@@ -1383,10 +1372,6 @@ impl Client {
         Some(Ok(usage))
     }
 }
-
-/// The output cap on a Responses keepalive: the Codex backend's minimum
-/// (`max_output_tokens` below 16 is refused; docs/transport.md).
-pub const RESPONSES_KEEPALIVE_CAP: u32 = 16;
 
 /// One request's encoded conversation, per dialect.
 enum Encoded {
@@ -1426,6 +1411,33 @@ impl AnyAssembler {
         match self {
             Self::Messages(a) => a.finish(),
             Self::Responses(a) => a.finish(),
+        }
+    }
+}
+
+/// The non-streamed Messages body a keepalive ping returns: the id, model and serving
+/// upstream, and the `usage` with its inline cost (docs/transport.md).
+#[derive(Deserialize)]
+pub(crate) struct KeepaliveResponse {
+    #[serde(default)]
+    id: Option<String>,
+    #[serde(default)]
+    model: Option<String>,
+    #[serde(default)]
+    provider: Option<String>,
+    usage: UsageWithCost,
+}
+
+impl KeepaliveResponse {
+    pub(crate) fn into_request_usage(self) -> RequestUsage {
+        RequestUsage {
+            id: self.id,
+            model: self.model,
+            usage: self.usage.usage,
+            receipt: Receipt {
+                served_by: self.provider,
+                cost: self.usage.cost.into_inline(),
+            },
         }
     }
 }

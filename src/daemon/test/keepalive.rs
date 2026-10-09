@@ -2,7 +2,11 @@
 
 use super::*;
 use crate::api::KeepaliveError;
-use crate::daemon::keepalive::{discard_is_affordable, lop_trailing_model_turns, prefix_tokens};
+use crate::api::{RequestUsage, TokenPrices};
+use crate::daemon::keepalive::{
+    KeepaliveSkipReason, PingCost, discard_is_affordable, lop_trailing_model_turns, prefix_tokens,
+    skip_reason,
+};
 use crate::log::{AssistantOutput, MessagesOutputBlock};
 use crate::project::{Role, WireTurn};
 
@@ -156,4 +160,238 @@ fn believed_cold_from_last_touch_plus_lifetime() {
         believed_cold_since(Some(touch), Timestamp(1_300_001), ttl),
         Some(Timestamp(1_300_000))
     );
+}
+
+/// z-ai/glm-5.3-flash on the Z.AI endpoint: $0.15/M prompt, $0.50/M completion,
+/// $0.03/M cache read.
+fn glm() -> TokenPrices {
+    TokenPrices {
+        prompt: 0.15e-6,
+        completion: 0.50e-6,
+        cache_read: 0.03e-6,
+    }
+}
+
+fn ping(output_tokens: u64, completion_usd: Option<f64>) -> PingCost {
+    PingCost {
+        output_tokens,
+        completion_usd,
+    }
+}
+
+/// The priced rule (docs/transport.md): a 10k-token ping (~$0.005) against a 200k
+/// prefix, whose cold-read premium is 200k × $0.12/M = $0.024, is affordable; the
+/// fixed token ratio would have refused it.
+#[test]
+fn priced_rule_accepts_the_glm_example() {
+    let prices = glm();
+    let cost = 10_000.0 * prices.completion;
+    assert!(skip_reason(ping(10_000, Some(cost)), 200_000, Some(&prices)).is_none());
+    assert!(!discard_is_affordable(10_000, 200_000));
+}
+
+/// A ping whose completion cost exceeds half the premium is refused, with the
+/// numbers that decided it.
+#[test]
+fn priced_rule_refuses_a_ping_costing_over_half_the_premium() {
+    let prices = glm();
+    // Premium at 200k is $0.024; half is $0.012.
+    assert!(skip_reason(ping(23_000, Some(0.0115)), 200_000, Some(&prices)).is_none());
+    let why = skip_reason(ping(25_000, Some(0.0125)), 200_000, Some(&prices)).unwrap();
+    let KeepaliveSkipReason::Discard {
+        output_tokens,
+        completion_usd,
+        prefix_tokens,
+        premium_usd,
+    } = why
+    else {
+        panic!("a discard stance")
+    };
+    assert_eq!((output_tokens, prefix_tokens), (25_000, 200_000));
+    assert_eq!(completion_usd, Some(0.0125));
+    assert!((premium_usd.unwrap() - 0.024).abs() < 1e-9);
+}
+
+/// Without prices the token-ratio rule decides, and a ping that generated nothing
+/// passes either rule.
+#[test]
+fn unpriced_sessions_fall_back_to_the_token_ratio() {
+    assert!(skip_reason(ping(1_000, None), 100_001, None).is_none());
+    assert!(skip_reason(ping(1_000, None), 100_000, None).is_some());
+    assert!(skip_reason(ping(0, None), 10, None).is_none());
+    assert!(skip_reason(ping(0, Some(0.0)), 10, Some(&glm())).is_none());
+}
+
+/// The completion cost is the receipt's inline figure when it has one, else the
+/// session's completion price over the discarded tokens.
+#[test]
+fn completion_cost_prefers_the_receipt() {
+    use crate::api::{InlineCost, Receipt};
+    use crate::daemon::keepalive::completion_cost;
+    let usage = Usage {
+        output_tokens: 1_000,
+        ..Usage::default()
+    };
+    let bare = RequestUsage::new(usage.clone());
+    assert_eq!(completion_cost(&bare, None), None);
+    assert!((completion_cost(&bare, Some(&glm())).unwrap() - 0.0005).abs() < 1e-12);
+    let billed = RequestUsage::new(usage).with_receipt(Receipt {
+        served_by: None,
+        cost: Some(InlineCost {
+            total_usd: 0.02,
+            prompt_usd: None,
+            completion_usd: Some(0.003),
+        }),
+    });
+    assert_eq!(completion_cost(&billed, Some(&glm())), Some(0.003));
+}
+
+/// A canned upstream for the loop tests: answers every request with the status and
+/// body `reply` picks by arrival order, closing each connection, and counts them.
+fn serve(
+    reply: impl Fn(usize) -> (u16, String) + Send + 'static,
+) -> (std::net::SocketAddr, Arc<std::sync::atomic::AtomicUsize>) {
+    use std::io::{Read, Write};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let seen = Arc::clone(&count);
+    std::thread::spawn(move || {
+        for sock in listener.incoming() {
+            let Ok(mut sock) = sock else { return };
+            let mut request = String::new();
+            let mut buf = [0u8; 16384];
+            loop {
+                let read = sock.read(&mut buf).unwrap_or(0);
+                request.push_str(&String::from_utf8_lossy(&buf[..read]));
+                let complete = request.split_once("\r\n\r\n").is_some_and(|(head, body)| {
+                    head.to_ascii_lowercase()
+                        .split("\r\n")
+                        .find_map(|line| line.strip_prefix("content-length: ").map(str::to_string))
+                        .and_then(|n| n.trim().parse::<usize>().ok())
+                        .is_some_and(|n| body.len() >= n)
+                });
+                if read == 0 || complete {
+                    break;
+                }
+            }
+            let n = seen.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let (status, body) = reply(n);
+            let _ = sock.write_all(
+                format!(
+                    "HTTP/1.1 {status} X\r\ncontent-type: application/json\r\n\
+                     connection: close\r\ncontent-length: {}\r\n\r\n{body}",
+                    body.len()
+                )
+                .as_bytes(),
+            );
+            let _ = sock.flush();
+        }
+    });
+    (addr, count)
+}
+
+/// A session with one user message and one recorded turn of `prefix` prompt tokens,
+/// and a client pointed at `addr`.
+fn pinged_session(
+    addr: std::net::SocketAddr,
+    prefix: u64,
+) -> (Arc<Session>, Arc<crate::api::Client>) {
+    use crate::api::{Client, Endpoint, Provider};
+    let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    shared
+        .append(1, Payload::User(vec![ContentBlock::Text("hi".into())]))
+        .unwrap();
+    record_turn(&shared, prefix);
+    let endpoint = Endpoint {
+        provider: Provider::Anthropic,
+        url: Some(format!("http://{addr}/v1/messages")),
+        auth_header: "x-api-key".into(),
+        auth_value: "k".into(),
+        session_id: None,
+        extra_headers: Vec::new(),
+        base: None,
+    };
+    (
+        shared,
+        Arc::new(Client::new(endpoint, "claude-opus-5", "sys", None)),
+    )
+}
+
+fn record_turn(shared: &Session, prefix: u64) {
+    shared.record_request(
+        RequestOrigin::Turn,
+        RequestUsage::new(Usage {
+            input_tokens: prefix,
+            ..Usage::default()
+        }),
+    );
+}
+
+fn skipped(shared: &Session) -> Value {
+    let state: Value = serde_json::from_str(&shared.state_json()).unwrap();
+    state["usage"]["keepalive_skipped"].clone()
+}
+
+/// An expensive first ping at a small prefix makes the next tick skip, with the stance
+/// in `/state`; the same estimate against a prefix that has grown pings again and
+/// clears it. Real one-second ticks (the loop's floor).
+#[tokio::test]
+async fn an_expensive_ping_skips_until_the_prefix_repays_it() {
+    let ping_body = r#"{"id":"m","model":"m","usage":{"input_tokens":5000,"output_tokens":10000}}"#;
+    let (addr, count) = serve(move |_| (200, ping_body.to_string()));
+    let (shared, client) = pinged_session(addr, 5_000);
+    let task = tokio::spawn(super::keepalive::keepalive_loop(
+        client,
+        Arc::clone(&shared),
+        Vec::new(),
+        Duration::from_millis(1),
+        None,
+    ));
+    let sent = |n| count.load(std::sync::atomic::Ordering::SeqCst) == n;
+    let wait_for = async |what: &dyn Fn() -> bool| {
+        for _ in 0..80 {
+            if what() {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        panic!("timed out");
+    };
+    // The first ping goes out unjudged; the following ticks skip.
+    wait_for(&|| sent(1) && skipped(&shared).is_object()).await;
+    let stance = skipped(&shared);
+    assert_eq!(stance["reason"], "discard");
+    assert_eq!(stance["output_tokens"], 10_000);
+    assert_eq!(stance["prefix_tokens"], 5_000);
+    tokio::time::sleep(Duration::from_millis(2_500)).await;
+    assert!(sent(1), "skipped ticks send nothing");
+
+    // The prefix grows past break-even: 10k discarded tokens need over 1M prefix.
+    record_turn(&shared, 2_000_000);
+    wait_for(&|| !sent(1)).await;
+    wait_for(&|| skipped(&shared).is_null()).await;
+    task.abort();
+}
+
+/// A permanent rejection still ends the loop, and the state says why.
+#[tokio::test]
+async fn a_permanent_rejection_ends_the_loop() {
+    let (addr, count) = serve(|_| (400, r#"{"error":"bad"}"#.to_string()));
+    let (shared, client) = pinged_session(addr, 5_000);
+    let task = tokio::spawn(super::keepalive::keepalive_loop(
+        client,
+        Arc::clone(&shared),
+        Vec::new(),
+        Duration::from_millis(1),
+        None,
+    ));
+    tokio::time::timeout(Duration::from_secs(10), task)
+        .await
+        .expect("the loop returns")
+        .unwrap();
+    assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 1);
+    let stance = skipped(&shared);
+    assert_eq!(stance["reason"], "rejected");
+    assert!(stance["detail"].as_str().unwrap().contains("400"));
 }

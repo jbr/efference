@@ -409,6 +409,7 @@ impl ResponsesAssembler {
             model: self.model,
             stop_reason,
             usage: self.usage,
+            receipt: super::super::Receipt::default(),
             failure_class: self.failure_class,
         })
     }

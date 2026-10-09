@@ -222,6 +222,12 @@ impl<'a> InteractiveState<'a> {
             if u.cold_streak >= crate::daemon::COLD_STREAK_WARN {
                 rows.push(("", format!("⚠ cache misses ×{}", u.cold_streak), header));
             }
+            // The keepalive's stance (docs/transport.md): stated only while it is not
+            // pinging on schedule, so a session going cold unrefreshed is not a
+            // surprise.
+            if let Some(note) = &u.keepalive_note {
+                rows.push(("", format!("⚠ {note}"), header));
+            }
             // Session cost (docs/transport.md): billed dollars from the provider's
             // accounting, absent where no per-request surface exists (direct
             // Anthropic). A nonzero unpriced count marks the total an undercount.

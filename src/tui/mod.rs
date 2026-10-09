@@ -442,6 +442,10 @@ pub(crate) struct UsageStats {
     /// `daemon::COLD_STREAK_WARN` the sidebar says so; a warm read resets it to 0,
     /// which clears the line.
     pub cold_streak: u32,
+    /// One line stating the keepalive's stance, from `usage.keepalive_skipped`
+    /// (docs/control-api.md): worded at parse time so rendering stays a pure function of
+    /// state. `None` while pings go out on schedule or the keepalive was never armed.
+    pub keepalive_note: Option<String>,
 }
 
 /// The last non-success upstream response, as surfaced by `GET /state`. Cleared

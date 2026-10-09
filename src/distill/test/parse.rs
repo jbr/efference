@@ -247,6 +247,7 @@ fn a_lone_mis_keyed_verdict_is_re_keyed_only_for_a_single_result_gate() {
 /// shape (docs/session-title.md).
 fn text_completion(text: &str) -> Completion {
     Completion {
+        receipt: Default::default(),
         assistant: Payload::Assistant {
             output: AssistantOutput::from_legacy_messages(
                 vec![],

@@ -33,6 +33,7 @@ fn retain_completion(name: &str, input: Value) -> Completion {
 /// A `Completion` whose assistant turn made every call in `calls`, in parallel.
 fn calls_completion(calls: Vec<ToolCall>) -> Completion {
     Completion {
+        receipt: Default::default(),
         assistant: Payload::Assistant {
             output: AssistantOutput::from_legacy_messages(vec![], vec![], calls),
             upstream_failure: None,

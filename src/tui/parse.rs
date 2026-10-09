@@ -447,5 +447,29 @@ pub(super) fn parse_usage(usage: &serde_json::Value) -> Option<UsageStats> {
             .get("cold_streak")
             .and_then(|v| v.as_u64())
             .unwrap_or(0) as u32,
+        keepalive_note: usage
+            .get("keepalive_skipped")
+            .filter(|k| !k.is_null())
+            .map(keepalive_note),
     })
+}
+
+/// The sidebar's wording for a `usage.keepalive_skipped` value: what the loop is doing
+/// in place of pinging, with the figure that decided it.
+fn keepalive_note(skipped: &serde_json::Value) -> String {
+    let tokens = |field: &str| skipped.get(field).and_then(|v| v.as_u64()).unwrap_or(0);
+    match skipped.get("reason").and_then(|v| v.as_str()) {
+        Some("rejected") => "keepalive off: ping rejected".to_string(),
+        _ => {
+            let cost = skipped
+                .get("completion_usd")
+                .and_then(|v| v.as_f64())
+                .map(|usd| format!(" (${usd:.4})"))
+                .unwrap_or_default();
+            format!(
+                "keepalive paused: {} out{cost}",
+                super::render_sidebar::num(tokens("output_tokens"))
+            )
+        }
+    }
 }

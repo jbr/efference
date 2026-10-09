@@ -283,6 +283,7 @@ impl Decisions {
     /// a decisions request out of the cold-streak classification.
     pub fn request_usage(&self) -> RequestUsage {
         RequestUsage {
+            receipt: Default::default(),
             id: self.id.clone(),
             model: self.model.clone(),
             usage: Usage {

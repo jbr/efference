@@ -391,3 +391,52 @@ fn image_input_is_read_per_provider_with_opposite_defaults() {
         "an absent field must not disable a capability that works"
     );
 }
+
+/// The keepalive's prices are the conservative reading of the endpoints that price a
+/// cache read (docs/transport.md): the smallest cold-read premium, the largest
+/// completion price, narrowed by the `--upstream` pin first. Endpoints with no
+/// cache-read price, or an unparseable one, contribute nothing; with none left the
+/// prices are absent and the keepalive uses its token-ratio rule.
+#[test]
+fn keepalive_prices_are_the_conservative_endpoint_reading() {
+    let body = r#"{
+        "data": {
+            "endpoints": [
+                {"tag": "z-ai", "context_length": 200000,
+                 "pricing": {"prompt": "0.00000015", "completion": "0.0000005",
+                             "input_cache_read": "0.00000003"}},
+                {"tag": "other", "context_length": 200000,
+                 "pricing": {"prompt": "0.0000002", "completion": "0.000002",
+                             "input_cache_read": "0.00000018"}},
+                {"tag": "uncached", "context_length": 200000,
+                 "pricing": {"prompt": "0.0000001", "completion": "0.0000009"}}
+            ]
+        }
+    }"#;
+    let prices = |upstream: &[String]| {
+        Provider::OpenRouter
+            .parse_capabilities(body, "m", upstream)
+            .unwrap()
+            .prices
+    };
+    let close = |a: f64, b: f64| (a - b).abs() < 1e-12;
+    let all = prices(&[]).unwrap();
+    // The 'other' endpoint's premium (0.02/M) is the smaller; the largest
+    // completion price among the caching endpoints is 2/M.
+    assert!(close(all.prompt, 0.2e-6) && close(all.cache_read, 0.18e-6));
+    assert!(close(all.completion, 2e-6));
+
+    let pinned = prices(&["z-ai".to_string()]).unwrap();
+    assert!(close(pinned.prompt, 0.15e-6) && close(pinned.completion, 0.5e-6));
+    assert!(close(pinned.premium(), 0.12e-6));
+
+    assert_eq!(prices(&["uncached".to_string()]), None);
+    // The display-string spelling of a cache-read price is not a per-token price.
+    let display = r#"{"data": {"endpoints": [{"context_length": 1,
+        "pricing": {"prompt": "0.1", "completion": "0.2",
+                    "input_cache_read": "$0.1/M tokens"}}]}}"#;
+    let caps = Provider::OpenRouter
+        .parse_capabilities(display, "m", &[])
+        .unwrap();
+    assert_eq!(caps.prices, None);
+}

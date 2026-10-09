@@ -854,7 +854,7 @@ openai-provider/validation.md).
 
 **The keepalive on this dialect** has no `max_tokens: 0`: its ping is the turn's own
 streamed envelope with `max_output_tokens` fixed at 16, the Codex backend's minimum
-(`RESPONSES_KEEPALIVE_CAP`), sent on the Codex profile too though a turn there omits the
+(`Provider::keepalive_output_cap`), sent on the Codex profile too though a turn there omits the
 field. The backend resumes a cached prefix only where an earlier request ended
 (backlog: separate-triage-cold-prefix.md), and the keepalive loop's lopped projection is
 exactly the last request's input, so the ping reads it whole and refreshes it: a cached
@@ -1451,8 +1451,16 @@ exhaustion and mark it `unpriced` — an undercount signal for a total that was
 never wrong. An aborted attempt that finalized unparseable billed real tokens
 and is priced like any other request. Cost is fetched, never modeled from a rate card —
 cache read/write/TTL multipliers and per-endpoint price variance make modeling
-brittle. OpenRouter is the one provider with such a surface today:
-`GET /api/v1/generation?id=…` returns `total_cost`, keyed by the generation id
+brittle. OpenRouter is the one provider with such a surface today. Its Messages
+endpoint returns the billed cost inline — `usage.cost` and `usage.cost_details`
+(prompt and completion shares) on the final streamed `message_delta` and on a
+non-streamed keepalive body, with the serving upstream as `provider` on the
+message — which the response parsers carry as `Receipt` beside `Usage` on
+`Completion` and `RequestUsage`. A request with an inline cost adds it to the
+total directly and spawns no lookup; `usage.jsonl` records it as `cost_usd`
+and the upstream as `served_by`. A request without one (a response that omits
+the field, or a cost-tracked endpoint that never sends it) falls back to
+`GET /api/v1/generation?id=…`, which returns `total_cost`, keyed by the generation id
 each response carries (the same id `usage.jsonl` records — the join to the
 provider's own accounting). The record lands some time after the response
 completes and a too-early GET 404s; the lag is the upstream's (seconds for
@@ -1491,7 +1499,7 @@ to a Gemini explicit cache that a tool loop never advances)
 and the `1h` TTL; the short foreign TTLs keep the keepalive relevant, though
 whether a `max_tokens: 0` ping refreshes a non-Anthropic cache is unverified —
 which is why the keepalive is gated on the model reporting a cache at all and
-capped by the runtime tripwire.
+priced by the per-tick affordability check.
 
 **Thinking.** A foreign model's `auto`-turn adaptive is granted by the
 capability lookup (`ModelCapabilities::thinking.adaptive`) — conservative like
@@ -1636,46 +1644,79 @@ boolean could disagree with the interval sitting beside it. The poll period
 follows the interval (a quarter of it, capped at 20s) so the ping lands near the
 interval rather than up to a full check-period late.
 
-The runtime tripwire below stays regardless: the gate is what the metadata says,
-and the tripwire is what the endpoint actually does.
+The affordability check below stays regardless: the gate is what the metadata says,
+and the check is what the endpoint actually does.
 
-### max_tokens: 0 as the keepalive primitive
+### The keepalive ping and its output cap
 
-A `max_tokens: 0` request reads (and thus refreshes) the cached prefix.
-`cache_read_input_tokens > 0`, `output_tokens: 0`, instant. The empty assistant
-turn is discarded; the log is never touched.
+A zero-output request reads (and thus refreshes) the cached prefix. The cap is the
+provider's (`Provider::keepalive_output_cap`): **0 on Anthropic**, which returns
+`cache_read_input_tokens > 0` and `output_tokens: 0`, instant; **16 on OpenRouter and
+on the Responses dialect**. OpenRouter reads `max_tokens: 0` as unset, so every model
+behind it generated freely to `end_turn` (measured 2026-10-08 across nine models and
+three request dialects: 94–4,077 tokens, and a real session's pings generated 2,961
+and 10,245 reasoning tokens). A positive cap is honoured exactly on most upstreams and
+the cap is not part of the cache key (every cap from 1 to 256 read the full cached
+prefix); OpenAI models behind OpenRouter floor it at 16, which is why 16 rather than
+1. Two upstreams ignore every cap (x-ai/grok-4.7, qwen/qwen3.8-omni-flash) and generate
+thousands of reasoning tokens regardless, which is what the affordability check below
+is for. The ping is non-streaming, and the empty assistant turn is discarded; the log
+is never touched. (`max_tokens: 0` is rejected by Anthropic when paired with
+`stream: true`.)
 
-This call is non-streaming by design: `max_tokens: 0` is rejected by the API
-when paired with `stream: true`.
+That contract is not universal, so the loop prices its pings. The check runs **per
+tick, before sending**, against an estimate of what the next ping will discard: what
+the most recent ping discarded on this endpoint. Before the first ping there is no
+estimate and it is sent. At each tick where a ping is due, the estimate is judged
+against the *current* prefix (the last real turn's prompt tokens: input + cache read +
+cache creation, however the endpoint split it); an affordable ping is sent, an
+unaffordable one is skipped without ending the loop, and the next tick judges again,
+so a session whose prefix grows past break-even resumes pinging. Observed live
+(2026-08-21): a mandatory-reasoning endpoint reasons on a zero-cap ping, ~4k thinking
+tokens per ping, billed as output. A runtime check rather than a provider gate, so it
+also catches any endpoint that stops honoring the cap; the offending ping's usage is
+still recorded.
 
-That contract is not universal, so the loop carries a **read-only tripwire**:
-a keepalive whose discarded output is large relative to the prefix it refreshed
-ends the keepalive for the session (`daemon/keepalive.rs`). Observed live
-(2026-08-21): a mandatory-reasoning endpoint reasons on a `max_tokens: 0` ping —
-~4k thinking tokens per ping, billed as output — turning the free refresh into a
-recurring charge. A runtime observation rather than a provider gate, so it also
-catches any future endpoint that stops honoring the contract; the offending
-ping's usage is still recorded.
+**With prices**, a ping is affordable iff its completion cost is less than the
+cold-read premium it avoids, over a margin: `completion cost < prefix × (prompt price −
+cache-read price) / 2`. The completion cost is the receipt's inline
+`completion_usd` when the response billed one, else the discarded tokens at the
+completion price. The margin (`PREMIUM_MARGIN`) is 2 because the ping goes out at four
+fifths of the cache lifetime, before anyone knows the session would have idled past
+it: the saving is realized only when the cache would have lapsed, so the cost must fit
+in half of it. On z-ai/glm-5.3-flash ($0.15/M prompt, $0.50/M completion, $0.03/M cache
+read) a 10k-token ping (~$0.005) is affordable against a 200k prefix (premium ~$0.024).
 
-The test is a ratio, not an offense count: output is tolerated while
-`discard_tokens × 100 < prefix_tokens`, where prefix is the ping's own reported
-prompt total (input + cache read + cache creation, however the endpoint split
-it). The constant is the price comparison with the prices cancelled out — an
-output token costs roughly 50× a cache-read token on Anthropic and 25–100× across
-providers, times a margin factor of 2. Order of magnitude is the intended
-precision; a dollar computation is not available at the decision point, since
-prices are only known retrospectively and subscription sessions have no dollar
-surface at all. The ratio self-scales, so a 500k prefix absorbs a few thousand
-reasoning tokens while a small prefix absorbs none and a runaway generation fails
-at any size — which is what keeps a mandatory-reasoning endpoint usable instead of
-disabling keepalive on its first ping. Pinging with thinking disabled is not an
-escape: changing thinking parameters invalidates message-level cache on Anthropic,
-so that ping would refresh nothing — which is why the ping sends the turn's own
-thinking (above).
+The prices ride `ModelCapabilities.prices` (`TokenPrices`, per-token USD; transport-only,
+never logged or projected), parsed from the endpoint listing boot already fetches for
+the ceilings: `pricing.prompt`, `pricing.completion`, `pricing.input_cache_read`. They
+differ per upstream and routing is unpinned, so the aggregation errs toward not pinging:
+among the endpoints that price a cache read (after the `--upstream` pin narrows the
+set, as for the ceilings), the one with the **smallest** premium supplies the prompt and
+cache-read prices and the **largest** completion price supplies the completion price.
+An endpoint without a cache-read price has no premium to weigh and contributes nothing.
+
+**Without prices** (Anthropic direct, custom endpoints, an OpenRouter model whose
+endpoints list no cache-read price) the rule is the token ratio: a ping is affordable
+while `discarded tokens × 100 < prefix tokens`. An output token costs about 50× a
+cache-read token on Anthropic and 25–100× across providers; 100 is that 50 times a
+margin of 2. It compares output with the cache-read price rather than the premium, so
+it over-weighs output where that price is far below the output price's usual multiple,
+which is why the priced rule exists. A ping that discarded nothing is affordable on
+either rule, including an endpoint that reports no usage. Pinging with thinking
+disabled is not an escape: changing thinking parameters invalidates message-level cache
+on Anthropic, so that ping would refresh nothing — which is why the ping sends the
+turn's own thinking (above).
+
+The stance is published as `usage.keepalive_skipped` (docs/control-api.md) and shown in
+the TUI sidebar: `discard` with the last ping's output, its cost, the prefix, and the
+premium; or `rejected`. The stderr line marks only the transition into and out of
+skipping, not every tick.
 
 A failed ping is classified by HTTP status (`api::KeepaliveError`, which carries
 the status structurally rather than in its message). An invalid-request-class 4xx
-is **terminal for the session's keepalive** — the upstream rejected the request
+is **terminal for the session's keepalive** (the one stance that does not end: the loop
+stops and `usage.keepalive_skipped` says `rejected`) — the upstream rejected the request
 itself, so the next tick would be rejected identically, and retrying only reprints
 the same line for the life of the pause. 408 and 429 describe the moment rather
 than the request; they, 5xx, and network failures keep the print-and-retry
@@ -1722,11 +1763,15 @@ a deadline; the wall stamp is what clients read. Neither reaches the projection.
 a field that ticks with the clock would make the level-triggered `usage` topic
 re-emit forever (docs/control-api.md). Clients subtract from their own clock.
 
-The fork peek's usage is folded into the metrics cell's totals. It does not stamp the
-cache-touch clock: `usage.jsonl` records a peek the same way whether it ran on the
-agent's client or a separate triage client with its own prefix, so only turns and
-keepalive pings count as touching the main prefix (`RequestOrigin::touches_main_prefix`).
-Leaving shared peeks out can only make the cache look colder than it is.
+The fork peek's usage is folded into the metrics cell's totals. Whether it stamps the
+cache-touch clock depends on where it ran: a peek on the agent's own client
+(`triage = "Shared"`) reads the main prefix and refreshes it, so `record_peek` stamps the
+clock as a turn does; a peek on a separate triage client has a prefix of its own and
+does not. Turns and keepalive pings always touch the main prefix
+(`RequestOrigin::touches_main_prefix`); a shared peek's `usage.jsonl` line carries
+`main_prefix: true` (omitted when false) so a restarted host and `efference dev cache`
+make the same call. Without the stamp, a cold read consented to at a shared peek
+leaves the clock on the earlier turn, and the next turn's cold check asks again.
 
 ### keepalive_loop: two clocks
 
@@ -1735,15 +1780,17 @@ cache nears eviction at idle.
 
 Two clocks keep this correct:
 
-- **Cache-touch clock** — stamped by `record_request` for real turns and by
-  `record_keepalive`. Tracks when the main prefix was last read; the cache is
+- **Cache-touch clock** — stamped by `record_request` for real turns, by
+  `record_peek` for peeks on the agent's own client, and by `record_keepalive`.
+  Tracks when the main prefix was last read; the cache is
   believed cold once it is older than the provider's cache lifetime
   (`keepalive::believed_cold_since`, backlog: cold-session.md).
-- **Real-turn clock** — stamped only by `record_request`. Tracks when a real
-  turn last occurred.
+- **Real-turn clock** — stamped by `record_request` and `record_peek`, never by
+  a ping. Tracks when a real turn last occurred.
 
 Both are seeded from `usage.jsonl` when a session's host attaches the record, from
-the last turn or ping and the last request that was not a ping. A restarted host
+the last request that touched the main prefix (a turn, a ping, or a line marked
+`main_prefix`) and the last request that was not a ping. A restarted host
 therefore keeps pinging a cache its predecessor kept warm, and a resumed session's
 cache is judged by when it was last read, not by when the host started.
 

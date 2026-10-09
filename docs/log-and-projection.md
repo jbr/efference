@@ -684,7 +684,10 @@ Every upstream request appends one JSONL line to the session dir's `usage.jsonl`
 a wall-clock stamp, the request's origin (`turn` / `peek` / `triage` / `spot` /
 `keepalive` / `aborted_attempt`), the upstream response id (Anthropic `msg_…`; an
 OpenRouter-fronted request's generation id), the model the response named for
-itself, and the four token counts. The main model and provider are fixed when
+itself, and the four token counts. When the response reported them, the line
+also carries `served_by` (the upstream that served the request) and `cost_usd`
+(the billed cost reported inline, docs/transport.md); both are omitted
+otherwise. The main model and provider are fixed when
 a session is created, but usage remains per request: an upstream may report a
 model alias or a response may be retried, so the per-line value is the
 accounting record. The canonical log carries the boot identity separately;
@@ -724,9 +727,10 @@ observation of the prefix having moved.
 One observation is noise — a retry, an eviction the TTL heuristic misses — so the
 signal is the **run**. `ColdStreak` (`src/daemon/metrics.rs`) folds each recorded
 request into a consecutive-unexplained-cold counter: only `turn` requests move it
-(the side channels carry their own prefixes at their own lineages), `peek`,
-`keepalive`, and `aborted_attempt` stamp the touch clock the idle test reads
-without counting, and any warm read clears it. An aborted attempt's zero
+(the side channels carry their own prefixes at their own lineages), `keepalive`,
+`aborted_attempt`, and a `peek` that ran on the agent's client (its usage line
+carries `main_prefix`) stamp the touch clock the idle test reads without counting,
+and any warm read clears it. An aborted attempt's zero
 `cache_read` is not evidence the prefix moved — counting it drove a false
 streak (two aborted attempts on one turn moved the
 streak to 2). `COLD_STREAK_WARN` is 4, set

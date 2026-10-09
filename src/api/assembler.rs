@@ -45,6 +45,9 @@ pub(super) struct Assembler {
     model: String,
     stop_reason: Option<String>,
     usage: Usage,
+    /// The upstream and inline cost the stream reported: `provider` from
+    /// `message_start`, `usage.cost` from the final `message_delta`.
+    receipt: Receipt,
     /// Whether the stream finalized: `message_stop` (Anthropic) or the `[DONE]`
     /// sentinel (OpenRouter) observed. A stream that closes without either died
     /// upstream — the completion assembles as a record-only partial
@@ -85,6 +88,7 @@ impl Assembler {
             model: String::new(),
             stop_reason: None,
             usage: Usage::default(),
+            receipt: Receipt::default(),
             finalized: false,
             failure: None,
             failure_class: FailureClass::Transient,
@@ -163,6 +167,8 @@ impl Assembler {
                     id: Option<String>,
                     model: String,
                     usage: Usage,
+                    #[serde(default)]
+                    provider: Option<String>,
                 }
                 let Env { message } = serde_json::from_str(data)?;
                 // The body as received, kept whole under the same cap: it is the
@@ -177,6 +183,7 @@ impl Assembler {
                 // telemetry, not content.
                 self.id = message.id;
                 self.model = message.model;
+                self.receipt.served_by = message.provider;
                 // input + cache_* land here; output_tokens is the initial
                 // placeholder, overwritten by message_delta.
                 self.usage = message.usage;
@@ -304,7 +311,7 @@ impl Assembler {
                 #[derive(Deserialize)]
                 struct Env {
                     delta: Delta,
-                    usage: Usage,
+                    usage: UsageWithCost,
                 }
                 #[derive(Deserialize)]
                 struct Delta {
@@ -315,7 +322,10 @@ impl Assembler {
                 if let Some(reason) = delta.stop_reason {
                     self.stop_reason = Some(reason);
                 }
-                self.usage.merge_max(&usage);
+                self.usage.merge_max(&usage.usage);
+                if let Some(cost) = usage.cost.into_inline() {
+                    self.receipt.cost = Some(cost);
+                }
             }
             // Terminal; the body ends after it, so the stream closes on its own.
             Some("message_stop") => self.finalized = true,
@@ -477,6 +487,7 @@ impl Assembler {
             model: self.model,
             stop_reason: self.stop_reason,
             usage: self.usage,
+            receipt: self.receipt,
             failure_class: self.failure_class,
         })
     }

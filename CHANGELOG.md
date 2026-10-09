@@ -8,6 +8,8 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- **Inline cost from OpenRouter** (docs/transport.md): a response's `usage.cost` prices the request directly, and the generation lookup runs only when a response carries none; `usage.jsonl` records each request's `cost_usd` and the upstream that served it (`served_by`).
+- **The keepalive's stance in `/state` and the TUI** (docs/control-api.md): `usage.keepalive_skipped` names a skipped or rejected ping with its numbers, and the sidebar warns beside the context meter.
 - **The newest Haiku as the default Anthropic spotter** (docs/model-catalog.md): with no spotter configured, a host session on Anthropic takes the newest active model on the listing's `haiku` line, by release date, instead of a compiled-in id; catalog rows carry `line` and `lifecycle`.
 - **Any tool-calling model as the spotter or triage model** (docs/transport.md): a forced `tool_choice` refused with a 400 (Sonnet 5.5, Opus 5.5, Fable) is retried as `auto` with a line naming the tool and thinking off, and the client sends that form from then on.
 - **Thinking and effort from the model's metadata** (docs/transport.md): Anthropic's `capabilities.thinking.types` and `capabilities.effort` decide adaptive vs off and validate `--effort` at boot, replacing the Claude-name allowlist (Haiku 5.5 now thinks, and `xhigh` works on it); off is spelled `between_tools` where a model refuses `disabled`; the keepalive sends the turn's own thinking and effort, so a Claude ping refreshes the cache instead of writing a fresh entry. `EFFERENCE_THINKING` is removed.
@@ -22,6 +24,9 @@ behind a change, see [`journal/`](journal/).
 - **`C-o` folds a cold session from the TUI** (docs/tui.md): the alternative to `⏎`-again's cold read, named in the cold notice.
 
 ### Fixed
+- **OpenRouter keepalive pings are capped** (docs/transport.md): OpenRouter reads `max_tokens: 0` as unset, so a ping on a reasoning model generated thousands of tokens; it now sends a cap of 16, which every honouring upstream bounds exactly and which still reads the cached prefix.
+- **The keepalive judges each ping against the prefix as it stands** (docs/transport.md): an expensive ping skips the next tick instead of ending the keepalive for the session, the threshold is priced from the model's listed prices (completion cost under half the cold-read premium), and only a permanent upstream rejection stops it.
+- **A shared triage peek refreshes the cold belief** (docs/transport.md): a peek on the agent's own client stamps the cache-touch clock, so one consent to a cold read covers the peek and the turn after it.
 - **The spotter verbs run without a main model** (docs/model-catalog.md): `dev spotter` and `dev spotter-eval` resolve the spotter role alone, read the stored catalog for its default as a host does, and `spotter-eval` without `--model` evaluates the configured spotter instead of an unqualified `claude-haiku-4-5`.
 - **One title ask in flight per session** (docs/session-title.md): a title check that passes while an ask runs marks a rerun instead of spending a second peek on the same question, and a user turn that lands mid-peek is asked about again.
 - **Cache marker per slug on OpenRouter** (docs/log-and-projection.md): the last-text-block marker froze the cached read for a whole tool loop on Gemini and Claude; Gemini slugs now send no marker (its implicit cache follows the prefix, and the `read N · write N` explicit-cache creation rows go away), and `anthropic/` slugs mark the trailing block as on the native API.

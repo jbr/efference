@@ -148,6 +148,10 @@ impl Entry {
             supported_efforts: None,
             default_effort: None,
             validates_efforts: false,
+            // A listing's prices are catalog prices (`Price`), not the per-endpoint
+            // cache-read pricing the keepalive check needs: that check falls back
+            // to its token-ratio rule.
+            prices: None,
         }
     }
 }

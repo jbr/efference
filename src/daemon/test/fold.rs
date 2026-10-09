@@ -95,11 +95,7 @@ async fn a_fold_resets_the_cold_belief_and_the_keepalive() {
     append_foldable_history(&shared);
     shared.record_request(
         RequestOrigin::Turn,
-        crate::api::RequestUsage {
-            id: None,
-            model: None,
-            usage: crate::api::Usage::default(),
-        },
+        crate::api::RequestUsage::new(crate::api::Usage::default()),
     );
     tokio::time::sleep(Duration::from_millis(5)).await;
     assert!(shared.cold_since().is_some());

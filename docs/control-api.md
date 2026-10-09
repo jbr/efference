@@ -716,14 +716,22 @@ not a topic — it is the log's cursor rather than control state, and sits outsi
     "last": { "input_tokens": …, "output_tokens": …,
               "cache_read_input_tokens": …, "cache_creation_input_tokens": … },
     "cumulative": { …same four fields… },
-    "last_request_at": 1754300000000,       // absolute Unix millis of the last turn or keepalive ping (persists across a host restart), or null before the first
+    "last_request_at": 1754300000000,       // absolute Unix millis of the last request on the main prefix: a turn, a keepalive ping, or a peek on the agent's own client (persists across a host restart), or null before the first
     "context": {                            // null when no capabilities were fetched
       "limit": 200000,                      // the boot-fetched context window (transport.md)
       "used": 9578                          // last request's total prompt tokens; null before the first
     },
+    "keepalive_skipped": null,              // null while pings go out on schedule and when no keepalive is armed;
+                                            //   else the stance (transport.md), absolute millis in `at`:
+                                            //   {"reason":"discard","at":…,"output_tokens":10000,"completion_usd":0.005,
+                                            //    "prefix_tokens":5000,"premium_usd":0.0006}  — the last ping's discard
+                                            //   is not repaid by the current prefix; re-judged each tick, so it clears
+                                            //   when the prefix grows (`completion_usd`/`premium_usd` null unpriced), or
+                                            //   {"reason":"rejected","at":…,"detail":"…"}  — the upstream refused the ping
+                                            //   itself; the loop has stopped for the session
     "cost": {                               // null when the provider has no per-request accounting (transport.md)
-      "usd": 0.0421,                        // billed session total from the provider's accounting endpoint
-      "unpriced": 0                         // requests the fetch couldn't price (total is an undercount if > 0)
+      "usd": 0.0421,                        // billed session total: inline per-response costs plus the provider's accounting endpoint for responses without one
+      "unpriced": 0                         // requests neither source could price (total is an undercount if > 0)
     },
     "plan": {                               // null off the Codex backend (transport.md)
       "type": "plus",                       // x-codex-plan-type

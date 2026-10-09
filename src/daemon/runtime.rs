@@ -118,6 +118,7 @@ impl SessionRuntime {
         // Whether this model has a prompt cache to keep warm at all
         // (docs/transport.md) — read before the capabilities move into `Session`.
         let cacheable = capabilities.prompt_cache.is_supported();
+        let prices = capabilities.prices;
         // The boot-fetched model capabilities (docs/transport.md) — the caller already
         // treated a failed lookup as fatal, so by here the value always exists.
         session.set_capabilities(capabilities);
@@ -173,10 +174,10 @@ impl SessionRuntime {
         //
         // Two gates, either of which keeps it from spawning. **No prompt cache**: the
         // boot capability lookup found no upstream behind this model that caches
-        // prompts, so a `max_tokens: 0` ping would refresh nothing and re-bill the
+        // prompts, so a ping would refresh nothing and re-bill the
         // whole prefix at the input rate every interval — the ping is only free where
         // there is an entry to read. **Interval zero**: the operator turned it off.
-        // The runtime tripwire inside the loop stays as well; it catches the endpoint
+        // The affordability check inside the loop stays as well; it catches the endpoint
         // that claims a cache and reasons on the ping anyway (docs/transport.md).
         // The cold state (backlog: cold-session.md) exists only where there is a cache
         // to lose; its watcher publishes the moment the belief turns.
@@ -196,6 +197,7 @@ impl SessionRuntime {
                 Arc::clone(&session),
                 tools,
                 ping_at,
+                prices,
             )));
         } else if !cacheable {
             eprintln!(

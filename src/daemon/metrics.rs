@@ -26,8 +26,9 @@ pub(super) struct Metrics {
     /// belongs in the cumulative totals and the cost, which is why this is a
     /// second field rather than a filter on the first.
     pub(super) last_turn_usage: Option<Usage>,
-    /// Stamped by requests on the main prefix — real turns and keepalive pings
-    /// ([`RequestOrigin::touches_main_prefix`]). The cache-touch clock: decides when to
+    /// Stamped by requests on the main prefix — real turns, keepalive pings
+    /// ([`RequestOrigin::touches_main_prefix`]), and result-triage peeks that ran on the
+    /// agent's own client ([`Session::record_peek`]). The cache-touch clock: decides when to
     /// ping, and when the session is believed cold (docs/transport.md). Seeded from
     /// `usage.jsonl` when the record is attached, so a restarted host keeps it.
     pub(super) last_request_at: Option<Instant>,
@@ -49,6 +50,8 @@ pub(super) struct Metrics {
     /// legitimate reason to (docs/log-and-projection.md) — the live end of the
     /// empirical prefix oracle, surfaced by `GET /state` as `usage.cold_streak`.
     pub(super) cold_streak: ColdStreak,
+    /// Set while the keepalive loop is skipping pings or ended on a rejection (`usage.keepalive_skipped`).
+    pub(super) keepalive_skipped: Option<super::keepalive::KeepaliveSkip>,
 }
 
 /// Session cost telemetry (docs/transport.md): the endpoint whose accounting
@@ -107,10 +110,12 @@ pub enum RequestOrigin {
 }
 
 impl RequestOrigin {
-    /// Whether a request of this origin read the main loop's own cached prefix, and so
-    /// refreshed it. Turns and keepalive pings do. A peek, title or triage request may
-    /// run on a separate triage client with a prefix of its own, and `usage.jsonl` does
-    /// not say which; leaving them out can only make the cache look colder than it is.
+    /// Whether every request of this origin read the main loop's own cached prefix, and
+    /// so refreshed it. Turns and keepalive pings do. A peek may run on the agent's own
+    /// client (it reads the main prefix) or on a separate triage client with a prefix of
+    /// its own; the origin does not say which, so the peek's line carries
+    /// [`UsageLine::main_prefix`] when it ran on the agent's client. Title and triage
+    /// requests are left out, which can only make the cache look colder than it is.
     pub fn touches_main_prefix(self) -> bool {
         matches!(self, Self::Turn | Self::Keepalive)
     }
@@ -175,10 +180,11 @@ pub enum CacheRead {
 /// `cache` verb reads offline — live, as the daemon records each request.
 ///
 /// Only `RequestOrigin::Turn` moves the streak: the side channels carry their own
-/// prefixes at their own lineages. `Peek`, `Keepalive`, and `AbortedAttempt` ride
-/// the main-loop prefix without being main-loop *evidence* — they stamp the touch
-/// clock (an idle gap is measured from the last thing that could have refreshed
-/// the prefix) but never count as cold. An aborted attempt in particular often
+/// prefixes at their own lineages. `Keepalive`, `AbortedAttempt`, and a `Peek` that
+/// ran on the agent's client ride the main-loop prefix without being main-loop
+/// *evidence* — they stamp the touch clock (an idle gap is measured from the last
+/// thing that could have refreshed the prefix) but never count as cold. A peek on a
+/// separate triage client neither stamps nor counts. An aborted attempt in particular often
 /// carries all-zero usage (docs/transport.md), so a zero `cache_read` there says
 /// nothing about whether the prefix moved.
 #[derive(Default)]
@@ -190,9 +196,10 @@ pub struct ColdStreak {
 
 impl ColdStreak {
     /// Fold one recorded request in, returning its classification for a main-loop
-    /// request and `None` for anything else. Takes the same four fields
-    /// `usage.jsonl` persists, so the offline verb replays a recorded session
-    /// through this exact logic.
+    /// request and `None` for anything else. Takes the fields `usage.jsonl`
+    /// persists, so the offline verb replays a recorded session through this exact
+    /// logic. A peek is taken as off the main prefix; [`Self::observe_touching`] is the
+    /// form for a request known to have read it.
     pub fn observe(
         &mut self,
         origin: RequestOrigin,
@@ -200,13 +207,27 @@ impl ColdStreak {
         model: Option<&str>,
         cache_read: u64,
     ) -> Option<CacheRead> {
-        let touches_prefix = matches!(
+        self.observe_touching(
             origin,
-            RequestOrigin::Turn
-                | RequestOrigin::Peek
-                | RequestOrigin::Keepalive
-                | RequestOrigin::AbortedAttempt
-        );
+            origin.touches_main_prefix(),
+            at_ms,
+            model,
+            cache_read,
+        )
+    }
+
+    /// [`Self::observe`] with `main_prefix` stating whether the request read the main
+    /// prefix ([`UsageLine::touches_main_prefix`]), which decides whether it stamps the
+    /// touch clock the idle test reads.
+    pub fn observe_touching(
+        &mut self,
+        origin: RequestOrigin,
+        main_prefix: bool,
+        at_ms: u128,
+        model: Option<&str>,
+        cache_read: u64,
+    ) -> Option<CacheRead> {
+        let touches_prefix = main_prefix || origin == RequestOrigin::AbortedAttempt;
         let previous_touch = self.last_touch_ms;
         if touches_prefix {
             self.last_touch_ms = Some(at_ms);
@@ -277,6 +298,31 @@ pub struct UsageLine {
     pub cache_read: u64,
     #[serde(default)]
     pub cache_write: u64,
+    /// The request read the main prefix although its origin does not imply it: a
+    /// result-triage peek on the agent's own client (`triage = "Shared"`,
+    /// docs/transport.md). Omitted when false, and absent on lines written before the
+    /// field existed, which read as false. Not written for origins that always touch the
+    /// main prefix ([`RequestOrigin::touches_main_prefix`]).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub main_prefix: bool,
+    /// The upstream that served the request, when the response named one
+    /// (`Receipt::served_by`, docs/transport.md). Absent on lines written before the
+    /// field existed and on providers that do not say.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub served_by: Option<String>,
+    /// The cost the response billed inline, in USD (`Receipt::cost`). Absent when the
+    /// response carried none; such a request is priced by the generation lookup, if
+    /// armed ([`Session::price_request`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cost_usd: Option<f64>,
+}
+
+impl UsageLine {
+    /// Whether this request refreshed the main prefix: its origin always does, or the
+    /// line records that it ran on the agent's own client.
+    pub fn touches_main_prefix(&self) -> bool {
+        self.main_prefix || self.origin.touches_main_prefix()
+    }
 }
 
 /// Now, as Unix millis — the stamp on a usage line and the input to the
@@ -310,32 +356,27 @@ impl Session {
     }
 
     /// Set the clocks from a `usage.jsonl` written before this process: the touch clock
-    /// from the last request on the main prefix, the real-turn clock from the last
-    /// request that was not a ping, and the last turn's usage. A line that does not parse
-    /// is skipped.
+    /// from the last request on the main prefix ([`UsageLine::touches_main_prefix`]), the
+    /// real-turn clock from the last request that was not a ping, and the last turn's
+    /// usage. A line that does not parse is skipped.
     fn seed_clocks(&self, record: &str) {
         let lines: Vec<UsageLine> = record
             .lines()
             .filter_map(|l| serde_json::from_str(l).ok())
             .collect();
-        let last = |keep: fn(RequestOrigin) -> bool| {
-            lines
-                .iter()
-                .filter(|l| keep(l.origin))
-                .map(|l| l.at_ms)
-                .max()
-        };
+        let last =
+            |keep: fn(&UsageLine) -> bool| lines.iter().filter(|l| keep(l)).map(|l| l.at_ms).max();
         let now = wall_millis();
         let instant = |at_ms: u128| {
             let ago = u64::try_from(now.saturating_sub(at_ms)).unwrap_or(u64::MAX);
             Instant::now().checked_sub(Duration::from_millis(ago))
         };
         let mut m = self.metrics.lock().unwrap();
-        if let Some(at_ms) = last(RequestOrigin::touches_main_prefix) {
+        if let Some(at_ms) = last(UsageLine::touches_main_prefix) {
             m.last_request_at = instant(at_ms);
             m.last_request_wall = Some(crate::log::Timestamp(at_ms as u64));
         }
-        if let Some(at_ms) = last(|o| o != RequestOrigin::Keepalive) {
+        if let Some(at_ms) = last(|l| l.origin != RequestOrigin::Keepalive) {
             m.last_real_turn_at = instant(at_ms);
         }
         // The context readout and the cold topic's size read the last turn's prompt.
@@ -352,7 +393,13 @@ impl Session {
     /// Append one origin-tagged line to `usage.jsonl` (flushed per line — each is a
     /// completed upstream request worth surviving a crash). Failures are reported and
     /// dropped: the record is diagnostic, never load-bearing.
-    fn persist_usage(&self, origin: RequestOrigin, at_ms: u128, request: &RequestUsage) {
+    fn persist_usage(
+        &self,
+        origin: RequestOrigin,
+        main_prefix: bool,
+        at_ms: u128,
+        request: &RequestUsage,
+    ) {
         use std::io::Write;
         let mut sink = self.usage_log.lock().unwrap();
         let Some(sink) = sink.as_mut() else { return };
@@ -365,6 +412,9 @@ impl Session {
             output: request.usage.output_tokens,
             cache_read: request.usage.cache_read_input_tokens,
             cache_write: request.usage.cache_creation_input_tokens,
+            main_prefix: main_prefix && !origin.touches_main_prefix(),
+            served_by: request.receipt.served_by.clone(),
+            cost_usd: request.receipt.cost.map(|c| c.total_usd),
         };
         let written = serde_json::to_string(&line)
             .map_err(io::Error::other)
@@ -381,29 +431,43 @@ impl Session {
     /// signal, docs/log-and-projection.md). Transport-only — no canonical-log append,
     /// no projection change.
     pub fn record_request(&self, origin: RequestOrigin, request: RequestUsage) {
+        self.record(origin, origin.touches_main_prefix(), request);
+    }
+
+    /// Record a result-triage peek's usage. `on_agent_client` is whether the peek ran on
+    /// the agent's own client (`triage = "Shared"`, `!Distiller::is_own`): it then read
+    /// the main prefix and refreshed it, so it stamps the touch clock like a turn; a peek
+    /// on a separate triage client does not (docs/transport.md).
+    pub fn record_peek(&self, on_agent_client: bool, request: RequestUsage) {
+        self.record(RequestOrigin::Peek, on_agent_client, request);
+    }
+
+    /// `main_prefix`: whether the request read (and so refreshed) the main prefix.
+    fn record(&self, origin: RequestOrigin, main_prefix: bool, request: RequestUsage) {
         let at_ms = wall_millis();
-        self.persist_usage(origin, at_ms, &request);
+        self.persist_usage(origin, main_prefix, at_ms, &request);
         // A zero-usage aborted attempt has nothing to price, and fetching it would
         // only run the generation lookup to exhaustion and misreport it as
         // `unpriced`. An aborted attempt with real usage — a stream that finalized
         // and then failed to parse (docs/transport.md) — was billed, so it is
         // priced like any other request.
         if origin != RequestOrigin::AbortedAttempt || !request.usage.is_zero() {
-            self.spawn_cost_fetch(&request);
+            self.price_request(&request);
         }
         let mut m = self.metrics.lock().unwrap();
         if origin == RequestOrigin::Turn {
             m.turn_requests += 1;
             m.last_turn_usage = Some(request.usage.clone());
         }
-        m.cold_streak.observe(
+        m.cold_streak.observe_touching(
             origin,
+            main_prefix,
             at_ms,
             request.model.as_deref(),
             request.usage.cache_read_input_tokens,
         );
         Self::fold_usage(&mut m, request.usage);
-        if origin.touches_main_prefix() {
+        if main_prefix {
             Self::stamp_touch(&mut m, at_ms);
         }
         m.last_real_turn_at = Some(Instant::now());
@@ -415,13 +479,14 @@ impl Session {
     /// stop pinging.
     pub fn record_keepalive(&self, request: RequestUsage) {
         let at_ms = wall_millis();
-        self.persist_usage(RequestOrigin::Keepalive, at_ms, &request);
-        self.spawn_cost_fetch(&request);
+        self.persist_usage(RequestOrigin::Keepalive, true, at_ms, &request);
+        self.price_request(&request);
         let mut m = self.metrics.lock().unwrap();
         // A ping refreshes the prefix it read, so it stamps the touch clock the
         // idle-eviction test reads — without ever counting as a main-loop request.
-        m.cold_streak.observe(
+        m.cold_streak.observe_touching(
             RequestOrigin::Keepalive,
+            true,
             at_ms,
             request.model.as_deref(),
             request.usage.cache_read_input_tokens,
@@ -434,6 +499,16 @@ impl Session {
     fn stamp_touch(m: &mut Metrics, at_ms: u128) {
         m.last_request_at = Some(Instant::now());
         m.last_request_wall = Some(crate::log::Timestamp(at_ms as u64));
+    }
+
+    /// Price one recorded request (docs/transport.md). A response that carried its
+    /// billed cost inline adds it to the session total here, and nothing else prices
+    /// that request; one that did not goes to [`Self::spawn_cost_fetch`].
+    fn price_request(&self, request: &RequestUsage) {
+        match request.receipt.cost {
+            Some(cost) => self.cost.lock().unwrap().total_usd += cost.total_usd,
+            None => self.spawn_cost_fetch(request),
+        }
     }
 
     /// Price one recorded request off the provider's accounting endpoint

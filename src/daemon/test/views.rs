@@ -188,30 +188,22 @@ fn state_reports_cache_telemetry() {
     // Cold prefix: all creation, no read.
     shared.record_request(
         RequestOrigin::Turn,
-        RequestUsage {
-            id: None,
-            model: None,
-            usage: Usage {
-                input_tokens: 6,
-                output_tokens: 10,
-                cache_creation_input_tokens: 9407,
-                cache_read_input_tokens: 0,
-            },
-        },
+        RequestUsage::new(Usage {
+            input_tokens: 6,
+            output_tokens: 10,
+            cache_creation_input_tokens: 9407,
+            cache_read_input_tokens: 0,
+        }),
     );
     // Now hot: reads climb, creation collapses (the cache gate signature, docs/README.md).
     shared.record_request(
         RequestOrigin::Turn,
-        RequestUsage {
-            id: None,
-            model: None,
-            usage: Usage {
-                input_tokens: 6,
-                output_tokens: 12,
-                cache_creation_input_tokens: 165,
-                cache_read_input_tokens: 9407,
-            },
-        },
+        RequestUsage::new(Usage {
+            input_tokens: 6,
+            output_tokens: 12,
+            cache_creation_input_tokens: 165,
+            cache_read_input_tokens: 9407,
+        }),
     );
 
     let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
@@ -266,16 +258,12 @@ fn state_reports_context_occupancy_against_the_boot_limit() {
     // tokens actually occupying the window.
     shared.record_request(
         RequestOrigin::Turn,
-        RequestUsage {
-            id: None,
-            model: None,
-            usage: Usage {
-                input_tokens: 6,
-                output_tokens: 12,
-                cache_creation_input_tokens: 165,
-                cache_read_input_tokens: 9407,
-            },
-        },
+        RequestUsage::new(Usage {
+            input_tokens: 6,
+            output_tokens: 12,
+            cache_creation_input_tokens: 165,
+            cache_read_input_tokens: 9407,
+        }),
     );
     let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
     assert_eq!(v["usage"]["context"]["limit"], 200_000);
@@ -287,16 +275,12 @@ fn state_reports_context_occupancy_against_the_boot_limit() {
     // rise with the prompt and read as a ceiling the session never hits.
     shared.record_request(
         RequestOrigin::Turn,
-        RequestUsage {
-            id: None,
-            model: None,
-            usage: Usage {
-                input_tokens: 196_000,
-                output_tokens: 12,
-                cache_creation_input_tokens: 0,
-                cache_read_input_tokens: 0,
-            },
-        },
+        RequestUsage::new(Usage {
+            input_tokens: 196_000,
+            output_tokens: 12,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
+        }),
     );
     let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
     assert_eq!(v["usage"]["context"]["limit"], 200_000);
@@ -318,15 +302,13 @@ fn context_occupancy_ignores_side_channel_requests() {
         prompt_cache: crate::api::PromptCachePolicy::Explicit,
         ..crate::api::ModelCapabilities::unknown()
     });
-    let usage = |input, read| RequestUsage {
-        id: None,
-        model: None,
-        usage: Usage {
+    let usage = |input, read| {
+        RequestUsage::new(Usage {
             input_tokens: input,
             output_tokens: 1,
             cache_creation_input_tokens: 0,
             cache_read_input_tokens: read,
-        },
+        })
     };
 
     shared.record_request(RequestOrigin::Turn, usage(10, 27_000));

@@ -258,3 +258,72 @@ fn openrouter_cache_counts_arrive_in_message_delta() {
     assert_eq!(completion.usage.cache_creation_input_tokens, 165);
     assert_eq!(completion.usage.cache_read_input_tokens, 9407);
 }
+
+/// OpenRouter's Messages endpoint reports the serving upstream on `message_start`
+/// and the billed cost in the final `message_delta`'s `usage` (docs/transport.md).
+/// These are the bytes captured live; the cost lands on the receipt and the token
+/// counts stay unaffected.
+#[test]
+fn inline_cost_and_serving_upstream_land_on_the_receipt() {
+    let completion = feed(&[
+            ("message_start", r#"{"type":"message_start","message":{"id":"gen-9","type":"message","role":"assistant","content":[],"model":"z-ai/glm-5.3-flash","stop_reason":null,"usage":{"input_tokens":0,"output_tokens":0,"cache_creation_input_tokens":null,"cache_read_input_tokens":null,"speed":"standard"},"provider":"InferenceNet"}}"#),
+            ("content_block_start", r#"{"index":0,"content_block":{"type":"text","text":""}}"#),
+            ("content_block_delta", r#"{"index":0,"delta":{"type":"text_delta","text":"hi"}}"#),
+            ("content_block_stop", r#"{"index":0}"#),
+            ("message_delta", r#"{"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"input_tokens":15,"output_tokens":55,"output_tokens_details":{"thinking_tokens":43},"cache_creation_input_tokens":null,"cache_read_input_tokens":0,"is_byok":false,"cost":0.00002855,"cost_details":{"upstream_inference_cost":0.00002855,"upstream_inference_prompt_cost":0.00000105,"upstream_inference_completions_cost":0.0000275}},"context_management":null}"#),
+            ("message_stop", r#"{"type":"message_stop"}"#),
+        ])
+        .unwrap();
+    assert_eq!(
+        completion.receipt.served_by.as_deref(),
+        Some("InferenceNet")
+    );
+    let cost = completion.receipt.cost.expect("inline cost");
+    assert_eq!(cost.total_usd, 0.00002855);
+    assert_eq!(cost.prompt_usd, Some(0.00000105));
+    assert_eq!(cost.completion_usd, Some(0.0000275));
+    assert_eq!(completion.usage.input_tokens, 15);
+    assert_eq!(completion.usage.output_tokens, 55);
+    assert_eq!(completion.request_usage().receipt, completion.receipt);
+}
+
+/// An explicit `null` cost (or none at all, as Anthropic sends) reads as no inline
+/// cost, so the request falls back to the generation lookup.
+#[test]
+fn null_or_missing_cost_reads_as_absent() {
+    for usage in [
+        r#"{"input_tokens":1,"output_tokens":2,"cost":null,"cost_details":null}"#,
+        r#"{"input_tokens":1,"output_tokens":2}"#,
+    ] {
+        let delta = format!(r#"{{"delta":{{"stop_reason":"end_turn"}},"usage":{usage}}}"#);
+        let completion = feed(&[
+            ("message_start", r#"{"message":{"id":"msg-1","model":"m","usage":{"input_tokens":1,"output_tokens":0}}}"#),
+            ("message_delta", delta.as_str()),
+            ("message_stop", r#"{"type":"message_stop"}"#),
+        ])
+        .unwrap();
+        assert_eq!(completion.receipt, Receipt::default(), "{usage}");
+        assert_eq!(completion.usage.output_tokens, 2);
+    }
+}
+
+/// The non-streamed keepalive body carries the same `usage.cost` and a top-level
+/// `provider`.
+#[test]
+fn keepalive_body_cost_and_provider_parse() {
+    use crate::api::client::KeepaliveResponse;
+    let body = r#"{"id":"gen-3","type":"message","model":"m","provider":"InferenceNet","usage":{"input_tokens":15,"output_tokens":0,"cache_read_input_tokens":null,"cost":0.00001,"cost_details":{"upstream_inference_cost":0.00001,"upstream_inference_prompt_cost":0.00001,"upstream_inference_completions_cost":0}}}"#;
+    let ping = serde_json::from_str::<KeepaliveResponse>(body)
+        .unwrap()
+        .into_request_usage();
+    assert_eq!(ping.receipt.served_by.as_deref(), Some("InferenceNet"));
+    let cost = ping.receipt.cost.unwrap();
+    assert_eq!(cost.total_usd, 0.00001);
+    assert_eq!(cost.completion_usd, Some(0.0));
+    assert_eq!(ping.usage.input_tokens, 15);
+    let bare = r#"{"id":"msg-1","model":"m","usage":{"input_tokens":1,"output_tokens":0}}"#;
+    let bare = serde_json::from_str::<KeepaliveResponse>(bare)
+        .unwrap()
+        .into_request_usage();
+    assert_eq!(bare.receipt, Receipt::default());
+}
