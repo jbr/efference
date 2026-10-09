@@ -11,6 +11,7 @@ use super::thinking::ToolChoice;
 use crate::log::{AssistantOutput, CompletionsMessage, MessagesOutputBlock, ResultImage};
 use crate::project::{UserPart, WireTurn};
 
+pub(crate) mod assembler;
 #[cfg(test)]
 mod test;
 
