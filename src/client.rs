@@ -747,6 +747,35 @@ impl Client {
         Ok(())
     }
 
+    /// Report whether a person is attending (`POST /attention`,
+    /// docs/web-push.md). A listener route at the socket root, whatever prefix
+    /// this client carries. `Ok(false)` is a `404`: a lone session bind serves no
+    /// attention table, so the caller stops reporting.
+    pub(crate) async fn report_attention(
+        &self,
+        report: &crate::daemon::attention::AttentionReport,
+    ) -> Result<bool> {
+        let path = "/attention";
+        let conn = self
+            .http
+            .post(path)
+            .with_request_header("content-type", "application/json; charset=utf-8")
+            .with_body(serde_json::to_string(report)?)
+            .await
+            .with_context(|| format!("POST {path} to the control socket"))?;
+        if conn.status().is_some_and(|s| s.code() == "404") {
+            return Ok(false);
+        }
+        read_2xx(conn, "POST", path).await?;
+        Ok(true)
+    }
+
+    /// The id of the session this client is bound to (`/sessions/<id>`), or
+    /// `None` at a session bind's root.
+    pub fn session_id(&self) -> Option<&str> {
+        self.prefix.strip_prefix("/sessions/")
+    }
+
     /// A fresh bootstrap link from the daemon's TCP bind (`GET /auth/link`,
     /// docs/web-bind.md) — current TOTP code in the fragment. The `/auth/*`
     /// credential routes answer only over the Unix socket (host possession is the

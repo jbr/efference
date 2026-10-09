@@ -252,7 +252,7 @@ export const resolveProposal = (
  * the report that says the page is leaving outlive it. */
 export async function sendAttention(report: {
   client: string;
-  viewing: string | null;
+  session: string | null;
   active: boolean;
 }): Promise<void> {
   const response = await fetch("/attention", {

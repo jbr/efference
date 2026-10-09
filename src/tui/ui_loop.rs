@@ -10,6 +10,10 @@ use std::io::Write;
 /// and a crossterm event-reader thread; renders each frame from the projected
 /// transcript. Adapted from ferritin's `ui_thread_loop` (the request-thread
 /// plumbing is gone; inbound data is [`TuiEvent`]s from the bridge).
+#[allow(
+    clippy::too_many_arguments,
+    reason = "two call sites (attach, offline) each supply every input once; a bundling struct would be built at both only to be taken apart here"
+)]
 pub(super) fn ui_loop(
     events: Receiver<TuiEvent>,
     senders: Senders,
@@ -26,7 +30,22 @@ pub(super) fn ui_loop(
     // The default for a run with no session behind it — the gallery and the
     // read-only view.
     attached: super::run::Attached,
+    // Reports whether the operator is attending (`attention.rs`); `None` where no
+    // host is behind the run.
+    mut attender: Option<super::attention::Attender>,
 ) -> io::Result<Exit> {
+    let attention_tx = senders.attention.clone();
+    let send_report = |report: Option<crate::daemon::attention::AttentionReport>,
+                       attender: &mut Option<super::attention::Attender>| {
+        if let Some(report) = report
+            && attention_tx.send(report).is_err()
+        {
+            // The dispatcher ended: the host serves no attention table here.
+            if let Some(attender) = attender {
+                attender.stop();
+            }
+        }
+    };
     // Build the render context: interactive TTY, sized to the terminal.
     let width = crossterm::terminal::size()
         .map(|(w, _)| w as usize)
@@ -57,6 +76,7 @@ pub(super) fn ui_loop(
             LeaveAlternateScreen,
             DisableMouseCapture,
             DisableBracketedPaste,
+            DisableFocusChange,
             PopKeyboardEnhancementFlags,
             crossterm::cursor::Show
         );
@@ -75,6 +95,7 @@ pub(super) fn ui_loop(
         EnterAlternateScreen,
         EnableMouseCapture,
         EnableBracketedPaste,
+        EnableFocusChange,
         PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES)
     )?;
     let backend = CrosstermBackend::new(stdout);
@@ -197,6 +218,17 @@ pub(super) fn ui_loop(
                     state.flush_reproject();
                     let mut next = Some(first);
                     while let Some(event) = next.take() {
+                        // Focus and input feed the attention reports (`attention.rs`).
+                        if let Some(attender) = attender.as_mut() {
+                            match &event {
+                                Event::FocusGained => attender.focus(true),
+                                Event::FocusLost => attender.focus(false),
+                                Event::Key(_) | Event::Mouse(_) => {
+                                    attender.input(std::time::Instant::now())
+                                }
+                                _ => {}
+                            }
+                        }
                         match event {
                             Event::Key(key) if !key.is_release() => {
                                 exit = state.handle_key_event(key, &mut terminal);
@@ -238,10 +270,22 @@ pub(super) fn ui_loop(
             },
         }
 
+        let report = attender
+            .as_mut()
+            .and_then(|a| a.due(std::time::Instant::now()));
+        send_report(report, &mut attender);
+
         if exit || state.ui.quit_requested {
             // The switcher is the only thing that sets a destination; every
             // other way out of the loop is a plain quit (`sessions.rs`).
-            break Ok(state.switch_to.take().unwrap_or(Exit::Quit));
+            let exit = state.switch_to.take().unwrap_or(Exit::Quit);
+            // Quitting says so at once; a switch leaves it to the next attach's
+            // first report, which would otherwise race this one.
+            if exit == Exit::Quit {
+                let report = attender.as_mut().and_then(|a| a.leaving());
+                send_report(report, &mut attender);
+            }
+            break Ok(exit);
         }
         if !redraw {
             continue;
@@ -275,6 +319,7 @@ pub(super) fn ui_loop(
         LeaveAlternateScreen,
         DisableMouseCapture,
         DisableBracketedPaste,
+        DisableFocusChange,
         PopKeyboardEnhancementFlags
     )?;
     terminal.show_cursor()?;

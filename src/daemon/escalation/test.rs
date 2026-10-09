@@ -26,7 +26,7 @@ fn set_active(attention: &Attention, active: bool) {
     attention.report_at(
         &AttentionReport {
             client: "c1".into(),
-            viewing: None,
+            session: None,
             active,
         },
         std::time::Instant::now(),

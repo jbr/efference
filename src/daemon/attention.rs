@@ -1,6 +1,6 @@
 //! Whether anyone is attending to the host (docs/web-push.md).
 //!
-//! Clients report `{client, viewing, active}` to `POST /attention`; the host keeps
+//! Clients report `{client, session, active}` to `POST /attention`; the host keeps
 //! the latest report per client with its arrival time. A client **lapses** when its
 //! reports stop, and someone is **attentive** when any unlapsed client's last
 //! report said `active`. The state is host-wide: one [`Attention`] is shared by
@@ -26,14 +26,14 @@ pub(crate) const LAPSE: Duration = Duration::from_secs(45);
 const MAX_ID_LEN: usize = 128;
 
 /// One client's report, as `POST /attention` receives it.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct AttentionReport {
-    /// A per-page-load id the client generated: one tab, one value.
+    /// A per-page-load (web) or per-process (TUI) id the client generated.
     pub(crate) client: String,
     /// The session the client has open, or `None` (null or absent) on a page
     /// that shows none (the session list).
-    pub(crate) viewing: Option<String>,
+    pub(crate) session: Option<String>,
     /// Whether the person is attending: the page is visible, focused, and has
     /// seen recent input.
     pub(crate) active: bool,
@@ -51,12 +51,12 @@ impl AttentionReport {
             ));
         }
         if report
-            .viewing
+            .session
             .as_ref()
             .is_some_and(|v| v.is_empty() || v.len() > MAX_ID_LEN)
         {
             return Err(format!(
-                "bad attention report: viewing must be null or 1 to {MAX_ID_LEN} characters"
+                "bad attention report: session must be null or 1 to {MAX_ID_LEN} characters"
             ));
         }
         Ok(report)
@@ -104,12 +104,12 @@ impl Attention {
 
 impl Host {
     /// Take a client's report: record it, and when it is an active report from a
-    /// client viewing a hosted session, tell that session its pending moment has
+    /// client with a hosted session open, tell that session its pending moment has
     /// been seen ([`Session::cancel_escalation`]).
     pub(crate) fn report_attention(&self, report: &AttentionReport) {
         self.attention.report_at(report, Instant::now());
         if report.active
-            && let Some(id) = &report.viewing
+            && let Some(id) = &report.session
             && let Some(session) = self.session(id)
         {
             session.cancel_escalation();

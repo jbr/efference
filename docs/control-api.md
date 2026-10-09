@@ -252,8 +252,8 @@ sessions from one process. Its own routes are the listener's, not a session's:
   the list once the loop has returned. The directory and log stay, so the session
   is resumable by patching it `active` again. `404` for an id that is not hosted.
 - `POST /attention` — a client reports whether a person is attending
-  ([web-push.md](web-push.md)). The body is `{"client", "viewing", "active"}`:
-  `client` a per-page-load id the client mints (1 to 128 characters), `viewing` the
+  ([web-push.md](web-push.md)). The body is `{"client", "session", "active"}`:
+  `client` a per-page-load (web) or per-process (TUI) id the client mints (1 to 128 characters), `session` the
   id of the session the client has open or `null` (an absent key reads as `null`),
   `active` a boolean. Unknown keys are refused. `204` with no body; `400
   bad_request` naming the problem for a malformed body. Host state, not a

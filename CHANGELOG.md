@@ -8,6 +8,7 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- **The TUI reports attention** (docs/web-push.md): focused with a key or mouse event in the last 5 minutes counts as attending through `POST /attention`, so a person in the terminal is not pushed at immediately.
 - **Inline cost from OpenRouter** (docs/transport.md): a response's `usage.cost` prices the request directly, and the generation lookup runs only when a response carries none; `usage.jsonl` records each request's `cost_usd` and the upstream that served it (`served_by`).
 - **The keepalive's stance in `/state` and the TUI** (docs/control-api.md): `usage.keepalive_skipped` names a skipped or rejected ping with its numbers, and the sidebar warns beside the context meter.
 - **The newest Haiku as the default Anthropic spotter** (docs/model-catalog.md): with no spotter configured, a host session on Anthropic takes the newest active model on the listing's `haiku` line, by release date, instead of a compiled-in id; catalog rows carry `line` and `lifecycle`.

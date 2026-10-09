@@ -2,7 +2,7 @@
 //
 // The host holds one table of clients' latest reports and decides, when a session
 // has something to announce, whether anyone is attending. A report is
-// `{client, viewing, active}`: `client` is a per-page-load id, `viewing` the
+// `{client, session, active}`: `client` is a per-page-load id, `session` the
 // session the page shows (null on the list), `active` whether the page is
 // visible, focused, and has seen input recently. `Attender` is the decision
 // of when a report is due, with every input passed in so it runs without a
@@ -32,7 +32,7 @@ export const INPUT_THROTTLE_MS = 10_000;
 
 export interface AttentionReport {
   client: string;
-  viewing: string | null;
+  session: string | null;
   active: boolean;
 }
 
@@ -64,7 +64,7 @@ export function isActive({
  * The state machine behind reporting. Feed it the page's state; `due(now)` says
  * whether a report should go out now, and records it as sent when it does.
  *
- * A report is due when `active` or `viewing` differs from the last one sent, and
+ * A report is due when `active` or `session` differs from the last one sent, and
  * when the page is active and the last report is a heartbeat old. A change to
  * inactive is never throttled; a change to active is throttled to one per
  * [`INPUT_THROTTLE_MS`] so the edge of the input window cannot flap.
@@ -72,9 +72,9 @@ export function isActive({
 export class Attender {
   visible = false;
   focused = false;
-  viewing: string | null = null;
+  session: string | null = null;
   lastInputAt: number | null = null;
-  private sent: { active: boolean; viewing: string | null; at: number } | null =
+  private sent: { active: boolean; session: string | null; at: number } | null =
     null;
 
   constructor(readonly client: string) {}
@@ -92,24 +92,24 @@ export class Attender {
     });
     const last = this.sent;
     if (last !== null) {
-      const changed = active !== last.active || this.viewing !== last.viewing;
+      const changed = active !== last.active || this.session !== last.session;
       if (!changed && !(active && now - last.at >= HEARTBEAT_MS)) return null;
       if (
         changed &&
         active &&
         !last.active &&
-        this.viewing === last.viewing &&
+        this.session === last.session &&
         now - last.at < INPUT_THROTTLE_MS
       ) {
         return null;
       }
-    } else if (!active && this.viewing === null) {
+    } else if (!active && this.session === null) {
       // Nothing has been said and nothing is worth saying: the host treats a
       // client it has not heard from as inattentive already.
       return null;
     }
-    this.sent = { active, viewing: this.viewing, at: now };
-    return { client: this.client, viewing: this.viewing, active };
+    this.sent = { active, session: this.session, at: now };
+    return { client: this.client, session: this.session, active };
   }
 }
 
@@ -150,7 +150,7 @@ export function startAttention(
     if (stopped) return;
     attender.visible = document.visibilityState === "visible";
     attender.focused = document.hasFocus();
-    attender.viewing = sessionId();
+    attender.session = sessionId();
     const report = attender.due(performance.now());
     if (report === null) return;
     send(report).catch((error: unknown) => {

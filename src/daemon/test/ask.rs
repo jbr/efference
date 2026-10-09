@@ -165,7 +165,7 @@ async fn an_ask_sends_a_push_carrying_the_question() {
     attention.report_at(
         &crate::daemon::attention::AttentionReport {
             client: "c1".into(),
-            viewing: None,
+            session: None,
             active: true,
         },
         std::time::Instant::now(),

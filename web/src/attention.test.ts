@@ -27,11 +27,11 @@ describe("isActive", () => {
   });
 });
 
-function attending(viewing: string | null = "s1") {
+function attending(session: string | null = "s1") {
   const a = new Attender("c1");
   a.visible = true;
   a.focused = true;
-  a.viewing = viewing;
+  a.session = session;
   return a;
 }
 
@@ -44,7 +44,7 @@ describe("Attender", () => {
   it("reports activation at once, then only a heartbeat", () => {
     const a = attending();
     a.input(0);
-    expect(a.due(0)).toEqual({ client: "c1", viewing: "s1", active: true });
+    expect(a.due(0)).toEqual({ client: "c1", session: "s1", active: true });
     expect(a.due(1_000)).toBeNull();
     a.input(HEARTBEAT_MS - 1);
     expect(a.due(HEARTBEAT_MS - 1)).toBeNull();
@@ -57,7 +57,7 @@ describe("Attender", () => {
     a.input(0);
     a.due(0);
     a.visible = false;
-    expect(a.due(1)).toEqual({ client: "c1", viewing: "s1", active: false });
+    expect(a.due(1)).toEqual({ client: "c1", session: "s1", active: false });
     expect(a.due(2)).toBeNull();
     a.visible = true;
     a.focused = false;
@@ -77,10 +77,10 @@ describe("Attender", () => {
     const a = attending("s1");
     a.input(0);
     a.due(0);
-    a.viewing = "s2";
-    expect(a.due(1)).toEqual({ client: "c1", viewing: "s2", active: true });
-    a.viewing = null;
-    expect(a.due(2)).toEqual({ client: "c1", viewing: null, active: true });
+    a.session = "s2";
+    expect(a.due(1)).toEqual({ client: "c1", session: "s2", active: true });
+    a.session = null;
+    expect(a.due(2)).toEqual({ client: "c1", session: null, active: true });
   });
 
   it("throttles input-caused activation but not deactivation", () => {
@@ -100,7 +100,7 @@ describe("Attender", () => {
 
   it("reports a first view even when inactive", () => {
     const a = new Attender("c1");
-    a.viewing = "s1";
-    expect(a.due(0)).toEqual({ client: "c1", viewing: "s1", active: false });
+    a.session = "s1";
+    expect(a.due(0)).toEqual({ client: "c1", session: "s1", active: false });
   });
 });

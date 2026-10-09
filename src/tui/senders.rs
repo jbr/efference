@@ -14,6 +14,7 @@
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
 use super::{HostCmd, PaceCmd, SidebarCmd};
+use crate::daemon::attention::AttentionReport;
 use crate::frontend::{Approval, Interrupt, SubmittedTurn};
 
 /// What the UI sends the operator's intent over.
@@ -40,6 +41,8 @@ pub(crate) struct Senders {
     /// The verbs addressed to the *host* rather than to this session — list and
     /// end (docs/tui.md).
     pub host: UnboundedSender<HostCmd>,
+    /// Attention reports for `POST /attention` (`attention.rs`, docs/web-push.md).
+    pub attention: UnboundedSender<AttentionReport>,
 }
 
 /// The far ends, one per field of [`Senders`].
@@ -56,6 +59,7 @@ pub(crate) struct Receivers {
     pub sidebar: UnboundedReceiver<SidebarCmd>,
     pub images: UnboundedReceiver<crate::tui::image::ImageKey>,
     pub host: UnboundedReceiver<HostCmd>,
+    pub attention: UnboundedReceiver<AttentionReport>,
 }
 
 impl Senders {
@@ -72,6 +76,7 @@ impl Senders {
         let (sidebar, sidebar_rx) = unbounded_channel();
         let (images, images_rx) = unbounded_channel();
         let (host, host_rx) = unbounded_channel();
+        let (attention, attention_rx) = unbounded_channel();
         (
             Self {
                 submit,
@@ -85,6 +90,7 @@ impl Senders {
                 sidebar,
                 images,
                 host,
+                attention,
             },
             Receivers {
                 submit: submit_rx,
@@ -98,6 +104,7 @@ impl Senders {
                 sidebar: sidebar_rx,
                 images: images_rx,
                 host: host_rx,
+                attention: attention_rx,
             },
         )
     }

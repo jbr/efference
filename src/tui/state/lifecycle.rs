@@ -29,6 +29,7 @@ impl<'a> InteractiveState<'a> {
             sidebar: sidebar_tx,
             images: images_tx,
             host: host_tx,
+            attention: _,
         } = senders;
         let current_theme_name = render_context
             .current_theme_name()

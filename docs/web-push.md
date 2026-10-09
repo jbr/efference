@@ -130,9 +130,9 @@ A notification about a moment the operator is already at the screen for is noise
 one nobody attended to is the point of the feature. The host decides between the two
 from what clients report, not from what they have open.
 
-**Attention.** Clients report `{client, viewing, active}` to the host-level
+**Attention.** Clients report `{client, session, active}` to the host-level
 `POST /attention` ([control-api.md](control-api.md)): `client` a per-page-load id,
-`viewing` the session the page shows (`null` on the session list), `active` whether a
+`session` the session the page shows (`null` on the session list), `active` whether a
 person is attending. The host keeps the latest report per client with its arrival time
 (`src/daemon/attention.rs`). A client **lapses** 45 seconds after its last report
 (`LAPSE`): the web client heartbeats about every 20 seconds while active, so two missed
@@ -152,7 +152,7 @@ is still standing when the delay ends. A moment stops standing when it
   ends (`AskWait` drop), a turn is submitted to the session (`submit_turn`, which also
   carries an `ask`'s reply and ends a settle), or the session is archived (the host's
   teardown).
-- *Seen:* an active report arrives from a client whose `viewing` is this session
+- *Seen:* an active report arrives from a client whose `session` is this session
   (`Host::report_attention`). An active report requires recent input, so this reads as
   the operator opening that session and doing something. A report for another
   session, an inactive report, and a report that arrived before the moment do not
@@ -171,7 +171,7 @@ notification.
 
 **The web client** (`web/src/attention.ts`) reports `active` when the page is visible,
 focused, and has seen pointer, key, wheel, scroll, or touch input within 60 seconds.
-It reports at once on a change of `active` or of `viewing` (client-side navigation
+It reports at once on a change of `active` or of `session` (client-side navigation
 between sessions included), sends an inactive report on hide or blur so the host need
 not wait for the lapse, and heartbeats every 20 seconds while active. A change to
 active is throttled to one per 10 seconds. A check every 5 seconds notices the input
@@ -179,5 +179,18 @@ window expiring, since idleness fires no event. Failures are logged and not show
 `404` (a lone session bind) stops reporting. The stream is not tied to attention: a
 hidden tab keeps its `/events` connection.
 
-**The TUI** does not report yet, so it is never an attentive client: a person working
-in a terminal gets the push at once.
+**The TUI** (`src/tui/attention.rs`) reports as a client of its own, with a
+per-process id as `client` and the session it is attached to as `session` (`null` on a
+lone session bind). It is `active` while its terminal is focused (focus reporting,
+`CSI ?1004h`) and a key or mouse event, `Moved` included, arrived within 5 minutes
+(`INPUT_WINDOW`): a person reading output without touching anything for longer lapses
+to the escalation, which costs a delayed push at worst. Focus starts as focused, and
+starting counts as input, since the operator has just launched or attached it; a
+terminal or multiplexer that never sends focus events (tmux without `focus-events on`)
+leaves it reading focused, so input recency alone decides there. It reports on a change
+of `active`, heartbeats every 20 seconds while active, sends an inactive report on
+focus loss and on quitting, and checks the input window on the loop's one-second tick.
+Switching sessions attaches afresh and the new attach's first report names the new
+session. Reports go out in order from a task of their own through the host-root
+`POST /attention`, never blocking the UI loop; failures are logged, not drawn, and a
+`404` (a lone session bind) stops reporting.

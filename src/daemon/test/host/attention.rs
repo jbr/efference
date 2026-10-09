@@ -4,8 +4,8 @@
 
 use super::*;
 
-fn body(client: &str, viewing: Option<&str>, active: bool) -> String {
-    serde_json::json!({ "client": client, "viewing": viewing, "active": active }).to_string()
+fn body(client: &str, session: Option<&str>, active: bool) -> String {
+    serde_json::json!({ "client": client, "session": session, "active": active }).to_string()
 }
 
 /// A malformed report is a `400` naming the problem; a good one is a `204`.
@@ -25,7 +25,7 @@ async fn the_route_accepts_a_report_and_rejects_a_malformed_one() {
         "not json".to_string(),
         "{}".to_string(),
         body("", None, true),
-        r#"{"client":"c1","viewing":null,"active":"yes"}"#.to_string(),
+        r#"{"client":"c1","session":null,"active":"yes"}"#.to_string(),
     ] {
         let conn = server.post("/attention").with_body(bad.clone()).await;
         conn.assert_status(400);
@@ -54,12 +54,12 @@ async fn only_an_active_report_viewing_the_session_cancels_its_escalation() {
     let session = host.session("one").unwrap();
     let server = host_server(&host).await;
 
-    let report = |viewing: Option<&'static str>, active: bool| {
+    let report = |session: Option<&'static str>, active: bool| {
         let server = &server;
         async move {
             server
                 .post("/attention")
-                .with_body(body("c1", viewing, active))
+                .with_body(body("c1", session, active))
                 .await
                 .assert_status(204);
         }
@@ -75,7 +75,7 @@ async fn only_an_active_report_viewing_the_session_cancels_its_escalation() {
     report(Some("two"), true).await;
     assert!(session.pending_escalation().is_some(), "another session");
     report(None, true).await;
-    assert!(session.pending_escalation().is_some(), "viewing nothing");
+    assert!(session.pending_escalation().is_some(), "no session open");
 
     report(Some("one"), true).await;
     assert!(session.pending_escalation().is_none(), "seen");

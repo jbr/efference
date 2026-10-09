@@ -1,5 +1,6 @@
 //! Entry points — attach to a daemon, or run the element gallery — and theme resolution.
 
+use super::attention::Attender;
 use super::*;
 
 /// Attach to a session and stay there until the operator leaves it.
@@ -77,6 +78,7 @@ async fn attach(
         sidebar: mut sidebar_rx,
         images: mut images_rx,
         host: host_rx,
+        attention: mut attention_rx,
     } = receivers;
 
     // The bridge feeds the UI thread everything — log entries, live deltas, and the
@@ -321,12 +323,48 @@ async fn attach(
         tx.clone(),
     ));
 
+    // Attention reports (`attention.rs`, docs/web-push.md): sent in order from a
+    // task of their own, so a slow host never holds the UI loop. A failure is
+    // logged and not shown; a `404` (a lone session bind has no attention table)
+    // ends the task, which the UI loop notices as a closed channel.
+    let attention_client = client.clone().with_prefix("");
+    let attention_task = tokio::spawn(async move {
+        while let Some(report) = attention_rx.recv().await {
+            match attention_client.report_attention(&report).await {
+                Ok(true) => {}
+                Ok(false) => {
+                    log::debug!("attention: the endpoint has no host table; reporting stops");
+                    break;
+                }
+                Err(e) => log::warn!("attention report failed: {e}"),
+            }
+        }
+    });
+    let attender = Attender::new(
+        super::attention::process_client_id(),
+        client.session_id().map(str::to_string),
+        std::time::Instant::now(),
+    );
+
     // The crossterm UI loop is blocking — run it off the async runtime.
     let ui = tokio::task::spawn_blocking(move || {
-        ui_loop(rx, senders, theme, images, None, frame_cost, attached)
+        ui_loop(
+            rx,
+            senders,
+            theme,
+            images,
+            None,
+            frame_cost,
+            attached,
+            Some(attender),
+        )
     });
 
     let result = ui.await.context("the TUI thread panicked")?;
+    // The loop's senders are gone, so the task ends once it has sent what the
+    // loop left queued (the inactive report on quitting); bounded so a stalled
+    // host cannot hold the process open.
+    let _ = tokio::time::timeout(std::time::Duration::from_secs(1), attention_task).await;
     bridge.abort();
     sender.abort();
     recaller.abort();
@@ -431,6 +469,7 @@ async fn run_offline(
             viewing,
             frame_cost,
             Attached::default(),
+            None,
         )
     });
     let result = ui.await.context("the TUI thread panicked")?;

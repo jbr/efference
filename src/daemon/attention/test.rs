@@ -2,38 +2,38 @@
 
 use super::*;
 
-fn report(client: &str, viewing: Option<&str>, active: bool) -> AttentionReport {
+fn report(client: &str, session: Option<&str>, active: bool) -> AttentionReport {
     AttentionReport {
         client: client.into(),
-        viewing: viewing.map(str::to_string),
+        session: session.map(str::to_string),
         active,
     }
 }
 
-/// A report is `{client, viewing, active}`; `viewing` may be null, and a body
+/// A report is `{client, session, active}`; `session` may be null, and a body
 /// that is not that shape is refused with a message rather than read leniently.
 #[test]
 fn a_report_parses_and_a_malformed_one_is_rejected() {
-    let parsed = AttentionReport::parse(r#"{"client":"c1","viewing":"hardy-hawk","active":true}"#)
+    let parsed = AttentionReport::parse(r#"{"client":"c1","session":"hardy-hawk","active":true}"#)
         .expect("a well-formed report");
     assert_eq!(parsed, report("c1", Some("hardy-hawk"), true));
-    let list = AttentionReport::parse(r#"{"client":"c1","viewing":null,"active":false}"#).unwrap();
-    assert_eq!(list.viewing, None);
+    let list = AttentionReport::parse(r#"{"client":"c1","session":null,"active":false}"#).unwrap();
+    assert_eq!(list.session, None);
 
     for bad in [
         "",
         "not json",
         "{}",
-        r#"{"client":"c1","viewing":null}"#,
-        r#"{"client":"","viewing":null,"active":true}"#,
-        r#"{"client":"c1","viewing":"","active":true}"#,
-        r#"{"client":"c1","viewing":null,"active":"yes"}"#,
-        r#"{"client":"c1","viewing":null,"active":true,"extra":1}"#,
+        r#"{"client":"c1","session":null}"#,
+        r#"{"client":"","session":null,"active":true}"#,
+        r#"{"client":"c1","session":"","active":true}"#,
+        r#"{"client":"c1","session":null,"active":"yes"}"#,
+        r#"{"client":"c1","session":null,"active":true,"extra":1}"#,
     ] {
         assert!(AttentionReport::parse(bad).is_err(), "{bad:?}");
     }
     let long = "x".repeat(MAX_ID_LEN + 1);
-    let body = serde_json::json!({"client": long, "viewing": null, "active": true});
+    let body = serde_json::json!({"client": long, "session": null, "active": true});
     assert!(AttentionReport::parse(&body.to_string()).is_err());
 }
 

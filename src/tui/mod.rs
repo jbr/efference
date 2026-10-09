@@ -18,6 +18,7 @@
 // not exercise yet but that keeps the code shaped like upstream for backporting.
 #![allow(dead_code)]
 
+pub(crate) mod attention;
 pub(crate) mod block_menu;
 pub(crate) mod clipboard;
 pub(crate) mod color_scheme;
@@ -614,8 +615,9 @@ use anyhow::{Context, Result};
 use crossbeam_channel::{Receiver, Sender, select};
 use crossterm::{
     event::{
-        self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
-        Event, KeyboardEnhancementFlags, PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
+        self, DisableBracketedPaste, DisableFocusChange, DisableMouseCapture, EnableBracketedPaste,
+        EnableFocusChange, EnableMouseCapture, Event, KeyboardEnhancementFlags,
+        PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
     },
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
