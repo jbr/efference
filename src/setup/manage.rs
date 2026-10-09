@@ -340,5 +340,6 @@ fn describe_auth<Q: Probe>(
                 Err(error) => (source, Some(error)),
             }
         }
+        ExistingAuth::None => ("no credential".to_string(), None),
     }
 }

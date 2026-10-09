@@ -839,3 +839,43 @@ body = { reasoning_effort = "high" }"#,
     .unwrap();
     assert!(encoder_key.contains("--effort"), "{encoder_key}");
 }
+
+/// A described connection may omit `auth`: it loads, sends no credential, and its
+/// requests carry no auth header. A named provider may not.
+#[test]
+fn a_described_connection_without_auth_sends_no_credential() {
+    let load = |text: &str| {
+        let config = InferenceConfig::from_toml(text).unwrap();
+        InferenceRegistry::from_config(
+            config,
+            Path::new("/host"),
+            environment(&[]),
+            &Arc::new(Secrets::in_memory()),
+        )
+        .map_err(|error| error.to_string())
+    };
+    let registry = load(
+        r#"
+[connections.ollama]
+dialect = "completions"
+base-url = "http://localhost:11434/v1"
+"#,
+    )
+    .unwrap();
+    let (_, endpoint) = registry.endpoint("ollama").unwrap();
+    assert!(!endpoint.sends_credential());
+    assert_eq!(
+        endpoint.url.as_deref(),
+        Some("http://localhost:11434/v1/chat/completions")
+    );
+
+    let named = load(
+        r#"
+[connections.anthropic]
+provider = "anthropic"
+"#,
+    )
+    .err()
+    .unwrap();
+    assert!(named.contains("needs an `auth` line"), "{named}");
+}

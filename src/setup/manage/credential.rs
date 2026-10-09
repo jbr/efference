@@ -46,6 +46,9 @@ pub(super) async fn edit_connection<P: Prompter, Q: Probe>(
         ExistingAuth::Oauth { .. } => {
             choices.push(Choice::new("Re-authorize"));
         }
+        // No credential to update or move; adding one is an `auth` line written
+        // by hand.
+        ExistingAuth::None => {}
     }
     choices.push(Choice::new("Back"));
     let picked = prompter.select(&format!("Edit {name}"), &choices)?;

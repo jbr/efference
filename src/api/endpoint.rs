@@ -25,7 +25,10 @@ pub struct Endpoint {
     /// [`Client`](crate::api::Client), so a client's url is always present.
     pub url: Option<String>,
     /// The auth header **name** — `x-api-key` for Anthropic, `authorization`
-    /// for OpenRouter's `Bearer` scheme. Derived from `provider`.
+    /// for OpenRouter's `Bearer` scheme. Derived from `provider`. Empty for a
+    /// connection that sends no credential ([`Endpoint::without_credential`]): a
+    /// header name cannot be empty, so the empty name means no header, and
+    /// [`Endpoint::authorize`] is the one place that reads it.
     pub auth_header: String,
     /// The auth header **value**, already assembled — the raw key for
     /// `x-api-key`, or `Bearer sk-or-…` once the provider's scheme prefix is
@@ -257,6 +260,36 @@ impl Endpoint {
             (_, None) => {}
         }
         Ok(endpoint)
+    }
+
+    /// An endpoint that sends no credential: a described connection with no `auth`
+    /// line, such as a local server (docs/operating.md).
+    pub fn without_credential(provider: Provider, base: String) -> Self {
+        Self {
+            provider,
+            url: provider.messages_url(Some(&base)),
+            auth_header: String::new(),
+            auth_value: AuthValue::from(String::new()),
+            session_id: None,
+            extra_headers: Vec::new(),
+            base: Some(base),
+            request: RequestOptions::default(),
+        }
+    }
+
+    /// Whether requests carry a credential.
+    pub fn sends_credential(&self) -> bool {
+        !self.auth_header.is_empty()
+    }
+
+    /// Add the credential header to a request, when the connection has one. `auth`
+    /// is the value read for this attempt ([`AuthValue::current`]).
+    pub fn authorize(&self, conn: trillium_client::Conn, auth: String) -> trillium_client::Conn {
+        if self.sends_credential() {
+            conn.with_request_header(self.auth_header.clone(), auth)
+        } else {
+            conn
+        }
     }
 
     /// The same endpoint under a **distinct** sticky key, for the spotter's client

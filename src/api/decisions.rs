@@ -394,9 +394,8 @@ impl Endpoint {
         })?;
         let http = crate::http::client().with_handler(decisions_retry());
         let auth = self.auth_value.current().await;
-        let conn = http
-            .post(url.as_str())
-            .with_request_header(self.auth_header.clone(), auth)
+        let conn = self
+            .authorize(http.post(url.as_str()), auth)
             .with_request_header("content-type", "application/json")
             .with_body(body);
         // Billed inference, so it carries the same attribution the inference

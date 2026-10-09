@@ -179,6 +179,20 @@ fn provider_errors_read_as_one_line() {
     );
 }
 
+/// A described connection with no `auth` line is a connection that sends no
+/// credential, not one setup cannot read.
+#[test]
+fn a_described_connection_without_auth_reads_as_no_credential() {
+    let existing = Existing::from_toml(
+        "[connections.ollama]\ndialect = \"completions\"\nbase-url = \"http://localhost:11434/v1\"\n",
+    )
+    .expect("a described connection may omit auth");
+    assert_eq!(
+        existing.connections["ollama"].auth,
+        crate::setup::ExistingAuth::None
+    );
+}
+
 /// A connection setup cannot read is named, not skipped. Silently omitting it
 /// would hide the connection most likely to need repairing behind a list that
 /// looks complete — and the auth kinds grow, so an older build meeting a newer

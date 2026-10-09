@@ -1447,9 +1447,7 @@ impl Endpoint {
         let auth = self.auth_value.current().await;
         // Every header is set before the request is sent: a header added to an
         // in-flight connection is not part of the request that went out.
-        let mut conn = http
-            .get(url)
-            .with_request_header(self.auth_header.clone(), auth);
+        let mut conn = self.authorize(http.get(url), auth);
         // OpenRouter answers a read carrying `anthropic-version` in Anthropic's
         // paginated listing shape (20 rows, ids re-prefixed `anthropic/…[1m]`)
         // rather than its own catalog, so its reads go without it.

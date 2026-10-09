@@ -328,6 +328,9 @@ pub enum ExistingAuth {
     Oauth {
         name: Option<String>,
     },
+    /// No `auth` line: a described connection that sends no credential, such as a
+    /// local server.
+    None,
 }
 
 impl ExistingAuth {
@@ -423,12 +426,13 @@ impl Existing {
                         .as_bool()
                         .ok_or_else(|| where_("has a non-boolean `disabled`"))?,
                 };
-                let auth = parse_auth(
-                    connection
-                        .get("auth")
-                        .ok_or_else(|| where_("has no `auth`"))?,
-                )
-                .map_err(|why| where_(&why))?;
+                // Only a described connection may omit `auth`, as at host load
+                // (`inference.rs`): it sends no credential.
+                let auth = match (connection.get("auth"), &base_url) {
+                    (Some(item), _) => parse_auth(item).map_err(|why| where_(&why))?,
+                    (None, Some(_)) => ExistingAuth::None,
+                    (None, None) => return Err(where_("has no `auth`")),
+                };
                 connections.insert(
                     name.to_string(),
                     ExistingConnection {

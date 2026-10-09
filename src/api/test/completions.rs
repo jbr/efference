@@ -105,3 +105,27 @@ async fn a_described_completions_connection_round_trips() {
     );
     assert!(completion.upstream_failure().is_none());
 }
+
+/// A connection with no credential sends no auth header at all, not an empty
+/// `Bearer`.
+#[tokio::test]
+async fn a_connection_without_a_credential_sends_no_auth_header() {
+    let (base, server) = serve(include_str!("../completions/mistral_text.sse"));
+    let endpoint = Endpoint::without_credential(Provider::Custom(WireDialect::Completions), base);
+    let client = Client::new(endpoint, "local", "PRE", None);
+    client
+        .complete(
+            &[crate::project::WireTurn::text("hi")],
+            &[],
+            ToolChoice::auto(),
+            |_| {},
+        )
+        .await
+        .unwrap();
+    let request = server.join().unwrap();
+    let (head, _) = request.split_once("\r\n\r\n").unwrap();
+    assert!(
+        !head.to_ascii_lowercase().contains("authorization"),
+        "{head}"
+    );
+}

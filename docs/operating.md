@@ -309,6 +309,10 @@ conventional answer arrive prefilled anyway. The connection is written as the tw
 keys it is — `dialect` and `base-url` — never as a `provider` line naming
 something that is not a provider name.
 
+A described connection may leave out `auth` entirely: it then sends no credential,
+which is right for a local server (`base-url = "http://localhost:11434/v1"` for
+Ollama). Setup lists it as "no credential". A named provider still needs its line.
+
 A `completions` connection takes two more keys, written by hand rather than by setup,
 for the fields vendors spell differently ([transport.md](transport.md)):
 `output-cap-field` (`max_tokens`, the default, or `max_completion_tokens`) and

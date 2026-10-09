@@ -122,7 +122,10 @@ struct ConnectionConfig {
     /// ([`resolve_declaration`]).
     #[serde(default)]
     provider: Option<String>,
-    auth: AuthConfig,
+    /// Where the credential comes from. Omitted on a described connection, it
+    /// sends none (a local server); a named provider must have one.
+    #[serde(default)]
+    auth: Option<AuthConfig>,
     /// The wire dialect — `"messages"` or `"responses"` — which describes an
     /// endpoint this crate knows no name for (docs/transport.md). Mutually
     /// exclusive with [`Self::provider`], whose every value derives its own
@@ -410,28 +413,34 @@ impl InferenceRegistry {
         let mut credential_variables = BTreeSet::new();
         for (name, config) in config.connections {
             validate_connection_name(&name)?;
-            if let AuthConfig::Env { key } = &config.auth {
+            if let Some(AuthConfig::Env { key }) = &config.auth {
                 credential_variables.insert(key.clone());
             }
             let (provider, base) = resolve_declaration(&name, &config)?;
             let request = resolve_request_options(&name, provider, &config)?;
-            let credential = if config.disabled {
-                Err(format!("connection {name:?} is disabled"))
-            } else {
-                load_credential(
-                    &name,
-                    provider,
-                    base,
-                    config.auth,
-                    host_cwd,
-                    &host_env,
-                    secrets,
-                )
-                .map(|mut credential| {
-                    credential.endpoint.request = request;
-                    credential
-                })
-            };
+            let credential = match (config.disabled, config.auth, base) {
+                (true, _, _) => Err(format!("connection {name:?} is disabled")),
+                (false, Some(auth), base) => {
+                    load_credential(&name, provider, base, auth, host_cwd, &host_env, secrets)
+                }
+                // A described connection with no `auth` line sends no credential.
+                (false, None, Some(base)) => Ok(Credential {
+                    endpoint: Endpoint::without_credential(provider, base),
+                    secret_values: Vec::new(),
+                }),
+                (false, None, None) => {
+                    return Err(format!(
+                        "connection {name:?}: {provider} needs an `auth` line; only a \
+                         described connection (`dialect` and `base-url`) may omit it, \
+                         which sends no credential"
+                    )
+                    .into());
+                }
+            }
+            .map(|mut credential| {
+                credential.endpoint.request = request;
+                credential
+            });
             if config.disabled {
                 disabled_names.insert(name.clone());
             } else {

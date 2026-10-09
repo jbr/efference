@@ -182,6 +182,6 @@ fn readable_key<Q: Probe>(
             ))
             .ok()
             .flatten(),
-        ExistingAuth::CodexCache | ExistingAuth::Oauth { .. } => None,
+        ExistingAuth::CodexCache | ExistingAuth::Oauth { .. } | ExistingAuth::None => None,
     }
 }

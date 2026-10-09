@@ -1032,6 +1032,19 @@ impl Client {
                             }
                         }
                     }
+                    // A connection with no `auth` line sends nothing, which is
+                    // right for a local server and a 401 anywhere else: say so,
+                    // since the provider's words cannot.
+                    let detail = if !self.endpoint.sends_credential()
+                        && matches!(status, Some(Status::Unauthorized | Status::Forbidden))
+                    {
+                        format!(
+                            "{detail} (this connection sends no credential: its config \
+                             block has no `auth` line)"
+                        )
+                    } else {
+                        detail
+                    };
                     return Err(Self::open_error(status, detail));
                 }
             }
@@ -1177,12 +1190,8 @@ impl Client {
     /// only that dialect (docs/transport.md).
     fn post(&self) -> trillium_client::Conn {
         let conn = self
-            .http
-            .post(self.url())
-            .with_request_header(
-                self.endpoint.auth_header.clone(),
-                self.endpoint.auth_value.get(),
-            )
+            .endpoint
+            .authorize(self.http.post(self.url()), self.endpoint.auth_value.get())
             .with_request_header("content-type", "application/json");
         let conn = match self.dialect() {
             WireDialect::Messages => {
