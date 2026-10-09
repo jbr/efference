@@ -34,5 +34,20 @@ pub fn counterpart(project: &Path, path: &Path) -> Option<PathBuf> {
     }
 }
 
+/// The project a directory inside some worktree belongs to: the prefix before its
+/// `.efference/worktrees/<id>`, or `None` for a directory inside no worktree. A session
+/// created in such a directory is rooted at that project and works in the directory, so
+/// a session created from inside a worktree, by a person or by a session working there,
+/// inherits it (docs/control-channel.md). Lexical; the innermost match wins.
+pub fn project_of(dir: &Path) -> Option<PathBuf> {
+    let components: Vec<Component> = dir.components().collect();
+    (0..components.len().saturating_sub(2)).rev().find_map(|i| {
+        let is_worktree = components[i].as_os_str() == crate::daemon::SESSION_BASE
+            && components[i + 1].as_os_str() == WORKTREES
+            && matches!(components[i + 2], Component::Normal(_));
+        is_worktree.then(|| components[..i].iter().collect())
+    })
+}
+
 #[cfg(test)]
 mod test;

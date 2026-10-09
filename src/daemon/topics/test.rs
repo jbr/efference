@@ -163,7 +163,10 @@ async fn a_retry_publishes_without_an_append() {
     let retry = crate::api::upstream_retry_state();
     let (shared, _turns_rx) = Session::full(crate::daemon::SessionParts {
         upstream_retry: Arc::clone(&retry),
-        ..crate::daemon::SessionParts::new(std::env::current_dir().unwrap(), Log::in_memory())
+        ..crate::daemon::SessionParts::new(
+            crate::policy::Directories::at(&std::env::current_dir().unwrap()),
+            Log::in_memory(),
+        )
     });
     let mut rx = shared.subscribe_state();
     tokio::spawn(watch_topics(Arc::clone(&shared)));

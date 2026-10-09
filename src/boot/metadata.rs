@@ -25,11 +25,15 @@ pub(super) fn metadata(request: &SessionRequest) -> SessionMetadata {
             .file_name()
             .unwrap_or_default()
             .to_string_lossy(),
-        request.cwd.clone(),
+        request.directories.project(),
         main,
         spotter,
         triage,
     );
+    let working = request.directories.working();
+    if working != request.directories.project() {
+        metadata.working = Some(working.to_path_buf());
+    }
     metadata.temperature = request.temperature;
     metadata.effort = request.effort.clone();
     metadata.upstream = request.upstream.clone();

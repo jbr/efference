@@ -51,7 +51,7 @@ pub(super) fn boot(cwd: &Path) -> SessionBoot<StaticSpotter> {
             reason: "test".into(),
         },
         log: Log::in_memory(),
-        paths: SessionPaths::new(cwd.to_path_buf(), cwd.to_path_buf()).unwrap(),
+        paths: SessionPaths::new(crate::policy::Directories::at(cwd), cwd.to_path_buf()).unwrap(),
         role: LoadedConfig::default(),
         autonomous: false,
         capabilities: ModelCapabilities {
@@ -70,7 +70,11 @@ pub(super) fn boot(cwd: &Path) -> SessionBoot<StaticSpotter> {
 /// to (docs/tools.md).
 pub(super) fn boot_in(cwd: &Path, session_dir: &Path) -> SessionBoot<StaticSpotter> {
     let mut boot = boot(cwd);
-    boot.paths = SessionPaths::new(cwd.to_path_buf(), session_dir.to_path_buf()).unwrap();
+    boot.paths = SessionPaths::new(
+        crate::policy::Directories::at(cwd),
+        session_dir.to_path_buf(),
+    )
+    .unwrap();
     boot
 }
 

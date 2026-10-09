@@ -69,7 +69,14 @@ impl TriageModel {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SessionMetadata {
     pub id: String,
+    /// The session's project directory: where `efference.toml` and the session base
+    /// live (docs/control-channel.md).
     pub cwd: PathBuf,
+    /// The working directory, recorded only when it differs from the project (a
+    /// session working in a worktree), so a header without it reads as the two being
+    /// the same directory.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub working: Option<PathBuf>,
     pub main: LoggedInference,
     pub spotter: LoggedInference,
     pub triage: TriageModel,
@@ -104,6 +111,7 @@ impl SessionMetadata {
         Self {
             id: id.into(),
             cwd: cwd.into(),
+            working: None,
             main,
             spotter,
             triage,

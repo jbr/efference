@@ -23,10 +23,15 @@ impl Host {
         body: CreateSession,
         lineage: crate::env::Lineage,
     ) -> std::result::Result<String, String> {
+        // The session is rooted at its project and works in the directory the client
+        // sent: they differ when that directory is inside a worktree
+        // (docs/control-channel.md).
+        let project = crate::worktree::project_of(&body.cwd).unwrap_or_else(|| body.cwd.clone());
+        let directories = crate::policy::Directories::new(project.clone(), body.cwd.clone());
         // The session base is what an unnamed id must be free in, on disk and in
         // the live map — a dead session's directory still holds its name
         // (docs/session-title.md).
-        let base = body.cwd.join(SESSION_BASE);
+        let base = project.join(SESSION_BASE);
         let id = body.name.unwrap_or_else(|| {
             slug::mint(|id| self.session(id).is_some() || base.join(id).exists())
         });
@@ -42,8 +47,9 @@ impl Host {
             return Err(format!("cwd must be absolute: {}", body.cwd.display()));
         }
         // An environment the caller supplied is the base, and nothing is run. An
-        // omitted one is established here, for this session's own directory, from
-        // the user-wide `env_hook` or the host environment (docs/env.md).
+        // omitted one is established here, for the directory the client sent (the
+        // working directory), from the user-wide `env_hook` or the host environment
+        // (docs/env.md).
         let base_env = match body.env {
             Some(env) => match crate::env_table::EnvSnapshot::new(env) {
                 Ok(base) => base,
@@ -72,9 +78,9 @@ impl Host {
         // The same resolution preview reports, then credentials for the roles it
         // selected. Project effort is boot's to apply, so it is not resolved here.
         // History is resolved here: the omitted branch defaults to past picks
-        // in this working root, and the write below records an explicit pick.
+        // in this project, and the write below records an explicit pick.
         let options = body.options.clone();
-        let scope = crate::history::Scope::for_request(&body.cwd, body.config.as_deref());
+        let scope = crate::history::Scope::for_request(&project, body.config.as_deref());
         let resolved = self.inference.resolve_options(
             &body.options,
             None,
@@ -122,8 +128,8 @@ impl Host {
             config: body.config.clone(),
         };
         let request = crate::boot::SessionRequest {
-            session_dir: body.cwd.join(SESSION_BASE).join(&id),
-            cwd: body.cwd,
+            session_dir: base.join(&id),
+            directories,
             base_env,
             config: body.config,
             inference,
@@ -182,7 +188,9 @@ pub struct CreateSession {
     /// `plain_id` requires.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
-    /// The session's working root. Absolute, always sent.
+    /// The directory the session works in. Absolute, always sent. The session's
+    /// project is this directory, or the project whose worktree it is inside
+    /// (docs/control-channel.md).
     pub cwd: PathBuf,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub config: Option<PathBuf>,

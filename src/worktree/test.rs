@@ -36,3 +36,29 @@ fn paths_outside_every_worktree_have_no_counterpart() {
         assert_eq!(counterpart(project, Path::new(path)), None, "{path}");
     }
 }
+
+#[test]
+fn a_directory_in_a_worktree_belongs_to_its_project() {
+    for dir in [
+        "/p/.efference/worktrees/quiet-fox",
+        "/p/.efference/worktrees/quiet-fox/src/bin",
+    ] {
+        assert_eq!(
+            project_of(Path::new(dir)),
+            Some(PathBuf::from("/p")),
+            "{dir}"
+        );
+    }
+}
+
+#[test]
+fn a_directory_in_no_worktree_belongs_to_none() {
+    for dir in [
+        "/p",
+        "/p/src",
+        "/p/.efference/worktrees",
+        "/p/.efference/quiet-fox",
+    ] {
+        assert_eq!(project_of(Path::new(dir)), None, "{dir}");
+    }
+}

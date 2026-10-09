@@ -37,7 +37,10 @@ fn state_reports_the_retry_in_flight() {
     let retry = crate::api::upstream_retry_state();
     let (shared, _turns_rx) = Session::full(crate::daemon::SessionParts {
         upstream_retry: Arc::clone(&retry),
-        ..crate::daemon::SessionParts::new(std::env::current_dir().unwrap(), Log::in_memory())
+        ..crate::daemon::SessionParts::new(
+            crate::policy::Directories::at(&std::env::current_dir().unwrap()),
+            Log::in_memory(),
+        )
     });
 
     let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
@@ -651,7 +654,10 @@ fn state_reports_plan_windows_under_usage() {
     let plan = crate::api::plan_state();
     let (shared, _turns_rx) = Session::full(crate::daemon::SessionParts {
         plan: Arc::clone(&plan),
-        ..crate::daemon::SessionParts::new(std::env::current_dir().unwrap(), Log::in_memory())
+        ..crate::daemon::SessionParts::new(
+            crate::policy::Directories::at(&std::env::current_dir().unwrap()),
+            Log::in_memory(),
+        )
     });
     let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
     assert!(v["usage"]["plan"].is_null());

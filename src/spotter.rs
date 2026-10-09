@@ -141,13 +141,14 @@ pub struct ForkSpot {
     /// shell expands it in-child, so the spotter sees the *variable*), and without
     /// the alias the granted literal path and the variable never connect.
     scratch: Option<std::path::PathBuf>,
-    /// The directory a move's relative paths resolve against, and the one grants
-    /// are absolutized against. It is the *session's* working directory, which is
-    /// not always the spotter process's: the offline eval replays cases recorded
-    /// in other checkouts, and resolving those against the eval process's cwd
-    /// reads their in-grant absolute paths as outside-grants
-    /// (docs/permissions.md). `None` falls back to the process cwd.
-    cwd: Option<std::path::PathBuf>,
+    /// The directories a move is judged in: its relative paths resolve against the
+    /// working directory, and grants absolutize against the project. They are the
+    /// *session's* directories, which are not always the spotter process's: the
+    /// offline eval replays cases recorded in other checkouts, and resolving those
+    /// against the eval process's cwd reads their in-grant absolute paths as
+    /// outside-grants (docs/permissions.md). `None` falls back to the process cwd
+    /// as both.
+    directories: Option<crate::policy::Directories>,
 }
 
 impl ForkSpot {
@@ -172,7 +173,7 @@ impl ForkSpot {
                 .without_turn_routing()
                 .with_origin(crate::log::RequestOrigin::Spot),
             scratch: None,
-            cwd: None,
+            directories: None,
         }
     }
 
@@ -190,15 +191,23 @@ impl ForkSpot {
         self
     }
 
-    /// Name the working directory the judged session runs in — what relative paths
-    /// in a move resolve against and what relative grants absolutize against. Every
-    /// caller that knows its session's cwd passes it; without it the process cwd
-    /// stands in, which is only the same directory when the spotter runs beside the
-    /// session it judges.
-    pub fn with_cwd(mut self, cwd: impl Into<std::path::PathBuf>) -> Self {
-        self.cwd = Some(cwd.into());
+    /// Name the directories the judged session runs in: the working directory, which
+    /// relative paths in a move resolve against, and the project, which relative
+    /// grants absolutize against. Every caller that knows its session's directories
+    /// passes them; without them the process cwd stands in for both, which is only
+    /// right when the spotter runs beside the session it judges.
+    pub fn with_directories(mut self, directories: crate::policy::Directories) -> Self {
+        self.directories = Some(directories);
         self
     }
+}
+
+/// The process cwd as both directories: the stand-in for a spotter nobody told its
+/// session's directories, which has only one directory to offer.
+pub(crate) fn process_directories() -> Option<crate::policy::Directories> {
+    std::env::current_dir()
+        .ok()
+        .map(|cwd| crate::policy::Directories::at(&cwd))
 }
 
 /// Attempts per spotter call when the upstream fails transiently, doubling from a
@@ -223,13 +232,9 @@ impl Spotter for ForkSpot {
         // block: the move (plus the optional promotion probe — it rides the fresh tail, so it never
         // perturbs the cached prefix, docs/log-and-projection.md). The persona (system) + the cached block are
         // the prefix; only the move is rewritten each call (docs/permissions.md).
-        let cwd = self.cwd.clone().or_else(|| std::env::current_dir().ok());
+        let dirs = self.directories.clone().or_else(process_directories);
         let turns = vec![WireTurn::User(vec![
-            UserPart::Text(render_context(
-                role,
-                cwd.as_deref(),
-                self.scratch.as_deref(),
-            )),
+            UserPart::Text(render_context(role, dirs.as_ref(), self.scratch.as_deref())),
             UserPart::Breakpoint,
             UserPart::Text(render_move(
                 role,
@@ -237,7 +242,7 @@ impl Spotter for ForkSpot {
                 brief,
                 chain,
                 probe,
-                cwd.as_deref(),
+                dirs.as_ref(),
                 self.scratch.as_deref(),
             )),
         ])];
@@ -330,12 +335,12 @@ impl Spotter for StaticSpotter {
 /// Grants render **resolved to their absolute form** by the same lexical rule the
 /// deterministic rung applies (`src/policy/paths.rs`): containment is then string-visible
 /// against the working-directory line, so the model is never asked to resolve the grant
-/// side. `cwd` is the *judged session's* working directory rather than the process's;
-/// `None` renders the directory as unknown and leaves relative grants in their configured
-/// spelling.
+/// side. `dirs` is the *judged session's* pair rather than the process's: the working
+/// directory is the line shown, and grants resolve against the project. `None` renders
+/// the directory as unknown and leaves relative grants in their configured spelling.
 fn render_context(
     role: &Config,
-    cwd: Option<&std::path::Path>,
+    dirs: Option<&crate::policy::Directories>,
     scratch: Option<&std::path::Path>,
 ) -> String {
     let mut s = String::from("Mission:\n");
@@ -350,8 +355,8 @@ fn render_context(
     }
 
     s.push_str("\n\nScope for this session:\n");
-    let cwd_display = cwd
-        .map(|p| p.display().to_string())
+    let cwd_display = dirs
+        .map(|d| d.working().display().to_string())
         .unwrap_or_else(|| "unknown".into());
     s.push_str(&format!("- working directory: {cwd_display}\n"));
     s.push_str(&format!(
@@ -372,12 +377,9 @@ fn render_context(
             // The absolute form leads; the configured spelling stays so a move that
             // types `../x` literally still matches. A grant already in its resolved
             // spelling renders once, unannotated.
-            let line = match cwd {
-                Some(cwd) => {
-                    let resolved =
-                        crate::policy::lexical_normalize(&crate::policy::absolutize(path, cwd))
-                            .display()
-                            .to_string();
+            let line = match dirs {
+                Some(dirs) => {
+                    let resolved = dirs.grant(path).display().to_string();
                     if resolved == *path {
                         format!("  - {path} ({label})\n")
                     } else {
@@ -434,11 +436,10 @@ fn grant_label(perms: &crate::config::Perms) -> &'static str {
 fn path_facts(
     command: &str,
     role: &Config,
-    cwd: &std::path::Path,
+    dirs: &crate::policy::Directories,
     scratch: Option<&std::path::Path>,
 ) -> String {
-    let dirs = crate::policy::Directories::at(cwd);
-    let found = crate::policy::path_words(command, &dirs, scratch);
+    let found = crate::policy::path_words(command, dirs, scratch);
     if found.words.is_empty() {
         return String::new();
     }
@@ -458,7 +459,7 @@ fn path_facts(
         };
         // Only the deciding grant is stated: "outside the working directory" read
         // as leaving scope even for a granted sibling, and the grant is what decides.
-        let grant = match crate::policy::decide(role, word, &dirs, scratch) {
+        let grant = match crate::policy::decide(role, word, dirs, scratch) {
             Decided::Grant(grant, perms) => format!(
                 "under the grant `{}` ({})",
                 grant.display(),
@@ -503,7 +504,7 @@ fn render_move(
     brief: Option<&ToolBrief<'_>>,
     chain: &[String],
     probe: Option<&str>,
-    cwd: Option<&std::path::Path>,
+    dirs: Option<&crate::policy::Directories>,
     scratch: Option<&std::path::Path>,
 ) -> String {
     let body = if call.name == bash::NAME {
@@ -511,17 +512,15 @@ fn render_move(
             Some(cmd) => {
                 // A leading `cd` into the working directory goes nowhere; the reviewer
                 // judges the rest, and is told so (`policy::without_cd_into`).
-                let shown = match cwd.and_then(|cwd| {
-                    crate::policy::without_cd_into(cmd, &crate::policy::Directories::at(cwd))
-                }) {
+                let shown = match dirs.and_then(|dirs| crate::policy::without_cd_into(cmd, dirs)) {
                     Some(rest) => format!(
                         "A shell command, run in the session's working directory (its leading \
                          `cd` into that directory is left out):\n\n    {rest}"
                     ),
                     None => format!("A shell command:\n\n    {cmd}"),
                 };
-                let facts = cwd
-                    .map(|cwd| path_facts(cmd, role, cwd, scratch))
+                let facts = dirs
+                    .map(|dirs| path_facts(cmd, role, dirs, scratch))
                     .unwrap_or_default();
                 format!("{shown}{facts}")
             }
@@ -600,9 +599,9 @@ pub fn preview_move(
     call: &ToolCall,
     brief: Option<&ToolBrief<'_>>,
     probe: Option<&str>,
-    cwd: &std::path::Path,
+    dirs: &crate::policy::Directories,
 ) -> String {
-    render_move(role, call, brief, &[], probe, Some(cwd), None)
+    render_move(role, call, brief, &[], probe, Some(dirs), None)
 }
 
 /// How much of a description and of an input schema ride into the move block. A

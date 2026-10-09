@@ -128,7 +128,10 @@ impl Host {
         // session hosted elsewhere is a different session that happens to share an
         // id, and quietly claiming it would attach a client to the wrong one.
         if let Some(hosted) = self.hosted(&id) {
-            let hosted_cwd = hosted.session.cwd();
+            // The patch's `cwd` names the root holding the session's `.efference`: its
+            // project, which differs from the working directory in a worktree.
+            let hosted = hosted.session.directories();
+            let hosted_cwd = hosted.project();
             return if hosted_cwd == cwd {
                 Err(ResumeRefused::AlreadyActive)
             } else {

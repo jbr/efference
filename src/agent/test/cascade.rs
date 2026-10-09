@@ -131,6 +131,7 @@ fn bound_leaf(command: &str) -> crate::control_tools::BoundAction {
         input: serde_json::json!({ "command": command, "intent": "whatever" }),
         intent: Some("whatever".into()),
         cwd: std::env::current_dir().unwrap(),
+        project: std::env::current_dir().unwrap(),
         session: "child".into(),
         chain: vec!["child".into()],
     }

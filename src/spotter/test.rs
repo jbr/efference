@@ -258,7 +258,11 @@ fn render_context_includes_scope_and_watch_for() {
         "/refs" = { read = true }
         "#,
     );
-    let ctx = render_context(&role, Some(Path::new("/work/repo")), None);
+    let ctx = render_context(
+        &role,
+        Some(&crate::policy::Directories::at(Path::new("/work/repo"))),
+        None,
+    );
     assert!(ctx.contains("Fix the build."), "{ctx}");
     // A relative grant leads with its resolved absolute form — string-visible
     // containment against the working-directory line — keeping the configured
@@ -281,7 +285,11 @@ fn render_context_includes_scope_and_watch_for() {
 /// comparing spellings instead of resolving.
 #[test]
 fn render_context_states_relative_path_resolution() {
-    let ctx = render_context(&Config::default(), Some(Path::new("/work/repo")), None);
+    let ctx = render_context(
+        &Config::default(),
+        Some(&crate::policy::Directories::at(Path::new("/work/repo"))),
+        None,
+    );
     assert!(
         ctx.contains("`sub/file` means `/work/repo/sub/file`"),
         "{ctx}"
@@ -298,7 +306,11 @@ fn render_context_resolves_parent_relative_grants() {
         "../sibling" = true
         "#,
     );
-    let ctx = render_context(&role, Some(Path::new("/work/repo")), None);
+    let ctx = render_context(
+        &role,
+        Some(&crate::policy::Directories::at(Path::new("/work/repo"))),
+        None,
+    );
     assert!(
         ctx.contains("  - /work/sibling (read, write) — granted as `../sibling`"),
         "{ctx}"
@@ -308,7 +320,11 @@ fn render_context_resolves_parent_relative_grants() {
 #[test]
 fn render_context_handles_empty_role() {
     // No scope, no paths, no watch-for: the spotter still gets a usable frame.
-    let ctx = render_context(&Config::default(), Some(Path::new("/work/repo")), None);
+    let ctx = render_context(
+        &Config::default(),
+        Some(&crate::policy::Directories::at(Path::new("/work/repo"))),
+        None,
+    );
     assert!(ctx.contains("no scope specified"), "{ctx}");
     assert!(ctx.contains("none configured"), "{ctx}");
     assert!(
@@ -324,7 +340,7 @@ fn render_context_handles_empty_role() {
 fn render_context_names_the_scratch_alias() {
     let ctx = render_context(
         &Config::default(),
-        Some(Path::new("/work/repo")),
+        Some(&crate::policy::Directories::at(Path::new("/work/repo"))),
         Some(Path::new("/var/tmp/efference-ab12")),
     );
     assert!(ctx.contains("$TMPDIR"), "{ctx}");
@@ -345,7 +361,13 @@ fn render_context_resolves_grants_against_the_given_cwd_not_the_process() {
         "." = true
         "#,
     );
-    let theirs = render_context(&role, Some(Path::new("/Users/jbr/code/trillium")), None);
+    let theirs = render_context(
+        &role,
+        Some(&crate::policy::Directories::at(Path::new(
+            "/Users/jbr/code/trillium",
+        ))),
+        None,
+    );
     assert!(
         theirs.contains("- working directory: /Users/jbr/code/trillium\n"),
         "{theirs}"
@@ -357,7 +379,13 @@ fn render_context_resolves_grants_against_the_given_cwd_not_the_process() {
 
     // The same case rendered from elsewhere — the pre-fix behavior — puts the grant
     // in a directory the move's absolute paths are not under.
-    let elsewhere = render_context(&role, Some(Path::new("/Users/jbr/code/efference")), None);
+    let elsewhere = render_context(
+        &role,
+        Some(&crate::policy::Directories::at(Path::new(
+            "/Users/jbr/code/efference",
+        ))),
+        None,
+    );
     assert!(
         !elsewhere.contains("/Users/jbr/code/trillium"),
         "{elsewhere}"
@@ -419,7 +447,15 @@ fn a_cd_into_the_working_directory_is_left_out_of_the_move() {
         "c1",
         json!({ "command": "cd /work/proj && cat .claude/settings.local.json" }),
     );
-    let block = render_move(&Config::default(), &into, None, &[], None, Some(cwd), None);
+    let block = render_move(
+        &Config::default(),
+        &into,
+        None,
+        &[],
+        None,
+        Some(&crate::policy::Directories::at(cwd)),
+        None,
+    );
     assert!(
         block.contains("    cat .claude/settings.local.json"),
         "{block}"
@@ -438,7 +474,7 @@ fn a_cd_into_the_working_directory_is_left_out_of_the_move() {
         None,
         &[],
         None,
-        Some(cwd),
+        Some(&crate::policy::Directories::at(cwd)),
         None,
     );
     assert!(
@@ -465,7 +501,15 @@ fn a_bash_move_states_where_its_paths_resolve() {
         "c1",
         json!({ "command": "cat >> .git/info/exclude << 'EOF'\n.efference/\nEOF" }),
     );
-    let block = render_move(&role, &call, None, &[], None, Some(cwd), None);
+    let block = render_move(
+        &role,
+        &call,
+        None,
+        &[],
+        None,
+        Some(&crate::policy::Directories::at(cwd)),
+        None,
+    );
     assert!(
         block.contains(
             "- `.git/info/exclude`, written → `/work/proj/.git/info/exclude`: under the \
@@ -477,13 +521,29 @@ fn a_bash_move_states_where_its_paths_resolve() {
     assert!(!block.contains("- `.efference/`"), "{block}");
 
     let outside = ToolCall::new(bash::NAME, "c2", json!({ "command": "cat /etc/hosts" }));
-    let block = render_move(&role, &outside, None, &[], None, Some(cwd), None);
+    let block = render_move(
+        &role,
+        &outside,
+        None,
+        &[],
+        None,
+        Some(&crate::policy::Directories::at(cwd)),
+        None,
+    );
     assert!(
         block.contains("`/etc/hosts` → `/etc/hosts`: no grant covers it"),
         "{block}"
     );
 
     let plain = ToolCall::new(bash::NAME, "c3", json!({ "command": "cargo test" }));
-    let block = render_move(&role, &plain, None, &[], None, Some(cwd), None);
+    let block = render_move(
+        &role,
+        &plain,
+        None,
+        &[],
+        None,
+        Some(&crate::policy::Directories::at(cwd)),
+        None,
+    );
     assert!(!block.contains("The paths this command names"), "{block}");
 }

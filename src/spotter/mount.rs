@@ -47,13 +47,13 @@ impl MountedSpotter {
         model: &str,
         kind: ModelKind,
         scratch: Option<std::path::PathBuf>,
-        cwd: impl Into<std::path::PathBuf>,
+        directories: crate::policy::Directories,
     ) -> Self {
         let mounted = match kind {
             ModelKind::Decisions => MountedSpotter::Jev(JevSpot::new(endpoint, model)),
             ModelKind::Text => MountedSpotter::Fork(ForkSpot::new(endpoint, model)),
         };
-        mounted.with_scratch(scratch).with_cwd(cwd)
+        mounted.with_scratch(scratch).with_directories(directories)
     }
 
     /// The prose rung over a replacement persona, or the decision rung, whichever
@@ -97,10 +97,11 @@ impl MountedSpotter {
         }
     }
 
-    pub fn with_cwd(self, cwd: impl Into<std::path::PathBuf>) -> Self {
+    /// The session's project and working directories, for the spotter's scope.
+    pub fn with_directories(self, directories: crate::policy::Directories) -> Self {
         match self {
-            MountedSpotter::Fork(fork) => MountedSpotter::Fork(fork.with_cwd(cwd)),
-            MountedSpotter::Jev(jev) => MountedSpotter::Jev(jev.with_cwd(cwd)),
+            MountedSpotter::Fork(fork) => MountedSpotter::Fork(fork.with_directories(directories)),
+            MountedSpotter::Jev(jev) => MountedSpotter::Jev(jev.with_directories(directories)),
         }
     }
 

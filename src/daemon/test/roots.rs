@@ -180,7 +180,10 @@ async fn sessions_use_their_own_environment_for_bash_and_context() {
             role,
             scratch: Some(scratch.clone()),
             env_policy: policy,
-            ..crate::daemon::SessionParts::new(cwd.clone(), Log::in_memory())
+            ..crate::daemon::SessionParts::new(
+                crate::policy::Directories::at(&cwd),
+                Log::in_memory(),
+            )
         });
         let state = session.state_json();
         assert!(!state.contains(&format!("private-{label}-credential")));

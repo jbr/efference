@@ -15,6 +15,7 @@ use crate::tools::Toolbox;
 
 /// What [`mount_toolbox`] needs from the boot so far.
 pub(super) struct ToolboxInputs<'a> {
+    /// The session's working directory: where bash and MCP servers run.
     pub cwd: &'a Path,
     pub scratch: &'a Path,
     pub loaded: &'a LoadedConfig,
@@ -115,7 +116,7 @@ pub(super) struct FrozenPreamble {
 /// brief, and the config note.
 pub(super) fn freeze_preamble(
     loaded: &LoadedConfig,
-    cwd: &Path,
+    project: &Path,
     env_policy: &EnvPolicy,
     model: &str,
     session_id: &str,
@@ -124,11 +125,11 @@ pub(super) fn freeze_preamble(
 ) -> Result<FrozenPreamble, Error> {
     let role_section = loaded.role.preamble_section();
     // The [context] preamble builder (docs/context.md): resolve the operator's listed
-    // files from cwd and fold the rendered block into the frozen prefix. Fail closed — configured
+    // files from the project directory and fold the rendered block into the frozen prefix. Fail closed — configured
     // context that can't be read aborts startup rather than silently vanishing.
     let mut resolved = match crate::context::resolve_with_child_env(
         &loaded.role.context,
-        cwd,
+        project,
         &env_policy.child_env(),
     ) {
         Ok(resolved) => resolved,
@@ -227,7 +228,7 @@ pub(super) async fn mount_spotter(
     inference: &SessionInference,
     main_endpoint: &Endpoint,
     scratch: &Path,
-    cwd: &Path,
+    directories: &crate::policy::Directories,
 ) -> Result<MountedSpotter, Error> {
     let (spotter_selection, mut spotter_endpoint) = inference.spotter();
     let spotter_model = spotter_selection.model.clone();
@@ -278,7 +279,7 @@ pub(super) async fn mount_spotter(
         &spotter_model,
         kind,
         Some(scratch.to_path_buf()),
-        cwd.to_path_buf(),
+        directories.clone(),
     )
     .with_thinking(thinking);
     eprintln!("spotter rung: {}", spotter.kind());

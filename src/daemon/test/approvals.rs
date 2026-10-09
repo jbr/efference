@@ -48,6 +48,7 @@ fn the_gate_carries_the_bound_leaf_action() {
         input: serde_json::json!({ "command": "rm -rf build", "intent": "clean the tree" }),
         intent: Some("clean the tree".into()),
         cwd: std::path::PathBuf::from("/work"),
+        project: std::path::PathBuf::from("/work"),
         session: "child".into(),
         chain: vec!["child".into()],
     };

@@ -157,7 +157,7 @@ async fn a_clean_log_resumes_with_its_state() {
     // The restored state, read the way the runtime reads it.
     assert_eq!(crate::log::latest_title(entries), Some("Listing things"));
     let (session, _turns) = crate::daemon::Session::full(crate::daemon::SessionParts::new(
-        boot.paths.cwd().to_path_buf(),
+        boot.paths.directories(),
         boot.log,
     ));
     assert_eq!(
@@ -219,7 +219,7 @@ async fn a_mid_batch_log_rolls_back() {
 
     // The session's turn and process numbering stay above what is on disk.
     let (session, _turns) = crate::daemon::Session::full(crate::daemon::SessionParts::new(
-        boot.paths.cwd().to_path_buf(),
+        boot.paths.directories(),
         boot.log,
     ));
     assert_eq!(session.latest_turn(), 1);

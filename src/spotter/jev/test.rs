@@ -495,7 +495,9 @@ fn the_state_withholds_the_harness_injected_intent() {
         None,
         &[],
         None,
-        Some(std::path::Path::new("/repo")),
+        Some(&crate::policy::Directories::at(std::path::Path::new(
+            "/repo",
+        ))),
         None,
     );
     let input = &state["move"]["input"];
@@ -522,7 +524,9 @@ fn grants_render_resolved_with_the_denies_kept() {
         None,
         &[],
         None,
-        Some(std::path::Path::new("/repo")),
+        Some(&crate::policy::Directories::at(std::path::Path::new(
+            "/repo",
+        ))),
         None,
     );
     let grants = state["path_grants"].as_array().expect("a list");
@@ -572,7 +576,15 @@ fn a_cd_into_the_working_directory_is_left_out_of_the_move() {
     );
     let config = role("scope = \"work here\"");
     let cwd = std::path::Path::new("/work/proj");
-    let state = state::state(&config, &call, None, &[], None, Some(cwd), None);
+    let state = state::state(
+        &config,
+        &call,
+        None,
+        &[],
+        None,
+        Some(&crate::policy::Directories::at(cwd)),
+        None,
+    );
     assert_eq!(state["move"]["command"], json!("cargo test"));
 }
 
@@ -594,7 +606,15 @@ fn a_shell_move_carries_its_resolved_paths() {
         "c1",
         json!({ "command": "cat >> .git/info/exclude << 'EOF'\n.efference/\nEOF\nrg x ~/.cargo/src" }),
     );
-    let state = state::state(&config, &call, None, &[], None, Some(cwd), None);
+    let state = state::state(
+        &config,
+        &call,
+        None,
+        &[],
+        None,
+        Some(&crate::policy::Directories::at(cwd)),
+        None,
+    );
     assert_eq!(
         state["move"]["paths"],
         json!([
@@ -610,6 +630,14 @@ fn a_shell_move_carries_its_resolved_paths() {
     assert!(state["move"].get("paths_complete").is_none());
 
     let plain = ToolCall::new(crate::bash::NAME, "c2", json!({ "command": "cargo test" }));
-    let state = state::state(&config, &plain, None, &[], None, Some(cwd), None);
+    let state = state::state(
+        &config,
+        &plain,
+        None,
+        &[],
+        None,
+        Some(&crate::policy::Directories::at(cwd)),
+        None,
+    );
     assert!(state["move"].get("paths").is_none());
 }

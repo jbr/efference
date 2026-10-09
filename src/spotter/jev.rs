@@ -59,10 +59,10 @@ pub struct JevSpot {
     /// `scratch_directory`, which is what connects a `$TMPDIR/…` move to the
     /// granted literal path.
     scratch: Option<std::path::PathBuf>,
-    /// The judged session's working directory, which is not always this
-    /// process's: the offline eval replays cases recorded in other checkouts
-    /// (docs/permissions.md). `None` falls back to the process cwd.
-    cwd: Option<std::path::PathBuf>,
+    /// The judged session's project and working directories, which are not always
+    /// this process's: the offline eval replays cases recorded in other checkouts
+    /// (docs/permissions.md). `None` falls back to the process cwd as both.
+    directories: Option<crate::policy::Directories>,
 }
 
 impl JevSpot {
@@ -71,7 +71,7 @@ impl JevSpot {
             endpoint,
             model: model.into(),
             scratch: None,
-            cwd: None,
+            directories: None,
         }
     }
 
@@ -80,8 +80,8 @@ impl JevSpot {
         self
     }
 
-    pub fn with_cwd(mut self, cwd: impl Into<std::path::PathBuf>) -> Self {
-        self.cwd = Some(cwd.into());
+    pub fn with_directories(mut self, directories: crate::policy::Directories) -> Self {
+        self.directories = Some(directories);
         self
     }
 }
@@ -96,14 +96,14 @@ impl Spotter for JevSpot {
         probe: Option<&str>,
         precedents: &[ToolCall],
     ) -> Spotting {
-        let cwd = self.cwd.clone().or_else(|| std::env::current_dir().ok());
+        let dirs = self.directories.clone().or_else(super::process_directories);
         let state = state::state(
             role,
             call,
             brief,
             chain,
             probe,
-            cwd.as_deref(),
+            dirs.as_ref(),
             self.scratch.as_deref(),
         );
         let watch_for = role.watch_for.iter().any(|w| !w.trim().is_empty());
@@ -112,7 +112,7 @@ impl Spotter for JevSpot {
         // The relation request rides beside the cold one, only when the session
         // has consented calls of the move's family to compare against.
         let candidates = relation::candidates(call, precedents);
-        let relation_state = relation::state(call, cwd.as_deref());
+        let relation_state = relation::state(call, dirs.as_ref().map(|d| d.working()));
         let relation_questions = relation::questions(&candidates);
         let cold = self.endpoint.decide(&self.model, &state, &questions);
         let relation = async {
@@ -238,10 +238,10 @@ pub fn preview_state(
     call: &ToolCall,
     brief: Option<&ToolBrief<'_>>,
     probe: Option<&str>,
-    cwd: Option<&std::path::Path>,
+    dirs: Option<&crate::policy::Directories>,
     scratch: Option<&std::path::Path>,
 ) -> String {
-    let state = state::state(role, call, brief, &[], probe, cwd, scratch);
+    let state = state::state(role, call, brief, &[], probe, dirs, scratch);
     serde_json::to_string_pretty(&state).unwrap_or_else(|_| state.to_string())
 }
 

@@ -48,11 +48,12 @@ pub const CONFIG_NAME: &str = "config.toml";
 /// What a session's creator supplies. Paths are absolute; nothing here is read
 /// from the process environment or working directory by `prepare`.
 pub struct SessionRequest {
-    /// The session's working root (docs/control-channel.md).
-    pub cwd: PathBuf,
+    /// The session's project (config, grants, the session base) and working directory
+    /// (tools, MCP mounts, children) (docs/control-channel.md).
+    pub directories: crate::policy::Directories,
     /// The session's base environment (docs/env.md).
     pub base_env: crate::env_table::EnvSnapshot,
-    /// The session dir to mint: `<cwd>/.efference/<id>` for the CLI.
+    /// The session dir to mint: `<project>/.efference/<id>`.
     pub session_dir: PathBuf,
     /// `--config`: the origin config to snapshot, or `None` for the default probe.
     pub config: Option<PathBuf>,
@@ -112,7 +113,7 @@ async fn prepare_minting(
 ) -> Result<SessionBoot<MountedSpotter>, Error> {
     let mut metadata = metadata::metadata(&request);
     let SessionRequest {
-        cwd,
+        directories,
         base_env,
         session_dir,
         config,
@@ -126,7 +127,10 @@ async fn prepare_minting(
         host,
         lineage,
     } = request;
-    assert!(cwd.is_absolute(), "session cwd must be absolute");
+    assert!(
+        directories.project().is_absolute() && directories.working().is_absolute(),
+        "session directories must be absolute"
+    );
     assert!(session_dir.is_absolute(), "session dir must be absolute");
     let (main_selection, mut endpoint) = inference.main();
     // The main role is fixed for the session's life. Keep its structured identity
@@ -143,7 +147,7 @@ async fn prepare_minting(
     // its `[env]` table may supply the harness's own credential as a reference
     // (docs/env.md), and because a malformed template or an unresolvable
     // reference should fail before anything is minted or bound.
-    let origin = match crate::config::load_in(&cwd, config.as_deref()) {
+    let origin = match crate::config::load_in(directories.project(), config.as_deref()) {
         Ok(l) => l,
         Err(e) => {
             e.eprint();
@@ -155,7 +159,7 @@ async fn prepare_minting(
     // a turn. The resolver's cache is shared with the session policy below and
     // with every later config edit, so an unchanged reference never re-prompts.
     let resolver = std::sync::Arc::new(crate::env_table::Resolver::with_environment(
-        cwd.clone(),
+        directories.project().to_path_buf(),
         base_env.clone(),
     ));
     // Every value is resolved here so a failing reference fails creation, before
@@ -224,7 +228,7 @@ async fn prepare_minting(
     // docs/context.md; orientation rides here as a config exec entry), the role's
     // brief, and the config note.
     let tools = parts::mount_toolbox(parts::ToolboxInputs {
-        cwd: &cwd,
+        cwd: directories.working(),
         scratch: &scratch,
         loaded: &loaded,
         env_policy: &env_policy,
@@ -242,7 +246,7 @@ async fn prepare_minting(
 
     let preamble = parts::freeze_preamble(
         &loaded,
-        &cwd,
+        directories.project(),
         &env_policy,
         model,
         &session_id,
@@ -280,7 +284,7 @@ async fn prepare_minting(
         &capabilities,
     );
 
-    let spotter = parts::mount_spotter(&inference, &endpoint, &scratch, &cwd).await?;
+    let spotter = parts::mount_spotter(&inference, &endpoint, &scratch, &directories).await?;
 
     if autonomous {
         eprintln!(
@@ -303,7 +307,7 @@ async fn prepare_minting(
         distiller,
         spotter,
         log,
-        paths: crate::daemon::SessionPaths::new(cwd.clone(), session_dir.canonicalize()?)?,
+        paths: crate::daemon::SessionPaths::new(directories, session_dir.canonicalize()?)?,
         role: loaded,
         autonomous,
         capabilities,

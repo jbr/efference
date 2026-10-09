@@ -27,7 +27,7 @@ pub(super) fn state(
     brief: Option<&ToolBrief<'_>>,
     chain: &[String],
     probe: Option<&str>,
-    cwd: Option<&std::path::Path>,
+    dirs: Option<&crate::policy::Directories>,
     scratch: Option<&std::path::Path>,
 ) -> Value {
     let mut state = json!({
@@ -36,11 +36,11 @@ pub(super) fn state(
             .as_deref()
             .map(str::trim)
             .filter(|s| !s.is_empty()),
-        "working_directory": cwd.map(|p| p.display().to_string()),
-        "path_grants": grants(role, cwd),
+        "working_directory": dirs.map(|d| d.working().display().to_string()),
+        "path_grants": grants(role, dirs),
         "scratch_directory": scratch.map(|p| p.display().to_string()),
         "watch_for": watch_for(role),
-        "move": proposed_move(role, call, brief, cwd, scratch),
+        "move": proposed_move(role, call, brief, dirs, scratch),
     });
     let object = state.as_object_mut().expect("state is built as an object");
     if let Some(holder) = chain.last() {
@@ -71,16 +71,12 @@ pub(super) fn state(
 /// The denies are included: a more specific grant overrides a broader one, and a
 /// denied subtree under an allowed parent is exactly the carve-out a bash move can
 /// stray into without the deterministic fast-path ever seeing it.
-fn grants(role: &Config, cwd: Option<&std::path::Path>) -> Vec<Value> {
+fn grants(role: &Config, dirs: Option<&crate::policy::Directories>) -> Vec<Value> {
     role.paths
         .iter()
         .map(|(path, perms)| {
             let access = access(perms);
-            let resolved = cwd.map(|cwd| {
-                crate::policy::lexical_normalize(&crate::policy::absolutize(path, cwd))
-                    .display()
-                    .to_string()
-            });
+            let resolved = dirs.map(|dirs| dirs.grant(path).display().to_string());
             match resolved {
                 Some(resolved) if resolved != *path => json!({
                     "path": resolved,
@@ -118,17 +114,16 @@ fn watch_for(role: &Config) -> Vec<&str> {
 fn paths(
     command: &str,
     role: &Config,
-    cwd: &std::path::Path,
+    dirs: &crate::policy::Directories,
     scratch: Option<&std::path::Path>,
 ) -> (Vec<Value>, bool) {
-    let dirs = crate::policy::Directories::at(cwd);
-    let found = crate::policy::path_words(command, &dirs, scratch);
+    let found = crate::policy::path_words(command, dirs, scratch);
     let entries = found
         .words
         .into_iter()
         .map(|word| {
             use crate::policy::Decided;
-            let mut entry = match (&word.resolved, crate::policy::decide(role, &word, &dirs, scratch)) {
+            let mut entry = match (&word.resolved, crate::policy::decide(role, &word, dirs, scratch)) {
                 // Listed rather than dropped: a list missing it reads as complete
                 // (docs/permissions.md).
                 (None, _) | (_, Decided::Unresolved) => json!({
@@ -181,7 +176,7 @@ fn proposed_move(
     role: &Config,
     call: &ToolCall,
     brief: Option<&ToolBrief<'_>>,
-    cwd: Option<&std::path::Path>,
+    dirs: Option<&crate::policy::Directories>,
     scratch: Option<&std::path::Path>,
 ) -> Value {
     if call.name == bash::NAME {
@@ -192,16 +187,12 @@ fn proposed_move(
                 // would otherwise have to do against `working_directory` itself.
                 let mut shell = json!({
                     "kind": "shell_command",
-                    "command": cwd
-                        .and_then(|cwd| {
-                            crate::policy::without_cd_into(
-                                command,
-                                &crate::policy::Directories::at(cwd),
-                            )
-                        })
+                    "command": dirs
+                        .and_then(|dirs| crate::policy::without_cd_into(command, dirs))
                         .unwrap_or(command),
                 });
-                if let Some((paths, complete)) = cwd.map(|cwd| paths(command, role, cwd, scratch))
+                if let Some((paths, complete)) =
+                    dirs.map(|dirs| paths(command, role, dirs, scratch))
                     && !paths.is_empty()
                 {
                     let object = shell.as_object_mut().expect("built as an object");

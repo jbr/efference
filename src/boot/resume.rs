@@ -37,7 +37,7 @@ use crate::spotter::MountedSpotter;
 /// selections, and flags come from the log's header; what the header cannot hold (a
 /// credential, the caller's environment, a host) is supplied here.
 pub struct ResumeRequest<'a> {
-    /// The existing session dir, absolute: `<cwd>/.efference/<id>`.
+    /// The existing session dir, absolute: `<project>/.efference/<id>`.
     pub session_dir: PathBuf,
     /// The base environment the resumed session's commands start from (docs/env.md).
     pub base_env: crate::env_table::EnvSnapshot,
@@ -101,14 +101,19 @@ async fn resume_minting(
         )
     })?;
     let metadata = recording.header.metadata();
-    let cwd = session_cwd(metadata, &session_dir)?;
-    if !cwd.is_dir() {
-        return Err(format!(
-            "cannot resume {}: its working directory {} is gone",
-            session_dir.display(),
-            cwd.display()
-        )
-        .into());
+    let directories = session_directories(metadata, &session_dir)?;
+    for (what, dir) in [
+        ("project directory", directories.project()),
+        ("working directory", directories.working()),
+    ] {
+        if !dir.is_dir() {
+            return Err(format!(
+                "cannot resume {}: its {what} {} is gone",
+                session_dir.display(),
+                dir.display()
+            )
+            .into());
+        }
     }
 
     let mut loaded = scaffold::load_session_config(&session_config, &session_dir)?;
@@ -136,7 +141,7 @@ async fn resume_minting(
     let scratch = scaffold::mint_scratch(minted, &mut loaded)?;
 
     let resolver = std::sync::Arc::new(crate::env_table::Resolver::with_environment(
-        cwd.clone(),
+        directories.project().to_path_buf(),
         base_env.clone(),
     ));
     let env_policy = env::build_env_policy(&resolver, &loaded.role.env, &inference, base_env)?;
@@ -147,7 +152,7 @@ async fn resume_minting(
         .map(|name| name.to_string_lossy().into_owned())
         .unwrap_or_default();
     let tools = parts::mount_toolbox(parts::ToolboxInputs {
-        cwd: &cwd,
+        cwd: directories.working(),
         scratch: &scratch,
         loaded: &loaded,
         env_policy: &env_policy,
@@ -170,7 +175,7 @@ async fn resume_minting(
         &loaded,
         &capabilities,
     );
-    let spotter = parts::mount_spotter(&inference, &endpoint, &scratch, &cwd).await?;
+    let spotter = parts::mount_spotter(&inference, &endpoint, &scratch, &directories).await?;
     let distiller = parts::mount_distiller(
         &inference,
         &endpoint,
@@ -204,7 +209,7 @@ async fn resume_minting(
             distiller,
             spotter,
             log,
-            paths: crate::daemon::SessionPaths::new(cwd, session_dir.canonicalize()?)?,
+            paths: crate::daemon::SessionPaths::new(directories, session_dir.canonicalize()?)?,
             role: loaded,
             autonomous,
             capabilities,
@@ -217,18 +222,23 @@ async fn resume_minting(
     ))
 }
 
-/// The working directory the session ran in: the header's, else the project root a
-/// `<cwd>/.efference/<id>` directory implies.
-fn session_cwd(
+/// The directories the session ran in: the header's project (`cwd`) and working
+/// directory (the project when none is recorded), else the project root a
+/// `<project>/.efference/<id>` directory implies, with the session working there.
+fn session_directories(
     metadata: Option<&SessionMetadata>,
     session_dir: &std::path::Path,
-) -> Result<PathBuf, Error> {
+) -> Result<crate::policy::Directories, Error> {
     if let Some(metadata) = metadata {
-        return Ok(metadata.cwd.clone());
+        let working = metadata.working.clone().unwrap_or(metadata.cwd.clone());
+        return Ok(crate::policy::Directories::new(
+            metadata.cwd.clone(),
+            working,
+        ));
     }
     let base = session_dir.parent();
     match base.and_then(|base| Some((base, base.parent()?))) {
-        Some((base, root)) if base.ends_with(BASE_DIR) => Ok(root.to_path_buf()),
+        Some((base, root)) if base.ends_with(BASE_DIR) => Ok(crate::policy::Directories::at(root)),
         _ => Err(format!(
             "cannot resume {}: the log header records no working directory",
             session_dir.display()

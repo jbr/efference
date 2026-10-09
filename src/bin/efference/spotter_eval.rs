@@ -219,7 +219,11 @@ pub(crate) fn dump_states(
                 &call,
                 brief.as_ref(),
                 None,
-                case.cwd.as_deref().map(std::path::Path::new),
+                // A recorded case holds one directory, which stands as both.
+                case.cwd
+                    .as_deref()
+                    .map(|cwd| efference::policy::Directories::at(std::path::Path::new(cwd)))
+                    .as_ref(),
                 scratch.as_deref(),
             );
             let state: Value = serde_json::from_str(&state)?;
@@ -381,7 +385,9 @@ pub(crate) async fn spotter_eval(
                         // behavior (the process cwd, via the rung's fallback);
                         // the count is warned about up front.
                         let spot = match &case.cwd {
-                            Some(cwd) => spot.with_cwd(cwd.as_str()),
+                            Some(cwd) => spot.with_directories(efference::policy::Directories::at(
+                                std::path::Path::new(cwd),
+                            )),
                             None => spot,
                         };
                         let brief = efference::agent::brief(&toolbox, &call.name);

@@ -206,8 +206,9 @@ pub struct ConfigRepair {
 /// The loop and HTTP handlers hold the same `Arc<Session>`; the runtime owns the
 /// listener and wires the agent future and auxiliary tasks.
 pub struct Session {
-    /// Immutable working root for policy and child execution (docs/control-channel.md).
-    cwd: PathBuf,
+    /// Immutable: the project (config, grants) and the working directory (tools and
+    /// child execution), which differ only inside a worktree (docs/control-channel.md).
+    directories: crate::policy::Directories,
     /// The parent of the session's storage dir — the `.efference/` base every
     /// session in this project shares (docs/tools.md). The in-session `sessions`
     /// mount scopes its listing and target resolution to it. Set once by the
@@ -534,7 +535,8 @@ pub struct Session {
 /// value for, so adding a dependency to a session touches the sites that supply
 /// it rather than every site that constructs one.
 pub(crate) struct SessionParts {
-    pub cwd: PathBuf,
+    /// The project and working directories (docs/control-channel.md).
+    pub directories: crate::policy::Directories,
     pub log: Log,
     pub role: LoadedConfig,
     pub scratch: Option<PathBuf>,
@@ -552,9 +554,9 @@ impl SessionParts {
     /// The session's own two pieces, with every shared cell freshly allocated —
     /// the shape a caller with no provider client behind it wants. A caller that
     /// has one overrides the cells it holds.
-    pub(crate) fn new(cwd: PathBuf, log: Log) -> Self {
+    pub(crate) fn new(directories: crate::policy::Directories, log: Log) -> Self {
         Self {
-            cwd,
+            directories,
             log,
             role: LoadedConfig::default(),
             scratch: None,
@@ -568,13 +570,14 @@ impl SessionParts {
 }
 
 impl Session {
-    /// The root used by policy and child processes (docs/control-channel.md).
+    /// The working directory: where tools and child processes run, and what a child
+    /// session inherits as its own (docs/control-channel.md).
     pub fn cwd(&self) -> &std::path::Path {
-        &self.cwd
+        self.directories.working()
     }
     /// The directories the permission classifier resolves against (docs/permissions.md).
     pub fn directories(&self) -> crate::policy::Directories {
-        crate::policy::Directories::at(&self.cwd)
+        self.directories.clone()
     }
     /// Name the session's web path (docs/web-bind.md): `/sessions/<id>/` under
     /// a host, `/` on the session's own bind. Called once, by the host's
@@ -675,6 +678,7 @@ impl Session {
         scratch: Option<PathBuf>,
         upstream_failure: UpstreamFailureState,
     ) -> (Arc<Self>, mpsc::UnboundedReceiver<SubmittedTurn>) {
+        let directories = crate::policy::Directories::at(&cwd);
         // Tests and the convenience constructors resolve the `[env]` policy from
         // the role they were handed (docs/env.md); boot builds one earlier —
         // it needs the strip set for the toolbox and the masker for the boot
@@ -682,7 +686,7 @@ impl Session {
         // one, whose needle set is append-only for its lifetime.
         let base = crate::env_table::EnvSnapshot::capture().expect("valid local environment");
         let resolver = Arc::new(crate::env_table::Resolver::with_environment(
-            cwd.clone(),
+            directories.project().to_path_buf(),
             base.clone(),
         ));
         let env_policy =
@@ -692,14 +696,14 @@ impl Session {
             scratch,
             upstream_failure,
             env_policy,
-            ..SessionParts::new(cwd, log)
+            ..SessionParts::new(directories, log)
         })
     }
 
     /// The full constructor.
     pub(crate) fn full(parts: SessionParts) -> (Arc<Self>, mpsc::UnboundedReceiver<SubmittedTurn>) {
         let SessionParts {
-            cwd,
+            directories,
             mut log,
             mut role,
             scratch,
@@ -709,9 +713,12 @@ impl Session {
             image_placement,
             env_policy,
         } = parts;
-        assert!(cwd.is_absolute(), "session cwd must be absolute");
+        assert!(
+            directories.working().is_absolute() && directories.project().is_absolute(),
+            "session directories must be absolute"
+        );
         if let ConfigSource::Path(path) = &mut role.source {
-            *path = cwd.join(&*path);
+            *path = directories.project().join(&*path);
         }
         // Install the mask before the log takes another append (docs/env.md).
         // Masking is irreversible filtering upstream of the log, so it has to be
@@ -735,11 +742,7 @@ impl Session {
         let effective = Arc::new(crate::policy::effective_config(&role.role, log.entries()));
         // Fold the probe ledger from a resumed log (no-op for a fresh one), then maintain it
         // incrementally as the loop assesses moves (docs/permissions.md).
-        let probes = crate::policy::probe_ledger(
-            &crate::policy::Directories::at(&cwd),
-            &effective,
-            log.entries(),
-        );
+        let probes = crate::policy::probe_ledger(&directories, &effective, log.entries());
         // Seed the process-id mint past every `p#<n>` a resumed log mentions, so a restarted
         // daemon never re-mints an ordinal the durable record already refers to
         // (docs/supervisor.md). Scanned over the serialized entry because
@@ -770,7 +773,7 @@ impl Session {
         };
         let shared = Arc::new_cyclic(|me| Self {
             pushes: push::PushState::new(me.clone()),
-            cwd,
+            directories,
             storage_base: std::sync::OnceLock::new(),
             attachment_store: std::sync::OnceLock::new(),
             web_path: std::sync::OnceLock::new(),

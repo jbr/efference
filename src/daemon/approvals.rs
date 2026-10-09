@@ -22,11 +22,11 @@ pub(super) struct Pending {
 }
 
 /// A session's held call, as its parent's `sessions__approve` resolver reads it
-/// (docs/permissions.md): the call the model wrote, plus the cwd its action
-/// resolves against.
+/// (docs/permissions.md): the call the model wrote, plus the directories its
+/// action is classified against.
 pub(crate) struct PendingGate {
     pub(crate) call: ToolCall,
-    pub(crate) cwd: PathBuf,
+    pub(crate) directories: crate::policy::Directories,
 }
 
 impl Session {
@@ -48,8 +48,8 @@ impl Session {
     }
 
     /// The held call, as a parent's `sessions__approve` resolver reads it
-    /// (docs/permissions.md): the call the model wrote plus the cwd its action
-    /// resolves against. `None` when no gate is open.
+    /// (docs/permissions.md): the call the model wrote plus the directories its action
+    /// is classified against. `None` when no gate is open.
     pub(crate) fn pending_gate(&self) -> Option<PendingGate> {
         let pending = self.pending.lock().unwrap();
         let pending = pending.as_ref()?;
@@ -59,7 +59,7 @@ impl Session {
                 pending.call_id.clone(),
                 pending.input.clone(),
             ),
-            cwd: self.cwd.clone(),
+            directories: self.directories(),
         })
     }
 

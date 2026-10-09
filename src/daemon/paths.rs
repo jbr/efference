@@ -3,19 +3,27 @@
 use std::io;
 use std::path::{Path, PathBuf};
 
+use crate::policy::Directories;
+
 /// Boot paths supplied by the caller, independent of the host process cwd.
 /// Storage does not follow the socket: a host may place its listener elsewhere.
 #[derive(Clone, Debug)]
 pub struct SessionPaths {
-    cwd: PathBuf,
+    /// The project (config, grants, session base) and the working directory (tools,
+    /// children); the same directory unless the session works in a worktree.
+    directories: Directories,
     storage: PathBuf,
 }
 
 impl SessionPaths {
     /// Require absolute paths rather than resolving against ambient process state.
     /// The caller creates storage and resolves its launch directory before boot.
-    pub fn new(cwd: PathBuf, storage: PathBuf) -> io::Result<Self> {
-        for (name, path) in [("cwd", &cwd), ("storage", &storage)] {
+    pub fn new(directories: Directories, storage: PathBuf) -> io::Result<Self> {
+        for (name, path) in [
+            ("project", directories.project()),
+            ("working", directories.working()),
+            ("storage", storage.as_path()),
+        ] {
             if !path.is_absolute() {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidInput,
@@ -23,16 +31,25 @@ impl SessionPaths {
                 ));
             }
         }
-        Ok(Self { cwd, storage })
+        Ok(Self {
+            directories,
+            storage,
+        })
     }
 
-    pub fn cwd(&self) -> &Path {
-        &self.cwd
+    /// The project directory: where `efference.toml` and the session base live.
+    pub fn project(&self) -> &Path {
+        self.directories.project()
+    }
+
+    /// The working directory: where the session's tools and children run.
+    pub fn working(&self) -> &Path {
+        self.directories.working()
     }
 
     /// The directories the permission classifier resolves against (docs/permissions.md).
-    pub fn directories(&self) -> crate::policy::Directories {
-        crate::policy::Directories::at(&self.cwd)
+    pub fn directories(&self) -> Directories {
+        self.directories.clone()
     }
 
     pub fn storage(&self) -> &Path {
@@ -55,9 +72,14 @@ impl SessionPaths {
         crate::attachments::dir_for_session(&self.storage)
     }
 
+    /// The attachments directory as the model addresses it: relative to the working
+    /// directory when inside it, absolute otherwise (a worktree session's attachments
+    /// sit under the project, outside its working directory).
     pub(crate) fn attachment_display(&self) -> PathBuf {
         let dir = self.attachments();
-        dir.strip_prefix(&self.cwd).unwrap_or(&dir).to_path_buf()
+        dir.strip_prefix(self.working())
+            .unwrap_or(&dir)
+            .to_path_buf()
     }
 }
 

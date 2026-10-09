@@ -115,6 +115,7 @@ fn unset_metadata_fields_are_skipped() {
     );
     let line = serde_json::to_string(&LogHeader::new(Some(metadata.clone()))).unwrap();
     for absent in [
+        "working",
         "temperature",
         "effort",
         "upstream",
@@ -135,6 +136,31 @@ fn unset_metadata_fields_are_skipped() {
             .unwrap()
             .metadata(),
         None
+    );
+}
+
+/// A worktree session records its working directory beside the project (`cwd`); the
+/// field survives a round trip, and a header without one reads as the two being the same.
+#[test]
+fn a_working_directory_apart_from_the_project_round_trips() {
+    let mut metadata = SessionMetadata::new(
+        "swift-lynx",
+        "/work/project",
+        LoggedInference::new("c", crate::api::Provider::Anthropic, "m"),
+        LoggedInference::new("c", crate::api::Provider::Anthropic, "m"),
+        TriageModel::shared(),
+    );
+    metadata.working = Some("/work/project/.efference/worktrees/swift-lynx".into());
+    let line = serde_json::to_string(&LogHeader::new(Some(metadata.clone()))).unwrap();
+    assert!(
+        line.contains(r#""working":"/work/project/.efference/worktrees/swift-lynx""#),
+        "{line}"
+    );
+    let header: LogHeader = serde_json::from_str(&line).unwrap();
+    assert_eq!(header.metadata(), Some(&metadata));
+    assert_eq!(
+        header.metadata().unwrap().cwd,
+        std::path::Path::new("/work/project")
     );
 }
 

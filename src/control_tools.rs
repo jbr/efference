@@ -120,15 +120,25 @@ pub struct BoundAction {
     /// The leaf call's one-line intent, lifted for the gate view.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub intent: Option<String>,
-    /// The leaf's working directory — what its relative paths resolve against,
-    /// and the cwd `policy::classify` runs with.
+    /// The leaf session's working directory — what its relative paths resolve
+    /// against.
     pub cwd: PathBuf,
+    /// The leaf session's project directory, which its grants resolve against;
+    /// with `cwd`, the directories `policy::classify` runs with.
+    pub project: PathBuf,
     /// The session the parent's call directly names — the top of `chain`.
     pub session: String,
     /// The session ids from that target down to the session holding the leaf,
     /// inclusive. One entry for a direct approval; longer when the held call is
     /// itself an approval. Only participating approvers appear.
     pub chain: Vec<String>,
+}
+
+impl BoundAction {
+    /// The leaf session's project and working directories, for classification.
+    pub fn directories(&self) -> crate::policy::Directories {
+        crate::policy::Directories::new(self.project.clone(), self.cwd.clone())
+    }
 }
 
 /// The tool state: an executor and the presentation requested by its mount.
@@ -378,7 +388,8 @@ impl HostExecutor {
                     name: gate.call.name,
                     input: gate.call.input,
                     intent,
-                    cwd: gate.cwd,
+                    cwd: gate.directories.working().to_path_buf(),
+                    project: gate.directories.project().to_path_buf(),
                     session: top,
                     chain,
                 });

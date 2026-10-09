@@ -508,13 +508,12 @@ pub(super) async fn judge<F: Frontend, S: Spotter>(
     }
     // The judged call: the child's leaf when bound, else the parent's own call.
     // The id stays the parent's, so the `Spot` audit entry and the gate correlate
-    // to the call actually held. The leaf's cwd is what its relative paths resolve
-    // against; the parent's is used otherwise.
+    // to the call actually held. The leaf's own directories classify it; the parent's are used otherwise.
     let leaf;
     let (judged, dirs): (&ToolCall, policy::Directories) = match bound {
         Some(bound) => {
             leaf = ToolCall::new(bound.name.clone(), call.id.clone(), bound.input.clone());
-            (&leaf, policy::Directories::at(&bound.cwd))
+            (&leaf, bound.directories())
         }
         None => (call, shared.directories()),
     };

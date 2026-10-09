@@ -88,7 +88,7 @@ pub(super) fn request(root: &Path, id: &str, effort: Option<&str>) -> SessionReq
     let registry = codex_registry(root, id);
     let inference = registry.resolve(Some("oai/gpt-5.6"), None, None).unwrap();
     SessionRequest {
-        cwd: root.to_path_buf(),
+        directories: crate::policy::Directories::at(root),
         base_env: base_env(),
         session_dir: root.join(BASE_DIR).join(id),
         config: None,
@@ -269,7 +269,7 @@ auth = {{ kind = "env", key = "EFFERENCE_BOOT_TEST_KEY" }}
     .resolve(Some("edge/m"), None, None)
     .unwrap();
     SessionRequest {
-        cwd: root.to_path_buf(),
+        directories: crate::policy::Directories::at(root),
         base_env: crate::env_table::EnvSnapshot::new(
             ["HOME", "PATH"]
                 .into_iter()

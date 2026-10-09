@@ -91,7 +91,7 @@ impl SessionRuntime {
             plan: client.plan_state(),
             image_placement: client.image_placement(),
             env_policy,
-            ..crate::daemon::SessionParts::new(paths.cwd().to_path_buf(), log)
+            ..crate::daemon::SessionParts::new(paths.directories(), log)
         });
         // The kickoff: with a `first-turn` and nothing yet said, the harness submits
         // the opening turn so the agent speaks first. A resumed log already has its
@@ -129,7 +129,7 @@ impl SessionRuntime {
             id: paths.id().to_string(),
             title: crate::log::latest_title(&session.snapshot()).map(str::to_string),
             model,
-            cwd: paths.cwd().to_string_lossy().into_owned(),
+            cwd: paths.working().to_string_lossy().into_owned(),
             inference,
             successor: None,
         });
