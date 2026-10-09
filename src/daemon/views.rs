@@ -37,6 +37,7 @@ impl Session {
             Topic::Fold => self.fold_json(),
             Topic::ConfigRepair => self.config_repair_json(),
             Topic::SessionIdentity => self.session_identity_json(),
+            Topic::CurrentOperations => self.current_operations_json(),
         }
     }
 

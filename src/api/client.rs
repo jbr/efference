@@ -14,8 +14,9 @@ use crate::api::auth_value::Reloaded;
 use crate::api::failure::{FailureClass, OpenError, classify_body};
 use crate::api::plan::{PlanState, plan_from_headers, plan_state};
 use crate::api::responses::assembler::ResponsesAssembler;
+use crate::api::stages::{ActiveTrace, StageSink, Trace};
 use crate::api::thinking::ThinkingSupport;
-use crate::log::is_captured_header;
+use crate::log::{RequestOrigin, is_captured_header};
 use crate::project::{WireTurn, encode_messages};
 
 /// Retry policy for requests that did not receive a successful response
@@ -161,6 +162,9 @@ struct UpstreamStatusHandler {
     /// The subscription-window snapshot (`api/plan.rs`), on the provider that
     /// reports one. Read on every status: the 429 that ends a window carries it.
     plan: Option<PlanState>,
+    /// The request whose attempt this is, when stages are recorded
+    /// (`api/stages.rs`).
+    active: ActiveTrace,
 }
 
 impl ClientHandler for UpstreamStatusHandler {
@@ -199,6 +203,10 @@ impl ClientHandler for UpstreamStatusHandler {
         }
         let status = u16::from(status);
         record_upstream_failure(&self.failure, status);
+        let active = self.active.lock().unwrap().clone();
+        if let Some(active) = active {
+            active.attempt_failed(status);
+        }
         let body = conn
             .response_body()
             .read_string()
@@ -317,6 +325,14 @@ pub struct Client {
     /// response handler that fills it and read by the daemon's `usage` topic.
     /// Allocated for every client; only the Codex arm's handler ever writes it.
     plan: PlanState,
+    /// Where this client reports each request's stages, installed by the session
+    /// (`set_stage_sink`; docs/log-and-projection.md). `None` records nothing.
+    stages: Option<StageSink>,
+    /// What the caller says these requests are for, tagged on each recorded stage
+    /// ([`Self::with_origin`]). [`RequestOrigin::Unknown`] until a caller says.
+    origin: RequestOrigin,
+    /// The request in flight, for the retry handler (`api/stages.rs`).
+    active_trace: ActiveTrace,
 }
 
 /// The user line a forced call sent as `auto` ends with (docs/transport.md).
@@ -350,6 +366,7 @@ impl Client {
             .turn_routing_header()
             .map(|_| turn_routing_state());
         let plan = plan_state();
+        let active_trace = ActiveTrace::default();
         let retry = RetryHandler::default()
             // Messages POSTs are replay-safe: an unsuccessful open produced no
             // assistant entry or provider-side completion.
@@ -405,6 +422,7 @@ impl Client {
                         .provider
                         .reports_plan_windows()
                         .then(|| Arc::clone(&plan)),
+                    active: Arc::clone(&active_trace),
                 },
             )),
             endpoint,
@@ -427,6 +445,24 @@ impl Client {
             upstream_attempts,
             turn_routing,
             plan,
+            stages: None,
+            origin: RequestOrigin::Unknown,
+            active_trace,
+        }
+    }
+
+    /// Install the sink this client's requests report their stages to
+    /// (docs/log-and-projection.md). Clones made afterwards share it.
+    pub fn set_stage_sink(&mut self, sink: StageSink) {
+        self.stages = Some(sink);
+    }
+
+    /// This client, tagging the requests it sends with `origin`. A cheap clone: the
+    /// shared cells (retry, reservation, the sink) stay shared.
+    pub fn with_origin(&self, origin: RequestOrigin) -> Self {
+        Self {
+            origin,
+            ..self.clone()
         }
     }
 
@@ -720,6 +756,33 @@ impl Client {
         tools: &[Value],
         tool_choice: ToolChoice,
         cap: Option<u32>,
+        on_delta: impl FnMut(Streamed),
+    ) -> Result<Completion, Error> {
+        let trace = Trace::begin(self.stages.as_ref(), self.origin, &self.active_trace);
+        let result = self
+            .send_traced(trace.as_ref(), turns, tools, tool_choice, cap, on_delta)
+            .await;
+        if let Some(trace) = trace {
+            match &result {
+                Err(e) => trace.failed(&e.to_string()),
+                Ok(completion) if completion.operator_abort() => trace.interrupted(),
+                Ok(completion) => match completion.upstream_failure() {
+                    Some(why) => trace.failed(why),
+                    None => trace.ended(),
+                },
+            }
+        }
+        result
+    }
+
+    /// [`Self::send`]'s request itself, reporting the stages it passes to `trace`.
+    async fn send_traced(
+        &self,
+        trace: Option<&Trace>,
+        turns: &[WireTurn],
+        tools: &[Value],
+        tool_choice: ToolChoice,
+        cap: Option<u32>,
         mut on_delta: impl FnMut(Streamed),
     ) -> Result<Completion, Error> {
         // A turn list recorded in the other dialect never becomes a request: the
@@ -763,6 +826,9 @@ impl Client {
         // that yields a working token yields it the first time, and a second
         // pass would only re-read the same bytes.
         let mut reloaded_auth = false;
+        // `Sent` is reported once per request; a reservation or credential retry
+        // loops back through the open below.
+        let mut sent_reported = false;
         // The operator's interrupt (docs/control-channel.md) is armed before the
         // request is sent, not once its stream opens: `notify_waiters` stores no
         // permit, so a press that lands after the request reaches the upstream but
@@ -822,6 +888,12 @@ impl Client {
             // sent, so an OAuth grant is refreshed here rather than on a 401.
             let sent_auth = self.endpoint.auth_value.current().await;
             let conn = self.post();
+            if let Some(trace) = trace
+                && !sent_reported
+            {
+                sent_reported = true;
+                trace.sent();
+            }
             match conn.with_body(body).into_sse().await {
                 Ok(events) => break events,
                 // The Codex backend streams SSE with no `content-type` at all
@@ -964,6 +1036,7 @@ impl Client {
         // other way out: it ends the read the same way, and `Aborted` tells the
         // caller not to retry.
         let mut operator_abort = false;
+        let mut first_byte_reported = false;
         let deadline = tokio::time::Instant::now() + self.stream_ceiling;
         while let Some(event) = tokio::select! {
             next = tokio::time::timeout_at(deadline, events.next()) => match next {
@@ -996,6 +1069,12 @@ impl Client {
                     break;
                 }
             };
+            if let Some(trace) = trace
+                && !first_byte_reported
+            {
+                first_byte_reported = true;
+                trace.first_byte();
+            }
             match assembler.apply(event.event_type(), event.data()) {
                 Ok(Some(streamed)) => on_delta(streamed),
                 Ok(None) => {}
@@ -1238,7 +1317,10 @@ impl Client {
         tool_choice: ToolChoice,
     ) -> Result<RequestUsage, KeepaliveError> {
         if self.dialect() == WireDialect::Responses {
-            return self.responses_keepalive(turns, tools, tool_choice).await;
+            return self
+                .with_origin(RequestOrigin::Keepalive)
+                .responses_keepalive(turns, tools, tool_choice)
+                .await;
         }
         let messages = encode_messages(turns, self.image_placement(), self.breakpoint_placement());
         let messages = &messages;
@@ -1265,6 +1347,28 @@ impl Client {
             stream: false,
         };
         let body = serde_json::to_string(&request).map_err(KeepaliveError::other)?;
+        // Non-streaming, so the ping has no first byte: it is sent, then it ends or fails.
+        let trace = Trace::begin(
+            self.stages.as_ref(),
+            RequestOrigin::Keepalive,
+            &self.active_trace,
+        );
+        if let Some(trace) = &trace {
+            trace.sent();
+        }
+        let result = self.keepalive_exchange(body).await;
+        if let Some(trace) = trace {
+            match &result {
+                Ok(_) => trace.ended(),
+                Err(e) => trace.failed(&e.to_string()),
+            }
+        }
+        result
+    }
+
+    /// The Messages keepalive's POST and read, split from [`Self::keepalive`] so the
+    /// trace closes on every exit.
+    async fn keepalive_exchange(&self, body: String) -> Result<RequestUsage, KeepaliveError> {
         let conn = self.post();
         let mut conn = conn.with_body(body).await.map_err(KeepaliveError::other)?;
         let status = conn.status().map(|s| s as u16);
@@ -1349,6 +1453,7 @@ impl Client {
             return None;
         }
         let completion = match self
+            .with_origin(RequestOrigin::TriagePrimer)
             .send(
                 turns,
                 tools,

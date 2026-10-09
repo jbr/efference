@@ -440,6 +440,7 @@ mod provider;
 mod render;
 mod reservation;
 pub(crate) mod responses;
+mod stages;
 mod thinking;
 
 pub use auth_value::{AuthValue, Reload, Reloaded, Reread, sync_reload};
@@ -470,6 +471,7 @@ pub use reservation::{
     output_cap_rejection, reservation_state,
 };
 pub use responses::encode_responses;
+pub use stages::{StageRecorder, StageSink};
 pub use thinking::{ThinkingOff, ThinkingSupport, ToolChoice, check_effort_thinking};
 
 use assembler::Assembler;

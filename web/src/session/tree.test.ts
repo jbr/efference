@@ -237,6 +237,21 @@ describe("the transcript tree", () => {
     expect(nodes.filter((n) => n.kind === "leaf")).toHaveLength(0);
   });
 
+  it("keeps request stages out of the transcript", () => {
+    const nodes = buildTree([
+      entry(1, { RequestStage: { request: 0, origin: "turn", stage: "sent" } }),
+      assistant(2, { calls: [{ id: "toolu_a", name: "bash" }] }),
+      entry(3, {
+        RequestStage: {
+          request: 0,
+          origin: "turn",
+          stage: { failed: { reason: "interrupted" } },
+        },
+      }),
+    ]);
+    expect(nodes.filter((n) => n.kind === "leaf")).toHaveLength(0);
+  });
+
   it("groups the calls of one step into one batch", () => {
     const nodes = buildTree([
       assistant(1, {

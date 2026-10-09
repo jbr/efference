@@ -114,6 +114,13 @@ impl MountedSpotter {
 }
 
 impl Spotter for MountedSpotter {
+    fn set_stage_sink(&mut self, sink: crate::api::StageSink) {
+        match self {
+            MountedSpotter::Fork(fork) => fork.set_stage_sink(sink),
+            MountedSpotter::Jev(jev) => jev.set_stage_sink(sink),
+        }
+    }
+
     async fn assess(
         &self,
         role: &Config,

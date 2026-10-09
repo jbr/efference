@@ -61,7 +61,7 @@ impl SessionRuntime {
             mut client,
             toolbox,
             mut distiller,
-            spotter,
+            mut spotter,
             log,
             paths,
             role,
@@ -147,6 +147,12 @@ impl SessionRuntime {
         // spotter does not — an interrupt during a gate is the tool's kill.
         client.set_abort(session.interrupt_signal());
         distiller.set_abort(session.interrupt_signal());
+        // Every request any of the session's clients makes reports its stages to
+        // the log (docs/log-and-projection.md): the agent client (turns, the shared
+        // peek, titles, keepalive, folds), the own-triage client, and the spotter.
+        client.set_stage_sink(session.stage_sink());
+        distiller.set_stage_sink(session.stage_sink());
+        spotter.set_stage_sink(session.stage_sink());
         // Share the client between the loop and the keepalive task. `tools` is computed
         // once here for the ping; `agent::run` recomputes the same (byte-stable,
         // docs/log-and-projection.md) definitions internally, so both send an

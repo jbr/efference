@@ -144,6 +144,11 @@ pub(crate) enum Topic {
     /// client reads it from the connect snapshot like everything else, and so a
     /// value that ever moves reaches clients without a new mechanism.
     SessionIdentity,
+    /// What the loop is waiting on right now (docs/control-api.md): the upstream
+    /// requests open, each with its origin, stage, and the instant that stage began,
+    /// and the tool calls executing. `null` when nothing is open. Parked waits keep
+    /// their own topics.
+    CurrentOperations,
 }
 
 impl Topic {
@@ -152,7 +157,7 @@ impl Topic {
     /// walking it, so a topic added here reaches both surfaces or neither — which is
     /// what keeps `GET /state` equal to the fold of every state frame
     /// (docs/control-api.md).
-    pub(crate) const ALL: [Topic; 20] = [
+    pub(crate) const ALL: [Topic; 21] = [
         Self::Gate,
         Self::Ask,
         Self::Processes,
@@ -173,6 +178,7 @@ impl Topic {
         Self::Fold,
         Self::ConfigRepair,
         Self::SessionIdentity,
+        Self::CurrentOperations,
     ];
 
     /// The topic named by a `?include=state:<topic>` token, or `None` if there is no such
@@ -205,6 +211,7 @@ impl Topic {
             Self::Fold => "fold",
             Self::ConfigRepair => "config_repair",
             Self::SessionIdentity => "session_identity",
+            Self::CurrentOperations => "current_operations",
         }
     }
 }
@@ -347,6 +354,7 @@ pub(crate) fn payload_kind(payload: &Payload) -> &'static str {
         Payload::CallStarted { .. } => "call_started",
         Payload::Resumed(_) => "resumed",
         Payload::ProcessEvent(_) => "process_event",
+        Payload::RequestStage(_) => "request_stage",
         Payload::ConfigEdit(_) => "config_edit",
         Payload::Preamble { .. } => "preamble",
         Payload::Title(_) => "title",

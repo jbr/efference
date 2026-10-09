@@ -159,6 +159,10 @@ pub(crate) enum TuiEvent {
     /// `session_identity` topic, docs/control-api.md). Static per session today;
     /// it arrives on the connect snapshot and drives the sidebar's SESSION section.
     SessionIdentity(Option<SessionIdentityView>),
+    /// What the loop is waiting on (the `current_operations` topic,
+    /// docs/control-api.md). Level-triggered: `None` is nothing open. Status-bar
+    /// chrome.
+    Operations(Option<operations::OperationsView>),
 
     /// The effective policy + its pending proposals changed (the `role`, `proposals`,
     /// and `review_level` topics, merged by the bridge). Drives the sidebar's POLICY
@@ -660,6 +664,7 @@ pub(crate) fn bullet_for_indent(indent: u16) -> char {
 mod test;
 
 mod bridge;
+mod operations;
 mod parse;
 mod run;
 mod ui_loop;

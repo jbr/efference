@@ -241,6 +241,9 @@ pub struct Session {
     /// The lock is only ever held across the
     /// synchronous `project`/append — never an `await`.
     log: Mutex<Log>,
+    /// The open requests and running tools, folded from the log as it grows
+    /// (`daemon/operations.rs`). Locked after `log`, never before.
+    operations: Mutex<operations::Operations>,
     /// Where tool-result images land on the wire (docs/log-and-projection.md):
     /// provider-derived at boot, fixed for the session.
     image_placement: ImagePlacement,
@@ -764,6 +767,7 @@ impl Session {
             cold_signal: Notify::new(),
             fold_state: Mutex::new(None),
             fold_signal: Notify::new(),
+            operations: Mutex::new(operations::Operations::fold(log.entries())),
             log: Mutex::new(log),
             image_placement,
             turns_tx,
@@ -1020,12 +1024,12 @@ impl Session {
     ) -> io::Result<Seq> {
         // User turns only — a submitted turn is never a `ConfigEdit`, so none of
         // `append`'s proposal-lifecycle handling applies here.
-        let seq = self.log.lock().unwrap().append_submission(
-            turn,
-            payload,
-            Some(submission_id),
-            source,
-        )?;
+        let seq = {
+            let mut log = self.log.lock().unwrap();
+            let seq = log.append_submission(turn, payload, Some(submission_id), source)?;
+            self.observe_operations(&log);
+            seq
+        };
         self.appended.notify_waiters();
         Ok(seq)
     }
@@ -1040,7 +1044,12 @@ impl Session {
             Payload::ConfigEdit(edit) => Some((edit.state, edit.change.clone(), edit.resolves)),
             _ => None,
         };
-        let seq = self.log.lock().unwrap().append(turn, payload)?;
+        let seq = {
+            let mut log = self.log.lock().unwrap();
+            let seq = log.append(turn, payload)?;
+            self.observe_operations(&log);
+            seq
+        };
         if let Some((state, change, resolves)) = edit {
             match state {
                 // A committed edit takes effect: fold it into the effective policy so a gate reads
@@ -1194,6 +1203,7 @@ mod http;
 mod keepalive;
 mod metrics;
 mod notifications;
+mod operations;
 mod pace;
 mod status;
 mod subscriptions;
@@ -1220,11 +1230,12 @@ pub(crate) use watch::refresh_and_emit;
 
 use approvals::Pending;
 
+pub use crate::log::RequestOrigin;
 use config_edits::{PendingProposal, session_visible_notice};
 use entry_view::{EntryView, result_raw};
 use errors::{ErrorBody, ErrorCode, fail, respond};
 use frames::{Frame, Topic};
-pub use metrics::{COLD_STREAK_WARN, CacheRead, ColdStart, ColdStreak, RequestOrigin, UsageLine};
+pub use metrics::{COLD_STREAK_WARN, CacheRead, ColdStart, ColdStreak, UsageLine};
 use metrics::{CostCell, Metrics};
 use notifications::Inbox;
 use pace::Pace;

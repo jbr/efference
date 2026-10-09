@@ -84,7 +84,7 @@ impl ForkPeek {
     ) -> Result<PeekAttempt, String> {
         let messages = peek_request(prefix, self.reader(), pending, inbox, background);
         peek_attempt(
-            self.client(agent),
+            &self.client(agent, RequestOrigin::Peek),
             self.tools(agent_tools),
             self.choice(RETAIN),
             &messages,

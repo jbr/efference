@@ -9,8 +9,17 @@
 // idle, but the session is busy writing its summary. Both the retry wait and the stall name the recovery: an empty
 // send, which the daemon takes as "retry now".
 
-import type { Park, Stall } from "../api/types.ts";
+import type { CurrentOperations, Park, Stall } from "../api/types.ts";
 import { kilotokens } from "./fold.ts";
+import { operationText } from "./operations.ts";
+
+/** The `current_operations` topic with what naming it needs: the session's
+ * model, and the client's clock (the topic carries absolute instants). */
+export interface OperationsView {
+  operations: CurrentOperations | null;
+  model: string;
+  now: number;
+}
 
 export interface TurnState {
   /** What the readout says. */
@@ -24,7 +33,8 @@ export interface TurnState {
 /**
  * The readout for the current topic values. A pure function: no clock is read,
  * so neither the stall's `at` nor the retry's `next_attempt_at` is rendered as
- * a time.
+ * a time; the operation's elapsed time is the one place a clock matters, and it
+ * arrives as `view.now`.
  */
 export function turnState(
   running: boolean,
@@ -32,6 +42,7 @@ export function turnState(
   retrying = false,
   folding = false,
   park: Park | null = null,
+  view: OperationsView | null = null,
 ): TurnState {
   if (stall !== null) {
     return {
@@ -75,6 +86,12 @@ export function turnState(
       kind: "running",
     };
   }
-  if (running) return { text: "running…", kind: "running" };
+  if (running) {
+    const operation =
+      view === null
+        ? null
+        : operationText(view.operations, view.model, view.now);
+    return { text: operation ?? "running…", kind: "running" };
+  }
   return { text: "your turn", kind: "idle" };
 }

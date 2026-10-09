@@ -225,7 +225,11 @@ fn lines(
             }
             vec![line("spot", body)]
         }
-        Payload::ToolTelemetry(_) | Payload::CallStarted { .. } => vec![],
+        // Request stages (docs/log-and-projection.md) are telemetry for the
+        // `current_operations` topic, not something the session said or did.
+        Payload::ToolTelemetry(_) | Payload::CallStarted { .. } | Payload::RequestStage(_) => {
+            vec![]
+        }
         Payload::Resumed(resumed) => vec![line(
             "resumed",
             crate::project::render_resumed(resumed, entry.seq),

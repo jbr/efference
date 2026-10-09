@@ -124,6 +124,11 @@ pub trait Spotter {
         probe: Option<&str>,
         precedents: &[ToolCall],
     ) -> impl Future<Output = Spotting> + Send;
+
+    /// Report the rung's upstream requests to `sink` as request stages
+    /// (docs/log-and-projection.md). The default records nothing: a rung that makes
+    /// no request through [`Client`] has none to report.
+    fn set_stage_sink(&mut self, _sink: crate::api::StageSink) {}
 }
 
 /// The model spotter — the independent rung realized. Owns a dedicated [`Client`]
@@ -163,7 +168,9 @@ impl ForkSpot {
         persona: impl Into<String>,
     ) -> Self {
         ForkSpot {
-            client: Client::new(endpoint, model, persona, None).without_turn_routing(),
+            client: Client::new(endpoint, model, persona, None)
+                .without_turn_routing()
+                .with_origin(crate::log::RequestOrigin::Spot),
             scratch: None,
             cwd: None,
         }
@@ -199,6 +206,10 @@ impl ForkSpot {
 const SPOT_ATTEMPTS: u32 = 3;
 
 impl Spotter for ForkSpot {
+    fn set_stage_sink(&mut self, sink: crate::api::StageSink) {
+        self.client.set_stage_sink(sink);
+    }
+
     async fn assess(
         &self,
         role: &Config,

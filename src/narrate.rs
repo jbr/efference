@@ -109,6 +109,7 @@ pub async fn narrate(
 ) -> Result<Narration, Error> {
     let turns = request(entries, cut)?;
     let completion = client
+        .with_origin(crate::log::RequestOrigin::Narrate)
         .complete(&turns, tools, ToolChoice::auto(), |_| {})
         .await
         .map_err(Error::Request)?;

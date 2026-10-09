@@ -169,6 +169,10 @@ fn decode_frame(
             "session_identity" => Some(send(TuiEvent::SessionIdentity(
                 parse::parse_session_identity(data),
             ))),
+            // Level-triggered: `null` means nothing is open.
+            "current_operations" => Some(send(TuiEvent::Operations(
+                super::operations::parse_current_operations(data),
+            ))),
             "pace" => parse::parse_pace(data).map(|pace| send(TuiEvent::Pace(pace))),
             "running" => data.as_bool().map(|r| send(TuiEvent::Running(r))),
             // The three policy-shaped topics update the held copy, then re-emit the

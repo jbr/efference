@@ -66,61 +66,6 @@ pub(super) struct CostCell {
     pub(super) unpriced: u32,
 }
 
-/// Which request shape spent the tokens (docs/log-and-projection.md) — the tag on each
-/// persisted usage line, so per-shape spend is a query over `usage.jsonl` rather than a
-/// reconstruction from the canonical log.
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum RequestOrigin {
-    /// An agent-loop completion (docs/README.md).
-    Turn,
-    /// A fork-peek round-trip riding tool results (docs/redaction-fork.md), retries
-    /// included.
-    Peek,
-    /// A standalone idle-triage peek (docs/supervisor.md).
-    Triage,
-    /// A title peek (docs/session-title.md) — the triage model asked, off the
-    /// cached prefix, what the session is for.
-    Title,
-    /// A spotter assessment (docs/permissions.md) — its own prefix, its own lineage.
-    Spot,
-    /// A cache keepalive ping (docs/log-and-projection.md).
-    Keepalive,
-    /// A triage-lineage primer (backlog/separate-triage-cold-prefix.md): the turn's own
-    /// input replayed on the own peek's client so the result-triage peek resumes where
-    /// the main request ended. Never main-prefix evidence: it plants a resume point on
-    /// the triage lineage, not the loop's.
-    TriagePrimer,
-    /// The narrator writing a fold's account (docs/summary-head.md): its own prompt,
-    /// so it does not touch the main prefix.
-    Narrate,
-    /// A retried attempt the loop recorded and re-sent — an unfinalized stream
-    /// (all-zero usage) or one that finalized unparseable (real usage;
-    /// docs/transport.md). Persisted as its own origin so it is not read as a
-    /// real main-loop request: only its non-zero usage is priced
-    /// ([`Session::spawn_cost_fetch`]) and it never counts as prefix evidence
-    /// ([`ColdStreak::observe`]).
-    AbortedAttempt,
-    /// An origin this build does not recognize — a forward-compat catch-all so a
-    /// `usage.jsonl` line written by a newer build still parses here (and, per
-    /// serde's `#[serde(other)]` contract, round-trips as this variant's own name
-    /// rather than the original one if ever re-serialized).
-    #[serde(other)]
-    Unknown,
-}
-
-impl RequestOrigin {
-    /// Whether every request of this origin read the main loop's own cached prefix, and
-    /// so refreshed it. Turns and keepalive pings do. A peek may run on the agent's own
-    /// client (it reads the main prefix) or on a separate triage client with a prefix of
-    /// its own; the origin does not say which, so the peek's line carries
-    /// [`UsageLine::main_prefix`] when it ran on the agent's client. Title and triage
-    /// requests are left out, which can only make the cache look colder than it is.
-    pub fn touches_main_prefix(self) -> bool {
-        matches!(self, Self::Turn | Self::Keepalive)
-    }
-}
-
 /// How long the main-loop prefix may go untouched before a cold read on the next
 /// turn is explained by eviction rather than by a moved prefix — Anthropic's
 /// five-minute ephemeral TTL (docs/transport.md). The keepalive pings under it

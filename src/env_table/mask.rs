@@ -332,6 +332,14 @@ impl Masker {
             // a value the tool table or the harness produced, not a value from
             // the environment. Nothing to mask (docs/env.md).
             Payload::ToolTelemetry(_) | Payload::CallStarted { .. } => {}
+            // A request stage (docs/log-and-projection.md) is an id, an origin, a
+            // status, and — on a failure — the provider's own error text, which
+            // can quote what the request carried.
+            Payload::RequestStage(stage) => {
+                if let crate::log::RequestStageKind::Failed { reason } = &mut stage.stage {
+                    self.mask_in_place(reason);
+                }
+            }
             // A gap, handle ids, and call ids: nothing from the environment.
             Payload::Resumed(_) => {}
             // A process lifecycle record (docs/supervisor.md) carries one piece

@@ -31,6 +31,8 @@
 
 use std::collections::HashSet;
 
+use crate::log::RequestOrigin;
+
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -298,6 +300,14 @@ impl ForkPeek {
         }
     }
 
+    /// Report the own-model peek's request stages to `sink`
+    /// (docs/log-and-projection.md); the shared peek rides the agent client.
+    pub fn set_stage_sink(&mut self, sink: crate::api::StageSink) {
+        if let Some(own) = &mut self.own {
+            own.client.set_stage_sink(sink);
+        }
+    }
+
     /// The shared-lineage peek: the agent's client and `tools[]`, borrowed per call.
     pub fn shared() -> Self {
         ForkPeek { own: None }
@@ -411,9 +421,13 @@ impl ForkPeek {
         })
     }
 
-    /// The client a peek sends through: the own one when set, else the agent's.
-    fn client<'a>(&'a self, agent: &'a Client) -> &'a Client {
-        self.own.as_ref().map_or(agent, |o| &o.client)
+    /// The client a peek sends through: the own one when set, else the agent's,
+    /// tagged with what the request is for (docs/log-and-projection.md).
+    fn client(&self, agent: &Client, origin: RequestOrigin) -> Client {
+        self.own
+            .as_ref()
+            .map_or(agent, |o| &o.client)
+            .with_origin(origin)
     }
 
     /// The `tools[]` a peek sends: the peek-only array when own, else the agent's.
@@ -485,7 +499,7 @@ impl ForkPeek {
 
         let mut record = PeekRecord::default();
         let parsed = peek_with_retries(
-            self.client(agent),
+            &self.client(agent, RequestOrigin::Peek),
             &agent.upstream_retry(),
             Patience::GATE,
             messages,
@@ -613,8 +627,9 @@ impl ForkPeek {
 
         let mut record = PeekRecord::default();
         let (client, tools, choice) = self.idle_envelope(agent, agent_tools);
+        let client = client.with_origin(RequestOrigin::Triage);
         let parsed = peek_with_retries(
-            client,
+            &client,
             &agent.upstream_retry(),
             Patience::ASIDE,
             messages,

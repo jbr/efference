@@ -668,6 +668,55 @@ fn process_events_project_to_identical_bytes() {
     }
 }
 
+/// A request stage (docs/log-and-projection.md) is telemetry: a request's stages are
+/// appended mid-turn, concurrently with other requests', so if any moved a projected
+/// byte it would invalidate the cached prefix on every request.
+#[test]
+fn request_stages_project_to_identical_bytes() {
+    use crate::log::{RequestOrigin, RequestStage, RequestStageKind};
+    let without = serde_json::to_string(&project(&sample_log())).unwrap();
+    let without_semantic = format!("{:?}", project_semantic(&sample_log()));
+    let stages = [
+        RequestStageKind::Sent,
+        RequestStageKind::AttemptFailed {
+            attempt: 1,
+            status: 503,
+        },
+        RequestStageKind::FirstByte,
+        RequestStageKind::Failed {
+            reason: "interrupted".into(),
+        },
+        RequestStageKind::Ended,
+    ];
+    for at in [0, 1, 2, 3] {
+        let mut with = sample_log();
+        for (i, stage) in stages.iter().cloned().enumerate() {
+            with.insert(
+                at,
+                entry(
+                    90 + i as u64,
+                    1,
+                    Payload::RequestStage(RequestStage {
+                        request: 7,
+                        origin: RequestOrigin::Turn,
+                        stage,
+                    }),
+                ),
+            );
+        }
+        assert_eq!(
+            without,
+            serde_json::to_string(&project(&with)).unwrap(),
+            "request stages inserted at index {at} must not perturb the projected wire"
+        );
+        assert_eq!(
+            without_semantic,
+            format!("{:?}", project_semantic(&with)),
+            "nor the dialect-neutral fold"
+        );
+    }
+}
+
 /// The boot preamble snapshot is replay/audit only: appending one anywhere in the log
 /// must not change a single projected byte — the system prompt is carried by the
 /// request's `system` field, never the `messages` array (docs/context.md).

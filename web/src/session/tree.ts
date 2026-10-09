@@ -309,6 +309,10 @@ export function buildTree(entries: LogEntry[]): TranscriptNode[] {
     // entry it is should read as empty rather than as a collapsed block.
     if ("Preamble" in p) continue;
 
+    // A request stage (docs/log-and-projection.md) is telemetry behind the
+    // `current_operations` topic, not something the session said or did.
+    if ("RequestStage" in p) continue;
+
     // A dispatch marker (Payload::CallStarted) appended before tool dispatch;
     // projects to nothing on the transcript.
     if ("CallStarted" in p) continue;

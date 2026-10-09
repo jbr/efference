@@ -18,6 +18,7 @@ import type {
   Ask,
   Attachment,
   Cold,
+  CurrentOperations,
   Fold,
   Pace,
   Park,
@@ -29,6 +30,7 @@ import { replyHint } from "./askMark.ts";
 import { type TurnState, turnState } from "./turnState.ts";
 import { useDockOffset } from "./float.ts";
 import { useNarrow } from "./useNarrow.ts";
+import { useNow } from "./useNow.ts";
 import { StagedAttachments } from "./Attachments.tsx";
 import { pastesAsFile, useStagedAttachments } from "./staging.ts";
 import { useDragToDismiss } from "./useDragToDismiss.ts";
@@ -58,6 +60,8 @@ export function Composer({
   cold,
   park,
   fold,
+  operations,
+  model,
 }: {
   submit: (
     text: string,
@@ -86,6 +90,10 @@ export function Composer({
   /** The `park` topic: the loop stopped at its cold check. */
   park: Park | null;
   fold: Fold | null;
+  /** The `current_operations` topic and the session's model: what the status
+   * bar says the loop is waiting on, in place of a bare "running". */
+  operations: CurrentOperations | null;
+  model: string;
 }) {
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -255,12 +263,14 @@ export function Composer({
       .catch((e) => setError(e instanceof ApiError ? e.message : `${e}`));
   }
 
+  const now = useNow(running && operations !== null);
   const turn = turnState(
     running,
     stall,
     retrying,
     offer.kind === "writing",
     park,
+    { operations, model, now },
   );
   return (
     <>

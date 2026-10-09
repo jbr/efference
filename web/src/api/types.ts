@@ -91,9 +91,63 @@ export type Payload =
   | { ConfigEdit: ConfigEdit }
   | { ToolTelemetry: ToolTelemetry }
   | { ProcessEvent: ProcessEvent }
+  | { RequestStage: RequestStage }
   | { Preamble: { system: string; context: unknown } }
   | { Title: Title }
   | { Resumed: Resumed };
+
+/** One stage of one upstream request (docs/log-and-projection.md). Telemetry:
+ * the transcript does not draw it; the `current_operations` topic folds it. */
+export interface RequestStage {
+  request: number;
+  origin: RequestOrigin;
+  stage:
+    | "sent"
+    | "first_byte"
+    | "ended"
+    | { attempt_failed: { attempt: number; status: number } }
+    | { failed: { reason: string } };
+}
+
+/** What a request is for (docs/log-and-projection.md). */
+export type RequestOrigin =
+  | "turn"
+  | "peek"
+  | "triage"
+  | "title"
+  | "spot"
+  | "keepalive"
+  | "triage_primer"
+  | "narrate"
+  | "aborted_attempt"
+  | "unknown";
+
+/** The `current_operations` topic (docs/control-api.md): what the loop is
+ * waiting on right now. `null` when nothing is open. Every `since` is an
+ * absolute Unix-millis instant; the client subtracts on its own clock. */
+export interface CurrentOperations {
+  requests: OpenRequest[];
+  tools: RunningTool[];
+}
+
+export interface OpenRequest {
+  request: number;
+  origin: RequestOrigin;
+  /** `sent`: handed to the transport, no stream event yet. `retrying`: an
+   * attempt was refused (`attempt`, `status`) and the transport is trying
+   * again. `streaming`: the first stream event arrived. */
+  stage: "sent" | "retrying" | "streaming";
+  since: number;
+  attempt?: number;
+  status?: number;
+}
+
+export interface RunningTool {
+  call_id: CallId;
+  tool: string;
+  intent: string | null;
+  since: number;
+}
 
 /** A session reopened by a later host process (docs/resumption.md). */
 export interface Resumed {
@@ -633,6 +687,7 @@ export interface StateTopics {
   park?: Park | null;
   fold?: Fold | null;
   session_identity?: SessionIdentity | null;
+  current_operations?: CurrentOperations | null;
 }
 
 /** The `ask` topic (docs/control-api.md): the question the loop is blocked on.

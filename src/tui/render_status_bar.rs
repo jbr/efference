@@ -52,6 +52,9 @@ impl<'a> InteractiveState<'a> {
         let indicators = [
             self.frame_cost.as_ref().and_then(|c| c.readout()),
             super::state::pace_indicator(self.pace),
+            // What the loop is waiting on (the `current_operations` topic): it leads
+            // the transport chips, which qualify it.
+            self.operation_text.clone(),
             // The retry leads the failure chip: it is the live state, and it says what
             // is being done about the status the chip names (docs/transport.md).
             super::state::upstream_retry_indicator(self.upstream_retry.as_ref()),

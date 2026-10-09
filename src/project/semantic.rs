@@ -404,6 +404,10 @@ pub fn project_semantic_for(log: &[LogEntry], reader: Reader) -> Vec<WireTurn> {
             // spawn or an exit mid-session cannot move the cached prefix
             // (docs/log-and-projection.md).
             Payload::ProcessEvent(_) => {}
+            // A request stage (docs/log-and-projection.md) is telemetry, like a
+            // tool's: it projects to nothing, so it can be appended at every stage
+            // of every request without moving the cached prefix.
+            Payload::RequestStage(_) => {}
             // A grant (docs/permissions.md) is audit-only too — its *effect* reaches
             // the model through the classifier (the policy fold), never the
             // transcript. So it projects to nothing, and appending one cannot perturb

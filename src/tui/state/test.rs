@@ -247,3 +247,28 @@ fn ctrl_o_folds_and_drops_a_pending_consent() {
     assert!(frx.try_recv().is_ok(), "a fold was asked for");
     assert!(!s.cold_consent);
 }
+
+/// The operation text shows only while the loop is running, follows the topic, and
+/// clears with it (docs/tui.md): an idle session's keepalive is not a wait.
+#[test]
+fn the_operation_text_follows_the_topic_while_running() {
+    let (mut s, _arx) = state_with_gate();
+    let now = crate::log::Timestamp::now().0;
+    let topic = serde_json::json!({
+        "requests": [{"request": 0, "origin": "turn", "stage": "sent", "since": now}],
+        "tools": [],
+    });
+    let view = crate::tui::operations::parse_current_operations(&topic);
+
+    assert!(!s.handle_event(TuiEvent::Operations(view)));
+    assert_eq!(s.operation_text, None, "not shown while the loop is idle");
+
+    assert!(!s.handle_event(TuiEvent::Running(true)));
+    assert_eq!(
+        s.operation_text.as_deref(),
+        Some("waiting on the model · 0s")
+    );
+
+    assert!(!s.handle_event(TuiEvent::Operations(None)));
+    assert_eq!(s.operation_text, None);
+}

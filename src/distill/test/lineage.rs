@@ -212,13 +212,13 @@ fn own_peek_sends_its_own_client_and_only_the_peek_tools() {
     let shared = ForkPeek::shared();
     assert!(!shared.is_own());
     assert_eq!(shared.own_model(), None);
-    assert_eq!(shared.client(&agent).model(), "big");
+    assert_eq!(shared.client(&agent, RequestOrigin::Peek).model(), "big");
     assert_eq!(shared.tools(&agent_tools).len(), 3);
 
     let own = ForkPeek::own(Client::new(endpoint.for_triage(), "small", "persona", None));
     assert!(own.is_own());
     assert_eq!(own.own_model(), Some("small"));
-    assert_eq!(own.client(&agent).model(), "small");
+    assert_eq!(own.client(&agent, RequestOrigin::Peek).model(), "small");
     let names: Vec<&str> = own
         .tools(&agent_tools)
         .iter()
@@ -255,7 +255,7 @@ fn the_idle_triage_rides_the_agent_lineage_whatever_the_triage_model() {
     assert_eq!(tools.len(), 3);
     assert_eq!(choice.forced(), None);
     // The per-result peek still runs on the own model.
-    assert_eq!(own.client(&agent).model(), "small");
+    assert_eq!(own.client(&agent, RequestOrigin::Peek).model(), "small");
 }
 
 /// The shared peek rides the agent lineage the main request already warmed, so there

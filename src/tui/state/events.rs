@@ -225,10 +225,16 @@ impl<'a> InteractiveState<'a> {
                 self.dirty = true;
             }
             TuiEvent::Running(running) => {
-                // Not rendered; it's the "is the loop working" signal graduated Esc reads
-                // (docs/tui.md). No repaint needed — nothing on screen depends on it directly.
+                // The "is the loop working" signal graduated Esc reads (docs/tui.md);
+                // the operation text is shown only while it is true.
                 self.loop_running = running;
+                self.refresh_operation_text();
                 return false;
+            }
+            TuiEvent::Operations(operations) => {
+                self.operations = operations;
+                self.refresh_operation_text();
+                self.dirty = true;
             }
             TuiEvent::Image { seq, idx, image } => {
                 // The reserved footprint was sized from the entry view's metadata,
@@ -340,6 +346,7 @@ impl<'a> InteractiveState<'a> {
             p.refresh_elapsed();
             changed |= (p.running_secs, p.idle_secs) != before;
         }
+        changed |= self.refresh_operation_text();
         if let Some(usage) = &mut self.usage {
             let secs = usage.last_request_at.map(crate::tui::secs_since);
             if usage.seconds_since_last_request != secs {
@@ -347,6 +354,29 @@ impl<'a> InteractiveState<'a> {
                 changed = true;
             }
         }
+        if changed {
+            self.dirty = true;
+        }
+        changed
+    }
+
+    /// Re-derive the status bar's operation text from the topic, the session's model,
+    /// and the clock. Shown only while the loop is running: an idle triage or a
+    /// keepalive ping is not something the operator is waiting on. Returns whether
+    /// the text changed.
+    fn refresh_operation_text(&mut self) -> bool {
+        let text = match (&self.operations, self.loop_running) {
+            (Some(view), true) => {
+                let model = self
+                    .session_identity
+                    .as_ref()
+                    .map_or("the model", |identity| identity.model.as_str());
+                crate::tui::operations::operation_text(view, model, crate::log::Timestamp::now().0)
+            }
+            _ => None,
+        };
+        let changed = text != self.operation_text;
+        self.operation_text = text;
         if changed {
             self.dirty = true;
         }

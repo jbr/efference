@@ -12,12 +12,14 @@ mod curation;
 pub use curation::result_verdicts;
 
 mod process;
+mod request;
 pub mod stops;
 mod upstream;
 
 #[cfg(test)]
 mod test;
 pub use process::{ExitOutcome, ProcessEvent, ProcessEventKind, ProcessExit, ProcessSpawn};
+pub use request::{RequestOrigin, RequestStage, RequestStageKind};
 pub use stops::Stop;
 pub use upstream::{
     CAPTURED_HEADERS, FRAME_CAPTURE_CAP, StreamDiagnostics, UpstreamFailureRecord,
@@ -275,6 +277,14 @@ pub enum Payload {
     ///
     /// [`ToolTelemetry`]: Payload::ToolTelemetry
     Title(Title),
+    /// One stage of one upstream request — sent, an attempt that failed, first byte,
+    /// ended, failed (docs/log-and-projection.md). Telemetry for "what was it doing,
+    /// and since when" and the source of the `current_operations` topic
+    /// (docs/control-api.md). Projects to nothing, like [`ToolTelemetry`]; the entry's
+    /// `at` is the stage's time, never projected.
+    ///
+    /// [`ToolTelemetry`]: Payload::ToolTelemetry
+    RequestStage(RequestStage),
 }
 
 /// A session reopened from its log (docs/log-and-projection.md): what the loader

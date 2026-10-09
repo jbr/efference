@@ -663,6 +663,11 @@ pub(super) struct InteractiveState<'a> {
     /// `session_identity` topic (docs/control-api.md). `None` until the connect
     /// snapshot lands, and in views that never connect. Sidebar chrome.
     pub session_identity: Option<SessionIdentityView>,
+    /// The `current_operations` topic (docs/control-api.md), and the status-bar text
+    /// derived from it against the clock. The text is re-derived once a second by
+    /// `refresh_clocks`, so rendering stays a pure function of state.
+    pub operations: Option<super::operations::OperationsView>,
+    pub operation_text: Option<String>,
 
     /// The effective policy + pending proposals, from the policy topics. Drives the
     /// sidebar's POLICY section (docs/permissions.md). Ephemeral chrome.

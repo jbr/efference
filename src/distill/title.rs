@@ -74,7 +74,7 @@ impl ForkPeek {
         messages.push(WireTurn::text(title_instruction(current)));
         let mut record = PeekRecord::default();
         let parsed = peek_with_retries(
-            self.client(agent),
+            &self.client(agent, RequestOrigin::Title),
             &agent.upstream_retry(),
             Patience::ASIDE,
             messages,

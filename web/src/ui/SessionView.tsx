@@ -333,6 +333,8 @@ export function SessionView() {
           cold={session.topics.cold ?? null}
           park={session.topics.park ?? null}
           fold={session.topics.fold ?? null}
+          operations={session.topics.current_operations ?? null}
+          model={session.topics.session_identity?.model ?? "the model"}
         />
       </div>
     </div>

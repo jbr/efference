@@ -361,6 +361,7 @@ pub async fn run<F: Frontend, S: Spotter>(
             let mut aborted_attempts: u32 = 0;
             let completion = loop {
                 let outcome = client
+                    .with_origin(RequestOrigin::Turn)
                     .complete(&turns, &tools, ToolChoice::auto(), |streamed| {
                         shared.publish_delta(match streamed {
                             Streamed::Text { index, text } => {

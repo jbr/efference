@@ -837,9 +837,38 @@ not a topic — it is the log's cursor rather than control state, and sits outsi
       "triage":  {"shared": true, "connection": "work", "provider": "openrouter", "model": "anthropic/claude-opus-4"}
     },
     "successor": "calm-finch"            // once this session has handed off (docs/tools.md); absent before
+  },
+  "current_operations": {          // null when no upstream request is open and no tool is executing
+    "requests": [{                 // open requests, in the order they were sent
+      "request": 57,               // the id its log entries share (log-and-projection.md)
+      "origin": "turn",            // "turn" | "peek" | "triage" | "title" | "spot" | "keepalive" | …
+      "stage": "sent",             // "sent": no stream event yet | "streaming": first event arrived
+                                   //   | "retrying": an attempt was refused (adds "attempt", "status")
+      "since": 1754300000000       // absolute Unix millis at which this stage began
+    }],
+    "tools": [{                    // calls dispatched and not yet resulted
+      "call_id": "toolu_1", "tool": "bash", "intent": "run the suite",  // intent may be null
+      "since": 1754300040000
+    }]
   }
 }
 ```
+
+**`current_operations` names what the loop is waiting on.** `running: true` alone
+cannot tell a slow first byte from a long tool, a slow triage peek from a hung
+stream. The topic lists the upstream requests open now and the tools executing,
+each with the instant its stage began, so a client subtracts on its own clock and
+the topic is not re-emitted per tick; it changes only at a transition. It is folded
+from the log's `RequestStage`, `CallStarted`, and `ToolResult` entries
+([log-and-projection.md](log-and-projection.md)), maintained as entries append
+rather than re-folded per recompute, and rebuilt from the log when a session is
+opened: a `Resumed` entry closes everything open before it, since those requests
+belonged to the previous host process. Several requests can be open at once (a peek
+and the spotter, a background title ask); parallel calls of one completion are all
+in `tools`. Parked waits keep their own topics (`gate`, `ask`, `park`, `stall`,
+`fold`) and are not repeated here; the topic is `null` rather than empty when
+nothing is open. The decisions-rung spotter, which does not pass through `Client`, reports no
+stages.
 
 **`stall` distinguishes the idle conditions `running: false` collapses.**
 When a turn's stream-abort budget is exhausted, the request itself fails past

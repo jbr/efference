@@ -53,6 +53,7 @@ enum Payload {
     ConfigEdit(ConfigEdit),  // one durable policy change — folded by the classifier (see permissions.md)
     Preamble { system: String, context: Resolved, inference: Option<LoggedInference> },  // boot record — replay/audit only (see context.md)
     Title(Title),      // the session's one-line title — presentation only, never projected (see session-title.md)
+    RequestStage(RequestStage),  // one stage of one upstream request — telemetry, never projected
     // Anticipated, not yet built: a frozen cache-breakpoint boundary (`Commit`)
     // for compaction. Kept here as a forward marker — types land ahead of the
     // feature that constructs them — not present in the code today.
@@ -93,6 +94,33 @@ on every tool call, and at every background spawn and exit — without moving th
 cached prefix. `ProcessEvent` is the durable answer to "what was `p#3`" for a
 reader with no daemon ([supervisor.md](supervisor.md)); metadata only, since a
 process's output belongs to the registry's bounded best-effort capture.
+
+`RequestStage` records where one upstream request is: `{request, origin, stage}`.
+`request` is an id minted by the host when the request starts, unique within the
+session and continued past the log's highest after a restart (the provider's
+generation id arrives late or never). `origin` is the same `RequestOrigin` the
+`usage.jsonl` lines carry (`turn`, `peek`, `triage`, `title`, `spot`, `keepalive`,
+`triage_primer`, `narrate`, `aborted_attempt`). `stage` is `sent` (handed to the
+transport), `attempt_failed {attempt, status}` (a refused attempt the transport may
+re-send), `first_byte` (the first stream event), `ended` (the stream finalized), or
+`failed {reason}` (an open failure, a stream that died or passed its ceiling, or
+`interrupted`: the operator's interrupt, or a request future dropped before it
+finished; the reason is capped at 160 characters and passes the `[env]` masker). The
+entry's own `at` is the stage's time. Streaming sub-stages (thinking, text, a tool
+call) are not recorded; the ephemeral `output` class distinguishes them.
+
+The stages are written from one seam, `Client::send` in `api/client.rs` (and the
+Messages keepalive beside it), into a `StageSink` the session installs on the agent
+client, the own-triage client, and the spotter's client. The caller tags the request
+with `Client::with_origin`; the keepalive and the triage primer tag themselves. A
+transport retry is attributed through a per-client slot holding the request in
+flight, because the retry handler builds each follow-up on a fresh connection, so
+requests that overlap on one client family can have a refused attempt attributed to
+the later one. It projects to nothing, like `ToolTelemetry`, and is pinned by
+`request_stages_project_to_identical_bytes`. Size: three entries of about 115 bytes
+for a request that completes (about 350 bytes), one more per refused attempt. The
+`current_operations` topic folds these entries ([control-api.md](control-api.md));
+a `Resumed` entry closes every request still open before it.
 
 ### `AssistantOutput`
 
