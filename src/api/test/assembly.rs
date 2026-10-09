@@ -137,7 +137,10 @@ fn assembles_text_and_split_tool_use() {
         .unwrap();
 
     assert_eq!(completion.model, "claude-haiku-4-5");
-    assert_eq!(completion.stop_reason.as_deref(), Some("tool_use"));
+    assert_eq!(
+        completion.finish.as_ref().map(|f| &f.reason),
+        Some(&crate::api::FinishReason::ToolCalls)
+    );
     assert_eq!(completion.usage.input_tokens, 3);
     assert_eq!(completion.usage.cache_read_input_tokens, 9407); // message_start
     assert_eq!(completion.usage.output_tokens, 4); // message_delta, not the placeholder 1
@@ -182,7 +185,10 @@ fn tool_call_cut_at_the_output_cap_is_a_record_only_partial() {
         ("message_stop", r#"{"type":"message_stop"}"#),
     ])
     .unwrap();
-    assert_eq!(completion.stop_reason.as_deref(), Some("max_tokens"));
+    assert_eq!(
+        completion.finish.as_ref().map(|f| &f.reason),
+        Some(&crate::api::FinishReason::OutputCap)
+    );
     let why = completion
         .upstream_failure()
         .expect("marked undispatchable");

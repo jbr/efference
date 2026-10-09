@@ -217,7 +217,8 @@ pub struct Completion {
     /// Optional defensively: a provider that omits it still completes.
     pub id: Option<String>,
     pub model: String,
-    pub stop_reason: Option<String>,
+    /// Why the provider ended the output, when it said ([`Finish`]).
+    pub finish: Option<Finish>,
     pub usage: Usage,
     /// What the response said about who served it and what it billed
     /// ([`Receipt`]); empty on providers that do not say.
@@ -340,6 +341,13 @@ pub(crate) struct UsageWithCost {
 }
 
 impl Completion {
+    /// The output cap cut the response.
+    pub fn hit_output_cap(&self) -> bool {
+        self.finish
+            .as_ref()
+            .is_some_and(|finish| finish.reason == FinishReason::OutputCap)
+    }
+
     /// The turn's output, whichever dialect produced it.
     pub fn assistant_output(&self) -> &AssistantOutput {
         match &self.assistant {
@@ -436,6 +444,7 @@ mod decisions;
 mod diagnostics;
 mod endpoint;
 pub(crate) mod failure;
+mod finish;
 pub(crate) mod plan;
 mod provider;
 mod render;
@@ -459,6 +468,7 @@ pub use diagnostics::{
 pub(crate) use endpoint::codex_cached_credentials;
 pub use endpoint::{Endpoint, ProbeResponse, sticky_session_id};
 pub use failure::{FailureClass, OpenError, error_class, error_status, is_request_rejection};
+pub use finish::{Finish, FinishReason};
 pub use plan::{PlanLimit, PlanSnapshot, PlanState, PlanWindow, plan_state};
 #[cfg(test)]
 pub(crate) use provider::seed_codex_catalog;

@@ -43,11 +43,8 @@ pub(super) struct TraceCore {
 
 impl TraceCore {
     fn record(&self, stage: RequestStageKind) {
-        self.sink.record(RequestStage {
-            request: self.request,
-            origin: self.origin,
-            stage,
-        });
+        self.sink
+            .record(RequestStage::new(self.request, self.origin, stage));
     }
 
     /// An attempt got a non-success status.
@@ -99,8 +96,14 @@ impl Trace {
         self.core.record(RequestStageKind::FirstByte);
     }
 
-    pub(super) fn ended(mut self) {
-        self.close(RequestStageKind::Ended);
+    /// The stream finalized; `finish` is the provider's word for why, when it gave one.
+    pub(super) fn ended(mut self, finish: Option<&str>) {
+        self.closed = true;
+        self.core.sink.record(RequestStage {
+            finish: finish.map(str::to_string),
+            ..RequestStage::new(self.core.request, self.core.origin, RequestStageKind::Ended)
+        });
+        self.release();
     }
 
     pub(super) fn failed(mut self, reason: &str) {
@@ -118,6 +121,11 @@ impl Trace {
     fn close(&mut self, stage: RequestStageKind) {
         self.closed = true;
         self.core.record(stage);
+        self.release();
+    }
+
+    /// Stop being the client's active request, if this one still is.
+    fn release(&mut self) {
         let mut active = self.active.lock().unwrap();
         if active
             .as_ref()

@@ -696,11 +696,7 @@ fn request_stages_project_to_identical_bytes() {
                 entry(
                     90 + i as u64,
                     1,
-                    Payload::RequestStage(RequestStage {
-                        request: 7,
-                        origin: RequestOrigin::Turn,
-                        stage,
-                    }),
+                    Payload::RequestStage(RequestStage::new(7, RequestOrigin::Turn, stage)),
                 ),
             );
         }

@@ -16,11 +16,7 @@ fn entry(seq: u64, at: u64, payload: Payload) -> LogEntry {
 }
 
 fn stage(request: u64, origin: RequestOrigin, stage: RequestStageKind) -> Payload {
-    Payload::RequestStage(RequestStage {
-        request,
-        origin,
-        stage,
-    })
+    Payload::RequestStage(RequestStage::new(request, origin, stage))
 }
 
 fn assistant_calling(call: ToolCall) -> Payload {
@@ -253,11 +249,11 @@ fn the_session_view_follows_appends() {
     let a = sink.mint();
     let b = sink.mint();
     assert_ne!(a, b);
-    sink.record(RequestStage {
-        request: a,
-        origin: RequestOrigin::Turn,
-        stage: RequestStageKind::Sent,
-    });
+    sink.record(RequestStage::new(
+        a,
+        RequestOrigin::Turn,
+        RequestStageKind::Sent,
+    ));
     let open = state(&session);
     assert_eq!(open["requests"][0]["request"], a);
     assert_eq!(open["requests"][0]["stage"], "sent");
@@ -267,11 +263,11 @@ fn the_session_view_follows_appends() {
         Payload::RequestStage(s) if s.request == a
     ));
 
-    sink.record(RequestStage {
-        request: a,
-        origin: RequestOrigin::Turn,
-        stage: RequestStageKind::Ended,
-    });
+    sink.record(RequestStage::new(
+        a,
+        RequestOrigin::Turn,
+        RequestStageKind::Ended,
+    ));
     assert_eq!(state(&session), Value::Null);
 }
 

@@ -123,7 +123,7 @@ pub async fn narrate(
 }
 
 fn account(completion: &crate::api::Completion) -> Result<String, Error> {
-    if completion.stop_reason.as_deref() == Some("max_tokens") {
+    if completion.hit_output_cap() {
         return Err(Error::Truncated);
     }
     let output = completion.assistant_output();

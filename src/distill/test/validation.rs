@@ -66,7 +66,7 @@ fn a_prose_only_response_retries_with_just_the_renewed_ask() {
         },
         id: None,
         model: "test".into(),
-        stop_reason: None,
+        finish: None,
         usage: Usage {
             input_tokens: 0,
             output_tokens: 0,

@@ -485,7 +485,7 @@ impl Assembler {
             },
             id: self.id,
             model: self.model,
-            stop_reason: self.stop_reason,
+            finish: self.stop_reason.as_deref().map(Finish::messages),
             usage: self.usage,
             receipt: self.receipt,
             failure_class: self.failure_class,

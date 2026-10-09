@@ -724,6 +724,18 @@ one session projects and assembles in exactly one dialect, and `Client::complete
 dispatches on it after encoding the shared semantic turns
 ([log-and-projection.md](log-and-projection.md)).
 
+No dialect is the harness's native vocabulary. Where the harness reads something
+every dialect reports, it reads it in a type of its own that is exhaustive across
+them, and each assembler maps its provider's words onto that type. The provider's
+own word is kept beside the mapping for the record. **Finish reasons** are the
+first such type (`api::Finish`, `api/finish.rs`). `FinishReason` names what the
+harness does about an ending: `Finished`, `ToolCalls`, `OutputCap`, `ContextWindow`,
+`StopSequence`, `Refused`, `Filtered`, `Paused`, `Other`. Each dialect has one
+mapping table. A request's `Ended` stage entry records the provider's word
+(`end_turn`, `tool_calls`, `incomplete:max_output_tokens`), and the loop reads only
+the neutral reason (`Completion::hit_output_cap`). Places where the Messages shape
+is still the internal one are listed in backlog/no-native-dialect.md.
+
 The recorded log carries its dialect in every assistant entry
 (`AssistantOutput::dialect`), and each encoder skips the other dialect's assistant
 turns rather than failing. That skip is harmless while a live session is pinned to one
@@ -798,10 +810,10 @@ Items are lifted into the log's `ResponsesOutputItem` vocabulary
 `function_call`; anything else is kept whole as `Unsupported`, and a turn holding
 one is record-only — never dispatched, never replayed. Unparseable
 `function_call.arguments` are kept as the string and make the turn record-only
-too. The stop reason is normalized to the Messages spellings the loop reads:
-`completed` → `tool_use` / `end_turn`, `incomplete` at `max_output_tokens` →
-`max_tokens` (a call cut there stays undispatched), other `incomplete` reasons
-pass through.
+too. The finish maps through `Finish::responses`: `completed` → `ToolCalls` when
+a call is present, else `Finished`; `incomplete` at `max_output_tokens` →
+`OutputCap` (a call cut there stays undispatched); `incomplete` at
+`content_filter` → `Filtered`; anything else → `Other`, with the raw word kept.
 
 **Usage.** Responses `input_tokens` is the whole prompt, cached and written tokens
 included; the harness's `Usage` splits input three ways so every consumer's sum is

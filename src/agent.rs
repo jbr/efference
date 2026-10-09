@@ -544,7 +544,7 @@ pub async fn run<F: Frontend, S: Spotter>(
                 u.cache_creation_input_tokens
             );
             shared.record_request(RequestOrigin::Turn, completion.request_usage());
-            let hit_cap = completion.stop_reason.as_deref() == Some("max_tokens");
+            let hit_cap = completion.hit_output_cap();
             shared.append(turn, completion.assistant)?;
 
             // A cap-terminated turn is legible, not silent: whatever arrived

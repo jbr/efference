@@ -63,7 +63,10 @@ fn openrouter_claude_assembles_reasoning_details_and_split_arguments() {
             .unwrap()
             .contains("poem.txt")
     );
-    assert_eq!(completion.stop_reason.as_deref(), Some("tool_use"));
+    assert_eq!(
+        completion.finish.as_ref().map(|f| &f.reason),
+        Some(&FinishReason::ToolCalls)
+    );
     assert_eq!(
         completion.receipt.served_by.as_deref(),
         Some("Amazon Bedrock")
@@ -111,7 +114,10 @@ fn mistral_thinking_parts_continue_and_the_answer_becomes_a_text_part() {
     assert_eq!(parts[0]["thinking"].as_array().unwrap().len(), 1);
     assert!(stored.reasoning_text()[0].starts_with("The user wants me to create"));
     assert!(stored.text()[0].contains("cat > /tmp/poem.txt"));
-    assert_eq!(completion.stop_reason.as_deref(), Some("end_turn"));
+    assert_eq!(
+        completion.finish.as_ref().map(|f| &f.reason),
+        Some(&FinishReason::Finished)
+    );
     assert!(live.iter().any(|s| matches!(s, Streamed::Thinking { .. })));
     assert!(live.iter().any(|s| matches!(s, Streamed::Text { .. })));
 }
@@ -195,7 +201,10 @@ fn inception_nulls_and_cached_tokens() {
     assert_eq!(completion.usage.input_tokens, 6);
     let (completion, _) = assemble(include_str!("../inception_tool.sse"));
     assert_eq!(message(&completion).tool_calls().unwrap().len(), 1);
-    assert_eq!(completion.stop_reason.as_deref(), Some("tool_use"));
+    assert_eq!(
+        completion.finish.as_ref().map(|f| &f.reason),
+        Some(&FinishReason::ToolCalls)
+    );
 }
 
 /// A stream cut before any finish is record-only.

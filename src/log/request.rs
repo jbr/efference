@@ -81,6 +81,24 @@ pub struct RequestStage {
     pub request: u64,
     pub origin: RequestOrigin,
     pub stage: RequestStageKind,
+    /// On `Ended`: the provider's own word for why the output ended (`end_turn`,
+    /// `tool_calls`, `incomplete:max_output_tokens`, …), as the dialect spelled it
+    /// (`api::Finish`). Absent on other stages, on a stream that named none, and on
+    /// entries written before the field existed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub finish: Option<String>,
+}
+
+impl RequestStage {
+    /// A stage with no finish word: every stage but a named `Ended`.
+    pub fn new(request: u64, origin: RequestOrigin, stage: RequestStageKind) -> Self {
+        Self {
+            request,
+            origin,
+            stage,
+            finish: None,
+        }
+    }
 }
 
 /// Where a request is, in the order a request passes them.

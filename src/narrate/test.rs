@@ -87,13 +87,13 @@ fn a_cut_between_a_call_and_its_result_is_refused() {
     }
 }
 
-fn completion(text: &str, calls: Vec<ToolCall>, stop_reason: Option<&str>) -> Completion {
+fn completion(text: &str, calls: Vec<ToolCall>, finish: Option<&str>) -> Completion {
     Completion {
         receipt: Default::default(),
         assistant: assistant(text, calls),
         id: None,
         model: "test".into(),
-        stop_reason: stop_reason.map(Into::into),
+        finish: finish.map(crate::api::Finish::messages),
         usage: Usage::default(),
         failure_class: FailureClass::Transient,
     }

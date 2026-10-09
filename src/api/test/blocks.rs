@@ -256,7 +256,7 @@ fn aborted_stream_assembles_as_record_only_partial() {
     .unwrap();
     let why = completion.upstream_failure().expect("must be marked");
     assert!(why.contains("before finalizing"), "{why}");
-    assert_eq!(completion.stop_reason, None);
+    assert_eq!(completion.finish, None);
     match &completion.assistant {
         Payload::Assistant { output, .. } => {
             assert_eq!(
@@ -310,7 +310,10 @@ fn failure_after_finalization_keeps_the_completion_clean() {
     a.fail("connection reset while draining".into());
     let completion = a.finish().unwrap();
     assert_eq!(completion.upstream_failure(), None);
-    assert_eq!(completion.stop_reason.as_deref(), Some("end_turn"));
+    assert_eq!(
+        completion.finish.as_ref().map(|f| &f.reason),
+        Some(&crate::api::FinishReason::Finished)
+    );
 }
 
 /// An abort can cut a tool input mid-fragment. The record-only entry keeps the raw

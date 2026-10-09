@@ -124,6 +124,16 @@ async fn a_normal_request_records_sent_first_byte_ended() {
             .iter()
             .all(|s| s.origin == RequestOrigin::Turn)
     );
+    // The ended stage keeps the provider's own word for the finish; no other
+    // stage carries one.
+    let finishes: Vec<_> = recorder
+        .stages
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|s| s.finish.clone())
+        .collect();
+    assert_eq!(finishes, [None, None, Some("end_turn".to_string())]);
 }
 
 /// A refused attempt the transport retries is recorded between sent and first

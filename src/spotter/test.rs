@@ -23,7 +23,7 @@ fn spot_completion(name: &str, input: Value) -> Completion {
         },
         id: None,
         model: "test".into(),
-        stop_reason: None,
+        finish: None,
         usage: Usage {
             input_tokens: 0,
             output_tokens: 0,

@@ -11,7 +11,7 @@ use serde_json::Value;
 use super::wire::item_from_wire;
 use crate::api::assembler::ResponseMeta;
 use crate::api::failure::{FailureClass, classify};
-use crate::api::{Completion, Error, Streamed, Usage};
+use crate::api::{Completion, Error, Finish, FinishReason, Streamed, Usage};
 use crate::log::{
     AssistantOutput, FRAME_CAPTURE_CAP, Payload, ResponsesOutputItem, StreamDiagnostics,
     UpstreamFailureRecord,
@@ -364,17 +364,14 @@ impl ResponsesAssembler {
                 ResponsesOutputItem::Reasoning { .. } | ResponsesOutputItem::Message { .. } => {}
             }
         }
-        // The normalized stop reason `agent.rs` reads: the Messages spellings,
-        // so the loop compares one vocabulary (docs/transport.md).
-        let stop_reason = match (self.status.as_deref(), self.incomplete_reason.as_deref()) {
-            (Some("completed"), _) if has_calls => Some("tool_use".to_string()),
-            (Some("completed"), _) => Some("end_turn".to_string()),
-            (Some("incomplete"), Some("max_output_tokens")) => Some("max_tokens".to_string()),
-            (Some("incomplete"), Some(reason)) => Some(reason.to_string()),
-            (Some(other), _) => Some(other.to_string()),
-            (None, _) => None,
-        };
-        if upstream_failure.is_none() && has_calls && stop_reason.as_deref() == Some("max_tokens") {
+        let finish = self
+            .status
+            .as_deref()
+            .map(|status| Finish::responses(status, self.incomplete_reason.as_deref(), has_calls));
+        let capped = finish
+            .as_ref()
+            .is_some_and(|finish| finish.reason == FinishReason::OutputCap);
+        if upstream_failure.is_none() && has_calls && capped {
             log::warn!("tool call cut at the output-token cap kept undispatched");
             upstream_failure = Some(
                 "stream stopped at the output-token cap mid-tool-call"
@@ -407,7 +404,7 @@ impl ResponsesAssembler {
             },
             id: self.id,
             model: self.model,
-            stop_reason,
+            finish,
             usage: self.usage,
             receipt: super::super::Receipt::default(),
             failure_class: self.failure_class,

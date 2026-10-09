@@ -783,7 +783,7 @@ impl Client {
                 Ok(completion) if completion.operator_abort() => trace.interrupted(),
                 Ok(completion) => match completion.upstream_failure() {
                     Some(why) => trace.failed(why),
-                    None => trace.ended(),
+                    None => trace.ended(completion.finish.as_ref().map(|f| f.raw.as_str())),
                 },
             }
         }
@@ -1383,7 +1383,7 @@ impl Client {
         let result = self.keepalive_exchange(body).await;
         if let Some(trace) = trace {
             match &result {
-                Ok(_) => trace.ended(),
+                Ok(_) => trace.ended(None),
                 Err(e) => trace.failed(&e.to_string()),
             }
         }

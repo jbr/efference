@@ -11,7 +11,7 @@ use serde_json::{Map, Value};
 
 use crate::api::assembler::ResponseMeta;
 use crate::api::failure::{FailureClass, classify};
-use crate::api::{Completion, Error, Receipt, Streamed, Usage, UsageCost};
+use crate::api::{Completion, Error, Finish, FinishReason, Receipt, Streamed, Usage, UsageCost};
 use crate::log::{
     AssistantOutput, CompletionsMessage, FRAME_CAPTURE_CAP, Payload, StreamDiagnostics,
     UpstreamFailureRecord,
@@ -281,20 +281,14 @@ impl CompletionsAssembler {
                 true
             }
         };
-        // The Messages spellings, so the loop compares one vocabulary
-        // (docs/transport.md). A call under `stop` is still a call: some servers
-        // finish a tool turn that way.
-        let stop_reason = self.finish_reason.as_deref().map(|reason| {
-            match reason {
-                "stop" | "tool_calls" | "function_call" if has_calls => "tool_use",
-                "stop" => "end_turn",
-                "length" => "max_tokens",
-                "content_filter" => "refusal",
-                other => other,
-            }
-            .to_string()
-        });
-        if upstream_failure.is_none() && has_calls && stop_reason.as_deref() == Some("max_tokens") {
+        let finish = self
+            .finish_reason
+            .as_deref()
+            .map(|reason| Finish::completions(reason, has_calls));
+        let capped = finish
+            .as_ref()
+            .is_some_and(|finish| finish.reason == FinishReason::OutputCap);
+        if upstream_failure.is_none() && has_calls && capped {
             log::warn!("tool call cut at the output-token cap kept undispatched");
             upstream_failure = Some(
                 "stream stopped at the output-token cap mid-tool-call"
@@ -327,7 +321,7 @@ impl CompletionsAssembler {
             },
             id: self.id,
             model: self.model,
-            stop_reason,
+            finish,
             usage: self.usage,
             receipt: self.receipt,
             failure_class: self.failure_class,

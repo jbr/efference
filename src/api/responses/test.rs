@@ -353,7 +353,10 @@ fn assembles_a_completed_turn_from_the_terminal_output() {
     assert_eq!(calls.len(), 1);
     assert_eq!(calls[0].id.0, "call_1");
     assert_eq!(calls[0].input, serde_json::json!({"command": "ls"}));
-    assert_eq!(completion.stop_reason.as_deref(), Some("tool_use"));
+    assert_eq!(
+        completion.finish.as_ref().map(|f| &f.reason),
+        Some(&crate::api::FinishReason::ToolCalls)
+    );
     assert_eq!(completion.id.as_deref(), Some("resp_1"));
     assert_eq!(completion.usage.input_tokens, 300);
     assert_eq!(completion.usage.cache_read_input_tokens, 600);
@@ -429,7 +432,10 @@ fn incomplete_at_the_cap_normalizes_to_max_tokens() {
     let (completion, _) = feed(&[
         r#"{"type":"response.incomplete","response":{"id":"r","status":"incomplete","incomplete_details":{"reason":"max_output_tokens"},"output":[{"type":"message","id":"m","role":"assistant","status":"incomplete","content":[{"type":"output_text","text":"so far"}]}],"usage":{"input_tokens":10,"output_tokens":5}}}"#,
     ]);
-    assert_eq!(completion.stop_reason.as_deref(), Some("max_tokens"));
+    assert_eq!(
+        completion.finish.as_ref().map(|f| &f.reason),
+        Some(&crate::api::FinishReason::OutputCap)
+    );
     assert!(completion.upstream_failure().is_none());
 
     let (cut, _) = feed(&[
