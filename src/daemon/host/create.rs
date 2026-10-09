@@ -47,9 +47,10 @@ impl Host {
             return Err(format!("cwd must be absolute: {}", body.cwd.display()));
         }
         // An environment the caller supplied is the base, and nothing is run. An
-        // omitted one is established here, for the directory the client sent (the
-        // working directory), from the user-wide `env_hook` or the host environment
-        // (docs/env.md).
+        // omitted one is established here, for the session's project, from the
+        // user-wide `env_hook` or the host environment (docs/env.md). The project, not
+        // the working directory: resume establishes it there too, before the header
+        // says where the session works, so a session gets one environment either way.
         let base_env = match body.env {
             Some(env) => match crate::env_table::EnvSnapshot::new(env) {
                 Ok(base) => base,
@@ -63,7 +64,7 @@ impl Host {
                 // reader on the response.
                 let abort = self.swansong.shutting_down();
                 match crate::env_table::environment_at(
-                    &body.cwd,
+                    &project,
                     self.inference.env_hook(),
                     &self.host_env,
                     abort,

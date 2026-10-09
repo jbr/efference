@@ -50,13 +50,13 @@ async fn an_omitted_environment_runs_the_hook_for_that_directory() {
     );
 }
 
-/// A creation whose `cwd` is inside a worktree establishes its environment in that
-/// directory (the working directory the client sent), and a failed launch leaves no
-/// session directory under the project or the worktree. A booted session's storage
-/// being `<project>/.efference/<id>` needs a provider to reach, so it is not
-/// exercised here (docs/control-channel.md).
+/// A creation whose `cwd` is inside a worktree establishes its environment at the
+/// project, where resume establishes it too, and a failed launch leaves no session
+/// directory under the project or the worktree. A booted session's storage being
+/// `<project>/.efference/<id>` needs a provider to reach, so it is not exercised here
+/// (docs/control-channel.md).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_worktree_cwd_runs_the_hook_there_and_roots_the_session_at_the_project() {
+async fn a_worktree_cwd_runs_the_hook_at_the_project() {
     let roots = Roots::new();
     let project = roots.0.join("one");
     let worktree = project.join(".efference/worktrees/w");
@@ -79,8 +79,8 @@ async fn a_worktree_cwd_runs_the_hook_there_and_roots_the_session_at_the_project
 
     let seen = std::fs::read_to_string(&ran).expect("the hook ran");
     assert!(
-        seen.contains(&format!("cwd={}", worktree.display())),
-        "the hook ran in the working directory the client sent: {seen}"
+        seen.contains(&format!("cwd={}\n", project.display())),
+        "the hook ran at the project, not the worktree: {seen}"
     );
     assert!(
         !project.join(".efference/fresh").exists() && !worktree.join(".efference").exists(),
