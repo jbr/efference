@@ -140,6 +140,25 @@ fn mistral_thinking_beside_a_tool_call() {
     );
 }
 
+/// Ollama spells reasoning as OpenRouter does, a flat `reasoning` string beside an
+/// empty `content`, and sends the call whole.
+#[test]
+fn ollama_flat_reasoning_and_a_whole_call() {
+    let (completion, _) = assemble(include_str!("../ollama_tool.sse"));
+    let stored = message(&completion);
+    assert!(
+        stored.as_map()["reasoning"]
+            .as_str()
+            .unwrap()
+            .starts_with("Okay")
+    );
+    assert_eq!(stored.tool_calls().unwrap().len(), 1);
+    assert_eq!(
+        completion.finish.as_ref().map(|f| &f.reason),
+        Some(&FinishReason::ToolCalls)
+    );
+}
+
 /// Two parallel calls whole in one chunk; usage rides the same chunk.
 #[test]
 fn mistral_parallel_calls_in_one_chunk() {
