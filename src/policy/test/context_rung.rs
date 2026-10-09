@@ -154,16 +154,34 @@ fn write_grants_split_on_existence() {
     let fresh = call("write", serde_json::json!({ "path": "memories/new.md" }));
 
     let read_only = ctx_role("memories", false, false);
-    assert_eq!(classify_in(&read_only, &existing, &dir), Verdict::Gate);
-    assert_eq!(classify_in(&read_only, &fresh, &dir), Verdict::Gate);
+    assert_eq!(
+        classify_in(&read_only, &existing, &Directories::at(&dir)),
+        Verdict::Gate
+    );
+    assert_eq!(
+        classify_in(&read_only, &fresh, &Directories::at(&dir)),
+        Verdict::Gate
+    );
 
     let update_only = ctx_role("memories", true, false);
-    assert_eq!(classify_in(&update_only, &existing, &dir), Verdict::Clear);
-    assert_eq!(classify_in(&update_only, &fresh, &dir), Verdict::Gate);
+    assert_eq!(
+        classify_in(&update_only, &existing, &Directories::at(&dir)),
+        Verdict::Clear
+    );
+    assert_eq!(
+        classify_in(&update_only, &fresh, &Directories::at(&dir)),
+        Verdict::Gate
+    );
 
     let append_only = ctx_role("memories", false, true);
-    assert_eq!(classify_in(&append_only, &existing, &dir), Verdict::Gate);
-    assert_eq!(classify_in(&append_only, &fresh, &dir), Verdict::Clear);
+    assert_eq!(
+        classify_in(&append_only, &existing, &Directories::at(&dir)),
+        Verdict::Gate
+    );
+    assert_eq!(
+        classify_in(&append_only, &fresh, &Directories::at(&dir)),
+        Verdict::Clear
+    );
 
     // The edit pipeline: `edit` names the file (enforced like `write`);
     // `undo_edit` names nothing and clears on any context write grant.
@@ -172,9 +190,18 @@ fn write_grants_split_on_existence() {
         serde_json::json!({ "file_path": "memories/existing.md" }),
     );
     let undo = call("undo_edit", serde_json::json!({}));
-    assert_eq!(classify_in(&update_only, &edit, &dir), Verdict::Clear);
-    assert_eq!(classify_in(&update_only, &undo, &dir), Verdict::Clear);
-    assert_eq!(classify_in(&read_only, &undo, &dir), Verdict::Gate);
+    assert_eq!(
+        classify_in(&update_only, &edit, &Directories::at(&dir)),
+        Verdict::Clear
+    );
+    assert_eq!(
+        classify_in(&update_only, &undo, &Directories::at(&dir)),
+        Verdict::Clear
+    );
+    assert_eq!(
+        classify_in(&read_only, &undo, &Directories::at(&dir)),
+        Verdict::Gate
+    );
 
     std::fs::remove_dir_all(&dir).unwrap();
 }

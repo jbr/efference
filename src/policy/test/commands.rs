@@ -110,11 +110,15 @@ fn cd_role() -> Config {
 }
 
 fn cd_verdict(command: &str) -> Verdict {
-    classify_in(&cd_role(), &bash_call(command), Path::new(CWD))
+    classify_in(
+        &cd_role(),
+        &bash_call(command),
+        &Directories::at(Path::new(CWD)),
+    )
 }
 
 fn cd_tokens(command: &str) -> Option<Vec<String>> {
-    bash_tokens_in(&cd_role(), command, Path::new(CWD))
+    bash_tokens_in(&cd_role(), command, &Directories::at(Path::new(CWD)))
 }
 
 /// The one tolerated operator (docs/permissions.md): a leading `cd <literal dir> &&` into a
@@ -237,7 +241,7 @@ fn stance_role(entries: &[(&str, CommandStance)]) -> Config {
 }
 
 fn stance_verdict(role: &Config, command: &str) -> Verdict {
-    classify_in(role, &bash_call(command), Path::new(CWD))
+    classify_in(role, &bash_call(command), &Directories::at(Path::new(CWD)))
 }
 
 /// Each stance's fast-path behavior (docs/permissions.md): `clear` auto-approves; `watch` and
@@ -268,9 +272,15 @@ fn bool_values_parse_as_clear_and_deny() {
     assert_eq!(role.commands["cargo"], CommandStance::Clear);
     assert_eq!(role.commands["npm"], CommandStance::Deny);
     let call = bash_call("cargo build");
-    assert_eq!(classify_in(&role, &call, Path::new(CWD)), Verdict::Clear);
+    assert_eq!(
+        classify_in(&role, &call, &Directories::at(Path::new(CWD))),
+        Verdict::Clear
+    );
     let call = bash_call("npm install");
-    assert_eq!(classify_in(&role, &call, Path::new(CWD)), Verdict::Deny);
+    assert_eq!(
+        classify_in(&role, &call, &Directories::at(Path::new(CWD))),
+        Verdict::Deny
+    );
 }
 
 /// **Longest-prefix-wins**, the way `[paths]` already resolves: a broad grant plus a specific
@@ -451,7 +461,7 @@ fn config_write_carve_out_detects_writes_to_the_protected_file() {
         serde_json::json!({ "path": ".efference/foo/config.toml" }),
     );
     assert!(
-        is_config_write_in(&rel, protected, cwd),
+        is_config_write_in(&rel, protected, &Directories::at(cwd)),
         "relative write to config"
     );
 
@@ -460,7 +470,7 @@ fn config_write_carve_out_detects_writes_to_the_protected_file() {
         serde_json::json!({ "path": "/work/.efference/foo/config.toml" }),
     );
     assert!(
-        is_config_write_in(&abs, protected, cwd),
+        is_config_write_in(&abs, protected, &Directories::at(cwd)),
         "absolute write to config"
     );
 
@@ -469,13 +479,13 @@ fn config_write_carve_out_detects_writes_to_the_protected_file() {
         serde_json::json!({ "file_path": ".efference/foo/config.toml" }),
     );
     assert!(
-        is_config_write_in(&edit, protected, cwd),
+        is_config_write_in(&edit, protected, &Directories::at(cwd)),
         "edit names the config"
     );
 
     let elsewhere = call("write", serde_json::json!({ "path": "src/main.rs" }));
     assert!(
-        !is_config_write_in(&elsewhere, protected, cwd),
+        !is_config_write_in(&elsewhere, protected, &Directories::at(cwd)),
         "a write elsewhere is not it"
     );
 
@@ -484,13 +494,13 @@ fn config_write_carve_out_detects_writes_to_the_protected_file() {
         serde_json::json!({ "paths": ".efference/foo/config.toml" }),
     );
     assert!(
-        !is_config_write_in(&read, protected, cwd),
+        !is_config_write_in(&read, protected, &Directories::at(cwd)),
         "reading the config is not a write"
     );
 
     let undo = call("undo_edit", serde_json::json!({}));
     assert!(
-        !is_config_write_in(&undo, protected, cwd),
+        !is_config_write_in(&undo, protected, &Directories::at(cwd)),
         "undo_edit carries no path"
     );
 }

@@ -1,7 +1,7 @@
 //! The permission fast-path — the deterministic, zero-model-cost rung of the cascade
 //! (docs/permissions.md).
 //!
-//! [`classify`] is a **pure function** of `(cwd, role, tool call)` returning a [`Verdict`]:
+//! [`classify`] is a **pure function** of `(directories, role, tool call)` returning a [`Verdict`]:
 //! `Clear` (auto-approve, no human, no model) or `Gate` (fall through to the spotter
 //! rung, then the human gate). The classifier is the *mechanism*; the role config is the
 //! *policy* — there are no special-cased program names or directories in here. It errs
@@ -147,22 +147,22 @@ pub const PROMOTE_AFTER_SAFE_VOTES: u32 = 1;
 
 /// Classify a tool call against the role (docs/permissions.md).
 /// `bash` runs the two-stage check; a structured tool clears on its `tool` grant plus any
-/// `path` grant its target needs. Resolves grants against the supplied session cwd,
-/// the fixed root the built-in tools also resolve relative paths against.
-pub fn classify(cwd: &Path, role: &Config, call: &ToolCall) -> Verdict {
-    classify_in(role, call, cwd)
+/// `path` grant its target needs. Grant keys resolve against the project and the
+/// call's targets against the working directory ([`Directories`]).
+pub fn classify(dirs: &Directories, role: &Config, call: &ToolCall) -> Verdict {
+    classify_in(role, call, dirs)
 }
 
 /// Stage 1's token vector for a bash command — the **bare** command, with a tolerated leading
 /// `cd <granted dir> &&` stripped (docs/permissions.md). `None` if stage 1 rejects the command.
 /// This is what prefix-promotion observes and probes, so a promoted prefix is the command itself
 /// and generalizes across run directories rather than pinning one `cd` target. Resolves the `cd`
-/// target against the supplied session cwd, like [`classify`].
-pub fn bash_tokens(cwd: &Path, role: &Config, command: &str) -> Option<Vec<String>> {
-    bash_tokens_in(role, command, cwd)
+/// target like [`classify`] does a target.
+pub fn bash_tokens(dirs: &Directories, role: &Config, command: &str) -> Option<Vec<String>> {
+    bash_tokens_in(role, command, dirs)
 }
 
-/// Whether `call` is a write whose target resolves (lexically, against the supplied session cwd) to
+/// Whether `call` is a write whose target resolves (lexically, as [`Directories::target`]) to
 /// `protected` — the session's own config file. A write to the policy file is a **proposal** that
 /// must always reach the operator, so the loop forces the human gate on it, **bypassing both the
 /// fast-path and the spotter** — neither may auto-clear a permission change
@@ -174,12 +174,12 @@ pub fn bash_tokens(cwd: &Path, role: &Config, command: &str) -> Option<Vec<Strin
 /// `undo_edit` carries no path, but it can only revert a previously-`edit`ed target — and
 /// an `edit` of the config is caught here — so the review point is the naming step, exactly
 /// where write permission is already enforced (the acknowledged per-tool wart in `path_check`).
-pub fn is_config_write(cwd: &Path, call: &ToolCall, protected: &Path) -> bool {
-    is_config_write_in(call, protected, cwd)
+pub fn is_config_write(dirs: &Directories, call: &ToolCall, protected: &Path) -> bool {
+    is_config_write_in(call, protected, dirs)
 }
 
-/// The cwd-injected core of [`is_config_write`], for deterministic tests.
-fn is_config_write_in(call: &ToolCall, protected: &Path, cwd: &Path) -> bool {
+/// The directories-injected core of [`is_config_write`], for deterministic tests.
+fn is_config_write_in(call: &ToolCall, protected: &Path, dirs: &Directories) -> bool {
     let key = match call.name.as_str() {
         "write" => "path",
         "edit" => "file_path",
@@ -191,20 +191,20 @@ fn is_config_write_in(call: &ToolCall, protected: &Path, cwd: &Path) -> bool {
     let Some(protected) = protected.to_str() else {
         return false;
     };
-    lexical_normalize(&absolutize(target, cwd)) == lexical_normalize(&absolutize(protected, cwd))
+    dirs.target(target) == dirs.target(protected)
 }
 
-/// The cwd-injected core, for deterministic tests. `bash` uses `cwd` to resolve the target of a
-/// tolerated leading `cd` against the `[paths]` grants ([`commands::bash_tokens_in`]).
-fn classify_in(role: &Config, call: &ToolCall, cwd: &Path) -> Verdict {
+/// The directories-injected core, for deterministic tests. `bash` uses `dirs` to resolve the
+/// target of a tolerated leading `cd` against the `[paths]` grants ([`commands::bash_tokens_in`]).
+fn classify_in(role: &Config, call: &ToolCall, dirs: &Directories) -> Verdict {
     if call.name == bash::NAME {
         match call.input.get("command").and_then(Value::as_str) {
-            Some(command) => classify_bash(role, command, cwd),
+            Some(command) => classify_bash(role, command, dirs),
             // A bash call without a string `command` is malformed — let the gate see it.
             None => Verdict::Gate,
         }
     } else {
-        classify_structured(role, call, cwd)
+        classify_structured(role, call, dirs)
     }
 }
 
@@ -216,7 +216,7 @@ fn classify_in(role: &Config, call: &ToolCall, cwd: &Path) -> Verdict {
 /// neither source covers the whole batch alone (the dogfood regression). A path-less tool
 /// (`kill_process`, …) clears on the name grant; `undo_edit` also clears on any `[context]` write
 /// grant. Anything not granted gates.
-fn classify_structured(role: &Config, call: &ToolCall, cwd: &Path) -> Verdict {
+fn classify_structured(role: &Config, call: &ToolCall, dirs: &Directories) -> Verdict {
     // `undo_edit` names no path (its target was named by the `edit` where write is enforced — the
     // acknowledged wart in [`path_spec`]). It clears on the name grant, or on any `[context]` write
     // grant, mirroring its clear-on-name rule under `tools`.
@@ -240,7 +240,7 @@ fn classify_structured(role: &Config, call: &ToolCall, cwd: &Path) -> Verdict {
     // the tool name is also granted (the name grant is a per-call precondition on that source).
     let name_granted = tool_granted(role, &call.name);
     let cleared = targets.iter().all(|t| {
-        context_granted(role, t, perm, cwd) || (name_granted && path_granted(role, t, perm, cwd))
+        context_granted(role, t, perm, dirs) || (name_granted && path_granted(role, t, perm, dirs))
     });
     verdict(cleared)
 }
@@ -297,12 +297,12 @@ pub struct MissingGrants {
 /// every target as ungranted whenever the tool name is missing. That is true of the
 /// *decision* and misleading as a *diagnosis*, so the path half here asks only whether some
 /// grant covers the target.
-pub fn missing_grants(cwd: &Path, role: &Config, call: &ToolCall) -> Option<MissingGrants> {
-    missing_grants_in(role, call, cwd)
+pub fn missing_grants(dirs: &Directories, role: &Config, call: &ToolCall) -> Option<MissingGrants> {
+    missing_grants_in(role, call, dirs)
 }
 
-/// The cwd-injected core of [`missing_grants`], for deterministic tests.
-fn missing_grants_in(role: &Config, call: &ToolCall, cwd: &Path) -> Option<MissingGrants> {
+/// The directories-injected core of [`missing_grants`], for deterministic tests.
+fn missing_grants_in(role: &Config, call: &ToolCall, dirs: &Directories) -> Option<MissingGrants> {
     if call.name == bash::NAME {
         return None;
     }
@@ -313,7 +313,7 @@ fn missing_grants_in(role: &Config, call: &ToolCall, cwd: &Path) -> Option<Missi
             let ungranted = targets
                 .into_iter()
                 .filter(|t| {
-                    !(context_granted(role, t, perm, cwd) || path_granted(role, t, perm, cwd))
+                    !(context_granted(role, t, perm, dirs) || path_granted(role, t, perm, dirs))
                 })
                 .map(str::to_string)
                 .collect::<Vec<_>>();
@@ -341,6 +341,7 @@ fn verdict(cleared: bool) -> Verdict {
 mod test;
 
 mod commands;
+mod directories;
 mod effective;
 mod path_words;
 mod paths;
@@ -348,6 +349,7 @@ mod probe;
 
 pub use commands::promotable_command;
 pub(crate) use commands::{bash_tokens_in, simple_command_tokens, without_cd_into};
+pub use directories::Directories;
 pub use effective::{apply_config_change, effective_config};
 pub(crate) use path_words::{Decided, decide, path_words};
 pub(crate) use paths::{absolutize, governing_grant, lexical_normalize, path_spec};

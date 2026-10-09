@@ -30,6 +30,11 @@ impl SessionPaths {
         &self.cwd
     }
 
+    /// The directories the permission classifier resolves against (docs/permissions.md).
+    pub fn directories(&self) -> crate::policy::Directories {
+        crate::policy::Directories::at(&self.cwd)
+    }
+
     pub fn storage(&self) -> &Path {
         &self.storage
     }

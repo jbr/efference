@@ -74,7 +74,11 @@ fn bash_call(command: &str) -> ToolCall {
 }
 
 fn verdict(command: &str) -> Verdict {
-    classify(Path::new(CWD), &sample_role(), &bash_call(command))
+    classify(
+        &Directories::at(Path::new(CWD)),
+        &sample_role(),
+        &bash_call(command),
+    )
 }
 
 // --- Stage 1: structural simplicity (decided before any prefix match) ---
@@ -119,7 +123,7 @@ fn fs_role() -> Config {
 }
 
 fn structured(role: &Config, c: &ToolCall) -> Verdict {
-    classify_in(role, c, Path::new(CWD))
+    classify_in(role, c, &Directories::at(Path::new(CWD)))
 }
 
 fn call(name: &str, input: Value) -> ToolCall {
@@ -131,7 +135,7 @@ fn call(name: &str, input: Value) -> ToolCall {
 #[test]
 fn a_cd_is_dropped_only_when_it_goes_nowhere() {
     let cwd = std::path::Path::new("/work/proj");
-    let drop = |command| without_cd_into(command, cwd);
+    let drop = |command| without_cd_into(command, &Directories::at(cwd));
     assert_eq!(drop("cd /work/proj && ls"), Some("ls"));
     assert_eq!(drop("cd . && ls -a"), Some("ls -a"));
     assert_eq!(drop("cd ../proj && ls"), Some("ls"));
@@ -140,4 +144,84 @@ fn a_cd_is_dropped_only_when_it_goes_nowhere() {
     assert_eq!(drop("cd /work/proj"), None);
     assert_eq!(drop("cd /work/proj && "), None);
     assert_eq!(drop("pushd /work/proj && ls"), None);
+}
+
+// --- Directories: grants resolve against the project, targets against the working dir ---
+
+fn path_call(name: &str, path: &str) -> ToolCall {
+    ToolCall::new(name, "toolu_d", serde_json::json!({ "path": path }))
+}
+
+fn worktree_session() -> Directories {
+    Directories::new(
+        PathBuf::from("/p"),
+        PathBuf::from("/p/.efference/worktrees/w"),
+    )
+}
+
+/// A relative write from a worktree maps to the project path, so the project's `.` grant
+/// clears it (docs/permissions.md).
+#[test]
+fn a_worktree_write_clears_under_the_project_grant() {
+    let role = role(
+        r#"
+        tools = ["write"]
+        [paths]
+        "." = { write = true }
+        "#,
+    );
+    let call = path_call("write", "src/x.rs");
+    assert_eq!(classify(&worktree_session(), &role, &call), Verdict::Clear);
+}
+
+/// A narrower project-level deny governs the same subtree seen from the worktree.
+#[test]
+fn a_project_deny_holds_inside_a_worktree() {
+    let role = role(
+        r#"
+        tools = ["write"]
+        [paths]
+        "." = { write = true }
+        "secrets" = false
+        "#,
+    );
+    let denied = path_call("write", "secrets/k");
+    let allowed = path_call("write", "src/k");
+    assert_eq!(classify(&worktree_session(), &role, &denied), Verdict::Gate);
+    assert_eq!(
+        classify(&worktree_session(), &role, &allowed),
+        Verdict::Clear
+    );
+}
+
+/// Every session reaches every worktree: a plain session's write into another session's
+/// worktree is judged as the project path.
+#[test]
+fn a_plain_session_reaches_any_worktree() {
+    let role = role(
+        r#"
+        tools = ["write"]
+        [paths]
+        "." = { write = true }
+        "#,
+    );
+    let call = path_call("write", "/p/.efference/worktrees/other/src/x.rs");
+    assert_eq!(
+        classify(&Directories::at(Path::new("/p")), &role, &call),
+        Verdict::Clear
+    );
+}
+
+/// A grant key resolves against the project, not the working directory.
+#[test]
+fn a_grant_key_resolves_against_the_project() {
+    let role = role(
+        r#"
+        tools = ["list"]
+        [paths]
+        "../sib" = { read = true }
+        "#,
+    );
+    let call = path_call("list", "/sib/a");
+    assert_eq!(classify(&worktree_session(), &role, &call), Verdict::Clear);
 }

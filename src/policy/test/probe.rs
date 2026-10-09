@@ -121,8 +121,16 @@ fn probe_ledger_folds_seen_and_votes_from_the_log() {
         assistant("d", "cd /work/sub && cargo test"),
         spot("d", Stance::Clear, None),
     ];
-    let local = probe_ledger(Path::new("/work"), &rooted_role, &rooted_log);
-    let elsewhere = probe_ledger(Path::new("/elsewhere"), &rooted_role, &rooted_log);
+    let local = probe_ledger(
+        &Directories::at(Path::new("/work")),
+        &rooted_role,
+        &rooted_log,
+    );
+    let elsewhere = probe_ledger(
+        &Directories::at(Path::new("/elsewhere")),
+        &rooted_role,
+        &rooted_log,
+    );
     assert_eq!(
         local
             .next_probe(&rooted_role, &toks("cargo test"))
@@ -134,7 +142,7 @@ fn probe_ledger_folds_seen_and_votes_from_the_log() {
         None
     );
 
-    let ledger = probe_ledger(Path::new(CWD), &Config::default(), &log);
+    let ledger = probe_ledger(&Directories::at(Path::new(CWD)), &Config::default(), &log);
     // Two sightings of `cargo` and `cargo test`.
 
     let role = Config::default();
@@ -168,7 +176,7 @@ fn probe_ledger_ignores_fallback_verdicts() {
             axes: None,
         }),
     }];
-    let ledger = probe_ledger(Path::new(CWD), &Config::default(), &log);
+    let ledger = probe_ledger(&Directories::at(Path::new(CWD)), &Config::default(), &log);
     assert!(
         !ledger.ready_to_promote("cargo"),
         "a fallback casts no vote"

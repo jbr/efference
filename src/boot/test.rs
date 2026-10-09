@@ -500,7 +500,11 @@ fn the_attachment_store_is_readable_through_the_self_surface_deny() {
     let cwd = PathBuf::from("/work/proj");
     let call = |tool: &str, path: PathBuf| {
         let input = serde_json::json!({ "path": path, "paths": [path], "content": "x" });
-        crate::policy::classify(&cwd, &role, &crate::log::ToolCall::new(tool, "c", input))
+        crate::policy::classify(
+            &crate::policy::Directories::at(&cwd),
+            &role,
+            &crate::log::ToolCall::new(tool, "c", input),
+        )
     };
     let attached = session_dir.join("attachments/composer/shot.png");
     use crate::policy::Verdict::{Clear, Gate};

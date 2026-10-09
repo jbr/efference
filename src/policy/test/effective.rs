@@ -32,11 +32,19 @@ fn effective_config_without_edits_matches_the_base() {
     let eff = effective_config(&base, &[]);
     // npm is unlisted in the base, so it gates under both the base and the (unchanged) fold.
     assert_eq!(
-        classify(Path::new(CWD), &base, &bash_call("npm install")),
+        classify(
+            &Directories::at(Path::new(CWD)),
+            &base,
+            &bash_call("npm install")
+        ),
         Verdict::Gate
     );
     assert_eq!(
-        classify(Path::new(CWD), &eff, &bash_call("npm install")),
+        classify(
+            &Directories::at(Path::new(CWD)),
+            &eff,
+            &bash_call("npm install")
+        ),
         Verdict::Gate
     );
 }
@@ -46,7 +54,11 @@ fn effective_config_without_edits_matches_the_base() {
 fn a_command_change_clears_a_previously_gated_command() {
     let base = sample_role();
     assert_eq!(
-        classify(Path::new(CWD), &base, &bash_call("npm install")),
+        classify(
+            &Directories::at(Path::new(CWD)),
+            &base,
+            &bash_call("npm install")
+        ),
         Verdict::Gate
     );
     let log = [change_entry(ConfigChange::Command {
@@ -54,7 +66,11 @@ fn a_command_change_clears_a_previously_gated_command() {
     })];
     let eff = effective_config(&base, &log);
     assert_eq!(
-        classify(Path::new(CWD), &eff, &bash_call("npm install")),
+        classify(
+            &Directories::at(Path::new(CWD)),
+            &eff,
+            &bash_call("npm install")
+        ),
         Verdict::Clear
     );
 }
@@ -71,7 +87,11 @@ fn only_committed_edits_fold_into_the_effective_config() {
     for state in [EditState::Proposed, EditState::Cancelled] {
         let eff = effective_config(&base, &[edit_entry(state, change.clone())]);
         assert_eq!(
-            classify(Path::new(CWD), &eff, &bash_call("npm install")),
+            classify(
+                &Directories::at(Path::new(CWD)),
+                &eff,
+                &bash_call("npm install")
+            ),
             Verdict::Gate,
             "{state:?} must not take effect",
         );
@@ -79,7 +99,11 @@ fn only_committed_edits_fold_into_the_effective_config() {
     // The same change, committed, does clear it — proving the gate, not an unrelated miss.
     let eff = effective_config(&base, &[edit_entry(EditState::Committed, change)]);
     assert_eq!(
-        classify(Path::new(CWD), &eff, &bash_call("npm install")),
+        classify(
+            &Directories::at(Path::new(CWD)),
+            &eff,
+            &bash_call("npm install")
+        ),
         Verdict::Clear
     );
 }
@@ -90,7 +114,10 @@ fn only_committed_edits_fold_into_the_effective_config() {
 fn tool_and_path_changes_fold_together_to_clear_a_write() {
     let base = Config::default(); // gates everything
     let c = call("write", serde_json::json!({ "path": "src/x.rs" }));
-    assert_eq!(classify_in(&base, &c, Path::new(CWD)), Verdict::Gate);
+    assert_eq!(
+        classify_in(&base, &c, &Directories::at(Path::new(CWD))),
+        Verdict::Gate
+    );
     let log = [
         change_entry(ConfigChange::Tool {
             name: "write".into(),
@@ -102,7 +129,10 @@ fn tool_and_path_changes_fold_together_to_clear_a_write() {
         }),
     ];
     let eff = effective_config(&base, &log);
-    assert_eq!(classify_in(&eff, &c, Path::new(CWD)), Verdict::Clear);
+    assert_eq!(
+        classify_in(&eff, &c, &Directories::at(Path::new(CWD))),
+        Verdict::Clear
+    );
 }
 
 /// The fold stays idempotent under replace-at-key: replaying the same change (e.g. one
@@ -116,7 +146,11 @@ fn folding_a_change_twice_is_harmless() {
     });
     let eff = effective_config(&base, &[g.clone(), g]);
     assert_eq!(
-        classify(Path::new(CWD), &eff, &bash_call("npm install")),
+        classify(
+            &Directories::at(Path::new(CWD)),
+            &eff,
+            &bash_call("npm install")
+        ),
         Verdict::Clear
     );
 }

@@ -49,4 +49,5 @@ pub mod supervisor;
 pub mod tools;
 pub mod tui;
 pub mod vision;
+pub mod worktree;
 pub mod www_authenticate;

@@ -121,13 +121,14 @@ fn paths(
     cwd: &std::path::Path,
     scratch: Option<&std::path::Path>,
 ) -> (Vec<Value>, bool) {
-    let found = crate::policy::path_words(command, cwd, scratch);
+    let dirs = crate::policy::Directories::at(cwd);
+    let found = crate::policy::path_words(command, &dirs, scratch);
     let entries = found
         .words
         .into_iter()
         .map(|word| {
             use crate::policy::Decided;
-            let mut entry = match (&word.resolved, crate::policy::decide(role, &word, cwd, scratch)) {
+            let mut entry = match (&word.resolved, crate::policy::decide(role, &word, &dirs, scratch)) {
                 // Listed rather than dropped: a list missing it reads as complete
                 // (docs/permissions.md).
                 (None, _) | (_, Decided::Unresolved) => json!({
@@ -192,7 +193,12 @@ fn proposed_move(
                 let mut shell = json!({
                     "kind": "shell_command",
                     "command": cwd
-                        .and_then(|cwd| crate::policy::without_cd_into(command, cwd))
+                        .and_then(|cwd| {
+                            crate::policy::without_cd_into(
+                                command,
+                                &crate::policy::Directories::at(cwd),
+                            )
+                        })
                         .unwrap_or(command),
                 });
                 if let Some((paths, complete)) = cwd.map(|cwd| paths(command, role, cwd, scratch))

@@ -54,7 +54,7 @@ pub(super) fn input_targets<'a>(
 /// probe is the one filesystem touch in the classifier — it is what tells create from update,
 /// and is harmless here because a verdict is derived state, never on the wire
 /// (docs/log-and-projection.md). `exec` entries have no files and grant nothing.
-pub(super) fn context_granted(role: &Config, target: &str, perm: Perm, cwd: &Path) -> bool {
+pub(super) fn context_granted(role: &Config, target: &str, perm: Perm, dirs: &Directories) -> bool {
     // The guide overlay's virtual prefix (docs/context.md, [`crate::guide`]) is read-granted
     // unconditionally — the mount exists whether or not the config lists it, and the
     // documents are the recovery path for a session whose config knows nothing else. Never
@@ -63,26 +63,27 @@ pub(super) fn context_granted(role: &Config, target: &str, perm: Perm, cwd: &Pat
     if crate::guide::is_virtual(target) {
         return perm == Perm::Read;
     }
-    let target = lexical_normalize(&absolutize(target, cwd));
+    // Grants match the judged (project-counterpart) target; the existence probe looks at
+    // the real path the model named.
+    let real = lexical_normalize(&absolutize(target, dirs.working()));
+    let target = dirs.target(target);
     role.context.iter().any(|entry| {
         let crate::config::ContextSource::Files(paths) = &entry.source else {
             return false;
         };
-        paths
-            .iter()
-            .any(|p| target.starts_with(lexical_normalize(&absolutize(p, cwd))))
+        paths.iter().any(|p| target.starts_with(dirs.grant(p)))
             && match perm {
                 Perm::Read => true,
                 Perm::Write => {
-                    (entry.grants.update && target.exists())
-                        || (entry.grants.create && !target.exists())
+                    (entry.grants.update && real.exists())
+                        || (entry.grants.create && !real.exists())
                 }
             }
     })
 }
 
-/// Whether `path` (resolved against `cwd`) is granted `perm` by the role's `[paths]` map.
-/// `write` implies `read`. Resolution is **longest-prefix-wins**: among the grants whose
+/// Whether `path` (a target, resolved by [`Directories::target`]) is granted `perm` by the
+/// role's `[paths]` map. `write` implies `read`. Resolution is **longest-prefix-wins**: among the grants whose
 /// subtree contains the target, the *most specific* (deepest) one governs — so a nested
 /// grant carves an exclusion out of a broader parent (allow `.`, deny `.efference/`,
 /// re-allow `.efference/<id>/config.toml` read-only). A no-access grant (`false` sugar,
@@ -93,26 +94,31 @@ pub(super) fn context_granted(role: &Config, target: &str, perm: Perm, cwd: &Pat
 /// lexical (`..`/`.` collapsed without touching the filesystem), so a symlink inside a
 /// grant that points outside is treated as inside — acceptable under the error-not-deception
 /// threat model (docs/permissions.md).
-pub(super) fn path_granted(role: &Config, path: &str, perm: Perm, cwd: &Path) -> bool {
+pub(super) fn path_granted(role: &Config, path: &str, perm: Perm, dirs: &Directories) -> bool {
     // A guide-overlay path names a document in the binary, not a location on disk
-    // ([`crate::guide`]). It must never resolve through this table: joined onto the cwd it
+    // ([`crate::guide`]). It must never resolve through this table: joined onto the working directory it
     // would look like an ordinary relative path and a broad `[paths]` grant would then
     // appear to grant *write* on it. Its own read grant is in [`context_granted`].
     if crate::guide::is_virtual(path) {
         return false;
     }
-    path_granted_at(role, &lexical_normalize(&absolutize(path, cwd)), perm, cwd)
+    path_granted_at(role, &dirs.target(path), perm, dirs)
 }
 
-/// [`path_granted`] for a target that is **already** absolute and normalized — the shape the
-/// bash redirection carve-out produces, where the write target may have been resolved
-/// against a `cd`'s directory rather than the process cwd
-/// ([`commands::classify_redirect_write`]). `cwd` still resolves the *grant* keys, which the
-/// operator may write relative (`"."`).
+/// [`path_granted`] for a target that is **already** absolute, normalized, and judged
+/// ([`Directories::judged`]) — the shape the bash redirection carve-out produces, where
+/// the write target may have been resolved against a `cd`'s directory rather than the
+/// working directory ([`commands::classify_redirect_write`]). `dirs` still resolves the
+/// *grant* keys, against the project.
 ///
 /// [`commands::classify_redirect_write`]: super::commands
-pub(super) fn path_granted_at(role: &Config, target: &Path, perm: Perm, cwd: &Path) -> bool {
-    match governing_grant(role, target, cwd) {
+pub(super) fn path_granted_at(
+    role: &Config,
+    target: &Path,
+    perm: Perm,
+    dirs: &Directories,
+) -> bool {
+    match governing_grant(role, target, dirs) {
         Some((_, perms)) => match perm {
             Perm::Read => perms.read || perms.write, // write implies read
             Perm::Write => perms.write,
@@ -122,17 +128,17 @@ pub(super) fn path_granted_at(role: &Config, target: &Path, perm: Perm, cwd: &Pa
 }
 
 /// The `[paths]` grant that decides an absolute, normalized `target` — the deepest one
-/// whose subtree contains it — resolved to its absolute form, with its perms. `None`
-/// when no grant covers the target.
+/// whose subtree contains it (judged, per [`Directories::judged`]) — resolved to its
+/// absolute form, with its perms. `None` when no grant covers the target.
 pub(crate) fn governing_grant<'a>(
     role: &'a Config,
     target: &Path,
-    cwd: &Path,
+    dirs: &Directories,
 ) -> Option<(PathBuf, &'a Perms)> {
     role.paths
         .iter()
         .filter_map(|(grant_path, perms)| {
-            let grant = lexical_normalize(&absolutize(grant_path, cwd));
+            let grant = dirs.grant(grant_path);
             target.starts_with(&grant).then_some((grant, perms))
         })
         .max_by_key(|(grant, _)| grant.components().count())

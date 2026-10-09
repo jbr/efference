@@ -91,7 +91,7 @@ async fn sessions_resolve_policy_config_references_and_children_in_their_own_roo
         let role = session.effective_config();
         let is_first = *label == "one";
         assert_eq!(
-            classify(session.cwd(), &role, &call),
+            classify(&session.directories(), &role, &call),
             if is_first {
                 Verdict::Clear
             } else {
@@ -99,16 +99,20 @@ async fn sessions_resolve_policy_config_references_and_children_in_their_own_roo
             }
         );
         assert_eq!(
-            missing_grants(session.cwd(), &role, &call).is_none(),
+            missing_grants(&session.directories(), &role, &call).is_none(),
             is_first
         );
         assert_eq!(
-            is_config_write(session.cwd(), &write, &first.join("efference.toml")),
+            is_config_write(
+                &session.directories(),
+                &write,
+                &first.join("efference.toml")
+            ),
             is_first
         );
         let command = format!("cd '{}' && cargo test", first.display());
         assert_eq!(
-            bash_tokens(session.cwd(), &role, &command).is_some(),
+            bash_tokens(&session.directories(), &role, &command).is_some(),
             is_first
         );
         let completed = tokio::time::timeout(Duration::from_secs(5), async {

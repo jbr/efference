@@ -437,7 +437,8 @@ fn path_facts(
     cwd: &std::path::Path,
     scratch: Option<&std::path::Path>,
 ) -> String {
-    let found = crate::policy::path_words(command, cwd, scratch);
+    let dirs = crate::policy::Directories::at(cwd);
+    let found = crate::policy::path_words(command, &dirs, scratch);
     if found.words.is_empty() {
         return String::new();
     }
@@ -457,7 +458,7 @@ fn path_facts(
         };
         // Only the deciding grant is stated: "outside the working directory" read
         // as leaving scope even for a granted sibling, and the grant is what decides.
-        let grant = match crate::policy::decide(role, word, cwd, scratch) {
+        let grant = match crate::policy::decide(role, word, &dirs, scratch) {
             Decided::Grant(grant, perms) => format!(
                 "under the grant `{}` ({})",
                 grant.display(),
@@ -510,7 +511,9 @@ fn render_move(
             Some(cmd) => {
                 // A leading `cd` into the working directory goes nowhere; the reviewer
                 // judges the rest, and is told so (`policy::without_cd_into`).
-                let shown = match cwd.and_then(|cwd| crate::policy::without_cd_into(cmd, cwd)) {
+                let shown = match cwd.and_then(|cwd| {
+                    crate::policy::without_cd_into(cmd, &crate::policy::Directories::at(cwd))
+                }) {
                     Some(rest) => format!(
                         "A shell command, run in the session's working directory (its leading \
                          `cd` into that directory is left out):\n\n    {rest}"

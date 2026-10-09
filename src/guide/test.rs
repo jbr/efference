@@ -248,7 +248,7 @@ fn the_prefix_is_read_granted_and_never_write_granted() {
     let empty = crate::config::Config::default();
     assert_eq!(
         crate::policy::classify(
-            &std::env::current_dir().unwrap(),
+            &crate::policy::Directories::at(&std::env::current_dir().unwrap()),
             &empty,
             &call("read", json!({ "paths": [path("new-project")] }))
         ),
@@ -259,7 +259,7 @@ fn the_prefix_is_read_granted_and_never_write_granted() {
     let granted = crate::config::parse_text("tools = [\"read\"]\n[paths]\n\"/work\" = true\n");
     assert_eq!(
         crate::policy::classify(
-            &std::env::current_dir().unwrap(),
+            &crate::policy::Directories::at(&std::env::current_dir().unwrap()),
             &granted,
             &call("read", json!({ "paths": [path("editing"), "/work/x.rs"] }))
         ),
@@ -267,7 +267,7 @@ fn the_prefix_is_read_granted_and_never_write_granted() {
     );
     assert_eq!(
         crate::policy::classify(
-            &std::env::current_dir().unwrap(),
+            &crate::policy::Directories::at(&std::env::current_dir().unwrap()),
             &granted,
             &call(
                 "read",
@@ -280,7 +280,7 @@ fn the_prefix_is_read_granted_and_never_write_granted() {
     let permissive = crate::config::parse_text("tools = [\"write\"]\n[paths]\n\"/\" = true\n");
     assert_eq!(
         crate::policy::classify(
-            &std::env::current_dir().unwrap(),
+            &crate::policy::Directories::at(&std::env::current_dir().unwrap()),
             &permissive,
             &call("write", json!({ "path": path("editing"), "contents": "x" }))
         ),

@@ -572,6 +572,10 @@ impl Session {
     pub fn cwd(&self) -> &std::path::Path {
         &self.cwd
     }
+    /// The directories the permission classifier resolves against (docs/permissions.md).
+    pub fn directories(&self) -> crate::policy::Directories {
+        crate::policy::Directories::at(&self.cwd)
+    }
     /// Name the session's web path (docs/web-bind.md): `/sessions/<id>/` under
     /// a host, `/` on the session's own bind. Called once, by the host's
     /// adopt; a session daemon never calls it and keeps the root default.
@@ -731,7 +735,11 @@ impl Session {
         let effective = Arc::new(crate::policy::effective_config(&role.role, log.entries()));
         // Fold the probe ledger from a resumed log (no-op for a fresh one), then maintain it
         // incrementally as the loop assesses moves (docs/permissions.md).
-        let probes = crate::policy::probe_ledger(&cwd, &effective, log.entries());
+        let probes = crate::policy::probe_ledger(
+            &crate::policy::Directories::at(&cwd),
+            &effective,
+            log.entries(),
+        );
         // Seed the process-id mint past every `p#<n>` a resumed log mentions, so a restarted
         // daemon never re-mints an ordinal the durable record already refers to
         // (docs/supervisor.md). Scanned over the serialized entry because

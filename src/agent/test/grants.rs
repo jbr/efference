@@ -66,7 +66,7 @@ pub(super) fn legislate_grants_then_approves_a_covered_call() {
     let call = bash_call("npm install");
     assert_eq!(
         policy::classify(
-            &std::env::current_dir().unwrap(),
+            &crate::policy::Directories::at(&std::env::current_dir().unwrap()),
             &shared.effective_config(),
             &call
         ),
@@ -87,7 +87,7 @@ pub(super) fn legislate_grants_then_approves_a_covered_call() {
     // The policy is now amended for any future call too.
     assert_eq!(
         policy::classify(
-            &std::env::current_dir().unwrap(),
+            &crate::policy::Directories::at(&std::env::current_dir().unwrap()),
             &shared.effective_config(),
             &call
         ),
@@ -224,7 +224,7 @@ pub(super) fn missing_grants_reports_the_two_halves_independently() {
     let call = |name: &str, input| ToolCall::new(name, "toolu_x", input);
     // Path granted, name not: only the name is reported.
     let missing = crate::policy::missing_grants(
-        &std::env::current_dir().unwrap(),
+        &crate::policy::Directories::at(&std::env::current_dir().unwrap()),
         &role,
         &call("edit", serde_json::json!({ "file_path": "src/lib.rs" })),
     )
@@ -235,7 +235,7 @@ pub(super) fn missing_grants_reports_the_two_halves_independently() {
     // bash is not decomposed this way.
     assert!(
         crate::policy::missing_grants(
-            &std::env::current_dir().unwrap(),
+            &crate::policy::Directories::at(&std::env::current_dir().unwrap()),
             &role,
             &call("bash", serde_json::json!({ "command": "rm -rf /" }))
         )

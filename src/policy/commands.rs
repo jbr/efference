@@ -7,12 +7,12 @@ use super::*;
 /// [`CommandStance::Clear`]. Stage 1 runs through [`bash_tokens_in`], so a leading
 /// `cd <granted dir> &&` is admitted and the remainder is what stage 2 matches — which means a
 /// carve-out governs the same way whether or not the move arrived with a `cd` in front of it.
-pub(super) fn classify_bash(role: &Config, command: &str, cwd: &Path) -> Verdict {
-    let Some(tokens) = bash_tokens_in(role, command, cwd) else {
+pub(super) fn classify_bash(role: &Config, command: &str, dirs: &Directories) -> Verdict {
+    let Some(tokens) = bash_tokens_in(role, command, dirs) else {
         // Stage 1 rejected it. One narrow shape gets a second look before it gates:
         // a redirection or here-doc write to a single literal path, which is a
         // `write` and is governed as one ([`classify_redirect_write`]).
-        return classify_redirect_write(role, command, cwd);
+        return classify_redirect_write(role, command, dirs);
     };
     match command_stance(role, &tokens) {
         Some(CommandStance::Clear) => Verdict::Clear,
@@ -109,8 +109,8 @@ struct RedirectWrite {
 /// own `config.toml` or log fails the path check like anything else there.
 ///
 /// This does not loosen stage 1 generally: every shape outside the list below still gates.
-fn classify_redirect_write(role: &Config, command: &str, cwd: &Path) -> Verdict {
-    let Some(write) = redirect_write_in(role, command, cwd) else {
+fn classify_redirect_write(role: &Config, command: &str, dirs: &Directories) -> Verdict {
+    let Some(write) = redirect_write_in(role, command, dirs) else {
         return Verdict::Gate;
     };
     match command_stance(role, &write.tokens) {
@@ -118,7 +118,7 @@ fn classify_redirect_write(role: &Config, command: &str, cwd: &Path) -> Verdict 
         Some(CommandStance::Deny) => Verdict::Deny,
         // Cleared as a command — now it must also be cleared as a write.
         Some(CommandStance::Clear) => {
-            if path_granted_at(role, &write.target, Perm::Write, cwd) {
+            if path_granted_at(role, &dirs.judged(&write.target), Perm::Write, dirs) {
                 Verdict::Clear
             } else {
                 Verdict::Gate
@@ -149,30 +149,33 @@ fn classify_redirect_write(role: &Config, command: &str, cwd: &Path) -> Verdict 
 ///   quoted form and the unquoted-but-literal one;
 /// - alongside any number of the fd duplications stage 1 already tolerates ([`is_safe_fd_dup`]);
 /// - optionally behind the same single leading `cd <read-granted literal dir> &&`. The write
-///   target then resolves against **that** directory, not the process cwd, because that is
+///   target then resolves against **that** directory, not the working directory, because that is
 ///   where the command actually runs.
 ///
 /// Fails closed (gates, exactly as today): pipes, `;`, `||`, backgrounding, more than one
 /// file redirection, an input redirection or here-string, a redirection whose target
 /// expands or globs, a here-doc containing any expansion or substitution, a negated or
 /// compound command, an assignment prefix, and anything that does not parse.
-fn redirect_write_in(role: &Config, command: &str, cwd: &Path) -> Option<RedirectWrite> {
+fn redirect_write_in(role: &Config, command: &str, dirs: &Directories) -> Option<RedirectWrite> {
     use brush_parser::ast::{AndOr, Command, IoFileRedirectKind, IoFileRedirectTarget, IoRedirect};
 
     let and_or = single_and_or_list(command)?;
     // The `cd` tolerance, and what it does to the target: after `cd sub`, `> out` names
-    // `sub/out`. Resolving against the process cwd would check the grant on the wrong file.
+    // `sub/out`. Resolving against the working directory would check the grant on the wrong file.
     let (pipeline, run_dir) = match and_or.additional.as_slice() {
-        [] => (&and_or.first, cwd.to_path_buf()),
+        [] => (&and_or.first, dirs.working().to_path_buf()),
         [AndOr::And(remainder)] => {
             let head = pipeline_tokens(&and_or.first)?;
             let [program, target] = head.as_slice() else {
                 return None;
             };
-            if program != "cd" || !path_granted(role, target, Perm::Read, cwd) {
+            if program != "cd" || !path_granted(role, target, Perm::Read, dirs) {
                 return None;
             }
-            (remainder, lexical_normalize(&absolutize(target, cwd)))
+            (
+                remainder,
+                lexical_normalize(&absolutize(target, dirs.working())),
+            )
         }
         _ => return None,
     };
@@ -293,7 +296,7 @@ pub(super) fn is_safe_fd_dup(redir: &brush_parser::ast::IoRedirect) -> bool {
 /// - the `cd` segment is exactly two words, `cd` and a **literal** target — the same word-unit
 ///   inspection stage 1 already performs ([`literal_word`]), so an expansion, a glob, or a tilde in
 ///   the target gates;
-/// - the target, resolved against `cwd` the way every other grant check resolves a path
+/// - the target, resolved by [`Directories::target`] the way every other grant check resolves a path
 ///   ([`path_granted`]), must sit under a `[paths]` grant carrying **read** — `cd` mutates nothing,
 ///   so read is the permission the move actually needs, and a write grant satisfies it too;
 /// - the operator is `&&` only (`;`, `||`, `|` gate), there is exactly **one** of it, and the
@@ -303,7 +306,11 @@ pub(super) fn is_safe_fd_dup(redir: &brush_parser::ast::IoRedirect) -> bool {
 /// models emit on nearly every call knocks a blanket `[commands]` grant off the fast path, and
 /// every such call pays a spotter round-trip. Recording the **remainder** (not the whole string) is
 /// what makes the promotion generalize across run directories.
-pub(crate) fn bash_tokens_in(role: &Config, command: &str, cwd: &Path) -> Option<Vec<String>> {
+pub(crate) fn bash_tokens_in(
+    role: &Config,
+    command: &str,
+    dirs: &Directories,
+) -> Option<Vec<String>> {
     use brush_parser::ast::AndOr;
 
     let and_or = single_and_or_list(command)?;
@@ -315,7 +322,7 @@ pub(crate) fn bash_tokens_in(role: &Config, command: &str, cwd: &Path) -> Option
             let [program, target] = head.as_slice() else {
                 return None;
             };
-            if program != "cd" || !path_granted(role, target, Perm::Read, cwd) {
+            if program != "cd" || !path_granted(role, target, Perm::Read, dirs) {
                 return None;
             }
             let tokens = pipeline_tokens(remainder)?;
@@ -333,9 +340,9 @@ pub(crate) fn bash_tokens_in(role: &Config, command: &str, cwd: &Path) -> Option
 /// (docs/permissions.md): agents prefix their own cwd habitually, and a reviewer
 /// asked to resolve `cd /abs/path` against a working-directory line reads the move
 /// as leaving it. Returns the remainder as written when `command` is `cd <dir> &&
-/// rest` with `<dir>` a literal that resolves, lexically, to `cwd`; `None` for
+/// rest` with `<dir>` a literal that resolves, lexically, to the working directory; `None` for
 /// anything else, including a `cd` somewhere else, which the reviewer must see.
-pub(crate) fn without_cd_into<'a>(command: &'a str, cwd: &Path) -> Option<&'a str> {
+pub(crate) fn without_cd_into<'a>(command: &'a str, dirs: &Directories) -> Option<&'a str> {
     let (head, rest) = command.split_once("&&")?;
     let tokens = simple_command_tokens(head)?;
     let [program, target] = tokens.as_slice() else {
@@ -345,6 +352,7 @@ pub(crate) fn without_cd_into<'a>(command: &'a str, cwd: &Path) -> Option<&'a st
         return None;
     }
     let lexical = super::lexical_normalize;
+    let cwd = dirs.working();
     if lexical(&cwd.join(target)) != lexical(cwd) {
         return None;
     }

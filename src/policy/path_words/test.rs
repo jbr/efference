@@ -2,7 +2,7 @@ use super::*;
 
 /// The words as `(word, resolved or "?", written)`, asserting the list is complete.
 fn words(command: &str) -> Vec<(String, String, bool)> {
-    let found = path_words(command, Path::new("/work/repo"), None);
+    let found = path_words(command, &Directories::at(Path::new("/work/repo")), None);
     assert!(found.complete, "{command}");
     listed(found)
 }
@@ -78,7 +78,7 @@ fn a_word_that_expands_at_run_time_is_listed_unresolved() {
 fn unread_words_mark_the_list_incomplete() {
     let compound = path_words(
         "for f in src/*.rs; do cat \"$f\"; done",
-        Path::new("/w"),
+        &Directories::at(Path::new("/w")),
         None,
     );
     assert!(!compound.complete);
@@ -86,10 +86,14 @@ fn unread_words_mark_the_list_incomplete() {
         .map(|i| format!("./f{i}"))
         .collect::<Vec<_>>()
         .join(" ");
-    let long = path_words(&format!("cat {many}"), Path::new("/w"), None);
+    let long = path_words(
+        &format!("cat {many}"),
+        &Directories::at(Path::new("/w")),
+        None,
+    );
     assert!(!long.complete);
     assert_eq!(long.words.len(), LIMIT);
-    assert!(!path_words("cat 'unterminated", Path::new("/w"), None).complete);
+    assert!(!path_words("cat 'unterminated", &Directories::at(Path::new("/w")), None).complete);
 }
 
 #[test]
@@ -111,7 +115,11 @@ fn a_repeated_word_is_listed_once_and_keeps_its_write() {
 #[test]
 fn an_unparseable_command_names_nothing() {
     assert_eq!(
-        listed(path_words("cat 'unterminated", Path::new("/w"), None)),
+        listed(path_words(
+            "cat 'unterminated",
+            &Directories::at(Path::new("/w")),
+            None
+        )),
         Vec::new()
     );
 }
@@ -126,7 +134,7 @@ fn devices_are_not_listed() {
 
 fn decided(toml: &str, command: &str) -> Vec<String> {
     let role = Config::from_toml(toml).expect("valid config");
-    let cwd = Path::new("/work/repo");
+    let cwd = &Directories::at(Path::new("/work/repo"));
     path_words(command, cwd, None)
         .words
         .iter()
@@ -178,7 +186,7 @@ fn a_literal_path_is_decided_by_its_deepest_grant() {
 #[test]
 fn a_tmpdir_path_resolves_under_the_scratch_directory() {
     let role = Config::from_toml(GRANTS).expect("valid config");
-    let cwd = Path::new("/work/repo");
+    let cwd = &Directories::at(Path::new("/work/repo"));
     let scratch = Path::new("/tmp/scratch-1");
     let found = path_words(
         "cat \"$TMPDIR/models.json\" > ${TMPDIR}/out && cat $TMPDIR/$NAME",

@@ -179,7 +179,7 @@ pub(super) fn commit_config_edit(
     )?;
     let role = shared.effective_config();
     Ok(
-        if policy::classify(shared.cwd(), &role, call) == Verdict::Clear {
+        if policy::classify(&shared.directories(), &role, call) == Verdict::Clear {
             Approval::Approve
         } else {
             Approval::Redirect(

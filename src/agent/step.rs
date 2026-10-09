@@ -174,7 +174,7 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
     // policy.
     let config_write = shared
         .config_path()
-        .is_some_and(|cfg| policy::is_config_write(shared.cwd(), call, cfg));
+        .is_some_and(|cfg| policy::is_config_write(&shared.directories(), call, cfg));
     // A hand-off gives this session's place to a new one (docs/tools.md): the operator's
     // decision, like a policy edit, so it takes the same route past the cascade.
     let hand_off = call.name == crate::control_tools::HAND_OFF_WIRE_NAME;
@@ -511,14 +511,14 @@ pub(super) async fn judge<F: Frontend, S: Spotter>(
     // to the call actually held. The leaf's cwd is what its relative paths resolve
     // against; the parent's is used otherwise.
     let leaf;
-    let (judged, cwd): (&ToolCall, &std::path::Path) = match bound {
+    let (judged, dirs): (&ToolCall, policy::Directories) = match bound {
         Some(bound) => {
             leaf = ToolCall::new(bound.name.clone(), call.id.clone(), bound.input.clone());
-            (&leaf, bound.cwd.as_path())
+            (&leaf, policy::Directories::at(&bound.cwd))
         }
-        None => (call, shared.cwd()),
+        None => (call, shared.directories()),
     };
-    match policy::classify(cwd, &role, judged) {
+    match policy::classify(&dirs, &role, judged) {
         Verdict::Clear => Ok(Approval::Approve),
         // A `[commands]` deny (docs/permissions.md): the operator already wrote the answer
         // for this prefix, so the spotter is not asked — the move goes straight to whoever
@@ -551,7 +551,7 @@ pub(super) async fn judge<F: Frontend, S: Spotter>(
                     .input
                     .get("command")
                     .and_then(Value::as_str)
-                    .and_then(|command| policy::bash_tokens(shared.cwd(), &role, command))
+                    .and_then(|command| policy::bash_tokens(&shared.directories(), &role, command))
                     .and_then(|tokens| shared.observe_and_pick_probe(&role, &tokens))
             } else {
                 None
@@ -641,7 +641,7 @@ pub(super) async fn judge<F: Frontend, S: Spotter>(
                         // the failure it answers is a model reading a gated `edit` as a
                         // broken tool and rewriting the file through bash instead.
                         Ok(Approval::Redirect(
-                            match policy::missing_grants(cwd, &role, judged) {
+                            match policy::missing_grants(&dirs, &role, judged) {
                                 Some(missing) => {
                                     missing_grant_message(shared.config_path(), &reason, &missing)
                                 }

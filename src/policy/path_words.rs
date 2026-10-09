@@ -52,16 +52,16 @@ pub(crate) struct PathWord {
 }
 
 /// The path-shaped words in `command`, in order and without repeats, resolved
-/// against `cwd` as the command moves through literal `cd`s. Empty and complete
+/// against the working directory as the command moves through literal `cd`s. Empty and complete
 /// when the command names none; empty and incomplete when it does not parse.
 ///
 /// `scratch` is the session's scratch directory, which every tool child sees as
 /// `$TMPDIR` (docs/tools.md): a word that is `$TMPDIR` (or `${TMPDIR}`) followed
 /// by a literal remainder resolves under it rather than being listed unresolved,
 /// since the harness set the variable itself.
-pub(crate) fn path_words(command: &str, cwd: &Path, scratch: Option<&Path>) -> PathWords {
+pub(crate) fn path_words(command: &str, dirs: &Directories, scratch: Option<&Path>) -> PathWords {
     let mut walk = Walk {
-        dir: Some(cwd.to_path_buf()),
+        dir: Some(dirs.working().to_path_buf()),
         scratch: scratch.map(Path::to_path_buf),
         found: PathWords {
             words: Vec::new(),
@@ -308,7 +308,7 @@ pub(crate) enum Decided<'a> {
 pub(crate) fn decide<'a>(
     role: &'a Config,
     word: &PathWord,
-    cwd: &Path,
+    dirs: &Directories,
     scratch: Option<&Path>,
 ) -> Decided<'a> {
     let Some(resolved) = &word.resolved else {
@@ -317,7 +317,10 @@ pub(crate) fn decide<'a>(
     if let Some(scratch) = scratch.filter(|scratch| resolved.starts_with(scratch)) {
         return Decided::Grant(scratch.to_path_buf(), &SCRATCH);
     }
-    let decided = |path: &Path| match governing_grant(role, path, cwd) {
+    // Words resolve against the working directory (or a `cd`'s); grants judge the project
+    // counterpart, mapped once here.
+    let resolved = &dirs.judged(resolved);
+    let decided = |path: &Path| match governing_grant(role, path, dirs) {
         Some((grant, perms)) => Decided::Grant(grant, perms),
         None => Decided::NoGrant,
     };
@@ -332,7 +335,7 @@ pub(crate) fn decide<'a>(
     let prefix: PathBuf = components[..first_glob].iter().collect();
     let glob = components[first_glob].as_os_str().to_string_lossy();
     let reaches_deeper = role.paths.keys().any(|grant| {
-        let grant = lexical_normalize(&absolutize(grant, cwd));
+        let grant = dirs.grant(grant);
         let Ok(below) = grant.strip_prefix(&prefix) else {
             return false;
         };

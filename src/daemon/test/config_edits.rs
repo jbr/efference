@@ -14,7 +14,7 @@ fn appending_a_config_edit_updates_the_effective_config() {
     let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
     assert_eq!(
         classify(
-            &std::env::current_dir().unwrap(),
+            &crate::policy::Directories::at(&std::env::current_dir().unwrap()),
             &shared.effective_config(),
             &call
         ),
@@ -25,7 +25,7 @@ fn appending_a_config_edit_updates_the_effective_config() {
     shared.append(0, allow_grant("npm")).unwrap();
     assert_eq!(
         classify(
-            &std::env::current_dir().unwrap(),
+            &crate::policy::Directories::at(&std::env::current_dir().unwrap()),
             &shared.effective_config(),
             &call
         ),
@@ -103,7 +103,7 @@ fn a_proposal_is_inert_until_committed_then_drains_the_queue() {
         .unwrap();
     assert_eq!(
         classify(
-            &std::env::current_dir().unwrap(),
+            &crate::policy::Directories::at(&std::env::current_dir().unwrap()),
             &shared.effective_config(),
             &call
         ),
@@ -133,7 +133,7 @@ fn a_proposal_is_inert_until_committed_then_drains_the_queue() {
         .unwrap();
     assert_eq!(
         classify(
-            &std::env::current_dir().unwrap(),
+            &crate::policy::Directories::at(&std::env::current_dir().unwrap()),
             &shared.effective_config(),
             &call
         ),
@@ -169,7 +169,7 @@ fn reload_emits_committed_edits_for_file_deltas() {
     );
     assert_eq!(
         classify(
-            &std::env::current_dir().unwrap(),
+            &crate::policy::Directories::at(&std::env::current_dir().unwrap()),
             &shared.effective_config(),
             &bash_call("cargo build")
         ),
@@ -180,7 +180,7 @@ fn reload_emits_committed_edits_for_file_deltas() {
     refresh_and_emit(&shared);
     assert_eq!(
         classify(
-            &std::env::current_dir().unwrap(),
+            &crate::policy::Directories::at(&std::env::current_dir().unwrap()),
             &shared.effective_config(),
             &bash_call("cargo build")
         ),
@@ -229,7 +229,7 @@ fn reload_failure_keeps_policy_reverts_file_and_notifies() {
     refresh_and_emit(&shared);
     assert_eq!(
         classify(
-            &std::env::current_dir().unwrap(),
+            &crate::policy::Directories::at(&std::env::current_dir().unwrap()),
             &shared.effective_config(),
             &bash_call("cargo build")
         ),
@@ -248,7 +248,7 @@ fn reload_failure_keeps_policy_reverts_file_and_notifies() {
     // Effective policy is unchanged (last good still in force) — fail-closed…
     assert_eq!(
         classify(
-            &std::env::current_dir().unwrap(),
+            &crate::policy::Directories::at(&std::env::current_dir().unwrap()),
             &shared.effective_config(),
             &bash_call("cargo build")
         ),
@@ -309,7 +309,7 @@ fn cancelling_a_proposal_drains_the_queue_without_applying() {
     );
     assert_eq!(
         classify(
-            &std::env::current_dir().unwrap(),
+            &crate::policy::Directories::at(&std::env::current_dir().unwrap()),
             &shared.effective_config(),
             &call
         ),
@@ -345,7 +345,7 @@ fn resolve_proposal_decision_commits_and_cancels() {
         .unwrap();
     assert_eq!(
         classify(
-            &std::env::current_dir().unwrap(),
+            &crate::policy::Directories::at(&std::env::current_dir().unwrap()),
             &shared.effective_config(),
             &npm
         ),
@@ -358,7 +358,7 @@ fn resolve_proposal_decision_commits_and_cancels() {
     );
     assert_eq!(
         classify(
-            &std::env::current_dir().unwrap(),
+            &crate::policy::Directories::at(&std::env::current_dir().unwrap()),
             &shared.effective_config(),
             &npm
         ),
@@ -387,7 +387,7 @@ fn resolve_proposal_decision_commits_and_cancels() {
     );
     assert_eq!(
         classify(
-            &std::env::current_dir().unwrap(),
+            &crate::policy::Directories::at(&std::env::current_dir().unwrap()),
             &shared.effective_config(),
             &cargo
         ),
@@ -411,7 +411,7 @@ fn resumed_log_edits_fold_into_the_initial_effective_config() {
     let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), log);
     assert_eq!(
         classify(
-            &std::env::current_dir().unwrap(),
+            &crate::policy::Directories::at(&std::env::current_dir().unwrap()),
             &shared.effective_config(),
             &bash_call("npm install")
         ),
