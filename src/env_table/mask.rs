@@ -347,6 +347,9 @@ impl Masker {
             // A cold-check record: a reason, instants, a token count, and a gesture
             // name. Nothing from the environment.
             Payload::Cold(_) => {}
+            // Git's output, including whatever the project's `post-checkout` hook
+            // printed: free text that may quote the environment.
+            Payload::Worktree(added) => self.mask_in_place(&mut added.output),
             // The provider's error text, which may quote the request back.
             Payload::ImagesRefused { refusal } => self.mask_in_place(refusal),
             // A gap, handle ids, and call ids: nothing from the environment.

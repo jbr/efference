@@ -29,6 +29,30 @@ fn log_entry_source_is_optional_and_round_trips() {
 }
 
 #[test]
+fn a_worktree_entry_round_trips() {
+    let entry = LogEntry {
+        seq: 1,
+        turn: 0,
+        at: Timestamp::now(),
+        submission_id: None,
+        source: None,
+        payload: Payload::Worktree(WorktreeAdded {
+            path: "/p/.efference/worktrees/quiet-fox".into(),
+            branch: "efference/quiet-fox".into(),
+            base: "abc123".into(),
+            exit_code: Some(1),
+            output: "hook failed\n".into(),
+        }),
+    };
+    let json = serde_json::to_string(&entry).unwrap();
+    let back: LogEntry = serde_json::from_str(&json).unwrap();
+    assert!(matches!(
+        (&back.payload, &entry.payload),
+        (Payload::Worktree(a), Payload::Worktree(b)) if a == b
+    ));
+}
+
+#[test]
 fn recorded_inference_comes_from_the_latest_boot_preamble() {
     let entry = |seq, inference: Option<LoggedInference>| LogEntry {
         seq,

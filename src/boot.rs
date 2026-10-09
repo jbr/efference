@@ -66,6 +66,8 @@ pub struct SessionRequest {
     pub autonomous: bool,
     pub reauth: Vec<String>,
     pub keep_scratch: bool,
+    /// Create the session's own git worktree and start it there (docs/control-channel.md).
+    pub worktree: bool,
     /// The host this session is created on, when it is: the in-session
     /// `sessions` mount reaches it directly (docs/tools.md). `None` for a
     /// standalone session, which has no host to address.
@@ -113,7 +115,7 @@ async fn prepare_minting(
 ) -> Result<SessionBoot<MountedSpotter>, Error> {
     let mut metadata = metadata::metadata(&request);
     let SessionRequest {
-        directories,
+        mut directories,
         base_env,
         session_dir,
         config,
@@ -124,6 +126,7 @@ async fn prepare_minting(
         autonomous,
         reauth,
         keep_scratch,
+        worktree,
         host,
         lineage,
     } = request;
@@ -202,6 +205,42 @@ async fn prepare_minting(
 
     let env_policy = env::build_env_policy(&resolver, &loaded.role.env, &inference, base_env)?;
 
+    // The session's id is its dir's name (docs/control-api.md): the address the
+    // control channel, the `sessions` mount's caller field, and the identity line
+    // in the system prompt all use, so it is read once here.
+    let session_id = session_dir
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default();
+
+    // The session's own worktree, made before the log exists so a refusal (not a git
+    // work tree) fails creation with only the session dir to roll back. Git runs the
+    // project's `post-checkout` hook inside this call, which can take seconds.
+    let mut worktree_added = None;
+    if worktree {
+        let project = directories.project().to_path_buf();
+        let (from, id, child_env) = (
+            directories.working().to_path_buf(),
+            session_id.clone(),
+            env_policy.child_env(),
+        );
+        let add_project = project.clone();
+        let added = tokio::task::spawn_blocking(move || {
+            crate::worktree::add(&add_project, &id, &from, &child_env)
+        })
+        .await
+        .map_err(|e| format!("worktree creation task failed: {e}"))??;
+        minted.worktree = Some(mint::MintedWorktree {
+            project: project.clone(),
+            path: added.path.clone(),
+            branch: added.branch.clone(),
+            env: env_policy.child_env(),
+        });
+        directories = crate::policy::Directories::new(project, added.path.clone());
+        metadata.working = Some(added.path.clone());
+        worktree_added = Some(added);
+    }
+
     let log_path = session_dir.join(LOG_NAME);
     metadata.effort = effort.clone();
     let mut log = Log::create(&log_path, Some(metadata))?;
@@ -212,14 +251,6 @@ async fn prepare_minting(
     log.set_masker(env_policy.masker());
     eprintln!("session dir: {}", session_dir.display());
     eprintln!("logging to {}", log_path.display());
-
-    // The session's id is its dir's name (docs/control-api.md): the address the
-    // control channel, the `sessions` mount's caller field, and the identity line
-    // in the system prompt all use, so it is read once here.
-    let session_id = session_dir
-        .file_name()
-        .map(|name| name.to_string_lossy().into_owned())
-        .unwrap_or_default();
 
     // Build the system prompt once, here at startup, and freeze it into the cached
     // prefix — it must stay byte-stable for the whole session or it would invalidate
@@ -246,7 +277,11 @@ async fn prepare_minting(
 
     let preamble = parts::freeze_preamble(
         &loaded,
-        directories.project(),
+        crate::env::Whereabouts {
+            project: directories.project(),
+            working: directories.working(),
+            created_branch: worktree_added.as_ref().map(|added| added.branch.as_str()),
+        },
         &env_policy,
         model,
         &session_id,
@@ -270,6 +305,19 @@ async fn prepare_minting(
             inference: Some(recorded_inference),
         },
     )?;
+
+    if let Some(added) = worktree_added {
+        log.append(
+            0,
+            crate::log::Payload::Worktree(crate::log::WorktreeAdded {
+                path: added.path,
+                branch: added.branch,
+                base: added.base,
+                exit_code: added.exit_code,
+                output: added.output,
+            }),
+        )?;
+    }
 
     let client = parts::build_client(
         &endpoint,

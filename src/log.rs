@@ -17,6 +17,7 @@ mod push;
 mod request;
 pub mod stops;
 mod upstream;
+mod worktree;
 
 #[cfg(test)]
 mod test;
@@ -31,6 +32,7 @@ pub use upstream::{
     CAPTURED_HEADERS, FRAME_CAPTURE_CAP, StreamDiagnostics, UpstreamFailureRecord,
     is_captured_header,
 };
+pub use worktree::WorktreeAdded;
 
 /// Monotonic per-entry sequence number; the address space [`project`] reads over.
 ///
@@ -301,6 +303,13 @@ pub enum Payload {
     ///
     /// [`Push`]: Payload::Push
     Cold(ColdEvent),
+    /// The session's own git worktree was created at boot: path, branch, base commit, and
+    /// git's output and exit status, which carry the project's `post-checkout` hook's
+    /// result (docs/control-channel.md). Projects to nothing, like [`Cold`]; appended
+    /// right after the boot [`Preamble`].
+    ///
+    /// [`Preamble`]: Payload::Preamble
+    Worktree(WorktreeAdded),
     /// The endpoint refused a request carrying images, and the same request with
     /// them withheld succeeded (docs/transport.md). From here the session's requests
     /// carry a placeholder in each image's place and the tool layer refuses new

@@ -2,11 +2,20 @@ use super::*;
 
 #[test]
 fn system_prompt_appends_role_section_when_present() {
-    let without = system_prompt("m", "sample-session", &Lineage::default(), None, None, None);
+    let without = system_prompt(
+        "m",
+        "sample-session",
+        &Lineage::default(),
+        None,
+        None,
+        None,
+        None,
+    );
     let with = system_prompt(
         "m",
         "sample-session",
         &Lineage::default(),
+        None,
         None,
         Some("Your role for this session:\n\nStay put."),
         None,
@@ -26,6 +35,7 @@ fn system_prompt_splices_context_block_before_the_role() {
         "m",
         "sample-session",
         &Lineage::default(),
+        None,
         Some("<CLAUDE.md>\nhi\n</CLAUDE.md>"),
         Some("Your role for this session:\n\nDo it."),
         None,
@@ -34,8 +44,16 @@ fn system_prompt_splices_context_block_before_the_role() {
     assert!(s.find("<CLAUDE.md>").unwrap() < s.find("Your role").unwrap());
     // No block → nothing spliced.
     assert!(
-        !system_prompt("m", "sample-session", &Lineage::default(), None, None, None)
-            .contains("<CLAUDE.md>")
+        !system_prompt(
+            "m",
+            "sample-session",
+            &Lineage::default(),
+            None,
+            None,
+            None,
+            None
+        )
+        .contains("<CLAUDE.md>")
     );
 }
 
@@ -48,6 +66,7 @@ fn system_prompt_never_names_the_config_file() {
         "m",
         "sample-session",
         &Lineage::default(),
+        None,
         Some("<CLAUDE.md>\nhi\n</CLAUDE.md>"),
         Some("Your role for this session:\n\nDo it."),
         None,
@@ -67,6 +86,7 @@ fn system_prompt_appends_the_unmounted_section_last() {
         "m",
         "sample-session",
         &Lineage::default(),
+        None,
         Some("<CLAUDE.md>\nhi\n</CLAUDE.md>"),
         Some("Your role for this session:\n\nDo it."),
         Some(unmounted),
@@ -79,6 +99,7 @@ fn system_prompt_appends_the_unmounted_section_last() {
         "m",
         "sample-session",
         &Lineage::default(),
+        None,
         Some("<CLAUDE.md>\nhi\n</CLAUDE.md>"),
         Some("Your role for this session:\n\nDo it."),
         None,
@@ -102,6 +123,7 @@ fn system_prompt_states_the_model_identity_and_the_session_id() {
         "anthropic/claude-sonnet-5",
         "burgundy-skink",
         &Lineage::default(),
+        None,
         Some("<CLAUDE.md>\nhi\n</CLAUDE.md>"),
         None,
         None,
@@ -134,6 +156,7 @@ fn system_prompt_names_the_creating_session_when_there_is_one() {
             created_by: Some(String::from("lucid-lark")),
             ..Lineage::default()
         },
+        None,
         Some("<CLAUDE.md>\nhi\n</CLAUDE.md>"),
         None,
         None,
@@ -158,6 +181,7 @@ fn system_prompt_names_the_creating_session_when_there_is_one() {
         "anthropic/claude-sonnet-5",
         "eager-meadow",
         &Lineage::default(),
+        None,
         Some("<CLAUDE.md>\nhi\n</CLAUDE.md>"),
         None,
         None,
@@ -183,6 +207,7 @@ fn system_prompt_names_the_creating_session_when_there_is_one() {
                 created_by: Some(String::from("lucid-lark")),
                 ..Lineage::default()
             },
+            None,
             Some("<CLAUDE.md>\nhi\n</CLAUDE.md>"),
             None,
             None,
@@ -218,6 +243,7 @@ fn a_successor_is_told_whom_it_succeeds() {
         None,
         None,
         None,
+        None,
     );
     assert!(prompt.contains("It succeeds `old-leaf`"), "{prompt}");
     assert!(prompt.contains("the first message is that session's brief"));
@@ -225,4 +251,38 @@ fn a_successor_is_told_whom_it_succeeds() {
     assert!(prompt.contains("confirm what they want to do"));
     assert!(prompt.contains("archive it with `archive`"));
     assert!(!prompt.contains("It was created by"));
+}
+
+/// A session working somewhere other than its project root names both paths; one that
+/// made its own worktree says so; one working at the root renders as before
+/// (docs/context.md).
+#[test]
+fn system_prompt_names_the_working_directory_when_it_is_not_the_project_root() {
+    let at_root = system_prompt("m", "new-leaf", &Lineage::default(), None, None, None, None);
+    let project = Path::new("/p");
+    let working = Path::new("/p/.efference/worktrees/new-leaf");
+    let render = |created_branch| {
+        system_prompt(
+            "m",
+            "new-leaf",
+            &Lineage::default(),
+            Some(Whereabouts {
+                project,
+                working,
+                created_branch,
+            }),
+            None,
+            None,
+            None,
+        )
+    };
+    let sentence = " Your working directory is `/p/.efference/worktrees/new-leaf`, inside the project at `/p`.";
+    assert!(!at_root.contains("Your working directory"));
+    assert_eq!(
+        render(None),
+        at_root.replacen("\n\n", &format!("{sentence}\n\n"), 1)
+    );
+    assert!(render(Some("efference/new-leaf")).contains(&format!(
+        "{sentence} It is a git worktree on branch `efference/new-leaf`, made for this session.\n\n"
+    )));
 }

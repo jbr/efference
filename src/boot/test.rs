@@ -99,6 +99,7 @@ pub(super) fn request(root: &Path, id: &str, effort: Option<&str>) -> SessionReq
         autonomous: false,
         reauth: Vec::new(),
         keep_scratch: false,
+        worktree: false,
         host: None,
         lineage: crate::env::Lineage::default(),
     }
@@ -286,6 +287,7 @@ auth = {{ kind = "env", key = "EFFERENCE_BOOT_TEST_KEY" }}
         autonomous: false,
         reauth: Vec::new(),
         keep_scratch: false,
+        worktree: false,
         host: None,
         lineage: crate::env::Lineage::default(),
     }
@@ -404,6 +406,67 @@ async fn a_late_failure_rolls_back_what_it_minted() {
     // The rolled-back name is free, and the parent the mint created recursively
     // is left in place for the retry.
     mint_session_dir(&dir).expect("the name is free for a corrected retry");
+}
+
+fn git_in(dir: &Path, args: &[&str]) {
+    let mut cmd = std::process::Command::new("git");
+    cmd.args(args).current_dir(dir);
+    crate::worktree::unset_repository_env(&mut cmd);
+    let output = crate::spawn::std_output(&mut cmd).unwrap();
+    assert!(output.status.success(), "git {args:?}");
+}
+
+/// `worktree: true` outside a git work tree fails creation and leaves nothing.
+#[tokio::test]
+async fn a_worktree_request_outside_git_is_refused_with_nothing_minted() {
+    let _serial = PREPARING.lock().await;
+    let root = Root::new("worktree-refused");
+    let dir = root.session_dir("plain-fox");
+    let mut req = request(root.path(), "plain-fox", None);
+    req.worktree = true;
+
+    let error = failure(prepare(req).await, "no git work tree must fail creation");
+    assert!(error.to_string().contains("git work tree"), "{error}");
+    assert!(!dir.exists());
+}
+
+/// A failure after the worktree exists removes the worktree and its branch.
+#[tokio::test]
+async fn a_late_failure_removes_the_worktree_it_made() {
+    let _serial = PREPARING.lock().await;
+    let root = Root::new("worktree-late");
+    git_in(root.path(), &["init", "-q"]);
+    std::fs::write(
+        root.path().join("efference.toml"),
+        "[context]\n\"absent.md\" = true\n",
+    )
+    .unwrap();
+    git_in(root.path(), &["add", "efference.toml"]);
+    git_in(
+        root.path(),
+        &[
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@t",
+            "commit",
+            "-q",
+            "-m",
+            "one",
+        ],
+    );
+    let mut req = request(root.path(), "late-fox", None);
+    req.worktree = true;
+
+    failure(prepare(req).await, "unreadable [context] must fail");
+    assert!(!crate::worktree::path(root.path(), "late-fox").exists());
+    assert!(!root.session_dir("late-fox").exists());
+    let mut cmd = std::process::Command::new("git");
+    cmd.args(["branch", "--list", "efference/late-fox"])
+        .current_dir(root.path());
+    crate::worktree::unset_repository_env(&mut cmd);
+    let branches = crate::spawn::std_output(&mut cmd).unwrap();
+    assert!(branches.stdout.is_empty(), "the branch is deleted");
 }
 
 /// A name whose dir exists is refused, and refusing it touches nothing: the

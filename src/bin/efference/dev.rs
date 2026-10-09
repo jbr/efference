@@ -869,6 +869,7 @@ pub(crate) async fn wire(
             &model,
             &session_id,
             &efference::env::Lineage::default(),
+            None,
             context_block.as_deref(),
             role_section.as_deref(),
             None,

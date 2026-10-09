@@ -116,7 +116,7 @@ pub(super) struct FrozenPreamble {
 /// brief, and the config note.
 pub(super) fn freeze_preamble(
     loaded: &LoadedConfig,
-    project: &Path,
+    whereabouts: crate::env::Whereabouts<'_>,
     env_policy: &EnvPolicy,
     model: &str,
     session_id: &str,
@@ -125,11 +125,12 @@ pub(super) fn freeze_preamble(
 ) -> Result<FrozenPreamble, Error> {
     let role_section = loaded.role.preamble_section();
     // The [context] preamble builder (docs/context.md): resolve the operator's listed
-    // files from the project directory and fold the rendered block into the frozen prefix. Fail closed — configured
-    // context that can't be read aborts startup rather than silently vanishing.
+    // files from the project directory and fold the rendered block into the frozen
+    // prefix. Fail closed — configured context that can't be read aborts startup rather
+    // than silently vanishing.
     let mut resolved = match crate::context::resolve_with_child_env(
         &loaded.role.context,
-        project,
+        whereabouts.project,
         &env_policy.child_env(),
     ) {
         Ok(resolved) => resolved,
@@ -150,6 +151,7 @@ pub(super) fn freeze_preamble(
         model,
         session_id,
         lineage,
+        Some(whereabouts),
         context_block.as_deref(),
         role_section.as_deref(),
         unmounted_section,

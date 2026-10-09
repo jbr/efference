@@ -64,6 +64,7 @@ pub(crate) async fn create_here(
         autonomous,
         reauth,
         keep_scratch,
+        worktree: false,
         // A human root has no creator to end with (docs/tools.md).
         detached: false,
         env: Some(env),

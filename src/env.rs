@@ -12,6 +12,8 @@
 //! the operator's declaration. Without it a session spends its first turns
 //! working out what kind of repo it is in.
 
+use std::path::Path;
+
 /// The system preamble. Explains the curation model so the agent stops defending
 /// against context bloat the old way (docs/redaction-fork.md) — the run that
 /// motivated this watched the model reflexively `grep`/`head` its own tool output.
@@ -56,10 +58,23 @@ pub struct Lineage {
     pub succeeds: Option<String>,
 }
 
+/// Where a session works, as the identity line states it when that is not its project
+/// root (docs/context.md). Fixed at creation, so the sentence is byte-stable.
+#[derive(Clone, Copy, Debug)]
+pub struct Whereabouts<'a> {
+    /// The project root: where config, grants, and the session's own dir live.
+    pub project: &'a Path,
+    /// The working directory: where tools run.
+    pub working: &'a Path,
+    /// The branch of the worktree this session created for itself, when it did.
+    pub created_branch: Option<&'a str>,
+}
+
 pub fn system_prompt(
     model: &str,
     session_id: &str,
     lineage: &Lineage,
+    whereabouts: Option<Whereabouts<'_>>,
     context_block: Option<&str>,
     role_section: Option<&str>,
     unmounted: Option<&str>,
@@ -110,6 +125,22 @@ pub fn system_prompt(
              open with `notify`, and archive it with `archive` once you have no more \
              questions for it.",
         );
+    }
+    // The working directory against the project root, when they differ
+    // (docs/control-channel.md): a session in a worktree has one path for where it
+    // works and another for the project, and an absolute path taken from one for the
+    // other lands in the wrong tree. Both are fixed at creation.
+    if let Some(whereabouts) = whereabouts.filter(|w| w.working != w.project) {
+        prompt.push_str(&format!(
+            " Your working directory is `{}`, inside the project at `{}`.",
+            whereabouts.working.display(),
+            whereabouts.project.display()
+        ));
+        if let Some(branch) = whereabouts.created_branch {
+            prompt.push_str(&format!(
+                " It is a git worktree on branch `{branch}`, made for this session."
+            ));
+        }
     }
     // How the harness works — `include_str!` keeps the file's trailing newline;
     // trim it so the join is clean.

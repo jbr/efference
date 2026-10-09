@@ -397,6 +397,7 @@ pub(crate) fn entry_nodes(
             // operation text through the `current_operations` topic; they draw
             // nothing in the transcript.
             Payload::RequestStage(_) | Payload::Push(_) | Payload::Cold(_) => {}
+            Payload::Worktree(_) => {}
             // Read through the transcript view; the placeholder in each result
             // already says what was withheld.
             Payload::ImagesRefused { .. } => {}

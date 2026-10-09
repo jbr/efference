@@ -139,6 +139,7 @@ impl Host {
             autonomous: body.autonomous,
             reauth: body.reauth,
             keep_scratch: body.keep_scratch,
+            worktree: body.worktree,
             // The new session's toolbox mounts the `sessions` provider against
             // this host, with the new session itself as the caller (docs/tools.md).
             host: Some(Arc::clone(self)),
@@ -207,6 +208,10 @@ pub struct CreateSession {
     pub reauth: Vec<String>,
     #[serde(default)]
     pub keep_scratch: bool,
+    /// Create the session its own worktree and start it there
+    /// (docs/control-channel.md).
+    #[serde(default)]
+    pub worktree: bool,
     /// Outlive the session that creates this one (docs/tools.md). Meaningful only
     /// for a session-driven `create`: a human root has no creator to end with.
     #[serde(default)]

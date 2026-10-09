@@ -234,6 +234,7 @@ async fn create_session(
         autonomous: false,
         reauth: Vec::new(),
         keep_scratch: false,
+        worktree: false,
         // A session created by a person at a keyboard has no creator to end with
         // (docs/tools.md).
         detached: false,

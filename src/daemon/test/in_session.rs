@@ -486,6 +486,7 @@ async fn a_successor_is_created_with_its_predecessors_options() {
         autonomous: false,
         reauth: Vec::new(),
         keep_scratch: false,
+        worktree: false,
         detached: false,
         env: Default::default(),
     };

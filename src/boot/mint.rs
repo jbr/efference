@@ -18,6 +18,15 @@ pub(super) struct Minted {
     /// `--keep-scratch`, honored on a failed boot as it is at session end
     /// (docs/tools.md): the post-mortem artifact survives the rollback.
     pub(super) keep_scratch: bool,
+    pub(super) worktree: Option<MintedWorktree>,
+}
+
+/// A worktree this attempt created, and what removing it needs.
+pub(super) struct MintedWorktree {
+    pub(super) project: PathBuf,
+    pub(super) path: PathBuf,
+    pub(super) branch: String,
+    pub(super) env: crate::env_table::ChildEnv,
 }
 
 impl Minted {
@@ -25,6 +34,9 @@ impl Minted {
     /// the boot report's surface. A failed removal is not escalated: the
     /// preparation error the caller is already returning is the one that matters.
     pub(super) fn roll_back(self) {
+        if let Some(w) = &self.worktree {
+            crate::worktree::remove(&w.project, &w.path, &w.branch, &w.env);
+        }
         if let Some(dir) = &self.session_dir
             && let Err(e) = std::fs::remove_dir_all(dir)
             && e.kind() != std::io::ErrorKind::NotFound

@@ -408,6 +408,8 @@ pub fn project_semantic_for(log: &[LogEntry], reader: Reader) -> Vec<WireTurn> {
             // tool's: it projects to nothing, so it can be appended at every stage
             // of every request without moving the cached prefix.
             Payload::RequestStage(_) | Payload::Push(_) | Payload::Cold(_) => {}
+            // The worktree's creation record (docs/control-channel.md) is audit only.
+            Payload::Worktree(_) => {}
             // The client withholds images in its encoding (docs/transport.md);
             // the entry itself is the audit record.
             Payload::ImagesRefused { .. } => {}

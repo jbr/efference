@@ -125,6 +125,7 @@ impl Tool<Control> for Create {
                     autonomous: self.autonomous,
                     reauth: Vec::new(),
                     keep_scratch: false,
+                    worktree: false,
                     detached: self.detached,
                     env: Some(env),
                 };
@@ -177,6 +178,7 @@ impl Tool<Control> for Create {
                     autonomous: self.autonomous,
                     reauth: Vec::new(),
                     keep_scratch: false,
+                    worktree: false,
                     detached: self.detached,
                     env: Some(env),
                 };

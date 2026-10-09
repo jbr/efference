@@ -78,6 +78,7 @@ impl Tool<Control> for HandOff {
                     autonomous: false,
                     reauth: Vec::new(),
                     keep_scratch: false,
+                    worktree: false,
                     // The host sets this from the caller's own placement.
                     detached: false,
                     env: Some(caller.child_env().resolved()),

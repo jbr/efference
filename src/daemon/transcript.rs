@@ -231,7 +231,8 @@ fn lines(
         | Payload::CallStarted { .. }
         | Payload::RequestStage(_)
         | Payload::Push(_)
-        | Payload::Cold(_) => {
+        | Payload::Cold(_)
+        | Payload::Worktree(_) => {
             vec![]
         }
         Payload::ImagesRefused { refusal } => vec![line(
