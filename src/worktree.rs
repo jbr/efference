@@ -163,8 +163,10 @@ pub(crate) fn unset_repository_env(cmd: &mut Command) {
 
 /// Stdout and stderr together, truncated at a character boundary with a marker.
 fn combined(output: &Output) -> String {
-    let mut text = String::from_utf8_lossy(&output.stdout).into_owned();
-    text.push_str(&String::from_utf8_lossy(&output.stderr));
+    let mut text = without_overwrites(&String::from_utf8_lossy(&output.stdout));
+    text.push_str(&without_overwrites(&String::from_utf8_lossy(
+        &output.stderr,
+    )));
     if text.len() > OUTPUT_CAP {
         let mut end = OUTPUT_CAP;
         while !text.is_char_boundary(end) {
@@ -174,6 +176,23 @@ fn combined(output: &Output) -> String {
         text.push_str("\n[output truncated]");
     }
     text
+}
+
+/// Each line as a terminal would leave it: the text after its last carriage return.
+/// Git's progress meters (`Updating files:  96% …\r`) redraw one line in place, and
+/// kept verbatim they are most of what a checkout prints.
+fn without_overwrites(text: &str) -> String {
+    text.split_inclusive('\n')
+        .map(|line| {
+            let (body, newline) = match line.strip_suffix('\n') {
+                Some(body) => (body, "\n"),
+                None => (line, ""),
+            };
+            let body = body.strip_suffix('\r').unwrap_or(body);
+            let last = body.rsplit('\r').next().unwrap_or(body);
+            format!("{last}{newline}")
+        })
+        .collect()
 }
 
 /// Create the session's worktree: `git worktree add -b efference/<id> <path> <base>`,

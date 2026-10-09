@@ -312,3 +312,16 @@ fn a_directory_in_no_worktree_belongs_to_none() {
         assert_eq!(project_of(Path::new(dir)), None, "{dir}");
     }
 }
+
+/// A progress meter's redraws keep only their last state, the line a terminal would
+/// show; lines without a carriage return pass through.
+#[test]
+fn progress_redraws_keep_their_last_state() {
+    let git = "HEAD is now at b5a984a7 smoke\nPreparing worktree\nUpdating files:  96% (1438/1485)\rUpdating files: 100% (1485/1485)\rUpdating files: 100% (1485/1485), done.\n";
+    assert_eq!(
+        without_overwrites(git),
+        "HEAD is now at b5a984a7 smoke\nPreparing worktree\nUpdating files: 100% (1485/1485), done.\n"
+    );
+    assert_eq!(without_overwrites("done.\r\n"), "done.\n");
+    assert_eq!(without_overwrites("no newline"), "no newline");
+}
