@@ -448,6 +448,7 @@ mod finish;
 pub(crate) mod plan;
 mod provider;
 mod render;
+mod request_options;
 mod reservation;
 pub(crate) mod responses;
 mod stages;
@@ -480,6 +481,7 @@ pub use render::{
     render_messages_pretty, render_messages_yaml, render_request_pretty, render_request_yaml,
     render_responses_request_pretty,
 };
+pub use request_options::{OutputCapField, RequestOptions};
 pub use reservation::{
     OutputCapRejection, Reservation, ReservationState, UNKNOWN_OUTPUT_CAP, is_window_overflow,
     output_cap_rejection, reservation_state,

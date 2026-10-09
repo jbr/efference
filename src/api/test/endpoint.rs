@@ -288,6 +288,7 @@ async fn an_expired_credential_is_re_read_and_the_attempt_retried() {
         ),
         session_id: None,
         extra_headers: Vec::new(),
+        request: Default::default(),
         base: None,
     };
     let client = Client::new(endpoint, "m", "sys", None);

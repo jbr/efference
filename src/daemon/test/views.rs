@@ -367,6 +367,7 @@ fn state_reports_session_cost_only_when_armed() {
         auth_value: "Bearer sk-or-test".into(),
         session_id: None,
         extra_headers: Vec::new(),
+        request: Default::default(),
         base: None,
     });
     let v: Value = serde_json::from_str(&shared.state_json()).unwrap();

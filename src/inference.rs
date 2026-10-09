@@ -11,7 +11,9 @@ use std::sync::Arc;
 
 use serde::Deserialize;
 
-use crate::api::{AuthValue, Endpoint, Error, Provider, Reload, Reread, WireDialect};
+use crate::api::{
+    AuthValue, Endpoint, Error, Provider, Reload, RequestOptions, Reread, WireDialect,
+};
 use crate::distill::TriageModel;
 use crate::env_table::EnvSnapshot;
 use crate::secrets::Secrets;
@@ -148,6 +150,16 @@ struct ConnectionConfig {
     /// unavailable, by the same mechanism as a credential that fails to load.
     #[serde(default)]
     disabled: bool,
+    /// Fields merged into every request body, for a vendor parameter whose value
+    /// is fixed (`body = { parallel_tool_calls = false }`). Read on a `completions`
+    /// connection only; keys the encoder writes are refused (`RequestOptions`,
+    /// docs/transport.md).
+    #[serde(default)]
+    body: Option<serde_json::Map<String, serde_json::Value>>,
+    /// The output cap's key, `max_tokens` (the default) or `max_completion_tokens`.
+    /// Read on a `completions` connection only.
+    #[serde(default)]
+    output_cap_field: Option<String>,
 }
 
 /// The location of an inference credential, never its value.
@@ -402,6 +414,7 @@ impl InferenceRegistry {
                 credential_variables.insert(key.clone());
             }
             let (provider, base) = resolve_declaration(&name, &config)?;
+            let request = resolve_request_options(&name, provider, &config)?;
             let credential = if config.disabled {
                 Err(format!("connection {name:?} is disabled"))
             } else {
@@ -414,6 +427,10 @@ impl InferenceRegistry {
                     &host_env,
                     secrets,
                 )
+                .map(|mut credential| {
+                    credential.endpoint.request = request;
+                    credential
+                })
             };
             if config.disabled {
                 disabled_names.insert(name.clone());
@@ -734,6 +751,28 @@ fn resolve_declaration(
         ));
     }
     Ok((Provider::Custom(dialect), Some(base)))
+}
+
+/// The connection's request settings (`RequestOptions`). They describe a
+/// Completions body, so on any other dialect they are refused rather than ignored:
+/// a setting that loads and does nothing reads as one that works.
+fn resolve_request_options(
+    name: &str,
+    provider: Provider,
+    config: &ConnectionConfig,
+) -> Result<RequestOptions, String> {
+    if config.body.is_none() && config.output_cap_field.is_none() {
+        return Ok(RequestOptions::default());
+    }
+    if provider != Provider::Custom(WireDialect::Completions) {
+        return Err(format!(
+            "connection {name:?}: `body` and `output-cap-field` are read only on a \
+             `dialect = \"completions\"` connection"
+        ));
+    }
+    let body = config.body.clone().unwrap_or_default();
+    RequestOptions::new(body, config.output_cap_field.as_deref())
+        .map_err(|error| format!("connection {name:?}: {error}"))
 }
 
 fn load_credential(

@@ -299,7 +299,7 @@ project. The prompts draw on `/dev/tty` when stdout is a pipe, which is what
 "Something else", for an endpoint speaking a dialect efference already has an
 encoder for at a URL the provider enum does not know
 ([transport.md](transport.md)). It asks the dialect — Anthropic Messages, OpenAI
-Responses, or System One decisions — then the base URL (for System One, the whole
+Responses, Chat Completions, or System One decisions — then the base URL (for System One, the whole
 request URL, since providers spell that route differently), and refuses a URL that
 is not one at the prompt rather than at host launch. Both are asked *before* the name, because the
 endpoint's host is a better name suggestion than anything the flow could derive
@@ -308,6 +308,14 @@ suggests `META_API_KEY` for the environment variable, so the two questions with 
 conventional answer arrive prefilled anyway. The connection is written as the two
 keys it is — `dialect` and `base-url` — never as a `provider` line naming
 something that is not a provider name.
+
+A `completions` connection takes two more keys, written by hand rather than by setup,
+for the fields vendors spell differently ([transport.md](transport.md)):
+`output-cap-field` (`max_tokens`, the default, or `max_completion_tokens`) and
+`body`, a table merged into every request for a vendor parameter whose value is fixed
+(`body = { parallel_tool_calls = false }`). `body` may not set a key the encoder
+writes, the effort included: that is `--effort`'s. Either key on another dialect fails
+the load rather than doing nothing.
 
 **Defaults: which model the spotter runs** (`src/setup/defaults.rs`). `[defaults]`
 has one role — `spotter` — and the editor says what it is for rather than

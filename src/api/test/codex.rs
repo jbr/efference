@@ -50,6 +50,7 @@ async fn codex_turn_routing_token_is_replayed_within_a_turn_and_dropped_at_the_n
         auth_value: "Bearer k".into(),
         session_id: None,
         extra_headers: Vec::new(),
+        request: Default::default(),
         base: None,
     };
     let client = Client::new(endpoint, "gpt-5.6-sol", "sys", None);
@@ -114,6 +115,7 @@ fn a_client_without_turn_routing_holds_no_token() {
         auth_value: "Bearer k".into(),
         session_id: None,
         extra_headers: Vec::new(),
+        request: Default::default(),
         base: None,
     };
     let client = Client::new(endpoint, "gpt-5.6-luna", "sys", None).without_turn_routing();
@@ -181,6 +183,7 @@ async fn codex_plan_windows_are_read_off_every_response_and_retained_when_absent
         auth_value: "Bearer k".into(),
         session_id: None,
         extra_headers: Vec::new(),
+        request: Default::default(),
         base: None,
     };
     let client = Client::new(endpoint, "gpt-5.6-sol", "sys", None);
@@ -273,6 +276,7 @@ async fn plan_windows_are_ignored_off_the_codex_backend() {
         auth_value: "Bearer k".into(),
         session_id: None,
         extra_headers: Vec::new(),
+        request: Default::default(),
         base: None,
     };
     let client = Client::new(endpoint, "m", "sys", None);
@@ -316,6 +320,7 @@ async fn a_codex_request_carries_its_headers_and_no_anthropic_version() {
         auth_value: "Bearer tok".into(),
         session_id: None,
         extra_headers: vec![("ChatGPT-Account-ID".into(), "acct-1".into())],
+        request: Default::default(),
         base: None,
     };
     let client = Client::new(endpoint, "gpt-5.6-luna", "sys", None);
@@ -391,6 +396,7 @@ async fn codex_keepalive_caps_output_where_a_turn_sends_no_cap() {
         auth_value: "Bearer k".into(),
         session_id: None,
         extra_headers: Vec::new(),
+        request: Default::default(),
         base: None,
     };
     let client = Client::new(endpoint, "gpt-6.1-sol", "sys", None);
@@ -475,6 +481,7 @@ async fn codex_primer_replays_the_turn_envelope_capped() {
         auth_value: "Bearer k".into(),
         session_id: None,
         extra_headers: Vec::new(),
+        request: Default::default(),
         base: None,
     };
     let client = Client::new(endpoint, "gpt-6.1-sol", "sys", None)
@@ -541,6 +548,7 @@ async fn primer_sends_nothing_without_an_implicit_responses_lineage() {
             auth_value: "y".into(),
             session_id: None,
             extra_headers: Vec::new(),
+            request: Default::default(),
             base: None,
         },
         "claude-haiku-4-5",
@@ -560,6 +568,7 @@ async fn primer_sends_nothing_without_an_implicit_responses_lineage() {
             auth_value: "y".into(),
             session_id: None,
             extra_headers: Vec::new(),
+            request: Default::default(),
             base: None,
         },
         "gpt-6.1-sol",
@@ -628,6 +637,7 @@ async fn primer_plants_despite_truncated_output() {
         auth_value: "Bearer k".into(),
         session_id: None,
         extra_headers: Vec::new(),
+        request: Default::default(),
         base: None,
     };
     let client = Client::new(endpoint, "gpt-6-luna", "sys", None)

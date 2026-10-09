@@ -901,9 +901,14 @@ impl Client {
                         messages.clone(),
                         tools,
                         tool_choice,
-                        max_tokens,
-                        self.temperature
-                            .map(|t| self.endpoint.provider.map_temperature(t)),
+                        completions::RequestParams {
+                            max_tokens,
+                            temperature: self
+                                .temperature
+                                .map(|t| self.endpoint.provider.map_temperature(t)),
+                            effort: self.effort.as_deref(),
+                            options: &self.endpoint.request,
+                        },
                     ))?
                 }
             };

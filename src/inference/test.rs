@@ -783,3 +783,59 @@ disabled = true
         ["IDLE_KEY".to_string(), "WORK_KEY".to_string()]
     );
 }
+
+/// A `completions` connection's `body` and `output-cap-field` reach its endpoint,
+/// and are refused on any other dialect and for keys the encoder writes.
+#[test]
+fn request_options_load_on_a_completions_connection_only() {
+    let load = |body: &str| {
+        let config = InferenceConfig::from_toml(&format!(
+            r#"
+[connections.mistral]
+auth = {{ kind = "env", key = "MISTRAL_KEY" }}
+base-url = "https://api.mistral.ai/v1"
+{body}
+"#
+        ))
+        .unwrap();
+        InferenceRegistry::from_config(
+            config,
+            Path::new("/host"),
+            environment(&[("MISTRAL_KEY", "k")]),
+            &Arc::new(Secrets::in_memory()),
+        )
+        .map_err(|error| error.to_string())
+    };
+
+    let registry = load(
+        r#"dialect = "completions"
+output-cap-field = "max_completion_tokens"
+body = { parallel_tool_calls = false, safe_prompt = true }"#,
+    )
+    .unwrap();
+    let (_, endpoint) = registry.endpoint("mistral").unwrap();
+    assert_eq!(
+        endpoint.request.output_cap_field,
+        crate::api::OutputCapField::MaxCompletionTokens
+    );
+    assert_eq!(
+        endpoint.request.body.get("parallel_tool_calls"),
+        Some(&serde_json::Value::Bool(false))
+    );
+
+    let elsewhere = load(
+        r#"dialect = "responses"
+body = { store = true }"#,
+    )
+    .err()
+    .unwrap();
+    assert!(elsewhere.contains("only on a"), "{elsewhere}");
+
+    let encoder_key = load(
+        r#"dialect = "completions"
+body = { reasoning_effort = "high" }"#,
+    )
+    .err()
+    .unwrap();
+    assert!(encoder_key.contains("--effort"), "{encoder_key}");
+}

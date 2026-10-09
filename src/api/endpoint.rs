@@ -59,6 +59,10 @@ pub struct Endpoint {
     /// suffixes of it: trimming a path segment off a URL to rebuild them would
     /// guess at a structure the operator supplied whole.
     pub base: Option<String>,
+    /// What the connection says about its request body beyond the dialect
+    /// ([`RequestOptions`]); the default everywhere but a described Completions
+    /// connection that sets `body` or `output-cap-field`.
+    pub request: RequestOptions,
 }
 
 /// One authenticated GET's whole answer, whatever its status
@@ -238,6 +242,7 @@ impl Endpoint {
             session_id: None,
             extra_headers: Vec::new(),
             base,
+            request: RequestOptions::default(),
         };
         match (provider, account_id) {
             (Provider::OpenAICodex, Some(account)) => endpoint

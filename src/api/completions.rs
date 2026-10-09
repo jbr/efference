@@ -7,6 +7,7 @@ use serde::Serialize;
 use serde_json::{Map, Value};
 
 use super::MAX_TOKENS;
+use super::request_options::{OutputCapField, RequestOptions};
 use super::thinking::ToolChoice;
 use crate::log::{AssistantOutput, CompletionsMessage, MessagesOutputBlock, ResultImage};
 use crate::project::{UserPart, WireTurn};
@@ -20,16 +21,36 @@ mod test;
 #[derive(Serialize)]
 pub(super) struct CompletionsRequest<'a> {
     model: &'a str,
-    /// Spelled `max_completion_tokens` by OpenAI's own endpoint; `max_tokens` is
-    /// what the other servers accept (backlog/completions-dialect/dialect.md).
-    max_tokens: u32,
+    /// The output cap under the connection's spelling (`OutputCapField`): exactly
+    /// one of these two is present.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    max_tokens: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    max_completion_tokens: Option<u32>,
     messages: Vec<Message>,
     tools: Vec<Value>,
     tool_choice: Value,
     #[serde(skip_serializing_if = "Option::is_none")]
     temperature: Option<f64>,
+    /// The session's effort, as OpenAI and Mistral spell it. Omitted when unset, so
+    /// the server's own default applies.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reasoning_effort: Option<&'a str>,
     stream: bool,
     stream_options: StreamOptions,
+    /// The connection's fixed `body` fields, after every encoder-written key. Its
+    /// keys never collide with those (`RequestOptions::new`).
+    #[serde(flatten)]
+    body: &'a Map<String, Value>,
+}
+
+/// What the client supplies beyond the turns: the per-request values and the
+/// connection's settings.
+pub(super) struct RequestParams<'a> {
+    pub max_tokens: u32,
+    pub temperature: Option<f64>,
+    pub effort: Option<&'a str>,
+    pub options: &'a RequestOptions,
 }
 
 /// Asks for the usage chunk at the end of the stream; without it most servers
@@ -175,13 +196,18 @@ pub fn render_completions_request_pretty(
     turns: &[WireTurn],
 ) -> Result<String, super::Error> {
     let messages = translate_completions(turns, system, model)?;
+    let options = RequestOptions::default();
     Ok(serde_json::to_string_pretty(&completions_request(
         model,
         messages,
         tools,
         tool_choice,
-        MAX_TOKENS,
-        None,
+        RequestParams {
+            max_tokens: MAX_TOKENS,
+            temperature: None,
+            effort: None,
+            options: &options,
+        },
     ))?)
 }
 
@@ -191,20 +217,26 @@ pub(super) fn completions_request<'a>(
     messages: Vec<Message>,
     tools: &[Value],
     tool_choice: ToolChoice,
-    max_tokens: u32,
-    temperature: Option<f64>,
+    params: RequestParams<'a>,
 ) -> CompletionsRequest<'a> {
+    let (max_tokens, max_completion_tokens) = match params.options.output_cap_field {
+        OutputCapField::MaxTokens => (Some(params.max_tokens), None),
+        OutputCapField::MaxCompletionTokens => (None, Some(params.max_tokens)),
+    };
     CompletionsRequest {
         model,
         max_tokens,
+        max_completion_tokens,
         messages,
         tools: tool_definitions(tools),
         tool_choice: tool_choice_value(&tool_choice),
-        temperature,
+        temperature: params.temperature,
+        reasoning_effort: params.effort,
         stream: true,
         stream_options: StreamOptions {
             include_usage: true,
         },
+        body: &params.options.body,
     }
 }
 

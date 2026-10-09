@@ -57,6 +57,7 @@ async fn a_stream_open_past_the_ceiling_is_marked_retryable() {
         auth_value: "k".into(),
         session_id: None,
         extra_headers: Vec::new(),
+        request: Default::default(),
         base: None,
     };
     let client = Client::new(endpoint, "m", "sys", None)
@@ -116,6 +117,7 @@ async fn an_interrupt_ends_the_read_and_marks_the_partial_aborted() {
         auth_value: "k".into(),
         session_id: None,
         extra_headers: Vec::new(),
+        request: Default::default(),
         base: None,
     };
     let interrupt = std::sync::Arc::new(tokio::sync::Notify::new());
@@ -193,6 +195,7 @@ async fn an_empty_stream_over_the_wire_captures_the_response_headers() {
         auth_value: "Bearer k".into(),
         session_id: None,
         extra_headers: Vec::new(),
+        request: Default::default(),
         base: None,
     };
     let client = Client::new(endpoint, "m", "sys", None);
@@ -296,6 +299,7 @@ async fn attribution_rides_openrouter_turns_and_nothing_else() {
             auth_value: "k".into(),
             session_id: None,
             extra_headers: Vec::new(),
+            request: Default::default(),
             base: None,
         };
         let client = Client::new(endpoint, "m", "sys", None);
@@ -386,6 +390,7 @@ async fn a_responses_stream_past_the_ceiling_keeps_its_partial_as_transient() {
         auth_value: "Bearer k".into(),
         session_id: None,
         extra_headers: Vec::new(),
+        request: Default::default(),
         base: None,
     };
     let client = Client::new(endpoint, "gpt-5.6-luna", "sys", None)
@@ -420,6 +425,7 @@ async fn a_foreign_dialect_turn_list_never_becomes_a_request() {
         auth_value: "k".into(),
         session_id: None,
         extra_headers: Vec::new(),
+        request: Default::default(),
         base: None,
     };
     let client = Client::new(endpoint, "m", "sys", None);

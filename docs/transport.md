@@ -1000,8 +1000,22 @@ message cannot carry an image, so the turn's result images and prose follow as o
 text part (some local servers accept only that form), parts with `data:` URLs
 otherwise. Tools are `{type: "function", function: {name, description, parameters}}`,
 `tool_choice` is `"auto"` or `{type: "function", function: {name}}`, and the body
-carries `max_tokens`, `temperature` when set, `stream: true`, and
-`stream_options.include_usage`. The dialect has no per-part cache marker, so
+carries the output cap, `temperature` when set, the session's effort as
+`reasoning_effort` when set (OpenAI's and Mistral's spelling; Mistral reasons only
+when it is sent), `stream: true`, and `stream_options.include_usage`.
+
+Two connection settings cover what vendors spell differently (`api::RequestOptions`,
+`api/request_options.rs`). `output-cap-field` names the cap's key, `max_tokens` by
+default or `max_completion_tokens` (OpenAI's own endpoint); the value is still the
+boot reservation's, which a fixed table could not carry. `body` is a table of fixed
+fields merged into every request after every encoder-written key
+(`parallel_tool_calls`, `safe_prompt`). It may not set a key the encoder writes, so
+it cannot replace `messages` or `tools`. That includes `reasoning_effort`, because the
+effort is the session's knob and may become mutable per request
+(backlog/effort-in-the-composer.md), where a copy fixed in `body` would shadow it.
+Both settings are fixed for the session, so neither moves a cached prefix, and both
+are refused at load on any other dialect. `request_options_shape_the_envelope` pins
+where each lands. The dialect has no per-part cache marker, so
 breakpoints place nothing, and no `parallel_tool_calls` or `prompt_cache_key` is sent,
 since not every server accepts them. The keepalive is the streamed ping Responses
 uses, capped at 16 output tokens. `completions_envelope_matches_expected_wire_bytes`

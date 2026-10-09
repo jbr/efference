@@ -109,6 +109,7 @@ fn mock(
         auth_value: "Bearer k".into(),
         session_id: None,
         extra_headers: Vec::new(),
+        request: Default::default(),
         base: None,
     };
     (Client::new(endpoint, "m", "sys", None), requests)

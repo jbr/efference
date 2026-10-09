@@ -81,13 +81,18 @@ fn completions_envelope_matches_expected_wire_bytes() {
         "description": "run",
         "input_schema": {"type": "object"},
     })];
+    let options = RequestOptions::default();
     let request = completions_request(
         "model-x",
         encode_completions(&turns, "PRE"),
         &tools,
         ToolChoice::auto(),
-        MAX_TOKENS,
-        None,
+        RequestParams {
+            max_tokens: MAX_TOKENS,
+            temperature: None,
+            effort: None,
+            options: &options,
+        },
     );
     assert_eq!(
         serde_json::to_string(&request).unwrap(),
@@ -103,6 +108,41 @@ fn completions_envelope_matches_expected_wire_bytes() {
             r#"{"role":"user","content":[{"type":"image_url","image_url":{"url":"data:image/png;base64,AAAA"}},{"type":"text","text":"and then?"}]}],"#,
             r#""tools":[{"function":{"description":"run","name":"bash","parameters":{"type":"object"}},"type":"function"}],"#,
             r#""tool_choice":"auto","stream":true,"stream_options":{"include_usage":true}}"#,
+        )
+    );
+}
+
+/// The connection's settings in the body: the cap under its configured spelling,
+/// the session's effort as `reasoning_effort`, and the `body` fields after every
+/// encoder-written key, in sorted order.
+#[test]
+fn request_options_shape_the_envelope() {
+    let Value::Object(body) =
+        serde_json::json!({"safe_prompt": true, "parallel_tool_calls": false})
+    else {
+        unreachable!()
+    };
+    let options = RequestOptions::new(body, Some("max_completion_tokens")).unwrap();
+    let request = completions_request(
+        "m",
+        encode_completions(&[WireTurn::text("hi")], ""),
+        &[],
+        ToolChoice::auto(),
+        RequestParams {
+            max_tokens: 100,
+            temperature: Some(0.5),
+            effort: Some("high"),
+            options: &options,
+        },
+    );
+    assert_eq!(
+        serde_json::to_string(&request).unwrap(),
+        concat!(
+            r#"{"model":"m","max_completion_tokens":100,"#,
+            r#""messages":[{"role":"user","content":"hi"}],"tools":[],"tool_choice":"auto","#,
+            r#""temperature":0.5,"reasoning_effort":"high","stream":true,"#,
+            r#""stream_options":{"include_usage":true},"#,
+            r#""parallel_tool_calls":false,"safe_prompt":true}"#,
         )
     );
 }

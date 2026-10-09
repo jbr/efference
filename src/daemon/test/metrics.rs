@@ -436,6 +436,7 @@ fn inline_cost_prices_a_request_and_is_recorded() {
         auth_value: "Bearer test".into(),
         session_id: None,
         extra_headers: Vec::new(),
+        request: Default::default(),
         base: None,
     });
     let request = |cost: Option<f64>| {

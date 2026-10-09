@@ -73,6 +73,7 @@ fn start(addr: SocketAddr, env: crate::env_table::EnvPolicy) -> (Swansong, Sessi
             auth_value: "k".into(),
             session_id: None,
             extra_headers: Vec::new(),
+            request: Default::default(),
             base: None,
         },
         "m",
