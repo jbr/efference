@@ -697,6 +697,7 @@ type Dispositions = (Vec<(Seq, Disposition)>, Vec<(String, BgVerdict)>);
 #[cfg(test)]
 mod test;
 
+mod digest_view;
 mod handles;
 mod own;
 mod parse;
@@ -713,6 +714,7 @@ use peek::*;
 use prompt::*;
 use validate::*;
 
+pub use digest_view::TriageView;
 pub use handles::reply_only_gate;
 pub use own::TriageModel;
 pub use peek::{PEEK_FORKS, PeekFailure};

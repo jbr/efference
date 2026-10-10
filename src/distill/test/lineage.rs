@@ -91,7 +91,14 @@ fn a_responses_peek_marks_the_shared_frontier_and_the_canonical_wire_carries_onl
     }];
 
     // The peek: prefix, frontier, then the fork-local raw and the ask.
-    let peek = peek_request(&prefix, Reader::Main, &pending, &[], &[]);
+    let peek = peek_request(
+        &prefix,
+        Reader::Main,
+        TriageView::Transcript,
+        &pending,
+        &[],
+        &[],
+    );
     let peek_input = encode_responses(&peek, "", PromptCachePolicy::Explicit);
     let peek_json: Vec<serde_json::Value> = peek_input
         .iter()

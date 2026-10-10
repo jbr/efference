@@ -87,15 +87,13 @@ pub fn render(entries: &[LogEntry], options: Options) -> String {
                 upstream_failure: None,
             } => {
                 let turn_calls = output.tool_calls().unwrap_or_default();
-                // Prose addressed to the operator: a turn that ended with no call, or
-                // one that puts a question with `ask`. Mid-turn narration is left out.
-                let asking = turn_calls.iter().any(|c| c.name == crate::supervisor::ASK);
-                if turn_calls.is_empty() || asking {
-                    let prose = output.text().join("\n").trim().to_string();
-                    if !prose.is_empty() {
-                        heading(&mut out, "agent", seq, options);
-                        let _ = writeln!(out, "{prose}\n");
-                    }
+                // Every turn's prose, mid-turn narration included: it is where the agent
+                // says what it took from the operator and what it is about to do, which
+                // the call lines alone do not carry (docs/digest.md).
+                let prose = output.text().join("\n").trim().to_string();
+                if !prose.is_empty() {
+                    heading(&mut out, "agent", seq, options);
+                    let _ = writeln!(out, "{prose}\n");
                 }
                 for (i, call) in turn_calls.iter().enumerate() {
                     if let Some((question, _, _)) = crate::supervisor::ask_of_call(&turn_calls, i) {

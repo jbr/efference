@@ -533,6 +533,46 @@ pub(super) fn peek_messages(
     background: &[BgView],
     roster: &[Item],
 ) -> Vec<WireTurn> {
+    let (results, ask) = gate_parts(pending, inbox, background, roster);
+    // The prefix hits cache; only the raws and the instruction are fresh, and they are
+    // discarded — the canonical lineage never sees raw (docs/redaction-fork.md). The
+    // frontier sits before that raw tail: the shared prefix is read, the throwaway
+    // suffix is never written.
+    let mut messages = project_semantic_for(prefix, reader);
+    messages.push(WireTurn::Breakpoint);
+    // Every call is answered — a call left unpaired makes the request invalid.
+    let mut content: Vec<UserPart> = results
+        .into_iter()
+        .map(|r| UserPart::ToolResult {
+            call_id: r.call_id,
+            seq: None,
+            content: r.content,
+            is_error: r.is_error,
+            images: Vec::new(),
+        })
+        .collect();
+    content.push(UserPart::Text(ask));
+    messages.push(WireTurn::User(content));
+    messages
+}
+
+/// One result as the triage request shows it: labelled and line-numbered, or a stand-in
+/// for a bypassed result.
+pub(super) struct GateResult {
+    pub(super) call_id: crate::log::CallId,
+    pub(super) content: String,
+    pub(super) is_error: bool,
+}
+
+/// The gate-scoped half of a triage request, shared by every view of the history: each
+/// result as triage reads it, and the trailing text carrying the riders (inbox,
+/// background, surfacing roster) and the retain instruction.
+pub(super) fn gate_parts(
+    pending: &[Pending<'_>],
+    inbox: &[ShownNotification],
+    background: &[BgView],
+    roster: &[Item],
+) -> (Vec<GateResult>, String) {
     let mut sections = String::new();
     append_inbox_and_background(&mut sections, inbox, background);
     append_roster(&mut sections, roster);
@@ -554,37 +594,27 @@ pub(super) fn peek_messages(
     }
     let instruction = retain_instruction(&offered, &riders);
 
-    // The prefix hits cache; only the raws and the instruction are fresh, and they are
-    // discarded — the canonical lineage never sees raw (docs/redaction-fork.md). The
-    // frontier sits before that raw tail: the shared prefix is read, the throwaway
-    // suffix is never written.
-    let mut messages = project_semantic_for(prefix, reader);
-    messages.push(WireTurn::Breakpoint);
-    // Every call is answered — a call left unpaired makes the request invalid —
-    // but a bypassed result answers with a stand-in rather than its output: the harness
-    // already decided it (docs/redaction-fork.md), and the ask above does not offer it.
-    let mut content: Vec<UserPart> = pending
+    // A bypassed result answers with a stand-in rather than its output: the harness
+    // already decided it (docs/redaction-fork.md), and the ask does not offer it.
+    let results = pending
         .iter()
         .zip(&labels)
-        .map(|(p, label)| UserPart::ToolResult {
+        .map(|(p, label)| GateResult {
             call_id: p.call.id.clone(),
-            seq: None,
             content: match (bypassed(p), label) {
                 (Some(shape), _) => bypassed_view(p.call, shape),
                 (None, Some(label)) => result_view(label, p.call, p.raw),
                 (None, None) => unreachable!("labels() labels every unbypassed result"),
             },
             is_error: p.raw.is_error,
-            images: Vec::new(),
         })
         .collect();
     // `sections` already opens with its own blank line when non-empty, and is empty
     // outright on a gate carrying no riders — so trim rather than always joining with a
     // gap, which left the block opening on stray whitespace.
-    content.push(UserPart::Text(match sections.trim() {
+    let ask = match sections.trim() {
         "" => instruction,
         sections => format!("{sections}\n\n{instruction}"),
-    }));
-    messages.push(WireTurn::User(content));
-    messages
+    };
+    (results, ask)
 }

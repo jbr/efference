@@ -56,15 +56,26 @@ impl PeekAttempt {
 /// live gate calls, so a replay can't drift from production (docs/redaction-fork.md).
 /// Split out for the `peek` dev tool's dry run, which reviews an ask without spending a
 /// request on it.
+///
+/// `view` picks the rendering of the history: the live gate's transcript, or the digest
+/// arm under evaluation (`digest_view.rs`).
 pub fn peek_request(
     prefix: &[LogEntry],
     reader: Reader,
+    view: TriageView,
     pending: &[Pending<'_>],
     inbox: &[ShownNotification],
     background: &[BgView],
 ) -> Vec<WireTurn> {
     let roster = surfaceable_roster(prefix);
-    peek_messages(prefix, reader, pending, inbox, background, &roster)
+    match view {
+        TriageView::Transcript => {
+            peek_messages(prefix, reader, pending, inbox, background, &roster)
+        }
+        TriageView::Digest => {
+            digest_view::digest_peek_messages(prefix, reader, pending, inbox, background, &roster)
+        }
+    }
 }
 
 impl ForkPeek {
@@ -73,16 +84,18 @@ impl ForkPeek {
     /// as the live gate under this configuration (shared or own), same validity rule
     /// (`parse_retain` plus [`require_coverage`] and [`require_in_bounds`]) — only the
     /// retry loop is absent, because the first attempt is the measurement.
+    #[allow(clippy::too_many_arguments)] // the gate's own inputs plus the view under test
     pub async fn attempt(
         &self,
         agent: &Client,
         agent_tools: &[Value],
+        view: TriageView,
         prefix: &[LogEntry],
         pending: &[Pending<'_>],
         inbox: &[ShownNotification],
         background: &[BgView],
     ) -> Result<PeekAttempt, String> {
-        let messages = peek_request(prefix, self.reader(), pending, inbox, background);
+        let messages = peek_request(prefix, self.reader(), view, pending, inbox, background);
         peek_attempt(
             &self.client(agent, RequestOrigin::Peek),
             self.tools(agent_tools),

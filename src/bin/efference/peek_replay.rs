@@ -10,7 +10,7 @@
 //! session depth, and replaying one is a single warm prefix read.
 
 use super::*;
-use efference::distill::{ForkPeek, Pending, ReplayVerdict, TriageModel, peek_request};
+use efference::distill::{ForkPeek, Pending, ReplayVerdict, TriageModel, TriageView, peek_request};
 use efference::log::{Keep, Payload, RawResult, ToolCall, WireState};
 use efference::project::{Reader, distillate};
 use std::collections::BTreeSet;
@@ -52,7 +52,10 @@ pub(crate) struct Gate {
 /// carrying one `tool_use` per call, and the API rejects a request that leaves any of
 /// them unanswered (docs/redaction-fork.md).
 pub(crate) fn gates(entries: &[efference::log::LogEntry]) -> Vec<Gate> {
-    // Every result, by call id, and every gate's recorded first-attempt breadcrumb.
+    // Every result, by call id, and every gate's recorded first-attempt breadcrumb. A
+    // result logged `Pending` takes the verdict a later `ResultVerdict` gave it, as the
+    // projection resolves it (docs/log-and-projection.md).
+    let verdicts = efference::log::result_verdicts(entries);
     let mut gates = Vec::new();
     for (i, entry) in entries.iter().enumerate() {
         let Payload::Assistant { output, .. } = &entry.payload else {
@@ -80,7 +83,11 @@ pub(crate) fn gates(entries: &[efference::log::LogEntry]) -> Vec<Gate> {
                     if let Some(call) = calls.iter().find(|c| c.id == *call_id) {
                         kept_calls.push(call.clone());
                         raws.push(raw.clone());
-                        recorded.push(wire.clone());
+                        recorded.push(
+                            verdicts
+                                .get(&later.seq)
+                                .map_or_else(|| wire.clone(), |&verdict| verdict.clone()),
+                        );
                     }
                 }
                 // The next completion starts a new gate.
@@ -311,6 +318,7 @@ pub(crate) async fn peek(
     dry_run: bool,
     model: &str,
     triage: Option<TriageModel>,
+    view: TriageView,
     out: Option<PathBuf>,
     table: usize,
 ) -> CliResult {
@@ -404,6 +412,7 @@ pub(crate) async fn peek(
                 tail_chars(&peek_request(
                     &entries[..g.prefix_end],
                     Reader::Main,
+                    view,
                     &pending,
                     &[],
                     &[],
@@ -426,7 +435,14 @@ pub(crate) async fn peek(
             .zip(&g.raws)
             .map(|(call, raw)| Pending { call, raw })
             .collect();
-        let messages = peek_request(&entries[..g.prefix_end], Reader::Main, &pending, &[], &[]);
+        let messages = peek_request(
+            &entries[..g.prefix_end],
+            Reader::Main,
+            view,
+            &pending,
+            &[],
+            &[],
+        );
         eprintln!("note: gate at seq {} · {} result(s)", g.seq, pending.len());
         let messages = efference::project::encode_messages(
             &messages[messages.len() - 1..],
@@ -521,6 +537,7 @@ pub(crate) async fn peek(
         uncached += tail_chars(&peek_request(
             &entries[..g.prefix_end],
             peek.reader(),
+            view,
             &pending,
             &[],
             &[],
@@ -537,6 +554,7 @@ pub(crate) async fn peek(
                 .attempt(
                     &client,
                     &tools,
+                    view,
                     &entries[..g.prefix_end],
                     &pending,
                     &[],

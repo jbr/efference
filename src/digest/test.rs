@@ -48,6 +48,8 @@ fn read_call(id: &str) -> ToolCall {
         .with_intent("find where the enum is defined")
 }
 
+/// Mid-turn prose renders too ("Looking." precedes a call): it is where the agent says
+/// what it is about to do (docs/digest.md).
 #[test]
 fn a_call_renders_its_paths_intent_and_note_without_bodies() {
     let log = [
@@ -64,6 +66,7 @@ fn a_call_renders_its_paths_intent_and_note_without_bodies() {
     assert_eq!(
         render(&log, Options::default()),
         "### operator\nfind the enum\n\n\
+         ### agent\nLooking.\n\n\
          • [read src/a.rs, src/b.rs] find where the enum is defined\n    → Defined in a.rs.\n\
          ### agent\nIt is in a.rs.\n\n"
     );
@@ -230,4 +233,47 @@ fn the_cut_marks_the_first_rendered_block_past_it() {
         ..Default::default()
     };
     assert!(!render(&log, options).contains(CUT));
+}
+
+/// The digest at one triage gate extends the digest at every earlier one, byte for byte:
+/// the gate's history ends at the assistant turn that made its calls, and every earlier
+/// result has its verdict by then. That is what lets a triage request that reads the
+/// digest resume a cached prefix (backlog: triage-reads-the-digest.md).
+#[test]
+fn the_digest_at_a_gate_extends_the_digest_at_every_earlier_gate() {
+    let log = [
+        user(1, "find the enum"),
+        assistant(2, "Looking.", vec![read_call("c1")]),
+        distilled(3, "c1", RawResult::text("a"), "Defined in a.rs."),
+        assistant(4, "Now its uses.", vec![read_call("c2")]),
+        distilled(5, "c2", RawResult::text("b"), "Used twice."),
+        assistant(6, "", vec![read_call("c3")]),
+        distilled(7, "c3", RawResult::text("c"), "Nothing else."),
+        assistant(8, "Done: it is in a.rs.", vec![]),
+        user(9, "thanks"),
+        assistant(10, "One more look.", vec![read_call("c4")]),
+    ];
+    // Each gate's history: through an assistant turn that made calls.
+    let gates: Vec<usize> = log
+        .iter()
+        .enumerate()
+        .filter(|(_, e)| {
+            matches!(&e.payload, Payload::Assistant { output, .. }
+                if output.tool_calls().is_ok_and(|c| !c.is_empty()))
+        })
+        .map(|(i, _)| i + 1)
+        .collect();
+    assert_eq!(gates.len(), 4);
+    let digests: Vec<String> = gates
+        .iter()
+        .map(|&end| render(&log[..end], Options::default()))
+        .collect();
+    for pair in digests.windows(2) {
+        assert!(
+            pair[1].starts_with(&pair[0]),
+            "a later gate's digest rewrote an earlier one's:\n{}\n---\n{}",
+            pair[0],
+            pair[1]
+        );
+    }
 }

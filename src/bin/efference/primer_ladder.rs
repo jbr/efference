@@ -8,7 +8,7 @@
 //! primer is the v1.1 verdict live. Sends real requests unless `--dry-run`.
 
 use super::*;
-use efference::distill::{ForkPeek, Pending, TriageModel};
+use efference::distill::{ForkPeek, Pending, TriageModel, TriageView};
 use efference::log::Payload;
 use std::io::Write;
 
@@ -206,7 +206,15 @@ pub(crate) async fn ladder(
             )),
         }
         match peek
-            .attempt(&client, &tools, prefix, &pending, &[], &[])
+            .attempt(
+                &client,
+                &tools,
+                TriageView::Transcript,
+                prefix,
+                &pending,
+                &[],
+                &[],
+            )
             .await
         {
             Ok(attempt) => emit(line(&format!("{label} peek"), &attempt.usage)),
@@ -232,7 +240,15 @@ pub(crate) async fn ladder(
             None => emit("E peek-tools→peek plant   SKIPPED no implicit lineage".into()),
         }
         match peek
-            .attempt(&client, &tools, prefix, &pending, &[], &[])
+            .attempt(
+                &client,
+                &tools,
+                TriageView::Transcript,
+                prefix,
+                &pending,
+                &[],
+                &[],
+            )
             .await
         {
             Ok(attempt) => emit(line("E peek-tools→peek peek", &attempt.usage)),
