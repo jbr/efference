@@ -29,8 +29,9 @@
 }
 @media (hover: hover) and (pointer: fine) {
   .new-session .setting-pick:hover {
-    border-color: var(--border-strong);
+    border-color: var(--btn-border-hover);
     background: var(--bg-raised);
+    box-shadow: var(--control-halo);
   }
 }
 @media (max-width: 700px) {

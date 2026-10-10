@@ -264,7 +264,7 @@ export function ModelPicker({
 
   return (
     <div
-      className="picker"
+      className="picker selection-panel"
       onKeyDown={onKey}
       onPointerDown={() => setKeyboardNavigation(false)}
     >
@@ -312,7 +312,7 @@ export function ModelPicker({
       </div>
 
       <div
-        className="picker-rows"
+        className="picker-rows selection-list"
         ref={rowList}
         onScroll={(event) => {
           setKeyboardNavigation(false);

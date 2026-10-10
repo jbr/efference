@@ -1,0 +1,152 @@
+/* Shared control light (docs/web-client.md). The surface/typography belongs
+   to each widget; intensity controls its boundary core and surrounding hue. */
+:root {
+  --interaction-hue: var(--accent);
+  --interaction-strength: 1;
+  --interaction-duration: 180ms;
+  --interaction-transition:
+    background-color var(--interaction-duration) ease-out,
+    border-color var(--interaction-duration) ease-out,
+    box-shadow var(--interaction-duration) ease-out,
+    color var(--interaction-duration) ease-out,
+    --press-level var(--interaction-duration) ease-out;
+}
+:root[data-theme="lilac"] {
+  --interaction-hue: var(--lilac);
+  --interaction-strength: 0.65;
+}
+:where(
+  button,
+  input,
+  select,
+  .composer-input,
+  .worktree-toggle,
+  .selection-row,
+  .switcher-card,
+  .card,
+  .ask-question > .content,
+  .gated,
+  .gate-float,
+  .gate-cue,
+  .meter-fill
+) {
+  --light-level: 0;
+  --light-white: white;
+  --light-whitening: calc(var(--light-level) * 90%);
+  --light-core: color-mix(
+    in srgb,
+    var(--interaction-hue),
+    var(--light-white) var(--light-whitening)
+  );
+  --light-edge: color-mix(
+    in srgb,
+    var(--border-control),
+    var(--light-core) calc(20% + var(--light-level) * 80%)
+  );
+  --control-halo:
+    0 0 calc(var(--light-level) * 4px)
+      color-mix(
+        in srgb,
+        var(--interaction-hue)
+          calc(var(--light-level) * var(--interaction-strength) * 80%),
+        transparent
+      ),
+    0 0 calc(var(--light-level) * 22px)
+      color-mix(
+        in srgb,
+        var(--interaction-hue)
+          calc(var(--light-level) * var(--interaction-strength) * 55%),
+        transparent
+      ),
+    inset 0 0 calc(var(--light-level) * 6px)
+      color-mix(
+        in srgb,
+        var(--interaction-hue)
+          calc(var(--light-level) * var(--interaction-strength) * 25%),
+        transparent
+      );
+  --btn-border-hover: var(--light-edge);
+  --btn-primary-border-lit: var(--light-edge);
+  --btn-primary-shadow-lit: var(--control-halo);
+  --focus-border: var(--light-edge);
+  --focus-shadow: var(--control-halo);
+  --field-focus-border: var(--focus-ring);
+  --field-focus-shadow: var(--control-halo);
+  --composer-focus-border: var(--focus-ring);
+  --composer-focus-shadow: var(--control-halo);
+  transition: var(--interaction-transition);
+}
+:where(.switcher-card, .gated, .gate-float, .gate-cue) {
+  --light-level: 0.5;
+}
+:where(.card, .switcher-card).attention-blocked {
+  --interaction-hue: var(--attention);
+  --light-level: 0.5;
+}
+@media (hover: hover) and (pointer: fine) {
+  :where(
+      button,
+      input,
+      select,
+      .worktree-toggle,
+      .selection-row,
+      .card,
+      .switcher-card
+    ):hover:not(:disabled) {
+    --light-level: 0.6;
+  }
+}
+:where(
+  button,
+  input,
+  select,
+  .selection-row,
+  .card,
+  .switcher-card
+):focus-visible,
+:where(.composer-input, .worktree-toggle):focus-within {
+  --light-level: 0.6;
+}
+:where(
+    button,
+    input,
+    select,
+    .worktree-toggle,
+    .selection-row,
+    .card,
+    .switcher-card
+  ):active:not(:disabled) {
+  --light-level: 1;
+}
+:is(button, .worktree-toggle, input[type="checkbox"]):active:not(:disabled) {
+  border-color: var(--light-edge);
+  box-shadow: var(--control-halo);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --interaction-duration: 0ms;
+  }
+}
+
+@property --press-level {
+  syntax: "<number>";
+  inherits: false;
+  initial-value: 0;
+}
+:where(button) {
+  --press-level: 0;
+  --press-color: color-mix(
+    in srgb,
+    var(--interaction-hue) calc(var(--press-level) * 18%),
+    transparent
+  );
+  --pressed-image: radial-gradient(
+    ellipse at center,
+    var(--press-color),
+    transparent 75%
+  );
+}
+button:active:not(:disabled) {
+  --press-level: 1;
+}

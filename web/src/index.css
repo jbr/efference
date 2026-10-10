@@ -3,6 +3,8 @@
    resolve through theme.css tokens exclusively (docs/web-client.md). */
 
 @import "./theme.css";
+@import "./ui/InteractionLight.css";
+@import "./ui/SelectionRows.css";
 
 /* The vertical rhythm in one place: the mock runs generous leading (1.75 on
    transcript mono, 1.8 on code) and the browser default is ~1.2 — the gap
@@ -82,9 +84,9 @@ label,
 /* Focus in the accent, everywhere — the UA blue reads as someone else's
    design. */
 :focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-  box-shadow: 0 0 8px var(--accent-glow);
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  box-shadow: var(--control-halo);
 }
 
 a {
@@ -117,28 +119,27 @@ button {
   border: 1px solid var(--border-control);
   border-radius: 6px;
   background: var(--btn-bg);
+  background-image: var(--pressed-image);
   color: var(--fg);
   cursor: pointer;
-  transition:
-    background-color 180ms ease-out,
-    border-color 180ms ease-out,
-    box-shadow 180ms ease-out,
-    color 180ms ease-out;
+  transition: var(--interaction-transition);
 }
 
 button:hover:not(:disabled) {
   color: var(--fg-bright);
   border-color: var(--btn-border-hover);
+  box-shadow: var(--control-halo);
 }
 
 /* Zero specificity, like the disabled fill below: a class-styled control
    keeps its own background on hover and focus. */
 button:where(:hover:not(:disabled), :focus-visible) {
-  background: var(--btn-bg-hover);
+  background-color: var(--btn-bg-hover);
 }
 
 button:focus-visible {
-  outline: none;
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
   color: var(--fg-bright);
   border-color: var(--focus-border);
   box-shadow: var(--focus-shadow);
@@ -160,13 +161,13 @@ button:where(:disabled) {
 button.primary {
   border-color: var(--btn-primary-border);
   background: var(--btn-primary-bg);
+  background-image: var(--pressed-image);
   color: var(--btn-primary-fg);
   box-shadow: var(--btn-primary-shadow);
 }
 
-/* Dimmed at rest, fully lit on hover. Without this rule the generic
-   button:hover (higher specificity) dulled the border, so hovering the
-   primary dimmed it. */
+/* Primary hover keeps its role border and halo rather than inheriting the
+   secondary button's higher-specificity hover border. */
 button.primary:hover:not(:disabled) {
   border-color: var(--btn-primary-border-lit);
   color: var(--btn-primary-fg);
@@ -176,10 +177,10 @@ button.primary:hover:not(:disabled) {
 /* Hover's full state plus a ring outside it. */
 button.primary:focus-visible {
   border-color: var(--btn-primary-border-lit);
-  background: var(--btn-primary-bg);
+  background-color: var(--btn-primary-bg);
   color: var(--btn-primary-fg);
   box-shadow: var(--btn-primary-shadow-lit);
-  outline: 1px solid var(--focus-ring);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
@@ -199,6 +200,7 @@ button.quiet:hover:not(:disabled),
 button.quiet:disabled {
   border-color: transparent;
   background: none;
+  box-shadow: none;
 }
 
 button.quiet:focus-visible {
@@ -231,10 +233,7 @@ input:not([type="checkbox"]) {
   border-radius: 6px;
   background: var(--bg-inset);
   color: var(--fg);
-  transition:
-    background-color 180ms ease-out,
-    border-color 180ms ease-out,
-    box-shadow 180ms ease-out;
+  transition: var(--interaction-transition);
 }
 
 /* A focused text field: the field-focus tokens (theme.css). Not the global outline —
@@ -253,7 +252,44 @@ textarea::placeholder {
 }
 
 input[type="checkbox"] {
-  accent-color: var(--accent);
+  appearance: none;
+  display: inline-grid;
+  place-content: center;
+  flex: none;
+  width: 1rem;
+  height: 1rem;
+  box-sizing: border-box;
+  border: 1px solid var(--border-control);
+  border-radius: 3px;
+  background: var(--bg-inset);
+  color: var(--badge-ink);
+  cursor: pointer;
+}
+input[type="checkbox"]:checked {
+  background: var(--badge-core);
+  border-color: var(--selection-border);
+  box-shadow: var(--badge-halo);
+}
+input[type="checkbox"]:checked::before {
+  content: "";
+  width: 0.25rem;
+  height: 0.45rem;
+  border: solid currentColor;
+  border-width: 0 2px 2px 0;
+  transform: translateY(-1px) rotate(45deg);
+}
+input[type="checkbox"]:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+@media (forced-colors: active) {
+  input[type="checkbox"] {
+    appearance: auto;
+    box-shadow: none;
+  }
+  input[type="checkbox"]:checked::before {
+    display: none;
+  }
 }
 
 /* The top bar: sticky interface chrome, full-bleed; the affordances inside
@@ -337,7 +373,7 @@ input[type="checkbox"] {
 .context-caption {
   font-size: 0.8em;
   line-height: 1;
-  color: var(--fg-faint);
+  color: var(--fg-dim);
   text-align: right;
 }
 
@@ -360,8 +396,10 @@ input[type="checkbox"] {
   min-width: 1.1rem;
   padding: 0 0.3rem;
   border-radius: 999px;
-  background: var(--accent);
-  color: var(--accent-contrast);
+  background: var(--badge-core);
+  color: var(--badge-ink);
+  box-shadow: var(--badge-halo);
+  font-weight: 500;
   font-size: 0.85em;
   line-height: 1.3;
   text-align: center;
@@ -381,16 +419,60 @@ input[type="checkbox"] {
 
 .meter {
   width: 6.5rem;
+  display: block;
   height: 3px;
-  border-radius: 2px;
+  border-radius: 999px;
   background: var(--bg-chip);
-  overflow: hidden;
 }
 
 .meter-fill {
+  --meter-warm: 0;
+  --meter-hot: 0;
+  --meter-color: color-mix(
+    in srgb,
+    color-mix(
+      in srgb,
+      var(--meter),
+      var(--accent) calc(var(--meter-warm) * 100%)
+    ),
+    var(--warn) calc(var(--meter-hot) * 100%)
+  );
   display: block;
   height: 100%;
-  background: var(--meter);
+  border-radius: inherit;
+  --interaction-hue: var(--meter-color);
+  --light-white: #f8fcff;
+  --light-whitening: calc(var(--light-level) * 100%);
+  background: var(--light-core);
+  box-shadow: var(--control-halo);
+  transition:
+    width var(--interaction-duration) ease-out,
+    var(--interaction-transition);
+}
+
+:root[data-theme="lilac"] .meter {
+  height: 5px;
+}
+:root[data-theme="lilac"] .meter-fill {
+  box-sizing: border-box;
+  border: min(1px, calc(var(--light-level) * 10px)) solid var(--meter-color);
+  background: var(--light-core);
+  box-shadow:
+    0 0 3px
+      color-mix(
+        in srgb,
+        var(--meter-color) calc(var(--light-level) * 80%),
+        transparent
+      ),
+    0 5px calc(8px + var(--light-level) * 26px) calc(var(--light-level) * 5px)
+      color-mix(
+        in srgb,
+        var(--meter-color) calc(var(--light-level) * 65%),
+        transparent
+      );
+}
+:root[data-theme="lilac"] .context-caption {
+  color: var(--fg-muted);
 }
 
 .dim {
@@ -428,8 +510,24 @@ input[type="checkbox"] {
 }
 
 .entry.user > .content {
-  border-left: 2px solid var(--accent);
-  padding-left: 0.9rem;
+  position: relative;
+  padding-left: 1rem;
+}
+.entry.user > .content::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.15rem;
+  bottom: 0.15rem;
+  width: 2px;
+  border-radius: 2px;
+  background: linear-gradient(
+    transparent,
+    var(--neon-ink-dim) 20% 80%,
+    transparent
+  );
+  box-shadow: 3px 0 10px color-mix(in srgb, var(--accent) 22%, transparent);
+  pointer-events: none;
 }
 
 .entry.pending > .content {
@@ -467,6 +565,7 @@ input[type="checkbox"] {
 .entry.config > .content {
   color: var(--fg-muted);
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 /* A title change (docs/session-title.md): a quiet line, since the top bar
@@ -484,9 +583,21 @@ input[type="checkbox"] {
   color: var(--fg-dim);
 }
 
+.ask-question .ask-mark {
+  margin: 0 0 0.55rem;
+}
+.ask-question-current > .content {
+  --light-level: 0.5;
+  padding: 0.8rem 1rem;
+  border: 1px solid var(--light-edge);
+  border-radius: 10px;
+  background: var(--bg-surface);
+  box-shadow: var(--control-halo);
+}
 .ask-current {
-  color: var(--fg);
-  font-weight: 600;
+  color: var(--neon-ink);
+  text-shadow: var(--neon-text);
+  font-weight: 500;
 }
 
 .title-change-text {
@@ -610,7 +721,7 @@ input[type="checkbox"] {
   content: "›";
   position: absolute;
   left: -1.5ch;
-  top: 0;
+  top: -0.25ch;
   color: var(--neon-ink);
   text-shadow: var(--neon-text);
 }
@@ -1064,10 +1175,7 @@ pre {
   border: 1px solid var(--border-control);
   border-radius: 2px;
   padding: 0.6rem 0.9rem;
-  transition:
-    background-color 180ms ease-out,
-    border-color 180ms ease-out,
-    box-shadow 180ms ease-out;
+  transition: var(--interaction-transition);
 }
 
 .composer-text-row {
@@ -1152,8 +1260,54 @@ pre {
   color: var(--warn);
 }
 
+.turn-state.waiting,
 .composer-toolbar .turn-state.waiting {
-  color: var(--accent);
+  color: var(--fg-muted);
+  font-family: var(--font-ui);
+  font-style: normal;
+  font-size: 0.8rem;
+}
+
+.composer-toolbar-left {
+  min-width: 0;
+}
+
+.composer-toolbar-right {
+  flex-shrink: 0;
+}
+
+@media (max-width: 700px) {
+  .composer-input .composer-toolbar {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 0.5rem;
+  }
+
+  .composer-input .composer-toolbar-left {
+    display: contents;
+  }
+
+  .composer-input .turn-state {
+    grid-column: 1 / -1;
+    grid-row: 1;
+    margin-left: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .composer-input .attach-btn {
+    grid-column: 1;
+    grid-row: 2;
+    justify-self: start;
+  }
+
+  .composer-input .composer-toolbar-right {
+    grid-column: 2;
+    grid-row: 2;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
 }
 
 /* The toolbar's buttons (attach, interrupt, resume, send) are the default
@@ -1192,7 +1346,7 @@ pre {
   line-height: 1;
   /* ↵ sits low in its em box; lift it to the label's optical center. */
   position: relative;
-  top: -0.3em;
+  top: -0.25ch;
 }
 
 .composer-toolbar button.attach-btn {

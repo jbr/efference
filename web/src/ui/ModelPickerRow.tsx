@@ -35,7 +35,7 @@ export function ModelPickerRow({
   return (
     <div className="picker-candidate">
       <button
-        className={`picker-row${selected ? " selected" : ""}${descends(row) ? " picker-folder" : " picker-model"}`}
+        className={`picker-row selection-row${selected ? " selected" : ""}${descends(row) ? " picker-folder" : " picker-model"}`}
         onClick={onPick}
         role="option"
         aria-selected={selected}

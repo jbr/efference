@@ -73,22 +73,10 @@
 .location {
   display: flex;
   align-items: center;
-  border-bottom: 1px solid var(--border-subtle);
 }
 .location-pick {
   flex: 1;
   min-width: 0;
-  padding: 1.1rem 0.8rem;
-  border: none;
-  border-radius: 6px;
-  background: none;
-  text-align: left;
-}
-@media (hover: hover) and (pointer: fine) {
-  .new-session .location-pick:hover {
-    background: var(--bg-raised);
-    box-shadow: inset 0 0 0 1px var(--border-strong);
-  }
 }
 .location-line {
   display: flex;
@@ -269,9 +257,6 @@
 .new-session-body > .picker .picker-rows {
   max-height: 60dvh;
 }
-.new-session-body > .picker .picker-row {
-  padding: 0.7rem 0.5rem;
-}
 .new-session-body > .picker .picker-text {
   flex-direction: column;
   gap: 0.25rem;
@@ -300,9 +285,6 @@
   }
   .location-path {
     font-size: 0.85rem;
-  }
-  .new-session-body > .picker {
-    border: 1px solid var(--border-strong);
   }
   .new-session-body > .picker .picker-row {
     flex-wrap: wrap;

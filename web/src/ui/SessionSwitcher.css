@@ -190,10 +190,12 @@
   flex-direction: column;
   gap: 0.35rem;
   padding: 0.8rem 0.95rem;
-  border: 1px solid var(--border);
+  border: 1px solid var(--light-edge);
   border-radius: 10px;
   background: var(--bg-surface);
-  box-shadow: 0 6px 22px rgb(0 0 0 / 0.12);
+  box-shadow:
+    0 6px 22px rgb(0 0 0 / 0.12),
+    var(--control-halo);
   color: inherit;
   text-decoration: none;
   font-size: 0.75rem;
@@ -202,7 +204,6 @@
 
 .switcher-card.attention-blocked {
   --attention: var(--accent);
-  border-color: color-mix(in srgb, var(--attention) 55%, var(--border));
 }
 
 .switcher-card.attention-blocked.status-stalled,

@@ -111,3 +111,18 @@ export function turnState(
   }
   return { text: "your turn", kind: "idle" };
 }
+
+export function turnClass(kind: TurnState["kind"]): string {
+  switch (kind) {
+    case "running":
+      return "turn-state dim";
+    case "stalled":
+      return "turn-state stalled";
+    case "parked":
+      return "turn-state parked";
+    case "waiting":
+      return "turn-state waiting";
+    case "idle":
+      return "turn-state your-turn";
+  }
+}

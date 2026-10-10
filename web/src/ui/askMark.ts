@@ -24,7 +24,7 @@ const place = (ask: AskQuestion) =>
 export function askMarkText(ask: AskQuestion, standing: AskStanding): string {
   switch (standing) {
     case "current":
-      return `▸ answering${place(ask)}`;
+      return `answering${place(ask)}`;
     case "upcoming":
       return `next${place(ask)}`;
     case "asked":

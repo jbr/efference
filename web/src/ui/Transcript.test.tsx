@@ -135,7 +135,10 @@ test("the echo of a reply says answering and offers no recall", () => {
 
 test("the topic names the current question and the next one is marked upcoming", () => {
   const html = render([asking], { ask: topic("a", 1, 2) });
-  expect(html).toContain("▸ answering · question 1 of 2");
+  expect(html).toContain("answering · question 1 of 2");
+  expect(html).toContain('class="entry ask-question ask-question-current"');
+  expect(html).toContain('class="entry ask-question ask-question-upcoming"');
+  expect(html).not.toContain("▸");
   expect(html).toContain("next · question 2 of 2");
   expect(html).not.toContain("asked · question");
 });
@@ -153,7 +156,7 @@ test("an answered question reads as asked while the next is current", () => {
   };
   const html = render([asking, first], { ask: topic("b", 2, 2) });
   expect(html).toContain("asked · question 1 of 2");
-  expect(html).toContain("▸ answering · question 2 of 2");
+  expect(html).toContain("answering · question 2 of 2");
   expect(html).not.toContain("next");
 });
 
@@ -166,7 +169,7 @@ test("a lone current question has no position", () => {
     ],
     { ask: topic("a", 1, 1) },
   );
-  expect(html).toContain("▸ answering<");
+  expect(html).toContain("answering<");
 });
 
 test("with no topic an open question is only asked", () => {

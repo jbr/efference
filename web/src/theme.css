@@ -98,77 +98,50 @@
   --fg-deleted: #8c8499;
 
   --accent: #e14b95;
-  --accent-contrast: #f0ebf6;
   /* Glow is a theme property, not a decoration Lilac forgot: the light
      theme sets it transparent, and every box-shadow through it disappears. */
   --accent-glow: rgb(225 75 149 / 0.45);
-  /* Neon: a near-white core with the color carried by a stacked glow, tight
-     to wide — a single wide accent shadow on accent ink reads as blur, not
-     light. --neon-ink is the core; --neon-text and --neon-box are the halo
-     for glyphs and for borders (the box stack adds an inner glow, so a border
-     reads as a lit tube). Lilac sets the halos to none and the ink back to
-     the accent. Mixed from the accent, so an --accent override carries them. */
+  /* Glyph light has a near-white core and stacked accent halo. Controls
+     use the softer --control-halo below (docs/web-client.md). */
   --neon-ink: color-mix(in srgb, var(--accent) 14%, white);
   --neon-text:
     0 0 2px var(--accent), 0 0 6px var(--accent),
     0 0 14px color-mix(in srgb, var(--accent) 70%, transparent),
     0 0 30px color-mix(in srgb, var(--accent) 40%, transparent);
-  --neon-box:
-    0 0 2px var(--accent), 0 0 6px var(--accent),
-    0 0 14px color-mix(in srgb, var(--accent) 55%, transparent),
-    0 0 30px color-mix(in srgb, var(--accent) 30%, transparent),
-    inset 0 0 2px var(--accent),
-    inset 0 0 8px color-mix(in srgb, var(--accent) 35%, transparent);
-  /* The same sign at rest: a pinker core, a softer outer stack, no inner
-     glow. A control lit at rest goes to --neon-box on hover. */
+  /* Border and edge-light core, tinted toward the accent. */
   --neon-ink-dim: color-mix(in srgb, var(--accent) 40%, white);
-  --neon-box-dim:
-    0 0 3px color-mix(in srgb, var(--accent) 80%, transparent),
-    0 0 10px color-mix(in srgb, var(--accent) 45%, transparent),
-    0 0 24px color-mix(in srgb, var(--accent) 22%, transparent);
-  /* Button states (index.css), as roles each theme fills: After Dark lights
-     a control with the neon above, Lilac lifts it into true white. Resting,
-     lit (hover), and focused, for the default (secondary) and the primary. */
+  /* Control states (index.css): unlit at rest, a soft halo on hover,
+     and a separate outline for keyboard focus. */
   --btn-bg: var(--bg-raised);
   --btn-bg-hover: var(--bg-raised);
-  --btn-border-hover: color-mix(
+  --control-halo:
+    0 0 3px color-mix(in srgb, var(--accent) 30%, transparent),
+    0 0 12px color-mix(in srgb, var(--accent) 16%, transparent);
+  --selection-border: color-mix(
     in srgb,
-    var(--accent) 50%,
+    var(--accent) 38%,
     var(--border-control)
   );
-  --focus-border: var(--neon-ink-dim);
-  --focus-shadow: 0 0 0 1px var(--neon-ink-dim), var(--neon-box-dim);
-  --focus-ring: var(--neon-ink);
+  --badge-core: color-mix(in srgb, var(--accent) 10%, white);
+  --badge-ink: var(--bg-page);
+  --badge-halo:
+    0 0 3px color-mix(in srgb, var(--accent) 60%, transparent),
+    0 0 10px color-mix(in srgb, var(--accent) 35%, transparent);
+  --focus-ring: var(--neon-ink-dim);
   --field-focus-bg: var(--bg-inset);
-  --field-focus-border: color-mix(
-    in srgb,
-    var(--accent) 60%,
-    var(--border-control)
-  );
-  --field-focus-shadow: none;
-  /* The composer while typing: the sign that is lit, since Enter sends and
-     the send button is secondary. */
+  /* Composer focus shares the field halo; Enter sends from the textarea. */
   --composer-focus-bg: var(--bg-inset);
-  --composer-focus-border: var(--neon-ink-dim);
-  --composer-focus-shadow: var(--neon-box-dim);
-  --btn-primary-bg: color-mix(in srgb, var(--accent) 12%, transparent);
-  --btn-primary-fg: var(--neon-ink);
-  --btn-primary-border: var(--neon-ink-dim);
-  --btn-primary-shadow: var(--neon-box-dim);
-  --btn-primary-border-lit: var(--neon-ink);
-  --btn-primary-shadow-lit: var(--neon-box);
-  /* A call held at the approval gate, in the flow and floated
-     (Transcript.css, Gate.css .gate-float). Mixed from the accent, so a
-     theme's --accent override carries them along. */
-  --gated-bg: color-mix(in srgb, var(--accent) 7%, var(--bg-raised));
-  --gated-border: color-mix(in srgb, var(--accent) 40%, transparent);
+  --btn-primary-bg: color-mix(in srgb, var(--accent) 8%, var(--bg-raised));
+  --btn-primary-fg: var(--fg-bright);
+  --btn-primary-border: var(--selection-border);
+  --btn-primary-shadow: none;
   --selection: rgb(225 75 149 / 0.28);
   --meter: #9a6be6;
   --warn: #dd9900;
 
   --code-type: #c9bd9c;
   --code-tool: #9db0cb;
-  --code-path: #9dc0b0;
+  --code-path: #aebad0;
   --diff-add: #a6c49c;
   --diff-del: #cc8e96;
   --diff-add-bg: rgb(166 196 156 / 0.07);
@@ -201,44 +174,33 @@
      "needs you" apart from the cooler lilac of focus and controls. The plum
      it replaced (#a23569) read as another palette's. 4.6:1 on the page. */
   --accent: oklch(0.56 0.1 320);
-  --accent-contrast: #fefdfe;
   --accent-glow: transparent;
   --neon-ink: var(--accent);
   --neon-text: none;
-  --neon-box: none;
   --neon-ink-dim: var(--accent);
-  --neon-box-dim: none;
-  /* Lilac's light is white: the page is a lilac off-white, so true white
-     reads brighter than it is, and a lit control rises into it on a soft
-     lilac shadow. A resting default sits flush, a shade under the page; the
-     primary is the one control lifted at rest. */
+  /* Lilac controls brighten into white on hover, with a soft lilac halo.
+     Primaries have a white surface at rest but no resting shadow. */
   --lilac: #b6a2d9;
   --lilac-strong: #8b70c2;
   --lift-color: rgb(76 52 120);
-  --lift:
-    0 1px 2px rgb(from var(--lift-color) r g b / 0.1),
-    0 3px 10px rgb(from var(--lift-color) r g b / 0.1);
-  --lift-high:
-    0 1px 2px rgb(from var(--lift-color) r g b / 0.12),
-    0 6px 18px rgb(from var(--lift-color) r g b / 0.16);
   --btn-bg: var(--bg-inset);
   --btn-bg-hover: #ffffff;
-  --btn-border-hover: var(--lilac);
-  --focus-border: var(--lilac-strong);
-  --focus-shadow: 0 0 0 3px rgb(from var(--lilac) r g b / 0.45);
+  --control-halo:
+    0 0 3px rgb(from var(--lilac) r g b / 0.3),
+    0 2px 12px rgb(from var(--lift-color) r g b / 0.12);
+  --selection-border: var(--lilac);
+  --badge-core: #ffffff;
+  --badge-ink: var(--fg-bright);
+  --badge-halo:
+    0 0 3px color-mix(in srgb, var(--accent) 50%, transparent),
+    0 0 9px color-mix(in srgb, var(--accent) 20%, transparent);
   --focus-ring: var(--lilac-strong);
   --field-focus-bg: #ffffff;
-  --field-focus-border: var(--lilac);
-  --field-focus-shadow: 0 0 0 3px rgb(from var(--lilac) r g b / 0.3);
   --composer-focus-bg: #ffffff;
-  --composer-focus-border: var(--lilac);
-  --composer-focus-shadow: var(--lift-high);
   --btn-primary-bg: #ffffff;
   --btn-primary-fg: var(--fg-bright);
   --btn-primary-border: var(--lilac);
-  --btn-primary-shadow: var(--lift);
-  --btn-primary-border-lit: var(--lilac-strong);
-  --btn-primary-shadow-lit: var(--lift-high);
+  --btn-primary-shadow: none;
   --selection: color-mix(in srgb, var(--lilac) 40%, transparent);
   --meter: #6e4fa8;
   /* Apricot, not After Dark's amber: Lilac's palette is mid-chroma and cool,
@@ -248,7 +210,7 @@
 
   --code-type: #7a6248;
   --code-tool: #4e6486;
-  --code-path: #47705c;
+  --code-path: #566781;
   --diff-add: #4f7a47;
   --diff-del: #a4515c;
   --diff-add-bg: rgb(79 122 71 / 0.1);

@@ -28,9 +28,35 @@ export function installOverflowReport(): void {
     const roots = over.filter(
       (el) => !el.parentElement || !over.includes(el.parentElement),
     );
+    const spills = [...document.querySelectorAll<HTMLElement>("body *")].filter(
+      (el) => {
+        if (el === panel || el.scrollWidth <= el.clientWidth + 1) return false;
+        for (
+          let ancestor: HTMLElement | null = el;
+          ancestor && ancestor !== document.body;
+          ancestor = ancestor.parentElement
+        ) {
+          const style = getComputedStyle(ancestor);
+          if (style.visibility === "hidden" || style.overflowX !== "visible")
+            return false;
+        }
+        return true;
+      },
+    );
+    const leaves = spills.filter(
+      (el) =>
+        ![...el.children].some((child) =>
+          spills.includes(child as HTMLElement),
+        ),
+    );
     panel.textContent =
-      `vw ${vw} · scrollW ${document.documentElement.scrollWidth} · ${over.length} over\n` +
-      roots.slice(0, 12).map(describe).join("\n");
+      `vw ${vw} · scrollW ${document.documentElement.scrollWidth} · ${over.length} over · ${leaves.length} text spills\n` +
+      [
+        ...roots.slice(0, 6).map(describe),
+        ...leaves
+          .slice(0, 6)
+          .map((el) => `${describe(el)} content:${el.scrollWidth}`),
+      ].join("\n");
   };
   report();
   setInterval(report, 2000);

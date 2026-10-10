@@ -103,3 +103,15 @@
 .worktree-description code {
   font-family: var(--font-mono);
 }
+
+@media (hover: hover) and (pointer: fine) {
+  .worktree-toggle:hover {
+    border-color: var(--btn-border-hover);
+    box-shadow: var(--control-halo);
+    cursor: pointer;
+  }
+}
+.worktree-toggle:focus-within {
+  border-color: var(--field-focus-border);
+  box-shadow: var(--field-focus-shadow);
+}

@@ -218,7 +218,7 @@ export function LiveCallBlock({
             lang={streamingLang(parsed.settled)}
           />
         ) : (
-          <div className="dim">
+          <div className="call-body-text dim">
             {arriving.key}: {arriving.text}…
           </div>
         ))}

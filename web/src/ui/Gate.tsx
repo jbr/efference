@@ -52,7 +52,7 @@ function SteerField({
 
 /** The decision: allow, or decline — which opens the redirect (decline and
  * say what to do instead) and, less prominently, stopping the turn. */
-function GateControls({
+export function GateControls({
   busy,
   coldLine,
   steer,

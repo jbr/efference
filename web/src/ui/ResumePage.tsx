@@ -144,7 +144,7 @@ export function ResumePage({
               Choose a workspace to see its archived sessions.
             </p>
 
-            <div className="resume-locations-list">
+            <div className="resume-locations-list selection-list selection-panel">
               {projects === null ? (
                 <div className="resume-loading">Reading workspaces…</div>
               ) : projects.length === 0 ? (
@@ -208,7 +208,11 @@ export function ResumePage({
                   : "No archived sessions here."}
               </div>
             ) : (
-              <div className="resume-results-list" ref={listRef} role="listbox">
+              <div
+                className="resume-results-list selection-list selection-panel"
+                ref={listRef}
+                role="listbox"
+              >
                 {filtered.map((item, idx) => {
                   const isSelected = idx === selectedIndex;
                   const isResuming = resumingId === item.id;
@@ -218,7 +222,7 @@ export function ResumePage({
                       key={item.id}
                       role="option"
                       aria-selected={isSelected}
-                      className={`resume-result-row${isSelected ? " selected" : ""}${isResuming ? " resuming" : ""}`}
+                      className={`resume-result-row selection-row${isSelected ? " selected" : ""}${isResuming ? " resuming" : ""}`}
                       onClick={() => void handleResume(item.id, route.cwd)}
                       onMouseMove={(e) => {
                         const last = pointer.current;

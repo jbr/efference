@@ -4,7 +4,7 @@
 import { expect, test } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { Usage } from "../api/types.ts";
-import { TopBar } from "./TopBar.tsx";
+import { TopBar, DrawerToggle } from "./TopBar.tsx";
 
 const usage = (context: Usage["context"]): Usage =>
   ({
@@ -47,4 +47,18 @@ test("an unknown window draws the count alone, with no bar", () => {
   expect(markup).not.toContain("meter-fill");
   expect(markup).toContain("12.3k");
   expect(markup).toContain("window unknown");
+});
+
+test("the shared drawer control only badges positive attention and retains its open state", () => {
+  const closed = renderToStaticMarkup(
+    <DrawerToggle open={false} attention={0} onClick={() => {}} />,
+  );
+  expect(closed).not.toContain("drawer-count");
+  expect(closed).toContain('aria-expanded="false"');
+  const open = renderToStaticMarkup(
+    <DrawerToggle open attention={12} onClick={() => {}} />,
+  );
+  expect(open).toContain('class="drawer-toggle open"');
+  expect(open).toContain('aria-expanded="true"');
+  expect(open).toContain('class="drawer-count">12</span>');
 });

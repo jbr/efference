@@ -1,3 +1,4 @@
+import { ContextBar } from "./ContextBar.tsx";
 // The quick session switcher (docs/web-client.md): a slim second row under the
 // top bar listing the *other* live sessions on the host, most recently visited
 // first. At rest a tab is a status dot and a title; hovering or focusing one
@@ -412,17 +413,7 @@ export function HoverCard({ card }: { card: CardModel }) {
         {context !== null && (
           <span className="switcher-card-usage">
             {context.limit !== null && (
-              <span className="meter">
-                <span
-                  className="meter-fill"
-                  style={{
-                    width:
-                      used === null
-                        ? 0
-                        : `${Math.min(100, (used / context.limit) * 100)}%`,
-                  }}
-                />
-              </span>
+              <ContextBar used={used} limit={context.limit} />
             )}
             {used === null ? "–" : tokens(used)}
             {context.limit !== null && `/${tokens(context.limit)}`}

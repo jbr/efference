@@ -13,10 +13,8 @@ test("standing follows the topic, and only while unresolved", () => {
 });
 
 test("marks name the position only when there are several", () => {
-  expect(askMarkText(question, "current")).toBe(
-    "▸ answering · question 1 of 2",
-  );
-  expect(askMarkText({ ...question, of: 1 }, "current")).toBe("▸ answering");
+  expect(askMarkText(question, "current")).toBe("answering · question 1 of 2");
+  expect(askMarkText({ ...question, of: 1 }, "current")).toBe("answering");
   expect(askMarkText({ ...question, n: 2 }, "upcoming")).toBe(
     "next · question 2 of 2",
   );

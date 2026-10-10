@@ -898,36 +898,44 @@ the default set on `:root` — which is also the pre-script paint — and Lilac
 overrides under `:root[data-theme="lilac"]`. `ui/theme.ts` resolves the
 choice — explicit and persisted in localStorage, or the system scheme when none
 is stored — and sets `data-theme` on `<html>`; `initTheme()` runs before first
-render, and the select lives in the bottom panel's interface tab. Glow is a token,
-not a decoration: After Dark's accent halo (`--accent-glow`) goes `transparent`
-in Lilac, and every box-shadow through it disappears with it. The neon
-tokens follow the same rule: `--neon-ink` is a near-white core and
-`--neon-text` / `--neon-box` a glow stacked tight to wide in the accent, so a lit
-glyph or border reads as light rather than blur; `--neon-ink-dim` /
-`--neon-box-dim` are the same sign at rest, which the primary button shows until
-hover lights it fully. Lilac sets the halos to `none` and the ink back to the
-accent.
+render, and the select lives in the bottom panel's interface tab. After Dark's
+legacy accent halo (`--accent-glow`) is transparent in Lilac. Glyphs use separate
+`--neon-ink` and `--neon-text` tokens: a near-white core with a stacked accent
+halo in After Dark, accent ink without a halo in Lilac.
 
-Button states read role tokens rather than the neon tokens directly —
-`--btn-bg` / `--btn-bg-hover` / `--btn-border-hover` for the default
-(secondary), `--btn-primary-*` resting and `-lit` for the primary, and
-`--focus-border` / `--focus-shadow` / `--focus-ring` — because the two themes
-light a control differently. After Dark points them at the neon tokens. Lilac's
-light is white: its page is a lilac off-white, so true white reads brighter
-than it is, and a lit control rises into white on a soft lilac shadow
-(`--lift`, `--lift-high`). A resting default sits flush, a shade under the
-page; the primary is the one control lifted at rest; focus is a lilac ring.
-`button.quiet` is text that acts: no fill or border of its own, with padding
-for the focus ring and a negative margin returning it, so it lays out where
-its bare text would. Text fields focus through `--field-focus-bg` /
-`--field-focus-border` / `--field-focus-shadow` rather than the global outline:
-After Dark tints the border toward the accent with no glow; Lilac's focused
-field rises into white with a lilac ring. The composer's box is the lit control
-while typing (`--composer-focus-*`: the dimmed neon sign in After Dark, white
-lifted on `--lift-high` in Lilac), and its send button is secondary — Enter
-sends, so the box, not the button, is what the operator is working. `--selection` is the accent's in After Dark
-and lilac in Lilac. Lilac's `--accent` is heather, a muted red-violet: warm
-enough to mark a gate or a waiting session apart from the cooler lilac of
+Control states read role tokens: `--btn-bg` / `--btn-bg-hover` /
+`--btn-border-hover` for secondary buttons, `--btn-primary-*` for primary
+buttons, and `--focus-border` / `--focus-shadow` / `--focus-ring` for keyboard
+focus. Resting primaries have no shadow. Hover uses `--control-halo`, a soft
+accent halo in After Dark and a lilac-tinted shadow in Lilac. Keyboard focus
+adds a separate outline to buttons; fields use their existing border and the
+shared halo through `--field-focus-*`. The composer uses the same halo through
+`--composer-focus-*`; its send button remains secondary because Enter sends
+from the textarea. `button.quiet` keeps its borderless text treatment on hover
+and has padding for its focus outline, with a negative margin returning it.
+`ui/InteractionLight.css` calculates the boundary core and halo from a local
+light level: resting controls are unlit, hover/focus uses 0.6, and pressed uses
+1. The core whitens as intensity rises, while hue remains in the halo. Buttons
+also animate a centered interior hue pool while pressed. The shared transition
+is 180ms, disabled under reduced motion. Fold pills, session hover cards,
+attention-blocked overview cards, current questions, and permission gates use
+the same boundary calculations. Floated gates retain opaque page backing;
+in-flow gates are transparent.
+
+`ui/SelectionRows.css` shares panel, list, and row framing across model,
+location, and archived-session choices, including even selected boundaries and
+room around rounded row corners.
+
+`--selection-border` gives selected picker and resume rows an even inset
+boundary without a one-sided rounded-corner mark. Drawer counts and checked
+checkboxes use `--badge-core` / `--badge-ink` / `--badge-halo`: a pale core,
+dark text or checkmark, and accent light around it. Checkboxes retain native
+keyboard interaction; forced-colors mode restores native appearance.
+The user-turn gutter is a tapered two-pixel core with a soft accent spill,
+drawn separately from its content box.
+
+`--selection` is accent-tinted in After Dark and lilac in Lilac. Lilac's
+`--accent` is heather, a muted red-violet distinct from the cooler lilac of
 controls and focus, and `--warn` is apricot.
 The session tabs' status dots use the same idea: a near-white core with the
 status color in the glow, the glow scaled per status through a registered
@@ -939,6 +947,11 @@ Adding a theme
 is authoring an override block plus a select option
 ([backlog/web/plain-themes.md](../backlog/web/plain-themes.md) is the pending
 pair).
+
+Strings and paths use misty blue (`--code-path`), while semantic diff additions
+and removals retain their separate colors. Gallery palette wrappers redeclare
+both that token and the relevant Shiki aliases, because aliases inherited from
+`:root` already carry their resolved root colors.
 
 Syntax colors derive from the same tokens. Shiki v4 dropped
 `createCssVariablesTheme`, so `ui/shikiTheme.ts` hand-authors the same shape:
@@ -988,6 +1001,13 @@ a keep carries the reason and a failed removal the error. Git's setup output
 sits collapsed behind a disclosure, with old progress redraws cleaned to their
 last segment per line.
 
+Ambient and config-entry content preserves its newlines with `pre-wrap` and
+allows long tokens to break with `overflow-wrap: anywhere`. Single-line unfinished
+tool arguments in `LiveCallBlock` reuse the `call-body-text` wrapping treatment;
+multiline fragments use `StreamingCode`. Background commands, build-output URLs,
+and paths can otherwise overflow a correctly sized content box and widen the page
+even though its bounding rectangle fits the viewport.
+
 **Density toggles** (`ui/viewSettings.ts`, persisted like the theme): two
 switches hide thinking and ambient entries. Hiding is display-only — the
 entries stay in the store and reappear on toggle. A spot verdict is drawn only on
@@ -1012,7 +1032,7 @@ entry with its id already folded; and a re-seed (`seed`) settles pending
 turns against the entries it absorbs, since those never pass through
 `applyLog`. (The TUI mints and keys the same way.)
 
-**An `ask` reads as a turn ending** (`session/tree.ts`, `ui/Transcript.tsx`). A call named `ask` (docs/supervisor.md) with a usable `question` is not a call node: `buildTree` emits a leaf carrying the question and its place among the asks of one completion (`askOfCall`, the counterpart of `supervisor::ask_of_call`), drawn as the assistant's prose with a mark, after the step's other calls. The mark (`ui/askMark.ts`) says where the question stands: `▸ answering` (emphasised, with ` · question n of m` when `of > 1`) for the ask the live `ask` topic's `call_id` names, which is the one the composer's send answers; `next · question n of m`, dim, for an unresolved ask while the topic names a sibling; `asked` (with the position) once its result has committed (`AskQuestion.resolved`, set by `buildTree`) or when there is no topic to say more, as in a replay. While the topic is non-null the composer's placeholder reads `your reply answers question n of m`, or `your reply answers the question` for a lone ask. Its result entry becomes a second leaf at its log position: with a `submission_id` it is the reply, drawn as the operator's message from `raw.content` (attributed as a `User` turn is, which on this client is not at all); without one — an interrupt, a malformed call — a dim `not answered`. An ask with no usable question stays an ordinary call. A call whose arguments are still streaming is not drawn until it commits. The composer needs nothing for it: a send while the `ask` topic is non-null is the reply. Its echo is keyed like any other, and because the fold settles on any entry carrying the id, the reply's `ToolResult` settles it; the echo reads "Sent · answering the question" and carries no Recall, since a reply is never queued. (The daemon's refusal to continue past a question, `409 not_continuable`, reaches the composer's error line like the other continue refusals.)
+**An `ask` reads as a turn ending** (`session/tree.ts`, `ui/Transcript.tsx`). A call named `ask` (docs/supervisor.md) with a usable `question` is not a call node: `buildTree` emits a leaf carrying the question and its place among the asks of one completion (`askOfCall`, the counterpart of `supervisor::ask_of_call`), drawn as the assistant's prose with a mark, after the step's other calls. The mark (`ui/askMark.ts`) says where the question stands: `answering` (above the prose in a softly lit current-question frame, with ` · question n of m` when `of > 1`) for the ask the live `ask` topic's `call_id` names, which is the one the composer's send answers; `next · question n of m`, dim, for an unresolved ask while the topic names a sibling; `asked` (with the position) once its result has committed (`AskQuestion.resolved`, set by `buildTree`) or when there is no topic to say more, as in a replay. While the topic is non-null the composer's placeholder reads `your reply answers question n of m`, or `your reply answers the question` for a lone ask. Its result entry becomes a second leaf at its log position: with a `submission_id` it is the reply, drawn as the operator's message from `raw.content` (attributed as a `User` turn is, which on this client is not at all); without one — an interrupt, a malformed call — a dim `not answered`. An ask with no usable question stays an ordinary call. A call whose arguments are still streaming is not drawn until it commits. The composer needs nothing for it: a send while the `ask` topic is non-null is the reply. Its echo is keyed like any other, and because the fold settles on any entry carrying the id, the reply's `ToolResult` settles it; the echo reads "Sent · answering the question" and carries no Recall, since a reply is never queued. (The daemon's refusal to continue past a question, `409 not_continuable`, reaches the composer's error line like the other continue refusals.)
 
 **An ask's recalled turns return to the composer once.** Turns queued before the question began are withdrawn by the daemon and published on the `ask` topic as `recalled`. Submission ids are recorded on the session (`minted`) **before** the POST, so a turn whose 202 has not resolved is still recognised as this client's; a restarted client has none and restores nothing. `applyFrame` on an `ask` frame with a `call_id` not yet seen (`askRestored`) drops the echoes of the minted ids among `recalled`, records them in `withdrawn` (so a late 202 does not queue an echo nothing will settle), and sets `askRecall`, which `SessionView` hands to the composer's `{text, attachments, nonce}` splice like a manual recall.
 
@@ -1085,7 +1105,15 @@ not what the reader is doing. The title is the one element that yields width,
 and on the phone breakpoint it is dropped: the start of a title says less than
 nothing, and the drawer shows it in full. The **context meter** is the bar,
 with `42.7k/1M` as a small caption under it so the numbers take no width of
-their own. The **Session** control carries a count when anything in the drawer
+their own. `ui/ContextBar.tsx` shares its fill with the switcher hover card:
+occupancy is clamped to 0–100%, its halo grows and its core whitens with occupancy.
+The rounded fill reaches cool white at full occupancy. Lilac has a continuous
+colored rim and a wider hue cloud extending behind the caption; After Dark uses
+the shared control halo. The hue moves
+from the meter hue toward the accent between 50% and 85%, then toward the warn
+hue between 85% and 100%. These are visual fill ranges, not consolidation
+thresholds. Unknown usage draws no fill; an unknown window draws the count
+without a bar. The **Session** control carries a count when anything in the drawer
 asks for attention — pending notifications, policy proposals, running
 processes (`ui/drawerAttention.ts`).
 
@@ -1147,7 +1175,7 @@ attempt 2 (429) · 8s`; the turn's own request leads, then a running tool, then 
 side requests, in `ui/operations.ts`; a `bash` call is labelled by its `command`, cut
 at 48 characters with an ellipsis, and its `intent` is the hover title, while other
 tools are labelled by the intent), `waiting for your approval` or `waiting for
-your answer` in the accent color while a gate or an `ask` is pending (it outranks
+your answer` in muted, upright UI text while a gate or an `ask` is pending (it outranks
 the operation text, since the operator is what the loop waits on; a stall and a
 park still come first), and the daemon's own sentence plus `· send to retry` in the warn
 color when the `stall` topic is set — a trajectory that stopped short, or a
@@ -1164,6 +1192,11 @@ it already says whose turn it is, and riding along is what sending out of
 turn does, so naming the mechanism cost prime UI space without adding
 anything the operator acts on (a hint shipped here and was removed
 2026-08-26).
+
+The expanded input uses `ui/ComposerToolbar.tsx` for attach, the turn-state
+readout, interrupt/resume, and send. At the 700px phone breakpoint the readout
+occupies a full-width line above the buttons rather than wrapping between them.
+The waiting readout has no dot or glow; its words state the pending action.
 
 **Attachments.** A file reaches the composer three ways — pasted (a
 clipboard image or file), dropped anywhere on the page (the window listens
@@ -1637,7 +1670,7 @@ The pending approval gate (`web/src/ui/Gate.tsx`) renders from the `gate` state
 topic, in the transcript flow rather than a modal, and **inside the gated call's own
 entry**. A gated call has no result entry, so the call is the transcript's last item;
 `Transcript` marks it (`gated`: rendered whole whatever its recency level, with the
-accent-tinted fill and an even accent border) and mounts an empty slot under the
+shared lit boundary and halo, with no tinted fill) and mounts an empty slot under the
 spotter's reason, into which the surface portals its controls. Reading order is call →
 reason → decision, all in one box: the decision is visibly *about* the call rather than a
 panel following it. The reason is the `Spot` verdict's text alone, with no stance label —
@@ -1792,26 +1825,56 @@ reach the router rather than stop at a `401`.
 
 With `?overflow` on the URL (dev builds), a fixed panel lists the viewport's
 width, the document's scroll width, and the outermost elements whose right edge
-passes the viewport — readable off a simulator screenshot, where no inspector is
-attached. A column wider than the screen shows on iOS as enlarged text (text
+passes the viewport. It also lists innermost visible text spills: elements whose
+content is wider than their box, excluding content confined by a hidden or
+scrolling ancestor. Both are readable off a simulator screenshot, where no
+inspector is attached. A column wider than the screen shows on iOS as enlarged text (text
 autosizing inflates an overflowing block), not only as a horizontal scroll, so
 "the text is huge" on a phone is a width bug first.
 
 ### The design gallery — `web/src/gallery/`
 
 With `?gallery` on the URL (dev builds), the page renders the client's widgets
-on fixture data instead of the app: buttons, the neon glyphs, the session
-tabs (one per dot state, and the hover card), the composer, a transcript
-excerpt, session cards, the launch settings, the model picker, and
-the resume lists. Components that render from props alone are the real ones;
-stateful surfaces (the composer, the resume list, the picker shell) are their
-markup under the same class names and page containers, so the stylesheet under
-test is production's. Each control also appears pinned in its hover and focus
-states: `pseudoStates.ts` copies every rule naming `:hover`, `:focus-visible`,
-`:focus-within`, `:focus`, or `:active` with the pseudo-class rewritten to an
-`is-*` class, and re-derives the copies when a stylesheet changes, so under HMR
-the pinned states follow the edit. The copied markup drifts if a component's
-structure changes; the gallery is a design surface, not a test.
+on fixture data instead of the app. A section index links to composed scenes,
+buttons (including the Session drawer's attention badge), neon glyphs, session
+tabs and their hover card, composers, code/results, session cards, launch
+settings, the model picker, and resume lists. Specimen labels stack above their
+controls on narrow screens; state comparisons wrap rather than widening the page.
+
+`Scenes.tsx` renders a shortened worktree UI exchange in finished, input-arriving,
+working, answer-needed, and approval-needed states. Input-arriving shows an
+unfinished single-line scalar argument to exercise transient wrapping. It uses
+`TranscriptContent`, the
+production transcript body without window follow-tail, built from fixture log
+entries through the normal tree projection. Tool output includes the distilled
+kept-line rendering and its note; working shows live output, asking shows the
+question's answering mark, and approval controls occupy the call's gate slot.
+Answer-needed contains two questions, with local controls to show either as
+current; the second state includes the submitted reply to the first question.
+The current question has a lit frame and an answering label above its prose,
+while upcoming and answered questions are unframed. This distinguishes the
+answer target from the user turn's left-edge highlight.
+Approval-needed shares production `GateControls`, including Allow, the
+Decline redirect field, and stop-turn action; its reason comes from a fixture
+Spot entry. The gallery does not mount the floating gate lifecycle.
+Scene submit, attach, interrupt, inspection, and approval interactions stay local;
+they do not issue session actions. The local raw-output disclosure is not the
+app's inspector.
+
+The composer fixtures share `ComposerToolbar` and `turnState` with the app;
+`DrawerToggle` is shared with `TopBar`. Code/result specimens use the production
+call and result components, including shell argument colors, edit-result framing
+for colored diffs, and errors. The input, resume list, and picker shells retain
+production class names but duplicate markup; those shells can drift when their
+components change. Context specimens share `ContextMeter` and compare 10%, 50%,
+75%, 90%, 100%, unknown usage, and unknown window. Checkbox specimens compare
+unchecked and checked states; each form pins a hovered control or row alongside
+its resting and selected controls. Fixture lists live in `fixtures.ts`.
+
+Controls also appear pinned in hover and focus states: `pseudoStates.ts` copies
+every rule naming `:hover`, `:focus-visible`, `:focus-within`, `:focus`, or
+`:active` with the pseudo-class rewritten to an `is-*` class, and re-derives the
+copies when a stylesheet changes, so under HMR the pinned states follow the edit.
 
 ### Scrubbing the stream — `web/src/session/record.ts`
 

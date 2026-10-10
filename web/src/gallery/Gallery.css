@@ -31,6 +31,7 @@
 .g-section {
   max-width: 64rem;
   margin: 2.5rem auto 0;
+  scroll-margin-top: 6rem;
 }
 
 .g-title {
@@ -55,10 +56,12 @@
 .g-name {
   font-family: var(--font-mono);
   font-size: 0.75rem;
-  color: var(--fg-faint);
+  color: var(--fg-dim);
+  overflow-wrap: anywhere;
 }
 
 .g-body {
+  min-width: 0;
   display: flex;
   flex-wrap: wrap;
   gap: 1.5rem;
@@ -66,12 +69,14 @@
 }
 
 .g-states {
+  flex-wrap: wrap;
   display: flex;
   gap: 1.25rem;
   align-items: flex-end;
 }
 
 .g-state {
+  flex-shrink: 0;
   margin: 0;
   display: flex;
   flex-direction: column;
@@ -83,7 +88,7 @@
   white-space: nowrap;
   font-family: var(--font-mono);
   font-size: 0.65rem;
-  color: var(--fg-ghost);
+  color: var(--fg-dim);
 }
 
 .g-row {
@@ -95,10 +100,6 @@
 .g-mono {
   font-family: var(--font-mono);
   font-size: 1rem;
-}
-
-.g-dot {
-  display: inline-block;
 }
 
 /* The page containers below carry page-level layout (full height, centered
@@ -129,10 +130,6 @@
   margin-bottom: 1rem;
 }
 
-.g-transcript .entry {
-  margin-top: 1rem;
-}
-
 .g-page {
   background: none;
 }
@@ -159,4 +156,185 @@
   margin: 0;
   font-family: var(--font-prose);
   font-size: 1.05rem;
+}
+
+.g-index {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.25rem;
+  max-width: 64rem;
+  margin: 1.5rem auto 0;
+  font-family: var(--font-ui);
+  font-size: 0.85rem;
+}
+
+.g-index a {
+  color: var(--fg-dim);
+}
+.g-body > .composer-toolbar {
+  flex-wrap: wrap;
+}
+.g-intro,
+.g-caption {
+  color: var(--fg-dim);
+  font-family: var(--font-ui);
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+.g-intro {
+  max-width: 44rem;
+  margin: 0 0 1rem;
+}
+.g-scene-modes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1.25rem;
+}
+.g-scene-modes button[aria-pressed="true"] {
+  background: var(--bg-chip);
+  border-color: var(--fg-dim);
+}
+.g-scene {
+  border: 1px solid var(--border-control);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.g-scene-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.9rem 1.25rem;
+  border-bottom: 1px solid var(--border-subtle);
+  font-family: var(--font-prose);
+}
+.g-scene .transcript {
+  padding: 1.5rem 1rem;
+}
+.g-scene .g-composer {
+  margin: 0;
+  padding: 0.75rem;
+}
+.g-composer .composer-inner {
+  width: 100%;
+}
+.g-example {
+  min-width: 0;
+}
+.g-example h3 {
+  margin: 0 0 0.75rem;
+  font-family: var(--font-ui);
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--fg-dim);
+}
+.g-composer-specimens {
+  display: grid;
+  gap: 1.5rem;
+}
+.g-syntax {
+  display: grid;
+  gap: 2rem;
+}
+.g-syntax .g-example {
+  padding: 1rem;
+  border: 1px solid var(--border-subtle);
+}
+
+.g-inspection {
+  margin: 1rem;
+  padding: 1rem;
+  background: var(--bg-inset);
+  font-family: var(--font-ui);
+}
+.g-inspection pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 760px) {
+  .gallery {
+    padding: 0 1rem 3rem;
+  }
+  .g-head {
+    flex-wrap: wrap;
+    padding: 0.75rem 0;
+  }
+  .g-head h1 {
+    font-size: 1.2rem;
+    width: 100%;
+  }
+  .g-head button {
+    white-space: nowrap;
+  }
+  .g-specimen {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.75rem;
+    align-items: start;
+  }
+  .g-section {
+    scroll-margin-top: 8rem;
+  }
+  .g-states {
+    gap: 1rem;
+  }
+  .g-switcher .switcher-pop {
+    width: min(22rem, calc(100vw - 3rem));
+  }
+  .g-scene .transcript {
+    padding: 1rem 0.5rem;
+  }
+  .g-scene .g-composer {
+    padding: 0.5rem;
+  }
+  .g-scene-head {
+    padding: 0.75rem;
+  }
+}
+
+.g-theme[aria-pressed="true"] {
+  background: var(--bg-chip);
+  border-color: var(--fg-dim);
+  color: var(--fg-bright);
+}
+
+.g-contexts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2rem;
+  padding: 1.25rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+}
+.g-contexts .context-meter {
+  font-size: 0.9rem;
+}
+.g-checkboxes + .g-checkboxes {
+  margin-top: 1rem;
+}
+
+.g-palettes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.5rem;
+}
+.g-palette {
+  --code-path: var(--palette-dark);
+  --shiki-token-string: var(--code-path);
+  --shiki-token-link: var(--code-path);
+  padding: 1rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+}
+:root[data-theme="lilac"] .g-palette {
+  --code-path: var(--palette-light);
+}
+.g-palette .g-caption {
+  margin-bottom: 0;
+}
+@media (max-width: 760px) {
+  .g-palettes {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }

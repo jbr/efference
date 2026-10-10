@@ -39,8 +39,9 @@
    way round: a one-side heavy border and rounded corners do not combine. */
 .t-entry.t-call.gated,
 .t-entry.t-call.gated:hover {
-  background: var(--gated-bg);
-  border: 1px solid var(--gated-border);
+  background: transparent;
+  border: 1px solid var(--light-edge);
+  box-shadow: var(--control-halo);
 }
 
 /* What came back — the header, the body, and the note — is one section,
@@ -86,7 +87,8 @@
 
 .t-fold:hover {
   color: var(--fg-bright);
-  border-color: var(--border-strong);
+  border-color: var(--btn-border-hover);
+  box-shadow: var(--control-halo);
 }
 
 /* Trimmed: content held to a fixed height; past it, a short steep fade to

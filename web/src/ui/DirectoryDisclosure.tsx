@@ -25,7 +25,7 @@ export function DirectoryDisclosure({
       <button
         ref={trigger}
         type="button"
-        className="location-pick directory-disclosure"
+        className="location-pick selection-row directory-disclosure"
         aria-expanded={open}
         aria-controls="launch-directory-form"
         onClick={onToggle}

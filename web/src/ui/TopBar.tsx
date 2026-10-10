@@ -14,6 +14,7 @@ import type {
 import { sessionId } from "../api/base.ts";
 import { listedTitle } from "../session/listing.ts";
 import { upstreamChip } from "./upstream.ts";
+import { ContextBar } from "./ContextBar.tsx";
 import { AppHeader } from "./AppHeader.tsx";
 import { SessionSwitcher } from "./SessionSwitcher.tsx";
 
@@ -27,7 +28,11 @@ const tokens = (n: number) =>
 /** Context occupancy: the bar is the reading, the numbers a caption under it
  * so they take no width of their own. Drawn only when the context is known; an
  * endpoint that reported no window gets the count alone, with no bar to fill. */
-function ContextMeter({ context }: { context: NonNullable<Usage["context"]> }) {
+export function ContextMeter({
+  context,
+}: {
+  context: NonNullable<Usage["context"]>;
+}) {
   const { used, limit } = context;
   const usedText = used === null ? "?" : used.toLocaleString();
   return (
@@ -39,17 +44,7 @@ function ContextMeter({ context }: { context: NonNullable<Usage["context"]> }) {
           : `context: ${usedText} of ${limit.toLocaleString()} tokens`
       }
     >
-      {limit !== null && (
-        <span className="meter">
-          <span
-            className="meter-fill"
-            style={{
-              width:
-                used === null ? 0 : `${Math.min(100, (used / limit) * 100)}%`,
-            }}
-          />
-        </span>
-      )}
+      {limit !== null && <ContextBar used={used} limit={limit} />}
       <span className="context-caption">
         {used === null ? "–" : tokens(used)}
         {limit !== null && `/${tokens(limit)}`}
@@ -127,14 +122,33 @@ export function TopBar({
       <span className="spacer" />
       {chip !== null && <UpstreamChip chip={chip} />}
       {context !== null && <ContextMeter context={context} />}
-      <button
-        className={drawerOpen ? "drawer-toggle open" : "drawer-toggle"}
-        aria-expanded={drawerOpen}
+      <DrawerToggle
+        open={drawerOpen}
+        attention={attention}
         onClick={onDrawer}
-      >
-        Session
-        {attention > 0 && <span className="drawer-count">{attention}</span>}
-      </button>
+      />
     </AppHeader>
+  );
+}
+
+/** The drawer control, including its attention count (docs/web-client.md). */
+export function DrawerToggle({
+  open,
+  attention,
+  onClick,
+}: {
+  open: boolean;
+  attention: number;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      className={open ? "drawer-toggle open" : "drawer-toggle"}
+      aria-expanded={open}
+      onClick={onClick}
+    >
+      Session
+      {attention > 0 && <span className="drawer-count">{attention}</span>}
+    </button>
   );
 }

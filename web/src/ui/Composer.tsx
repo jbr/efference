@@ -24,11 +24,12 @@ import type {
   Park,
   Stall,
 } from "../api/types.ts";
+import { ComposerToolbar } from "./ComposerToolbar.tsx";
 import { FoldNotice } from "./FoldNotice.tsx";
 import { foldOffer } from "./fold.ts";
 import { coldLine } from "./coldLine.ts";
 import { replyHint } from "./askMark.ts";
-import { type TurnState, turnState } from "./turnState.ts";
+import { turnState, turnClass } from "./turnState.ts";
 import { useDockOffset } from "./float.ts";
 import { useNarrow } from "./useNarrow.ts";
 import { useNow } from "./useNow.ts";
@@ -328,74 +329,26 @@ export function Composer({
                 rows={3}
               />
             </div>
-            <div className="composer-toolbar">
-              <div className="composer-toolbar-left">
-                {/* The picker is the phone's way in: there is no drag, and a
-                    paste carries no file. */}
-                <input
-                  ref={picker}
-                  type="file"
-                  multiple
-                  hidden
-                  onChange={(event) => {
-                    for (const file of event.target.files ?? []) stage(file);
-                    event.target.value = "";
-                  }}
-                />
-                <button
-                  type="button"
-                  className="attach-btn"
-                  title="attach files (or paste, or drop them anywhere)"
-                  aria-label="attach files"
-                  onClick={() => picker.current?.click()}
-                >
-                  <svg
-                    width="16"
-                    height="16"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.5"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    aria-hidden="true"
-                  >
-                    <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48" />
-                  </svg>
-                  <span>attach</span>
-                </button>
-                <span className={turnClass(turn.kind)} title={turn.title}>
-                  {turn.text}
-                </span>
-              </div>
-              <div className="composer-toolbar-right">
-                {running && (
-                  <button
-                    type="button"
-                    className="interrupt-btn"
-                    onClick={() => act(interruptLoop())}
-                  >
-                    interrupt
-                  </button>
-                )}
-                {(pace?.held ?? false) && (
-                  <button
-                    type="button"
-                    className="resume-btn"
-                    onClick={() => act(patchLoop({ held: false }))}
-                  >
-                    resume
-                  </button>
-                )}
-                {!narrow && (
-                  <span className="composer-hint">shift-enter for newline</span>
-                )}
-                <button disabled={attachments.uploading} className="send-btn">
-                  <span>send</span>
-                  {!narrow && <kbd className="send-kbd">↵</kbd>}
-                </button>
-              </div>
-            </div>
+            <input
+              ref={picker}
+              type="file"
+              multiple
+              hidden
+              onChange={(event) => {
+                for (const file of event.target.files ?? []) stage(file);
+                event.target.value = "";
+              }}
+            />
+            <ComposerToolbar
+              turn={turn}
+              narrow={narrow}
+              running={running}
+              held={pace?.held ?? false}
+              uploading={attachments.uploading}
+              onAttach={() => picker.current?.click()}
+              onInterrupt={() => act(interruptLoop())}
+              onResume={() => act(patchLoop({ held: false }))}
+            />
           </div>
         </div>
       </form>
@@ -422,21 +375,4 @@ export function Composer({
       )}
     </>
   );
-}
-
-/** The turn-state readout's class: the warn colour is a stall or a cold park; the accent is a gate or
- * `ask` waiting on the operator. */
-function turnClass(kind: TurnState["kind"]): string {
-  switch (kind) {
-    case "running":
-      return "turn-state dim";
-    case "stalled":
-      return "turn-state stalled";
-    case "parked":
-      return "turn-state parked";
-    case "waiting":
-      return "turn-state waiting";
-    case "idle":
-      return "turn-state your-turn";
-  }
 }

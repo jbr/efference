@@ -41,12 +41,6 @@
   font-size: 0.95rem;
 }
 
-.resume-locations-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
 .resume-picker-header {
   display: flex;
   align-items: baseline;
@@ -69,7 +63,7 @@
   border: 1px solid var(--border-control);
   border-radius: 8px;
   color: var(--fg-bright);
-  transition: border-color 150ms ease;
+  transition: var(--interaction-transition);
 }
 
 .resume-search-bar .resume-search-input::placeholder {
@@ -79,9 +73,6 @@
 .resume-results-list {
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--bg-surface);
   overflow-y: auto;
   max-height: 60vh;
 }
@@ -91,19 +82,6 @@
   grid-template-columns: minmax(0, 1fr) 9rem 7rem;
   align-items: center;
   gap: 1rem;
-  padding: 0.75rem 1rem;
-  border-bottom: 1px solid var(--border-subtle);
-  cursor: pointer;
-  transition: background 100ms ease;
-}
-
-.resume-result-row:last-child {
-  border-bottom: none;
-}
-
-.resume-result-row:hover,
-.resume-result-row.selected {
-  background: var(--bg-raised);
 }
 
 .resume-result-row.resuming {

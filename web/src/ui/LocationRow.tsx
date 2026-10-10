@@ -55,7 +55,11 @@ export function LocationRow({
           </button>
         </div>
       )}
-      <button type="button" className="location-pick" onClick={onSelect}>
+      <button
+        type="button"
+        className={`location-pick selection-row${selected ? " selected" : ""}`}
+        onClick={onSelect}
+      >
         <span className="location-line">
           <span className="location-path">
             <span className="location-parent">{parent}</span>

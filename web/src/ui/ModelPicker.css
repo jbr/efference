@@ -3,9 +3,6 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
-  border: 1px solid var(--border-strong);
-  border-radius: 10px;
-  background: var(--bg-raised);
   overflow: hidden;
 }
 .picker-path {
@@ -49,7 +46,6 @@
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 0.25rem;
 }
 .picker-note {
   margin: 0.4rem 0.5rem;
@@ -67,23 +63,11 @@
   align-items: center;
   gap: 0.65rem;
   width: 100%;
-  padding: 0.7rem 0.5rem;
-  border: none;
-  border-radius: 6px;
-  background: none;
-  text-align: left;
   font-size: 0.8rem;
   color: var(--fg);
   cursor: pointer;
 }
-.picker-row.selected {
-  background: var(--bg-chip);
-  box-shadow: inset 2px 0 0 var(--accent);
-}
 @media (hover: hover) and (pointer: fine) {
-  .picker-row:hover:not(.selected) {
-    background: var(--bg-chip);
-  }
   .picker-root:hover,
   .picker-breadcrumb:hover {
     text-decoration: underline;

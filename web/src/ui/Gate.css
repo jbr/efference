@@ -5,7 +5,8 @@
 
 /* The floating gate: the gated entry (Transcript.css .gated), lifted and
    pinned above the dock while the one in the flow is scrolled out of view —
-   the same fill, border, radius, and padding, plus a shadow for the lift.
+   the same lit boundary, radius, and padding, with opaque page backing and
+   a shadow for the lift.
    The bottom offset is measured from the dock's height (Gate.tsx), because
    the panel and composer change it. */
 .gate-float {
@@ -18,11 +19,13 @@
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
-  background: var(--gated-bg);
-  border: 1px solid var(--gated-border);
+  background: var(--bg-page);
+  border: 1px solid var(--light-edge);
   border-radius: 12px;
   padding: 0.6rem 1.1rem 0.9rem;
-  box-shadow: 0 8px 32px rgb(0 0 0 / 0.3);
+  box-shadow:
+    0 8px 32px rgb(0 0 0 / 0.3),
+    var(--control-halo);
 }
 
 .gate-float-head {
@@ -56,10 +59,12 @@
   overflow: hidden;
   text-overflow: ellipsis;
   cursor: pointer;
-  border: 1px solid var(--gated-border);
-  background: var(--gated-bg);
+  border: 1px solid var(--light-edge);
+  background: var(--bg-page);
   padding: 0.3rem 0.7rem;
-  box-shadow: 0 1px 6px rgb(0 0 0 / 0.3);
+  box-shadow:
+    0 1px 6px rgb(0 0 0 / 0.3),
+    var(--control-halo);
 }
 
 /* The decision, under the reason it answers. */

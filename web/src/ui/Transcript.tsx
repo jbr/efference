@@ -6,7 +6,7 @@
 // never drop (docs/web-client.md).
 
 import { handoffPredecessor } from "../api/types.ts";
-import { memo, useMemo } from "react";
+import { memo, useMemo, type ComponentProps } from "react";
 import type {
   Ask,
   Attachment,
@@ -220,11 +220,11 @@ function Leaf({
   if (node.ask !== undefined) {
     const standing = askStanding(node.ask, liveAsk);
     return (
-      <Entry label={null}>
-        <Markdown>{node.ask.question}</Markdown>
+      <Entry label={null} as={`ask-question ask-question-${standing}`}>
         <p className={`ask-mark ask-${standing}`}>
           {askMarkText(node.ask, standing)}
         </p>
+        <Markdown>{node.ask.question}</Markdown>
       </Entry>
     );
   }
@@ -547,7 +547,7 @@ function PendingTurns({
   );
 }
 
-export function Transcript({
+export function TranscriptContent({
   nodes,
   streaming,
   pending,
@@ -572,7 +572,6 @@ export function Transcript({
   onInspect: (callId: CallId) => void;
   onOpenFile: (path: string, callId: CallId) => void;
 }) {
-  useFollowTail();
   const { thinking, ambient } = useViewSettings();
   const shown = useMemo(
     () =>
@@ -620,4 +619,10 @@ export function Transcript({
       />
     </div>
   );
+}
+
+/** The session view follows the window tail; embedded specimens only render content (docs/web-client.md). */
+export function Transcript(props: ComponentProps<typeof TranscriptContent>) {
+  useFollowTail();
+  return <TranscriptContent {...props} />;
 }
