@@ -231,9 +231,9 @@ pub(crate) enum DevCommand {
         /// With --triage-model: its reasoning level (implies thinking on).
         #[arg(long, value_name = "LEVEL")]
         triage_effort: Option<String>,
-        /// The history the triage request reads: `transcript` (the live gate's view)
-        /// or `digest` (the trajectory digest, an experiment arm;
-        /// backlog/triage-reads-the-digest.md).
+        /// The history the triage request reads: `transcript` (the live gate's view),
+        /// or an experiment arm (backlog/triage-ground-truth): `digest` (the trajectory
+        /// digest), `tail:N` (the digest of the last N assistant turns), `intent` (none).
         #[arg(long, default_value = "transcript")]
         view: String,
         /// Write every compared result-draw as a JSON line to this file.
@@ -569,13 +569,9 @@ pub(crate) async fn run<F: Future<Output = Result<ClientTarget, CliError>>>(
                 auto_choice: triage_auto_choice,
                 effort: triage_effort,
             });
-            let view = match view.as_str() {
-                "transcript" => efference::distill::TriageView::Transcript,
-                "digest" => efference::distill::TriageView::Digest,
-                other => {
-                    return Err(format!("--view {other}: expected transcript or digest").into());
-                }
-            };
+            let view = efference::distill::TriageView::parse(&view).ok_or_else(|| {
+                format!("--view {view}: expected transcript, digest, tail:N or intent")
+            })?;
             peek_replay::peek(
                 path, seq, repeat, limit, dry_run, &model, triage, view, out, table,
             )

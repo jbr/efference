@@ -72,9 +72,9 @@ pub fn peek_request(
         TriageView::Transcript => {
             peek_messages(prefix, reader, pending, inbox, background, &roster)
         }
-        TriageView::Digest => {
-            digest_view::digest_peek_messages(prefix, reader, pending, inbox, background, &roster)
-        }
+        view => digest_view::digest_peek_messages(
+            prefix, reader, view, pending, inbox, background, &roster,
+        ),
     }
 }
 

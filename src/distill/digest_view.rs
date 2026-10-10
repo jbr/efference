@@ -20,33 +20,78 @@ pub enum TriageView {
     /// The trajectory digest: one line per call with its intent and note, the operator's
     /// turns and the agent's prose.
     Digest,
+    /// The digest of only the last `n` assistant turns, the gate's own counted: a recent
+    /// tail rather than the whole history.
+    Tail(usize),
+    /// No history: the gate's calls, their results, and the ask.
+    Intent,
+}
+
+impl TriageView {
+    /// `transcript`, `digest`, `tail:N`, or `intent`.
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "transcript" => Some(Self::Transcript),
+            "digest" => Some(Self::Digest),
+            "intent" => Some(Self::Intent),
+            _ => s
+                .strip_prefix("tail:")
+                .and_then(|n| n.parse().ok())
+                .filter(|n| *n > 0)
+                .map(Self::Tail),
+        }
+    }
 }
 
 const DIGEST_HEAD: &str = "The session so far, as a digest: each operator turn, the \
 agent's prose, and one line per tool call with its intent and the note triage left on \
 its result.";
 
+const TAIL_HEAD: &str = "The session's most recent turns, as a digest: the agent's \
+prose, and one line per tool call with its intent and the note triage left on its result.";
+
 const GATE_HEAD: &str = "The agent's latest calls, and what each returned:";
 
-/// The digest view's request: one user turn holding the digest of everything before the
-/// gate's results, a breakpoint after it (the digest of a longer log extends a shorter
-/// one's, so this is where a cache can resume), then the gate's calls and results and
-/// the same ask the transcript view sends.
+/// The text-only views' request: one user turn holding the history `view` asks for (the
+/// whole digest, a tail of it, or none), a breakpoint after it (the digest of a longer
+/// log extends a shorter one's, so this is where a cache can resume), then the gate's
+/// calls and results and the same ask the transcript view sends.
 pub(super) fn digest_peek_messages(
     prefix: &[LogEntry],
     reader: Reader,
+    view: TriageView,
     pending: &[Pending<'_>],
     inbox: &[ShownNotification],
     background: &[BgView],
     roster: &[Item],
 ) -> Vec<WireTurn> {
-    let digest = crate::digest::render(
-        prefix,
-        crate::digest::Options {
-            reader,
-            ..Default::default()
-        },
-    );
+    let render = |entries: &[LogEntry]| {
+        crate::digest::render(
+            entries,
+            crate::digest::Options {
+                reader,
+                ..Default::default()
+            },
+        )
+    };
+    let history = match view {
+        TriageView::Intent | TriageView::Transcript => None,
+        TriageView::Digest => Some(format!("{DIGEST_HEAD}\n\n{}", render(prefix).trim_end())),
+        TriageView::Tail(n) => {
+            let start = prefix
+                .iter()
+                .enumerate()
+                .filter(|(_, e)| matches!(e.payload, Payload::Assistant { .. }))
+                .map(|(i, _)| i)
+                .rev()
+                .nth(n - 1)
+                .unwrap_or(0);
+            Some(format!(
+                "{TAIL_HEAD}\n\n{}",
+                render(&prefix[start..]).trim_end()
+            ))
+        }
+    };
     let (results, ask) = gate_parts(pending, inbox, background, roster);
     let mut gate = format!("{GATE_HEAD}\n");
     for (p, result) in pending.iter().zip(results) {
@@ -56,12 +101,13 @@ pub(super) fn digest_peek_messages(
         }
         let _ = writeln!(gate, "{}", result.content);
     }
-    vec![WireTurn::User(vec![
-        UserPart::Text(format!("{DIGEST_HEAD}\n\n{}", digest.trim_end())),
-        UserPart::Breakpoint,
-        UserPart::Text(gate),
-        UserPart::Text(ask),
-    ])]
+    let mut parts = Vec::new();
+    if let Some(history) = history {
+        parts.push(UserPart::Text(history));
+        parts.push(UserPart::Breakpoint);
+    }
+    parts.extend([UserPart::Text(gate), UserPart::Text(ask)]);
+    vec![WireTurn::User(parts)]
 }
 
 #[cfg(test)]
