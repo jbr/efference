@@ -112,7 +112,16 @@ entries, one per label listed here and no others: {labels}.",
             labels = many.join(", "),
         ),
     };
-    let fields: Vec<&str> = std::iter::once(KEEP_FIELDS)
+    // An experiment's replacement for the `keep`/`note` rows (backlog/triage-ground-truth),
+    // read from a file so a wording mutation is a text edit; unset, the shipped rows.
+    let keep_fields = match std::env::var("EFFERENCE_PEEK_FIELDS") {
+        Ok(path) => std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("EFFERENCE_PEEK_FIELDS: {path}: {e}"))
+            .trim_end()
+            .to_string(),
+        Err(_) => KEEP_FIELDS.to_string(),
+    };
+    let fields: Vec<&str> = std::iter::once(keep_fields.as_str())
         .chain(riders.iter().copied())
         .collect();
     v.assemble(&shape, &fields)
