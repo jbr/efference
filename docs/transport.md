@@ -1880,7 +1880,7 @@ turn's own thinking (above).
 
 The stance is published as `usage.keepalive_skipped` (docs/control-api.md) and shown in
 the TUI sidebar: `discard` with the last ping's output, its cost, the prefix, and the
-premium; or `rejected`. The stderr line marks only the transition into and out of
+premium; `rejected`; or `exhausted`. The stderr line marks only the transition into and out of
 skipping, not every tick.
 
 A failed ping is classified by HTTP status (`api::KeepaliveError`, which carries
@@ -1890,7 +1890,12 @@ stops and `usage.keepalive_skipped` says `rejected`) — the upstream rejected t
 itself, so the next tick would be rejected identically, and retrying only reprints
 the same line for the life of the pause. 408 and 429 describe the moment rather
 than the request; they, 5xx, and network failures keep the print-and-retry
-behavior.
+behavior — except a failure whose body names a terminal condition
+(`api/failure.rs`, e.g. the Codex backend's 429 `usage_limit_reached`). That one
+holds until a reset hours away, so the keepalive stops pinging and publishes
+`exhausted` with the refusal and its `resets_at`, until the next real turn: that
+turn is the first request that can find the limit lifted, and a turn that fails
+on it stalls the loop on its own account.
 
 The prefix bytes sent by a keepalive must be byte-identical to what a real turn
 sends, or the ping writes a new cache entry instead of refreshing the live one.

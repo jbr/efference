@@ -126,6 +126,28 @@ impl KeepaliveError {
             _ => false,
         }
     }
+
+    /// Whether the body names a condition no retry changes before it resets — the
+    /// Codex backend's `usage_limit_reached` arrives as a 429, which the status alone
+    /// reads as a moment (`api/failure.rs`). The same request would succeed after a
+    /// reset, so this is not [`is_permanent`](Self::is_permanent).
+    pub fn is_exhausted(&self) -> bool {
+        match self {
+            Self::Status { body, .. } => classify_body(body) == FailureClass::Terminal,
+            Self::Other(_) => false,
+        }
+    }
+
+    /// When an exhausted limit resets, in epoch milliseconds, where the body says
+    /// (`error.resets_at`, in seconds, on the Codex backend).
+    pub fn resets_at(&self) -> Option<u64> {
+        let Self::Status { body, .. } = self else {
+            return None;
+        };
+        let value: serde_json::Value = serde_json::from_str(body).ok()?;
+        let secs = value.get("error")?.get("resets_at")?.as_u64()?;
+        Some(secs.saturating_mul(1000))
+    }
 }
 
 impl std::fmt::Display for KeepaliveError {

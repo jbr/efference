@@ -396,3 +396,45 @@ async fn a_permanent_rejection_ends_the_loop() {
     assert_eq!(stance["reason"], "rejected");
     assert!(stance["detail"].as_str().unwrap().contains("400"));
 }
+
+/// A plan's usage limit (a 429 whose body names it) pauses the pings instead of
+/// retrying them every tick, with the reset time in the stance; the next real turn
+/// resumes them.
+#[tokio::test]
+async fn an_exhausted_limit_pauses_until_the_next_turn() {
+    let limit = r#"{"error":{"type":"usage_limit_reached","message":"The usage limit has been reached","resets_at":1791623333,"resets_in_seconds":13597}}"#;
+    let ok = r#"{"id":"m","model":"m","usage":{"input_tokens":5000,"output_tokens":1}}"#;
+    let (addr, count) = serve(move |n| match n {
+        0 => (429, limit.to_string()),
+        _ => (200, ok.to_string()),
+    });
+    let (shared, client) = pinged_session(addr, 5_000);
+    let task = tokio::spawn(super::keepalive::keepalive_loop(
+        client,
+        Arc::clone(&shared),
+        Vec::new(),
+        Duration::from_millis(1),
+        None,
+    ));
+    let sent = |n| count.load(std::sync::atomic::Ordering::SeqCst) == n;
+    let wait_for = async |what: &dyn Fn() -> bool| {
+        for _ in 0..80 {
+            if what() {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        panic!("timed out");
+    };
+    wait_for(&|| sent(1) && skipped(&shared).is_object()).await;
+    let stance = skipped(&shared);
+    assert_eq!(stance["reason"], "exhausted");
+    assert_eq!(stance["resets_at"], 1_791_623_333_000u64);
+    tokio::time::sleep(Duration::from_millis(2_500)).await;
+    assert!(sent(1), "paused ticks send nothing");
+
+    record_turn(&shared, 5_000);
+    wait_for(&|| !sent(1)).await;
+    wait_for(&|| skipped(&shared).is_null()).await;
+    task.abort();
+}

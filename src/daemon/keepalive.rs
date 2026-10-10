@@ -88,6 +88,15 @@ pub(crate) enum KeepaliveSkipReason {
         /// The upstream's refusal.
         detail: String,
     },
+    /// The upstream answered with a limit that holds until it resets (a plan's usage
+    /// limit). Pinging resumes after the next real turn, which is the first request
+    /// that can learn the limit has passed.
+    Exhausted {
+        /// The upstream's refusal.
+        detail: String,
+        /// When the limit resets, epoch milliseconds, where the refusal says.
+        resets_at: Option<u64>,
+    },
 }
 
 /// What the most recent ping discarded: the estimate of what the next one will, on
@@ -130,6 +139,10 @@ pub(crate) async fn keepalive_loop(
     // What the last ping discarded; none before the first ping, which is sent
     // unjudged.
     let mut estimate: Option<PingCost> = None;
+    // The real-turn clock's reading when a ping met an exhausted limit. Pinging
+    // stays off while that clock keeps running from the same turn; a new real turn
+    // restarts it below this reading, and the pings resume.
+    let mut exhausted_at: Option<Duration> = None;
     loop {
         tokio::time::sleep(check).await;
         // Need a real turn to have happened (a prefix worth keeping warm) and to be
@@ -137,6 +150,10 @@ pub(crate) async fn keepalive_loop(
         let (Some(touch), Some(turn)) = shared.keepalive_clocks() else {
             continue;
         };
+        if exhausted_at.is_some_and(|at| turn >= at) {
+            continue;
+        }
+        exhausted_at = None;
         if turn >= CAP || touch < ping_at {
             continue;
         }
@@ -186,6 +203,20 @@ pub(crate) async fn keepalive_loop(
                     },
                 }));
                 return;
+            }
+            // A limit that holds until it resets (a plan's usage limit, which Codex
+            // sends as a 429) answers every ping identically until then; one line,
+            // and no pings until the next real turn.
+            Err(e) if e.is_exhausted() => {
+                eprintln!("[keepalive paused until the next turn: {e}]");
+                shared.set_keepalive_skipped(Some(KeepaliveSkip {
+                    at: crate::log::Timestamp::now(),
+                    why: KeepaliveSkipReason::Exhausted {
+                        detail: e.to_string(),
+                        resets_at: e.resets_at(),
+                    },
+                }));
+                exhausted_at = Some(turn);
             }
             Err(e) => eprintln!("[keepalive failed: {e}]"),
         }

@@ -470,6 +470,7 @@ fn keepalive_note(skipped: &serde_json::Value) -> String {
     let tokens = |field: &str| skipped.get(field).and_then(|v| v.as_u64()).unwrap_or(0);
     match skipped.get("reason").and_then(|v| v.as_str()) {
         Some("rejected") => "keepalive off: ping rejected".to_string(),
+        Some("exhausted") => "keepalive paused: usage limit".to_string(),
         _ => {
             let cost = skipped
                 .get("completion_usd")

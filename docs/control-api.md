@@ -758,7 +758,10 @@ not a topic — it is the log's cursor rather than control state, and sits outsi
                                             //   is not repaid by the current prefix; re-judged each tick, so it clears
                                             //   when the prefix grows (`completion_usd`/`premium_usd` null unpriced), or
                                             //   {"reason":"rejected","at":…,"detail":"…"}  — the upstream refused the ping
-                                            //   itself; the loop has stopped for the session
+                                            //   itself; the loop has stopped for the session, or
+                                            //   {"reason":"exhausted","at":…,"detail":"…","resets_at":…}  — a limit that
+                                            //   holds until it resets (a plan's usage limit; `resets_at` absolute millis,
+                                            //   null when the refusal names none); pings resume after the next real turn
     "cost": {                               // null when the provider has no per-request accounting (transport.md)
       "usd": 0.0421,                        // billed session total: inline per-response costs plus the provider's accounting endpoint for responses without one
       "unpriced": 0                         // requests neither source could price (total is an undercount if > 0)
