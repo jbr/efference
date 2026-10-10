@@ -221,7 +221,26 @@ export type UpstreamFailureRecord = string | { why: string; stream?: unknown };
 
 /** One assistant turn's ordered output, externally tagged by wire dialect. */
 export type AssistantOutput =
-  { Messages: MessagesOutputBlock[] } | { Responses: ResponsesOutputItem[] };
+  | { Messages: MessagesOutputBlock[] }
+  | { Responses: ResponsesOutputItem[] }
+  | { Completions: CompletionsMessage };
+
+/** One Chat Completions assistant message, stored as the stream assembled it
+ * (src/log/completions.rs). Only `content`, `tool_calls`, and `refusal` are
+ * defined by the dialect; every other key is vendor reasoning under the name it
+ * arrived on (`reasoning_content`, `reasoning`, `reasoning_details`, ...). */
+export type CompletionsMessage = {
+  content?: string | { type: string; [extra: string]: unknown }[];
+  tool_calls?: CompletionsToolCall[];
+  refusal?: string;
+  [extra: string]: unknown;
+};
+
+export interface CompletionsToolCall {
+  id?: string;
+  function?: { name?: string; arguments?: string };
+  [extra: string]: unknown;
+}
 
 /** One content block of an Anthropic-Messages assistant message. */
 export type MessagesOutputBlock =
@@ -702,7 +721,17 @@ export interface SessionIdentity {
 // native model id the wire carries.
 export interface ModelSelection {
   connection: string;
-  provider: "anthropic" | "openrouter" | "openai" | "openai-codex";
+  // `custom-<dialect>` for a described connection (src/api/provider.rs).
+  provider:
+    | "anthropic"
+    | "openrouter"
+    | "openai"
+    | "openai-codex"
+    | "typesafe"
+    | "custom-messages"
+    | "custom-responses"
+    | "custom-completions"
+    | "custom-systemone";
   model: string;
 }
 

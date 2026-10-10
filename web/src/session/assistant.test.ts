@@ -74,6 +74,58 @@ describe("the grouped assistant view", () => {
     ]);
   });
 
+  it("reads a Completions message: content, flat reasoning, calls", () => {
+    const view = viewOf({
+      Completions: {
+        content: "reading",
+        reasoning_content: "let me look",
+        tool_calls: [
+          {
+            id: "call_00",
+            type: "function",
+            function: { name: "read", arguments: '{"paths": ["a"]}' },
+          },
+          {
+            id: "call_01",
+            type: "function",
+            function: { name: "list", arguments: "" },
+          },
+        ],
+      },
+    });
+    expect(view.text).toEqual([{ Text: "reading" }]);
+    expect(view.thinking).toEqual([{ Text: "let me look" }]);
+    expect(view.calls).toEqual([
+      { id: "call_00", name: "read", input: { paths: ["a"] } },
+      { id: "call_01", name: "list", input: {} },
+    ]);
+  });
+
+  it("prefers flat Completions reasoning over its structured duplicate", () => {
+    const view = viewOf({
+      Completions: {
+        content: "",
+        reasoning: "thought",
+        reasoning_details: [{ type: "reasoning.text", text: "thought" }],
+      },
+    });
+    expect(view.text).toEqual([]);
+    expect(view.thinking).toEqual([{ Text: "thought" }]);
+  });
+
+  it("reads Completions thinking content parts beside text parts", () => {
+    const view = viewOf({
+      Completions: {
+        content: [
+          { type: "thinking", thinking: [{ type: "text", text: "hm" }] },
+          { type: "text", text: "answer" },
+        ],
+      },
+    });
+    expect(view.text).toEqual([{ Text: "answer" }]);
+    expect(view.thinking).toEqual([{ Text: "hm" }]);
+  });
+
   it("round-trips the grouped fixture through the Messages dialect", () => {
     const call = { id: "c1", name: "write", input: {} };
     const { output } = messagesAssistant(

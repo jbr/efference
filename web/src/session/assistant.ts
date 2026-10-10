@@ -8,6 +8,7 @@
 
 import type {
   AssistantOutput,
+  CompletionsMessage,
   ContentBlock,
   MessagesOutputBlock,
   Payload,
@@ -40,6 +41,7 @@ export function viewOf(output: AssistantOutput): AssistantView {
     }
     return view;
   }
+  if ("Completions" in output) return completionsView(output.Completions);
   for (const item of output.Responses) {
     if ("Reasoning" in item) {
       for (const part of item.Reasoning.summary) {
@@ -59,6 +61,70 @@ export function viewOf(output: AssistantOutput): AssistantView {
     }
   }
   return view;
+}
+
+/** The keys the Completions dialect defines; every other key is opaque vendor
+ * reasoning (src/log/completions.rs, `DEFINED`). */
+const DEFINED = new Set(["role", "content", "tool_calls", "refusal"]);
+
+/** Keys whose string values are read out of an opaque structure (`READABLE`). */
+const READABLE = new Set(["text", "summary", "content", "thinking"]);
+
+/** Mirrors `CompletionsMessage::{text, reasoning_text, tool_calls}`. Reasoning is
+ * a display heuristic: a flat string under an opaque key wins; only when there is
+ * none are structured keys and non-`text` content parts walked, since OpenRouter
+ * sends the same reasoning both flat and as `reasoning_details`. */
+function completionsView(message: CompletionsMessage): AssistantView {
+  const view: AssistantView = { thinking: [], text: [], calls: [] };
+  const parts = Array.isArray(message.content) ? message.content : [];
+  if (typeof message.content === "string") {
+    view.text.push({ Text: message.content });
+  }
+  for (const part of parts) {
+    if (part.type === "text" && typeof part.text === "string") {
+      view.text.push({ Text: part.text });
+    }
+  }
+  if (typeof message.refusal === "string") {
+    view.text.push({ Text: message.refusal });
+  }
+  view.text = view.text.filter((block) => "Text" in block && block.Text !== "");
+
+  const opaque = Object.entries(message).filter(([key]) => !DEFINED.has(key));
+  let reasoning = opaque
+    .map(([, value]) => value)
+    .filter((value): value is string => typeof value === "string");
+  if (reasoning.every((text) => text === "")) {
+    reasoning = [];
+    for (const [, value] of opaque) readable(value, reasoning);
+    for (const part of parts)
+      if (part.type !== "text") readable(part, reasoning);
+  }
+  view.thinking = reasoning
+    .filter((text) => text !== "")
+    .map((text) => ({ Text: text }));
+
+  for (const call of message.tool_calls ?? []) {
+    const args = call.function?.arguments ?? "";
+    view.calls.push({
+      id: call.id ?? "",
+      name: call.function?.name ?? "",
+      input: args.trim() === "" ? {} : parseArguments(args),
+    });
+  }
+  return view;
+}
+
+/** The strings under READABLE keys inside `value`, depth first in key order. */
+function readable(value: unknown, out: string[]): void {
+  if (Array.isArray(value)) {
+    for (const item of value) readable(item, out);
+  } else if (value !== null && typeof value === "object") {
+    for (const [key, inner] of Object.entries(value)) {
+      if (typeof inner === "string" && READABLE.has(key)) out.push(inner);
+      else readable(inner, out);
+    }
+  }
 }
 
 function parseArguments(args: string): unknown {
