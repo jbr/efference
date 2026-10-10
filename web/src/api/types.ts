@@ -95,7 +95,8 @@ export type Payload =
   | { Cold: ColdEvent }
   | { Preamble: { system: string; context: unknown } }
   | { Title: Title }
-  | { Resumed: Resumed };
+  | { Resumed: Resumed }
+  | { Worktree: WorktreeEvent };
 
 /** One step of the cold check (docs/control-api.md). Not drawn: the `park`
  * topic is the live state. */
@@ -177,6 +178,33 @@ export interface Resumed {
   resumes_after?: Seq;
   /** Calls of the last batch that had not run when the session stopped. */
   pending_calls?: CallId[];
+}
+
+/** One event in a session's own worktree (docs/worktrees.md): the Rust
+ * `WorktreeEvent` as its JSON arrives — `path` and `branch` beside a `kind`
+ * whose `event` tag carries that variant's fields. */
+export interface WorktreeEvent {
+  path: string;
+  branch: string;
+  kind: WorktreeEventKind;
+}
+
+/** What happened to the worktree. `added` and `restored` carry what
+ * `git worktree add` produced, including the project's `post-checkout` hook
+ * output; the rest carry their outcome. */
+export type WorktreeEventKind =
+  | ({ event: "added" } & WorktreeCheckout)
+  | ({ event: "restored" } & WorktreeCheckout)
+  | { event: "removed"; branch_deleted: boolean }
+  | { event: "kept"; reason: string }
+  | { event: "remove_failed"; error: string };
+
+/** What `git worktree add` produced. `exit_code` is `null` when a signal ended
+ * it; nonzero with an existing directory is a failed `post-checkout` hook. */
+export interface WorktreeCheckout {
+  base: string;
+  exit_code: number | null;
+  output: string;
 }
 
 /** One title decision (docs/session-title.md). Log metadata: appended even when

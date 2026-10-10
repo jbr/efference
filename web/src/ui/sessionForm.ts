@@ -38,6 +38,9 @@ export interface Draft {
   effort: string | null;
   /** Sampling temperature, `null` for the provider's own. */
   temperature: number | null;
+  /** Start in its own git worktree: its own checkout and branch at
+   * `.efference/worktrees/<id>` (docs/worktrees.md). */
+  worktree: boolean;
 }
 
 /** One role's selection: the connection by name, and the provider-native model
@@ -67,6 +70,7 @@ export const emptyDraft = (
   triage: { mode: "inherit" },
   effort: null,
   temperature: null,
+  worktree: false,
 });
 
 /** The body both `QUERY /sessions` and `POST /sessions` take. One conversion
@@ -91,6 +95,7 @@ export function sessionRequest(draft: Draft): Record<string, unknown> {
         }),
     ...(draft.effort === null ? {} : { effort: draft.effort }),
     ...(draft.temperature === null ? {} : { temperature: draft.temperature }),
+    ...(draft.worktree ? { worktree: true } : {}),
   };
 }
 
@@ -117,6 +122,7 @@ export const SETTING_FIELDS = [
   "triage",
   "effort",
   "temperature",
+  "worktree",
 ];
 
 /** The issues that belong to no row, and so are stated beside Start instead.

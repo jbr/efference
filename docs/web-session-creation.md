@@ -82,9 +82,15 @@ separate Change action.
 ## Settings and preview
 
 `ui/NewSessionSettings.tsx` presents main model, effort, temperature, spotter
-model, and triage model. Model controls open the role-specific selection page.
+model, triage model, and worktree. Model controls open the role-specific selection page.
 An explicit override has a **Reset** action. Clearing a separate triage selection
 returns it to inheritance; the resolved shared state reads **Same as main model**.
+
+The worktree toggle starts the session in its own checkout and branch at
+`.efference/worktrees/<id>` (docs/worktrees.md). On it sends `worktree: true`
+in the creation body; off it sends nothing, like any other untouched field.
+Outside a git repository the host refuses the creation, shown like any other
+refusal beside **Start session**.
 
 Effort is a discrete choice strip over low, medium, high, xhigh, and max.
 **Use default** clears the override and is separate from that ordinal scale.

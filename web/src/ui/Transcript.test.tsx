@@ -183,3 +183,69 @@ test("a restart is a notice, not an unknown entry", () => {
   );
   expect(html).not.toContain("unknown entry");
 });
+
+test("a worktree event is a notice with its setup output disclosed", () => {
+  const html = render([
+    entry(7, {
+      Worktree: {
+        path: "/p/.efference/worktrees/quiet-fox",
+        branch: "efference/quiet-fox",
+        kind: {
+          event: "added",
+          base: "abc123",
+          exit_code: 0,
+          output:
+            "Preparing worktree (new branch 'efference/quiet-fox')\nUpdating files:  96% (1438/1485)\rUpdating files: 100% (1485/1485), done.\n",
+        },
+      },
+    }),
+  ]);
+  expect(html).toContain("worktree added on");
+  expect(html).toContain(
+    '<code class="worktree-branch">efference/quiet-fox</code>',
+  );
+  expect(html).not.toContain("`efference/quiet-fox`");
+  expect(html).toContain("Show setup output");
+  expect(html).toContain("worktree-setup");
+  expect(html).toContain("Updating files: 100% (1485/1485), done.");
+  expect(html).not.toContain("96% (1438/1485)");
+  expect(html).not.toContain("unknown entry");
+});
+
+test("a worktree add with a failed setup states it on the line", () => {
+  const html = render([
+    entry(8, {
+      Worktree: {
+        path: "/p/.efference/worktrees/quiet-fox",
+        branch: "efference/quiet-fox",
+        kind: {
+          event: "added",
+          base: "abc123",
+          exit_code: 1,
+          output: "hook failed\n",
+        },
+      },
+    }),
+  ]);
+  expect(html).toContain(
+    '<code class="worktree-branch">efference/quiet-fox</code>',
+  );
+  expect(html).toContain("(setup failed: exit 1)");
+  expect(html).toContain("hook failed");
+  expect(html).not.toContain("unknown entry");
+});
+
+test("a worktree removal without setup output is a single line", () => {
+  const html = render([
+    entry(9, {
+      Worktree: {
+        path: "/p/.efference/worktrees/quiet-fox",
+        branch: "efference/quiet-fox",
+        kind: { event: "removed", branch_deleted: false },
+      },
+    }),
+  ]);
+  expect(html).toContain("worktree removed (branch kept)");
+  expect(html).not.toContain("Show setup output");
+  expect(html).not.toContain("unknown entry");
+});

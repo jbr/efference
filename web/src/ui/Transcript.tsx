@@ -14,6 +14,7 @@ import type {
   Mark,
   Spot,
   UserBlock,
+  WorktreeEvent,
 } from "../api/types.ts";
 import type { LiveBlock, PendingTurn, Streaming } from "../session/store.ts";
 import type { CallNode, LeafNode, TranscriptNode } from "../session/tree.ts";
@@ -23,6 +24,7 @@ import type { CallId } from "../api/types.ts";
 import { askMarkText, askStanding } from "./askMark.ts";
 import { Markdown } from "./Markdown.tsx";
 import { resumedLine } from "./resumed.ts";
+import { cleanWorktreeOutput, setupNote } from "./worktree.ts";
 import { SentAttachments } from "./Attachments.tsx";
 import { CallBlock, LiveCallBlock, ResultBlock } from "./ToolBlocks.tsx";
 import { useFollowTail } from "./useFollowTail.ts";
@@ -74,6 +76,57 @@ function Entry({
       <div className="content">{children}</div>
     </div>
   );
+}
+
+/** A worktree event as a notice, in the shape of a `Resumed` one: one line
+ * naming what happened, with git's setup output — which carries the project's
+ * `post-checkout` hook output — collapsed behind a disclosure. The branch
+ * renders as a code chip, as identifiers do elsewhere in the UI. */
+function WorktreeNotice({ event }: { event: WorktreeEvent }) {
+  const setup =
+    event.kind.event === "added" || event.kind.event === "restored"
+      ? cleanWorktreeOutput(event.kind.output)
+      : "";
+  return (
+    <Entry label="worktree" as="ambient">
+      <WorktreeLine event={event} />
+      {setup !== "" && (
+        <details className="worktree-setup">
+          <summary>Show setup output</summary>
+          <pre>{setup}</pre>
+        </details>
+      )}
+    </Entry>
+  );
+}
+
+function WorktreeLine({ event }: { event: WorktreeEvent }) {
+  switch (event.kind.event) {
+    case "added":
+      return (
+        <>
+          worktree added on{" "}
+          <code className="worktree-branch">{event.branch}</code>
+          {setupNote(event.kind.exit_code)}
+        </>
+      );
+    case "restored":
+      return (
+        <>
+          worktree restored from{" "}
+          <code className="worktree-branch">{event.branch}</code>
+          {setupNote(event.kind.exit_code)}
+        </>
+      );
+    case "removed":
+      return event.kind.branch_deleted
+        ? "worktree removed (branch deleted)"
+        : "worktree removed (branch kept)";
+    case "kept":
+      return `worktree kept: ${event.kind.reason}`;
+    case "remove_failed":
+      return `worktree removal failed: ${event.kind.error}`;
+  }
 }
 
 /** Why a call waiting at the gate was held: the spotter's reason, as its own
@@ -267,6 +320,9 @@ function Leaf({
         {resumedLine(p.Resumed, node.entry.seq)}
       </Entry>
     );
+  }
+  if ("Worktree" in p) {
+    return <WorktreeNotice event={p.Worktree} />;
   }
   return (
     <Entry label="unknown entry" as="dim">

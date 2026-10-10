@@ -189,6 +189,7 @@ export function NewSessionForm({
     triage: draft?.triage ?? { mode: "inherit" as const },
     effort: draft?.effort ?? null,
     temperature: draft?.temperature ?? null,
+    worktree: draft?.worktree ?? false,
   });
 
   async function forget(entry: ProjectEntry) {

@@ -946,6 +946,12 @@ appends a title entry even when the peek kept the previous one. **A restart**
 (`Resumed`) renders as the notice the model reads for it, in an ambient entry
 (`ui/resumed.ts`, a port of `render_resumed`): the gap, lost background
 processes, calls left pending, and entries skipped after an unclean end.
+**A worktree event** (`Worktree`) renders as a one-line notice in an ambient
+entry (`ui/worktree.ts`): an add or restore names the branch, with a failed
+setup stated on the line itself; a removal says whether the branch went too;
+a keep carries the reason and a failed removal the error. Git's setup output
+sits collapsed behind a disclosure, with old progress redraws cleaned to their
+last segment per line.
 
 **Density toggles** (`ui/viewSettings.ts`, persisted like the theme): two
 switches hide thinking and ambient entries. Hiding is display-only — the

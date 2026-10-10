@@ -2,8 +2,13 @@
 import { act, type ComponentProps } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { fetchProjects, forgetProject } from "../api/sessionForm.ts";
-import type { ProjectEntry } from "../api/sessionForm.ts";
+import {
+  createSession,
+  fetchProjects,
+  forgetProject,
+  previewSession,
+} from "../api/sessionForm.ts";
+import type { ProjectEntry, SessionPreview } from "../api/sessionForm.ts";
 import { NewSessionForm } from "./NewSessionForm.tsx";
 import { emptyDraft } from "./sessionForm.ts";
 
@@ -213,6 +218,57 @@ test("Somewhere else remains a full-row disclosure and Escape closes it with foc
   expect(trigger.getAttribute("aria-expanded")).toBe("false");
   expect(document.activeElement).toBe(trigger);
   expect(props.onClose).not.toHaveBeenCalled();
+});
+
+test("the worktree toggle says what it does and keeps it in the draft", async () => {
+  vi.mocked(previewSession).mockResolvedValue(previewAnswer());
+  const draft = emptyDraft(alpha.cwd);
+  const props = await render({ draft, page: "settings" });
+  await act(async () => {});
+  const box = host.querySelector<HTMLInputElement>(".worktree-toggle input")!;
+  expect(box.checked).toBe(false);
+  expect(host.textContent).toContain(".efference/worktrees/");
+  await click(box);
+  expect(props.onDraft).toHaveBeenCalledWith({ ...draft, worktree: true });
+});
+
+test("untoggling the worktree returns the draft to shared checkout", async () => {
+  vi.mocked(previewSession).mockResolvedValue(previewAnswer());
+  const draft = { ...emptyDraft(alpha.cwd), worktree: true };
+  const props = await render({ draft, page: "settings" });
+  await act(async () => {});
+  const box = host.querySelector<HTMLInputElement>(".worktree-toggle input")!;
+  expect(box.checked).toBe(true);
+  await click(box);
+  expect(props.onDraft).toHaveBeenCalledWith({ ...draft, worktree: false });
+});
+
+test("starting with the worktree on sends it in the creation body", async () => {
+  Object.defineProperty(window, "scrollTo", {
+    value: () => {},
+    configurable: true,
+  });
+  vi.mocked(previewSession).mockResolvedValue(previewAnswer());
+  vi.mocked(createSession).mockResolvedValue({ id: "quiet-fox" });
+  const draft = { ...emptyDraft(alpha.cwd), worktree: true };
+  await render({ draft, page: "settings" });
+  await act(async () => {});
+  await click(host.querySelector<HTMLElement>(".new-session-foot .primary")!);
+  expect(createSession).toHaveBeenCalledWith({
+    cwd: alpha.cwd,
+    worktree: true,
+  });
+});
+
+const previewAnswer = (): SessionPreview => ({
+  effective: {
+    main: { value: null, source: null },
+    spotter: { value: null, source: null },
+    triage: { value: null, source: null },
+    effort: { value: null, source: "provider_default" },
+    temperature: { value: null, source: "provider_default" },
+  },
+  issues: [],
 });
 
 test("directory disclosure commits a path without discarding settings and collapses afterward", async () => {

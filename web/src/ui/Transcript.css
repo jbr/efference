@@ -308,3 +308,18 @@
 .t-box-open:hover {
   color: var(--fg-bright);
 }
+
+/* The worktree setup-output disclosure: the summary is the click target, so
+   it takes the pointer cursor other transcript controls use. */
+.entry .worktree-setup summary {
+  cursor: pointer;
+}
+
+/* The branch on a worktree notice: the chip identifiers wear elsewhere in the
+   UI (`.prose code`), since ambient entries have no markdown pass turning
+   backticks into one. */
+.entry .worktree-branch {
+  background: var(--bg-chip);
+  padding: 0 0.25em;
+  border-radius: 3px;
+}

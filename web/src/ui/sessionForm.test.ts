@@ -101,6 +101,16 @@ test("triage sharing main sends nothing of its own", () => {
   });
 });
 
+test("the worktree toggle is sent only when on", () => {
+  // Untouched is omitted, like every other uninherited field — the host
+  // defaults it false (docs/worktrees.md).
+  expect(sessionRequest(draft())).toEqual({ cwd: "/tmp/one" });
+  expect(sessionRequest(draft({ worktree: true }))).toEqual({
+    cwd: "/tmp/one",
+    worktree: true,
+  });
+});
+
 test("an issue is said once — by its row, or beside Start", () => {
   const issues = [
     { field: "temperature", code: "out_of_range", message: "must be 0 to 100" },
