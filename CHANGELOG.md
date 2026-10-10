@@ -47,6 +47,7 @@ behind a change, see [`journal/`](journal/).
 - **A worktree toggle in the new-session forms** (docs/tui.md, docs/web-session-creation.md): the web and TUI forms offer *start in its own worktree* (its own checkout and branch at `.efference/worktrees/<id>`), sent as `worktree: true` on creation; outside a git work tree the host refuses it like any other creation.
 
 ### Fixed
+- **A fold is accepted while triage holds results** (docs/control-api.md, docs/redaction-fork.md): `POST /loop/fold` no longer refuses a loop held at a triage gate as "running", and the continue that retries the gate peeks the folded projection, so a hold that outlived the cache can be summarized instead of read uncached.
 - **The keepalive pauses on a plan's usage limit** (docs/transport.md): a ping refused with a body naming a terminal condition (Codex's 429 `usage_limit_reached`) stops the pings until the next real turn, publishing `keepalive_skipped: exhausted` with the reset time, instead of retrying every tick to the 30-minute cap.
 - **A session can be resumed right after its archive** (docs/log-and-projection.md): the archive closes the log and releases its writer lock before answering, where an open SSE stream used to keep the lock until the client disconnected; the streams of an ended session now end.
 - **The TUI's `Resumed` notice no longer doubles its glyph** (docs/tui.md): `render_resumed` is the wire notice and already opens with `⟢`, so the annotation adds none.

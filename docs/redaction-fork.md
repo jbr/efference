@@ -404,7 +404,10 @@ raw. It retries until it has a verdict or the operator stops the turn:
   results are on the log as `Pending` and their verdicts are not; the session stalls with
   `StallReason::TriageUnavailable` (upstream) or `StallReason::TriageDefect` (every
   fork unusable, which is a harness defect and is logged at error level as one) while
-  the loop keeps running. The operator's continue runs the gate again from the top;
+  the loop keeps running. The operator's continue runs the gate again from the top,
+  over the log as it stands then: a fold written during the hold (`POST /loop/fold`
+  accepts one there, docs/control-api.md) is what the retried peek forks, so a hold
+  that outlived the cache can be retried without reading the whole history uncached;
   the operator's interrupt ends the turn with each result withheld as the interrupt's
   *after* juncture withholds one — `WireState::Elided`, nothing that says triage
   failed, and the operator's own message next on the wire

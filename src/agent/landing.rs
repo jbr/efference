@@ -42,7 +42,7 @@ pub(super) async fn land(
         if !distiller.is_own() {
             shared.await_warm_or_person().await;
         }
-        let entries = shared.snapshot();
+        let mut entries = shared.snapshot();
         // Open the triage gate (docs/inbox.md): re-show the still-active
         // notifications (left at earlier gates), then log any newly arrived
         // (ephemeral) ones as first-show `Ambient` entries — each entry's seq
@@ -83,7 +83,14 @@ pub(super) async fn land(
                 Ok(outcome) => break carried.onto(outcome),
                 Err(failure) => {
                     match hold(shared, client, !distiller.is_own(), failure, &mut carried).await {
-                        Held::Retry => continue,
+                        // Re-read the log: a fold written during the hold
+                        // (docs/summary-head.md) is what the retried peek forks, not
+                        // the history it replaced. The `Ambient` entries appended
+                        // above project to nothing, so the prefix is otherwise the same.
+                        Held::Retry => {
+                            entries = shared.snapshot();
+                            continue;
+                        }
                         Held::Interrupted => break carried.interrupted(pending.len()),
                     }
                 }

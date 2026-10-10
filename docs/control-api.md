@@ -515,7 +515,11 @@ instead of paying the uncached read; for a warm one, at the operator's request. 
 after it (about 15k tokens, the cut moved earlier so no call is separated from its
 result) stay verbatim. The fold appends one boundary mark and starts no request: an
 idle session stays idle, and a loop parked at its cold check stays parked until the
-next turn or continue. After a fold the
+next turn or continue. A loop held at a triage gate without a verdict (the
+`triage_unavailable` or `triage_defect` stall, docs/redaction-fork.md) is running but
+sends nothing, so it accepts a fold the same way: it stays held, and the continue
+that retries it peeks the folded projection rather than the history the account
+replaced. After a fold the
 session is neither warm nor cold: nothing has sent the new prefix, so the keepalive
 has nothing to ping and the `cold` topic is `null` until a request ages past the
 cache lifetime.

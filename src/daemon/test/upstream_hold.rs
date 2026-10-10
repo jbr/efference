@@ -316,6 +316,61 @@ async fn a_gate_without_a_verdict_holds_until_continue() {
     host.shut_down().await;
 }
 
+/// **A fold written during a hold is what the retried peek forks.** The gate holds,
+/// a fold's mark lands (as `fold_once` appends it), and the operator retries: the
+/// retried peek carries the account, not the history it replaced. The gate's first
+/// snapshot predates the mark, so a retry that reused it would still read the whole
+/// unfolded prefix, which is the cold read the fold exists to avoid.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_fold_during_a_hold_is_what_the_retry_peeks() {
+    let requests = Arc::new(AtomicUsize::new(0));
+    let bodies = Arc::new(Mutex::new(Vec::new()));
+    let addr = recording(
+        Arc::clone(&requests),
+        |n| match n {
+            0 => Answer::Stream(tool_call("toolu_1", "bash", r#"{"command":"echo hi"}"#)),
+            1 => Answer::Status(400, REFUSED),
+            2 => Answer::Stream(tool_call("toolu_r", "retain", r#"{"keep":"all"}"#)),
+            _ => Answer::Stream(end_turn()),
+        },
+        &bodies,
+    );
+    let (host, runtime) = start(addr);
+    let session = Arc::clone(runtime.session());
+    session.submit_turn(SubmittedTurn::new("zebra history to fold away", "s1"));
+
+    wait_until("the gate is held", || session.stall().is_some()).await;
+    let upto = session
+        .snapshot()
+        .iter()
+        .find_map(|e| matches!(e.payload, Payload::User(_)).then_some(e.seq))
+        .expect("the user turn is logged");
+    session
+        .append(
+            1,
+            Payload::Mark(crate::log::Mark::boundary(upto, "the folded account")),
+        )
+        .unwrap();
+    assert_eq!(session.request_continue(), Ok(()));
+    wait_until("the turn finishes", || {
+        !session.running.load(Ordering::SeqCst)
+    })
+    .await;
+
+    let bodies = bodies.lock().unwrap().clone();
+    let held = &bodies[1];
+    let retried = &bodies[2];
+    assert!(
+        held.contains("zebra history"),
+        "the held peek read the history"
+    );
+    assert!(
+        retried.contains("the folded account") && !retried.contains("zebra history"),
+        "the retried peek reads the fold: {retried}"
+    );
+    host.shut_down().await;
+}
+
 /// **A failed request takes the schedule.** The transport exhausts its own
 /// attempts on an overloaded upstream and returns an error; the loop records it
 /// and waits to retry instead of stalling, and the operator's continue cuts the

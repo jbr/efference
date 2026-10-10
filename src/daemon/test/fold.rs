@@ -135,6 +135,29 @@ async fn a_warm_fold_is_accepted_on_request_and_reports_on_the_fold_topic() {
     assert_eq!(shared.topic_json(Topic::Cold), Value::Null);
 }
 
+/// A loop held at a triage gate is running but sends nothing until the operator
+/// retries, so it accepts a fold as a cold-parked loop does; one running a request
+/// does not. The held gate's state was the `dry-linnet` case: a fold refused as
+/// "the loop is running" left a cold read or an archive as the only ways forward.
+#[test]
+fn a_held_triage_gate_accepts_a_fold() {
+    let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    shared.set_cache_ttl(Duration::from_secs(3_600));
+    append_foldable_history(&shared);
+    shared
+        .running
+        .store(true, std::sync::atomic::Ordering::SeqCst);
+    assert_eq!(shared.request_fold(true), Err(NotFoldable::Busy));
+
+    shared.set_stall(crate::agent::stalled(
+        StallReason::TriageUnavailable,
+        None,
+        "triage could not reach its model".into(),
+        "429".into(),
+    ));
+    assert_eq!(shared.request_fold(true), Ok(()));
+}
+
 /// A warm fold with nothing past the tail still declines: warm lifts only the cache
 /// guard.
 #[test]
