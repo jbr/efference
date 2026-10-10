@@ -108,6 +108,7 @@ impl Log {
             log: Log {
                 entries: recording.entries,
                 sink: Some(BufWriter::new(file)),
+                closed: false,
                 masker: Arc::default(),
             },
             header: recording.header,

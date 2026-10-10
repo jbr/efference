@@ -286,6 +286,13 @@ impl Tail {
                 }
             }
 
+            // The session has ended and every entry has been delivered. The broadcasts
+            // never close while this stream holds the session, so this is the stream's
+            // end; without it a connection kept the ended session alive.
+            if self.shared.log_closed() {
+                return None;
+            }
+
             // Nothing ready: wait for whichever source moves first. A completed `recv`
             // has **consumed** its message (cancel-safety covers only the losing
             // branches), so both channel arms must capture what they received — an `_ =`

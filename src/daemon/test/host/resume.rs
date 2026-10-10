@@ -254,3 +254,49 @@ async fn the_patch_route_is_not_shadowed_by_the_session_wildcard() {
 
     host.swansong().shut_down().await;
 }
+
+/// An archive releases the log's writer lock before it answers, even while an SSE
+/// stream still holds the session: the stream used to keep the `Session`, and with
+/// it the lock, alive until the client disconnected, so a resume right after the
+/// archive was refused as "another writer holds this log open". The stream itself
+/// ends once the session's log is closed.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_archive_releases_the_log_while_a_stream_holds_the_session() {
+    use futures_lite::StreamExt;
+    let roots = Roots::new();
+    let cwd = roots.0.join("one");
+    std::fs::create_dir_all(&cwd).unwrap();
+    let path = cwd.join("log.jsonl");
+    let mut boot = runtime::boot(&cwd);
+    boot.log = crate::persist::Log::create(&path, None).expect("a fresh log");
+    let host = Host::new(one_connection_registry(), baseline_env());
+    host.adopt("one".into(), SessionRuntime::start(boot, host.swansong()))
+        .expect("the id is free in this test");
+    let session = host.session("one").expect("hosted");
+    let mut stream = crate::daemon::stream::control_stream(
+        Arc::clone(&session),
+        crate::daemon::stream::Include::default(),
+        0,
+    );
+    drop(session);
+
+    host.end("one").expect("hosted").await;
+
+    let file = std::fs::OpenOptions::new()
+        .append(true)
+        .open(&path)
+        .unwrap();
+    file.try_lock()
+        .expect("the archive released the writer lock while the stream was open");
+    // The stream drains what was logged, then ends rather than waiting forever.
+    let ended = tokio::time::timeout(Duration::from_secs(5), async {
+        while stream.next().await.is_some() {}
+    })
+    .await;
+    assert!(
+        ended.is_ok(),
+        "the stream ends once its session's log is closed"
+    );
+
+    host.swansong().shut_down().await;
+}

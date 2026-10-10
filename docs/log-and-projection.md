@@ -472,9 +472,15 @@ implies; it takes it so that every sink holds one.
 
 A log has one writer, including across host processes. `Log::create` and
 `Log::open` each take an exclusive advisory lock (`File::try_lock`) on the file
-and hold it for the life of the `Log` — the lock rides on the `File` the sink
-owns, so it is released when the `Log` is dropped, after the last line is
-flushed.
+and hold it until the log is closed — the lock rides on the `File` the sink
+owns, so it is released when the sink goes, after the last line is flushed.
+`Log::close` drops the sink explicitly, and an archive calls it once its last
+append (the worktree retirement) has landed: a `Session` can outlive its
+teardown in whatever still holds it (an open SSE stream, a handler), and the
+lock must not, or a resume right after the archive is refused. A closed log
+keeps its entries for those readers and refuses appends; the SSE streams end
+once they have delivered every entry. Dropping a `Log` that was never closed
+releases the lock the same way.
 
 A held lock is refused rather than waited on: the second caller is told which
 log is in use (`OpenError::Held`, and an `io::Error` of kind `WouldBlock` from

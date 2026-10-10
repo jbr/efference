@@ -374,11 +374,16 @@ impl Host {
         let archiving = self.swansong.state().is_running();
         Some(async move {
             hosted.swansong.shut_down().await;
-            if archiving {
+            let retired = if archiving {
                 retire_worktree(&hosted.session, &id).await
             } else {
                 None
-            }
+            };
+            // The retirement above is the last append. Closing here rather than at
+            // the `Session`'s drop is what lets a resume follow the archive at once:
+            // an open SSE stream or a handler can still be holding the session.
+            hosted.session.close_log();
+            retired
         })
     }
 }

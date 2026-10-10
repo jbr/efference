@@ -25,7 +25,7 @@
 //!
 //! A log has one writer. Every sink holds an **exclusive lock** on its file for
 //! as long as it is open — taken by [`Log::create`] and by [`Log::open`],
-//! released when the `Log` drops — and an existing lock is refused rather than
+//! released by [`Log::close`] or when the `Log` drops — and an existing lock is refused rather than
 //! waited on, so two writers (in one host or in two) cannot interleave their
 //! appends into one `seq` space. Reading a log takes no lock, so a session
 //! running somewhere else can still be read.
@@ -82,9 +82,12 @@ fn writer_lock(file: &File) -> Result<(), LockRefused> {
 pub struct Log {
     entries: Vec<LogEntry>,
     /// The JSONL sink, which also holds the file's exclusive writer lock: the
-    /// lock lives on the `File` inside it, so dropping the `Log` flushes the
-    /// last line and then releases it.
+    /// lock lives on the `File` inside it, so dropping the `Log` (or [`Log::close`])
+    /// flushes the last line and then releases it.
     sink: Option<BufWriter<File>>,
+    /// Set by [`Log::close`]: the session has ended, and an append is an error
+    /// rather than an entry that reaches memory and no file.
+    closed: bool,
     /// The `[env]` mask (docs/env.md). Every payload passes through it on the way
     /// in, which is what makes append the one choke point securing every
     /// downstream surface — the wire, the jsonl, the TUI, `control transcript` and `entries`. An empty
@@ -141,6 +144,7 @@ impl Log {
         Ok(Self {
             entries: Vec::new(),
             sink: Some(sink),
+            closed: false,
             masker: Arc::default(),
         })
     }
@@ -150,6 +154,7 @@ impl Log {
         Self {
             entries: Vec::new(),
             sink: None,
+            closed: false,
             masker: Arc::default(),
         }
     }
@@ -163,6 +168,7 @@ impl Log {
         Self {
             entries,
             sink: None,
+            closed: false,
             masker: Arc::default(),
         }
     }
@@ -206,6 +212,9 @@ impl Log {
         // once, before it becomes a durable record. This is deliberately *not* a
         // `WireState`: there is no reversible verdict, because a raw copy on disk
         // is half of what masking exists to prevent (docs/log-and-projection.md).
+        if self.closed {
+            return Err(io::Error::other("the log is closed: its session has ended"));
+        }
         let mut payload = payload;
         self.masker.mask_payload(&mut payload);
         let seq = self.entries.len() as Seq;
@@ -224,6 +233,24 @@ impl Log {
         }
         self.entries.push(entry);
         Ok(seq)
+    }
+
+    /// End the log's writing: flush the sink and release the file's writer lock
+    /// now, rather than when the last holder of the `Log` lets go of it. A
+    /// session's teardown calls this, so a log can be reopened as soon as its
+    /// session has ended even while a reader (an SSE stream, a handler) still
+    /// holds the session. The entries stay readable; appends after it fail.
+    pub fn close(&mut self) -> io::Result<()> {
+        self.closed = true;
+        match self.sink.take() {
+            Some(mut sink) => sink.flush(),
+            None => Ok(()),
+        }
+    }
+
+    /// Whether [`close`](Self::close) has run.
+    pub fn is_closed(&self) -> bool {
+        self.closed
     }
 }
 

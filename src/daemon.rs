@@ -1050,6 +1050,20 @@ impl Session {
         Ok(seq)
     }
 
+    /// End the session's log at teardown: release its writer lock so the session can
+    /// be resumed at once, and wake SSE tailers so their streams end once they have
+    /// delivered every entry. Readers still holding the session keep its entries.
+    pub(crate) fn close_log(&self) {
+        if let Err(e) = self.log.lock().unwrap().close() {
+            eprintln!("[log: flushing at close failed: {e}]");
+        }
+        self.appended.notify_waiters();
+    }
+
+    pub(crate) fn log_closed(&self) -> bool {
+        self.log.lock().unwrap().is_closed()
+    }
+
     /// Append to the log (durably) and wake SSE tailers. The single appender is
     /// the loop; handlers only read.
     pub fn append(&self, turn: Turn, payload: Payload) -> io::Result<Seq> {
