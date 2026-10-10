@@ -22,6 +22,10 @@ fn a_path_in_a_worktree_stands_for_the_same_path_in_the_project() {
         counterpart(project, Path::new("/p/.efference/worktrees/quiet-fox")),
         Some(PathBuf::from("/p"))
     );
+    // Compared as text too: `PathBuf` equality ignores a trailing separator, which a
+    // reviewer shown the path does not.
+    let root = counterpart(project, Path::new("/p/.efference/worktrees/quiet-fox"));
+    assert_eq!(root.unwrap().to_str(), Some("/p"));
 }
 
 #[test]

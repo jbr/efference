@@ -296,6 +296,32 @@ fn render_context_states_relative_path_resolution() {
     );
 }
 
+/// A worktree session's reviewer sees the project as the working directory and each
+/// path as its project counterpart, with no line for a leading `cd` into the
+/// worktree: the real path sits under the denied `.efference/` (docs/worktrees.md).
+#[test]
+fn a_worktree_session_is_reviewed_as_its_project_counterpart() {
+    let role = Config::from_toml("[paths]\n\".\" = true\n\".efference\" = false\n").unwrap();
+    let dirs = crate::policy::Directories::new(
+        "/work/proj".into(),
+        "/work/proj/.efference/worktrees/w".into(),
+    );
+    let ctx = render_context(&role, Some(&dirs), None);
+    assert!(ctx.contains("- working directory: /work/proj\n"), "{ctx}");
+
+    let call = ToolCall::new(
+        bash::NAME,
+        "c1",
+        serde_json::json!({ "command": "cd /work/proj/.efference/worktrees/w && wc -l src/a.rs" }),
+    );
+    let rendered = render_move(&role, &call, None, &[], None, Some(&dirs), None);
+    assert!(
+        rendered.contains("- `src/a.rs` → `/work/proj/src/a.rs`"),
+        "{rendered}"
+    );
+    assert!(!rendered.contains("worktrees/w`"), "{rendered}");
+}
+
 /// A `..`-relative grant resolves through the parent — the spelling a sibling-repo
 /// grant (`../fs-mcp`) arrives in.
 #[test]

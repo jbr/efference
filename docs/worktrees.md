@@ -74,7 +74,11 @@ carries exactly the project's grants, narrower ones included. A grant of `.` the
 covers the project checkout and every worktree, for reading and writing — a worktree is
 a convenience, not an isolation boundary, and path grants are mistake-guardrails
 ([permissions.md](permissions.md)). Only classification sees the counterpart; the tool
-touches the path the call named. `.efference/` itself is never mapped: it exists only at
+touches the path the call named. Both spotters are shown the same view: the project as
+the working directory and each resolved path as its counterpart
+(`Directories::judged_working`), because the worktree's real path sits under the
+denied `.efference/` and a reviewer comparing strings read every in-tree move as a
+denied path. `.efference/` itself is never mapped: it exists only at
 the project, where the injected self-surface stack anchors.
 
 A grant key that leaves the project (`../sibling`) resolves from the project, as its

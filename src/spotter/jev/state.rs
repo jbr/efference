@@ -36,7 +36,7 @@ pub(super) fn state(
             .as_deref()
             .map(str::trim)
             .filter(|s| !s.is_empty()),
-        "working_directory": dirs.map(|d| d.working().display().to_string()),
+        "working_directory": dirs.map(|d| d.judged_working().display().to_string()),
         "path_grants": grants(role, dirs),
         "scratch_directory": scratch.map(|p| p.display().to_string()),
         "watch_for": watch_for(role),
@@ -134,7 +134,7 @@ fn paths(
                 (Some(resolved), decided) => {
                     let mut entry = json!({
                         "as_written": word.word,
-                        "resolved": resolved.display().to_string(),
+                        "resolved": dirs.judged(resolved).display().to_string(),
                     });
                     let object = entry.as_object_mut().expect("built as an object");
                     match decided {
@@ -184,12 +184,14 @@ fn proposed_move(
             Some(command) => {
                 // A leading `cd` into the working directory goes nowhere, so the move
                 // is the rest (`policy::without_cd_into`) — the resolution the model
-                // would otherwise have to do against `working_directory` itself.
+                // would otherwise have to do against `working_directory` itself. Its
+                // paths are the rest's too, so the dropped `cd` target is not listed.
+                let command = dirs
+                    .and_then(|dirs| crate::policy::without_cd_into(command, dirs))
+                    .unwrap_or(command);
                 let mut shell = json!({
                     "kind": "shell_command",
-                    "command": dirs
-                        .and_then(|dirs| crate::policy::without_cd_into(command, dirs))
-                        .unwrap_or(command),
+                    "command": command,
                 });
                 if let Some((paths, complete)) =
                     dirs.map(|dirs| paths(command, role, dirs, scratch))

@@ -641,3 +641,39 @@ fn a_shell_move_carries_its_resolved_paths() {
     );
     assert!(state["move"].get("paths").is_none());
 }
+
+/// A worktree session is shown as classification judges it: the project as its
+/// working directory, each path as its project counterpart, and no entry for a
+/// leading `cd` into the worktree. The worktree's real path sits under the denied
+/// `.efference/`, which read as a denied path on every in-tree move
+/// (docs/worktrees.md).
+#[test]
+fn a_worktree_move_is_shown_as_its_project_counterpart() {
+    let config = role(
+        r#"
+[paths]
+"." = true
+".efference" = false
+"#,
+    );
+    let dirs = crate::policy::Directories::new(
+        "/work/proj".into(),
+        "/work/proj/.efference/worktrees/w".into(),
+    );
+    let call = ToolCall::new(
+        crate::bash::NAME,
+        "c1",
+        json!({ "command": "cd /work/proj/.efference/worktrees/w && wc -l src/a.rs" }),
+    );
+    let state = state::state(&config, &call, None, &[], None, Some(&dirs), None);
+    assert_eq!(state["working_directory"], "/work/proj");
+    assert_eq!(state["move"]["command"], "wc -l src/a.rs");
+    assert_eq!(
+        state["move"]["paths"],
+        json!([{
+            "as_written": "src/a.rs",
+            "resolved": "/work/proj/src/a.rs",
+            "under_grant": { "path": "/work/proj", "access": "read, write" },
+        }])
+    );
+}

@@ -51,6 +51,13 @@ impl Directories {
         crate::worktree::counterpart(&self.project, path).unwrap_or_else(|| path.to_path_buf())
     }
 
+    /// The working directory as classification judges it: the project, for a session
+    /// in a worktree. A reviewer shown the worktree's real path reads every target in
+    /// it as under the denied `.efference/`, though each is judged as its counterpart.
+    pub fn judged_working(&self) -> PathBuf {
+        self.judged(&self.working)
+    }
+
     /// A `[paths]` or `[context]` key, resolved against the project.
     pub fn grant(&self, key: &str) -> PathBuf {
         lexical_normalize(&absolutize(key, &self.project))

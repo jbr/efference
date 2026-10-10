@@ -30,6 +30,10 @@ pub fn counterpart(project: &Path, path: &Path) -> Option<PathBuf> {
     let rest = path.strip_prefix(&worktrees).ok()?;
     let mut components = rest.components();
     match components.next() {
+        // `join("")` would append a separator, which a displayed path keeps.
+        Some(Component::Normal(_)) if components.as_path().as_os_str().is_empty() => {
+            Some(project.to_path_buf())
+        }
         Some(Component::Normal(_)) => Some(project.join(components.as_path())),
         _ => None,
     }

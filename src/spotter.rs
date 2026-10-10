@@ -356,7 +356,7 @@ fn render_context(
 
     s.push_str("\n\nScope for this session:\n");
     let cwd_display = dirs
-        .map(|d| d.working().display().to_string())
+        .map(|d| d.judged_working().display().to_string())
         .unwrap_or_else(|| "unknown".into());
     s.push_str(&format!("- working directory: {cwd_display}\n"));
     s.push_str(&format!(
@@ -475,7 +475,7 @@ fn path_facts(
         s.push_str(&format!(
             "- `{}`{written} → `{}`: {grant}\n",
             word.word,
-            resolved.display()
+            dirs.judged(resolved).display()
         ));
     }
     if !found.complete {
@@ -512,15 +512,18 @@ fn render_move(
             Some(cmd) => {
                 // A leading `cd` into the working directory goes nowhere; the reviewer
                 // judges the rest, and is told so (`policy::without_cd_into`).
-                let shown = match dirs.and_then(|dirs| crate::policy::without_cd_into(cmd, dirs)) {
+                let rest = dirs.and_then(|dirs| crate::policy::without_cd_into(cmd, dirs));
+                let shown = match rest {
                     Some(rest) => format!(
                         "A shell command, run in the session's working directory (its leading \
                          `cd` into that directory is left out):\n\n    {rest}"
                     ),
                     None => format!("A shell command:\n\n    {cmd}"),
                 };
+                // Paths from the command as shown, so the dropped `cd` target is not
+                // listed back.
                 let facts = dirs
-                    .map(|dirs| path_facts(cmd, role, dirs, scratch))
+                    .map(|dirs| path_facts(rest.unwrap_or(cmd), role, dirs, scratch))
                     .unwrap_or_default();
                 format!("{shown}{facts}")
             }
