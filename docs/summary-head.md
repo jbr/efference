@@ -103,6 +103,15 @@ as ending there; `--cut` ends the account early, as a fold with a tail would. Th
 the one the log recorded at boot, resolved through the current config, under the recorded
 system prompt. It appends nothing, since a session's log has one writer, the host.
 
+## While the account is written
+
+`narrate` hands the response's fragments to a callback as they arrive. The fold routes
+the text and thinking to the session's `output` broadcast as `NarratorText` and
+`NarratorThinking` deltas (docs/control-api.md), distinct from the main loop's
+`AssistantText` and `ThinkingText` and exempt from the rule that a committed `Assistant`
+entry retires block deltas. They are not logged and not projected: the mark's account
+stays the only record. `efference dev narrate` passes a callback that ignores them.
+
 ## What is not here
 
 When a fold is offered, and the clients' controls for it, belong to the cold session

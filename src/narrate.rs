@@ -6,7 +6,7 @@
 //! caller to report; this module never substitutes another summary, another model, or
 //! an unsummarized read.
 
-use crate::api::{Client, RequestUsage, ToolChoice};
+use crate::api::{Client, RequestUsage, Streamed, ToolChoice};
 use crate::digest;
 use crate::log::{Audience, LogEntry, Mark, MarkKind, Payload, Seq};
 use crate::project::WireTurn;
@@ -101,16 +101,20 @@ pub fn request(entries: &[LogEntry], cut: Option<Seq>) -> Result<Vec<WireTurn>, 
 /// `client` and `tools` are the session's own, so the narrator is the session's model
 /// under its own system prompt; the account is expected as text, and a tool call in
 /// its place is an error.
+///
+/// `on_delta` sees the response's fragments as they arrive; a caller with no one to
+/// show them to passes `|_| {}`.
 pub async fn narrate(
     client: &Client,
     tools: &[Value],
     entries: &[LogEntry],
     cut: Option<Seq>,
+    on_delta: impl FnMut(Streamed),
 ) -> Result<Narration, Error> {
     let turns = request(entries, cut)?;
     let completion = client
         .with_origin(crate::log::RequestOrigin::Narrate)
-        .complete(&turns, tools, ToolChoice::auto(), |_| {})
+        .complete(&turns, tools, ToolChoice::auto(), on_delta)
         .await
         .map_err(Error::Request)?;
     if let Some(why) = completion.upstream_failure() {

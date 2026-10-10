@@ -295,6 +295,13 @@ impl Frame {
                 "process_output",
                 serde_json::json!({ "id": id, "chunk": chunk }),
             ),
+            StreamDelta::NarratorText { text } => {
+                ("narrator_delta", serde_json::json!({ "text": text }))
+            }
+            StreamDelta::NarratorThinking { text } => (
+                "narrator_thinking_delta",
+                serde_json::json!({ "text": text }),
+            ),
         };
         Self {
             class: Class::Output,

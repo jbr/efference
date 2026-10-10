@@ -53,7 +53,7 @@ pub(crate) async fn narrate(target: &str, upto: Option<u64>, cut: Option<u64>) -
             .unwrap_or_default()
     );
     let started = std::time::Instant::now();
-    let narration = efference::narrate::narrate(&client, &tools, &entries, cut).await?;
+    let narration = efference::narrate::narrate(&client, &tools, &entries, cut, |_| {}).await?;
     let usage = &narration.usage.usage;
     eprintln!(
         "{:.0}s · input {} (cache read {}, write {}) · output {}",

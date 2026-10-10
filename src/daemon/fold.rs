@@ -217,7 +217,24 @@ async fn fold_once(client: &Client, session: &Session, tools: &[Value]) -> Resul
     let cut = fold_cut(&entries, FOLD_TAIL_TOKENS)
         .ok_or_else(|| NotFoldable::Nothing.message().to_string())?;
     let turns_before = session.metrics.lock().unwrap().turn_requests;
-    let narration = crate::narrate::narrate(client, tools, &entries, Some(cut))
+    // The account as it is written goes to `output` subscribers and nowhere else: the
+    // mark below stays its only durable record (docs/summary-head.md).
+    let narration =
+        crate::narrate::narrate(
+            client,
+            tools,
+            &entries,
+            Some(cut),
+            |streamed| match streamed {
+                Streamed::Text { text, .. } => {
+                    session.publish_delta(StreamDelta::NarratorText { text })
+                }
+                Streamed::Thinking { text, .. } => {
+                    session.publish_delta(StreamDelta::NarratorThinking { text })
+                }
+                Streamed::ToolStart { .. } | Streamed::ToolInput { .. } => {}
+            },
+        )
         .await
         .map_err(|e| e.to_string())?;
     session.record_request(RequestOrigin::Narrate, narration.usage);

@@ -194,3 +194,63 @@ async fn the_client_reads_a_fold_refusal_as_a_decline() {
         }
     );
 }
+
+/// While a fold's account is written, the narrator's thinking and text reach the
+/// session's `output` broadcast as narrator deltas, in the order they streamed
+/// (docs/summary-head.md), never as the main loop's response.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_fold_streams_the_narrators_deltas() {
+    use super::upstream_hold::{Answer, events, scripted, wait_until};
+    let requests = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let addr = scripted(Arc::clone(&requests), |_| {
+        Answer::Stream(events(&[
+            r#"{"type":"message_start","message":{"model":"m","usage":{"input_tokens":1,"output_tokens":0}}}"#.to_string(),
+            r#"{"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":"","signature":""}}"#.to_string(),
+            r#"{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"weighing it"}}"#.to_string(),
+            r#"{"type":"content_block_stop","index":0}"#.to_string(),
+            r#"{"type":"content_block_start","index":1,"content_block":{"type":"text","text":""}}"#.to_string(),
+            r#"{"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"the "}}"#.to_string(),
+            r#"{"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"account"}}"#.to_string(),
+            r#"{"type":"content_block_stop","index":1}"#.to_string(),
+            r#"{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":1}}"#.to_string(),
+            r#"{"type":"message_stop"}"#.to_string(),
+        ]))
+    });
+    // The fold loop runs on the session's own client; the test starts it directly
+    // because the runtime spawns it only for a model with a prompt cache.
+    let endpoint = crate::api::Endpoint {
+        provider: crate::api::Provider::Anthropic,
+        url: Some(format!("http://{addr}/v1/messages")),
+        auth_header: "x-api-key".into(),
+        auth_value: "k".into(),
+        session_id: None,
+        extra_headers: Vec::new(),
+        request: Default::default(),
+        base: None,
+    };
+    let client = Arc::new(Client::new(endpoint, "m", "sys", None));
+    let (session, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    tokio::spawn(crate::daemon::fold::fold_loop(
+        client,
+        Arc::clone(&session),
+        Vec::new(),
+    ));
+    append_foldable_history(&session);
+    let mut deltas = session.subscribe_stream();
+
+    assert_eq!(session.request_fold(true), Ok(()));
+    wait_until("the fold finishes", || !session.folding()).await;
+
+    let mut seen = Vec::new();
+    while let Ok(delta) = deltas.try_recv() {
+        seen.push(match delta {
+            StreamDelta::NarratorThinking { text } => format!("thinking:{text}"),
+            StreamDelta::NarratorText { text } => format!("text:{text}"),
+            StreamDelta::AssistantText { .. } | StreamDelta::ThinkingText { .. } => {
+                panic!("a narrator's fragment arrived as the main response's")
+            }
+            _ => continue,
+        });
+    }
+    assert_eq!(seen, ["thinking:weighing it", "text:the ", "text:account"]);
+}

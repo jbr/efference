@@ -533,7 +533,9 @@ cannot throw a live cache away by accident.
   the `fold` topic (`writing`, then `null` once the mark lands, or `failed` with the
   error, which stays until the next turn or fold). A failure changes nothing: fold
   again, or send and read the cache uncached. An account written while a turn read the cache anyway
-  is discarded as superseded; a keepalive ping does not count as one.
+  is discarded as superseded; a keepalive ping does not count as one. While it writes,
+  the narrator's fragments arrive on the `output` class as `narrator_delta` and
+  `narrator_thinking_delta`; the mark's `log` frame is the account's only durable form.
 - `?wait` — hold until the fold lands or fails, then return `/state`.
 - `409 not_foldable` — the cache is not believed expired and the body did not say
   `warm`, a gate or question is pending, a request is in flight, or everything since
@@ -1285,6 +1287,12 @@ the oldest. The committed entry on the `log` class is the authoritative copy.
 - `tool_call_input` — `{ "index": <n>, "fragment": "<partial json>" }` — arguments arriving,
   verbatim. A client may display these but must not **parse** them as a complete document:
   mid-stream they are a partial slice.
+- `narrator_delta` — `{ "text": "<fragment>" }` — the account a fold's narrator is writing
+  (`POST /loop/fold`). Not the main loop's response: it carries no `index`, belongs to no
+  block, and the `Assistant` entry preemption below does not drop it.
+- `narrator_thinking_delta` — `{ "text": "<fragment>" }` — the narrator's extended thinking,
+  with the same scope. Both end with the fold: the mark's `log` frame, or the `fold` topic
+  going `failed`, supersedes them.
 - `tool_output` — `{ "call_id": "…", "chunk": "…" }`
 - `process_output` — `{ "id": <n>, "chunk": "…" }` — a background process's output,
   keyed by the bare process id (rendered `p#<n>` in prose, never in machine-facing

@@ -136,7 +136,10 @@ struct Tail {
 ///
 /// `ToolOutput` and `ProcessOutput` are excluded on purpose: they are keyed by a call
 /// id and a process id rather than by a block index, and a backgrounded process
-/// emitting while a turn commits must still reach the client.
+/// emitting while a turn commits must still reach the client. The narrator's deltas
+/// are excluded too: a fold's account is not a block of any turn's response, and a
+/// fold can run while the loop is parked, so a committed `Assistant` entry says
+/// nothing about it.
 fn is_block_delta(delta: &StreamDelta) -> bool {
     matches!(
         delta,

@@ -93,7 +93,7 @@ fn read_request(reader: &mut BufReader<TcpStream>) -> Option<String> {
 
 /// A Messages upstream answering request *n* with `script(n)`; `requests` counts
 /// arrivals.
-fn scripted(requests: Arc<AtomicUsize>, script: fn(usize) -> Answer) -> SocketAddr {
+pub(super) fn scripted(requests: Arc<AtomicUsize>, script: fn(usize) -> Answer) -> SocketAddr {
     serve(requests, script, None)
 }
 

@@ -32,8 +32,8 @@ use trillium_sse::{Eventable, sse};
 
 use crate::agent;
 use crate::api::{
-    Client, Error, RequestUsage, ToolChoice, UpstreamFailureState, UpstreamRetryState, Usage,
-    upstream_failure_state, upstream_retry_state,
+    Client, Error, RequestUsage, Streamed, ToolChoice, UpstreamFailureState, UpstreamRetryState,
+    Usage, upstream_failure_state, upstream_retry_state,
 };
 
 use crate::config::{ConfigSource, LoadedConfig, Refreshed};
@@ -91,6 +91,15 @@ pub enum StreamDelta {
     /// [`ToolOutput`](Self::ToolOutput) is by `call_id`. Lossy: a cold-opened client
     /// seeds its tail from the process resource and layers these on top.
     ProcessOutput { id: u64, chunk: String },
+    /// A fragment of the account a fold's narrator is writing (docs/summary-head.md).
+    /// Not the main loop's response: it belongs to no content block of one, and the
+    /// committed `Assistant` entry that retires the block variants does not retire it.
+    /// The finished account lands as the fold's `Mark`; these are lossy and never
+    /// logged.
+    NarratorText { text: String },
+    /// A fragment of the narrator's extended thinking, the counterpart of
+    /// [`NarratorText`](Self::NarratorText).
+    NarratorThinking { text: String },
 }
 
 /// What a session is, for a client that has to name it on screen: the model it

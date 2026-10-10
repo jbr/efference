@@ -444,3 +444,44 @@ async fn block_deltas_flow_again_after_the_next_entry() {
         "the next response streams normally: {seen:?}"
     );
 }
+
+/// A fold's account is not a block of the response that committed: a fold running
+/// beside a parked loop keeps streaming after an `Assistant` frame, so the drain that
+/// retires block deltas leaves the narrator's alone.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn narrator_deltas_survive_a_committed_assistant_entry() {
+    let (shared, _turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let mut stream = control_stream(
+        Arc::clone(&shared),
+        Include::parse(Some("log,output")).unwrap(),
+        0,
+    );
+
+    shared.publish_delta(StreamDelta::AssistantText {
+        index: 0,
+        text: "fragment".into(),
+    });
+    shared.publish_delta(StreamDelta::NarratorThinking {
+        text: "weighing".into(),
+    });
+    shared.publish_delta(StreamDelta::NarratorText {
+        text: "the account".into(),
+    });
+    shared.append(1, assistant("the whole answer")).unwrap();
+
+    let seen = collect(&mut stream).await;
+    assert!(
+        !seen.iter().any(|f| f.kind == "assistant_delta"),
+        "the block delta is superseded: {seen:?}"
+    );
+    let text = |kind: &str| {
+        seen.iter()
+            .find(|f| f.kind == kind)
+            .map(|f| f.data["text"].clone())
+    };
+    assert_eq!(text("narrator_delta"), Some(Value::from("the account")));
+    assert_eq!(
+        text("narrator_thinking_delta"),
+        Some(Value::from("weighing"))
+    );
+}
