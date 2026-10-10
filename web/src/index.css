@@ -102,21 +102,46 @@ a:hover {
 }
 
 /* The control language, from the mock: flat bordered mono. A class-styled
-   control (panel tabs, process rows) overrides these by specificity. */
+   control (panel tabs, process rows) overrides these by specificity.
+
+   The unnamed default is the secondary button. Its states, and the
+   primary's, read role tokens each theme fills (theme.css): After Dark lights
+   a control with neon, Lilac lifts it into white. Focus-visible goes further
+   than hover, so a keyboard focus is findable at a glance. Disabled drops the
+   fill and the border to near the page, so it never reads as a resting
+   control. */
 button {
   font: inherit;
   font-size: 0.8em;
   padding: 0.3rem 0.85rem;
   border: 1px solid var(--border-control);
   border-radius: 6px;
-  background: var(--bg-raised);
+  background: var(--btn-bg);
   color: var(--fg);
   cursor: pointer;
+  transition:
+    background-color 180ms ease-out,
+    border-color 180ms ease-out,
+    box-shadow 180ms ease-out,
+    color 180ms ease-out;
 }
 
 button:hover:not(:disabled) {
   color: var(--fg-bright);
-  border-color: var(--border-strong);
+  border-color: var(--btn-border-hover);
+}
+
+/* Zero specificity, like the disabled fill below: a class-styled control
+   keeps its own background on hover and focus. */
+button:where(:hover:not(:disabled), :focus-visible) {
+  background: var(--btn-bg-hover);
+}
+
+button:focus-visible {
+  outline: none;
+  color: var(--fg-bright);
+  border-color: var(--focus-border);
+  box-shadow: var(--focus-shadow);
 }
 
 button:disabled {
@@ -124,11 +149,60 @@ button:disabled {
   cursor: default;
 }
 
+/* Zero specificity: a class-styled control keeps its own fill and border
+   when disabled; only the unnamed default empties out. */
+button:where(:disabled) {
+  background: transparent;
+  border-color: var(--border-subtle);
+  box-shadow: none;
+}
+
 button.primary {
-  border-color: var(--accent);
+  border-color: var(--btn-primary-border);
   background: var(--btn-primary-bg);
   color: var(--btn-primary-fg);
-  box-shadow: 0 0 14px var(--accent-glow);
+  box-shadow: var(--btn-primary-shadow);
+}
+
+/* Dimmed at rest, fully lit on hover. Without this rule the generic
+   button:hover (higher specificity) dulled the border, so hovering the
+   primary dimmed it. */
+button.primary:hover:not(:disabled) {
+  border-color: var(--btn-primary-border-lit);
+  color: var(--btn-primary-fg);
+  box-shadow: var(--btn-primary-shadow-lit);
+}
+
+/* Hover's full state plus a ring outside it. */
+button.primary:focus-visible {
+  border-color: var(--btn-primary-border-lit);
+  background: var(--btn-primary-bg);
+  color: var(--btn-primary-fg);
+  box-shadow: var(--btn-primary-shadow-lit);
+  outline: 1px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* The quiet button: text that acts, with no fill or border of its own. The
+   padding is room for the focus ring, and the negative margin gives it back,
+   so a quiet button lays out where its bare text would. The border stays,
+   transparent, so focus can color it. */
+button.quiet {
+  padding: 0.1rem 0.35rem;
+  margin: -0.1rem -0.35rem;
+  border-color: transparent;
+  border-radius: 4px;
+  background: none;
+}
+
+button.quiet:hover:not(:disabled),
+button.quiet:disabled {
+  border-color: transparent;
+  background: none;
+}
+
+button.quiet:focus-visible {
+  border-color: var(--focus-border);
 }
 
 /* Disabled keeps the primary's own colors and fades the whole control; the
@@ -157,6 +231,20 @@ input:not([type="checkbox"]) {
   border-radius: 6px;
   background: var(--bg-inset);
   color: var(--fg);
+  transition:
+    background-color 180ms ease-out,
+    border-color 180ms ease-out,
+    box-shadow 180ms ease-out;
+}
+
+/* A focused text field: the field-focus tokens (theme.css). Not the global outline —
+   a field already has a border to carry focus, and an outline beside it read
+   as a second, competing edge. */
+input:not([type="checkbox"]):focus-visible {
+  outline: none;
+  background: var(--field-focus-bg);
+  border-color: var(--field-focus-border);
+  box-shadow: var(--field-focus-shadow);
 }
 
 input::placeholder,
@@ -443,8 +531,8 @@ input[type="checkbox"] {
 }
 
 .prompt {
-  color: var(--accent);
-  text-shadow: 0 0 9px var(--accent-glow);
+  color: var(--neon-ink);
+  text-shadow: var(--neon-text);
 }
 
 .call-tool {
@@ -523,8 +611,8 @@ input[type="checkbox"] {
   position: absolute;
   left: -1.5ch;
   top: 0;
-  color: var(--accent);
-  text-shadow: 0 0 9px var(--accent-glow);
+  color: var(--neon-ink);
+  text-shadow: var(--neon-text);
 }
 
 /* How a command runs when it is not the default of blocking until it exits:
@@ -609,8 +697,8 @@ input[type="checkbox"] {
 }
 
 .note-glyph {
-  color: var(--accent);
-  text-shadow: 0 0 9px var(--accent-glow);
+  color: var(--neon-ink);
+  text-shadow: var(--neon-text);
 }
 
 .note-text {
@@ -664,8 +752,8 @@ input[type="checkbox"] {
 
 .consolidation-rule .glyph {
   font-size: 0.85rem;
-  color: var(--accent);
-  text-shadow: 0 0 9px var(--accent-glow);
+  color: var(--neon-ink);
+  text-shadow: var(--neon-text);
 }
 
 .consolidation-rule .c-label {
@@ -948,11 +1036,6 @@ pre {
   flex: none;
 }
 
-.dot.breathing {
-  animation: ef-breathe 3.2s ease-in-out infinite;
-  box-shadow: 0 0 8px var(--accent-glow);
-}
-
 .your-turn {
   font-family: var(--font-prose);
   font-style: italic;
@@ -981,6 +1064,10 @@ pre {
   border: 1px solid var(--border-control);
   border-radius: 2px;
   padding: 0.6rem 0.9rem;
+  transition:
+    background-color 180ms ease-out,
+    border-color 180ms ease-out,
+    box-shadow 180ms ease-out;
 }
 
 .composer-text-row {
@@ -1021,9 +1108,12 @@ pre {
 }
 
 /* The box is the focus affordance, not the borderless textarea inside it. */
+/* Typing lights the whole box: Enter sends, so the box is the control and
+   the send button is secondary beside it. */
 .composer-input:focus-within {
-  border-color: var(--accent);
-  box-shadow: 0 0 10px var(--accent-glow);
+  background: var(--composer-focus-bg);
+  border-color: var(--composer-focus-border);
+  box-shadow: var(--composer-focus-shadow);
 }
 
 .composer-text-row textarea::placeholder {
@@ -1066,36 +1156,14 @@ pre {
   color: var(--accent);
 }
 
-.composer-toolbar .interrupt-btn {
+/* The toolbar's buttons (attach, interrupt, resume, send) are the default
+   and primary buttons at the toolbar's size; colors and states are the base
+   rules'. */
+.composer-toolbar button {
   font-family: var(--font-ui);
   font-size: 0.8rem;
-  padding: 0.2rem 0.65rem;
+  padding: 0.22rem 0.65rem;
   border-radius: 4px;
-  background: var(--bg-raised);
-  border: 1px solid var(--border-control);
-  color: var(--fg-dim);
-  cursor: pointer;
-}
-
-.composer-toolbar .interrupt-btn:hover {
-  border-color: var(--border-strong);
-  color: var(--fg-bright);
-}
-
-.composer-toolbar .resume-btn {
-  font-family: var(--font-ui);
-  font-size: 0.8rem;
-  padding: 0.2rem 0.65rem;
-  border-radius: 4px;
-  background: var(--bg-raised);
-  border: 1px solid var(--border-control);
-  color: var(--fg);
-  cursor: pointer;
-}
-
-.composer-toolbar .resume-btn:hover {
-  border-color: var(--border-strong);
-  color: var(--fg-bright);
 }
 
 .composer-hint {
@@ -1106,7 +1174,7 @@ pre {
   user-select: none;
 }
 
-.send-btn {
+.composer-toolbar .send-btn {
   display: inline-flex;
   align-items: center;
   gap: 0.45rem;
@@ -1115,43 +1183,26 @@ pre {
   border-radius: 4px;
 }
 
-.send-btn.primary .send-kbd {
+/* The key the button stands for, as a bare glyph beside the label. */
+.send-btn .send-kbd {
   font-family: var(--font-mono);
-  font-size: 0.72rem;
-  background: rgba(255, 255, 255, 0.15);
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  font-size: 0.8rem;
   color: inherit;
-  padding: 0 0.25rem;
-  border-radius: 2px;
-  line-height: 1.25;
+  opacity: 0.6;
+  line-height: 1;
+  /* ↵ sits low in its em box; lift it to the label's optical center. */
+  position: relative;
+  top: -0.3em;
 }
 
 .composer-toolbar button.attach-btn {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
-  background: var(--bg-raised);
-  border: 1px solid var(--border-control);
-  padding: 0.22rem 0.65rem;
-  border-radius: 4px;
-  font-family: var(--font-ui);
-  font-size: 0.8rem;
-  color: var(--fg-dim);
-  cursor: pointer;
 }
 
 .composer-toolbar button.attach-btn svg {
   display: block;
-  opacity: 0.75;
-}
-
-.composer-toolbar button.attach-btn:hover {
-  color: var(--fg-bright);
-  border-color: var(--border-strong);
-}
-
-.composer-toolbar button.attach-btn:hover svg {
-  opacity: 1;
 }
 
 /* Attachment chips (ui/Attachments.tsx): the composer's staged row above the

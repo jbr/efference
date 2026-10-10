@@ -390,10 +390,7 @@ export function Composer({
                 {!narrow && (
                   <span className="composer-hint">shift-enter for newline</span>
                 )}
-                <button
-                  disabled={attachments.uploading}
-                  className="send-btn primary"
-                >
+                <button disabled={attachments.uploading} className="send-btn">
                   <span>send</span>
                   {!narrow && <kbd className="send-kbd">↵</kbd>}
                 </button>

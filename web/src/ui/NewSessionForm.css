@@ -42,11 +42,9 @@
   color: var(--fg-muted);
   line-height: 1.5;
 }
-.new-session-back {
-  margin: 0 0 1rem;
-  padding: 0;
-  border: none;
-  background: none;
+/* Compound, to outrank button.quiet's margin. */
+.new-session-back.quiet {
+  margin: -0.1rem -0.35rem 1rem;
   color: var(--fg-muted);
 }
 .new-session-current {
@@ -247,9 +245,9 @@
 .new-session-issue {
   color: var(--warn);
 }
-:root[data-theme="daylight"] .new-session input:not([type="checkbox"]),
-:root[data-theme="daylight"] .new-session .setting-pick,
-:root[data-theme="daylight"]
+:root[data-theme="lilac"] .new-session input:not([type="checkbox"]),
+:root[data-theme="lilac"] .new-session .setting-pick,
+:root[data-theme="lilac"]
   .new-session
   .effort-choices
   button:not([aria-pressed="true"]) {

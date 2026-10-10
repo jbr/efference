@@ -286,7 +286,7 @@ export function NewSessionForm({
         <header className="new-session-head">
           {picking !== null && (
             <button
-              className="new-session-back"
+              className="quiet new-session-back"
               onClick={() => onBack("settings")}
             >
               ← Back to settings

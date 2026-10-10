@@ -21,8 +21,24 @@ if (
 ) {
   void import("./overflowReport.ts").then((m) => m.installOverflowReport());
 }
-createRoot(document.getElementById("root")!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-);
+const root = createRoot(document.getElementById("root")!);
+// The design gallery (src/gallery/Gallery.tsx) replaces the app, and is
+// dead code outside dev builds.
+if (
+  import.meta.env.DEV &&
+  new URLSearchParams(location.search).has("gallery")
+) {
+  void import("./gallery/Gallery.tsx").then(({ Gallery }) =>
+    root.render(
+      <StrictMode>
+        <Gallery />
+      </StrictMode>,
+    ),
+  );
+} else {
+  root.render(
+    <StrictMode>
+      <App />
+    </StrictMode>,
+  );
+}

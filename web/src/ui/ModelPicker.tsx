@@ -270,7 +270,7 @@ export function ModelPicker({
     >
       <nav className="picker-path" aria-label="Model location">
         <button
-          className="picker-root"
+          className="quiet picker-root"
           disabled={chips.length === 0 && query === ""}
           onClick={() => {
             setChips([]);
@@ -284,7 +284,7 @@ export function ModelPicker({
         {chips.map((chip, index) => (
           <Fragment key={`${index}-${chip}`}>
             <button
-              className="picker-breadcrumb"
+              className="quiet picker-breadcrumb"
               aria-label={`Browse ${chips.slice(0, index + 1).join(" / ")}`}
               aria-current={index === chips.length - 1 ? "location" : undefined}
               onClick={() => {

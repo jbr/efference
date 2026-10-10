@@ -30,9 +30,6 @@
   font-size: 0.85rem;
 }
 .setting-reset {
-  padding: 0;
-  border: none;
-  background: none;
   color: var(--fg-muted);
   font-size: 0.75rem;
 }
@@ -71,9 +68,6 @@
   color: var(--fg-bright);
 }
 .effort-default {
-  padding: 0;
-  border: none;
-  background: none;
   color: var(--fg-muted);
   font-size: 0.75rem;
 }

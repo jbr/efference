@@ -110,7 +110,7 @@ it describes and ignores stale answers. Field issues appear beside their
 controls; issues without a corresponding control appear beside **Start session**.
 
 The launch action is right-aligned while hints and refusal text remain left-aligned.
-Daylight uses the white raised surface for inputs, model controls, and idle effort
+Lilac uses the white raised surface for inputs, model controls, and idle effort
 choices; dark surfaces and selected effort feedback retain their theme treatment.
 
 Start is disabled without an issue-free preview for the current draft and while

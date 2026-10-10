@@ -76,30 +76,76 @@
   text-overflow: ellipsis;
 }
 
+/* Status dots as neon (docs/web-client.md): a near-white core with the
+   status color carried by its glow. After Dark's core is tinted toward the
+   hue. Lilac's is true white shading out to the hue, a lit bead: a white
+   core with only a rim read as a hollow ring on a light page, the idle
+   shape.
+   --dot-hue is the status; --dot-r scales the glow, so a quieter status is a
+   smaller glow rather than a different shape, and running pulses the glow
+   while the core stays lit. Idle is an unlit tube: an outline, no glow. */
+@property --dot-r {
+  syntax: "<number>";
+  inherits: false;
+  initial-value: 1;
+}
+
 .switcher-dot {
+  --dot-hue: var(--fg-faint);
+  --dot-core: color-mix(in srgb, var(--dot-hue) 14%, white);
   flex: none;
   width: 0.5rem;
   height: 0.5rem;
   border-radius: 50%;
   box-sizing: border-box;
+  background: var(--dot-core);
+  box-shadow:
+    0 0 var(--dot-rim-blur) var(--dot-rim-spread) var(--dot-hue),
+    0 0 calc(var(--dot-r) * var(--dot-glow-near)) var(--dot-hue),
+    0 0 calc(var(--dot-r) * var(--dot-glow-far))
+      color-mix(in srgb, var(--dot-hue) 55%, transparent);
+}
+
+:root {
+  --dot-rim-blur: 2px;
+  --dot-rim-spread: 0;
+  --dot-glow-near: 5px;
+  --dot-glow-far: 10px;
+}
+
+:where(:root[data-theme="lilac"]) .switcher-dot {
+  background: radial-gradient(
+    circle,
+    #ffffff 0 30%,
+    color-mix(in srgb, var(--dot-hue) 70%, white) 60%,
+    var(--dot-hue) 100%
+  );
+  box-shadow:
+    0 0 calc(var(--dot-r) * 4px)
+      color-mix(in srgb, var(--dot-hue) 70%, transparent),
+    0 0 calc(var(--dot-r) * 9px)
+      color-mix(in srgb, var(--dot-hue) 35%, transparent);
 }
 
 .dot-idle .switcher-dot {
+  background: none;
   border: 1px solid var(--fg-faint);
+  box-shadow: none;
 }
 
 .dot-working .switcher-dot {
-  background: var(--fg-faint);
+  --dot-hue: var(--fg-dim);
   animation: switcher-pulse 2.4s ease-in-out infinite;
 }
 
 .dot-needs .switcher-dot {
-  background: var(--accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+  --dot-hue: var(--accent);
+  --dot-r: 1.3;
 }
 
 .dot-turn .switcher-dot {
-  background: var(--accent);
+  --dot-hue: var(--accent);
+  --dot-r: 0.6;
 }
 
 .dot-needs,
@@ -109,13 +155,13 @@
 
 .dot-stalled .switcher-dot,
 .dot-parked .switcher-dot {
-  background: var(--warn);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--warn) 22%, transparent);
+  --dot-hue: var(--warn);
+  --dot-r: 1.1;
 }
 
 @keyframes switcher-pulse {
   50% {
-    opacity: 0.3;
+    --dot-r: 0.15;
   }
 }
 
@@ -260,7 +306,8 @@
 }
 
 .switcher-more .more-dot {
-  background: var(--accent);
+  --dot-hue: var(--accent);
+  --dot-r: 0.6;
 }
 
 .switcher-menu {

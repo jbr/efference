@@ -54,7 +54,7 @@ export function Settings({
         error={error("effort")}
         action={
           <button
-            className="effort-default"
+            className="quiet effort-default"
             aria-label="Use default effort"
             aria-pressed={draft.effort === null}
             onClick={() => edit({ effort: null })}
@@ -161,7 +161,7 @@ function Setting({
         {action}
         {reset && (
           <button
-            className="setting-reset"
+            className="quiet setting-reset"
             aria-label={`Reset ${label}`}
             title="Clear this override"
             onClick={reset}

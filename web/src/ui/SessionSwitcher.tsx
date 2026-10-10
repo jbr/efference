@@ -198,7 +198,13 @@ export function SessionSwitcher({ currentId }: { currentId: string }) {
   );
 }
 
-function Tab({ card, inert = false }: { card: CardModel; inert?: boolean }) {
+export function Tab({
+  card,
+  inert = false,
+}: {
+  card: CardModel;
+  inert?: boolean;
+}) {
   const label = card.title ?? card.id;
   const phrase = statusPhrase(card);
   const body = (
@@ -274,7 +280,7 @@ function useFit(labels: string[]): {
   return { row, measure, fit };
 }
 
-function MoreButton({
+export function MoreButton({
   total,
   waiting,
   open = false,
@@ -383,7 +389,7 @@ function useKeepOnScreen() {
   return ref;
 }
 
-function HoverCard({ card }: { card: CardModel }) {
+export function HoverCard({ card }: { card: CardModel }) {
   const phrase = statusPhrase(card);
   const context = card.context;
   const used = context?.used ?? null;

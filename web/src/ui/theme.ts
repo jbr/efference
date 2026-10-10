@@ -3,7 +3,7 @@
 // localStorage, or the system scheme when none is stored. The resolved theme
 // lands as data-theme on <html>, which is the selector theme.css keys on.
 
-export type ThemeName = "after-dark" | "daylight";
+export type ThemeName = "after-dark" | "lilac";
 export type ThemeChoice = ThemeName | "system";
 
 const KEY = "theme";
@@ -11,15 +11,15 @@ const KEY = "theme";
 const lightQuery = () => window.matchMedia("(prefers-color-scheme: light)");
 
 const systemTheme = (): ThemeName =>
-  lightQuery().matches ? "daylight" : "after-dark";
+  lightQuery().matches ? "lilac" : "after-dark";
 
 export function themeChoice(): ThemeChoice {
   const stored = localStorage.getItem(KEY);
-  return stored === "after-dark" || stored === "daylight" ? stored : "system";
+  return stored === "after-dark" || stored === "lilac" ? stored : "system";
 }
 
 /** The standalone window's chrome takes `theme-color`, so an installed app
- * whose title bar stays dark under Daylight looks broken in a way the page
+ * whose title bar stays dark under Lilac looks broken in a way the page
  * itself never does. index.html carries After Dark's value as the pre-JS
  * default; this keeps it following the resolved theme. */
 function applyThemeColor() {

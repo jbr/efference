@@ -1,0 +1,162 @@
+/* The gallery's own frame (Gallery.tsx). Only layout around the specimens:
+   anything that styles a widget belongs in the widget's stylesheet, or the
+   gallery stops showing what production shows. */
+.gallery {
+  min-height: 100dvh;
+  background: var(--bg-page);
+  color: var(--fg);
+  padding: 0 2rem 6rem;
+}
+
+.g-head {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 1rem 0;
+  background: var(--bg-page);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.g-head h1 {
+  margin: 0;
+  font-family: var(--font-prose);
+  font-weight: 500;
+  font-size: 1.4rem;
+  color: var(--fg-bright);
+}
+
+.g-section {
+  max-width: 64rem;
+  margin: 2.5rem auto 0;
+}
+
+.g-title {
+  font-family: var(--font-ui);
+  margin: 0 0 1rem;
+  font-size: 0.75rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--fg-dim);
+  font-weight: 500;
+}
+
+.g-specimen {
+  display: grid;
+  grid-template-columns: 16rem 1fr;
+  gap: 1.5rem;
+  align-items: center;
+  padding: 1rem 0;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.g-name {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--fg-faint);
+}
+
+.g-body {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+  align-items: center;
+}
+
+.g-states {
+  display: flex;
+  gap: 1.25rem;
+  align-items: flex-end;
+}
+
+.g-state {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.g-state figcaption {
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  color: var(--fg-ghost);
+}
+
+.g-row {
+  display: flex;
+  gap: 1.5rem;
+  align-items: center;
+}
+
+.g-mono {
+  font-family: var(--font-mono);
+  font-size: 1rem;
+}
+
+.g-dot {
+  display: inline-block;
+}
+
+/* The page containers below carry page-level layout (full height, centered
+   widths); inside the gallery they are only selector scopes. */
+.g-page,
+.g-inline,
+.g-form,
+.g-resume,
+.g-overview {
+  min-height: 0;
+  margin: 0;
+  width: auto;
+}
+
+.g-form {
+  max-width: 44rem;
+}
+
+.g-resume .resume-page-body {
+  padding: 0;
+  margin: 0;
+  max-width: 44rem;
+  gap: 1.5rem;
+}
+
+.g-composer {
+  position: static;
+  margin-bottom: 1rem;
+}
+
+.g-transcript .entry {
+  margin-top: 1rem;
+}
+
+.g-page {
+  background: none;
+}
+
+.g-switcher {
+  padding: 0;
+  flex-wrap: wrap;
+}
+
+/* The hover card is absolutely placed under its tab; give it room. */
+.g-pop-host {
+  height: 11rem;
+  align-items: flex-start;
+}
+
+/* ::selection cannot be pinned on an element, so the specimen paints the
+   token it reads. */
+.g-selection {
+  background: var(--selection);
+  color: inherit;
+}
+
+.g-prose {
+  margin: 0;
+  font-family: var(--font-prose);
+  font-size: 1.05rem;
+}

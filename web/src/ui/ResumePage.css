@@ -76,14 +76,6 @@
   color: var(--fg-faint);
 }
 
-/* The accent border is the focus indicator; the global outline and glow
-   would draw a second ring around it. */
-.resume-search-bar .resume-search-input:focus-visible {
-  outline: none;
-  box-shadow: none;
-  border-color: var(--accent);
-}
-
 .resume-results-list {
   display: flex;
   flex-direction: column;

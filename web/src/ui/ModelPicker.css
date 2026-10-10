@@ -17,9 +17,6 @@
 }
 .picker-root,
 .picker-breadcrumb {
-  padding: 0;
-  border: none;
-  background: none;
   color: var(--fg);
   font-size: inherit;
 }
@@ -40,7 +37,8 @@
   width: 100%;
   min-width: 0;
   padding: 0.3rem 0.4rem;
-  border: none;
+  /* Transparent, not none: focus colors it (index.css). */
+  border: 1px solid transparent;
   background: var(--bg-inset);
   font-family: var(--font-mono);
   font-size: 0.9rem;

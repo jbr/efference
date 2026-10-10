@@ -385,7 +385,7 @@ export function Interface() {
         >
           <option value="system">system</option>
           <option value="after-dark">after dark</option>
-          <option value="daylight">daylight</option>
+          <option value="lilac">lilac</option>
         </select>
       </label>
       <div className="view-toggles">

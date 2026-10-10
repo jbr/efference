@@ -894,13 +894,48 @@ equals one whole-buffer pass, at every prefix — is pinned by
 
 `web/src/theme.css` holds every color as a custom property; components reference
 tokens only. A theme is one override block: After Dark (dark, magenta accent) is
-the default set on `:root` — which is also the pre-script paint — and Daylight
-overrides under `:root[data-theme="daylight"]`. `ui/theme.ts` resolves the
+the default set on `:root` — which is also the pre-script paint — and Lilac
+overrides under `:root[data-theme="lilac"]`. `ui/theme.ts` resolves the
 choice — explicit and persisted in localStorage, or the system scheme when none
 is stored — and sets `data-theme` on `<html>`; `initTheme()` runs before first
 render, and the select lives in the bottom panel's interface tab. Glow is a token,
 not a decoration: After Dark's accent halo (`--accent-glow`) goes `transparent`
-in Daylight, and every box-shadow through it disappears with it. Adding a theme
+in Lilac, and every box-shadow through it disappears with it. The neon
+tokens follow the same rule: `--neon-ink` is a near-white core and
+`--neon-text` / `--neon-box` a glow stacked tight to wide in the accent, so a lit
+glyph or border reads as light rather than blur; `--neon-ink-dim` /
+`--neon-box-dim` are the same sign at rest, which the primary button shows until
+hover lights it fully. Lilac sets the halos to `none` and the ink back to the
+accent.
+
+Button states read role tokens rather than the neon tokens directly —
+`--btn-bg` / `--btn-bg-hover` / `--btn-border-hover` for the default
+(secondary), `--btn-primary-*` resting and `-lit` for the primary, and
+`--focus-border` / `--focus-shadow` / `--focus-ring` — because the two themes
+light a control differently. After Dark points them at the neon tokens. Lilac's
+light is white: its page is a lilac off-white, so true white reads brighter
+than it is, and a lit control rises into white on a soft lilac shadow
+(`--lift`, `--lift-high`). A resting default sits flush, a shade under the
+page; the primary is the one control lifted at rest; focus is a lilac ring.
+`button.quiet` is text that acts: no fill or border of its own, with padding
+for the focus ring and a negative margin returning it, so it lays out where
+its bare text would. Text fields focus through `--field-focus-bg` /
+`--field-focus-border` / `--field-focus-shadow` rather than the global outline:
+After Dark tints the border toward the accent with no glow; Lilac's focused
+field rises into white with a lilac ring. The composer's box is the lit control
+while typing (`--composer-focus-*`: the dimmed neon sign in After Dark, white
+lifted on `--lift-high` in Lilac), and its send button is secondary — Enter
+sends, so the box, not the button, is what the operator is working. `--selection` is the accent's in After Dark
+and lilac in Lilac. Lilac's `--accent` is heather, a muted red-violet: warm
+enough to mark a gate or a waiting session apart from the cooler lilac of
+controls and focus, and `--warn` is apricot.
+The session tabs' status dots use the same idea: a near-white core with the
+status color in the glow, the glow scaled per status through a registered
+`--dot-r` (a gate's is largest, your turn's smallest), and a running session's
+glow pulsing while its core stays lit; an idle session is an unlit outline.
+Lilac's dot is a white bead shading out to the hue, since a white core with
+only a rim read as the idle outline on a light page.
+Adding a theme
 is authoring an override block plus a select option
 ([backlog/web/plain-themes.md](../backlog/web/plain-themes.md) is the pending
 pair).
@@ -927,7 +962,7 @@ stays in the mono. The user turn's accent gutter carries no glow, dropped on
 use the same day.
 
 One asset trap, recorded because it will recur: Vite inlines small `src/`
-assets as `data:` URIs, and the CSP has no `data:` source. Daylight's
+assets as `data:` URIs, and the CSP has no `data:` source. Lilac's
 paper-grain SVG therefore lives in `public/` (never inlined, served as-is),
 not `src/assets/` — anything else CSS references by URL follows the same rule
 or grows a hash in `default-src`.
@@ -1761,6 +1796,22 @@ passes the viewport — readable off a simulator screenshot, where no inspector 
 attached. A column wider than the screen shows on iOS as enlarged text (text
 autosizing inflates an overflowing block), not only as a horizontal scroll, so
 "the text is huge" on a phone is a width bug first.
+
+### The design gallery — `web/src/gallery/`
+
+With `?gallery` on the URL (dev builds), the page renders the client's widgets
+on fixture data instead of the app: buttons, the neon glyphs, the session
+tabs (one per dot state, and the hover card), the composer, a transcript
+excerpt, session cards, the launch settings, the model picker, and
+the resume lists. Components that render from props alone are the real ones;
+stateful surfaces (the composer, the resume list, the picker shell) are their
+markup under the same class names and page containers, so the stylesheet under
+test is production's. Each control also appears pinned in its hover and focus
+states: `pseudoStates.ts` copies every rule naming `:hover`, `:focus-visible`,
+`:focus-within`, `:focus`, or `:active` with the pseudo-class rewritten to an
+`is-*` class, and re-derives the copies when a stylesheet changes, so under HMR
+the pinned states follow the edit. The copied markup drifts if a component's
+structure changes; the gallery is a design surface, not a test.
 
 ### Scrubbing the stream — `web/src/session/record.ts`
 
