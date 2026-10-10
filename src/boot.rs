@@ -331,7 +331,7 @@ async fn prepare_minting(
              config file; config writes still gate for the orchestrator-above"
         );
     }
-    let distiller = parts::mount_distiller(
+    let (distiller, triage_prices) = parts::mount_distiller(
         &inference,
         &endpoint,
         model,
@@ -354,6 +354,7 @@ async fn prepare_minting(
         inference: Some(inference.identity()),
         env_policy,
         keep_scratch,
+        triage_prices,
     })
 }
 

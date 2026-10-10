@@ -42,6 +42,10 @@ pub enum RequestOrigin {
     /// the main request ended. Never main-prefix evidence: it plants a resume point on
     /// the triage lineage, not the loop's.
     TriagePrimer,
+    /// A keepalive ping on the triage lineage: the primer's own envelope re-sent over the
+    /// primed turns (docs/transport.md). It refreshes the triage lineage's resume point
+    /// and never main-prefix evidence.
+    TriageKeepalive,
     /// The narrator writing a fold's account (docs/summary-head.md): its own prompt,
     /// so it does not touch the main prefix.
     Narrate,
@@ -69,6 +73,14 @@ impl RequestOrigin {
     /// requests are left out, which can only make the cache look colder than it is.
     pub fn touches_main_prefix(self) -> bool {
         matches!(self, Self::Turn | Self::Keepalive)
+    }
+
+    /// Whether every request of this origin read the triage lineage's own cached prefix
+    /// (docs/transport.md): the primer and the triage keepalive do, and a result-triage
+    /// peek does only when it ran on its own client, which the origin does not say, so
+    /// `Session::record_peek` decides for it.
+    pub fn touches_triage_prefix(self) -> bool {
+        matches!(self, Self::TriagePrimer | Self::TriageKeepalive)
     }
 }
 

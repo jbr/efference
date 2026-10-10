@@ -3,6 +3,7 @@
 //! the refusal of a foreign-dialect turn list.
 
 use super::*;
+use crate::log::RequestOrigin;
 
 /// **The duration ceiling** (docs/transport.md): a stream that opens, trickles,
 /// and then never finalizes is given up on rather than blocking its turn forever,
@@ -310,7 +311,7 @@ async fn attribution_rides_openrouter_turns_and_nothing_else() {
                 .expect("the canned stream assembles");
         } else {
             client
-                .keepalive(&[], &[], ToolChoice::auto())
+                .keepalive(RequestOrigin::Keepalive, &[], &[], ToolChoice::auto())
                 .await
                 .expect("the canned body parses");
         }

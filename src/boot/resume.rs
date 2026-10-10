@@ -207,7 +207,7 @@ async fn resume_minting(
         &capabilities,
     );
     let spotter = parts::mount_spotter(&inference, &endpoint, &scratch, &directories).await?;
-    let distiller = parts::mount_distiller(
+    let (distiller, triage_prices) = parts::mount_distiller(
         &inference,
         &endpoint,
         model,
@@ -252,6 +252,7 @@ async fn resume_minting(
             inference: Some(inference.identity()),
             env_policy,
             keep_scratch,
+            triage_prices,
         },
         options,
     ))

@@ -1395,9 +1395,11 @@ impl Client {
     ///
     /// On the Responses and Completions dialects the ping is an ordinary streamed
     /// request with the output capped at [`Provider::keepalive_output_cap`]
-    /// ([`Self::streamed_keepalive`]).
+    /// ([`Self::streamed_keepalive`]). `origin` tags the ping's stages: `Keepalive` for
+    /// the main loop, `TriageKeepalive` for the triage lineage (docs/transport.md).
     pub async fn keepalive(
         &self,
+        origin: RequestOrigin,
         turns: &[WireTurn],
         tools: &[Value],
         tool_choice: ToolChoice,
@@ -1407,7 +1409,7 @@ impl Client {
             WireDialect::Responses | WireDialect::Completions
         ) {
             return self
-                .with_origin(RequestOrigin::Keepalive)
+                .with_origin(origin)
                 .streamed_keepalive(turns, tools, tool_choice)
                 .await;
         }
@@ -1437,11 +1439,7 @@ impl Client {
         };
         let body = serde_json::to_string(&request).map_err(KeepaliveError::other)?;
         // Non-streaming, so the ping has no first byte: it is sent, then it ends or fails.
-        let trace = Trace::begin(
-            self.stages.as_ref(),
-            RequestOrigin::Keepalive,
-            &self.active_trace,
-        );
+        let trace = Trace::begin(self.stages.as_ref(), origin, &self.active_trace);
         if let Some(trace) = &trace {
             trace.sent();
         }
@@ -1517,6 +1515,13 @@ impl Client {
         Ok(completion.request_usage())
     }
 
+    /// Whether this client can plant a triage-lineage primer (docs/transport.md): a
+    /// Responses lineage with an implicit cache. [`Self::prime`] and the triage keepalive
+    /// both key on it, so the keepalive is armed exactly where the primer can plant.
+    pub(crate) fn plants_primer(&self) -> bool {
+        self.dialect() == WireDialect::Responses && self.prompt_cache == PromptCachePolicy::Implicit
+    }
+
     /// The triage-lineage primer (backlog/separate-triage-cold-prefix.md): the turn's
     /// own input replayed so a later peek extends a request that ended where the main
     /// one did. Shaped exactly like the keepalive's Responses ping — the turn envelope
@@ -1536,9 +1541,7 @@ impl Client {
         tools: &[Value],
         tool_choice: ToolChoice,
     ) -> Option<Result<RequestUsage, Error>> {
-        if self.dialect() != WireDialect::Responses
-            || self.prompt_cache != PromptCachePolicy::Implicit
-        {
+        if !self.plants_primer() {
             return None;
         }
         let completion = match self

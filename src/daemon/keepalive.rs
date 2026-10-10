@@ -1,7 +1,10 @@
 //! The cache keepalive timer (docs/log-and-projection.md).
 
+mod session;
+
 use super::*;
 use crate::api::TokenPrices;
+use crate::distill::ForkPeek;
 
 /// How long the cached prefix may go untouched before the keepalive pings it,
 /// absent a `[transport] keepalive-interval` (docs/transport.md): four fifths of the
@@ -9,6 +12,81 @@ use crate::api::TokenPrices;
 /// refreshes would expire. Four minutes against a five-minute cache.
 pub fn keepalive_interval(cache_ttl: Duration) -> Duration {
     cache_ttl * 4 / 5
+}
+
+/// The cache lineage a keepalive loop keeps warm (docs/transport.md): the main prefix the
+/// agent's turns write, or the triage lineage a separate triage model's primer plants.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum CacheLineage {
+    Main,
+    Triage,
+}
+
+impl CacheLineage {
+    /// The origin the lineage's pings are tagged with (`usage.jsonl`, `dev cache`).
+    fn origin(self) -> RequestOrigin {
+        match self {
+            Self::Main => RequestOrigin::Keepalive,
+            Self::Triage => RequestOrigin::TriageKeepalive,
+        }
+    }
+
+    /// The name the loop's stderr lines and the stance's wording use.
+    fn name(self) -> &'static str {
+        match self {
+            Self::Main => "keepalive",
+            Self::Triage => "triage keepalive",
+        }
+    }
+}
+
+/// One keepalive loop's ping: the lineage it keeps warm, the envelope it sends, and its
+/// cadence (docs/transport.md). The session runtime builds one per armed lineage.
+pub(crate) struct KeepaliveSpec {
+    pub(crate) lineage: CacheLineage,
+    pub(crate) client: Arc<Client>,
+    pub(crate) tools: Vec<Value>,
+    pub(crate) choice: ToolChoice,
+    pub(crate) ping_at: Duration,
+    pub(crate) prices: Option<TokenPrices>,
+}
+
+impl KeepaliveSpec {
+    /// The triage lineage's keepalive (docs/transport.md): the primer's own envelope
+    /// re-sent, armed only where the primer can plant (a shared triage has none, and
+    /// neither does a Messages-dialect triage model). `configured` is
+    /// `[transport] keepalive-interval`, which applies to both lineages; absent, the
+    /// cadence is the triage provider's cache lifetime, as the main loop's is.
+    pub(crate) fn triage(
+        peek: &ForkPeek,
+        configured: Option<Duration>,
+        prices: Option<TokenPrices>,
+    ) -> Option<Self> {
+        let (client, tools, choice) = peek.primer_envelope()?;
+        let ping_at = configured
+            .unwrap_or_else(|| keepalive_interval(client.endpoint().provider.cache_ttl()));
+        Some(Self {
+            lineage: CacheLineage::Triage,
+            client: Arc::new(client),
+            tools,
+            choice,
+            ping_at,
+            prices,
+        })
+    }
+}
+
+/// The turns the last primer sent (docs/transport.md), which the triage keepalive re-sends
+/// byte for byte.
+#[derive(Clone)]
+pub(super) struct PrimedPrefix {
+    /// The primer's input, as sent.
+    pub(super) turns: Vec<WireTurn>,
+    /// When the primer was sent, taken before the send: a fold stamped after it moved the
+    /// prefix the primer read, so the stored turns stop describing the live entry.
+    pub(super) sent: crate::log::Timestamp,
+    /// The prompt tokens the primer read: what a ping of these turns reads back.
+    pub(super) prefix_tokens: u64,
 }
 
 /// From when the session's cache is believed to have expired (backlog: cold-session.md):
@@ -117,21 +195,27 @@ impl PingCost {
     }
 }
 
-/// The cache keepalive (docs/transport.md): fire a ping (capped at [`crate::api::Provider::keepalive_output_cap`]) when the
-/// canonical prefix nears eviction during idle, so the next real turn resumes hot.
-/// Pure transport — it reads the prefix and records the usage; the log is never
-/// touched.
+/// The cache keepalive (docs/transport.md): fire a ping (capped at
+/// [`crate::api::Provider::keepalive_output_cap`]) when the lineage's cached prefix nears
+/// eviction during idle, so the next real turn resumes hot. Pure transport — it reads the
+/// prefix and records the usage; the log is never touched.
 ///
-/// Two clocks ([`Session::keepalive_clocks`]): ping off the cache-touch clock, give
-/// up off the *real-turn* clock, so a ping can never reset its own deadline.
-pub(crate) async fn keepalive_loop(
-    client: Arc<Client>,
-    shared: Arc<Session>,
-    tools: Vec<Value>,
-    ping_at: Duration,
-    prices: Option<TokenPrices>,
-) {
+/// One loop per armed lineage ([`CacheLineage`]). Each reads its own clock, stance, and
+/// prefix; the give-up cap reads the real-turn clock, which both share.
+///
+/// Two clocks ([`Session::keepalive_clocks`]): ping off the lineage's cache-touch clock,
+/// give up off the *real-turn* clock, so a ping can never reset its own deadline.
+pub(crate) async fn keepalive_loop(spec: KeepaliveSpec, shared: Arc<Session>) {
     const CAP: Duration = Duration::from_secs(30 * 60); // give up after 30 min idle
+    let KeepaliveSpec {
+        lineage,
+        client,
+        tools,
+        choice,
+        ping_at,
+        prices,
+    } = spec;
+    let name = lineage.name();
     // Poll often enough that the ping lands near the interval rather than up to a
     // full check-period late — a quarter of the interval, capped at 20s. The floor
     // keeps a very short interval from becoming a busy loop.
@@ -147,7 +231,7 @@ pub(crate) async fn keepalive_loop(
         tokio::time::sleep(check).await;
         // Need a real turn to have happened (a prefix worth keeping warm) and to be
         // inside the window: nearing eviction but not yet past the give-up cap.
-        let (Some(touch), Some(turn)) = shared.keepalive_clocks() else {
+        let (Some(touch), Some(turn)) = shared.keepalive_clocks(lineage) else {
             continue;
         };
         if exhausted_at.is_some_and(|at| turn >= at) {
@@ -161,64 +245,74 @@ pub(crate) async fn keepalive_loop(
         // the last ping's discard against the prefix as it stands now. A skipped
         // tick sends nothing, so the next one re-evaluates and a prefix that has
         // grown past break-even resumes the pings.
-        if let (Some(estimate), Some(prefix)) = (estimate, shared.main_prefix_tokens())
+        if let (Some(estimate), Some(prefix)) = (estimate, shared.ping_prefix_tokens(lineage))
             && let Some(why) = skip_reason(estimate, prefix, prices.as_ref())
         {
-            shared.set_keepalive_skipped(Some(KeepaliveSkip {
-                at: crate::log::Timestamp::now(),
-                why,
-            }));
+            shared.set_keepalive_skipped(
+                lineage,
+                Some(KeepaliveSkip {
+                    at: crate::log::Timestamp::now(),
+                    why,
+                }),
+            );
             continue;
         }
-        shared.set_keepalive_skipped(None);
+        shared.set_keepalive_skipped(lineage, None);
         // Same prefix a real turn would send (byte-identical, or it writes a new
         // entry instead of refreshing the live one); the output cap keeps it a read.
-        let mut turns = shared.project_turns();
-        lop_trailing_model_turns(&mut turns);
-        if turns.is_empty() {
-            // Nothing but model turns in the log (or nothing at all): there is no
-            // valid ping to send, and no prefix a real turn would reuse either.
+        // Nothing to ping (the log holds only model turns, or no primer has been sent
+        // on the triage lineage) leaves no prefix to keep.
+        let Some(turns) = shared.ping_turns(lineage) else {
             continue;
-        }
-        turns.push(WireTurn::Breakpoint);
-        match client.keepalive(&turns, &tools, ToolChoice::auto()).await {
+        };
+        match client
+            .keepalive(lineage.origin(), &turns, &tools, choice)
+            .await
+        {
             Ok(request) => {
                 let cache_read = request.usage.cache_read_input_tokens;
                 estimate = Some(PingCost::of(&request, prices.as_ref()));
-                shared.record_keepalive(request);
-                eprintln!("[keepalive: cache read {cache_read} — TTL refreshed]");
+                match lineage {
+                    CacheLineage::Main => shared.record_keepalive(request),
+                    CacheLineage::Triage => shared.record_triage_keepalive(request),
+                }
+                eprintln!("[{name}: cache read {cache_read} — TTL refreshed]");
             }
             // A rejected *request* is rejected identically next tick, so retrying it
             // at the check cadence only reprints the same line for the life of the
             // pause. Terminal for the session; transient failures (5xx, network,
             // timeouts, rate limits) keep retrying.
             Err(e) if e.is_permanent() => {
-                eprintln!(
-                    "[keepalive rejected by the upstream: {e}; keepalive off for this session]"
+                eprintln!("[{name} rejected by the upstream: {e}; {name} off for this session]");
+                shared.set_keepalive_skipped(
+                    lineage,
+                    Some(KeepaliveSkip {
+                        at: crate::log::Timestamp::now(),
+                        why: KeepaliveSkipReason::Rejected {
+                            detail: e.to_string(),
+                        },
+                    }),
                 );
-                shared.set_keepalive_skipped(Some(KeepaliveSkip {
-                    at: crate::log::Timestamp::now(),
-                    why: KeepaliveSkipReason::Rejected {
-                        detail: e.to_string(),
-                    },
-                }));
                 return;
             }
             // A limit that holds until it resets (a plan's usage limit, which Codex
             // sends as a 429) answers every ping identically until then; one line,
             // and no pings until the next real turn.
             Err(e) if e.is_exhausted() => {
-                eprintln!("[keepalive paused until the next turn: {e}]");
-                shared.set_keepalive_skipped(Some(KeepaliveSkip {
-                    at: crate::log::Timestamp::now(),
-                    why: KeepaliveSkipReason::Exhausted {
-                        detail: e.to_string(),
-                        resets_at: e.resets_at(),
-                    },
-                }));
+                eprintln!("[{name} paused until the next turn: {e}]");
+                shared.set_keepalive_skipped(
+                    lineage,
+                    Some(KeepaliveSkip {
+                        at: crate::log::Timestamp::now(),
+                        why: KeepaliveSkipReason::Exhausted {
+                            detail: e.to_string(),
+                            resets_at: e.resets_at(),
+                        },
+                    }),
+                );
                 exhausted_at = Some(turn);
             }
-            Err(e) => eprintln!("[keepalive failed: {e}]"),
+            Err(e) => eprintln!("[{name} failed: {e}]"),
         }
     }
 }
@@ -304,47 +398,4 @@ pub(super) fn skip_reason(
         prefix_tokens: prefix,
         premium_usd,
     })
-}
-
-impl Session {
-    /// The prompt tokens the next main-prefix request would read: the last real turn's
-    /// prompt. `None` before the first turn's usage.
-    pub(super) fn main_prefix_tokens(&self) -> Option<u64> {
-        let metrics = self.metrics.lock().unwrap();
-        metrics.last_turn_usage.as_ref().map(prefix_tokens)
-    }
-
-    /// Publish the keepalive's stance (`usage.keepalive_skipped`), or clear it. The
-    /// stance is recomputed every tick, so an unchanged one keeps its original `at` and
-    /// wakes nobody; the stderr line marks only the transitions into and out of
-    /// skipping.
-    pub(super) fn set_keepalive_skipped(&self, skip: Option<KeepaliveSkip>) {
-        let mut metrics = self.metrics.lock().unwrap();
-        let current = &metrics.keepalive_skipped;
-        if current.as_ref().map(|c| &c.why) == skip.as_ref().map(|s| &s.why) {
-            return;
-        }
-        match (&skip, current.is_some()) {
-            (
-                Some(KeepaliveSkip {
-                    why:
-                        KeepaliveSkipReason::Discard {
-                            output_tokens,
-                            prefix_tokens,
-                            ..
-                        },
-                    ..
-                }),
-                false,
-            ) => eprintln!(
-                "[keepalive skipping: the last ping generated {output_tokens} output tokens, \
-                 more than a refresh of a {prefix_tokens}-token prefix repays]"
-            ),
-            (None, true) => eprintln!("[keepalive resumed: the prefix now repays a ping]"),
-            _ => {}
-        }
-        metrics.keepalive_skipped = skip;
-        drop(metrics);
-        self.touch_state();
-    }
 }

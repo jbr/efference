@@ -1,6 +1,7 @@
 //! Tests for `metrics.rs`.
 
 use super::*;
+use crate::daemon::keepalive::CacheLineage;
 
 /// The keepalive's load-bearing invariant (docs/log-and-projection.md): a ping advances the
 /// cache-touch clock (it really did refresh the TTL) but must NOT reset the
@@ -17,7 +18,7 @@ fn keepalive_advances_touch_clock_not_cap_clock() {
     );
 
     // Nothing to keep warm yet → both clocks absent.
-    assert_eq!(shared.keepalive_clocks(), (None, None));
+    assert_eq!(shared.keepalive_clocks(CacheLineage::Main), (None, None));
 
     let usage = Usage {
         input_tokens: 1,
@@ -29,7 +30,7 @@ fn keepalive_advances_touch_clock_not_cap_clock() {
     std::thread::sleep(Duration::from_millis(5));
     shared.record_keepalive(RequestUsage::new(usage)); // ping → advances the touch clock only
 
-    let (touch, turn) = shared.keepalive_clocks();
+    let (touch, turn) = shared.keepalive_clocks(CacheLineage::Main);
     let (touch, turn) = (touch.unwrap(), turn.unwrap());
     assert!(
         turn > touch,
@@ -246,11 +247,11 @@ fn only_main_prefix_requests_stamp_the_touch_clock() {
     let request = || RequestUsage::new(Usage::default());
     shared.record_request(RequestOrigin::Spot, request());
     shared.record_request(RequestOrigin::Peek, request());
-    let (touch, turn) = shared.keepalive_clocks();
+    let (touch, turn) = shared.keepalive_clocks(CacheLineage::Main);
     assert_eq!(touch, None, "side requests leave the touch clock alone");
     assert!(turn.is_some(), "but they are activity for the give-up cap");
     shared.record_request(RequestOrigin::Turn, request());
-    assert!(shared.keepalive_clocks().0.is_some());
+    assert!(shared.keepalive_clocks(CacheLineage::Main).0.is_some());
 }
 
 /// A restarted host reads its clocks back from `usage.jsonl`: the touch clock from the
@@ -281,7 +282,7 @@ fn attaching_the_usage_record_seeds_the_clocks() {
     );
     shared.attach_usage_log(&usage_path);
 
-    let (touch, turn) = shared.keepalive_clocks();
+    let (touch, turn) = shared.keepalive_clocks(CacheLineage::Main);
     let minutes = |d: Option<Duration>| d.unwrap().as_secs() / 60;
     assert_eq!(minutes(touch), 20, "the ping is the last main-prefix touch");
     assert_eq!(
@@ -326,7 +327,14 @@ fn a_shared_peek_line_seeds_the_touch_clock() {
     std::fs::write(&usage_path, &record).unwrap();
     let old = new_session();
     old.attach_usage_log(&usage_path);
-    assert_eq!(old.keepalive_clocks().0.unwrap().as_secs() / 60, 30);
+    assert_eq!(
+        old.keepalive_clocks(CacheLineage::Main)
+            .0
+            .unwrap()
+            .as_secs()
+            / 60,
+        30
+    );
 
     let flagged = format!(
         "{record}{{\"at_ms\":{},\"origin\":\"peek\",\"main_prefix\":true}}\n",
@@ -335,7 +343,15 @@ fn a_shared_peek_line_seeds_the_touch_clock() {
     std::fs::write(&usage_path, flagged).unwrap();
     let seeded = new_session();
     seeded.attach_usage_log(&usage_path);
-    assert_eq!(seeded.keepalive_clocks().0.unwrap().as_secs() / 60, 10);
+    assert_eq!(
+        seeded
+            .keepalive_clocks(CacheLineage::Main)
+            .0
+            .unwrap()
+            .as_secs()
+            / 60,
+        10
+    );
 }
 
 /// A peek on the agent's client refreshes the idle window the streak measures from; one

@@ -3,6 +3,7 @@
 //! keepalive sends the turn's thinking and effort.
 
 use super::*;
+use crate::log::RequestOrigin;
 
 /// Anthropic's `GET /v1/models/{id}` declares the `thinking` types and the
 /// effort levels a model takes (docs/transport.md). Live API bodies:
@@ -435,7 +436,7 @@ async fn the_keepalive_sends_the_turns_thinking_and_effort() {
                 .expect("the canned stream assembles");
         } else {
             client
-                .keepalive(&[], &[], ToolChoice::auto())
+                .keepalive(RequestOrigin::Keepalive, &[], &[], ToolChoice::auto())
                 .await
                 .expect("the canned body parses");
         }

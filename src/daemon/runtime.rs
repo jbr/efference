@@ -31,6 +31,9 @@ pub struct SessionBoot<S: Spotter> {
     pub env_policy: crate::env_table::EnvPolicy,
     /// Leave the scratch dir on disk when the session ends (docs/tools.md).
     pub keep_scratch: bool,
+    /// The triage model's prices, for its keepalive's affordability check
+    /// (docs/transport.md). `None` on a shared triage, which has no keepalive of its own.
+    pub triage_prices: Option<crate::api::TokenPrices>,
 }
 
 /// A started session: its state, and the handle that ends it.
@@ -71,14 +74,15 @@ impl SessionRuntime {
             inference,
             env_policy,
             keep_scratch,
+            triage_prices,
         } = boot;
         let swansong = parent.child();
         // The keepalive interval, read off the config before it moves into `Session`
         // (docs/transport.md).
-        let ping_at = role
-            .role
-            .transport
-            .keepalive_interval
+        // The configured interval applies to both lineages (docs/transport.md); read before
+        // `role` moves into `Session`.
+        let configured_interval = role.role.transport.keepalive_interval;
+        let ping_at = configured_interval
             .unwrap_or_else(|| keepalive_interval(client.endpoint().provider.cache_ttl()));
         // The kickoff (docs/context.md), read before the config moves into `Session`.
         let first_turn = role.role.first_turn.clone();
@@ -199,17 +203,29 @@ impl SessionRuntime {
         }
         if cacheable && !ping_at.is_zero() {
             tokio::spawn(swansong.interrupt(keepalive_loop(
-                Arc::clone(&client),
+                KeepaliveSpec {
+                    lineage: CacheLineage::Main,
+                    client: Arc::clone(&client),
+                    tools,
+                    choice: ToolChoice::auto(),
+                    ping_at,
+                    prices,
+                },
                 Arc::clone(&session),
-                tools,
-                ping_at,
-                prices,
             )));
         } else if !cacheable {
             eprintln!(
                 "[keepalive off: {} reports no prompt cache behind this model]",
                 client.endpoint().provider.name()
             );
+        }
+        // The triage lineage's keepalive (docs/transport.md): armed only where the triage
+        // model is the session's own and its primer can plant. Interval zero turns it off,
+        // as it does the main loop.
+        if let Some(triage) = KeepaliveSpec::triage(&distiller, configured_interval, triage_prices)
+            && !triage.ping_at.is_zero()
+        {
+            tokio::spawn(swansong.interrupt(keepalive_loop(triage, Arc::clone(&session))));
         }
 
         // The fs-watch initiator (docs/permissions.md): if the config resolved

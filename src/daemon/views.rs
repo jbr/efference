@@ -178,6 +178,8 @@ impl Session {
             // The keepalive's stance when it is not pinging on schedule, or
             // null while it is or was never armed (docs/transport.md).
             "keepalive_skipped": metrics.keepalive_skipped,
+            // The triage lineage's keepalive stance (docs/transport.md), by the same rule.
+            "triage_keepalive_skipped": metrics.triage_keepalive_skipped,
             // The Codex backend's subscription windows (docs/transport.md): the
             // plan and its two usage windows as of the last response that named
             // them, resets as absolute millis. null on every other provider.

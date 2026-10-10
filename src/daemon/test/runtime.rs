@@ -63,6 +63,7 @@ pub(super) fn boot(cwd: &Path) -> SessionBoot<StaticSpotter> {
         inference: None,
         env_policy: crate::env_table::EnvPolicy::default(),
         keep_scratch: false,
+        triage_prices: None,
     }
 }
 

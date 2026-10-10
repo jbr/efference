@@ -52,6 +52,18 @@ pub(super) struct Metrics {
     pub(super) cold_streak: ColdStreak,
     /// Set while the keepalive loop is skipping pings or ended on a rejection (`usage.keepalive_skipped`).
     pub(super) keepalive_skipped: Option<super::keepalive::KeepaliveSkip>,
+    /// The triage lineage's touch clock (docs/transport.md): stamped by a primer, a
+    /// keepalive ping, and a result-triage peek on the own client. Idle triage runs on the
+    /// agent's client and does not stamp it. The triage keepalive reads it the way the main
+    /// loop reads [`Metrics::last_request_at`]; the give-up cap stays on the real-turn clock.
+    pub(super) last_triage_at: Option<Instant>,
+    /// The same event as [`Metrics::last_triage_at`], on the wall clock, for the fold filter.
+    pub(super) last_triage_wall: Option<crate::log::Timestamp>,
+    /// The turns the last primer sent (docs/transport.md), replayed by the triage keepalive.
+    pub(super) triage_primed: Option<super::keepalive::PrimedPrefix>,
+    /// Set while the triage keepalive is skipping pings or ended on a rejection
+    /// (`usage.triage_keepalive_skipped`).
+    pub(super) triage_keepalive_skipped: Option<super::keepalive::KeepaliveSkip>,
 }
 
 /// Session cost telemetry (docs/transport.md): the endpoint whose accounting
@@ -321,7 +333,15 @@ impl Session {
             m.last_request_at = instant(at_ms);
             m.last_request_wall = Some(crate::log::Timestamp(at_ms as u64));
         }
-        if let Some(at_ms) = last(|l| l.origin != RequestOrigin::Keepalive) {
+        // A ping of either lineage is not a real turn: it must not reset the cap.
+        // The triage lineage's clock is not seeded (docs/transport.md): nothing stored
+        // survives a restart, so its first cold read after one is accepted.
+        if let Some(at_ms) = last(|l| {
+            !matches!(
+                l.origin,
+                RequestOrigin::Keepalive | RequestOrigin::TriageKeepalive
+            )
+        }) {
             m.last_real_turn_at = instant(at_ms);
         }
         // The context readout and the cold topic's size read the last turn's prompt.
@@ -376,19 +396,37 @@ impl Session {
     /// signal, docs/log-and-projection.md). Transport-only — no canonical-log append,
     /// no projection change.
     pub fn record_request(&self, origin: RequestOrigin, request: RequestUsage) {
-        self.record(origin, origin.touches_main_prefix(), request);
+        self.record(
+            origin,
+            origin.touches_main_prefix(),
+            origin.touches_triage_prefix(),
+            request,
+        );
     }
 
     /// Record a result-triage peek's usage. `on_agent_client` is whether the peek ran on
     /// the agent's own client (`triage = "Shared"`, `!Distiller::is_own`): it then read
     /// the main prefix and refreshed it, so it stamps the touch clock like a turn; a peek
-    /// on a separate triage client does not (docs/transport.md).
+    /// on a separate triage client stamps the triage lineage's clock instead
+    /// (docs/transport.md).
     pub fn record_peek(&self, on_agent_client: bool, request: RequestUsage) {
-        self.record(RequestOrigin::Peek, on_agent_client, request);
+        self.record(
+            RequestOrigin::Peek,
+            on_agent_client,
+            !on_agent_client,
+            request,
+        );
     }
 
-    /// `main_prefix`: whether the request read (and so refreshed) the main prefix.
-    fn record(&self, origin: RequestOrigin, main_prefix: bool, request: RequestUsage) {
+    /// `main_prefix` and `triage_prefix`: whether the request read (and so refreshed) the
+    /// main prefix, and whether it read the triage lineage's own prefix.
+    fn record(
+        &self,
+        origin: RequestOrigin,
+        main_prefix: bool,
+        triage_prefix: bool,
+        request: RequestUsage,
+    ) {
         let at_ms = wall_millis();
         self.persist_usage(origin, main_prefix, at_ms, &request);
         // A zero-usage aborted attempt has nothing to price, and fetching it would
@@ -415,6 +453,9 @@ impl Session {
         if main_prefix {
             Self::stamp_touch(&mut m, at_ms);
         }
+        if triage_prefix {
+            Self::stamp_triage_touch(&mut m, at_ms);
+        }
         m.last_real_turn_at = Some(Instant::now());
     }
 
@@ -440,10 +481,29 @@ impl Session {
         Self::stamp_touch(&mut m, at_ms);
     }
 
+    /// A triage keepalive ping's usage (docs/transport.md): persisted and folded into the
+    /// telemetry like a main ping, and it stamps the triage lineage's touch clock. It does
+    /// not stamp the real-turn clock, for the same reason [`Self::record_keepalive`] does
+    /// not.
+    pub fn record_triage_keepalive(&self, request: RequestUsage) {
+        let at_ms = wall_millis();
+        self.persist_usage(RequestOrigin::TriageKeepalive, false, at_ms, &request);
+        self.price_request(&request);
+        let mut m = self.metrics.lock().unwrap();
+        Self::fold_usage(&mut m, request.usage);
+        Self::stamp_triage_touch(&mut m, at_ms);
+    }
+
     /// Stamp the cache-touch clock, on both clocks, for a request on the main prefix.
     fn stamp_touch(m: &mut Metrics, at_ms: u128) {
         m.last_request_at = Some(Instant::now());
         m.last_request_wall = Some(crate::log::Timestamp(at_ms as u64));
+    }
+
+    /// The same stamp for the triage lineage's own prefix.
+    fn stamp_triage_touch(m: &mut Metrics, at_ms: u128) {
+        m.last_triage_at = Some(Instant::now());
+        m.last_triage_wall = Some(crate::log::Timestamp(at_ms as u64));
     }
 
     /// Price one recorded request (docs/transport.md). A response that carried its
@@ -506,24 +566,5 @@ impl Session {
     /// on past [`COLD_STREAK_WARN`].
     pub fn cold_streak(&self) -> u32 {
         self.metrics.lock().unwrap().cold_streak.streak()
-    }
-
-    /// `(since last cache-touch, since last real turn)` — the keepalive task's two
-    /// clocks. The first decides *when* to ping (the cache is nearing its TTL); the
-    /// second enforces the *cap* (a ping doesn't reset it, so unbounded idle still
-    /// stops). Both `None` until the first real turn — nothing to keep warm yet.
-    ///
-    /// A fold since the last touch empties the first: the prefix that request read no
-    /// longer exists, and nothing has sent the new one, so there is no entry to keep.
-    pub(super) fn keepalive_clocks(&self) -> (Option<Duration>, Option<Duration>) {
-        let folded = self.last_fold_at();
-        let m = self.metrics.lock().unwrap();
-        let touched = m
-            .last_request_wall
-            .filter(|touch| folded.is_none_or(|fold| touch.0 > fold.0));
-        (
-            touched.and(m.last_request_at).map(|t| t.elapsed()),
-            m.last_real_turn_at.map(|t| t.elapsed()),
-        )
     }
 }

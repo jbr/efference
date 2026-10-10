@@ -40,7 +40,15 @@ pub(super) async fn run_batch<'a, F: Frontend, S: Spotter>(
             return None;
         }
         let input = primer.as_ref()?;
-        input.distiller.prime(input.turns).await
+        // Stamped before the send: a fold that lands during the flight moves the prefix
+        // the primer read, and the triage keepalive must not replay it (docs/transport.md).
+        let sent = crate::log::Timestamp::now();
+        let outcome = input.distiller.prime(input.turns).await?;
+        // A primer that planted (it has usage) is what the triage keepalive re-sends.
+        if let Some(usage) = &outcome.usage {
+            shared.set_triage_primed(input.turns, sent, usage);
+        }
+        Some(outcome)
     };
     let batch_fut = async move {
         run_calls(

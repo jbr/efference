@@ -8,6 +8,7 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- **The triage model's cache stays warm** (docs/transport.md): a session whose own triage model primes its Responses lineage keeps that lineage warm by re-sending the primer as a ping, with its own stance (`usage.triage_keepalive_skipped`) and origin (`triage_keepalive`).
 - **The fold streams its narrator** (docs/control-api.md): the account's text and thinking arrive on the `output` class as `narrator_delta` and `narrator_thinking_delta` while it is written; the mark stays the only durable record.
 - **Image lightbox** (docs/web-client.md): tapping a result image — in the transcript or the inspector, which now shows the picture it used to omit — opens it full screen with pinch, wheel and double-tap zoom, pan, swipe-to-dismiss, and Sent-attachment thumbnails route through it too; a stable set of aspect-ratio fixtures lives in the design gallery.
 - **Context occupancy light** (docs/web-client.md): shared meters warm and whiten toward capacity; Lilac uses a rounded colored rim and a wider hue cloud.

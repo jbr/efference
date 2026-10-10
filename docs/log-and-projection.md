@@ -112,7 +112,7 @@ to explain what the session did; what streams per token stays on the ephemeral
 session and continued past the log's highest after a restart (the provider's
 generation id arrives late or never). `origin` is the same `RequestOrigin` the
 `usage.jsonl` lines carry (`turn`, `peek`, `triage`, `title`, `spot`, `keepalive`,
-`triage_primer`, `narrate`, `aborted_attempt`). `stage` is `sent` (handed to the
+`triage_primer`, `triage_keepalive`, `narrate`, `aborted_attempt`). `stage` is `sent` (handed to the
 transport), `attempt_failed {attempt, status}` (a refused attempt the transport may
 re-send), `first_byte` (the first stream event), `ended` (the stream finalized), or
 `failed {reason}` (an open failure, a stream that died or passed its ceiling, or

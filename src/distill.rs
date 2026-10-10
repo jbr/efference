@@ -49,6 +49,12 @@ use crate::supervisor::BgView;
 
 const RETAIN: &str = "retain";
 
+/// The tool choice the primer sends (`ForkPeek::prime`) and its keepalive re-sends:
+/// forced `retain`, the peek's own head (docs/transport.md).
+fn primer_choice() -> ToolChoice {
+    ToolChoice::force(RETAIN)
+}
+
 /// The tool of the **standalone** idle-triage peek (docs/supervisor.md): no `keep`
 /// (there's no tool output to retain), only inbox/background dispositions.
 const TRIAGE: &str = "triage";
@@ -386,8 +392,18 @@ impl ForkPeek {
     /// choice) and share only the input prefix. The output is discarded either way.
     pub async fn prime(&self, turns: &[WireTurn]) -> Option<TriagePrimerOutcome> {
         let own = self.own.as_ref()?;
-        self.prime_with(turns, &own.tools, ToolChoice::force(RETAIN))
-            .await
+        self.prime_with(turns, &own.tools, primer_choice()).await
+    }
+
+    /// The envelope the primer goes out on, which the triage keepalive re-sends
+    /// (docs/transport.md): the own client, the peek's `tools[]`, and the primer's forced
+    /// choice. `None` on the shared peek and where the own client plants no primer
+    /// ([`Client::plants_primer`]), so a `Some` is exactly the case the keepalive arms in.
+    pub fn primer_envelope(&self) -> Option<(Client, Vec<Value>, ToolChoice)> {
+        let own = self.own.as_ref()?;
+        own.client
+            .plants_primer()
+            .then(|| (own.client.clone(), own.tools.clone(), primer_choice()))
     }
 
     /// `prime` with an explicit choice: the ladder verb's `auto` arm replays v1

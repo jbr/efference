@@ -2,6 +2,7 @@
 
 use super::*;
 use crate::daemon::fold::{FOLD_TAIL_TOKENS, NotFoldable, fold_cut};
+use crate::daemon::keepalive::CacheLineage;
 use crate::log::{AssistantOutput, LogEntry, Mark, RawResult, Timestamp, WireState};
 
 fn entry(seq: u64, payload: Payload) -> LogEntry {
@@ -99,13 +100,13 @@ async fn a_fold_resets_the_cold_belief_and_the_keepalive() {
     );
     tokio::time::sleep(Duration::from_millis(5)).await;
     assert!(shared.cold_since().is_some());
-    assert!(shared.keepalive_clocks().0.is_some());
+    assert!(shared.keepalive_clocks(CacheLineage::Main).0.is_some());
 
     shared
         .append(1, Payload::Mark(Mark::boundary(0, "account")))
         .unwrap();
     assert_eq!(shared.cold_since(), None);
-    assert_eq!(shared.keepalive_clocks().0, None);
+    assert_eq!(shared.keepalive_clocks(CacheLineage::Main).0, None);
 }
 
 /// A warm session has nothing to fold: the fold is the cold session's alternative to

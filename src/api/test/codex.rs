@@ -3,6 +3,7 @@
 //! backend, and the Codex request headers.
 
 use super::*;
+use crate::log::RequestOrigin;
 
 /// The Codex backend's turn-routing contract over a socket (docs/transport.md):
 /// the first request of a turn carries no token, the token the backend issues
@@ -405,7 +406,7 @@ async fn codex_keepalive_caps_output_where_a_turn_sends_no_cap() {
         .await
         .unwrap();
     let ping = client
-        .keepalive(&[], &[], ToolChoice::auto())
+        .keepalive(RequestOrigin::Keepalive, &[], &[], ToolChoice::auto())
         .await
         .unwrap();
     assert_eq!(ping.usage.cache_read_input_tokens, 900);

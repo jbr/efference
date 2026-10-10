@@ -98,6 +98,7 @@ fn rank(origin: &str) -> usize {
         "title",
         "triage_primer",
         "keepalive",
+        "triage_keepalive",
     ]
     .iter()
     .position(|o| *o == origin)
@@ -125,7 +126,9 @@ fn request_text(request: &OpenRequestView, model: &str, now: u64) -> String {
         "spot" => format!("spotter judging · {since}"),
         "title" => format!("writing a title · {since}"),
         "narrate" => format!("writing the summary · {since}"),
-        "triage_primer" | "keepalive" => format!("warming the cache · {since}"),
+        "triage_primer" | "keepalive" | "triage_keepalive" => {
+            format!("warming the cache · {since}")
+        }
         // A turn, an aborted attempt, or an origin this build does not know.
         _ => match request.stage.as_str() {
             "retrying" => retrying,

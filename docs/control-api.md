@@ -768,6 +768,9 @@ not a topic — it is the log's cursor rather than control state, and sits outsi
                                             //   {"reason":"exhausted","at":…,"detail":"…","resets_at":…}  — a limit that
                                             //   holds until it resets (a plan's usage limit; `resets_at` absolute millis,
                                             //   null when the refusal names none); pings resume after the next real turn
+    "triage_keepalive_skipped": null,       // the triage lineage's stance (transport.md): null while its pings go out on
+                                            //   schedule and when none is armed (a shared triage, or one that plants no
+                                            //   primer); else the same reasons as keepalive_skipped, the same shape
     "cost": {                               // null when the provider has no per-request accounting (transport.md)
       "usd": 0.0421,                        // billed session total: inline per-response costs plus the provider's accounting endpoint for responses without one
       "unpriced": 0                         // requests neither source could price (total is an undercount if > 0)

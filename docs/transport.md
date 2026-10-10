@@ -912,7 +912,8 @@ serial residue the gate path paid, and whether a gate followed. The primer force
 replays. It tolerates the truncated output: a 16-token budget at a call-eliciting
 position cuts the model's function call mid-arguments, which marks the completion
 without unmaking its input prefix, and only a response with no accounted input
-counts as nothing planted. The
+counts as nothing planted. The primer's turns are kept for the triage keepalive,
+which re-sends them (the last section of this file). The
 spotter model must be one its connection's metadata source knows: with no
 `[defaults].spotter` and no connection reaching jev, the main connection's cheap band applies
 (on Anthropic, the newest active `haiku`-line model in the held listing,
@@ -1881,7 +1882,8 @@ turn's own thinking (above).
 The stance is published as `usage.keepalive_skipped` (docs/control-api.md) and shown in
 the TUI sidebar: `discard` with the last ping's output, its cost, the prefix, and the
 premium; `rejected`; or `exhausted`. The stderr line marks only the transition into and out of
-skipping, not every tick.
+skipping, not every tick. The triage lineage's keepalive publishes its own stance as
+`usage.triage_keepalive_skipped`, with the same reasons and the same transitions.
 
 A failed ping is classified by HTTP status (`api::KeepaliveError`, which carries
 the status structurally rather than in its message). An invalid-request-class 4xx
@@ -1950,12 +1952,14 @@ leaves the clock on the earlier turn, and the next turn's cold check parks again
 
 ### keepalive_loop: two clocks
 
-`keepalive_loop` is spawned by the session runtime. It fires `Client::keepalive` when the
-cache nears eviction at idle.
+`keepalive_loop` is spawned by the session runtime, once per armed cache lineage
+(`KeepaliveSpec`, `CacheLineage`). It fires `Client::keepalive` when the cache nears
+eviction at idle. This section describes the main lineage; the triage lineage's loop
+is the last section of this file.
 
 Two clocks keep this correct:
 
-- **Cache-touch clock** — stamped by `record_request` for real turns, by
+- **Cache-touch clock** (main lineage) — stamped by `record_request` for real turns, by
   `record_peek` for peeks on the agent's own client, and by `record_keepalive`.
   Tracks when the main prefix was last read; the cache is
   believed cold once it is older than the provider's cache lifetime
@@ -1978,3 +1982,46 @@ The loop pings when the touch clock exceeds the configured interval
 minutes of genuine idle). Past that threshold, one cold cache read on resume
 is cheaper than indefinite pinging. During active work, real turns keep the
 touch clock reset and the keepalive never fires.
+
+### The triage lineage's keepalive
+
+Where the triage model is the session's own and its client plants a primer
+(`Client::plants_primer`: a Responses lineage with an implicit cache), the triage
+lineage is a second cache the main loop does not keep warm. A second `keepalive_loop`
+(`CacheLineage::Triage`, built by `KeepaliveSpec::triage`) keeps it warm, and its ping
+is the primer re-sent:
+
+- **Turns.** The ping replays the turns the last primer sent. `Session::set_triage_primed`
+  stores them when the primer returns with usage, and the ping sends them byte for byte
+  rather than re-projecting the log: the primer goes out at the start of a tool batch,
+  from the turn's input, and a projection taken later does not reproduce those bytes.
+  With no primer sent, or with the stored one dropped, there is no ping.
+- **Envelope.** The primer's own, from `ForkPeek::primer_envelope`, which `prime` also
+  uses: the own client, the peek's `tools[]`, and forced `retain`. The ping and the
+  primer therefore send the same body. `api/test/triage_ping.rs` pins that over a mock
+  Responses backend.
+- **Clocks.** The triage touch clock is stamped by a primer, by a result-triage peek on
+  the own client, and by the ping (`RequestOrigin::touches_triage_prefix`,
+  `Session::record_peek`, `Session::record_triage_keepalive`). Idle triage runs on the
+  agent's client and does not stamp it. The real-turn clock is the main lineage's, so a
+  triage ping does not reset the give-up cap. The cadence is `[transport]
+  keepalive-interval` when set, else four fifths of the triage provider's cache
+  lifetime; zero turns both lineages off.
+- **Folds.** A fold stamped after the stored primer was sent drops the stored turns and
+  empties the triage touch clock, as a fold empties the main one. The primer's stamp is
+  taken before its send, so a fold that lands during the send drops it as well.
+- **Guards.** The affordability check uses the triage model's prices (carried from boot
+  as `SessionBoot::triage_prices`). The terminal-rejection stop and the usage-limit pause
+  apply as on the main lineage. Each lineage publishes its own stance:
+  `usage.keepalive_skipped` for the main, `usage.triage_keepalive_skipped` for this one.
+- **Record.** A ping is recorded under the `triage_keepalive` origin, with the main
+  prefix untouched, so `efference dev cache` prices it apart from `keepalive`, and
+  `ColdStreak` does not count it. The triage clock is not seeded from `usage.jsonl` on a
+  restart, since nothing stored survives one: the first triage read after a restart is cold.
+
+It is not armed on a shared triage, whose requests ride the main prefix that the main
+keepalive keeps; on an own triage model whose client plants no primer (a Messages-dialect
+model, where no primer is sent); or at interval zero.
+
+The ping refreshes the point the last primer planted. A result-triage peek after the
+primer writes a resume point at its own breakpoint, which the ping does not refresh.

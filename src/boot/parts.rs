@@ -5,7 +5,7 @@
 use std::path::Path;
 
 use super::{describe_window, mcp_mount};
-use crate::api::{Client, Endpoint, Error, ModelCapabilities, UNKNOWN_OUTPUT_CAP};
+use crate::api::{Client, Endpoint, Error, ModelCapabilities, TokenPrices, UNKNOWN_OUTPUT_CAP};
 use crate::config::LoadedConfig;
 use crate::distill::ForkPeek;
 use crate::env_table::EnvPolicy;
@@ -301,7 +301,7 @@ pub(super) async fn mount_distiller(
     context_block: Option<&str>,
     env_policy: &EnvPolicy,
     loaded: &LoadedConfig,
-) -> Result<ForkPeek, Error> {
+) -> Result<(ForkPeek, Option<TokenPrices>), Error> {
     Ok(match inference.triage() {
         Some((selection, mut triage_endpoint, triage)) => {
             triage_endpoint.session_id = main_endpoint.session_id.clone();
@@ -331,11 +331,11 @@ pub(super) async fn mount_distiller(
                 },
                 if triage.auto_choice { "auto" } else { "forced" }
             );
-            peek
+            (peek, caps.prices)
         }
         None => {
             eprintln!("triage: {model} (shared main client)");
-            ForkPeek::shared()
+            (ForkPeek::shared(), None)
         }
     })
 }
