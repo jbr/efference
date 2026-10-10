@@ -286,8 +286,22 @@ async fn an_archive_releases_the_log_while_a_stream_holds_the_session() {
         .append(true)
         .open(&path)
         .unwrap();
-    file.try_lock()
-        .expect("the archive released the writer lock while the stream was open");
+    // Polled briefly rather than tried once: a test elsewhere in this process that forks a
+    // child holds a copy of every open descriptor until the child's exec closes them, and
+    // the lock rides the descriptor. Without the fix the lock is held for as long as the
+    // stream is, so a short poll still fails it.
+    let mut released = false;
+    for _ in 0..50 {
+        if file.try_lock().is_ok() {
+            released = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert!(
+        released,
+        "the archive released the writer lock while the stream was open"
+    );
     // The stream drains what was logged, then ends rather than waiting forever.
     let ended = tokio::time::timeout(Duration::from_secs(5), async {
         while stream.next().await.is_some() {}
