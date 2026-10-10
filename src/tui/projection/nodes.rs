@@ -341,6 +341,60 @@ pub(in crate::tui) fn annotation_line(marker: &str, text: &str) -> DocumentNode<
     )
 }
 
+/// The notice a `Worktree` entry carries (docs/worktrees.md), as one muted
+/// [`Annotation`](EntryKind::Annotation) line in the shape a `Resumed` entry
+/// uses, with the branch in the inline-code register the web client chips it in.
+///
+/// Git's setup `output` is deliberately not shown: the line states the outcome,
+/// and a failed setup's exit status is on the line itself because that failure is
+/// the reason the entry exists. The whole output is in the log (`efference dev`),
+/// and surfacing it is backlog/worktree-setup-detail.md.
+pub(in crate::tui) fn worktree_notice(event: &crate::log::WorktreeEvent) -> DocumentNode<'static> {
+    use crate::log::WorktreeEventKind;
+    let mut spans = vec![dim_span("⟢ worktree ")];
+    match &event.kind {
+        WorktreeEventKind::Added(checkout) => {
+            spans.push(dim_span("added on "));
+            spans.push(inline_code(event.branch.clone()));
+            spans.push(dim_span(&setup_note(checkout.exit_code)));
+        }
+        WorktreeEventKind::Restored(checkout) => {
+            spans.push(dim_span("restored from "));
+            spans.push(inline_code(event.branch.clone()));
+            spans.push(dim_span(&setup_note(checkout.exit_code)));
+        }
+        WorktreeEventKind::Removed { branch_deleted } => {
+            spans.push(dim_span(if *branch_deleted {
+                "removed (branch deleted)"
+            } else {
+                "removed (branch kept)"
+            }));
+        }
+        WorktreeEventKind::Kept { reason } => {
+            spans.push(dim_span(&format!("kept: {reason}")));
+        }
+        WorktreeEventKind::RemoveFailed { error } => {
+            spans.push(dim_span(&format!("removal failed: {error}")));
+        }
+    }
+    DocumentNode::entry(
+        EntryKind::Annotation,
+        vec![DocumentNode::Paragraph { spans }],
+    )
+}
+
+/// How a checkout's exit status reads on the notice line: nothing when the setup
+/// succeeded, the status otherwise. A nonzero status is stated on the line
+/// itself, since a failed setup is the reason the entry exists (docs/worktrees.md).
+/// Mirrors the web client's `setupNote` (`web/src/ui/worktree.ts`).
+fn setup_note(exit_code: Option<i32>) -> String {
+    match exit_code {
+        Some(0) => String::new(),
+        Some(code) => format!(" (setup failed: exit {code})"),
+        None => " (setup failed: git ended by signal)".to_string(),
+    }
+}
+
 /// The spotter's verdict on a call (docs/permissions.md, docs/tui.md), as one muted
 /// line, emitted as its own [`Annotation`](EntryKind::Annotation) entry beside the
 /// call it judges.

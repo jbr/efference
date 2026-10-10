@@ -27,7 +27,10 @@ fn an_untouched_draft_resolves_from_the_hosts_defaults() {
     // resolves the same defaults again (docs/control-api.md).
     assert_eq!(
         key(&mut form, KeyCode::Enter),
-        Action::Create(SessionOptions::default())
+        Action::Create {
+            options: SessionOptions::default(),
+            worktree: false,
+        }
     );
 }
 
@@ -117,6 +120,32 @@ fn r_on_a_role_row_clears_the_pick() {
     );
 }
 
+/// The worktree toggle is client-only: `⏎` flips it, `r` puts it back, and the
+/// choice rides in the creation. Neither gesture previews, because the host
+/// resolves no worktree value (docs/worktrees.md).
+#[test]
+fn the_worktree_toggle_flips_and_rides_in_the_creation() {
+    let mut form = form();
+    assert!(!form.draft.worktree);
+    form.selected = 6;
+    assert_eq!(key(&mut form, KeyCode::Enter), Action::Continue);
+    assert!(form.draft.worktree);
+    // `r` resets it to the shared checkout, with no round trip.
+    assert_eq!(key(&mut form, KeyCode::Char('r')), Action::Continue);
+    assert!(!form.draft.worktree);
+    // Toggled on, the creation carries it; the preview options never do.
+    press(&mut form, KeyCode::Enter);
+    assert!(form.draft.worktree);
+    form.selected = 0;
+    assert_eq!(
+        key(&mut form, KeyCode::Enter),
+        Action::Create {
+            options: SessionOptions::default(),
+            worktree: true,
+        }
+    );
+}
+
 /// A reply that arrives after the draft moved on describes a draft nobody is
 /// looking at: it is dropped, and the current draft is re-sent.
 #[test]
@@ -189,7 +218,7 @@ fn failed_creation_preserves_every_edit() {
     assert_eq!(form.page, Page::Form);
     let draft = form.draft.clone();
     press(&mut form, KeyCode::Up);
-    let Action::Create(options) = key(&mut form, KeyCode::Enter) else {
+    let Action::Create { options, worktree } = key(&mut form, KeyCode::Enter) else {
         panic!("a resolved draft starts creating")
     };
     assert!(form.creating);
@@ -198,7 +227,10 @@ fn failed_creation_preserves_every_edit() {
     assert!(!form.creating);
     assert_eq!(form.note.as_deref(), Some("the host refused: demo"));
     // The same draft is still what a retry would send.
-    assert_eq!(key(&mut form, KeyCode::Enter), Action::Create(options));
+    assert_eq!(
+        key(&mut form, KeyCode::Enter),
+        Action::Create { options, worktree }
+    );
 }
 
 #[test]

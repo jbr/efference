@@ -589,3 +589,98 @@ fn a_sourced_turn_keeps_its_source_verbatim() {
         "the source reads as written: {text}"
     );
 }
+
+/// A `Worktree` entry renders as one muted notice line per event, the shape a
+/// `Resumed` entry uses (docs/worktrees.md): the branch on add and restore, the
+/// outcome on remove, keep, and failure. A failed setup's exit status is on the
+/// line itself; git's setup output is not drawn.
+#[test]
+fn a_worktree_entry_renders_as_a_notice_line() {
+    use crate::log::{Checkout, WorktreeEvent, WorktreeEventKind};
+    let notice = |kind| {
+        let log = [entry(
+            1,
+            Payload::Worktree(WorktreeEvent {
+                path: "/code/example/.efference/worktrees/brave-otter".into(),
+                branch: "efference/brave-otter".into(),
+                kind,
+            }),
+        )];
+        let doc = project(
+            &log,
+            &LiveTail::default(),
+            &ViewState::default(),
+            Gate::default(),
+            &[],
+        );
+        assert_eq!(kinds(&doc), vec![EntryKind::Annotation]);
+        collect_text(&doc.nodes).trim().to_string()
+    };
+    let checkout = |exit_code| Checkout {
+        base: "abc123".into(),
+        exit_code,
+        output: "Updating files: 96%\rUpdating files: 100%\r".into(),
+    };
+    assert_eq!(
+        notice(WorktreeEventKind::Added(checkout(Some(0)))),
+        "⟢ worktree added on efference/brave-otter"
+    );
+    assert_eq!(
+        notice(WorktreeEventKind::Restored(checkout(Some(3)))),
+        "⟢ worktree restored from efference/brave-otter (setup failed: exit 3)"
+    );
+    assert_eq!(
+        notice(WorktreeEventKind::Restored(checkout(None))),
+        "⟢ worktree restored from efference/brave-otter (setup failed: git ended by signal)"
+    );
+    assert_eq!(
+        notice(WorktreeEventKind::Removed {
+            branch_deleted: true
+        }),
+        "⟢ worktree removed (branch deleted)"
+    );
+    assert_eq!(
+        notice(WorktreeEventKind::Removed {
+            branch_deleted: false
+        }),
+        "⟢ worktree removed (branch kept)"
+    );
+    assert_eq!(
+        notice(WorktreeEventKind::Kept {
+            reason: "uncommitted changes".into()
+        }),
+        "⟢ worktree kept: uncommitted changes"
+    );
+    assert_eq!(
+        notice(WorktreeEventKind::RemoveFailed {
+            error: "cannot remove".into()
+        }),
+        "⟢ worktree removal failed: cannot remove"
+    );
+}
+
+/// A `Resumed` notice carries one leading glyph, not two: `render_resumed` is the
+/// wire notice and already opens with `⟢`, so the annotation supplies none.
+#[test]
+fn a_resumed_notice_carries_one_glyph() {
+    let log = [entry(
+        1,
+        Payload::Resumed(crate::log::Resumed {
+            gap_ms: 45_000,
+            lost_processes: Vec::new(),
+            resumes_after: None,
+            pending_calls: Vec::new(),
+        }),
+    )];
+    let doc = project(
+        &log,
+        &LiveTail::default(),
+        &ViewState::default(),
+        Gate::default(),
+        &[],
+    );
+    assert_eq!(
+        collect_text(&doc.nodes).trim(),
+        "⟢ session resumed after 45s: the host process restarted."
+    );
+}

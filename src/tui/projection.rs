@@ -393,8 +393,12 @@ pub(crate) fn entry_nodes(
             Payload::ToolTelemetry(_) => {}
             Payload::CallStarted { .. } => {}
             Payload::Resumed(resumed) => {
+                // `render_resumed` is the wire notice and carries its own leading
+                // `⟢`, so the annotation marker is empty here — supplying one
+                // doubled the glyph. The web client strips the wire glyph and
+                // re-adds its own for the same reason (web/src/ui/resumed.ts).
                 nodes.push(annotation_line(
-                    "⟢ ",
+                    "",
                     &crate::project::render_resumed(resumed, entry.seq),
                 ));
             }
@@ -407,7 +411,10 @@ pub(crate) fn entry_nodes(
             // operation text through the `current_operations` topic; they draw
             // nothing in the transcript.
             Payload::RequestStage(_) | Payload::Push(_) | Payload::Cold(_) => {}
-            Payload::Worktree(_) => {}
+            // A session's worktree life (docs/worktrees.md): one muted notice line
+            // per event, the shape a `Resumed` entry uses. The entry carries no
+            // wire block, so it draws only here.
+            Payload::Worktree(event) => nodes.push(worktree_notice(event)),
             // Read through the transcript view; the placeholder in each result
             // already says what was withheld.
             Payload::ImagesRefused { .. } => {}

@@ -65,6 +65,11 @@ pub(in crate::tui) struct Draft {
     pub(in crate::tui) triage: TriageDraft,
     pub(in crate::tui) effort: Option<String>,
     pub(in crate::tui) temperature: Option<u8>,
+    /// Start in its own git worktree: its own checkout and branch at
+    /// `.efference/worktrees/<id>` (docs/worktrees.md). A creation-only knob the
+    /// host resolves no value for, so it is absent from [`Self::to_options`] and
+    /// rides in the creation alone.
+    pub(in crate::tui) worktree: bool,
 }
 
 impl Draft {

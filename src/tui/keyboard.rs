@@ -25,8 +25,8 @@ impl<'a> InteractiveState<'a> {
             Action::Preview(options) => {
                 let _ = self.host_tx.send(HostCmd::Preview(options));
             }
-            Action::Create(options) => {
-                let _ = self.host_tx.send(HostCmd::Create(options));
+            Action::Create { options, worktree } => {
+                let _ = self.host_tx.send(HostCmd::Create { options, worktree });
             }
             Action::RefreshCatalog {
                 connection,

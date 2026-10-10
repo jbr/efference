@@ -39,9 +39,9 @@ use matcher::Chip;
 use std::path::PathBuf;
 
 /// The form page's fixed rows: start, main, effort, temperature, spotter,
-/// triage. Named because the height calculation and the cursor bound are the
-/// same six (`render.rs`).
-const FORM_ROWS: usize = 6;
+/// triage, worktree. Named because the height calculation and the cursor bound
+/// are the same seven (`render.rs`).
+const FORM_ROWS: usize = 7;
 
 /// Rows the model picker gets before it scrolls. Sized so the root view — the
 /// top recents and every connection of a typical host — fits without scrolling
@@ -130,8 +130,13 @@ pub(super) enum Action {
     /// Recompute the effective draft — a committed edit, not a keystroke.
     Preview(SessionOptions),
     /// Post the creation. The container attaches the working root and the
-    /// environment, which never enter the UI thread (docs/env.md).
-    Create(SessionOptions),
+    /// environment, which never enter the UI thread (docs/env.md). `worktree` is
+    /// creation-only — the options in `options` are exactly what a preview
+    /// resolves, and the host resolves no worktree value (docs/worktrees.md).
+    Create {
+        options: SessionOptions,
+        worktree: bool,
+    },
     /// Read one connection's catalog entry again, awaiting the provider when
     /// the stored copy is older than `max_age` seconds. Answered with
     /// [`Form::catalog_returned`].
@@ -287,7 +292,7 @@ impl Form {
     fn handle_form_key(&mut self, key: KeyEvent) -> Action {
         match step(key) {
             Some(Step::Back) => self.selected = self.selected.saturating_sub(1),
-            Some(Step::Forward) => self.selected = (self.selected + 1).min(5),
+            Some(Step::Forward) => self.selected = (self.selected + 1).min(FORM_ROWS - 1),
             None => {}
         }
         match key.code {
@@ -314,6 +319,13 @@ impl Form {
                         ),
                     },
                     4 => Self::picker(Role::Spotter),
+                    5 => Self::picker(Role::Triage),
+                    // A boolean: no page, and no preview — the host resolves no
+                    // worktree value to re-answer (docs/worktrees.md).
+                    6 => {
+                        self.draft.worktree = !self.draft.worktree;
+                        return Action::Continue;
+                    }
                     _ => Self::picker(Role::Triage),
                 };
             }
@@ -324,6 +336,12 @@ impl Form {
                     3 => self.draft.temperature = None,
                     4 => self.draft.spotter = None,
                     5 => self.draft.triage = TriageDraft::Inherit,
+                    // The worktree knob is client-only, so its reset needs no
+                    // preview to reconcile.
+                    6 => {
+                        self.draft.worktree = false;
+                        return Action::Continue;
+                    }
                     _ => return Action::Continue,
                 }
                 return self.preview();
@@ -354,7 +372,10 @@ impl Form {
             Some(_) => {
                 self.creating = true;
                 self.note = Some("creating the session…".into());
-                Action::Create(self.draft.to_options())
+                Action::Create {
+                    options: self.draft.to_options(),
+                    worktree: self.draft.worktree,
+                }
             }
         }
     }

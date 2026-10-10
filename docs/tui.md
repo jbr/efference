@@ -481,6 +481,13 @@ the source column. `Start session` is refused while the host has not answered, o
 answered with issues: posting a creation the host is known to reject spends a round trip
 to learn what is already on screen.
 
+The one field with no host-resolved value is **worktree** (docs/worktrees.md): a
+client-only toggle — `⏎` on its row flips it, `r` puts it back off — whose choice creation
+sends outside the options a preview resolves, so neither gesture previews. Its dim trailer
+states what turning it on does rather than where a value came from, and it follows the
+value rather than sitting in the source column, so the description is not padded off the
+modal's capped width.
+
 Preview is recomputed on *committed* edits — leaving a picker, accepting an editor, `r`
 resetting a field — never per keystroke, so the request rate follows selections and no
 debounce timer is needed. A reply that arrives after the draft moved on is dropped and the

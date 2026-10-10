@@ -111,7 +111,9 @@ fn drive(
 pub(super) fn dispatch(commands: &tokio::sync::mpsc::UnboundedSender<HostCmd>, action: Action) {
     let _ = match action {
         Action::Preview(options) => commands.send(HostCmd::Preview(options)),
-        Action::Create(options) => commands.send(HostCmd::Create(options)),
+        Action::Create { options, worktree } => {
+            commands.send(HostCmd::Create { options, worktree })
+        }
         Action::RefreshCatalog {
             connection,
             max_age,
@@ -155,8 +157,10 @@ pub fn run() -> io::Result<()> {
     })();
     viewport.close()?;
     match outcome? {
-        Action::Create(options) => {
-            println!("Accepted (no host attached, so nothing was created): {options:?}")
+        Action::Create { options, worktree } => {
+            println!(
+                "Accepted (no host attached, so nothing was created): {options:?} · worktree: {worktree}"
+            )
         }
         _ => println!("Cancelled."),
     }

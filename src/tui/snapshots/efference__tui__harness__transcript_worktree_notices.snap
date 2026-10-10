@@ -1,0 +1,31 @@
+---
+source: src/tui/harness.rs
+expression: self.render()
+---
+    0         1         2         3         4         5         6         7         
+    01234567890123456789012345678901234567890123456789012345678901234567890123456789
+   ┌────────────────────────────────────────────────────────────────────────────────┐
+ 0 │ efference                                                             session  │
+ 1 │ ┃ Start me in a worktree.                                                      │
+ 2 │   ⟢ worktree added on efference/brave-otter                                    │
+ 3 │   ⟢ worktree restored from efference/brave-otter (setup failed: exit 3)        │
+ 4 │   ⟢ worktree removed (branch kept)                                             │
+ 5 │                                                                                │
+ 6 │                                                                                │
+ 7 │                                                                                │
+ 8 │                                                                                │
+ 9 │                                                                                │
+10 │                                                                                │
+11 │                                                                                │
+12 │                                                                                │
+13 │                                                                                │
+14 │                                                                                │
+15 │                                                                                │
+16 │                                                                                │
+17 │                                                                                │
+18 │                                                                                │
+19 │   pace fast     sessions s     theme t     help ?     detach q                 │
+20 │›                                                                               │
+   │  ^                                                                             │
+21 │   efference — ↑ controls                                                       │
+   └────────────────────────────────────────────────────────────────────────────────┘

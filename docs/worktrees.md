@@ -119,6 +119,11 @@ went too), `kept` (why), and `remove_failed`. It projects to nothing, like `Cold
 free text is masked like any other ([log-and-projection.md](log-and-projection.md)). It
 is the audit trail for a slow, cold, or failed setup.
 
+Both clients draw the entry as a one-line notice in their transcripts — the branch on an
+add or restore with a failed setup's exit status on the line itself, and the outcome on
+remove, keep, or failure ([tui.md](tui.md), [web-client.md](web-client.md)). The setup
+`output` is not shown in the TUI; the web collapses it behind a disclosure.
+
 ## Git only
 
 Placement, the permission rule, the identity line, the header, and the log entry are not

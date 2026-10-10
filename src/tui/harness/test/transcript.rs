@@ -303,6 +303,35 @@ fn redacted_thinking_says_so_rather_than_rendering_nothing() {
     );
 }
 
+/// A session's worktree life renders as one muted notice line per event
+/// (docs/worktrees.md): the branch on an add or restore, a failed setup's exit
+/// status on the line itself, and git's setup output nowhere (it stays in the
+/// log; surfacing it is backlog/worktree-setup-detail.md).
+#[test]
+fn transcript_worktree_notices() {
+    use crate::log::{Checkout, Payload, WorktreeEvent, WorktreeEventKind};
+    let checkout = |exit_code| Checkout {
+        base: "abc1234".into(),
+        exit_code,
+        output: "Updating files:  96%\rUpdating files: 100%\r".into(),
+    };
+    let event = |kind| {
+        Payload::Worktree(WorktreeEvent {
+            path: "/code/example/.efference/worktrees/brave-otter".into(),
+            branch: "efference/brave-otter".into(),
+            kind,
+        })
+    };
+    let mut play = Screenplay::new(80, 22);
+    play.user("Start me in a worktree.");
+    play.commit(event(WorktreeEventKind::Added(checkout(Some(0)))));
+    play.commit(event(WorktreeEventKind::Restored(checkout(Some(3)))));
+    play.commit(event(WorktreeEventKind::Removed {
+        branch_deleted: false,
+    }));
+    play.snapshot("transcript_worktree_notices");
+}
+
 /// Renders the `efference dev gallery` transcript (every element type) headlessly,
 /// at a tall terminal so most of it fits — a regression guard for the live
 /// design page and a single place to eyeball the whole element set at once.

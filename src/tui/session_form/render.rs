@@ -51,6 +51,12 @@ struct Row {
     /// A field the host flagged, or a connection it cannot use. Rendered dim,
     /// like the picker's unavailable choice.
     flagged: bool,
+    /// Whether the trailer starts in the shared source column. False for a
+    /// trailer that is prose about the row (the worktree toggle's description),
+    /// which would otherwise be padded out to that column and clipped: the
+    /// modal is capped at 92 columns (`render_sessions.rs`), so a long
+    /// description only fits where it follows the value.
+    align_trailer: bool,
 }
 
 impl Row {
@@ -60,6 +66,7 @@ impl Row {
             value: String::new(),
             trailer: String::new(),
             flagged: false,
+            align_trailer: true,
         }
     }
 }
@@ -159,6 +166,12 @@ impl Form {
             .map(|(index, row)| {
                 let body = match row.value.is_empty() && row.trailer.is_empty() {
                     true => row.label.clone(),
+                    // A prose trailer sits right after the value rather than in
+                    // the shared source column, where it would be padded off the
+                    // modal's edge.
+                    false if !row.align_trailer => {
+                        format!("{:label_width$}  {}", row.label, row.value)
+                    }
                     false => format!("{:label_width$}  {:value_width$}", row.label, row.value),
                 };
                 let body_style = match (row.flagged, index == selected) {
@@ -242,12 +255,14 @@ impl Form {
                 value: "—".into(),
                 trailer: message.to_string(),
                 flagged: true,
+                align_trailer: true,
             },
             None => Row {
                 label: label.to_string(),
                 value: value.unwrap_or_else(|| "—".into()),
                 trailer: source.unwrap_or_default().to_string(),
                 flagged: false,
+                align_trailer: true,
             },
         }
     }
@@ -333,6 +348,16 @@ impl Form {
                     spotter_source,
                 ),
                 self.row(Role::Triage.label(), &["triage"], triage, triage_source),
+                // A client-only knob: the host resolves no worktree value, so this
+                // row has no source column. Its trailer states what turning it on
+                // does rather than where the value came from (docs/worktrees.md).
+                Row {
+                    label: "worktree".into(),
+                    value: if self.draft.worktree { "on" } else { "off" }.into(),
+                    trailer: "its own checkout and branch at .efference/worktrees/<id>".into(),
+                    flagged: false,
+                    align_trailer: false,
+                },
             ],
             self.selected,
         )

@@ -19,9 +19,9 @@ expression: self.render()
 11 │    │  temperature    —                            provider default                            │    │
 12 │    │  spotter model  router/~typesafe/jev-latest  decision model                              │    │
 13 │    │  triage model   the main client              nothing configured                          │    │
-14 │    │  model: connection "blank" is unavailable                                                │    │
-15 │    │  ↑↓ move · enter picks · r resets · esc cancels                                          │    │
-16 │    │                                                                                          │    │
+14 │    │  worktree       off  its own checkout and branch at .efference/worktrees/<id>            │    │
+15 │    │  model: connection "blank" is unavailable                                                │    │
+16 │    │  ↑↓ move · enter picks · r resets · esc cancels                                          │    │
 17 │    │                                                                                          │    │
 18 │    │                                                                                          │    │
 19 │    │                                                                                          │    │

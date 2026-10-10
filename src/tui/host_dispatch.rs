@@ -66,8 +66,8 @@ pub(super) async fn serve(
                 }
                 continue;
             }
-            HostCmd::Create(options) => {
-                let created = create_session(&client, origin.as_deref(), options).await;
+            HostCmd::Create { options, worktree } => {
+                let created = create_session(&client, origin.as_deref(), options, worktree).await;
                 if events.send(TuiEvent::Created(created)).is_err() {
                     break;
                 }
@@ -218,6 +218,7 @@ async fn create_session(
     client: &Client,
     origin: Result<&std::path::Path, &std::io::Error>,
     options: crate::inference::SessionOptions,
+    worktree: bool,
 ) -> Result<String, String> {
     let cwd = origin
         .map_err(|e| format!("reading the working directory: {e}"))?
@@ -234,7 +235,7 @@ async fn create_session(
         autonomous: false,
         reauth: Vec::new(),
         keep_scratch: false,
-        worktree: false,
+        worktree,
         // A session created by a person at a keyboard has no creator to end with
         // (docs/tools.md).
         detached: false,

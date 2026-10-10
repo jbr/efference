@@ -274,8 +274,12 @@ pub(crate) enum HostCmd {
     Preview(crate::inference::SessionOptions),
     /// `POST /sessions` — create from the form's draft. The selections travel;
     /// the working root and the environment are the dispatcher's, and never
-    /// enter the UI thread (docs/env.md).
-    Create(crate::inference::SessionOptions),
+    /// enter the UI thread (docs/env.md). `worktree` is creation-only, outside
+    /// the resolvable options (docs/worktrees.md).
+    Create {
+        options: crate::inference::SessionOptions,
+        worktree: bool,
+    },
     /// `GET /sessions?state=archived` for the dispatcher's working root — the
     /// resume page's rows.
     Archived,

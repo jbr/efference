@@ -19,9 +19,9 @@ expression: self.render()
 11 │    │  temperature    —                                                                        │    │
 12 │    │  spotter model  —                                                                        │    │
 13 │    │  triage model   —                                                                        │    │
-14 │    │  resolving this draft with the host…                                                     │    │
-15 │    │  ↑↓ move · enter picks · r resets · esc cancels                                          │    │
-16 │    │                                                                                          │    │
+14 │    │  worktree       off  its own checkout and branch at .efference/worktrees/<id>            │    │
+15 │    │  resolving this draft with the host…                                                     │    │
+16 │    │  ↑↓ move · enter picks · r resets · esc cancels                                          │    │
 17 │    │                                                                                          │    │
 18 │    │                                                                                          │    │
 19 │    │                                                                                          │    │
