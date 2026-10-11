@@ -16,6 +16,10 @@ import { Transcript } from "./Transcript.tsx";
 vi.hoisted(() => {
   Object.assign(globalThis, {
     IS_REACT_ACT_ENVIRONMENT: true,
+    ResizeObserver: class {
+      observe() {}
+      disconnect() {}
+    },
   });
   Object.defineProperty(window, "scrollTo", { value: () => {} });
   Object.defineProperty(window, "matchMedia", {

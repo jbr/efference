@@ -3,6 +3,7 @@
 // the second consumer arrived.
 
 import { useEffect, useState } from "react";
+import { resumeTail } from "./followTail.ts";
 
 /** The dock's measured height plus a margin: the floating surfaces sit just
  * above the dock, whose height moves (the bottom panel expands and
@@ -22,13 +23,5 @@ export function useDockOffset(): number {
   return bottom;
 }
 
-/** The jump the floating surfaces offer. It scrolls to the document tail
- * rather than to the surface: a gated call has no result entry, so the gate
- * *is* the tail, and going there brings the call and its verdict along. It
- * also has to be a jump, not a smooth `scrollIntoView`. `useFollowTail` pins
- * to the bottom after every render while the viewport is near it, so an
- * animated scroll toward the tail re-engages the follow partway down and is
- * cancelled by the next render — including the one caused by the in-flow
- * surface coming into view. */
-export const jumpToTail = () =>
-  window.scrollTo(0, document.documentElement.scrollHeight);
+/** Gate/latest jumps explicitly resume window-tail following (docs/web-client.md). */
+export const jumpToTail = resumeTail;

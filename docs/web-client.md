@@ -364,11 +364,10 @@ there; `min-width` alone lets the box shrink while the unbreakable token still
 paints past it.
 
 **The jump-to-latest chip** (`ui/JumpToLatest.tsx`, both form factors): a fixed
-chip above the dock, shown only while the viewport is away from the tail,
-tapping it an instant jump — the gate float's constraint (never smooth-scroll
-toward the tail; `useFollowTail` re-pins mid-animation) travels with the shared
-`jumpToTail` in `ui/float.ts`, extracted from Gate.tsx when this second consumer
-arrived along with `useDockOffset`. Hidden while a gate is pending (the float
+chip above the dock, shown only while follow intent is disengaged. Tapping it
+explicitly resumes following and jumps instantly through `jumpToTail` in
+`ui/float.ts`; `useDockOffset` keeps it above the measured dock. Hidden while a
+gate is pending (the float
 owns that slot and carries its own jump) and while the file viewer covers the
 transcript.
 
@@ -1008,10 +1007,17 @@ or grows a hash in `default-src`.
 ## Transcript ergonomics
 
 Two behaviours over the render-whole transcript. **Follow-tail**
-(`ui/useFollowTail.ts`): the transcript scrolls the window, so "following"
-means the viewport sits at the document's bottom — new entries and streamed
-output keep it pinned there, scrolling up holds position, and a cold open
-lands at the tail rather than the top of the log. **The preamble is not
+(`ui/useFollowTail.ts`, `ui/followTail.ts`): the transcript scrolls the window.
+Following is reader intent, not a continuously recomputed distance to the bottom.
+A cold open follows the tail; upward window movement paired with wheel, touch,
+keyboard, or scrollbar navigation holds the reading position. Content growth,
+programmatic scroll events, and viewport changes do not independently cancel
+following. Reaching the bottom by any means (within one CSS pixel for fractional
+scroll positions) or an explicit latest/gate jump re-engages it. The transcript
+pins after renders and observes document/body size and viewport changes for
+asynchronous layout growth. Nested scroll containers and editing controls retain
+their own input behavior. `JumpToLatest` subscribes to the same intent rather
+than measuring bottom contact separately. **The preamble is not
 rendered**: the system prompt is audit data rather than conversation, and a new
 session whose only entry it is reads as empty. **A title change** renders as
 one quiet line, `Title updated to …`, and only when the text changed — the log
@@ -1774,10 +1780,10 @@ new call. Two properties are deliberate: the floating surface **never scrolls
 the page on its own** — a pending decision does not get to move the page out
 from under someone reading — and its `jump to call ↓` is a jump to the document
 tail (the gated call has no result, so the gate *is* the tail), not a smooth
-`scrollIntoView`. `useFollowTail` pins to the bottom after every render while
-the viewport is near it, so an animated scroll toward the tail re-engages the
-follow partway down and is cancelled by the next render. Any future
-scroll-to-somewhere affordance meets the same constraint.
+`scrollIntoView`. Its jump explicitly resumes follow intent; subsequent renders
+and layout growth pin the tail. A navigation to an earlier transcript position
+must instead disengage follow intent rather than relying on a programmatic
+scroll event to identify a reader departure.
 
 The decisions ride `PUT /v1/approvals/:call_id` (`Decision` in `api/types.ts`):
 approve, abort, and redirect with steering text. The route also takes a
