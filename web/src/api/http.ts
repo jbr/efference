@@ -129,9 +129,10 @@ export const withdrawTurns = (submissionId: string) =>
 export async function uploadAttachment(
   name: string,
   body: Blob,
+  base = apiBase(),
 ): Promise<Attachment> {
   const response = await fetch(
-    join(`/v1/attachments?name=${encodeURIComponent(name)}`),
+    join(`/v1/attachments?name=${encodeURIComponent(name)}`, base),
     {
       method: "POST",
       headers: { "content-type": "application/octet-stream" },
@@ -143,16 +144,19 @@ export async function uploadAttachment(
 }
 // A staged upload taken back before sending. A sent one stays: its turn names it.
 // A 204 has no body for `request` to parse, hence the bare fetch.
-export async function removeAttachment(name: string): Promise<void> {
+export async function removeAttachment(
+  name: string,
+  base = apiBase(),
+): Promise<void> {
   await throwIfFailed(
-    await fetch(join(`/v1/attachments/${encodeURIComponent(name)}`), {
+    await fetch(join(`/v1/attachments/${encodeURIComponent(name)}`, base), {
       method: "DELETE",
     }),
   );
 }
 /** Where a stored attachment's bytes are — an `<img src>` for an image. */
-export const attachmentUrl = (name: string) =>
-  join(`/v1/attachments/${encodeURIComponent(name)}`);
+export const attachmentUrl = (name: string, base = apiBase()) =>
+  join(`/v1/attachments/${encodeURIComponent(name)}`, base);
 // The id is a precondition: a 409 gate_moved answer means that call is no
 // longer the pending gate, and `detail` carries the current one.
 export const resolveApproval = (callId: CallId, decision: Decision) =>

@@ -325,3 +325,44 @@
   padding: 0 0.25em;
   border-radius: 3px;
 }
+
+/* Ambient notices are display annotations, not assistant prose
+   (docs/web-client.md). */
+.ambient-notice {
+  line-height: 1.7;
+}
+
+.ambient-notice .ambient-source {
+  color: inherit;
+}
+
+.ambient-preview {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}
+
+.ambient-preview.expanded {
+  display: block;
+}
+
+.ambient-notice .ambient-toggle {
+  display: block;
+  font-size: inherit;
+  color: var(--fg-dim);
+  margin-top: 0.25rem;
+}
+
+/* Raw call contents and returned output share typography, regardless of
+   whether language detection chose a div or a pre (docs/web-client.md). */
+:root {
+  --output-font-size: 0.8125rem;
+}
+
+pre,
+.call-body-text,
+.ambient-notice {
+  font-family: var(--font-mono);
+  font-size: var(--output-font-size);
+}

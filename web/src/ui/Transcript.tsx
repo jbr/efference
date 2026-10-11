@@ -23,6 +23,7 @@ import { assistantView } from "../session/assistant.ts";
 import type { CallId } from "../api/types.ts";
 import { askMarkText, askStanding } from "./askMark.ts";
 import { Markdown } from "./Markdown.tsx";
+import { Ambient } from "./Ambient.tsx";
 import { resumedLine } from "./resumed.ts";
 import { cleanWorktreeOutput, setupNote } from "./worktree.ts";
 import { SentAttachments } from "./Attachments.tsx";
@@ -292,8 +293,7 @@ function Leaf({
   if ("Ambient" in p) {
     return (
       <Entry label="ambient" as="ambient">
-        <span className="ambient-source">{p.Ambient.source}</span> —{" "}
-        {p.Ambient.body}
+        <Ambient source={p.Ambient.source} body={p.Ambient.body} />
       </Entry>
     );
   }

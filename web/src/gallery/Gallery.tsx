@@ -35,6 +35,7 @@ import {
   archived,
 } from "./fixtures.ts";
 import { ButtonSpecimens } from "./ButtonSpecimens.tsx";
+import { AmbientSpecimens } from "./AmbientSpecimens.tsx";
 import { Specimen, States } from "./Specimens.tsx";
 import { PaletteSpecimens } from "./PaletteSpecimens.tsx";
 import { installPseudoStates } from "./pseudoStates.ts";
@@ -94,6 +95,7 @@ export function Gallery() {
           "Context window",
           "Composer",
           "Code and results",
+          "Ambients",
           "Images",
           "Syntax palette",
           "Session card",
@@ -187,6 +189,9 @@ export function Gallery() {
       </Section>
       <Section title="Code and results">
         <SyntaxSpecimens />
+      </Section>
+      <Section title="Ambients">
+        <AmbientSpecimens />
       </Section>
       <Section title="Images">
         <ImageSpecimens />

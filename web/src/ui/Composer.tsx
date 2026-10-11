@@ -6,7 +6,15 @@
 // (docs/control-api.md — submission is decoupled from inference; a 202 is
 // success, the turn's effects arrive on the stream).
 
-import { useEffect, useRef, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
+import { apiBase } from "../api/base.ts";
+import { acquireDraft } from "./drafts.ts";
 import {
   ApiError,
   continueLoop,
@@ -34,7 +42,7 @@ import { useDockOffset } from "./float.ts";
 import { useNarrow } from "./useNarrow.ts";
 import { useNow } from "./useNow.ts";
 import { StagedAttachments } from "./Attachments.tsx";
-import { pastesAsFile, useStagedAttachments } from "./staging.ts";
+import { pastesAsFile } from "./staging.ts";
 import { useDragToDismiss } from "./useDragToDismiss.ts";
 
 /** What a recall handed back: the text to prepend and the attachments to stage
@@ -94,10 +102,18 @@ export function Composer({
   operations: CurrentOperations | null;
   model: string;
 }) {
-  const [draft, setDraft] = useState("");
+  const store = useMemo(() => acquireDraft(apiBase()), []);
+  const snapshot = useSyncExternalStore(store.subscribe, store.snapshot);
+  const draft = snapshot.text;
+  const setDraft = store.setText;
   const [error, setError] = useState<string | null>(null);
-  const attachments = useStagedAttachments();
-  const { stage, restore } = attachments;
+  const attachments = {
+    staged: snapshot.staged,
+    ready: snapshot.staged.flatMap((s) => (s.attachment ? [s.attachment] : [])),
+    uploading: snapshot.staged.some((s) => s.status === "uploading"),
+    remove: store.remove,
+  };
+  const { stage, restore } = store;
   // A file dragged anywhere over the page is headed here: the composer is the
   // only drop target, so the whole window accepts it (docs/web-client.md).
   const [dragging, setDragging] = useState(false);
@@ -131,7 +147,7 @@ export function Composer({
     restore(recalled.attachments);
     setExpanded(true);
     field.current?.focus();
-  }, [recalled, restore]);
+  }, [recalled, restore, setDraft]);
   useEffect(() => {
     // `dragleave` fires on every child boundary crossed, so presence is tracked
     // as a depth rather than a flag.
@@ -226,8 +242,7 @@ export function Composer({
     }
     try {
       await send(text, attachments.ready);
-      attachments.clear();
-      setDraft("");
+      store.sent(snapshot);
       setError(null);
       setExpanded(false);
     } catch (e) {

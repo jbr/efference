@@ -441,27 +441,6 @@ export function SyntaxSpecimens() {
           wire="Raw"
         />
       </Example>
-      <Example title="Ambient notification · long URL and command">
-        <TranscriptContent
-          nodes={buildTree([
-            entry(1, {
-              Ambient: {
-                source: "test-watch",
-                body: "p#12 — exited 0; final output:\nhttps://rolldown.rs/reference/OutputOptions.codeSplitting\npython3 -c \"print('a-command-with-an-unbroken-argument-that-must-not-widen-the-phone-transcript')\"",
-                slot: null,
-              },
-            }),
-          ])}
-          streaming={emptyStreaming}
-          pending={[]}
-          ask={null}
-          gatedCall={null}
-          onGateSlot={noop}
-          onRecall={noop}
-          onInspect={noop}
-          onOpenFile={noop}
-        />
-      </Example>
       <Example title="Failure · error and recovery">
         <ResultBlock
           tool="bash"

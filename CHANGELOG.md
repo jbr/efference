@@ -8,6 +8,8 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- Web composer drafts retain text and attachments per session, keep uploads running across switches, and restore text and completed attachments after reload.
+- Compact, expandable web ambient notifications with plain-text terminal output, dedicated gallery specimens, and shared raw-output typography.
 - **The digest carries the agent's mid-turn prose** (docs/digest.md): every assistant turn's prose renders, not only the turn-ending reply, so the fold's narrator sees what the agent took from the operator and meant to do next.
 - **`efference dev peek --view digest`** (docs/digest.md): replays triage gates with the history rendered as the trajectory digest instead of the transcript, as text only, so any model on any dialect can be replayed against a session.
 - **The triage model's cache stays warm** (docs/transport.md): a session whose own triage model primes its Responses lineage keeps that lineage warm by re-sending the primer as a ping, with its own stance (`usage.triage_keepalive_skipped`) and origin (`triage_keepalive`).

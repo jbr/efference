@@ -1019,6 +1019,15 @@ a keep carries the reason and a failed removal the error. Git's setup output
 sits collapsed behind a disclosure, with old progress redraws cleaned to their
 last segment per line.
 
+Ambient notifications (`ui/Ambient.tsx`) use the shared transcript output size
+(`--output-font-size`, 0.8125rem) and monospace family, also applied to raw call
+contents and tool-result code. They show at most three rendered lines by default;
+a disclosure appears only when the preview overflows and expands the full text.
+The source stays muted. Display-only cleanup (`ui/ambientText.ts`) removes ANSI
+CSI formatting and OSC links/titles; stored text and agent delivery are unchanged.
+The gallery has a dedicated Ambients section with short, process-output, ANSI
+and wrapping specimens.
+
 Ambient and config-entry content preserves its newlines with `pre-wrap` and
 allows long tokens to break with `overflow-wrap: anywhere`. Single-line unfinished
 tool arguments in `LiveCallBlock` reuse the `call-body-text` wrapping treatment;
@@ -1062,7 +1071,7 @@ it actually popped (docs/control-api.md). Nothing was ever logged, so there is
 nothing to retract. The action drops only the echoes the daemon reported
 popping, and hands the texts to the composer, which prepends them to the draft
 already there joined with a newline — via a `{text, attachments, nonce}` prop,
-because the composer owns its draft and recalling the same text twice is two
+because recalling the same text twice is two
 events rather than one value. The turns' attachments come back with them, still
 stored, and are staged again. An empty answer is the lost race — the loop dequeued the turn
 first — and the draft is left alone.
@@ -1174,6 +1183,30 @@ elements below it dock at its measured height rather than a constant.
 
 ## The composer area
 
+**Drafts belong to the session, not the mounted composer.** `ui/drafts.ts`
+keeps a `DraftStore` per session API base; `ui/Composer.tsx` subscribes to its
+text and staged attachments. Client-side switching unmounts the view, not the
+draft or its uploads. Upload requests, late removal requests, and image URLs
+are bound to the originating base, even after the page changes sessions. This
+store opens no session stream, so retaining a draft does not count as watching
+that session or suppress its push notifications.
+
+Each edit and attachment transition saves text and chip metadata to
+origin-scoped localStorage under the session base. Completed attachments restore
+from their stored server references; pasted text remains available for the
+chip's inline action. File bytes and blob preview URLs are not persisted. A
+reload restores an upload that was in progress as a failed chip with an
+interruption reason, not a resumable upload. Malformed saved data is ignored;
+denied or full storage leaves the live draft usable without reload persistence.
+Image blob previews are revoked on upload completion or chip removal, not on
+view unmount.
+
+A failed send leaves the draft alone. A successful send clears its submitted
+text only if it has not changed while the request was pending, and removes only
+the submitted ready chips; newer edits, newer attachments, and failed chips
+remain. Sent files are not deleted. Empty drafts remove their localStorage entry.
+The server has no draft store; these drafts remain browser-local.
+
 The status bar (`ui/Composer.tsx`) is the dock's **outermost row, below the
 composer at the window edge**, full-bleed — chrome frames content, as in a
 native status bar (the row originally sat *above* the input, which put the
@@ -1228,12 +1261,14 @@ the draft instead. Each staged file uploads at once as raw bytes
 `application/octet-stream` being the one other type the TCP bind's CSRF gate
 admits — so its chip shows what the daemon made of it (`PNG · 1280×800 ·
 240 KB`, `40 lines · 2 KB`) while it can still be removed. Chips sit above the
-input; an image's chip is its thumbnail (an object URL of the local file).
+input; an image's chip uses a local object URL while uploading and the stored
+image URL once ready.
 Removing one deletes the upload; one removed mid-upload is deleted when the
 upload lands. Send waits for uploads to finish, carries every ready chip's
-name, and clears the row only once the turn is accepted, so a refused send
-keeps them. A draft of attachments alone is a turn, not the continue. The
-staging rules are `ui/staging.ts`; the chips, staged and sent, are
+name, and removes the submitted ready chips only once the turn is accepted,
+so a refused send keeps them. A draft of attachments alone is a turn, not the continue. The
+paste and description rules are `ui/staging.ts`; draft and upload ownership are
+`ui/drafts.ts`; the chips, staged and sent, are
 `ui/Attachments.tsx`. A sent turn — and its pending echo — shows its
 attachments under its prose, an image as a thumbnail served by
 `GET /attachments/:name` that opens full size in a new tab.

@@ -58,9 +58,10 @@ export const clientRoute = (): string => deriveRoute(pathname());
 
 /** Join a control path onto the base. Every `/v1/…` and `/files/…` URL the
  * client builds goes through here; `/auth/…` and `/sessions` do not — those are
- * the *listener's* surfaces, at its root under either binding. */
-export const join = (path: string): string => apiBase() + path;
+ * the *listener's* surfaces, at its root under either binding. An explicit base
+ * binds work that outlives navigation to its originating session. */
+export const join = (path: string, base = apiBase()): string => base + path;
 
-/** The link into one session's view — a navigation, not client-side state: the
- * base changes, so the page reloads against a different control endpoint. */
+/** The link into one session's view. Client-side navigation remounts the view
+ * against its control endpoint (docs/web-client.md). */
 export const sessionHref = (id: string): string => `/sessions/${id}/`;

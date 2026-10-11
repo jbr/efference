@@ -120,7 +120,7 @@ export function SessionView() {
   // where it starts.
   // What a recall handed back, for the composer to prepend (docs/web-client.md). The
   // counter is the trigger: recalling the same text twice must still splice twice, and
-  // the composer owns its draft, so the splice has to be an event rather than a value.
+  // the draft store survives the view, so a splice is an event rather than a value.
   const [recalled, setRecalled] = useState<Recalled | null>(null);
   // Only what the daemon reports it actually popped reaches the composer — a turn the
   // loop already dequeued comes back as an empty list and the draft is left alone.
