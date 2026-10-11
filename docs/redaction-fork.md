@@ -232,12 +232,19 @@ opposite verdicts on the same self-scheduled timer exit two cycles apart
 
 The prefix is the same canonical projection either way, so the own lineage is warm
 across gates: each peek writes the newest assistant turn and reads the rest, at the
-triage model's rate. The **tail ask is unchanged** — first person, "the call you just
-made" — and byte-identical between the two configurations, so a replayed gate
-differs only in model and head. The `+third-person` ask variant is the framing
-alternative, an ablation, not a default. The `note` field's ask says whose note it
-is: a note to self, read on the agent's next turn in place of the dropped lines,
-which holds whichever model writes it.
+triage model's rate. The tail ask keeps its frame — first person, "the call you just
+made"; the `+third-person` ask variant is the framing alternative, an ablation, not a
+default — but its **`keep`/`note` rows differ by who answers**. The agent's own model
+(the shared peek) writes a note to self, read on its next turn in place of the dropped
+lines. A separate triage model writes a **report**: what it dropped and whether that is
+safe, the answers to the intent's questions, what the output lacks — what the output
+shows, never what to do about it, since a different model suggesting the next step is
+noise at best and steering at worst. The report's `keep` row separates what the intent
+asks to *see* (kept) from what it asks as a *question* (answered in the note, keeping the
+one line that proves it), lets a fact replace lines that only witness it (a run of
+passing tests), and never lets prose replace a line the agent may copy, search for, or
+edit from. The grounding rules below hold for both. The split came out of replaying
+hand-labelled gates (backlog: triage-ground-truth).
 
 **Evaluating a candidate offline.** `efference dev peek <session> --triage-model X`
 replays every recorded gate under the separate-model shape — the same constructor

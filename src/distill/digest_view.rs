@@ -92,7 +92,7 @@ pub(super) fn digest_peek_messages(
             ))
         }
     };
-    let (results, ask) = gate_parts(pending, inbox, background, roster);
+    let (results, ask) = gate_parts(pending, inbox, background, roster, reader);
     let mut gate = format!("{GATE_HEAD}\n");
     for (p, result) in pending.iter().zip(results) {
         let _ = writeln!(gate, "\n• {} {}", p.call.name, p.call.input);

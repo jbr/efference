@@ -57,6 +57,47 @@ const KEEP_FIELDS: &str =
               one you can act on. This is about the intent, never about the task: do
               not suggest what to call next or what the output means.";
 
+/// The `keep`/`note` rows a **separate triage model** is asked (docs/redaction-fork.md):
+/// the note is a report for the agent, not a note to self. A different model chiming in
+/// with what to do next is noise at best and steering at worst, so it reports what the
+/// output shows — what was dropped and whether that is safe, the answers to the intent's
+/// questions, what the output lacks — and never what to do about it. What the intent asks
+/// to *see* is kept; what it asks as a *question* is answered in the note, keeping the one
+/// line that proves the answer; lines that only witness something (a run of passing
+/// tests) give way to the fact, and a line the agent may copy, search for, or edit from
+/// never does (backlog: triage-ground-truth). The grounding rules above hold unchanged.
+const REPORT_FIELDS: &str =
+    "keep        \"all\", \"none\", or comma-separated 1-based inclusive line ranges like
+              \"40-52,310-318\". Keep what answers the intent and what the task will need
+              next; whatever you drop is gone from the working context. What the intent
+              asks to SEE (a struct, the imports, the failing case) is kept. What it asks
+              as a QUESTION (did it pass? did anything move? is X here?) is answered in
+              the `note` from the output, keeping only the line that proves the answer —
+              a totals or summary line — not every line the answer covers. Where many
+              lines say one thing — a run of passing tests, progress and build chatter,
+              repeated matches of the same kind — drop them and state the fact in the
+              `note`. Never drop a line the agent may need to copy, search for, or edit
+              from: paths, identifiers, exact error or warning text, the code it is about
+              to change. Where the output enumerates distinct candidates, the lines you
+              keep read afterwards as the whole set, so keep it whole or say in the
+              `note` how many of how many survived.
+  note        A report for the agent, who will see only the lines you kept: what you
+              dropped and whether it is safe not to see it, the answers to the intent's
+              questions, and anything it asked about that the output does not contain.
+              Report what the output shows, not what to do about it: \"the doc comment
+              says 'four channels'\", not \"the doc comment needs updating\"; \"line 72
+              repeats line 70's text\", not \"delete line 72\". Do not restate the kept
+              lines. Every claim must rest on the output; a claim that turns on one line
+              puts that line in `keep`. Never say something passed, was absent, or was
+              unrelated unless the output shows it. If you kept everything, leave it
+              empty.
+  intent_feedback
+              Omit almost always. Use only when the `intent` gave you nothing to
+              decide against — it restated the arguments, or named no question the
+              output could answer — and say so in one clause, so the next intent is
+              one you can act on. This is about the intent, never about the task: do
+              not suggest what to call next or what the output means.";
+
 /// The `retain` ask, scoped to the results **this gate** is deciding
 /// (docs/redaction-fork.md).
 ///
@@ -93,7 +134,10 @@ const KEEP_FIELDS: &str =
 ///
 /// `riders` are the field rows for whatever else this gate carries (inbox, background,
 /// surfacing roster), placed inside the block rather than appended after it.
-pub(super) fn retain_instruction(offered: &[String], riders: &[&str]) -> String {
+/// `reader` says who answers: the agent's own model (`Reader::Main`, the shared peek) is
+/// asked for a note to self ([`KEEP_FIELDS`]); a separate triage model
+/// (`Reader::Triage`) for a report ([`REPORT_FIELDS`]).
+pub(super) fn retain_instruction(offered: &[String], riders: &[&str], reader: Reader) -> String {
     let v = AskVariant::from_env();
     let scope = "Nothing earlier in this conversation is being triaged — those results are \
 already decided, and their [n] tags are not result labels.";
@@ -119,7 +163,10 @@ entries, one per label listed here and no others: {labels}.",
             .unwrap_or_else(|e| panic!("EFFERENCE_PEEK_FIELDS: {path}: {e}"))
             .trim_end()
             .to_string(),
-        Err(_) => KEEP_FIELDS.to_string(),
+        Err(_) => match reader {
+            Reader::Main => KEEP_FIELDS.to_string(),
+            Reader::Triage => REPORT_FIELDS.to_string(),
+        },
     };
     let fields: Vec<&str> = std::iter::once(keep_fields.as_str())
         .chain(riders.iter().copied())
@@ -207,8 +254,9 @@ struct AskVariant {
     output_final: bool,
     /// The shape sentence says "the call the agent just made" instead of "the call you
     /// just made" — the separate-model peek's alternative framing
-    /// (backlog/distiller-experiment.md). Off: the tail stays byte-identical between
-    /// the shared and the separate-model peek, so the replay eval varies one thing.
+    /// (backlog/distiller-experiment.md). Off: the tail keeps its first-person frame for
+    /// both the shared and the separate-model peek (their `keep`/`note` rows differ by
+    /// reader, [`REPORT_FIELDS`]).
     third_person: bool,
 }
 
@@ -542,7 +590,7 @@ pub(super) fn peek_messages(
     background: &[BgView],
     roster: &[Item],
 ) -> Vec<WireTurn> {
-    let (results, ask) = gate_parts(pending, inbox, background, roster);
+    let (results, ask) = gate_parts(pending, inbox, background, roster, reader);
     // The prefix hits cache; only the raws and the instruction are fresh, and they are
     // discarded — the canonical lineage never sees raw (docs/redaction-fork.md). The
     // frontier sits before that raw tail: the shared prefix is read, the throwaway
@@ -581,6 +629,7 @@ pub(super) fn gate_parts(
     inbox: &[ShownNotification],
     background: &[BgView],
     roster: &[Item],
+    reader: Reader,
 ) -> (Vec<GateResult>, String) {
     let mut sections = String::new();
     append_inbox_and_background(&mut sections, inbox, background);
@@ -601,7 +650,7 @@ pub(super) fn gate_parts(
     if roster_shown(roster) {
         riders.push(SURFACE_FIELD);
     }
-    let instruction = retain_instruction(&offered, &riders);
+    let instruction = retain_instruction(&offered, &riders, reader);
 
     // A bypassed result answers with a stand-in rather than its output: the harness
     // already decided it (docs/redaction-fork.md), and the ask does not offer it.

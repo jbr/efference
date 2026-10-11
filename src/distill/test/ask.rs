@@ -133,7 +133,7 @@ fn roster_is_empty_without_a_preamble() {
 /// (docs/redaction-fork.md).
 #[test]
 fn a_single_result_gate_asks_for_the_flat_form_and_no_label() {
-    let instruction = retain_instruction(&["r1".to_string()], &[]);
+    let instruction = retain_instruction(&["r1".to_string()], &[], Reader::Main);
     assert!(
         !instruction.contains("r1"),
         "nothing to copy: {instruction}"
@@ -150,7 +150,7 @@ fn a_single_result_gate_asks_for_the_flat_form_and_no_label() {
 #[test]
 fn a_multi_result_gate_lists_every_offered_label_and_the_count() {
     let offered = ["r1".to_string(), "r2".to_string()];
-    let instruction = retain_instruction(&offered, &[]);
+    let instruction = retain_instruction(&offered, &[], Reader::Main);
     assert!(instruction.contains("no others: r1, r2."), "{instruction}");
     assert!(
         instruction.contains("exactly 2 `results` entries"),
@@ -170,7 +170,7 @@ fn every_retain_ask_excludes_the_transcript_behind_it() {
         vec!["r1".to_string()],
         vec!["r1".to_string(), "r2".to_string()],
     ] {
-        let instruction = retain_instruction(&offered, &[]);
+        let instruction = retain_instruction(&offered, &[], Reader::Main);
         assert!(
             instruction.contains("Nothing earlier in this conversation is being triaged"),
             "the ask must say what is out of scope: {instruction}"
@@ -194,7 +194,7 @@ fn the_ask_grounds_the_note_in_the_kept_lines_and_flags_a_partial_enumeration() 
         vec!["only".to_string()],
         vec!["a".to_string(), "b".to_string()],
     ] {
-        let instruction = retain_instruction(&offered, &[]);
+        let instruction = retain_instruction(&offered, &[], Reader::Main);
         assert!(
             instruction.contains("Ground it in\n              the lines you kept"),
             "the note must be answerable from what survives: {instruction}"
@@ -216,7 +216,7 @@ fn the_ask_grounds_the_note_in_the_kept_lines_and_flags_a_partial_enumeration() 
 /// gates with a work tool instead of a verdict (journal/2026-08-07-session-key-review.md).
 #[test]
 fn the_ask_is_bannered_and_opens_and_closes_on_the_imperative() {
-    let instruction = retain_instruction(&["call_x".to_string()], &[]);
+    let instruction = retain_instruction(&["call_x".to_string()], &[], Reader::Main);
     let mut lines = instruction.lines();
     assert_eq!(lines.next(), Some(ASK_BANNER), "{instruction}");
     assert!(
@@ -234,7 +234,7 @@ fn the_ask_is_bannered_and_opens_and_closes_on_the_imperative() {
 /// (`extend_with_retry`), so the sentence is true as written rather than a discouragement.
 #[test]
 fn the_ask_says_this_turn_is_not_the_task() {
-    let instruction = retain_instruction(&["call_x".to_string()], &[]);
+    let instruction = retain_instruction(&["call_x".to_string()], &[], Reader::Main);
     assert!(
         instruction.contains("not a work turn"),
         "the ask must disown the task: {instruction}"
@@ -251,7 +251,7 @@ fn the_ask_says_this_turn_is_not_the_task() {
 #[test]
 fn rider_fields_appear_only_when_their_section_does() {
     let offered = ["call_x".to_string()];
-    let bare = retain_instruction(&offered, &[]);
+    let bare = retain_instruction(&offered, &[], Reader::Main);
     assert!(bare.contains("  keep "), "keep always rides: {bare}");
     for absent in ["surfaced", "inbox", "background"] {
         assert!(
@@ -259,7 +259,7 @@ fn rider_fields_appear_only_when_their_section_does() {
             "{absent} named with no section: {bare}"
         );
     }
-    let with_roster = retain_instruction(&offered, &[SURFACE_FIELD]);
+    let with_roster = retain_instruction(&offered, &[SURFACE_FIELD], Reader::Main);
     assert!(with_roster.contains("  surfaced "), "{with_roster}");
     assert!(!with_roster.contains("  inbox "), "{with_roster}");
 }
@@ -333,7 +333,7 @@ fn intent_feedback_is_carried_in_both_answer_shapes_and_absent_by_default() {
 /// say when the output lacks what the intent wanted rather than summarize around it.
 #[test]
 fn the_ask_scopes_intent_feedback_to_the_intent_and_prefers_it_didnt() {
-    let instruction = retain_instruction(&["only".to_string()], &[]);
+    let instruction = retain_instruction(&["only".to_string()], &[], Reader::Main);
     assert!(instruction.contains("intent_feedback"), "{instruction}");
     assert!(
         instruction.contains("about the intent, never about the task"),
@@ -362,4 +362,23 @@ fn title_instruction_quotes_the_standing_title() {
         "{kept}"
     );
     assert!(kept.contains("Keep it verbatim"), "{kept}");
+}
+
+/// Who answers decides what the note is (docs/redaction-fork.md): the agent's own model
+/// writes a note to self; a separate triage model writes a report that says what the
+/// output shows and never what to do next. Both keep the grounding rule.
+#[test]
+fn a_separate_triage_model_is_asked_for_a_report() {
+    let own = retain_instruction(&["r1".to_string()], &[], Reader::Main);
+    let separate = retain_instruction(&["r1".to_string()], &[], Reader::Triage);
+    assert!(own.contains("note to self"), "{own}");
+    assert!(separate.contains("A report for the agent"), "{separate}");
+    assert!(
+        separate.contains("not what to do about it"),
+        "a report names facts, not next steps: {separate}"
+    );
+    assert!(!separate.contains("note to self"), "{separate}");
+    for ask in [&own, &separate] {
+        assert!(ask.contains("puts that line in") || ask.contains("belongs in `keep`"));
+    }
 }

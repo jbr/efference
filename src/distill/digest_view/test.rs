@@ -69,7 +69,7 @@ fn render(view: TriageView) -> (String, Vec<UserPart>) {
         })
         .collect::<Vec<_>>()
         .join("\n");
-    let (_, ask) = gate_parts(&pending, &[], &[], &[]);
+    let (_, ask) = gate_parts(&pending, &[], &[], &[], Reader::Main);
     assert!(text.ends_with(&ask), "every view closes on the same ask");
     assert!(text.contains("cargo test") && text.contains("3 passed"));
     (text, parts.clone())
