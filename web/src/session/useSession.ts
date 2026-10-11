@@ -47,16 +47,25 @@ export function useSession(): {
       let connector: Connector | null = null;
       let recorder: { close(): void } | null = null;
       let cancelled = false;
-      void import("./record.ts").then(({ record }) => {
+      void Promise.all([
+        import("./record.ts"),
+        import("../ui/streamDebug.ts"),
+      ]).then(([{ record }, { installStreamDebug }]) => {
         const installed = record(store);
-        connector = connect(store, installed.tap, base);
-        recorder = installed;
+        const debug = installStreamDebug(store, installed.scrub, base);
+        connector = connect(store, installed.tap, base, debug.observer);
+        recorder = {
+          close() {
+            installed.close();
+            debug.close();
+          },
+        };
         // The import resolves after StrictMode's cleanup has already run, so
         // checking `cancelled` *before* building would leak a connection the
         // cleanup never saw. Build, then tear down if the effect is gone.
         if (cancelled) {
           connector.close();
-          installed.close();
+          recorder.close();
         } else {
           live.current = connector;
         }

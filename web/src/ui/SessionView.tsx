@@ -57,6 +57,15 @@ export function SessionView() {
       sessionName(session.topics.session_identity, sessionId()),
     ),
   );
+  useEffect(() => {
+    if (import.meta.env.DEV) {
+      document.dispatchEvent(
+        new CustomEvent("efference:stream-render", {
+          detail: { base: apiBase(), seq: session.lastSeq },
+        }),
+      );
+    }
+  }, [session]);
   // One projection, shared: the transcript renders it, the inspector reads
   // the selected call out of it. The selection is a call id, not a node —
   // the node is re-found each render so a landing result or verdict shows

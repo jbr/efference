@@ -1,51 +1,29 @@
-// Dev-only stream scrubbing: keep every frame the live session delivers, and
-// control when it folds (docs/web-client.md).
-//
-// The problem is that a pre-commit state is real but momentary. A tool call's
-// input arrives over a few hundred milliseconds and is then superseded by the
-// committed entry, and looking at what was on screen during those milliseconds
-// means catching them — which a screenshot taken through an extension, sharing
-// the event loop with the render it is trying to observe, does not reliably do.
-//
-// So this holds the fold rather than slowing the stream. Frames keep arriving
-// from the daemon and keep landing on the tape; what stops is the store
-// consuming them. The tape is the session's own frames in arrival order, so the
-// state at position N is the state the client genuinely passed through — nothing
-// here synthesizes a frame, reorders one, or stands in for one.
-//
-// Scope: within the current session, and in memory. A reload starts a new tape.
-// Repeatability across reloads would mean persisting the tape (localStorage) or
-// serving a recorded session through the daemon's own code
-// (backlog/session-replay.md) — the latter being the only way to get it for the
-// TUI too.
-//
-// Reached through an `import.meta.env.DEV` guard in `useSession.ts`, so a
-// production build discards the branch and this module with it.
+// Dev-only rolling stream recording and controlled folding (docs/web-client.md).
+// Retained frames replay from their exact base; a held store snapshot remains
+// independent when its position leaves the retained window.
 
 import type { Frame } from "../api/types.ts";
 import type { FrameTap } from "./connect.ts";
 import { applyFrame, type Session, type Store } from "./store.ts";
 import { sessionId } from "../api/base.ts";
 import { listTapes, loadTape, saveTape } from "./tapeStore.ts";
+import { FrameTape } from "./frameTape.ts";
 
-/**
- * How many frames a tape holds before it stops recording.
- *
- * It stops rather than dropping the oldest: every position is reconstructed by
- * folding from the tape's base, so discarding the head would make every
- * remaining position unreachable. A full tape is a legible limit; a silently
- * rebased one is a wrong transcript.
- */
+/** Number of recent frames retained; older frames fold into the replay base. */
 const MAX_TAPE = 20_000;
 
 /** The dev console handle, also driven by [`SCRUB_EVENT`]. */
 export interface ScrubHandle {
   /** Frames folded into the store. */
   readonly cursor: number;
-  /** Frames on the tape. Keeps growing while held. */
+  /** Frames retained on the rolling tape. */
   readonly length: number;
   /** Whether the store is tracking the live end of the tape. */
   readonly following: boolean;
+  /** The displayed held snapshot predates the retained replay window. */
+  readonly expired: boolean;
+  /** Frames already folded into the rolling base. */
+  readonly evicted: number;
   /** Stop folding; arriving frames keep landing on the tape. */
   hold(): void;
   /** Fold everything held back, and track the live end again. */
@@ -103,24 +81,29 @@ const open: Recorder[] = [];
  *
  * [`connect`]: ./connect.ts
  */
-export function record(store: Store): { tap: FrameTap; close(): void } {
-  const recorder = new Recorder(store);
+export function record(
+  store: Store,
+  capacity = MAX_TAPE,
+): { tap: FrameTap; scrub: ScrubHandle; close(): void } {
+  const recorder = new Recorder(store, capacity);
   return {
     tap: recorder,
+    scrub: recorder,
     close: () => recorder.close(),
   };
 }
 
 class Recorder implements FrameTap, ScrubHandle {
-  /** Every frame since the last catch-up read, in arrival order. */
-  private tape: Frame[] = [];
+  /** Recent frames in arrival order, independent of a held store snapshot. */
+  private tape: FrameTape;
   /**
-   * The store as it stood before the tape's first frame — the seeded transcript
-   * window. Every position is `base` plus a prefix of the tape, which is what
-   * makes a seek backwards exact rather than approximate.
+   * The state before the first retained frame: the seed plus evicted frames.
+   * Every position is `base` plus a prefix of the tape, so backwards seeks
+   * reconstruct an exact state.
    */
   private base: Session;
-  private full = false;
+  expired = false;
+  evicted = 0;
   cursor = 0;
   following = true;
   /** Whose recording this is, and when it began — its key in the saved-tape
@@ -131,7 +114,11 @@ class Recorder implements FrameTap, ScrubHandle {
   private replaying = false;
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
 
-  constructor(private readonly store: Store) {
+  constructor(
+    private readonly store: Store,
+    private readonly capacity: number,
+  ) {
+    this.tape = new FrameTape(capacity);
     this.base = store.snapshot();
     open.push(this);
     window.__scrub = this;
@@ -152,9 +139,10 @@ class Recorder implements FrameTap, ScrubHandle {
   /** A fresh catch-up read landed: what came before describes a replaced store. */
   reset(): void {
     if (this.replaying) return;
-    this.tape = [];
+    this.tape = new FrameTape(this.capacity);
     this.cursor = 0;
-    this.full = false;
+    this.expired = false;
+    this.evicted = 0;
     this.following = true;
     this.base = this.store.snapshot();
     this.startedAt = Date.now();
@@ -181,7 +169,7 @@ class Recorder implements FrameTap, ScrubHandle {
         session: this.session,
         startedAt: this.startedAt,
         base: this.base,
-        tape: this.tape,
+        tape: this.tape.snapshot(),
       }).catch((error: unknown) =>
         console.warn("[scrub] could not save the tape", error),
       );
@@ -204,8 +192,10 @@ class Recorder implements FrameTap, ScrubHandle {
     this.replaying = true;
     this.following = false;
     this.base = saved.base;
-    this.tape = saved.tape;
-    this.full = false;
+    this.tape = new FrameTape(Math.max(this.capacity, saved.tape.length));
+    for (const frame of saved.tape) this.tape.push(frame);
+    this.expired = false;
+    this.evicted = 0;
     // Past the end, so foldTo refolds from the restored base rather than
     // walking forward from a cursor into the live tape.
     this.cursor = saved.tape.length + 1;
@@ -218,12 +208,13 @@ class Recorder implements FrameTap, ScrubHandle {
 
   frame(frame: Frame): void {
     if (this.replaying) return;
-    if (this.tape.length >= MAX_TAPE) {
-      if (!this.full) console.warn(`[scrub] ${this.describe()}`);
-      this.full = true;
-      return;
+    const evicted = this.tape.push(frame);
+    if (evicted !== undefined) {
+      this.base = applyFrame(this.base, evicted);
+      this.evicted += 1;
+      if (this.cursor > 0) this.cursor -= 1;
+      else this.expired = true;
     }
-    this.tape.push(frame);
     if (frame.class === "output") this.streamed = true;
     this.scheduleSave();
     if (this.following) this.foldTo(this.tape.length);
@@ -238,9 +229,9 @@ class Recorder implements FrameTap, ScrubHandle {
    */
   private foldTo(n: number): void {
     const target = Math.max(0, Math.min(n, this.tape.length));
-    if (target < this.cursor) {
+    if (this.expired || target < this.cursor) {
       const base = this.base;
-      const prefix = this.tape.slice(0, target);
+      const prefix = this.tape.snapshot(target);
       // `connection` is carried over rather than rewound. It is not a recorded
       // fact — no frame carries it; the connection lifecycle sets it directly —
       // so refolding would restore whatever it was when the base was taken and
@@ -252,11 +243,12 @@ class Recorder implements FrameTap, ScrubHandle {
       this.cursor = target;
     } else {
       while (this.cursor < target) {
-        const frame = this.tape[this.cursor];
+        const frame = this.tape.at(this.cursor);
         this.store.update((s) => applyFrame(s, frame));
         this.cursor += 1;
       }
     }
+    this.expired = false;
     // While held, a scrub is a deliberate move to one position and the render
     // is what is being looked at, so the store notifies now rather than on the
     // next animation frame. While following, the coalescing is the point
@@ -324,9 +316,10 @@ class Recorder implements FrameTap, ScrubHandle {
   }
 
   describe(): string {
-    const full = this.full ? ` · tape full (${MAX_TAPE})` : "";
+    const rolled = this.evicted > 0 ? ` · rolled ${this.evicted}` : "";
+    const expired = this.expired ? " · held position expired" : "";
     return this.following
-      ? `rec ${this.tape.length}${full}`
-      : `scrub ${this.cursor}/${this.tape.length}${full}`;
+      ? `rec ${this.tape.length}${rolled}`
+      : `scrub ${this.cursor}/${this.tape.length}${rolled}${expired}`;
   }
 }

@@ -10,7 +10,11 @@
 import { apiBase } from "../api/base.ts";
 import type { Frame } from "../api/types.ts";
 import { ApiError, fetchLogTail } from "../api/http.ts";
-import { openStream, type StreamHandle } from "../api/stream.ts";
+import {
+  openStream,
+  type StreamCallbacks,
+  type StreamHandle,
+} from "../api/stream.ts";
 import { applyFrame, reseed, type Store } from "./store.ts";
 
 /** How much of the log's end the catch-up read asks for. */
@@ -39,6 +43,7 @@ export function connect(
   store: Store,
   tap?: FrameTap,
   base: string = apiBase(),
+  observer?: Partial<StreamCallbacks>,
 ): Connector {
   const sink: FrameTap = tap ?? {
     reset: () => {},
@@ -76,9 +81,18 @@ export function connect(
     stream = openStream(
       since === null ? 0 : since + 1,
       {
-        onFrame: (frame) => sink.frame(frame),
-        onConnect: () => store.update((s) => ({ ...s, connection: "live" })),
+        onAttempt: observer?.onAttempt,
+        onActivity: observer?.onActivity,
+        onFrame: (frame) => {
+          observer?.onFrame?.(frame);
+          sink.frame(frame);
+        },
+        onConnect: () => {
+          observer?.onConnect?.();
+          store.update((s) => ({ ...s, connection: "live" }));
+        },
         onDisconnect: (error) => {
+          observer?.onDisconnect?.(error);
           if (
             error instanceof ApiError &&
             (error.status === 401 || error.status === 404)

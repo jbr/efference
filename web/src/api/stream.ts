@@ -21,6 +21,9 @@ export interface StreamHandle {
 
 export interface StreamCallbacks {
   onFrame(frame: Frame): void;
+  /** Diagnostic observation of a request and raw reads, including heartbeats. */
+  onAttempt?(cursor: Seq): void;
+  onActivity?(bytes: number): void;
   /** Connection ended or failed; the reader will retry unless closed. */
   onDisconnect?(error: unknown): void;
   onConnect?(): void;
@@ -47,6 +50,7 @@ export function openStream(
     while (!closed) {
       controller = new AbortController();
       try {
+        callbacks.onAttempt?.(cursor);
         const response = await fetch(`${base}/v1/events?since=${cursor}`, {
           headers: { accept: "text/event-stream" },
           signal: controller.signal,
@@ -58,7 +62,7 @@ export function openStream(
         attempt = 0;
         callbacks.onConnect?.();
         let sliceStart = performance.now();
-        for await (const data of sseData(response.body)) {
+        for await (const data of sseData(response.body, callbacks.onActivity)) {
           const frame = JSON.parse(data) as Frame;
           if (frame.class === "log") {
             cursor = frame.seq + 1;
@@ -134,6 +138,7 @@ function yieldToTasks(): Promise<void> {
  */
 export async function* sseData(
   body: ReadableStream<Uint8Array>,
+  onActivity?: (bytes: number) => void,
 ): AsyncGenerator<string> {
   const decoder = new TextDecoder();
   let buffer = "";
@@ -143,6 +148,7 @@ export async function* sseData(
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
+      onActivity?.(value.byteLength);
       buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split(/\r\n|\r|\n/);
       buffer = lines.pop() ?? "";

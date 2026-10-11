@@ -42,6 +42,15 @@ describe("sseData", () => {
     expect(events).toEqual(["x"]);
   });
 
+  it("reports raw reads including heartbeat-only chunks", async () => {
+    const reads = vi.fn();
+    const events = [];
+    for await (const data of sseData(streamOf(":\n\n", "data: x\n\n"), reads))
+      events.push(data);
+    expect(events).toEqual(["x"]);
+    expect(reads.mock.calls).toEqual([[3], [9]]);
+  });
+
   it("joins multi-line data fields with newlines", async () => {
     const events = await collect(streamOf("data: a\ndata: b\n\n"));
     expect(events).toEqual(["a\nb"]);

@@ -180,6 +180,91 @@ describe("the command bridge", () => {
   });
 });
 
+describe("rolling retention", () => {
+  function rolling() {
+    const store = new Store();
+    const installed = record(store, 3);
+    installed.tap.reset();
+    return { store, ...installed, scrub: window.__scrub! };
+  }
+
+  it("keeps folding and replays the retained window after multiple wraps", () => {
+    const { store, tap, close, scrub } = rolling();
+    try {
+      for (const frame of arriving.slice(0, 4)) tap.frame(frame);
+      for (let i = 0; i < 8; i++) tap.frame(fragment(0, "x"));
+      const live = store.snapshot();
+      expect(live.lastSeq).toBeNull();
+      expect(scrub.length).toBe(3);
+      expect(scrub.evicted).toBe(9);
+      expect(scrub.cursor).toBe(3);
+      scrub.seek(0);
+      expect(store.snapshot()).not.toEqual(live);
+      scrub.seek(3);
+      expect(store.snapshot()).toEqual(live);
+      scrub.resume();
+      tap.frame(commit);
+      expect(store.snapshot().lastSeq).toBe(9);
+      expect(scrub.following).toBe(true);
+      expect(scrub.expired).toBe(false);
+    } finally {
+      close();
+    }
+  });
+
+  it("retains an evicted held snapshot until a seek or step", () => {
+    const { store, tap, close, scrub } = rolling();
+    try {
+      tap.frame(start);
+      scrub.hold();
+      const held = store.snapshot();
+      for (let i = 0; i < 6; i++) tap.frame(fragment(0, "x"));
+      expect(scrub.expired).toBe(true);
+      expect(store.snapshot()).toBe(held);
+      scrub.step();
+      expect(scrub.expired).toBe(false);
+      expect(store.snapshot().streaming.blocks[0].text).toBe("xxxx");
+      scrub.seek(0);
+      expect(store.snapshot().streaming.blocks[0].text).toBe("xxx");
+      scrub.resume();
+      expect(store.snapshot().streaming.blocks[0].text).toBe("xxxxxx");
+    } finally {
+      close();
+    }
+  });
+
+  it("resumes from an expired held snapshot including a committed item", () => {
+    const { store, tap, close, scrub } = rolling();
+    try {
+      scrub.hold();
+      for (const frame of arriving) tap.frame(frame);
+      expect(scrub.expired).toBe(true);
+      expect(store.snapshot().lastSeq).toBeNull();
+      scrub.resume();
+      expect(store.snapshot().lastSeq).toBe(9);
+      expect(scrub.expired).toBe(false);
+      expect(scrub.cursor).toBe(3);
+    } finally {
+      close();
+    }
+  });
+});
+it("delivers committed items beyond the default 20,000-frame limit", () => {
+  const { store, tap, close, scrub } = installed();
+  try {
+    for (let i = 0; i < 20_001; i++) tap.frame(fragment(0, ""));
+    tap.frame(commit);
+    expect(scrub().length).toBe(20_000);
+    expect(scrub().evicted).toBe(2);
+    expect(store.snapshot().lastSeq).toBe(9);
+    scrub().seek(0);
+    scrub().resume();
+    expect(store.snapshot().lastSeq).toBe(9);
+  } finally {
+    close();
+  }
+});
+
 describe("the position log", () => {
   it("names the mode and the position after each command, and draws nothing", () => {
     const info = vi.spyOn(console, "info").mockImplementation(() => {});

@@ -1958,9 +1958,15 @@ copies when a stylesheet changes, so under HMR the pinned states follow the edit
 ### Scrubbing the stream — `web/src/session/record.ts`
 
 A dev build interposes a recorder between the stream reader and the fold.
-`connect` takes an optional `FrameTap`; the recorder's keeps every frame on a
-tape in arrival order and decides when the store consumes it. The connection is
-otherwise unchanged — same catch-up read, same `GET /events`, same frames — so
+`connect` takes an optional `FrameTap`; the recorder retains the latest 20,000
+frames in arrival order and decides when the store consumes them. `session/frameTape.ts`
+uses a ring buffer; each evicted frame folds into the tape's base snapshot, so
+seeking within the retained window reconstructs the exact state. Eviction does
+not stop live folding. A held store snapshot remains independent of the tape;
+if its position is evicted, it stays displayed and is marked expired until an
+explicit step, seek, or resume refolds within the retained window. Cursor values
+are relative to the retained window, and the recorder reports the evicted count.
+The connection is otherwise unchanged — same catch-up read, same `GET /events`, same frames — so
 what a held position shows is a state the client genuinely passed through.
 Nothing is synthesized, reordered, or stood in for.
 
@@ -1982,10 +1988,18 @@ entirely, where slowing the stream only widens it.
 
 Driven by `window.__scrub` from devtools, and by a `efference:scrub` DOM
 CustomEvent — an extension's scripts run in an isolated world that shares the
-DOM and nothing else, so a global the page set is invisible to them. Nothing is
-drawn on the page: installing the recorder prints the interface to the console,
-and each command logs the mode and position it landed on (`[scrub] scrub 137/412`),
-without which two screenshots at different cursors are indistinguishable.
+DOM and nothing else, so a global the page set is invisible to them. Installing
+the recorder prints the interface to the console, and each command logs the mode
+and position it landed on (`[scrub] scrub 137/412`).
+
+While investigating stream recovery, dev session views also install a temporary,
+non-interactive overlay (`ui/streamDebug.ts`). A one-second timer reads diagnostics
+without updating the session store or rerendering React: connection attempts,
+raw byte reads including heartbeats, delivered frame counts and sequence,
+folded store sequence, last reported view render, and recorder mode/window.
+The overlay remains visible for screenshots; session unmount removes it and its
+timer. Production builds omit the recorder and overlay. Raw activity observation
+in `api/stream.ts` does not change heartbeat parsing or reconnect policy.
 
 A recording is saved to IndexedDB (`session/tapeStore.ts`) once it holds streamed
 output — a reload that only reconnects records a state snapshot, and saving those
