@@ -449,7 +449,7 @@ pub(crate) fn host_routes(files: bool) -> impl trillium::Handler {
         .all(
             "/sessions/:session/*",
             (
-                resolve_session,
+                move |conn: Conn| async move { resolve_session(conn, files).await },
                 control_routes(),
                 files.then_some(session_files),
             ),
@@ -534,8 +534,9 @@ async fn read_sessions(conn: Conn) -> Conn {
 struct HostedFiles(Files);
 
 /// `/sessions/:session/*`: put the session into conn state for the control
-/// routes, or `404` when no hosted session has that id.
-async fn resolve_session(conn: Conn) -> Conn {
+/// routes, or `404` when no hosted session has that id. Exact public web-shell
+/// routes pass through even without a session (docs/web-client.md).
+async fn resolve_session(conn: Conn, web: bool) -> Conn {
     let Some(host) = host_of(&conn) else {
         return missing_host(conn);
     };
@@ -544,6 +545,16 @@ async fn resolve_session(conn: Conn) -> Conn {
         Some(hosted) => conn
             .with_state(hosted.session)
             .with_state(HostedFiles(hosted.files)),
+        // The router has stripped the session prefix. These exact routes carry
+        // only the public shell; the client then observes the API's 404 and goes
+        // home (docs/web-client.md). Control and file paths still fail here.
+        None if web
+            && conn.method() == trillium::Method::Get
+            && super::tcp::Surface::Session
+                .spa_route(&format!("/{}", conn.path().trim_start_matches('/'))) =>
+        {
+            conn
+        }
         None => no_such_session(conn, &id),
     }
 }

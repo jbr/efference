@@ -54,7 +54,7 @@ export async function requestAt<T>(
 }
 
 /** Throw a non-2xx as an ApiError carrying its error envelope. */
-async function throwIfFailed(response: Response): Promise<void> {
+export async function throwIfFailed(response: Response): Promise<void> {
   if (response.ok) return;
   let envelope: ErrorEnvelope;
   try {

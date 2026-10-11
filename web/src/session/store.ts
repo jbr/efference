@@ -58,7 +58,7 @@ export interface Streaming {
 }
 
 export type Connection =
-  "connecting" | "live" | "reconnecting" | "unauthenticated";
+  "connecting" | "live" | "reconnecting" | "unauthenticated" | "missing";
 
 export interface Session {
   connection: Connection;

@@ -61,7 +61,10 @@ export function SessionView() {
   const follow = successorHref(session.topics.session_identity, sessionHref);
   useEffect(() => {
     if (follow !== null) navigate(follow, "replace");
-  }, [follow]);
+    else if (session.connection === "missing" && apiBase() !== "") {
+      navigate("/", "replace");
+    }
+  }, [follow, session.connection]);
   // The gated call's slot in the transcript, where the gate's decision
   // renders (ui/Gate.tsx); null until that call is on screen.
   const [gateSlot, setGateSlot] = useState<HTMLDivElement | null>(null);

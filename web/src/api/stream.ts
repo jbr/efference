@@ -12,6 +12,7 @@
 // and `:` heartbeat comments fall out of the grammar for free.
 
 import { apiBase } from "./base.ts";
+import { throwIfFailed } from "./http.ts";
 import type { Frame, Seq } from "./types.ts";
 
 export interface StreamHandle {
@@ -50,8 +51,9 @@ export function openStream(
           headers: { accept: "text/event-stream" },
           signal: controller.signal,
         });
-        if (!response.ok || !response.body) {
-          throw new Error(`events: http ${response.status}`);
+        await throwIfFailed(response);
+        if (!response.body) {
+          throw new Error("events: missing response body");
         }
         attempt = 0;
         callbacks.onConnect?.();
@@ -71,6 +73,7 @@ export function openStream(
       } catch (error) {
         if (closed) return;
         callbacks.onDisconnect?.(error);
+        if (closed) return;
         attempt += 1;
         await sleep(Math.min(500 * 2 ** attempt, 15_000));
       }

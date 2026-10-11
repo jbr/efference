@@ -8,6 +8,7 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- Web views return home when their session is missing or archived, including stale direct page URLs, while retaining login, reconnect, and handoff navigation.
 - Web composer drafts retain text and attachments per session, keep uploads running across switches, and restore text and completed attachments after reload.
 - Compact, expandable web ambient notifications with plain-text terminal output, dedicated gallery specimens, and shared raw-output typography.
 - **The digest carries the agent's mid-turn prose** (docs/digest.md): every assistant turn's prose renders, not only the turn-ending reply, so the fold's narrator sees what the agent took from the operator and meant to do next.

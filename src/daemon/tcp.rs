@@ -366,7 +366,7 @@ impl Surface {
     /// joins its control paths onto (docs/web-client.md), so every route is answered
     /// there too. The enumeration stays exact either way: `/sessions/<id>/anything`
     /// that is not a named route is still a `404`.
-    fn spa_route(self, path: &str) -> bool {
+    pub(super) fn spa_route(self, path: &str) -> bool {
         SPA_ROUTES.contains(&path)
             || (matches!(self, Surface::Host)
                 && session_scoped(path).is_some_and(|route| SPA_ROUTES.contains(&route)))

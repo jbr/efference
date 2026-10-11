@@ -2,7 +2,8 @@
 // a bounded catch-up read, then the one long-lived stream from the cursor —
 // `GET /log?tail=N`, then `GET /events?since=last_seq+1`. Reconnect inside the
 // stream reader replays by cursor; a 401 anywhere parks the session as
-// unauthenticated until Login mints a cookie and calls retry(). The stream stays
+// unauthenticated until Login mints a cookie and calls retry(). A 404 marks the
+// session missing and stops retries. The stream stays
 // open while the tab is hidden: whether a person is attending is reported
 // separately (attention.ts), not inferred from the connection.
 
@@ -56,8 +57,14 @@ export function connect(
       store.update((s) => reseed(s, entries));
     } catch (error) {
       if (closed) return;
-      if (error instanceof ApiError && error.status === 401) {
-        store.update((s) => ({ ...s, connection: "unauthenticated" }));
+      if (
+        error instanceof ApiError &&
+        (error.status === 401 || error.status === 404)
+      ) {
+        store.update((s) => ({
+          ...s,
+          connection: error.status === 404 ? "missing" : "unauthenticated",
+        }));
         return;
       }
       // The daemon is unreachable or errored; the stream opener below will
@@ -71,8 +78,20 @@ export function connect(
       {
         onFrame: (frame) => sink.frame(frame),
         onConnect: () => store.update((s) => ({ ...s, connection: "live" })),
-        onDisconnect: () =>
-          store.update((s) => ({ ...s, connection: "reconnecting" })),
+        onDisconnect: (error) => {
+          if (
+            error instanceof ApiError &&
+            (error.status === 401 || error.status === 404)
+          ) {
+            stream?.close();
+            store.update((s) => ({
+              ...s,
+              connection: error.status === 404 ? "missing" : "unauthenticated",
+            }));
+          } else {
+            store.update((s) => ({ ...s, connection: "reconnecting" }));
+          }
+        },
       },
       base,
     );

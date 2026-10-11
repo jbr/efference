@@ -79,6 +79,13 @@ events — a client would register one listener per known kind and silently drop
 frames from a newer daemon. Reconnection resumes by `?since=` (the daemon does not
 read `Last-Event-ID`), replaying the durable subset exactly.
 
+The catch-up read and stream opener retain structured HTTP failures. A `401`
+parks the connector for login; a `404` marks the session `missing` and stops
+retries. `SessionView` replaces a missing host session's page with the root,
+without a toast, so Back does not return to the absent session. A known handoff
+successor takes precedence over going home. Network failures and other HTTP
+errors stay on the reconnect path rather than triggering navigation.
+
 ### Coalescing the fold
 
 A long block arrives as thousands of `output` deltas, and the pre-commit tail
@@ -1856,7 +1863,11 @@ six-digit field on a bare visit or a failed trade. The SPA index answers the cli
 named routes and nothing else (`SPA_ROUTES`, `src/daemon/tcp.rs`) — a broader index
 fallback would answer scanner probes `200`. On a host those routes are also answered
 under a session prefix, which is the one place the anonymous shell sits among guarded
-paths ([web-bind.md](web-bind.md)). One more GET is anonymous: on a *session* bind,
+paths ([web-bind.md](web-bind.md)). The exact shell routes remain available when
+that session is absent: the host resolver lets them reach the frontend, whose
+session API read observes `404` and navigates home. Missing-session API and file
+routes still answer `404` after their credential checks. One more GET is anonymous:
+on a *session* bind,
 `GET /sessions`, which is no route of its and answers `404` — that `404` is how
 `resolveEntry` reads "not a host" (`web/src/session/entry.ts`), so the probe has to
 reach the router rather than stop at a `401`.
