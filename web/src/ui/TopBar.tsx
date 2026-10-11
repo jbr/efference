@@ -12,7 +12,7 @@ import type {
   Usage,
 } from "../api/types.ts";
 import { sessionId } from "../api/base.ts";
-import { listedTitle } from "../session/listing.ts";
+import { sessionName } from "./identity.ts";
 import { upstreamChip } from "./upstream.ts";
 import { ContextBar } from "./ContextBar.tsx";
 import { AppHeader } from "./AppHeader.tsx";
@@ -113,10 +113,7 @@ export function TopBar({
     >
       {(identity !== null || routeId !== null) && (
         <span className="session-name" title={identity?.id ?? routeId ?? ""}>
-          {identity?.title ??
-            (routeId !== null ? listedTitle(routeId) : null) ??
-            identity?.id ??
-            routeId}
+          {sessionName(identity, routeId)}
         </span>
       )}
       <span className="spacer" />

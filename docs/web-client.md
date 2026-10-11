@@ -1129,6 +1129,13 @@ against the column edge.
 
 ## The top bar
 
+The browser document title follows the current session name, with ` · efference`
+as the suffix; home and unresolved root views use `efference`. `ui/identity.ts`
+shares the header's title/listing/id fallback, and `ui/documentTitle.ts` updates
+the document in a layout effect and resets it when its owning view unmounts.
+Session identity updates rename the tab without a reload; switching to a cold
+session uses that session's listing title or id rather than the previous view's.
+
 `ui/TopBar.tsx`: sticky interface chrome — the serif wordmark (under a host,
 also the link back to the session list), the session's title
 ([session-title.md](session-title.md), the id until one is written), the

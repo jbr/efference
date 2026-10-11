@@ -8,6 +8,7 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- Web browser titles follow the active session and its title changes, and reset to the app name on home.
 - Web views return home when their session is missing or archived, including stale direct page URLs, while retaining login, reconnect, and handoff navigation.
 - Web composer drafts retain text and attachments per session, keep uploads running across switches, and restore text and completed attachments after reload.
 - Compact, expandable web ambient notifications with plain-text terminal output, dedicated gallery specimens, and shared raw-output typography.

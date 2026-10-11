@@ -8,6 +8,21 @@
 // verbatim: an unshortened absolute path is correct, a wrongly shortened one is
 // a claim about a directory that does not exist.
 
+import type { SessionIdentity } from "../api/types.ts";
+import { listedTitle } from "../session/listing.ts";
+
+export function sessionName(
+  identity: SessionIdentity | null | undefined,
+  routeId: string | null,
+): string | null {
+  return (
+    identity?.title ??
+    (routeId !== null ? listedTitle(routeId) : null) ??
+    identity?.id ??
+    routeId
+  );
+}
+
 const HOME_PARENTS = ["Users", "home"];
 
 /** Where a session that handed off (docs/tools.md) sends its viewer: the

@@ -5,7 +5,7 @@
 // `/sessions/<id>/`; `App.tsx` decides which of the two it is.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { apiBase, clientRoute, sessionHref } from "../api/base.ts";
+import { apiBase, clientRoute, sessionHref, sessionId } from "../api/base.ts";
 import type { CallId } from "../api/types.ts";
 import { spotFor } from "../session/store.ts";
 import {
@@ -16,11 +16,12 @@ import {
 import { buildTree, type CallNode } from "../session/tree.ts";
 import { useSession } from "../session/useSession.ts";
 import { Composer, type Recalled } from "./Composer.tsx";
+import { sessionDocumentTitle, useDocumentTitle } from "./documentTitle.ts";
 import { Drawer } from "./Drawer.tsx";
 import { drawerAttention } from "./drawerAttention.ts";
 import { FileView } from "./FileView.tsx";
 import { GateSurface } from "./Gate.tsx";
-import { successorHref } from "./identity.ts";
+import { sessionName, successorHref } from "./identity.ts";
 import { Inspector } from "./Inspector.tsx";
 import { JumpToLatest } from "./JumpToLatest.tsx";
 import { LightboxHost } from "./Lightbox.tsx";
@@ -51,6 +52,11 @@ function bootRoute(): "session" | "tree" {
 
 export function SessionView() {
   const { session, connector, actions } = useSession();
+  useDocumentTitle(
+    sessionDocumentTitle(
+      sessionName(session.topics.session_identity, sessionId()),
+    ),
+  );
   // One projection, shared: the transcript renders it, the inspector reads
   // the selected call out of it. The selection is a call id, not a node —
   // the node is re-found each render so a landing result or verdict shows

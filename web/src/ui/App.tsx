@@ -9,6 +9,7 @@
 
 import { deriveBase } from "../api/base.ts";
 import { useEntry } from "../session/entry.ts";
+import { APP_TITLE, useDocumentTitle } from "./documentTitle.ts";
 import { Login } from "./Login.tsx";
 import { usePathname } from "./route.ts";
 import { SessionList } from "./SessionList.tsx";
@@ -17,6 +18,7 @@ import { SessionView } from "./SessionView.tsx";
 export function App() {
   const base = deriveBase(usePathname());
   const { entry, resolve } = useEntry(base);
+  useDocumentTitle(entry?.kind === "session" ? null : APP_TITLE);
   // The probe is one same-origin request; the shell paints, and this is the
   // moment before it answers. Nothing is claimed about the binding until it does.
   if (entry === null) return null;
