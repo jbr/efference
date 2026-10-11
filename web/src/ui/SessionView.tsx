@@ -18,6 +18,7 @@ import { useSession } from "../session/useSession.ts";
 import { Composer, type Recalled } from "./Composer.tsx";
 import { sessionDocumentTitle, useDocumentTitle } from "./documentTitle.ts";
 import { Drawer } from "./Drawer.tsx";
+import { EarlierHistory } from "./EarlierHistory.tsx";
 import { drawerAttention } from "./drawerAttention.ts";
 import { FileView } from "./FileView.tsx";
 import { GateSurface } from "./Gate.tsx";
@@ -51,7 +52,7 @@ function bootRoute(): "session" | "tree" {
 }
 
 export function SessionView() {
-  const { session, connector, actions } = useSession();
+  const { session, connector, actions, history } = useSession();
   useDocumentTitle(
     sessionDocumentTitle(
       sessionName(session.topics.session_identity, sessionId()),
@@ -261,6 +262,7 @@ export function SessionView() {
           <div className="col">{session.connection}…</div>
         </div>
       )}
+      <EarlierHistory history={history} entries={session.entries} />
       <Transcript
         nodes={nodes}
         streaming={session.streaming}

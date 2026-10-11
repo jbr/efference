@@ -1,5 +1,11 @@
 import { afterEach, expect, test, vi } from "vitest";
-import { ApiError, continueLoop } from "./http.ts";
+import {
+  ApiError,
+  continueLoop,
+  fetchLogBefore,
+  fetchLogRange,
+  fetchCallSeq,
+} from "./http.ts";
 
 const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status });
@@ -41,4 +47,20 @@ test("a decline arrives as an ApiError naming the case", async () => {
   expect((error as ApiError).message).toBe(
     "nothing to continue: the last turn completed",
   );
+});
+
+test("history reads bind ranges and encoded references to their source session", async () => {
+  const fetchMock = vi
+    .fn()
+    .mockImplementation(() => Promise.resolve(json(200, [])));
+  vi.stubGlobal("fetch", fetchMock);
+  await fetchLogBefore(42, 80, "/sessions/source");
+  await fetchLogRange(12, 42, "/sessions/source");
+  await fetchCallSeq("call/id?", "/sessions/source");
+  expect(fetchMock.mock.calls.map(([path]) => path)).toEqual([
+    "/sessions/source/v1/log?before=42&tail=80",
+    "/sessions/source/v1/log?since=12&before=42",
+    "/sessions/source/v1/tool_calls/call%2Fid%3F",
+  ]);
+  for (const [, init] of fetchMock.mock.calls) expect(init.method).toBe("GET");
 });

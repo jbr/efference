@@ -17,6 +17,7 @@ import { recallTurn, resolveGate, submitTurn } from "./actions.ts";
 import { connect, type Connector } from "./connect.ts";
 import { ProcessSeeder } from "./processSeed.ts";
 import { acquireStore } from "./registry.ts";
+import { acquireHistory, type HistoryLoader } from "./history.ts";
 import type { Session } from "./store.ts";
 
 export interface SessionActions {
@@ -31,6 +32,7 @@ export function useSession(): {
   session: Session;
   connector: Connector;
   actions: SessionActions;
+  history: HistoryLoader;
 } {
   // The base is read once per mount: the view is keyed by session, so a page
   // that has moved to another session is a different mount (ui/App.tsx).
@@ -110,5 +112,6 @@ export function useSession(): {
   useEffect(() => {
     if (processes) seeder.sync(processes);
   }, [seeder, processes]);
-  return { session, connector, actions };
+  const history = useMemo(() => acquireHistory(store, base), [store, base]);
+  return { session, connector, actions, history };
 }

@@ -16,9 +16,10 @@ import {
   type StreamHandle,
 } from "../api/stream.ts";
 import { applyFrame, reseed, type Store } from "./store.ts";
+import { coherentWindow, HISTORY_PAGE } from "./history.ts";
 
 /** How much of the log's end the catch-up read asks for. */
-export const CATCH_UP_TAIL = 200;
+export const CATCH_UP_TAIL = HISTORY_PAGE;
 
 export interface Connector {
   /** Re-run catch-up + stream, e.g. after the login view mints a session. */
@@ -57,9 +58,17 @@ export function connect(
     stream = null;
     store.update((s) => ({ ...s, connection: "connecting" }));
     try {
-      const entries = await fetchLogTail(CATCH_UP_TAIL, base);
+      const tail = await fetchLogTail(CATCH_UP_TAIL, base);
       if (closed) return;
-      store.update((s) => reseed(s, entries));
+      store.update((s) => reseed(s, tail));
+      try {
+        const entries = await coherentWindow(store.snapshot().entries, base);
+        if (closed) return;
+        store.update((s) => reseed(s, entries));
+      } catch {
+        // A missing reference is not a missing session. Retain the fetched
+        // window and its cursor; backward paging can bring its owner into view.
+      }
     } catch (error) {
       if (closed) return;
       if (

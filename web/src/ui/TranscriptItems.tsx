@@ -281,14 +281,26 @@ function CallItem({
 }) {
   const [open, setOpen] = useState(false);
   if (gated) {
-    return <div className="t-entry t-call gated">{renderFull(node)}</div>;
+    return (
+      <div data-transcript-key={node.key} className="t-entry t-call gated">
+        {renderFull(node)}
+      </div>
+    );
   }
   if (open || level === "full") {
-    return <div className="t-entry t-call">{renderFull(node)}</div>;
+    return (
+      <div data-transcript-key={node.key} className="t-entry t-call">
+        {renderFull(node)}
+      </div>
+    );
   }
   if (level === "brief") {
     return (
-      <button className="t-entry t-row" onClick={() => setOpen(true)}>
+      <button
+        data-transcript-key={node.key}
+        className="t-entry t-row"
+        onClick={() => setOpen(true)}
+      >
         <ActionHead node={node} />
         <Note node={node} />
       </button>
@@ -297,7 +309,7 @@ function CallItem({
   // Trimmed: the whole call, its result capped to a few lines under a fade,
   // and the note lifted out from under the fade to below it.
   return (
-    <div className="t-entry t-call t-capped">
+    <div data-transcript-key={node.key} className="t-entry t-call t-capped">
       <Capped label="Show the whole result" onExpand={() => setOpen(true)}>
         {renderFull(node)}
       </Capped>
@@ -346,7 +358,11 @@ export function TranscriptItems({
         const payload = item.node.entry.payload;
         if (isThinking(item.node) && "Assistant" in payload) {
           return (
-            <div key={item.node.key} className="t-entry">
+            <div
+              key={item.node.key}
+              data-transcript-key={item.node.key}
+              className="t-entry"
+            >
               <Thinking
                 text={joinText(assistantView(payload.Assistant).thinking)}
                 level={level}
@@ -354,7 +370,11 @@ export function TranscriptItems({
             </div>
           );
         }
-        return <div key={item.node.key}>{renderLeaf(item.node)}</div>;
+        return (
+          <div key={item.node.key} data-transcript-key={item.node.key}>
+            {renderLeaf(item.node)}
+          </div>
+        );
       })}
     </>
   );

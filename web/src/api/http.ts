@@ -89,6 +89,26 @@ export const fetchState = () => get<StateSnapshot>("/v1/state");
 // moved (api/stream.ts: the connection's own base).
 export const fetchLogTail = (n: number, base: string = apiBase()) =>
   requestAt<LogEntry[]>("GET", `${base}/v1/log?tail=${n}`);
+export const fetchLogBefore = (
+  before: Seq,
+  n: number,
+  base: string = apiBase(),
+) => requestAt<LogEntry[]>("GET", `${base}/v1/log?before=${before}&tail=${n}`);
+export const fetchLogRange = (
+  since: Seq,
+  before: Seq,
+  base: string = apiBase(),
+) =>
+  requestAt<LogEntry[]>(
+    "GET",
+    `${base}/v1/log?since=${since}&before=${before}`,
+  );
+export const fetchCallSeq = (id: CallId, base: string = apiBase()) =>
+  requestAt<{ seq: Seq }>(
+    "GET",
+    `${base}/v1/tool_calls/${encodeURIComponent(id)}`,
+  );
+
 // One entry by seq — the dereference address for what the window and the stream
 // elide (a truncated result's `content`, docs/control-api.md). ETag-validated, so
 // a second look is a 304.

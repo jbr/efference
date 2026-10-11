@@ -136,8 +136,8 @@ export type TranscriptNode = LeafNode | BatchNode;
  * where they appear in the log: that attachment is the whole point of the
  * hierarchy. Entries naming a call that isn't in the log are dropped rather
  * than rendered loose — a result with no call is not a thing a reader can act
- * on, and the stream's coherence rule (docs/control-api.md) means it does not
- * normally happen.
+ * on. Window reads resolve these relationships in `history.ts`; an unresolved
+ * reference remains omitted until its owner is loaded (docs/web-client.md).
  */
 export function buildTree(entries: LogEntry[]): TranscriptNode[] {
   const nodes: TranscriptNode[] = [];

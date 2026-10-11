@@ -366,3 +366,11 @@ pre,
   font-family: var(--font-mono);
   font-size: var(--output-font-size);
 }
+
+.earlier-history {
+  min-height: 2.5rem;
+  padding-block: 0.75rem;
+  color: var(--fg-dim);
+  font-size: 0.8125rem;
+  text-align: center;
+}

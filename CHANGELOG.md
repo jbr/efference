@@ -8,6 +8,7 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- Web transcripts load earlier history automatically near the top, preserving the reading position and live streaming with smaller initial windows.
 - Tail following avoids redundant scrolls and defers layout pinning during presses to preserve iOS button taps.
 - Web transcripts keep following through content and viewport growth until the reader scrolls away, and resume when the reader reaches the bottom.
 - Dev stream recordings retain the latest frames with exact replay and preserved paused views, without stopping live updates at capacity.

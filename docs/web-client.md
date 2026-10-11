@@ -86,6 +86,38 @@ without a toast, so Back does not return to the absent session. A known handoff
 successor takes precedence over going home. Network failures and other HTTP
 errors stay on the reconnect path rather than triggering navigation.
 
+### Earlier transcript windows
+
+`connect.ts` opens with an 80-entry tail; `history.ts` fetches 80-entry backward
+pages with `before` and `tail`. Counts are durable log entries, including records
+that do not render as conversation. `EarlierHistory` observes the row above the
+transcript with a 300-pixel top margin. It loads when the reader approaches that
+row after leaving the tail, or when a short initial window cannot fill the
+viewport. A failed page exposes Retry instead of automatically repeating the
+request; a short page marks the beginning of the session.
+
+The loader belongs to the warm store and binds every read to its session base.
+Only one backward request runs at a time. A response whose starting boundary has
+changed is discarded. `prependHistory` merges by sequence, preferring held entries
+on overlap; it does not change the live cursor, topics, pending submissions, or
+pre-commit output. The existing stream continues while pages are fetched.
+
+A cut can leave a result, spot, telemetry record, or result verdict without its
+owner. `coherentWindow` resolves the issuing call sequence or result sequence and
+reads the intervening range, repeating until those tree relationships are within
+the window. This can extend a page beyond its requested count. Keeping the range
+contiguous prevents a dereferenced earlier call from moving the paging cursor
+past unseen entries. The initial tail uses the same repair. If that repair fails,
+the fetched tail and its cursor remain usable; a missing call reference is not
+classified as a missing session.
+
+Transcript item roots carry stable node keys in the DOM. Immediately before a
+page merges, the surface captures the first node intersecting the viewport; its
+layout effect restores that node's previous offset after the prepend. It adjusts
+only residual movement, so browser scroll anchoring is not applied twice. The
+dev recorder incorporates fetched historical prefixes into its replay base when
+seeking backward or saving, without treating a history fetch as a live frame.
+
 ### Coalescing the fold
 
 A long block arrives as thousands of `output` deltas, and the pre-commit tail

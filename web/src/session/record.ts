@@ -8,6 +8,7 @@ import { applyFrame, type Session, type Store } from "./store.ts";
 import { sessionId } from "../api/base.ts";
 import { listTapes, loadTape, saveTape } from "./tapeStore.ts";
 import { FrameTape } from "./frameTape.ts";
+import { prependHistory } from "./history.ts";
 
 /** Number of recent frames retained; older frames fold into the replay base. */
 const MAX_TAPE = 20_000;
@@ -154,6 +155,16 @@ class Recorder implements FrameTap, ScrubHandle {
    * returning to out of the store within a few reloads. */
   private streamed = false;
 
+  private rememberHistory(): void {
+    if (this.replaying) return;
+    const first = this.base.entries[0]?.seq;
+    if (first === undefined) return;
+    this.base = prependHistory(
+      this.base,
+      this.store.snapshot().entries.filter((entry) => entry.seq < first),
+    );
+  }
+
   /** Save the recording, at most once a second while frames arrive — once it
    * holds streamed output. */
   private scheduleSave(): void {
@@ -164,6 +175,7 @@ class Recorder implements FrameTap, ScrubHandle {
     this.saveTimer = setTimeout(() => {
       this.saveTimer = null;
       if (this.replaying || this.tape.length === 0) return;
+      this.rememberHistory();
       void saveTape({
         key: `${this.session}:${this.startedAt}`,
         session: this.session,
@@ -230,6 +242,7 @@ class Recorder implements FrameTap, ScrubHandle {
   private foldTo(n: number): void {
     const target = Math.max(0, Math.min(n, this.tape.length));
     if (this.expired || target < this.cursor) {
+      this.rememberHistory();
       const base = this.base;
       const prefix = this.tape.snapshot(target);
       // `connection` is carried over rather than rewound. It is not a recorded

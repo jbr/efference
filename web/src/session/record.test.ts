@@ -12,7 +12,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Frame } from "../api/types.ts";
 import { record, SCRUB_EVENT } from "./record.ts";
-import { Store } from "./store.ts";
+import { Store, seed } from "./store.ts";
+import { prependHistory } from "./history.ts";
 import { messagesAssistant } from "./assistant.ts";
 
 /** One `tool_call_input` delta — the frame class the scrubber exists for. */
@@ -278,4 +279,25 @@ describe("the position log", () => {
     close();
     info.mockRestore();
   });
+});
+
+it("keeps fetched historical pages through backward seeks without leaking later commits", () => {
+  const store = new Store();
+  store.update((s) => seed(s, [{ ...commit.data, seq: 5 }]));
+  const { tap, scrub, close } = record(store);
+  try {
+    tap.reset();
+    tap.frame(commit);
+    store.update((s) => prependHistory(s, [{ ...commit.data, seq: 3 }]));
+    scrub.seek(0);
+    expect(store.snapshot().entries.map((entry) => entry.seq)).toEqual([3, 5]);
+    expect(store.snapshot().lastSeq).toBe(5);
+    scrub.resume();
+    expect(store.snapshot().entries.map((entry) => entry.seq)).toEqual([
+      3, 5, 9,
+    ]);
+    expect(store.snapshot().lastSeq).toBe(9);
+  } finally {
+    close();
+  }
 });

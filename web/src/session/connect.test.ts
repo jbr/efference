@@ -38,7 +38,7 @@ it.each([404, 401])(
     );
     expect(fetch).toHaveBeenCalledTimes(1);
     expect(fetch).toHaveBeenCalledWith(
-      `${base}/v1/log?tail=200`,
+      `${base}/v1/log?tail=80`,
       expect.anything(),
     );
   },
@@ -102,4 +102,31 @@ it("detects external archive when the live stream ends and reconnect is missing"
   } finally {
     vi.useRealTimers();
   }
+});
+
+it("retains a fetched tail and opens its stream when a boundary reference is missing", async () => {
+  const entry = {
+    seq: 50,
+    turn: 1,
+    at: 0,
+    payload: {
+      ToolResult: {
+        call_id: "absent",
+        raw: { content: "ok", is_error: false },
+        wire: "Raw",
+      },
+    },
+  };
+  const { store, fetch } = start(
+    Response.json([entry]),
+    failed(404),
+    new Response(new ReadableStream()),
+  );
+  await vi.waitFor(() => expect(store.snapshot().connection).toBe("live"));
+  expect(store.snapshot().lastSeq).toBe(50);
+  expect(store.snapshot().entries).toEqual([entry]);
+  expect(fetch).toHaveBeenLastCalledWith(
+    `${base}/v1/events?since=51`,
+    expect.anything(),
+  );
 });
