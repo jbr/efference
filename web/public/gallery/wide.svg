@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900">
+  <rect width="1600" height="900" fill="hsl(210 40% 20%)" />
+  <g stroke="hsl(210 70% 66%)" stroke-width="3" fill="none">
+    <rect x="10" y="10" width="1580" height="880" />
+    <line x1="0" y1="0" x2="1600" y2="900" />
+    <line x1="1600" y1="0" x2="0" y2="900" />
+  </g>
+  <text x="800" y="450" fill="hsl(210 30% 94%)" font-family="monospace" font-size="120" text-anchor="middle" dominant-baseline="middle">1600×900</text>
+</svg>

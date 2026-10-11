@@ -13,9 +13,11 @@ import type {
   CallId,
   DistillateLines,
   RawResult,
+  ResultImage,
   ToolCall,
   WireState,
 } from "../api/types.ts";
+import { openLightbox } from "./lightbox.ts";
 import { Code, NumberedCode, StreamingCode } from "./Code.tsx";
 import { PinnedBox } from "./TranscriptItems.tsx";
 import {
@@ -247,6 +249,67 @@ export function ResultBody({ body }: { body: ResultView }) {
   }
 }
 
+/** One image with a tap target: the picture is a chrome-free button whose tap
+ * opens the lightbox (lightbox.ts). The button is also what the call's own
+ * click handler skips over, so tapping an image does not open the inspector
+ * (Transcript.tsx). width/height reserve the aspect box before the bytes land. */
+export function ZoomableImage({
+  src,
+  width,
+  height,
+  label,
+}: {
+  src: string;
+  width: number;
+  height: number;
+  /** The accessible name and the lightbox caption, e.g. "image/png 1179×2556". */
+  label: string;
+}) {
+  return (
+    <button
+      type="button"
+      className="result-image-button"
+      aria-label={`open image ${width}×${height} full screen`}
+      onClick={() => openLightbox({ src, alt: label, caption: label })}
+    >
+      <img
+        className="result-image"
+        src={src}
+        width={width}
+        height={height}
+        alt={label}
+        loading="lazy"
+      />
+    </button>
+  );
+}
+
+/** The images a result carries (docs/control-api.md): each from its reference,
+ * the bytes fetched by the browser through the cookie-authed, ETag-validated
+ * image route. `seq` is the result entry they resolve against. */
+export function ResultImages({
+  seq,
+  images,
+}: {
+  seq: number;
+  images: ResultImage[];
+}) {
+  if (images.length === 0) return null;
+  return (
+    <>
+      {images.map((image, idx) => (
+        <ZoomableImage
+          key={idx}
+          src={join(`/v1/log/${seq}/images/${idx}`)}
+          width={image.width}
+          height={image.height}
+          label={`${image.media_type} ${image.width}×${image.height}`}
+        />
+      ))}
+    </>
+  );
+}
+
 export function ResultBlock({
   tool,
   seq,
@@ -306,21 +369,7 @@ export function ResultBlock({
       ) : (
         <ResultBody body={body} />
       )}
-      {(shown.images ?? []).map((image, idx) => (
-        // The view carries only the reference (docs/control-api.md); the
-        // bytes come from the image route, cookie-authed and
-        // ETag-validated by the browser. width/height reserve layout
-        // space before the fetch lands.
-        <img
-          key={idx}
-          className="result-image"
-          src={join(`/v1/log/${seq}/images/${idx}`)}
-          width={image.width}
-          height={image.height}
-          alt={`${image.media_type} ${image.width}×${image.height}`}
-          loading="lazy"
-        />
-      ))}
+      <ResultImages seq={seq} images={shown.images ?? []} />
       {hidden > 0 && <MoreLines hidden={hidden} />}
       {whole.elided !== undefined && (
         // The affordance is the honest half of the marker in the head: the

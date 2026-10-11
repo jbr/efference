@@ -11,6 +11,7 @@
 // hover and focus states (pseudoStates.ts).
 
 import { type ReactNode, useEffect, useState } from "react";
+import { LightboxHost } from "../ui/Lightbox.tsx";
 import { LocationRow } from "../ui/LocationRow.tsx";
 import { ModelPickerRow } from "../ui/ModelPickerRow.tsx";
 import { Settings } from "../ui/NewSessionSettings.tsx";
@@ -22,6 +23,7 @@ import { ContextMeter } from "../ui/TopBar.tsx";
 import {
   GalleryScenes,
   ComposerSpecimens,
+  ImageSpecimens,
   SyntaxSpecimens,
 } from "./Scenes.tsx";
 import {
@@ -92,6 +94,7 @@ export function Gallery() {
           "Context window",
           "Composer",
           "Code and results",
+          "Images",
           "Syntax palette",
           "Session card",
           "Forms — session settings",
@@ -184,6 +187,9 @@ export function Gallery() {
       </Section>
       <Section title="Code and results">
         <SyntaxSpecimens />
+      </Section>
+      <Section title="Images">
+        <ImageSpecimens />
       </Section>
       <Section title="Syntax palette">
         <PaletteSpecimens />
@@ -358,6 +364,9 @@ export function Gallery() {
           </div>
         </div>
       </Section>
+      {/* The gallery mounts the app's one lightbox so the image specimens
+          actually open it. */}
+      <LightboxHost />
     </div>
   );
 }

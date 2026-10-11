@@ -23,6 +23,8 @@ import { GateSurface } from "./Gate.tsx";
 import { successorHref } from "./identity.ts";
 import { Inspector } from "./Inspector.tsx";
 import { JumpToLatest } from "./JumpToLatest.tsx";
+import { LightboxHost } from "./Lightbox.tsx";
+import { closeLightbox, useLightboxImage } from "./lightbox.ts";
 import { Login } from "./Login.tsx";
 import { useOverlayHistory } from "./overlayHistory.ts";
 import { navigate } from "./route.ts";
@@ -186,19 +188,25 @@ export function SessionView() {
     [session.entries],
   );
 
-  // Back/edge-swipe dismisses overlays (ui/overlayHistory.ts). The file
-  // viewer closes first: it renders over the transcript the inspector's
-  // sheet also occupies, and it is always the later-opened of the two here
-  // (its only entry points are a call's open ⤢ and the inspector footer).
+  // The lightbox (ui/Lightbox.tsx): its state is the module store, so back
+  // and edge-swipe dismiss it through the same count as the other overlays.
+  const lightboxImage = useLightboxImage();
+  // Back/edge-swipe dismisses overlays (ui/overlayHistory.ts). The lightbox
+  // closes first — it covers everything — then the file viewer, which renders
+  // over the transcript the inspector's sheet also occupies and is always the
+  // later-opened of the two here (its entry points are a call's open ⤢ and the
+  // inspector footer).
   useOverlayHistory(
     (inspecting !== null ? 1 : 0) +
       (viewingFile !== null ? 1 : 0) +
-      (drawerOpen ? 1 : 0),
+      (drawerOpen ? 1 : 0) +
+      (lightboxImage !== null ? 1 : 0),
     useCallback(() => {
-      if (viewingFile !== null) setViewingFile(null);
+      if (lightboxImage !== null) closeLightbox();
+      else if (viewingFile !== null) setViewingFile(null);
       else if (drawerOpen) setDrawerOpen(false);
       else setInspecting(null);
-    }, [viewingFile, drawerOpen]),
+    }, [lightboxImage, viewingFile, drawerOpen]),
   );
   const newestEdit = useMemo(
     () => lastEdit(session.entries),
@@ -338,6 +346,7 @@ export function SessionView() {
           model={session.topics.session_identity?.model ?? "the model"}
         />
       </div>
+      <LightboxHost />
     </div>
   );
 }

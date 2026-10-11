@@ -329,7 +329,7 @@ What narrow changes:
   its header down.
 
 **Overlays are history-backed** (`ui/overlayHistory.ts`, both form factors):
-each open overlay — inspector, file viewer, drawer — owns one history entry, so the
+each open overlay — inspector, file viewer, drawer, lightbox — owns one history entry, so the
 back button and Safari's edge swipe (which *is* history-back) dismiss the
 overlay instead of leaving the app. Not a router: the overlays remain App
 state, and the hook *reconciles* — App reports how many overlays are open, the
@@ -462,12 +462,30 @@ result decides it; a verdict naming a result that was not Pending is ignored. Th
 fold runs over the entry list, so the initial window and live frames take the
 same path; results logged directly with their final wire render as before.
 
-A result's images render below its body as plain `<img>` elements pointed at
-`GET /v1/log/{seq}/images/{idx}` ([control-api.md](control-api.md)): the entry
+A result's images render below its body as buttons over `<img>` elements pointed
+at `GET /v1/log/{seq}/images/{idx}` ([control-api.md](control-api.md)): the entry
 view carries only `{media_type, width, height}` — the attributes that hold the
 aspect box before the bytes land — and the browser supplies the fetch (ambient
 session cookie), the `ETag` revalidation, and lazy loading. Capped at 420px
-display width; full resolution is the browser's own open-image-in-new-tab.
+display width; tapping one opens it full screen in the lightbox. The inspector's
+result tab carries the same images, so a picture-returning call is not a drawer
+of everything but the picture.
+
+**The lightbox** (`ui/Lightbox.tsx`, store in `ui/lightbox.ts`) is the client's
+one full-screen image viewer, mounted once — `LightboxHost` — by the session view
+and the gallery. Its state is a module store rather than threaded props because
+an image opens from unrelated places (a transcript result, the inspector, a sent
+attachment) and the viewer is a single instance. Pinch, wheel, and double-tap
+zoom (`ui/zoom.ts`: a scale about the image's center plus a translation, anchored
+so the point under the fingers stays under them, and clamped to the stage); a
+one-finger drag pans while zoomed and *dismisses* at fit, in any direction
+(`ui/swipe.ts`); the backdrop, the ✕, and Escape close it. The stage claims the
+gesture (`touch-action: none`), the transform is set inline, and the overlay sits
+above the whole z-index ladder because it is the topmost surface. It is counted
+in the overlay history, so back and edge-swipe dismiss it first. The stage's
+pointer capture retargets the pointerup and click to the stage, so the handlers
+read the element the pointer landed on, recorded at pointerdown, rather than the
+event's own target.
 
 An oversized result's **text** arrives the same way — a prefix plus
 `content_elided`, whole at `GET /v1/log/{seq}` ([control-api.md](control-api.md)).
@@ -1837,7 +1855,7 @@ autosizing inflates an overflowing block), not only as a horizontal scroll, so
 With `?gallery` on the URL (dev builds), the page renders the client's widgets
 on fixture data instead of the app. A section index links to composed scenes,
 buttons (including the Session drawer's attention badge), neon glyphs, session
-tabs and their hover card, composers, code/results, session cards, launch
+tabs and their hover card, composers, code/results, images, session cards, launch
 settings, the model picker, and resume lists. Specimen labels stack above their
 controls on narrow screens; state comparisons wrap rather than widening the page.
 
@@ -1870,6 +1888,14 @@ components change. Context specimens share `ContextMeter` and compare 10%, 50%,
 75%, 90%, 100%, unknown usage, and unknown window. Checkbox specimens compare
 unchecked and checked states; each form pins a hovered control or row alongside
 its resting and selected controls. Fixture lists live in `fixtures.ts`.
+
+`ImageSpecimens` renders the production zoom target over fixtures of three aspect
+ratios — wide, square, and tall — so the lightbox's fit and gestures can be worked
+on without driving a session to an image result. The fixtures are files under
+`public/gallery/`, referenced by path rather than imported: an import of an SVG
+that small is inlined as a `data:` URI, and the client's CSP (`default-src
+'self'`, no `img-src`; `src/daemon/tcp.rs`) blocks those. The gallery mounts
+`LightboxHost` so the specimens actually open the viewer.
 
 Controls also appear pinned in hover and focus states: `pseudoStates.ts` copies
 every rule naming `:hover`, `:focus-visible`, `:focus-within`, `:focus`, or

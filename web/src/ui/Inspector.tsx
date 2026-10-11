@@ -18,7 +18,7 @@ import type { CallNode } from "../session/tree.ts";
 import { assistantView } from "../session/assistant.ts";
 import { ArgsTab } from "./ArgsTab.tsx";
 import { CallSignature } from "./CallHead.tsx";
-import { ResultBody } from "./ToolBlocks.tsx";
+import { ResultBody, ResultImages } from "./ToolBlocks.tsx";
 import { resultRender, wireLabel } from "../render/parse.ts";
 import { callView } from "./signature.ts";
 import { layoutSignature } from "./signatureLayout.ts";
@@ -402,6 +402,15 @@ export function Inspector({
               <ResultBody body={rendered.body} />
             ) : (
               output === null && <div className="dim">no result yet</div>
+            )}
+            {/* The image is part of the result, and its absence is what made
+                this drawer useless for a picture-returning call. It opens the
+                same lightbox the transcript does (lightbox.ts). */}
+            {result !== null && (
+              <ResultImages
+                seq={entry?.seq ?? 0}
+                images={result.raw.images ?? []}
+              />
             )}
             {output !== null && (
               <OutputSection label={output.label} read={output.read} />

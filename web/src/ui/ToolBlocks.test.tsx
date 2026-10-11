@@ -28,6 +28,24 @@ test("a decided result has neither the label nor the box", () => {
   expect(markup).not.toContain("t-pinned");
 });
 
+test("a result image renders as a button that opens the lightbox", () => {
+  const markup = renderToStaticMarkup(
+    <ResultBlock
+      tool="mcp__playwright__browser_take_screenshot"
+      seq={7}
+      raw={{
+        content: "",
+        is_error: false,
+        images: [{ media_type: "image/png", width: 1179, height: 2556 }],
+      }}
+      wire="Raw"
+    />,
+  );
+  expect(markup).toContain('class="result-image-button"');
+  expect(markup).toContain("/v1/log/7/images/0");
+  expect(markup).toContain("1179×2556");
+});
+
 test("an unfinished scalar input uses the wrapping content body", () => {
   const fragment =
     "async page => { await page.setViewportSize({width:390,height";

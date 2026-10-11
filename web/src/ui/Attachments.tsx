@@ -4,6 +4,7 @@
 
 import { attachmentUrl } from "../api/http.ts";
 import type { Attachment } from "../api/types.ts";
+import { openLightbox } from "./lightbox.ts";
 import { describeKind, isImage, type Staged } from "./staging.ts";
 
 /** The composer's staged row. Each chip can be removed; a paste staged for
@@ -63,7 +64,7 @@ export function StagedAttachments({
 }
 
 /** The files a sent (or queued) turn carried. An image's thumbnail opens the
- * full-size bytes in a new tab. */
+ * lightbox, so the full-size bytes are visible without leaving the app. */
 export function SentAttachments({
   attachments,
 }: {
@@ -75,9 +76,20 @@ export function SentAttachments({
       {attachments.map((a) => (
         <li key={a.name} className="attachment" title={a.path}>
           {isImage(a.kind) && (
-            <a href={attachmentUrl(a.name)} target="_blank" rel="noreferrer">
+            <button
+              type="button"
+              className="attachment-image"
+              aria-label={`open ${a.name} full screen`}
+              onClick={() =>
+                openLightbox({
+                  src: attachmentUrl(a.name),
+                  alt: a.name,
+                  caption: `${a.name} · ${describeKind(a.kind)}`,
+                })
+              }
+            >
               <img src={attachmentUrl(a.name)} alt={a.name} />
-            </a>
+            </button>
           )}
           <span className="attachment-text">
             <span className="attachment-name">{a.name}</span>

@@ -1,0 +1,115 @@
+/* The lightbox (docs/web-client.md): an image full screen over everything.
+   The z-index clears the whole ladder — the drawer's 4 and the gallery's
+   sticky header at 10 — because the viewer is the topmost surface there is.
+   The backdrop is near-black in either theme, which is what an image wants
+   behind it; the transform is zoom.ts's, set inline by Lightbox.tsx. Entry
+   from @starting-style, exit via `.closing`, both a fade. */
+
+.lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transition: opacity 0.2s ease-out;
+}
+
+@starting-style {
+  .lightbox {
+    opacity: 0;
+  }
+}
+
+.lightbox.closing {
+  opacity: 0;
+  transition: opacity 0.16s ease-in;
+}
+
+/* The dim layer, a sibling of the content rather than the root's own
+   background: a swipe moves the stage and its picture, not this, and its
+   opacity falls with how far the finger has dragged, so the page shows
+   through as the image leaves (Lightbox.tsx). */
+.lightbox-scrim {
+  position: absolute;
+  inset: 0;
+  background: rgb(0 0 0 / 0.92);
+  transition: opacity 0.2s ease-out;
+}
+
+.lightbox-head {
+  position: relative;
+  z-index: 1;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: calc(env(safe-area-inset-top) + 0.5rem) 0.75rem 0.5rem;
+  padding-left: calc(env(safe-area-inset-left) + 0.75rem);
+  padding-right: calc(env(safe-area-inset-right) + 0.75rem);
+  color: rgb(255 255 255 / 0.72);
+}
+
+.lightbox-caption {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lightbox-close {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgb(255 255 255 / 0.1);
+  color: rgb(255 255 255 / 0.9);
+  font-size: 0.9rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.lightbox-close:hover {
+  background: rgb(255 255 255 / 0.2);
+}
+
+/* The stage owns the gesture: `touch-action: none` stops the browser from
+   scrolling or page-zooming under the fingers, and `overflow: hidden` keeps a
+   zoomed, panned image from widening the page. The picture is centered here,
+   which is the reference point zoom.ts's translation is measured from.
+
+   The dismissal swipe translates the stage (and so the picture, and its clip);
+   released short of the threshold, the transform eases back. The image's own
+   transform is the zoom and carries no transition, so the wheel does not lag. */
+.lightbox-stage {
+  flex: 1;
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  touch-action: none;
+  cursor: zoom-out;
+  transition: transform 0.2s ease-out;
+}
+
+.lightbox-image {
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+  transform-origin: center center;
+  will-change: transform;
+  user-select: none;
+  -webkit-user-drag: none;
+  cursor: zoom-in;
+}

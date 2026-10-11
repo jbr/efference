@@ -8,6 +8,7 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- **Image lightbox** (docs/web-client.md): tapping a result image — in the transcript or the inspector, which now shows the picture it used to omit — opens it full screen with pinch, wheel and double-tap zoom, pan, swipe-to-dismiss, and Sent-attachment thumbnails route through it too; a stable set of aspect-ratio fixtures lives in the design gallery.
 - **Context occupancy light** (docs/web-client.md): shared meters warm and whiten toward capacity; Lilac uses a rounded colored rim and a wider hue cloud.
 - **Misty-blue syntax accents** (docs/web-client.md): strings and paths use a quieter blue palette; the gallery retains four production-rendered palette comparisons.
 - **Lit decision targets** (docs/web-client.md): current questions and permission gates use shared glowing frames; gallery scenes compare two-question progress and production gate controls with local-only decisions.

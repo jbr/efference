@@ -7,7 +7,7 @@ import { buildTree } from "../session/tree.ts";
 import { GateControls } from "../ui/Gate.tsx";
 import { ComposerToolbar } from "../ui/ComposerToolbar.tsx";
 import { TranscriptContent } from "../ui/Transcript.tsx";
-import { CallBlock, ResultBlock } from "../ui/ToolBlocks.tsx";
+import { CallBlock, ResultBlock, ZoomableImage } from "../ui/ToolBlocks.tsx";
 import { turnState, type TurnState } from "../ui/turnState.ts";
 import { useNarrow } from "../ui/useNarrow.ts";
 
@@ -474,6 +474,43 @@ export function SyntaxSpecimens() {
           wire="Raw"
         />
       </Example>
+    </div>
+  );
+}
+
+// The fixtures are files under `public/gallery/`, referenced by path rather
+// than imported: an import of a small SVG is inlined as a `data:` URI, which
+// the client's CSP blocks (`default-src 'self'`, no `img-src`; src/daemon/tcp.rs).
+// Each drawing is its own aspect ratio, so a glance at the thumbnail says what
+// the lightbox has to fit.
+const FIXTURE_IMAGES = [
+  { src: "/gallery/wide.svg", width: 1600, height: 900 },
+  { src: "/gallery/square.svg", width: 1000, height: 1000 },
+  { src: "/gallery/tall.svg", width: 900, height: 1600 },
+];
+
+export function ImageSpecimens() {
+  return (
+    <div className="g-syntax">
+      <Example title="Result images · wide, square, tall">
+        <div className="transcript">
+          <div className="block">
+            {FIXTURE_IMAGES.map((image) => (
+              <ZoomableImage
+                key={image.width}
+                src={image.src}
+                width={image.width}
+                height={image.height}
+                label={`image/svg+xml ${image.width}×${image.height}`}
+              />
+            ))}
+          </div>
+        </div>
+      </Example>
+      <p className="g-caption">
+        Tap any image to open the lightbox. Pinch or scroll to zoom, double-tap
+        to toggle, drag to pan, and Escape, the ✕, or the backdrop to close.
+      </p>
     </div>
   );
 }
