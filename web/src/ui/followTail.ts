@@ -4,6 +4,7 @@ let following = true;
 const listeners = new Set<() => void>();
 let active = false;
 let navigationPending = false;
+let pressing = false;
 
 export const tailFollowing = () => following;
 export function subscribeTail(listener: () => void): () => void {
@@ -24,7 +25,7 @@ function atBottom() {
   );
 }
 export function pinTail() {
-  if (active && following && !navigationPending)
+  if (active && following && !navigationPending && !pressing && !atBottom())
     window.scrollTo({
       top: document.documentElement.scrollHeight,
       behavior: "instant",
@@ -70,6 +71,7 @@ function editable(target: EventTarget | null) {
 
 export function installFollowTail(): () => void {
   active = true;
+  pressing = false;
   navigationPending = false;
   setFollowing(true);
   let previousY = window.scrollY;
@@ -125,6 +127,7 @@ export function installFollowTail(): () => void {
       depart(event);
   };
   const touchStart = (event: TouchEvent) => {
+    pressing = true;
     touchY = event.touches[0]?.clientY ?? null;
   };
   const touchMove = (event: TouchEvent) => {
@@ -133,9 +136,12 @@ export function installFollowTail(): () => void {
     touchY = next;
   };
   const touchEnd = () => {
+    pressing = false;
     touchY = null;
+    schedulePin();
   };
   const pointerDown = (event: PointerEvent) => {
+    pressing = true;
     draggingScrollbar =
       event.pointerType === "mouse" &&
       (event.clientX >= document.documentElement.clientWidth - 16 ||
@@ -145,6 +151,8 @@ export function installFollowTail(): () => void {
   const pointerUp = () => {
     if (draggingScrollbar) scrollbarUntil = Date.now() + 200;
     draggingScrollbar = false;
+    pressing = false;
+    schedulePin();
   };
   window.addEventListener("scroll", scroll, { passive: true });
   window.addEventListener("resize", schedulePin);
@@ -165,6 +173,7 @@ export function installFollowTail(): () => void {
   previousY = window.scrollY;
   return () => {
     active = false;
+    pressing = false;
     navigationPending = false;
     observer.disconnect();
     if (scheduled !== null) cancelAnimationFrame(scheduled);

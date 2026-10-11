@@ -1015,8 +1015,12 @@ programmatic scroll events, and viewport changes do not independently cancel
 following. Reaching the bottom by any means (within one CSS pixel for fractional
 scroll positions) or an explicit latest/gate jump re-engages it. The transcript
 pins after renders and observes document/body size and viewport changes for
-asynchronous layout growth. Nested scroll containers and editing controls retain
-their own input behavior. `JumpToLatest` subscribes to the same intent rather
+asynchronous layout growth. Pinning skips redundant scroll commands when the
+viewport already contacts the bottom and defers layout-driven scrolling during
+an active touch/pointer press, resuming on an animation frame after release so
+the target is not moved before click dispatch. Nested scroll containers and
+editing controls retain their own input behavior. `JumpToLatest` subscribes to
+the same intent rather
 than measuring bottom contact separately. **The preamble is not
 rendered**: the system prompt is audit data rather than conversation, and a new
 session whose only entry it is reads as empty. **A title change** renders as

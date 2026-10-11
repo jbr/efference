@@ -239,3 +239,44 @@ test("a small deliberate departure is not swallowed by bottom-distance slack", (
   expect(tailFollowing()).toBe(false);
   expect(y).toBe(1195);
 });
+
+test("bottom-contact renders, resize and scroll notifications do not issue redundant scroll commands", () => {
+  vi.mocked(window.scrollTo).mockClear();
+  pinTail();
+  resize([], {} as ResizeObserver);
+  window.dispatchEvent(new Event("scroll"));
+  flush();
+  expect(window.scrollTo).not.toHaveBeenCalled();
+});
+
+test("growth during a touch press waits until release and click dispatch before pinning", () => {
+  const button = document.createElement("button");
+  document.body.append(button);
+  const clicked = vi.fn();
+  button.addEventListener("click", clicked);
+  const touch = new Event("touchstart", { bubbles: true });
+  Object.defineProperty(touch, "touches", { value: [{ clientY: 300 }] });
+  button.dispatchEvent(touch);
+  height = 2600;
+  resize([], {} as ResizeObserver);
+  flush();
+  pinTail();
+  expect(y).toBe(1200);
+  expect(tailFollowing()).toBe(true);
+  button.dispatchEvent(new Event("touchend", { bubbles: true }));
+  button.click();
+  expect(clicked).toHaveBeenCalledTimes(1);
+  expect(y).toBe(1200);
+  flush();
+  expect(y).toBe(1800);
+});
+
+test("mouse presses also defer layout-driven pinning until release", () => {
+  window.dispatchEvent(new MouseEvent("pointerdown", { clientX: 180 }));
+  height = 2600;
+  pinTail();
+  expect(y).toBe(1200);
+  window.dispatchEvent(new Event("pointerup"));
+  flush();
+  expect(y).toBe(1800);
+});

@@ -8,6 +8,7 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- Tail following avoids redundant scrolls and defers layout pinning during presses to preserve iOS button taps.
 - Web transcripts keep following through content and viewport growth until the reader scrolls away, and resume when the reader reaches the bottom.
 - Dev stream recordings retain the latest frames with exact replay and preserved paused views, without stopping live updates at capacity.
 - Web browser titles follow the active session and its title changes, and reset to the app name on home.
