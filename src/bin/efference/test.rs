@@ -253,18 +253,9 @@ fn the_scaffold_parses_and_lists_the_guide() {
 #[test]
 fn cache_report_separates_explained_cold_reads_from_the_streak() {
     use efference::daemon::UsageLine;
-    let line = |origin, at_ms, cache_read| UsageLine {
-        at_ms,
-        origin,
-        id: None,
-        model: Some("claude-haiku-4-5".into()),
-        input: 10,
-        output: 20,
-        cache_read,
-        cache_write: 0,
-        main_prefix: false,
-        served_by: None,
-        cost_usd: None,
+    let line = |origin, at_ms, cache_read| {
+        let request = usage(10, 20, cache_read).with_model("claude-haiku-4-5");
+        UsageLine::new(origin, at_ms, false, &request)
     };
     use efference::daemon::RequestOrigin::{Keepalive, Spot, Turn};
     let t = 1_800_000_000_000u128;
@@ -308,19 +299,7 @@ fn cache_report_separates_explained_cold_reads_from_the_streak() {
 fn cache_report_does_not_join_streaks_across_sessions() {
     use efference::daemon::RequestOrigin::Turn;
     use efference::daemon::UsageLine;
-    let cold = |at_ms| UsageLine {
-        at_ms,
-        origin: Turn,
-        id: None,
-        model: None,
-        input: 1,
-        output: 1,
-        cache_read: 0,
-        cache_write: 0,
-        main_prefix: false,
-        served_by: None,
-        cost_usd: None,
-    };
+    let cold = |at_ms| UsageLine::new(Turn, at_ms, false, &usage(1, 1, 0));
     let t = 1_800_000_000_000u128;
     let report = cache_report::fold_sessions(&[
         ("a".into(), vec![cold(t), cold(t + 1_000)]),
@@ -330,6 +309,19 @@ fn cache_report_does_not_join_streaks_across_sessions() {
     assert_eq!(report.cold_starts[0], 2, "each session boots cold once");
     assert_eq!(report.unexplained, 2);
     assert_eq!(report.longest_streak, 1);
+}
+
+/// A request's usage with no cache write: the input to a test's [`UsageLine`].
+///
+/// [`UsageLine`]: efference::daemon::UsageLine
+#[cfg(feature = "dev")]
+fn usage(input: u64, output: u64, cache_read: u64) -> efference::api::RequestUsage {
+    efference::api::RequestUsage::new(efference::api::Usage {
+        input_tokens: input,
+        output_tokens: output,
+        cache_creation_input_tokens: 0,
+        cache_read_input_tokens: cache_read,
+    })
 }
 
 fn bind_flags(bind: Option<&str>) -> serve::BindFlags {

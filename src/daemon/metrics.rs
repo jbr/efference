@@ -275,6 +275,30 @@ pub struct UsageLine {
 }
 
 impl UsageLine {
+    /// The line for one completed request at `at_ms`. `main_prefix` says the request
+    /// ran on the agent's own client; it is recorded only where `origin` does not
+    /// already imply it.
+    pub fn new(
+        origin: RequestOrigin,
+        at_ms: u128,
+        main_prefix: bool,
+        request: &crate::api::RequestUsage,
+    ) -> Self {
+        Self {
+            at_ms,
+            origin,
+            id: request.id.clone(),
+            model: request.model.clone(),
+            input: request.usage.input_tokens,
+            output: request.usage.output_tokens,
+            cache_read: request.usage.cache_read_input_tokens,
+            cache_write: request.usage.cache_creation_input_tokens,
+            main_prefix: main_prefix && !origin.touches_main_prefix(),
+            served_by: request.receipt.served_by.clone(),
+            cost_usd: request.receipt.cost.map(|c| c.total_usd),
+        }
+    }
+
     /// Whether this request refreshed the main prefix: its origin always does, or the
     /// line records that it ran on the agent's own client.
     pub fn touches_main_prefix(&self) -> bool {
@@ -368,19 +392,7 @@ impl Session {
         use std::io::Write;
         let mut sink = self.usage_log.lock().unwrap();
         let Some(sink) = sink.as_mut() else { return };
-        let line = UsageLine {
-            at_ms,
-            origin,
-            id: request.id.clone(),
-            model: request.model.clone(),
-            input: request.usage.input_tokens,
-            output: request.usage.output_tokens,
-            cache_read: request.usage.cache_read_input_tokens,
-            cache_write: request.usage.cache_creation_input_tokens,
-            main_prefix: main_prefix && !origin.touches_main_prefix(),
-            served_by: request.receipt.served_by.clone(),
-            cost_usd: request.receipt.cost.map(|c| c.total_usd),
-        };
+        let line = UsageLine::new(origin, at_ms, main_prefix, request);
         let written = serde_json::to_string(&line)
             .map_err(io::Error::other)
             .and_then(|json| writeln!(sink, "{json}").and_then(|()| sink.flush()));

@@ -25,25 +25,11 @@ use crate::daemon::{
 use crate::frontend::{Approval, SubmittedTurn};
 use crate::inference::{ConnectionInventory, ResolvedOptions};
 
-fn catalog_query(
-    cwd: &std::path::Path,
-    config: Option<&std::path::Path>,
-    max_age: Option<u64>,
-    role: Option<ModelRole>,
-) -> String {
-    let mut query = trillium_client::url::form_urlencoded::Serializer::new(String::new());
-    query.append_pair("cwd", &cwd.to_string_lossy());
-    if let Some(config) = config {
-        query.append_pair("config", &config.to_string_lossy());
-    }
-    if let Some(max_age) = max_age {
-        query.append_pair("max_age", &max_age.to_string());
-    }
-    if let Some(role) = role {
-        query.append_pair("role", role.name());
-    }
-    query.finish()
-}
+mod host;
+mod transport;
+
+use transport::{json_field, read_2xx};
+use trillium_client::Method;
 
 /// A client bound to one daemon control socket. Cheap to [`Clone`] (the inner
 /// trillium client is `Arc`-backed) so a client can hand a copy to a
@@ -70,6 +56,12 @@ impl Client {
     /// and no trailing one, so `sessions/x/` and `/sessions/x` are the same base.
     pub fn at(socket: impl Into<PathBuf>, prefix: &str) -> Self {
         Self::with_connector(UnixClientConfig::new(socket)).with_prefix(prefix)
+    }
+
+    /// The id of the session this client is bound to (`/sessions/<id>`), or
+    /// `None` at a session bind's root.
+    pub fn session_id(&self) -> Option<&str> {
+        self.prefix.strip_prefix("/sessions/")
     }
 
     /// Re-base this client under `prefix` (see [`at`](Self::at)); the transport
@@ -171,7 +163,7 @@ impl Client {
             .with_body(bytes)
             .await
             .with_context(|| format!("POST {path} to the control socket"))?;
-        let body = read_2xx(conn, "POST", path).await?;
+        let body = read_2xx(conn, Method::Post, path).await?;
         serde_json::from_str(&body).with_context(|| format!("parsing the upload response: {body}"))
     }
 
@@ -253,6 +245,17 @@ impl Client {
         self.post("/loop/interrupt", String::new()).await.map(drop)
     }
 
+    /// Fold a cold session's history into an account (`POST /loop/fold`,
+    /// docs/control-api.md). Accepted means the session's model is writing it; the
+    /// mark lands on the log when it is done. A decline (`409 not_foldable`) is a
+    /// normal answer whose message says why.
+    pub async fn fold(&self) -> Result<FoldOutcome> {
+        Ok(match self.post_declinable("/loop/fold", "fold").await? {
+            None => FoldOutcome::Accepted,
+            Some(message) => FoldOutcome::Declined { message },
+        })
+    }
+
     /// Hand control back with no input (`POST /loop/continue`, docs/control-api.md):
     /// the idle loop takes another turn on the wire it already has. Nothing is
     /// submitted and nothing is appended, so this is not a turn with empty text —
@@ -260,64 +263,32 @@ impl Client {
     ///
     /// A decline (`409 not_continuable`) is a normal answer, not a transport
     /// failure: the moment simply had no continue in it, and the daemon's message
-    /// says which case. Errors are
-    /// reserved for a request that didn't get an answer.
-    /// Fold a cold session's history into an account (`POST /loop/fold`,
-    /// docs/control-api.md). Accepted means the session's model is writing it; the
-    /// mark lands on the log when it is done. A decline (`409 not_foldable`) is a
-    /// normal answer whose message says why.
-    pub async fn fold(&self) -> Result<FoldOutcome> {
-        let path = self.versioned("/loop/fold");
-        let path = path.as_str();
-        let mut conn = self
-            .http
-            .post(path)
-            .await
-            .with_context(|| format!("POST {path} to the control socket"))?;
-        let status = conn.status();
-        let body = conn
-            .response_body()
-            .read_string()
-            .await
-            .with_context(|| format!("reading the response to POST {path}"))?;
-        match status {
-            Some(s) if s.is_success() => Ok(FoldOutcome::Accepted),
-            Some(trillium_client::Status::Conflict) => Ok(FoldOutcome::Declined {
-                message: json_field(&body, "message")
-                    .unwrap_or_else(|_| "the daemon declined the fold".into()),
-            }),
-            other => {
-                let code = other.map_or_else(|| "no status".to_string(), |s| s.code().to_string());
-                Err(anyhow!("POST {path} → {code}: {body}"))
-            }
-        }
+    /// says which case. Errors are reserved for a request that didn't get an answer.
+    pub async fn continue_loop(&self) -> Result<ContinueOutcome> {
+        Ok(
+            match self.post_declinable("/loop/continue", "continue").await? {
+                None => ContinueOutcome::Accepted,
+                Some(message) => ContinueOutcome::Declined { message },
+            },
+        )
     }
 
-    pub async fn continue_loop(&self) -> Result<ContinueOutcome> {
-        let path = self.versioned("/loop/continue");
-        let path = path.as_str();
-        let mut conn = self
-            .http
-            .post(path)
-            .await
-            .with_context(|| format!("POST {path} to the control socket"))?;
-        let status = conn.status();
+    /// POST to a loop verb whose `409` is an answer rather than a failure: `None`
+    /// when accepted, the daemon's message when declined.
+    async fn post_declinable(&self, path: &str, verb: &str) -> Result<Option<String>> {
+        let path = self.versioned(path);
+        let mut conn = self.exchange(Method::Post, &path, None).await?;
+        if conn.status() != Some(trillium_client::Status::Conflict) {
+            return read_2xx(conn, Method::Post, &path).await.map(|_| None);
+        }
         let body = conn
             .response_body()
             .read_string()
             .await
             .with_context(|| format!("reading the response to POST {path}"))?;
-        match status {
-            Some(s) if s.is_success() => Ok(ContinueOutcome::Accepted),
-            Some(trillium_client::Status::Conflict) => Ok(ContinueOutcome::Declined {
-                message: json_field(&body, "message")
-                    .unwrap_or_else(|_| "the daemon declined the continue".into()),
-            }),
-            other => {
-                let code = other.map_or_else(|| "no status".to_string(), |s| s.code().to_string());
-                Err(anyhow!("POST {path} → {code}: {body}"))
-            }
-        }
+        Ok(Some(json_field(&body, "message").unwrap_or_else(|_| {
+            format!("the daemon declined the {verb}")
+        })))
     }
 
     /// The running processes (`GET /processes`, docs/supervisor.md) — foreground and
@@ -529,368 +500,11 @@ impl Client {
             .map_err(|e| anyhow!("opening the event stream at {path}: {e}"))
     }
 
-    /// Create a session on a host (`POST /sessions`, docs/control-api.md) and
-    /// return its id. A listener route, not a session's: it sits at the socket
-    /// root regardless of this client's prefix, so the usual pairing is a
-    /// prefix-less client for creation and [`at`](Self::at) for what follows.
-    /// The request carries the caller's environment; it is written to the wire
-    /// and to nothing else, and an error quotes the response, not the request.
-    pub async fn create_session(&self, request: &CreateSession) -> Result<String> {
-        let body = serde_json::to_string(request).context("encoding the session request")?;
-        let path = "/sessions";
-        let conn = self
-            .http
-            .post(path)
-            .with_request_header("content-type", "application/json; charset=utf-8")
-            .with_body(body)
-            .await
-            .with_context(|| format!("POST {path} to the host socket"))?;
-        json_field(&read_2xx(conn, "POST", path).await?, "id")
-    }
-
-    /// Change one session's state on a host (`PATCH /sessions/:session`,
-    /// docs/control-api.md) and return the state it ended in. The same transition
-    /// as `DELETE /sessions/:session`, spelled as the change it is, so a client
-    /// picks by whether it knows what it wants.
-    ///
-    /// A listener route, not a session's: it addresses the host's own root
-    /// regardless of this client's prefix. The request carries the caller's
-    /// environment; it is written to the wire and to nothing else, and an error
-    /// quotes the response, not the request.
-    pub async fn patch_session(&self, id: &str, request: &PatchSession) -> Result<SessionState> {
-        let body = serde_json::to_string(request).context("encoding the session patch")?;
-        let path = format!("/sessions/{id}");
-        let conn = self
-            .http
-            .patch(path.clone())
-            .with_request_header("content-type", "application/json; charset=utf-8")
-            .with_body(body)
-            .await
-            .with_context(|| format!("PATCH {path} to the host socket"))?;
-        let response = read_2xx(conn, "PATCH", &path).await?;
-        let state = serde_json::from_str::<serde_json::Value>(&response)
-            .ok()
-            .and_then(|value| value.get("state").cloned())
-            .ok_or_else(|| anyhow!("no \"state\" in response: {response}"))?;
-        serde_json::from_value(state).context("reading the patched state")
-    }
-
-    /// Resolve a proposed hosted session (`QUERY /sessions`, docs/control-api.md)
-    /// Resolve a proposed hosted session (`QUERY /sessions`, docs/control-api.md)
-    /// without creating a directory or starting a runtime: the effective
-    /// selections, where each came from, and the issues that would stop creation.
-    /// A listener route, so it always addresses the socket root.
-    pub async fn session_options(
-        &self,
-        request: &SessionOptionsRequest,
-    ) -> Result<ResolvedOptions> {
-        let body = serde_json::to_string(request).context("encoding the session options")?;
-        let path = "/sessions";
-        let conn = self
-            .http
-            .build_conn(trillium::Method::Query, path)
-            .with_request_header("content-type", "application/json; charset=utf-8")
-            .with_body(body)
-            .await
-            .with_context(|| format!("QUERY {path} on the host socket"))?;
-        let body = read_2xx(conn, "QUERY", path).await?;
-        serde_json::from_str(&body).with_context(|| format!("decoding QUERY {path}"))
-    }
-
-    /// Every configured connection's stored model listing, with recent ranks for
-    /// the project at `cwd` (`GET /inference/catalog`). Never waits on a provider:
-    /// an entry's `status` says whether its copy is fresh, stale, missing, or
-    /// failed, and a missing or stale one is being refreshed in the host
-    /// (docs/model-catalog.md). `role` narrows the answer to what that role may
-    /// choose; `None` is every model, which is what the spotter may choose. A
-    /// listener route, so it addresses the socket root.
-    pub async fn catalog(
-        &self,
-        cwd: &std::path::Path,
-        config: Option<&std::path::Path>,
-        role: Option<ModelRole>,
-    ) -> Result<Vec<ConnectionCatalog>> {
-        #[derive(serde::Deserialize)]
-        struct Catalog {
-            connections: Vec<ConnectionCatalog>,
-        }
-        let path = format!(
-            "/inference/catalog?{}",
-            catalog_query(cwd, config, None, role)
-        );
-        let body = self.get_unversioned(&path).await?;
-        let catalog: Catalog =
-            serde_json::from_str(&body).with_context(|| format!("decoding GET {path}"))?;
-        Ok(catalog.connections)
-    }
-
-    /// One connection's entry (`GET /inference/catalog/:connection`), refreshed
-    /// and awaited by the host when its copy is older than `max_age` seconds
-    /// (the host's 24-hour TTL when `None`; it floors the value at one minute).
-    pub async fn catalog_connection(
-        &self,
-        connection: &str,
-        cwd: &std::path::Path,
-        config: Option<&std::path::Path>,
-        max_age: Option<u64>,
-        role: Option<ModelRole>,
-    ) -> Result<ConnectionCatalog> {
-        let name =
-            percent_encoding::utf8_percent_encode(connection, percent_encoding::NON_ALPHANUMERIC);
-        let path = format!(
-            "/inference/catalog/{name}?{}",
-            catalog_query(cwd, config, max_age, role)
-        );
-        let body = self.get_unversioned(&path).await?;
-        serde_json::from_str(&body).with_context(|| format!("decoding GET {path}"))
-    }
-
-    /// The host's configured inference connections (`GET /inference`). This is a
-    /// listener route, so it always addresses the socket root.
-    pub async fn inference_inventory(&self) -> Result<Vec<ConnectionInventory>> {
-        #[derive(serde::Deserialize)]
-        struct Inventory {
-            connections: Vec<ConnectionInventory>,
-        }
-        let path = "/inference";
-        let body = self.get_unversioned(path).await?;
-        let inventory: Inventory =
-            serde_json::from_str(&body).with_context(|| format!("decoding GET {path}"))?;
-        Ok(inventory.connections)
-    }
-
-    /// The sessions a host holds (`GET /sessions`, docs/control-api.md), sorted
-    /// by id, each with its title once one has been written. A listener route at
-    /// the socket root, like [`create_session`](Self::create_session).
-    pub async fn sessions(&self) -> Result<Vec<SessionSummary>> {
-        let path = "/sessions";
-        let conn = self
-            .http
-            .get(path)
-            .await
-            .with_context(|| format!("GET {path} on the host socket"))?;
-        let body = read_2xx(conn, "GET", path).await?;
-        serde_json::from_str(&body).with_context(|| format!("decoding GET {path}"))
-    }
-
-    /// The dormant sessions under the working root `cwd`
-    /// (`GET /sessions?state=archived&cwd=<root>`, docs/control-api.md), most
-    /// recently active first. Rows with a `problem` are directories the host
-    /// could not read as sessions; a session the host is running is not listed.
-    pub async fn archived_sessions(&self, cwd: &std::path::Path) -> Result<Vec<ArchivedSession>> {
-        let query = trillium_client::url::form_urlencoded::Serializer::new(String::new())
-            .append_pair("state", "archived")
-            .append_pair("cwd", &cwd.to_string_lossy())
-            .finish();
-        let path = format!("/sessions?{query}");
-        let conn = self
-            .http
-            .get(path.clone())
-            .await
-            .with_context(|| format!("GET {path} on the host socket"))?;
-        let body = read_2xx(conn, "GET", &path).await?;
-        serde_json::from_str(&body).with_context(|| format!("decoding GET {path}"))
-    }
-
-    /// Subscribe to the host's session listing (`GET /sessions` with
-    /// `Accept: text/event-stream`, docs/control-api.md). Each event carries the
-    /// whole listing — the same array [`sessions`](Self::sessions) returns — so a
-    /// client holds the latest frame and needs no cursor and no reconciliation.
-    /// A listener route at the socket root, like the rest of this family.
-    pub async fn session_events(&self) -> Result<trillium_client::sse::EventStream> {
-        let path = "/sessions";
-        self.http
-            .get(path)
-            .into_sse()
-            .await
-            .map_err(|e| anyhow!("opening the session listing stream at {path}: {e}"))
-    }
-
-    /// The ids of the sessions a host holds: [`sessions`](Self::sessions) without
-    /// the titles.
-    pub async fn list_sessions(&self) -> Result<Vec<String>> {
-        Ok(self
-            .sessions()
-            .await?
-            .into_iter()
-            .map(|listing| listing.id)
-            .collect())
-    }
-
-    /// End a hosted session (`DELETE /sessions/:id`, docs/control-api.md):
-    /// answers once its teardown has run. A listener route at the socket root;
-    /// `404` for an id the host does not hold.
-    pub async fn archive_session(&self, id: &str) -> Result<()> {
-        let path = format!("/sessions/{id}");
-        let conn = self
-            .http
-            .delete(path.as_str())
-            .await
-            .with_context(|| format!("DELETE {path} on the host socket"))?;
-        read_2xx(conn, "DELETE", &path).await?;
-        Ok(())
-    }
-
-    /// Report whether a person is attending (`POST /attention`,
-    /// docs/web-push.md). A listener route at the socket root, whatever prefix
-    /// this client carries. `Ok(false)` is a `404`: a lone session bind serves no
-    /// attention table, so the caller stops reporting.
-    pub(crate) async fn report_attention(
-        &self,
-        report: &crate::daemon::attention::AttentionReport,
-    ) -> Result<bool> {
-        let path = "/attention";
-        let conn = self
-            .http
-            .post(path)
-            .with_request_header("content-type", "application/json; charset=utf-8")
-            .with_body(serde_json::to_string(report)?)
-            .await
-            .with_context(|| format!("POST {path} to the control socket"))?;
-        if conn.status().is_some_and(|s| s.code() == "404") {
-            return Ok(false);
-        }
-        read_2xx(conn, "POST", path).await?;
-        Ok(true)
-    }
-
-    /// The id of the session this client is bound to (`/sessions/<id>`), or
-    /// `None` at a session bind's root.
-    pub fn session_id(&self) -> Option<&str> {
-        self.prefix.strip_prefix("/sessions/")
-    }
-
-    /// A fresh bootstrap link from the daemon's TCP bind (`GET /auth/link`,
-    /// docs/web-bind.md) — current TOTP code in the fragment. The `/auth/*`
-    /// credential routes answer only over the Unix socket (host possession is the
-    /// enrollment authority) and live beside `/v1`, hence [`get_unversioned`].
-    ///
-    /// [`get_unversioned`]: Self::get_unversioned
-    pub async fn auth_link(&self) -> Result<String> {
-        json_field(&self.get_unversioned("/auth/link").await?, "url")
-    }
-
-    /// The authenticator-app enrollment URI (`GET /auth/otpauth`, docs/web-bind.md).
-    /// Carries the TOTP secret itself — the caller renders it as a QR at the host
-    /// terminal and nowhere else.
-    pub async fn auth_otpauth(&self) -> Result<String> {
-        json_field(&self.get_unversioned("/auth/otpauth").await?, "uri")
-    }
-
-    /// The program bearer for the TCP bind (`GET /auth/bearer`, docs/web-bind.md).
-    pub async fn auth_bearer(&self) -> Result<String> {
-        json_field(&self.get_unversioned("/auth/bearer").await?, "bearer")
-    }
-
-    /// GET a path that lives beside `/v1` rather than under it — the `/auth/*`
-    /// family only (docs/web-bind.md).
-    async fn get_unversioned(&self, path: &str) -> Result<String> {
-        let conn = self
-            .http
-            .get(path)
-            .await
-            .with_context(|| format!("GET {path} from the control socket"))?;
-        read_2xx(conn, "GET", path).await
-    }
-
-    /// POST a JSON body to `path`, returning the response body on a 2xx and an
-    /// error carrying the status + body otherwise.
-    async fn post(&self, path: &str, body: String) -> Result<String> {
-        let path = self.versioned(path);
-        let path = path.as_str();
-        let conn = self
-            .http
-            .post(path)
-            .with_request_header("content-type", "application/json; charset=utf-8")
-            .with_body(body)
-            .await
-            .with_context(|| format!("POST {path} to the control socket"))?;
-        read_2xx(conn, "POST", path).await
-    }
-
-    /// PATCH a JSON body to `path` — same contract as [`post`](Self::post).
-    async fn patch(&self, path: &str, body: String) -> Result<String> {
-        let path = self.versioned(path);
-        let path = path.as_str();
-        let conn = self
-            .http
-            .patch(path)
-            .with_request_header("content-type", "application/json; charset=utf-8")
-            .with_body(body)
-            .await
-            .with_context(|| format!("PATCH {path} to the control socket"))?;
-        read_2xx(conn, "PATCH", path).await
-    }
-
-    /// PUT a JSON body to `path` — same contract as [`post`](Self::post).
-    async fn put(&self, path: &str, body: String) -> Result<String> {
-        let path = self.versioned(path);
-        let path = path.as_str();
-        let conn = self
-            .http
-            .put(path)
-            .with_request_header("content-type", "application/json; charset=utf-8")
-            .with_body(body)
-            .await
-            .with_context(|| format!("PUT {path} to the control socket"))?;
-        read_2xx(conn, "PUT", path).await
-    }
-
-    /// DELETE `path` — same contract as [`post`](Self::post).
-    async fn delete(&self, path: &str) -> Result<String> {
-        let path = self.versioned(path);
-        let path = path.as_str();
-        let conn = self
-            .http
-            .delete(path)
-            .await
-            .with_context(|| format!("DELETE {path} on the control socket"))?;
-        read_2xx(conn, "DELETE", path).await
-    }
-
     /// One logged result image's decoded bytes (`GET /log/:seq/images/:idx`,
     /// docs/control-api.md) — the dereference target for the image references
     /// entry views carry (`data` is omitted there; this is where it lives).
     pub async fn log_image(&self, seq: u64, idx: usize) -> Result<Vec<u8>> {
         self.get_bytes(&format!("/log/{seq}/images/{idx}")).await
-    }
-
-    /// GET `path`, returning the raw response bytes on a 2xx — for the one
-    /// non-JSON resource (image bytes); everything else reads through
-    /// [`get`](Self::get).
-    async fn get_bytes(&self, path: &str) -> Result<Vec<u8>> {
-        let path = self.versioned(path);
-        let path = path.as_str();
-        let mut conn = self
-            .http
-            .get(path)
-            .await
-            .with_context(|| format!("GET {path} from the control socket"))?;
-        if conn.status().is_some_and(|s| s.is_success()) {
-            conn.response_body()
-                .read_bytes()
-                .await
-                .with_context(|| format!("reading the response to GET {path}"))
-        } else {
-            let code = conn
-                .status()
-                .map(|s| s.code().to_string())
-                .unwrap_or_else(|| "no status".into());
-            Err(anyhow!("GET {path} → {code}"))
-        }
-    }
-
-    /// GET `path`, returning the response body on a 2xx (else an error with the
-    /// status + body).
-    async fn get(&self, path: &str) -> Result<String> {
-        let path = self.versioned(path);
-        let path = path.as_str();
-        let conn = self
-            .http
-            .get(path)
-            .await
-            .with_context(|| format!("GET {path} from the control socket"))?;
-        read_2xx(conn, "GET", path).await
     }
 }
 
@@ -947,25 +561,6 @@ pub struct TurnOptions<'a> {
     pub source: Option<&'a str>,
 }
 
-/// Pull one string field out of a JSON body — the `/auth/*` responses are all a
-/// single-field object.
-fn json_field(body: &str, field: &str) -> Result<String> {
-    serde_json::from_str::<serde_json::Value>(body)
-        .ok()
-        .and_then(|v| v.get(field).and_then(|f| f.as_str()).map(String::from))
-        .ok_or_else(|| anyhow!("no {field:?} in response: {body}"))
-}
-
-impl Client {
-    /// Join the base prefix and the API version onto a verb's path
-    /// (docs/control-api.md): every session route is served under `/v1`, and
-    /// prefixing here — the one place every request passes through — keeps the
-    /// verbs above reading like the API they document.
-    fn versioned(&self, path: &str) -> String {
-        format!("{}/v1{path}", self.prefix)
-    }
-}
-
 /// The JSON body for an approval decision — the four-valued [`Approval`] the loop consumes
 /// (docs/control-channel.md). Shared by the blocking and non-blocking `approve` verbs.
 fn approval_body(decision: &Approval) -> String {
@@ -982,27 +577,6 @@ fn approval_body(decision: &Approval) -> String {
         }),
     };
     body.to_string()
-}
-
-/// Read a finished client conn's body, mapping a non-2xx status into an error that
-/// carries the daemon's own JSON error message (so a 404 "no pending approval"
-/// surfaces verbatim at the CLI).
-async fn read_2xx(mut conn: trillium_client::Conn, method: &str, path: &str) -> Result<String> {
-    let ok = conn.status().is_some_and(|s| s.is_success());
-    let code = conn
-        .status()
-        .map(|s| s.code().to_string())
-        .unwrap_or_else(|| "no status".into());
-    let body = conn
-        .response_body()
-        .read_string()
-        .await
-        .with_context(|| format!("reading the response to {method} {path}"))?;
-    if ok {
-        Ok(body)
-    } else {
-        Err(anyhow!("{method} {path} → {code}: {body}"))
-    }
 }
 
 #[cfg(test)]

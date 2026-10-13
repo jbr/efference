@@ -389,3 +389,55 @@ fn stale(cached: Option<&Cached>, endpoint: &Endpoint, error: Error) -> Result<L
     );
     parse(&cached.body)
 }
+
+/// A catalog naming the models the boot-path fixtures configure, in the shape
+/// the backend answered on 2026-09-24. Seeding it is how a test runs the boot
+/// path for a Codex connection without a provider (`codex::seed`).
+#[cfg(test)]
+const EXAMPLE_CODEX_CATALOG: &str = r#"{
+  "models": [
+    {
+      "slug": "gpt-5.6",
+      "display_name": "GPT-5.6",
+      "context_window": 272000,
+      "input_modalities": ["text", "image"],
+      "default_reasoning_level": "medium",
+      "supported_reasoning_levels": [
+        {"effort": "low"}, {"effort": "medium"}, {"effort": "high"}
+      ],
+      "visibility": "list",
+      "supported_in_api": true
+    },
+    {
+      "slug": "gpt-5.6-terra",
+      "display_name": "GPT-5.6-Terra",
+      "context_window": 272000,
+      "input_modalities": ["text", "image"],
+      "default_reasoning_level": "medium",
+      "supported_reasoning_levels": [
+        {"effort": "low"}, {"effort": "medium"}, {"effort": "high"}
+      ],
+      "visibility": "list",
+      "supported_in_api": true
+    },
+    {
+      "slug": "gpt-5.6-luna",
+      "display_name": "GPT-5.6-Luna",
+      "context_window": 272000,
+      "input_modalities": ["text", "image"],
+      "default_reasoning_level": "medium",
+      "supported_reasoning_levels": [
+        {"effort": "low"}, {"effort": "medium"}, {"effort": "high"}
+      ],
+      "visibility": "list",
+      "supported_in_api": true
+    }
+  ]
+}"#;
+
+/// Seed one connection's catalog from [`EXAMPLE_CODEX_CATALOG`]. Test-only, and
+/// named for the account so parallel tests do not share a cache entry.
+#[cfg(test)]
+pub(crate) fn seed_codex_catalog(provider: Provider, account: &str) {
+    seed(provider, None, account, EXAMPLE_CODEX_CATALOG);
+}

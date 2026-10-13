@@ -25,7 +25,7 @@ pub(super) async fn continue_loop(conn: Conn) -> Conn {
     let Some(shared) = shared_of(&conn) else {
         return missing_state(conn);
     };
-    shared.person_acted(crate::log::ReleasedBy::Continue);
+    shared.person_acted(crate::daemon::PersonAction::Continue);
     match shared.request_continue() {
         Ok(()) => conn
             .with_status(202)

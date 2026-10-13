@@ -133,8 +133,8 @@ since, context_tokens}` when the loop stops before a request on the main prefix,
 `warm` when a fold or another request ended the belief). It projects
 to nothing (`cold_records_project_to_identical_bytes`).
 
-The stages are written from one seam, `Client::send` in `api/client.rs` (and the
-Messages keepalive beside it), into a `StageSink` the session installs on the agent
+The stages are written from one seam, `Client::send_request` in `api/client/send.rs` (and the
+Messages keepalive in `api/client/keepalive.rs`), into a `StageSink` the session installs on the agent
 client, the own-triage client, and the spotter's client. The caller tags the request
 with `Client::with_origin`; the keepalive and the triage primer tag themselves. A
 transport retry is attributed through a per-client slot holding the request in

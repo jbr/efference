@@ -21,7 +21,20 @@ pub fn render_request_pretty(
     tool_choice: ToolChoice,
     messages: &[ApiMessage],
 ) -> Result<String, Error> {
-    let request = Request {
+    let request = offline_request(model, system, tools, tool_choice, messages);
+    Ok(serde_json::to_string_pretty(&request)?)
+}
+
+/// The [`Request`] both dev renderers show: a streaming turn's envelope, built
+/// without the boot-time lookups a session makes.
+fn offline_request<'a>(
+    model: &'a str,
+    system: &'a str,
+    tools: &'a [Value],
+    tool_choice: ToolChoice,
+    messages: &'a [ApiMessage],
+) -> Request<'a> {
+    Request {
         model,
         max_tokens: MAX_TOKENS,
         system,
@@ -39,8 +52,7 @@ pub fn render_request_pretty(
         prompt_cache_key: None,
         messages,
         stream: true,
-    };
-    Ok(serde_json::to_string_pretty(&request)?)
+    }
 }
 
 /// Render the same envelope as [`render_request_pretty`] as **pseudo-YAML** (the
@@ -139,24 +151,6 @@ pub(super) fn request_value(
     tool_choice: ToolChoice,
     messages: &[ApiMessage],
 ) -> Value {
-    let request = Request {
-        model,
-        max_tokens: MAX_TOKENS,
-        system,
-        tools,
-        tool_choice,
-        // The dev views render the shape a turn sends offline. The model's thinking
-        // support and the session's effort come from the boot-time metadata lookup,
-        // which these helpers do not make, so thinking renders as a source that
-        // declares nothing (omitted) and effort as unset.
-        thinking: Thinking::for_request(&tool_choice, ThinkingSupport::UNKNOWN, false),
-        reasoning: None,
-        output_config: None,
-        temperature: None,
-        upstream: None,
-        prompt_cache_key: None,
-        messages,
-        stream: true,
-    };
+    let request = offline_request(model, system, tools, tool_choice, messages);
     serde_json::to_value(&request).expect("request envelope serializes")
 }

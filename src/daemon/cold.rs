@@ -1,4 +1,4 @@
-//! The `cold` state topic (backlog: cold-session.md, docs/transport.md): whether the
+//! The `cold` state topic (docs/control-api.md, docs/transport.md): whether the
 //! session's prompt cache is believed to have expired.
 //!
 //! The belief is a function of the clock — the last request on the main prefix plus
@@ -126,7 +126,7 @@ impl Session {
     /// park it releases. Nothing is left behind when the session is warm, so an action
     /// taken before a cold moment does not release a later one. A loop parked since
     /// before a fold, with the belief gone, is woken the same way.
-    pub(crate) fn person_acted(&self, by: ReleasedBy) {
+    pub(crate) fn release_cold(&self, by: ReleasedBy) {
         if self.cold_since().is_some() {
             self.record_cold(ColdEvent::Released { by });
             self.person_acted.store(true, Ordering::SeqCst);

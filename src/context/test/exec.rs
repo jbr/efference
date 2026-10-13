@@ -62,15 +62,13 @@ fn resolve_exec_runs_in_base_and_allows_empty_stdout() {
         ],
         &dir,
     )
-    .unwrap();
-    assert!(matches!(
-        &resolved.sections[0].items[0],
-        Item::Exec { body, .. } if body == "marker.txt\n"
-    ));
-    assert!(matches!(
-        &resolved.sections[1].items[0],
-        Item::Exec { body, .. } if body.is_empty()
-    ));
+    .unwrap_or_else(|e| panic!("{e}"));
+    let body = |section: usize| match &resolved.sections[section].items[0] {
+        Item::Exec { body, .. } => body.clone(),
+        other => panic!("not an exec item: {other:?}"),
+    };
+    assert_eq!(body(0), "marker.txt\n");
+    assert_eq!(body(1), "");
     std::fs::remove_dir_all(&dir).unwrap();
 }
 

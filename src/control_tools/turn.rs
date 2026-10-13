@@ -110,9 +110,8 @@ impl Tool<Control> for Turn {
                 // beside the `mcp[<name>]` shape an external mount uses.
                 let source = format!("session[{}]", state.caller);
                 let target = state.resolve_mutating(self.session.as_deref())?;
-                // The same person action the route notes (docs/control-api.md).
-                target.person_acted(target.turn_released_by());
-                target.submit_turn(
+                // A person action, as on the route (docs/control-api.md).
+                target.submit_client_turn(
                     crate::frontend::SubmittedTurn::new(text, crate::daemon::mint_submission_id())
                         .sourced(Some(source)),
                 );

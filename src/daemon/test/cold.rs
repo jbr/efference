@@ -116,7 +116,7 @@ async fn the_cold_check_parks_until_a_person_acts() {
     );
     shared.running.store(false, Ordering::SeqCst);
 
-    shared.person_acted(crate::log::ReleasedBy::Turn);
+    shared.release_cold(crate::log::ReleasedBy::Turn);
     tokio::time::timeout(Duration::from_secs(2), check)
         .await
         .expect("released")
@@ -170,7 +170,7 @@ async fn a_fold_leaves_the_park_folded() {
 async fn a_person_acting_on_a_warm_session_is_not_kept() {
     let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
     shared.set_cache_ttl(Duration::ZERO);
-    shared.person_acted(crate::log::ReleasedBy::Turn);
+    shared.release_cold(crate::log::ReleasedBy::Turn);
     assert!(!shared.person_acted.load(Ordering::SeqCst));
     assert!(cold_records(&shared).is_empty());
 }
@@ -274,7 +274,7 @@ async fn every_person_action_releases_a_park_and_is_recorded() {
         .await
         .expect("parks");
 
-        shared.person_acted(by);
+        shared.release_cold(by);
         tokio::time::timeout(Duration::from_secs(2), check)
             .await
             .expect("released")

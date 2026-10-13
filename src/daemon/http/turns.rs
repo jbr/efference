@@ -58,9 +58,8 @@ pub(super) async fn submit_turn(mut conn: Conn) -> Conn {
                 Ok(attachments) => attachments,
                 Err(message) => return fail(conn, ErrorCode::BadRequest, message),
             };
-            shared.person_acted(shared.turn_released_by());
             let submission_id = submission_id.unwrap_or_else(mint_submission_id);
-            shared.submit_turn(
+            shared.submit_client_turn(
                 SubmittedTurn::new(text, submission_id.clone())
                     .sourced(source)
                     .with_attachments(attachments),

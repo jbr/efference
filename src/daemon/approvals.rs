@@ -96,16 +96,13 @@ impl Session {
     /// `GET /state` reflects the resolution immediately. `false` → no such gate.
     /// The decision is a person's action (docs/control-api.md), noted once the gate is
     /// known to be this one and before the decision reaches the loop, so the cold check
-    /// that follows finds it. Only a decision that lets the turn go on counts: `abort`
-    /// makes no further request.
+    /// that follows finds it.
     pub(crate) fn resolve_approval(&self, id: &CallId, decision: Approval) -> bool {
         let sender = self.approvals.lock().unwrap().remove(id);
         let Some(tx) = sender else { return false };
-        if !matches!(decision, Approval::Abort) {
-            self.person_acted(crate::log::ReleasedBy::Approval);
-        }
-        // The gate's push has nothing left to announce (docs/web-push.md).
-        self.cancel_escalation(crate::log::PushCancel::GateDecided);
+        self.person_acted(super::PersonAction::Decision {
+            aborted: matches!(decision, Approval::Abort),
+        });
         {
             let mut pending = self.pending.lock().unwrap();
             if pending.as_ref().is_some_and(|p| p.call_id == id.0) {

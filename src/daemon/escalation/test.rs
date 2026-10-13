@@ -128,7 +128,7 @@ async fn answering_an_ask_cancels() {
     let _wait = shared.begin_ask("ask_1", "Sure?".into(), 1, 1);
     let held = shared.pending_escalation().expect("the ask is held");
     assert_eq!(held.body, "Sure?");
-    shared.submit_turn(crate::frontend::SubmittedTurn::new("yes", "sub_1"));
+    shared.submit_client_turn(crate::frontend::SubmittedTurn::new("yes", "sub_1"));
     assert_eq!(titles(&shared), None);
 }
 
@@ -148,7 +148,7 @@ async fn submitting_a_turn_cancels_a_settle() {
     let (shared, _attention) = attended_session();
     shared.push(MomentKind::Settle, "done".into());
     assert!(shared.pending_escalation().is_some());
-    shared.submit_turn(crate::frontend::SubmittedTurn::new("next", "sub_1"));
+    shared.submit_client_turn(crate::frontend::SubmittedTurn::new("next", "sub_1"));
     assert_eq!(titles(&shared), None);
 }
 
@@ -310,7 +310,7 @@ async fn each_cancel_cause_is_recorded() {
     // A turn submitted.
     let (shared, _attention) = attended_session();
     shared.push(MomentKind::Settle, "done".into());
-    shared.submit_turn(crate::frontend::SubmittedTurn::new("next", "sub_1"));
+    shared.submit_client_turn(crate::frontend::SubmittedTurn::new("next", "sub_1"));
     assert_eq!(cancelled(&shared), vec![PushCancel::TurnSubmitted]);
 
     // Archived and seen.

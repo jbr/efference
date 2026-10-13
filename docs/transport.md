@@ -306,7 +306,7 @@ Two properties make one client sufficient. TLS is per-destination — `RustlsCon
 handshakes only for a secure destination and delegates to plain TCP otherwise, so
 `http://` callers share it. And handlers are per-clone: `with_handler` *replaces*
 rather than stacks, so the shared client installs none and each caller adds its
-own (retry and upstream-status in `api/client.rs`, redirect-following in
+own (retry in `api/client.rs` and upstream-status in `api/client/upstream_status.rs`, redirect-following in
 `oauth.rs`). The clone keeps the pool; only the handler and the copy-on-write
 default headers differ.
 
@@ -1522,7 +1522,7 @@ answer" must not degrade into no validation. Per provider:
   `max_tokens`, and routing skips endpoints that cannot produce a response that
   long, so a max would silently pin routing to the single widest endpoint and
   change price and availability as a side effect of a display value. The min
-  is taken over the endpoints at or above `OUTPUT_FLOOR` (32k, `api/provider.rs`):
+  is taken over the endpoints at or above `OUTPUT_FLOOR` (32k, `api/provider/capabilities.rs`):
   an outlier far below its peers would otherwise cap every turn of the session
   at its number, which on a model whose thinking counts against `max_tokens`
   is a turn cut off before its first tool call (`z-ai/glm-5.3-flash`,

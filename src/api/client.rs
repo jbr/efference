@@ -1,4 +1,9 @@
 //! The streaming client: `complete` and the cache `keepalive` (docs/transport.md).
+//!
+//! This file holds the client's configuration and the forced-choice fallback.
+//! One request's pipeline is `client/send.rs`, the keepalive and primer are
+//! `client/keepalive.rs`, the per-response observer is `client/upstream_status.rs`,
+//! and the image-refusal recovery is `client/images.rs`.
 
 use super::*;
 
@@ -21,6 +26,16 @@ use crate::log::{RequestOrigin, is_captured_header};
 use crate::project::{WireTurn, encode_messages};
 
 mod images;
+mod keepalive;
+mod send;
+mod upstream_status;
+
+pub use keepalive::KeepaliveError;
+#[cfg(test)]
+pub(crate) use keepalive::KeepaliveResponse;
+use upstream_status::{CapturedErrorBody, UpstreamStatusHandler, read_error_body, response_meta};
+#[cfg(test)]
+pub(super) use upstream_status::{clear_upstream_failure, record_upstream_failure};
 
 /// Retry policy for requests that did not receive a successful response
 /// (docs/transport.md). Every upstream request is a replay-safe POST carrying
@@ -47,37 +62,6 @@ const RETRY_AFTER_CAP: Duration = Duration::from_secs(30);
 /// `[transport] stream-ceiling` (`config::TransportLimits`).
 pub const DEFAULT_STREAM_CEILING: Duration = Duration::from_secs(3600);
 
-/// Record one non-success upstream status. Matching statuses increment the
-/// diagnostic's count; a different one starts a new run (docs/transport.md).
-pub(super) fn record_upstream_failure(failure: &UpstreamFailureState, status: u16) {
-    let mut failure = failure.lock().unwrap();
-    match failure.as_mut() {
-        Some(previous) if previous.status == status => {
-            previous.count = previous.count.saturating_add(1);
-        }
-        _ => {
-            *failure = Some(UpstreamFailure { status, count: 1 });
-        }
-    }
-}
-
-/// The all-clear: a 2xx means the upstream is answering, so the chip stops
-/// reporting a failure that is over (docs/transport.md). This is the non-retry
-/// half of the boundary — a retry that finalizes arrives here too, because
-/// finalizing required a 2xx.
-pub(super) fn clear_upstream_failure(failure: &UpstreamFailureState) {
-    *failure.lock().unwrap() = None;
-}
-
-/// A non-2xx response body, read in the reverse pass and stashed on the conn.
-///
-/// Reading a body consumes it, and the caller that would otherwise read it — the
-/// `into_sse` open error, or `keepalive` — runs *after* this handler. Parking the
-/// bytes in the conn's state is what lets both the durable per-attempt record and
-/// the caller's own error message quote the upstream, instead of one of them
-/// finding an empty body.
-struct CapturedErrorBody(String);
-
 /// The non-2xx statuses the transport retries on its own, before the agent loop
 /// sees a failure (docs/transport.md): the rate-limit and server-side family.
 const RETRY_STATUSES: [Status; 5] = [
@@ -87,184 +71,6 @@ const RETRY_STATUSES: [Status; 5] = [
     Status::ServiceUnavailable,
     Status::GatewayTimeout,
 ];
-
-/// The stashed non-2xx body, if this conn's response carried one.
-pub(super) fn captured_error_body(conn: &mut Conn) -> Option<String> {
-    conn.take_state::<CapturedErrorBody>().map(|b| b.0)
-}
-
-/// Why a keepalive ping failed (docs/transport.md). A distinct type from the
-/// transport's boxed [`Error`] because the keepalive loop's retry decision is a
-/// function of the HTTP status: a request the upstream rejects as malformed will
-/// be rejected identically on the next tick, so the loop must be able to read the
-/// status structurally rather than parse an error string.
-#[derive(Debug)]
-pub enum KeepaliveError {
-    /// The upstream answered with a non-2xx. `status` is `None` when the response
-    /// carried no status line at all; `body` is the upstream's text.
-    Status { status: Option<u16>, body: String },
-    /// Anything before or after the status: connection failure, unreadable body,
-    /// a response that did not parse.
-    Other(Error),
-}
-
-impl KeepaliveError {
-    pub fn other(e: impl Into<Error>) -> Self {
-        Self::Other(e.into())
-    }
-
-    /// Whether this failure will recur identically on the next ping — the upstream
-    /// rejected the request itself, not the moment. True for the 4xx range except
-    /// 408 (request timeout) and 429 (rate limit), which describe the moment. 401
-    /// and 403 count as permanent here because the client's credential is fixed at
-    /// boot, so a rejected credential stays rejected for the life of the session.
-    pub fn is_permanent(&self) -> bool {
-        match self {
-            Self::Status {
-                status: Some(s), ..
-            } => (400..500).contains(s) && *s != 408 && *s != 429,
-            _ => false,
-        }
-    }
-
-    /// Whether the body names a condition no retry changes before it resets — the
-    /// Codex backend's `usage_limit_reached` arrives as a 429, which the status alone
-    /// reads as a moment (`api/failure.rs`). The same request would succeed after a
-    /// reset, so this is not [`is_permanent`](Self::is_permanent).
-    pub fn is_exhausted(&self) -> bool {
-        match self {
-            Self::Status { body, .. } => classify_body(body) == FailureClass::Terminal,
-            Self::Other(_) => false,
-        }
-    }
-
-    /// When an exhausted limit resets, in epoch milliseconds, where the body says
-    /// (`error.resets_at`, in seconds, on the Codex backend).
-    pub fn resets_at(&self) -> Option<u64> {
-        let Self::Status { body, .. } = self else {
-            return None;
-        };
-        let value: serde_json::Value = serde_json::from_str(body).ok()?;
-        let secs = value.get("error")?.get("resets_at")?.as_u64()?;
-        Some(secs.saturating_mul(1000))
-    }
-}
-
-impl std::fmt::Display for KeepaliveError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Status {
-                status: Some(status),
-                body,
-            } => write!(f, "keepalive returned {status}: {body}"),
-            Self::Status { status: None, body } => {
-                write!(f, "keepalive returned no status: {body}")
-            }
-            Self::Other(e) => write!(f, "{e}"),
-        }
-    }
-}
-
-impl std::error::Error for KeepaliveError {}
-
-/// Observes every upstream response in the reverse pass, before the outer retry
-/// handler queues another attempt (docs/transport.md).
-///
-/// Three things happen here, all of them below the agent loop:
-///
-/// - a non-2xx updates the status/count diagnostic; a 2xx clears it, which is the
-///   chip's all-clear boundary;
-/// - a non-2xx body is read once and stashed, both for the caller and for the record;
-/// - the failed attempt is queued for the loop to drain into a durable record-only
-///   log entry — the handler cannot append, so the body crosses that boundary
-///   through the queue.
-struct UpstreamStatusHandler {
-    failure: UpstreamFailureState,
-    attempts: UpstreamAttemptQueue,
-    /// The turn's sticky-routing token and the header it arrives on
-    /// (docs/transport.md); `None` where the provider has no such contract.
-    turn_routing: Option<(&'static str, TurnRoutingState)>,
-    /// The subscription-window snapshot (`api/plan.rs`), on the provider that
-    /// reports one. Read on every status: the 429 that ends a window carries it.
-    plan: Option<PlanState>,
-    /// The request whose attempt this is, when stages are recorded
-    /// (`api/stages.rs`).
-    active: ActiveTrace,
-}
-
-impl ClientHandler for UpstreamStatusHandler {
-    async fn after_response(&self, conn: &mut Conn) -> trillium_client::Result<()> {
-        let Some(status) = conn.status() else {
-            return Ok(());
-        };
-        if let Some(cell) = &self.plan {
-            let headers = conn.response_headers();
-            let observed_at = crate::log::Timestamp::now().0;
-            let names: Vec<String> = headers
-                .iter()
-                .map(|(name, _)| name.as_ref().to_string())
-                .collect();
-            if let Some(snapshot) = plan_from_headers(
-                names,
-                |name| headers.get_str(name).map(str::to_string),
-                observed_at,
-            ) {
-                *cell.lock().unwrap_or_else(|e| e.into_inner()) = Some(snapshot);
-            }
-        }
-        if status.is_success() {
-            clear_upstream_failure(&self.failure);
-            // First token of the turn wins: the backend issues it at turn start and
-            // the contract is to replay that value unchanged until the turn ends.
-            if let Some((header, cell)) = &self.turn_routing
-                && let Some(token) = conn.response_headers().get_str(*header)
-            {
-                let mut slot = cell.lock().unwrap_or_else(|e| e.into_inner());
-                if slot.is_none() {
-                    *slot = Some(token.to_string());
-                }
-            }
-            return Ok(());
-        }
-        let status = u16::from(status);
-        record_upstream_failure(&self.failure, status);
-        let active = self.active.lock().unwrap().clone();
-        if let Some(active) = active {
-            active.attempt_failed(status);
-        }
-        let body = conn
-            .response_body()
-            .read_string()
-            .await
-            .unwrap_or_else(|read_err| format!("(could not read error body: {read_err})"));
-        conn.insert_state(CapturedErrorBody(body.clone()));
-        push_upstream_attempt(&self.attempts, UpstreamAttemptFailure { status, body });
-        Ok(())
-    }
-}
-
-/// The status and allowlisted response headers of an executed conn
-/// (docs/transport.md).
-///
-/// The allowlist is [`is_captured_header`]: a response header can carry
-/// account-scoped values, so what may reach the log is a named set rather than
-/// whatever the edge attached (docs/env.md). Values still pass the `[env]` masker
-/// at append, like every other stored string.
-pub(super) fn response_meta(conn: &Conn) -> ResponseMeta {
-    let headers = conn
-        .response_headers()
-        .into_iter()
-        .filter_map(|(name, values)| {
-            let name = name.to_string();
-            let value = values.one()?.as_str()?;
-            is_captured_header(&name).then(|| (name.to_ascii_lowercase(), value.to_string()))
-        })
-        .collect();
-    ResponseMeta {
-        status: conn.status().map_or(0, u16::from),
-        headers,
-    }
-}
 
 /// A thin Anthropic Messages client, holding the resolved endpoint, the model,
 /// and the session's system prompt. The system is byte-stable across the
@@ -407,13 +213,7 @@ impl Client {
             .with_all_methods()
             // `with_statuses` replaces the default (429, 503), so enumerate the
             // whole transient set. Other 4xx responses remain immediate errors.
-            .with_statuses([
-                Status::TooManyRequests,
-                Status::InternalServerError,
-                Status::BadGateway,
-                Status::ServiceUnavailable,
-                Status::GatewayTimeout,
-            ])
+            .with_statuses(RETRY_STATUSES)
             // The status set above, with one veto: a body that names a condition
             // no retry can change (`api/failure.rs`) — the Codex backend answers
             // an exhausted plan with a 429 whose body says `usage_limit_reached`
@@ -599,6 +399,69 @@ impl Client {
             .flatten()
     }
 
+    /// The turns URL this client posts to. Present by construction: resolution
+    /// refuses a provider with no inference dialect for every role that builds a
+    /// client (`src/inference/options.rs`), so the only way here is a provider
+    /// that has one.
+    fn url(&self) -> &str {
+        self.endpoint
+            .url
+            .as_deref()
+            .expect("a client is only built on a provider that serves turns")
+    }
+
+    /// The authenticated POST every request starts from. The `anthropic-version`
+    /// header is part of the Messages dialect, not a provider identity, so it rides
+    /// only that dialect (docs/transport.md).
+    fn post(&self) -> trillium_client::Conn {
+        let conn = self
+            .endpoint
+            .authorize(self.http.post(self.url()), self.endpoint.auth_value.get())
+            .with_request_header("content-type", "application/json");
+        let conn = match self.dialect() {
+            WireDialect::Messages => {
+                conn.with_request_header("anthropic-version", ANTHROPIC_VERSION)
+            }
+            WireDialect::Responses => conn,
+            WireDialect::Completions => conn,
+            WireDialect::SystemOne => {
+                unreachable!("a client is only built on a provider that serves turns")
+            }
+        };
+        let conn = self
+            .endpoint
+            .extra_headers
+            .iter()
+            .fold(conn, |conn, (name, value)| {
+                conn.with_request_header(name.clone(), value.clone())
+            });
+        let conn = self.with_attribution(self.with_session_id(conn));
+        self.with_turn_routing(conn)
+    }
+
+    /// The Codex backend's routing headers (docs/transport.md): the model hint
+    /// on every request, and the turn's sticky token once the backend has issued
+    /// one. Both are transport-only — neither reaches the body, so neither can
+    /// move the cached prefix; what they move is which machine sees it.
+    fn with_turn_routing(&self, conn: trillium_client::Conn) -> trillium_client::Conn {
+        let provider = &self.endpoint.provider;
+        let conn = match provider.routing_hint_header() {
+            Some(header) => conn.with_request_header(header, format!("model={}", self.model)),
+            None => conn,
+        };
+        match (provider.turn_routing_header(), self.turn_routing_token()) {
+            (Some(header), Some(token)) => conn.with_request_header(header, token),
+            _ => conn,
+        }
+    }
+
+    /// The session's `--temperature` in the provider's native float range, as a
+    /// request body carries it; `None` when the session set none.
+    fn wire_temperature(&self) -> Option<f64> {
+        self.temperature
+            .map(|t| self.endpoint.provider.map_temperature(t))
+    }
+
     /// Pin which upstream serves this session (docs/transport.md). Applies to
     /// every request the client makes, so a session's spotter and fork peeks
     /// route the same way its turns do.
@@ -781,866 +644,5 @@ impl Client {
             .without_thinking()
             .send(&turns, tools, ToolChoice::auto(), None, on_delta)
             .await
-    }
-
-    /// [`Self::complete`], with the output cap fixed at `cap` instead of reserved
-    /// against the window when one is given. A fixed cap is sent as-is, also on the
-    /// Codex profile that otherwise omits it, and a refusal of it is not retried at
-    /// another value: the caller chose it (the Responses keepalive, docs/transport.md).
-    /// Reached through [`Self::send`], which handles an image refusal.
-    async fn send_request(
-        &self,
-        turns: &[WireTurn],
-        tools: &[Value],
-        tool_choice: ToolChoice,
-        cap: Option<u32>,
-        on_delta: impl FnMut(Streamed),
-    ) -> Result<Completion, Error> {
-        let trace = Trace::begin(self.stages.as_ref(), self.origin, &self.active_trace);
-        let result = self
-            .send_traced(trace.as_ref(), turns, tools, tool_choice, cap, on_delta)
-            .await;
-        if let Some(trace) = trace {
-            match &result {
-                Err(e) => trace.failed(&e.to_string()),
-                Ok(completion) if completion.operator_abort() => trace.interrupted(),
-                Ok(completion) => match completion.upstream_failure() {
-                    Some(why) => trace.failed(why),
-                    None => trace.ended(completion.finish.as_ref().map(|f| f.raw.as_str())),
-                },
-            }
-        }
-        result
-    }
-
-    /// [`Self::send`]'s request itself, reporting the stages it passes to `trace`.
-    async fn send_traced(
-        &self,
-        trace: Option<&Trace>,
-        turns: &[WireTurn],
-        tools: &[Value],
-        tool_choice: ToolChoice,
-        cap: Option<u32>,
-        mut on_delta: impl FnMut(Streamed),
-    ) -> Result<Completion, Error> {
-        // A turn list recorded in the other dialect never becomes a request: the
-        // encoder would skip every assistant turn and send a history with the
-        // model's replies missing (docs/transport.md). Live sessions are pinned to
-        // one provider, so this answers only a recorded session continued or
-        // rendered under another.
-        crate::project::check_dialect(turns, self.dialect())?;
-        // Encode once per dialect (docs/transport.md). The encoded form is what the
-        // reservation sizes and what each retry re-sends verbatim.
-        let encoded = match self.dialect() {
-            WireDialect::Messages => Encoded::Messages(encode_messages(
-                turns,
-                self.image_placement(),
-                self.breakpoint_placement(),
-            )),
-            WireDialect::Responses => {
-                let preamble = match self.endpoint.provider.responses_profile() {
-                    ResponsesProfile::Platform => self.system.as_str(),
-                    // Rides `instructions` instead (docs/transport.md).
-                    ResponsesProfile::Codex => "",
-                };
-                Encoded::Responses(encode_responses(turns, preamble, self.prompt_cache))
-            }
-            WireDialect::Completions => {
-                Encoded::Completions(completions::encode_completions(turns, &self.system))
-            }
-            WireDialect::SystemOne => {
-                unreachable!("a client is only built on a provider that serves turns")
-            }
-        };
-        // The prompt's variable parts, sized before `max_tokens` is chosen: the
-        // reservation is a function of how much of the window the prompt takes
-        // (`api/reservation.rs`), estimated from these bytes against the last
-        // response's exact count.
-        let body_bytes = match &encoded {
-            Encoded::Messages(messages) => self.system.len() + serde_json::to_vec(messages)?.len(),
-            Encoded::Responses(input) => self.system.len() + serde_json::to_vec(input)?.len(),
-            // The preamble is the first encoded message.
-            Encoded::Completions(messages) => serde_json::to_vec(messages)?.len(),
-        } + serde_json::to_vec(tools)?.len();
-        let mut max_tokens = cap.unwrap_or_else(|| self.reserve(body_bytes));
-        // The credential re-read below happens at most once per call: a source
-        // that yields a working token yields it the first time, and a second
-        // pass would only re-read the same bytes.
-        let mut reloaded_auth = false;
-        // `Sent` is reported once per request; a reservation or credential retry
-        // loops back through the open below.
-        let mut sent_reported = false;
-        // The operator's interrupt (docs/control-channel.md) is armed before the
-        // request is sent, not once its stream opens: `notify_waiters` stores no
-        // permit, so a press that lands after the request reaches the upstream but
-        // before the read loop below registers would otherwise be lost, leaving the
-        // read on a stream that may never finish. Armed here, it is ready the first
-        // time the read loop polls it.
-        let abort_signal = self
-            .abort
-            .clone()
-            .unwrap_or_else(|| Arc::new(tokio::sync::Notify::new()));
-        let abort = abort_signal.notified();
-        tokio::pin!(abort);
-        abort.as_mut().enable();
-        let mut events = loop {
-            let body = match &encoded {
-                Encoded::Messages(messages) => {
-                    let thinking =
-                        Thinking::for_request(&tool_choice, self.thinking, self.thinking_off);
-                    let request = Request {
-                        model: &self.model,
-                        max_tokens,
-                        system: &self.system,
-                        tools,
-                        tool_choice,
-                        thinking,
-                        reasoning: self.reasoning_off(thinking),
-                        output_config: self.effort.clone().map(|effort| OutputConfig { effort }),
-                        temperature: self
-                            .temperature
-                            .map(|t| self.endpoint.provider.map_temperature(t)),
-                        upstream: self.upstream.as_ref(),
-                        prompt_cache_key: self.prompt_cache_key(),
-                        messages,
-                        stream: true,
-                    };
-                    serde_json::to_string(&request)?
-                }
-                Encoded::Responses(input) => serde_json::to_string(&self.responses_request(
-                    input.clone(),
-                    tools,
-                    &tool_choice,
-                    max_tokens,
-                    cap.is_some(),
-                ))?,
-                Encoded::Completions(messages) => {
-                    serde_json::to_string(&completions::completions_request(
-                        &self.model,
-                        messages.clone(),
-                        tools,
-                        tool_choice,
-                        completions::RequestParams {
-                            max_tokens,
-                            temperature: self
-                                .temperature
-                                .map(|t| self.endpoint.provider.map_temperature(t)),
-                            effort: self.effort.as_deref(),
-                            options: &self.endpoint.request,
-                        },
-                    ))?
-                }
-            };
-            log::debug!(
-                "POST {}: {} turns, {} request bytes, max_tokens {max_tokens}",
-                self.url(),
-                turns.len(),
-                body.len()
-            );
-
-            // What this attempt authenticates with, kept so a rejection can say
-            // which value was rejected rather than re-reading one that may
-            // already have been repaired by another session (`AuthValue`).
-            // `current` renews a value near its stated expiry before it is
-            // sent, so an OAuth grant is refreshed here rather than on a 401.
-            let sent_auth = self.endpoint.auth_value.current().await;
-            let conn = self.post();
-            if let Some(trace) = trace
-                && !sent_reported
-            {
-                sent_reported = true;
-                trace.sent();
-            }
-            match conn.with_body(body).into_sse().await {
-                Ok(events) => break events,
-                // The Codex backend streams SSE with no `content-type` at all
-                // (docs/transport.md). `into_sse` refuses that like a browser
-                // EventSource would, but the failed negotiation still owns the
-                // executed conn, so the Responses dialect recovers the stream
-                // from it. A *present* wrong content-type, and every other
-                // dialect, stay on the failure arm.
-                Err(e)
-                    if self.dialect() == WireDialect::Responses
-                        && matches!(e.kind, SseErrorKind::UnexpectedContentType(None)) =>
-                {
-                    // `new` fails only on an unexecuted conn (`NoBody`), which a
-                    // content-type refusal has already ruled out.
-                    match EventStream::new(e.into()) {
-                        Ok(events) => break events,
-                        Err(e) => {
-                            let (status, detail) = Self::sse_open_failure(e).await;
-                            return Err(Self::open_error(status, detail));
-                        }
-                    }
-                }
-                Err(e) => {
-                    let (status, detail) = Self::sse_open_failure(e).await;
-                    // The window backstop (`api/reservation.rs`): the estimate
-                    // undershot and the provider named the overrun, so halve
-                    // the reservation and go again — once per halving, down to
-                    // the floor. Any other open failure stays terminal.
-                    let overran = cap.is_none()
-                        && status == Some(Status::BadRequest)
-                        && is_window_overflow(&detail);
-                    // The other reservation 400: the cap itself is above what the
-                    // model accepts, which is what an *unreported* cap
-                    // (`UNKNOWN_OUTPUT_CAP`) risks. Where the provider names its
-                    // ceiling the retry goes straight there; where it does not,
-                    // the same halving applies.
-                    let rejected =
-                        (cap.is_none() && status == Some(Status::BadRequest) && !overran)
-                            .then(|| output_cap_rejection(&detail))
-                            .flatten();
-                    // A statement rather than a condition, so the reservation
-                    // guard is released here: the `continue` below re-enters the
-                    // request path, which reads the reservation again.
-                    let retry = match rejected {
-                        Some(OutputCapRejection::Max(stated)) => {
-                            let mut reservation = self.reservation.lock().unwrap();
-                            reservation.clamp_to(stated).or_else(|| reservation.halve())
-                        }
-                        Some(OutputCapRejection::Unstated) => {
-                            self.reservation.lock().unwrap().halve()
-                        }
-                        None => overran
-                            .then(|| self.reservation.lock().unwrap().halve())
-                            .flatten(),
-                    };
-                    if let Some(retry) = retry {
-                        if overran {
-                            log::warn!(
-                                "prompt plus max_tokens {max_tokens} overran the window; \
-                                 retrying with max_tokens {retry}"
-                            );
-                        } else {
-                            log::warn!(
-                                "{} refused max_tokens {max_tokens}; retrying with \
-                                 max_tokens {retry}",
-                                self.endpoint.provider
-                            );
-                        }
-                        max_tokens = u32::try_from(retry).unwrap_or(u32::MAX);
-                        continue;
-                    }
-                    // The credential aged out under a running host
-                    // (docs/transport.md). The value is shared by every session
-                    // on this connection, so re-reading its source here repairs
-                    // all of them — the operator runs `codex login` in another
-                    // terminal and the next attempt carries the new token. A
-                    // credential that is *wrong* rather than expired classifies
-                    // Terminal and never reaches this.
-                    if !reloaded_auth
-                        && status == Some(Status::Unauthorized)
-                        && classify_body(&detail) == FailureClass::CredentialExpired
-                    {
-                        reloaded_auth = true;
-                        match self.endpoint.auth_value.reload(&sent_auth).await {
-                            Reloaded::Replaced => {
-                                log::warn!(
-                                    "{} rejected an expired credential; re-read its source \
-                                     and retrying",
-                                    self.endpoint.provider
-                                );
-                                continue;
-                            }
-                            // Every other outcome leaves the same value on the
-                            // wire, so the retry would fail identically. The
-                            // reason joins the error the caller stalls with.
-                            outcome => {
-                                return Err(Self::open_error(
-                                    status,
-                                    format!("{detail} (credential re-read: {outcome})"),
-                                ));
-                            }
-                        }
-                    }
-                    // A connection with no `auth` line sends nothing, which is
-                    // right for a local server and a 401 anywhere else: say so,
-                    // since the provider's words cannot.
-                    let detail = if !self.endpoint.sends_credential()
-                        && matches!(status, Some(Status::Unauthorized | Status::Forbidden))
-                    {
-                        format!(
-                            "{detail} (this connection sends no credential: its config \
-                             block has no `auth` line)"
-                        )
-                    } else {
-                        detail
-                    };
-                    return Err(Self::open_error(status, detail));
-                }
-            }
-        };
-
-        let mut assembler = match self.dialect() {
-            WireDialect::Messages => AnyAssembler::Messages(Assembler::new()),
-            WireDialect::Responses => AnyAssembler::Responses(ResponsesAssembler::new()),
-            WireDialect::Completions => AnyAssembler::Completions(CompletionsAssembler::new()),
-            WireDialect::SystemOne => {
-                unreachable!("a client is only built on a provider that serves turns")
-            }
-        };
-        // The response the stream opened on, read off the executed conn before the
-        // first event. Only the empty-finalized path keeps it (docs/transport.md) —
-        // that path's whole record is otherwise one prose string, and the edge's
-        // `x-generation-id` is the join key every after-the-fact query needs.
-        // The `UpstreamStatusHandler` below cannot do this: an empty stream is a
-        // 200, so the handler takes its success early-return, and at that point
-        // nothing yet knows the stream will arrive empty.
-        assembler.observed_response(response_meta(events.conn()));
-        // A mid-stream death — a transport error, an in-stream `error` event, an
-        // unparseable event — stops the read but never discards the partial: the
-        // failure is recorded on the assembler and `finish` folds it into the
-        // completion's `upstream_failure`, alongside whatever content accumulated
-        // (docs/transport.md). Only a failure to *open* the stream (above) is an
-        // `Err` from this function.
-        //
-        // The duration ceiling (docs/transport.md). A stream that stays open and
-        // never finalizes is bounded by nothing else — the retry policy above
-        // applies only while opening a response — so the read loop carries an
-        // absolute deadline. Exceeding it is marked exactly like a mid-stream
-        // death: the partial is kept, `finish` folds the reason into the
-        // completion's `upstream_failure`, and the caller's abort-retry budget
-        // decides what happens next.
-        //
-        // The operator's interrupt, armed above before the request went out, is the
-        // other way out: it ends the read the same way, and `Aborted` tells the
-        // caller not to retry.
-        let mut operator_abort = false;
-        let mut first_byte_reported = false;
-        let deadline = tokio::time::Instant::now() + self.stream_ceiling;
-        while let Some(event) = tokio::select! {
-            next = tokio::time::timeout_at(deadline, events.next()) => match next {
-                Ok(event) => event,
-                Err(_) => {
-                    let why = format!(
-                        "upstream SSE stream stayed open past the {}s ceiling without \
-                         finalizing ([transport] stream-ceiling)",
-                        self.stream_ceiling.as_secs()
-                    );
-                    log::error!("{why}");
-                    assembler.fail(why);
-                    None
-                }
-            },
-            _ = &mut abort => {
-                let why = "generation ended by the operator's interrupt".to_string();
-                log::info!("{why}");
-                assembler.fail(why);
-                operator_abort = true;
-                None
-            }
-        } {
-            let event = match event {
-                Ok(event) => event,
-                Err(e) => {
-                    let why = format!("upstream SSE stream failed mid-stream: {e}");
-                    log::error!("{why}");
-                    assembler.fail(why);
-                    break;
-                }
-            };
-            if let Some(trace) = trace
-                && !first_byte_reported
-            {
-                first_byte_reported = true;
-                trace.first_byte();
-            }
-            match assembler.apply(event.event_type(), event.data()) {
-                Ok(Some(streamed)) => on_delta(streamed),
-                Ok(None) => {}
-                Err(e) => {
-                    let why = e.to_string();
-                    log::error!("{why}");
-                    assembler.fail(why);
-                    break;
-                }
-            }
-        }
-        // Dropping the stream closes its connection: a hung socket is freed here,
-        // not when the provider decides.
-        drop(events);
-        let mut completion = assembler.finish();
-        if operator_abort && let Ok(completion) = &mut completion {
-            completion.failure_class = FailureClass::Aborted;
-        }
-        // A server that read far fewer prompt tokens than the request's text could
-        // encode to cut the prompt and said nothing (`api/truncation.rs`). Its
-        // answer is to a conversation the model did not see, so the turn is
-        // record-only, and a retry would be cut the same way.
-        if let Ok(completion) = &mut completion
-            && completion.upstream_failure().is_none()
-            && let Some(why) = truncation::truncated(
-                completion.usage.prompt_tokens(),
-                truncation::text_bytes(&self.system, tools, turns),
-            )
-        {
-            log::warn!("{why}");
-            completion.fail_terminal(why);
-        }
-        // Anchor the next estimate to this response's exact prompt count
-        // (`api/reservation.rs`). An attempt that died with zero usage
-        // counted nothing and teaches nothing, and a truncated one counted the
-        // wrong thing.
-        if let Ok(completion) = &completion
-            && completion.terminal_failure().is_none()
-        {
-            let prompt_tokens = completion.usage.prompt_tokens();
-            if prompt_tokens > 0 {
-                self.reservation
-                    .lock()
-                    .unwrap()
-                    .calibrate(prompt_tokens, body_bytes);
-            }
-        }
-        completion
-    }
-
-    /// The turns URL this client posts to. Present by construction: resolution
-    /// refuses a provider with no inference dialect for every role that builds a
-    /// client (`src/inference/options.rs`), so the only way here is a provider
-    /// that has one.
-    fn url(&self) -> &str {
-        self.endpoint
-            .url
-            .as_deref()
-            .expect("a client is only built on a provider that serves turns")
-    }
-
-    /// The authenticated POST every request starts from. The `anthropic-version`
-    /// header is part of the Messages dialect, not a provider identity, so it rides
-    /// only that dialect (docs/transport.md).
-    fn post(&self) -> trillium_client::Conn {
-        let conn = self
-            .endpoint
-            .authorize(self.http.post(self.url()), self.endpoint.auth_value.get())
-            .with_request_header("content-type", "application/json");
-        let conn = match self.dialect() {
-            WireDialect::Messages => {
-                conn.with_request_header("anthropic-version", ANTHROPIC_VERSION)
-            }
-            WireDialect::Responses => conn,
-            WireDialect::Completions => conn,
-            WireDialect::SystemOne => {
-                unreachable!("a client is only built on a provider that serves turns")
-            }
-        };
-        let conn = self
-            .endpoint
-            .extra_headers
-            .iter()
-            .fold(conn, |conn, (name, value)| {
-                conn.with_request_header(name.clone(), value.clone())
-            });
-        let conn = self.with_attribution(self.with_session_id(conn));
-        self.with_turn_routing(conn)
-    }
-
-    /// The Codex backend's routing headers (docs/transport.md): the model hint
-    /// on every request, and the turn's sticky token once the backend has issued
-    /// one. Both are transport-only — neither reaches the body, so neither can
-    /// move the cached prefix; what they move is which machine sees it.
-    fn with_turn_routing(&self, conn: trillium_client::Conn) -> trillium_client::Conn {
-        let provider = &self.endpoint.provider;
-        let conn = match provider.routing_hint_header() {
-            Some(header) => conn.with_request_header(header, format!("model={}", self.model)),
-            None => conn,
-        };
-        match (provider.turn_routing_header(), self.turn_routing_token()) {
-            (Some(header), Some(token)) => conn.with_request_header(header, token),
-            _ => conn,
-        }
-    }
-
-    /// The Responses envelope for one turn (docs/transport.md).
-    fn responses_request<'a>(
-        &'a self,
-        input: Vec<responses::wire::InputItem>,
-        tools: &[Value],
-        tool_choice: &ToolChoice,
-        max_output_tokens: u32,
-        capped: bool,
-    ) -> responses::ResponsesRequest<'a> {
-        let reasoning =
-            (self.thinking.adaptive && !self.thinking_off).then(|| responses::Reasoning {
-                effort: self.effort.clone(),
-                summary: "auto",
-            });
-        match self.endpoint.provider.responses_profile() {
-            ResponsesProfile::Platform => responses::ResponsesRequest {
-                model: &self.model,
-                instructions: None,
-                input,
-                tools: responses::tool_definitions(tools),
-                tool_choice: responses::tool_choice_value(tool_choice),
-                parallel_tool_calls: tool_choice.forced().is_none(),
-                store: false,
-                include: None,
-                truncation: Some("disabled"),
-                max_output_tokens: Some(max_output_tokens),
-                reasoning,
-                temperature: self
-                    .temperature
-                    .map(|t| self.endpoint.provider.map_temperature(t)),
-                prompt_cache_key: self.prompt_cache_key(),
-                prompt_cache_options: (self.prompt_cache == PromptCachePolicy::Explicit)
-                    .then_some(responses::PromptCacheOptions { mode: "explicit" }),
-                stream: true,
-            },
-            // What Codex CLI sends, and nothing it does not: the backend is
-            // undocumented, so an extra field is a guess at its tolerance.
-            ResponsesProfile::Codex => responses::ResponsesRequest {
-                model: &self.model,
-                instructions: Some(&self.system),
-                input,
-                tools: responses::tool_definitions(tools),
-                tool_choice: responses::tool_choice_value(tool_choice),
-                parallel_tool_calls: tool_choice.forced().is_none(),
-                store: false,
-                include: Some(vec!["reasoning.encrypted_content"]),
-                truncation: None,
-                // Omitted as Codex CLI omits it, except where a caller fixed the cap:
-                // the backend enforces one with a minimum of 16 (docs/transport.md).
-                max_output_tokens: capped.then_some(max_output_tokens),
-                reasoning,
-                temperature: None,
-                prompt_cache_key: self.prompt_cache_key(),
-                prompt_cache_options: None,
-                stream: true,
-            },
-        }
-    }
-
-    /// WireTurn a failed `into_sse` into a legible [`Error`], reading the response body on a
-    /// non-2xx. The `SseError` still owns the `Conn` (it `Deref`s to it and converts
-    /// back via `Into<Conn>`), so on `Status` we read the body — Anthropic's error
-    /// responses carry a JSON `error.message` that names the actual problem. Logged at
-    /// `error` so the daemon's log preserves it even though the error also propagates.
-    ///
-    /// This *propagates*: the agent loop treats an open failure as terminal for
-    /// the trajectory, recording the message durably as an empty record-only
-    /// assistant entry. Mid-stream deaths are the different case — they assemble
-    /// as record-only partials and the loop retries them (docs/transport.md).
-    async fn sse_open_failure(e: SseError) -> (Option<Status>, String) {
-        // Any open failure still owns the conn: an unexpected content-type (a JSON
-        // error body on a 4xx the retry handler let through, or a 200 that is not
-        // a stream) is read the same way a status error is, so the upstream's
-        // words reach the record instead of "content-type: None".
-        if !matches!(e.kind, SseErrorKind::Status(_)) {
-            let kind = e.kind.to_string();
-            let mut conn: Conn = e.into();
-            let status = conn.status();
-            let body = match captured_error_body(&mut conn) {
-                Some(body) => body,
-                // No status means no response arrived — the connect itself
-                // failed — so there is no body and no transport to read one
-                // from; the client panics on the read rather than erroring.
-                None if status.is_none() => String::new(),
-                None => conn
-                    .response_body()
-                    .read_string()
-                    .await
-                    .unwrap_or_else(|read_err| format!("(could not read body: {read_err})")),
-            };
-            let body = body.trim();
-            let detail = if body.is_empty() {
-                kind
-            } else {
-                format!("{kind} — {body}")
-            };
-            return (status, detail);
-        }
-        // `Status` is `Copy`, so binding it doesn't move `e.kind` — `e` stays whole and
-        // convertible into its `Conn`.
-        if let SseErrorKind::Status(status) = e.kind {
-            let mut conn: Conn = e.into();
-            // The observing handler already read this body in the reverse pass and
-            // stashed it on the conn; reading again would find it consumed.
-            let body = match captured_error_body(&mut conn) {
-                Some(body) => body,
-                None => conn
-                    .response_body()
-                    .read_string()
-                    .await
-                    .unwrap_or_else(|read_err| format!("(could not read error body: {read_err})")),
-            };
-            (Some(status), body)
-        } else {
-            (None, e.kind.to_string())
-        }
-    }
-
-    /// The [`Error`] for an open failure [`Self::sse_open_failure`] took apart:
-    /// the status and body on a non-2xx, the transport's own text otherwise.
-    fn open_error(status: Option<Status>, detail: String) -> Error {
-        let message = match status {
-            Some(status) => format!("upstream API returned {status}: {detail}"),
-            None => format!("upstream SSE request failed: {detail}"),
-        };
-        log::error!("{message}");
-        Box::new(OpenError::new(status.map(|s| s as u16), message, &detail))
-    }
-
-    /// A cache-keepalive ping (docs/transport.md): a **non-streaming**
-    /// round-trip over the same prefix a real turn would send, capped at
-    /// [`Provider::keepalive_output_cap`] (`max_tokens: 0` on Anthropic, 16 on
-    /// OpenRouter, which reads 0 as unset). Returns only the `usage`; the log is never touched.
-    ///
-    /// Non-streaming because `max_tokens: 0` is rejected with `stream: true`. The
-    /// prefix bytes must match a real request's **exactly** or the ping writes a
-    /// *new* cache entry instead of refreshing the live one — which is why it
-    /// takes the caller's `messages` / `tools` / `tool_choice` (the loop's
-    /// `auto()`) and reuses the client's own `system`, rather than reconstructing
-    /// any of them.
-    ///
-    /// On the Responses and Completions dialects the ping is an ordinary streamed
-    /// request with the output capped at [`Provider::keepalive_output_cap`]
-    /// ([`Self::streamed_keepalive`]). `origin` tags the ping's stages: `Keepalive` for
-    /// the main loop, `TriageKeepalive` for the triage lineage (docs/transport.md).
-    pub async fn keepalive(
-        &self,
-        origin: RequestOrigin,
-        turns: &[WireTurn],
-        tools: &[Value],
-        tool_choice: ToolChoice,
-    ) -> Result<RequestUsage, KeepaliveError> {
-        if matches!(
-            self.dialect(),
-            WireDialect::Responses | WireDialect::Completions
-        ) {
-            return self
-                .with_origin(origin)
-                .streamed_keepalive(turns, tools, tool_choice)
-                .await;
-        }
-        let messages = encode_messages(turns, self.image_placement(), self.breakpoint_placement());
-        let messages = &messages;
-        let thinking = Thinking::for_request(&tool_choice, self.thinking, self.thinking_off);
-        let request = Request {
-            model: &self.model,
-            max_tokens: self.endpoint.provider.keepalive_output_cap(),
-            system: &self.system,
-            tools,
-            tool_choice,
-            // The turn's own thinking and effort (docs/transport.md): on Anthropic a
-            // ping whose thinking differs from the turn's misses the message-level
-            // cache and writes a fresh entry instead of refreshing the live one.
-            // `max_tokens: 0` takes thinking on and any effort.
-            thinking,
-            reasoning: self.reasoning_off(thinking),
-            output_config: self.effort.clone().map(|effort| OutputConfig { effort }),
-            temperature: self
-                .temperature
-                .map(|t| self.endpoint.provider.map_temperature(t)),
-            upstream: self.upstream.as_ref(),
-            prompt_cache_key: self.prompt_cache_key(),
-            messages,
-            stream: false,
-        };
-        let body = serde_json::to_string(&request).map_err(KeepaliveError::other)?;
-        // Non-streaming, so the ping has no first byte: it is sent, then it ends or fails.
-        let trace = Trace::begin(self.stages.as_ref(), origin, &self.active_trace);
-        if let Some(trace) = &trace {
-            trace.sent();
-        }
-        let result = self.keepalive_exchange(body).await;
-        if let Some(trace) = trace {
-            match &result {
-                Ok(_) => trace.ended(None),
-                Err(e) => trace.failed(&e.to_string()),
-            }
-        }
-        result
-    }
-
-    /// The Messages keepalive's POST and read, split from [`Self::keepalive`] so the
-    /// trace closes on every exit.
-    async fn keepalive_exchange(&self, body: String) -> Result<RequestUsage, KeepaliveError> {
-        let conn = self.post();
-        let mut conn = conn.with_body(body).await.map_err(KeepaliveError::other)?;
-        let status = conn.status().map(|s| s as u16);
-        if !status.is_some_and(|s| (200..300).contains(&s)) {
-            // Same stash as the SSE open error: the handler consumed the body already.
-            let body = match captured_error_body(&mut conn) {
-                Some(text) => text,
-                None => conn
-                    .response_body()
-                    .read_string()
-                    .await
-                    .map_err(KeepaliveError::other)?,
-            };
-            return Err(KeepaliveError::Status { status, body });
-        }
-        let text = conn
-            .response_body()
-            .read_string()
-            .await
-            .map_err(KeepaliveError::other)?;
-        serde_json::from_str::<KeepaliveResponse>(&text)
-            .map(KeepaliveResponse::into_request_usage)
-            .map_err(KeepaliveError::other)
-    }
-
-    /// The streamed keepalive (docs/transport.md): the turn's own envelope, streamed,
-    /// with the output capped at [`Provider::keepalive_output_cap`]. Neither Responses
-    /// nor Completions has a `max_tokens: 0`, and the Codex backend resumes a cached prefix only where an
-    /// earlier request ended, so the ping re-sends the last request's input whole —
-    /// what the keepalive loop's lopped projection is — and pays a cached read plus
-    /// the capped output.
-    async fn streamed_keepalive(
-        &self,
-        turns: &[WireTurn],
-        tools: &[Value],
-        tool_choice: ToolChoice,
-    ) -> Result<RequestUsage, KeepaliveError> {
-        let completion = self
-            .send(
-                turns,
-                tools,
-                tool_choice,
-                Some(self.endpoint.provider.keepalive_output_cap()),
-                |_| {},
-            )
-            .await
-            .map_err(|e| match e.downcast_ref::<OpenError>() {
-                Some(open) => KeepaliveError::Status {
-                    status: open.status(),
-                    body: open.to_string(),
-                },
-                None => KeepaliveError::Other(e),
-            })?;
-        if let Some(why) = completion.upstream_failure() {
-            return Err(KeepaliveError::other(why.to_string()));
-        }
-        Ok(completion.request_usage())
-    }
-
-    /// Whether this client can plant a triage-lineage primer (docs/transport.md): a
-    /// Responses lineage with an implicit cache. [`Self::prime`] and the triage keepalive
-    /// both key on it, so the keepalive is armed exactly where the primer can plant.
-    pub(crate) fn plants_primer(&self) -> bool {
-        self.dialect() == WireDialect::Responses && self.prompt_cache == PromptCachePolicy::Implicit
-    }
-
-    /// The triage-lineage primer (backlog/separate-triage-cold-prefix.md): the turn's
-    /// own input replayed so a later peek extends a request that ended where the main
-    /// one did. Shaped exactly like the keepalive's Responses ping — the turn envelope
-    /// with the backend-minimum output cap — because it is the same write: a cached
-    /// read plus the capped output. `None` where no implicit lineage exists to plant
-    /// in (anything but Responses-with-implicit-policy), so the caller sends nothing
-    /// speculative there; the peek then goes out unprimed, the failure mode being fixed.
-    ///
-    /// The primer wants the write, not the read, so a marked output does not fail it:
-    /// a 16-token budget at a call-eliciting position truncates the model's function
-    /// call mid-arguments, which marks the completion without unmaking its input
-    /// prefix — the provider still processed (and wrote) the whole replayed prefix.
-    /// Only a response with no accounted input is evidence nothing was planted.
-    pub(crate) async fn prime(
-        &self,
-        turns: &[WireTurn],
-        tools: &[Value],
-        tool_choice: ToolChoice,
-    ) -> Option<Result<RequestUsage, Error>> {
-        if !self.plants_primer() {
-            return None;
-        }
-        let completion = match self
-            .with_origin(RequestOrigin::TriagePrimer)
-            .send(
-                turns,
-                tools,
-                tool_choice,
-                Some(self.endpoint.provider.keepalive_output_cap()),
-                |_| {},
-            )
-            .await
-        {
-            Ok(completion) => completion,
-            Err(e) => return Some(Err(e)),
-        };
-        let usage = completion.request_usage();
-        if usage.usage.input_tokens == 0 {
-            let why = completion
-                .upstream_failure()
-                .unwrap_or("primer response carried no usage")
-                .to_string();
-            return Some(Err(Box::new(std::io::Error::other(why))));
-        }
-        Some(Ok(usage))
-    }
-}
-
-/// One request's encoded conversation, per dialect.
-enum Encoded {
-    Messages(Vec<ApiMessage>),
-    Responses(Vec<responses::wire::InputItem>),
-    Completions(Vec<completions::Message>),
-}
-
-/// The per-dialect stream folder behind one read loop.
-enum AnyAssembler {
-    Messages(Assembler),
-    Responses(ResponsesAssembler),
-    Completions(CompletionsAssembler),
-}
-
-impl AnyAssembler {
-    fn observed_response(&mut self, response: ResponseMeta) {
-        match self {
-            Self::Messages(a) => a.observed_response(response),
-            Self::Responses(a) => a.observed_response(response),
-            Self::Completions(a) => a.observed_response(response),
-        }
-    }
-
-    fn fail(&mut self, why: String) {
-        match self {
-            Self::Messages(a) => a.fail(why),
-            Self::Responses(a) => a.fail(why),
-            Self::Completions(a) => a.fail(why),
-        }
-    }
-
-    fn apply(&mut self, event_type: Option<&str>, data: &str) -> Result<Option<Streamed>, Error> {
-        match self {
-            Self::Messages(a) => a.apply(event_type, data),
-            Self::Responses(a) => a.apply(event_type, data),
-            Self::Completions(a) => a.apply(event_type, data),
-        }
-    }
-
-    fn finish(self) -> Result<Completion, Error> {
-        match self {
-            Self::Messages(a) => a.finish(),
-            Self::Responses(a) => a.finish(),
-            Self::Completions(a) => a.finish(),
-        }
-    }
-}
-
-/// The non-streamed Messages body a keepalive ping returns: the id, model and serving
-/// upstream, and the `usage` with its inline cost (docs/transport.md).
-#[derive(Deserialize)]
-pub(crate) struct KeepaliveResponse {
-    #[serde(default)]
-    id: Option<String>,
-    #[serde(default)]
-    model: Option<String>,
-    #[serde(default)]
-    provider: Option<String>,
-    usage: UsageWithCost,
-}
-
-impl KeepaliveResponse {
-    pub(crate) fn into_request_usage(self) -> RequestUsage {
-        RequestUsage {
-            id: self.id,
-            model: self.model,
-            usage: self.usage.usage,
-            receipt: Receipt {
-                served_by: self.provider,
-                cost: self.usage.cost.into_inline(),
-            },
-        }
     }
 }

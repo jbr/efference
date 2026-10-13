@@ -102,115 +102,6 @@ pub enum StreamDelta {
     NarratorThinking { text: String },
 }
 
-/// What a session is, for a client that has to name it on screen: the model it
-/// was configured with and the directory it runs in (docs/control-api.md).
-///
-/// Both are fixed at boot today. They are carried as a state topic rather than a
-/// one-shot read so a client learns them from the connect snapshot along with
-/// everything else, and so either moving later reaches clients through the
-/// mechanism that already delivers whole-topic replacements.
-#[derive(Clone, Debug, Serialize)]
-pub struct SessionIdentity {
-    /// The session id (docs/session-title.md): its directory name under
-    /// `.efference/`, the `--name` a client resolves, the address a peer
-    /// messages. Fixed at creation.
-    pub id: String,
-    /// The current title — the last `Title` entry's text (docs/session-title.md),
-    /// `None` before the first is written. The one identity field that moves.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub title: Option<String>,
-    /// The native model id boot resolved — the same string the system prompt's
-    /// identity line states (docs/context.md).
-    pub model: String,
-    /// The session's working directory, as the daemon knows it: what the tool
-    /// layer was built with, rendered as a path string.
-    pub cwd: String,
-    /// The host connection and native model behind each role, with whether
-    /// triage shares the main client. `None` only for a session built without
-    /// boot (tests).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub inference: Option<crate::inference::InferenceIdentity>,
-    /// The session this one handed its work to with `hand_off` (docs/tools.md),
-    /// once it has. An attached client follows it there.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub successor: Option<String>,
-}
-
-/// Why a trajectory stopped short of finishing (docs/transport.md).
-#[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum StallReason {
-    /// The stream-abort budget was spent: every attempt died before finalizing.
-    RetriesExhausted,
-    /// The request itself failed after the transport's own retries.
-    RequestFailed,
-    /// The upstream named a failure no retry can change — an exhausted plan, a
-    /// rejected request, a bad credential — so the loop stalled on the first
-    /// attempt rather than spend the schedule (docs/transport.md).
-    UpstreamRefused,
-    /// The triage gate could not reach its model — the schedule ran out, or the
-    /// upstream refused — so the loop holds the batch's results, unshown, until a
-    /// retry succeeds or the operator interrupts (docs/redaction-fork.md).
-    TriageUnavailable,
-    /// The triage model answered every fork and never usably: a harness defect,
-    /// logged as one. The loop holds the results the same way
-    /// (docs/redaction-fork.md).
-    TriageDefect,
-}
-
-/// A trajectory that ended without finishing (docs/transport.md).
-///
-/// The loop returns to idle on both failure paths above, which leaves the
-/// daemon's other signals — `running: false`, no gate, an empty inbox once a
-/// triage peek has dismissed the notification — identical to a run that
-/// finished its work. This topic is the difference a supervising client reads:
-/// set when the loop gives up, cleared when a trajectory next starts, so it
-/// names the *current* condition rather than a past one (the same clear-on-
-/// recovery rule the transport diagnostics follow).
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
-pub struct Stall {
-    pub reason: StallReason,
-    /// How many attempts were spent, where the failure path counts them;
-    /// `null` where it does not.
-    pub attempts: Option<u32>,
-    /// Unix millis at which the loop gave up — absolute, like every other
-    /// instant on the control channel, so nothing has to re-emit a ticking
-    /// field (docs/control-api.md).
-    pub at: u64,
-    /// Leads with what happened and what recovers it — the same register the
-    /// retry topic's `message` uses.
-    pub message: String,
-    /// The upstream's own words for the failure that ended the trajectory.
-    pub detail: String,
-}
-
-/// The config file on disk does not parse **and** could not be restored to the
-/// last content that did (`config::Refreshed::RevertFailed`) — the one state the
-/// adopted-or-rejected invariant cannot reach (docs/permissions.md).
-///
-/// It is terminal-until-repaired rather than a notice: the effective policy in
-/// memory is still the last good config, but the file no longer shows it, and the
-/// file is the perimeter's readable form. Running on indefinitely would mean a
-/// session acting under permissions nobody can inspect. Making it terminal
-/// introduces no blocked-with-nobody-home state, because a config write is the one
-/// operation that is never autonomous — it gates for the orchestrator even under
-/// `--autonomous`, so a file in this condition always has an owner.
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
-pub struct ConfigRepair {
-    /// The file a human has to fix.
-    pub path: String,
-    /// Unix millis at which the daemon parked, absolute like every other instant
-    /// on the control channel (docs/control-api.md).
-    pub at: u64,
-    /// Leads with the condition and what clears it — the same register the
-    /// `stall` topic's `message` uses.
-    pub message: String,
-    /// Why the file did not parse.
-    pub parse_error: String,
-    /// Why the restore of the last good content also failed.
-    pub restore_error: String,
-}
-
 /// A session's state and control surface (docs/control-channel.md).
 /// The loop and HTTP handlers hold the same `Arc<Session>`; the runtime owns the
 /// listener and wires the agent future and auxiliary tasks.
@@ -535,49 +426,6 @@ pub struct Session {
     tools: Mutex<HashMap<String, crate::tools::ToolEntry>>,
 }
 
-/// What a [`Session`] is built from: the working directory and log it owns, the
-/// role it starts under, and the shared cells its client already holds.
-///
-/// Named fields rather than a parameter list, because four of these are opaque
-/// shared-state handles and a positional mistake among them would compile.
-/// [`Self::new`] fills every field a caller without a provider client has no
-/// value for, so adding a dependency to a session touches the sites that supply
-/// it rather than every site that constructs one.
-pub(crate) struct SessionParts {
-    /// The project and working directories (docs/control-channel.md).
-    pub directories: crate::policy::Directories,
-    pub log: Log,
-    pub role: LoadedConfig,
-    pub scratch: Option<PathBuf>,
-    pub upstream_failure: UpstreamFailureState,
-    pub upstream_retry: UpstreamRetryState,
-    pub plan: crate::api::PlanState,
-    /// Chosen from the provider at boot and fixed thereafter, so the canonical
-    /// wire and the fork's cached prefix project byte-identically
-    /// (docs/log-and-projection.md).
-    pub image_placement: ImagePlacement,
-    pub env_policy: crate::env_table::EnvPolicy,
-}
-
-impl SessionParts {
-    /// The session's own two pieces, with every shared cell freshly allocated —
-    /// the shape a caller with no provider client behind it wants. A caller that
-    /// has one overrides the cells it holds.
-    pub(crate) fn new(directories: crate::policy::Directories, log: Log) -> Self {
-        Self {
-            directories,
-            log,
-            role: LoadedConfig::default(),
-            scratch: None,
-            upstream_failure: upstream_failure_state(),
-            upstream_retry: upstream_retry_state(),
-            plan: crate::api::plan_state(),
-            image_placement: ImagePlacement::default(),
-            env_policy: crate::env_table::EnvPolicy::default(),
-        }
-    }
-}
-
 impl Session {
     /// The working directory: where tools and child processes run, and what a child
     /// session inherits as its own (docs/control-channel.md).
@@ -643,217 +491,6 @@ impl Session {
         }))
     }
 
-    /// Build state under the default role at an absolute working root
-    /// (docs/control-channel.md). Relative roots are a caller error and panic.
-    pub fn new(cwd: PathBuf, log: Log) -> (Arc<Self>, mpsc::UnboundedReceiver<SubmittedTurn>) {
-        Self::with_role(cwd, log, LoadedConfig::default())
-    }
-
-    /// Build the shared state under a resolved role and hand back the turn-inbox
-    /// receiver for the loop.
-    pub fn with_role(
-        cwd: PathBuf,
-        log: Log,
-        role: LoadedConfig,
-    ) -> (Arc<Self>, mpsc::UnboundedReceiver<SubmittedTurn>) {
-        Self::with_role_and_scratch(cwd, log, role, None)
-    }
-
-    /// The full constructor: [`with_role`](Self::with_role) plus the session
-    /// scratch dir (docs/tools.md), whose value seeds the structured-tool path
-    /// expander and the background spawn env.
-    pub fn with_role_and_scratch(
-        cwd: PathBuf,
-        log: Log,
-        role: LoadedConfig,
-        scratch: Option<PathBuf>,
-    ) -> (Arc<Self>, mpsc::UnboundedReceiver<SubmittedTurn>) {
-        Self::with_role_scratch_and_upstream_failure(
-            cwd,
-            log,
-            role,
-            scratch,
-            upstream_failure_state(),
-        )
-    }
-
-    /// The daemon constructor with the upstream client's shared transport
-    /// diagnostic (docs/transport.md). Tests normally use the public convenience
-    /// constructors above, which allocate an empty cell.
-    pub(crate) fn with_role_scratch_and_upstream_failure(
-        cwd: PathBuf,
-        log: Log,
-        role: LoadedConfig,
-        scratch: Option<PathBuf>,
-        upstream_failure: UpstreamFailureState,
-    ) -> (Arc<Self>, mpsc::UnboundedReceiver<SubmittedTurn>) {
-        let directories = crate::policy::Directories::at(&cwd);
-        // Tests and the convenience constructors resolve the `[env]` policy from
-        // the role they were handed (docs/env.md); boot builds one earlier —
-        // it needs the strip set for the toolbox and the masker for the boot
-        // preamble — and passes it to [`Session::full`] so the session has exactly
-        // one, whose needle set is append-only for its lifetime.
-        let base = crate::env_table::EnvSnapshot::capture().expect("valid local environment");
-        let resolver = Arc::new(crate::env_table::Resolver::with_environment(
-            directories.project().to_path_buf(),
-            base.clone(),
-        ));
-        let env_policy =
-            crate::env_table::EnvPolicy::build_snapshot(&role.role.env, base, &[], resolver).policy;
-        Self::full(SessionParts {
-            role,
-            scratch,
-            upstream_failure,
-            env_policy,
-            ..SessionParts::new(directories, log)
-        })
-    }
-
-    /// The full constructor.
-    pub(crate) fn full(parts: SessionParts) -> (Arc<Self>, mpsc::UnboundedReceiver<SubmittedTurn>) {
-        let SessionParts {
-            directories,
-            mut log,
-            mut role,
-            scratch,
-            upstream_failure,
-            upstream_retry,
-            plan,
-            image_placement,
-            env_policy,
-        } = parts;
-        assert!(
-            directories.working().is_absolute() && directories.project().is_absolute(),
-            "session directories must be absolute"
-        );
-        if let ConfigSource::Path(path) = &mut role.source {
-            *path = directories.project().join(&*path);
-        }
-        // Install the mask before the log takes another append (docs/env.md).
-        // Masking is irreversible filtering upstream of the log, so it has to be
-        // in force at the choke point rather than applied to a stored entry.
-        log.set_masker(env_policy.masker());
-        let (turns_tx, turns_rx) = mpsc::unbounded_channel();
-
-        // Bounded ring: a consumer that falls this far behind drops the oldest
-        // deltas (a `Lagged` on `recv`) rather than stalling the loop — the log is
-        // the durable record, so a dropped delta is only a momentary gap in the
-        // live view.
-        let (stream_tx, _) = broadcast::channel(1024);
-        // State updates are whole-topic replacements, so a lagging connection loses
-        // nothing it cannot recover: the newest value for each topic is the only one that
-        // matters, and a `Lagged` is resolved by re-reading the topics rather than by
-        // replay. Sized well above the topic count so that is rare rather than routine.
-        let (state_tx, _) = broadcast::channel(256);
-        // Fold any grants already in the log (a resumed session) into the initial effective
-        // role; from here it's maintained incrementally on append. Computed before `log` is
-        // moved into the struct.
-        let effective = Arc::new(crate::policy::effective_config(&role.role, log.entries()));
-        // Fold the probe ledger from a resumed log (no-op for a fresh one), then maintain it
-        // incrementally as the loop assesses moves (docs/permissions.md).
-        let probes = crate::policy::probe_ledger(&directories, &effective, log.entries());
-        // Seed the process-id mint past every `p#<n>` a resumed log mentions, so a restarted
-        // daemon never re-mints an ordinal the durable record already refers to
-        // (docs/supervisor.md). Scanned over the serialized entry because
-        // handles land in prose (tool results, notification sources), not in a typed field.
-        let minted = log
-            .entries()
-            .iter()
-            .map(|e| {
-                serde_json::to_string(e).map_or(0, |s| crate::supervisor::max_handle_mention(&s))
-            })
-            .max()
-            .unwrap_or(0);
-        // Open the file the role resolved from, if any. Boot has already loaded and validated it,
-        // so this parses; a failure here is reported and leaves the session file-less (edits stay
-        // in the log fold) rather than aborting a session over a race with an external writer.
-        let config_file = match &role.source {
-            ConfigSource::Path(path) => match crate::config::ConfigFile::load(path) {
-                Ok(file) => Some(file),
-                Err(e) => {
-                    eprintln!(
-                        "[config: could not open {} for editing: {e}]",
-                        path.display()
-                    );
-                    None
-                }
-            },
-            ConfigSource::Default => None,
-        };
-        let shared = Arc::new_cyclic(|me| Self {
-            pushes: push::PushState::new(me.clone()),
-            directories,
-            storage_base: std::sync::OnceLock::new(),
-            attachment_store: std::sync::OnceLock::new(),
-            web_path: std::sync::OnceLock::new(),
-            cache_ttl: std::sync::OnceLock::new(),
-            person_acted: AtomicBool::new(false),
-            cold_parked: AtomicBool::new(false),
-            cold_signal: Notify::new(),
-            fold_state: Mutex::new(None),
-            fold_signal: Notify::new(),
-            operations: Mutex::new(operations::Operations::fold(log.entries())),
-            log: Mutex::new(log),
-            image_placement,
-            turns_tx,
-            approvals: Mutex::new(HashMap::new()),
-            pending: Mutex::new(None),
-            upstream: Mutex::new(None),
-            interrupt: Arc::new(Notify::new()),
-            interrupt_latch: AtomicBool::new(false),
-            detach: Notify::new(),
-            detach_note: Mutex::new(None),
-            appended: Notify::new(),
-            attention: std::sync::OnceLock::new(),
-            escalation: Arc::default(),
-            running: AtomicBool::new(false),
-            queue: Mutex::new(std::collections::VecDeque::new()),
-            ask: Mutex::new(None),
-            settle_changed: Notify::new(),
-            continue_pending: AtomicBool::new(false),
-            continue_signal: Notify::new(),
-            subscriptions: std::sync::atomic::AtomicUsize::new(0),
-            notified: Notify::new(),
-            stream_tx,
-            state_changed: Notify::new(),
-            state_tx,
-            metrics: Mutex::new(Metrics::default()),
-            usage_log: Mutex::new(None),
-            upstream_failure,
-            upstream_retry,
-            plan,
-            retention: Mutex::new((0, Retention::default())),
-            capabilities: Mutex::new(None),
-            cost: Arc::new(Mutex::new(CostCell::default())),
-            identity: Mutex::new(None),
-            stall: Mutex::new(None),
-            config_repair: Mutex::new(None),
-            config_repaired: Notify::new(),
-            inbox: Mutex::new(Inbox::default()),
-
-            proposals: Mutex::new(Vec::new()),
-            supervisor: Mutex::new(Supervisor::with_minted(minted)),
-            reaped: tokio::sync::Notify::new(),
-            role,
-            effective: Mutex::new(effective),
-            config_file: Mutex::new(config_file),
-            probes: Mutex::new(probes),
-            env_policy,
-            review_level: AtomicU8::new(crate::policy::ReviewLevel::SpotterHuman.as_u8()),
-            pace: Mutex::new(Pace::default()),
-            pace_interrupt: Notify::new(),
-            expander: crate::expand::Expander::new(
-                scratch
-                    .iter()
-                    .map(|p| ("TMPDIR".to_string(), p.to_string_lossy().into_owned()))
-                    .collect(),
-            ),
-            scratch,
-            tools: Mutex::new(HashMap::new()),
-        });
-        (shared, turns_rx)
-    }
-
     /// Snapshot the full session tool catalog for `GET /v1/tools/:name`
     /// (docs/control-api.md) — `agent::tool_catalog`, which mirrors
     /// `agent::tool_definitions`: the toolbox's mounted tools *and* the
@@ -879,123 +516,6 @@ impl Session {
     /// thereafter and read by `GET /state`'s context readout.
     pub fn set_capabilities(&self, capabilities: crate::api::ModelCapabilities) {
         *self.capabilities.lock().unwrap() = Some(capabilities);
-    }
-
-    /// Store what this session is — the model it was configured with and the
-    /// directory it runs in (docs/control-api.md). Called once by the runtime before
-    /// the loop starts; the `session_identity` topic reads it back.
-    pub fn set_identity(&self, identity: SessionIdentity) {
-        *self.identity.lock().unwrap() = Some(identity);
-        self.touch_state();
-    }
-
-    /// What this session is, as the `session_identity` topic reports it; `None`
-    /// where no session booted.
-    pub fn identity(&self) -> Option<SessionIdentity> {
-        self.identity.lock().unwrap().clone()
-    }
-
-    /// Record a title decision (docs/session-title.md): append the `Title` entry
-    /// and move the identity's `title`, so the topic republishes. `Ok(None)` when
-    /// no identity was set (a session read with no daemon behind it), in which
-    /// case nothing is appended either.
-    pub fn set_title(&self, title: crate::log::Title) -> io::Result<Option<Seq>> {
-        let mut guard = self.identity.lock().unwrap();
-        let Some(identity) = guard.as_mut() else {
-            return Ok(None);
-        };
-        let seq = self.append(self.latest_turn(), Payload::Title(title.clone()))?;
-        identity.title = Some(title.text);
-        drop(guard);
-        self.touch_state();
-        Ok(Some(seq))
-    }
-
-    /// Record the session this one handed off to (docs/tools.md), so the
-    /// `session_identity` topic republishes and attached clients follow it.
-    pub fn set_successor(&self, successor: &str) {
-        if let Some(identity) = self.identity.lock().unwrap().as_mut() {
-            identity.successor = Some(successor.to_string());
-        }
-        self.touch_state();
-    }
-
-    /// Record that the trajectory gave up (docs/transport.md) — the loop is
-    /// returning to idle without finishing. Read back by the `stall` topic.
-    pub(crate) fn set_stall(&self, stall: Stall) {
-        *self.stall.lock().unwrap() = Some(stall);
-        // A stall is a decision point (`is_settled`): a held gate reaches it with the
-        // loop still running, so the settle waiters are woken here, not only at park.
-        self.settle_changed.notify_waiters();
-        self.touch_state();
-    }
-
-    /// Clear the stall: a trajectory is starting, or a held gate is retrying, so the
-    /// last outcome is no longer the current condition. Called when the work
-    /// resumes rather than on a successful completion; the one time the topic is set
-    /// while the loop runs is a held triage gate (docs/redaction-fork.md).
-    pub(crate) fn clear_stall(&self) {
-        let mut stall = self.stall.lock().unwrap();
-        if stall.is_none() {
-            return;
-        }
-        *stall = None;
-        drop(stall);
-        self.touch_state();
-    }
-
-    /// The trajectory-stalled condition, or `None` when the last trajectory
-    /// finished (or none has run).
-    pub(crate) fn stall(&self) -> Option<Stall> {
-        self.stall.lock().unwrap().clone()
-    }
-
-    /// Park the loop on "config unparseable — human must repair"
-    /// (docs/permissions.md). Idempotent: repeated failed saves replace the
-    /// condition rather than stacking, exactly as the revert notice supersedes on
-    /// its stable slot.
-    pub(crate) fn require_config_repair(&self, repair: ConfigRepair) {
-        *self.config_repair.lock().unwrap() = Some(repair);
-        self.touch_state();
-    }
-
-    /// The file parses again: clear the park and wake whoever is waiting on it.
-    /// Called from the same refresh that sets it, on every outcome that leaves
-    /// valid content on disk — an adopted edit, or a revert that succeeded.
-    pub(crate) fn clear_config_repair(&self) {
-        let mut repair = self.config_repair.lock().unwrap();
-        if repair.is_none() {
-            return;
-        }
-        *repair = None;
-        drop(repair);
-        self.config_repaired.notify_waiters();
-        self.touch_state();
-    }
-
-    /// The config-repair condition, or `None` when the file parses.
-    pub(crate) fn config_repair(&self) -> Option<ConfigRepair> {
-        self.config_repair.lock().unwrap().clone()
-    }
-
-    /// Wait until the config file parses again (docs/permissions.md). Returns
-    /// immediately when there is nothing to repair, which is the normal case.
-    ///
-    /// Lost-wakeup safe by the same discipline as the pace hold: the wake future is
-    /// armed before the state is read, so a repair landing in between still wakes
-    /// the wait. Re-checks after each wake, so a spurious notify cannot release a
-    /// park that is still warranted.
-    pub async fn await_config_repair(&self) {
-        loop {
-            let repaired = self.config_repaired.notified();
-            tokio::pin!(repaired);
-            repaired.as_mut().enable(); // arm before reading, so a racing repair isn't lost
-            let Some(repair) = self.config_repair() else {
-                return;
-            };
-            eprintln!("[config: parked — {}]", repair.message);
-            repaired.await;
-        }
     }
 
     /// Cumulative triage retention over the whole session (docs/redaction-fork.md),
@@ -1025,181 +545,6 @@ impl Session {
     pub fn enable_cost_tracking(&self, endpoint: crate::api::Endpoint) {
         self.cost.lock().unwrap().endpoint = Some(endpoint);
     }
-
-    /// Resolve `$TMPDIR` in a structured call's path fields against the frozen
-    /// session env map ([`crate::expand`]) — the loop's one expansion choke
-    /// point, upstream of classify/spot/exec. `Ok(None)` = untouched.
-    pub fn expand_call(
-        &self,
-        call: &crate::log::ToolCall,
-    ) -> Result<Option<crate::log::ToolCall>, String> {
-        crate::expand::expand_call(&self.expander, call)
-    }
-
-    /// [`append`](Self::append) carrying the submission id of the
-    /// `POST /v1/turns` the entry realizes (docs/control-api.md) — the loop's
-    /// user-turn appends route here so the entry names its originating
-    /// submission.
-    pub fn append_submission(
-        &self,
-        turn: Turn,
-        payload: Payload,
-        submission_id: String,
-        source: Option<String>,
-    ) -> io::Result<Seq> {
-        // User turns only — a submitted turn is never a `ConfigEdit`, so none of
-        // `append`'s proposal-lifecycle handling applies here.
-        let seq = {
-            let mut log = self.log.lock().unwrap();
-            let seq = log.append_submission(turn, payload, Some(submission_id), source)?;
-            self.observe_operations(&log);
-            seq
-        };
-        self.appended.notify_waiters();
-        Ok(seq)
-    }
-
-    /// End the session's log at teardown: release its writer lock so the session can
-    /// be resumed at once, and wake SSE tailers so their streams end once they have
-    /// delivered every entry. Readers still holding the session keep its entries.
-    pub(crate) fn close_log(&self) {
-        if let Err(e) = self.log.lock().unwrap().close() {
-            eprintln!("[log: flushing at close failed: {e}]");
-        }
-        self.appended.notify_waiters();
-    }
-
-    pub(crate) fn log_closed(&self) -> bool {
-        self.log.lock().unwrap().is_closed()
-    }
-
-    /// Append to the log (durably) and wake SSE tailers. The single appender is
-    /// the loop; handlers only read.
-    pub fn append(&self, turn: Turn, payload: Payload) -> io::Result<Seq> {
-        // A `ConfigEdit` drives the proposal lifecycle (docs/permissions.md):
-        // capture its `(state, change)` before the payload moves into the log, then act on it
-        // *after* a successful append, so a failed write never edits state. Cheap clone, edits only.
-        let edit = match &payload {
-            Payload::ConfigEdit(edit) => Some((edit.state, edit.change.clone(), edit.resolves)),
-            _ => None,
-        };
-        let seq = {
-            let mut log = self.log.lock().unwrap();
-            let seq = log.append(turn, payload)?;
-            self.observe_operations(&log);
-            seq
-        };
-        if let Some((state, change, resolves)) = edit {
-            match state {
-                // A committed edit takes effect: fold it into the effective policy so a gate reads
-                // current policy in O(1) (no log re-scan), and — for session-visible keys — notify.
-                EditState::Committed => {
-                    {
-                        let mut eff = self.effective.lock().unwrap();
-                        let mut role = (**eff).clone();
-                        crate::policy::apply_config_change(&mut role, &change);
-                        *eff = Arc::new(role);
-                    }
-                    // Resolving a proposal: drop the referenced proposal from the pending queue.
-                    // `None` for a direct synchronous/fs-watch commit, which had no queued proposal.
-                    if let Some(proposal) = resolves {
-                        self.resolve_proposal(proposal);
-                    }
-                    // Session-visible edits (`scope`, `paths`) surface as an `Ambient` notification
-                    // so the session learns its perimeter moved — an optional tail append that never
-                    // re-renders the cached preamble (docs/permissions.md). It rides
-                    // the same inbox/triage machinery as any notification, and fires for *every*
-                    // committing initiator because this is the single appender. `commands`/`tools`
-                    // notify nothing — their effect reaches the model only through the classifier.
-                    if let Some((body, slot)) = session_visible_notice(&change) {
-                        self.notify("config".to_string(), body, Some(slot), None);
-                    }
-                }
-                // A proposal is inert in the effective config: it joins the pending-proposals queue,
-                // addressed by its own `seq`, awaiting an orchestrator's commit/cancel.
-                EditState::Proposed => {
-                    self.proposals
-                        .lock()
-                        .unwrap()
-                        .push(PendingProposal { seq, change });
-                }
-                // A cancel drops the referenced proposal from the queue; the effective config
-                // never moved.
-                EditState::Cancelled => {
-                    if let Some(proposal) = resolves {
-                        self.resolve_proposal(proposal);
-                    }
-                }
-            }
-        }
-        self.appended.notify_waiters();
-        Ok(seq)
-    }
-
-    /// Publish an ephemeral pre-commit output delta to the control stream's `output`
-    /// subscribers (docs/control-api.md). Intentionally lossy: a send with no
-    /// subscribers — or to a lagging one — is dropped, because the committed entry on
-    /// the `log` class is the authoritative copy. Never touches the log.
-    pub fn publish_delta(&self, delta: StreamDelta) {
-        let _ = self.stream_tx.send(delta);
-    }
-
-    /// A fresh subscription to the delta fan-out for one control-stream connection.
-    fn subscribe_stream(&self) -> broadcast::Receiver<StreamDelta> {
-        self.stream_tx.subscribe()
-    }
-
-    /// Project the current log into the wire (docs/README.md). Lock held only for the
-    /// synchronous fold.
-    pub fn project_messages(&self) -> Vec<ApiMessage> {
-        project_with(self.log.lock().unwrap().entries(), self.image_placement)
-    }
-
-    /// The dialect-neutral fold of the current log (docs/log-and-projection.md) —
-    /// what a request encodes. Lock held only for the synchronous fold.
-    pub fn project_turns(&self) -> Vec<WireTurn> {
-        project_semantic(self.log.lock().unwrap().entries())
-    }
-
-    /// A clone of the entries — handed to the fork distiller, which awaits the
-    /// model and so can't borrow across the lock (docs/redaction-fork.md).
-    pub fn snapshot(&self) -> Vec<LogEntry> {
-        self.log.lock().unwrap().entries().to_vec()
-    }
-
-    /// The turn of the most recent log entry (`0` if empty) — the turn an **out-of-band** append
-    /// attaches to (the fs-watch initiator, which has no loop-turn context,
-    /// docs/permissions.md). A `ConfigEdit` projects to nothing, so its turn
-    /// is pure audit grouping; attaching it to the in-flight turn is the honest placement.
-    pub(crate) fn latest_turn(&self) -> Turn {
-        self.log
-            .lock()
-            .unwrap()
-            .entries()
-            .last()
-            .map(|e| e.turn)
-            .unwrap_or(0)
-    }
-
-    /// A clone of the single entry at `seq` (== its index in the log), or `None`
-    /// if the log hasn't reached it yet. The `/events` tail reads one entry at a
-    /// time, so it never clones the whole log. The loop reads back the result it
-    /// just captured, to hand triage the bytes the log holds (docs/redaction-fork.md).
-    pub(crate) fn entry_at(&self, seq: u64) -> Option<LogEntry> {
-        self.log
-            .lock()
-            .unwrap()
-            .entries()
-            .get(seq as usize)
-            .cloned()
-    }
-
-    /// The calls that ran with the operator's consent, folded under the log lock so
-    /// the whole log is never cloned (docs/permissions.md). The decision rung's
-    /// precedent evidence.
-    pub(crate) fn consented_calls(&self) -> Vec<crate::log::ToolCall> {
-        crate::spotter::precedent::consented(self.log.lock().unwrap().entries())
-    }
 }
 
 /// Cap on a `/settle` (or `?wait`) long-poll: past this, return the current state regardless, so a
@@ -1223,9 +568,13 @@ mod attachments;
 mod background;
 mod cold;
 mod config_edits;
+mod construct;
 mod continuation;
 mod entry_view;
 mod fold;
+mod identity;
+mod session_log;
+mod stall;
 // The typed error envelope (docs/control-api.md) — every non-2xx body the router
 // answers with.
 pub(crate) mod errors;
@@ -1244,6 +593,7 @@ mod metrics;
 mod notifications;
 mod operations;
 mod pace;
+mod person;
 mod status;
 mod subscriptions;
 // Whether any client is attending the host (docs/web-push.md), and how a moment's
@@ -1264,19 +614,23 @@ mod watch;
 /// exercise a real request/response cycle without binding anything.
 pub use handler::{App, Transport, handler};
 
+pub(crate) use person::PersonAction;
 pub(crate) use watch::refresh_and_emit;
 
 use approvals::Pending;
 
 pub use crate::log::RequestOrigin;
 use config_edits::{PendingProposal, session_visible_notice};
+pub(crate) use construct::SessionParts;
 use entry_view::{EntryView, result_raw};
 use errors::{ErrorBody, ErrorCode, fail, respond};
 use frames::{Frame, Topic};
+pub use identity::SessionIdentity;
 pub use metrics::{COLD_STREAK_WARN, CacheRead, ColdStart, ColdStreak, UsageLine};
 use metrics::{CostCell, Metrics};
 use notifications::Inbox;
 use pace::Pace;
+pub use stall::{ConfigRepair, Stall, StallReason};
 use stream::{Include, control_stream};
 use topics::{StateUpdate, watch_topics};
 

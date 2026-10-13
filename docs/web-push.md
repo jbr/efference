@@ -180,10 +180,10 @@ a task on the host's runtime (`src/daemon/escalation.rs`), and sends it if the m
 is still standing when the delay ends. A moment stops standing when it
 **resolves** or is **seen**:
 
-- *Resolves:* the gate is decided (`resolve_approval`, whichever decision), the `ask`
-  ends (`AskWait` drop), a turn is submitted to the session (`submit_turn`, which also
-  carries an `ask`'s reply and ends a settle), or the session is archived (the host's
-  teardown).
+- *Resolves:* a person decides the gate or submits a turn (`Session::person_acted`,
+  `src/daemon/person.rs` — the one hook that also releases the cold check's park; a
+  turn also carries an `ask`'s reply and ends a settle), the `ask` ends (`AskWait`
+  drop), or the session is archived (the host's teardown).
 - *Seen:* an active report arrives from a client whose `session` is this session
   (`Host::report_attention`). An active report requires recent input, so this reads as
   the operator opening that session and doing something. A report for another
