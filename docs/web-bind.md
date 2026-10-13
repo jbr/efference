@@ -201,8 +201,9 @@ Runs before every TCP route, in order:
 3. **Credential check** — valid cookie or bearer, else `401 unauthorized`. The
    rule is the **anonymous list, not the guarded one**: everything costs a
    credential except what is named as free, so a route added later is guarded
-   unless it is named there too. The free surface is the web client's shell and
-   hashed assets at its base ([web-client.md](web-client.md)), which reveal
+   unless it is named there too. The free surface is the web client's shell, its
+   hashed assets, and the launch images under `/splash`, at its base
+   ([web-client.md](web-client.md)), which reveal
    nothing session-specific; `POST /auth/session`, the mint, which the login
    flow cannot present a credential for; and on a session bind `GET /sessions`,
    which is no route of its — the web client's probe to tell the two bindings

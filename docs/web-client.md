@@ -1696,12 +1696,28 @@ while remaining readable and followable by name.
 ## Installability
 
 `public/manifest.webmanifest`, `public/sw.js`, and the icons: the app installs
-to a home screen and runs in `standalone` display. The icon is the wordmark's
-own glyph — the `e` from Newsreader, the face the top bar speaks in — on the
-After Dark page background, as an SVG (`public/icon.svg`, the source) and the
-PNG sizes derived from it. `theme-color` starts at After Dark's page background
-and follows the resolved theme (`ui/theme.ts`), since the standalone window's
-chrome takes it.
+to a home screen and runs in `standalone` display. The icon is a schwa (`ə`),
+the mark the efference site's favicon uses, on the After Dark page background,
+as an SVG (`public/icon.svg`, the source) and the PNG sizes derived from it. The
+maskable icon keeps the mark inside the 80% safe zone. `theme-color` starts at
+After Dark's page background and follows the resolved theme (`ui/theme.ts`),
+since the standalone window's chrome takes it.
+
+The launch screen is separate from the icon. iOS shows a home-screen app's launch
+screen from an `apple-touch-startup-image` whose size, orientation and pixel ratio
+match the device exactly; without one the screen is white until the page paints,
+and iOS does not read the manifest's `background_color`. `scripts/startup-images.py`
+draws one plain, centred wordmark, Newsreader pinned to `wght` 400 and `opsz` 72, at
+every size in its device table in both orientations, in the After Dark and Lilac
+page colours read from `web/src/theme.css`. Its output is 76 PNGs under
+`web/public/splash/` and the link block between the startup-images markers in
+`web/index.html`; re-run it after changing the wordmark or the table. iOS takes the
+image when the app is added to the home screen, so a changed image shows only after
+the app is re-added. The launch scheme follows `prefers-color-scheme`, because a
+static image cannot read the stored theme choice. The wordmark is laid out through
+raqm, with the font's kerning and ligatures. The gate serves `/splash` anonymously
+(`ASSET_PREFIXES` in `src/daemon/tcp.rs`), like the rest of the shell; the worker
+does not precache them, since iOS reads them only when the app is added.
 
 The service worker does three things: make the app installable, let the shell
 paint from cache on a cold start or a lost network, and receive push
@@ -1713,7 +1729,10 @@ bindings; the shell routes are matched the same way, so a session-prefixed
 navigation falls back to the same cached shell. A transcript or a file's bytes served from cache would be a stale claim
 about what the agent did, and saying what the agent did is what this page is
 for. What is cached is the build's own hashed assets (cache-first, because the
-hash is the version) and the shell routes. Registration
+hash is the version) and the shell routes. The few public files the build does
+not hash (the manifest, every icon, `paper.svg`) are precached by name, and
+`src/daemon/tcp.rs` names the same files as anonymous; changing their bytes means
+bumping `CACHE` in `sw.js`, or installed copies keep the old ones. Registration
 (`src/pwa.ts`) is `/sw.js` in production and `/sw.js?dev=1` under Vite. In dev
 mode the worker installs no cache, answers no `fetch`, and deletes every
 `efference-shell-*` cache on activation, so a cached asset never reaches HMR and
@@ -1854,7 +1873,7 @@ note ("handed off from `<id>` — its brief:") rather than as the operator's tur
 ## Serving and auth
 
 The gate enumerates its anonymous surface rather than deriving it from guarded
-prefixes ([web-bind.md](web-bind.md)): the app shell and hashed assets serve without a
+prefixes ([web-bind.md](web-bind.md)): the app shell, the hashed assets, and the launch images under `/splash` serve without a
 credential — the same posture as the inline bootstrap page the app replaced — as does
 `POST /auth/session`, and everything else, `/v1` included, takes cookie-or-bearer. The
 login view (`web/src/ui/Login.tsx`) carries the bootstrap dance: read `#token=` from

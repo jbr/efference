@@ -15,7 +15,11 @@
 // offline fallback. A route in one and not the other works online and 404s
 // from the home screen.
 
-const CACHE = "efference-shell-v2";
+/** The precache's name. Bump it when a precached file's bytes change under the
+ * same name (the manifest, the icons): an installed worker keeps the copies it
+ * cached until a new name replaces them, and activation deletes every other
+ * cache. */
+const CACHE = "efference-shell-v3";
 
 /** Dev mode: `src/pwa.ts` registers `/sw.js?dev=1` when the page is served by
  * Vite. The worker then caches nothing and answers no fetch, so HMR always
@@ -51,6 +55,8 @@ const SHELL_ASSETS = [
   "/icon.svg",
   "/icon-192.png",
   "/icon-512.png",
+  "/icon-maskable-512.png",
+  "/apple-touch-icon.png",
   "/paper.svg",
 ];
 

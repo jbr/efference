@@ -399,11 +399,13 @@ impl Surface {
     fn anonymous(self, method: Method, path: &str) -> bool {
         let get = method == Method::Get;
         // The web client's own shell, wherever it is served: its routes at its
-        // base, the build's hashed assets, and the few public files whose names
-        // the build does not hash. None of it is session content, and the login
-        // view lives inside it (docs/web-client.md). The asset lists mirror the
-        // service worker's precache (`web/public/sw.js`), which has to agree:
-        // a file in one and not the other is a shell that cannot load itself.
+        // base, the build's hashed assets, the launch images under `/splash`, and
+        // the few public files whose names the build does not hash. None of it is
+        // session content, and the login view lives inside it (docs/web-client.md).
+        // The shell lists mirror the service worker's precache (`web/public/sw.js`),
+        // which has to agree: a file in one and not the other is a shell that cannot
+        // load itself. `/splash` is the exception: iOS reads the launch images only
+        // when the app is added to the home screen, so the worker does not cache them.
         if get
             && (self.spa_route(path)
                 || ASSET_PREFIXES.iter().any(|prefix| under(path, prefix))
@@ -598,17 +600,22 @@ impl trillium::Handler for SecurityHeaders {
 ///   a file (docs/web-client.md "Navigating the working directory").
 const SPA_ROUTES: [&str; 2] = ["/", "/tree"];
 
-/// The hashed build's own directories, served at the listener's root whichever
-/// binding answered the shell. Mirrors `isCacheable` in `web/public/sw.js`.
-const ASSET_PREFIXES: [&str; 2] = ["/assets", "/fonts"];
+/// The build's own directories, served at the listener's root whichever binding
+/// answered the shell. `/assets` and `/fonts` mirror `isCacheable` in
+/// `web/public/sw.js`. `/splash` holds the launch images (docs/web-client.md
+/// "Installability"): iOS reads them only at add-to-home time, so the worker
+/// does not cache them.
+const ASSET_PREFIXES: [&str; 3] = ["/assets", "/fonts", "/splash"];
 
 /// Public files the build does not hash, so they are named rather than found by
 /// prefix. Mirrors `SHELL_ASSETS` in `web/public/sw.js`.
-const SHELL_ASSETS: [&str; 6] = [
+const SHELL_ASSETS: [&str; 8] = [
     "/manifest.webmanifest",
     "/icon.svg",
     "/icon-192.png",
     "/icon-512.png",
+    "/icon-maskable-512.png",
+    "/apple-touch-icon.png",
     "/paper.svg",
     // The worker script itself, which the browser fetches to register the
     // worker and which nothing precaches (`web/src/pwa.ts`). It is fetched on a

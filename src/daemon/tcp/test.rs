@@ -140,6 +140,18 @@ fn the_anonymous_surface_is_named() {
         ),
         (Surface::Session, Method::Get, "/fonts/x.woff2", anonymous),
         (Surface::Session, Method::Get, "/icon-192.png", anonymous),
+        (
+            Surface::Session,
+            Method::Get,
+            "/apple-touch-icon.png",
+            anonymous,
+        ),
+        (
+            Surface::Session,
+            Method::Get,
+            "/splash/after-dark-1206x2622.png",
+            anonymous,
+        ),
         // The worker script, which the browser fetches to register the worker.
         (Surface::Session, Method::Get, "/sw.js", anonymous),
         (Surface::Session, Method::Post, "/auth/session", anonymous),

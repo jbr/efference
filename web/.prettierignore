@@ -1,3 +1,7 @@
 # pnpm 12 writes the lockfile as two YAML documents (its own binary identity, then
 # the graph); Prettier reformats the separator and the check fails on every install.
 pnpm-lock.yaml
+
+# index.html carries the block scripts/startup-images.py generates (one link per launch
+# image); Prettier would reflow its 80 link tags on every run, so the file is excluded.
+index.html
