@@ -11,14 +11,16 @@ export function RangeContent({
   retained,
   lang = null,
   step = 12,
+  startLine = 1,
 }: {
   text: string;
   retained: readonly LineRange[];
   lang?: string | null;
   step?: number;
+  startLine?: number;
 }) {
   // A different captured source/range selection starts a fresh expansion view.
-  const identity = JSON.stringify([text, retained]);
+  const identity = JSON.stringify([text, retained, startLine]);
   return (
     <RangeView
       key={identity}
@@ -26,6 +28,7 @@ export function RangeContent({
       retained={retained}
       lang={lang}
       step={Math.max(1, Math.floor(step))}
+      startLine={startLine}
     />
   );
 }
@@ -34,11 +37,13 @@ function RangeView({
   retained,
   lang,
   step,
+  startLine,
 }: {
   text: string;
   retained: readonly LineRange[];
   lang: string | null;
   step: number;
+  startLine: number;
 }) {
   const lines = useMemo(() => (text === "" ? [] : text.split("\n")), [text]);
   const kept = useMemo(
@@ -59,7 +64,7 @@ function RangeView({
         <div className="range-gap-actions">
           {above && (
             <button
-              aria-label={`Show ${Math.min(step, b - a + 1)} lines after line ${a - 1}`}
+              aria-label={`Show ${Math.min(step, b - a + 1)} lines after line ${startLine + a - 2}`}
               title="Expand downward"
               onClick={() => reveal([a, Math.min(b, a + step - 1)])}
             >
@@ -68,7 +73,7 @@ function RangeView({
           )}
           {below && (
             <button
-              aria-label={`Show ${Math.min(step, b - a + 1)} lines before line ${b + 1}`}
+              aria-label={`Show ${Math.min(step, b - a + 1)} lines before line ${startLine + b}`}
               title="Expand upward"
               onClick={() => reveal([Math.max(a, b - step + 1), b])}
             >
@@ -108,7 +113,7 @@ function RangeView({
                   return (
                     <div
                       className={`numbered-line range-line${isKept ? " is-retained" : ""}`}
-                      data-line={n}
+                      data-line={startLine + n - 1}
                       key={n}
                     >
                       <span
@@ -117,7 +122,7 @@ function RangeView({
                           isKept ? "Retained by curation" : "Revealed context"
                         }
                       >
-                        {n}
+                        {startLine + n - 1}
                       </span>
                       <span className="line-body">
                         {tokens?.[n - 1]

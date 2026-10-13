@@ -368,7 +368,7 @@ What narrow changes:
   its header down.
 
 **Overlays are history-backed** (`ui/overlayHistory.ts`, both form factors):
-each open overlay — inspector, file viewer, drawer, lightbox — owns one history entry, so the
+each inspection depth and lightbox — owns one history entry, so the
 back button and Safari's edge swipe (which *is* history-back) dismiss the
 overlay instead of leaving the app. Not a router: the overlays remain App
 state, and the hook *reconciles* — App reports how many overlays are open, the
@@ -400,8 +400,8 @@ chip above the dock, shown only while follow intent is disengaged. Tapping it
 explicitly resumes following and jumps instantly through `jumpToTail` in
 `ui/float.ts`; `useDockOffset` keeps it above the measured dock. Hidden while a
 gate is pending (the float
-owns that slot and carries its own jump) and while the file viewer covers the
-transcript.
+owns that slot and carries its own jump) and while a current-file sheet covers the
+transcript below the desktop sibling breakpoint.
 
 Known nit: wire-vocabulary glyphs quoted in an *inline-code span* (a model
 writing `` `⟢` `` in its own prose) render as tofu on iOS — IBM Plex Mono lacks
@@ -1492,13 +1492,7 @@ attribution. With no definition at all the tab renders exactly what it rendered
 before any of this — the sent arguments, unglossed, with no error surface and no
 retry spinner.
 
-There is deliberately **no `file` tab**: the drawer
-is call-scoped, so a tab here would read as "the file at the time of this
-call", while a file read from disk is the file *now*, and serving the
-historical reading would mean snapshotting every file at every edit. The
-division held instead is that the inspector shows what a call did — from the
-log, which holds it — and the file viewer shows what a file is
-([backlog/web/file-view/](../backlog/web/file-view/README.md)). The `result` and `raw` tabs also carry **the command's own output**, under
+Historical operation and explicitly current-file context are separate views in the same sidebar. The `result` and `raw` tabs also carry **the command's own output**, under
 whatever the committed result showed, for the two cases where a `ToolResult` is
 not the output ([supervisor.md](supervisor.md)):
 
@@ -1538,56 +1532,27 @@ safe for the reason the position existed: a gate decides a *call*, never a
 result, so no pending decision rests on a truncated body — and the full
 body is one click away. Other tools' results still render whole.
 
+## Captured file operations
+
+`ui/inspector/FileOperation.tsx` provides file-specific inspection instead of generic tabs. Reads show captured per-file bodies; `fileCapture.ts` maps retained raw-result positions into each body, strips explicit ranged-read number/tab prefixes, and preserves original file-line coordinates. Captures may be partial, range-limited, or byte-truncated; they are not assumed to be whole historical files. Canonical capture paths confirm removal of range selectors for current-file navigation. Submitted write content comes from call arguments, with append labeled as appended bytes rather than a whole file. Failed/pending writes are qualified. Edit operations show the full recorded diff, not reconstructed whole-file history. Raw arguments/results, permission verdicts and curation remain under Details.
+
+`ui/RangeContent.tsx` is a display-only expansion component backed by captured original text and inclusive retained ranges. Gap rows reveal up to twelve lines from either edge; intersecting ranges merge. Retained lines have a gutter marker, and revealed context has the same text contrast. Highlighting runs over the full captured source before selecting visible rows, preserving grammar across gaps. Expansion never changes the agent's curated output. Changing the captured source resets expansion; unrelated renders preserve it. The gallery has plain and highlighted specimens.
+
 ## The file viewer
 
-`ui/FileView.tsx`: an overlay filling the band between the top bar and the
-dock, showing what a file *is* — read from disk over `/files`
-([web-bind.md](web-bind.md)) — where the inspector shows what a call *did*.
-The chrome stays visible and working: the composer, the panel, and a pending
-gate remain at hand while reading. The band's edges are measured
-(`useChromeBand`, a `ResizeObserver` on `.top-bar` and `.dock`, the same
-shape as the gate float's dock offset) because the dock's height moves; the
-app column is `min-height: 100dvh` flex with the transcript growing, so the
-dock sits at the viewport bottom even under a short transcript and the
-band's bottom edge meets it. The slide-out passes behind the dock (both
-carry a z-index, dock later in the DOM); the viewer sits below the inspector
-and the gate float. The transcript stays mounted behind it and uses the
-inspector's overlay machinery (`@starting-style` entry, `.closing` +
-`transitionend` exit with the timeout fallback, `shown`-through-the-slide in
-`App`); Escape closes. No router: the overlay is App state, like the drawer.
+`ui/FileView.tsx` reads the current file from `/files` ([web-bind.md](web-bind.md)) in the same sidebar position as operation inspection. At desktop widths of at least 1100px it is a sibling column; narrower screens use the inspection sheet. The transcript remains mounted. `ui/inspector/useDrawerWidth.ts` shares resize width between operation and file views. An Operation return restores the mounted historical inspector, including expanded ranges. Closing ends inspection; browser Back steps from current-file context to the operation before leaving inspection. A direct tree view has no operation to return to.
 
-Entry is the `open ⤢` affordance: in the transcript it is the **path chip** on
-the argument that names the file (above — a button, so the open-the-inspector
-click ignores it), and in the inspector's footer it is a link per viewable file
-the call names, labelled `open current file` — footer rather than tab, because
-the drawer is call-scoped history and the file on disk is now. Which files a
-call names is `session/touchedFiles.ts`: `write`'s `path`, the edit tools'
-`file_path`, `read`'s `paths` — the inspector serves all three; the transcript
-chips only the arguments the chip table names, which is the write-and-edit
-half. **Within-cwd only, categorically** — an absolute or
+Call path chips still open current-file context directly. File-operation bodies offer View current file or Locate in current file; other tool inspectors retain a current-file footer. `session/touchedFiles.ts` supplies paths and anchors. Current content is explicitly labeled current, not reconstructed historical content. **Within-cwd only, categorically** — an absolute or
 `..`-leading path yields no affordance and is never followed; the call's own
 log diff is its surface. That is a scope position (no arbitrary reads from
 elsewhere on the system), not a resolution gap. The `session_identity` topic
 ([control-api.md](control-api.md)) now names the cwd, so it is the mapping
 available if the scope ever widens.
 
-**Highlights come from diffing successive fetches, never from the tool
-call.** `session/lineDiff.ts` is the one diff engine: hand-rolled Myers over
-lines, common affixes trimmed first, an edit-distance budget past which the
-middle reports as one changed block. The bytes last rendered per path live
-in a module-scoped map, so a highlight means *what changed since you last
-looked* — identical for an agent edit and a save from emacs, and surviving
-close/reopen of the overlay. A pure deletion has no line to tint and reports
-as a seam (`removedAt`), drawn as a dashed rule on the line after it. Source
-view tints lines (`NumberedCode`'s `lineClass`, `data-line` as the scroll
-anchor); rendered markdown tints at **block granularity** — the same line
-ranges mapped onto top-level blocks via hast `position` by a rehype plugin
-stamping `data-changed` (`ui/Markdown.tsx`), sub-block precision
-deliberately not wanted: the reader who wants lines toggles to source.
+**Highlight sources do not mix.** With a selected edit anchor, an exact location highlights its surviving added lines; approximate/unlocated matches show a qualification and no confidently located-line tint. Refreshes keep resolving that selected anchor. Without an anchor, `session/lineDiff.ts` compares fetched content with the last content shown for the same session/path, marking observed changes and deletion seams. This is changes since viewing, not the selected operation's historical diff. Source mode tints numbered lines; rendered Markdown uses block-level highlights.
 
 **Freshness is two sources through one mechanism.** A committed, non-errored
-edit in the log (the `lastEdit` derivation) triggers an immediate
-conditional GET; the daemon's change stream covers edits from outside — an
+edit in the log (the `lastEdit` derivation) supplies a new target while following; the daemon's change stream covers edits from outside — an
 `EventSource` on the same `/files` URL (the content negotiation and the
 watcher behind it are [web-bind.md](web-bind.md) "Watching for changes"),
 held while the tab is visible and closed while hidden. Every poke, and
@@ -1625,12 +1590,12 @@ re-runs with *its* anchor; `anchorForCall` reads that call's result.
 Anchor-driven loads are unconditional — a `304` would carry no bytes to locate
 against.
 
-**Following the agent** is the same signal steering the view: an edit
+**Following the agent** is explicit and starts off: an edit
 landing on the open path re-reads it now; one landing elsewhere switches the
 view to that file and lands on the edit. Edits and writes move the view; a
 bare `read` never does — reads are the tree's working-set annotation instead.
 The `following ⇢` toggle suppresses the switch and any jump the reader did not
-ask for, while keeping the live reload and the highlights; a jump the reader
+ask for, while keeping live reload and the selected anchor; a jump the reader
 *did* ask for (a path chip, a tree click) happens either way.
 
 **Refusals render legibly against the path** — "not a text file",

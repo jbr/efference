@@ -1980,37 +1980,6 @@ select {
   color: var(--code-type);
 }
 
-/* The file viewer (FileView.tsx): an overlay filling the band between the
-   top bar and the dock — the chrome stays visible and working, so the
-   composer and a pending gate remain at hand while reading. Top and bottom
-   are set inline from measured chrome heights (useChromeBand in
-   FileView.tsx). Same entry/exit machinery as the inspector
-   (@starting-style in, .closing + transitionend out), and like it floating
-   over the transcript rather than reflowing it. Below the inspector and the
-   gate float; the slide passes behind the dock (both carry a z-index and
-   sit later in the DOM). */
-.file-view {
-  position: fixed;
-  left: 0;
-  right: 0;
-  background: var(--bg-page);
-  display: flex;
-  flex-direction: column;
-  z-index: 1;
-  transition: transform 0.2s ease-out;
-}
-
-@starting-style {
-  .file-view {
-    transform: translateY(100%);
-  }
-}
-
-.file-view.closing {
-  transform: translateY(100%);
-  transition: transform 0.2s ease-in;
-}
-
 .file-view-head {
   flex: none;
   display: flex;

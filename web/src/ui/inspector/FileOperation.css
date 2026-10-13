@@ -1,0 +1,36 @@
+.file-operation {
+  min-width: 0;
+}
+.file-operation > p,
+.file-operation section > p {
+  font-family: var(--font-ui);
+  font-size: 0.8rem;
+}
+.file-operation h3 {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+  margin: 1rem 0 0.4rem;
+}
+.file-operation pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.file-operation .linkish {
+  margin-block: 0.65rem;
+  font-family: var(--font-ui);
+  font-size: 0.8rem;
+}
+.file-operation-kind {
+  color: var(--fg-dim);
+}
+.inspector.is-file-operation .inspector-head {
+  flex-wrap: wrap;
+}
+.inspector.is-file-operation .inspector-head strong {
+  overflow-wrap: anywhere;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+}

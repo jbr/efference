@@ -1,3 +1,5 @@
+import { useSidebarOverlay } from "./inspector/useSidebarOverlay.ts";
+import { anchorFromResult, type DiffAnchor } from "../session/editAnchor.ts";
 import { useHistoricalCall } from "./inspector/useHistoricalCall.ts";
 // One session, whole (docs/web-client.md): the transcript, the composer and
 // dock, the gate surface, and the two overlays. Everything it fetches goes
@@ -39,6 +41,7 @@ interface OpenRequest {
   path: string | null;
   callId: CallId | null;
   key: number;
+  anchor?: DiffAnchor | null;
 }
 
 /** The client's routing, such as it is: the paths the server's SPA index
@@ -89,7 +92,11 @@ export function SessionView() {
   // central target where the ✕ is a distant corner one (Fitts), and a second
   // click on "show me this" reading as "stop showing me this" is the toggle
   // idiom. A different call switches without closing.
+  const [viewingFile, setViewingFile] = useState<OpenRequest | null>(
+    bootRoute() === "tree" ? { path: null, callId: null, key: 0 } : null,
+  );
   const onInspect = useCallback((id: CallId) => {
+    setViewingFile(null);
     setInspecting((prev) => (prev === id ? null : id));
   }, []);
   // The drawer's slide-out needs it mounted after `inspecting` clears —
@@ -171,9 +178,6 @@ export function SessionView() {
   // when the path does not, so a second call's `open ⤢` on the same file still
   // lands on *its* edit. A `null` path is the tree with nothing chosen, which
   // is what `/tree` opens.
-  const [viewingFile, setViewingFile] = useState<OpenRequest | null>(
-    bootRoute() === "tree" ? { path: null, callId: null, key: 0 } : null,
-  );
   const [shownFile, setShownFile] = useState<OpenRequest | null>(viewingFile);
   if (viewingFile !== null && viewingFile !== shownFile)
     setShownFile(viewingFile);
@@ -185,15 +189,37 @@ export function SessionView() {
     return () => clearTimeout(id);
   }, [fileClosing, fileDone]);
   const onOpenFile = useCallback(
-    (path: string, callId: CallId | null = null) =>
-      setViewingFile((prev) => ({ path, callId, key: (prev?.key ?? 0) + 1 })),
+    (
+      path: string,
+      callId: CallId | null = null,
+      anchor?: DiffAnchor | null,
+    ) => {
+      if (callId !== null) setInspecting(callId);
+      else setInspecting(null);
+      setViewingFile((prev) => ({
+        path,
+        callId,
+        anchor,
+        key: (prev?.key ?? 0) + 1,
+      }));
+    },
     [],
   );
   const closeFile = useCallback(() => setViewingFile(null), []);
-  const openAnchor = useMemo(
-    () => anchorForCall(session.entries, shownFile?.callId ?? null),
-    [session.entries, shownFile],
-  );
+  const openAnchor = useMemo(() => {
+    if (shownFile?.anchor !== undefined) return shownFile.anchor;
+    const anchor = anchorForCall(session.entries, shownFile?.callId ?? null);
+    if (anchor !== null) return anchor;
+    const payload =
+      inspected?.callId === shownFile?.callId
+        ? inspected?.result?.payload
+        : null;
+    return payload &&
+      "ToolResult" in payload &&
+      !payload.ToolResult.raw.is_error
+      ? anchorFromResult(payload.ToolResult.raw.content)
+      : null;
+  }, [session.entries, shownFile, inspected]);
   const activity = useMemo(
     () => fileActivity(session.entries),
     [session.entries],
@@ -222,6 +248,7 @@ export function SessionView() {
     [session.entries],
   );
 
+  const overlaySidebar = useSidebarOverlay();
   if (session.connection === "unauthenticated") {
     return <Login onAuthenticated={() => connector.retry()} />;
   }
@@ -229,7 +256,11 @@ export function SessionView() {
   const gate = session.topics.gate;
   const processes = session.topics.processes ?? [];
   return (
-    <div className={inspected !== null ? "app session-split" : "app"}>
+    <div
+      className={
+        inspected !== null || shownFile !== null ? "app session-split" : "app"
+      }
+    >
       <div className="session-main">
         <TopBar
           // Only under a host is there a list to go back to — at a session
@@ -269,28 +300,17 @@ export function SessionView() {
           onInspect={onInspect}
           onOpenFile={onOpenFile}
         />
-        {shownFile !== null && (
-          <FileView
-            path={shownFile.path}
-            openKey={shownFile.key}
-            openAnchor={openAnchor}
-            lastEdit={newestEdit}
-            activity={activity}
-            closing={fileClosing}
-            onSlideOut={fileDone}
-            onClose={closeFile}
-          />
-        )}
-        {/* Hidden while a gate is pending (the gate float/cue owns the
-          above-dock slot and carries its own jump) and while the file viewer
-          covers the transcript the jump would land in. */}
-        <JumpToLatest hidden={gate != null || shownFile !== null} />
+        {/* Desktop file context is beside the transcript; only an overlay
+            sheet hides the jump destination. */}
+        <JumpToLatest
+          hidden={gate != null || (overlaySidebar && shownFile !== null)}
+        />
         {gate && (
           <div className="col">
             <GateSurface
               gate={gate}
               spot={spotFor(session.entries, gate.call_id)}
-              covered={shownFile !== null}
+              covered={overlaySidebar && shownFile !== null}
               slot={gateSlot}
               cold={session.topics.cold ?? null}
               resolve={(decision) =>
@@ -304,6 +324,7 @@ export function SessionView() {
             processes={processes}
             selected={inspecting}
             onInspect={(id) => {
+              setViewingFile(null);
               setInspecting(id);
             }}
           />
@@ -325,8 +346,26 @@ export function SessionView() {
         </div>
         <LightboxHost />
       </div>
+      {shownFile !== null && (
+        <FileView
+          path={shownFile.path}
+          openKey={shownFile.key}
+          openAnchor={openAnchor}
+          lastEdit={newestEdit}
+          activity={activity}
+          closing={fileClosing}
+          onSlideOut={fileDone}
+          onBack={shownFile.callId !== null ? closeFile : undefined}
+          onClose={() => {
+            closeFile();
+            setInspecting(null);
+          }}
+        />
+      )}
       {inspected !== null && (
         <Inspector
+          key={inspected.callId}
+          hidden={shownFile !== null}
           node={inspected}
           process={processes.find((p) => p.call_id === inspected.callId)}
           closing={closing}

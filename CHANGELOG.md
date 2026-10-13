@@ -8,6 +8,7 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- File-operation inspectors show expandable captured reads, submitted write/append content, and recorded diffs, with current-file context and explicit edit following in the shared sidebar.
 - Session switcher tabs show stable session IDs; the session-details panel is removed while task, hold, summary, and app-settings controls remain on their dedicated surfaces.
 - Running-task shortcuts open shared process inspectors with sibling desktop layout, full commands, live tails, lifecycle states, and compact background handoffs.
 - Composer controls use icon-only attach, hold/release, octagonal interrupt, and send actions; session tabs retain stable slots and current-session details.

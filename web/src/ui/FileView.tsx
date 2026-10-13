@@ -1,28 +1,10 @@
-// The file viewer (docs/web-client.md): an overlay filling the band between
-// the top bar and the dock, showing what a file *is* — read from disk over
-// /files (docs/web-bind.md) — where the inspector shows what a call *did*.
-// The transcript stays mounted behind it, one dismissal away; the dock stays
-// visible and working, so the composer and gate remain at hand while
-// reading.
-//
-// Two independent sources say where to look, and they answer different
-// questions:
-//
-// - **What changed since you last looked** — the client keeps the bytes it last
-//   showed per path and diffs each re-fetch against them, so a highlight means
-//   exactly that, identical for an agent edit and a save from emacs. Empty on a
-//   file's first open, which is every file follow switches you to.
-// - **Where the edit landed** — the anchor carried by the edit's own result
-//   (session/editAnchor.ts), located by content in the file as it is now. This
-//   is what makes `open ⤢` land on the edit and follow land on each new one,
-//   and it says when it is only approximately right rather than highlighting
-//   confidently in the wrong place.
-//
-// Freshness is two sources folded into one mechanism: a committed edit in the
-// log triggers an immediate conditional GET, and the daemon's change stream (an
-// EventSource on the same /files URL) covers edits from outside — every poke,
-// and every (re)open of the stream, answers with the same conditional GET, so
-// the stream carries no content and replaces only the old poll's timer.
+import { apiBase } from "../api/base.ts";
+import { useDrawerWidth } from "./inspector/useDrawerWidth.ts";
+import "./FileSidebar.css";
+// Current-file context in the shared inspection sidebar (docs/web-client.md).
+// The bytes are from disk now, not a historical reconstruction. A selected
+// operation anchor and observed changes since viewing are separate highlight
+// sources. Follow mode is explicit; file refreshes retain the selected anchor.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchFile, fileStream } from "../api/files.ts";
@@ -42,7 +24,6 @@ import { langForPath } from "../render/parse.ts";
 import { NumberedCode } from "./Code.tsx";
 import { FileTreePane } from "./FileTree.tsx";
 import { Markdown } from "./Markdown.tsx";
-import { useNarrow } from "./useNarrow.ts";
 
 interface Shown {
   text: string;
@@ -70,27 +51,6 @@ interface ScrollTo {
  * and reopening the viewer: the reader did look, whether or not the overlay
  * stayed mounted. Client-session-scoped, like everything derived here. */
 const lastShown = new Map<string, string>();
-
-/** The band between the sticky chrome: below the top bar, above the dock.
- * Both edges are measured, not guessed in CSS — the dock's height moves
- * (the panel expands and collapses, the textarea resizes) — the same shape
- * as the gate float's dock offset (Gate.tsx). */
-function useChromeBand(): { top: number; bottom: number } {
-  const [band, setBand] = useState({ top: 0, bottom: 0 });
-  useEffect(() => {
-    const bar = document.querySelector(".top-bar");
-    const dock = document.querySelector(".dock");
-    if (!(bar instanceof HTMLElement) || !(dock instanceof HTMLElement)) return;
-    const update = () =>
-      setBand({ top: bar.offsetHeight, bottom: dock.offsetHeight });
-    update();
-    const observer = new ResizeObserver(update);
-    observer.observe(bar);
-    observer.observe(dock);
-    return () => observer.disconnect();
-  }, []);
-  return band;
-}
 
 /** The refusal, legible against the path — never a blank pane. The endpoint
  * refuses rather than degrades (docs/web-bind.md), so every body that does
@@ -149,6 +109,7 @@ export function FileView({
   closing,
   onSlideOut,
   onClose,
+  onBack,
 }: {
   /** The path the viewer was opened on, or `null` for the tree with no file
    * chosen — the `/tree` entry. Following may move off it. */
@@ -166,7 +127,9 @@ export function FileView({
   closing: boolean;
   onSlideOut: () => void;
   onClose: () => void;
+  onBack?: () => void;
 }) {
+  const [base] = useState(apiBase);
   const [target, setTarget] = useState<Target | null>(
     path === null ? null : { path, anchor: openAnchor, demanded: true, key: 0 },
   );
@@ -174,9 +137,8 @@ export function FileView({
 
   const [shown, setShown] = useState<Shown | null>(null);
   const [refusal, setRefusal] = useState<Refusal | null>(null);
-  const [follow, setFollow] = useState(true);
+  const [follow, setFollow] = useState(false);
   const [showSource, setShowSource] = useState(false);
-  const narrow = useNarrow();
   const [treeOpen, setTreeOpen] = useState(path === null);
 
   const etagRef = useRef<string | null>(null);
@@ -200,7 +162,11 @@ export function FileView({
       const result = await fetchFile(
         target,
         conditional ? etagRef.current : null,
-      );
+      ).catch((error: unknown) => ({
+        kind: "refused" as const,
+        code: "internal" as const,
+        message: String(error),
+      }));
       // A newer load (a path switch, a faster poll) supersedes this one.
       if (generation !== generationRef.current) return;
       if (result.kind === "unchanged") return;
@@ -213,10 +179,11 @@ export function FileView({
         return;
       }
       etagRef.current = result.etag;
-      const prev = lastShown.get(target);
+      const baselineKey = `${base}\n${target}`;
+      const prev = lastShown.get(baselineKey);
       const changed =
         prev === undefined ? NO_CHANGES : diffLines(prev, result.text);
-      lastShown.set(target, result.text);
+      lastShown.set(baselineKey, result.text);
 
       // The edit's own anchor, resolved against the bytes that just arrived.
       // It outranks the since-you-last-looked diff as a scroll target: the
@@ -236,12 +203,19 @@ export function FileView({
         };
       }
     },
-    [],
+    [base],
   );
 
   // Every reason to show a file runs through one target, and always
   // unconditionally: the anchor needs bytes to resolve against, which a 304
   // would not carry.
+  const [displayedTarget, setDisplayedTarget] = useState(target);
+  if (displayedTarget !== target) {
+    setDisplayedTarget(target);
+    setShown(null);
+    setRefusal(null);
+  }
+
   useEffect(() => {
     if (target === null) return;
     etagRef.current = null;
@@ -252,8 +226,7 @@ export function FileView({
   // while the tab is visible — the poll's `document.hidden` check, become
   // closing the stream. `onopen` re-fetches conditionally, which covers what
   // a hidden interval or a dropped connection missed (EventSource reconnects
-  // on its own); a poke's answer is the same conditional GET. No anchor: a
-  // change from outside the session is not an edit anyone pointed at.
+  // on its own); a poke's answer is the same conditional GET. Keep the selected anchor: external changes may move or remove it.
   useEffect(() => {
     if (current === null) return;
     let source: EventSource | null = null;
@@ -261,9 +234,10 @@ export function FileView({
       source = fileStream(current);
       source.addEventListener(
         "change",
-        () => void load(current, true, null, false),
+        () => void load(current, true, target?.anchor ?? null, false),
       );
-      source.onopen = () => void load(current, true, null, false);
+      source.onopen = () =>
+        void load(current, true, target?.anchor ?? null, false);
     };
     const visibility = () => {
       if (document.hidden) {
@@ -279,7 +253,7 @@ export function FileView({
       source?.close();
       document.removeEventListener("visibilitychange", visibility);
     };
-  }, [current, load]);
+  }, [current, target?.anchor, load]);
 
   // A fresh open request — a call's `open ⤢`, or the inspector's. The key
   // changes per request, so a second call's `open ⤢` on the file already shown
@@ -293,7 +267,7 @@ export function FileView({
         ? null
         : { path, anchor: openAnchor, demanded: true, key: openKey },
     );
-    if (path !== null && narrow) setTreeOpen(false);
+    if (path !== null) setTreeOpen(false);
   }
 
   // Following the agent: a landed edit on the open path re-reads it now rather
@@ -308,7 +282,7 @@ export function FileView({
   const [seenSeq, setSeenSeq] = useState<number | null>(lastEdit?.seq ?? null);
   if (lastEdit !== null && lastEdit.seq !== seenSeq) {
     setSeenSeq(lastEdit.seq);
-    if (lastEdit.path === current || follow) {
+    if (follow) {
       setTarget({
         path: lastEdit.path,
         anchor: lastEdit.anchor,
@@ -333,7 +307,15 @@ export function FileView({
     const anchor =
       bodyRef.current?.querySelector(`[data-line="${scroll.line}"]`) ??
       bodyRef.current?.querySelector("[data-changed]");
-    anchor?.scrollIntoView({ block: "center" });
+    const body = bodyRef.current;
+    if (anchor && body) {
+      const rect = anchor.getBoundingClientRect();
+      body.scrollTop +=
+        rect.top -
+        body.getBoundingClientRect().top -
+        body.clientHeight / 2 +
+        rect.height / 2;
+    }
   }, [shown, showSource, follow]);
 
   useEffect(() => {
@@ -344,7 +326,7 @@ export function FileView({
     return () => document.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  const band = useChromeBand();
+  const { width, grip } = useDrawerWidth();
   const tree = useFileTree();
   const lang = useMemo(() => langForPath(current ?? ""), [current]);
   const isMarkdown = lang === "markdown";
@@ -360,15 +342,19 @@ export function FileView({
     if (shown === null) return undefined;
     const changed = new Set<number>();
     const ranges =
-      shown.anchored?.kind === "exact"
-        ? [...shown.changed.changed, ...shown.anchored.changed]
+      shown.anchored !== null
+        ? shown.anchored.kind === "exact"
+          ? shown.anchored.changed
+          : []
         : shown.changed.changed;
     for (const [a, b] of ranges) {
       for (let n = a; n <= b; n++) changed.add(n);
     }
     // A pure deletion has no line to tint; the seam is drawn on the line
     // after it.
-    const seams = new Set(shown.changed.removedAt.map((n) => n + 1));
+    const seams = new Set(
+      shown.anchored !== null ? [] : shown.changed.removedAt.map((n) => n + 1),
+    );
     return (n: number) =>
       changed.has(n) ? "changed" : seams.has(n) ? "removed-before" : undefined;
   }, [shown]);
@@ -385,8 +371,12 @@ export function FileView({
 
   return (
     <div
-      className={closing ? "file-view closing" : "file-view"}
-      style={{ top: band.top, bottom: band.bottom }}
+      className={
+        closing
+          ? "inspector file-view file-sidebar closing"
+          : "inspector file-view file-sidebar"
+      }
+      style={{ width }}
       onTransitionEnd={(e) => {
         if (
           closing &&
@@ -396,7 +386,13 @@ export function FileView({
           onSlideOut();
       }}
     >
+      <div className="inspector-grip" {...grip} />
       <div className="file-view-head">
+        {onBack && (
+          <button className="linkish" onClick={onBack}>
+            ← Operation
+          </button>
+        )}
         <button
           className={treeOpen ? "linkish follow on" : "linkish follow"}
           title="the working directory, and a path finder over it"
@@ -424,7 +420,11 @@ export function FileView({
         >
           {follow ? "following ⇢" : "follow"}
         </button>
-        <button className="linkish" onClick={onClose}>
+        <button
+          className="linkish"
+          aria-label="Close file inspector"
+          onClick={onClose}
+        >
           ✕
         </button>
       </div>
@@ -439,6 +439,11 @@ export function FileView({
         )}
         <div className="file-view-body" ref={bodyRef}>
           <div className="file-view-col">
+            {current !== null && shown === null && refusal === null && (
+              <p role="status" className="dim">
+                Loading current file…
+              </p>
+            )}
             {current === null && (
               <div className="file-refusal">
                 <div className="file-refusal-what">no file open</div>
@@ -459,8 +464,10 @@ export function FileView({
               (isMarkdown && !showSource ? (
                 <Markdown
                   changedLines={
-                    shown.anchored?.kind === "exact"
-                      ? [...shown.changed.changed, ...shown.anchored.changed]
+                    shown.anchored !== null
+                      ? shown.anchored.kind === "exact"
+                        ? shown.anchored.changed
+                        : []
                       : shown.changed.changed
                   }
                 >

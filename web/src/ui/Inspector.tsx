@@ -1,3 +1,7 @@
+import { anchorFromResult, type DiffAnchor } from "../session/editAnchor.ts";
+import { FileOperation } from "./inspector/FileOperation.tsx";
+import { fileOperation } from "./inspector/fileCapture.ts";
+import { useDrawerWidth } from "./inspector/useDrawerWidth.ts";
 import { isHandoff } from "./inspector/handoff.ts";
 import { Disclosure } from "./Disclosure.tsx";
 import "./inspector/Layout.css";
@@ -7,7 +11,7 @@ import "./inspector/Layout.css";
 // view over the same CallNode the transcript renders, so it re-uses the
 // cordon's renderers rather than growing its own.
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type {
   CallId,
   Process,
@@ -32,46 +36,8 @@ import { useWholeResult } from "./wholeResult.ts";
 import { rustLines } from "../render/distill.ts";
 import { fetchProcessOutput } from "../api/http.ts";
 
-/** Drag-to-resize, persisted. The drawer floats over the content (the
- * content column never moves for it — index.css), so resizing is purely the
- * drawer's own reflow. Clamped so it can neither collapse below usability
- * nor swallow the whole viewport. */
-const WIDTH_KEY = "inspector-width";
-const clampWidth = (w: number) =>
-  Math.min(Math.max(w, 280), Math.max(320, window.innerWidth - 320));
-
-function useDrawerWidth() {
-  const [width, setWidth] = useState(() =>
-    clampWidth(Number(localStorage.getItem(WIDTH_KEY)) || 396),
-  );
-  const dragging = useRef(false);
-  const grip = {
-    onPointerDown: (e: React.PointerEvent<HTMLDivElement>) => {
-      dragging.current = true;
-      e.currentTarget.setPointerCapture(e.pointerId);
-      e.preventDefault();
-    },
-    onPointerMove: (e: React.PointerEvent<HTMLDivElement>) => {
-      if (!dragging.current) return;
-      const w = clampWidth(window.innerWidth - e.clientX);
-      setWidth(w);
-      localStorage.setItem(WIDTH_KEY, String(w));
-    },
-    onPointerUp: (e: React.PointerEvent<HTMLDivElement>) => {
-      dragging.current = false;
-      e.currentTarget.releasePointerCapture(e.pointerId);
-    },
-  };
-  return { width, grip };
-}
-
-// No `file` tab: the drawer is call-scoped, so a tab here reads as "the file
-// at the time of this call", while a file read from disk is the file *now* —
-// and serving the historical reading would mean snapshotting every file at
-// every edit. The division is that the inspector shows what a call did (from
-// the log, which holds it) and the file view shows what a file is
-// (backlog/web/file-view/README.md); the viewer opens from `open ⤢`, labelled
-// as current.
+// Generic tools retain result/args/raw/spot views; file operations use captured
+// content and navigate to explicitly current-file context (docs/web-client.md).
 type Tab = "result" | "args" | "raw" | "spot";
 const TABS: Tab[] = ["result", "args", "raw", "spot"];
 
@@ -283,18 +249,24 @@ export function Inspector({
   onSlideOut,
   onClose,
   onOpenFile,
+  hidden = false,
   liveOutput,
   processId: suppliedProcessId,
   processOutput,
   processLost,
 }: {
   node: CallNode;
+  hidden?: boolean;
   process?: Process;
   /** The exit transition is running; `onSlideOut` unmounts when it lands. */
   closing: boolean;
   onSlideOut: () => void;
   onClose: () => void;
-  onOpenFile: (path: string, callId: CallId) => void;
+  onOpenFile: (
+    path: string,
+    callId: CallId,
+    anchor?: DiffAnchor | null,
+  ) => void;
   /** `streaming.toolOutput[callId]`: the live tail of a call still running. */
   liveOutput: string | undefined;
   /** The process this call spawned, from the call↔process mapping. */
@@ -340,7 +312,8 @@ export function Inspector({
   // second click — the transcript is where the on-demand affordance lives.
   const whole = useWholeResult(entry?.seq ?? null, payload?.raw ?? null);
   useEffect(() => {
-    if (whole.elided !== undefined) whole.fetchWhole();
+    if (whole.elided !== undefined && whole.state === "idle")
+      whole.fetchWhole();
   }, [whole.elided, whole.fetchWhole, whole]);
   // Memoized so the identity is stable across renders: the render below keys
   // its own memo on it.
@@ -376,6 +349,8 @@ export function Inspector({
     processId !== undefined ||
     node.telemetry?.bash?.background === true ||
     view?.shell?.background === true;
+  const fileInspection = fileOperation(node.name);
+  const filePaths = call ? openablePaths(call.name, call.input) : [];
   const commandInspection =
     view?.shell != null || processId !== undefined || process !== undefined;
   const command =
@@ -386,8 +361,8 @@ export function Inspector({
   const { width, grip } = useDrawerWidth();
   return (
     <div
-      className={closing ? "inspector closing" : "inspector"}
-      style={{ width }}
+      className={`inspector${closing ? " closing" : ""}${fileInspection ? " is-file-operation" : ""}`}
+      style={{ width, display: hidden ? "none" : undefined }}
       onTransitionEnd={(e) => {
         // Keyed to the transform: only the slide's own end means done, not
         // any other property a future style might transition.
@@ -401,7 +376,9 @@ export function Inspector({
     >
       <div className="inspector-grip" {...grip} />
       <div className="inspector-head">
-        {commandInspection ? (
+        {fileInspection ? (
+          <strong>{filePaths.length === 1 ? filePaths[0] : node.name}</strong>
+        ) : commandInspection ? (
           <strong>
             {command.trim().split(/\s+/)[0]}
             {processId !== undefined && ` · p#${processId}`}
@@ -412,7 +389,7 @@ export function Inspector({
         <span className="call-head">
           {/* One line in the head, wrapping as text: the inspector's
               body is where the arguments are read at length. */}
-          {!commandInspection && view !== null && (
+          {!commandInspection && !fileInspection && view !== null && (
             <CallSignature layout={layoutSignature(view, null)} />
           )}
         </span>
@@ -425,7 +402,7 @@ export function Inspector({
           ✕
         </button>
       </div>
-      {!commandInspection && (
+      {!commandInspection && !fileInspection && (
         <div className="inspector-tabs">
           {TABS.map((t) => (
             <button
@@ -439,7 +416,30 @@ export function Inspector({
         </div>
       )}
       <div className="inspector-body">
-        {(commandInspection || tab === "result") && (
+        {whole.state === "failed" && (
+          <p role="alert">
+            Could not load the rest of this result.{" "}
+            <button onClick={whole.fetchWhole}>Retry</button>
+          </p>
+        )}
+        {fileInspection && call && (
+          <FileOperation
+            name={call.name}
+            input={call.input}
+            raw={result?.raw ?? null}
+            wire={result?.wire ?? "Pending"}
+            onCurrent={(path) =>
+              onOpenFile(
+                path,
+                node.callId,
+                result !== null && !result.raw.is_error
+                  ? anchorFromResult(result.raw.content)
+                  : null,
+              )
+            }
+          />
+        )}
+        {!fileInspection && (commandInspection || tab === "result") && (
           <>
             {commandInspection ? (
               <CommandView
@@ -477,12 +477,13 @@ export function Inspector({
           </>
         )}
         {!commandInspection &&
+          !fileInspection &&
           tab === "args" &&
           call !== null &&
           view !== null && (
             <ArgsTab name={call.name} input={call.input} intent={view.intent} />
           )}
-        {!commandInspection && tab === "raw" && (
+        {!commandInspection && !fileInspection && tab === "raw" && (
           <>
             {result !== null ? (
               <pre>{result.raw.content}</pre>
@@ -495,6 +496,7 @@ export function Inspector({
           </>
         )}
         {!commandInspection &&
+          !fileInspection &&
           tab === "spot" &&
           (node.spot !== null ? (
             <div className="inspector-spot">
@@ -511,10 +513,8 @@ export function Inspector({
             <div className="dim">no verdict logged</div>
           ))}
       </div>
-      {call !== null && (
-        // In the footer, and labelled current: this drawer is the historical
-        // record of what the call did; the file on disk is *now*, which is
-        // why there is no `file` tab (backlog/web/file-view/README.md).
+      {call !== null && !fileInspection && (
+        // Generic tool calls can still open explicitly current-file context.
         <InspectorOpen
           name={call.name}
           input={call.input}
@@ -523,14 +523,17 @@ export function Inspector({
         />
       )}
       <Disclosure className="inspector-details" label="Details">
-        {commandInspection && result !== null && (
+        {fileInspection && call && view && (
+          <ArgsTab name={call.name} input={call.input} intent={view.intent} />
+        )}
+        {(commandInspection || fileInspection) && result !== null && (
           <Disclosure label="Raw tool result">
             <pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
               {result.raw.content}
             </pre>
           </Disclosure>
         )}
-        {commandInspection && node.spot !== null && (
+        {(commandInspection || fileInspection) && node.spot !== null && (
           <Disclosure label="Permission verdict">
             <p>
               {node.spot.stance} · {node.spot.origin}
@@ -563,7 +566,11 @@ function InspectorOpen({
   input: unknown;
   /** The call whose edit the viewer should land on (session/editAnchor.ts). */
   callId: CallId;
-  onOpenFile: (path: string, callId: CallId) => void;
+  onOpenFile: (
+    path: string,
+    callId: CallId,
+    anchor?: DiffAnchor | null,
+  ) => void;
 }) {
   const paths = useMemo(() => openablePaths(name, input), [name, input]);
   if (paths.length === 0) return null;
