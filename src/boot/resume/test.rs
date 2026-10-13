@@ -539,24 +539,9 @@ async fn a_failed_resume_leaves_the_session_dir_alone() {
 /// logged after `Resumed`.
 #[tokio::test]
 async fn an_archived_worktree_is_restored_on_resume() {
-    use super::super::test::git_in;
     let _serial = PREPARING.lock().await;
     let root = Root::new("resume-worktree");
-    git_in(root.path(), &["init", "-q"]);
-    git_in(
-        root.path(),
-        &[
-            "-c",
-            "user.name=t",
-            "-c",
-            "user.email=t@t",
-            "commit",
-            "-q",
-            "--allow-empty",
-            "-m",
-            "one",
-        ],
-    );
+    crate::worktree::testing::repository(root.path());
     let mut req = request(root.path(), "wt-fox", None);
     req.worktree = true;
     let boot = prepare(req).await.unwrap();

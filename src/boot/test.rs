@@ -1,5 +1,6 @@
 use super::scaffold::self_surface_grants;
 use super::*;
+use crate::worktree::testing::{commit, git};
 use std::path::Path;
 
 /// The re-serve guard (docs/control-channel.md): a fresh name mints its dir, and a name whose
@@ -408,14 +409,6 @@ async fn a_late_failure_rolls_back_what_it_minted() {
     mint_session_dir(&dir).expect("the name is free for a corrected retry");
 }
 
-pub(super) fn git_in(dir: &Path, args: &[&str]) {
-    let mut cmd = std::process::Command::new("git");
-    cmd.args(args).current_dir(dir);
-    crate::worktree::unset_repository_env(&mut cmd);
-    let output = crate::spawn::std_output(&mut cmd).unwrap();
-    assert!(output.status.success(), "git {args:?}");
-}
-
 /// `worktree: true` outside a git work tree fails creation and leaves nothing.
 #[tokio::test]
 async fn a_worktree_request_outside_git_is_refused_with_nothing_minted() {
@@ -435,38 +428,22 @@ async fn a_worktree_request_outside_git_is_refused_with_nothing_minted() {
 async fn a_late_failure_removes_the_worktree_it_made() {
     let _serial = PREPARING.lock().await;
     let root = Root::new("worktree-late");
-    git_in(root.path(), &["init", "-q"]);
+    git(root.path(), &["init", "-q"]);
     std::fs::write(
         root.path().join("efference.toml"),
         "[context]\n\"absent.md\" = true\n",
     )
     .unwrap();
-    git_in(root.path(), &["add", "efference.toml"]);
-    git_in(
-        root.path(),
-        &[
-            "-c",
-            "user.name=t",
-            "-c",
-            "user.email=t@t",
-            "commit",
-            "-q",
-            "-m",
-            "one",
-        ],
-    );
+    git(root.path(), &["add", "efference.toml"]);
+    commit(root.path(), "one");
     let mut req = request(root.path(), "late-fox", None);
     req.worktree = true;
 
     failure(prepare(req).await, "unreadable [context] must fail");
     assert!(!crate::worktree::path(root.path(), "late-fox").exists());
     assert!(!root.session_dir("late-fox").exists());
-    let mut cmd = std::process::Command::new("git");
-    cmd.args(["branch", "--list", "efference/late-fox"])
-        .current_dir(root.path());
-    crate::worktree::unset_repository_env(&mut cmd);
-    let branches = crate::spawn::std_output(&mut cmd).unwrap();
-    assert!(branches.stdout.is_empty(), "the branch is deleted");
+    let branches = git(root.path(), &["branch", "--list", "efference/late-fox"]);
+    assert!(branches.is_empty(), "the branch is deleted");
 }
 
 /// A name whose dir exists is refused, and refusing it touches nothing: the

@@ -1,3 +1,4 @@
+use super::testing::{commit, git, repository};
 use super::*;
 
 #[test]
@@ -55,20 +56,6 @@ fn a_directory_in_a_worktree_belongs_to_its_project() {
     }
 }
 
-/// Run `git` in `dir` through the spawn lock, asserting it succeeds; its stdout.
-fn git_in(dir: &Path, args: &[&str]) -> String {
-    let mut cmd = std::process::Command::new("git");
-    cmd.args(args).current_dir(dir);
-    unset_repository_env(&mut cmd);
-    let output = crate::spawn::std_output(&mut cmd).unwrap();
-    assert!(
-        output.status.success(),
-        "git {args:?}: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    String::from_utf8_lossy(&output.stdout).trim().to_string()
-}
-
 fn temp_dir(label: &str) -> PathBuf {
     use std::hash::{BuildHasher, Hasher, RandomState};
     let n = RandomState::new().build_hasher().finish();
@@ -80,23 +67,11 @@ fn temp_dir(label: &str) -> PathBuf {
 #[test]
 fn add_makes_a_worktree_on_a_new_branch_at_head_and_remove_undoes_it() {
     let project = temp_dir("add");
-    git_in(&project, &["init", "-q"]);
+    git(&project, &["init", "-q"]);
     std::fs::write(project.join("f.txt"), "hi").unwrap();
-    git_in(&project, &["add", "f.txt"]);
-    git_in(
-        &project,
-        &[
-            "-c",
-            "user.name=t",
-            "-c",
-            "user.email=t@t",
-            "commit",
-            "-q",
-            "-m",
-            "one",
-        ],
-    );
-    let head = git_in(&project, &["rev-parse", "HEAD"]);
+    git(&project, &["add", "f.txt"]);
+    commit(&project, "one");
+    let head = git(&project, &["rev-parse", "HEAD"]);
     let env = crate::env_table::ChildEnv::default();
 
     let added = add(&project, "quiet-fox", &project, &env).unwrap();
@@ -106,15 +81,15 @@ fn add_makes_a_worktree_on_a_new_branch_at_head_and_remove_undoes_it() {
     assert_eq!(added.base, head);
     assert_eq!(added.exit_code, Some(0));
     assert_eq!(
-        git_in(&added.path, &["rev-parse", "--abbrev-ref", "HEAD"]),
+        git(&added.path, &["rev-parse", "--abbrev-ref", "HEAD"]),
         "efference/quiet-fox"
     );
-    assert_eq!(git_in(&added.path, &["rev-parse", "HEAD"]), head);
+    assert_eq!(git(&added.path, &["rev-parse", "HEAD"]), head);
 
     remove(&project, &added.path, &added.branch, &env);
     assert!(!added.path.exists());
     assert_eq!(
-        git_in(&project, &["branch", "--list", "efference/quiet-fox"]),
+        git(&project, &["branch", "--list", "efference/quiet-fox"]),
         ""
     );
     std::fs::remove_dir_all(&project).unwrap();
@@ -127,21 +102,7 @@ fn add_ignores_a_git_dir_in_the_environment() {
     let project = temp_dir("project");
     let other = temp_dir("other");
     for repo in [&project, &other] {
-        git_in(repo, &["init", "-q"]);
-        git_in(
-            repo,
-            &[
-                "-c",
-                "user.name=t",
-                "-c",
-                "user.email=t@t",
-                "commit",
-                "-q",
-                "--allow-empty",
-                "-m",
-                "one",
-            ],
-        );
+        repository(repo);
     }
     let env = crate::env_table::ChildEnv::default().with_inject(
         [(
@@ -152,44 +113,26 @@ fn add_ignores_a_git_dir_in_the_environment() {
     );
 
     let added = add(&project, "quiet-fox", &project, &env).unwrap();
-    assert!(git_in(&project, &["worktree", "list"]).contains("quiet-fox"));
-    assert!(!git_in(&other, &["worktree", "list"]).contains("quiet-fox"));
-    assert_eq!(git_in(&other, &["config", "core.bare"]), "false");
+    assert!(git(&project, &["worktree", "list"]).contains("quiet-fox"));
+    assert!(!git(&other, &["worktree", "list"]).contains("quiet-fox"));
+    assert_eq!(git(&other, &["config", "core.bare"]), "false");
 
     remove(&project, &added.path, &added.branch, &env);
     std::fs::remove_dir_all(&project).unwrap();
     std::fs::remove_dir_all(&other).unwrap();
 }
 
-fn commit_in(dir: &Path, message: &str) {
-    git_in(
-        dir,
-        &[
-            "-c",
-            "user.name=t",
-            "-c",
-            "user.email=t@t",
-            "commit",
-            "-q",
-            "--allow-empty",
-            "-m",
-            message,
-        ],
-    );
-}
-
 /// A repository with one commit and a session worktree `quiet-fox` on its own branch.
 fn project_with_worktree() -> (PathBuf, Added) {
     let project = temp_dir("retire");
-    git_in(&project, &["init", "-q"]);
-    commit_in(&project, "one");
+    repository(&project);
     let env = crate::env_table::ChildEnv::default();
     let added = add(&project, "quiet-fox", &project, &env).unwrap();
     (project, added)
 }
 
 fn branches(project: &Path) -> String {
-    git_in(project, &["branch", "--format=%(refname:short)"])
+    git(project, &["branch", "--format=%(refname:short)"])
 }
 
 #[test]
@@ -217,7 +160,7 @@ fn retire_removes_a_clean_worktree_and_a_branch_with_no_unique_commits() {
 fn retire_keeps_a_branch_holding_a_unique_commit() {
     let (project, added) = project_with_worktree();
     let env = crate::env_table::ChildEnv::default();
-    commit_in(&added.path, "only here");
+    commit(&added.path, "only here");
 
     assert_eq!(
         retire(&project, "quiet-fox", &env),
@@ -249,8 +192,8 @@ fn retire_keeps_a_dirty_worktree_untouched() {
 fn restore_re_adds_from_the_kept_branch() {
     let (project, added) = project_with_worktree();
     let env = crate::env_table::ChildEnv::default();
-    commit_in(&added.path, "only here");
-    let tip = git_in(&added.path, &["rev-parse", "HEAD"]);
+    commit(&added.path, "only here");
+    let tip = git(&added.path, &["rev-parse", "HEAD"]);
     retire(&project, "quiet-fox", &env);
     assert!(!added.path.exists());
 
@@ -258,9 +201,9 @@ fn restore_re_adds_from_the_kept_branch() {
     assert_eq!(restored.path, added.path);
     assert_eq!(restored.branch, "efference/quiet-fox");
     assert_eq!(restored.base, tip);
-    assert_eq!(git_in(&restored.path, &["rev-parse", "HEAD"]), tip);
+    assert_eq!(git(&restored.path, &["rev-parse", "HEAD"]), tip);
     assert_eq!(
-        git_in(&restored.path, &["rev-parse", "--abbrev-ref", "HEAD"]),
+        git(&restored.path, &["rev-parse", "--abbrev-ref", "HEAD"]),
         "efference/quiet-fox"
     );
     std::fs::remove_dir_all(&project).unwrap();
@@ -270,7 +213,7 @@ fn restore_re_adds_from_the_kept_branch() {
 fn restore_starts_a_fresh_branch_when_the_branch_is_gone() {
     let (project, added) = project_with_worktree();
     let env = crate::env_table::ChildEnv::default();
-    let head = git_in(&project, &["rev-parse", "HEAD"]);
+    let head = git(&project, &["rev-parse", "HEAD"]);
     retire(&project, "quiet-fox", &env);
     assert!(!branches(&project).contains("efference/quiet-fox"));
 
@@ -278,7 +221,7 @@ fn restore_starts_a_fresh_branch_when_the_branch_is_gone() {
     assert_eq!(restored.path, added.path);
     assert_eq!(restored.base, head);
     assert_eq!(
-        git_in(&restored.path, &["rev-parse", "--abbrev-ref", "HEAD"]),
+        git(&restored.path, &["rev-parse", "--abbrev-ref", "HEAD"]),
         "efference/quiet-fox"
     );
     std::fs::remove_dir_all(&project).unwrap();

@@ -7,33 +7,6 @@ use super::*;
 use crate::log::{Payload, WorktreeEventKind};
 use serde_json::Value;
 
-fn git_in(dir: &Path, args: &[&str]) {
-    let mut cmd = std::process::Command::new("git");
-    cmd.args(args).current_dir(dir);
-    crate::worktree::unset_repository_env(&mut cmd);
-    let output = crate::spawn::std_output(&mut cmd).unwrap();
-    assert!(output.status.success(), "git {args:?}");
-}
-
-/// A repository at `roots.0` with one commit.
-fn repository(roots: &Roots) {
-    git_in(&roots.0, &["init", "-q"]);
-    git_in(
-        &roots.0,
-        &[
-            "-c",
-            "user.name=t",
-            "-c",
-            "user.email=t@t",
-            "commit",
-            "-q",
-            "--allow-empty",
-            "-m",
-            "one",
-        ],
-    );
-}
-
 /// Host a session named `id` whose working directory is a worktree it made.
 fn hosting_worktree(roots: &Roots, host: &Arc<Host>, id: &str) -> PathBuf {
     let env = crate::env_table::ChildEnv::default();
@@ -65,7 +38,7 @@ fn worktree_events(session: &Session) -> Vec<WorktreeEventKind> {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn deleting_a_session_removes_its_clean_worktree() {
     let roots = Roots::new();
-    repository(&roots);
+    crate::worktree::testing::repository(&roots.0);
     let host = Host::new(one_connection_registry(), baseline_env());
     let server = host_server(&host).await;
     let path = hosting_worktree(&roots, &host, "wt-fox");
@@ -99,7 +72,7 @@ async fn deleting_a_session_removes_its_clean_worktree() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn archiving_a_dirty_worktree_keeps_it() {
     let roots = Roots::new();
-    repository(&roots);
+    crate::worktree::testing::repository(&roots.0);
     let host = Host::new(one_connection_registry(), baseline_env());
     let server = host_server(&host).await;
     let path = hosting_worktree(&roots, &host, "wt-fox");
@@ -145,7 +118,7 @@ async fn a_session_without_a_worktree_answers_without_the_field() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_worktree_session_lists_under_its_project() {
     let roots = Roots::new();
-    repository(&roots);
+    crate::worktree::testing::repository(&roots.0);
     let host = Host::new(one_connection_registry(), baseline_env());
     let path = hosting_worktree(&roots, &host, "wt-lister");
 
