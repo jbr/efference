@@ -15,6 +15,7 @@
 //! recomputed on each one. A `Resumed` entry closes everything open before it: those
 //! requests and calls belonged to the previous host process, which is gone.
 
+use crate::log::Telemetry;
 use std::collections::HashMap;
 use std::sync::{Arc, Weak};
 
@@ -98,7 +99,7 @@ impl Operations {
     pub(crate) fn observe(&mut self, at: Timestamp, payload: &Payload) {
         let at = at.0;
         match payload {
-            Payload::RequestStage(stage) => self.observe_stage(at, stage),
+            Payload::Telemetry(Telemetry::RequestStage(stage)) => self.observe_stage(at, stage),
             Payload::Assistant { output, .. } => {
                 // A new completion means the previous batch is over, finished or not.
                 self.tools.clear();
@@ -122,7 +123,7 @@ impl Operations {
                     .collect();
             }
             Payload::User(_) => self.tools.clear(),
-            Payload::CallStarted { call_id } => {
+            Payload::Telemetry(Telemetry::CallStarted { call_id }) => {
                 if let Some(issued) = self.issued.get(call_id) {
                     self.tools.push(RunningTool {
                         call_id: call_id.clone(),
@@ -270,7 +271,7 @@ impl StageRecorder for SessionStages {
         // Telemetry: a failed write is reported and dropped rather than failing the
         // request it describes, as for process events.
         let turn = session.latest_turn();
-        if let Err(e) = session.append(turn, Payload::RequestStage(stage)) {
+        if let Err(e) = session.append(turn, Payload::Telemetry(Telemetry::RequestStage(stage))) {
             eprintln!("[request stage: append failed: {e}]");
         }
     }

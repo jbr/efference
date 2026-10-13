@@ -1,6 +1,7 @@
 //! Tests for `operations.rs`: the fold behind `current_operations`.
 
 use super::*;
+use crate::log::Telemetry;
 use crate::log::{AssistantOutput, ContentBlock, RawResult, Resumed, ToolCall, WireState};
 use crate::persist::Log;
 
@@ -16,7 +17,9 @@ fn entry(seq: u64, at: u64, payload: Payload) -> LogEntry {
 }
 
 fn stage(request: u64, origin: RequestOrigin, stage: RequestStageKind) -> Payload {
-    Payload::RequestStage(RequestStage::new(request, origin, stage))
+    Payload::Telemetry(Telemetry::RequestStage(RequestStage::new(
+        request, origin, stage,
+    )))
 }
 
 fn assistant_calling(call: ToolCall) -> Payload {
@@ -141,9 +144,9 @@ fn a_resumed_entry_closes_everything_before_it() {
         ),
         (
             30,
-            Payload::CallStarted {
+            Payload::Telemetry(Telemetry::CallStarted {
                 call_id: "t1".into(),
-            },
+            }),
         ),
         (40, resumed()),
     ]);
@@ -168,9 +171,9 @@ fn a_started_call_is_running_until_its_result() {
         (10, assistant_calling(call)),
         (
             20,
-            Payload::CallStarted {
+            Payload::Telemetry(Telemetry::CallStarted {
                 call_id: "t1".into(),
-            },
+            }),
         ),
     ];
     let ops = fold(started.clone());
@@ -198,9 +201,9 @@ fn only_a_bash_call_carries_its_command() {
         ),
         (
             20,
-            Payload::CallStarted {
+            Payload::Telemetry(Telemetry::CallStarted {
                 call_id: "t1".into(),
-            },
+            }),
         ),
     ]);
     assert!(ops.json()["tools"][0].get("command").is_none());
@@ -226,9 +229,9 @@ fn a_user_entry_clears_running_calls() {
         ),
         (
             20,
-            Payload::CallStarted {
+            Payload::Telemetry(Telemetry::CallStarted {
                 call_id: "t1".into(),
-            },
+            }),
         ),
         (30, Payload::User(vec![ContentBlock::Text("stop".into())])),
     ]);
@@ -260,7 +263,7 @@ fn the_session_view_follows_appends() {
     let logged = session.snapshot();
     assert!(matches!(
         &logged.last().unwrap().payload,
-        Payload::RequestStage(s) if s.request == a
+        Payload::Telemetry(Telemetry::RequestStage(s)) if s.request == a
     ));
 
     sink.record(RequestStage::new(

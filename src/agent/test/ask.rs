@@ -1,6 +1,7 @@
 //! Tests for the loop-owned `ask` (docs/supervisor.md): blocking, resolution by a
 //! submitted turn, recall of the turns queued before it, and the interrupt.
 use super::*;
+use crate::log::Telemetry;
 
 use crate::frontend::SubmittedTurn;
 
@@ -290,7 +291,7 @@ async fn run_call_skips_the_cascade_and_carries_the_reply() {
         !shared
             .snapshot()
             .iter()
-            .any(|e| matches!(e.payload, Payload::CallStarted { .. })),
+            .any(|e| matches!(e.payload, Payload::Telemetry(Telemetry::CallStarted { .. }))),
         "an ask is never marked started"
     );
 }

@@ -4,12 +4,12 @@
 //! A **moment** is one firing of a gate, an `ask`, or a settle. Every entry about
 //! it carries the same `moment` number (unique within the session), so the log
 //! reads as a short story: decided, then escalated or cancelled, then the
-//! per-device delivery. None of it reaches the wire: [`Payload::Push`] projects to
-//! nothing, like [`Payload::RequestStage`], and the entry's own `at` is the
+//! per-device delivery. None of it reaches the wire: [`Telemetry::Push`] projects to
+//! nothing, like [`Telemetry::RequestStage`], and the entry's own `at` is the
 //! time of each step.
 //!
-//! [`Payload::Push`]: crate::log::Payload::Push
-//! [`Payload::RequestStage`]: crate::log::Payload::RequestStage
+//! [`Telemetry::Push`]: crate::log::Telemetry::Push
+//! [`Telemetry::RequestStage`]: crate::log::Telemetry::RequestStage
 
 use serde::{Deserialize, Serialize};
 

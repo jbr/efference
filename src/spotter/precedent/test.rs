@@ -1,4 +1,5 @@
 use super::*;
+use crate::log::Telemetry;
 use crate::log::{AssistantOutput, Origin, Spot, Timestamp, ToolOutcome, ToolTelemetry};
 use serde_json::json;
 
@@ -25,7 +26,7 @@ fn call(id: &str, command: &str) -> ToolCall {
 }
 
 fn ran(id: &str) -> LogEntry {
-    entry(Payload::ToolTelemetry(ToolTelemetry {
+    entry(Payload::Telemetry(Telemetry::Tool(ToolTelemetry {
         call_id: id.into(),
         tool: "bash".into(),
         duration_ms: 1,
@@ -34,7 +35,7 @@ fn ran(id: &str) -> LogEntry {
         images: 0,
         bash: None,
         edit: None,
-    }))
+    })))
 }
 
 fn spot(id: &str, stance: Stance) -> LogEntry {

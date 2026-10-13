@@ -10,6 +10,7 @@
 //! back past the whole completion. Any other unfinished completion is a **pending batch**:
 //! its undecided calls have not run, and the session resumes at it.
 
+use crate::log::Telemetry;
 use crate::log::{CallId, LogEntry, Payload, Seq, Stance, ToolCall, Turn, WireState};
 use crate::project::skipped_seqs;
 
@@ -72,7 +73,7 @@ pub struct Resumption {
 fn has_markers(entries: &[LogEntry]) -> bool {
     entries
         .iter()
-        .any(|e| matches!(e.payload, Payload::CallStarted { .. }))
+        .any(|e| matches!(e.payload, Payload::Telemetry(Telemetry::CallStarted { .. })))
 }
 
 /// The index in `live` of the last completion that is live and not record-only.
@@ -131,7 +132,7 @@ fn classify(
                 None => {
                     let never_started = if markers {
                         !after().any(|entry| {
-                            matches!(&entry.payload, Payload::CallStarted { call_id } if *call_id == call.id)
+                            matches!(&entry.payload, Payload::Telemetry(Telemetry::CallStarted { call_id }) if *call_id == call.id)
                         })
                     } else {
                         after().any(|entry| {

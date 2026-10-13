@@ -8,12 +8,12 @@
 //! sub-stages (thinking, text, a tool call) are not recorded; the ephemeral `output`
 //! class distinguishes them.
 //!
-//! None of this reaches the wire: [`Payload::RequestStage`] projects to nothing, like
-//! [`Payload::ToolTelemetry`], and the entry's own `at` is the stage's time, so no
+//! None of this reaches the wire: [`Telemetry::RequestStage`] projects to nothing, like
+//! [`Telemetry::Tool`], and the entry's own `at` is the stage's time, so no
 //! clock reading is stored here.
 //!
-//! [`Payload::RequestStage`]: crate::log::Payload::RequestStage
-//! [`Payload::ToolTelemetry`]: crate::log::Payload::ToolTelemetry
+//! [`Telemetry::RequestStage`]: crate::log::Telemetry::RequestStage
+//! [`Telemetry::Tool`]: crate::log::Telemetry::Tool
 
 use serde::{Deserialize, Serialize};
 

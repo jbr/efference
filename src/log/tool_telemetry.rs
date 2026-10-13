@@ -3,7 +3,7 @@
 use super::*;
 
 /// What one tool call cost and how it came out (docs/tools.md), recorded per
-/// call as a [`Payload::ToolTelemetry`] entry.
+/// call as a [`Telemetry::Tool`] entry.
 ///
 /// It exists so that "did that edit apply or get refused" is a field rather than
 /// a grep over result prose. Prose written for a model is not a measurement

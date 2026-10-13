@@ -186,3 +186,23 @@ fn a_spot_carries_the_decision_axes_and_old_entries_still_read() {
     let back: Spot = serde_json::from_str(old).unwrap();
     assert_eq!(back.axes, None);
 }
+
+/// Telemetry nests under one key, `{"Telemetry": {"<Variant>": …}}` — the shape
+/// version 2 of the log format introduced (docs/log-and-projection.md). Changing it
+/// is a log-format change: every recorded log would stop reading.
+#[test]
+fn telemetry_nests_under_one_key() {
+    let payload = Payload::Telemetry(Telemetry::CallStarted {
+        call_id: "toolu_a".into(),
+    });
+    let json = serde_json::to_string(&payload).unwrap();
+    assert_eq!(
+        json,
+        r#"{"Telemetry":{"CallStarted":{"call_id":"toolu_a"}}}"#
+    );
+    let back: Payload = serde_json::from_str(&json).unwrap();
+    assert!(matches!(
+        back,
+        Payload::Telemetry(Telemetry::CallStarted { call_id }) if call_id == CallId::from("toolu_a")
+    ));
+}

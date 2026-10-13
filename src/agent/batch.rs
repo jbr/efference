@@ -2,6 +2,7 @@
 //! cascade and the tool run in call order, and the outcomes are held for the gate.
 
 use super::*;
+use crate::log::Telemetry;
 
 /// What running a completion's calls left behind: the outcomes in call order, and whether
 /// the turn was aborted or redirected along the way.
@@ -188,7 +189,7 @@ async fn run_calls<F: Frontend, S: Spotter>(
                 // rather than after the verdict cannot move the wire, and no reader
                 // reads it as a verdict: it is a measurement of the call, not a
                 // decision about its output.
-                shared.append(turn, Payload::ToolTelemetry(*telemetry))?;
+                shared.append(turn, Payload::Telemetry(Telemetry::Tool(*telemetry)))?;
                 steps.push(Step::Ran {
                     call: call.clone(),
                     result_seq,

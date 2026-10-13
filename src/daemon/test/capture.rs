@@ -8,6 +8,7 @@ use super::upstream_hold::{Answer, end_turn, recording, tool_call, wait_until};
 use super::*;
 use crate::daemon::SessionRuntime;
 use crate::frontend::SubmittedTurn;
+use crate::log::Telemetry;
 use crate::log::{AssistantOutput, ContentBlock, Distilled, Keep, RawResult, WireState};
 use std::collections::BTreeMap;
 use std::net::SocketAddr;
@@ -234,7 +235,7 @@ async fn a_completed_batch_projects_the_wire_a_directly_logged_one_would() {
         };
         let started = log[..*seq as usize]
             .iter()
-            .any(|e| matches!(&e.payload, Payload::CallStarted { call_id: id } if id == call_id));
+            .any(|e| matches!(&e.payload, Payload::Telemetry(Telemetry::CallStarted { call_id: id }) if id == call_id));
         assert!(
             started,
             "the call behind the result at {seq} was marked started first"

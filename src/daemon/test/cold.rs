@@ -3,6 +3,7 @@
 use super::*;
 use crate::daemon::cold::ParkReason;
 use crate::log::Mark;
+use crate::log::Telemetry;
 
 /// A session whose cache is already believed cold: a zero lifetime and one turn on
 /// the record, a moment ago.
@@ -212,7 +213,7 @@ fn cold_records(shared: &Session) -> Vec<crate::log::ColdEvent> {
         .entries()
         .iter()
         .filter_map(|e| match &e.payload {
-            Payload::Cold(event) => Some(event.clone()),
+            Payload::Telemetry(Telemetry::Cold(event)) => Some(event.clone()),
             _ => None,
         })
         .collect()

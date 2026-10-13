@@ -7,6 +7,7 @@ use super::*;
 use crate::daemon::attention::{Attention, AttentionReport};
 use crate::frontend::Approval;
 use crate::log::MomentKind;
+use crate::log::Telemetry;
 use crate::log::{CallId, ToolCall};
 use crate::persist::Log;
 
@@ -166,7 +167,7 @@ fn records(shared: &Session) -> Vec<PushRecord> {
         .entries()
         .iter()
         .filter_map(|e| match &e.payload {
-            Payload::Push(record) => Some(record.clone()),
+            Payload::Telemetry(Telemetry::Push(record)) => Some(record.clone()),
             _ => None,
         })
         .collect()

@@ -1,4 +1,5 @@
 use super::*;
+use crate::log::Telemetry;
 
 use crate::log::CallId;
 use serde_json::json;
@@ -169,11 +170,14 @@ fn telemetry_serializes_without_its_absent_halves() {
         false,
         None,
     );
-    let line = serde_json::to_string(&crate::log::Payload::ToolTelemetry(t)).unwrap();
+    let line = serde_json::to_string(&crate::log::Payload::Telemetry(Telemetry::Tool(t))).unwrap();
     assert!(!line.contains("bash"), "{line}");
     assert!(!line.contains("edit"), "{line}");
     assert!(!line.contains("images"), "{line}");
     assert!(line.contains(r#""outcome":"applied""#), "{line}");
     let back: crate::log::Payload = serde_json::from_str(&line).unwrap();
-    assert!(matches!(back, crate::log::Payload::ToolTelemetry(_)));
+    assert!(matches!(
+        back,
+        crate::log::Payload::Telemetry(Telemetry::Tool(_))
+    ));
 }

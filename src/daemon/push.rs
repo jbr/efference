@@ -8,6 +8,7 @@
 //! than anything the session notices.
 
 use super::*;
+use crate::log::Telemetry;
 use crate::log::{
     DeviceDelivery, LogEntry, MomentKind, Payload, PushCancel, PushEvent, PushRecord,
 };
@@ -83,7 +84,7 @@ impl Session {
     /// ([`Session::cancel_escalation`]) — a push that fires is one nobody
     /// attended to. The decision lives here rather than at the call sites, so a
     /// gate, an `ask`, and a settle escalate identically. Each step is appended
-    /// to the log as a [`Payload::Push`].
+    /// to the log as a [`Telemetry::Push`].
     pub(super) fn push(&self, kind: MomentKind, body: String) {
         let moment = self.pushes.next.fetch_add(1, Ordering::Relaxed);
         let mut message = crate::push::Message::new(self.push_title(kind.title()), body);
@@ -110,7 +111,7 @@ impl Session {
             kind,
             event,
         };
-        if let Err(e) = self.append(turn, Payload::Push(record)) {
+        if let Err(e) = self.append(turn, Payload::Telemetry(Telemetry::Push(record))) {
             eprintln!("[push record: append failed: {e}]");
         }
     }

@@ -225,14 +225,9 @@ fn lines(
             }
             vec![line("spot", body)]
         }
-        // Request stages (docs/log-and-projection.md) are telemetry for the
-        // `current_operations` topic, not something the session said or did.
-        Payload::ToolTelemetry(_)
-        | Payload::CallStarted { .. }
-        | Payload::RequestStage(_)
-        | Payload::Push(_)
-        | Payload::Cold(_)
-        | Payload::Worktree(_) => {
+        // Telemetry (docs/log-and-projection.md) is how the session ran, not
+        // something it said or did.
+        Payload::Telemetry(_) | Payload::Worktree(_) => {
             vec![]
         }
         Payload::ImagesRefused { refusal } => vec![line(

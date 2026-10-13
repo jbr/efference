@@ -15,11 +15,11 @@
 //! mint so the two read the same way.
 //!
 //! None of this reaches the wire — a [`Payload::ProcessEvent`] projects to
-//! nothing, like [`Payload::ToolTelemetry`] (docs/log-and-projection.md) — so the
+//! nothing, like [`Telemetry::Tool`] (docs/log-and-projection.md) — so the
 //! shape here cannot move the cached prefix.
 //!
 //! [`Payload::ProcessEvent`]: crate::log::Payload::ProcessEvent
-//! [`Payload::ToolTelemetry`]: crate::log::Payload::ToolTelemetry
+//! [`Telemetry::Tool`]: crate::log::Telemetry::Tool
 
 use serde::{Deserialize, Serialize};
 

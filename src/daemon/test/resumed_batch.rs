@@ -8,6 +8,7 @@ use super::upstream_hold::{Answer, end_turn, recording, wait_until};
 use super::*;
 use crate::daemon::SessionRuntime;
 use crate::frontend::{Approval, SubmittedTurn};
+use crate::log::Telemetry;
 use crate::log::{AssistantOutput, CallId, RawResult, Resumed, Spot, Stance, WireState};
 use crate::project::{ApiBlock, Role};
 use crate::spotter::StaticSpotter;
@@ -52,8 +53,11 @@ fn stopped_log(calls: Vec<ToolCall>, pending: &[&str], extra: impl FnOnce(&mut L
 }
 
 fn captured(log: &mut Log, id: &str, output: &str) -> u64 {
-    log.append(1, Payload::CallStarted { call_id: id.into() })
-        .unwrap();
+    log.append(
+        1,
+        Payload::Telemetry(Telemetry::CallStarted { call_id: id.into() }),
+    )
+    .unwrap();
     log.append(
         1,
         Payload::tool_result(id, RawResult::text(output), WireState::Pending),
@@ -232,7 +236,7 @@ async fn a_captured_result_is_triaged_without_running_again() {
     assert_eq!(results_of(&log, "c1"), 1);
     assert_eq!(
         log.iter()
-            .filter(|e| matches!(e.payload, Payload::CallStarted { .. }))
+            .filter(|e| matches!(e.payload, Payload::Telemetry(Telemetry::CallStarted { .. })))
             .count(),
         1,
         "the call was not dispatched again"

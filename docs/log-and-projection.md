@@ -42,27 +42,43 @@ enum Payload {
     Assistant { output: AssistantOutput, upstream_failure: Option<UpstreamFailureRecord> },
     ToolResult { call_id: CallId, raw: RawResult, wire: WireState },
     ResultVerdict { for_result: Seq, wire: WireState },  // the final wire for a `Pending` result (see redaction-fork.md)
-    CallStarted { call_id: CallId },  // a call's dispatch is about to reach the world — never projected
     Resumed(Resumed),  // the session was reopened by a later host process — projects a restart notice
     Mark(Mark),        // a salience annotation
     Ambient(Notification),  // an out-of-band notification (see inbox.md)
     Triage(Triage),    // a fork verdict — the audit record (see redaction-fork.md)
     Spot(Spot),        // a spotter permission verdict — audit only (see permissions.md)
-    ToolTelemetry(ToolTelemetry),  // what one call cost and how it came out (see tools.md)
+    Telemetry(Telemetry),  // how the session ran, not what it said — never projected (below)
     ProcessEvent(ProcessEvent),    // a background process's mint or exit (see supervisor.md)
     ConfigEdit(ConfigEdit),  // one durable policy change — folded by the classifier (see permissions.md)
     Preamble { system: String, context: Resolved, inference: Option<LoggedInference> },  // boot record — replay/audit only (see context.md)
     Title(Title),      // the session's one-line title — presentation only, never projected (see session-title.md)
-    RequestStage(RequestStage),  // one stage of one upstream request — telemetry, never projected
-    Cold(ColdEvent),  // one step of the cold check (parked, released, unparked) — never projected (see control-api.md)
     Worktree(WorktreeEvent),  // the session's git worktree added, restored, removed, or kept — never projected (see worktrees.md)
-    Push(PushRecord),  // one step of a moment's push (decided, held, escalated, cancelled, delivered) — never projected (see web-push.md)
     ImagesRefused { refusal: String },  // the endpoint refused images; the client withholds them from here — never projected (see transport.md)
     // Anticipated, not yet built: a frozen cache-breakpoint boundary (`Commit`)
     // for compaction. Kept here as a forward marker — types land ahead of the
     // feature that constructs them — not present in the code today.
 }
 ```
+
+```rust
+enum Telemetry {
+    Tool(ToolTelemetry),               // what one call cost and how it came out (see tools.md)
+    CallStarted { call_id: CallId },   // a call's dispatch is about to reach the world
+    RequestStage(RequestStage),        // one stage of one upstream request
+    Push(PushRecord),                  // one step of a moment's push (see web-push.md)
+    Cold(ColdEvent),                   // one step of the cold check (see control-api.md)
+}
+```
+
+A telemetry entry serializes as `{"Telemetry": {"<Variant>": …}}`, and its log frame's
+`kind` is `telemetry.<variant>` (`telemetry.tool`, `telemetry.cold`, …), so no frame kind
+shares a name with a state topic. The family is the payloads every reader that renders a
+session skips: the wire projection, the agent and TUI transcripts, and the web tree each
+have one `Telemetry(_)` arm, so a new event of this kind is one variant. A reader that uses
+a variant's contents matches it by name — the `[env]` masker (a failed request's reason),
+the `current_operations` fold, the web client attaching `Tool` to its call. Payloads that
+project to nothing but are rendered somewhere (`ProcessEvent`, `Worktree`, `Title`,
+`ImagesRefused`) stay top-level.
 
 `Commit` is a placeholder: when compaction needs an explicit freeze primitive
 it slots in here without touching any other type.
@@ -92,14 +108,14 @@ with a seq after `resumes_after` and before the `Resumed` entry are skipped by
 `project_semantic` (`skipped_seqs`); a log with no such range projects exactly as
 before. Each `Resumed` entry skips its own range.
 
-`ToolTelemetry` and `ProcessEvent` are log metadata in the same sense timestamps
+`Telemetry` and `ProcessEvent` are log metadata in the same sense timestamps
 are: both project to nothing, which is what lets them be appended mid-session —
 on every tool call, and at every background spawn and exit — without moving the
 cached prefix. `ProcessEvent` is the durable answer to "what was `p#3`" for a
 reader with no daemon ([supervisor.md](supervisor.md)); metadata only, since a
 process's output belongs to the registry's bounded best-effort capture.
 
-These payloads are the log's telemetry: events the session went through that the model
+These payloads are events the session went through that the model
 never reads. They are timestamped by the entry's `at`, replayed by `GET /log` and
 `/events` like any entry, skipped by the transcripts, and excluded from `project`, so
 appending one mid-session leaves the cached prefix byte-identical (each has a test
@@ -409,7 +425,7 @@ one.
 ### The header
 
 ```rust
-{"format":"efference-session-log","version":1,"metadata":{…}}
+{"format":"efference-session-log","version":2,"metadata":{…}}
 ```
 
 The header is one JSON object and nothing else. It is **not** a `LogEntry`: it
@@ -428,13 +444,13 @@ so a newer file's incompatible metadata reports as the unsupported version it
 is rather than as a field this build happens not to know. There is no
 importer for an unheadered log and no serializer kept for an old shape.
 
-Only version 1 exists. An incompatible change to the entries, including a change of
-meaning that leaves their shape intact, increments the version and comes with an
-explicit forward transformation: an older file is converted once before writable use,
-validated whole, written beside the original and atomically swapped in. Mixed versions
-are never appended to one file. Read-only inspection and the inventory never rewrite a
-file. A log from before the header is converted outside the harness (the 2026-10-02
-corpus migration, journal/2026-10-02-resumption-foundation-and-corpus-migration.md).
+The reader accepts exactly one version, the current one: 2, which nested the telemetry
+payloads under `Telemetry`. An incompatible change to the entries, including a change of
+meaning that leaves their shape intact, increments the version. Before launch there is no
+in-harness migration: the existing logs are converted once, outside the harness, with the
+host stopped — the 1→2 pass is `scripts/migrate-log-v2.py`; the unheadered→1 pass was the
+2026-10-02 corpus migration (journal/2026-10-02-resumption-foundation-and-corpus-migration.md)
+— and a file a pass missed is refused as the unsupported version it is.
 
 There is no hash chain over the entries. A chain stored in the file doesn't stop an
 editor from recomputing it or truncating the file, and every migration would have to

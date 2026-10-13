@@ -1,6 +1,7 @@
 use super::super::test::{PREPARING, Root, codex_registry, drop_boot, request, scratch_dirs};
 use super::*;
 use crate::boot::{BASE_DIR, prepare};
+use crate::log::Telemetry;
 use crate::log::{
     AssistantOutput, CallId, ContentBlock, ExitOutcome, ProcessEvent, ProcessEventKind,
     ProcessExit, ProcessSpawn, RawResult, Title, TitleAuthor, ToolCall, WireState,
@@ -244,9 +245,9 @@ async fn a_started_call_rolls_back_once() {
         log.append(1, call_assistant("call_2")).unwrap();
         log.append(
             1,
-            Payload::CallStarted {
+            Payload::Telemetry(Telemetry::CallStarted {
                 call_id: "call_2".into(),
-            },
+            }),
         )
         .unwrap();
     })
@@ -344,7 +345,7 @@ fn calls_assistant(ids: &[&str]) -> Payload {
 }
 
 fn started(id: &str) -> Payload {
-    Payload::CallStarted { call_id: id.into() }
+    Payload::Telemetry(Telemetry::CallStarted { call_id: id.into() })
 }
 
 fn gate_spot(id: &str) -> Payload {

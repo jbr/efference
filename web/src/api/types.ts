@@ -89,10 +89,8 @@ export type Payload =
   | { Ambient: Notification }
   | { Spot: Spot }
   | { ConfigEdit: ConfigEdit }
-  | { ToolTelemetry: ToolTelemetry }
+  | { Telemetry: Telemetry }
   | { ProcessEvent: ProcessEvent }
-  | { RequestStage: RequestStage }
-  | { Cold: ColdEvent }
   | { Preamble: { system: string; context: unknown } }
   | { Title: Title }
   | { Resumed: Resumed }
@@ -115,6 +113,15 @@ export type ColdEvent =
 
 /** One stage of one upstream request (docs/log-and-projection.md). Telemetry:
  * the transcript does not draw it; the `current_operations` topic folds it. */
+/** How the session ran rather than what it said (docs/log-and-projection.md):
+ * projects to nothing, and the transcript renders none of it. */
+export type Telemetry =
+  | { Tool: ToolTelemetry }
+  | { CallStarted: { call_id: string } }
+  | { RequestStage: RequestStage }
+  | { Push: unknown }
+  | { Cold: ColdEvent };
+
 export interface RequestStage {
   request: number;
   origin: RequestOrigin;

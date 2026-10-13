@@ -7,6 +7,7 @@
 //! mechanism, and every downstream surface (the wire, the jsonl, the TUI, the
 //! `control transcript` and `entries` reads) reads an already-filtered record.
 
+use crate::log::Telemetry;
 use std::borrow::Cow;
 use std::collections::BTreeSet;
 use std::sync::RwLock;
@@ -372,11 +373,12 @@ impl Masker {
             // token, and the call's own `operation` argument — every one of them
             // a value the tool table or the harness produced, not a value from
             // the environment. Nothing to mask (docs/env.md).
-            Payload::ToolTelemetry(_) | Payload::CallStarted { .. } => {}
+            Payload::Telemetry(Telemetry::Tool(_))
+            | Payload::Telemetry(Telemetry::CallStarted { .. }) => {}
             // A request stage (docs/log-and-projection.md) is an id, an origin, a
             // status, and — on a failure — the provider's own error text, which
             // can quote what the request carried.
-            Payload::RequestStage(stage) => {
+            Payload::Telemetry(Telemetry::RequestStage(stage)) => {
                 if let crate::log::RequestStageKind::Failed { reason } = &mut stage.stage {
                     self.mask_in_place(reason);
                 }
@@ -384,10 +386,10 @@ impl Masker {
             // A push record (docs/web-push.md) is a moment number, a kind, client
             // ids, and per-device answers whose free text has the endpoint
             // replaced before it is logged. Nothing from the environment.
-            Payload::Push(_) => {}
+            Payload::Telemetry(Telemetry::Push(_)) => {}
             // A cold-check record: a reason, instants, a token count, and a gesture
             // name. Nothing from the environment.
-            Payload::Cold(_) => {}
+            Payload::Telemetry(Telemetry::Cold(_)) => {}
             // Git's output, including whatever the project's `post-checkout` hook
             // printed, and its error and status text: free text that may quote the
             // environment.

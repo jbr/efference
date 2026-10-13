@@ -373,16 +373,13 @@ pub fn project_semantic_for(log: &[LogEntry], reader: Reader) -> Vec<WireTurn> {
             // A spotter verdict (docs/permissions.md) is audit-only — the permission
             // decision lives in the log, never on the canonical wire.
             Payload::Spot(_) => {}
-            // Per-call tool telemetry (docs/tools.md) is log metadata in the same
-            // sense timestamps are: it measures a call the wire already carries,
-            // and adds nothing the model reads. It projects to nothing, which is
-            // what lets it be appended on every call without moving the cached
-            // prefix (docs/log-and-projection.md).
-            Payload::ToolTelemetry(_) => {}
+            // Telemetry is log metadata in the same sense timestamps are: it
+            // measures or marks what the wire already carries, and adds nothing the
+            // model reads. It projects to nothing, which is what lets it be appended
+            // at every call and request stage without moving the cached prefix
+            // (docs/log-and-projection.md).
+            Payload::Telemetry(_) => {}
             Payload::ResultVerdict { .. } => {}
-            // A dispatch marker is for a resumed session's loader, not the model:
-            // the call and its result already carry everything the wire says.
-            Payload::CallStarted { .. } => {}
             // The restart notice (docs/log-and-projection.md): one harness text block at
             // the entry's own position, so it appends to the wire like any later turn.
             Payload::Resumed(resumed) if !resumed.pending_calls.is_empty() => {
@@ -404,10 +401,6 @@ pub fn project_semantic_for(log: &[LogEntry], reader: Reader) -> Vec<WireTurn> {
             // spawn or an exit mid-session cannot move the cached prefix
             // (docs/log-and-projection.md).
             Payload::ProcessEvent(_) => {}
-            // A request stage (docs/log-and-projection.md) is telemetry, like a
-            // tool's: it projects to nothing, so it can be appended at every stage
-            // of every request without moving the cached prefix.
-            Payload::RequestStage(_) | Payload::Push(_) | Payload::Cold(_) => {}
             // The worktree's creation record (docs/control-channel.md) is audit only.
             Payload::Worktree(_) => {}
             // The client withholds images in its encoding (docs/transport.md);

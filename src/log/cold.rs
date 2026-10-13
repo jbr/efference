@@ -2,11 +2,11 @@
 //! the loop parked because the cache is believed expired, when a person's action
 //! released it and which one, and when the park ended.
 //!
-//! None of it reaches the wire: [`Payload::Cold`] projects to nothing, like
-//! [`Payload::Push`], and the entry's own `at` is the time of each step.
+//! None of it reaches the wire: [`Telemetry::Cold`] projects to nothing, like
+//! [`Telemetry::Push`], and the entry's own `at` is the time of each step.
 //!
-//! [`Payload::Cold`]: crate::log::Payload::Cold
-//! [`Payload::Push`]: crate::log::Payload::Push
+//! [`Telemetry::Cold`]: crate::log::Telemetry::Cold
+//! [`Telemetry::Push`]: crate::log::Telemetry::Push
 
 use serde::{Deserialize, Serialize};
 

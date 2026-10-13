@@ -1,5 +1,6 @@
 use super::*;
 use crate::context::Item;
+use crate::log::Telemetry;
 use crate::log::{
     AssistantOutput, CallId, ContentBlock, Disposition, Distilled, Keep, LogEntry, Mark,
     Notification, Origin, Payload, RawResult, Timestamp, ToolCall, Triage, WireState,
@@ -602,7 +603,7 @@ fn tool_telemetry_projects_to_identical_bytes() {
             entry(
                 99,
                 1,
-                Payload::ToolTelemetry(ToolTelemetry {
+                Payload::Telemetry(Telemetry::Tool(ToolTelemetry {
                     call_id: CallId("toolu_1".into()),
                     tool: "bash".into(),
                     duration_ms: 1234,
@@ -619,7 +620,7 @@ fn tool_telemetry_projects_to_identical_bytes() {
                         anchor_bytes: Some(40),
                         content_bytes: Some(900),
                     }),
-                }),
+                })),
             ),
         );
         assert_eq!(
@@ -696,7 +697,11 @@ fn request_stages_project_to_identical_bytes() {
                 entry(
                     90 + i as u64,
                     1,
-                    Payload::RequestStage(RequestStage::new(7, RequestOrigin::Turn, stage)),
+                    Payload::Telemetry(Telemetry::RequestStage(RequestStage::new(
+                        7,
+                        RequestOrigin::Turn,
+                        stage,
+                    ))),
                 ),
             );
         }
@@ -748,11 +753,11 @@ fn push_records_project_to_identical_bytes() {
                 entry(
                     90 + i as u64,
                     1,
-                    Payload::Push(PushRecord {
+                    Payload::Telemetry(Telemetry::Push(PushRecord {
                         moment: 1,
                         kind: MomentKind::Gate,
                         event,
-                    }),
+                    })),
                 ),
             );
         }
@@ -792,7 +797,10 @@ fn cold_records_project_to_identical_bytes() {
     for at in [0, 1, 2, 3] {
         let mut with = sample_log();
         for (i, event) in events.iter().cloned().enumerate() {
-            with.insert(at, entry(90 + i as u64, 1, Payload::Cold(event)));
+            with.insert(
+                at,
+                entry(90 + i as u64, 1, Payload::Telemetry(Telemetry::Cold(event))),
+            );
         }
         assert_eq!(
             without,

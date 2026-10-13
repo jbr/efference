@@ -387,11 +387,10 @@ pub(crate) fn entry_nodes(
             // A grant (docs/permissions.md) — audit-only on the transcript, so it
             // draws nothing here.
             Payload::ConfigEdit(_) => {}
-            // Per-call telemetry (docs/tools.md) is a measurement of the call
-            // beside it, for offline analysis — it says nothing the transcript
-            // reader does not already see, so it draws nothing.
-            Payload::ToolTelemetry(_) => {}
-            Payload::CallStarted { .. } => {}
+            // Telemetry (docs/log-and-projection.md) — per-call measurements,
+            // request stages, push and cold-check steps — reaches the reader through
+            // the state topics it feeds, if at all; it draws nothing here.
+            Payload::Telemetry(_) => {}
             Payload::Resumed(resumed) => {
                 // `render_resumed` is the wire notice and carries its own leading
                 // `⟢`, so the annotation marker is empty here — supplying one
@@ -407,10 +406,6 @@ pub(crate) fn entry_nodes(
             // result, the exit notification), kept for readers with no daemon.
             // It draws nothing here.
             Payload::ProcessEvent(_) => {}
-            // Request stages (docs/log-and-projection.md) feed the header's
-            // operation text through the `current_operations` topic; they draw
-            // nothing in the transcript.
-            Payload::RequestStage(_) | Payload::Push(_) | Payload::Cold(_) => {}
             // A session's worktree life (docs/worktrees.md): one muted notice line
             // per event, the shape a `Resumed` entry uses. The entry carries no
             // wire block, so it draws only here.

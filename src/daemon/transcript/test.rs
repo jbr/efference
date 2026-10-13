@@ -1,4 +1,5 @@
 use super::*;
+use crate::log::Telemetry;
 use crate::log::{
     AssistantOutput, ConfigEdit, ContentBlock, Disposition, Distilled, Keep, Notification, Origin,
     Timestamp, ToolTelemetry, Triage,
@@ -152,7 +153,7 @@ fn silent_entries_render_to_nothing_and_verdicts_on_the_inbox_do_not() {
         entry(1, Payload::Triage(quiet)),
         entry(
             2,
-            Payload::ToolTelemetry(ToolTelemetry {
+            Payload::Telemetry(Telemetry::Tool(ToolTelemetry {
                 call_id: "toolu_1".into(),
                 tool: "read".into(),
                 duration_ms: 1,
@@ -161,7 +162,7 @@ fn silent_entries_render_to_nothing_and_verdicts_on_the_inbox_do_not() {
                 images: 0,
                 bash: None,
                 edit: None,
-            }),
+            })),
         ),
         entry(3, Payload::Triage(loud)),
         entry(

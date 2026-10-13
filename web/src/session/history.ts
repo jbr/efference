@@ -45,8 +45,8 @@ export async function coherentWindow(
           ? p.ToolResult.call_id
           : "Spot" in p
             ? p.Spot.call_id
-            : "ToolTelemetry" in p
-              ? p.ToolTelemetry.call_id
+            : "Telemetry" in p && "Tool" in p.Telemetry
+              ? p.Telemetry.Tool.call_id
               : null;
       if (id !== null && !calls.has(id)) missing.add(id);
       if ("ResultVerdict" in p)

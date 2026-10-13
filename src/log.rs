@@ -22,6 +22,7 @@ mod request;
 mod result;
 mod spot;
 pub mod stops;
+mod telemetry;
 mod tool_telemetry;
 mod triage;
 mod upstream;
@@ -46,6 +47,7 @@ pub use request::{RequestOrigin, RequestStage, RequestStageKind};
 pub use result::{ContentElision, RawResult, ResultImage};
 pub use spot::{Spot, Stance};
 pub use stops::Stop;
+pub use telemetry::Telemetry;
 pub use tool_telemetry::{BashTelemetry, EditTelemetry, ToolOutcome, ToolTelemetry};
 pub use triage::{Origin, Triage};
 pub use upstream::{
@@ -184,11 +186,10 @@ pub enum Payload {
     /// The final wire decision for a previously captured pending result.
     /// Raw output stays on the referenced entry (docs/redaction-fork.md).
     ResultVerdict { for_result: Seq, wire: WireState },
-    /// A call's dispatch is about to reach the world: appended after the permission
-    /// cascade clears it and before the tool runs (docs/log-and-projection.md). A call
-    /// with this and no result may have had side effects, which is the one state a
-    /// resumed session can't continue from. Projects to nothing.
-    CallStarted { call_id: CallId },
+    /// A fact about how the session ran rather than what it said (the
+    /// [`Telemetry`] family): projects to nothing, and every reader that renders a
+    /// session skips it (docs/log-and-projection.md).
+    Telemetry(Telemetry),
     /// The session was reopened from its log by a later host process
     /// (docs/log-and-projection.md). Projects the restart notice at its position: how
     /// long the session sat, which background processes it no longer supervises, and
@@ -221,23 +222,6 @@ pub enum Payload {
     /// only, never on the canonical wire. Fast-path clears are deliberately *not*
     /// logged; the spotter is the first permission rung that earns an entry.
     Spot(Spot),
-    /// Per-call tool telemetry (docs/tools.md) — how long one call took, how it
-    /// came out, and how big its result was, appended right after the
-    /// [`ToolResult`] it describes. Projects to nothing: it is log metadata in
-    /// the same sense timestamps are, so it can be added, grown, or read back
-    /// without touching the wire or the cached prefix
-    /// (docs/log-and-projection.md).
-    ///
-    /// A separate entry rather than a field on [`ToolResult`], which is the
-    /// shape [`Spot`] already uses for per-call audit: the pairing is by
-    /// `call_id`, the payload is written by a different concern than the result,
-    /// and [`ToolResult`] is constructed at dozens of sites (many of them a
-    /// harness stand-in with no run to measure) that would each have to name a
-    /// telemetry value they do not have.
-    ///
-    /// [`ToolResult`]: Payload::ToolResult
-    /// [`Spot`]: Payload::Spot
-    ToolTelemetry(ToolTelemetry),
     /// One lifecycle fact about a background process — its mint or its exit
     /// (docs/supervisor.md). The supervisor's registry is ephemeral, but a
     /// `p#<n>` handle appears in prose (the backgrounding result, the exit
@@ -247,11 +231,11 @@ pub enum Payload {
     /// status and duration. A process's *output* is the registry's bounded
     /// best-effort capture and is deliberately not recorded here.
     ///
-    /// Projects to nothing, like [`ToolTelemetry`] — the exit still reaches the
+    /// Projects to nothing, like [`Telemetry`] — the exit still reaches the
     /// model as an [`Ambient`] notification, and this is the audit record beside
     /// it, not a second copy on the wire (docs/log-and-projection.md).
     ///
-    /// [`ToolTelemetry`]: Payload::ToolTelemetry
+    /// [`Telemetry`]: Payload::Telemetry
     /// [`Ambient`]: Payload::Ambient
     ProcessEvent(ProcessEvent),
     /// A config edit — the durable record of one change to the policy table
@@ -301,32 +285,14 @@ pub enum Payload {
     /// or by an operator over the control channel; the latest entry is the current
     /// title, which the `session_identity` topic carries. Appended even when the
     /// peek kept the previous text, so the log records that the question was asked.
-    /// Log metadata: it projects to nothing, like [`ToolTelemetry`], and never
+    /// Log metadata: it projects to nothing, like [`Telemetry`], and never
     /// touches the wire or the cached prefix (docs/log-and-projection.md).
     ///
-    /// [`ToolTelemetry`]: Payload::ToolTelemetry
+    /// [`Telemetry`]: Payload::Telemetry
     Title(Title),
-    /// One stage of one upstream request — sent, an attempt that failed, first byte,
-    /// ended, failed (docs/log-and-projection.md). Telemetry for "what was it doing,
-    /// and since when" and the source of the `current_operations` topic
-    /// (docs/control-api.md). Projects to nothing, like [`ToolTelemetry`]; the entry's
-    /// `at` is the stage's time, never projected.
-    ///
-    /// [`ToolTelemetry`]: Payload::ToolTelemetry
-    RequestStage(RequestStage),
-    /// One step of a moment's push: decided, held, escalated, cancelled, or the
-    /// push services' answers (docs/web-push.md). Projects to nothing, like
-    /// [`RequestStage`]; the entry's `at` is the step's time.
-    Push(PushRecord),
-    /// One step of the cold check: the loop parked, a person released it, the park ended
-    /// (docs/control-api.md). Projects to nothing, like [`Push`]; the entry's `at` is the
-    /// step's time.
-    ///
-    /// [`Push`]: Payload::Push
-    Cold(ColdEvent),
     /// The session's own git worktree was created at boot: path, branch, base commit, and
     /// git's output and exit status, which carry the project's `post-checkout` hook's
-    /// result (docs/control-channel.md). Projects to nothing, like [`Cold`]; appended
+    /// result (docs/control-channel.md). Projects to nothing, like [`Telemetry`]; appended
     /// right after the boot [`Preamble`].
     ///
     /// [`Preamble`]: Payload::Preamble
@@ -335,10 +301,10 @@ pub enum Payload {
     /// them withheld succeeded (docs/transport.md). From here the session's requests
     /// carry a placeholder in each image's place and the tool layer refuses new
     /// images; a resumed session reads this entry back to restore both. `refusal`
-    /// is the provider's error. Projects to nothing, like [`Cold`]: the placeholder
+    /// is the provider's error. Projects to nothing, like [`Telemetry`]: the placeholder
     /// is the client's encoding, not this entry's projection.
     ///
-    /// [`Cold`]: Payload::Cold
+    /// [`Telemetry`]: Payload::Telemetry
     ImagesRefused { refusal: String },
 }
 

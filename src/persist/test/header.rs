@@ -19,7 +19,7 @@ fn the_header_is_line_one_and_takes_no_seq() {
     let first = lines.next().unwrap();
     let header: LogHeader = serde_json::from_str(first).expect("line 1 is a header");
     assert_eq!(header.format(), LogHeader::FORMAT);
-    assert_eq!(header.version(), 1);
+    assert_eq!(header.version(), LogHeader::VERSION);
     assert_eq!(
         lines.count(),
         3,
@@ -226,19 +226,19 @@ fn rejects_an_unknown_future_version() {
     std::fs::write(
         &path,
         format!(
-            "{{\"format\":\"{}\",\"version\":2,\"metadata\":null}}\n",
+            "{{\"format\":\"{}\",\"version\":3,\"metadata\":null}}\n",
             LogHeader::FORMAT
         ),
     )
     .unwrap();
 
     match load_error(&path) {
-        LoadError::UnsupportedVersion { version, .. } => assert_eq!(version, 2),
+        LoadError::UnsupportedVersion { version, .. } => assert_eq!(version, 3),
         other => panic!("expected an unsupported version, got {other:?}"),
     }
     let message = load_error(&path).to_string();
-    assert!(message.contains("unsupported log version 2"), "{message}");
-    assert!(message.contains("reads version 1"), "{message}");
+    assert!(message.contains("unsupported log version 3"), "{message}");
+    assert!(message.contains("reads version 2"), "{message}");
 
     std::fs::remove_file(&path).unwrap();
 }
@@ -306,7 +306,7 @@ fn rejects_unreadable_metadata() {
     std::fs::write(
         &path,
         format!(
-            "{{\"format\":\"{}\",\"version\":1,\"metadata\":{{\"id\":7}}}}\n",
+            "{{\"format\":\"{}\",\"version\":2,\"metadata\":{{\"id\":7}}}}\n",
             LogHeader::FORMAT
         ),
     )

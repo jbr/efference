@@ -7,6 +7,7 @@
 //! carry unanswered `tool_use` blocks and be rejected.
 
 use super::*;
+use crate::log::Telemetry;
 
 use crate::log::ToolTelemetry;
 
@@ -245,9 +246,9 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
             // result is the one a resumed session drops rather than reruns.
             shared.append(
                 turn,
-                Payload::CallStarted {
+                Payload::Telemetry(Telemetry::CallStarted {
                     call_id: call.id.clone(),
-                },
+                }),
             )?;
             // Approved, so a result the gate triages will follow short of an
             // interrupt — fire the primer over the execution window

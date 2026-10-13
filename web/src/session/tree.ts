@@ -283,9 +283,16 @@ export function buildTree(entries: LogEntry[]): TranscriptNode[] {
       continue;
     }
 
-    if ("ToolTelemetry" in p) {
-      const owner = byCall.get(p.ToolTelemetry.call_id);
-      if (owner !== undefined) owner.telemetry = p.ToolTelemetry;
+    // Telemetry (docs/log-and-projection.md) is how the session ran, not
+    // something it said or did: request stages, push and cold-check steps, and
+    // dispatch markers are trails behind the state topics. A tool's measurement
+    // is the one the client shows, on the call it names.
+    if ("Telemetry" in p) {
+      const t = p.Telemetry;
+      if ("Tool" in t) {
+        const owner = byCall.get(t.Tool.call_id);
+        if (owner !== undefined) owner.telemetry = t.Tool;
+      }
       continue;
     }
 
@@ -308,22 +315,6 @@ export function buildTree(entries: LogEntry[]): TranscriptNode[] {
     // was told before the operator said anything, and a new session whose only
     // entry it is should read as empty rather than as a collapsed block.
     if ("Preamble" in p) continue;
-
-    // A request stage (docs/log-and-projection.md) is telemetry behind the
-    // `current_operations` topic, not something the session said or did.
-    if ("RequestStage" in p) continue;
-
-    // A push record (docs/web-push.md) is the notification trail, not
-    // conversation.
-    if ("Push" in p) continue;
-
-    // A cold-check record (docs/control-api.md): the park, the person
-    // action that released it, the resume. The `park` topic is the live state; this is the trail.
-    if ("Cold" in p) continue;
-
-    // A dispatch marker (Payload::CallStarted) appended before tool dispatch;
-    // projects to nothing on the transcript.
-    if ("CallStarted" in p) continue;
 
     // A title entry is appended even when the peek kept the previous text
     // (docs/session-title.md); only a change is something to read.

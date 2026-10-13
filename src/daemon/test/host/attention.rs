@@ -4,6 +4,7 @@
 
 use super::*;
 use crate::log::MomentKind;
+use crate::log::Telemetry;
 
 fn body(client: &str, session: Option<&str>, active: bool) -> String {
     serde_json::json!({ "client": client, "session": session, "active": active }).to_string()
@@ -83,12 +84,12 @@ async fn only_an_active_report_viewing_the_session_cancels_its_escalation() {
     let seen = session.log.lock().unwrap().entries().iter().any(|e| {
         matches!(
             &e.payload,
-            crate::log::Payload::Push(crate::log::PushRecord {
+            crate::log::Payload::Telemetry(Telemetry::Push(crate::log::PushRecord {
                 event: crate::log::PushEvent::Cancelled {
                     cause: crate::log::PushCancel::Seen { client },
                 },
                 ..
-            }) if client == "c1"
+            })) if client == "c1"
         )
     });
     assert!(seen, "the sighting is recorded with the client");

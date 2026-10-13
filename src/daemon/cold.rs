@@ -8,6 +8,7 @@
 //! wakes the differ anyway.
 
 use super::*;
+use crate::log::Telemetry;
 use crate::log::{ColdEvent, ColdReason, ReleasedBy, Timestamp, UnparkCause};
 
 /// Why the loop is stopped at its cold check mid-turn (the `park` topic,
@@ -150,7 +151,7 @@ impl Session {
     /// write is reported and dropped: the record must not fail what it describes.
     fn record_cold(&self, event: ColdEvent) {
         let turn = self.latest_turn();
-        if let Err(e) = self.append(turn, Payload::Cold(event)) {
+        if let Err(e) = self.append(turn, Payload::Telemetry(Telemetry::Cold(event))) {
             eprintln!("[cold record: append failed: {e}]");
         }
     }

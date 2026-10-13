@@ -5,6 +5,7 @@
 //! calls; deciding whether one is the same action as the move is the model's job
 //! (`jev/relation.rs`).
 
+use crate::log::Telemetry;
 use std::collections::{HashMap, HashSet};
 
 use crate::log::{CallId, LogEntry, Payload, Stance, ToolCall};
@@ -22,7 +23,7 @@ pub fn consented(log: &[LogEntry]) -> Vec<ToolCall> {
     let mut judged: HashMap<&CallId, Stance> = HashMap::new();
     for entry in log {
         match &entry.payload {
-            Payload::ToolTelemetry(telemetry) => {
+            Payload::Telemetry(Telemetry::Tool(telemetry)) => {
                 ran.insert(&telemetry.call_id);
             }
             Payload::Spot(spot) => {

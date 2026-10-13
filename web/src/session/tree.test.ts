@@ -185,12 +185,14 @@ describe("the transcript tree", () => {
     const nodes = buildTree([
       assistant(1, { calls: [{ id: "toolu_a", name: "list" }] }),
       entry(2, {
-        ToolTelemetry: {
-          call_id: "toolu_a",
-          tool: "list",
-          duration_ms: 4,
-          outcome: "applied",
-          result_bytes: 279,
+        Telemetry: {
+          Tool: {
+            call_id: "toolu_a",
+            tool: "list",
+            duration_ms: 4,
+            outcome: "applied",
+            result_bytes: 279,
+          },
         },
       } as LogEntry["payload"]),
     ]);
@@ -239,13 +241,19 @@ describe("the transcript tree", () => {
 
   it("keeps request stages out of the transcript", () => {
     const nodes = buildTree([
-      entry(1, { RequestStage: { request: 0, origin: "turn", stage: "sent" } }),
+      entry(1, {
+        Telemetry: {
+          RequestStage: { request: 0, origin: "turn", stage: "sent" },
+        },
+      }),
       assistant(2, { calls: [{ id: "toolu_a", name: "bash" }] }),
       entry(3, {
-        RequestStage: {
-          request: 0,
-          origin: "turn",
-          stage: { failed: { reason: "interrupted" } },
+        Telemetry: {
+          RequestStage: {
+            request: 0,
+            origin: "turn",
+            stage: { failed: { reason: "interrupted" } },
+          },
         },
       }),
     ]);

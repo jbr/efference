@@ -3,14 +3,14 @@
 //! removal or retention on archive.
 //!
 //! None of it reaches the wire: [`Payload::Worktree`] projects to nothing, like
-//! [`Payload::Cold`]. It exists as the audit trail for a cold or failed setup and for
+//! [`Telemetry::Cold`]. It exists as the audit trail for a cold or failed setup and for
 //! what became of the directory afterward. Git runs the project's `post-checkout` hook
 //! during `git worktree add` and makes the hook's exit status its own, so a worktree
 //! whose warming failed is a created worktree with a nonzero `exit_code`, and the
 //! hook's output is in `output`.
 //!
 //! [`Payload::Worktree`]: crate::log::Payload::Worktree
-//! [`Payload::Cold`]: crate::log::Payload::Cold
+//! [`Telemetry::Cold`]: crate::log::Telemetry::Cold
 
 use std::path::PathBuf;
 
