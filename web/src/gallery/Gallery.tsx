@@ -1,3 +1,4 @@
+import { RangeContentSpecimens } from "./RangeContentSpecimens.tsx";
 // The design gallery: the client's widgets on one page, on fixture data, for
 // iterating on the visual language without driving a live session to each
 // state. Dev builds only — main.tsx imports it behind `?gallery` under
@@ -98,6 +99,7 @@ export function Gallery() {
           "Context interactions",
           "Composer",
           "Code and results",
+          "Expandable ranges",
           "Ambients",
           "Images",
           "Syntax palette",
@@ -196,6 +198,9 @@ export function Gallery() {
 
       <Section title="Code and results">
         <SyntaxSpecimens />
+      </Section>
+      <Section title="Expandable ranges">
+        <RangeContentSpecimens />
       </Section>
       <Section title="Ambients">
         <AmbientSpecimens />
