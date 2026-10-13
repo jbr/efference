@@ -37,7 +37,13 @@ import {
   tokens,
 } from "./overview.ts";
 import { Activity } from "./SessionCard.tsx";
-import { orderByRecency, readVisits, recordVisit } from "./switcherOrder.ts";
+import {
+  orderByRecency,
+  orderByTabs,
+  readVisits,
+  recordVisit,
+} from "./switcherOrder.ts";
+import { homeRelative } from "./identity.ts";
 import "./SessionSwitcher.css";
 
 /** The host's live sessions, followed; `null` until the first listing, and
@@ -109,10 +115,11 @@ const wantsOperator = (card: CardModel) => {
 const OPEN_DELAY_MS = 180;
 const CLOSE_DELAY_MS = 120;
 
+let tabOrder: string[] | null = null;
+
 export function SessionSwitcher({ currentId }: { currentId: string }) {
   const sessions = useLiveSessions();
-  // Read before this page's own visit is recorded; the current session is not
-  // a tab, so its own entry would not matter anyway.
+  // Recency seeds the first row; selecting a tab does not change its slot.
   const [visits] = useState(readVisits);
   useEffect(() => {
     if (apiBase() !== "") recordVisit(currentId);
@@ -120,12 +127,15 @@ export function SessionSwitcher({ currentId }: { currentId: string }) {
 
   const cards = useMemo(() => {
     const all = sessions ?? [];
-    const others = orderByRecency(
-      all.filter((session) => session.id !== currentId),
-      visits,
-    );
-    return others.map((entry) => cardModel(entry, all, null));
-  }, [sessions, currentId, visits]);
+    const ordered =
+      tabOrder === null
+        ? orderByRecency(all, visits)
+        : orderByTabs(all, tabOrder);
+    return ordered.map((entry) => cardModel(entry, all, null));
+  }, [sessions, visits]);
+  useEffect(() => {
+    if (cards.length > 0) tabOrder = cards.map((entry) => entry.id);
+  }, [cards]);
 
   const entries = useMemo(
     () => new Map((sessions ?? []).map((session) => [session.id, session])),
@@ -146,7 +156,7 @@ export function SessionSwitcher({ currentId }: { currentId: string }) {
   const spilled = cards.slice(fit ?? cards.length);
 
   return (
-    <nav className="switcher" aria-label="Other sessions" ref={row}>
+    <nav className="switcher" aria-label="Sessions" ref={row}>
       {visible.map((card) => (
         <span
           key={card.id}
@@ -167,7 +177,14 @@ export function SessionSwitcher({ currentId }: { currentId: string }) {
             if (event.key === "Escape") schedule(null, 0);
           }}
         >
-          <Tab card={card} />
+          <Tab
+            card={card}
+            current={card.id === currentId}
+            onCurrentClick={() => {
+              clearTimeout(timer.current);
+              setShown(shown === card.id ? null : card.id);
+            }}
+          />
           {shown === card.id && (
             <HoverCard
               card={cardModel(
@@ -184,13 +201,13 @@ export function SessionSwitcher({ currentId }: { currentId: string }) {
           )}
         </span>
       ))}
-      {spilled.length > 0 && <MoreMenu cards={spilled} />}
+      {spilled.length > 0 && <MoreMenu cards={spilled} currentId={currentId} />}
       {/* Every tab and the `⋯` button at natural width, unseen, so the fit
           is read from layout rather than guessed. */}
       <div className="switcher-measure" aria-hidden="true" ref={measure}>
         {cards.map((card) => (
           <span key={card.id} className="switcher-slot">
-            <Tab card={card} inert />
+            <Tab card={card} inert current={card.id === currentId} />
           </span>
         ))}
         <MoreButton total={99} waiting={1} />
@@ -202,9 +219,13 @@ export function SessionSwitcher({ currentId }: { currentId: string }) {
 export function Tab({
   card,
   inert = false,
+  current = false,
+  onCurrentClick,
 }: {
   card: CardModel;
   inert?: boolean;
+  current?: boolean;
+  onCurrentClick?: () => void;
 }) {
   const label = card.title ?? card.id;
   const phrase = statusPhrase(card);
@@ -221,11 +242,23 @@ export function Tab({
       )}
     </>
   );
-  const className = `switcher-tab dot-${dotKind(card)}`;
+  const className = `switcher-tab dot-${dotKind(card)}${current ? " is-current" : ""}`;
   return inert ? (
     <span className={className}>{body}</span>
   ) : (
-    <a className={className} href={sessionHref(card.id)}>
+    <a
+      className={className}
+      href={sessionHref(card.id)}
+      aria-current={current ? "page" : undefined}
+      onClick={
+        current
+          ? (event) => {
+              event.preventDefault();
+              onCurrentClick?.();
+            }
+          : undefined
+      }
+    >
       {body}
     </a>
   );
@@ -315,7 +348,13 @@ export function MoreButton({
 }
 
 /** The tabs that did not fit, as a list: dot, title, and what it is doing. */
-function MoreMenu({ cards }: { cards: CardModel[] }) {
+function MoreMenu({
+  cards,
+  currentId,
+}: {
+  cards: CardModel[];
+  currentId: string;
+}) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -346,7 +385,11 @@ function MoreMenu({ cards }: { cards: CardModel[] }) {
       {open && (
         <div className="switcher-menu" role="menu" ref={menu}>
           {cards.map((card) => (
-            <MenuRow key={card.id} card={card} />
+            <MenuRow
+              key={card.id}
+              card={card}
+              current={card.id === currentId}
+            />
           ))}
           <a className="switcher-menu-row switcher-menu-all" href="/">
             All sessions
@@ -357,13 +400,20 @@ function MoreMenu({ cards }: { cards: CardModel[] }) {
   );
 }
 
-function MenuRow({ card }: { card: CardModel }): ReactNode {
+function MenuRow({
+  card,
+  current,
+}: {
+  card: CardModel;
+  current: boolean;
+}): ReactNode {
   const phrase = statusPhrase(card);
   return (
     <a
       className={`switcher-menu-row dot-${dotKind(card)}`}
       href={sessionHref(card.id)}
       role="menuitem"
+      aria-current={current ? "page" : undefined}
     >
       <span className="switcher-dot" aria-hidden="true" />
       <span className="switcher-label">{card.title ?? card.id}</span>
@@ -410,6 +460,32 @@ export function HoverCard({ card }: { card: CardModel }) {
           {card.title ?? <em>Untitled</em>}
         </span>
         <Activity card={card} />
+        <span className="switcher-card-facts">
+          {card.cwd && (
+            <span>
+              <span>directory</span>
+              <span title={card.cwd}>{homeRelative(card.cwd)}</span>
+            </span>
+          )}
+          {card.models && (
+            <>
+              <span>
+                <span>model</span>
+                <span>{card.models.main}</span>
+              </span>
+              <span>
+                <span>spotter</span>
+                <span>{card.models.spotter}</span>
+              </span>
+              {card.models.triage && (
+                <span>
+                  <span>triage</span>
+                  <span>{card.models.triage}</span>
+                </span>
+              )}
+            </>
+          )}
+        </span>
         {context !== null && (
           <span className="switcher-card-usage">
             {context.limit !== null && (

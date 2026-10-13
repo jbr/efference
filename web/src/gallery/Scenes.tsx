@@ -6,10 +6,10 @@ import { emptyStreaming, type Streaming } from "../session/store.ts";
 import { buildTree } from "../session/tree.ts";
 import { GateControls } from "../ui/Gate.tsx";
 import { ComposerToolbar } from "../ui/ComposerToolbar.tsx";
+import { useNarrow } from "../ui/useNarrow.ts";
 import { TranscriptContent } from "../ui/Transcript.tsx";
 import { CallBlock, ResultBlock, ZoomableImage } from "../ui/ToolBlocks.tsx";
 import { turnState, type TurnState } from "../ui/turnState.ts";
-import { useNarrow } from "../ui/useNarrow.ts";
 
 const noop = () => {};
 const entry = (seq: number, payload: LogEntry["payload"]): LogEntry => ({
@@ -135,6 +135,7 @@ function ComposerFixture({
   initial?: string;
 }) {
   const narrow = useNarrow();
+  const [held, setHeld] = useState(false);
   const [draft, setDraft] = useState(initial);
   const [notice, setNotice] = useState("");
   return (
@@ -163,12 +164,13 @@ function ComposerFixture({
           <ComposerToolbar
             turn={turn}
             narrow={narrow}
+            held={held}
+            onHoldChange={setHeld}
             running={running}
             onAttach={() => setNotice("Gallery only — no file was uploaded.")}
             onInterrupt={() =>
               setNotice("Gallery only — no session was interrupted.")
             }
-            onResume={noop}
           />
         </div>
         {notice && (

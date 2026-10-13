@@ -1,4 +1,5 @@
 import { turnClass, type TurnState } from "./turnState.ts";
+import "./ComposerToolbar.css";
 
 /** The input's controls and readout, without session actions (docs/web-client.md). */
 export function ComposerToolbar({
@@ -6,65 +7,135 @@ export function ComposerToolbar({
   narrow,
   running,
   held = false,
+  holdPending = false,
   uploading = false,
   onAttach,
   onInterrupt,
-  onResume,
+  onHoldChange,
 }: {
   turn: TurnState;
   narrow: boolean;
   running: boolean;
   held?: boolean;
+  holdPending?: boolean;
   uploading?: boolean;
   onAttach: () => void;
   onInterrupt: () => void;
-  onResume: () => void;
+  onHoldChange: (held: boolean) => void;
 }) {
   return (
     <div className="composer-toolbar">
       <div className="composer-toolbar-left">
-        <button
-          type="button"
-          className="attach-btn"
-          title="attach files (or paste, or drop them anywhere)"
-          aria-label="attach files"
-          onClick={onAttach}
-        >
-          <PaperClip />
-          <span>attach</span>
-        </button>
+        <div className="composer-toolbar-tools">
+          <button
+            type="button"
+            className="attach-btn composer-icon-button"
+            title="Attach files (or paste, or drop them anywhere)"
+            aria-label="Attach files"
+            onClick={onAttach}
+          >
+            <PaperClip />
+          </button>
+          <HoldButton
+            held={held}
+            pending={holdPending}
+            onChange={onHoldChange}
+          />
+        </div>
         <span className={turnClass(turn.kind)} title={turn.title}>
           {turn.text}
         </span>
       </div>
       <div className="composer-toolbar-right">
         {running && (
-          <button type="button" className="interrupt-btn" onClick={onInterrupt}>
-            interrupt
-          </button>
-        )}
-        {held && (
-          <button type="button" className="resume-btn" onClick={onResume}>
-            resume
+          <button
+            type="button"
+            className="interrupt-btn composer-icon-button"
+            title="Interrupt current operation"
+            aria-label="Interrupt current operation"
+            onClick={onInterrupt}
+          >
+            <ComposerActionIcon kind="stop" />
           </button>
         )}
         {!narrow && (
           <span className="composer-hint">shift-enter for newline</span>
         )}
-        <button disabled={uploading} className="send-btn">
-          <span>send</span>
-          {!narrow && <kbd className="send-kbd">↵</kbd>}
+        <button
+          type="submit"
+          disabled={uploading}
+          className="send-btn composer-icon-button"
+          title={narrow ? "Send message" : "Send message (Enter)"}
+          aria-label="Send message"
+        >
+          <ComposerActionIcon kind="send" />
         </button>
       </div>
     </div>
   );
 }
 
+export function HoldButton({
+  held,
+  pending = false,
+  onChange,
+}: {
+  held: boolean;
+  pending?: boolean;
+  onChange: (held: boolean) => void;
+}) {
+  const label = held ? "Release hold" : "Hold after the current step";
+  return (
+    <button
+      type="button"
+      className="hold-btn composer-icon-button"
+      title={label}
+      aria-label={label}
+      aria-pressed={held}
+      aria-busy={pending}
+      disabled={pending}
+      onClick={() => onChange(!held)}
+    >
+      <ComposerActionIcon kind={held ? "play" : "pause"} />
+    </button>
+  );
+}
+
+export function ComposerActionIcon({
+  kind,
+}: {
+  kind: "send" | "play" | "pause" | "stop";
+}) {
+  return (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {kind === "send" ? (
+        <path d="M12 20V4m-7 7 7-7 7 7" />
+      ) : kind === "pause" ? (
+        <path d="M8 5v14M16 5v14" />
+      ) : kind === "play" ? (
+        <path d="m8 5 11 7-11 7Z" />
+      ) : (
+        <path d="M8 3h8l5 5v8l-5 5H8l-5-5V8Z" />
+      )}
+    </svg>
+  );
+}
+
 export function PaperClip() {
   return (
     <svg
-      width="16"
-      height="16"
+      width="18"
+      height="18"
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"

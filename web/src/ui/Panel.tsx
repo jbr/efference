@@ -365,8 +365,7 @@ const VIEW_LABELS: Record<keyof ViewSettings, string> = {
 };
 
 /** Interface preferences: the theme, and the transcript density switches.
- * Buried here on purpose — none of these is an affordance used *during* a
- * session, so they do not merit constant display (jbr, 2026-08-19). Hiding
+ * Shared across sessions in the home-accessible app settings view. Hiding
  * via the switches is display-only; the entries stay in the store. */
 export function Interface() {
   const settings = useViewSettings();

@@ -11,11 +11,8 @@
 import { type ReactNode, useState } from "react";
 import { patchLoop } from "../api/http.ts";
 import type {
-  Cold,
-  Fold,
   Pace,
   PendingNotification,
-  Process,
   Proposal,
   ReviewLevel,
   Role,
@@ -23,8 +20,7 @@ import type {
   Usage,
 } from "../api/types.ts";
 import { homeRelative } from "./identity.ts";
-import { FoldControl } from "./FoldControl.tsx";
-import { Inbox, Interface, Policy, Tasks } from "./Panel.tsx";
+import { Inbox, Policy } from "./Panel.tsx";
 import { useDragToDismiss } from "./useDragToDismiss.ts";
 import { useNarrow } from "./useNarrow.ts";
 import "./Drawer.css";
@@ -192,15 +188,7 @@ export function Drawer({
   reviewLevel,
   role,
   proposals,
-  processes,
   notifications,
-  cold,
-  fold,
-  running,
-  gatePending,
-  asking,
-  processOutput,
-  processLost,
 }: {
   /** The exit transition is running; `onSlideOut` unmounts when it lands. */
   closing: boolean;
@@ -212,15 +200,7 @@ export function Drawer({
   reviewLevel: ReviewLevel | null;
   role: Role | null;
   proposals: Proposal[];
-  processes: Process[];
   notifications: PendingNotification[];
-  cold: Cold | null;
-  fold: Fold | null;
-  running: boolean;
-  gatePending: boolean;
-  asking: boolean;
-  processOutput: Record<number, string>;
-  processLost: Record<number, number>;
 }) {
   const [error, setError] = useState<string | null>(null);
   const narrow = useNarrow();
@@ -258,37 +238,15 @@ export function Drawer({
               <Inbox notifications={notifications} act={act} />
             </Section>
           )}
-          {processes.length > 0 && (
-            <Section title="Tasks">
-              <Tasks
-                processes={processes}
-                output={processOutput}
-                lost={processLost}
-                act={act}
-              />
-            </Section>
-          )}
           <section className="drawer-section">
             <SessionFacts identity={identity} usage={usage} />
             <RunControls pace={pace} reviewLevel={reviewLevel} act={act} />
           </section>
-          <Section title="Context">
-            <FoldControl
-              cold={cold}
-              fold={fold}
-              running={running}
-              gatePending={gatePending}
-              asking={asking}
-            />
-          </Section>
           {(role !== null || proposals.length > 0) && (
             <Section title="Policy">
               <Policy role={role} proposals={proposals} act={act} />
             </Section>
           )}
-          <Section title="This device">
-            <Interface />
-          </Section>
         </div>
       </aside>
     </>

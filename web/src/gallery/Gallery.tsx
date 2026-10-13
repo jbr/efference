@@ -36,6 +36,8 @@ import {
 } from "./fixtures.ts";
 import { ButtonSpecimens } from "./ButtonSpecimens.tsx";
 import { AmbientSpecimens } from "./AmbientSpecimens.tsx";
+import { ContextMeterSpecimens } from "./ContextMeterSpecimens.tsx";
+
 import { Specimen, States } from "./Specimens.tsx";
 import { PaletteSpecimens } from "./PaletteSpecimens.tsx";
 import { installPseudoStates } from "./pseudoStates.ts";
@@ -93,6 +95,7 @@ export function Gallery() {
           "Neon",
           "Session tabs",
           "Context window",
+          "Context interactions",
           "Composer",
           "Code and results",
           "Ambients",
@@ -184,9 +187,13 @@ export function Gallery() {
           </figure>
         </div>
       </Section>
+      <Section title="Context interactions">
+        <ContextMeterSpecimens />
+      </Section>
       <Section title="Composer">
         <ComposerSpecimens />
       </Section>
+
       <Section title="Code and results">
         <SyntaxSpecimens />
       </Section>

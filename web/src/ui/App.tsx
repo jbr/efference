@@ -7,6 +7,7 @@
 // (session/registry.ts) and renders the last snapshot at once
 // (docs/web-client.md).
 
+import { AppSettings } from "./AppSettings.tsx";
 import { deriveBase } from "../api/base.ts";
 import { useEntry } from "../session/entry.ts";
 import { APP_TITLE, useDocumentTitle } from "./documentTitle.ts";
@@ -28,7 +29,17 @@ export function App() {
   if (entry.kind === "list") {
     // The probe's answer seeds the list; the list holds the listing stream open
     // from there, so nothing above it re-resolves (docs/web-client.md).
-    return <SessionList sessions={entry.sessions} />;
+    return (
+      <>
+        <SessionList sessions={entry.sessions} />
+        <AppSettings />
+      </>
+    );
   }
-  return <SessionView key={base} />;
+  return (
+    <>
+      <SessionView key={base} />
+      <AppSettings />
+    </>
+  );
 }

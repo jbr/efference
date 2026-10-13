@@ -29,6 +29,11 @@ export function usePathname(): string {
   return useSyncExternalStore(subscribe, () => location.pathname);
 }
 
+/** The query, including app settings, heard without remounting the page. */
+export function useSearch(): string {
+  return useSyncExternalStore(subscribe, () => location.search);
+}
+
 /** Whether the client renders the page at `pathname` itself: the list, or a
  * session's own view (not a route inside one — `/tree` is the session view's
  * to read). */
@@ -54,10 +59,11 @@ export function navigate(href: string, mode: "push" | "replace" = "push") {
   if (url.pathname === location.pathname && url.search === location.search) {
     return;
   }
+  const changedPage = url.pathname !== location.pathname;
   const target = url.pathname + url.search;
   if (mode === "replace") history.replaceState(null, "", target);
   else history.pushState(null, "", target);
-  window.scrollTo(0, 0);
+  if (changedPage) window.scrollTo(0, 0);
   notify();
 }
 

@@ -4,6 +4,7 @@ import type { ScrubHandle } from "../session/record.ts";
 import type { Store } from "../session/store.ts";
 
 export const RENDER_EVENT = "efference:stream-render";
+let minimized = false;
 
 export function installStreamDebug(
   store: Store,
@@ -28,7 +29,41 @@ export function installStreamDebug(
     maxWidth: "calc(100vw - 8px)",
     whiteSpace: "pre-wrap",
   });
-  document.body.append(badge);
+  const shell = document.createElement("div");
+  const toggle = document.createElement("button");
+  toggle.type = "button";
+  Object.assign(shell.style, {
+    position: "fixed",
+    zIndex: "10000",
+    pointerEvents: "none",
+  });
+  Object.assign(toggle.style, {
+    pointerEvents: "auto",
+    font: "11px/1.4 monospace",
+    padding: "5px 8px",
+    minHeight: "32px",
+  });
+  Object.assign(badge.style, { position: "static" });
+  const arrange = () => {
+    badge.hidden = minimized;
+    toggle.textContent = minimized ? "Stream debug" : "Minimize stream debug";
+    toggle.setAttribute("aria-expanded", String(!minimized));
+    Object.assign(shell.style, {
+      top: minimized ? "auto" : "calc(env(safe-area-inset-top, 0px) + 4px)",
+      right: minimized ? "auto" : "4px",
+      bottom: minimized
+        ? "calc(env(safe-area-inset-bottom, 0px) + 4px)"
+        : "auto",
+      left: minimized ? "4px" : "auto",
+    });
+  };
+  toggle.onclick = () => {
+    minimized = !minimized;
+    arrange();
+  };
+  shell.append(toggle, badge);
+  arrange();
+  document.body.append(shell);
   const started = Date.now();
   let attempts = 0,
     connects = 0,
@@ -109,7 +144,8 @@ export function installStreamDebug(
     close() {
       clearInterval(timer);
       document.removeEventListener(RENDER_EVENT, onRender);
-      badge.remove();
+      toggle.onclick = null;
+      shell.remove();
     },
   };
 }

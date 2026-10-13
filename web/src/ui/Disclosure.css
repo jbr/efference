@@ -1,0 +1,23 @@
+.disclosure > summary {
+  cursor: pointer;
+  user-select: none;
+  border-radius: 0.2rem;
+  padding: 0.35rem 0.45rem;
+  transition: background-color 100ms ease;
+}
+.disclosure > summary:hover {
+  background: color-mix(in srgb, currentColor 6%, transparent);
+}
+.disclosure > summary:active {
+  background: color-mix(in srgb, currentColor 12%, transparent);
+}
+.disclosure[open] > summary {
+  background: color-mix(in srgb, currentColor 5%, transparent);
+}
+.disclosure[open] > summary:hover {
+  background: color-mix(in srgb, currentColor 9%, transparent);
+}
+.disclosure > summary:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}

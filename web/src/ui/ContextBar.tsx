@@ -19,7 +19,11 @@ export function ContextBar({
       "--meter-hot": Math.max(0, Math.min(1, (ratio - 0.85) / 0.15)),
     };
   return (
-    <span className="meter" aria-hidden="true">
+    <span
+      className="meter"
+      aria-hidden="true"
+      data-empty={ratio === 0 ? "" : undefined}
+    >
       <span className="meter-fill" style={style} />
     </span>
   );

@@ -1,0 +1,30 @@
+.composer-toolbar-tools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.composer-toolbar button.composer-icon-button,
+.status-bar button.composer-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  flex-shrink: 0;
+}
+.composer-icon-button svg {
+  display: block;
+}
+.hold-btn[aria-pressed="true"] {
+  background: var(--btn-bg-hover);
+  border-color: var(--focus-ring);
+}
+@media (max-width: 700px) {
+  .composer-input .composer-toolbar-tools {
+    grid-column: 1;
+    grid-row: 2;
+    justify-self: start;
+  }
+}

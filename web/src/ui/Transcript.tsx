@@ -1,3 +1,5 @@
+import { isHandoff } from "./inspector/handoff.ts";
+import { Disclosure } from "./Disclosure.tsx";
 // The transcript: the log projected into its hierarchy (`session/tree.ts`),
 // rendered as items at a level of detail set by their distance from the tail
 // (`ui/TranscriptItems.tsx`, rules in `ui/transcriptLevels.ts`), plus the
@@ -92,10 +94,9 @@ function WorktreeNotice({ event }: { event: WorktreeEvent }) {
     <Entry label="worktree" as="ambient">
       <WorktreeLine event={event} />
       {setup !== "" && (
-        <details className="worktree-setup">
-          <summary>Show setup output</summary>
+        <Disclosure className="worktree-setup" label="Show setup output">
           <pre>{setup}</pre>
-        </details>
+        </Disclosure>
       )}
     </Entry>
   );
@@ -398,15 +399,24 @@ const Call = memo(function Call({
       {node.result === null && liveOutput !== undefined && (
         <LiveResult text={liveOutput} />
       )}
-      {node.result !== null && result !== null && (
-        <ResultBlock
-          tool={node.name}
-          seq={node.result.seq}
-          raw={result.raw}
-          wire={result.wire}
-          distillate={result.distillate}
-        />
-      )}
+      {node.result !== null &&
+        result !== null &&
+        (isHandoff(result.raw.content, node.telemetry?.bash?.handle) ? (
+          <div
+            className="dim"
+            style={{ fontSize: ".8125rem", padding: ".4rem 0" }}
+          >
+            Backgrounded · {node.telemetry?.bash?.handle}
+          </div>
+        ) : (
+          <ResultBlock
+            tool={node.name}
+            seq={node.result.seq}
+            raw={result.raw}
+            wire={result.wire}
+            distillate={result.distillate}
+          />
+        ))}
     </div>
   );
 });

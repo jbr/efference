@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { orderByRecency, readVisits, recordVisit } from "./switcherOrder.ts";
+import {
+  orderByRecency,
+  orderByTabs,
+  readVisits,
+  recordVisit,
+} from "./switcherOrder.ts";
 
 const ids = (sessions: { id: string }[]) => sessions.map((s) => s.id);
 const listed = ["a", "b", "c", "d"].map((id) => ({ id }));
@@ -51,5 +56,21 @@ describe("visits in storage", () => {
   it("reads corrupt storage as no visits", () => {
     localStorage.setItem("efference.sessionVisits", "not json");
     expect(readVisits()).toEqual({});
+  });
+});
+
+describe("orderByTabs", () => {
+  it("preserves slots across changed visits and listing order", () => {
+    const previous = ["b", "a", "c"];
+    expect(
+      ids(orderByTabs([{ id: "c" }, { id: "a" }, { id: "b" }], previous)),
+    ).toEqual(previous);
+  });
+  it("removes absent sessions and appends new sessions", () => {
+    expect(
+      ids(
+        orderByTabs([{ id: "d" }, { id: "b" }, { id: "a" }], ["a", "b", "c"]),
+      ),
+    ).toEqual(["a", "b", "d"]);
   });
 });

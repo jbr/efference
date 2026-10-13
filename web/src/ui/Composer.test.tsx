@@ -145,3 +145,38 @@ test("a send accepted after switching does not clear either session's newer draf
     view.close();
   }
 });
+
+test("composer hold sends a loop patch without submitting or clearing its draft", async () => {
+  const id = `draft-${crypto.randomUUID()}`;
+  const store = acquireDraft(`/sessions/${id}`);
+  store.setText("keep this draft while holding");
+  const fetch = vi.fn(
+    async () =>
+      new Response(
+        JSON.stringify({
+          pace: { held: true, speed_ms: 0 },
+          review_level: "spotter_human",
+          running: false,
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+  );
+  vi.stubGlobal("fetch", fetch);
+  const send = vi.fn(() => Promise.resolve());
+  const view = mount(send);
+  try {
+    view.render(id);
+    await act(async () =>
+      view.host.querySelector<HTMLButtonElement>(".hold-btn")!.click(),
+    );
+    expect(fetch).toHaveBeenCalledOnce();
+    const [url, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe(`/sessions/${id}/v1/loop`);
+    expect(init.method).toBe("PATCH");
+    expect(JSON.parse(init.body as string)).toEqual({ pace: { held: true } });
+    expect(send).not.toHaveBeenCalled();
+    expect(store.snapshot().text).toBe("keep this draft while holding");
+  } finally {
+    view.close();
+  }
+});

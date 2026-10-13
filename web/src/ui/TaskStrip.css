@@ -1,0 +1,30 @@
+.task-strip {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.4rem 1rem;
+  border-top: 1px solid var(--border);
+  font: 0.75rem var(--font-mono);
+  background: var(--bg);
+  min-width: 0;
+}
+.task-strip-items {
+  display: flex;
+  gap: 0.35rem;
+  flex: 1;
+  overflow-x: auto;
+  min-width: 0;
+}
+.task-strip button {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  white-space: nowrap;
+  padding: 0.4rem 0.6rem;
+}
+.task-strip button[aria-pressed="true"] {
+  border-color: var(--accent);
+}
+.task-strip .task-placement {
+  font-size: 0.65rem;
+}

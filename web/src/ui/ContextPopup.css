@@ -1,0 +1,130 @@
+.context-popup-trigger {
+  background: transparent;
+  border: 0;
+  padding: 6px;
+  min-height: 44px;
+  color: inherit;
+}
+.context-popup {
+  position: fixed;
+  inset: auto 8px auto auto;
+  margin: 0;
+  width: 340px;
+  max-width: calc(100vw - 16px);
+  max-height: calc(100dvh - 120px);
+  overflow: auto;
+  box-sizing: border-box;
+  padding: 16px;
+  border: 1px solid var(--border-control);
+  border-radius: 10px;
+  background: var(--bg-surface);
+  color: var(--fg);
+  font-size: 0.875rem;
+  box-shadow: 0 6px 22px rgb(0 0 0 / 0.12);
+}
+.context-popup-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.context-popup-heading h2 {
+  font-family: var(--font-prose);
+  font-weight: 500;
+  font-size: 1.5rem;
+  margin: 0;
+}
+
+button.context-popup-trigger {
+  --meter-interaction: 0;
+  background-image: none;
+}
+button.context-popup-trigger:hover:not(:disabled),
+button.context-popup-trigger:focus-visible,
+button.context-popup-trigger:active:not(:disabled),
+button.context-popup-trigger[aria-expanded="true"] {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+@media (hover: hover) and (pointer: fine) {
+  button.context-popup-trigger:hover:not(:disabled) {
+    --meter-interaction: 0.6;
+  }
+}
+button.context-popup-trigger:focus-visible {
+  --meter-interaction: 0.6;
+}
+button.context-popup-trigger:active:not(:disabled),
+button.context-popup-trigger[aria-expanded="true"] {
+  --meter-interaction: 1;
+}
+/* The shared press selector takes its specificity from checkbox attributes. */
+button.context-popup-trigger.context-popup-trigger:active:not(:disabled) {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+.context-popup-trigger .meter-fill {
+  filter: drop-shadow(
+      0 0 calc(var(--meter-interaction) * 3px)
+        color-mix(
+          in srgb,
+          var(--meter-color) calc(var(--meter-interaction) * 85%),
+          transparent
+        )
+    )
+    drop-shadow(
+      0 0 calc(var(--meter-interaction) * 12px)
+        color-mix(
+          in srgb,
+          var(--meter-color) calc(var(--meter-interaction) * 65%),
+          transparent
+        )
+    );
+  transition:
+    filter var(--interaction-duration) ease-out,
+    width var(--interaction-duration) ease-out,
+    var(--interaction-transition);
+}
+:root[data-theme="lilac"] .context-popup-trigger .meter-fill {
+  filter: drop-shadow(
+      0 0 calc(var(--meter-interaction) * 2px)
+        color-mix(
+          in srgb,
+          var(--meter-color) calc(var(--meter-interaction) * 65%),
+          transparent
+        )
+    )
+    drop-shadow(
+      0 calc(var(--meter-interaction) * 3px)
+        calc(var(--meter-interaction) * 8px)
+        color-mix(
+          in srgb,
+          var(--meter-color) calc(var(--meter-interaction) * 40%),
+          transparent
+        )
+    );
+}
+.context-popup-trigger[aria-expanded="true"] .context-caption {
+  color: var(--fg-bright);
+}
+
+.context-popup-trigger .meter[data-empty] {
+  box-shadow: 0 0 calc(var(--meter-interaction) * 8px)
+    color-mix(
+      in srgb,
+      var(--meter) calc(var(--meter-interaction) * 55%),
+      transparent
+    );
+  transition: box-shadow var(--interaction-duration) ease-out;
+}
+:root[data-theme="lilac"] .context-popup-trigger .meter[data-empty] {
+  box-shadow: 0 calc(var(--meter-interaction) * 2px)
+    calc(var(--meter-interaction) * 6px)
+    color-mix(
+      in srgb,
+      var(--meter) calc(var(--meter-interaction) * 35%),
+      transparent
+    );
+}

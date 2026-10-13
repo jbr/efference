@@ -1,0 +1,53 @@
+.app-settings-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  color: var(--fg-muted);
+  border-radius: 6px;
+}
+.app-settings-link:hover,
+.app-settings-link:focus-visible {
+  color: var(--fg-bright);
+  background: var(--bg-chip);
+}
+.app-settings-page {
+  position: fixed;
+  inset: 0;
+  margin: 0;
+  width: 100%;
+  height: 100dvh;
+  max-width: none;
+  max-height: none;
+  box-sizing: border-box;
+  border: 0;
+  padding: 0;
+  background: var(--bg-page);
+  color: var(--fg);
+  font: inherit;
+  overflow-y: auto;
+}
+.app-settings-page::backdrop {
+  background: var(--bg-page);
+}
+
+.app-settings-content {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 24px 20px;
+}
+.app-settings-content h1 {
+  font-family: var(--font-prose);
+  font-weight: 500;
+}
+.app-settings-content > p {
+  color: var(--fg-muted);
+}
+.app-settings-content .interface {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 24px;
+  padding: 16px 0;
+}

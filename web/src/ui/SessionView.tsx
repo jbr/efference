@@ -1,3 +1,4 @@
+import { useHistoricalCall } from "./inspector/useHistoricalCall.ts";
 // One session, whole (docs/web-client.md): the transcript, the composer and
 // dock, the gate surface, and the two overlays. Everything it fetches goes
 // through the client's base (api/base.ts), so this is the same view whether the
@@ -32,6 +33,7 @@ import { useOverlayHistory } from "./overlayHistory.ts";
 import { navigate } from "./route.ts";
 import { TopBar } from "./TopBar.tsx";
 import { Transcript } from "./Transcript.tsx";
+import { TaskStrip } from "./TaskStrip.tsx";
 
 /** One request to show a file: what to show, which call asked (the anchor's
  * source), and a key that changes per request. */
@@ -123,7 +125,7 @@ export function SessionView() {
     return () => clearTimeout(id);
   }, [closing, done]);
 
-  const inspected = useMemo<CallNode | null>(() => {
+  const loadedInspection = useMemo<CallNode | null>(() => {
     if (shown === null) return null;
     for (const node of nodes) {
       if (node.kind !== "batch") continue;
@@ -132,6 +134,12 @@ export function SessionView() {
     }
     return null;
   }, [nodes, shown]);
+  const { node: inspected, error: inspectionError } = useHistoricalCall(
+    shown,
+    loadedInspection,
+    session.entries,
+    apiBase(),
+  );
 
   // The file viewer (FileView.tsx): opened by a call's `open ⤢`, dismissed
   // like the inspector — `shownFile` holds the seed path through the exit
@@ -241,42 +249,127 @@ export function SessionView() {
   const proposals = session.topics.proposals ?? [];
   const processes = session.topics.processes ?? [];
   return (
-    <div className="app">
-      <TopBar
-        // Only under a host is there a list to go back to — at a session
-        // daemon's root this view is the whole app (api/base.ts).
-        listHref={apiBase() === "" ? null : "/"}
-        identity={session.topics.session_identity ?? null}
-        usage={session.topics.usage ?? null}
-        upstreamFailure={session.topics.upstream_failure ?? null}
-        upstreamRetry={session.topics.upstream_retry ?? null}
-        drawerOpen={drawerOpen}
-        attention={drawerAttention(notifications, proposals, processes)}
-        onDrawer={() => {
-          setInspecting(null);
-          setDrawerOpen((open) => !open);
-        }}
-      />
-      {session.connection !== "live" && (
-        <div className="banner">
-          <div className="col">{session.connection}…</div>
+    <div className={inspected !== null ? "app session-split" : "app"}>
+      <div className="session-main">
+        <TopBar
+          // Only under a host is there a list to go back to — at a session
+          // daemon's root this view is the whole app (api/base.ts).
+          listHref={apiBase() === "" ? null : "/"}
+          identity={session.topics.session_identity ?? null}
+          usage={session.topics.usage ?? null}
+          upstreamFailure={session.topics.upstream_failure ?? null}
+          upstreamRetry={session.topics.upstream_retry ?? null}
+          summary={{
+            cold: session.topics.cold ?? null,
+            fold: session.topics.fold ?? null,
+            running: session.topics.running ?? false,
+            gatePending: gate != null,
+            asking: (session.topics.ask ?? null) !== null,
+          }}
+          drawerOpen={drawerOpen}
+          attention={drawerAttention(notifications, proposals, processes)}
+          onDrawer={() => {
+            setInspecting(null);
+            setDrawerOpen((open) => !open);
+          }}
+        />
+        {session.connection !== "live" && (
+          <div className="banner">
+            <div className="col">{session.connection}…</div>
+          </div>
+        )}
+        {inspectionError && (
+          <div className="banner" role="alert">
+            Could not inspect task: {inspectionError}
+          </div>
+        )}
+        <EarlierHistory history={history} entries={session.entries} />
+        <Transcript
+          nodes={nodes}
+          streaming={session.streaming}
+          pending={session.pendingTurns}
+          ask={session.topics.ask ?? null}
+          gatedCall={gate?.call_id ?? null}
+          onGateSlot={setGateSlot}
+          onRecall={onRecall}
+          onInspect={onInspect}
+          onOpenFile={onOpenFile}
+        />
+        {shownFile !== null && (
+          <FileView
+            path={shownFile.path}
+            openKey={shownFile.key}
+            openAnchor={openAnchor}
+            lastEdit={newestEdit}
+            activity={activity}
+            closing={fileClosing}
+            onSlideOut={fileDone}
+            onClose={closeFile}
+          />
+        )}
+        {/* Hidden while a gate is pending (the gate float/cue owns the
+          above-dock slot and carries its own jump) and while the file viewer
+          covers the transcript the jump would land in. */}
+        <JumpToLatest hidden={gate != null || shownFile !== null} />
+        {gate && (
+          <div className="col">
+            <GateSurface
+              gate={gate}
+              spot={spotFor(session.entries, gate.call_id)}
+              covered={shownFile !== null}
+              slot={gateSlot}
+              cold={session.topics.cold ?? null}
+              resolve={(decision) =>
+                actions.resolveGate(gate.call_id, decision)
+              }
+            />
+          </div>
+        )}
+        {drawerShown && (
+          <Drawer
+            closing={drawerClosing}
+            onSlideOut={drawerDone}
+            onClose={() => setDrawerOpen(false)}
+            identity={session.topics.session_identity ?? null}
+            usage={session.topics.usage ?? null}
+            pace={session.topics.pace ?? null}
+            reviewLevel={session.topics.review_level ?? null}
+            role={session.topics.role ?? null}
+            proposals={proposals}
+            notifications={notifications}
+          />
+        )}
+        <div className="dock">
+          <TaskStrip
+            processes={processes}
+            selected={inspecting}
+            onInspect={(id) => {
+              setDrawerOpen(false);
+              setInspecting(id);
+            }}
+          />
+          <Composer
+            submit={actions.submitTurn}
+            recalled={recalled}
+            pace={session.topics.pace ?? null}
+            running={session.topics.running ?? false}
+            stall={session.topics.stall ?? null}
+            retrying={(session.topics.upstream_retry ?? null) !== null}
+            gatePending={gate != null}
+            ask={session.topics.ask ?? null}
+            cold={session.topics.cold ?? null}
+            park={session.topics.park ?? null}
+            fold={session.topics.fold ?? null}
+            operations={session.topics.current_operations ?? null}
+            model={session.topics.session_identity?.model ?? "the model"}
+          />
         </div>
-      )}
-      <EarlierHistory history={history} entries={session.entries} />
-      <Transcript
-        nodes={nodes}
-        streaming={session.streaming}
-        pending={session.pendingTurns}
-        ask={session.topics.ask ?? null}
-        gatedCall={gate?.call_id ?? null}
-        onGateSlot={setGateSlot}
-        onRecall={onRecall}
-        onInspect={onInspect}
-        onOpenFile={onOpenFile}
-      />
+        <LightboxHost />
+      </div>
       {inspected !== null && (
         <Inspector
           node={inspected}
+          process={processes.find((p) => p.call_id === inspected.callId)}
           closing={closing}
           onSlideOut={done}
           onClose={() => setInspecting(null)}
@@ -299,74 +392,6 @@ export function SessionView() {
           }
         />
       )}
-      {shownFile !== null && (
-        <FileView
-          path={shownFile.path}
-          openKey={shownFile.key}
-          openAnchor={openAnchor}
-          lastEdit={newestEdit}
-          activity={activity}
-          closing={fileClosing}
-          onSlideOut={fileDone}
-          onClose={closeFile}
-        />
-      )}
-      {/* Hidden while a gate is pending (the gate float/cue owns the
-          above-dock slot and carries its own jump) and while the file viewer
-          covers the transcript the jump would land in. */}
-      <JumpToLatest hidden={gate != null || shownFile !== null} />
-      {gate && (
-        <div className="col">
-          <GateSurface
-            gate={gate}
-            spot={spotFor(session.entries, gate.call_id)}
-            covered={shownFile !== null}
-            slot={gateSlot}
-            cold={session.topics.cold ?? null}
-            resolve={(decision) => actions.resolveGate(gate.call_id, decision)}
-          />
-        </div>
-      )}
-      {drawerShown && (
-        <Drawer
-          closing={drawerClosing}
-          onSlideOut={drawerDone}
-          onClose={() => setDrawerOpen(false)}
-          identity={session.topics.session_identity ?? null}
-          usage={session.topics.usage ?? null}
-          pace={session.topics.pace ?? null}
-          reviewLevel={session.topics.review_level ?? null}
-          role={session.topics.role ?? null}
-          proposals={proposals}
-          processes={processes}
-          notifications={notifications}
-          cold={session.topics.cold ?? null}
-          fold={session.topics.fold ?? null}
-          running={session.topics.running ?? false}
-          gatePending={gate != null}
-          asking={(session.topics.ask ?? null) !== null}
-          processOutput={session.streaming.processOutput}
-          processLost={session.streaming.processLost}
-        />
-      )}
-      <div className="dock">
-        <Composer
-          submit={actions.submitTurn}
-          recalled={recalled}
-          pace={session.topics.pace ?? null}
-          running={session.topics.running ?? false}
-          stall={session.topics.stall ?? null}
-          retrying={(session.topics.upstream_retry ?? null) !== null}
-          gatePending={gate != null}
-          ask={session.topics.ask ?? null}
-          cold={session.topics.cold ?? null}
-          park={session.topics.park ?? null}
-          fold={session.topics.fold ?? null}
-          operations={session.topics.current_operations ?? null}
-          model={session.topics.session_identity?.model ?? "the model"}
-        />
-      </div>
-      <LightboxHost />
     </div>
   );
 }

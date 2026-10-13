@@ -315,6 +315,7 @@ input[type="checkbox"]:disabled {
   display: flex;
   align-items: center;
   gap: 0.8rem;
+  min-height: 44px;
   padding: 0.45rem 0.9rem;
 }
 
@@ -1381,7 +1382,9 @@ pre {
   display: flex;
   align-items: center;
   gap: 0.55rem;
-  max-width: 22rem;
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: min(22rem, 100%);
   padding: 0.3rem 0.45rem;
   background: var(--bg-chip);
   border: 1px solid var(--border-control);

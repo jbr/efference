@@ -1,0 +1,72 @@
+.session-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 100dvh;
+  flex: 1;
+}
+.inspector-details {
+  padding: 0.7rem 0.9rem;
+  border-top: 1px solid var(--border-subtle);
+  max-height: 35dvh;
+  overflow: auto;
+  font-size: 0.8rem;
+}
+.command-inspection h4 {
+  margin: 1rem 0 0.5rem;
+}
+.command-inspection {
+  min-width: 0;
+}
+.command-inspection pre {
+  min-width: 0;
+  max-width: 100%;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.command-actions {
+  display: flex;
+  gap: 0.4rem;
+}
+@media (min-width: 1100px) {
+  .app.session-split {
+    display: flex;
+    flex-direction: row;
+    align-items: flex-start;
+  }
+  .session-split > .session-main {
+    width: 0;
+  }
+  .session-split > .inspector {
+    position: sticky;
+    top: 0;
+    bottom: auto;
+    height: 100dvh;
+    flex: none;
+    max-width: calc(100vw - 600px);
+    min-width: 320px;
+  }
+}
+
+.command-inspection > .dim,
+.command-output-heading {
+  font-family: var(--font-sans);
+}
+.command-output-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.command-output-heading .dim {
+  font-size: 0.75rem;
+}
+.command-output {
+  height: 32dvh;
+  min-height: 8rem;
+  overscroll-behavior: contain;
+}
+
+.inspector {
+  box-sizing: border-box;
+}

@@ -8,6 +8,10 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- Running-task shortcuts open shared process inspectors with sibling desktop layout, full commands, live tails, lifecycle states, and compact background handoffs.
+- Composer controls use icon-only attach, hold/release, octagonal interrupt, and send actions; session tabs retain stable slots and current-session details.
+- App settings are accessible from home and sessions, with shared browser preferences and notification registration outside the session drawer.
+- The web context meter opens usage details and a direct, state-guarded summarize-history action.
 - Web transcripts load earlier history automatically near the top, preserving the reading position and live streaming with smaller initial windows.
 - Tail following avoids redundant scrolls and defers layout pinning during presses to preserve iOS button taps.
 - Web transcripts keep following through content and viewport growth until the reader scrolls away, and resume when the reader reaches the bottom.

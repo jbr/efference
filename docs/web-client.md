@@ -1359,15 +1359,17 @@ with the same *summarize instead* button. After a fold the park stays and `cold`
 null; the readout says `paused: summarized · send to continue`, with no notice.
 
 **Summarizing is the fold** (`POST /loop/fold`, [control-api.md](control-api.md);
-`ui/fold.ts`, `ui/FoldNotice.tsx`, `ui/FoldControl.tsx`). Two entry points, one
-rule (`foldOffer`): the cold notice's button, which runs the fold at once, and a
-*Context* section in the drawer, available whether or not the session is cold,
-which asks for confirmation first — a fold has no undo yet — saying whether it
-spends a live cache. Both are held back, with the reason shown, while a gate or
-question is pending or a warm loop is running; a loop parked at its cold check may
-fold. Progress is the `fold` topic: the turn-state readout and the drawer say
-`summarizing the history…`, a failure shows its error with a retry, and the
-account lands as the consolidation mark in the transcript.
+`ui/fold.ts`, `ui/FoldNotice.tsx`, `ui/FoldControl.tsx`). Two entry points share
+`foldOffer`: the cold notice's button and the standing action in the context-meter
+popup (`ui/ContextPopup.tsx`). Opening the popup then choosing **Summarize history**
+starts the operation without a further confirmation; the request supplies consent
+to spend a live cache when the session is warm. Both entry points are blocked,
+with the reason shown, while a gate or question is pending or a warm loop is
+running; a loop parked at its cold check may fold. The popup prevents duplicate
+clicks while its request is pending. Progress is the `fold` topic: the turn-state
+readout and popup say `summarizing the history…`, errors remain visible for retry,
+and the account lands as the consolidation mark in the transcript. The native
+popover closes on outside interaction or Escape and stays inside the viewport.
 
 The input is inset into the dock rather than floating on it: the composer
 band shares the dock's surface color, and the box is near-square (2px) in
@@ -1382,6 +1384,21 @@ drag events, neither of which depends on the field being a textarea.
 The controls strip is gone; its last resident, the usage line, lives in the
 top bar. A non-`live` connection still shows as a full-width banner under
 the bar, not just a dimmed word.
+
+## App settings
+
+`ui/AppSettings.tsx` exposes browser-wide preferences from the home and session
+headers. The fullscreen settings dialog reuses `AppHeader` and the page/theme
+tokens; its title uses the prose font. The `settings` query parameter addresses
+the view without adding a host route. Opening, closing, and browser Back leave
+the underlying session or home view mounted, including composer and launch
+state; query-only navigation does not reset window scroll. The modal dialog
+provides focus containment, background inertness, and Escape dismissal.
+
+`ui/Panel.tsx`'s `Interface` supplies the existing theme and thinking/ambient
+visibility preferences and browser push registration. These controls no longer
+live in the session drawer. Preference storage and push permission/subscription
+behavior are unchanged; notification prompts run only on explicit interaction.
 
 ## The drawer
 
@@ -2057,3 +2074,11 @@ daemon's own code remains the only way the TUI gets the same
 
 The whole module sits behind `import.meta.env.DEV` in `useSession.ts`, which a
 production build folds to `false`; the branch and the module go with it.
+
+### Command inspection and running-task shortcuts
+
+`ui/TaskStrip.tsx` places running-task shortcuts above the composer. Foreground processes enter after one second; explicitly backgrounded processes enter immediately. Selecting a shortcut opens the originating call without scrolling the transcript. The session panel no longer duplicates task output/actions. `ui/inspector/useHistoricalCall.ts` resolves calls outside loaded history into an inspector-only window, merging subsequent live entries without changing transcript history.
+
+At desktop widths of at least 1100px, `ui/inspector/Layout.css` places the inspector beside the session column; narrower screens retain the overlay sheet. Bash inspection uses `ui/inspector/CommandView.tsx`: one heading, full Bash-highlighted command, independent wrapping output viewport, and live process actions. Output follows while running until the reader scrolls upward; bottom contact or Follow output resumes. Finished processes have no following controls. Structured telemetry supplies background handles after cold navigation; process records supply observed exit status and final duration. Missing end records remain unknown rather than implying success.
+
+Raw results, permission verdicts, telemetry, and curation details remain under native disclosures (`ui/Disclosure.tsx`). Other tools retain the generic inspector tabs. `ui/inspector/handoff.ts` recognizes explicit and automatic handoff instructions against recorded handles: the transcript presents a compact Backgrounded label, while process output excludes those instructions. The underlying result remains unchanged.

@@ -1,3 +1,6 @@
+import { isHandoff } from "./inspector/handoff.ts";
+import { Disclosure } from "./Disclosure.tsx";
+import "./inspector/Layout.css";
 // The inspector (docs/web-client.md): a call-scoped right drawer — "raw is
 // one tap away" promoted from a per-result <details> to a standing surface.
 // Everything it shows the store already holds, entry-whole; this is a second
@@ -7,6 +10,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   CallId,
+  Process,
   DistillateLines,
   Keep,
   RawResult,
@@ -16,6 +20,7 @@ import type {
 } from "../api/types.ts";
 import type { CallNode } from "../session/tree.ts";
 import { assistantView } from "../session/assistant.ts";
+import { CommandView } from "./inspector/CommandView.tsx";
 import { ArgsTab } from "./ArgsTab.tsx";
 import { CallSignature } from "./CallHead.tsx";
 import { ResultBody, ResultImages } from "./ToolBlocks.tsx";
@@ -273,16 +278,18 @@ function OutputSection({ label, read }: { label: string; read: OutputRead }) {
 
 export function Inspector({
   node,
+  process,
   closing,
   onSlideOut,
   onClose,
   onOpenFile,
   liveOutput,
-  processId,
+  processId: suppliedProcessId,
   processOutput,
   processLost,
 }: {
   node: CallNode;
+  process?: Process;
   /** The exit transition is running; `onSlideOut` unmounts when it lands. */
   closing: boolean;
   onSlideOut: () => void;
@@ -296,6 +303,8 @@ export function Inspector({
   processOutput: string | undefined;
   processLost: number | undefined;
 }) {
+  const recordedHandle = node.telemetry?.bash?.handle;
+  const recordedId = recordedHandle?.match(/^p#(\d+)$/)?.[1];
   const [tab, setTab] = useState<Tab>("result");
   const call = useMemo(() => {
     const issued = node.issued.payload;
@@ -309,6 +318,15 @@ export function Inspector({
     () => (call !== null ? callView(call.name, call.input) : null),
     [call],
   );
+  const backgroundCapable =
+    node.telemetry?.bash?.background === true ||
+    view?.shell?.background === true ||
+    view?.shell?.backgroundAfter != null;
+  const processId =
+    suppliedProcessId ??
+    (backgroundCapable && recordedId !== undefined
+      ? Number(recordedId)
+      : undefined);
   const entry =
     node.result !== null && "ToolResult" in node.result.payload
       ? node.result
@@ -353,6 +371,18 @@ export function Inspector({
       : retained !== null
         ? { label: `p#${processId} output`, read: retained }
         : null;
+  const backgroundHandoff =
+    isHandoff(result?.raw.content ?? "", recordedHandle) ||
+    processId !== undefined ||
+    node.telemetry?.bash?.background === true ||
+    view?.shell?.background === true;
+  const commandInspection =
+    view?.shell != null || processId !== undefined || process !== undefined;
+  const command =
+    process?.command ??
+    (call?.input && typeof call.input === "object" && "command" in call.input
+      ? String(call.input.command)
+      : node.name);
   const { width, grip } = useDrawerWidth();
   return (
     <div
@@ -371,34 +401,61 @@ export function Inspector({
     >
       <div className="inspector-grip" {...grip} />
       <div className="inspector-head">
-        <span className="inspector-title">inspecting</span>
+        {commandInspection ? (
+          <strong>
+            {command.trim().split(/\s+/)[0]}
+            {processId !== undefined && ` · p#${processId}`}
+          </strong>
+        ) : (
+          <span className="inspector-title">inspecting</span>
+        )}
         <span className="call-head">
           {/* One line in the head, wrapping as text: the inspector's
               body is where the arguments are read at length. */}
-          {view !== null && (
+          {!commandInspection && view !== null && (
             <CallSignature layout={layoutSignature(view, null)} />
           )}
         </span>
         <span className="spacer" />
-        <button className="linkish" onClick={onClose}>
+        <button
+          className="linkish"
+          aria-label="Close inspector"
+          onClick={onClose}
+        >
           ✕
         </button>
       </div>
-      <div className="inspector-tabs">
-        {TABS.map((t) => (
-          <button
-            key={t}
-            className={t === tab ? "inspector-tab open" : "inspector-tab"}
-            onClick={() => setTab(t)}
-          >
-            {t}
-          </button>
-        ))}
-      </div>
+      {!commandInspection && (
+        <div className="inspector-tabs">
+          {TABS.map((t) => (
+            <button
+              key={t}
+              className={t === tab ? "inspector-tab open" : "inspector-tab"}
+              onClick={() => setTab(t)}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
+      )}
       <div className="inspector-body">
-        {tab === "result" && (
+        {(commandInspection || tab === "result") && (
           <>
-            {rendered !== null ? (
+            {commandInspection ? (
+              <CommandView
+                key={node.callId}
+                process={process}
+                processId={processId}
+                command={command}
+                running={liveOutput !== undefined && result === null}
+                completed={result !== null && !backgroundHandoff}
+                output={
+                  output?.read.output ??
+                  (!backgroundHandoff ? (result?.raw.content ?? "") : "")
+                }
+                lost={output?.read.lost ?? 0}
+              />
+            ) : rendered !== null ? (
               <ResultBody body={rendered.body} />
             ) : (
               output === null && <div className="dim">no result yet</div>
@@ -412,15 +469,20 @@ export function Inspector({
                 images={result.raw.images ?? []}
               />
             )}
-            {output !== null && (
-              <OutputSection label={output.label} read={output.read} />
-            )}
+            {output !== null &&
+              processId === undefined &&
+              process === undefined && (
+                <OutputSection label={output.label} read={output.read} />
+              )}
           </>
         )}
-        {tab === "args" && call !== null && view !== null && (
-          <ArgsTab name={call.name} input={call.input} intent={view.intent} />
-        )}
-        {tab === "raw" && (
+        {!commandInspection &&
+          tab === "args" &&
+          call !== null &&
+          view !== null && (
+            <ArgsTab name={call.name} input={call.input} intent={view.intent} />
+          )}
+        {!commandInspection && tab === "raw" && (
           <>
             {result !== null ? (
               <pre>{result.raw.content}</pre>
@@ -432,7 +494,8 @@ export function Inspector({
             )}
           </>
         )}
-        {tab === "spot" &&
+        {!commandInspection &&
+          tab === "spot" &&
           (node.spot !== null ? (
             <div className="inspector-spot">
               <div>
@@ -459,14 +522,33 @@ export function Inspector({
           onOpenFile={onOpenFile}
         />
       )}
-      {node.telemetry !== null && <TelemetryPanel telemetry={node.telemetry} />}
-      {result !== null && (
-        <ForkPanel
-          raw={result.raw}
-          wire={result.wire}
-          distillate={result.distillate}
-        />
-      )}
+      <Disclosure className="inspector-details" label="Details">
+        {commandInspection && result !== null && (
+          <Disclosure label="Raw tool result">
+            <pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
+              {result.raw.content}
+            </pre>
+          </Disclosure>
+        )}
+        {commandInspection && node.spot !== null && (
+          <Disclosure label="Permission verdict">
+            <p>
+              {node.spot.stance} · {node.spot.origin}
+            </p>
+            <p>{node.spot.reason}</p>
+          </Disclosure>
+        )}
+        {node.telemetry !== null && (
+          <TelemetryPanel telemetry={node.telemetry} />
+        )}
+        {result !== null && (
+          <ForkPanel
+            raw={result.raw}
+            wire={result.wire}
+            distillate={result.distillate}
+          />
+        )}
+      </Disclosure>
     </div>
   );
 }

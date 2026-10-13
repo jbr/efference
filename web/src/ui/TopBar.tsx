@@ -1,3 +1,6 @@
+import { ContextPopup } from "./ContextPopup.tsx";
+import type { FoldControlProps } from "./FoldControl.tsx";
+import { AppSettingsLink } from "./AppSettings.tsx";
 // The top bar (docs/web-client.md): sticky interface chrome — the wordmark
 // (the way back to the session list), the session's title, the context meter,
 // and the control that opens the drawer. Deliberately minimal: what the
@@ -83,6 +86,7 @@ export function TopBar({
   drawerOpen,
   attention,
   onDrawer,
+  summary,
 }: {
   /** The session list to go back to, when this page is served by a host —
    * `null` at a session daemon's root, where there is no list. */
@@ -95,6 +99,7 @@ export function TopBar({
   /** Things in the drawer asking for attention (`drawerAttention`). */
   attention: number;
   onDrawer: () => void;
+  summary?: FoldControlProps;
 }) {
   const chip = upstreamChip(upstreamFailure, upstreamRetry);
   const routeId = sessionId();
@@ -118,7 +123,14 @@ export function TopBar({
       )}
       <span className="spacer" />
       {chip !== null && <UpstreamChip chip={chip} />}
-      {context !== null && <ContextMeter context={context} />}
+      {summary ? (
+        <ContextPopup context={context} summary={summary}>
+          {context !== null ? <ContextMeter context={context} /> : undefined}
+        </ContextPopup>
+      ) : (
+        context !== null && <ContextMeter context={context} />
+      )}
+      <AppSettingsLink />
       <DrawerToggle
         open={drawerOpen}
         attention={attention}

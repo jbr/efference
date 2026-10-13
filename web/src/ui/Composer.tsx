@@ -32,7 +32,11 @@ import type {
   Park,
   Stall,
 } from "../api/types.ts";
-import { ComposerToolbar } from "./ComposerToolbar.tsx";
+import {
+  ComposerToolbar,
+  HoldButton,
+  ComposerActionIcon,
+} from "./ComposerToolbar.tsx";
 import { FoldNotice } from "./FoldNotice.tsx";
 import { foldOffer } from "./fold.ts";
 import { coldLine } from "./coldLine.ts";
@@ -107,6 +111,7 @@ export function Composer({
   const draft = snapshot.text;
   const setDraft = store.setText;
   const [error, setError] = useState<string | null>(null);
+  const [holdPending, setHoldPending] = useState(false);
   const attachments = {
     staged: snapshot.staged,
     ready: snapshot.staged.flatMap((s) => (s.attachment ? [s.attachment] : [])),
@@ -216,6 +221,18 @@ export function Composer({
   }
   const act = (call: Promise<unknown>) =>
     void call.then(() => setError(null)).catch((e) => setError(`${e}`));
+  async function changeHold(held: boolean) {
+    if (holdPending) return;
+    setHoldPending(true);
+    try {
+      await patchLoop({ held });
+      setError(null);
+    } catch (e) {
+      setError(`${e}`);
+    } finally {
+      setHoldPending(false);
+    }
+  }
 
   // The cold line for the pending question: what answering reads uncached.
   const askColdLine = ask !== null ? coldLine(cold, "your answer") : null;
@@ -362,7 +379,8 @@ export function Composer({
               uploading={attachments.uploading}
               onAttach={() => picker.current?.click()}
               onInterrupt={() => act(interruptLoop())}
-              onResume={() => act(patchLoop({ held: false }))}
+              holdPending={holdPending}
+              onHoldChange={(held) => void changeHold(held)}
             />
           </div>
         </div>
@@ -374,18 +392,21 @@ export function Composer({
           </span>
           <span className="spacer" />
           {running && (
-            <button type="button" onClick={() => act(interruptLoop())}>
-              interrupt
-            </button>
-          )}
-          {(pace?.held ?? false) && (
             <button
               type="button"
-              onClick={() => act(patchLoop({ held: false }))}
+              className="interrupt-btn composer-icon-button"
+              aria-label="Interrupt current operation"
+              title="Interrupt current operation"
+              onClick={() => act(interruptLoop())}
             >
-              resume
+              <ComposerActionIcon kind="stop" />
             </button>
           )}
+          <HoldButton
+            held={pace?.held ?? false}
+            pending={holdPending}
+            onChange={(held) => void changeHold(held)}
+          />
         </div>
       )}
     </>

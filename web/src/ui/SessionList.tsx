@@ -1,3 +1,4 @@
+import { AppSettingsLink } from "./AppSettings.tsx";
 // The host's root: an overview of every live session, grouped by working
 // directory into workspaces, one card each (docs/web-client.md).
 //
@@ -256,6 +257,7 @@ export function SessionList({
         >
           New session
         </button>
+        <AppSettingsLink />
       </AppHeader>
       <main className="overview-body">
         {error !== null && <p className="overview-error">{error}</p>}

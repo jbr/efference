@@ -51,3 +51,18 @@ export function orderByRecency<T extends { id: string }>(
     .sort((a, b) => at(b.session) - at(a.session) || a.index - b.index)
     .map(({ session }) => session);
 }
+
+/** Keep established tab slots; append newly listed sessions in listing order. */
+export function orderByTabs<T extends { id: string }>(
+  sessions: T[],
+  previous: string[],
+): T[] {
+  const entries = new Map(sessions.map((session) => [session.id, session]));
+  const retained = previous.flatMap((id) => {
+    const session = entries.get(id);
+    if (!session) return [];
+    entries.delete(id);
+    return [session];
+  });
+  return [...retained, ...entries.values()];
+}
