@@ -14,6 +14,11 @@
     <link rel="icon" href="/icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <meta name="theme-color" content="#16131d" />
+    <!-- The theme tokens as a stylesheet of the page's own, not an import from
+         main.tsx: under the Vite dev server an imported stylesheet arrives only
+         once the module graph has loaded, so the first frames paint unstyled
+         (white). A linked one holds the first paint in both builds. -->
+    <link rel="stylesheet" href="/src/theme.css" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="efference" />

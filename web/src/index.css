@@ -1,8 +1,8 @@
 /* Structure only — layout is still the pre-design minimal shell; the panes
    and entry chrome are the redesign pass's later units. Colors and type
-   resolve through theme.css tokens exclusively (docs/web-client.md). */
+   resolve through theme.css tokens exclusively (docs/web-client.md), which
+   index.html links ahead of this file. */
 
-@import "./theme.css";
 @import "./ui/InteractionLight.css";
 @import "./ui/SelectionRows.css";
 

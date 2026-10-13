@@ -950,8 +950,13 @@ equals one whole-buffer pass, at every prefix — is pinned by
 
 `web/src/theme.css` holds every color as a custom property; components reference
 tokens only. A theme is one override block: After Dark (dark, magenta accent) is
-the default set on `:root` — which is also the pre-script paint — and Lilac
-overrides under `:root[data-theme="lilac"]`. `ui/theme.ts` resolves the
+the default set on `:root`, and Lilac overrides under `:root[data-theme="lilac"]`.
+The frames before the script runs show only the page background, which `:root`
+paints onto the canvas; until `data-theme` is set, it follows `prefers-color-scheme`,
+Lilac's under a light scheme, as the iOS launch images do ("Installability").
+`index.html` links `theme.css` itself rather than leaving it to `main.tsx`'s import
+of `index.css`: under the Vite dev server an imported stylesheet arrives only with
+the module graph, and the frames before it paint unstyled white. `ui/theme.ts` resolves the
 choice — explicit and persisted in localStorage, or the system scheme when none
 is stored — and sets `data-theme` on `<html>`; `initTheme()` runs before first
 render, and the select lives in the bottom panel's interface tab. After Dark's

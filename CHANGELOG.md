@@ -175,7 +175,7 @@ behind a change, see [`journal/`](journal/).
 
 ### Changed
 - **The web app icon is the schwa from the site favicon**, in place of the Newsreader `e` (docs/web-client.md).
-- **The installed web app launches on a centred Newsreader wordmark in its theme's page colour (iOS), in place of white**, from generated startup images (docs/web-client.md "Installability").
+- **The installed web app launches on a centred Newsreader wordmark in its theme's page colour (iOS), in place of white**, from generated startup images (docs/web-client.md "Installability"); the page that follows starts in the same colour, with no white gap under the dev server.
 - **Session log format version 2** (docs/log-and-projection.md): telemetry payloads (tool measurements, dispatch markers, request stages, push and cold-check steps) nest under one `Telemetry` key, and their frame kinds read `telemetry.<variant>`; version-1 logs are refused, and `scripts/migrate-log-v2.py` converts them.
 - **A separate triage model writes a report, not a note to self** (docs/redaction-fork.md): its `keep`/`note` rows keep what the intent asks to see, answer what it asks as a question in the note with the one line that proves it, let a fact replace lines that only witness it, and report what the output shows rather than what to do next; shared triage's rows are unchanged.
 - **The decision spotter judges by precedent** (docs/permissions.md): a move's sketchiness level sets how many earlier calls like it the operator must have approved before it clears (0, 0, 1, 2, never), asked as a same/wider/different choice per earlier call; it emits no `watch`, and `efference dev spotter-bands` is gone.
