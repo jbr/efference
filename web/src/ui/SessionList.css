@@ -148,6 +148,10 @@
   gap: 0.9rem;
 }
 
+.card-grid:empty {
+  padding-bottom: 0;
+}
+
 /* ---- the card ---- */
 
 /* Two voices, three sizes. Prose — the title, the status predicate, the

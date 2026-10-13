@@ -7,7 +7,7 @@
 // and a supervisor's card names what it supervises. Working with a subagent
 // should be no further away than working with the session that created it.
 
-import type { SessionEntry } from "../api/http.ts";
+import type { ArchivedSession, SessionEntry } from "../api/http.ts";
 import type { LogEntry, StateSnapshot } from "../api/types.ts";
 import { callView } from "./signature.ts";
 import { viewOf } from "../session/assistant.ts";
@@ -233,22 +233,41 @@ export function splitPath(path: string): [string, string] {
   return [path.slice(0, cut + 1), path.slice(cut + 1)];
 }
 
-/** Cards grouped by working directory. Groups and cards keep a stable order
- * (path, then the listing's id order) so a card stays where the operator last
- * saw it; urgency is carried by the card, not by moving it. */
-export function workspaces(cards: CardModel[]): Workspace[] {
+/** Live workspaces keep path order and cards keep listing order. Up to five
+ * archive-only workspaces follow in latest-activity order (docs/web-client.md). */
+export function workspaces(
+  cards: CardModel[],
+  archivedByCwd: ReadonlyMap<string, ArchivedSession[]> = new Map(),
+): Workspace[] {
   const groups = new Map<string, CardModel[]>();
   for (const card of cards) {
     const group = groups.get(card.cwd);
     if (group) group.push(card);
     else groups.set(card.cwd, [card]);
   }
-  return [...groups.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([cwd, cards]) => {
-      const [parent, name] = splitPath(homeRelative(cwd));
-      return { cwd, parent, name, cards };
-    });
+  const recent = [...archivedByCwd.entries()]
+    .filter(
+      ([cwd, sessions]) => !groups.has(cwd) && sessions.some((s) => !s.problem),
+    )
+    .map(([cwd, sessions]) => ({
+      cwd,
+      lastActive: sessions.reduce(
+        (latest, s) =>
+          s.problem
+            ? latest
+            : Math.max(latest, s.last_active_at ?? s.created_at ?? 0),
+        0,
+      ),
+    }))
+    .sort((a, b) => b.lastActive - a.lastActive || a.cwd.localeCompare(b.cwd))
+    .slice(0, 5);
+  return [
+    ...[...groups.entries()].sort(([a], [b]) => a.localeCompare(b)),
+    ...recent.map(({ cwd }): [string, CardModel[]] => [cwd, []]),
+  ].map(([cwd, cards]) => {
+    const [parent, name] = splitPath(homeRelative(cwd));
+    return { cwd, parent, name, cards };
+  });
 }
 
 export const tokens = (n: number) =>

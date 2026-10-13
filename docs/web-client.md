@@ -200,9 +200,18 @@ render; nothing above the list re-resolves after that.
 
 **The root is an overview, grouped into workspaces** (`ui/overview.ts` is the model,
 `ui/SessionCard.tsx` a card, `ui/SessionList.tsx` the page). Sessions group by working
-directory, one card each, in a stable order — workspaces by path, cards in listing
-order — so a card stays where the operator last saw it and urgency is carried by the
-card rather than by moving it. A workspace heading sets the path's last component as
+directory, one card each, in a stable order — live workspaces by path, cards in
+listing order — so urgency is carried by the card rather than by moving it. Up to
+five archive-only workspaces follow, ordered by their latest resumable session's
+activity (creation time when activity is unknown, then path to break ties). Their
+age does not remove the workspace: archived sessions active within one hour appear
+as full cards (five per workspace, two on narrow screens), and those within one
+week appear as compact rows (up to five); the remaining sessions are available
+through the archive picker. Roots with only unreadable sessions are not included.
+The archive inventory is fetched on mount and when the live listing changes, so
+ending a workspace's last live session leaves its archived work available at home.
+
+A workspace heading sets the path's last component as
 the name and the parent small and faint (`~/code/` **efference**), because the name is
 what the operator recognizes it by and the parent is what tells `~/code/api` from
 `~/work/api`. Headings are sticky section headers: each docks under the top bar while

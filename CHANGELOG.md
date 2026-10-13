@@ -8,6 +8,7 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- Web home keeps up to five recent archive-only workspaces below live workspaces, with archived sessions available to resume.
 - Anthropic sessions ask for the provider's own cache diagnostics: each turn names the previous response, and a named miss (`tools_changed`, `system_changed`, `model_changed`, `messages_changed`) lands on the usage line and in `efference dev cache` — attribution for a cold read that no token total can supply.
 - Web session-switcher cards offer archiving with active-work confirmation, inline failure feedback, and return home when the viewed session is archived.
 - Session cards, context details, and plan tooltips share popup styling; context details open on mouse hover, keyboard focus, or touch, without mouse clicks pinning popups.

@@ -1,6 +1,6 @@
 import { AppSettingsLink } from "./AppSettings.tsx";
-// The host's root: an overview of every live session, grouped by working
-// directory into workspaces, one card each (docs/web-client.md).
+// The host's root: live sessions and recent archived work, grouped by working
+// directory into workspaces (docs/web-client.md).
 //
 // The listing is a subscription (`api/sessions.ts`), so a session created or
 // ended anywhere appears or leaves on its own. Each card's richer state — the
@@ -182,8 +182,8 @@ export function SessionList({
       const feed = feeds.get(entry.id);
       return cardModel(entry, sessions, feed?.state ?? null, feed?.recent);
     });
-    return workspaces(cards);
-  }, [sessions, feeds]);
+    return workspaces(cards, archivedByCwd);
+  }, [sessions, feeds, archivedByCwd]);
 
   useStuckHeadings(
     page,
@@ -262,10 +262,8 @@ export function SessionList({
       <main className="overview-body">
         {error !== null && <p className="overview-error">{error}</p>}
         {groups.length === 0 ? (
-          // Liveness, not existence: a dead session's log stays on disk and
-          // readable by the offline verbs, and is not listed here.
           <div className="overview-empty">
-            <p className="overview-empty-title">No active sessions</p>
+            <p className="overview-empty-title">No recent workspaces</p>
           </div>
         ) : (
           groups.map((group) => (

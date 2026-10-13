@@ -2,7 +2,7 @@
 // by working directory (docs/web-client.md).
 
 import { expect, test } from "vitest";
-import type { SessionEntry } from "../api/http.ts";
+import type { ArchivedSession, SessionEntry } from "../api/http.ts";
 import type { LogEntry, Payload, StateSnapshot } from "../api/types.ts";
 import { messagesAssistant } from "../session/assistant.ts";
 import {
@@ -192,4 +192,86 @@ test("a reply preview is its first paragraph without inline marks", () => {
   expect(
     plainFirstParagraph("## Found it\nThe `timer` is **re-armed**.\n\nx"),
   ).toBe("Found it The timer is re-armed.");
+});
+
+test("recent archive-only workspaces follow every live workspace, capped at five", () => {
+  const live = Array.from({ length: 6 }, (_, i) =>
+    entry({ id: `live-${i}`, cwd: `/live/${i}` }),
+  );
+  const archives = new Map<string, ArchivedSession[]>();
+  for (let i = 0; i < 7; i++) {
+    archives.set(`/old/${i}`, [
+      {
+        id: `old-${i}`,
+        cwd: `/old/${i}`,
+        state: "archived",
+        last_active_at: i + 1,
+      },
+    ]);
+  }
+  archives.set("/live/0", [
+    { id: "older", cwd: "/live/0", state: "archived", last_active_at: 100 },
+  ]);
+  const groups = workspaces(
+    live.map((e) => cardModel(e, live, null)),
+    archives,
+  );
+  expect(groups.map((g) => g.cwd)).toEqual([
+    ...live.map((e) => e.cwd),
+    "/old/6",
+    "/old/5",
+    "/old/4",
+    "/old/3",
+    "/old/2",
+  ]);
+  expect(groups.slice(6).every((g) => g.cards.length === 0)).toBe(true);
+});
+
+test("archive recency uses the latest resumable session with deterministic ties", () => {
+  const archive = (
+    cwd: string,
+    over: Partial<ArchivedSession> = {},
+  ): ArchivedSession => ({ id: cwd, cwd, state: "archived", ...over });
+  const archives = new Map([
+    ["/b", [archive("/b", { last_active_at: 20 })]],
+    [
+      "/a",
+      [
+        archive("/a", { last_active_at: 1 }),
+        archive("/a", { last_active_at: 20 }),
+        archive("/a", { last_active_at: 100, problem: "missing log" }),
+      ],
+    ],
+    ["/broken", [archive("/broken", { problem: "missing log" })]],
+    ["/empty", []],
+    ["/unknown", [archive("/unknown")]],
+    ["/created", [archive("/created", { created_at: 10 })]],
+  ]);
+  expect(workspaces([], archives).map((g) => g.cwd)).toEqual([
+    "/a",
+    "/b",
+    "/created",
+    "/unknown",
+  ]);
+});
+
+test("a workspace remains after its final live session is archived", () => {
+  const session = entry();
+  const archives = new Map<string, ArchivedSession[]>([
+    [
+      session.cwd!,
+      [
+        {
+          id: session.id,
+          cwd: session.cwd!,
+          state: "archived",
+          last_active_at: 1,
+        },
+      ],
+    ],
+  ]);
+  const before = workspaces([cardModel(session, [session], null)], archives);
+  const after = workspaces([], archives);
+  expect(after.map((g) => g.cwd)).toEqual(before.map((g) => g.cwd));
+  expect(after[0].cards).toEqual([]);
 });
