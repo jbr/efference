@@ -1,6 +1,6 @@
 import { settingsHref } from "./settingsHref.ts";
 import { useEffect, useRef } from "react";
-import { Interface } from "./Panel.tsx";
+import { Interface } from "./Interface.tsx";
 import { AppHeader } from "./AppHeader.tsx";
 import { navigate, useSearch } from "./route.ts";
 import "./AppSettings.css";

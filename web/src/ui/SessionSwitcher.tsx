@@ -1,7 +1,7 @@
 import { ContextBar } from "./ContextBar.tsx";
 // The quick session switcher (docs/web-client.md): a slim second row under the
-// top bar listing the *other* live sessions on the host, most recently visited
-// first. At rest a tab is a status dot and a title; hovering or focusing one
+// top bar listing live sessions in stable slots, including the selected session.
+// At rest a tab is a status dot and a session id; hovering or focusing one
 // opens a card — the facts the overview card carries, less its settings —
 // without leaving the page. Switching is a client-side navigation, as it is
 // from the list (ui/route.ts): the tabs are plain links, so a modified click
@@ -144,7 +144,7 @@ export function SessionSwitcher({ currentId }: { currentId: string }) {
   const [shown, setShown] = useState<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const feed = useCardFeed(shown);
-  const { row, measure, fit } = useFit(cards.map((c) => c.title ?? c.id));
+  const { row, measure, fit } = useFit(cards.map((c) => c.id));
 
   if (sessions === null || cards.length === 0) return null;
 
@@ -227,19 +227,13 @@ export function Tab({
   current?: boolean;
   onCurrentClick?: () => void;
 }) {
-  const label = card.title ?? card.id;
+  const label = card.id;
   const phrase = statusPhrase(card);
   const body = (
     <>
       <span className="switcher-dot" aria-hidden="true" />
       <span className="switcher-label">{label}</span>
-      {!inert && (
-        <span className="visually-hidden">
-          {" "}
-          {card.id}
-          {phrase !== null ? ` ${phrase}` : ""}
-        </span>
-      )}
+      {!inert && <span className="visually-hidden"> {phrase ?? ""}</span>}
     </>
   );
   const className = `switcher-tab dot-${dotKind(card)}${current ? " is-current" : ""}`;

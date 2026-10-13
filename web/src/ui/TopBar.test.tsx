@@ -4,7 +4,7 @@
 import { expect, test } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { Usage } from "../api/types.ts";
-import { TopBar, DrawerToggle } from "./TopBar.tsx";
+import { TopBar } from "./TopBar.tsx";
 
 const usage = (context: Usage["context"]): Usage =>
   ({
@@ -30,9 +30,6 @@ const bar = (context: Usage["context"]) =>
       usage={usage(context)}
       upstreamFailure={null}
       upstreamRetry={null}
-      drawerOpen={false}
-      attention={0}
-      onDrawer={() => {}}
     />,
   );
 
@@ -49,16 +46,6 @@ test("an unknown window draws the count alone, with no bar", () => {
   expect(markup).toContain("window unknown");
 });
 
-test("the shared drawer control only badges positive attention and retains its open state", () => {
-  const closed = renderToStaticMarkup(
-    <DrawerToggle open={false} attention={0} onClick={() => {}} />,
-  );
-  expect(closed).not.toContain("drawer-count");
-  expect(closed).toContain('aria-expanded="false"');
-  const open = renderToStaticMarkup(
-    <DrawerToggle open attention={12} onClick={() => {}} />,
-  );
-  expect(open).toContain('class="drawer-toggle open"');
-  expect(open).toContain('aria-expanded="true"');
-  expect(open).toContain('class="drawer-count">12</span>');
+test("header no longer exposes the session panel", () => {
+  expect(bar(null)).not.toContain("drawer-toggle");
 });

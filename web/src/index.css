@@ -378,34 +378,6 @@ input[type="checkbox"]:disabled {
   text-align: right;
 }
 
-/* The drawer control (ui/Drawer.tsx), with the count of what in the drawer
-   is asking for attention. */
-.drawer-toggle {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-}
-
-.drawer-toggle.open {
-  border-color: var(--border-strong);
-  background: var(--bg-chip);
-  color: var(--fg-bright);
-}
-
-.drawer-count {
-  min-width: 1.1rem;
-  padding: 0 0.3rem;
-  border-radius: 999px;
-  background: var(--badge-core);
-  color: var(--badge-ink);
-  box-shadow: var(--badge-halo);
-  font-weight: 500;
-  font-size: 0.85em;
-  line-height: 1.3;
-  text-align: center;
-}
-
 /* The upstream diagnostic: a warn-tinted chip left of the usage meter. Tinted
    rather than filled — the banner owns the loud treatment. Both topics behind it
    clear on recovery, so the chip's absence is the all-clear

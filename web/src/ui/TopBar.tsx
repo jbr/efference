@@ -83,9 +83,6 @@ export function TopBar({
   usage,
   upstreamFailure,
   upstreamRetry,
-  drawerOpen,
-  attention,
-  onDrawer,
   summary,
 }: {
   /** The session list to go back to, when this page is served by a host —
@@ -95,10 +92,6 @@ export function TopBar({
   usage: Usage | null;
   upstreamFailure: UpstreamFailure | null;
   upstreamRetry: UpstreamRetry | null;
-  drawerOpen: boolean;
-  /** Things in the drawer asking for attention (`drawerAttention`). */
-  attention: number;
-  onDrawer: () => void;
   summary?: FoldControlProps;
 }) {
   const chip = upstreamChip(upstreamFailure, upstreamRetry);
@@ -131,33 +124,6 @@ export function TopBar({
         context !== null && <ContextMeter context={context} />
       )}
       <AppSettingsLink />
-      <DrawerToggle
-        open={drawerOpen}
-        attention={attention}
-        onClick={onDrawer}
-      />
     </AppHeader>
-  );
-}
-
-/** The drawer control, including its attention count (docs/web-client.md). */
-export function DrawerToggle({
-  open,
-  attention,
-  onClick,
-}: {
-  open: boolean;
-  attention: number;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      className={open ? "drawer-toggle open" : "drawer-toggle"}
-      aria-expanded={open}
-      onClick={onClick}
-    >
-      Session
-      {attention > 0 && <span className="drawer-count">{attention}</span>}
-    </button>
   );
 }

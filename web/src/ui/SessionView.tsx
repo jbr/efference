@@ -18,9 +18,7 @@ import { buildTree, type CallNode } from "../session/tree.ts";
 import { useSession } from "../session/useSession.ts";
 import { Composer, type Recalled } from "./Composer.tsx";
 import { sessionDocumentTitle, useDocumentTitle } from "./documentTitle.ts";
-import { Drawer } from "./Drawer.tsx";
 import { EarlierHistory } from "./EarlierHistory.tsx";
-import { drawerAttention } from "./drawerAttention.ts";
 import { FileView } from "./FileView.tsx";
 import { GateSurface } from "./Gate.tsx";
 import { sessionName, successorHref } from "./identity.ts";
@@ -86,26 +84,12 @@ export function SessionView() {
   // The gated call's slot in the transcript, where the gate's decision
   // renders (ui/Gate.tsx); null until that call is on screen.
   const [gateSlot, setGateSlot] = useState<HTMLDivElement | null>(null);
-  // The session drawer (ui/Drawer.tsx): open/shown/closing is the
-  // inspector's slide pattern — `drawerShown` keeps it mounted through the
-  // exit transition, with the same timeout fallback for a hidden tab.
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const [drawerShown, setDrawerShown] = useState(false);
-  if (drawerOpen && !drawerShown) setDrawerShown(true);
-  const drawerClosing = !drawerOpen && drawerShown;
-  const drawerDone = useCallback(() => setDrawerShown(false), []);
-  useEffect(() => {
-    if (!drawerClosing) return;
-    const id = setTimeout(drawerDone, 350);
-    return () => clearTimeout(id);
-  }, [drawerClosing, drawerDone]);
   const [inspecting, setInspecting] = useState<CallId | null>(null);
   // Clicking the call being inspected closes the drawer: the call is a huge
   // central target where the ✕ is a distant corner one (Fitts), and a second
   // click on "show me this" reading as "stop showing me this" is the toggle
   // idiom. A different call switches without closing.
   const onInspect = useCallback((id: CallId) => {
-    setDrawerOpen(false);
     setInspecting((prev) => (prev === id ? null : id));
   }, []);
   // The drawer's slide-out needs it mounted after `inspecting` clears —
@@ -226,14 +210,12 @@ export function SessionView() {
   useOverlayHistory(
     (inspecting !== null ? 1 : 0) +
       (viewingFile !== null ? 1 : 0) +
-      (drawerOpen ? 1 : 0) +
       (lightboxImage !== null ? 1 : 0),
     useCallback(() => {
       if (lightboxImage !== null) closeLightbox();
       else if (viewingFile !== null) setViewingFile(null);
-      else if (drawerOpen) setDrawerOpen(false);
       else setInspecting(null);
-    }, [lightboxImage, viewingFile, drawerOpen]),
+    }, [lightboxImage, viewingFile]),
   );
   const newestEdit = useMemo(
     () => lastEdit(session.entries),
@@ -245,8 +227,6 @@ export function SessionView() {
   }
 
   const gate = session.topics.gate;
-  const notifications = session.topics.notifications ?? [];
-  const proposals = session.topics.proposals ?? [];
   const processes = session.topics.processes ?? [];
   return (
     <div className={inspected !== null ? "app session-split" : "app"}>
@@ -265,12 +245,6 @@ export function SessionView() {
             running: session.topics.running ?? false,
             gatePending: gate != null,
             asking: (session.topics.ask ?? null) !== null,
-          }}
-          drawerOpen={drawerOpen}
-          attention={drawerAttention(notifications, proposals, processes)}
-          onDrawer={() => {
-            setInspecting(null);
-            setDrawerOpen((open) => !open);
           }}
         />
         {session.connection !== "live" && (
@@ -325,26 +299,11 @@ export function SessionView() {
             />
           </div>
         )}
-        {drawerShown && (
-          <Drawer
-            closing={drawerClosing}
-            onSlideOut={drawerDone}
-            onClose={() => setDrawerOpen(false)}
-            identity={session.topics.session_identity ?? null}
-            usage={session.topics.usage ?? null}
-            pace={session.topics.pace ?? null}
-            reviewLevel={session.topics.review_level ?? null}
-            role={session.topics.role ?? null}
-            proposals={proposals}
-            notifications={notifications}
-          />
-        )}
         <div className="dock">
           <TaskStrip
             processes={processes}
             selected={inspecting}
             onInspect={(id) => {
-              setDrawerOpen(false);
               setInspecting(id);
             }}
           />

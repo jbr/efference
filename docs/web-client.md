@@ -1196,15 +1196,12 @@ the shared control halo. The hue moves
 from the meter hue toward the accent between 50% and 85%, then toward the warn
 hue between 85% and 100%. These are visual fill ranges, not consolidation
 thresholds. Unknown usage draws no fill; an unknown window draws the count
-without a bar. The **Session** control carries a count when anything in the drawer
-asks for attention — pending notifications, policy proposals, running
-processes (`ui/drawerAttention.ts`).
+without a bar.
 
 **The session switcher** (`ui/SessionSwitcher.tsx`) is a second row inside the sticky
 header, present only under a host and only while another session is live. It lists the
-*other* live sessions on the host, from the same listing subscription the overview holds
-(`api/sessions.ts`), so it adds one connection at rest. A tab is a status dot and a title
-(the id before one is written); the dot is read from the listing alone through `cardModel`:
+live sessions, including the selected session on the host, from the same listing subscription the overview holds
+(`api/sessions.ts`), so it adds one connection at rest. A tab is a status dot and a session id; the dot is read from the listing alone through `cardModel`:
 a gated session is an accent dot with a halo, a session whose turn ended or that is asking
 is the accent dot without one — a finished turn waits on the operator until the session is
 archived — a stalled one is the warn colour, a running one pulses faintly, and a session
@@ -1395,86 +1392,14 @@ the underlying session or home view mounted, including composer and launch
 state; query-only navigation does not reset window scroll. The modal dialog
 provides focus containment, background inertness, and Escape dismissal.
 
-`ui/Panel.tsx`'s `Interface` supplies the existing theme and thinking/ambient
+`ui/Interface.tsx` supplies the existing theme and thinking/ambient
 visibility preferences and browser push registration. These controls no longer
 live in the session drawer. Preference storage and push permission/subscription
 behavior are unchanged; notification prompts run only on explicit interaction.
 
-## The drawer
+## Process output seeding
 
-`ui/Drawer.tsx`: everything about a session that is not the conversation,
-behind the top bar's **Session** control, so the page itself is the transcript
-and the composer. A side sheet on a wide window; on the phone breakpoint a
-bottom sheet with a grabber, rounded top corners, and room for the home
-indicator. It closes with Done, a tap on the scrim, or history-back (it is an
-overlay to `ui/overlayHistory.ts` like the inspector), and it and the inspector
-exclude each other since both occupy the right edge. The slide is the
-inspector's: transform only, entry from `@starting-style`, exit via `.closing`
-with the unmount on `transitionend` and a timeout fallback.
-
-**The phone sheet drags.** Its header is the handle; the sheet follows the
-finger, stretching with resistance above its resting place. On release it
-takes the velocity of the last 80ms only — a drag that sped up and then stopped
-was not a flick — projects 180ms of that momentum, and closes if the projection
-lands past half the sheet's height; otherwise it springs back. That is the rule
-an iOS sheet follows; a quarter-height threshold with average speed closed on
-short quick drags and left no way to abandon one.
-
-The header is "Session details"; the title follows in full as a serif
-paragraph. Sections, each drawn only when it has content — "no processes" and
-"nothing pending" were placeholders a reader had to open to learn nothing
-from:
-
-- **inbox** and **tasks** first, because they are what asks for attention.
-- **the session** — model, spotter, triage (only when it differs from main),
-  directory, id, cost as `key value` facts; then the review level in words
-  ("The spotter decides", "The spotter, then you", "You review every call",
-  and "The supervising session" only while that is the value), the pause
-  between steps, and hold after the current step — one `PATCH /v1/loop`, which
-  the api layer's `patchLoop` translates to the wire's partial-`pace` shape.
-- **policy**.
-- **this device** — theme, density switches, notifications; app-wide rather
-  than per-session, here until the app has a settings home.
-
-Labels in the drawer are IBM Plex Sans (`--font-ui`), values mono, the title
-serif: the interface voice is being tried here before the rest of the chrome
-adopts it.
-
-The sections carried over from the bottom panel they replaced, in detail
-(`ui/Panel.tsx` holds them; `Drawer.tsx` arranges them):
-
-- **tasks** — one row per process (command, pid, elapsed ticked once a
-  second, muted flag) beside a detail pane: the command line, the verbs —
-  mute/unmute, the background handoff with its optional note
-  (`PATCH /v1/processes/:id`, a 202) on the foreground entry, kill
-  (`DELETE /v1/processes/:id`) on any — and a live tail pinned to its
-  bottom. The tail is `streaming.processOutput`'s rendering surface, the one
-  streaming topic that folds into the store and renders
-  nowhere. The mock's "foreground" verb is deliberately absent: the wire has
-  a background handoff, not a foregrounding.
-
-  The tail is **seeded, not only streamed**: `output` is ephemeral with no
-  replay, so a process already running when the client connects has no deltas
-  to build a tail from, and a backgrounded process is frequently quiet — which
-  is usually why it was backgrounded. `session/processSeed.ts` reads
-  `GET /v1/processes/:id/output` once per process as the `processes` topic
-  first names it, and folds the result *under* whatever deltas have arrived
-  since. An id with output already buffered is skipped: the retained read is a
-  snapshot containing those same bytes, so seeding a warm buffer would
-  duplicate them. Bytes the supervisor dropped at its retention cap are stated
-  above the tail rather than silently skipped.
-- **inbox** — pending notifications with dismiss
-  (`DELETE /v1/notifications/:id`); on an idle loop the inbox delivers
-  immediately, so rows only exist while a tool is mid-run.
-- **policy** — the perimeter from `role` (scope, commands, paths, tools)
-  with pending proposals merged *in their committed sort position*,
-  ⊕-flagged, each carrying commit and cancel (`PATCH /v1/proposals/:seq`).
-  The sort rule is the TUI's, and the reason travels with it: committing a
-  proposal must not move it, because reflow at the moment of confirmation is
-  how you lose track of what you confirmed. `ui/policy.ts` computes the
-  rows, and `ui/policy.test.ts` pins the invariant (same index before and
-  after commit). This closes the config-edit loop from this client: an agent
-  that proposes a grant no longer blocks on a human at a terminal.
+`session/processSeed.ts` reads `GET /v1/processes/:id/output` once when the processes topic first names a process, folding retained bytes beneath deltas already received. Warm buffers are skipped to avoid duplicating the retained snapshot. Supervisor retention loss is stated above the output. Task shortcuts and the call inspector provide process access; there is no separate session-details panel.
 
 The gate cue's bottom offset is measured from the dock's height with a
 `ResizeObserver` rather than guessed in CSS — the composer changes that
@@ -1492,10 +1417,7 @@ without closing, and the `✕` remains. The
 selection is a call id held in `App`, which builds the transcript tree once
 and shares it with both consumers; the node is re-found from the tree each
 render, so a result or verdict landing after the drawer opened shows up in
-it. The drawer **floats over the content, which stays in place** — opening a
-second view does not get to move the text someone is reading (the earlier
-`body:has(.inspector)` margin yield did exactly that, and was reversed on
-use). Its left edge is a drag-to-resize grip — width clamped
+it. At desktop widths of at least 1100px the inspector occupies a sibling column; narrower screens use an overlay sheet. Its left edge is a drag-to-resize grip — width clamped
 at both ends and persisted like the theme. It is opaque: a frosted variant
 (translucent surface over `backdrop-filter` blur) was tried and dropped —
 re-blurring a backdrop that is also moving stuttered against the slide on
@@ -1966,7 +1888,7 @@ autosizing inflates an overflowing block), not only as a horizontal scroll, so
 
 With `?gallery` on the URL (dev builds), the page renders the client's widgets
 on fixture data instead of the app. A section index links to composed scenes,
-buttons (including the Session drawer's attention badge), neon glyphs, session
+buttons, neon glyphs, session
 tabs and their hover card, composers, code/results, images, session cards, launch
 settings, the model picker, and resume lists. Specimen labels stack above their
 controls on narrow screens; state comparisons wrap rather than widening the page.

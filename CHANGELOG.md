@@ -8,6 +8,7 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- Session switcher tabs show stable session IDs; the session-details panel is removed while task, hold, summary, and app-settings controls remain on their dedicated surfaces.
 - Running-task shortcuts open shared process inspectors with sibling desktop layout, full commands, live tails, lifecycle states, and compact background handoffs.
 - Composer controls use icon-only attach, hold/release, octagonal interrupt, and send actions; session tabs retain stable slots and current-session details.
 - App settings are accessible from home and sessions, with shared browser preferences and notification registration outside the session drawer.

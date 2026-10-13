@@ -1,6 +1,5 @@
 import type { CSSProperties } from "react";
 import { PaperClip } from "../ui/ComposerToolbar.tsx";
-import { DrawerToggle } from "../ui/TopBar.tsx";
 import { Specimen, States } from "./Specimens.tsx";
 
 export function ButtonSpecimens() {
@@ -37,28 +36,6 @@ export function ButtonSpecimens() {
       </Specimen>
       <Specimen name="default (unnamed) — button">
         <States render={(cls) => <button className={cls}>Resume…</button>} />
-      </Specimen>
-      <Specimen name="Session drawer — .drawer-toggle / .drawer-count">
-        <States
-          on=".drawer-toggle"
-          render={() => (
-            <DrawerToggle open={false} attention={1} onClick={() => {}} />
-          )}
-        />
-        <div className="g-states">
-          <figure className="g-state">
-            <DrawerToggle open={false} attention={0} onClick={() => {}} />
-            <figcaption>no badge</figcaption>
-          </figure>
-          <figure className="g-state">
-            <DrawerToggle open={false} attention={12} onClick={() => {}} />
-            <figcaption>two digits</figcaption>
-          </figure>
-          <figure className="g-state">
-            <DrawerToggle open attention={1} onClick={() => {}} />
-            <figcaption>open</figcaption>
-          </figure>
-        </div>
       </Specimen>
       <Specimen name="disabled">
         <div className="g-states">
