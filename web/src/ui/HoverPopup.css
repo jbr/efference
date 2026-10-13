@@ -1,0 +1,57 @@
+.hover-popup-anchor {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+}
+
+.hover-popup-position {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 10;
+  width: 19rem;
+  max-width: calc(100vw - 1rem);
+  padding-top: 0.45rem;
+}
+
+.hover-popup-position[data-align="right"] {
+  left: auto;
+  right: 0;
+}
+
+.hover-popup-position[hidden] {
+  display: none;
+}
+
+.hover-popup-surface {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  box-sizing: border-box;
+  max-height: calc(100dvh - 120px);
+  overflow: auto;
+  padding: 0.8rem 0.95rem;
+  border: 1px solid var(--light-edge);
+  border-radius: 10px;
+  background: var(--bg-surface);
+  box-shadow:
+    0 6px 22px rgb(0 0 0 / 0.12),
+    var(--control-halo);
+  color: var(--fg);
+  font-family: var(--font-prose);
+  font-size: 0.95rem;
+  line-height: 1.4;
+}
+
+.hover-popup-title {
+  margin: 0;
+  color: var(--fg-bright);
+  font-family: var(--font-prose);
+  font-size: 1.1rem;
+  font-weight: 500;
+  line-height: 1.25;
+}
+
+.hover-popup-surface p {
+  margin: 0;
+}

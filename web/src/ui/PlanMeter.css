@@ -1,0 +1,55 @@
+button.plan-meter-trigger {
+  background: transparent;
+  background-image: none;
+  border: 0;
+  padding: 6px;
+  min-height: 44px;
+  color: inherit;
+}
+
+button.plan-meter-trigger:hover:not(:disabled),
+button.plan-meter-trigger:focus-visible,
+button.plan-meter-trigger.plan-meter-trigger:active:not(:disabled) {
+  background: transparent;
+  box-shadow: none;
+}
+
+.plan-meter {
+  min-width: 5rem;
+}
+
+.plan-meter .plan-meter-track .meter {
+  width: 100%;
+}
+
+@media (max-width: 700px) {
+  .plan-meter {
+    min-width: 3.5rem;
+  }
+}
+
+.plan-meter .context-caption {
+  white-space: nowrap;
+}
+
+.plan-meter-track {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  border-radius: 3px;
+  background: var(--bg-chip);
+}
+
+.plan-meter-time-track {
+  display: block;
+  height: 2px;
+  border-radius: 999px;
+}
+
+.plan-meter-time-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--fg-dim);
+  opacity: 0.65;
+}

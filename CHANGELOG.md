@@ -8,6 +8,8 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- Session cards, context details, and plan tooltips share popup styling; context details open on mouse hover, keyboard focus, or touch, without mouse clicks pinning popups.
+- Web headers show Codex allowance usage beside elapsed window time, with reported-window cycling and relative reset/report details; other providers retain the existing header.
 - File-operation inspectors show expandable captured reads, submitted write/append content, and recorded diffs, with current-file context and explicit edit following in the shared sidebar.
 - Session switcher tabs show stable session IDs; the session-details panel is removed while task, hold, summary, and app-settings controls remain on their dedicated surfaces.
 - Running-task shortcuts open shared process inspectors with sibling desktop layout, full commands, live tails, lifecycle states, and compact background handoffs.

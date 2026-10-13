@@ -18,6 +18,7 @@ import { sessionId } from "../api/base.ts";
 import { sessionName } from "./identity.ts";
 import { upstreamChip } from "./upstream.ts";
 import { ContextBar } from "./ContextBar.tsx";
+import { PlanMeter } from "./PlanMeter.tsx";
 import { AppHeader } from "./AppHeader.tsx";
 import { SessionSwitcher } from "./SessionSwitcher.tsx";
 
@@ -123,6 +124,7 @@ export function TopBar({
       ) : (
         context !== null && <ContextMeter context={context} />
       )}
+      {usage?.plan && <PlanMeter plan={usage.plan} />}
       <AppSettingsLink />
     </AppHeader>
   );

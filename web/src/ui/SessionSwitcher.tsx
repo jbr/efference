@@ -22,6 +22,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { HOVER_OPEN_DELAY_MS, HOVER_CLOSE_DELAY_MS } from "./HoverPopup.tsx";
 import { apiBase, sessionHref } from "../api/base.ts";
 import { prefetchStore } from "../session/registry.ts";
 import { lastListing, rememberListing } from "../session/listing.ts";
@@ -112,9 +113,6 @@ const wantsOperator = (card: CardModel) => {
   );
 };
 
-const OPEN_DELAY_MS = 180;
-const CLOSE_DELAY_MS = 120;
-
 let tabOrder: string[] | null = null;
 
 export function SessionSwitcher({ currentId }: { currentId: string }) {
@@ -165,14 +163,14 @@ export function SessionSwitcher({ currentId }: { currentId: string }) {
             if (event.pointerType !== "mouse") return;
             // Ahead of the card's own delay: the read has the whole hover to land in.
             prefetchStore(`/sessions/${card.id}`);
-            schedule(card.id, OPEN_DELAY_MS);
+            schedule(card.id, HOVER_OPEN_DELAY_MS);
           }}
-          onPointerLeave={() => schedule(null, CLOSE_DELAY_MS)}
+          onPointerLeave={() => schedule(null, HOVER_CLOSE_DELAY_MS)}
           onFocus={() => {
             prefetchStore(`/sessions/${card.id}`);
             schedule(card.id, 0);
           }}
-          onBlur={() => schedule(null, CLOSE_DELAY_MS)}
+          onBlur={() => schedule(null, HOVER_CLOSE_DELAY_MS)}
           onKeyDown={(event) => {
             if (event.key === "Escape") schedule(null, 0);
           }}
@@ -440,9 +438,9 @@ export function HoverCard({ card }: { card: CardModel }) {
   const used = context?.used ?? null;
   const pop = useKeepOnScreen();
   return (
-    <div className="switcher-pop" ref={pop}>
+    <div className="switcher-pop hover-popup-position" ref={pop}>
       <a
-        className={`switcher-card attention-${card.attention}${card.status === "stalled" || card.status === "parked" ? ` status-${card.status}` : ""}`}
+        className={`switcher-card hover-popup-surface attention-${card.attention}${card.status === "stalled" || card.status === "parked" ? ` status-${card.status}` : ""}`}
         href={sessionHref(card.id)}
         tabIndex={-1}
       >

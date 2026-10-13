@@ -38,6 +38,7 @@ import {
 import { ButtonSpecimens } from "./ButtonSpecimens.tsx";
 import { AmbientSpecimens } from "./AmbientSpecimens.tsx";
 import { ContextMeterSpecimens } from "./ContextMeterSpecimens.tsx";
+import { PlanMeterSpecimens } from "./PlanMeterSpecimens.tsx";
 
 import { Specimen, States } from "./Specimens.tsx";
 import { PaletteSpecimens } from "./PaletteSpecimens.tsx";
@@ -97,6 +98,7 @@ export function Gallery() {
           "Session tabs",
           "Context window",
           "Context interactions",
+          "Plan allowance",
           "Composer",
           "Code and results",
           "Expandable ranges",
@@ -191,6 +193,9 @@ export function Gallery() {
       </Section>
       <Section title="Context interactions">
         <ContextMeterSpecimens />
+      </Section>
+      <Section title="Plan allowance">
+        <PlanMeterSpecimens />
       </Section>
       <Section title="Composer">
         <ComposerSpecimens />

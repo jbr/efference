@@ -1198,6 +1198,37 @@ hue between 85% and 100%. These are visual fill ranges, not consolidation
 thresholds. Unknown usage draws no fill; an unknown window draws the count
 without a bar.
 
+`ui/PlanMeter.tsx` adds a subscription meter next to context occupancy only when
+`usage.plan` reports a window; other providers leave the header unchanged.
+The shared track has the existing glowing usage fill above a subdued elapsed-time
+line. `ui/planMeter.ts` computes elapsed time from the reported duration and reset
+instant, clamped to 0–100%; absent timing leaves the lower line unfilled. The client
+clock refreshes every 30 seconds. Clicking cycles through reported short and long
+windows, Codex first and then other named allowances such as Spark; absent allowances
+never enter the cycle. The initial selection uses the backend's active allowance
+when present. Captions show duration and used percentage, and name non-Codex
+allowances. Hover/focus details use the prose typeface, named usage/time readings,
+and GitHub relative-time elements for report and reset instants. A passed reset
+retains the last reported usage and identifies it as awaiting an update rather than
+assuming the allowance renewed. The gallery's Plan allowance section supplies
+behind/equal/ahead, exhausted, unknown-timing and passed-reset specimens plus
+Codex-only and Codex/Spark cycling examples.
+
+The switcher card, context details and plan tooltip share the anchored surface in
+`ui/HoverPopup.css`: surface background, light edge, ten-pixel corners, control halo,
+shadow and padding. Meter details use the card's prose title and body sizes.
+`ui/HoverPopup.tsx` opens meter details after 180ms of mouse hover or immediately on
+focus; its padded positioning wrapper bridges the pointer's path into the panel.
+Mouse departure closes after 120ms; focus acquired by a mouse click does not keep
+that popup open. Keyboard focus keeps details open while focus remains inside.
+Pointer events distinguish mouse from touch/pen on hybrid devices: a non-mouse
+pointer release opens details, while mouse clicks do not open or pin them. Context
+retains the summarize-history action and keyboard activation. Escape or an outside pointer
+press dismisses meter details. Their right-aligned panels shift horizontally to
+stay inside the viewport. Plan clicks continue cycling allowances rather than
+acting as a popup toggle. Switcher cards use the same hover delays and surface
+while retaining their session-navigation interaction.
+
 **The session switcher** (`ui/SessionSwitcher.tsx`) is a second row inside the sticky
 header, present only under a host and only while another session is live. It lists the
 live sessions, including the selected session on the host, from the same listing subscription the overview holds
@@ -1365,8 +1396,8 @@ with the reason shown, while a gate or question is pending or a warm loop is
 running; a loop parked at its cold check may fold. The popup prevents duplicate
 clicks while its request is pending. Progress is the `fold` topic: the turn-state
 readout and popup say `summarizing the history…`, errors remain visible for retry,
-and the account lands as the consolidation mark in the transcript. The native
-popover closes on outside interaction or Escape and stays inside the viewport.
+and the account lands as the consolidation mark in the transcript. The hover
+panel closes on outside interaction or Escape and stays inside the viewport.
 
 The input is inset into the dock rather than floating on it: the composer
 band shares the dock's surface color, and the box is near-square (2px) in
