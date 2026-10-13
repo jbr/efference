@@ -175,6 +175,13 @@ impl Session {
             // model change, not idle past the TTL). A number, not a flag, so the
             // threshold stays a client decision; 0 whenever the last turn read warm.
             "cold_streak": metrics.cold_streak.streak(),
+            // What the provider said about the most recent miss it attributed
+            // (docs/transport.md): the *why* beside the streak's *how often*. Null until
+            // one arrives, and the reason is the provider's own spelling — the two that
+            // mean no comparison was produced read as themselves here rather than being
+            // filtered, so a client states "no comparison" instead of showing nothing.
+            // Absolute stamp, like `last_request_at`, and for the same reason.
+            "last_cache_miss": metrics.last_cache_miss,
             // The keepalive's stance when it is not pinging on schedule, or
             // null while it is or was never armed (docs/transport.md).
             "keepalive_skipped": metrics.keepalive_skipped,

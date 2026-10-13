@@ -183,10 +183,11 @@ fn state_reports_cache_telemetry() {
         Log::create(&log_path, None).expect("create log"),
     );
 
-    // No request yet: no `last`, no stamp.
+    // No request yet: no `last`, no stamp, and nothing the provider has attributed.
     let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
     assert!(v["usage"]["last"].is_null());
     assert!(v["usage"]["last_request_at"].is_null());
+    assert!(v["usage"]["last_cache_miss"].is_null());
 
     // Cold prefix: all creation, no read.
     shared.record_request(
@@ -231,6 +232,35 @@ fn state_reports_cache_telemetry() {
     // first turn's cold read was the session's boot, the second was warm, so nothing
     // is outstanding.
     assert_eq!(v["usage"]["cold_streak"], 0);
+
+    // What the provider attributed, when it named something, rides the topic too
+    // (docs/transport.md): the reason in the provider's own spelling, the magnitude it
+    // estimated, and an absolute stamp — a client judges staleness against its own clock,
+    // since an elapsed-time field would re-emit this topic on every read.
+    use crate::api::{CacheMiss, CacheMissReason};
+    shared.record_request(
+        RequestOrigin::Turn,
+        RequestUsage::new(Usage {
+            input_tokens: 900,
+            output_tokens: 40,
+            cache_creation_input_tokens: 15_600,
+            cache_read_input_tokens: 0,
+        })
+        .with_cache_miss(CacheMiss {
+            reason: CacheMissReason::ToolsChanged,
+            cache_missed_input_tokens: Some(12_280),
+        }),
+    );
+    let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
+    assert_eq!(v["usage"]["last_cache_miss"]["reason"], "tools_changed");
+    assert_eq!(
+        v["usage"]["last_cache_miss"]["cache_missed_input_tokens"],
+        12_280
+    );
+    let miss_at = v["usage"]["last_cache_miss"]["at"]
+        .as_u64()
+        .expect("an absolute stamp");
+    assert!(miss_at <= crate::log::Timestamp::now().0);
 }
 
 /// `GET /state` reports context-window occupancy (docs/transport.md): null with

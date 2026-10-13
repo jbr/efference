@@ -1611,6 +1611,18 @@ provider still matches it. The classifier, the threshold and the corpus it came
 from, and the offline `efference dev cache` view are in
 [log-and-projection](log-and-projection.md).
 
+Beside it the topic carries `usage.last_cache_miss` — the most recent miss the
+provider itself attributed, exactly as `CacheMiss` arrived, or null until it names
+one (docs/control-api.md). It is the *why* next to the streak's *how often*: a
+client stating "cache misses ×4, tools changed" has the answer no token total
+supplies. Two of the six reasons (`previous_message_not_found`, `unavailable`) say
+no comparison was produced rather than naming a divergence, so a client that
+renders one as a cause has to say so for those; the daemon publishes them rather
+than filtering, to keep that choice at the display. The stamp is absolute for the
+same reason `last_request_at` is, and it is *not* cleared by a warm read — a
+divergence named late enough for an earlier breakpoint to still hit is a real
+finding, and clearing on warmth would erase it.
+
 **Session cost telemetry.** Where the provider has a per-request accounting
 surface, every recorded request (turn, peek, spot, triage, keepalive — plus
 keepalive pings funnel through the same two record methods) spawns a

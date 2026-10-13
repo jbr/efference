@@ -753,6 +753,16 @@ not a topic — it is the log's cursor rather than control state, and sits outsi
               "cache_read_input_tokens": …, "cache_creation_input_tokens": … },
     "cumulative": { …same four fields… },
     "last_request_at": 1754300000000,       // absolute Unix millis of the last request on the main prefix: a turn, a keepalive ping, or a peek on the agent's own client (persists across a host restart), or null before the first
+    "last_cache_miss": null,                // the provider's own attribution of the most recent cache miss it
+                                            //   named, or null until one arrives (transport.md):
+                                            //   {"reason":"tools_changed","cache_missed_input_tokens":12280,
+                                            //    "at":1754300000000}  — absolute millis, like last_request_at, so a
+                                            //   client judges staleness against its own clock. `reason` is the
+                                            //   provider's spelling, and `previous_message_not_found`/`unavailable`
+                                            //   mean no comparison was produced rather than that a divergence was found
+    "cold_streak": 0,                       // consecutive main-loop requests that read nothing from the cache and
+                                            //   had no legitimate explanation (log-and-projection.md); 0 whenever the
+                                            //   last turn read warm, so the warning threshold stays a client's call
     "context": {                            // null when no capabilities were fetched
       "limit": 200000,                      // the boot-fetched context window (transport.md)
       "used": 9578                          // last request's total prompt tokens; null before the first

@@ -52,6 +52,13 @@ pub(super) struct Metrics {
     /// legitimate reason to (docs/log-and-projection.md) — the live end of the
     /// empirical prefix oracle, surfaced by `GET /state` as `usage.cold_streak`.
     pub(super) cold_streak: ColdStreak,
+    /// The most recent cache miss the provider attributed, surfaced as
+    /// `usage.last_cache_miss` (docs/control-api.md) — the *why* beside the streak's
+    /// *how often*. Kept across warm reads rather than cleared by them: a divergence the
+    /// provider named late enough for an earlier breakpoint to still hit is a real
+    /// finding with low impact, and clearing on warmth would erase it. Clients judge
+    /// staleness from its own absolute stamp.
+    pub(super) last_cache_miss: Option<LastCacheMiss>,
     /// Set while the keepalive loop is skipping pings or ended on a rejection (`usage.keepalive_skipped`).
     pub(super) keepalive_skipped: Option<super::keepalive::KeepaliveSkip>,
     /// The triage lineage's touch clock (docs/transport.md): stamped by a primer, a
@@ -230,6 +237,25 @@ impl ColdStreak {
     pub fn streak(&self) -> u32 {
         self.streak
     }
+}
+
+/// The most recent cache miss the provider attributed, as `GET /state` publishes it
+/// (docs/control-api.md). The reason is the provider's own spelling, and two of the six
+/// values — `previous_message_not_found` and `unavailable` — mean no comparison was
+/// produced rather than naming a divergence, so a client that renders this as a
+/// *cause* has to say so for those two.
+///
+/// `at` is absolute wall-clock millis, like `last_request_at` and for the same reason
+/// (docs/control-api.md): an elapsed-time field changes on every read, which under
+/// level-triggered emission means the topic never goes quiet.
+#[derive(Clone, Debug, Serialize)]
+pub struct LastCacheMiss {
+    pub reason: crate::api::CacheMissReason,
+    /// The provider's byte-derived estimate of the prefix that fell after the
+    /// divergence. Absent on the reasons that carry none.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cache_missed_input_tokens: Option<u64>,
+    pub at: crate::log::Timestamp,
 }
 
 /// One line of `usage.jsonl`: when, which shape, the upstream's own id for the
@@ -471,6 +497,7 @@ impl Session {
             request.model.as_deref(),
             request.usage.cache_read_input_tokens,
         );
+        Self::note_cache_miss(&mut m, at_ms, &request);
         Self::fold_usage(&mut m, request.usage);
         if main_prefix {
             Self::stamp_touch(&mut m, at_ms);
@@ -499,6 +526,7 @@ impl Session {
             request.model.as_deref(),
             request.usage.cache_read_input_tokens,
         );
+        Self::note_cache_miss(&mut m, at_ms, &request);
         Self::fold_usage(&mut m, request.usage);
         Self::stamp_touch(&mut m, at_ms);
     }
@@ -514,6 +542,23 @@ impl Session {
         let mut m = self.metrics.lock().unwrap();
         Self::fold_usage(&mut m, request.usage);
         Self::stamp_triage_touch(&mut m, at_ms);
+    }
+
+    /// Note the provider's attribution of this request's cache miss, when it made one
+    /// (`usage.last_cache_miss`, docs/control-api.md). Both record paths call it, so a
+    /// keepalive ping's own attribution — the crispest probe of the prefix, since its
+    /// body is the turn's envelope — lands where a turn's does. Last one wins: the topic
+    /// states the most recent answer the provider gave, and a client that wants the
+    /// history reads `usage.jsonl`.
+    fn note_cache_miss(m: &mut Metrics, at_ms: u128, request: &RequestUsage) {
+        let Some(miss) = &request.cache_miss else {
+            return;
+        };
+        m.last_cache_miss = Some(LastCacheMiss {
+            reason: miss.reason,
+            cache_missed_input_tokens: miss.cache_missed_input_tokens,
+            at: crate::log::Timestamp(at_ms as u64),
+        });
     }
 
     /// Stamp the cache-touch clock, on both clocks, for a request on the main prefix.
