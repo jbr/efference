@@ -139,10 +139,13 @@
   flex-wrap: wrap;
 }
 
-/* The hover card is absolutely placed under its tab; give it room. */
 .g-pop-host {
-  height: 11rem;
   align-items: flex-start;
+}
+
+.g-pop-host .switcher-pop {
+  position: static;
+  padding-top: 0;
 }
 
 /* ::selection cannot be pinned on an element, so the specimen paints the

@@ -66,3 +66,27 @@ export function orderByTabs<T extends { id: string }>(
   });
   return [...retained, ...entries.values()];
 }
+
+/** The selected tab stays visible when the row overflows (docs/web-client.md). */
+export function fitTabs(
+  tabs: { id: string; width: number }[],
+  currentId: string,
+  room: number,
+  moreWidth: number,
+  gap: number,
+): Set<string> {
+  const total =
+    tabs.reduce((sum, tab) => sum + tab.width, 0) +
+    gap * Math.max(0, tabs.length - 1);
+  if (total <= room) return new Set(tabs.map((tab) => tab.id));
+  const current = tabs.find((tab) => tab.id === currentId);
+  const visible = new Set(current ? [current.id] : []);
+  let used = moreWidth + (current ? gap + current.width : 0);
+  for (const tab of tabs) {
+    if (tab.id === currentId) continue;
+    if (used + gap + tab.width > room) break;
+    visible.add(tab.id);
+    used += gap + tab.width;
+  }
+  return visible;
+}

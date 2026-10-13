@@ -5,6 +5,7 @@ import {
   readVisits,
   recordVisit,
 } from "./switcherOrder.ts";
+import { fitTabs } from "./switcherOrder.ts";
 
 const ids = (sessions: { id: string }[]) => sessions.map((s) => s.id);
 const listed = ["a", "b", "c", "d"].map((id) => ({ id }));
@@ -72,5 +73,33 @@ describe("orderByTabs", () => {
         orderByTabs([{ id: "d" }, { id: "b" }, { id: "a" }], ["a", "b", "c"]),
       ),
     ).toEqual(["a", "b", "d"]);
+  });
+});
+
+describe("fitTabs", () => {
+  const tabs = [
+    { id: "a", width: 50 },
+    { id: "b", width: 80 },
+    { id: "current", width: 100 },
+  ];
+  it("uses every slot when the full row fits without overflow", () => {
+    expect([...fitTabs(tabs, "current", 240, 30, 5)]).toEqual([
+      "a",
+      "b",
+      "current",
+    ]);
+  });
+  it("reserves the current tab's measured width and overflow button first", () => {
+    const visible = fitTabs(tabs, "current", 190, 30, 5);
+    expect(
+      tabs.filter((tab) => visible.has(tab.id)).map((tab) => tab.id),
+    ).toEqual(["a", "current"]);
+    expect([...fitTabs(tabs, "current", 180, 30, 5)]).toEqual(["current"]);
+  });
+  it("keeps the current session reachable even below its natural width", () => {
+    expect([...fitTabs(tabs, "current", 90, 30, 5)]).toEqual(["current"]);
+  });
+  it("also fits a listing without the current session", () => {
+    expect([...fitTabs(tabs, "missing", 170, 30, 5)]).toEqual(["a", "b"]);
   });
 });

@@ -1224,28 +1224,44 @@ that popup open. Keyboard focus keeps details open while focus remains inside.
 Pointer events distinguish mouse from touch/pen on hybrid devices: a non-mouse
 pointer release opens details, while mouse clicks do not open or pin them. Context
 retains the summarize-history action and keyboard activation. Escape or an outside pointer
-press dismisses meter details. Their right-aligned panels shift horizontally to
-stay inside the viewport. Plan clicks continue cycling allowances rather than
-acting as a popup toggle. Switcher cards use the same hover delays and surface
-while retaining their session-navigation interaction.
+press dismisses meter details. Meter and session-card panels use
+`ui/useKeepOnScreen.ts` to shift horizontally inside the viewport on opening and resize.
+Plan clicks continue cycling allowances rather than acting as a popup toggle. Switcher
+cards use the same hover delays and surface while retaining their session-navigation interaction.
 
 **The session switcher** (`ui/SessionSwitcher.tsx`) is a second row inside the sticky
-header, present only under a host and only while another session is live. It lists the
-live sessions, including the selected session on the host, from the same listing subscription the overview holds
-(`api/sessions.ts`), so it adds one connection at rest. A tab is a status dot and a session id; the dot is read from the listing alone through `cardModel`:
-a gated session is an accent dot with a halo, a session whose turn ended or that is asking
-is the accent dot without one — a finished turn waits on the operator until the session is
-archived — a stalled one is the warn colour, a running one pulses faintly, and a session
-never started is a hollow ring. Hovering or focusing a tab opens a card with the overview
-card's status line, title, activity line and context meter; that opens the session's own
-state stream and log tail (`openSessionCard`) only while the card shows.
-Tabs run most recently visited first, from visit times in `localStorage`
-(`ui/switcherOrder.ts`), and
+header, present under a host whenever a live session is listed, including when only the
+selected session remains. It uses the same listing subscription the overview holds
+(`api/sessions.ts`), so it adds one connection at rest. A tab is a status dot and a session
+id; the dot is read from the listing alone through `cardModel`: a gated session is an
+accent dot with a halo, a session whose turn ended or that is asking is the accent dot
+without one — a finished turn waits on the operator until the session is archived — a
+stalled one is the warn colour, a running one pulses faintly, and a session never started
+is a hollow ring. Hovering or keyboard-focusing a tab opens a card
+(`ui/SessionHoverCard.tsx`) with the overview card's status line, title, activity line and
+context meter; that opens the session's own state stream and log tail (`openSessionCard`)
+only while the card shows. Clicking or tapping the selected tab toggles its card. Keyboard
+focus can move into its actions; a click-opened card or an archive interaction keeps the card
+open across pointer departure. Escape restores tab focus and closes the card; an outside
+pointer press also dismisses it.
 
-sessions never visited here follow in the host's id order. Tabs are measured against the
-row, and those that do not fit are listed in a `+N` menu whose button carries an accent dot
-when a session in it is waiting on the operator; attention does not reorder tabs. Entering
-a session from a tab is a client-side navigation, as from a card.
+The card's navigation content and archive footer are separate elements. The footer's
+“Archive session” action (`ui/ArchiveAction.tsx`) uses the overview's `archiveWarning`
+rule: active work or background processes show a specific warning with “Archive anyway”
+and “Cancel”; an idle session with nothing running archives directly. The action disables
+while its request is pending, and the switcher reuses a pending request for that session
+if its card is reopened. Failure stays in the card with a retryable action and does not
+navigate. After a successful archive, the current session's route is replaced with home;
+archiving another session, or entering another view while the request runs, leaves the
+new view alone. The listing update removes the archived tab and closes its preview feed.
+
+Recency seeds tab order from visit times in `localStorage` (`ui/switcherOrder.ts`), with
+unvisited sessions following in the host's id order. Established slots persist across
+session navigation. Tabs are measured against the row (`ui/useSwitcherFit.ts`); when they
+overflow, the selected tab's measured width is reserved first, and other visible tabs
+retain their relative order. Those that do not fit are listed in a `+N` menu whose button
+carries an accent dot when a session in it is waiting on the operator; attention does not
+reorder tabs. Entering a session from a tab is a client-side navigation, as from a card.
 
 It also carries one warn-tinted chip left of the meter, fed by the two
 transport topics through `ui/upstream.ts` (a pure function of the pair, so the
@@ -1888,6 +1904,8 @@ buttons, neon glyphs, session
 tabs and their hover card, composers, code/results, images, session cards, launch
 settings, the model picker, and resume lists. Specimen labels stack above their
 controls on narrow screens; state comparisons wrap rather than widening the page.
+`SessionArchiveSpecimens.tsx` shows idle archiving, active-session confirmation, pending
+feedback and retryable failures through local callbacks, without sending session requests.
 
 `Scenes.tsx` renders a shortened worktree UI exchange in finished, input-arriving,
 working, answer-needed, and approval-needed states. Input-arriving shows an

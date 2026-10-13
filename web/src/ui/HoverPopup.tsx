@@ -1,12 +1,12 @@
 import {
   useCallback,
   useEffect,
-  useLayoutEffect,
   useRef,
   useState,
   type ReactNode,
   type MouseEvent,
 } from "react";
+import { useKeepOnScreen } from "./useKeepOnScreen.ts";
 import "./HoverPopup.css";
 
 export const HOVER_OPEN_DELAY_MS = 180;
@@ -33,7 +33,7 @@ export function HoverPopup({
 }) {
   const [open, setOpen] = useState(false);
   const anchor = useRef<HTMLSpanElement>(null);
-  const panel = useRef<HTMLDivElement>(null);
+  const panel = useKeepOnScreen(open);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const keyboard = useRef(true);
   const show = useCallback((event: MouseEvent) => {
@@ -72,23 +72,6 @@ export function HoverPopup({
     };
     document.addEventListener("pointerdown", dismiss);
     return () => document.removeEventListener("pointerdown", dismiss);
-  }, [open]);
-  useLayoutEffect(() => {
-    if (!open) return;
-    const fit = () => {
-      const element = panel.current;
-      if (!element) return;
-      element.style.transform = "";
-      const bounds = element.getBoundingClientRect();
-      const offset =
-        bounds.left < 8
-          ? 8 - bounds.left
-          : Math.min(0, window.innerWidth - 8 - bounds.right);
-      element.style.transform = `translateX(${offset}px)`;
-    };
-    fit();
-    window.addEventListener("resize", fit);
-    return () => window.removeEventListener("resize", fit);
   }, [open]);
   return (
     <span

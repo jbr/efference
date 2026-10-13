@@ -1,4 +1,3 @@
-import { ContextBar } from "./ContextBar.tsx";
 // The quick session switcher (docs/web-client.md): a slim second row under the
 // top bar listing live sessions in stable slots, including the selected session.
 // At rest a tab is a status dot and a session id; hovering or focusing one
@@ -7,26 +6,25 @@ import { ContextBar } from "./ContextBar.tsx";
 // from the list (ui/route.ts): the tabs are plain links, so a modified click
 // still opens another tab.
 //
-// Tabs that do not fit the row spill into a `⋯` menu, which carries a count
-// when a session in it is waiting on the operator. At rest it costs one
+// Tabs that do not fit the row spill into a `+N` menu; the selected tab stays
+// visible so its card's archive action remains reachable. At rest it costs one
 // connection, the host's listing stream; a session's own state and log tail
-// are opened only while its card is showing. With no other
-// live session — or at a session daemon's root, where there is no host to
-// list — it renders nothing and the row is absent.
+// are opened only while its card is showing. An empty listing — or a session
+// daemon's root, where there is no host to list — leaves the row absent.
 
 import {
   useEffect,
-  useLayoutEffect,
+  useId,
   useMemo,
   useRef,
   useState,
   type ReactNode,
 } from "react";
 import { HOVER_OPEN_DELAY_MS, HOVER_CLOSE_DELAY_MS } from "./HoverPopup.tsx";
-import { apiBase, sessionHref } from "../api/base.ts";
+import { apiBase, sessionHref, sessionId } from "../api/base.ts";
 import { prefetchStore } from "../session/registry.ts";
 import { lastListing, rememberListing } from "../session/listing.ts";
-import type { SessionEntry } from "../api/http.ts";
+import { archiveSession, type SessionEntry } from "../api/http.ts";
 import { openSessionCard, openSessions } from "../api/sessions.ts";
 import type { StateSnapshot } from "../api/types.ts";
 import {
@@ -35,16 +33,17 @@ import {
   foldRecent,
   type Recent,
   statusPhrase,
-  tokens,
 } from "./overview.ts";
-import { Activity } from "./SessionCard.tsx";
 import {
   orderByRecency,
   orderByTabs,
   readVisits,
   recordVisit,
 } from "./switcherOrder.ts";
-import { homeRelative } from "./identity.ts";
+import { navigate } from "./route.ts";
+import { HoverCard } from "./SessionHoverCard.tsx";
+import { useKeepOnScreen } from "./useKeepOnScreen.ts";
+import { useSwitcherFit } from "./useSwitcherFit.ts";
 import "./SessionSwitcher.css";
 
 /** The host's live sessions, followed; `null` until the first listing, and
@@ -139,19 +138,74 @@ export function SessionSwitcher({ currentId }: { currentId: string }) {
     () => new Map((sessions ?? []).map((session) => [session.id, session])),
     [sessions],
   );
-  const [shown, setShown] = useState<string | null>(null);
+  const [requestedShown, setShown] = useState<string | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const pinned = useRef(false);
+  const keyboard = useRef(true);
+  const requests = useRef(new Map<string, Promise<unknown>>());
+  const popupId = useId();
+  const { row, measure, fit } = useSwitcherFit(
+    cards.map((c) => c.id),
+    currentId,
+  );
+  const shown =
+    requestedShown !== null &&
+    entries.has(requestedShown) &&
+    (fit === null || fit.has(requestedShown))
+      ? requestedShown
+      : null;
   const feed = useCardFeed(shown);
-  const { row, measure, fit } = useFit(cards.map((c) => c.id));
 
-  if (sessions === null || cards.length === 0) return null;
+  useEffect(() => () => clearTimeout(timer.current), []);
+  useEffect(() => {
+    const key = () => {
+      keyboard.current = true;
+    };
+    const pointer = (event: PointerEvent) => {
+      keyboard.current = false;
+      const slot = row.current?.querySelector('[data-popup-open="true"]');
+      if (slot && !slot.contains(event.target as Node)) {
+        clearTimeout(timer.current);
+        pinned.current = false;
+        setShown(null);
+      }
+    };
+    document.addEventListener("keydown", key, true);
+    document.addEventListener("pointerdown", pointer, true);
+    return () => {
+      document.removeEventListener("keydown", key, true);
+      document.removeEventListener("pointerdown", pointer, true);
+    };
+  }, [row]);
 
   const schedule = (id: string | null, delay: number) => {
     clearTimeout(timer.current);
-    timer.current = setTimeout(() => setShown(id), delay);
+    timer.current = setTimeout(() => {
+      pinned.current = false;
+      setShown(id);
+    }, delay);
   };
-  const visible = cards.slice(0, fit ?? cards.length);
-  const spilled = cards.slice(fit ?? cards.length);
+  const pin = (id: string) => {
+    clearTimeout(timer.current);
+    pinned.current = true;
+    setShown(id);
+  };
+  function archive(id: string) {
+    const existing = requests.current.get(id);
+    if (existing) return existing;
+    const request = archiveSession(id)
+      .then(() => {
+        // A request can outlive navigation: do not leave a different session.
+        if (sessionId() === id) navigate("/", "replace");
+      })
+      .finally(() => requests.current.delete(id));
+    requests.current.set(id, request);
+    return request;
+  }
+
+  if (sessions === null || cards.length === 0) return null;
+  const visible = cards.filter((card) => fit === null || fit.has(card.id));
+  const spilled = cards.filter((card) => fit !== null && !fit.has(card.id));
 
   return (
     <nav className="switcher" aria-label="Sessions" ref={row}>
@@ -159,42 +213,75 @@ export function SessionSwitcher({ currentId }: { currentId: string }) {
         <span
           key={card.id}
           className="switcher-slot"
+          data-popup-open={shown === card.id}
+          onClickCapture={() => clearTimeout(timer.current)}
           onPointerEnter={(event) => {
             if (event.pointerType !== "mouse") return;
             // Ahead of the card's own delay: the read has the whole hover to land in.
             prefetchStore(`/sessions/${card.id}`);
-            schedule(card.id, HOVER_OPEN_DELAY_MS);
+            if (shown === card.id) clearTimeout(timer.current);
+            else if (!pinned.current || shown === null)
+              schedule(card.id, HOVER_OPEN_DELAY_MS);
           }}
-          onPointerLeave={() => schedule(null, HOVER_CLOSE_DELAY_MS)}
-          onFocus={() => {
+          onPointerLeave={(event) => {
+            if (event.pointerType !== "mouse" || pinned.current) return;
+            if (
+              keyboard.current &&
+              event.currentTarget.contains(document.activeElement)
+            )
+              return;
+            schedule(null, HOVER_CLOSE_DELAY_MS);
+          }}
+          onFocus={(event) => {
+            if (
+              !keyboard.current ||
+              event.currentTarget.contains(event.relatedTarget as Node | null)
+            )
+              return;
             prefetchStore(`/sessions/${card.id}`);
-            schedule(card.id, 0);
+            pin(card.id);
           }}
-          onBlur={() => schedule(null, HOVER_CLOSE_DELAY_MS)}
+          onBlur={(event) => {
+            if (
+              !event.currentTarget.contains(event.relatedTarget as Node | null)
+            )
+              schedule(null, HOVER_CLOSE_DELAY_MS);
+          }}
           onKeyDown={(event) => {
-            if (event.key === "Escape") schedule(null, 0);
+            if (event.key !== "Escape") return;
+            event.currentTarget
+              .querySelector<HTMLAnchorElement>(".switcher-tab")
+              ?.focus();
+            clearTimeout(timer.current);
+            pinned.current = false;
+            setShown(null);
+            event.stopPropagation();
           }}
         >
           <Tab
             card={card}
             current={card.id === currentId}
+            popupId={`${popupId}-${card.id}`}
+            open={shown === card.id}
             onCurrentClick={() => {
-              clearTimeout(timer.current);
-              setShown(shown === card.id ? null : card.id);
+              if (shown === card.id && pinned.current) {
+                clearTimeout(timer.current);
+                pinned.current = false;
+                setShown(null);
+              } else pin(card.id);
             }}
           />
           {shown === card.id && (
             <HoverCard
+              id={`${popupId}-${card.id}`}
               card={cardModel(
-                entries.get(card.id) ?? {
-                  id: card.id,
-                  status: card.status,
-                  processes: card.processes,
-                },
+                entries.get(card.id)!,
                 sessions,
                 feed?.state ?? null,
                 feed?.recent,
               )}
+              onArchive={() => archive(card.id)}
+              onInteract={() => pin(card.id)}
             />
           )}
         </span>
@@ -219,11 +306,15 @@ export function Tab({
   inert = false,
   current = false,
   onCurrentClick,
+  popupId,
+  open,
 }: {
   card: CardModel;
   inert?: boolean;
   current?: boolean;
   onCurrentClick?: () => void;
+  popupId?: string;
+  open?: boolean;
 }) {
   const label = card.id;
   const phrase = statusPhrase(card);
@@ -242,9 +333,20 @@ export function Tab({
       className={className}
       href={sessionHref(card.id)}
       aria-current={current ? "page" : undefined}
+      aria-haspopup={popupId ? "dialog" : undefined}
+      aria-controls={open ? popupId : undefined}
+      aria-expanded={open}
       onClick={
         current
           ? (event) => {
+              if (
+                event.button !== 0 ||
+                event.metaKey ||
+                event.ctrlKey ||
+                event.shiftKey ||
+                event.altKey
+              )
+                return;
               event.preventDefault();
               onCurrentClick?.();
             }
@@ -254,56 +356,6 @@ export function Tab({
       {body}
     </a>
   );
-}
-
-/**
- * How many tabs fit the row, `null` until measured. The unseen measuring strip
- * holds every tab then the `⋯` button; tabs are taken in order while they and
- * the button fit, and all of them are taken when they all fit without it.
- */
-function useFit(labels: string[]): {
-  row: React.RefObject<HTMLElement | null>;
-  measure: React.RefObject<HTMLDivElement | null>;
-  fit: number | null;
-} {
-  const row = useRef<HTMLElement>(null);
-  const measure = useRef<HTMLDivElement>(null);
-  const [fit, setFit] = useState<number | null>(null);
-  const key = labels.join("\n");
-  useLayoutEffect(() => {
-    const element = row.current;
-    const strip = measure.current;
-    if (element === null || strip === null) return;
-    const compute = () => {
-      const style = getComputedStyle(element);
-      const gap = parseFloat(getComputedStyle(strip).columnGap) || 0;
-      const room =
-        element.clientWidth -
-        parseFloat(style.paddingLeft) -
-        parseFloat(style.paddingRight);
-      const widths = [...strip.children].map(
-        (child) => child.getBoundingClientRect().width,
-      );
-      const more = widths.pop() ?? 0;
-      const total =
-        widths.reduce((sum, w) => sum + w, 0) +
-        gap * Math.max(0, widths.length - 1);
-      if (total <= room) return setFit(widths.length);
-      let used = more;
-      let count = 0;
-      for (const width of widths) {
-        if (used + gap + width > room) break;
-        used += gap + width;
-        count += 1;
-      }
-      setFit(count);
-    };
-    compute();
-    const observer = new ResizeObserver(compute);
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, [key]);
-  return { row, measure, fit };
 }
 
 export function MoreButton({
@@ -414,81 +466,5 @@ function MenuRow({
         {phrase}
       </span>
     </a>
-  );
-}
-
-/** A floating panel opens at its anchor's left edge; one anchored near the
- * right edge of the window is shifted back until it is wholly visible. */
-function useKeepOnScreen() {
-  const ref = useRef<HTMLDivElement>(null);
-  useLayoutEffect(() => {
-    const element = ref.current;
-    if (element === null) return;
-    element.style.transform = "";
-    const over =
-      element.getBoundingClientRect().right - (window.innerWidth - 8);
-    if (over > 0) element.style.transform = `translateX(${-over}px)`;
-  });
-  return ref;
-}
-
-export function HoverCard({ card }: { card: CardModel }) {
-  const phrase = statusPhrase(card);
-  const context = card.context;
-  const used = context?.used ?? null;
-  const pop = useKeepOnScreen();
-  return (
-    <div className="switcher-pop hover-popup-position" ref={pop}>
-      <a
-        className={`switcher-card hover-popup-surface attention-${card.attention}${card.status === "stalled" || card.status === "parked" ? ` status-${card.status}` : ""}`}
-        href={sessionHref(card.id)}
-        tabIndex={-1}
-      >
-        <span className="switcher-card-head">
-          <span className="card-id">{card.id}</span>
-          {phrase !== null && <span className="card-status"> {phrase}</span>}
-        </span>
-        <span className="switcher-card-title">
-          {card.title ?? <em>Untitled</em>}
-        </span>
-        <Activity card={card} />
-        <span className="switcher-card-facts">
-          {card.cwd && (
-            <span>
-              <span>directory</span>
-              <span title={card.cwd}>{homeRelative(card.cwd)}</span>
-            </span>
-          )}
-          {card.models && (
-            <>
-              <span>
-                <span>model</span>
-                <span>{card.models.main}</span>
-              </span>
-              <span>
-                <span>spotter</span>
-                <span>{card.models.spotter}</span>
-              </span>
-              {card.models.triage && (
-                <span>
-                  <span>triage</span>
-                  <span>{card.models.triage}</span>
-                </span>
-              )}
-            </>
-          )}
-        </span>
-        {context !== null && (
-          <span className="switcher-card-usage">
-            {context.limit !== null && (
-              <ContextBar used={used} limit={context.limit} />
-            )}
-            {used === null ? "–" : tokens(used)}
-            {context.limit !== null && `/${tokens(context.limit)}`}
-            {card.costUsd !== null && <span>${card.costUsd.toFixed(2)}</span>}
-          </span>
-        )}
-      </a>
-    </div>
   );
 }

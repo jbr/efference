@@ -17,7 +17,8 @@ import { LocationRow } from "../ui/LocationRow.tsx";
 import { ModelPickerRow } from "../ui/ModelPickerRow.tsx";
 import { Settings } from "../ui/NewSessionSettings.tsx";
 import { SessionCard } from "../ui/SessionCard.tsx";
-import { HoverCard, MoreButton, Tab } from "../ui/SessionSwitcher.tsx";
+import { MoreButton, Tab } from "../ui/SessionSwitcher.tsx";
+import { SessionArchiveSpecimens } from "./SessionArchiveSpecimens.tsx";
 import { emptyDraft, type Draft } from "../ui/sessionForm.ts";
 import { setThemeChoice, themeChoice } from "../ui/theme.ts";
 import { ContextMeter } from "../ui/TopBar.tsx";
@@ -157,13 +158,7 @@ export function Gallery() {
             )}
           />
         </Specimen>
-        <Specimen name="hover card — .switcher-pop">
-          <div className="switcher g-switcher g-pop-host">
-            <span className="switcher-slot">
-              <HoverCard card={tabCards[0]} />
-            </span>
-          </div>
-        </Specimen>
+        <SessionArchiveSpecimens />
       </Section>
 
       <Section title="Context window">

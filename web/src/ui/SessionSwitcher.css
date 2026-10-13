@@ -187,6 +187,66 @@
   line-height: 1.5;
 }
 
+.switcher-card-link {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  color: inherit;
+  text-decoration: none;
+}
+
+.switcher-card .archive-action {
+  margin-top: 0.3rem;
+  padding-top: 0.45rem;
+  border-top: 1px solid var(--border);
+  font-family: var(--font-prose);
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.archive-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.archive-buttons button {
+  min-height: 2rem;
+  padding: 0.3rem 0.45rem;
+  border: none;
+  border-radius: 5px;
+  background: none;
+  color: var(--fg-dim);
+  font: inherit;
+  cursor: pointer;
+}
+
+.archive-buttons button:hover:not(:disabled),
+.archive-buttons button:focus-visible {
+  background: var(--bg-chip);
+  color: var(--fg-bright);
+}
+
+.archive-buttons .archive-button:hover:not(:disabled),
+.archive-buttons .archive-button:focus-visible {
+  color: var(--diff-del);
+}
+
+.archive-buttons button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.archive-action .archive-warning,
+.archive-action [role="alert"] {
+  margin-bottom: 0.4rem;
+  overflow-wrap: anywhere;
+}
+
+.archive-action [role="alert"] {
+  color: var(--diff-del);
+}
+
 .switcher-card.attention-blocked {
   --attention: var(--accent);
 }
@@ -346,11 +406,13 @@
   padding-top: 0.45rem;
 }
 
-/* On a phone the labels go and the dots stay: the dot is the at-a-glance
-   reading, the card is for a pointer. */
 @media (max-width: 40rem) {
   .switcher-label {
     max-width: 6rem;
+  }
+
+  .archive-buttons button {
+    min-height: 44px;
   }
 }
 
