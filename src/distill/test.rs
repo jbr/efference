@@ -47,6 +47,7 @@ fn calls_completion(calls: Vec<ToolCall>) -> Completion {
             cache_creation_input_tokens: 0,
             cache_read_input_tokens: 0,
         },
+        cache_miss: None,
         failure_class: crate::api::FailureClass::Transient,
     }
 }

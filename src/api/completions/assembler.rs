@@ -323,6 +323,7 @@ impl CompletionsAssembler {
             model: self.model,
             finish,
             usage: self.usage,
+            cache_miss: None,
             receipt: self.receipt,
             failure_class: self.failure_class,
         })

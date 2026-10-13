@@ -1,7 +1,75 @@
 //! Tests for stream event assembly: the phase sink, prose, text, split
-//! tool-use, the output-cap cut, and cache-count merging.
+//! tool-use, the output-cap cut, cache-count merging, and the provider's own
+//! cache-diagnostics attribution.
 
 use super::*;
+
+/// The provider's attribution of a cache miss arrives on `message_start` — it is on no
+/// other frame of the stream — and rides the completion from there (docs/transport.md).
+/// This is the parse the offline report reads: the reason names where the prompt moved,
+/// and the count says how much prefix fell after it.
+#[test]
+fn a_named_cache_miss_rides_the_completion() {
+    let completion = feed(&[
+        (
+            "message_start",
+            r#"{"message":{"model":"claude-opus-5","usage":{"input_tokens":4,"cache_read_input_tokens":0},"diagnostics":{"cache_miss_reason":{"type":"system_changed","cache_missed_input_tokens":13655}}}}"#,
+        ),
+        (
+            "content_block_start",
+            r#"{"index":0,"content_block":{"type":"text","text":""}}"#,
+        ),
+        (
+            "content_block_delta",
+            r#"{"index":0,"delta":{"type":"text_delta","text":"ok"}}"#,
+        ),
+        ("content_block_stop", r#"{"index":0}"#),
+        ("message_stop", "{}"),
+    ])
+    .expect("a finalized stream");
+
+    assert_eq!(
+        completion.cache_miss,
+        Some(CacheMiss {
+            reason: CacheMissReason::SystemChanged,
+            cache_missed_input_tokens: Some(13655),
+        })
+    );
+}
+
+/// The three states the provider's `diagnostics` field can be in all read as no
+/// attribution (docs/transport.md): the field absent (nothing was sent), the field
+/// `null` (a comparison ran and found no divergence, or there was nothing to compare
+/// against), and a present object whose `cache_miss_reason` is `null` (the comparison
+/// had not finished when the response serialized — it resolves on the next request,
+/// which is compared against the fingerprint *this* response stored).
+#[test]
+fn the_quiet_cache_diagnostics_states_read_as_no_attribution() {
+    for diagnostics in [
+        "",
+        r#","diagnostics":null"#,
+        r#","diagnostics":{"cache_miss_reason":null}"#,
+    ] {
+        let start = format!(
+            r#"{{"message":{{"model":"m","usage":{{"input_tokens":1,"output_tokens":1}}{diagnostics}}}}}"#
+        );
+        let completion = feed(&[
+            ("message_start", &start),
+            (
+                "content_block_start",
+                r#"{"index":0,"content_block":{"type":"text","text":""}}"#,
+            ),
+            (
+                "content_block_delta",
+                r#"{"index":0,"delta":{"type":"text_delta","text":"ok"}}"#,
+            ),
+            ("content_block_stop", r#"{"index":0}"#),
+            ("message_stop", "{}"),
+        ])
+        .expect("a finalized stream");
+        assert_eq!(completion.cache_miss, None, "for {diagnostics}");
+    }
+}
 
 /// **Every generation phase reaches the live sink**, not just prose
 /// (docs/transport.md). A sink carrying only text fragments publishes nothing on

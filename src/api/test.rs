@@ -37,6 +37,7 @@ fn live(events: &[(&str, &str)]) -> Vec<Streamed> {
 
 mod assembly;
 mod blocks;
+mod cache_chain;
 mod capabilities;
 mod codex;
 mod completions;

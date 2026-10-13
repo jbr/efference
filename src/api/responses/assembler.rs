@@ -406,6 +406,7 @@ impl ResponsesAssembler {
             model: self.model,
             finish,
             usage: self.usage,
+            cache_miss: None,
             receipt: super::super::Receipt::default(),
             failure_class: self.failure_class,
         })

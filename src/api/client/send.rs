@@ -139,6 +139,7 @@ impl Client {
             upstream: self.upstream.as_ref(),
             prompt_cache_key: self.prompt_cache_key(),
             messages,
+            cache_diagnostics: self.cache_diagnostics(),
             stream,
         }
     }
@@ -431,6 +432,12 @@ impl Client {
         if operator_abort {
             completion.failure_class = FailureClass::Aborted;
         }
+        // The response id a turn leaves on the chain is the one the next turn names as
+        // `previous_message_id` (docs/transport.md). Recorded here, at the one site that
+        // finishes a stream, so every dialect's turn extends it and no caller has to
+        // remember to. Attempts that never finalized carry no id, and the call is a
+        // no-op for them.
+        self.remember_response_id(self.origin, completion.id.as_deref());
         Ok(completion)
     }
 

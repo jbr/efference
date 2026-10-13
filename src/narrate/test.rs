@@ -95,6 +95,7 @@ fn completion(text: &str, calls: Vec<ToolCall>, finish: Option<&str>) -> Complet
         model: "test".into(),
         finish: finish.map(crate::api::Finish::messages),
         usage: Usage::default(),
+        cache_miss: None,
         failure_class: FailureClass::Transient,
     }
 }

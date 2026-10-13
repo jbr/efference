@@ -51,6 +51,10 @@ fn offline_request<'a>(
         upstream: None,
         prompt_cache_key: None,
         messages,
+        // The dev views render what a session *sends*, and this one has no chain:
+        // the object is per-session state, so the offline envelope shows the bytes of
+        // a session that has not opted in (docs/transport.md).
+        cache_diagnostics: None,
         stream: true,
     }
 }

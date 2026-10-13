@@ -2,6 +2,8 @@
 
 use super::*;
 
+use crate::api::CacheMiss;
+
 /// Per-session cache/usage telemetry.
 ///
 /// **Two clocks, two jobs.** The [`Instant`]s are monotonic and drive *interval* logic
@@ -272,6 +274,13 @@ pub struct UsageLine {
     /// armed ([`Session::price_request`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cost_usd: Option<f64>,
+    /// The provider's own attribution of this request's cache miss, when it named one
+    /// ([`CacheMiss`], docs/transport.md). Absent on most lines: a request the provider
+    /// saw no divergence in carries nothing, and a provider with no such feature never
+    /// does. In the provider's own spelling (`"cache_miss":{"type":"tools_changed",…}`)
+    /// so the record and a raw response agree.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_miss: Option<CacheMiss>,
 }
 
 impl UsageLine {
@@ -296,6 +305,7 @@ impl UsageLine {
             main_prefix: main_prefix && !origin.touches_main_prefix(),
             served_by: request.receipt.served_by.clone(),
             cost_usd: request.receipt.cost.map(|c| c.total_usd),
+            cache_miss: request.cache_miss.clone(),
         }
     }
 

@@ -249,7 +249,9 @@ impl Client {
 }
 
 /// The non-streamed Messages body a keepalive ping returns: the id, model and serving
-/// upstream, and the `usage` with its inline cost (docs/transport.md).
+/// upstream, the `usage` with its inline cost, and — since a ping sends the cache
+/// diagnostics opt-in like any other request on the main prefix — the provider's own
+/// attribution of a cache miss (docs/transport.md).
 #[derive(Deserialize)]
 pub(crate) struct KeepaliveResponse {
     #[serde(default)]
@@ -259,6 +261,8 @@ pub(crate) struct KeepaliveResponse {
     #[serde(default)]
     provider: Option<String>,
     usage: UsageWithCost,
+    #[serde(default)]
+    diagnostics: Option<CacheDiagnosticsResult>,
 }
 
 impl KeepaliveResponse {
@@ -267,6 +271,7 @@ impl KeepaliveResponse {
             id: self.id,
             model: self.model,
             usage: self.usage.usage,
+            cache_miss: self.diagnostics.and_then(|d| d.cache_miss_reason),
             receipt: Receipt {
                 served_by: self.provider,
                 cost: self.usage.cost.into_inline(),

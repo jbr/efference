@@ -1818,6 +1818,53 @@ interval rather than up to a full check-period late.
 The affordability check below stays regardless: the gate is what the metadata says,
 and the check is what the endpoint actually does.
 
+### The provider's own cache diagnostics
+
+The keepalive below decides when to keep the cache warm; this says why a request missed
+it. On the Messages dialect a request may carry a top-level `diagnostics` object
+(`CacheDiagnostics`) naming the response it should be compared against, and the
+response then carries a `diagnostics` object naming the first point of divergence
+(`CacheMiss`): `model_changed`, `system_changed`, `tools_changed`, `messages_changed`,
+each with a byte-derived `cache_missed_input_tokens` estimate, plus
+`previous_message_not_found` and `unavailable` for the cases where no comparison was
+produced. The object *is* the opt-in — the provider stores a fingerprint of a request
+only when it carries one — so a chain sends it on every request: the session's first
+turn opts in with an explicit `"previous_message_id": null`, and each turn after names
+the previous turn's response id (`src/api/client.rs`, the client's `cache_chain`, shared
+across clones).
+
+Three properties decide how it is sent.
+
+**It sits after `messages`.** It is the envelope's only per-request field — every other
+one is a per-session constant — and the prompt cache matches a prefix, so a value that
+changes every turn cannot sit ahead of the message list. Measured against the live API
+(2026-10-13): two requests whose bodies differ only in this value read the whole
+15,186-token prefix on the second, so the field is not part of what the provider
+matches. `the_cache_diagnostics_object_sits_after_messages` pins both its bytes and its
+position.
+
+**Only a turn extends the chain.** A keepalive ping sends the same object — its body is
+the turn's envelope, so it is the crispest probe of the prefix, and its own response
+gets a comparison. But a ping's body differs in `max_tokens` and in being non-streaming,
+and `tool_choice`, `thinking`, and `output_config` are the prompt-affecting parameters
+the provider answers `unavailable` for rather than naming a location; naming a ping as
+the next turn's comparison base would put those differences between the turn and its own
+comparison. A peek sends the object on neither count: it appends its own question before
+sending, so comparing it against the loop's prompt would report a `messages_changed`
+divergence the loop never made (`RequestOrigin::sends_the_loop_prompt`).
+
+**Native Anthropic only** (`Provider::cache_diagnostics_field`). The feature is
+Claude-API-only — not Bedrock, not Vertex — and an unrecognized top-level key is a 400 on
+Messages, which is why this is a gate and not a header-style nicety. OpenRouter's
+`/api/v1/messages` skin was measured accepting the object and answering
+`"diagnostics": null` while serving from AWS: a constant null a session cannot tell
+apart from "no divergence", so enabling it there would trade a real signal for a
+plausible-looking one.
+
+What the provider says rides the usage line as `cache_miss` and is reported by
+`efference dev cache`, which counts the named divergences by reason apart from the two
+that mean no comparison happened (docs/log-and-projection.md).
+
 ### The keepalive ping and its output cap
 
 A zero-output request reads (and thus refreshes) the cached prefix. The cap is the

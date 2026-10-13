@@ -7,7 +7,7 @@
 
 use super::*;
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use trillium::Status;
@@ -72,6 +72,18 @@ const RETRY_STATUSES: [Status; 5] = [
     Status::GatewayTimeout,
 ];
 
+/// The previous response's id on one client's cache chain (docs/transport.md): the
+/// value the next request names as `diagnostics.previous_message_id`. A named type
+/// because a bare `Mutex<Option<String>>` in a struct field says nothing about what
+/// the string is, and no compile error would follow from passing it the wrong one.
+type CacheChain = Arc<Mutex<Option<String>>>;
+
+/// An empty chain — no response to compare against yet, so the first request of a
+/// session opts in with an explicit `null` (docs/transport.md).
+fn cache_chain() -> CacheChain {
+    Arc::new(Mutex::new(None))
+}
+
 /// A thin Anthropic Messages client, holding the resolved endpoint, the model,
 /// and the session's system prompt. The system is byte-stable across the
 /// session, so it stays in the cached prefix (docs/log-and-projection.md); the
@@ -79,8 +91,9 @@ const RETRY_STATUSES: [Status; 5] = [
 /// prefix matches and hits cache.
 ///
 /// `Clone` is a cheap hand-off of *the same* client: the Arc-backed live states
-/// (reservation, upstream retry and failure) are shared, so a clone observes and
-/// joins the same retry story the original does.
+/// (reservation, upstream retry and failure, the cache chain) are shared, so a
+/// clone observes and joins the same retry story the original does — and the keepalive
+/// ping, which is a clone, names the same previous response the turn did.
 #[derive(Clone)]
 pub struct Client {
     http: HttpClient,
@@ -171,6 +184,13 @@ pub struct Client {
     /// What the caller says these requests are for, tagged on each recorded stage
     /// ([`Self::with_origin`]). [`RequestOrigin::Unknown`] until a caller says.
     origin: RequestOrigin,
+    /// This client's cache chain, when it has one: the id of the previous response, which
+    /// the next request names as `diagnostics.previous_message_id` (docs/transport.md).
+    /// Shared across clones, so a keepalive ping, a `with_origin` clone, reads and
+    /// extends the same chain the turn does. `None` where this client's requests are off
+    /// the chain entirely ([`Self::without_cache_chain`]); the inner id is `None` until
+    /// the first response.
+    cache_chain: Option<CacheChain>,
     /// The request in flight, for the retry handler (`api/stages.rs`).
     active_trace: ActiveTrace,
 }
@@ -283,6 +303,7 @@ impl Client {
             plan,
             stages: None,
             origin: RequestOrigin::Unknown,
+            cache_chain: Some(cache_chain()),
             active_trace,
         }
     }
@@ -397,6 +418,57 @@ impl Client {
             .prompt_cache_key_field()
             .then_some(self.endpoint.session_id.as_deref())
             .flatten()
+    }
+
+    /// The request body's `diagnostics` object, when this client's requests are the
+    /// ones a cache chain can be drawn through (docs/transport.md): the provider reads
+    /// the field ([`Provider::cache_diagnostics_field`]) and this request sends the
+    /// loop's own prompt ([`RequestOrigin::sends_the_loop_prompt`]).
+    ///
+    /// The object is present — with an explicit `null` on the first request — wherever
+    /// those hold, because the object *is* the opt-in that stores the fingerprint the
+    /// next request is compared against; a chain that skips a request loses the
+    /// comparison for the one after it. `None` where they do not: a provider that would
+    /// 400 or answer a meaningless null, and a request whose body is not the loop's
+    /// prompt, which could only ever compare unlike bodies.
+    fn cache_diagnostics(&self) -> Option<CacheDiagnostics> {
+        let chain = self.cache_chain.as_ref()?;
+        (self.origin.sends_the_loop_prompt() && self.endpoint.provider.cache_diagnostics_field())
+            .then(|| CacheDiagnostics {
+                previous_message_id: chain.lock().unwrap_or_else(|e| e.into_inner()).clone(),
+            })
+    }
+
+    /// Record the response that just arrived as the one this chain's next request is
+    /// compared against (docs/transport.md). `origin` is the request that produced it,
+    /// and only a **turn** extends the chain: a turn's response is the one whose
+    /// fingerprint is the loop's own prompt, so it is the only body the next turn can be
+    /// held against. A keepalive ping still *sends* the object — that is how its own
+    /// response gets a comparison, and the ping is the crispest probe of the turn's
+    /// prefix — but its body differs in `max_tokens` and in being non-streaming, so
+    /// naming it as the next turn's comparison base would risk the provider answering
+    /// `unavailable` for a difference that is ours and not the prefix's.
+    ///
+    /// A peek never reaches here: its origin does not send the loop's prompt, so it
+    /// neither opts in nor is remembered. Neither does a client taken off the chain
+    /// with [`Self::without_cache_chain`], whatever origin it carries.
+    pub(super) fn remember_response_id(&self, origin: RequestOrigin, id: Option<&str>) {
+        let (Some(chain), RequestOrigin::Turn, Some(id)) = (self.cache_chain.as_ref(), origin, id)
+        else {
+            return;
+        };
+        *chain.lock().unwrap_or_else(|e| e.into_inner()) = Some(id.to_string());
+    }
+
+    /// This client, off the cache chain (docs/transport.md): it sends no `diagnostics`
+    /// object and records nothing. For a request that carries a turn's origin but not the
+    /// turn's prompt — the forced-choice fallback appends its own instruction turn with
+    /// thinking off, so its response is not the body the next turn extends, and naming it
+    /// as the comparison base would have the provider report a divergence in `messages`
+    /// that the loop never made.
+    pub fn without_cache_chain(mut self) -> Self {
+        self.cache_chain = None;
+        self
     }
 
     /// The turns URL this client posts to. Present by construction: resolution
@@ -642,6 +714,7 @@ impl Client {
         turns.push(WireTurn::text(forced_choice_instruction(forced)));
         self.clone()
             .without_thinking()
+            .without_cache_chain()
             .send(&turns, tools, ToolChoice::auto(), None, on_delta)
             .await
     }

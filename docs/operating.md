@@ -464,8 +464,11 @@ A fourth read is offline, about spend rather than content, and a developer's ins
 rather than an operator's: **`efference dev cache`** folds a
 session's `usage.jsonl` into a prompt-cache read rate per request origin, separating the
 cold reads that explain themselves (session boot, a cross-model replay, an idle gap past the
-cache TTL) from the ones that do not, and reporting the longest run of the latter. With no
-argument it reads the most recently written session; `--all` sweeps the corpus, which is
+cache TTL) from the ones that do not, and reporting the longest run of the latter. Where
+the provider named a cause, it counts those by reason as well — `tools_changed`,
+`system_changed`, `messages_changed`, `model_changed`, held apart from the reasons that
+mean no comparison happened — which is the one thing the token columns cannot supply. With
+no argument it reads the most recently written session; `--all` sweeps the corpus, which is
 where a rate is worth comparing against. It needs no daemon and no network.
 
 **`efference dev stops`** is its sibling over `log.jsonl`, about turn endings rather

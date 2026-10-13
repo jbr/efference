@@ -206,6 +206,24 @@ impl Provider {
         }
     }
 
+    /// Whether this provider reads the Messages API's top-level `diagnostics` object
+    /// (docs/transport.md) — the cache-diagnostics opt-in, whose
+    /// `previous_message_id` names the response the provider should compare this
+    /// request's prompt against.
+    ///
+    /// Native Anthropic only. The feature is Claude-API-only: Bedrock and Vertex do
+    /// not implement it, and an unrecognized top-level key is a 400 on Messages, which
+    /// is why this is a gate rather than a header-style nicety. OpenRouter's
+    /// `/api/v1/messages` skin was measured accepting the object and answering
+    /// `"diagnostics": null` while serving the request from AWS, so a session there
+    /// would read a constant null it cannot tell apart from "no divergence" or from a
+    /// quiet drop. The custom Messages endpoints inherit that ambiguity,
+    /// and a fingerprint's scope is the caller's organization and workspace, which
+    /// through a router is not ours.
+    pub(in crate::api) fn cache_diagnostics_field(&self) -> bool {
+        matches!(self, Self::Anthropic)
+    }
+
     /// The literal prepended to the secret to form the auth header value.
     /// Split off the secret so the secret stays a *whole* value (an `op://…`
     /// reference `op run` can substitute — docs/transport.md).

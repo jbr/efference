@@ -85,6 +85,7 @@ fn request_omits_temperature_when_none() {
         upstream: None,
         prompt_cache_key: None,
         messages: &[],
+        cache_diagnostics: None,
         stream: false,
     };
     let json = serde_json::to_string(&request).unwrap();
@@ -112,6 +113,7 @@ fn request_includes_temperature_when_set() {
         upstream: None,
         prompt_cache_key: None,
         messages: &[],
+        cache_diagnostics: None,
         stream: false,
     };
     let json = serde_json::to_string(&request).unwrap();
@@ -165,6 +167,7 @@ fn request_envelope_matches_expected_wire_bytes() {
         upstream: None,
         prompt_cache_key: None,
         messages: &messages,
+        cache_diagnostics: None,
         stream: true,
     };
     let expected = concat!(
@@ -219,6 +222,7 @@ fn with_effort_envelope_matches_expected_wire_bytes() {
         upstream: None,
         prompt_cache_key: None,
         messages: &messages,
+        cache_diagnostics: None,
         stream: true,
     };
     let expected = concat!(
@@ -256,6 +260,7 @@ fn openrouter_envelope_carries_the_prompt_cache_key() {
         upstream: Some(&pin),
         prompt_cache_key: Some("work-0123456789abcdef"),
         messages: &[],
+        cache_diagnostics: None,
         stream: true,
     };
     let expected = concat!(
@@ -266,6 +271,69 @@ fn openrouter_envelope_carries_the_prompt_cache_key() {
         r#""messages":[],"stream":true}"#,
     );
     assert_eq!(serde_json::to_string(&request).unwrap(), expected);
+}
+
+/// **The cache-diagnostics object, pinned in both of its shapes.**
+///
+/// Its position is the pin's point: the object sits *after* `messages`, because its
+/// value changes on every request of a chain and everything ahead of the last
+/// breakpoint has to stay byte-stable (docs/log-and-projection.md). It is the
+/// envelope's only per-request field, and that is why it cannot sit with the
+/// per-session constants.
+///
+/// The first request of a chain carries an explicit `null` — the opt-in with nothing
+/// to compare against, which is what makes the API store a fingerprint for it — and
+/// every request after it names the previous response. Measured against the live API:
+/// a pair of requests differing only in this value read the whole 15k-token prefix on
+/// the second, so the field is not part of what the provider's cache matches.
+#[test]
+fn the_cache_diagnostics_object_sits_after_messages() {
+    let messages = [ApiMessage {
+        role: crate::project::Role::User,
+        content: vec![crate::project::ApiBlock::Text {
+            text: "hello".into(),
+            cache_control: None,
+        }],
+    }];
+    let render = |previous_message_id| {
+        serde_json::to_string(&Request {
+            model: "m",
+            max_tokens: 1,
+            system: "",
+            tools: &[],
+            tool_choice: ToolChoice::auto(),
+            thinking: Thinking::Omit,
+            reasoning: None,
+            output_config: None,
+            temperature: None,
+            upstream: None,
+            prompt_cache_key: None,
+            messages: &messages,
+            cache_diagnostics: Some(CacheDiagnostics {
+                previous_message_id,
+            }),
+            stream: true,
+        })
+        .expect("serializes")
+    };
+
+    let opening = concat!(
+        r#"{"model":"m","max_tokens":1,"tools":[],"#,
+        r#""tool_choice":{"type":"auto"},"#,
+        r#""messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}],"#,
+    );
+    // The first request of a chain: the opt-in, with an explicit null rather than an
+    // absent field, which is the difference between "store a fingerprint" and "store
+    // nothing".
+    assert_eq!(
+        render(None),
+        format!(r#"{opening}"diagnostics":{{"previous_message_id":null}},"stream":true}}"#)
+    );
+    // Every request after it names the response it should be compared against.
+    assert_eq!(
+        render(Some("msg_01Xyz".to_string())),
+        format!(r#"{opening}"diagnostics":{{"previous_message_id":"msg_01Xyz"}},"stream":true}}"#)
+    );
 }
 
 /// The envelope's two omit-when-unset fields drop out **entirely** rather than
@@ -287,6 +355,7 @@ fn request_envelope_omits_unset_fields_entirely() {
         upstream: None,
         prompt_cache_key: None,
         messages: &[],
+        cache_diagnostics: None,
         stream: true,
     };
     let expected = concat!(
@@ -405,6 +474,7 @@ fn a_pinned_upstream_renders_as_the_provider_object() {
             upstream,
             prompt_cache_key: None,
             messages: &messages,
+            cache_diagnostics: None,
             stream: true,
         })
         .expect("serializes")

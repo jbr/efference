@@ -71,6 +71,10 @@ pub(super) struct Assembler {
     frames_truncated: bool,
     /// The `message_start` event's `data` verbatim, subject to the same cap.
     message_start: Option<String>,
+    /// The provider's attribution of a cache miss, off `message_start`
+    /// (docs/transport.md). Response telemetry like `usage`, and read the same
+    /// way — by the request that recorded it, never by the projection.
+    cache_miss: Option<CacheMiss>,
 }
 
 /// The response half of the evidence: what [`Client::complete`] read off the
@@ -96,6 +100,7 @@ impl Assembler {
             frames: String::new(),
             frames_truncated: false,
             message_start: None,
+            cache_miss: None,
         }
     }
 
@@ -169,6 +174,12 @@ impl Assembler {
                     usage: Usage,
                     #[serde(default)]
                     provider: Option<String>,
+                    /// The cache-diagnostics result, when the request opted in
+                    /// (docs/transport.md). It rides on the `message_start` frame
+                    /// and nowhere else — the other frames of the stream carry no
+                    /// copy — so this is the streamed parse site.
+                    #[serde(default)]
+                    diagnostics: Option<CacheDiagnosticsResult>,
                 }
                 let Env { message } = serde_json::from_str(data)?;
                 // The body as received, kept whole under the same cap: it is the
@@ -184,6 +195,7 @@ impl Assembler {
                 self.id = message.id;
                 self.model = message.model;
                 self.receipt.served_by = message.provider;
+                self.cache_miss = message.diagnostics.and_then(|d| d.cache_miss_reason);
                 // input + cache_* land here; output_tokens is the initial
                 // placeholder, overwritten by message_delta.
                 self.usage = message.usage;
@@ -487,6 +499,7 @@ impl Assembler {
             model: self.model,
             finish: self.stop_reason.as_deref().map(Finish::messages),
             usage: self.usage,
+            cache_miss: self.cache_miss,
             receipt: self.receipt,
             failure_class: self.failure_class,
         })

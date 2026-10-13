@@ -774,7 +774,10 @@ OpenRouter-fronted request's generation id), the model the response named for
 itself, and the four token counts. When the response reported them, the line
 also carries `served_by` (the upstream that served the request) and `cost_usd`
 (the billed cost reported inline, docs/transport.md); both are omitted
-otherwise. The main model and provider are fixed when
+otherwise. When the provider named a cache-miss reason, the line carries
+`cache_miss` — the provider's own object, in its spelling
+(`{"type":"tools_changed","cache_missed_input_tokens":41850}`) — and it is absent
+otherwise, which is most lines. The main model and provider are fixed when
 a session is created, but usage remains per request: an upstream may report a
 model alias or a response may be retried, so the per-line value is the
 accounting record. The canonical log carries the boot identity separately;
@@ -837,6 +840,16 @@ provider is the better instrument where one exists — the Codex response's
 `usage.attribution` carries per-input-item cached counts, and OpenAI's platform API
 answers `prompt_cache_options.comparison_response_id` with a `prompt_cache_diagnostics`
 reason naming what diverged.
+
+Anthropic answers a top-level `diagnostics` object on the Messages dialect with its own
+naming of the first divergence, which is wired here: `src/api/client.rs` carries the
+previous response id per client and `CacheMiss` rides the usage line as `cache_miss`
+(docs/transport.md, under "The provider's own cache diagnostics").
+`efference dev cache` counts those reasons across a record — the four `*_changed` ones
+apart from `previous_message_not_found` and `unavailable`, which say that no comparison
+happened rather than what moved. It is attribution beside the streak, not a replacement
+for it: the reasons explain a cold read whose cause is in the request, and a streak of
+cold reads with no reason attached is still the signal this oracle exists for.
 
 Two surfaces read it. `GET /state` publishes the live count as
 `usage.cold_streak`, which the TUI header states beside the context meter once it

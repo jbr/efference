@@ -292,6 +292,9 @@ impl Decisions {
                 cache_creation_input_tokens: 0,
                 cache_read_input_tokens: 0,
             },
+            // The route carries no prompt cache, so it has no cache chain to draw a
+            // comparison through (docs/transport.md).
+            cache_miss: None,
         }
     }
 }

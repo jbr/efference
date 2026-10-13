@@ -10,6 +10,7 @@
 
 use super::*;
 
+use efference::api::{CacheMiss, CacheMissReason};
 use efference::daemon::{CacheRead, ColdStart, ColdStreak, RequestOrigin, UsageLine};
 
 pub(crate) const USAGE_NAME: &str = "usage.jsonl";
@@ -33,6 +34,68 @@ pub(crate) struct OriginTally {
     pub(crate) output: u64,
 }
 
+/// Provider-attributed cache misses by reason (docs/transport.md) — what the provider
+/// itself said moved, which is the one thing a token total cannot tell you.
+///
+/// The four `*_changed` reasons are divergences and count toward [`Self::total`]'s
+/// first line; the other two report that no comparison happened at all, so they explain
+/// nothing about a read but are worth seeing when they dominate a record — a run of
+/// `previous_message_not_found` means the chain broke, not the prefix.
+///
+/// Counted for every line that carries one, warm or cold, because a divergence the
+/// provider named on a read that *still* hit an earlier breakpoint is a real finding
+/// with low impact, and hiding it behind the cold-read columns would lose it.
+#[derive(Default)]
+pub(crate) struct Attributed {
+    pub(crate) model_changed: u64,
+    pub(crate) system_changed: u64,
+    pub(crate) tools_changed: u64,
+    pub(crate) messages_changed: u64,
+    /// The chain broke: no stored fingerprint for the id we named, so nothing was
+    /// compared — the previous request did not carry the object, or it aged out of the
+    /// provider's retention.
+    pub(crate) previous_message_not_found: u64,
+    /// A prompt-affecting parameter the comparison does not cover differs, or the
+    /// divergence sits past the provider's horizon: the provider's way of saying it could
+    /// not answer. This harness produces some of these itself, by moving `tool_choice`
+    /// or `thinking` on a retry (docs/transport.md), so a count here is not by itself a
+    /// defect.
+    pub(crate) unavailable: u64,
+    /// A reason this build does not know, kept visible rather than folded in so a new
+    /// provider value shows up as itself.
+    pub(crate) other: u64,
+}
+
+impl Attributed {
+    pub(crate) fn observe(&mut self, miss: &CacheMiss) {
+        match miss.reason {
+            CacheMissReason::ModelChanged => self.model_changed += 1,
+            CacheMissReason::SystemChanged => self.system_changed += 1,
+            CacheMissReason::ToolsChanged => self.tools_changed += 1,
+            CacheMissReason::MessagesChanged => self.messages_changed += 1,
+            CacheMissReason::PreviousMessageNotFound => self.previous_message_not_found += 1,
+            CacheMissReason::Unavailable => self.unavailable += 1,
+            CacheMissReason::Other => self.other += 1,
+        }
+    }
+
+    /// How many misses the provider attributed to a divergence.
+    pub(crate) fn divergences(&self) -> u64 {
+        self.model_changed + self.system_changed + self.tools_changed + self.messages_changed
+    }
+
+    /// How many requests the provider answered no comparison for — a fact about the
+    /// chain or about parameters the comparison does not cover, never about the prefix.
+    pub(crate) fn no_comparison(&self) -> u64 {
+        self.previous_message_not_found + self.unavailable + self.other
+    }
+
+    /// Every attribution on the record, no-comparison ones included.
+    pub(crate) fn total(&self) -> u64 {
+        self.divergences() + self.no_comparison()
+    }
+}
+
 /// What one session's usage record says about its cache (docs/log-and-projection.md).
 /// `turn` rows carry the classification; every origin carries a read rate, because a
 /// side channel going cold is its own (different) signal.
@@ -46,6 +109,8 @@ pub(crate) struct CacheReport {
     pub(crate) cold_starts: [u64; 3],
     /// Cold main-loop reads with none — the prefix-moved evidence.
     pub(crate) unexplained: u64,
+    /// Provider-attributed misses by reason, across every origin that opts in.
+    pub(crate) attributed: Attributed,
     /// The longest run of consecutive unexplained cold main-loop reads.
     pub(crate) longest_streak: u32,
     /// Which session held [`Self::longest_streak`], for the corpus sweep.
@@ -113,6 +178,9 @@ pub(crate) fn fold_sessions(sessions: &[(String, Vec<UsageLine>)]) -> CacheRepor
                 if line.cache_read > 0 {
                     tally.warm += 1;
                 }
+            }
+            if let Some(miss) = &line.cache_miss {
+                report.attributed.observe(miss);
             }
             let verdict = streak.observe_touching(
                 line.origin,
@@ -295,6 +363,32 @@ pub(crate) fn cache(session: Option<String>, name: Option<String>, all: bool) ->
             format!(" ({})", report.longest_streak_session)
         }
     );
+    // What the provider itself said moved, when the record carries any
+    // (docs/transport.md). Printed only then: a provider without the feature writes no
+    // such field, and a session whose prefix never moved gets nothing — so the two
+    // lines address the reader who has a cold streak and no cause for it.
+    if report.attributed.total() > 0 {
+        let a = &report.attributed;
+        if a.divergences() > 0 {
+            println!(
+                "  provider named the cause  {:>4}   tools {} · system {} · messages {} · model {}",
+                a.divergences(),
+                a.tools_changed,
+                a.system_changed,
+                a.messages_changed,
+                a.model_changed,
+            );
+        }
+        if a.no_comparison() > 0 {
+            println!(
+                "  provider compared nothing {:>4}   {} no fingerprint · {} unavailable · {} unknown",
+                a.no_comparison(),
+                a.previous_message_not_found,
+                a.unavailable,
+                a.other,
+            );
+        }
+    }
     // The live standing, for the single-session read: what the sidebar is showing
     // right now, in the same units.
     if targets.len() == 1 {

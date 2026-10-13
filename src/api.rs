@@ -65,6 +65,37 @@ impl Upstream {
     }
 }
 
+/// The Anthropic cache-diagnostics opt-in (docs/transport.md): the top-level
+/// `diagnostics` object, whose `previous_message_id` names the response this
+/// request is to be compared against. The object *is* the opt-in — the API
+/// stores a fingerprint for a request only when it carries one — so a client
+/// that wants the comparison sends it on every request of a chain.
+///
+/// `previous_message_id` is `None` on the first request of a chain, and that
+/// `null` is the opt-in without anything to compare against. It never skips
+/// serialization: absent and explicit-null are different bytes, and the null is
+/// the whole point of the first request.
+#[derive(Clone, Debug, Serialize, PartialEq)]
+pub struct CacheDiagnostics {
+    pub previous_message_id: Option<String>,
+}
+
+/// The response half of the same object (docs/transport.md): the `diagnostics` field a
+/// response carries when its request opted in. One struct for both read sites — the
+/// streamed `message_start` frame and the non-streamed keepalive body — so the provider's
+/// shape has one spelling here.
+///
+/// The nesting is what the provider distinguishes: the whole object absent or `null`
+/// means no comparison was made, while a present object whose `cache_miss_reason` is
+/// `null` means the comparison had not finished when the response serialized. Both read
+/// as no attribution — the second resolves on the next request, whose comparison is
+/// against the fingerprint this response stored.
+#[derive(Clone, Debug, Deserialize)]
+pub struct CacheDiagnosticsResult {
+    #[serde(default)]
+    pub cache_miss_reason: Option<CacheMiss>,
+}
+
 #[derive(Serialize)]
 struct Request<'a> {
     model: &'a str,
@@ -119,6 +150,18 @@ struct Request<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     prompt_cache_key: Option<&'a str>,
     messages: &'a [ApiMessage],
+    /// The cache-diagnostics opt-in for this request (docs/transport.md), sent only
+    /// where the provider reads it ([`Provider::cache_diagnostics_field`]). `None`
+    /// skips serialization entirely, so a session that gets no object sends the
+    /// bytes it always did.
+    ///
+    /// This is the envelope's only *per-request* field: its value changes every
+    /// turn, which is why it sits after `messages`, outside the cached prefix.
+    /// Measured rather than assumed — a pair of requests whose bodies differ only
+    /// in this value read the whole 15k-token prefix on the second one, so the
+    /// field is not part of what the cache matches (docs/transport.md).
+    #[serde(rename = "diagnostics", skip_serializing_if = "Option::is_none")]
+    cache_diagnostics: Option<CacheDiagnostics>,
     /// Always `true` — the response is consumed as SSE (docs/transport.md). A
     /// delivery flag rather than a cache-relevant one, though its position in
     /// this struct is pinned along with the rest of the envelope by
@@ -195,6 +238,86 @@ impl Usage {
     }
 }
 
+/// A cache miss the provider itself attributed to a divergence (docs/transport.md) —
+/// one `diagnostics.cache_miss_reason` object off a response. It names *which part* of
+/// the request the provider saw differ from the request it compared against, which no
+/// token total can: the four `*_changed` reasons are the projection, the system prompt,
+/// the tools array, and the message history, in the provider's own comparison order.
+///
+/// `cache_missed_input_tokens` is the provider's estimate of how much prefix fell after
+/// the divergence point. It is derived from byte lengths before tokenization, so it is
+/// a magnitude rather than a billing number.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct CacheMiss {
+    #[serde(rename = "type")]
+    pub reason: CacheMissReason,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_missed_input_tokens: Option<u64>,
+}
+
+/// Which divergence the provider named (docs/transport.md). The first four are
+/// divergences and identify the *first* one only — the provider reports the earliest,
+/// so a later one may hide behind it. The last two mean no comparison was produced at
+/// all, and are not evidence that the prefix moved.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[serde(rename_all = "snake_case")]
+pub enum CacheMissReason {
+    /// A different model served the request; the cache is per model.
+    ModelChanged,
+    /// The system prompt differs — typically a per-request value interpolated into it.
+    SystemChanged,
+    /// The tools array differs: added, removed, reordered, or serialized
+    /// non-deterministically. The divergence that has cost this harness a cache before
+    /// (docs/log-and-projection.md).
+    ToolsChanged,
+    /// Model, system, and tools all match, but an earlier entry in `messages` was
+    /// altered, reordered, or removed rather than appended to.
+    MessagesChanged,
+    /// No fingerprint was stored for the id we named — the previous request did not
+    /// carry the object, or it aged out of the provider's retention.
+    PreviousMessageNotFound,
+    /// No comparison was produced: a prompt-affecting parameter outside model/system/
+    /// tools/messages differs ([`Self::changes_the_prompt`]), or the divergence sits
+    /// beyond the provider's comparison horizon.
+    Unavailable,
+    /// A reason this build does not know. Kept so a new provider value reads as an
+    /// unnamed miss rather than failing the whole response.
+    #[serde(other)]
+    Other,
+}
+
+impl CacheMissReason {
+    /// Whether this reason *is* a divergence — the four the provider names by location,
+    /// as opposed to the two that report no comparison happened.
+    ///
+    /// The split matters where a reason is counted as attribution: `Unavailable` and
+    /// `PreviousMessageNotFound` say nothing about the prefix, so a cold read carrying
+    /// one is still unexplained ([`crate::daemon::CacheRead`]).
+    pub fn names_a_divergence(self) -> bool {
+        matches!(
+            self,
+            Self::ModelChanged | Self::SystemChanged | Self::ToolsChanged | Self::MessagesChanged
+        )
+    }
+}
+
+impl std::fmt::Display for CacheMissReason {
+    /// The provider's own spelling, so a report and a raw response line agree.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let name = match self {
+            Self::ModelChanged => "model_changed",
+            Self::SystemChanged => "system_changed",
+            Self::ToolsChanged => "tools_changed",
+            Self::MessagesChanged => "messages_changed",
+            Self::PreviousMessageNotFound => "previous_message_not_found",
+            Self::Unavailable => "unavailable",
+            Self::Other => "other",
+        };
+        f.write_str(name)
+    }
+}
+
+/// Deserialize a `u64` that a provider may send as an explicit JSON `null` (or omit
 /// Deserialize a `u64` that a provider may send as an explicit JSON `null` (or omit
 /// entirely, when paired with `#[serde(default)]`), folding both to 0 — see
 /// [`Usage`]. Not part of any wire-byte pin: `Usage` is response telemetry, never
@@ -220,6 +343,14 @@ pub struct Completion {
     /// Why the provider ended the output, when it said ([`Finish`]).
     pub finish: Option<Finish>,
     pub usage: Usage,
+    /// The provider's own attribution of a cache miss for this request ([`CacheMiss`]),
+    /// when it named one (docs/transport.md) — `diagnostics.cache_miss_reason` off the
+    /// response. `None` covers all three of "no object was sent", "a comparison ran and
+    /// found no divergence", and "the comparison was still running when the response
+    /// serialized": the provider's `null` and its `{"cache_miss_reason": null}` are the
+    /// same fact to every consumer here, because the last of them resolves on the next
+    /// request — whose comparison is against the fingerprint *this* response stored.
+    pub cache_miss: Option<CacheMiss>,
     /// What the response said about who served it and what it billed
     /// ([`Receipt`]); empty on providers that do not say.
     pub receipt: Receipt,
@@ -242,18 +373,23 @@ pub struct RequestUsage {
     /// (docs/log-and-projection.md). Optional defensively, like `id`.
     pub model: Option<String>,
     pub usage: Usage,
+    /// The provider's own attribution of a cache miss for this request, when it named
+    /// one ([`Completion::cache_miss`]) — persisted with the counts because a cold read
+    /// and its stated cause are one fact about one request.
+    pub cache_miss: Option<CacheMiss>,
     pub receipt: Receipt,
 }
 
 impl RequestUsage {
-    /// A request's token counts with no id, model, or receipt — the fields a test or a
-    /// route with nothing to report leaves unset. Adding a field to the struct changes
-    /// this constructor, not its callers.
+    /// A request's token counts with no id, model, attribution, or receipt — the fields
+    /// a test or a route with nothing to report leaves unset. Adding a field to the
+    /// struct changes this constructor, not its callers.
     pub fn new(usage: Usage) -> Self {
         Self {
             id: None,
             model: None,
             usage,
+            cache_miss: None,
             receipt: Receipt::default(),
         }
     }
@@ -270,6 +406,13 @@ impl RequestUsage {
 
     pub fn with_receipt(mut self, receipt: Receipt) -> Self {
         self.receipt = receipt;
+        self
+    }
+
+    /// Attach the provider's attribution of a cache miss, as a response that named one
+    /// would ([`Completion::cache_miss`]).
+    pub fn with_cache_miss(mut self, cache_miss: CacheMiss) -> Self {
+        self.cache_miss = Some(cache_miss);
         self
     }
 }
@@ -403,6 +546,7 @@ impl Completion {
             id: self.id.clone(),
             model: Some(self.model.clone()),
             usage: self.usage.clone(),
+            cache_miss: self.cache_miss.clone(),
             receipt: self.receipt.clone(),
         }
     }

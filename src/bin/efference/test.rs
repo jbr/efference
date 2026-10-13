@@ -291,6 +291,63 @@ fn cache_report_separates_explained_cold_reads_from_the_streak() {
     );
 }
 
+/// The provider's own attribution, folded (docs/transport.md): a named divergence is
+/// counted by reason across a record, and the reasons that mean *no comparison happened*
+/// are counted apart from them — they say nothing about the prefix, which is the
+/// distinction a reader of a cold streak needs. A divergence named on a read that was
+/// still warm is counted too: the provider saw the prompt move, and only an earlier
+/// breakpoint happened to absorb it.
+#[cfg(feature = "dev")]
+#[test]
+fn cache_report_counts_the_provider_attribution_by_reason() {
+    use efference::api::{CacheMiss, CacheMissReason};
+    use efference::daemon::RequestOrigin::Turn;
+    use efference::daemon::UsageLine;
+
+    let line = |at_ms, cache_read, miss: Option<(CacheMissReason, u64)>| {
+        let request = usage(10, 20, cache_read);
+        let request = match miss {
+            Some((reason, missed)) => request.with_cache_miss(CacheMiss {
+                reason,
+                cache_missed_input_tokens: Some(missed),
+            }),
+            None => request,
+        };
+        UsageLine::new(Turn, at_ms, false, &request)
+    };
+    let t = 1_800_000_000_000u128;
+    let lines = vec![
+        line(t, 0, None), // boot
+        line(t + 1_000, 0, Some((CacheMissReason::ToolsChanged, 41_850))),
+        line(t + 2_000, 0, Some((CacheMissReason::ToolsChanged, 41_850))),
+        line(t + 3_000, 0, Some((CacheMissReason::Unavailable, 0))),
+        line(
+            t + 4_000,
+            5_000,
+            Some((CacheMissReason::SystemChanged, 900)),
+        ),
+    ];
+    let report = cache_report::fold_sessions(&[("s".into(), lines)]);
+
+    let a = &report.attributed;
+    assert_eq!(
+        (
+            a.model_changed,
+            a.system_changed,
+            a.tools_changed,
+            a.messages_changed
+        ),
+        (0, 1, 2, 0),
+        "the divergences, by the name the provider gave them"
+    );
+    assert_eq!(
+        (a.unavailable, a.previous_message_not_found),
+        (1, 0),
+        "a no-comparison reason is held apart from the divergences"
+    );
+    assert_eq!((a.divergences(), a.total()), (3, 4));
+}
+
 /// Two sessions are folded with two trackers, never one: a prefix belongs to a
 /// session, so the end of one must not be joined to the start of the next (which
 /// would swallow the second session's boot cold start into the first's streak).

@@ -491,3 +491,50 @@ fn inline_cost_prices_a_request_and_is_recorded() {
     let old: UsageLine = serde_json::from_str(r#"{"at_ms":1,"origin":"turn","input":3}"#).unwrap();
     assert_eq!((old.cost_usd, old.served_by), (None, None));
 }
+
+/// The provider's own attribution of a cache miss is persisted in the provider's spelling
+/// and read back the same way (docs/transport.md). Absent on most lines — a request the
+/// provider saw no divergence in carries nothing, and a line written before the field
+/// existed reads as `None` — which is what makes the offline report's attribution block
+/// appear only for records that have one.
+#[test]
+fn an_attributed_cache_miss_round_trips_through_the_usage_line() {
+    use crate::api::{CacheMiss, CacheMissReason};
+
+    let miss = CacheMiss {
+        reason: CacheMissReason::ToolsChanged,
+        cache_missed_input_tokens: Some(41_850),
+    };
+    let line = UsageLine::new(
+        RequestOrigin::Turn,
+        1_800_000_000_000,
+        false,
+        &RequestUsage::new(Usage::default()).with_cache_miss(miss.clone()),
+    );
+    let json = serde_json::to_value(&line).unwrap();
+    assert_eq!(
+        json["cache_miss"],
+        serde_json::json!({"type":"tools_changed","cache_missed_input_tokens":41850})
+    );
+    let parsed: UsageLine = serde_json::from_value(json).unwrap();
+    assert_eq!(parsed.cache_miss, Some(miss));
+
+    // A request with no attribution writes no field at all, rather than a null one.
+    let quiet = UsageLine::new(
+        RequestOrigin::Turn,
+        0,
+        false,
+        &RequestUsage::new(Usage::default()),
+    );
+    let json = serde_json::to_value(&quiet).unwrap();
+    assert!(json.get("cache_miss").is_none(), "{json}");
+
+    // And a reason this build does not know reads as its own name rather than failing
+    // the line: the provider can add one.
+    let unknown: CacheMiss = serde_json::from_value(
+        serde_json::json!({"type": "something_new", "cache_missed_input_tokens": 7}),
+    )
+    .unwrap();
+    assert_eq!(unknown.reason, CacheMissReason::Other);
+    assert_eq!(unknown.cache_missed_input_tokens, Some(7));
+}

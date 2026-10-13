@@ -113,6 +113,36 @@ async fn a_refused_forced_choice_falls_back_to_auto_and_is_remembered() {
     }
 }
 
+/// The fallback carries a turn's origin but not the turn's prompt — it appends an
+/// instruction turn and turns thinking off — so it is off the cache chain
+/// (docs/transport.md): the turn's own request opts in, and the retry that follows it
+/// neither sends the object nor leaves an id for the next turn to be compared against.
+/// Naming the fallback's response as the next comparison base would have the provider
+/// report a divergence in `messages` that the loop never made.
+#[tokio::test]
+async fn the_forced_choice_fallback_stays_off_the_cache_chain() {
+    let (client, server) = scripted(vec![(400, REFUSAL), (200, STREAM), (200, STREAM)]);
+    let client = client.with_origin(crate::log::RequestOrigin::Turn);
+    let turns = [WireTurn::text("is this safe?")];
+    let forced = ToolChoice::force("spot");
+    client.complete(&turns, &[], forced, |_| {}).await.unwrap();
+    client.complete(&turns, &[], forced, |_| {}).await.unwrap();
+    let bodies = server.join().unwrap();
+
+    assert_eq!(
+        bodies[0]["diagnostics"]["previous_message_id"],
+        Value::Null,
+        "the turn's own request opts in: {}",
+        bodies[0]
+    );
+    for body in &bodies[1..] {
+        assert!(
+            body.get("diagnostics").is_none(),
+            "the fallback is off the chain: {body}"
+        );
+    }
+}
+
 /// When the `auto` retry fails too, the 400 had another cause: the first error
 /// comes back and nothing is learned, so the next forced call is sent forced.
 #[tokio::test]

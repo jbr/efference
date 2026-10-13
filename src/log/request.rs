@@ -75,6 +75,21 @@ impl RequestOrigin {
         matches!(self, Self::Turn | Self::Keepalive)
     }
 
+    /// Whether a request of this origin sends **the loop's own prompt** — the bytes the
+    /// next turn will extend, byte for byte.
+    ///
+    /// Turns and keepalive pings do: a ping re-sends the turn's envelope verbatim, which
+    /// is what makes it refresh the same cache entry rather than write a new one. A peek
+    /// appends its own question before sending, so it rides the same *prefix* without
+    /// carrying the same prompt — the distinction [`Self::touches_main_prefix`] does not
+    /// draw, because for the touch clock a peek's read refreshes the prefix it read.
+    /// Cache diagnostics turns on this one: naming a response the loop never sent as the
+    /// previous one has the next turn compared against a body that differs in `messages`,
+    /// and reported as a divergence (docs/transport.md).
+    pub fn sends_the_loop_prompt(self) -> bool {
+        matches!(self, Self::Turn | Self::Keepalive)
+    }
+
     /// Whether every request of this origin read the triage lineage's own cached prefix
     /// (docs/transport.md): the primer and the triage keepalive do, and a result-triage
     /// peek does only when it ran on its own client, which the origin does not say, so

@@ -265,6 +265,7 @@ fn text_completion(text: &str) -> Completion {
             cache_creation_input_tokens: 0,
             cache_read_input_tokens: 0,
         },
+        cache_miss: None,
         failure_class: crate::api::FailureClass::Transient,
     }
 }
