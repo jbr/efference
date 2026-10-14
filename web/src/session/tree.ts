@@ -336,7 +336,7 @@ export function buildTree(entries: LogEntry[]): TranscriptNode[] {
     // `keep: all` line after every result, which said nothing the reader did
     // not already have. Its genuinely batch-scoped fields (`inbox`, `retries`)
     // have no surface yet; when they get one it is the batch node's, not a
-    // leaf's (see backlog/web/entry-architecture.md).
+    // leaf's (docs/web-client.md).
     if ("Triage" in p) continue;
 
     // A process lifecycle record (docs/supervisor.md) is not rendered either:

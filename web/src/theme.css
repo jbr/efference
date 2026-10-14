@@ -243,8 +243,8 @@
 
 /* What the highlighter's theme resolves against. Aliases of the semantic
    tokens above, so they need no per-theme block: var() resolves at use.
-   Provisional mapping — the syntax palette converges with the TUI's
-   eventually (backlog/web/theme.md tracks that from the backlog side). */
+   Provisional mapping: the web and TUI syntax palettes are not yet
+   converged (docs/web-client.md). */
 :root {
   --shiki-foreground: var(--fg);
   --shiki-token-comment: var(--fg-faint);

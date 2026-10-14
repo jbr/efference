@@ -342,7 +342,7 @@ export interface ArgField {
 }
 
 /**
- * Every argument of a call, for the inspector's args tab (backlog/web/…).
+ * Every argument of a call, for the inspector's args tab (docs/web-client.md).
  *
  * Separate from the signature (`ui/signature.ts`) on purpose. The signature's
  * bodies answer "what does the transcript header need beyond its summary",

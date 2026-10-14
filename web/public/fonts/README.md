@@ -3,7 +3,7 @@
 Declared by src/theme.css; served same-origin because the CSP is
 `default-src 'self'`. Official builds, unmodified — subsetting counts as
 modification under the OFL's reserved-name clause, so the whole files ship
-with their license texts beside them (backlog/web/theme.md has the
+with their license texts beside them (docs/web-client.md has the
 reasoning):
 
 - `newsreader-var.woff2` / `newsreader-italic-var.woff2` — Newsreader

@@ -904,7 +904,7 @@ text is model-authored and the page holds a session credential, so a markup-
 emitting renderer would mean `dangerouslySetInnerHTML` over untrusted content;
 that constraint is what picks the library, not ergonomics. Two `react-markdown`
 defaults carry it and neither should be switched off without reading
-[backlog/web/untrusted-output.md](../backlog/web/untrusted-output.md): raw HTML
+[Untrusted content](#untrusted-content): raw HTML
 is escaped unless `rehype-raw` is added, and `defaultUrlTransform` passes only
 `http`/`https`/`irc`/`ircs`/`mailto`/`xmpp`, so a `javascript:` or `data:` URL in
 model output never reaches an `href`.
