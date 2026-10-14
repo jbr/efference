@@ -233,7 +233,7 @@ anyway. Read-only and human-facing: it is what running a
 static file server beside the daemon was doing, moved inside it, so project files
 are readable through the same page the session runs in — including from away from
 the machine. It is the server half of the file viewer
-([../backlog/web/file-view/](../backlog/web/file-view/README.md)).
+([web-client.md](web-client.md)).
 
 - `GET /files/<path>` → the file's bytes.
 - `GET /files/<dir>` → a JSON listing: `path` (relative to the root),

@@ -1,9 +1,9 @@
 // Which files a call names, for the file viewer (docs/web-client.md;
-// backlog/web/file-view/). Session-layer derivation over the log the store
+// docs/web-client.md). Session-layer derivation over the log the store
 // already holds — the /files endpoint contributes nothing and knows nothing
 // about the session.
 //
-// The viewer is within-cwd only, categorically (backlog/web/file-view/
+// The viewer is within-cwd only, categorically (docs/web-client.md
 // viewer.md): an absolute path is out of the surface's scope, not merely
 // unresolvable, so it yields nothing here and the call's own log diff stays
 // its only surface. A `..`-leading path would escape the root the same way
@@ -31,7 +31,7 @@ const str = (input: unknown, key: string): string | null => {
 
 /** The file a call changes on disk, when it names one the viewer can serve.
  * Edits and writes only — this is the follow signal, and a bare `read` does
- * not move the view (backlog/web/file-view/viewer.md). */
+ * not move the view (docs/web-client.md). */
 export function editedPath(name: string, input: unknown): string | null {
   if (!EDIT_TOOLS.has(name)) return null;
   const path = str(input, name === "write" ? "path" : "file_path");

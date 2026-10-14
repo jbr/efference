@@ -2,7 +2,7 @@
 // directory"): which directories are expanded, what each one contains, and the
 // change stream that keeps that current.
 //
-// Session-layer rather than component-internal, per backlog/web/README.md: a
+// Session-layer rather than component-internal, per docs/web-client.md: a
 // phone eventually renders this as something other than an indented list, and
 // that should be a layout change over the same state.
 //

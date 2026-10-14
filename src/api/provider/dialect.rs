@@ -15,7 +15,7 @@ pub enum WireDialect {
     Responses,
     /// Chat Completions: `messages[]` with `role: "tool"` results, assistant
     /// messages replayed as received, SSE `choices[0].delta` chunks ending in
-    /// `[DONE]` (backlog/completions-dialect/dialect.md until it is served).
+    /// `[DONE]` (backlog/completions-dialect.md until it is served).
     Completions,
     /// The System One contract (docs/transport.md): one POST of
     /// `{model, state, questions}` answered with a probability per question.

@@ -17,7 +17,7 @@ export const RECENT = 6;
 /** Items this far from the tail and beyond render brief. */
 export const ANCIENT = 20;
 /** Thinking at or under this many words is never folded — about 8 wrapped
- * lines, the median block (backlog/web/thinking-autocollapse.md), where a
+ * lines, the median block (backlog/web-thinking-autocollapse.md), where a
  * fold costs a click and saves nothing. Words rather than newlines (thinking
  * is a few long paragraphs) or characters (markdown syntax inflates them). */
 export const THINKING_FLOOR = 120;
@@ -45,7 +45,7 @@ export const wordCount = (text: string) =>
 /** A call that renders whole at any distance: still running or held at a
  * gate, failed, withheld by a triage failure, or flagged by the spotter.
  * Errors, gates, and refusals render at every density
- * (backlog/web/transcript-density.md). */
+ * (backlog/web-transcript-density.md). */
 export function mustShow(node: CallNode): boolean {
   if (node.result === null) return true;
   const payload = node.result.payload;

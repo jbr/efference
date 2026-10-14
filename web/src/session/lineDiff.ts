@@ -1,4 +1,4 @@
-// The viewer's one diff engine (backlog/web/file-view/viewer.md): line-level,
+// The viewer's one diff engine (docs/web-client.md): line-level,
 // over successive fetches of the same file, so a highlight means "what changed
 // since you last looked". One engine for every file type — markdown maps the
 // same line ranges onto its blocks rather than diffing again in another

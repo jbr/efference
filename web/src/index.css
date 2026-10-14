@@ -982,7 +982,7 @@ pre {
    composer — chrome frames content, as in a native status bar. Full-bleed:
    turn state at the far left, the loop dials at the far right; the gap
    between them is reserved for the key-hint strip (binds are deferred —
-   backlog/web/README.md). */
+   docs/web-client.md). */
 .status-bar {
   display: flex;
   gap: 0.7rem;
@@ -2166,7 +2166,7 @@ select {
 }
 
 /* ————— The phone breakpoint (interim usability pass, 2026-08-22) —————
-   Not the mobile design pass (backlog/web/README.md scopes that as its own
+   Not the mobile design pass (backlog/web-mobile-inspection-design.md scopes that as its own
    drill-down wireframing effort): these are the minimum reflows that make
    the desktop layout survivable on a ~400pt viewport. The label gutter
    moves above the content instead of beside it — a 6rem gutter plus insets

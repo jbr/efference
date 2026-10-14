@@ -44,7 +44,7 @@ interface StampNode {
 
 /** Stamp `data-changed` onto every top-level block whose source lines overlap
  * a changed range — the file viewer's markdown highlight, at block granularity
- * by design (backlog/web/file-view/viewer.md). mdast/hast `position` is the
+ * by design (docs/web-client.md). mdast/hast `position` is the
  * source-to-output mapping, so the one line diff serves this view too; the
  * stamp is an attribute and the tint is CSS. */
 const stampChanged =

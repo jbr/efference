@@ -22,9 +22,27 @@ the reference TUI does.
   schemas), which deletes the cordon whole; the reserved `render` field on log
   frames remains the daemon-side alternative if structure is slow to arrive.
 - **Content before styling.** This gated the first slice; with the information
-  surface substantially built, styling now arrives from the design pass
-  ([backlog/web/README.md](../backlog/web/README.md) records the mock source and
-  how to read it), starting with the theme layer below.
+  surface substantially built, styling now arrives from the design pass,
+  starting with the theme layer below.
+
+## The design source
+
+The visual design lives in the claude.ai/design project "App design iteration"
+(`https://claude.ai/design/p/b6ea6457-2c10-4529-b17b-ad5eeb18ca9b`).
+`Efference Session - After Dark.dc.html` is the composite mock; `Daylight` is its
+light counterpart; per-region iterations (Session View / Transcript / Inspector /
+Bottom Panel / File View) and the brand-identity uploads sit beside it (including
+`efference-lowcontrast.tmTheme`, whose provenance is unconfirmed — it may be the TUI
+asset).
+
+How to read the mock (jbr, 2026-08-19): it was drawn without visibility into the
+client's code, so the **layout and IA are the signal**; the fine detail is imagined
+and gets filled in during implementation, not treated as requirements. Concretely:
+specific keyboard binds are deferred entirely — the layouts reserve hint surfaces,
+and jbr drives concrete binds through individual suggestions once the pass is up;
+the top bar starts minimal and grows interactively; invented metrics (batch timing)
+are dropped. A departure from pure restyling gets raised for discussion, not taken
+as marching orders — the discussion outcomes so far are recorded in each unit.
 
 ## Layering — the churn gradient
 
@@ -128,7 +146,7 @@ in the suite's environment, past a delta's arrival interval well before a block
 of that size finishes. Once the folding thread is behind, the deltas already
 buffered in the fetch body keep it saturated after the producer has gone quiet —
 so the page did not recover when the stream ended, only when it was reloaded
-([../backlog/web/streaming-hot-loop.md](../backlog/web/streaming-hot-loop.md)).
+([../backlog/web-streaming-hot-loop.md](../backlog/web-streaming-hot-loop.md)).
 
 Two mechanisms bound that, both below `ui/`:
 
@@ -344,6 +362,26 @@ viewport, iterated live in the iOS simulator. One width breakpoint, 700px,
 declared twice on purpose: the `@media (max-width: 700px)` block at the end of
 `index.css`, and `ui/useNarrow.ts` (a `matchMedia` binding, the one JS-side
 reading) for what CSS cannot switch. Change both together.
+
+This pass scopes the layout, not the phone. The desktop browser is the target;
+mobile is supported by a reflow of it, and phone-layout defects in that reflow
+are ordinary backlog units. What remains open is whether a phone eventually wants
+more than a reflow: fitting a harness's worth of information onto a phone may
+need drill-down views that depart far enough from the desktop layout to be their
+own wireframing pass, which has not run
+([../backlog/web-mobile-inspection-design.md](../backlog/web-mobile-inspection-design.md)
+is that unit). The breakpoint's cheapest workable moves — terse results with
+tap-to-detail, the inspector as a full-screen sheet — already landed on that
+drill-down shape, which is evidence for the prediction, not a substitute for the
+pass.
+
+Functionality is a different question, and it is not scoped out. This is one app
+that will meet the phone case too, and a *capability* motivated by using the
+harness away from the machine is in scope. The standing constraint on how units
+are built follows from it and is stated above under layering: state machinery
+stays out of the components, so meeting the phone later is a **layout change**
+rather than a second implementation. The free pass is on making it responsive
+now — not on wiring logic into a desktop-shaped component.
 
 What narrow changes:
 
@@ -618,7 +656,7 @@ page's length and DOM weight stay bounded as a session grows.
 - **Thinking**: trimmed is a three-line preview under the same fade; brief is a
   "Thought · N words" pill. Thinking of 120 words or fewer is never folded —
   the median block is about that size, and folding it costs a click and saves
-  nothing (backlog/web/thinking-autocollapse.md).
+  nothing (backlog/web-thinking-autocollapse.md).
 - **Always whole, at any distance**: user turns and assistant prose; a call
   still running or held at a gate; a failed call; a result withheld by a triage
   failure; a call the spotter gated or watched. Errors, gates, and refusals
@@ -629,7 +667,7 @@ than dropping: every entry still renders, as the positions require, and a gate
 decides a call, never a result, so no pending decision rests on a folded body.
 Levels are not yet anchored against the scroll: folding an item above the
 viewport while the reader is scrolled up moves the page — harmless while
-following the tail, and the open item in backlog/web/thinking-autocollapse.md.
+following the tail, and the open item in backlog/web-thinking-autocollapse.md.
 
 **A call's parts, top to bottom**: the intent as its title (upright serif,
 inline markdown), the signature under it at a smaller size, then what came
@@ -1013,7 +1051,7 @@ Lilac's dot is a white bead shading out to the hue, since a white core with
 only a rim read as the idle outline on a light page.
 Adding a theme
 is authoring an override block plus a select option
-([backlog/web/plain-themes.md](../backlog/web/plain-themes.md) is the pending
+([backlog/web-plain-themes.md](../backlog/web-plain-themes.md) is the pending
 pair).
 
 Strings and paths use misty blue (`--code-path`), while semantic diff additions
@@ -1366,7 +1404,7 @@ title. An empty send is the continue, which retries either wait. The choice is
 `ui/turnState.ts`, a pure function of `running`, `stall`, whether a retry
 is waiting, a pending gate or ask, and the operations view (the topic, the model, and the clock), so the component holds no branching of its own. The span between state and controls is
 reserved for the key-hint strip (binds are deferred to interactive
-suggestions; [backlog/web/README.md](../backlog/web/README.md)). The input
+suggestions; see "The design source" above). The input
 carries no hint about mid-trajectory injection
 ([control-channel.md](control-channel.md)): the turn-state indicator beside
 it already says whose turn it is, and riding along is what sending out of
