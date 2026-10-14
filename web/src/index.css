@@ -61,7 +61,6 @@ select,
 label,
 .top-bar,
 .banner,
-.policy-section,
 .status-bar,
 .entry > .label,
 .block .kind,
@@ -346,7 +345,7 @@ input[type="checkbox"]:disabled {
 
 /* The session's title (docs/session-title.md): prose, so the serif, and the
    one element of the bar that yields width — it ellipsizes before the meter
-   or the drawer control would move. */
+   or the cost would move. */
 .session-name {
   min-width: 0;
   font-family: var(--font-prose);
@@ -376,6 +375,25 @@ input[type="checkbox"]:disabled {
   line-height: 1;
   color: var(--fg-dim);
   text-align: right;
+}
+
+/* The session cost (docs/web-client.md "The top bar"): the context meter's
+   caption without the meter, read as its sibling. Its inner structure is the
+   meter's — a bar over a caption — so the caption lands on the context
+   caption's line; the bar is drawn empty and given no width. The font is a
+   button's 0.8em because the meter sits in the context popup button, so that
+   is the size the caption beside it is set at. Drawn only where the provider
+   prices requests. */
+.cost-meter {
+  display: block;
+  flex: none;
+  font-size: 0.8em;
+}
+
+/* The meter's bar, kept only for the line it gives the caption below it. */
+.cost-meter .meter {
+  width: 0;
+  visibility: hidden;
 }
 
 /* The upstream diagnostic: a warn-tinted chip left of the usage meter. Tinted
@@ -941,88 +959,6 @@ pre {
   overflow: hidden;
 }
 
-.panel-body.tasks {
-  display: grid;
-  grid-template-columns: 15rem 1fr;
-}
-
-.proc-list {
-  border-right: 1px solid var(--border-subtle);
-  overflow-y: auto;
-}
-
-.proc-row {
-  display: block;
-  width: 100%;
-  text-align: left;
-  font: inherit;
-  font-size: 0.8em;
-  padding: 0.5rem 0.9rem;
-  border: none;
-  /* A flush list row: square, so the picked row's one-side accent does not
-     meet the button's rounded corners. */
-  border-radius: 0;
-  border-bottom: 1px solid var(--border-subtle);
-  background: none;
-  color: var(--fg-dim);
-  cursor: pointer;
-}
-
-.proc-row.picked {
-  background: var(--bg-page);
-  color: var(--fg-bright);
-  box-shadow: inset 2px 0 0 var(--accent);
-}
-
-.proc-name {
-  display: flex;
-  gap: 0.5rem;
-  align-items: center;
-}
-
-.proc-name .dot.idle {
-  background: none;
-  border: 1px solid var(--fg-ghost);
-}
-
-.proc-meta {
-  display: block;
-  font-size: 0.9em;
-  margin-top: 0.15rem;
-}
-
-.proc-detail {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.proc-head {
-  display: flex;
-  gap: 0.55rem;
-  align-items: center;
-  padding: 0.45rem 0.9rem;
-  border-bottom: 1px solid var(--border-subtle);
-  font-size: 0.8em;
-}
-
-.proc-head .spacer {
-  flex: 1;
-}
-
-.proc-head input {
-  font: inherit;
-  min-width: 0;
-  width: 14rem;
-}
-
-.proc-command {
-  color: var(--code-path);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .tail {
   flex: 1;
   min-height: 0;
@@ -1040,52 +976,6 @@ pre {
   padding: 0.35rem 0.9rem 0;
   font-size: 0.75em;
   border-top: 1px solid var(--border-subtle);
-}
-
-.panel-body.inbox,
-.panel-body.policy {
-  overflow-y: auto;
-}
-
-.inbox-row {
-  display: flex;
-  gap: 0.7rem;
-  align-items: baseline;
-  justify-content: space-between;
-  padding: 0.25rem 0;
-}
-
-.policy-row {
-  display: grid;
-  grid-template-columns: 9ch minmax(0, 1fr) auto;
-  column-gap: 0.75rem;
-  align-items: baseline;
-  padding: 0.1rem 0;
-}
-
-/* The row's key, in the drawer's key: value vocabulary (.facts). */
-.policy-section {
-  font-family: var(--font-ui);
-  color: var(--fg-dim);
-}
-
-.policy-row > :not(.policy-section) {
-  overflow-wrap: anywhere;
-}
-
-/* A `watch`/`gate`/`deny` command carve-out: warn-tinted so it never reads
-   as a grant the way a bare `clear` row does. */
-.policy-carve-out {
-  color: var(--warn);
-}
-
-.policy-verbs {
-  display: flex;
-  gap: 0.4rem;
-}
-
-.policy-verbs button {
-  font-size: 0.8em;
 }
 
 /* The status bar: the dock's outermost row, at the window edge below the
@@ -2311,7 +2201,7 @@ select {
   }
 
   /* A phone has room for the start of a title and nothing more, and the
-     start alone says less than nothing; the drawer shows it whole. */
+     start alone says less than nothing. */
   .session-name {
     display: none;
   }
@@ -2357,8 +2247,8 @@ select {
   }
 }
 
-/* The fold's notice in the composer and its control in the drawer
-   (docs/web-client.md). */
+/* The fold's notice in the composer and its control in the context details
+   popup (docs/web-client.md). */
 .fold-notice {
   font-family: var(--font-ui);
   font-size: 0.85rem;

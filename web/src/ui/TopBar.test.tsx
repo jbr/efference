@@ -1,12 +1,14 @@
-// The context meter (docs/web-client.md): an endpoint that reported no window
-// sends `limit: null`, which draws the count alone instead of throwing.
+// The context meter and the session cost (docs/web-client.md): an endpoint
+// that reported no window sends `limit: null`, which draws the count alone
+// instead of throwing, and a provider that prices no requests sends no cost,
+// which draws no readout beside the meter.
 
 import { expect, test } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { Usage } from "../api/types.ts";
 import { TopBar } from "./TopBar.tsx";
 
-const usage = (context: Usage["context"]): Usage =>
+const usage = (context: Usage["context"], cost: Usage["cost"] = null): Usage =>
   ({
     last: null,
     cumulative: {
@@ -17,17 +19,17 @@ const usage = (context: Usage["context"]): Usage =>
     },
     last_request_at: null,
     context,
-    cost: null,
+    cost,
     limits: {},
     cold_streak: 0,
   }) as unknown as Usage;
 
-const bar = (context: Usage["context"]) =>
+const bar = (context: Usage["context"], cost: Usage["cost"] = null) =>
   renderToStaticMarkup(
     <TopBar
       listHref={null}
       identity={null}
-      usage={usage(context)}
+      usage={usage(context, cost)}
       upstreamFailure={null}
       upstreamRetry={null}
     />,
@@ -48,4 +50,26 @@ test("an unknown window draws the count alone, with no bar", () => {
 
 test("header no longer exposes the session panel", () => {
   expect(bar(null)).not.toContain("drawer-toggle");
+});
+
+test("a priced session draws its cost beside the meter", () => {
+  const markup = bar(
+    { limit: 200_000, used: 50_000 },
+    { usd: 0.1, unpriced: 0 },
+  );
+  expect(markup).toContain("cost-meter");
+  expect(markup).toContain("$0.10");
+});
+
+test("a session on a provider that prices nothing draws no cost", () => {
+  expect(bar({ limit: 200_000, used: 50_000 })).not.toContain("cost-meter");
+});
+
+test("an unpriced total is a marked floor, its count only in the title", () => {
+  const markup = bar(
+    { limit: 200_000, used: 50_000 },
+    { usd: 1.5, unpriced: 3 },
+  );
+  expect(markup).toContain(">~$1.50<");
+  expect(markup).toContain("cost: ~$1.50 · 3 unpriced");
 });

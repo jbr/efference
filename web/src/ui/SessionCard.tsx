@@ -12,6 +12,7 @@ import { useEffect, useRef, useState } from "react";
 import { sessionHref } from "../api/base.ts";
 import type { CardModel } from "./overview.ts";
 import { statusPhrase, tokens } from "./overview.ts";
+import { costLabel } from "./cost.ts";
 
 export function Activity({ card }: { card: CardModel }) {
   const activity = card.activity;
@@ -225,7 +226,7 @@ export function SessionCard({
               {context.limit !== null && `/${tokens(context.limit)}`}
             </span>
           )}
-          {card.costUsd !== null && <span>${card.costUsd.toFixed(2)}</span>}
+          {card.cost !== null && <span>{costLabel(card.cost)}</span>}
         </div>
       </footer>
     </article>

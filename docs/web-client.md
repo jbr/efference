@@ -289,7 +289,7 @@ layer derives the base from `location` on every call (`api/base.ts`), so `connec
 when a view mounts and passes it to the catch-up read and the stream (`fetchLogTail`,
 `openStream`), whose reconnects must reach the session they began on even after the page has
 moved. `ui/App.tsx` keys the session view by base, so inspector selection, the open file, the
-drawer, the file tree and the composer's local state are per session, and a pop between
+file tree and the composer's local state are per session, and a pop between
 sessions is a remount.
 
 **Warm sessions.** A session's `Store` comes from `session/registry.ts`, which retains the
@@ -321,8 +321,8 @@ says App holds a piece of state (the inspector selection, the open file request,
 overlay count).
 
 `ui/AppHeader.tsx` supplies the shared header frame and wordmark navigation.
-`TopBar.tsx` supplies session identity, usage and drawer controls; the overview
-and launch pages supply their own actions. The wordmark links to the session
+`TopBar.tsx` supplies session identity, usage and the app-settings link; the
+overview and launch pages supply their own actions. The wordmark links to the session
 list, with a callback available for draft-preserving navigation within the launch
 flow. Modified clicks keep native link behavior. A page without a list can pass
 a null home URL to render a non-link wordmark. Caller refs attach to the actual
@@ -373,8 +373,6 @@ What narrow changes:
 - Chrome rows tighten: the context meter narrows, the title drops from the top
   bar, the upstream chip ellipsizes, and the gate's decision rows wrap so every decision stays on screen (verified
   live: a `human_only` gate decided by tap from the simulator).
-- **The drawer is a bottom sheet** (see "The drawer"), dismissed by dragging
-  its header down.
 
 **Overlays are history-backed** (`ui/overlayHistory.ts`, both form factors):
 each inspection depth and lightbox — owns one history entry, so the
@@ -997,7 +995,7 @@ location, and archived-session choices, including even selected boundaries and
 room around rounded row corners.
 
 `--selection-border` gives selected picker and resume rows an even inset
-boundary without a one-sided rounded-corner mark. Drawer counts and checked
+boundary without a one-sided rounded-corner mark. Checked
 checkboxes use `--badge-core` / `--badge-ink` / `--badge-halo`: a pale core,
 dark text or checkmark, and accent light around it. Checkboxes retain native
 keyboard interaction; forced-colors mode restores native appearance.
@@ -1146,7 +1144,7 @@ line, the top fading only while lines are scrolled out above. The triaged
 result replaces it when it commits. Output whose call has not committed yet
 still peeks as its own item below the tail. Tools that do not stream show their
 result once the call returns, while it awaits triage (below).
-Background-process output is the drawer's tasks section.
+Background-process output is read in the running-task strip's inspectors (below).
 
 **Streaming flows into the committed state without a change of shape.** A call
 whose arguments are arriving is the same item a committed call is — the intent
@@ -1175,7 +1173,7 @@ an error is information.
 The page is full width; content sits in a centered `.col` (60rem). The chrome
 — the top bar, the connection banner, the composer band, and the status bar —
 bleeds to the viewport edges, and each bar's affordances anchor to the window
-edges too: the wordmark and the drawer control, the turn state and the
+edges too: the wordmark and the app-settings link, the turn state and the
 interrupt (full width for parity across the bars, 2026-08-20). Only content
 keeps the column: the transcript and the composer input. Chrome is also invisible to text selection (`user-select: none`
 across labels, bars, tabs, and controls) — only content selects: transcript
@@ -1195,12 +1193,12 @@ session uses that session's listing title or id rather than the previous view's.
 `ui/TopBar.tsx`: sticky interface chrome — the serif wordmark (under a host,
 also the link back to the session list), the session's title
 ([session-title.md](session-title.md), the id until one is written), the
-context meter, and the **Session** control that opens the drawer. What the
-session is — models, directory, cost — and how it runs are the drawer's: the
-bar carried them on one line and could show none of them whole, and they are
-not what the reader is doing. The title is the one element that yields width,
+context meter, the session cost where the provider prices requests, and the
+app-settings link. What the session is — models, directory — and how it runs
+belong to the surfaces that show them whole; the bar carried them on one line
+and could show none of them. The title is the one element that yields width,
 and on the phone breakpoint it is dropped: the start of a title says less than
-nothing, and the drawer shows it in full. The **context meter** is the bar,
+nothing. The **context meter** is the bar,
 with `42.7k/1M` as a small caption under it so the numbers take no width of
 their own. `ui/ContextBar.tsx` shares its fill with the switcher hover card:
 occupancy is clamped to 0–100%, its halo grows and its core whitens with occupancy.
@@ -1211,6 +1209,18 @@ from the meter hue toward the accent between 50% and 85%, then toward the warn
 hue between 85% and 100%. These are visual fill ranges, not consolidation
 thresholds. Unknown usage draws no fill; an unknown window draws the count
 without a bar.
+
+**Session cost** draws beside the context meter only where the provider prices
+requests; a direct Anthropic session has none, and its header is unchanged. It
+takes the meter's caption line — `$0.51` in the same dim type, with the meter's
+bar left out — because the provider's running total is a sum, not an occupancy.
+`ui/cost.ts` writes the figure for the header and both session cards. A request
+the provider's accounting endpoint could not price makes the total a floor, and
+the presence of any such request prefixes the number with `~` rather than
+naming a count: past the first, "inexact" is the whole of what the reader
+needs. The header names the count itself in the element's title. Cost and
+context are independent readings, each drawn where its own provider supplies it,
+and not assumed present together.
 
 `ui/PlanMeter.tsx` adds a subscription meter next to context occupancy only when
 `usage.plan` reports a window; other providers leave the header unchanged.
@@ -1252,8 +1262,8 @@ accent dot with a halo, a session whose turn ended or that is asking is the acce
 without one — a finished turn waits on the operator until the session is archived — a
 stalled one is the warn colour, a running one pulses faintly, and a session never started
 is a hollow ring. Hovering or keyboard-focusing a tab opens a card
-(`ui/SessionHoverCard.tsx`) with the overview card's status line, title, activity line and
-context meter; that opens the session's own state stream and log tail (`openSessionCard`)
+(`ui/SessionHoverCard.tsx`) with the overview card's status line, title, activity line,
+context meter and cost; that opens the session's own state stream and log tail (`openSessionCard`)
 only while the card shows. Clicking or tapping the selected tab toggles its card. Keyboard
 focus can move into its actions; a click-opened card or an archive interaction keeps the card
 open across pointer departure. Escape restores tab focus and closes the card; an outside
@@ -1329,7 +1339,8 @@ by `safe-area-inset-bottom`, so on a phone it clears the home indicator and the
 rounded corners. At the left the turn state; at the right only the controls
 that apply now: **interrupt** (`POST /v1/loop/interrupt`) while a turn runs,
 and **resume** while the loop is held, because a hidden hold reads as a hang.
-The other dials — review level, pace, hold — are the drawer's. The turn state is
+The other dials — pace and review level — are set over the control channel, not
+from this client; hold is the composer band's own. The turn state is
 "your turn" in the serif when the loop is idle, a dim `running…` while it
 moves (`retrying the upstream · send to retry now` while an `upstream_retry`
 pause runs; while a request or tool is open, the `current_operations` topic's
@@ -1454,9 +1465,10 @@ state; query-only navigation does not reset window scroll. The modal dialog
 provides focus containment, background inertness, and Escape dismissal.
 
 `ui/Interface.tsx` supplies the existing theme and thinking/ambient
-visibility preferences and browser push registration. These controls no longer
-live in the session drawer. Preference storage and push permission/subscription
-behavior are unchanged; notification prompts run only on explicit interaction.
+visibility preferences and browser push registration, reached from the
+app-settings link in the header. Preference storage and push
+permission/subscription behavior are unchanged; notification prompts run only on
+explicit interaction.
 
 ## Process output seeding
 
@@ -1960,8 +1972,8 @@ Scene submit, attach, interrupt, inspection, and approval interactions stay loca
 they do not issue session actions. The local raw-output disclosure is not the
 app's inspector.
 
-The composer fixtures share `ComposerToolbar` and `turnState` with the app;
-`DrawerToggle` is shared with `TopBar`. Code/result specimens use the production
+The composer fixtures share `ComposerToolbar` and `turnState` with the app.
+Code/result specimens use the production
 call and result components, including shell argument colors, edit-result framing
 for colored diffs, and errors. The input, resume list, and picker shells retain
 production class names but duplicate markup; those shells can drift when their
@@ -2046,7 +2058,7 @@ production build folds to `false`; the branch and the module go with it.
 
 ### Command inspection and running-task shortcuts
 
-`ui/TaskStrip.tsx` places running-task shortcuts above the composer. Foreground processes enter after one second; explicitly backgrounded processes enter immediately. Selecting a shortcut opens the originating call without scrolling the transcript. The session panel no longer duplicates task output/actions. `ui/inspector/useHistoricalCall.ts` resolves calls outside loaded history into an inspector-only window, merging subsequent live entries without changing transcript history.
+`ui/TaskStrip.tsx` places running-task shortcuts above the composer. Foreground processes enter after one second; explicitly backgrounded processes enter immediately. Selecting a shortcut opens the originating call without scrolling the transcript. `ui/inspector/useHistoricalCall.ts` resolves calls outside loaded history into an inspector-only window, merging subsequent live entries without changing transcript history.
 
 At desktop widths of at least 1100px, `ui/inspector/Layout.css` places the inspector beside the session column; narrower screens retain the overlay sheet. Bash inspection uses `ui/inspector/CommandView.tsx`: one heading, full Bash-highlighted command, independent wrapping output viewport, and live process actions. Output follows while running until the reader scrolls upward; bottom contact or Follow output resumes. Finished processes have no following controls. Structured telemetry supplies background handles after cold navigation; process records supply observed exit status and final duration. Missing end records remain unknown rather than implying success.
 

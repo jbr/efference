@@ -35,7 +35,8 @@ export interface CardModel {
   /** Why a `parked` session is parked (the `park` topic); `null` when not known. */
   park: "expired" | "folded" | null;
   context: { used: number | null; limit: number | null } | null;
-  costUsd: number | null;
+  /** The provider's billed running total; `unpriced > 0` makes it a floor. */
+  cost: { usd: number; unpriced: number } | null;
   /** `triage` is `null` when it is the main model — the default. */
   models: { main: string; spotter: string; triage: string | null } | null;
 }
@@ -199,7 +200,7 @@ export function cardModel(
     activity,
     park: entry.status === "parked" ? (park?.reason ?? null) : null,
     context: usage?.context ?? null,
-    costUsd: usage?.cost?.usd ?? null,
+    cost: usage?.cost ?? null,
     models: inference
       ? {
           main: inference.main.model,

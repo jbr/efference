@@ -1,6 +1,7 @@
 import { sessionHref } from "../api/base.ts";
 import { ArchiveAction } from "./ArchiveAction.tsx";
 import { ContextBar } from "./ContextBar.tsx";
+import { costLabel } from "./cost.ts";
 import { homeRelative } from "./identity.ts";
 import { type CardModel, statusPhrase, tokens } from "./overview.ts";
 import { Activity } from "./SessionCard.tsx";
@@ -69,14 +70,18 @@ export function HoverCard({
               </>
             )}
           </span>
-          {context !== null && (
+          {(context !== null || card.cost !== null) && (
             <span className="switcher-card-usage">
-              {context.limit !== null && (
-                <ContextBar used={used} limit={context.limit} />
+              {context !== null && (
+                <>
+                  {context.limit !== null && (
+                    <ContextBar used={used} limit={context.limit} />
+                  )}
+                  {used === null ? "–" : tokens(used)}
+                  {context.limit !== null && `/${tokens(context.limit)}`}
+                </>
               )}
-              {used === null ? "–" : tokens(used)}
-              {context.limit !== null && `/${tokens(context.limit)}`}
-              {card.costUsd !== null && <span>${card.costUsd.toFixed(2)}</span>}
+              {card.cost !== null && <span>{costLabel(card.cost)}</span>}
             </span>
           )}
         </a>

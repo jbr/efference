@@ -4,7 +4,9 @@ import type { ScrubHandle } from "../session/record.ts";
 import type { Store } from "../session/store.ts";
 
 export const RENDER_EVENT = "efference:stream-render";
-let minimized = false;
+// Starts collapsed: the open panel floats over the header, so it is the toggle
+// bottom-left that reveals it rather than something a dev has to dismiss.
+let minimized = true;
 
 export function installStreamDebug(
   store: Store,

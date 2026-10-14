@@ -95,7 +95,7 @@ export const card = (over: Partial<CardModel>): CardModel => ({
   },
   park: null,
   context: { used: 233_000, limit: 1_000_000 },
-  costUsd: null,
+  cost: null,
   models: { main: "deepseek-flash", spotter: "jev-latest", triage: null },
   ...over,
 });

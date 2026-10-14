@@ -3,10 +3,10 @@ import type { FoldControlProps } from "./FoldControl.tsx";
 import { AppSettingsLink } from "./AppSettings.tsx";
 // The top bar (docs/web-client.md): sticky interface chrome — the wordmark
 // (the way back to the session list), the session's title, the context meter,
-// and the control that opens the drawer. Deliberately minimal: what the
-// session is (models, directory, cost) and how it runs are the drawer's, and
-// additions here happen one argued element at a time. Loop state is not
-// restated here: the banner, gate cue, and composer turn-state carry it.
+// the session cost where the provider prices requests, and the app-settings
+// link. Deliberately minimal: additions here happen one argued element at a
+// time. Loop state is not restated here: the banner, gate cue, and composer
+// turn-state carry it.
 
 import type {
   SessionIdentity,
@@ -19,6 +19,7 @@ import { sessionName } from "./identity.ts";
 import { upstreamChip } from "./upstream.ts";
 import { ContextBar } from "./ContextBar.tsx";
 import { PlanMeter } from "./PlanMeter.tsx";
+import { costLabel } from "./cost.ts";
 import { AppHeader } from "./AppHeader.tsx";
 import { SessionSwitcher } from "./SessionSwitcher.tsx";
 
@@ -52,6 +53,31 @@ export function ContextMeter({
       <span className="context-caption">
         {used === null ? "–" : tokens(used)}
         {limit !== null && `/${tokens(limit)}`}
+      </span>
+    </span>
+  );
+}
+
+/** Session cost: the provider's billed running total, as a caption beside the
+ * context meter. Absent on a provider that prices no requests — a direct
+ * Anthropic session has none. `costLabel` marks the total `~` once any request
+ * went unpriced, so it reads as a floor; how many did is in the title, since
+ * past the first the count adds nothing. */
+export function CostMeter({ cost }: { cost: NonNullable<Usage["cost"]> }) {
+  const label = costLabel(cost);
+  return (
+    <span
+      className="cost-meter"
+      title={
+        cost.unpriced > 0
+          ? `cost: ${label} · ${cost.unpriced} unpriced`
+          : `cost: ${label}`
+      }
+    >
+      <span className="context-meter">
+        {/* The meter's bar, kept only for the line it gives the caption. */}
+        <span className="meter cost-meter-gap" aria-hidden="true" />
+        <span className="context-caption">{label}</span>
       </span>
     </span>
   );
@@ -98,6 +124,7 @@ export function TopBar({
   const chip = upstreamChip(upstreamFailure, upstreamRetry);
   const routeId = sessionId();
   const context = usage?.context ?? null;
+  const cost = usage?.cost ?? null;
   return (
     <AppHeader
       homeHref={listHref}
@@ -124,6 +151,7 @@ export function TopBar({
       ) : (
         context !== null && <ContextMeter context={context} />
       )}
+      {cost !== null && <CostMeter cost={cost} />}
       {usage?.plan && <PlanMeter plan={usage.plan} />}
       <AppSettingsLink />
     </AppHeader>

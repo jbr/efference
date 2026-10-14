@@ -21,7 +21,7 @@ import { MoreButton, Tab } from "../ui/SessionSwitcher.tsx";
 import { SessionArchiveSpecimens } from "./SessionArchiveSpecimens.tsx";
 import { emptyDraft, type Draft } from "../ui/sessionForm.ts";
 import { setThemeChoice, themeChoice } from "../ui/theme.ts";
-import { ContextMeter } from "../ui/TopBar.tsx";
+import { ContextMeter, CostMeter } from "../ui/TopBar.tsx";
 import {
   GalleryScenes,
   ComposerSpecimens,
@@ -99,6 +99,7 @@ export function Gallery() {
           "Session tabs",
           "Context window",
           "Context interactions",
+          "Session cost",
           "Plan allowance",
           "Composer",
           "Code and results",
@@ -188,6 +189,36 @@ export function Gallery() {
       </Section>
       <Section title="Context interactions">
         <ContextMeterSpecimens />
+      </Section>
+      <Section title="Session cost">
+        <p className="g-intro">
+          The provider's running total, drawn beside the context meter. A
+          provider that prices no requests draws nothing; any request the
+          provider could not price prefixes the total with a `~` floor marker.
+        </p>
+        <div className="g-contexts" style={{ fontSize: "0.8rem" }}>
+          {(
+            [
+              [0, 0, "no spend yet"],
+              [0.37, 0, "rounded to cents"],
+              [12.5, 3, "requests unpriced"],
+            ] as const
+          ).map(([usd, unpriced, label]) => (
+            <figure className="g-state" key={label}>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "0.8rem",
+                }}
+              >
+                <ContextMeter context={{ used: 100_000, limit: 200_000 }} />
+                <CostMeter cost={{ usd, unpriced }} />
+              </div>
+              <figcaption>{label}</figcaption>
+            </figure>
+          ))}
+        </div>
       </Section>
       <Section title="Plan allowance">
         <PlanMeterSpecimens />
