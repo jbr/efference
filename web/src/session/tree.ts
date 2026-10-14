@@ -43,8 +43,8 @@ export interface LeafNode {
   kind: "leaf";
   key: string;
   entry: LogEntry;
-  /** Marks only: how many committed entries sit at or below the boundary's
-   * `upto` — the span the consolidation replaced on the wire. Client-computed
+  /** Marks only: how many turns, completions and results sit in the mark's
+   * range — the span the consolidation replaced on the wire. Client-computed
    * from the window; the wire's token delta is provider accounting the client
    * does not hold, so the count is entries, not tokens. */
   replaces?: number;
@@ -150,10 +150,31 @@ export function buildTree(entries: LogEntry[]): TranscriptNode[] {
   const pending = new Map<Seq, CallNode>();
   const seqs: Seq[] = [];
   let title: string | null = null;
+  // Marks are drawn where the agent's projection puts their account — after the
+  // entry their range ends in — not where they were appended, which can be after
+  // later work (docs/consolidate.md). `drawnBy` maps a seq to the entry whose
+  // nodes draw it (a result is drawn in the call its issuing entry made);
+  // `endOf` is the node count once an entry's nodes are in. Marks are placed
+  // after the loop, so these positions are all in the mark-free array.
+  const drawnBy = new Map<Seq, Seq>();
+  const endOf = new Map<Seq, number>();
+  const turns: Seq[] = [];
+  const marks: { at: number; node: LeafNode }[] = [];
+  let previous: Seq | null = null;
 
   for (const entry of entries) {
     const p = entry.payload;
     seqs.push(entry.seq);
+    if (previous !== null) endOf.set(previous, nodes.length);
+    previous = entry.seq;
+    const issuer =
+      "ToolResult" in p && !askCalls.has(p.ToolResult.call_id)
+        ? byCall.get(p.ToolResult.call_id)?.issued.seq
+        : undefined;
+    drawnBy.set(entry.seq, issuer ?? entry.seq);
+    if ("User" in p || "Assistant" in p || "ToolResult" in p) {
+      turns.push(entry.seq);
+    }
 
     // The kickoff is part of the session's opening, like the preamble: not drawn
     // as a turn, so the agent's greeting leads the transcript (docs/context.md).
@@ -170,15 +191,22 @@ export function buildTree(entries: LogEntry[]): TranscriptNode[] {
               ? { from: 0, upto: p.Mark.kind.Boundary.upto }
               : null
           : null;
-      nodes.push({
+      const node: LeafNode = {
         kind: "leaf",
         key: `${entry.seq}`,
         entry,
+        // Turns, completions and results — not the telemetry logged among them.
         replaces:
           range === null
             ? undefined
-            : seqs.filter((s) => s >= range.from && s <= range.upto).length,
-      });
+            : turns.filter((s) => s >= range.from && s <= range.upto).length,
+      };
+      const last =
+        range === null ? undefined : seqs.findLast((s) => s <= range.upto);
+      const host = last === undefined ? undefined : drawnBy.get(last);
+      const at = host === undefined ? undefined : endOf.get(host);
+      if (at === undefined) nodes.push(node);
+      else marks.push({ at, node });
       continue;
     }
 
@@ -332,6 +360,12 @@ export function buildTree(entries: LogEntry[]): TranscriptNode[] {
     nodes.push({ kind: "leaf", key: `${entry.seq}`, entry });
   }
 
+  // Highest position first, so each splice leaves the earlier positions valid;
+  // marks sharing a position keep log order.
+  marks
+    .map((mark, order) => ({ ...mark, order }))
+    .sort((a, b) => b.at - a.at || b.order - a.order)
+    .forEach(({ at, node }) => nodes.splice(at, 0, node));
   return nodes;
 }
 

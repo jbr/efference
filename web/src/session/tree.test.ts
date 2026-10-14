@@ -359,8 +359,37 @@ describe("the consolidation mark", () => {
         Mark: { kind: { Boundary: { upto: 1 } }, note: "summary" },
       }),
     ]);
-    const mark = nodes.at(-1);
+    const mark = nodes.find(
+      (n) => n.kind === "leaf" && "Mark" in n.entry.payload,
+    );
     expect(mark?.kind === "leaf" && mark.replaces).toBe(1);
+  });
+
+  it("sits at the end of its range, ahead of work appended before it", () => {
+    // Adopted while the trajectory kept going: the mark lands after later work
+    // in the log, but the agent reads its account where the range ends.
+    const nodes = buildTree([
+      entry(1, { User: [{ Text: "survey" }] }),
+      assistant(2, { calls: [{ id: "r", name: "read" }] }),
+      entry(3, { ToolResult: { call_id: "r", raw, wire: "Raw" } }),
+      entry(4, { Telemetry: { RequestStage: {} } } as LogEntry["payload"]),
+      assistant(5, { text: true }),
+      entry(6, { User: [{ Text: "now group them" }] }),
+      assistant(7, { calls: [{ id: "l", name: "list" }] }),
+      entry(8, {
+        Mark: { kind: { Span: { from: 1, upto: 3 } }, note: "account" },
+      }),
+    ]);
+    expect(nodes.map((n) => n.key)).toEqual([
+      "1",
+      "2:batch",
+      "8",
+      "5:text",
+      "6",
+      "7:batch",
+    ]);
+    const mark = nodes[2];
+    expect(mark.kind === "leaf" && mark.replaces).toBe(3);
   });
 });
 

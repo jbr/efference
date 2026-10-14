@@ -55,9 +55,12 @@ pub fn candidate(log: &[LogEntry]) -> Option<Span> {
             Payload::Assistant {
                 output,
                 upstream_failure: None,
-            } => output
-                .tool_calls()
-                .is_ok_and(|calls| calls.is_empty() || calls.iter().any(|c| c.name == "ask")),
+            } => output.tool_calls().is_ok_and(|calls| {
+                // A completion with neither prose nor a call (thinking only) ends the
+                // trajectory without reporting anything, so it is not a juncture.
+                calls.iter().any(|c| c.name == "ask")
+                    || (calls.is_empty() && output.text().iter().any(|t| !t.trim().is_empty()))
+            }),
             _ => false,
         })
         .map(|e| e.seq);

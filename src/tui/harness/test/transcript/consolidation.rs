@@ -36,3 +36,51 @@ fn a_consolidation_reads_as_its_extent_and_summary() {
     );
     play.snapshot("transcript_consolidation");
 }
+
+/// A consolidation adopted while the trajectory kept going is appended after the
+/// later work, but is drawn where the agent's projection puts its account: after
+/// the entry its range ends in (docs/consolidate.md). Rendered once before the mark
+/// arrives, so the incremental view has to move it into an entry already drawn.
+#[test]
+fn a_late_consolidation_is_drawn_at_its_range_end() {
+    let mut play = Screenplay::new(80, 40);
+    play.user("Survey the backlog.");
+    play.assistant(
+        "",
+        vec![ToolCall::new(
+            "read",
+            "toolu_r",
+            json!({"path": "backlog/INDEX.md", "intent": "survey"}),
+        )],
+    );
+    play.tool_result("toolu_r", "index contents", false, WireState::Raw);
+    play.assistant("The survey is complete.", vec![]);
+    play.user("Now group them.");
+    play.assistant(
+        "",
+        vec![ToolCall::new(
+            "list",
+            "toolu_l",
+            json!({"path": "backlog/web", "intent": "later work"}),
+        )],
+    );
+    play.render();
+    play.commit(Payload::Mark(Mark::span(1, 3, "Account of the survey.")));
+
+    let frame = play.render();
+    let at = |needle: &str| {
+        frame
+            .find(needle)
+            .unwrap_or_else(|| panic!("{needle:?} missing:\n{frame}"))
+    };
+    assert!(
+        frame.contains("⊙ consolidated #1–#3 · 3 entries"),
+        "the rule names the range and counts its turns and results only:\n{frame}"
+    );
+    assert!(
+        at("survey") < at("⊙ consolidated")
+            && at("⊙ consolidated") < at("The survey is complete")
+            && at("The survey is complete") < at("later work"),
+        "the account sits at the end of its range, ahead of the work after it:\n{frame}"
+    );
+}

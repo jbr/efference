@@ -109,8 +109,11 @@ pressure to write.
 tool bytes, checking/adopted/skip disposition and adopted account size. These
 entries project to nothing. Usage is persisted with origin `consolidation`,
 which reads the main prefix but does not become the main diagnostic comparison
-base. TUI and web transcript accounts display the replacement bounds and entry
-count; the control transcript names the range and account.
+base. TUI and web transcripts draw the account at the end of its range, where the
+agent reads it, with the replacement bounds and entry count; the control
+transcript names the range and account. A check's range ends only at a report
+with visible prose or an `ask`: a completion with neither (thinking only) ends
+the trajectory without reporting anything and is not a juncture.
 
 ## The agent-called tool
 

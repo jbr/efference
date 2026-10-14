@@ -201,3 +201,25 @@ fn account_turn(from: Seq, upto: Seq, note: &str) -> WireTurn {
          written by this session with those entries in view.\n\n{note}"
     ))
 }
+
+/// The wild-marsh shape: a completion with only thinking ends the trajectory
+/// without a report, so there is nothing to retain and no juncture.
+#[test]
+fn a_thinking_only_completion_is_not_a_report() {
+    let log = vec![
+        user(0, "instruction"),
+        call(1, "r", "read"),
+        result(2, "r", "listing"),
+        entry(
+            3,
+            Payload::Assistant {
+                output: AssistantOutput::Messages(vec![MessagesOutputBlock::Thinking {
+                    text: "let me read more".into(),
+                    signature: String::new(),
+                }]),
+                upstream_failure: None,
+            },
+        ),
+    ];
+    assert_eq!(candidate(&log), None);
+}

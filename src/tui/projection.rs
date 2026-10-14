@@ -7,7 +7,7 @@
 //! wire projection it does not coalesce or elide — every entry renders, whole, so
 //! the human sees the whole record (docs/positions.md).
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::frontend::SubmittedTurn;
 use crate::log::{
@@ -76,12 +76,25 @@ pub(crate) struct Gate<'g> {
 ///
 /// Holding indices rather than borrows is what lets the incremental projection
 /// ([`Transcript`]) keep the index across rebuilds without borrowing the log.
+///
+/// It also places consolidation marks. A mark is drawn where projection injects its
+/// account — after the entry its range ends in — not where it was appended
+/// (docs/consolidate.md). A range ending in a tool result ends in the entry that
+/// made the call, since the result is drawn there.
 #[derive(Debug, Default)]
 pub(crate) struct CallIndex {
     result_at: HashMap<String, usize>,
     spot_at: HashMap<String, usize>,
     pending_calls: HashMap<u64, String>,
     verdict_at: HashMap<u64, usize>,
+    /// `call_id` → the index of the entry that made the call.
+    call_owner: HashMap<String, usize>,
+    /// `seq` → the index of the entry whose nodes draw it.
+    drawn_by: BTreeMap<u64, usize>,
+    /// Entry index → the marks drawn after its nodes, in log order.
+    marks_after: HashMap<usize, Vec<usize>>,
+    /// Mark index → the entry index it is drawn after.
+    mark_host: HashMap<usize, usize>,
 }
 
 impl CallIndex {
@@ -90,7 +103,28 @@ impl CallIndex {
     /// Later entries overwrite earlier ones, so a re-judged call shows its latest
     /// verdict, matching the daemon's `latest_spot_reason` (which reads in reverse).
     pub(crate) fn absorb(&mut self, idx: usize, entry: &LogEntry) -> Option<String> {
+        let drawn_by = match &entry.payload {
+            Payload::ToolResult { call_id, .. } => {
+                self.call_owner.get(&call_id.0).copied().unwrap_or(idx)
+            }
+            _ => idx,
+        };
+        self.drawn_by.insert(entry.seq, drawn_by);
         match &entry.payload {
+            Payload::Assistant { output, .. } => {
+                for call in output.tool_calls().unwrap_or_default() {
+                    self.call_owner.insert(call.id.0, idx);
+                }
+                None
+            }
+            Payload::Mark(mark) => {
+                let upto = *mark.kind.range().end();
+                if let Some((_, &host)) = self.drawn_by.range(..=upto).next_back() {
+                    self.marks_after.entry(host).or_default().push(idx);
+                    self.mark_host.insert(idx, host);
+                }
+                None
+            }
             Payload::ToolResult { call_id, wire, .. } => {
                 self.result_at.insert(call_id.0.clone(), idx);
                 if matches!(wire, WireState::Pending) {
@@ -109,6 +143,12 @@ impl CallIndex {
             }
             _ => None,
         }
+    }
+
+    /// The entry a mark at `idx` is drawn after, when its range ends in a
+    /// committed entry: the one to re-project when the mark arrives.
+    pub(crate) fn mark_host(&self, idx: usize) -> Option<usize> {
+        self.mark_host.get(&idx).copied()
     }
 
     /// A call's committed result, with the `seq` of the entry carrying it — the
@@ -352,13 +392,12 @@ pub(crate) fn entry_nodes(
             }
             // Emitted as its call's result entry above.
             Payload::ToolResult { .. } => {}
-            Payload::Mark(mark) => {
-                let replaces = log
-                    .iter()
-                    .filter(|e| mark.kind.range().contains(&e.seq))
-                    .count();
-                push_mark(&mut nodes, &mark.kind, &mark.note, replaces);
+            // Drawn after the entry its range ends in (see `CallIndex`); in place
+            // only when that entry is not in this log.
+            Payload::Mark(mark) if index.mark_host(idx).is_none() => {
+                push_mark(&mut nodes, &mark.kind, &mark.note, replaced(log, mark));
             }
+            Payload::Mark(_) => {}
             // An ambient notification (docs/inbox.md), rendered as a marked line so the
             // human sees the out-of-band event in the stream. The transcript shows the
             // whole record — every *shown* notification renders here, where the wire
@@ -424,7 +463,26 @@ pub(crate) fn entry_nodes(
             Payload::ResultVerdict { .. } => {}
         }
     }
+    for &at in index.marks_after.get(&idx).into_iter().flatten() {
+        if let Some(Payload::Mark(mark)) = log.get(at).map(|e| &e.payload) {
+            push_mark(&mut nodes, &mark.kind, &mark.note, replaced(log, mark));
+        }
+    }
     nodes
+}
+
+/// How many conversational entries a mark's range replaces: turns, completions and
+/// results, not the telemetry and bookkeeping logged among them.
+fn replaced(log: &[LogEntry], mark: &crate::log::Mark) -> usize {
+    log.iter()
+        .filter(|e| {
+            mark.kind.range().contains(&e.seq)
+                && matches!(
+                    e.payload,
+                    Payload::User(_) | Payload::Assistant { .. } | Payload::ToolResult { .. }
+                )
+        })
+        .count()
 }
 
 /// The uncommitted end of the transcript: the in-flight streaming tail, then the

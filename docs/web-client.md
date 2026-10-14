@@ -1155,13 +1155,18 @@ recent tier stays in that box, stopped at its last line, with only its header
 changing from "Thinking…" to "Thought · N words · show all".
 
 **The consolidation mark** renders as a boundary: a dashed rule with
-`⊙ consolidated through #N · M entries`, then the replacing summary as prose
-between the rules. The count is committed entries at or below the boundary's
-`upto` — client-computed from the window; the wire's token delta is provider
-accounting the client does not hold. There is no expand affordance behind it:
-render-whole means every entry the fold replaced is already on screen above,
-so the mark's job is to say where the model's context stops carrying the raw
-log, not to reveal anything. The `consolidate` call itself collapses to its
+`⊙ consolidated #from–#upto · M entries` (`through #N` for a head fold), then
+the replacing summary as prose between the rules. It is drawn where the
+agent's projection injects the account — after the entry the range ends in,
+a result counting as drawn by the entry that issued its call — not at the
+mark's own log position, which for a background check can follow later work
+(docs/consolidate.md). `buildTree` places marks after its main pass, from the
+node count recorded at each entry. The count is the turns, completions and
+results in the range — client-computed from the window; the wire's token delta
+is provider accounting the client does not hold. There is no expand affordance
+behind it: render-whole means every entry the range replaced is on screen
+above, so the mark's job is to say where the model's context stops carrying
+the raw log, not to reveal anything. The `consolidate` call itself collapses to its
 header once resolved — its input is the summary the mark renders in full
 (the pair projects normally, so the log holds the summary twice), and its
 result is a constant acknowledgement. A pending, gated, or failed
