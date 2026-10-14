@@ -5,7 +5,7 @@ use super::*;
 /// The content of a [`Payload::Mark`] — a breadcrumb left in the record. `note` is
 /// the one-line decision / dead-end / relevance / consolidation-summary text.
 /// Additive by design: a mark projects to nothing except through
-/// [`MarkKind::Boundary`], so growing this struct cannot perturb the
+/// its range variants, so growing this struct cannot perturb the
 /// byte-stability pin (docs/log-and-projection.md).
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Mark {
@@ -29,6 +29,16 @@ impl Mark {
             note: note.into(),
             writer: Writer::default(),
             audience: Audience::default(),
+        }
+    }
+
+    /// Replace only this inclusive working span (docs/consolidate.md).
+    pub fn span(from: Seq, upto: Seq, note: impl Into<String>) -> Self {
+        Self {
+            kind: MarkKind::Span { from, upto },
+            note: note.into(),
+            writer: Writer::Agent,
+            audience: Audience::All,
         }
     }
 
@@ -77,12 +87,31 @@ impl Audience {
     }
 }
 
-/// What a [`Mark`] does to the projection. `Boundary` is the consolidation
-/// variant `project` acts on: it folds every entry with `seq <= upto` to a
-/// summary user message. The salience-annotation kinds named in
-/// docs/log-and-projection.md (decision / dead-end / relevance) land when they
-/// get a construction site.
+/// Head and working-span replacements interpreted by projection
+/// (docs/consolidate.md, docs/summary-head.md).
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum MarkKind {
-    Boundary { upto: Seq },
+    Boundary {
+        upto: Seq,
+    },
+    /// An inclusive replacement range; entries before `from` remain unchanged.
+    Span {
+        from: Seq,
+        upto: Seq,
+    },
+}
+
+impl MarkKind {
+    pub fn range(&self) -> std::ops::RangeInclusive<Seq> {
+        match *self {
+            Self::Boundary { upto } => 0..=upto,
+            Self::Span { from, upto } => from..=upto,
+        }
+    }
+    pub fn label(&self) -> String {
+        match *self {
+            Self::Boundary { upto } => format!("consolidated through #{upto}"),
+            Self::Span { from, upto } => format!("consolidated #{from}–#{upto}"),
+        }
+    }
 }

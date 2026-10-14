@@ -42,6 +42,15 @@ pub enum Telemetry {
     /// One step of the cold check: the loop parked, a person released it, the park
     /// ended (docs/control-api.md). The entry's `at` is the step's time.
     Cold(ColdEvent),
+    /// A main-model consolidation check and its disposition (docs/consolidate.md).
+    Consolidation {
+        from: super::Seq,
+        upto: super::Seq,
+        context: super::Seq,
+        tool_bytes: usize,
+        outcome: String,
+        account_bytes: usize,
+    },
 }
 
 impl Telemetry {
@@ -54,6 +63,7 @@ impl Telemetry {
             Telemetry::RequestStage(_) => "telemetry.request_stage",
             Telemetry::Push(_) => "telemetry.push",
             Telemetry::Cold(_) => "telemetry.cold",
+            Telemetry::Consolidation { .. } => "telemetry.consolidation",
         }
     }
 }

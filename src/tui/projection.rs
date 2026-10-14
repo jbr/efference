@@ -353,8 +353,10 @@ pub(crate) fn entry_nodes(
             // Emitted as its call's result entry above.
             Payload::ToolResult { .. } => {}
             Payload::Mark(mark) => {
-                let crate::log::MarkKind::Boundary { upto } = &mark.kind;
-                let replaces = log.iter().filter(|e| e.seq <= *upto).count();
+                let replaces = log
+                    .iter()
+                    .filter(|e| mark.kind.range().contains(&e.seq))
+                    .count();
                 push_mark(&mut nodes, &mark.kind, &mark.note, replaces);
             }
             // An ambient notification (docs/inbox.md), rendered as a marked line so the

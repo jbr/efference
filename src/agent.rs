@@ -169,6 +169,7 @@ pub async fn run<F: Frontend, S: Spotter>(
     // The title ask's owned request surface, built once; each title check hands its
     // detached task a clone (docs/session-title.md).
     let title_ask = TitleAsk::new(client, &tools, &distiller);
+    let consolidation = consolidation::ConsolidationCheck::new(client, &tools);
     // Continues the log's numbering: `0` for a new session, the last entry's turn for a
     // resumed one, so a resumed session's new turns do not reuse a recorded number.
     let mut turn: Turn = shared.latest_turn();
@@ -332,6 +333,7 @@ pub async fn run<F: Frontend, S: Spotter>(
             // prefix behind it (docs/session-title.md). Detached, so the ask
             // never delays the response to the message.
             if first_step_of_turn || landed > 0 {
+                consolidation.check(&shared);
                 solicit_title_detached(&shared, &title_ask);
             }
             // Project, then place the single trailing cache breakpoint just before
@@ -566,6 +568,7 @@ pub async fn run<F: Frontend, S: Spotter>(
             }
 
             if calls.is_empty() {
+                consolidation.check(&shared);
                 // The trajectory is ending: a title check, the moment the title
                 // peek reads the whole of it (docs/session-title.md). Detached: the loop breaks
                 // and re-arms at once, and the peek reads the prefix this turn
@@ -600,6 +603,9 @@ pub async fn run<F: Frontend, S: Spotter>(
             )
             .await?;
 
+            if calls.iter().any(|call| call.name == "ask") {
+                consolidation.check(&shared);
+            }
             if after_landing(&shared, &mut turn, abort_turn, redirect)? {
                 // An aborted trajectory ends without an answer: a title check, as
                 // at the clean end (docs/session-title.md).
@@ -618,6 +624,7 @@ mod test;
 mod ask;
 mod batch;
 mod config_edit;
+mod consolidation;
 mod gate;
 mod images;
 mod landing;

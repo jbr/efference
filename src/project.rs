@@ -40,7 +40,7 @@ impl Reader {
 
 /// A boundary mark and the summary it contributes, extracted in the pre-pass.
 struct Boundary {
-    /// The `upto` that the mark named — the last seq of the elided old-task span.
+    /// The last seq of the mark's inclusive replacement range.
     /// The summary is injected just before the first non-elided entry with
     /// `seq > upto` (i.e., the start of the live conversation that follows).
     upto: Seq,
@@ -48,17 +48,22 @@ struct Boundary {
     summary: String,
 }
 
-/// Pre-pass: collect boundary marks so the main loop can elide their spans.
-///
-/// Returns `(boundaries, elided_seqs)`:
-/// - `boundaries` — one entry per [`MarkKind::Boundary`] that applies to `reader`, in
-///   log order.
-/// - `elided_seqs` — the set of [`Seq`]s to skip in the main loop; for each
-///   boundary this is every entry with `seq <= upto` plus the mark itself.
-///
-/// When multiple boundaries exist the folds may overlap (each later
-/// consolidation subsumes the earlier ones). The later boundary's summary
-/// wins for any seq covered by both folds.
+/// The text a mark contributes. A working-span account is introduced as a harness
+/// note so it is not read as the operator's turn; a head fold's note is projected
+/// as written, since the narrator's account carries its own heading
+/// (docs/consolidate.md, docs/summary-head.md).
+fn account(kind: &MarkKind, note: &str) -> String {
+    match kind {
+        MarkKind::Boundary { .. } => note.to_string(),
+        MarkKind::Span { from, upto } => format!(
+            "⟢ consolidation: entries #{from}–#{upto} were replaced by this account of \
+             them, written by this session with those entries in view.\n\n{note}"
+        ),
+    }
+}
+
+/// Collect applicable head/span accounts and the union of their elided ranges
+/// (docs/consolidate.md). Marks themselves never project at their append position.
 fn extract_boundaries(
     log: &[LogEntry],
     skipped: &HashSet<Seq>,
@@ -72,7 +77,7 @@ fn extract_boundaries(
             continue;
         }
         if let Payload::Mark(Mark {
-            kind: MarkKind::Boundary { upto },
+            kind,
             note,
             audience,
             ..
@@ -82,16 +87,17 @@ fn extract_boundaries(
             if !reader.applies(*audience) {
                 continue;
             }
-            let upto = *upto;
-            // Elide the old-task span and the mark itself.
+            let range = kind.range();
+            let upto = *range.end();
+            // Elide the named range and the mark itself.
             for e in log {
-                if e.seq <= upto || e.seq == entry.seq {
+                if range.contains(&e.seq) || e.seq == entry.seq {
                     elided.insert(e.seq);
                 }
             }
             boundaries.push(Boundary {
                 upto,
-                summary: note.clone(),
+                summary: account(kind, note),
             });
         }
     }

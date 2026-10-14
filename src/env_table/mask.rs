@@ -390,6 +390,9 @@ impl Masker {
             // A cold-check record: a reason, instants, a token count, and a gesture
             // name. Nothing from the environment.
             Payload::Telemetry(Telemetry::Cold(_)) => {}
+            Payload::Telemetry(Telemetry::Consolidation { outcome, .. }) => {
+                self.mask_in_place(outcome)
+            }
             // Git's output, including whatever the project's `post-checkout` hook
             // printed, and its error and status text: free text that may quote the
             // environment.

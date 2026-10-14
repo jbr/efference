@@ -1409,7 +1409,8 @@ most recently.
 **Sticky routing (`x-session-id`).** OpenRouter routes a model slug to *some*
 upstream provider and keeps a conversation on one of them so the prompt cache
 stays warm. Absent an explicit key it derives one by hashing the first system
-message and the first non-system message — which `consolidate` moves: it elides
+message and the first non-system message — which a head fold or a working span
+starting at that first turn moves: it elides
 every entry up to `upto`, including the original first user message, and projects
 a summary in its place ([consolidate.md](consolidate.md)). The first non-system
 message is therefore different on the next turn, the derived key changes, and

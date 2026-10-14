@@ -139,6 +139,47 @@ impl Session {
         project_semantic(self.log.lock().unwrap().entries())
     }
 
+    /// Adopt a consolidation written over the `frozen` snapshot, unless something
+    /// appended since changes what that range projects to (docs/consolidate.md): a
+    /// fold, a rollback, a verdict on a result at or before the snapshot's end, or
+    /// a `consolidate` call whose own fold was computed without this one. Ordinary
+    /// newer work, including calls still awaiting results, stays after the range.
+    pub(crate) fn adopt_consolidation(
+        &self,
+        frozen: &[LogEntry],
+        span: crate::consolidate::Span,
+        note: String,
+    ) -> io::Result<bool> {
+        {
+            let mut log = self.log.lock().unwrap();
+            let entries = log.entries();
+            let frozen_end = frozen.last().map(|e| e.seq);
+            if entries.len() < frozen.len()
+                || entries.get(frozen.len().wrapping_sub(1)).map(|e| e.seq) != frozen_end
+                || entries[frozen.len()..].iter().any(|e| match &e.payload {
+                    Payload::Mark(_) | Payload::Resumed(_) => true,
+                    Payload::ResultVerdict { for_result, .. } => {
+                        frozen_end.is_some_and(|end| *for_result <= end)
+                    }
+                    Payload::Assistant { output, .. } => output.tool_calls().is_ok_and(|calls| {
+                        calls.iter().any(|c| c.name == crate::consolidate::NAME)
+                    }),
+                    _ => false,
+                })
+            {
+                return Ok(false);
+            }
+            let turn = entries.last().map_or(0, |e| e.turn);
+            log.append(
+                turn,
+                Payload::Mark(crate::log::Mark::span(span.from, span.upto, note)),
+            )?;
+            self.observe_operations(&log);
+        }
+        self.appended.notify_waiters();
+        Ok(true)
+    }
+
     /// A clone of the entries — handed to the fork distiller, which awaits the
     /// model and so can't borrow across the lock (docs/redaction-fork.md).
     pub fn snapshot(&self) -> Vec<LogEntry> {

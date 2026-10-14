@@ -198,9 +198,9 @@ pub enum Payload {
     /// A salience annotation written when it is known (docs/log-and-projection.md):
     /// a decision, a dead end, a relevance note, or a consolidation boundary. The
     /// foundation for intent-aware compaction — a mark is *kept* through a fold
-    /// while the deliberation around it is elided. [`MarkKind::Boundary`] is the
-    /// one kind `project` acts on, folding its named span (`seq <= upto`) to a
-    /// summary user message on the wire.
+    /// while the deliberation around it is elided. Projection acts on head
+    /// (`Boundary`) and inclusive working-span (`Span`) replacement ranges,
+    /// injecting their account as a user message (docs/consolidate.md).
     Mark(Mark),
     /// A fork verdict (docs/redaction-fork.md) — the durable record of a throwaway
     /// peek's decision. The fork's *transcript* stays throwaway; its *decision* is

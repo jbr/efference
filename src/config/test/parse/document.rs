@@ -210,3 +210,17 @@ fn first_turn_parses_and_an_empty_one_is_refused() {
         .to_string();
     assert!(err.contains("`first-turn` is empty"), "{err}");
 }
+
+#[test]
+fn consolidation_budget_is_optional_and_measured_in_bytes() {
+    assert_eq!(parse_str("").consolidation_bytes, None);
+    assert_eq!(
+        parse_str("consolidation-bytes = 65536").consolidation_bytes,
+        Some(65_536)
+    );
+    assert_eq!(
+        parse_str("consolidation-bytes = 0").consolidation_bytes,
+        Some(0)
+    );
+    assert!(crate::config::Config::from_toml("consolidation-bytes = -1").is_err());
+}

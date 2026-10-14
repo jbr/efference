@@ -3,6 +3,11 @@
 Every key is optional. Unknown keys are a hard error — a typo fails the whole file rather
 than being silently ignored, and so does any entry the harness cannot read soundly.
 
+`consolidation-bytes = 65536` sets the opportunistic consolidation threshold:
+UTF-8 tool argument JSON plus post-triage projected result text in the newly
+eligible working span. Default: 64 KiB. Images and pure dialogue do not count.
+Zero checks any nonempty tool-work budget; it does not force an account.
+
 ## Top-level keys
 
 ```toml

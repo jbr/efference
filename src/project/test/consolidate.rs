@@ -299,35 +299,9 @@ fn a_responses_boundary_folds_whole_replay_units() {
             Payload::User(vec![ContentBlock::Text("task B".into())]),
         ),
         entry(4, 1, call("consolidate_1", "ENC-C")),
-        entry(
-            5,
-            1,
-            Payload::Mark(Mark::boundary(
-                crate::consolidate::extent(&log_prefix()),
-                "A is done",
-            )),
-        ),
+        entry(5, 1, Payload::Mark(Mark::boundary(2, "A is done"))),
         entry(6, 1, result("consolidate_1", "consolidated")),
     ];
-    // `extent` reads the log as it stood when the consolidate call was made.
-    fn log_prefix() -> Vec<LogEntry> {
-        vec![
-            entry(
-                0,
-                0,
-                Payload::User(vec![ContentBlock::Text("task A".into())]),
-            ),
-            entry(1, 0, call("call_a", "ENC-A")),
-            entry(2, 0, result("call_a", "out-a")),
-            entry(
-                3,
-                1,
-                Payload::User(vec![ContentBlock::Text("task B".into())]),
-            ),
-            entry(4, 1, call("consolidate_1", "ENC-C")),
-        ]
-    }
-    assert_eq!(crate::consolidate::extent(&log_prefix()), 2);
     assert!(crate::consolidate::split_calls(&log, 2).is_empty());
 
     let input = encode_responses(&project_semantic(&log), "", PromptCachePolicy::None);

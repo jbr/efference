@@ -120,7 +120,17 @@ export type Telemetry =
   | { CallStarted: { call_id: string } }
   | { RequestStage: RequestStage }
   | { Push: unknown }
-  | { Cold: ColdEvent };
+  | { Cold: ColdEvent }
+  | {
+      Consolidation: {
+        from: Seq;
+        upto: Seq;
+        context: Seq;
+        tool_bytes: number;
+        outcome: string;
+        account_bytes: number;
+      };
+    };
 
 export interface RequestStage {
   request: number;
@@ -143,6 +153,7 @@ export type RequestOrigin =
   | "keepalive"
   | "triage_primer"
   | "narrate"
+  | "consolidation"
   | "aborted_attempt"
   | "unknown";
 
@@ -362,7 +373,7 @@ export type WireState =
 export type Keep = "All" | "None" | { Ranges: [number, number][] };
 
 export interface Mark {
-  kind: { Boundary: { upto: Seq } };
+  kind: { Boundary: { upto: Seq } } | { Span: { from: Seq; upto: Seq } };
   note: string;
 }
 

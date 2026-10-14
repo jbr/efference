@@ -611,6 +611,14 @@ impl Client {
         self.abort = Some(abort);
     }
 
+    /// A client whose reads do not answer to the operator's interrupt: for a
+    /// detached request that is not part of the trajectory the interrupt stops
+    /// (docs/consolidate.md).
+    pub fn without_interrupt(mut self) -> Self {
+        self.abort = None;
+        self
+    }
+
     /// Raise the per-turn output budget to the model's reported cap
     /// (`ModelCapabilities::max_output_tokens`). Values past `u32::MAX` clamp.
     pub fn with_max_output(mut self, cap: u64) -> Self {

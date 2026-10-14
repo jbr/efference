@@ -162,16 +162,22 @@ export function buildTree(entries: LogEntry[]): TranscriptNode[] {
     if ("Mark" in p) {
       // Tolerant of a mark kind this client does not know: it renders as a
       // plain note rather than a boundary with an extent.
-      const upto =
-        typeof p.Mark.kind === "object" && "Boundary" in p.Mark.kind
-          ? p.Mark.kind.Boundary.upto
+      const range =
+        typeof p.Mark.kind === "object"
+          ? "Span" in p.Mark.kind
+            ? p.Mark.kind.Span
+            : "Boundary" in p.Mark.kind
+              ? { from: 0, upto: p.Mark.kind.Boundary.upto }
+              : null
           : null;
       nodes.push({
         kind: "leaf",
         key: `${entry.seq}`,
         entry,
         replaces:
-          upto === null ? undefined : seqs.filter((s) => s <= upto).length,
+          range === null
+            ? undefined
+            : seqs.filter((s) => s >= range.from && s <= range.upto).length,
       });
       continue;
     }

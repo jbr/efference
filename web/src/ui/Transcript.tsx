@@ -177,7 +177,10 @@ function Consolidation({
   mark: Mark;
   replaces: number | undefined;
 }) {
-  if (!(typeof mark.kind === "object" && "Boundary" in mark.kind)) {
+  if (!(
+    typeof mark.kind === "object" &&
+    ("Boundary" in mark.kind || "Span" in mark.kind)
+  )) {
     // A mark kind this client does not know: the note still reads.
     return (
       <Entry label="mark">
@@ -185,12 +188,15 @@ function Consolidation({
       </Entry>
     );
   }
-  const upto = mark.kind.Boundary.upto;
+  const label =
+    "Span" in mark.kind
+      ? `consolidated #${mark.kind.Span.from}–#${mark.kind.Span.upto}`
+      : `consolidated through #${mark.kind.Boundary.upto}`;
   return (
     <div className="consolidation">
       <div className="consolidation-rule">
         <span className="glyph">⊙</span>
-        <span className="c-label">consolidated through #{upto}</span>
+        <span className="c-label">{label}</span>
         {replaces !== undefined && (
           <span className="c-count">
             {replaces} {replaces === 1 ? "entry" : "entries"}

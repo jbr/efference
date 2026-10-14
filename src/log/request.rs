@@ -49,6 +49,8 @@ pub enum RequestOrigin {
     /// The narrator writing a fold's account (docs/summary-head.md): its own prompt,
     /// so it does not touch the main prefix.
     Narrate,
+    /// A continuation of the main envelope considering a completed working span.
+    Consolidation,
     /// A retried attempt the loop recorded and re-sent — an unfinalized stream
     /// (all-zero usage) or one that finalized unparseable (real usage;
     /// docs/transport.md). Persisted as its own origin so it is not read as a
@@ -72,7 +74,7 @@ impl RequestOrigin {
     /// [`UsageLine::main_prefix`](crate::daemon::UsageLine) when it ran on the agent's client. Title and triage
     /// requests are left out, which can only make the cache look colder than it is.
     pub fn touches_main_prefix(self) -> bool {
-        matches!(self, Self::Turn | Self::Keepalive)
+        matches!(self, Self::Turn | Self::Keepalive | Self::Consolidation)
     }
 
     /// Whether a request of this origin sends **the loop's own prompt** — the bytes the

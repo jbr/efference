@@ -15,6 +15,8 @@ pub(super) struct RawConfig {
     trust_threshold: Option<f64>,
     #[serde(rename = "first-turn", default)]
     first_turn: Option<String>,
+    #[serde(rename = "consolidation-bytes", default)]
+    consolidation_bytes: Option<usize>,
     /// `[commands]` table: each value is a [`CommandStance`] or the `bool` sugar
     /// ([`RawCommandValue`]).
     #[serde(default)]
@@ -379,6 +381,7 @@ pub(super) fn validate(raw: RawConfig) -> Result<Config, ValidationError> {
         watch_for: raw.watch_for,
         trust_threshold: raw.trust_threshold,
         first_turn: raw.first_turn,
+        consolidation_bytes: raw.consolidation_bytes,
         commands,
         tools,
         paths,

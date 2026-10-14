@@ -14,26 +14,6 @@ fn at(seq: Seq, payload: Payload) -> LogEntry {
 fn user(seq: Seq) -> LogEntry {
     at(seq, Payload::User(vec![ContentBlock::Text("u".into())]))
 }
-fn work(seq: Seq) -> LogEntry {
-    at(
-        seq,
-        Payload::Assistant {
-            output: AssistantOutput::Messages(vec![]),
-            upstream_failure: None,
-        },
-    )
-}
-
-#[test]
-fn extent_folds_up_to_just_before_the_live_user_turn() {
-    // task A (0..=2), the new task instruction at 3, then the consolidate turn.
-    let log = vec![user(0), work(1), work(2), user(3), work(4)];
-    assert_eq!(
-        extent(&log),
-        2,
-        "fold task A; preserve the live instruction at seq 3"
-    );
-}
 
 #[test]
 fn summary_parses_and_tolerates_garbage() {
@@ -98,12 +78,9 @@ fn result(seq: Seq, call_id: &str) -> LogEntry {
     )
 }
 
-/// The boundary `extent` derives is whole: results are appended before the next user
-/// turn, so the step just before the live ask is never cut. A boundary set by hand
-/// inside a step is what `split_calls` names — the call whose result is on the other
-/// side, in either direction, once each.
+/// Head-fold pairing checks remain available to the digest/narrator path.
 #[test]
-fn extent_never_splits_a_call_and_a_hand_placed_boundary_is_named() {
+fn a_hand_placed_boundary_names_split_calls() {
     let log = vec![
         user(0),
         responses_call(1, "call_a"),
@@ -113,8 +90,7 @@ fn extent_never_splits_a_call_and_a_hand_placed_boundary_is_named() {
         user(5),
         responses_call(6, "consolidate"),
     ];
-    let upto = extent(&log);
-    assert_eq!(upto, 4);
+    let upto = 4;
     assert_eq!(split_calls(&log, upto), Vec::<crate::log::CallId>::new());
 
     // Between call_b and its result: the call folds, the output would replay alone.

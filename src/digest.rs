@@ -8,7 +8,7 @@
 //! rather than the volume of work they did. It is a deterministic fold over the log and
 //! asks no model anything.
 
-use crate::log::{CallId, ContentBlock, LogEntry, MarkKind, Payload, Seq, ToolCall, WireState};
+use crate::log::{CallId, ContentBlock, LogEntry, Payload, Seq, ToolCall, WireState};
 use crate::project::Reader;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
@@ -130,13 +130,7 @@ pub fn render(entries: &[LogEntry], options: Options) -> String {
             }
             Payload::Mark(mark) if !options.reader.applies(mark.audience) => {}
             Payload::Mark(mark) => {
-                let MarkKind::Boundary { upto } = mark.kind;
-                heading(
-                    &mut out,
-                    &format!("consolidated through {upto}"),
-                    seq,
-                    options,
-                );
+                heading(&mut out, &mark.kind.label().replace('#', ""), seq, options);
                 let _ = writeln!(out, "{}\n", mark.note.trim());
             }
             _ => {}

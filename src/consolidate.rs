@@ -57,7 +57,14 @@ static SCHEMA: LazyLock<ToolDefinition> = LazyLock::new(|| {
          task: capture what you accomplished and the facts worth carrying forward — \
          interfaces you added, where useful functions live, decisions you made — and \
          write it as you'd want to read it at the top of the next task. This summary \
-         becomes the record of that work going forward."
+         becomes the record of that work going forward. Write at least 100 words. \
+         It replaces the work since the previous consolidation, or since the session \
+         began; earlier summaries stay as they are. Called as your first action after \
+         an operator message, that message and the report or question it answers stay \
+         verbatim. Called mid-task, the replaced range runs through your last tool \
+         result and includes the instructions you are working under, so carry forward \
+         the ones that still apply. Do not reconstruct unsupported exact code or \
+         identifiers."
             .into(),
     );
     tool.annotations = Some(ToolAnnotations {
@@ -94,43 +101,14 @@ struct Input {
 }
 
 /// Pull the summary note out of a `consolidate` call's input; `None` if malformed
-/// (the loop falls back to an empty note rather than dropping the boundary).
+/// (the loop refuses a missing or short note).
 pub fn summary(input: &Value) -> Option<String> {
     Input::deserialize(input).ok().map(|i| i.summary)
 }
 
-/// The `upto` a boundary folds: everything up to the entry just before the **live task
-/// instruction** — the most recent user turn, which must survive so the agent keeps the
-/// fresh ask. Append-only means the boundary mark sits at the tail, so it names this
-/// extent explicitly (docs/consolidate.md).
-///
-/// Degenerate fallback when there's no earlier entry to fold to (e.g. a consolidate
-/// with no later user turn): the live user seq itself.
-pub fn extent(log: &[LogEntry]) -> Seq {
-    match log
-        .iter()
-        .rev()
-        .find(|e| matches!(e.payload, Payload::User(_)))
-    {
-        Some(live) => log
-            .iter()
-            .map(|e| e.seq)
-            .filter(|&s| s < live.seq)
-            .max()
-            .unwrap_or(live.seq),
-        None => log.last().map(|e| e.seq).unwrap_or(0),
-    }
-}
-
-/// The calls a boundary at `upto` would cut from their results: a call recorded at or
-/// before `upto` whose result lands after it, or a result at or before `upto` whose
-/// call lands after. Projection folds by sequence range and pairs nothing, so such a
-/// mark would replay a `function_call_output` with no `function_call` before it (or a
-/// call with no output), which the provider rejects — and the mark is append-only, so
-/// the loop checks here, at construction, and refuses to write one
-/// (docs/consolidate.md). Empty for the boundary `extent` derives in ordinary use:
-/// results are appended before the next user turn, so the step before the live ask
-/// is whole. Ids are reported in log order of the result, once each.
+/// Calls split by a head-fold cut, used by the digest/narrator path
+/// (docs/summary-head.md). Working-span checks additionally reject unanswered
+/// calls and validate both range edges (docs/consolidate.md).
 pub fn split_calls(log: &[LogEntry], upto: Seq) -> Vec<CallId> {
     // Which side of the boundary each call was made on, by id.
     let call_folded: HashMap<CallId, bool> = log
@@ -158,3 +136,6 @@ pub fn split_calls(log: &[LogEntry], upto: Seq) -> Vec<CallId> {
 
 #[cfg(test)]
 mod test;
+
+mod span;
+pub use span::{Span, before, candidate, safe, tool_bytes};

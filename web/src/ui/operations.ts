@@ -17,6 +17,7 @@ const REQUEST_ORDER: RequestOrigin[] = [
   "spot",
   "triage",
   "narrate",
+  "consolidation",
   "title",
   "triage_primer",
   "keepalive",
@@ -56,6 +57,8 @@ function requestText(request: OpenRequest, model: string, now: number): string {
       return `spotter judging · ${since}`;
     case "title":
       return `writing a title · ${since}`;
+    case "consolidation":
+      return `considering consolidation · ${since}`;
     case "narrate":
       return `writing the summary · ${since}`;
     case "triage_primer":

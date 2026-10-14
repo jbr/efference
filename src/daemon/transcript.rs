@@ -187,10 +187,9 @@ fn lines(
             vec![line("result", body)]
         }
         Payload::Mark(mark) => {
-            let crate::log::MarkKind::Boundary { upto } = &mark.kind;
             vec![line(
                 "mark",
-                format!("boundary through seq {upto}: {}", mark.note),
+                format!("{}: {}", mark.kind.label(), mark.note),
             )]
         }
         Payload::Triage(triage) => {

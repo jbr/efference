@@ -560,7 +560,7 @@ pub(in crate::tui) fn push_mark(
     note: &str,
     replaces: usize,
 ) {
-    let MarkKind::Boundary { upto } = kind;
+    let label = kind.label();
     nodes.push(DocumentNode::horizontal_rule());
     nodes.push(DocumentNode::Paragraph {
         spans: vec![
@@ -571,7 +571,7 @@ pub(in crate::tui) fn push_mark(
             },
             Span {
                 text: format!(
-                    "consolidated through #{upto} · {replaces} {}",
+                    "{label} · {replaces} {}",
                     if replaces == 1 { "entry" } else { "entries" }
                 )
                 .into(),

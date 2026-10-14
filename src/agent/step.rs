@@ -211,28 +211,54 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
         Approval::Approve if call.name == consolidate::NAME => {
             let note = consolidate::summary(&call.input).unwrap_or_default();
             let log = shared.snapshot();
-            let upto = consolidate::extent(&log);
-            // The boundary is checked where it is made, not where it is projected: a
-            // mark is append-only, and a fold that cut a call from its result would
-            // replay an unpaired item on every later request (docs/consolidate.md).
-            // `extent` never produces one in ordinary use; this refuses the write if
-            // an append ordering ever changes that.
-            let split = consolidate::split_calls(&log, upto);
-            if !split.is_empty() {
-                let ids: Vec<&str> = split.iter().map(|id| id.0.as_str()).collect();
-                log::error!("consolidate refused: a boundary at {upto} would split {ids:?}");
+            let current = log
+                .iter()
+                .position(|e| match &e.payload {
+                    Payload::Assistant { output, .. } => output
+                        .tool_calls()
+                        .is_ok_and(|calls| calls.iter().any(|c| c.id == call.id)),
+                    _ => false,
+                })
+                .unwrap_or(log.len());
+            let prefix = &log[..current];
+            let span = prefix
+                .iter()
+                .rev()
+                .find(|e| {
+                    matches!(
+                        e.payload,
+                        Payload::User(_) | Payload::Assistant { .. } | Payload::ToolResult { .. }
+                    )
+                })
+                .and_then(|e| match &e.payload {
+                    Payload::User(_) => consolidate::candidate(prefix),
+                    Payload::Assistant { output, .. }
+                        if output.tool_calls().is_ok_and(|calls| calls.is_empty()) =>
+                    {
+                        consolidate::candidate(prefix)
+                    }
+                    _ => consolidate::before(prefix, e.seq),
+                });
+            let refusal = match span {
+                None => Some(
+                    "consolidate refused: there is no completed work since the previous \
+                     consolidation to replace; nothing was folded",
+                ),
+                Some(_) if note.split_whitespace().count() < 100 => Some(
+                    "consolidate refused: the summary is shorter than 100 words; nothing \
+                     was folded",
+                ),
+                Some(_) => None,
+            };
+            let (Some(span), None) = (span, refusal) else {
                 return Ok(Decision::Direct(vec![Payload::tool_result(
                     call.id.clone(),
-                    RawResult::error(format!(
-                        "consolidate refused: the boundary would separate a call from \
-                         its result ({}); nothing was folded",
-                        ids.join(", ")
-                    )),
+                    RawResult::error(refusal.unwrap_or_default()),
                     WireState::Raw,
                 )]));
-            }
+            };
             Ok(Decision::Direct(vec![
-                Payload::Mark(Mark::boundary(upto, note)),
+                Payload::Mark(Mark::span(span.from, span.upto, note)),
                 Payload::tool_result(
                     call.id.clone(),
                     RawResult::text("consolidated"),

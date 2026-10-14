@@ -256,3 +256,17 @@ test("a worktree removal without setup output is a single line", () => {
   expect(html).not.toContain("Show setup output");
   expect(html).not.toContain("unknown entry");
 });
+
+test("shows the exact working span and counts only entries in that range", () => {
+  const html = render([
+    entry(1, { User: [{ Text: "retained prefix" }] }),
+    entry(2, { User: [{ Text: "work" }] }),
+    entry(3, { User: [{ Text: "more work" }] }),
+    entry(4, {
+      Mark: { kind: { Span: { from: 2, upto: 3 } }, note: "account" },
+    }),
+  ]);
+  expect(html).toContain("consolidated #2–#3");
+  expect(html).toContain("2 entries");
+  expect(html).toContain("account");
+});

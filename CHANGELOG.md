@@ -8,6 +8,7 @@ behind a change, see [`journal/`](journal/).
 ## [Unreleased]
 
 ### Added
+- Opportunistic consolidation: past a tool-text budget (`consolidation-bytes`, default 64 KiB), a background request on the session's main model either writes an account of the newly completed working span or answers `skip` at final replies, answered asks, and arriving user turns; an adopted account replaces only that span, introduced as a harness note, and `consolidate` now uses the same span semantics instead of folding everything before the latest user message.
 - Web session headers show the provider's running cost beside the context meter where the provider prices requests; a request the provider could not price prefixes the total with a `~` floor marker, and the session cards carry the same figure.
 - Web home keeps up to five recent archive-only workspaces below live workspaces, with archived sessions available to resume.
 - Anthropic sessions ask for the provider's own cache diagnostics: each turn names the previous response, and a named miss (`tools_changed`, `system_changed`, `model_changed`, `messages_changed`) lands on the usage line and in `efference dev cache` — attribution for a cold read that no token total can supply.

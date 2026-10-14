@@ -67,6 +67,7 @@ enum Telemetry {
     RequestStage(RequestStage),        // one stage of one upstream request
     Push(PushRecord),                  // one step of a moment's push (see web-push.md)
     Cold(ColdEvent),                   // one step of the cold check (see control-api.md)
+    Consolidation { from: Seq, upto: Seq, context: Seq, tool_bytes: usize, outcome: String, account_bytes: usize },
 }
 ```
 
@@ -128,7 +129,7 @@ to explain what the session did; what streams per token stays on the ephemeral
 session and continued past the log's highest after a restart (the provider's
 generation id arrives late or never). `origin` is the same `RequestOrigin` the
 `usage.jsonl` lines carry (`turn`, `peek`, `triage`, `title`, `spot`, `keepalive`,
-`triage_primer`, `triage_keepalive`, `narrate`, `aborted_attempt`). `stage` is `sent` (handed to the
+`triage_primer`, `triage_keepalive`, `narrate`, `consolidation`, `aborted_attempt`). `stage` is `sent` (handed to the
 transport), `attempt_failed {attempt, status}` (a refused attempt the transport may
 re-send), `first_byte` (the first stream event), `ended` (the stream finalized), or
 `failed {reason}` (an open failure, a stream that died or passed its ceiling, or
@@ -351,13 +352,16 @@ stays in the log and the wire carries nothing. Elision does *not* fold the paire
 ```rust
 struct Mark { kind: MarkKind, note: String }
 enum MarkKind {
-    Boundary { upto: Seq },  // compaction fold-point — the only kind built
+    Boundary { upto: Seq },  // digest/narrator head fold
+    Span { from: Seq, upto: Seq }, // newly completed working span
     // decision / dead-end / relevance kinds land when they get a construction site
 }
 ```
 
-A `Mark::Boundary` entry drives compaction entirely inside `project`:
-projection folds every entry with `seq <= upto` to a summary user message.
+A mark drives compaction entirely inside `project`: `Boundary` folds the head
+`seq <= upto`; `Span` replaces only the inclusive `from..=upto` working range.
+Each injects its account before the first retained entry after the range.
+Earlier working-span accounts remain outside later normal consolidation ranges.
 There is no separate mutation of stored entries; the fold is a projection
 concern, not a log mutation. See [consolidate.md](consolidate.md).
 
@@ -372,7 +376,7 @@ fn project(log) -> Vec<ApiMessage>   // = encode_messages(project_semantic(log),
 
 Projection is two stages. `project_semantic` (`src/project/semantic.rs`) is the
 dialect-neutral fold: it decides **selection** — which entries reach the wire, the
-compaction fold driven by a pre-pass over `Mark::Boundary` entries, result verdicts
+compaction fold driven by a pre-pass over applicable `Mark` ranges, result verdicts
 (`Distilled` re-rendered from `keep` + `raw`, `Elided`, `TriageFailed`), pinned
 notifications, surfaced context, and every audit-only exclusion — and renders what
 every dialect sends identically (result text with its `[seq]` handle, and the
@@ -872,10 +876,11 @@ this:
   enters the log and never changes — so no cached prefix entry is ever
   mutated. The invariant holds by construction.
 
-- **Compaction folds a span.** Projection over a `Mark::Boundary` elides
-  entries with `seq <= upto` and injects a summary, rewriting the prefix from
-  the fold point. This is exactly one deliberate cache write; everything past
-  the boundary is unaffected.
+- **Compaction replaces a named range.** A `MarkKind::Span` elides
+  `from..=upto` and injects its account; the retained prefix before `from`
+  stays byte-stable. `Boundary` folds the head through `upto`. Both deliberately
+  invalidate prefix-cache reuse from the replacement's start onward, while
+  retaining the content after the range.
 
 - **Ambient notifications** never splice behind a breakpoint. They queue
   out-of-band and are logged only at first-show. A pinned notification projects
@@ -900,10 +905,20 @@ Correctness can never depend on the memo.
 
 Its invalidation boundary coincides with the prompt-cache breakpoint: every
 tail append extends the wire only at the tail, and the one event that rewrites
-the prefix — a `Mark::Boundary` fold — is exactly the "one deliberate cache
+the prefix — a consolidation mark — is exactly the "one deliberate cache
 write." Incremental re-derivation follows the same prefix/tail boundary the
 cache already imposes.
 
 The memo is available as a pure-efficiency lever but is **never persisted** — a
 persisted wire would become a rival source of truth. Tracked in the backlog
 until the transcript is long enough to measure.
+
+### Opportunistic consolidation usage
+
+`consolidation` is a continuation of the main model's full
+projected context, with its instruction after the shared-prefix breakpoint
+(`docs/consolidate.md`). Its usage records count as a main-prefix read, but it
+does not send the loop's exact prompt or become the diagnostics comparison base.
+`Telemetry::Consolidation` records the frozen bounds, examined context sequence,
+post-verdict tool-text budget, disposition and adopted account byte count. It
+projects to nothing; only an adopted span mark contributes account text.

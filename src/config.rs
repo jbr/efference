@@ -213,6 +213,8 @@ pub struct Config {
     /// read once at boot; editing it mid-session changes nothing. TOML:
     /// `first-turn = "…"`.
     pub first_turn: Option<String>,
+    /// Opportunistic consolidation tool-text budget; absent uses 64 KiB (docs/consolidate.md).
+    pub consolidation_bytes: Option<usize>,
 
     /// The bash prefix-allowlist as a **map** from command-prefix key to the [`CommandStance`]
     /// it carries (docs/permissions.md). `cargo` addresses the whole program, `git diff` only
