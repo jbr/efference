@@ -640,13 +640,14 @@ export interface Pace {
 export type ReviewLevel =
   "autonomous" | "upstream" | "spotter_human" | "human_only";
 
-// The last non-success upstream response, with consecutive occurrences of that
-// status. Ephemeral transport diagnostics: never log content (docs/transport.md).
+// Latest upstream failure: optional HTTP status, consecutive occurrences and
+// error detail. Ephemeral diagnostics (docs/transport.md).
 // The daemon clears it on the next 2xx, so a set value names a failure that is
 // current rather than one already survived.
 export interface UpstreamFailure {
-  status: number;
+  status: number | null;
   count: number;
+  detail: string;
 }
 
 // The session's prompt cache is believed expired (docs/control-api.md). `null`

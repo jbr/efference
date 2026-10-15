@@ -59,7 +59,7 @@ describe("record-only entries", () => {
     expect(nodes.map((n) => n.key)).toEqual(["1:aborted", "1:text"]);
   });
 
-  it("is visible even when the entry is empty — the empty-stream case", () => {
+  it("keeps empty failed attempts out of the transcript", () => {
     const nodes = buildTree([
       entry(1, {
         Assistant: {
@@ -68,7 +68,36 @@ describe("record-only entries", () => {
         },
       }),
     ]);
-    expect(nodes.map((n) => n.key)).toEqual(["1:aborted"]);
+    expect(nodes).toEqual([]);
+  });
+
+  it("does not accumulate transport failures in the transcript", () => {
+    const failures = [1, 2, 3].map((seq) =>
+      entry(seq, {
+        Assistant: {
+          ...messagesAssistant([], [], []),
+          upstream_failure: `upstream attempt failed (HTTP 503): {"error":{"message":"overloaded"}}`,
+        },
+      }),
+    );
+    expect(
+      buildTree([...failures, assistant(4, { text: true })]).map(
+        (node) => node.key,
+      ),
+    ).toEqual(["4:text"]);
+  });
+
+  it("preserves deliberate interruption notices even without partial content", () => {
+    expect(
+      buildTree([
+        entry(1, {
+          Assistant: {
+            ...messagesAssistant([], [], []),
+            upstream_failure: "generation ended by the operator's interrupt",
+          },
+        }),
+      ]).map((node) => node.key),
+    ).toEqual(["1:aborted"]);
   });
 
   it("reads the why out of either serialization", () => {

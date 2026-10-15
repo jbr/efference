@@ -1,3 +1,4 @@
+import { UpstreamSpecimens } from "./UpstreamSpecimens.tsx";
 import { RangeContentSpecimens } from "./RangeContentSpecimens.tsx";
 // The design gallery: the client's widgets on one page, on fixture data, for
 // iterating on the visual language without driving a live session to each
@@ -104,6 +105,7 @@ export function Gallery() {
           "Composer",
           "Code and results",
           "Expandable ranges",
+          "Transport status",
           "Ambients",
           "Images",
           "Syntax palette",
@@ -119,6 +121,9 @@ export function Gallery() {
       </nav>
       <Section title="Scenes">
         <GalleryScenes />
+      </Section>
+      <Section title="Transport status">
+        <UpstreamSpecimens />
       </Section>
       <Section title="Buttons">
         <ButtonSpecimens />

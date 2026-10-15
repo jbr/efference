@@ -9,6 +9,8 @@ behind a change, see [`journal/`](journal/).
 
 ### Added
 
+- Web transport failures appear once in readable header chrome instead of accumulating in the transcript, clearing on HTTP recovery and updating if the stream fails.
+
 - Web tool results share inline expandable ranges with captured files, with compact full-row controls and stable pending-to-triaged gutters.
 - Opportunistic consolidation: past a tool-text budget (`consolidation-bytes`, default 64 KiB), a background request on the session's main model either writes an account of the newly completed working span or answers `skip` at final replies, answered asks, and arriving user turns; an adopted account replaces only that span, introduced as a harness note, and `consolidate` now uses the same span semantics instead of folding everything before the latest user message.
 - Web session headers show the provider's running cost beside the context meter where the provider prices requests; a request the provider could not price prefixes the total with a `~` floor marker, and the session cards carry the same figure.

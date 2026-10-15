@@ -270,7 +270,7 @@ impl Session {
     /// The last non-success upstream response (docs/transport.md). Cleared by the
     /// next 2xx, which is the recovery boundary the retry topic below shares.
     fn upstream_failure_json(&self) -> Value {
-        serde_json::to_value(*self.upstream_failure.lock().unwrap()).unwrap_or(Value::Null)
+        serde_json::to_value(&*self.upstream_failure.lock().unwrap()).unwrap_or(Value::Null)
     }
 
     /// The retry in flight (docs/transport.md): which surface is retrying, which

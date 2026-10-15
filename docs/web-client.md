@@ -844,19 +844,14 @@ annotate with costs the reader nothing: the signature reads exactly as it did.
 
 ## A record-only entry is marked
 
-An assistant entry carrying `upstream_failure` is one the stream never stood
-behind — an aborted partial, an absorbed HTTP failure, an empty finalized
-stream — so `project` skips it and nothing in it is in the model's context
-([transport.md](transport.md)). `session/tree.ts` emits a leading `:aborted`
-leaf for it, above the content, which still renders because it is often the only
-copy of what the model produced; the marker is warn-toned and rule-bordered, an
-annotation rather than content. The node exists even when the entry is empty,
-which is exactly the empty-stream case — otherwise that entry renders as
-nothing at all. `upstreamFailureWhy` reads the prose out of either
-serialization: the bare string every older log carries, or the object whose
-`stream` field is the empty-stream evidence (which the transcript has no reason
-to show and the inspector might). The words are the TUI's, deliberately:
-*⚠ stream aborted — recorded, not in context*.
+An assistant entry carrying `upstream_failure` is record-only: `project` skips
+it ([transport.md](transport.md)). Empty failed attempts produce no transcript
+nodes; their current explanation belongs to transport chrome instead. Partial
+thinking, prose and tool calls still render, led by an *Incomplete response —
+recorded, not in context* marker without the raw failure body. Deliberate operator
+interruptions retain a *Generation interrupted* marker, including when empty.
+`upstreamFailureWhy` reads either the string or object serialization of the mark.
+
 
 ## A call's input, while it arrives
 
@@ -1341,20 +1336,21 @@ retain their relative order. Those that do not fit are listed in a `+N` menu who
 carries an accent dot when a session in it is waiting on the operator; attention does not
 reorder tabs. Entering a session from a tab is a client-side navigation, as from a card.
 
-It also carries one warn-tinted chip left of the meter, fed by the two
-transport topics through `ui/upstream.ts` (a pure function of the pair, so the
-component holds no endpoint or clock logic). While `upstream_retry` is set the
-chip names the retry — `↻ attempt 2 of 12 failed upstream, retrying`, with a
-`triage:` prefix for a triage peek's retry, and the upstream's `detail` text as the title;
-otherwise `upstream_failure` names the last non-success status,
-`upstream 429 ×3`, the count covering consecutive matching statuses and elided
-at one. Both topics are level-triggered and both clear on recovery
-(docs/transport.md), so the chip's absence is the all-clear rather than
-"nothing observed yet", and a stalling loop's cause is visible while it
-stalls. The chip renders no countdown — `next_attempt_at` is an absolute
-instant, and a remaining-wait readout would mean either a clock read in the
-render path or an interval driving a ticking value. Loop state is not restated
-in the bar: the banner, the gate cue, and the composer's turn-state carry it.
+Below the top bar and session switcher, one wrapping transport notice shows the
+latest failure, never a list of prior attempts. `ui/upstream.ts` combines the
+level-triggered `upstream_failure` and `upstream_retry` topics without endpoint or
+clock logic. `ui/upstreamMessage.ts` extracts `error.message` from provider JSON
+(with string-error and top-level-message fallbacks), bounds the explanation, and
+keeps unrecognized JSON and echoed SSE response data out of the notice. HTTP
+status supplies a category; status-less failures describe interrupted generation.
+Retry progress names the attempt and budget separately, with triage retries marked.
+Counts remain diagnostic data but are not rendered as accumulated errors.
+
+HTTP 2xx clears the failure. Retry progress may remain until finalization or
+exhaustion, but never reintroduces the old retry detail after that recovery. A
+later stream failure sets a new notice. The gallery's Transport status section
+covers overload, usage limit, broken stream and recovery at desktop and phone
+widths. Loop state stays in the banner, gate cue and composer's turn-state.
 The page is `viewport-fit=cover`, which draws it under the status bar and beside
 the notch, so the bar pads itself by the `safe-area-inset-*` values; sticky
 elements below it dock at its measured height rather than a constant.

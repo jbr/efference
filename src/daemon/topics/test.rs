@@ -136,10 +136,9 @@ async fn an_append_alone_wakes_the_diff() {
     tokio::spawn(watch_topics(Arc::clone(&shared)));
     drain(&mut rx).await; // the startup snapshot
 
-    *failure.lock().unwrap() = Some(crate::api::UpstreamFailure {
-        status: 429,
-        count: 2,
-    });
+    let mut diagnostic = crate::api::UpstreamFailure::new(Some(429), "");
+    diagnostic.count = 2;
+    *failure.lock().unwrap() = Some(diagnostic);
     // Then append, as a request that failed and retried would.
     shared
         .append(

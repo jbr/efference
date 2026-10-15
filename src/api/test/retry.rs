@@ -9,23 +9,41 @@ use super::*;
 fn upstream_failure_counts_consecutive_statuses() {
     let failure = upstream_failure_state();
 
-    record_upstream_failure(&failure, 429);
-    record_upstream_failure(&failure, 429);
+    record_upstream_failure(&failure, Some(429), "");
+    record_upstream_failure(&failure, Some(429), "");
 
     assert_eq!(
         *failure.lock().unwrap(),
         Some(UpstreamFailure {
-            status: 429,
+            status: Some(429),
             count: 2,
+            detail: String::new(),
         })
     );
-    record_upstream_failure(&failure, 503);
+    record_upstream_failure(&failure, Some(503), "");
     assert_eq!(
         *failure.lock().unwrap(),
         Some(UpstreamFailure {
-            status: 503,
+            status: Some(503),
             count: 1,
+            detail: String::new(),
         })
+    );
+}
+
+#[test]
+fn latest_failure_replaces_detail_and_a_stream_can_fail_after_recovery() {
+    let failure = upstream_failure_state();
+    record_upstream_failure(&failure, Some(503), "first");
+    record_upstream_failure(&failure, Some(503), "second");
+    let latest = failure.lock().unwrap().clone().unwrap();
+    assert_eq!(latest.count, 2);
+    assert_eq!(latest.detail, "second");
+    super::client::clear_upstream_failure(&failure);
+    record_upstream_failure(&failure, None, "stream closed");
+    assert_eq!(
+        *failure.lock().unwrap(),
+        Some(UpstreamFailure::new(None, "stream closed"))
     );
 }
 
@@ -35,19 +53,20 @@ fn upstream_failure_counts_consecutive_statuses() {
 fn upstream_failure_clears_on_recovery() {
     let failure = upstream_failure_state();
 
-    record_upstream_failure(&failure, 429);
+    record_upstream_failure(&failure, Some(429), "");
     assert!(failure.lock().unwrap().is_some());
 
     super::client::clear_upstream_failure(&failure);
     assert_eq!(*failure.lock().unwrap(), None);
 
     // A later failure starts a fresh run rather than resuming the cleared count.
-    record_upstream_failure(&failure, 429);
+    record_upstream_failure(&failure, Some(429), "");
     assert_eq!(
         *failure.lock().unwrap(),
         Some(UpstreamFailure {
-            status: 429,
+            status: Some(429),
             count: 1,
+            detail: String::new(),
         })
     );
 }
@@ -304,6 +323,9 @@ async fn a_400_open_returns_its_body_once_and_queues_the_attempt() {
         .complete(&[], &[], ToolChoice::auto(), |_| {})
         .await
         .expect_err("a 400 is an open failure");
+    let diagnostic = client.upstream_failure().lock().unwrap().clone().unwrap();
+    assert_eq!(diagnostic.status, Some(400));
+    assert!(diagnostic.detail.contains("bad input"));
     let _ = std::net::TcpStream::connect(addr);
     assert_eq!(server.join().unwrap(), 1, "not retried");
     let text = error.to_string();

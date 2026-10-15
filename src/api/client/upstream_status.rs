@@ -6,16 +6,20 @@ use super::*;
 
 /// Record one non-success upstream status. Matching statuses increment the
 /// diagnostic's count; a different one starts a new run (docs/transport.md).
-pub(in crate::api) fn record_upstream_failure(failure: &UpstreamFailureState, status: u16) {
+pub(in crate::api) fn record_upstream_failure(
+    failure: &UpstreamFailureState,
+    status: Option<u16>,
+    detail: impl Into<String>,
+) {
     let mut failure = failure.lock().unwrap();
-    match failure.as_mut() {
-        Some(previous) if previous.status == status => {
-            previous.count = previous.count.saturating_add(1);
-        }
-        _ => {
-            *failure = Some(UpstreamFailure { status, count: 1 });
-        }
+    let mut next = UpstreamFailure::new(status, detail);
+    if let Some(previous) = failure
+        .as_ref()
+        .filter(|previous| previous.status == status)
+    {
+        next.count = previous.count.saturating_add(1);
     }
+    *failure = Some(next);
 }
 
 /// The all-clear: a 2xx means the upstream is answering, so the chip stops
@@ -104,7 +108,6 @@ impl ClientHandler for UpstreamStatusHandler {
             return Ok(());
         }
         let status = u16::from(status);
-        record_upstream_failure(&self.failure, status);
         let active = self.active.lock().unwrap().clone();
         if let Some(active) = active {
             active.attempt_failed(status);
@@ -114,6 +117,7 @@ impl ClientHandler for UpstreamStatusHandler {
             .read_string()
             .await
             .unwrap_or_else(|read_err| format!("(could not read error body: {read_err})"));
+        record_upstream_failure(&self.failure, Some(status), &body);
         conn.insert_state(CapturedErrorBody(body.clone()));
         push_upstream_attempt(&self.attempts, UpstreamAttemptFailure { status, body });
         Ok(())

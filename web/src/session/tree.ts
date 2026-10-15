@@ -213,11 +213,16 @@ export function buildTree(entries: LogEntry[]): TranscriptNode[] {
     if ("Assistant" in p) {
       const { upstream_failure } = p.Assistant;
       const { thinking, text, calls } = assistantView(p.Assistant);
-      // A record-only entry leads with the marker, above content that still
-      // renders — it is often the only copy of what the model produced. The
-      // node exists even when the entry is empty, which is exactly the
-      // empty-finalized-stream case: otherwise it renders as nothing at all.
-      if (upstream_failure !== undefined) {
+      // Keep partial content marked apart from finalized turns. Empty failed
+      // attempts belong to transport chrome, not the conversation.
+      if (
+        upstream_failure !== undefined &&
+        (upstreamFailureWhy(upstream_failure) ===
+          "generation ended by the operator's interrupt" ||
+          thinking.length > 0 ||
+          text.length > 0 ||
+          calls.length > 0)
+      ) {
         nodes.push({ kind: "leaf", key: `${entry.seq}:aborted`, entry });
       }
       if (thinking.length > 0) {

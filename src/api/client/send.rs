@@ -25,6 +25,15 @@ impl Client {
         let result = self
             .send_traced(trace.as_ref(), turns, tools, tool_choice, cap, on_delta)
             .await;
+        if let Err(error) = &result
+            && super::super::error_status(error).is_none_or(|status| (200..300).contains(&status))
+        {
+            super::upstream_status::record_upstream_failure(
+                &self.upstream_failure,
+                None,
+                error.to_string(),
+            );
+        }
         if let Some(trace) = trace {
             match &result {
                 Err(e) => trace.failed(&e.to_string()),
@@ -473,6 +482,11 @@ impl Client {
                 .lock()
                 .unwrap()
                 .calibrate(prompt_tokens, body_bytes);
+        }
+        if !completion.operator_abort()
+            && let Some(why) = completion.upstream_failure()
+        {
+            super::upstream_status::record_upstream_failure(&self.upstream_failure, None, why);
         }
         completion
     }

@@ -279,8 +279,11 @@ function Leaf({
       return (
         <Entry label={null}>
           <div className="record-only">
-            ⚠ stream aborted — recorded, not in context
-            {record !== undefined && ` · ${upstreamFailureWhy(record)}`}
+            {record !== undefined &&
+            upstreamFailureWhy(record) ===
+              "generation ended by the operator's interrupt"
+              ? "Generation interrupted — recorded, not in context"
+              : "Incomplete response — recorded, not in context"}
           </div>
         </Entry>
       );

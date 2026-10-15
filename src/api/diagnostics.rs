@@ -37,13 +37,25 @@ pub fn turn_routing_state() -> TurnRoutingState {
     Arc::new(Mutex::new(None))
 }
 
-/// The last non-success status received from the upstream API, plus consecutive
-/// occurrences of that status. Ephemeral transport diagnostics: never appended
+/// The latest upstream failure: optional HTTP status, consecutive occurrences,
+/// and error detail. Cleared on HTTP 2xx; later stream failure sets it again.
+/// Ephemeral transport diagnostics: never appended
 /// to the log or projected (docs/transport.md).
-#[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 pub struct UpstreamFailure {
-    pub status: u16,
+    pub status: Option<u16>,
     pub count: u32,
+    pub detail: String,
+}
+
+impl UpstreamFailure {
+    pub fn new(status: Option<u16>, detail: impl Into<String>) -> Self {
+        Self {
+            status,
+            count: 1,
+            detail: detail.into(),
+        }
+    }
 }
 
 /// Shared state written by the HTTP client and read through the daemon's

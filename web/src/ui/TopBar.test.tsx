@@ -3,7 +3,7 @@
 // instead of throwing, and a provider that prices no requests sends no cost,
 // which draws no readout beside the meter.
 
-import { expect, test } from "vitest";
+import { describe, expect, it, test } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { Usage } from "../api/types.ts";
 import { TopBar } from "./TopBar.tsx";
@@ -72,4 +72,39 @@ test("an unpriced total is a marked floor, its count only in the title", () => {
   );
   expect(markup).toContain(">~$1.50<");
   expect(markup).toContain("cost: ~$1.50 · 3 unpriced");
+});
+
+describe("transport notice", () => {
+  it("shows one readable explanation below the header and clears it on recovery", () => {
+    const failure = {
+      status: 503,
+      count: 4,
+      detail:
+        '{"error":{"message":"Temporarily overloaded.","code":"service_overloaded"}}',
+    };
+    const html = renderToStaticMarkup(
+      <TopBar
+        listHref={null}
+        identity={null}
+        usage={null}
+        upstreamFailure={failure}
+        upstreamRetry={null}
+      />,
+    );
+    expect(html).toContain('role="status"');
+    expect(html).toContain("Temporarily overloaded.");
+    expect(html).toContain("HTTP 503");
+    expect(html).not.toContain("service_overloaded");
+    expect(html).not.toContain("×4");
+    const recovered = renderToStaticMarkup(
+      <TopBar
+        listHref={null}
+        identity={null}
+        usage={null}
+        upstreamFailure={null}
+        upstreamRetry={null}
+      />,
+    );
+    expect(recovered).not.toContain("upstream-notice");
+  });
 });

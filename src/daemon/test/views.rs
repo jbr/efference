@@ -18,14 +18,13 @@ fn state_reports_upstream_failure() {
     let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
     assert!(v["upstream_failure"].is_null());
 
-    *failure.lock().unwrap() = Some(crate::api::UpstreamFailure {
-        status: 429,
-        count: 2,
-    });
+    let mut diagnostic = crate::api::UpstreamFailure::new(Some(429), "");
+    diagnostic.count = 2;
+    *failure.lock().unwrap() = Some(diagnostic);
     let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
     assert_eq!(
         v["upstream_failure"],
-        serde_json::json!({ "status": 429, "count": 2 })
+        serde_json::json!({ "status": 429, "count": 2, "detail": "" })
     );
 }
 

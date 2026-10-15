@@ -1,59 +1,116 @@
 import { describe, expect, it } from "vitest";
 import type { UpstreamRetry } from "../api/types.ts";
 import { upstreamChip } from "./upstream.ts";
+import { upstreamMessage } from "./upstreamMessage.ts";
 
-const NOW = 1_754_300_000_000;
-
-const retry = (
-  surface: UpstreamRetry["surface"],
-  attempt: number,
-): UpstreamRetry => ({
-  surface,
-  attempt,
+const retry: UpstreamRetry = {
+  surface: "turn",
+  attempt: 2,
   budget: 12,
-  next_attempt_at: NOW + 4_000,
-  message: `attempt ${attempt} of 12 failed upstream, retrying`,
-  detail: "upstream SSE stream failed mid-stream: connection reset",
-});
+  next_attempt_at: 100,
+  message: "retrying",
+  detail: "old error",
+};
 
-describe("the upstream chip", () => {
-  it("is absent when neither topic is set — the all-clear", () => {
+describe("upstream notice", () => {
+  it("is absent after recovery when no retry remains", () => {
     expect(upstreamChip(null, null)).toBeNull();
   });
-
-  it("names the last non-success status, eliding a count of one", () => {
-    expect(upstreamChip({ status: 429, count: 1 }, null)?.text).toBe(
-      "upstream 429",
+  it("shows the latest explanation and retry progress without an accumulating count", () => {
+    const chip = upstreamChip(
+      {
+        status: 503,
+        count: 3,
+        detail:
+          '{"error":{"code":"service_overloaded","message":"Please retry."}}',
+      },
+      retry,
     );
-    expect(upstreamChip({ status: 429, count: 3 }, null)?.text).toBe(
-      "upstream 429 ×3",
+    expect(chip?.text).toBe("Please retry.");
+    expect(chip?.title).toBe("Upstream unavailable · HTTP 503");
+    expect(chip?.progress).toBe("Retrying · attempt 2 of 12");
+  });
+  it("does not resurrect the retry's old error after a 2xx clears failure", () => {
+    expect(upstreamChip(null, retry)?.text).toBe("");
+    expect(upstreamChip(null, retry)?.progress).toContain("Retrying");
+  });
+  it("shows stream failures without inventing an HTTP status", () => {
+    const chip = upstreamChip(
+      { status: null, count: 1, detail: "connection reset" },
+      null,
+    );
+    expect(chip?.title).toBe("Generation interrupted");
+    expect(chip?.text).toBe("connection reset");
+  });
+  it("distinguishes triage retries", () => {
+    expect(
+      upstreamChip(null, { ...retry, surface: "peek" })?.progress,
+    ).toContain("triage");
+  });
+});
+
+describe("provider explanations", () => {
+  it.each([
+    {
+      error: {
+        type: "invalid_request_error",
+        message: "Unsupported thinking mode.",
+      },
+      request_id: "req_1",
+    },
+    {
+      error: {
+        type: "usage_limit_reached",
+        message: "The usage limit has been reached",
+        resets_at: 100,
+      },
+    },
+    {
+      error: {
+        code: "service_overloaded",
+        message: "Temporarily overloaded.",
+        param: null,
+        type: "server_error",
+      },
+    },
+    {
+      type: "error",
+      error: {
+        type: "api_error",
+        error_type: "server",
+        message: "Stream closed.",
+      },
+      metadata: { provider_name: "provider" },
+    },
+    {
+      error: {
+        code: "credit_balance_exhausted",
+        type: "insufficient_quota",
+        message: "Add credits.",
+      },
+      sequence_number: 2,
+    },
+  ])("extracts error.message from %j", (body) => {
+    expect(upstreamMessage(`upstream error: ${JSON.stringify(body)}`)).toBe(
+      body.error.message,
     );
   });
-
-  it("leads with the retry message, not the status, while one is in flight", () => {
-    const chip = upstreamChip({ status: 529, count: 2 }, retry("turn", 2));
-    expect(chip?.text).toBe("↻ attempt 2 of 12 failed upstream, retrying");
-    expect(chip?.retrying).toBe(true);
-    expect(chip?.text).not.toContain("529");
+  it("supports string errors and top-level messages", () => {
+    expect(upstreamMessage('{"error":"Unavailable"}')).toBe("Unavailable");
+    expect(upstreamMessage('{"message":"Unavailable"}')).toBe("Unavailable");
   });
-
-  it("marks a triage retry apart from a turn's", () => {
-    expect(upstreamChip(null, retry("peek", 3))?.text).toBe(
-      "↻ triage: attempt 3 of 12 failed upstream, retrying",
-    );
+  it("does not expose echoed instructions from a rejected SSE response", () => {
+    expect(
+      upstreamMessage(
+        'Unexpected content-type for SSE request: None — event: response.created\ndata: {"response":{"instructions":"private"}}',
+      ),
+    ).toBe("Unexpected content-type for SSE request: None");
   });
-
-  // The chip is a pure function of the two topics — no clock is read, so it
-  // never renders a stale countdown.
-  it("puts the upstream's own words in the title", () => {
-    expect(upstreamChip(null, retry("turn", 2))?.title).toBe(
-      "upstream SSE stream failed mid-stream: connection reset",
+  it("keeps non-JSON diagnostics bounded and excludes unknown JSON", () => {
+    expect(upstreamMessage("connection reset")).toBe("connection reset");
+    expect(upstreamMessage('{"unexpected":"private"}')).toBe(
+      "The upstream request failed.",
     );
-  });
-
-  it("falls back to the failure chip once the retry clears", () => {
-    expect(upstreamChip({ status: 529, count: 2 }, null)?.text).toBe(
-      "upstream 529 ×2",
-    );
+    expect(upstreamMessage("x".repeat(1000))).toHaveLength(600);
   });
 });

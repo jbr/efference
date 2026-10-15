@@ -71,6 +71,9 @@ async fn a_stream_open_past_the_ceiling_is_marked_retryable() {
     let why = completion.upstream_failure().expect("must be marked");
     assert!(why.contains("ceiling"), "{why}");
     assert!(why.contains("stream-ceiling"), "names the knob: {why}");
+    let diagnostic = client.upstream_failure().lock().unwrap().clone().unwrap();
+    assert_eq!(diagnostic.status, None);
+    assert_eq!(diagnostic.detail, why);
     server.join().unwrap();
 }
 
@@ -141,6 +144,7 @@ async fn an_interrupt_ends_the_read_and_marks_the_partial_aborted() {
         "the read ended on the interrupt, not the ceiling"
     );
     assert!(completion.operator_abort());
+    assert!(client.upstream_failure().lock().unwrap().is_none());
     assert_eq!(completion.failure_class, FailureClass::Aborted);
     assert!(completion.terminal_failure().is_none());
     let why = completion.upstream_failure().unwrap();

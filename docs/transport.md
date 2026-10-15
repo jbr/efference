@@ -593,18 +593,20 @@ daemon: it sets `stall` with `reason: "request_failed"` carrying that body as
 projection is unchanged. Keepalive failures are transport-only and leave the log
 unchanged.
 
-Every non-2xx response also updates one shared diagnostic: its numeric status and
-how many consecutive responses carried that status. `RetryHandler` is outermost
-and the observer is inside it, so reverse response handling records each failed
-attempt before the retry handler queues its follow-up. The daemon exposes this
-optional value as `upstream_failure` on `GET /state`; the TUI shows
-`upstream 429 ×2` in its status bar. It is **cleared by the next 2xx**: a
-response that arrives is the all-clear, which also covers the retrying case,
-since an attempt cannot finalize without one. The chip therefore reports a
-failure that is current rather than one that happened once and was survived —
-a chip that persists through a full recovery teaches an operator to ignore the
-one surface meant to carry signal. It stays content-free: the status and the
-count are all it carries, and the bodies live in the log (below).
+Every non-2xx response updates one shared diagnostic: its numeric status, the
+latest error body, and how many consecutive responses carried that status.
+`RetryHandler` is outermost and the observer is inside it, so reverse response
+handling records each failed attempt before the retry handler queues its follow-up.
+The daemon exposes this optional value as `upstream_failure` on `GET /state`.
+The TUI shows HTTP status and count; the web client extracts the provider's
+explanation for a single notice outside the transcript.
+
+The diagnostic is **cleared by the next HTTP 2xx**: accepting a new response is
+the recovery boundary, not finishing its generation. A subsequent stream failure
+sets it again with `status: null` and the stream's explanation. Connection failures
+and rejected successful responses also set a status-less diagnostic. Deliberate
+operator interruption does not set it. Each failure replaces `detail`; the state
+is ephemeral, while durable assistant failure records retain the audit trail.
 
 ### The retry in flight
 

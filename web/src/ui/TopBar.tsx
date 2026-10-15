@@ -83,24 +83,24 @@ export function CostMeter({ cost }: { cost: NonNullable<Usage["cost"]> }) {
   );
 }
 
-/** The transport chip: a retry in flight while one is, otherwise the last
- * non-success status. Both topics clear on recovery, so the chip's absence is
- * the all-clear rather than "nothing observed yet". A stalling loop with no
- * visible cause is what it is here for. Shape lives in `ui/upstream.ts`. */
-function UpstreamChip({
+/** Latest upstream explanation and separate retry progress (docs/web-client.md). */
+export function UpstreamNotice({
   chip,
 }: {
   chip: NonNullable<ReturnType<typeof upstreamChip>>;
 }) {
   return (
-    <span
-      className={
-        chip.retrying ? "upstream-failure retrying" : "upstream-failure"
-      }
-      title={chip.title}
-    >
-      {chip.text}
-    </span>
+    <div className="upstream-notice" role="status" aria-live="polite">
+      {chip.text && (
+        <>
+          <strong>{chip.title}</strong>
+          <span>{chip.text}</span>
+        </>
+      )}
+      {chip.progress && (
+        <span className="upstream-progress">{chip.progress}</span>
+      )}
+    </div>
   );
 }
 
@@ -129,12 +129,12 @@ export function TopBar({
     <AppHeader
       homeHref={listHref}
       below={
-        // Only under a host are there other sessions to switch to.
-        // The page's own session, not the identity topic's: that is absent
-        // from a session's first paint, and the row should not wait for it.
-        listHref !== null && routeId !== null ? (
-          <SessionSwitcher currentId={routeId} />
-        ) : undefined
+        <>
+          {listHref !== null && routeId !== null && (
+            <SessionSwitcher currentId={routeId} />
+          )}
+          {chip !== null && <UpstreamNotice chip={chip} />}
+        </>
       }
     >
       {(identity !== null || routeId !== null) && (
@@ -143,7 +143,6 @@ export function TopBar({
         </span>
       )}
       <span className="spacer" />
-      {chip !== null && <UpstreamChip chip={chip} />}
       {summary ? (
         <ContextPopup context={context} summary={summary}>
           {context !== null ? <ContextMeter context={context} /> : undefined}
