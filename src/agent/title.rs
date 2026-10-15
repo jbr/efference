@@ -136,13 +136,13 @@ async fn solicit_title(shared: &Session, ask: &TitleAsk, force: bool) -> bool {
         shared.record_request(RequestOrigin::Title, u);
     }
     for why in &peek.retries {
-        log::warn!("title peek: {why}");
+        log::debug!("title peek: {why}");
     }
     let Some(text) = peek.title else {
         return false;
     };
     if current.as_deref() != Some(text.as_str()) {
-        eprintln!("[title: {text}]");
+        log::debug!("title: {text}");
     }
     let seq = match shared.set_title(Title {
         text,

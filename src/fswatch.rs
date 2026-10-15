@@ -69,7 +69,7 @@ impl FsWatch {
                 Ok(events) => events,
                 Err(errors) => {
                     for e in errors {
-                        eprintln!("[fswatch error: {e}]");
+                        log::warn!("fswatch error: {e}");
                     }
                     return;
                 }

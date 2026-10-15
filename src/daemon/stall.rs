@@ -152,7 +152,7 @@ impl Session {
             let Some(repair) = self.config_repair() else {
                 return;
             };
-            eprintln!("[config: parked — {}]", repair.message);
+            log::debug!("config: parked — {}", repair.message);
             repaired.await;
         }
     }

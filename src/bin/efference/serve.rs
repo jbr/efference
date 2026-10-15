@@ -385,6 +385,12 @@ pub(crate) async fn host(
         std::fs::create_dir_all(dir)?;
     }
     let _ = std::fs::remove_file(&socket);
+    // Output discipline: with RUST_LOG unset the host announces session
+    // lifecycle (created, resumed, archived, ended — `info`) and transport and
+    // operational failures (`warn`, `error`), and nothing else. Per-session
+    // detail — the boot report, turn-loop chatter, keepalive, model prose —
+    // logs at `debug`; `RUST_LOG=efference=debug` brings it back. No direct
+    // prints outside the interactive MCP authorization prompt.
     let _ = env_logger::Builder::from_env(
         env_logger::Env::default().default_filter_or("warn,efference=info"),
     )

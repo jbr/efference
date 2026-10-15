@@ -37,7 +37,7 @@ pub(super) fn record_image_refusal(
         return Ok(());
     }
     toolbox.refuse_images();
-    eprintln!("[images withheld from here on: the endpoint refused them]");
+    log::debug!("images withheld from here on: the endpoint refused them");
     shared.append(
         turn,
         Payload::ImagesRefused {

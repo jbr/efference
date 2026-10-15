@@ -222,7 +222,7 @@ async fn resume_minting(
     let opened = Log::open(&log_path).map_err(std::io::Error::from)?;
     let mut log = opened.log;
     if let Some(repair) = &opened.repaired {
-        eprintln!("log: repaired a torn tail ({repair:?})");
+        log::debug!("log: repaired a torn tail ({repair:?})");
     }
     // The log can have moved between the read-only load and the reopen; the entries the
     // session continues from are the reopened ones.
@@ -235,7 +235,6 @@ async fn resume_minting(
     if let Some(added) = restored {
         log.append(turn, Payload::Worktree(added.into_event(true)))?;
     }
-    eprintln!("resumed {}", session_dir.display());
 
     Ok((
         SessionBoot {

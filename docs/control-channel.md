@@ -152,9 +152,17 @@ the body's `model`, `spotter_model`, and `triage` selections (each optional) aga
 the host's `InferenceRegistry` ([transport.md](transport.md)) before anything is
 minted, builds a `SessionRequest` carrying the resolved endpoints, runs
 `boot::prepare`, starts the runtime, and adopts it. The `Host` is constructed with
-the registry its launch loaded; the sessions mutex is not held across creation. Its
-boot report goes to the host's stderr, and an MCP authorization opens a browser
-on the host's machine. An island host's stderr is its `host.log`, which the
+the registry its launch loaded; the sessions mutex is not held across creation.
+An MCP authorization opens a browser on the host's machine.
+
+The host's output is logging, not a transcript. With `RUST_LOG` unset it
+announces session lifecycle — created, resumed, archived, ended (`info`) — and
+transport and operational failures (`warn`, `error`), and prints nothing else.
+Per-session detail — the boot report, turn-loop chatter, keepalive, model prose
+— logs at `debug`, so `RUST_LOG=efference=debug` restores it; a boot failure's
+detail rides the refusal the create response returns rather than a print. The
+one direct print is the interactive MCP authorization prompt. An island host's
+output is its `host.log`, which the
 launcher prints only when startup fails ([operating.md](operating.md));
 its lifetime is bound to the launcher by a pipe on its stdin rather than by any
 connection to this socket (`src/daemon/island.rs`).

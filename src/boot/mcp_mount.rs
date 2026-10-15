@@ -44,7 +44,7 @@ pub async fn mount_all(
         // revoked grant or a changed authorization server.
         if reauth.iter().any(|r| r == name) {
             store.clear(name)?;
-            eprintln!("[mcp: `{name}` credentials cleared; re-authorizing]");
+            log::debug!("mcp: `{name}` credentials cleared; re-authorizing");
         }
 
         let reason = match mount_one(toolbox, name, entry, cwd, store).await {
@@ -52,19 +52,18 @@ pub async fn mount_all(
             Err(e) => format!("{e:#}"),
         };
         if !entry.optional {
-            eprintln!(
-                "error: mcp server `{name}` is declared in the configuration but did not \
-                 mount: {reason}"
-            );
-            eprintln!(
-                "       fix it, or set `optional = true` under [mcp.servers.{name}] to start \
-                 without it."
-            );
-            return Err(format!("could not mount mcp server `{name}`").into());
+            // The reason and the fix ride the returned error — the create
+            // response is where the operator reads it, and no print repeats it.
+            return Err(format!(
+                "mcp server `{name}` is declared in the configuration but did not mount: \
+                 {reason}. Fix it, or set `optional = true` under [mcp.servers.{name}] to \
+                 start without it."
+            )
+            .into());
         }
-        // Optional: loud at every launch, not only the one where it broke.
-        eprintln!(
-            "[mcp: `{name}` did not mount and is optional — continuing without it: {reason}]"
+        // Optional: the skip is recorded in the mount result the session reports.
+        log::debug!(
+            "mcp: `{name}` did not mount and is optional — continuing without it: {reason}"
         );
         unmounted.push(Unmounted {
             name: name.clone(),

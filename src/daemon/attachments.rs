@@ -52,7 +52,7 @@ pub(crate) async fn attachments_watch_loop(
     display_dir: PathBuf,
 ) {
     if let Err(e) = std::fs::create_dir_all(&dir) {
-        eprintln!("[attachments: could not create {}: {e}]", dir.display());
+        log::warn!("attachments: could not create {}: {e}", dir.display());
         return;
     }
     let mut seen: std::collections::HashSet<PathBuf> = read_names(&dir);
@@ -63,12 +63,12 @@ pub(crate) async fn attachments_watch_loop(
     }) {
         Ok(d) => d,
         Err(e) => {
-            eprintln!("[attachments: could not start watcher: {e}]");
+            log::warn!("attachments: could not start watcher: {e}");
             return;
         }
     };
     if let Err(e) = debouncer.watch(&dir, RecursiveMode::NonRecursive) {
-        eprintln!("[attachments: could not watch {}: {e}]", dir.display());
+        log::warn!("attachments: could not watch {}: {e}", dir.display());
         return;
     }
 

@@ -158,10 +158,10 @@ pub(super) async fn peek_with_retries<T>(
             {
                 break;
             }
-            log::warn!("fork peek attempt {attempt}: {why}; retrying in-fork");
+            log::debug!("fork peek attempt {attempt}: {why}; retrying in-fork");
         }
         if fork < forks {
-            log::warn!("fork peek fork {fork} produced no usable verdict; starting a fresh fork");
+            log::debug!("fork peek fork {fork} produced no usable verdict; starting a fresh fork");
         }
     }
     Err(PeekFailure::Unusable(last))
@@ -244,7 +244,7 @@ pub(super) async fn peek_completion(
                 "peek failed upstream, {failed} attempts exhausted: {why}"
             )));
         };
-        log::warn!("fork peek attempt {failed} of {budget} failed upstream: {why}; retrying");
+        log::debug!("fork peek attempt {failed} of {budget} failed upstream: {why}; retrying");
         // Published on the same topic the turn loop uses, distinguished by its
         // surface (docs/transport.md).
         retry.set(stream_abort_retry(

@@ -86,7 +86,7 @@ pub(super) async fn hold(
             )
         }
     };
-    eprintln!("[{message}: {why}]");
+    log::debug!("{message}: {why}");
     carried.retries.push(format!("held: {why}"));
     shared.set_stall(stalled(reason, None, message.to_string(), why));
 

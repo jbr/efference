@@ -8,7 +8,7 @@
 //! pipe this process holds, which is the ownership connection
 //! ([`efference::daemon::island`]).
 //!
-//! An island leaves the terminal as it found it. The host's boot report stays in
+//! An island leaves the terminal as it found it. The host's output stays in
 //! the log: echoed before the TUI took the screen, it was left behind on the
 //! normal screen when the TUI gave it back. The log is shown here only when
 //! startup fails — the host exits, or the session cannot be created — which is

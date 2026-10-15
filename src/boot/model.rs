@@ -38,7 +38,7 @@ pub(super) async fn resolve_capabilities(
             format!("--temperature: {model} does not accept a sampling temperature").into(),
         );
     }
-    eprintln!(
+    log::debug!(
         "model: {model} · context {}{}",
         describe_window(capabilities.context_length),
         match capabilities.max_output_tokens {
@@ -68,15 +68,15 @@ pub(super) async fn resolve_capabilities(
         return Err(why.into());
     }
     match (effort, &capabilities.default_effort) {
-        (Some(effort), _) if capabilities.validates_efforts => eprintln!("effort: {effort}"),
+        (Some(effort), _) if capabilities.validates_efforts => log::debug!("effort: {effort}"),
         // Sent without a check against the model's metadata, which may name no
         // levels at all: the provider may honor it, refuse it, or drop it
         // silently, and only the last one leaves no trace (docs/transport.md).
         (Some(effort), _) => {
-            eprintln!("effort: {effort} · unchecked, the model's metadata does not bound it");
+            log::debug!("effort: {effort} · unchecked, the model's metadata does not bound it");
         }
         (None, Some(default)) => {
-            eprintln!("effort: unset · provider default {default}");
+            log::debug!("effort: unset · provider default {default}");
         }
         (None, None) => {}
     }

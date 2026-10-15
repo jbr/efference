@@ -42,7 +42,7 @@ impl Session {
     /// delivered every entry. Readers still holding the session keep its entries.
     pub(crate) fn close_log(&self) {
         if let Err(e) = self.log.lock().unwrap().close() {
-            eprintln!("[log: flushing at close failed: {e}]");
+            log::warn!("log: flushing at close failed: {e}");
         }
         self.appended.notify_waiters();
     }

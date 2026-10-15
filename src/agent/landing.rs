@@ -117,7 +117,7 @@ pub(super) async fn land(
         if let Some(usage) = outcome.usage {
             shared.record_request(RequestOrigin::TriagePrimer, usage);
         }
-        log::info!(
+        log::debug!(
             "triage primer: send {}ms, residue {}ms, primed {primed}, gated {}",
             outcome.send_ms,
             outcome.residue_ms,
@@ -309,7 +309,7 @@ pub(super) fn after_landing(
     redirect: Option<String>,
 ) -> std::io::Result<bool> {
     if abort_turn {
-        eprintln!("[turn aborted]");
+        log::debug!("turn aborted");
         return Ok(true);
     }
     if let Some(message) = redirect {
@@ -326,7 +326,7 @@ pub(super) fn after_landing(
     // paid request and after any turn the operator queued to explain the
     // press had already been drained into that request.
     if shared.take_interrupt() {
-        eprintln!("[turn ended by the operator's interrupt]");
+        log::debug!("turn ended by the operator's interrupt");
         return Ok(true);
     }
     Ok(false)

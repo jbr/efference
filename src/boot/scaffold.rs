@@ -120,7 +120,7 @@ pub(super) fn snapshot_config(origin: &LoadedConfig, session_config: &Path) -> R
         match &origin.source {
             ConfigSource::Path(p) => {
                 std::fs::copy(p, session_config)?;
-                eprintln!(
+                log::debug!(
                     "config: snapshot of {} → {}",
                     p.display(),
                     session_config.display()
@@ -128,11 +128,11 @@ pub(super) fn snapshot_config(origin: &LoadedConfig, session_config: &Path) -> R
             }
             ConfigSource::Default => {
                 std::fs::write(session_config, CONFIG_SCAFFOLD)?;
-                eprintln!("config: scaffolded {}", session_config.display());
+                log::debug!("config: scaffolded {}", session_config.display());
             }
         }
     } else {
-        eprintln!("config: reusing {}", session_config.display());
+        log::debug!("config: reusing {}", session_config.display());
     }
     Ok(())
 }
@@ -172,7 +172,7 @@ pub(super) fn mint_scratch(
     // Minted by exclusive create under a random name, so — like the session dir — it
     // belongs to this attempt and a later failure may remove it.
     minted.scratch = Some(scratch.clone());
-    eprintln!("scratch: {} (exported as $TMPDIR)", scratch.display());
+    log::debug!("scratch: {} (exported as $TMPDIR)", scratch.display());
     loaded.role.paths.insert(
         scratch.to_string_lossy().into_owned(),
         crate::config::Perms {

@@ -272,7 +272,7 @@ impl StageRecorder for SessionStages {
         // request it describes, as for process events.
         let turn = session.latest_turn();
         if let Err(e) = session.append(turn, Payload::Telemetry(Telemetry::RequestStage(stage))) {
-            eprintln!("[request stage: append failed: {e}]");
+            log::warn!("request stage: append failed: {e}");
         }
     }
 }

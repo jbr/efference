@@ -13,11 +13,15 @@ pub(super) fn resolve_env_table(
     table: &std::collections::BTreeMap<String, crate::env_table::EnvEntry>,
 ) -> Result<Vec<crate::env_table::ResolvedValue>, Error> {
     let (values, errors) = resolver.resolve_table(table);
-    for error in &errors {
-        eprintln!("error: [env] {error}");
-    }
     if !errors.is_empty() {
-        return Err("could not resolve [env] references".into());
+        // Each reference's failure rides the returned error: the create response
+        // is where the operator reads it, and no print repeats it.
+        let detail = errors
+            .iter()
+            .map(|e| e.to_string())
+            .collect::<Vec<_>>()
+            .join("; ");
+        return Err(format!("could not resolve [env] references: {detail}").into());
     }
     Ok(values)
 }
@@ -55,7 +59,7 @@ pub(super) fn build_env_policy(
         .filter(|name| table.get(*name).and_then(|entry| entry.strip) != Some(false))
         .collect();
     if !withheld.is_empty() {
-        eprintln!(
+        log::debug!(
             "env: withheld from this session's commands — the host's model credentials \
              ({}); a project that needs one sets `strip = false` for it under [env]",
             withheld
@@ -73,22 +77,27 @@ pub(super) fn build_env_policy(
         resolver.clone(),
     );
     for name in &env_report.forced_mask {
-        eprintln!(
-            "[env: `{name}` resolves from a command, so its value is masked despite \
+        log::debug!(
+            "env: `{name}` resolves from a command, so its value is masked despite \
              `mask = false` — a value the harness fetched for the session is known to be \
-             a secret]"
+             a secret"
         );
     }
-    for conflict in &env_report.conflicts {
-        eprintln!("error: [env] {conflict}");
-    }
     if !env_report.conflicts.is_empty() {
-        return Err("ambiguous [env] table".into());
+        // The conflicts ride the returned error: the create response is where
+        // the operator reads them, and no print repeats them.
+        let detail = env_report
+            .conflicts
+            .iter()
+            .map(|c| c.to_string())
+            .collect::<Vec<_>>()
+            .join("; ");
+        return Err(format!("ambiguous [env] table: {detail}").into());
     }
     for name in &env_report.below_floor {
-        eprintln!(
-            "[env: `{name}` is set to fewer than {} characters and will not be masked — \
-             too short a needle would shred unrelated output]",
+        log::debug!(
+            "env: `{name}` is set to fewer than {} characters and will not be masked — \
+             too short a needle would shred unrelated output",
             crate::env_table::MASKABILITY_FLOOR
         );
     }

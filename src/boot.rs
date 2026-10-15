@@ -80,7 +80,8 @@ pub struct SessionRequest {
 }
 
 /// Prepare a session: everything from the origin config to the provider client,
-/// in the order the boot report prints it. Fails before minting anything when the
+/// in the order the boot report logs it (per-session setup detail, at `debug`).
+/// Fails before minting anything when the
 /// config, a reference, the provider, or the effort level is unusable; a failure
 /// after that point rolls back what this attempt minted, so the name is free for a
 /// corrected retry (docs/control-channel.md).
@@ -249,8 +250,8 @@ async fn prepare_minting(
     // masking exists for.
     inference.absorb_secrets(&env_policy.masker());
     log.set_masker(env_policy.masker());
-    eprintln!("session dir: {}", session_dir.display());
-    eprintln!("logging to {}", log_path.display());
+    log::debug!("session dir: {}", session_dir.display());
+    log::debug!("logging to {}", log_path.display());
 
     // Build the system prompt once, here at startup, and freeze it into the cached
     // prefix — it must stay byte-stable for the whole session or it would invalidate
@@ -326,7 +327,7 @@ async fn prepare_minting(
     let spotter = parts::mount_spotter(&inference, &endpoint, &scratch, &directories).await?;
 
     if autonomous {
-        eprintln!(
+        log::debug!(
             "autonomous: no synchronous gate — spotter Watch/Gate redirects the model to its \
              config file; config writes still gate for the orchestrator-above"
         );

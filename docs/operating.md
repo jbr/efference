@@ -194,10 +194,12 @@ and the host reads EOF and shuts down as a signal would, reaping every session's
 a TUI that dies during startup leaves nothing running. No other client carries ownership: a
 second TUI, the web client, or an agent attaching and leaving does not extend or end the
 island. An island leaves the terminal as it found it: while the host starts the launcher
-shows one status line, erased before the TUI takes the screen, and the boot report stays in
-`host.log`. Echoed before the TUI, it was left on the normal screen when the TUI gave the
+shows one status line, erased before the TUI takes the screen, and the host's output goes
+to `host.log`. Echoed before the TUI, it was left on the normal screen when the TUI gave the
 terminal back. The log is printed only when startup fails — the host refuses to start or
-creation fails — where it is the explanation. A setup offer that launches the session erases
+creation fails — where it is the explanation; by default it carries session lifecycle and
+failures, and a creation refusal's detail rides the refusal itself
+([control-channel.md](control-channel.md)). A setup offer that launches the session erases
 its own questions first (`setup::terminal::Terminal::erase`, which counts the rows its
 prompts leave), keeping only the line naming a file the wizard wrote.
 
@@ -246,7 +248,8 @@ still a legitimate thing to build, and an offline verb naming a specific model
 already fails on that model alone. A credential that expires *after* launch is a
 different matter: sessions exist by then, and it is re-read in place
 ([transport.md](transport.md)).
-The boot report and the TUI session drawer's Session section name each role by connection.
+The TUI session drawer's Session section names each role by connection; the host
+logs the same roles at `debug` (the boot report).
 
 **First run: `efference setup`** (`src/setup.rs`). A bare `efference` on a machine
 with no `~/.efference/config.toml` runs it. With one, a directory holding neither an

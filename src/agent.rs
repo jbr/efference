@@ -184,7 +184,7 @@ pub async fn run<F: Frontend, S: Spotter>(
         // wake-on-notification, which replaced a blocking `wait`). A user turn drives a
         // normal trajectory; an event wakes a standalone triage that escalates to a
         // trajectory only if it pins something. The first turn arrives here too.
-        eprintln!("\n(idle — awaiting a user turn or an event on the control socket)");
+        log::debug!("idle — awaiting a user turn or an event on the control socket");
         // A resumed session's unfinished batch, derived from the log each time
         // (docs/resumption.md). While it waits, the wire ends in unanswered `tool_use`
         // blocks, so no triage may project it: an event stays in the inbox and rides the
@@ -353,7 +353,7 @@ pub async fn run<F: Frontend, S: Spotter>(
             // entered a phase with no output — so the last thing an operator saw during a long
             // generation was `idle`, which reads as *finished*. The cost of a stale `idle` isn't
             // cosmetic: it invites interrupting or abandoning a live session on false signal.
-            eprintln!("(generating — turn {turn})");
+            log::debug!("generating — turn {turn}");
             // Bounded retry for a stream that dies before finalizing
             // (docs/transport.md). Each aborted attempt commits its partial as a
             // record-only entry — the only copy of that content anywhere — which
@@ -412,7 +412,7 @@ pub async fn run<F: Frontend, S: Spotter>(
                             );
                             shared.append(turn, completion.assistant)?;
                             shared.take_interrupt();
-                            eprintln!("[generation ended by the operator]");
+                            log::debug!("generation ended by the operator");
                             break None;
                         }
                         turn += 1;
@@ -456,9 +456,9 @@ pub async fn run<F: Frontend, S: Spotter>(
                 if let Some(reason) = terminal {
                     // The schedule would only repeat the answer, so the trajectory
                     // stalls now, with the same audiences as exhaustion — the
-                    // record-only entry, stderr, and the stall topic carrying the
+                    // record-only entry, the log, and the stall topic carrying the
                     // provider's words.
-                    eprintln!("[upstream refused the request: {why}]");
+                    log::warn!("upstream refused the request: {why}");
                     shared.set_stall(stalled(
                         reason,
                         Some(aborted_attempts),
@@ -468,7 +468,7 @@ pub async fn run<F: Frontend, S: Spotter>(
                     break None;
                 }
                 let Some(pause) = stream_abort_backoff(aborted_attempts) else {
-                    eprintln!("[upstream unusable, {aborted_attempts} attempts exhausted: {why}]");
+                    log::warn!("upstream unusable, {aborted_attempts} attempts exhausted: {why}");
                     // An upstream failure is told to the operator and the log,
                     // never to the model (docs/transport.md): if we are in a
                     // position to describe the failure to it, we have already
@@ -488,9 +488,9 @@ pub async fn run<F: Frontend, S: Spotter>(
                     ));
                     break None;
                 };
-                eprintln!(
-                    "[upstream attempt {aborted_attempts} of {STREAM_ABORT_ATTEMPTS} failed: \
-                     {why} — retrying]"
+                log::debug!(
+                    "upstream attempt {aborted_attempts} of {STREAM_ABORT_ATTEMPTS} failed: \
+                     {why} — retrying"
                 );
                 // The wait is the state: publish it before sleeping, so a client can
                 // tell "retrying, attempt 3 of 12" from "the model is thinking hard"
@@ -527,19 +527,19 @@ pub async fn run<F: Frontend, S: Spotter>(
             let output = completion.assistant_output();
             for text in output.text() {
                 if !text.is_empty() {
-                    println!("\n{text}");
+                    log::debug!("{text}");
                 }
             }
             let calls = output.tool_calls().unwrap_or_else(|e| {
                 log::error!("finalized turn carried unparseable call arguments: {e}");
                 Vec::new()
             });
-            // Record cache/usage telemetry (surfaced on `GET /state`) and print a
-            // legible live line: cache read vs creation is the hot/cold signal
+            // Record cache/usage telemetry (surfaced on `GET /state`) and log a
+            // legible line: cache read vs creation is the hot/cold signal
             // (docs/log-and-projection.md). Transport-only — `record_request` never touches the log.
             let u = &completion.usage;
-            eprintln!(
-                "[usage: in {} · out {} · cache read {} · cache write {}]",
+            log::debug!(
+                "usage: in {} · out {} · cache read {} · cache write {}",
                 u.input_tokens,
                 u.output_tokens,
                 u.cache_read_input_tokens,
@@ -555,7 +555,7 @@ pub async fn run<F: Frontend, S: Spotter>(
             // (docs/transport.md). Unannounced, a multi-minute think ending at
             // the cap leaves the session sitting idle, reading as a hang.
             if hit_cap {
-                eprintln!("[turn ended at the output-token cap]");
+                log::debug!("turn ended at the output-token cap");
                 shared.notify(
                     "turn".to_string(),
                     "The last model turn ended at the output-token cap — what it \

@@ -368,7 +368,7 @@ impl Session {
             .open(path)
         {
             Ok(file) => *self.usage_log.lock().unwrap() = Some(io::BufWriter::new(file)),
-            Err(e) => eprintln!("[usage record: could not open {}: {e}]", path.display()),
+            Err(e) => log::warn!("usage record: could not open {}: {e}", path.display()),
         }
     }
 
@@ -433,7 +433,7 @@ impl Session {
             .map_err(io::Error::other)
             .and_then(|json| writeln!(sink, "{json}").and_then(|()| sink.flush()));
         if let Err(e) = written {
-            eprintln!("[usage record: write failed: {e}]");
+            log::warn!("usage record: write failed: {e}");
         }
     }
 

@@ -120,11 +120,11 @@ impl Session {
                     ..
                 }),
                 false,
-            ) => eprintln!(
-                "[{name} skipping: the last ping generated {output_tokens} output tokens, \
-                 more than a refresh of a {prefix_tokens}-token prefix repays]"
+            ) => log::debug!(
+                "{name} skipping: the last ping generated {output_tokens} output tokens, \
+                 more than a refresh of a {prefix_tokens}-token prefix repays"
             ),
-            (None, true) => eprintln!("[{name} resumed: the prefix now repays a ping]"),
+            (None, true) => log::debug!("{name} resumed: the prefix now repays a ping"),
             _ => {}
         }
         *current = skip;

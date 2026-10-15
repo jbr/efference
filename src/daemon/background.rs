@@ -302,7 +302,7 @@ impl Session {
     pub(crate) fn append_process_event(&self, event: crate::log::ProcessEvent) {
         let turn = self.latest_turn();
         if let Err(e) = self.append(turn, crate::log::Payload::ProcessEvent(event)) {
-            eprintln!("[process record: append failed: {e}]");
+            log::warn!("process record: append failed: {e}");
         }
     }
 

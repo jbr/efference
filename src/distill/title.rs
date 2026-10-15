@@ -88,7 +88,7 @@ impl ForkPeek {
         let title = match parsed {
             Ok(title) => Some(title),
             Err(why) => {
-                log::warn!("title peek produced no usable line; title unchanged — {why}");
+                log::debug!("title peek produced no usable line; title unchanged — {why}");
                 None
             }
         };

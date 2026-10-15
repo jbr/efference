@@ -293,7 +293,7 @@ pub async fn send(store: &Store, key: &p256::SecretKey, message: Message) -> Vec
     for subscription in subscriptions {
         let outcome = send_one(key, &subscription, &message, now).await;
         let (host, device) = device_label(&subscription.endpoint);
-        log::info!("push to {host} ({device}): {outcome:?}");
+        log::debug!("push to {host} ({device}): {outcome:?}");
         if matches!(outcome, DeliveryOutcome::Gone { .. })
             && let Err(e) = store.remove(&subscription.endpoint)
         {
@@ -306,7 +306,7 @@ pub async fn send(store: &Store, key: &p256::SecretKey, message: Message) -> Vec
         });
     }
     if devices.is_empty() {
-        log::info!("push has no subscribed devices");
+        log::debug!("push has no subscribed devices");
     }
     devices
 }

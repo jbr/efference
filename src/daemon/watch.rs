@@ -31,25 +31,25 @@ pub(crate) async fn config_watch_loop(shared: Arc<Session>, path: PathBuf) {
     }) {
         Ok(d) => d,
         Err(e) => {
-            eprintln!(
-                "[config-watch: could not start watcher for {}: {e}]",
+            log::warn!(
+                "config-watch: could not start watcher for {}: {e}",
                 path.display()
             );
             return;
         }
     };
     if let Err(e) = debouncer.watch(&dir, RecursiveMode::NonRecursive) {
-        eprintln!("[config-watch: could not watch {}: {e}]", dir.display());
+        log::warn!("config-watch: could not watch {}: {e}", dir.display());
         return;
     }
-    eprintln!("watching config: {}", path.display());
+    log::debug!("watching config: {}", path.display());
 
     while let Some(result) = rx.recv().await {
         let events = match result {
             Ok(events) => events,
             Err(errors) => {
                 for e in errors {
-                    eprintln!("[config-watch error: {e}]");
+                    log::warn!("config-watch error: {e}");
                 }
                 continue;
             }
@@ -89,7 +89,7 @@ pub(crate) fn refresh_and_emit(shared: &Session) -> Option<Refreshed> {
             // The revert put valid content back on disk, so a prior park (if any) is over —
             // the file parses again, which is the whole condition (docs/permissions.md).
             shared.clear_config_repair();
-            eprintln!("[config: edit did not parse, reverted to last good: {error}]");
+            log::debug!("config: edit did not parse, reverted to last good: {error}");
             shared.notify(
                 "config".to_string(),
                 format!(
@@ -110,7 +110,7 @@ pub(crate) fn refresh_and_emit(shared: &Session) -> Option<Refreshed> {
             // loop on it (docs/permissions.md) rather than running on indefinitely under a policy
             // the file no longer shows. Safe to make terminal because a config write is never
             // autonomous, so there is always an owner to do the repair.
-            eprintln!("[config: edit did not parse AND the revert failed: {error} / {io}]");
+            log::warn!("config: edit did not parse AND the revert failed: {error} / {io}");
             shared.notify(
                 "config".to_string(),
                 format!(
@@ -158,7 +158,7 @@ pub(crate) fn refresh_and_emit(shared: &Session) -> Option<Refreshed> {
             .map(|e| e.to_string())
             .collect::<Vec<_>>()
             .join("; ");
-        eprintln!("[config: unresolved [env] reference: {detail}]");
+        log::debug!("config: unresolved [env] reference: {detail}");
         shared.notify(
             "config".to_string(),
             format!(
@@ -187,7 +187,7 @@ pub(crate) fn refresh_and_emit(shared: &Session) -> Option<Refreshed> {
             note: "config file edited".into(),
         };
         if let Err(e) = shared.append(turn, Payload::ConfigEdit(edit)) {
-            eprintln!("[config-watch: append failed: {e}]");
+            log::warn!("config-watch: append failed: {e}");
         }
     }
     Some(Refreshed::Adopted(file_config))

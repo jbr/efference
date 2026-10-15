@@ -257,7 +257,7 @@ pub fn add(
 }
 
 /// Undo [`add`] after a failed boot: remove the worktree, then its branch. Best effort;
-/// a failure is named on stderr, the boot report's surface.
+/// a failure is named on the log (`warn`).
 pub fn remove(project: &Path, path: &Path, branch: &str, env: &crate::env_table::ChildEnv) {
     let path = path.to_string_lossy();
     for args in [
@@ -266,12 +266,12 @@ pub fn remove(project: &Path, path: &Path, branch: &str, env: &crate::env_table:
     ] {
         match git(project, env, &args) {
             Ok(output) if output.status.success() => {}
-            Ok(output) => eprintln!(
-                "[worktree: `git {}` failed: {}]",
+            Ok(output) => log::warn!(
+                "worktree: `git {}` failed: {}",
                 args.join(" "),
                 combined(&output).trim()
             ),
-            Err(e) => eprintln!("[worktree: {e}]"),
+            Err(e) => log::warn!("worktree: {e}"),
         }
     }
 }

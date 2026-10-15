@@ -210,6 +210,7 @@ impl Host {
         // than the host's defaults (docs/tools.md). A resume adopts, so this is
         // where its `Hosted.options` comes from.
         self.record_options(&id, options);
+        log::info!("session {id}: resumed");
         Ok(Resume::Resumed)
     }
 }
@@ -243,7 +244,6 @@ impl From<String> for ResumeRefused {
     }
 }
 
-/// `PATCH /sessions/:session`: change one session's state. Mounted on every host
 /// `PATCH /sessions/:session`: change one session's state. Mounted on every host
 /// listener beside `DELETE /sessions/:session`, and registered ahead of the
 /// `/sessions/:session/*` wildcard so the session is not resolved into conn state

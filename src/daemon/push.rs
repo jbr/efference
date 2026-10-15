@@ -112,7 +112,7 @@ impl Session {
             event,
         };
         if let Err(e) = self.append(turn, Payload::Telemetry(Telemetry::Push(record))) {
-            eprintln!("[push record: append failed: {e}]");
+            log::warn!("push record: append failed: {e}");
         }
     }
 

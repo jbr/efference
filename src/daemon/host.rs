@@ -220,11 +220,11 @@ impl Host {
         tokio::spawn(async move {
             let status = match runtime.finished().await {
                 Ok(()) => {
-                    eprintln!("session {id}: ended");
+                    log::info!("session {id}: ended");
                     super::status::SessionStatus::Ended
                 }
                 Err(e) => {
-                    eprintln!("session {id}: ended with error: {e}");
+                    log::warn!("session {id}: ended with error: {e}");
                     super::status::SessionStatus::Failed {
                         error: e.to_string(),
                     }
@@ -383,6 +383,12 @@ impl Host {
             // the `Session`'s drop is what lets a resume follow the archive at once:
             // an open SSE stream or a handler can still be holding the session.
             hosted.session.close_log();
+            // Announced only for a deliberate archive: a host shutdown cascades
+            // sessions through here with `archiving` false, and a dying host has
+            // nothing to announce to.
+            if archiving {
+                log::info!("session {id}: archived");
+            }
             retired
         })
     }
@@ -408,7 +414,7 @@ async fn retire_worktree(session: &Arc<Session>, id: &str) -> Option<crate::work
     if let Some(event) = retired.clone().into_event(&project, id)
         && let Err(e) = session.append(0, crate::log::Payload::Worktree(event))
     {
-        eprintln!("session {id}: could not log the worktree outcome: {e}");
+        log::warn!("session {id}: could not log the worktree outcome: {e}");
     }
     (retired != crate::worktree::Retired::Absent).then_some(retired)
 }
@@ -627,7 +633,7 @@ pub async fn serve_host(
             },
             App::Host,
         ));
-    eprintln!("host socket: {}", socket.display());
+    log::info!("host socket: {}", socket.display());
     let mut _tcp_server = None;
     if let Some((auth, listener)) = web {
         let open = listener.open;
@@ -648,18 +654,18 @@ pub async fn serve_host(
         if let Some(bound) = handle.info().await.tcp_socket_addr() {
             auth.bound_port(bound.port());
         }
-        eprintln!("web: {} (bound {addr})", auth.public_base());
+        log::info!("web: {} (bound {addr})", auth.public_base());
         let link = auth.mint_link();
         match &link {
-            Some(link) => eprintln!("  {link}"),
+            Some(link) => log::info!("  {link}"),
             None => {
-                eprintln!("  (every current code is used; a link minted in half a minute works)")
+                log::info!("  (every current code is used; a link minted in half a minute works)")
             }
         }
         if let Some(link) = link.filter(|_| open)
             && webbrowser::open(&link).is_err()
         {
-            eprintln!("[could not open a browser for {link}]");
+            log::warn!("could not open a browser for {link}");
         }
         _tcp_server = Some(handle);
     }

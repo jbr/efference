@@ -30,8 +30,8 @@ pub(super) struct MintedWorktree {
 }
 
 impl Minted {
-    /// Remove what this attempt minted, naming anything that resists on stderr —
-    /// the boot report's surface. A failed removal is not escalated: the
+    /// Remove what this attempt minted, naming anything that resists on the log
+    /// (`warn`). A failed removal is not escalated: the
     /// preparation error the caller is already returning is the one that matters.
     pub(super) fn roll_back(self) {
         if let Some(w) = &self.worktree {
@@ -41,15 +41,15 @@ impl Minted {
             && let Err(e) = std::fs::remove_dir_all(dir)
             && e.kind() != std::io::ErrorKind::NotFound
         {
-            eprintln!("[session dir: could not remove {}: {e}]", dir.display());
+            log::warn!("session dir: could not remove {}: {e}", dir.display());
         }
         match (&self.scratch, self.keep_scratch) {
-            (Some(scratch), true) => eprintln!("scratch kept: {}", scratch.display()),
+            (Some(scratch), true) => log::debug!("scratch kept: {}", scratch.display()),
             (Some(scratch), false) => {
                 if let Err(e) = std::fs::remove_dir_all(scratch)
                     && e.kind() != std::io::ErrorKind::NotFound
                 {
-                    eprintln!("[scratch: could not remove {}: {e}]", scratch.display());
+                    log::warn!("scratch: could not remove {}: {e}", scratch.display());
                 }
             }
             (None, _) => {}

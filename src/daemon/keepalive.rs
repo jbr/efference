@@ -276,14 +276,14 @@ pub(crate) async fn keepalive_loop(spec: KeepaliveSpec, shared: Arc<Session>) {
                     CacheLineage::Main => shared.record_keepalive(request),
                     CacheLineage::Triage => shared.record_triage_keepalive(request),
                 }
-                eprintln!("[{name}: cache read {cache_read} — TTL refreshed]");
+                log::debug!("{name}: cache read {cache_read} — TTL refreshed");
             }
             // A rejected *request* is rejected identically next tick, so retrying it
             // at the check cadence only reprints the same line for the life of the
             // pause. Terminal for the session; transient failures (5xx, network,
             // timeouts, rate limits) keep retrying.
             Err(e) if e.is_permanent() => {
-                eprintln!("[{name} rejected by the upstream: {e}; {name} off for this session]");
+                log::debug!("{name} rejected by the upstream: {e}; {name} off for this session");
                 shared.set_keepalive_skipped(
                     lineage,
                     Some(KeepaliveSkip {
@@ -299,7 +299,7 @@ pub(crate) async fn keepalive_loop(spec: KeepaliveSpec, shared: Arc<Session>) {
             // sends as a 429) answers every ping identically until then; one line,
             // and no pings until the next real turn.
             Err(e) if e.is_exhausted() => {
-                eprintln!("[{name} paused until the next turn: {e}]");
+                log::debug!("{name} paused until the next turn: {e}");
                 shared.set_keepalive_skipped(
                     lineage,
                     Some(KeepaliveSkip {
@@ -312,7 +312,7 @@ pub(crate) async fn keepalive_loop(spec: KeepaliveSpec, shared: Arc<Session>) {
                 );
                 exhausted_at = Some(turn);
             }
-            Err(e) => eprintln!("[{name} failed: {e}]"),
+            Err(e) => log::debug!("{name} failed: {e}"),
         }
     }
 }

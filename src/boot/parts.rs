@@ -84,14 +84,14 @@ pub(super) async fn mount_toolbox(inputs: ToolboxInputs<'_>) -> Result<MountedTo
         .expect("the main model's provider serves turns");
     let illegal = toolbox.illegal_names(dialect);
     if !illegal.is_empty() {
-        for problem in &illegal {
-            eprintln!("error: tool name {problem}");
-        }
+        // Each problem rides the returned error: the create response is where
+        // the operator reads it, and no print repeats it.
         return Err(format!(
-            "{} mounted tool name{} the {} dialect rejects",
+            "{} mounted tool name{} the {} dialect rejects: {}",
             illegal.len(),
             if illegal.len() == 1 { "" } else { "s" },
-            dialect
+            dialect,
+            illegal.join("; ")
         )
         .into());
     }
@@ -135,8 +135,9 @@ pub(super) fn freeze_preamble(
     ) {
         Ok(resolved) => resolved,
         Err(e) => {
-            eprintln!("error: {e}");
-            return Err("could not resolve [context] entries".into());
+            // The failure rides the returned error: the create response is
+            // where the operator reads it, and no print repeats it.
+            return Err(format!("could not resolve [context] entries: {e}").into());
         }
     };
     // Mask the resolved sections *before* rendering (docs/env.md). The preamble is
@@ -192,7 +193,7 @@ pub(super) fn build_client(
     // outright with fallbacks disabled.
     let upstream = crate::api::Upstream::pinned(upstream);
     if let Some(pin) = &upstream {
-        eprintln!("upstream: {} (fallbacks disabled)", pin.order.join(", "));
+        log::debug!("upstream: {} (fallbacks disabled)", pin.order.join(", "));
     }
     let mut client = Client::new(endpoint.clone(), model, system, temperature)
         .with_upstream(upstream.clone())
@@ -234,9 +235,11 @@ pub(super) async fn mount_spotter(
 ) -> Result<MountedSpotter, Error> {
     let (spotter_selection, mut spotter_endpoint) = inference.spotter();
     let spotter_model = spotter_selection.model.clone();
-    eprintln!(
+    log::debug!(
         "spotter: {}/{} ({})",
-        spotter_selection.connection, spotter_selection.model, spotter_selection.provider
+        spotter_selection.connection,
+        spotter_selection.model,
+        spotter_selection.provider
     );
     spotter_endpoint.session_id = main_endpoint.session_id.clone();
     // The spotter's model is validated against *its* provider's metadata source,
@@ -284,7 +287,7 @@ pub(super) async fn mount_spotter(
         directories.clone(),
     )
     .with_thinking(thinking);
-    eprintln!("spotter rung: {}", spotter.kind());
+    log::debug!("spotter rung: {}", spotter.kind());
     Ok(spotter)
 }
 
@@ -318,7 +321,7 @@ pub(super) async fn mount_distiller(
             )
             .await
             .map_err(|error| format!("triage model: {error}"))?;
-            eprintln!(
+            log::debug!(
                 "triage: {}/{} ({}) · context {} · thinking {} · tool choice {}",
                 selection.connection,
                 selection.model,
@@ -334,7 +337,7 @@ pub(super) async fn mount_distiller(
             (peek, caps.prices)
         }
         None => {
-            eprintln!("triage: {model} (shared main client)");
+            log::debug!("triage: {model} (shared main client)");
             (ForkPeek::shared(), None)
         }
     })

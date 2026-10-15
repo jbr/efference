@@ -122,8 +122,8 @@ session), `kind` (`gate`, `ask`, `settle`), and an `event`:
   cut to 120 characters). An empty `devices` means nothing was subscribed.
 
 `crate::push::send` returns the per-device answers; the spawned send task appends them
-through a weak handle on the session. The same answers go to the host's stderr
-(`log::info!`, with `warn!` for prune failures). A `sent` or `escalated` with no
+through a weak handle on the session. The same answers go to the host's log
+(`log::debug!`, with `warn!` for prune failures). A `sent` or `escalated` with no
 `delivery` after it means the host had no root installed (no binding), so it could not
 send.
 

@@ -174,10 +174,7 @@ impl Session {
             ConfigSource::Path(path) => match crate::config::ConfigFile::load(path) {
                 Ok(file) => Some(file),
                 Err(e) => {
-                    eprintln!(
-                        "[config: could not open {} for editing: {e}]",
-                        path.display()
-                    );
+                    log::warn!("config: could not open {} for editing: {e}", path.display());
                     None
                 }
             },

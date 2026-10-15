@@ -167,6 +167,7 @@ impl Host {
             self.inference.history().record(pick);
         }
         self.remembered.record(&launch);
+        log::info!("session {id}: created in {}", scope.cwd.display());
         Ok(id)
     }
 }

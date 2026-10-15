@@ -214,8 +214,8 @@ impl SessionRuntime {
                 Arc::clone(&session),
             )));
         } else if !cacheable {
-            eprintln!(
-                "[keepalive off: {} reports no prompt cache behind this model]",
+            log::debug!(
+                "keepalive off: {} reports no prompt cache behind this model",
                 client.endpoint().provider.name()
             );
         }
@@ -281,7 +281,7 @@ impl SessionRuntime {
             let result = match loop_swansong.interrupt(run).await {
                 Some(result) => result,
                 None => {
-                    eprintln!("\nshutting down");
+                    log::debug!("turn loop interrupted; shutting down");
                     Ok(())
                 }
             };
@@ -295,11 +295,11 @@ impl SessionRuntime {
             // retained as a post-mortem artifact.
             if let Some(scratch) = scratch {
                 if keep_scratch {
-                    eprintln!("scratch kept: {}", scratch.display());
+                    log::debug!("scratch kept: {}", scratch.display());
                 } else if let Err(e) = std::fs::remove_dir_all(&scratch)
                     && e.kind() != std::io::ErrorKind::NotFound
                 {
-                    eprintln!("[scratch: could not remove {}: {e}]", scratch.display());
+                    log::warn!("scratch: could not remove {}: {e}", scratch.display());
                 }
             }
             let _ = done.send(result);

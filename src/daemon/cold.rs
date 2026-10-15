@@ -152,7 +152,7 @@ impl Session {
     fn record_cold(&self, event: ColdEvent) {
         let turn = self.latest_turn();
         if let Err(e) = self.append(turn, Payload::Telemetry(Telemetry::Cold(event))) {
-            eprintln!("[cold record: append failed: {e}]");
+            log::warn!("cold record: append failed: {e}");
         }
     }
 
@@ -203,8 +203,8 @@ impl Session {
                 return self.unpark_cold(UnparkCause::Person);
             }
             if !self.cold_parked.swap(true, Ordering::SeqCst) {
-                eprintln!(
-                    "(cold — waiting for a person before reading the expired cache, or a fold)"
+                log::debug!(
+                    "cold — waiting for a person before reading the expired cache, or a fold"
                 );
                 self.record_cold(ColdEvent::Parked {
                     reason: ColdReason::Expired,

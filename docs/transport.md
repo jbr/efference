@@ -50,7 +50,7 @@ hard error, never a silent drop. The API surface is explicit about what the
 assembler knows how to handle; anything outside that set stops assembly
 immediately and loudly rather than silently losing data — the refusal becomes
 the completion's `upstream_failure` (below), so it survives to the log rather
-than only to stderr.
+than only to a transient terminal line.
 
 *Finalized-or-marked.* The assembler tracks whether the stream **finalized**
 (`message_stop` observed, or `[DONE]`). A stream that dies without finalizing —
@@ -417,7 +417,8 @@ daemon's own `message` names what happened and not which key recovers it.
 harness is in a position to describe the failure to it, the harness has already
 recovered from it — and the description is not neutral: a serde parse error
 delivered to the inbox is something the model then reasons about mid-task. So the audiences are the **log** (a record-only entry per
-failed attempt, for audit), **stderr** (live operator text), and the **operator's
+failed attempt, for audit), the **host's log output** (`warn` — live operator
+text, visible at the default level), and the **operator's
 state topics** (`upstream_retry` while a retry is in flight, `stall` once a
 budget is spent). Nothing on these paths posts to the inbox.
 
@@ -584,8 +585,8 @@ cached prefix.
 
 An exhausted *open* failure (the retry handler gave up) is recorded before it is
 judged: the loop appends an empty record-only assistant entry carrying the error
-body — Anthropic's 4xx bodies name exactly what was malformed, and the log is the
-durable file where stderr is not. A transient one then takes the schedule like an
+body — Anthropic's 4xx bodies name exactly what was malformed, and the log is
+durable where the host's terminal output is not. A transient one then takes the schedule like an
 aborted stream. A terminal one fails the current trajectory rather than the
 daemon: it sets `stall` with `reason: "request_failed"` carrying that body as
 `detail`, and returns to idle. The model is told nothing either way, and the
