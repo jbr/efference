@@ -159,7 +159,9 @@ pub(super) fn commit_config_edit(
     if let Err(e) = shared.apply_config_change(&change) {
         // Nothing is appended, so effective policy is untouched — the gate stands, and the reason
         // names the file rather than implying the rule itself was refused.
-        log::warn!("config edit: could not write to the config file: {e}");
+        shared.warn(format_args!(
+            "config edit: could not write to the config file: {e}"
+        ));
         return Ok(Approval::Redirect(format!(
             "That grant could not be written to the session's config file, so it was not applied \
              and this call is still gated. The config file needs attention before policy can \

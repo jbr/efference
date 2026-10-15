@@ -458,7 +458,7 @@ pub async fn run<F: Frontend, S: Spotter>(
                     // stalls now, with the same audiences as exhaustion — the
                     // record-only entry, the log, and the stall topic carrying the
                     // provider's words.
-                    log::warn!("upstream refused the request: {why}");
+                    shared.warn(format_args!("upstream refused the request: {why}"));
                     shared.set_stall(stalled(
                         reason,
                         Some(aborted_attempts),
@@ -468,7 +468,9 @@ pub async fn run<F: Frontend, S: Spotter>(
                     break None;
                 }
                 let Some(pause) = stream_abort_backoff(aborted_attempts) else {
-                    log::warn!("upstream unusable, {aborted_attempts} attempts exhausted: {why}");
+                    shared.warn(format_args!(
+                        "upstream unusable, {aborted_attempts} attempts exhausted: {why}"
+                    ));
                     // An upstream failure is told to the operator and the log,
                     // never to the model (docs/transport.md): if we are in a
                     // position to describe the failure to it, we have already
@@ -531,7 +533,9 @@ pub async fn run<F: Frontend, S: Spotter>(
                 }
             }
             let calls = output.tool_calls().unwrap_or_else(|e| {
-                log::error!("finalized turn carried unparseable call arguments: {e}");
+                shared.error(format_args!(
+                    "finalized turn carried unparseable call arguments: {e}"
+                ));
                 Vec::new()
             });
             // Record cache/usage telemetry (surfaced on `GET /state`) and log a

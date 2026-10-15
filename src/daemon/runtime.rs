@@ -89,6 +89,7 @@ impl SessionRuntime {
         let scratch = toolbox.scratch_dir().map(std::path::Path::to_path_buf);
         let (session, turns) = Session::full(crate::daemon::SessionParts {
             role,
+            id: Some(paths.id().to_string()),
             scratch: scratch.clone(),
             upstream_failure: client.upstream_failure(),
             upstream_retry: client.upstream_retry(),

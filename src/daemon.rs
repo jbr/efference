@@ -102,6 +102,13 @@ pub enum StreamDelta {
     NarratorThinking { text: String },
 }
 
+/// The prefix session-scoped log lines carry, the shape the lifecycle
+/// announcements use (docs/control-channel.md). Empty when there is no id —
+/// tests, offline sessions — leaving the line unattributed.
+pub(crate) fn session_id_prefix(id: Option<&str>) -> String {
+    id.map(|id| format!("session {id}: ")).unwrap_or_default()
+}
+
 /// A session's state and control surface (docs/control-channel.md).
 /// The loop and HTTP handlers hold the same `Arc<Session>`; the runtime owns the
 /// listener and wires the agent future and auxiliary tasks.
@@ -109,6 +116,9 @@ pub struct Session {
     /// Immutable: the project (config, grants) and the working directory (tools and
     /// child execution), which differ only inside a worktree (docs/control-channel.md).
     directories: crate::policy::Directories,
+    /// The session's id — the storage directory's name, known at boot
+    /// (docs/control-channel.md). None in tests and offline sessions.
+    id: Option<String>,
     /// The parent of the session's storage dir — the `.efference/` base every
     /// session in this project shares (docs/tools.md). The in-session `sessions`
     /// mount scopes its listing and target resolution to it. Set once by the
@@ -464,6 +474,18 @@ impl Session {
     /// when the runtime set one (docs/tools.md).
     pub fn storage_base(&self) -> Option<&std::path::Path> {
         self.storage_base.get().map(PathBuf::as_path)
+    }
+
+    /// Log a session-scoped warning with the session's id prefixed, the shape
+    /// the lifecycle announcements use (docs/control-channel.md). Unattributed
+    /// when the session has no id (tests, offline sessions).
+    pub fn warn(&self, args: std::fmt::Arguments<'_>) {
+        log::warn!("{}{args}", session_id_prefix(self.id.as_deref()));
+    }
+
+    /// The same, at error level.
+    pub fn error(&self, args: std::fmt::Arguments<'_>) {
+        log::error!("{}{args}", session_id_prefix(self.id.as_deref()));
     }
 
     /// The environment every child this session spawns receives — the base its

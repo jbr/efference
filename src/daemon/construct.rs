@@ -24,6 +24,10 @@ pub(crate) struct SessionParts {
     /// (docs/log-and-projection.md).
     pub image_placement: ImagePlacement,
     pub env_policy: crate::env_table::EnvPolicy,
+    /// The session's id — the storage directory's name, known at boot
+    /// (docs/control-channel.md). None in tests and offline sessions, whose
+    /// log lines print unattributed.
+    pub id: Option<String>,
 }
 
 impl SessionParts {
@@ -33,6 +37,7 @@ impl SessionParts {
     pub(crate) fn new(directories: crate::policy::Directories, log: Log) -> Self {
         Self {
             directories,
+            id: None,
             log,
             role: LoadedConfig::default(),
             scratch: None,
@@ -116,6 +121,7 @@ impl Session {
     pub(crate) fn full(parts: SessionParts) -> (Arc<Self>, mpsc::UnboundedReceiver<SubmittedTurn>) {
         let SessionParts {
             directories,
+            id,
             mut log,
             mut role,
             scratch,
@@ -174,7 +180,11 @@ impl Session {
             ConfigSource::Path(path) => match crate::config::ConfigFile::load(path) {
                 Ok(file) => Some(file),
                 Err(e) => {
-                    log::warn!("config: could not open {} for editing: {e}", path.display());
+                    log::warn!(
+                        "{}config: could not open {} for editing: {e}",
+                        session_id_prefix(id.as_deref()),
+                        path.display()
+                    );
                     None
                 }
             },
@@ -183,6 +193,7 @@ impl Session {
         let shared = Arc::new_cyclic(|me| Self {
             pushes: push::PushState::new(me.clone()),
             directories,
+            id,
             storage_base: std::sync::OnceLock::new(),
             attachment_store: std::sync::OnceLock::new(),
             web_path: std::sync::OnceLock::new(),

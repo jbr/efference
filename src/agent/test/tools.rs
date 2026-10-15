@@ -111,16 +111,24 @@ async fn wait_wakes_for_a_notification_and_returns_its_body() {
 
 #[test]
 pub(super) fn cap_passes_through_results_under_the_limit() {
+    let (shared, _rx) = Session::new(
+        std::env::current_dir().unwrap(),
+        crate::persist::Log::in_memory(),
+    );
     let r = RawResult::text("a".repeat(MAX_TOOL_RESULT_BYTES));
-    let capped = cap_tool_result(&call("search"), r);
+    let capped = cap_tool_result(&shared, &call("search"), r);
     assert!(!capped.is_error);
     assert_eq!(capped.content.len(), MAX_TOOL_RESULT_BYTES);
 }
 
 #[test]
 pub(super) fn cap_turns_oversized_results_into_a_hard_error_with_a_head() {
+    let (shared, _rx) = Session::new(
+        std::env::current_dir().unwrap(),
+        crate::persist::Log::in_memory(),
+    );
     let huge = "x".repeat(MAX_TOOL_RESULT_BYTES + 1);
-    let capped = cap_tool_result(&call("search"), RawResult::text(huge));
+    let capped = cap_tool_result(&shared, &call("search"), RawResult::text(huge));
     assert!(capped.is_error, "over-cap result must be a hard error");
     // The result carries the explanation + head, not the megabytes.
     assert!(
@@ -142,8 +150,12 @@ pub(super) fn cap_turns_oversized_results_into_a_hard_error_with_a_head() {
 #[test]
 pub(super) fn cap_head_is_char_boundary_safe() {
     // 4-byte chars straddling the 1KB head boundary.
+    let (shared, _rx) = Session::new(
+        std::env::current_dir().unwrap(),
+        crate::persist::Log::in_memory(),
+    );
     let huge = "🦀".repeat(MAX_TOOL_RESULT_BYTES); // 4 bytes each → well over the cap
-    let capped = cap_tool_result(&call("read"), RawResult::text(huge));
+    let capped = cap_tool_result(&shared, &call("read"), RawResult::text(huge));
     assert!(capped.is_error);
     // Round-trips as valid UTF-8 (the test would not even construct otherwise, but
     // assert the head contains whole crabs).

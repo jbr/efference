@@ -179,6 +179,7 @@ behind a change, see [`journal/`](journal/).
 ### Changed
 
 - **`efference host` is quiet by default** (docs/control-channel.md): with `RUST_LOG` unset it announces session lifecycle (created, resumed, archived, ended — `info`) and transport/operational failures (`warn`/`error`) and nothing else; boot-report lines, turn-loop chatter, keepalive, and model prose log at `debug`, and boot-failure detail rides the create refusal instead of a print.
+- **Session-scoped host log lines carry the session's id** (docs/control-channel.md): the `warn`/`error` lines from the agent loop, tool-result capping, and config watching are prefixed `session <id>: …` like the lifecycle announcements; the id lives on `Session`, set at construction from the storage directory's name.
 - **The web app icon is the schwa from the site favicon**, in place of the Newsreader `e` (docs/web-client.md).
 - **The installed web app launches on a centred Newsreader wordmark in its theme's page colour (iOS), in place of white**, from generated startup images (docs/web-client.md "Installability"); the page that follows starts in the same colour, with no white gap under the dev server.
 - **Session log format version 2** (docs/log-and-projection.md): telemetry payloads (tool measurements, dispatch markers, request stages, push and cold-check steps) nest under one `Telemetry` key, and their frame kinds read `telemetry.<variant>`; version-1 logs are refused, and `scripts/migrate-log-v2.py` converts them.

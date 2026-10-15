@@ -31,15 +31,18 @@ pub(crate) async fn config_watch_loop(shared: Arc<Session>, path: PathBuf) {
     }) {
         Ok(d) => d,
         Err(e) => {
-            log::warn!(
+            shared.warn(format_args!(
                 "config-watch: could not start watcher for {}: {e}",
                 path.display()
-            );
+            ));
             return;
         }
     };
     if let Err(e) = debouncer.watch(&dir, RecursiveMode::NonRecursive) {
-        log::warn!("config-watch: could not watch {}: {e}", dir.display());
+        shared.warn(format_args!(
+            "config-watch: could not watch {}: {e}",
+            dir.display()
+        ));
         return;
     }
     log::debug!("watching config: {}", path.display());
@@ -49,7 +52,7 @@ pub(crate) async fn config_watch_loop(shared: Arc<Session>, path: PathBuf) {
             Ok(events) => events,
             Err(errors) => {
                 for e in errors {
-                    log::warn!("config-watch error: {e}");
+                    shared.warn(format_args!("config-watch error: {e}"));
                 }
                 continue;
             }
@@ -110,7 +113,9 @@ pub(crate) fn refresh_and_emit(shared: &Session) -> Option<Refreshed> {
             // loop on it (docs/permissions.md) rather than running on indefinitely under a policy
             // the file no longer shows. Safe to make terminal because a config write is never
             // autonomous, so there is always an owner to do the repair.
-            log::warn!("config: edit did not parse AND the revert failed: {error} / {io}");
+            shared.warn(format_args!(
+                "config: edit did not parse AND the revert failed: {error} / {io}"
+            ));
             shared.notify(
                 "config".to_string(),
                 format!(
@@ -187,7 +192,7 @@ pub(crate) fn refresh_and_emit(shared: &Session) -> Option<Refreshed> {
             note: "config file edited".into(),
         };
         if let Err(e) = shared.append(turn, Payload::ConfigEdit(edit)) {
-            log::warn!("config-watch: append failed: {e}");
+            shared.warn(format_args!("config-watch: append failed: {e}"));
         }
     }
     Some(Refreshed::Adopted(file_config))

@@ -118,7 +118,7 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
         }
         let started = std::time::Instant::now();
         let (result, reply) = ask_result(shared, call, ask_at).await;
-        let result = cap_tool_result(call, result);
+        let result = cap_tool_result(shared, call, result);
         let telemetry = Box::new(telemetry::observe(
             call,
             &result,
@@ -462,9 +462,10 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
             // Bound the result before it touches anything (defense in depth): the fork
             // peek, the wire, and the logged `raw`. An over-cap result becomes a hard error
             // so the model narrows the call.
-            let result = cap_tool_result(call, result);
+            let result = cap_tool_result(shared, call, result);
             // A config write is the one call whose *effect* is decided after it runs
             // (docs/permissions.md): the file must always parse, so we re-read it here —
+
             // synchronously, before the result is logged — and either adopt the edit or
             // revert it. Reverting turns the result into an error carrying the parse
             // failure, so the author learns its edit didn't take *in the tool result it's
