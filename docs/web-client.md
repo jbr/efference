@@ -8,6 +8,19 @@ a client of the same `/v1` surface as everything else ([control-api.md](control-
 — it holds one stream connection and derives everything from its frames, exactly as
 the reference TUI does.
 
+## UI development tools
+
+For UI polish and transient-state debugging in a dev build:
+
+- **Component gallery:** open `/?gallery` for fixture-driven components and composed
+  transcript states. See [The design gallery](#the-design-gallery--websrcgallery).
+- **Stream tape and replay API:** use `window.__scrub` to `hold()`, `step(n)`,
+  `seek(n)`, and `resume()` the session's incoming frames. `tapes()` lists saved
+  recordings; `restore()` loads an earlier recording. This lets browser automation
+  inspect an interim state without racing the live stream. See
+  [Scrubbing the stream](#scrubbing-the-stream--websrcsessionrecordts) for semantics,
+  persistence, and the DOM-event API.
+
 ## Positions (from the plan that gated it)
 
 - **Parity of information, not parity of interface.** The transcript is whole and
@@ -388,14 +401,12 @@ What narrow changes:
 - **The label gutter stacks.** The entry grid drops to one column — label above
   content, left-aligned — because a 6rem gutter plus insets is ~40% of a phone's
   width. The user turn's accent border is on the content, so it survives.
-- **Every tool's result truncates to a glance** — 4 lines, the `⋯ N more lines`
-  marker, the note — because at 32ch a long result is minutes of scrolling. The
-  tap-to-inspect sheet holds the body; this is the drill-down posture arriving
-  empirically. Desktop keeps read/write-only truncation at 12. A call's elided
-  argument (a write's contents) truncates on the width's budget at *both*
-  widths — the inspector's args tab holds the whole — and the marker appends
-  `· tap to inspect` on narrow, because touch has no hover to discover the
-  affordance with.
+- **Tool results expand inline** at both widths: up to 20 retained lines show
+  whole; longer selections initially show ten. Omission rows reveal captured
+  context or additional retained lines. Call arguments still truncate at 12
+  lines on desktop and 4 on narrow screens, with the inspector holding the whole.
+  The argument marker adds `· tap to inspect` on narrow screens because touch
+  has no hover to discover the affordance with.
 - **The inspector is a full-width sheet** (`100vw` overriding the persisted
   inline width; the resize grip hides — it has no touch meaning).
 - **The composer band collapses when unfocused** to reclaim the dock's third of
@@ -743,7 +754,7 @@ chip's resolved command) is budgeted as an upper bound, and a wide character cou
 as one column; either can overrun a row, which then wraps as text rather than clipping.
 Before the first measurement the signature renders flat.
 
-Call bodies truncate on the same budget results do, at both widths
+Call bodies truncate at both widths
 (`ui/truncate.ts`: 12 lines at desktop, 4 on the phone) — which is what stopped
 a `write` from printing the whole file into the transcript.
 
@@ -1652,7 +1663,7 @@ body is one click away. Other tools' results still render whole.
 
 `ui/inspector/FileOperation.tsx` provides file-specific inspection instead of generic tabs. Reads show captured per-file bodies; `fileCapture.ts` maps retained raw-result positions into each body, strips explicit ranged-read number/tab prefixes, and preserves original file-line coordinates. Captures may be partial, range-limited, or byte-truncated; they are not assumed to be whole historical files. Canonical capture paths confirm removal of range selectors for current-file navigation. Submitted write content comes from call arguments, with append labeled as appended bytes rather than a whole file. Failed/pending writes are qualified. Edit operations show the full recorded diff, not reconstructed whole-file history. Raw arguments/results, permission verdicts and curation remain under Details.
 
-`ui/RangeContent.tsx` is a display-only expansion component backed by captured original text and inclusive retained ranges. Gap rows reveal up to twelve lines from either edge; intersecting ranges merge. Retained lines have a gutter marker, and revealed context has the same text contrast. Highlighting runs over the full captured source before selecting visible rows, preserving grammar across gaps. Expansion never changes the agent's curated output. Changing the captured source resets expansion; unrelated renders preserve it. The gallery has plain and highlighted specimens.
+`ui/RangeContent.tsx` is a display-only expansion component backed by captured original text and inclusive retained ranges. The whole gap row is a button revealing up to ten lines per available edge; middle gaps use one ⇅ control to reveal both ends together. Intersecting ranges merge. Retained lines have a gutter marker, and revealed context has the same text contrast. Highlighting runs over the full captured source before selecting visible rows, preserving grammar across gaps. Expansion never changes the agent's curated output. Changing the captured source resets expansion; unrelated renders preserve it. The gallery has plain and highlighted specimens. `ui/ResultRanges.tsx` adapts transcript results to the same component, preserving raw-result coordinates through read framing removal and diff classification. Pending output uses the same numbered gutter as decided output, inside its bounded pinned box. Decided selections up to 20 lines show whole; longer selections start with ten visible retained lines. Expanding a hidden selection does not alter its retained status.
 
 ## The file viewer
 

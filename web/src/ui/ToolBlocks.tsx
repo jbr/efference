@@ -1,3 +1,4 @@
+import { ResultRanges } from "./ResultRanges.tsx";
 // Tool call and result blocks (docs/web-client.md): the display half over
 // the cordon's parse (`render/parse.ts`). A call renders as its intent, then
 // a pseudocode signature laid out at the column's width (`signature.ts`,
@@ -338,6 +339,24 @@ export function ResultBlock({
     () => resultRender(tool, shown, wire, distillate),
     [tool, shown, wire, distillate],
   );
+  const expandable =
+    wire === "Pending" ||
+    wire === "Raw" ||
+    (typeof wire === "object" &&
+      "Distilled" in wire &&
+      !(shown.content_elided && view.body.kind === "text"));
+  const ranges = (
+    <ResultRanges
+      tool={tool}
+      raw={shown}
+      wire={wire}
+      lang={
+        view.body.kind === "code" || view.body.kind === "numbered"
+          ? view.body.lang
+          : null
+      }
+    />
+  );
   const narrow = useNarrow();
   const { body, hidden } = useMemo(
     () => truncateBody(view.body, tool, narrow),
@@ -364,13 +383,15 @@ export function ResultBlock({
         // Raw output while triage runs, in the bounded box a running
         // command's tail uses; the verdict replaces it with the triaged body.
         <PinnedBox grows={shown.content} className="t-output">
-          <ResultBody body={body} />
+          {ranges}
         </PinnedBox>
+      ) : expandable ? (
+        ranges
       ) : (
         <ResultBody body={body} />
       )}
       <ResultImages seq={seq} images={shown.images ?? []} />
-      {hidden > 0 && <MoreLines hidden={hidden} />}
+      {!expandable && hidden > 0 && <MoreLines hidden={hidden} />}
       {whole.elided !== undefined && (
         // The affordance is the honest half of the marker in the head: the
         // reader is looking at a prefix, and this is where the rest lives.

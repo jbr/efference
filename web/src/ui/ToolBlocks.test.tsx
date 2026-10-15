@@ -17,7 +17,9 @@ test("a pending result renders raw output in the bounded box under the label", (
   );
   expect(markup).toContain("result (awaiting triage)");
   expect(markup).toContain("t-pinned");
-  expect(markup).toContain("line one\nline two");
+  expect(markup).toContain('class="line-body">line one');
+  expect(markup).toContain('class="line-body">line two');
+  expect(markup).toContain('class="range-content range-transcript"');
 });
 
 test("a decided result has neither the label nor the box", () => {
@@ -59,4 +61,73 @@ test("an unfinished scalar input uses the wrapping content body", () => {
   expect(markup).toContain(
     "code: async page =&gt; { await page.setViewportSize({width:390,height…",
   );
+});
+
+test("pending and distilled results use the same line gutter", () => {
+  for (const wire of [
+    "Pending",
+    { Distilled: { keep: "All", note: null } },
+  ] as const) {
+    const markup = renderToStaticMarkup(
+      <ResultBlock tool="bash" seq={2} raw={raw} wire={wire} />,
+    );
+    expect(markup.match(/class="lineno"/g)).toHaveLength(2);
+    expect(markup.match(/class="line-body"/g)).toHaveLength(2);
+  }
+});
+
+test("short results display whole; longer results start with ten expandable rows", () => {
+  for (const count of [14, 20, 21]) {
+    const markup = renderToStaticMarkup(
+      <ResultBlock
+        tool="bash"
+        seq={2}
+        raw={{
+          content: Array.from({ length: count }, (_, i) => `row ${i + 1}`).join(
+            "\n",
+          ),
+          is_error: false,
+        }}
+        wire={{ Distilled: { keep: "All", note: null } }}
+      />,
+    );
+    expect(markup.match(/class="line-body"/g)).toHaveLength(
+      count <= 20 ? count : 10,
+    );
+    expect(markup.includes('class="range-gap"')).toBe(count > 20);
+  }
+});
+
+test("read ranges strip sentinels but retain raw verdict coordinates", () => {
+  const markup = renderToStaticMarkup(
+    <ResultBlock
+      tool="read"
+      seq={2}
+      raw={{
+        content:
+          "==token BEGIN example.ts, LENGTH: 2==\nconst a = 1;\nconst b = 2;\n==token END example.ts==",
+        is_error: false,
+      }}
+      wire={{ Distilled: { keep: { Ranges: [[3, 3]] }, note: null } }}
+    />,
+  );
+  expect(markup).toContain('data-line="3"');
+  expect(markup).toContain("const b = 2;");
+  expect(markup).not.toContain("const a = 1;");
+  expect(markup).not.toContain("BEGIN example");
+  expect(markup).toContain('class="range-gap"');
+});
+
+test("edit ranges preserve diff classification and raw coordinates", () => {
+  const markup = renderToStaticMarkup(
+    <ResultBlock
+      tool="undo_edit"
+      seq={2}
+      raw={{ content: "changed\n===DIFF===\n-old\n+new", is_error: false }}
+      wire={{ Distilled: { keep: { Ranges: [[4, 4]] }, note: null } }}
+    />,
+  );
+  expect(markup).toContain('data-line="4"');
+  expect(markup).toContain("diff-added");
+  expect(markup).not.toContain("===DIFF===");
 });

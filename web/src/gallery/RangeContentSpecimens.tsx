@@ -16,7 +16,7 @@ const plain = Array.from(
 export function RangeContentSpecimens() {
   return (
     <>
-      <Specimen name="Captured source · gutter marks retained lines · expand either edge of a gap">
+      <Specimen name="Captured source · gutter marks retained lines · expand both ends of a middle gap">
         <RangeContent
           text={code}
           retained={[

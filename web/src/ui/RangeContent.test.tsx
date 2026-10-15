@@ -45,9 +45,7 @@ test("expands both sides, merges ranges, and resets for a different captured sou
         expect(button).toBeDefined();
         button!.click();
       });
-    click("Show 4 lines after line 4");
-    expect(numbers()).toEqual([3, 4, 5, 6, 7, 8, 12, 13]);
-    click("Show 3 lines before line 12");
+    click("Show 7 omitted lines from both ends");
     expect(numbers()).toEqual(Array.from({ length: 11 }, (_, i) => i + 3));
     expect(host.querySelectorAll(".is-retained")).toHaveLength(4);
     expect(new Set(numbers()).size).toBe(numbers().length);
@@ -57,6 +55,40 @@ test("expands both sides, merges ranges, and resets for a different captured sou
       ),
     );
     expect(numbers()).toEqual([3, 4, 12, 13]);
+  } finally {
+    act(() => root.unmount());
+  }
+});
+
+test("default middle expansion reveals ten lines from each edge without changing retention", () => {
+  const host = document.createElement("div");
+  const root = createRoot(host);
+  try {
+    act(() =>
+      root.render(
+        <RangeContent
+          text={Array.from({ length: 40 }, (_, i) => `row ${i + 1}`).join("\n")}
+          retained={[
+            [1, 1],
+            [40, 40],
+          ]}
+        />,
+      ),
+    );
+    const button = host.querySelector<HTMLButtonElement>(".range-gap")!;
+    expect(button.textContent).toContain("⇅");
+    act(() => button.click());
+    const numbers = [...host.querySelectorAll("[data-line]")].map((e) =>
+      Number(e.getAttribute("data-line")),
+    );
+    expect(numbers).toEqual([
+      ...Array.from({ length: 11 }, (_, i) => i + 1),
+      ...Array.from({ length: 11 }, (_, i) => i + 30),
+    ]);
+    expect(host.querySelectorAll(".is-retained")).toHaveLength(2);
+    expect(host.querySelector(".range-gap")?.textContent).toContain(
+      "18 lines omitted",
+    );
   } finally {
     act(() => root.unmount());
   }
