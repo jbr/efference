@@ -710,6 +710,7 @@ type Dispositions = (Vec<(Seq, Disposition)>, Vec<(String, BgVerdict)>);
 #[cfg(test)]
 mod test;
 
+mod ask_variant;
 mod digest_view;
 mod handles;
 mod line_view;
@@ -722,6 +723,7 @@ mod schema;
 mod title;
 mod validate;
 
+use ask_variant::*;
 use handles::*;
 use line_view::*;
 use parse::*;
