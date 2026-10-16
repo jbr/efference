@@ -9,6 +9,7 @@ behind a change, see [`journal/`](journal/).
 
 ### Added
 
+- fs-mcp `read` closes its frame without a blank line when the file already ends in a newline, and labels the size `BYTES` rather than `LENGTH`; the TUI and web parsers accept both spellings (docs/tui.md).
 - The idle triage ask and the per-result inbox row define pin, leave, and dismiss in the same words and say nothing else will wake the agent; the "nothing changes" framing is gone (docs/inbox.md).
 - A triage view marks a result that carries images, and the ask says they reach the agent as they are, so notes stop claiming an image was not retained (docs/triage.md).
 - A triaged result says what was dropped (docs/triage.md): one that kept nothing opens with `(output dropped by triage)` before its note, a cut result ends with `@@ n lines total @@`, and trailing blank lines count as covered.

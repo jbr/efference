@@ -163,7 +163,7 @@ pub(in crate::tui) fn is_diff_tool(name: &str) -> bool {
     matches!(name, "edit" | "undo_edit" | "retarget_edit")
 }
 
-/// Strip a `read` result's sentinel framing (`==<token> BEGIN <path>, LENGTH: n
+/// Strip a `read` result's sentinel framing (`==<token> BEGIN <path>, BYTES: n
 /// <token>==` … matching `END`) and render the file body as a code block, syntax-
 /// highlighted by the path's extension. Returns `None` if the marker isn't present
 /// (so the caller falls back to a plain code block).
@@ -215,7 +215,13 @@ struct ReadRows<'c> {
 pub(in crate::tui) fn read_marker(line: &str) -> Option<Option<String>> {
     let inner = line.strip_prefix("==")?.strip_suffix("==")?;
     if let Some(rest) = inner.split_once(" BEGIN ").map(|(_, r)| r) {
-        let path = rest.split(", LENGTH:").next().unwrap_or(rest).trim();
+        // `BYTES:` is the current spelling; `LENGTH:` is what older session logs hold.
+        let path = rest
+            .split(", BYTES:")
+            .next()
+            .and_then(|r| r.split(", LENGTH:").next())
+            .unwrap_or(rest)
+            .trim();
         Some(Some(path.to_string()))
     } else if inner.contains(" END ") {
         Some(None)

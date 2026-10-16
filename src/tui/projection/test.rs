@@ -684,3 +684,25 @@ fn a_resumed_notice_carries_one_glyph() {
         "⟢ session resumed after 45s: the host process restarted."
     );
 }
+
+/// fs-mcp spells the size field `BYTES:`; logs written before that say `LENGTH:`.
+/// Both leave the path field, and a windowed read's trailing `LINES:`, out of it.
+#[test]
+fn read_marker_takes_the_path_before_either_size_field() {
+    use super::tools::read_marker;
+    for line in [
+        "==tok BEGIN src/a.rs, BYTES: 9 tok==",
+        "==tok BEGIN src/a.rs, LENGTH: 9 tok==",
+        "==tok BEGIN src/a.rs, BYTES: 9, LINES: 2-3 tok==",
+    ] {
+        assert_eq!(
+            read_marker(line),
+            Some(Some("src/a.rs".to_string())),
+            "{line}"
+        );
+    }
+    assert_eq!(
+        read_marker("==tok END src/a.rs, BYTES: 9 tok=="),
+        Some(None)
+    );
+}

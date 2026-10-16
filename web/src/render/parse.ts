@@ -78,7 +78,10 @@ export function readMarker(line: string): { path: string | null } | null {
   const begin = inner.split(" BEGIN ");
   if (begin.length > 1) {
     const rest = begin.slice(1).join(" BEGIN ");
-    const path = (rest.split(", LENGTH:")[0] ?? rest).trim();
+    // `BYTES:` is the current spelling; `LENGTH:` is what older session logs hold.
+    const path = (
+      (rest.split(", BYTES:")[0] ?? rest).split(", LENGTH:")[0] ?? rest
+    ).trim();
     return { path };
   }
   if (inner.includes(" END ")) return { path: null };

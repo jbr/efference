@@ -22,6 +22,12 @@ test("read_marker classifies BEGIN, END, and content lines", () => {
   expect(readMarker("==tok BEGIN src/foo.rs, LENGTH: 42 tok==")).toEqual({
     path: "src/foo.rs",
   });
+  expect(readMarker("==tok BEGIN src/foo.rs, BYTES: 42 tok==")).toEqual({
+    path: "src/foo.rs",
+  });
+  expect(
+    readMarker("==tok BEGIN src/foo.rs, BYTES: 42, LINES: 3-4 tok=="),
+  ).toEqual({ path: "src/foo.rs" });
   expect(readMarker("==tok END src/foo.rs tok==")).toEqual({ path: null });
   expect(readMarker("let x = 1;")).toBeNull();
   expect(readMarker("== not a marker")).toBeNull();
