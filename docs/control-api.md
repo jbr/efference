@@ -1028,7 +1028,7 @@ inside one.
 content-hash `ETag`, and a matching `If-None-Match` with `304 Not Modified`, so a
 returning client's second look is one empty round-trip. No route sets a
 `Cache-Control` lifetime. The `LogEntry` itself is written once and never
-mutated — redaction chooses `wire` at append time from the verdict rather than
+mutated — triage chooses `wire` at append time from the verdict rather than
 flipping it afterward — but what this route serves is the build's entry *view*,
 which changes shape with the daemon, and at a session daemon's socket root the
 address `/v1/log/3` is the same for every session that origin ever serves. A
@@ -1164,7 +1164,7 @@ family (`agent::brief`'s doc comment, [permissions.md](permissions.md)): a
 lookup that consults only the providers reads a name in `tools[]` as absent.
 The two peek tools (`retain`, `triage`) answer here even though they never
 reach a gate and are never the subject of an ordinary logged call — they ride
-every turn's `tools[]` regardless, so a reader inspecting the fork peek's own
+every turn's `tools[]` regardless, so a reader inspecting the triage's own
 exchange can still ask what shape it was answering.
 
 Unlike the spotter's brief ([permissions.md](permissions.md)), this route has

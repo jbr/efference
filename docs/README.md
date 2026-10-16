@@ -44,10 +44,10 @@ Each session is an append-only log; the wire transcript sent to the API is
 from it is how most harnesses work; what efference commits to on top of that is:
 
 - **Rendering decisions are stored as per-entry verdicts, not content edits.**
-  Redaction flips a `WireState` (`Raw → Triaged → Elided`) carrying the
+  Triage flips a `WireState` (`Raw → Triaged → Elided`) carrying the
   *verdict* (`keep` ranges + an optional note); `project` re-renders from the
   immutable `raw` each turn. Because the raw result survives in the log, every
-  redaction is reversible and auditable.
+  triage is reversible and auditable.
 - **`project` is byte-deterministic, and tests pin it** (see the invariants
   below).
 - **Decisions get first-class log entries** — salience marks, triage verdicts,
@@ -62,7 +62,7 @@ enum Payload {
     ToolResult { call_id: CallId, raw: RawResult, wire: WireState },
     Mark(Mark),         // a salience annotation (e.g. a consolidation fold-point)
     Ambient(Notification),  // an out-of-band notification
-    Triage(Triage),     // a fork verdict — the audit record
+    Triage(Triage),     // a triage verdict — the audit record
 }
 
 enum WireState {
@@ -102,10 +102,10 @@ Violating any one silently breaks caching or correctness:
    this — re-projecting an identical log yields identical bytes, and the exact wire
    encoding is fixed so any reorder/rename of a wire field fails *on purpose*.
 2. **Committed regions are immutable on the wire; all mutation happens in the uncommitted
-   tail past the last cache breakpoint.** Redaction is fixed *at append*, so no cached
+   tail past the last cache breakpoint.** Triage is fixed *at append*, so no cached
    prefix entry is ever mutated. The one operation that rewrites prefix — a consolidation
    fold — is exactly one deliberate cache write.
-3. **raw is never overwritten; only `wire` flips.** This is what makes every redaction
+3. **raw is never overwritten; only `wire` flips.** This is what makes every triage
    reversible and the log a complete audit record.
 4. **A completion may make several tool calls.** A turn under `auto` tool choice is
    free to call tools in parallel: the request does not set `disable_parallel_tool_use`

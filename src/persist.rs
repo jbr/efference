@@ -3,7 +3,7 @@
 //! Append-only **JSONL**: one [`LogEntry`] per line. Chosen deliberately over a
 //! binary format because the log is an append-only *event journal* we want to
 //! read/`tail`/`jq` while iterating on projection — and because a Phase-1
-//! redaction is itself just another appended event line (flip `wire`, never
+//! triage is itself just another appended event line (flip `wire`, never
 //! touch `raw`), where a snapshot format would re-serialize the world. Perf is a
 //! non-issue: projection reads the in-memory `Vec` each turn, never the disk;
 //! the disk is touched once per append and once per session load.

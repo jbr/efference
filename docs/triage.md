@@ -1,4 +1,4 @@
-# The redaction fork — triage on every tool result
+# The triage — triage on every tool result
 
 Every tool result enters the canonical lineage through a fork: a throwaway branch
 that shares a cached prefix with canonical but whose raw content and extraction
@@ -72,7 +72,7 @@ bytes every other reader sees ([env.md](env.md)).
 Every captured result gets exactly one final verdict. A batch that ends in an error
 before its gate resolves what it already captured as `Elided` (`undecided` in
 `agent/batch.rs`), the same verdict an interrupted gate gives; a gate that answered
-for fewer results than it was offered (which the distiller reports as a failure rather
+for fewer results than it was offered (which the triager reports as a failure rather
 than returning) is backstopped the same way and logged at error level. A pending result
 with no verdict would project to nothing and orphan its `tool_use`.
 
@@ -186,7 +186,7 @@ the tail.
 ## The separate-model peek
 
 `--triage-model` names a model other than the agent's and the peek runs on its own
-`Client` (`ForkPeek::own`) instead of borrowing the agent turn's (`ForkPeek::shared`,
+`Client` (`Triager::own`) instead of borrowing the agent turn's (`Triager::shared`,
 the default, and what an omitted or equal `--triage-model` boots). The shared
 envelope above exists to keep one cache lineage; a second model is a second
 lineage over the same transcript whatever the envelope does, so the own client
@@ -221,7 +221,7 @@ drops the parts of it that only served that:
 **The idle triage is not delegated.** The standalone triage an idle session runs when a
 notification arrives ([inbox.md](inbox.md)) sends the agent's client, the agent's full
 `tools[]`, and `auto` whether or not a triage model is configured
-(`ForkPeek::idle_envelope`). That ask decides whether the session wakes at all, and a
+(`Triager::idle_envelope`). That ask decides whether the session wakes at all, and a
 wrong dismiss there is silent: nothing re-raises it until something else wakes the
 session. It runs on the agent lineage, at the agent's thinking, reading the cache the
 keepalive holds warm through idle; a separate model's reflexive answer is kept for the
@@ -248,7 +248,7 @@ hand-labelled gates (backlog: triage-ground-truth).
 
 **Evaluating a candidate offline.** `efference dev peek <session> --triage-model X`
 replays every recorded gate under the separate-model shape — the same constructor
-boot uses (`ForkPeek::for_triage_model`), the session's own preamble context and
+boot uses (`Triager::for_triage_model`), the session's own preamble context and
 model name in the triage system prompt — and compares each draw's verdict against the
 **recorded** one, line for line after the cap. The reference is what the session's own
 peek chose to see, not an operator's idea of the right keep: the agent doing the work
@@ -263,7 +263,7 @@ a live session measures that.
 
 What is *not* built: the own client's retry and reservation state is not reported
 on `GET /state`, and nothing acts on the triage model's context window being
-smaller than the agent's (backlog/inbox/distiller-experiment.md).
+smaller than the agent's (backlog/inbox/triager-experiment.md).
 
 ## Two answer shapes, and one scoped ask
 
@@ -457,7 +457,7 @@ calls ([README.md](README.md)), so a peek may answer a batch in several `retain`
 
 ## Line numbers are the coordinate system
 
-All tool output is line-numbered before it is shown in the fork peek. Line
+All tool output is line-numbered before it is shown in the triage. Line
 numbers are the coordinate system `retain(lines=…)` addresses, and
 the selection preserves original numbers across elisions so any kept line maps
 back to the raw. The raw in the log stays pristine; numbering is a render transform
@@ -469,7 +469,7 @@ Line-per-line numbering inflates the canonical wire — a keep-all verdict on a
 small result would be larger than the raw it replaces. The two renderings are
 therefore split:
 
-- **`number_lines`** (`cat -n` per line) — shown only in the throwaway fork peek;
+- **`number_lines`** (`cat -n` per line) — shown only in the throwaway triage;
   the coordinate system `retain(lines=…)` addresses. Implemented in `src/triage/prompt.rs`.
 
 - **`render_hunks`** (the canonical wire form) — a `@@ lines a-b @@` header per
@@ -527,9 +527,9 @@ client surface.
 A failed peek is not erased — its withheld-output error is visible on the wire — but
 `origin` still classifies *what kind* of failure it was, which the rendered artifact
 cannot say. `project` reads `Triage` only as audit (it emits pinned-notification blocks
-from `inbox`) and skips it otherwise. Every fork decision is reconstructable from
+from `inbox`) and skips it otherwise. Every triage decision is reconstructable from
 the log — including ones only ever visible inside the throwaway branch — for
-observability and distiller-quality work, with none of the fork's context touching
+observability and triager-quality work, with none of the fork's context touching
 the wire or the cache.
 
 ## Retention — how much of the peek survives

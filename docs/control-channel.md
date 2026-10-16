@@ -55,7 +55,7 @@ replaced before policy and harness-owned values are applied ([env.md](env.md)).
 ## Session runtime: one session's tasks and their shutdown
 
 `SessionBoot` (`src/daemon/runtime.rs`) is the pure-data set of inputs a session
-starts from: the provider client, the mounted toolbox, the fork peek, the spotter,
+starts from: the provider client, the mounted toolbox, the triage, the spotter,
 the log, the session paths, the loaded role, the review level, the model's
 capabilities and name, the environment policy, and whether to keep scratch. Whoever
 creates the session resolves these; nothing in the struct reads ambient process
@@ -97,7 +97,7 @@ dir, config path, model and flags) to a `SessionBoot` — is `boot::prepare`
 capability lookup, minting the session dir and snapshotting the config, scratch,
 the `[env]` policy, the log, the toolbox and MCP mounts (`src/boot/mcp_mount.rs`,
 the one step that may wait for a human), the frozen preamble, the client, the
-spotter, and the fork peek. The CLI builds the request from flags; a host's
+spotter, and the triage. The CLI builds the request from flags; a host's
 creation handler builds it from a request body. Boot progress prints to stderr
 today. Listener binding stays with whoever runs the runtime.
 
@@ -295,7 +295,7 @@ The gate answers a call that hasn't run. The interrupt answers one that is alrea
 Nothing here can suspend a tool. The MCP providers are synchronous (`src/tools.rs`), so a call that has started will finish; what the interrupt controls is not whether it runs but **whether its output is projected**. `Session::take_interrupt` consumes the latch at the two junctures around a call:
 
 - **before a call runs** — the operator interrupted while the model was generating, so the call doesn't run and the turn ends. Its `tool_use` gets the ordinary un-run `aborted()` stand-in.
-- **where the result lands** — the call ran and its effects stand; the result is appended with `raw` intact and `wire: WireState::Elided`, and the turn ends. This is taken *before* the redaction fork, so the withheld output is never peeked at, never triaged, and costs no round-trip — a fork that read it first would defeat the point on its way to the same place.
+- **where the result lands** — the call ran and its effects stand; the result is appended with `raw` intact and `wire: WireState::Elided`, and the turn ends. This is taken *before* the triage, so the withheld output is never peeked at, never triaged, and costs no round-trip — a fork that read it first would defeat the point on its way to the same place.
 
 - **mid-generation** — no tool is running or pending; the model is streaming. `Client::complete` races its read against the same notifier (`Client::set_abort`, armed before the request is sent, so a press that lands after the request reached the upstream but before its stream opened is not lost — `notify_waiters` stores no permit) and ends the read: the stream is dropped, which is what frees a hung socket, and the partial comes back marked `FailureClass::Aborted`. The turn loop commits it as the record-only entry an aborted attempt writes, counts it against no retry budget, consumes the latch, and returns to idle — unlike a killed tool there is no result to continue from, and a queued submission lands at once. The own-triage client reads against the notifier too: an interrupted peek withholds its verdict (the step's results are logged under the failed verdict), and the loop consumes the latch right after the gate, ending the turn there rather than letting it ride into the next completion and stop that one's first call. The spotter does not — an interrupt during a gate is the tool's kill.
 

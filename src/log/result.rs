@@ -3,7 +3,7 @@
 use super::*;
 
 /// The full, immutable result of a tool run. Survives in the log forever; never
-/// overwritten by redaction — that is what makes every redaction reversible.
+/// overwritten by triage — that is what makes every triage reversible.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RawResult {
     pub content: String,

@@ -12,7 +12,7 @@ use crate::log::RequestOrigin;
 /// connection open with an unterminated SSE body, which is the shape nothing
 /// bounded before this: the retry policy applies only while *opening* a response.
 ///
-/// One read loop serves both stream surfaces, so a turn and a fork peek are
+/// One read loop serves both stream surfaces, so a turn and a triage are
 /// bounded by the same knob.
 #[tokio::test]
 async fn a_stream_open_past_the_ceiling_is_marked_retryable() {

@@ -403,7 +403,7 @@ impl Session {
     /// usually wants the entry it came from next, and it costs nothing to say now.
     ///
     /// Both this and [`Self::entry_json`] are immutably cacheable: a `LogEntry` is
-    /// written once and never mutated — redaction chooses `wire` at append time from the
+    /// written once and never mutated — triage chooses `wire` at append time from the
     /// verdict rather than flipping it afterward (docs/log-and-projection.md) — so a
     /// returning client never refetches what it has seen.
     pub(super) fn tool_call_json(&self, call_id: &str) -> Option<String> {

@@ -21,7 +21,7 @@ pub(super) struct Metrics {
     pub(super) last_usage: Option<Usage>,
     /// The last **main-loop** completion's usage, stamped by `RequestOrigin::Turn`
     /// alone. Context-window occupancy is a fact about the trajectory's own
-    /// prefix, and the side channels do not share it: a fork peek, a triage, or a
+    /// prefix, and the side channels do not share it: a triage, a triage, or a
     /// spotter assessment carries its own much smaller prompt, so reading
     /// occupancy off [`Metrics::last_usage`] makes the reported context *drop*
     /// mid-turn and correct when the turn completes. Side-channel usage still
@@ -453,7 +453,7 @@ impl Session {
     }
 
     /// Record a result-triage peek's usage. `on_agent_client` is whether the peek ran on
-    /// the agent's own client (`triage = "Shared"`, `!Distiller::is_own`): it then read
+    /// the agent's own client (`triage = "Shared"`, `!Triager::is_own`): it then read
     /// the main prefix and refreshed it, so it stamps the touch clock like a turn; a peek
     /// on a separate triage client stamps the triage lineage's clock instead
     /// (docs/transport.md).

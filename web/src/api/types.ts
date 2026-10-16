@@ -399,7 +399,7 @@ export type Stance = "clear" | "watch" | "gate" | "clear_always";
 /** What one tool call cost and how it came out (docs/tools.md) — the harness's
  * own measurement of the dispatch, joined to its call by `call_id`. `duration_ms`
  * excludes the permission cascade, and `result_bytes` is the raw result before
- * the fork peek triages it, so the pair (this, the rendered result) is what
+ * the triage triages it, so the pair (this, the rendered result) is what
  * says how much a gate saved. Additive by construction on the Rust side: fields
  * may appear here that this client does not read yet. */
 export interface ToolTelemetry {

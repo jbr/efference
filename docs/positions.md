@@ -19,7 +19,7 @@ Agent-facing:
 - `cargo test | tail -3`: the agent doesn't want noise, but cannot know in
   advance what will be noise. Piping through `tail` loses liveness (no output
   until exit) and loses the failure detail, forcing a re-run. *(Answered by
-  the redaction fork — [triage.md](triage.md).)*
+  the triage — [triage.md](triage.md).)*
 - Grepping a file repeatedly to find a needle, spending more tokens than
   reading it once would have. Navigating and reading code is a coding
   harness's bread-and-butter operation, not an optional add-on.
@@ -114,7 +114,7 @@ the docs are part of the agent's tooling.
 Stated for any future summarizer, human or model:
 
 - The append-only log with a projected wire is standard harness practice.
-  efference's additions are incremental: verdict-based reversible redaction,
+  efference's additions are incremental: verdict-based reversible triage,
   test-pinned byte determinism, first-class audit entries.
 - Byte-stable projection is table stakes for prompt caching — done carefully
   here, not invented here.

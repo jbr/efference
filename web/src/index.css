@@ -801,7 +801,7 @@ input[type="checkbox"]:disabled {
   color: var(--fg-muted);
 }
 
-/* The distiller's note: an annotation beside the result, not tool output. */
+/* The triager's note: an annotation beside the result, not tool output. */
 .note {
   display: flex;
   gap: 0.6rem;
@@ -819,7 +819,7 @@ input[type="checkbox"]:disabled {
   font-size: 1.05em;
   font-weight: 300;
   color: var(--fg-muted);
-  /* A note is the distiller's account of the output, so it is full of
+  /* A note is the triager's account of the output, so it is full of
      identifiers — `transcript_tool_io(Screenplay)`, `tool_result(id,content)`.
      As a flex item its default `min-width: auto` is the longest of those, so on
      a narrow viewport the box grew past the row and the overhang was cut at the

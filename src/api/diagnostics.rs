@@ -7,7 +7,7 @@
 //!   Content-free by design; the bodies live in the log.
 //! - [`UpstreamRetryState`] — a retry in flight, level-triggered: which surface, which
 //!   attempt, of what budget, and when the next attempt fires. Carries its own change
-//!   signal because the fork peek writes it from a code path that holds no `Session`.
+//!   signal because the triage writes it from a code path that holds no `Session`.
 //! - [`UpstreamAttemptQueue`] — failed HTTP attempts the retry handler absorbed, waiting
 //!   for the loop to drain them into durable record-only log entries. The handler sits
 //!   below the loop and cannot append, so the body crosses that boundary here.
@@ -114,7 +114,7 @@ pub struct UpstreamRetry {
 
 /// The retry cell, its change signal, and the operator's "retry now".
 ///
-/// The signal is here rather than on `Session` because the fork peek publishes retry
+/// The signal is here rather than on `Session` because the triage publishes retry
 /// state from inside `triage`, which holds a `Client` and no `Session` — and unlike
 /// the upstream-failure cell, a retry is *not* followed by an append, so the
 /// daemon's wake-on-`appended` fallback would leave the topic late for the whole
@@ -241,7 +241,7 @@ impl UpstreamAttemptFailure {
 }
 
 /// How many undrained attempt failures the queue holds. A queue nobody drains — a
-/// keepalive failing against an idle daemon, or a fork peek's attempts before the
+/// keepalive failing against an idle daemon, or a triage's attempts before the
 /// loop reaches its next append — keeps the most recent this many and drops the
 /// oldest, so an outage cannot grow the process without bound.
 const ATTEMPT_QUEUE_CAP: usize = 64;

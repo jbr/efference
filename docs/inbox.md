@@ -2,7 +2,7 @@
 
 The inbox is the realized form of "enqueue then triage": background and out-of-band
 events interrupt the agent by enqueuing, but never mid-thought. Each time the agent
-finishes an action and runs the triage fork peek (see `triage.md`), it grooms
+finishes an action and runs the triage triage (see `triage.md`), it grooms
 its inbox in the same throwaway branch at no extra round-trip.
 
 ## What a notification is
@@ -130,7 +130,7 @@ shown-and-active layer reconstructs from the log.
 
 ## Triage: pin · dismiss · leave
 
-Pending and active-shown notifications appear in the fork peek view beneath the
+Pending and active-shown notifications appear in the triage view beneath the
 line-numbered tool output, each item labelled with its arrival `seq` handle. The
 `retain` verdict (see `triage.md`) gains an `inbox` field; the model may give
 each notification one of three dispositions:
@@ -213,7 +213,7 @@ A pinned notification renders as a user-role message block:
 The `⟢` sigil is chosen to be Haiku-safe. The preamble says what it means — notes the harness
 adds, which report and never carry the operator's instructions (`assets/prompts/session.md`) —
 and every harness note shares it: pinned notifications, attachments, surfaced context, the
-distiller's note on a result. It is a convention, not an authentication: anything that can put
+triager's note on a result. It is a convention, not an authentication: anything that can put
 text in front of the model (a file, a command's output, another client's turn) can spell it.
 What keeps a forged note harmless is that a genuine one carries no authority to borrow — gates
 are enforced mechanically, never by what the model believes — so a forgery can plant a false

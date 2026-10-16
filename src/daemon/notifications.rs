@@ -158,7 +158,7 @@ impl Session {
 
     /// The directed inbox read (docs/inbox.md — `check_inbox`): the active shown
     /// notifications (left at earlier gates) plus the newly-arrived ephemeral ones,
-    /// so the model can survey what's waiting on demand. The fork peek for this
+    /// so the model can survey what's waiting on demand. The triage for this
     /// tool's own result is where they're actually triaged.
     pub fn inbox_summary(&self) -> String {
         let pending = self.pending_notifications();

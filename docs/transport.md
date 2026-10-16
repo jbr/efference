@@ -146,7 +146,7 @@ An `auto` turn sends `adaptive` (`display: "summarized"`) where the model takes
 it. Everything else sends the model's spelling of off: a forced `tool_choice`
 (Anthropic answers forced choice with thinking on with a 400), a model without
 adaptive, and a client built `without_thinking`. The main agent turn and the
-fork peek both send `auto` —
+triage both send `auto` —
 the shared envelope ([triage.md](triage.md)): identical
 `tool_choice` and thinking are part of what lets the peek read the agent lineage's
 cache — so both may think (the fork's thinking is discarded with its throwaway
@@ -204,7 +204,7 @@ keeps the tools+system cache tier valid (see
 call-type and never flipped turn-to-turn, so it stays out of the cached
 prefix's way. The wire encoding is pinned by
 `project::tests::thinking_turn_matches_expected_wire_bytes`. Thinking blocks are
-never elided today — that's a deferred generalization of the redaction model
+never elided today — that's a deferred generalization of the triage model
 (the log holds them all verbatim).
 
 ### Effort: the level axis
@@ -263,7 +263,7 @@ provider error on the first turn. A level outside those two spellings has no
 known coupling and passes through.
 
 **Which envelopes carry it.** The effort rides the agent `Client`, so every
-request that client makes carries it — the main turn and the fork peek, which is
+request that client makes carries it — the main turn and the triage, which is
 the shared envelope ([triage.md](triage.md)): if one carried it
 and the other didn't, the peek would stop reading the agent lineage's cache — and
 the keepalive, which sends the turn's envelope (above). The spotter forces its
@@ -408,7 +408,7 @@ trajectory with nothing appended, which re-sends the failed request. While a
 backoff pause is running (or a triage gate is held, below) it ends the wait, so the
 next attempt fires at once; the daemon accepts it then even though the loop is
 running. The signal lives on the retry cell (`UpstreamRetryCell::hurry`), beside
-the retry state both loops already publish, because the fork peek's wait runs
+the retry state both loops already publish, because the triage's wait runs
 where only the client is in reach. Both clients add the gesture to what they show —
 `↻ … · ⏎ retries now` during a pause, `⚠ … · ⏎ to retry` on a stall — so the
 daemon's own `message` names what happened and not which key recovers it.
@@ -457,7 +457,7 @@ handler decides. An unknown name defaults to transient deliberately, so a code
 this table has not met keeps the bounded retry rather than stalling a session on
 it; the name stays visible in the record-only entry and the stall detail.
 
-The **fork peek** takes the same treatment on the same budget: an aborted peek
+The **triage** takes the same treatment on the same budget: an aborted peek
 stream or a transiently failed peek request is retried up to
 `STREAM_ABORT_ATTEMPTS` times on the same capped schedule, re-sending
 byte-identical messages over the warm prefix (its tail is throwaway, so nothing
@@ -492,7 +492,7 @@ the partial is kept as a record-only entry, the reason rides on the completion's
 — which means it is retried on the schedule above, publishes `upstream_retry`
 while it waits, and lands on `stall` if the budget runs out. It is never a silent
 kill. Because `complete` is the one read loop, **both** stream surfaces are
-bounded by it: a turn and a fork peek alike.
+bounded by it: a turn and a triage alike.
 
 The operator does not have to wait for it: `POST /loop/interrupt` (the TUI's
 second `Esc`) ends a read in flight the same way, marked `Aborted` rather than
@@ -616,7 +616,7 @@ level-triggered state topic, `upstream_retry` on `GET /state`
 that just failed, the budget it is spending, the absolute instant the next
 attempt fires, a lead line — *attempt 2 of 12 failed upstream, retrying* — and the
 upstream's own error text as `detail`. Both retry loops publish it (`agent.rs`
-for a turn, `triage/peek.rs` for a fork peek, on the agent's cell even when
+for a turn, `triage/peek.rs` for a triage, on the agent's cell even when
 triage runs on its own model) through one shared constructor, so the surfaces
 differ only in the name they carry; the distinction is kept because a triage wait
 sits between tool results, where an operator would otherwise read it as the model
@@ -881,7 +881,7 @@ turned out to be the missing `session-id` key instead. The client holds the toke
 cell (`api::TurnRoutingState`) that the response handler fills on the first
 successful response of a turn (later values do not replace it), `Client::post`
 replays on every request, and the agent loop clears through `Client::begin_turn`
-at each trajectory start and each seam-drained user turn. The fork peek shares the
+at each trajectory start and each seam-drained user turn. The triage shares the
 agent's client and so the token; the spotter's client is built
 `without_turn_routing`, since each of its requests is its own conversation. Every
 Codex request also names its model in `x-codex-routing-hint` (`model=<slug>`), as
@@ -901,7 +901,7 @@ read plus 16 output tokens. A capped request that the upstream refuses is not re
 another cap. OpenAI exposes no per-generation cost endpoint, so cost tracking stays off.
 
 **The triage primer is the same write on the triage lineage.** Where the peek runs on
-its own model (`ForkPeek::own`), the batch fires the turn's own input on the triage
+its own model (`Triager::own`), the batch fires the turn's own input on the triage
 client at the first execution start — post-approval, so nothing speculative is ever
 sent — capped at the same backend minimum (`Client::prime`, Responses with an
 implicit policy only). The gate's peek then extends a triage-lineage request that
@@ -1476,7 +1476,7 @@ it is a per-session constant, so it cannot toggle mid-session; unset, it skips
 serialization entirely, so adding it moved no Anthropic session's bytes.
 
 The spotter takes a **distinct** key (`Endpoint::for_spotter`, a `-spot` suffix), and
-so does the separate-model fork peek when one is configured (`Endpoint::for_triage`,
+so does the separate-model triage when one is configured (`Endpoint::for_triage`,
 `-triage`; [triage.md](triage.md)).
 It has its own system prompt and shares no prefix with the agent turn, so the two
 are separate conversations over one endpoint; message-hash derivation separated
@@ -1588,7 +1588,7 @@ counted, the whole body is estimated at that ratio. Far from the wall the
 value sent is the cap; near it, the reservation shrinks each turn. A 400 in
 either provider's overflow phrasing is the backstop: the reservation is halved
 and the request retried, once per halving down to the floor, and any other
-open failure stays terminal. Turns, fork peeks, and triage all share the one
+open failure stays terminal. Turns, triages, and triage all share the one
 client and so the one calibration; the keepalive's `max_tokens: 0` ping and
 the spotter's own client (no window set) are outside it.
 
@@ -1772,7 +1772,7 @@ it is transport-only.
 `StreamDelta` and publishes to the broadcast channel. Producers have no
 knowledge of the daemon or the channel.
 
-**The fork peek passes a no-op sink.** The fork's triage tokens are internal
+**The triage passes a no-op sink.** The fork's triage tokens are internal
 bookkeeping; they must never surface on the stream. The no-op `|_| {}` is the
 enforcement.
 
@@ -2003,7 +2003,7 @@ a deadline; the wall stamp is what clients read. Neither reaches the projection.
 a field that ticks with the clock would make the level-triggered `usage` topic
 re-emit forever (docs/control-api.md). Clients subtract from their own clock.
 
-The fork peek's usage is folded into the metrics cell's totals. Whether it stamps the
+The triage's usage is folded into the metrics cell's totals. Whether it stamps the
 cache-touch clock depends on where it ran: a peek on the agent's own client
 (`triage = "Shared"`) reads the main prefix and refreshes it, so `record_peek` stamps the
 clock as a turn does; a peek on a separate triage client has a prefix of its own and
@@ -2059,7 +2059,7 @@ is the primer re-sent:
   rather than re-projecting the log: the primer goes out at the start of a tool batch,
   from the turn's input, and a projection taken later does not reproduce those bytes.
   With no primer sent, or with the stored one dropped, there is no ping.
-- **Envelope.** The primer's own, from `ForkPeek::primer_envelope`, which `prime` also
+- **Envelope.** The primer's own, from `Triager::primer_envelope`, which `prime` also
   uses: the own client, the peek's `tools[]`, and forced `retain`. The ping and the
   primer therefore send the same body. `api/test/triage_ping.rs` pins that over a mock
   Responses backend.

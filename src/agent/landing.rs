@@ -9,7 +9,7 @@ pub(super) async fn land(
     client: &Client,
     tools: &[Value],
     shared: &Arc<Session>,
-    distiller: &ForkPeek,
+    triager: &Triager,
     turn_at: &mut Turn,
     steps: Vec<Step>,
     primer: Option<TriagePrimerOutcome>,
@@ -35,11 +35,11 @@ pub(super) async fn land(
     let mut gate = if pending.is_empty() {
         None
     } else {
-        // `ForkPeek` re-enters the model here — the prefix is the log through
+        // `Triager` re-enters the model here — the prefix is the log through
         // this completion's `tool_use` blocks, so we snapshot it (can't borrow
-        // across the distiller's await). A peek on the agent's client reads the
+        // across the triager's await). A peek on the agent's client reads the
         // main prefix, so it waits at the cold check like a turn's request.
-        if !distiller.is_own() {
+        if !triager.is_own() {
             shared.await_warm_or_person().await;
         }
         let mut entries = shared.snapshot();
@@ -76,13 +76,13 @@ pub(super) async fn land(
         // continue runs the gate again from the top.
         let mut carried = Carried::default();
         Some(loop {
-            match distiller
+            match triager
                 .triage_results(client, tools, &entries, &pending, &shown, &background)
                 .await
             {
                 Ok(outcome) => break carried.onto(outcome),
                 Err(failure) => {
-                    match hold(shared, client, !distiller.is_own(), failure, &mut carried).await {
+                    match hold(shared, client, !triager.is_own(), failure, &mut carried).await {
                         // Re-read the log: a fold written during the hold
                         // (docs/summary-head.md) is what the retried peek forks, not
                         // the history it replaced. The `Ambient` entries appended
@@ -104,7 +104,7 @@ pub(super) async fn land(
     // (sliding its TTL), so it belongs in the docs/log-and-projection.md telemetry.
     if let Some(g) = &gate {
         for u in &g.usage {
-            shared.record_peek(!distiller.is_own(), u.clone());
+            shared.record_peek(!triager.is_own(), u.clone());
         }
     }
     // The primer's usage and timing (docs/transport.md): its own
@@ -207,7 +207,7 @@ pub(super) async fn land(
                 //
                 // A gate that answered for fewer results than it was offered would leave a
                 // captured result pending forever, which projects to nothing and orphans its
-                // `tool_use` on the next request (docs/README.md). The distiller does not do
+                // `tool_use` on the next request (docs/README.md). The triager does not do
                 // that — one result short of a verdict is a `GateFailure`, which holds or
                 // withholds the whole batch — so this is the breach's last line of defence:
                 // withhold the result, the same way an interrupted gate does, and say so in
@@ -271,7 +271,7 @@ pub(super) async fn land(
             client,
             tools,
             shared,
-            distiller,
+            triager,
             &mut turn,
             Sight {
                 entries: &entries,

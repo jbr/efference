@@ -45,7 +45,7 @@ pub(super) fn should_solicit_title(entries: &[LogEntry]) -> bool {
 pub(super) struct TitleAsk {
     client: Client,
     tools: Vec<Value>,
-    distiller: ForkPeek,
+    triager: Triager,
     flight: Arc<std::sync::Mutex<Flight>>,
 }
 
@@ -60,11 +60,11 @@ struct Flight {
 }
 
 impl TitleAsk {
-    pub(super) fn new(client: &Client, tools: &[Value], distiller: &ForkPeek) -> Self {
+    pub(super) fn new(client: &Client, tools: &[Value], triager: &Triager) -> Self {
         Self {
             client: client.clone(),
             tools: tools.to_vec(),
-            distiller: distiller.clone(),
+            triager: triager.clone(),
             flight: Arc::default(),
         }
     }
@@ -129,7 +129,7 @@ async fn solicit_title(shared: &Session, ask: &TitleAsk, force: bool) -> bool {
     }
     let current = latest_title(&entries).map(str::to_string);
     let peek = ask
-        .distiller
+        .triager
         .title(&ask.client, &ask.tools, &entries, current.as_deref())
         .await;
     for u in peek.usage {

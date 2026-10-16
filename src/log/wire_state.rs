@@ -3,12 +3,12 @@
 use super::*;
 
 /// How a [`Payload::ToolResult`] should be projected. Flipping this (never
-/// touching `raw`) is the one redaction primitive — every projection experiment
+/// touching `raw`) is the one triage primitive — every projection experiment
 /// is a change to how [`project`] reads these (docs/README.md, docs/log-and-projection.md).
 ///
 /// Each variant is wired into [`project`] before it has a construction site, so a
 /// new site lands as a behavior change rather than a type change that would move
-/// the byte-stability pin. `Triaged` is built by the redaction fork
+/// the byte-stability pin. `Triaged` is built by the triage
 /// (docs/triage.md); `Elided` by the interrupt (docs/control-channel.md).
 ///
 /// [`project`]: crate::project::project
@@ -84,7 +84,7 @@ impl From<Triaged> for WireState {
 
 /// What of a tool result survives on the canonical wire (docs/triage.md).
 /// Ranges are 1-based inclusive line spans, interpreted against the first
-/// `PEEK_LINE_CAP` lines — the set the fork peek showed the model.
+/// `PEEK_LINE_CAP` lines — the set the triage showed the model.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Keep {
     /// Keep every (shown) line.

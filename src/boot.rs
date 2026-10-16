@@ -6,7 +6,7 @@
 //! preparation: the origin config, `[env]` references, the provider and its
 //! capability lookup, the session dir and config snapshot, scratch, the `[env]`
 //! policy, the log, the toolbox and its MCP mounts, the frozen preamble, the
-//! provider client, the spotter, and the fork peek. Listeners and the control
+//! provider client, the spotter, and the triage. Listeners and the control
 //! socket are not prepared here; they belong to whoever runs the runtime.
 //!
 //! A host's session-creation handler builds the request from a control-channel
@@ -332,7 +332,7 @@ async fn prepare_minting(
              config file; config writes still gate for the orchestrator-above"
         );
     }
-    let (distiller, triage_prices) = parts::mount_distiller(
+    let (triager, triage_prices) = parts::mount_triager(
         &inference,
         &endpoint,
         model,
@@ -344,7 +344,7 @@ async fn prepare_minting(
     Ok(SessionBoot {
         client,
         toolbox,
-        distiller,
+        triager,
         spotter,
         log,
         paths: crate::daemon::SessionPaths::new(directories, session_dir.canonicalize()?)?,

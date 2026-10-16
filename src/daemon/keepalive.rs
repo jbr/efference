@@ -4,7 +4,7 @@ mod session;
 
 use super::*;
 use crate::api::TokenPrices;
-use crate::triage::ForkPeek;
+use crate::triage::Triager;
 
 /// How long the cached prefix may go untouched before the keepalive pings it,
 /// absent a `[transport] keepalive-interval` (docs/transport.md): four fifths of the
@@ -58,7 +58,7 @@ impl KeepaliveSpec {
     /// `[transport] keepalive-interval`, which applies to both lineages; absent, the
     /// cadence is the triage provider's cache lifetime, as the main loop's is.
     pub(crate) fn triage(
-        peek: &ForkPeek,
+        peek: &Triager,
         configured: Option<Duration>,
         prices: Option<TokenPrices>,
     ) -> Option<Self> {

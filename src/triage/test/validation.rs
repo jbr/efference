@@ -285,7 +285,7 @@ fn a_coverage_rejection_reports_what_was_answered() {
     );
 }
 
-/// The fork peek retries a stream that dies before finalizing on the **same budget and
+/// The triage retries a stream that dies before finalizing on the **same budget and
 /// schedule** as the main loop's own aborted turns (docs/transport.md) — one policy for
 /// one failure, whichever surface it lands on. Before this, an aborted peek withheld on
 /// the first abort while an aborted turn got four attempts; a controlled run caught the

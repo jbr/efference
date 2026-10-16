@@ -25,7 +25,7 @@ fn lines(s: &str) -> Vec<&str> {
 const CALL_ID: &str = "toolu_x";
 
 /// A `Completion` whose assistant turn made a single `retain` call carrying
-/// `input` — the shape `ForkPeek` asks for and `parse_retain` reads.
+/// `input` — the shape `Triager` asks for and `parse_retain` reads.
 fn retain_completion(name: &str, input: Value) -> Completion {
     calls_completion(vec![ToolCall::new(name, "r", input)])
 }

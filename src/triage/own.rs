@@ -25,7 +25,7 @@ pub struct TriageModel {
     pub effort: Option<String>,
 }
 
-impl ForkPeek {
+impl Triager {
     /// The separate-model peek for `triage` (docs/triage.md): the model's
     /// capabilities looked up like the agent's, a client on [`Endpoint::for_triage`]
     /// with the given `system`, thinking off unless asked, a peek-sized output cap,
@@ -37,7 +37,7 @@ impl ForkPeek {
         triage: &TriageModel,
         system: String,
         stream_ceiling: Duration,
-    ) -> Result<(ForkPeek, ModelCapabilities), String> {
+    ) -> Result<(Triager, ModelCapabilities), String> {
         let caps = endpoint
             .fetch_capabilities(&triage.model, &[])
             .await
@@ -67,7 +67,7 @@ impl ForkPeek {
         client = client
             .with_max_output(cap)
             .with_context_window(caps.context_length);
-        let peek = ForkPeek::own(client);
+        let peek = Triager::own(client);
         let peek = if triage.auto_choice {
             peek.with_auto_choice()
         } else {

@@ -23,7 +23,7 @@ use std::path::Path;
 /// newline so the joined prompt stays byte-clean.
 const PREAMBLE: &str = include_str!("../assets/prompts/session.md");
 
-/// The separate-model fork peek's persona (docs/triage.md). `{agent_model}`
+/// The separate-model triage's persona (docs/triage.md). `{agent_model}`
 /// is substituted with the main model's id.
 const TRIAGE_PERSONA: &str = include_str!("../assets/prompts/triage.md");
 
@@ -167,14 +167,14 @@ pub fn system_prompt(
     prompt
 }
 
-/// The system prompt of the separate-model fork peek (docs/triage.md): the
+/// The system prompt of the separate-model triage (docs/triage.md): the
 /// triage model's own identity line, the persona that discloses the model seam once
 /// and then reads the transcript as its own, and the session's `[context]` block
 /// verbatim. No curation preamble, role section, or unmounted list — those describe
 /// the agent's perimeter, and the peek never acts inside it.
 ///
 /// Assumptions this text encodes, each an experiment knob rather than a finding
-/// (backlog/inbox/distiller-experiment.md): the seam is disclosed at the head rather than
+/// (backlog/inbox/triager-experiment.md): the seam is disclosed at the head rather than
 /// hidden; the tail ask stays first-person and byte-identical to the shared peek's;
 /// the whole context block is shared. A knowledge-cutoff note or a provider system
 /// prompt would sit on the identity line, as it does for the agent.

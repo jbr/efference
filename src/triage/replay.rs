@@ -2,7 +2,7 @@
 
 use super::*;
 
-/// What one un-retried fork peek came back with — the `peek` dev tool's measurement
+/// What one un-retried triage came back with — the `peek` dev tool's measurement
 /// primitive (docs/triage.md).
 ///
 /// The gate's own machinery retries, so a session's `Triage.retries` records *that* a
@@ -78,8 +78,8 @@ pub fn peek_request(
     }
 }
 
-impl ForkPeek {
-    /// One fork-peek round trip against a recorded gate, with **no retries**
+impl Triager {
+    /// One triage round trip against a recorded gate, with **no retries**
     /// (docs/triage.md). Same request, same client, tools and `tool_choice`
     /// as the live gate under this configuration (shared or own), same validity rule
     /// (`parse_retain` plus [`require_coverage`] and [`require_in_bounds`]) — only the

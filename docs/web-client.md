@@ -443,7 +443,7 @@ failures of this shape were found together at narrow widths and fixed the same
 way. A call head is a wrapping flex row whose signature holds a `min-width`
 floor, because without one, shrink took a multi-path `read` target down to a
 one-character-per-line column beside squeezed basename links — 2673px of height
-for one head. A distiller note and markdown prose break inside long tokens
+for one head. A triager note and markdown prose break inside long tokens
 (`overflow-wrap: break-word`), and the note additionally sets `min-width: 0`:
 as a flex item its default `auto` floor is the longest identifier it contains,
 so a note full of them — which is what a note about code is — grew its box past
@@ -661,7 +661,7 @@ page's length and DOM weight stay bounded as a session grows.
 
 - **A call**: full is the whole call; trimmed caps it at 20rem under a short,
   steep fade with a centred "Show the whole result" set on the fade (shown only
-  when something is actually hidden), the distiller's note lifted out below the
+  when something is actually hidden), the triager's note lifted out below the
   cap; brief is one row — the intent as its title, the tool and what it acted
   on (its string arguments) beneath, the note under that.
 - **Thinking**: trimmed is a three-line preview under the same fade; brief is a
@@ -1641,7 +1641,7 @@ truncated capture as the whole output.
 Below the tabs,
 **what the fork returned**: the raw line count, the surfaced count computed
 from the keep, the keep itself (`All` / `None` / `Ranges(a..b, …)`), the
-wire state, and the distiller's note — the audit view of
+wire state, and the triager's note — the audit view of
 [triage.md](triage.md)'s output. Stepping between calls from
 the drawer waits on the deferred key binds.
 

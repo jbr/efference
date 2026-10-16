@@ -38,7 +38,7 @@ pub(super) async fn run_idle_triage(
     client: &Client,
     tools: &[Value],
     shared: &Arc<Session>,
-    distiller: &ForkPeek,
+    triager: &Triager,
     turn: &mut Turn,
 ) -> Result<bool, Error> {
     // Let a burst settle so several events triage together, not one peek each.
@@ -68,7 +68,7 @@ pub(super) async fn run_idle_triage(
         forced: &forced,
         background: &background,
     };
-    triage_and_record(client, tools, shared, distiller, turn, sight).await
+    triage_and_record(client, tools, shared, triager, turn, sight).await
 }
 
 /// What a standalone triage peek looks at: the prefix it forks from, the notifications
@@ -89,7 +89,7 @@ pub(super) async fn triage_and_record(
     client: &Client,
     tools: &[Value],
     shared: &Arc<Session>,
-    distiller: &ForkPeek,
+    triager: &Triager,
     turn: &mut Turn,
     sight: Sight<'_>,
 ) -> Result<bool, Error> {
@@ -99,7 +99,7 @@ pub(super) async fn triage_and_record(
         forced,
         background,
     } = sight;
-    let triage = distiller
+    let triage = triager
         .triage(client, tools, entries, shown, background)
         .await;
     for u in triage.usage {

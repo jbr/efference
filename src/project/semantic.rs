@@ -30,7 +30,7 @@ pub enum WireTurn {
     /// tail can append a synthetic turn without a log entry behind it.
     Assistant(AssistantOutput),
     /// A prompt-cache breakpoint requested at this point in the turn list — the
-    /// per-request trailing marker, or a fork peek's frontier ahead of its raw tail
+    /// per-request trailing marker, or a triage's frontier ahead of its raw tail
     /// (docs/log-and-projection.md). Each encoder attaches it to the nearest
     /// preceding block its wire lets carry one, so the physical marker may sit
     /// earlier than the logical frontier.
@@ -419,7 +419,7 @@ pub fn project_semantic_for(log: &[LogEntry], reader: Reader) -> Vec<WireTurn> {
             // clients, never for the model: it projects to nothing, so a title
             // written mid-session cannot move the cached prefix.
             Payload::Title(_) => {}
-            // A fork verdict emits a block per **pinned** notification and per
+            // A triage verdict emits a block per **pinned** notification and per
             // **surfaced** context item at its own position — notification bodies
             // looked up from the `Ambient` arrival (docs/inbox.md), surfaced items
             // re-rendered from the boot listing (docs/triage.md). This

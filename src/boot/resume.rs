@@ -207,7 +207,7 @@ async fn resume_minting(
         &capabilities,
     );
     let spotter = parts::mount_spotter(&inference, &endpoint, &scratch, &directories).await?;
-    let (distiller, triage_prices) = parts::mount_distiller(
+    let (triager, triage_prices) = parts::mount_triager(
         &inference,
         &endpoint,
         model,
@@ -240,7 +240,7 @@ async fn resume_minting(
         SessionBoot {
             client,
             toolbox: tools.toolbox,
-            distiller,
+            triager,
             spotter,
             log,
             paths: crate::daemon::SessionPaths::new(directories, session_dir.canonicalize()?)?,

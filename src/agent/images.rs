@@ -23,7 +23,7 @@ pub(super) fn restore_image_refusal(shared: &Session, client: &Client, toolbox: 
 
 /// When the client has learned a refusal the toolbox has not, close the gate and
 /// append the record. Checked after every main-loop request, so a lesson a clone
-/// learned (the shared fork peek, the keepalive) is recorded at the next one.
+/// learned (the shared triage, the keepalive) is recorded at the next one.
 pub(super) fn record_image_refusal(
     shared: &Session,
     client: &Client,

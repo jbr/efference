@@ -59,7 +59,7 @@ pub struct TitlePeek {
     pub retries: Vec<String>,
 }
 
-impl ForkPeek {
+impl Triager {
     /// Ask for the session's title over `prefix` (docs/session-title.md). Never
     /// fails the caller: an unusable answer after the in-fork retries is `None`.
     pub async fn title(

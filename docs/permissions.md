@@ -701,7 +701,7 @@ intervention latency is a later unit). `ClearAlways` is the prefix-promotion saf
 upstream failure (a dropped stream, a timed-out or refused connection, an overloaded
 status) is first retried up to three attempts, one and two seconds apart: a short burst is
 worth absorbing, and an outage is not worth waiting out when the fallback is a prompt the
-operator answers faster. (The distiller has no fallback that is safe to show, so it
+operator answers faster. (The triager has no fallback that is safe to show, so it
 waits instead: a triage gate without a verdict holds its results until one arrives —
 [triage.md](triage.md) — never a silent keep-all.)
 

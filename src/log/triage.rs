@@ -1,9 +1,9 @@
-//! The fork peek's logged decision (docs/triage.md).
+//! The triage's logged decision (docs/triage.md).
 
 use super::*;
 
-/// A fork verdict (docs/triage.md) — what the model decided in a throwaway
-/// peek, recorded durably so every fork decision is reconstructable from the log
+/// A triage verdict (docs/triage.md) — what the model decided in a throwaway
+/// peek, recorded durably so every triage decision is reconstructable from the log
 /// (including ones only ever visible inside the fork). The rendered wire form lives
 /// on the paired [`ToolResult`]'s [`WireState`]; this carries the *provenance* the
 /// rendered artifact can't, with no overlap.
@@ -16,11 +16,11 @@ pub struct Triage {
     /// that rides no tool result). Backward-compatible: serde reads an old bare `seq` as `Some`.
     pub for_result: Option<Seq>,
     /// Whether the verdict came from the model or a harness fallback. For a
-    /// model-free stub distiller this is the one signal the rendered artifact
+    /// model-free stub triager this is the one signal the rendered artifact
     /// erases (its head/tail verdict renders like a deliberate one); a failed peek
     /// additionally projects a withheld-output error (docs/triage.md).
     pub origin: Origin,
-    /// The model's exact `keep` string, pre-parse (empty for a model-free distiller).
+    /// The model's exact `keep` string, pre-parse (empty for a model-free triager).
     pub raw_keep: String,
     /// Per-notification dispositions chosen in this peek, by the notification's
     /// arrival `seq` (docs/inbox.md). Empty on a gate that was shown nothing.
@@ -61,6 +61,6 @@ pub enum Origin {
     /// A real `retain` call from the peek model.
     Model,
     /// The harness fallback — the peek failed (the result projects a withheld-output
-    /// error, docs/triage.md), or a model-free stub distiller ran.
+    /// error, docs/triage.md), or a model-free stub triager ran.
     Fallback,
 }

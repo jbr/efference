@@ -1,10 +1,10 @@
 //! TriageOutcome — what a raw tool result projects to on the canonical wire
 //! (docs/triage.md, docs/README.md), and the inbox triage that rides the
-//! same fork peek (docs/inbox.md).
+//! same triage (docs/inbox.md).
 //!
 //! Every tool result is triaged at append; the durable wire never carries raw
 //! output, and a result's `wire` is fixed once and never mutated (so caching is
-//! safe by construction). The distiller's job is to produce a **verdict** — which
+//! safe by construction). The triager's job is to produce a **verdict** — which
 //! lines survive (`keep`) plus a `note` — not rendered bytes: the wire form is
 //! re-rendered from `raw` + the verdict at projection time
 //! ([`crate::project::render_triaged`], docs/triage.md), so the kept bytes
@@ -16,7 +16,7 @@
 //! [`TriageOutcome`] and land on the logged [`Triage`](crate::log::Triage). One type
 //! does the triaging:
 //!
-//! - [`ForkPeek`] — the universal triage gate (docs/triage.md): fork a
+//! - [`Triager`] — the universal triage gate (docs/triage.md): fork a
 //!   throwaway branch off the cached prefix, show the model the line-numbered raw
 //!   output + the inbox, and ask it (via the tail instruction, never a forced
 //!   `tool_choice`) to call `retain` to choose what the canonical wire keeps and which
@@ -49,7 +49,7 @@ use crate::supervisor::BgView;
 
 const RETAIN: &str = "retain";
 
-/// The tool choice the primer sends (`ForkPeek::prime`) and its keepalive re-sends:
+/// The tool choice the primer sends (`Triager::prime`) and its keepalive re-sends:
 /// forced `retain`, the peek's own head (docs/transport.md).
 fn primer_choice() -> ToolChoice {
     ToolChoice::force(RETAIN)
@@ -83,7 +83,7 @@ pub enum BgVerdict {
 
 /// One tool result awaiting triage: the call that produced it and its raw output.
 /// A gate covers every result a single completion produced (docs/triage.md),
-/// so the loop hands the distiller a slice of these rather than one at a time.
+/// so the loop hands the triager a slice of these rather than one at a time.
 pub struct Pending<'a> {
     pub call: &'a ToolCall,
     pub raw: &'a RawResult,
@@ -98,7 +98,7 @@ pub struct TriageOutcome {
     pub wire: WireState,
     /// Whether the verdict is the model's or a harness fallback (docs/triage.md).
     pub origin: Origin,
-    /// The model's exact `keep` string, pre-parse — empty for a model-free distiller.
+    /// The model's exact `keep` string, pre-parse — empty for a model-free triager.
     pub raw_keep: String,
 }
 
@@ -131,7 +131,7 @@ pub struct GateOutcome {
     /// when nothing was surfaced.
     pub surfaced: Vec<String>,
     /// The [`RequestUsage`] of every request this gate made — empty for a model-free
-    /// distiller, one entry per fork round-trip (in-fork retries included). Each fork
+    /// triager, one entry per fork round-trip (in-fork retries included). Each fork
     /// request reads the shared canonical prefix (sliding its cache TTL), and the loop
     /// folds them all into the cache telemetry (docs/log-and-projection.md).
     pub usage: Vec<RequestUsage>,
@@ -206,7 +206,7 @@ pub struct InboxTriage {
     pub background: Vec<(String, BgVerdict)>,
     pub origin: Origin,
     /// One entry per request the peek made (in-fork retries included), like
-    /// [`GateOutcome::usage`]; empty for a model-free distiller or a transport failure.
+    /// [`GateOutcome::usage`]; empty for a model-free triager or a transport failure.
     pub usage: Vec<RequestUsage>,
     /// Non-compliant-attempt breadcrumbs, like [`GateOutcome::retries`].
     pub retries: Vec<String>,
@@ -217,7 +217,7 @@ pub struct InboxTriage {
 /// The model peek — the universal triage gate (docs/triage.md) realized.
 ///
 /// The gate is a concrete type, not a trait object. It was built behind a
-/// single-method `Distiller` trait threaded as a generic bound through
+/// single-method `Triager` trait threaded as a generic bound through
 /// `agent::run`, `daemon::serve`, and `run_idle_triage`; the second implementation
 /// that bound existed for never arrived, and the one that briefly did (a model-free
 /// `HeadTail` stub) had no call sites, tests included. Swapping the *model* behind
@@ -239,21 +239,21 @@ pub struct InboxTriage {
 /// docs/session-title.md): a `Client` clone shares the Arc-backed live states,
 /// and the rest is configuration.
 #[derive(Clone)]
-pub struct ForkPeek {
+pub struct Triager {
     /// The triage model's client and tools when the peek runs on its own model;
     /// `None` borrows the agent turn's.
-    own: Option<OwnPeek>,
+    own: Option<OwnTriage>,
 }
 
 /// The separate-model peek's request surface: everything cache-keyed that the shared
 /// configuration would have borrowed from the agent turn.
 #[derive(Clone)]
-struct OwnPeek {
+struct OwnTriage {
     client: Client,
     tools: Vec<Value>,
     /// Force the asked-for tool (`tool_choice: {type: tool}`) rather than `auto`.
     /// The default: the first separate-model run opened five of eight gates with an
-    /// invented work call (backlog/inbox/distiller-experiment.md), and forcing removes that
+    /// invented work call (backlog/inbox/triager-experiment.md), and forcing removes that
     /// path by construction. `auto` is the knob, kept for the ablation and for a
     /// Claude triage model that should think (a forced choice disables thinking).
     force_choice: bool,
@@ -270,8 +270,8 @@ pub const PEEK_MAX_OUTPUT: u64 = 16_384;
 /// construction rather than by re-projection (which, built after the assistant turn
 /// landed, would end on an unanswered call and be refused).
 pub struct TriagePrimerInput<'a> {
-    /// The fork peek whose own client carries the triage lineage.
-    pub distiller: &'a ForkPeek,
+    /// The triage whose own client carries the triage lineage.
+    pub triager: &'a Triager,
     /// The main request's turns, through the breakpoint it sent.
     pub turns: &'a [WireTurn],
 }
@@ -297,7 +297,7 @@ pub struct TriagePrimerOutcome {
     pub error: Option<String>,
 }
 
-impl ForkPeek {
+impl Triager {
     /// Make the own-model peek's reads answer to the operator's interrupt
     /// (docs/control-channel.md); the shared peek already rides the agent client.
     pub fn set_abort(&mut self, abort: std::sync::Arc<tokio::sync::Notify>) {
@@ -316,15 +316,15 @@ impl ForkPeek {
 
     /// The shared-lineage peek: the agent's client and `tools[]`, borrowed per call.
     pub fn shared() -> Self {
-        ForkPeek { own: None }
+        Triager { own: None }
     }
 
     /// The separate-model peek over `client`. Its `tools[]` is the two peek tools —
     /// no world tools, since nothing is ever asked of them in a peek, and this
     /// lineage shares no cache with the agent turn to keep the arrays identical for.
     pub fn own(client: Client) -> Self {
-        ForkPeek {
-            own: Some(OwnPeek {
+        Triager {
+            own: Some(OwnTriage {
                 client,
                 tools: vec![retain_tool(), triage_tool()],
                 force_choice: true,

@@ -32,14 +32,14 @@ use crate::spotter::Spotter;
 use crate::supervisor;
 use crate::tools::Toolbox;
 use crate::triage::{
-    BgVerdict, ForkPeek, Pending, TriagePrimerInput, TriagePrimerOutcome, is_peek_tool,
+    BgVerdict, Pending, TriagePrimerInput, TriagePrimerOutcome, Triager, is_peek_tool,
 };
 
-/// Hard cap on a single tool result's bytes (defense in depth). The fork peek caps
+/// Hard cap on a single tool result's bytes (defense in depth). The triage caps
 /// *line count* (`PEEK_LINE_CAP`), but not a pathological single huge line; an
 /// over-cap result is almost always a mistake — e.g. grepping the gitignored session
 /// logs, which embed prior raw results, so one matched line can be hundreds of KB —
-/// and feeding it onward would bloat the fork peek, blow the request size limit (the
+/// and feeding it onward would bloat the triage, blow the request size limit (the
 /// 400 this guards against), and, since `raw` is logged verbatim, recursively bloat
 /// the next session's searches. Generous, since legitimate large reads should pass;
 /// crossing it signals something went wrong, so we don't silently truncate.
@@ -53,7 +53,7 @@ const IDLE_TRIAGE_DEBOUNCE_MS: u64 = 250;
 /// (docs/transport.md): each failed attempt is appended record-only (it projects
 /// to nothing, so the replay re-sends byte-identical messages over the still-warm
 /// prefix), then the request goes again after a [`stream_abort_backoff`] pause.
-/// The fork peek's gate reaches for the same constant and the same schedule
+/// The triage's gate reaches for the same constant and the same schedule
 /// (`triage/peek.rs`): one stated policy, whichever surface the failure lands on.
 ///
 /// Sized to **wait the failure out**. An upstream failure is usually an ephemeral
@@ -156,7 +156,7 @@ pub async fn run<F: Frontend, S: Spotter>(
     client: &Client,
     frontend: &mut F,
     shared: Arc<Session>,
-    distiller: ForkPeek,
+    triager: Triager,
     spotter: S,
     mut toolbox: Toolbox,
 ) -> Result<(), Error> {
@@ -168,7 +168,7 @@ pub async fn run<F: Frontend, S: Spotter>(
     let tools = tool_definitions(&toolbox);
     // The title ask's owned request surface, built once; each title check hands its
     // detached task a clone (docs/session-title.md).
-    let title_ask = TitleAsk::new(client, &tools, &distiller);
+    let title_ask = TitleAsk::new(client, &tools, &triager);
     let consolidation = consolidation::ConsolidationCheck::new(client, &tools);
     // Continues the log's numbering: `0` for a new session, the last entry's turn for a
     // resumed one, so a resumed session's new turns do not reuse a recorded number.
@@ -205,7 +205,7 @@ pub async fn run<F: Frontend, S: Spotter>(
             IdleWake::Event => {
                 // Standalone triage. Escalate to a trajectory only if it changed the
                 // wire (pinned something); otherwise back to idle, the prefix still hot.
-                if !run_idle_triage(client, &tools, &shared, &distiller, &mut turn).await? {
+                if !run_idle_triage(client, &tools, &shared, &triager, &mut turn).await? {
                     continue;
                 }
                 // Escalated: fall into the trajectory with no new user turn — the model
@@ -239,7 +239,7 @@ pub async fn run<F: Frontend, S: Spotter>(
         // provider issues one, belongs to the previous trajectory and must not be
         // replayed into this one (docs/transport.md).
         client.begin_turn();
-        distiller.begin_turn();
+        triager.begin_turn();
 
         // A trajectory is starting, so the previous one's give-up is no longer the
         // current condition (docs/transport.md): the `stall` topic names what the
@@ -286,10 +286,7 @@ pub async fn run<F: Frontend, S: Spotter>(
                     primer,
                     ..
                 } = replay_batch(frontend, &shared, &spotter, &toolbox, &pending).await?;
-                land(
-                    client, &tools, &shared, &distiller, &mut turn, steps, primer,
-                )
-                .await?;
+                land(client, &tools, &shared, &triager, &mut turn, steps, primer).await?;
                 if after_landing(&shared, &mut turn, abort_turn, redirect)? {
                     break;
                 }
@@ -320,7 +317,7 @@ pub async fn run<F: Frontend, S: Spotter>(
                 // A user turn lands mid-trajectory: to the upstream that is a new
                 // turn, so its routing token starts over (docs/transport.md).
                 client.begin_turn();
-                distiller.begin_turn();
+                triager.begin_turn();
                 shared.append_submission(
                     turn,
                     Payload::User(submitted.blocks()),
@@ -590,8 +587,8 @@ pub async fn run<F: Frontend, S: Spotter>(
             // primer is byte-identical to the request above; armed only on the own
             // peek, whose lineage the main request never warms. Shared peeks skip it
             // without spending a request.
-            let primer = distiller.is_own().then(|| TriagePrimerInput {
-                distiller: &distiller,
+            let primer = triager.is_own().then(|| TriagePrimerInput {
+                triager: &triager,
                 turns: &turns,
             });
             let Batch {
@@ -602,10 +599,7 @@ pub async fn run<F: Frontend, S: Spotter>(
                 ..
             } = run_batch(frontend, &shared, &spotter, &toolbox, turn, &calls, primer).await?;
 
-            land(
-                client, &tools, &shared, &distiller, &mut turn, steps, primer,
-            )
-            .await?;
+            land(client, &tools, &shared, &triager, &mut turn, steps, primer).await?;
 
             if calls.iter().any(|call| call.name == "ask") {
                 consolidation.check(&shared);

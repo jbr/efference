@@ -310,7 +310,7 @@ fn a_partial_selection_of_an_edit_shows_the_triaged_lines() {
     );
     assert!(
         frame.contains("inserted the read line-range entry"),
-        "the distiller's note still shows:\n{frame}"
+        "the triager's note still shows:\n{frame}"
     );
 }
 

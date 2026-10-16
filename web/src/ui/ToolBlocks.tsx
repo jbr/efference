@@ -411,7 +411,7 @@ export function ResultBlock({
         </div>
       )}
       {view.note !== null && (
-        // The distiller's note sits beside the result as its own annotation
+        // The triager's note sits beside the result as its own annotation
         // row — that rung's account *of* the output, not something the tool
         // printed (docs/tui.md renders it as an `Annotation` entry for the
         // same reason). The ✧ is display chrome; the wire's selection keeps

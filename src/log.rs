@@ -140,7 +140,7 @@ pub struct LogEntry {
     pub payload: Payload,
 }
 
-/// The content of a log entry. Immutable once appended; redaction never mutates
+/// The content of a log entry. Immutable once appended; triage never mutates
 /// a payload's `raw`, only flips a [`WireState`] (docs/README.md).
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum Payload {
@@ -176,7 +176,7 @@ pub enum Payload {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         upstream_failure: Option<UpstreamFailureRecord>,
     },
-    /// The result of running one tool call. `raw` is immutable; redaction only
+    /// The result of running one tool call. `raw` is immutable; triage only
     /// flips `wire`.
     ToolResult {
         call_id: CallId,
@@ -202,14 +202,14 @@ pub enum Payload {
     /// (`Boundary`) and inclusive working-span (`Span`) replacement ranges,
     /// injecting their account as a user message (docs/consolidate.md).
     Mark(Mark),
-    /// A fork verdict (docs/triage.md) — the durable record of a throwaway
+    /// A triage verdict (docs/triage.md) — the durable record of a throwaway
     /// peek's decision. The fork's *transcript* stays throwaway; its *decision* is
-    /// logged here for audit / introspection / distiller-quality work. Projects as
+    /// logged here for audit / introspection / triager-quality work. Projects as
     /// audit only, except it emits a block per **pinned** notification (its `inbox`)
     /// at this entry's tail-ward position (docs/inbox.md).
     Triage(Triage),
     /// An out-of-band notification (docs/inbox.md), logged at **first-show** — the
-    /// moment a fork peek first shows it to the model. Pure audit on the canonical
+    /// moment a triage first shows it to the model. Pure audit on the canonical
     /// wire (it projects to nothing); a *pinned* one is emitted by its resolving
     /// [`Triage`], at that entry's position. Its `seq` is its durable id (the handle
     /// the `retain` inbox verdict references).

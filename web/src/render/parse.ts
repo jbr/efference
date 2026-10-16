@@ -153,7 +153,7 @@ export interface ResultRender {
   /** The TUI's size half-label — "kept N of M lines" — triaged only, and
    * null alongside a null `stateWord` when nothing was dropped. */
   sizeLabel: string | null;
-  /** The distiller's note; true of the output whichever form is shown. */
+  /** The triager's note; true of the output whichever form is shown. */
   note: string | null;
   /** "16 KiB of 256 KiB shown" when the control channel truncated this
    * result's `content` (docs/control-api.md), else null. Mirrors the marker

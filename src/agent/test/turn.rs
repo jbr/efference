@@ -144,7 +144,7 @@ pub(super) fn a_multi_call_completion_projects_a_fully_paired_wire() {
     assert_eq!(uses, vec!["search_2", "bash_3"]);
 
     // Both results land in a *single* trailing user message, in call order — the shape
-    // Anthropic expects for a multi-call turn, and the one the fork peek reproduces.
+    // Anthropic expects for a multi-call turn, and the one the triage reproduces.
     let last = messages.last().expect("a trailing user message");
     assert_eq!(last.role, crate::project::Role::User);
     let answered: Vec<&str> = last

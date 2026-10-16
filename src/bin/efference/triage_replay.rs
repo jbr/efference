@@ -12,7 +12,7 @@
 use super::*;
 use efference::log::{Keep, Payload, RawResult, ToolCall, WireState};
 use efference::project::{Reader, selection};
-use efference::triage::{ForkPeek, Pending, ReplayVerdict, TriageModel, TriageView, peek_request};
+use efference::triage::{Pending, ReplayVerdict, TriageModel, TriageView, Triager, peek_request};
 use std::collections::BTreeSet;
 use std::io::Write;
 
@@ -37,7 +37,7 @@ pub(crate) struct Gate {
     pub(crate) raws: Vec<RawResult>,
     /// The recorded verdict per result, alongside `raws` — what the session's own
     /// peek chose to see. The reference a candidate model is compared against
-    /// (backlog/inbox/distiller-experiment.md): not an operator's idea of the right keep,
+    /// (backlog/inbox/triager-experiment.md): not an operator's idea of the right keep,
     /// but what the agent that was doing the work kept for itself.
     pub(crate) recorded: Vec<WireState>,
     /// What the recorded run's first attempt did, from `Triage.retries` — the baseline
@@ -480,7 +480,7 @@ pub(crate) async fn peek(
                 &agent_model,
                 context_block.as_deref(),
             );
-            let (peek, caps) = ForkPeek::for_triage_model(
+            let (peek, caps) = Triager::for_triage_model(
                 &triage_endpoint,
                 t,
                 triage_system,
@@ -500,7 +500,7 @@ pub(crate) async fn peek(
             );
             (peek, t.model.as_str())
         }
-        None => (ForkPeek::shared(), model),
+        None => (Triager::shared(), model),
     };
     let client = Client::new(endpoint, model, system, None);
     let mut sink = match &out {

@@ -256,7 +256,7 @@ impl Spotter for ForkSpot {
         loop {
             attempt += 1;
             // No-op sink: the spotter's tokens are internal and must never surface
-            // on the control stream (mirrors the fork peek).
+            // on the control stream (mirrors the triage).
             let (usage, transient) = match self
                 .client
                 .complete(

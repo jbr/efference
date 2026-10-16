@@ -319,7 +319,7 @@ pub(in crate::tui) fn bound_action(bound: &crate::tui::ActingOn) -> DocumentNode
 
 /// One harness annotation beside a call or its result: a marker glyph and a muted
 /// line, as its own non-focusable [`Annotation`](EntryKind::Annotation) entry
-/// (docs/tui.md). The shared shape behind the spotter's verdict and the distiller's
+/// (docs/tui.md). The shared shape behind the spotter's verdict and the triager's
 /// note — both are a different rung's account *of* the content, not the content.
 pub(in crate::tui) fn annotation_line(marker: &str, text: &str) -> DocumentNode<'static> {
     DocumentNode::entry(

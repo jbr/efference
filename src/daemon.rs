@@ -280,7 +280,7 @@ pub struct Session {
     /// (docs/transport.md).
     upstream_failure: UpstreamFailureState,
     /// The retry in flight, shared with the HTTP client and with both retry loops
-    /// (the turn loop and the fork peek), and surfaced by `GET /state` as its own
+    /// (the turn loop and the triage), and surfaced by `GET /state` as its own
     /// level-triggered topic. Unlike the failure cell above it carries its own
     /// change signal — a retry pause is *not* followed by an append, so
     /// `watch_topics`'s wake-on-`appended` fallback would leave the topic late for
@@ -335,7 +335,7 @@ pub struct Session {
 
     /// The ephemeral inbox of pending ambient notifications (docs/inbox.md): out-of-band
     /// events awaiting their first triage gate. Control state, *not* a log payload —
-    /// a notification only becomes a durable `Ambient` entry when a fork peek first
+    /// a notification only becomes a durable `Ambient` entry when a triage first
     /// shows it. Superseded/dismissed-while-pending entries are dropped here
     /// (the "never-happened" case); only shown ones reach the audit log.
     inbox: Mutex<Inbox>,

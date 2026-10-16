@@ -158,7 +158,7 @@ async fn a_peek_neither_opts_in_nor_extends_the_chain() {
         .complete(&[], &[], ToolChoice::auto(), |_| {})
         .await
         .expect("the mock stream finalizes");
-    // The fork peek, on the agent's own client, as the distiller builds it.
+    // The triage, on the agent's own client, as the triager builds it.
     client
         .with_origin(crate::log::RequestOrigin::Peek)
         .complete(&[], &[], ToolChoice::auto(), |_| {})

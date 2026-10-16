@@ -167,7 +167,7 @@ struct Process {
 
 /// A live snapshot of one running process for the peek's ambient `background`
 /// section (docs/supervisor.md). Owned (it borrows nothing of the registry) so the loop can
-/// build it under the lock and hand it to the fork distiller, which then awaits.
+/// build it under the lock and hand it to the triager, which then awaits.
 ///
 /// Model-facing: the tail is inline and the times are humanized elapsed counts.
 /// [`ProcessState`] is the control API's view of the same registry and diverges on

@@ -460,7 +460,7 @@ impl Assembler {
         // dies before finalizing (docs/transport.md), and is marked the same way.
         // Marking it here rather than in the loop is what makes both surfaces
         // handle it: the mark *is* the record-only/retryable signal, so the turn
-        // loop and the fork peek each retry it on the budget they already have.
+        // loop and the triage each retry it on the budget they already have.
         //
         // Zero output tokens is required as corroboration, so a model that
         // legitimately answers with no blocks — but was billed for the thinking

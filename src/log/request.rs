@@ -25,7 +25,7 @@ use serde::{Deserialize, Serialize};
 pub enum RequestOrigin {
     /// An agent-loop completion (docs/README.md).
     Turn,
-    /// A fork-peek round-trip riding tool results (docs/triage.md), retries
+    /// A triage round-trip riding tool results (docs/triage.md), retries
     /// included.
     Peek,
     /// A standalone idle-triage peek (docs/supervisor.md).

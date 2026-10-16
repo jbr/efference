@@ -107,7 +107,7 @@ pub(crate) async fn watch_topics(shared: Arc<Session>) {
         let appended = shared.appended.notified();
         let settled = shared.settle_changed.notified();
         // The fourth signal, and the one that is not a `Session` field's own: the
-        // retry cell is written from the fork peek, which holds a `Client` and no
+        // retry cell is written from the triage, which holds a `Client` and no
         // `Session`, and a retry pause is not followed by an append — so neither
         // fallback above would repair it before the pause ended.
         let retried = shared.upstream_retry.changed();

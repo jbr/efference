@@ -45,7 +45,7 @@ enum Payload {
     Resumed(Resumed),  // the session was reopened by a later host process — projects a restart notice
     Mark(Mark),        // a salience annotation
     Ambient(Notification),  // an out-of-band notification (see inbox.md)
-    Triage(Triage),    // a fork verdict — the audit record (see triage.md)
+    Triage(Triage),    // a triage verdict — the audit record (see triage.md)
     Spot(Spot),        // a spotter permission verdict — audit only (see permissions.md)
     Telemetry(Telemetry),  // how the session ran, not what it said — never projected (below)
     ProcessEvent(ProcessEvent),    // a background process's mint or exit (see supervisor.md)
@@ -258,9 +258,9 @@ struct Triaged { keep: Keep, note: Option<String>, intent_feedback: Option<Strin
 enum Keep { All, None, Ranges(Vec<(usize, usize)>) }
 ```
 
-`WireState` is the one redaction primitive. It lives next to an immutable
-`raw: RawResult` on every `ToolResult` entry. **Redaction only ever flips
-`wire`; `raw` is never overwritten.** That is what makes every redaction
+`WireState` is the one triage primitive. It lives next to an immutable
+`raw: RawResult` on every `ToolResult` entry. **Triage only ever flips
+`wire`; `raw` is never overwritten.** That is what makes every triage
 reversible: the full result survives in the log regardless of what the wire
 shows.
 
@@ -317,8 +317,8 @@ byte-identical on any image-free log. Images ride `Raw`
 and `Triaged` states — a triage verdict addresses text lines, and must not
 silently eat an image the model pulled deliberately — and are shed by `Elided`
 and `TriageFailed`, which is what makes elision the cost-recovery lever for
-accumulated visual tokens. The fork peek projects the canonical prefix with
-the same session placement (`ForkPeek.image_placement`), or its request would
+accumulated visual tokens. The triage projects the canonical prefix with
+the same session placement (`Triager.image_placement`), or its request would
 cold the shared cache lineage.
 
 **The inversion `WireState` is not: masking.** `WireState` is *reversible
@@ -327,7 +327,7 @@ table's masking ([env.md](env.md)) is the opposite arrangement: **irreversible
 filtering upstream of the log**, applied at `Log::append_submission` before an
 entry exists. There is no verdict to flip, because the value never becomes
 `raw` — a raw copy on disk is half of what masking exists to prevent, so the
-reversibility that makes `WireState` right for redaction is exactly wrong here.
+reversibility that makes `WireState` right for triage is exactly wrong here.
 Folding masking into a `WireState` variant would reintroduce that artifact.
 Byte-determinism of `project` is untouched either way: the filtering happens
 upstream, so by the time projection reads an entry its text is already final.
@@ -336,8 +336,7 @@ Crucially, `Triaged` stores the **verdict** — which line ranges survive
 (`keep`) and an optional breadcrumb (`note`) — not the rendered bytes.
 `project` re-renders the kept hunks from `raw` each turn, so the wire is a
 genuine pure projection, and the kept bytes are never persisted twice. The
-structured decision doubles as the audit record. See [the redaction
-fork](triage.md) for how verdicts are produced.
+structured decision doubles as the audit record. See [the triage doc](triage.md) for how verdicts are produced.
 
 **Note on `Elided`:** `WireState::Elided` projects the placeholder `[elided]` —
 a block with no content, present only so the paired `tool_use` isn't orphaned.
@@ -411,7 +410,7 @@ The three byte pins fix the Messages encoder's output over the semantic fold; th
 Responses envelope has its own pin (`responses_envelope_matches_expected_wire_bytes`).
 
 The `Breakpoint` turn is how every request shape expresses its frontier without
-touching wire types: the agent loop appends one at the tail, a fork peek places one
+touching wire types: the agent loop appends one at the tail, a triage places one
 ahead of its raw fork-local tail, and the spotter marks its stable scope block mid-turn
 with `UserPart::Breakpoint`. `Client::complete` takes turns, encodes for its dialect,
 and sends — callers never build wire messages.
@@ -754,14 +753,14 @@ reader re-derives them from the recorded provider and model, so a log rendered
 under a different current config still has the historical shape. The log does
 not store either derived value. The consequence for the byte pins is that the
 pinned bytes are pinned **per placement** — `project/test/cache.rs` covers the
-arms and asserts the marker count stays one for each. On the Responses wire the fork peek's frontier has its own
+arms and asserts the marker count stays one for each. On the Responses wire the triage's frontier has its own
 pin (`triage/test.rs`): the peek's one marker sits on the last carrier before the
 fork-local tail and never in it, and the next canonical request repeats the pre-fork
 items content for content, marks its own tail, and carries the selection rather
 than the raw output or the peek's ask. The marker is a write instruction, not
 content, so the two requests differ only in where it sits.
 
-One request shape rides this marker everywhere: agent turns, fork peeks, and
+One request shape rides this marker everywhere: agent turns, triages, and
 keepalive pings send the same `tools[]`, `tool_choice: auto`, and thinking policy
 ([triage.md](triage.md), the shared envelope), so a session's
 requests read and extend a **single cache lineage** rather than keying one per
@@ -866,13 +865,13 @@ origin means those lines no longer read as unexplained cold turns in the report.
 
 ---
 
-## The invariant tying caching to redaction
+## The invariant tying caching to triage
 
 **Committed regions are immutable on the wire; all mutation happens in the
 uncommitted tail past the last cache breakpoint.** Three operations must honor
 this:
 
-- **Redaction is at append.** Each tool result's `wire` is fixed the moment it
+- **Triage is at append.** Each tool result's `wire` is fixed the moment it
   enters the log and never changes — so no cached prefix entry is ever
   mutated. The invariant holds by construction.
 
@@ -889,7 +888,7 @@ this:
   (`Payload::Ambient`) project to nothing on the canonical wire. See
   [inbox.md](inbox.md).
 
-Because redaction-at-append never touches a committed entry, no explicit freeze
+Because triage-at-append never touches a committed entry, no explicit freeze
 primitive is needed yet. A `Commit` payload that freezes a boundary is
 anticipated (see `Payload` above) but not built. Keeping the canonical lineage
 lean — triaged, not raw — also keeps consecutive breakpoints inside the

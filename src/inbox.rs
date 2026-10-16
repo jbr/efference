@@ -1,6 +1,6 @@
 //! The live ambient-notification inbox over the log (docs/inbox.md).
 //!
-//! The pending inbox is **event-sourced**: a notification a fork peek has shown is an
+//! The pending inbox is **event-sourced**: a notification a triage has shown is an
 //! [`Payload::Ambient`] log entry, and it stays *active* until a [`Triage`] verdict
 //! pins or dismisses its `seq`. [`active_shown`] folds the log to that active set —
 //! the shown-but-unresolved notifications a gate re-shows ("left" / bumped, docs/inbox.md).
@@ -13,7 +13,7 @@ use std::collections::HashSet;
 
 use crate::log::{LogEntry, Payload, Seq};
 
-/// A notification surfaced to the model in a fork peek, addressed by its arrival
+/// A notification surfaced to the model in a triage, addressed by its arrival
 /// `seq` — its durable id, the `[seq]` handle the `retain` inbox verdict references.
 #[derive(Clone, Debug)]
 pub struct ShownNotification {

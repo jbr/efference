@@ -11,7 +11,7 @@ use crate::env_table::EnvPolicy;
 use crate::inference::SessionInference;
 use crate::spotter::MountedSpotter;
 use crate::tools::Toolbox;
-use crate::triage::ForkPeek;
+use crate::triage::Triager;
 
 /// What [`mount_toolbox`] needs from the boot so far.
 pub(super) struct ToolboxInputs<'a> {
@@ -186,7 +186,7 @@ pub(super) fn build_client(
         upstream,
         effort,
     } = settings;
-    // The upstream pin rides the agent client, which the fork peek shares — so
+    // The upstream pin rides the agent client, which the triage shares — so
     // turns and gates route alike. It deliberately does **not** reach the spotter:
     // endpoint slugs are per-model, the spotter runs a different (Haiku-band)
     // model, and an order naming endpoints that do not serve it would fail
@@ -199,9 +199,9 @@ pub(super) fn build_client(
         .with_upstream(upstream.clone())
         // `[transport] stream-ceiling` (docs/transport.md): the bound on a stream
         // that stays open without finalizing. It rides the agent client, which
-        // the fork peek shares, so both stream surfaces are bounded alike.
+        // the triage shares, so both stream surfaces are bounded alike.
         .with_stream_ceiling(loaded.role.transport.stream_ceiling)
-        // The effort level rides the agent client, so the turn and the fork peek send
+        // The effort level rides the agent client, so the turn and the triage send
         // one envelope (docs/triage.md). The spotter's client is built
         // separately and never carries it; the keepalive omits it by construction.
         .with_effort(effort)
@@ -297,14 +297,14 @@ pub(super) async fn mount_spotter(
 /// Sharing is explicit (docs/triage.md): an omitted triage selection
 /// uses the main client; a configured selection always gets its own endpoint
 /// and retry state, even when it names the same native model.
-pub(super) async fn mount_distiller(
+pub(super) async fn mount_triager(
     inference: &SessionInference,
     main_endpoint: &Endpoint,
     model: &str,
     context_block: Option<&str>,
     env_policy: &EnvPolicy,
     loaded: &LoadedConfig,
-) -> Result<(ForkPeek, Option<TokenPrices>), Error> {
+) -> Result<(Triager, Option<TokenPrices>), Error> {
     Ok(match inference.triage() {
         Some((selection, mut triage_endpoint, triage)) => {
             triage_endpoint.session_id = main_endpoint.session_id.clone();
@@ -313,7 +313,7 @@ pub(super) async fn mount_distiller(
                 model,
                 context_block,
             ));
-            let (peek, caps) = ForkPeek::for_triage_model(
+            let (peek, caps) = Triager::for_triage_model(
                 &triage_endpoint,
                 triage,
                 system,
@@ -338,7 +338,7 @@ pub(super) async fn mount_distiller(
         }
         None => {
             log::debug!("triage: {model} (shared main client)");
-            (ForkPeek::shared(), None)
+            (Triager::shared(), None)
         }
     })
 }

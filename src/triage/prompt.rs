@@ -1,4 +1,4 @@
-//! The instruction text and the rosters appended to a fork peek (docs/triage.md).
+//! The instruction text and the rosters appended to a triage (docs/triage.md).
 
 use super::*;
 
@@ -254,7 +254,7 @@ struct AskVariant {
     output_final: bool,
     /// The shape sentence says "the call the agent just made" instead of "the call you
     /// just made" — the separate-model peek's alternative framing
-    /// (backlog/inbox/distiller-experiment.md). Off: the tail keeps its first-person frame for
+    /// (backlog/inbox/triager-experiment.md). Off: the tail keeps its first-person frame for
     /// both the shared and the separate-model peek (their `keep`/`note` rows differ by
     /// reader, [`REPORT_FIELDS`]).
     third_person: bool,
@@ -555,7 +555,7 @@ pub(super) fn bypassed_view(call: &ToolCall, shape: &str) -> String {
 }
 
 /// Render every line `cat -n`-style (1-based, 6-wide, tab-separated). This is the
-/// coordinate system the fork-peek gate (docs/triage.md) addresses with
+/// coordinate system the triage gate (docs/triage.md) addresses with
 /// `retain(lines=…)`, so it is shown ONLY in the throwaway fork — never on the
 /// canonical wire, which uses the leaner `@@`-hunks in
 /// [`render_triaged`](crate::project::render_triaged).
@@ -568,7 +568,7 @@ pub(super) fn number_lines(lines: &[&str]) -> String {
         .join("\n")
 }
 
-/// Build the fork peek's request (docs/triage.md): the cached
+/// Build the triage's request (docs/triage.md): the cached
 /// prefix-through-`tool_use`, then one user message carrying every result plus the
 /// gate-scoped riders and the retain prompt.
 ///

@@ -9,7 +9,7 @@ use super::*;
 /// zero content blocks, zero usage. Unmarked it commits as the model choosing
 /// silence, so the loop has
 /// nothing to dispatch and idles with the task unfinished. Marked, the turn loop
-/// and the fork peek each retry it on the budget they already have.
+/// and the triage each retry it on the budget they already have.
 #[test]
 fn a_stream_that_finalizes_empty_is_marked_retryable() {
     let completion = feed(&[

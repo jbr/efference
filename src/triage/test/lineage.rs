@@ -216,13 +216,13 @@ fn own_peek_sends_its_own_client_and_only_the_peek_tools() {
     let agent = Client::new(endpoint.clone(), "big", "sys", None);
     let agent_tools = vec![json!({"name": "read"}), retain_tool(), triage_tool()];
 
-    let shared = ForkPeek::shared();
+    let shared = Triager::shared();
     assert!(!shared.is_own());
     assert_eq!(shared.own_model(), None);
     assert_eq!(shared.client(&agent, RequestOrigin::Peek).model(), "big");
     assert_eq!(shared.tools(&agent_tools).len(), 3);
 
-    let own = ForkPeek::own(Client::new(endpoint.for_triage(), "small", "persona", None));
+    let own = Triager::own(Client::new(endpoint.for_triage(), "small", "persona", None));
     assert!(own.is_own());
     assert_eq!(own.own_model(), Some("small"));
     assert_eq!(own.client(&agent, RequestOrigin::Peek).model(), "small");
@@ -255,7 +255,7 @@ fn the_idle_triage_rides_the_agent_lineage_whatever_the_triage_model() {
     .unwrap();
     let agent = Client::new(endpoint.clone(), "big", "sys", None);
     let agent_tools = vec![json!({"name": "read"}), retain_tool(), triage_tool()];
-    let own = ForkPeek::own(Client::new(endpoint.for_triage(), "small", "persona", None));
+    let own = Triager::own(Client::new(endpoint.for_triage(), "small", "persona", None));
 
     let (client, tools, choice) = own.idle_envelope(&agent, &agent_tools);
     assert_eq!(client.model(), "big");
@@ -270,7 +270,7 @@ fn the_idle_triage_rides_the_agent_lineage_whatever_the_triage_model() {
 #[tokio::test]
 async fn the_shared_peek_takes_no_primer() {
     assert!(
-        ForkPeek::shared().prime(&[]).await.is_none(),
+        Triager::shared().prime(&[]).await.is_none(),
         "a shared peek never primes"
     );
 }

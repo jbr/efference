@@ -5,7 +5,7 @@ use crate::api::{Endpoint, ModelCapabilities, Provider};
 use crate::daemon::{SessionBoot, SessionRuntime};
 use crate::log::Stance;
 use crate::spotter::StaticSpotter;
-use crate::triage::ForkPeek;
+use crate::triage::Triager;
 use std::path::Path;
 use trillium_tokio::Swansong;
 
@@ -46,7 +46,7 @@ pub(super) fn boot(cwd: &Path) -> SessionBoot<StaticSpotter> {
     SessionBoot {
         client: Client::new(endpoint, "m", "sys", None),
         toolbox: Toolbox::bash_and_mcps(cwd.to_path_buf(), Some(scratch)).unwrap(),
-        distiller: ForkPeek::shared(),
+        triager: Triager::shared(),
         spotter: StaticSpotter {
             stance: Stance::Clear,
             reason: "test".into(),

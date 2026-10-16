@@ -9,7 +9,7 @@
 
 use super::*;
 use efference::log::Payload;
-use efference::triage::{ForkPeek, Pending, TriageModel, TriageView};
+use efference::triage::{Pending, TriageModel, TriageView, Triager};
 use std::io::Write;
 
 /// Parse `--gaps` (`"0,120,300,480"`) into seconds between primer pairs.
@@ -34,7 +34,7 @@ fn line(label: &str, usage: &efference::api::RequestUsage) -> String {
 /// One primer send through the own peek. `None` where no implicit lineage exists;
 /// an `Err` where the send failed (warned at the send site).
 async fn plant(
-    peek: &ForkPeek,
+    peek: &Triager,
     turns: &[efference::project::WireTurn],
     tools: &[serde_json::Value],
     choice: efference::api::ToolChoice,
@@ -153,7 +153,7 @@ pub(crate) async fn ladder(
     triage_endpoint.session_id = endpoint.session_id.clone();
     let triage_system =
         efference::env::triage_system_prompt(&t.model, &agent_model, context_block.as_deref());
-    let (peek, _) = ForkPeek::for_triage_model(
+    let (peek, _) = Triager::for_triage_model(
         &triage_endpoint,
         t,
         triage_system,

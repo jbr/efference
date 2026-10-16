@@ -570,9 +570,9 @@ async fn a_triage_ping_replays_the_primed_turns_under_the_primers_envelope() {
 #[test]
 fn the_triage_keepalive_arms_only_where_a_primer_plants() {
     use crate::api::{Client, Endpoint, PromptCachePolicy, Provider};
-    use crate::triage::ForkPeek;
-    assert!(KeepaliveSpec::triage(&ForkPeek::shared(), None, None).is_none());
-    let messages = ForkPeek::own(Client::new(
+    use crate::triage::Triager;
+    assert!(KeepaliveSpec::triage(&Triager::shared(), None, None).is_none());
+    let messages = Triager::own(Client::new(
         messages_endpoint("127.0.0.1:9".parse().unwrap()),
         "claude-haiku-5",
         "sys",
@@ -590,7 +590,7 @@ fn the_triage_keepalive_arms_only_where_a_primer_plants() {
         request: Default::default(),
         base: None,
     };
-    let peek = ForkPeek::own(
+    let peek = Triager::own(
         Client::new(codex, "gpt-6.1-sol", "sys", None)
             .with_prompt_cache(PromptCachePolicy::Implicit),
     );

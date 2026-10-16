@@ -107,7 +107,7 @@ pub struct Client {
     /// [`ThinkingSupport::UNKNOWN`] until [`Self::with_thinking`] sets it.
     thinking: ThinkingSupport,
     /// Never think, whatever the model would do on its own (docs/triage.md):
-    /// the separate-model fork peek's default, where the peek's reasoning is
+    /// the separate-model triage's default, where the peek's reasoning is
     /// discarded with the tail and costs latency and tokens on every gate.
     pub(super) thinking_off: bool,
     /// The per-turn output cap. Defaults to the pre-reasoning-era 4096;
@@ -126,7 +126,7 @@ pub struct Client {
     /// How long one response's SSE stream may stay open (docs/transport.md).
     /// Session-constant and transport-only — it never reaches the request body,
     /// so it cannot move the cached prefix. Both stream surfaces ride it: the
-    /// turn loop and the fork peek call the same [`Self::complete`].
+    /// turn loop and the triage call the same [`Self::complete`].
     stream_ceiling: Duration,
     /// The operator's interrupt, when this client's reads answer to one
     /// (docs/control-channel.md): `POST /loop/interrupt` fires it, and a read in
@@ -135,7 +135,7 @@ pub struct Client {
     /// `None` for clients nothing interrupts (the spotter, the dev verbs).
     abort: Option<Arc<tokio::sync::Notify>>,
     /// The session's effort level, when one is set (docs/transport.md). Rides
-    /// every request this client makes — the turn loop and the fork peek, so the
+    /// every request this client makes — the turn loop and the triage, so the
     /// peek's prefix still matches the agent lineage's (docs/triage.md),
     /// and the keepalive, which sends the turn's envelope. The spotter's client
     /// never sets it.
@@ -163,7 +163,7 @@ pub struct Client {
     /// above: the model reads images, so a later rejection has another cause.
     images_accepted: Arc<std::sync::atomic::AtomicBool>,
     /// A retry in flight, written by both retry loops (docs/transport.md). It
-    /// rides on the client because the fork peek retries with a `Client` and no
+    /// rides on the client because the triage retries with a `Client` and no
     /// `Session` in scope.
     upstream_retry: UpstreamRetryState,
     /// Failed HTTP attempts the retry handler absorbed, waiting for the agent
@@ -340,7 +340,7 @@ impl Client {
     /// A user turn is starting (docs/transport.md): forget the previous turn's
     /// routing token so the first request of this one goes out without a header
     /// and the backend issues a fresh token. Called by the agent loop at each
-    /// trajectory start and each seam-drained user turn; the fork peek shares this
+    /// trajectory start and each seam-drained user turn; the triage shares this
     /// client and so the token, which is the point — the peek is a request of the
     /// same turn.
     pub fn begin_turn(&self) {
@@ -362,7 +362,7 @@ impl Client {
     }
 
     /// Clone the retry-in-flight cell (docs/transport.md). The daemon publishes it
-    /// as a state topic; the turn loop and the fork peek write it.
+    /// as a state topic; the turn loop and the triage write it.
     pub fn upstream_retry(&self) -> UpstreamRetryState {
         Arc::clone(&self.upstream_retry)
     }
@@ -535,7 +535,7 @@ impl Client {
     }
 
     /// Pin which upstream serves this session (docs/transport.md). Applies to
-    /// every request the client makes, so a session's spotter and fork peeks
+    /// every request the client makes, so a session's spotter and triages
     /// route the same way its turns do.
     pub fn with_prompt_cache(mut self, policy: PromptCachePolicy) -> Self {
         self.prompt_cache = policy;
@@ -564,7 +564,7 @@ impl Client {
     /// docs/transport.md). Boot-time only: it is set before the first turn and
     /// never changed, since a mid-session change would move the cached prefix.
     /// Applies to every [`Self::complete`] this client makes, so the turn and
-    /// the fork peek carry the same envelope; the keepalive is not built from it.
+    /// the triage carry the same envelope; the keepalive is not built from it.
     pub fn with_effort(mut self, effort: Option<String>) -> Self {
         self.effort = effort;
         self
@@ -587,7 +587,7 @@ impl Client {
     }
 
     /// Send every request with thinking off, whatever the model would do on its
-    /// own (docs/triage.md): the separate-model fork peek's default. Spelled
+    /// own (docs/triage.md): the separate-model triage's default. Spelled
     /// the way the model's metadata says ([`ThinkingSupport::off`]), so set the
     /// capability answer with [`Self::with_thinking`] as well.
     pub fn without_thinking(mut self) -> Self {
@@ -650,7 +650,7 @@ impl Client {
     /// — prose, thinking, a tool call opening, its arguments arriving — is handed
     /// to `on_delta` as a [`Streamed`] the moment it arrives: the transport-only
     /// live sink the daemon publishes to the control stream's `output` class.
-    /// Pass a no-op `|_| {}` when nothing is listening (the fork peek, whose
+    /// Pass a no-op `|_| {}` when nothing is listening (the triage, whose
     /// triage tokens must never surface).
     ///
     /// `into_sse` *is* the execution — the conn must not be awaited first (that

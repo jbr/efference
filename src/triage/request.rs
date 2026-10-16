@@ -158,10 +158,10 @@ pub(super) async fn peek_with_retries<T>(
             {
                 break;
             }
-            log::debug!("fork peek attempt {attempt}: {why}; retrying in-fork");
+            log::debug!("triage attempt {attempt}: {why}; retrying in-fork");
         }
         if fork < forks {
-            log::debug!("fork peek fork {fork} produced no usable verdict; starting a fresh fork");
+            log::debug!("triage fork {fork} produced no usable verdict; starting a fresh fork");
         }
     }
     Err(PeekFailure::Unusable(last))
@@ -196,7 +196,7 @@ pub(super) async fn peek_completion(
 ) -> Result<Completion, PeekFailure> {
     let mut failed: u32 = 0;
     loop {
-        // No-op sink: the fork peek's triage tokens are internal and must never surface
+        // No-op sink: the triage's triage tokens are internal and must never surface
         // on the control stream — only the main thread's prose streams.
         let (why, terminal) = match client.complete(messages, tools, choice, |_| {}).await {
             Ok(completion) => {
@@ -244,7 +244,7 @@ pub(super) async fn peek_completion(
                 "peek failed upstream, {failed} attempts exhausted: {why}"
             )));
         };
-        log::debug!("fork peek attempt {failed} of {budget} failed upstream: {why}; retrying");
+        log::debug!("triage attempt {failed} of {budget} failed upstream: {why}; retrying");
         // Published on the same topic the turn loop uses, distinguished by its
         // surface (docs/transport.md).
         retry.set(stream_abort_retry(

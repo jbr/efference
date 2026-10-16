@@ -319,7 +319,7 @@ fn state_reports_context_occupancy_against_the_boot_limit() {
     assert_eq!(v["usage"]["context"]["used"], 196_000);
 }
 
-/// **A side-channel request must not move reported occupancy.** The fork peek,
+/// **A side-channel request must not move reported occupancy.** The triage,
 /// the idle triage, and the spotter each carry their own much smaller prefix, so
 /// folding them into the context readout makes it *drop* mid-turn and correct
 /// itself afterwards. Their tokens still belong in the cumulative totals, which

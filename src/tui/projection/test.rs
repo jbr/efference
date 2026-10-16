@@ -262,7 +262,7 @@ fn triaged_wire_supersedes_raw() {
         "hides the dropped raw line: {code}"
     );
 
-    // The distiller's note is *about* the result, so it is its own annotation entry
+    // The triager's note is *about* the result, so it is its own annotation entry
     // beside it rather than a line inside the result's body (docs/tui.md).
     assert!(
         !code.contains("the triaged summary"),

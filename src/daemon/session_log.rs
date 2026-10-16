@@ -180,7 +180,7 @@ impl Session {
         Ok(true)
     }
 
-    /// A clone of the entries — handed to the fork distiller, which awaits the
+    /// A clone of the entries — handed to the triager, which awaits the
     /// model and so can't borrow across the lock (docs/triage.md).
     pub fn snapshot(&self) -> Vec<LogEntry> {
         self.log.lock().unwrap().entries().to_vec()

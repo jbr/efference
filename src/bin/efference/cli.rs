@@ -354,14 +354,14 @@ pub(crate) struct SessionFlags {
     /// gpt-5.6-luna on OpenAI and OpenAI-Codex.
     #[arg(long)]
     pub(crate) spotter_model: Option<String>,
-    /// Use the main client for the fork peek even when `[defaults].triage` configures
+    /// Use the main client for the triage even when `[defaults].triage` configures
     /// a separate model.
     #[arg(
         long,
         conflicts_with_all = ["triage_model", "triage_thinking", "triage_auto_choice", "triage_effort"]
     )]
     pub(crate) triage_shared: bool,
-    /// Model for the fork peek that triages every tool result, selected like --model.
+    /// Model for the triage that triages every tool result, selected like --model.
     ///
     /// Experimental. Omitted, the peek runs on the agent's own client and reads the
     /// agent's prompt cache (on a host, unless `[defaults].triage` is set). Given, the
@@ -424,7 +424,7 @@ pub(crate) struct SessionFlags {
     ///
     /// Distinct from the connection's declared provider, which is selected
     /// by session configuration. Ignored on Anthropic, which has no such
-    /// choice. Applies to the agent's own requests (turns and fork peeks),
+    /// choice. Applies to the agent's own requests (turns and triages),
     /// not the spotter: slugs are per-model and the spotter runs a different
     /// one. Endpoints behind one model slug differ in uptime and latency
     /// tail, so a controlled run should pin one and record it.

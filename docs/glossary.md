@@ -6,9 +6,9 @@ than one current meaning are listed with each sense, so a reader can tell which 
 
 | word | identifiers | governing doc |
 | --- | --- | --- |
-| **triage** — the role that judges each tool result before the agent sees it | `src/triage/`, `Distiller`, `ForkPeek`, `peek` (`peek.rs`, `dev peek`), `WireState::Triaged`, `RequestOrigin::Peek` / `"peek"` in `usage.jsonl`; the web's "triaged" labels | triage.md |
+| **triage** — the role that judges each tool result before the agent sees it | `src/triage/`, `Triager`, `Triager`, `peek` (`peek.rs`, `dev peek`), `WireState::Triaged`, `RequestOrigin::Peek` / `"peek"` in `usage.jsonl`; the web's "triaged" labels | triage.md |
 | **triage verdict** — what triage returns: which lines to keep, and a note | `Triaged { keep, note }`, the `retain` tool | triage.md |
-| **triage primer** — a capped request that plants the triage model's cache | `ForkPeek::prime`, `RequestOrigin::TriagePrimer` | transport.md |
+| **triage primer** — a capped request that plants the triage model's cache | `Triager::prime`, `RequestOrigin::TriagePrimer` | transport.md |
 | **fold** — replacing earlier history with a written account | `POST /loop/fold`, `fold.rs`, `consolidate` (the agent's tool), `Payload::Mark` with `MarkKind::Boundary { upto }`, "summary head", "narrator" (`narrate::narrate`) | consolidate.md, summary-head.md |
 | **gate** (1) — a tool call held for a permission decision | `Approval`, `/state`'s `gate`, the loop's `Gated` position | permissions.md |
 | **gate** (2) — *older sense, being retired*: the triage pass over one completion's results | `src/agent/gate.rs` (the triage hold), `Patience::GATE`, `PEEK_FORKS` | triage.md |

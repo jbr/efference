@@ -24,7 +24,7 @@ pub struct ToolTelemetry {
     /// hour), and a backgrounded spawn is the spawn alone.
     pub duration_ms: u64,
     pub outcome: ToolOutcome,
-    /// Bytes of result text as the tool produced it — **before** the fork peek
+    /// Bytes of result text as the tool produced it — **before** the triage
     /// triages it (docs/triage.md). The pair (this, the selection's
     /// size) is what says how much a gate actually saved.
     pub result_bytes: usize,

@@ -8,7 +8,7 @@
 
 use super::*;
 use crate::api::{Client, Error, ModelCapabilities};
-use crate::triage::ForkPeek;
+use crate::triage::Triager;
 use tokio::sync::oneshot;
 use trillium_tokio::Swansong;
 
@@ -18,7 +18,7 @@ use trillium_tokio::Swansong;
 pub struct SessionBoot<S: Spotter> {
     pub client: Client,
     pub toolbox: Toolbox,
-    pub distiller: ForkPeek,
+    pub triager: Triager,
     pub spotter: S,
     pub log: Log,
     pub paths: SessionPaths,
@@ -63,7 +63,7 @@ impl SessionRuntime {
         let SessionBoot {
             mut client,
             toolbox,
-            mut distiller,
+            mut triager,
             mut spotter,
             log,
             paths,
@@ -151,12 +151,12 @@ impl SessionRuntime {
         // the agent client and the own-triage client both read against it. The
         // spotter does not — an interrupt during a gate is the tool's kill.
         client.set_abort(session.interrupt_signal());
-        distiller.set_abort(session.interrupt_signal());
+        triager.set_abort(session.interrupt_signal());
         // Every request any of the session's clients makes reports its stages to
         // the log (docs/log-and-projection.md): the agent client (turns, the shared
         // peek, titles, keepalive, folds), the own-triage client, and the spotter.
         client.set_stage_sink(session.stage_sink());
-        distiller.set_stage_sink(session.stage_sink());
+        triager.set_stage_sink(session.stage_sink());
         spotter.set_stage_sink(session.stage_sink());
         // Share the client between the loop and the keepalive task. `tools` is computed
         // once here for the ping; `agent::run` recomputes the same (byte-stable,
@@ -223,7 +223,7 @@ impl SessionRuntime {
         // The triage lineage's keepalive (docs/transport.md): armed only where the triage
         // model is the session's own and its primer can plant. Interval zero turns it off,
         // as it does the main loop.
-        if let Some(triage) = KeepaliveSpec::triage(&distiller, configured_interval, triage_prices)
+        if let Some(triage) = KeepaliveSpec::triage(&triager, configured_interval, triage_prices)
             && !triage.ping_at.is_zero()
         {
             tokio::spawn(swansong.interrupt(keepalive_loop(triage, Arc::clone(&session))));
@@ -275,7 +275,7 @@ impl SessionRuntime {
                 &client,
                 &mut frontend,
                 Arc::clone(&loop_session),
-                distiller,
+                triager,
                 spotter,
                 toolbox,
             );

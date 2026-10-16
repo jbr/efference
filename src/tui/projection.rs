@@ -374,7 +374,7 @@ pub(crate) fn entry_nodes(
                     }
                     if let Some((seq, raw, wire)) = result {
                         nodes.push(result_entry(call, seq, raw, wire, view));
-                        // The distiller's note is *about* the result, not part of it
+                        // The triager's note is *about* the result, not part of it
                         // — the same rung distinction the spotter's verdict gets — so
                         // it is its own entry rather than a trailing line boxed in
                         // with the output (docs/triage.md).
@@ -659,7 +659,7 @@ fn result_entry(
     // highlighted and framing-stripped and an edit's diff is still colored, at
     // whatever subset survived triage.
     //
-    // The note still shows either way: it is the distiller's account of the output,
+    // The note still shows either way: it is the triager's account of the output,
     // and it is true regardless of which form of the output is on screen.
     // The header names the state and the size, the way the web client's result head
     // does (docs/web-client.md): `result (triaged, kept 3 of 412 lines)`. When
@@ -783,7 +783,7 @@ fn result_entry(
     .keyed(call_id.to_string())
 }
 
-/// The distiller's note on a result, and the breadcrumb for lines the peek cap
+/// The triager's note on a result, and the breadcrumb for lines the peek cap
 /// dropped before triage ever saw them — each as its own [`Annotation`] entry
 /// beside the result (docs/tui.md).
 ///

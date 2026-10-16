@@ -69,7 +69,7 @@ pub enum SelectionSource {
     ProjectConfig,
     /// Nothing named it, so the wire omits it and the provider decides.
     ProviderDefault,
-    /// Nothing named a separate triage client, so the fork peek shares main's.
+    /// Nothing named a separate triage client, so the triage shares main's.
     SharedMain,
 }
 
@@ -116,7 +116,7 @@ impl<T> Effective<T> {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "mode", rename_all = "snake_case")]
 pub enum EffectiveTriage {
-    /// The fork peek runs on the main client.
+    /// The triage runs on the main client.
     Shared,
     Separate {
         #[serde(flatten)]

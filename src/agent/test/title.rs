@@ -147,7 +147,7 @@ async fn the_title_ask_compresses_an_over_budget_title() {
         )
         .unwrap();
     let client = mock_client("Fix title cadence");
-    let ask = TitleAsk::new(&client, &[], &ForkPeek::shared());
+    let ask = TitleAsk::new(&client, &[], &Triager::shared());
     solicit_title_detached(&shared, &ask);
     assert!(
         eventually(|| titles(&shared).len() > 1).await,
@@ -169,7 +169,7 @@ async fn the_title_ask_stays_silent_while_the_title_answers_the_check() {
         })
         .unwrap();
     let client = mock_client("A different line");
-    let ask = TitleAsk::new(&client, &[], &ForkPeek::shared());
+    let ask = TitleAsk::new(&client, &[], &Triager::shared());
     solicit_title_detached(&shared, &ask);
     for _ in 0..20 {
         tokio::time::sleep(std::time::Duration::from_millis(25)).await;
@@ -216,7 +216,7 @@ async fn title_checks_during_an_ask_in_flight_spend_one_peek() {
     user_turn(&shared, "start");
     let (release, hold) = std::sync::mpsc::channel();
     let (client, requests) = mock("Fix title cadence", Some(hold));
-    let ask = TitleAsk::new(&client, &[], &ForkPeek::shared());
+    let ask = TitleAsk::new(&client, &[], &Triager::shared());
     solicit_title_detached(&shared, &ask);
     assert!(eventually(|| requests.load(Ordering::SeqCst) == 1).await);
     solicit_title_detached(&shared, &ask);
@@ -239,7 +239,7 @@ async fn a_user_turn_during_the_peek_is_asked_about_again() {
     user_turn(&shared, "start");
     let (release, hold) = std::sync::mpsc::channel();
     let (client, requests) = mock("Fix title cadence", Some(hold));
-    let ask = TitleAsk::new(&client, &[], &ForkPeek::shared());
+    let ask = TitleAsk::new(&client, &[], &Triager::shared());
     solicit_title_detached(&shared, &ask);
     assert!(eventually(|| requests.load(Ordering::SeqCst) == 1).await);
     user_turn(&shared, "new scope");

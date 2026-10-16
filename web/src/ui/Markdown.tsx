@@ -91,7 +91,7 @@ export function Markdown({
 }
 
 /** The inline marks only — code, emphasis, links — for a one-line annotation
- * (the distiller's note) that sits in running text rather than as a block.
+ * (the triager's note) that sits in running text rather than as a block.
  * Block structure is unwrapped rather than rendered: a note is one run of
  * text, and a stray `#` or list marker in it is not a heading or a list. The
  * same safety defaults as [`Markdown`] hold. */

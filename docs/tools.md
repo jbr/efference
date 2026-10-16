@@ -27,9 +27,9 @@ cache-prefix invariant). The real cost to watch is discoverability failure: a
 capability that never fires because its hint did not trigger — hints deserve
 the same iteration as the tools themselves.
 
-The redaction policy is the most-iterated knob; see `triage.md`. It is
-one concrete type (`ForkPeek`), not a trait: the single-implementation
-`Distiller` bound it was built behind was threaded through three signatures for
+The triage policy is the most-iterated knob; see `triage.md`. It is
+one concrete type (`Triager`), not a trait: the single-implementation
+`Triager` bound it was built behind was threaded through three signatures for
 a polymorphism nothing exercised, and the swap the backlog names — a smaller
 model behind the same peek — is a field and a different client, not a second
 implementation.
@@ -98,7 +98,7 @@ tells the agent that triage may answer with a request for a better question
 the intent, not the task. Collision is stated in one sentence: a tool that declares
 its own `intent` keeps it.
 
-**Readers.** The TUI leads a call entry's body with it. The fork peek's `result_view`
+**Readers.** The TUI leads a call entry's body with it. The triage's `result_view`
 puts it in the result header so the triage `note` answers it rather than restating
 what the tool did ([triage.md](triage.md)); the two halves are written
 at different times by different requests, so they can disagree, and a `note` that does

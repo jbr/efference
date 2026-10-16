@@ -13,8 +13,8 @@ pub fn tool_definitions(toolbox: &Toolbox) -> Vec<Value> {
     tools.push(consolidate::definition());
     tools.extend(supervisor::tool_definitions());
     // The peek tools (docs/triage.md) stand in every turn's array even though
-    // only a fork peek's tail instruction ever asks for them: with the tools array,
-    // `tool_choice`, and thinking policy identical, the fork peek is the same
+    // only a triage's tail instruction ever asks for them: with the tools array,
+    // `tool_choice`, and thinking policy identical, the triage is the same
     // conversation continued with a different tail and reads the agent lineage's cache
     // instead of keying its own (docs/log-and-projection.md). Their schemas are static
     // for the same reason. An un-asked call is paired with a nudge result in the loop.
@@ -67,7 +67,7 @@ pub fn brief<'a>(toolbox: &'a Toolbox, name: &str) -> Option<crate::tools::ToolB
 /// the lookup consulted only the providers). Composed from the same brief
 /// sources `brief` reads, plus the two peek tools, which `brief` excludes
 /// (they never reach a gate) but this route does not: `retain`/`triage` still
-/// ride every turn's `tools[]`, so a reader destructuring the fork peek's own
+/// ride every turn's `tools[]`, so a reader destructuring the triage's own
 /// call wants their schema too.
 ///
 /// None of these five sources inject [`crate::tools::INTENT`] the way a
