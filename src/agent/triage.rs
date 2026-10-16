@@ -146,8 +146,24 @@ pub(super) async fn triage_and_record(
             thinking: triage.thinking,
         }),
     )?;
+    expire_unmentioned(shared, *turn)?;
     Ok(escalate)
 }
+
+/// Dismiss the notifications that [`MAX_UNMENTIONED_SHOWS`](crate::inbox::MAX_UNMENTIONED_SHOWS)
+/// triages have shown without any verdict mentioning them (docs/inbox.md). Each gets a
+/// `Telemetry::InboxExpired` entry, which projects to nothing and takes the notification
+/// out of [`active_shown`]. Run after a triage's entries are written, so the count includes it.
+pub(super) fn expire_unmentioned(shared: &Arc<Session>, turn: Turn) -> Result<(), Error> {
+    for (seq, shows) in crate::inbox::unmentioned_past_cap(&shared.snapshot()) {
+        shared.append(
+            turn,
+            Payload::Telemetry(crate::log::Telemetry::InboxExpired { seq, shows }),
+        )?;
+    }
+    Ok(())
+}
+
 /// Override the triage's verdict for the must-wake notifications (docs/inbox.md): each
 /// `forced` seq is pinned, whether the triage pinned it, dismissed it, or left it.
 /// Deterministic on purpose — the fork keeps everything downstream of *whether* the

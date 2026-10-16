@@ -66,6 +66,7 @@ enum Telemetry {
     Cold(ColdEvent),                   // one step of the cold check (see control-api.md)
     CompactionRequested { warm: bool, cut: Seq }, // a compaction accepted, and its cut (see summary.md)
     CompactionFailed { error: String },           // the compaction asked for last ended without a summary
+    InboxExpired { seq: Seq, shows: usize },      // a shown notification no verdict mentioned, dismissed by the harness (see inbox.md)
     SupervisorSet { supervisor: Option<String> }, // the supervisor pointer set or cleared (see permissions.md)
     Consolidation { from: Seq, upto: Seq, context: Seq, tool_bytes: usize, outcome: String, account_bytes: usize },
 }

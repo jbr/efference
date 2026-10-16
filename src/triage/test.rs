@@ -68,4 +68,5 @@ mod ask;
 mod fork;
 mod lineage;
 mod parse;
+mod riders;
 mod validation;

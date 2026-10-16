@@ -121,6 +121,7 @@ export type Telemetry =
   | { Cold: ColdEvent }
   | { CompactionRequested: { warm: boolean; cut: Seq } }
   | { CompactionFailed: { error: string } }
+  | { InboxExpired: { seq: Seq; shows: number } }
   | { SupervisorSet: { supervisor: string | null } }
   | {
       Consolidation: {

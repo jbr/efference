@@ -17,6 +17,13 @@ what truly warrants picking the work back up.";
 /// the preamble attributes to the operator (docs/triage.md).
 pub(super) const ASK_BANNER: &str = "⟢ triage · the harness asks: answer, don't act";
 
+/// The header over the riders (inbox, background, roster), which follow the ask. It says
+/// they are not the output of the call, because the block that used to sit directly above
+/// the ask was the last rider, and notes were written about it (docs/triage.md).
+pub(super) const RIDERS_HEADER: &str = "═══ also pending · not the output of the call above ═══\n\
+The sections below are separate from the result blocks. Answer them in the matching fields \
+described above; the result's `keep` and `note` are about the result alone.";
+
 /// The `keep`/`note` rows of the field block. `note` says *only what it showed* because a
 /// triage once turned a raw `unknown tool: ferritin` into "ferritin is not available as a CLI
 /// tool in this environment" — false, and the raw is discarded, so the invented claim was
@@ -143,13 +150,13 @@ pub(super) fn retain_instruction(offered: &[String], riders: &[&str], reader: Re
 already decided, and their [n] tags are not result labels.";
     let shape = match offered {
         [_one] => format!(
-            "The block above is the FULL, line-numbered output of the one call you just made. \
-{scope} Answer with a top-level `keep` and `note`: no `results` array and no label, since \
+            "The block headed `═══ result` above is the FULL, line-numbered output of the one call you \
+just made. {scope} Answer with a top-level `keep` and `note`: no `results` array and no label, since \
 there is only one result in question."
         ),
         many => format!(
-            "The blocks above are the FULL, line-numbered output of the {n} calls you just made, \
-each under a header naming its label. Line numbers restart at 1 within each result, so ranges \
+            "The blocks headed `═══ result` above are the FULL, line-numbered output of the {n} calls \
+you just made, each under a header naming its label. Line numbers restart at 1 within each result, so ranges \
 are always relative to the result you are deciding. {scope} Answer with exactly {n} `results` \
 entries, one per label listed here and no others: {labels}.",
             n = many.len(),
@@ -378,23 +385,23 @@ further is coming, so decide on what is there."
 }
 
 /// The triage-scoped riders, as field rows for [`retain_instruction`]'s block. Each is added
-/// only when its section is actually present in the view above.
+/// only when its section is actually present in the request.
 pub(super) const INBOX_FIELD: &str =
-    "  inbox       The pending notifications under \"inbox\" above, an [id] each. `pin` the ids
-              worth carrying into your working context going forward and `dismiss` the
-              noise; any id you don't list stays in the inbox and is shown again at the
-              next decision point.";
+    "  inbox       The pending notifications under \"inbox\" in the sections after this ask, an
+              [id] each. `pin` the ids worth carrying into your working context going forward and
+              `dismiss` the noise; any id you don't list stays in the inbox and is shown
+              again at the next decision point.";
 
 pub(super) const BACKGROUND_FIELD: &str =
-    "  background  The processes under \"background\" above, a [p#n] handle each. `pin` the
-              handles whose current output you want captured onto the record now, and
-              `mute` the ones whose tail you no longer need (they keep running, and still
+    "  background  The processes under \"background\" in the sections after this ask, a [p#n]
+              handle each. `pin` the handles whose current output you want captured onto the
+              record now, and `mute` the ones whose tail you no longer need (they keep running, and still
               notify you when they exit). Anything you don't list keeps streaming its
               latest tail to you at the next decision point.";
 
 pub(super) const SURFACE_FIELD: &str =
-    "  surfaced    The files under \"context\" above — available to you, not yet loaded, each
-              shown with its summary and the path to read. Name any that genuinely bear on
+    "  surfaced    The files under \"context\" in the sections after this ask — available to you,
+              not yet loaded, each listed with the path to read. Name any that genuinely bear on
               what you're doing right now and it will be surfaced as a reminder to read it
               before you rely on memory. Name nothing if none apply.";
 
@@ -637,7 +644,7 @@ pub(super) fn triage_parts(
 
     // Scoped to exactly this triage's ids, and shape-selected on its size — the tail is
     // discarded with the fork, so nothing here is cache-keyed (docs/triage.md).
-    // A rider's field row is offered only when its section is actually above.
+    // A rider's field row is offered only when its section is actually shown.
     let labels = labels(pending);
     let offered: Vec<String> = labels.iter().flatten().cloned().collect();
     let mut riders: Vec<&str> = Vec::new();
@@ -667,12 +674,12 @@ pub(super) fn triage_parts(
             is_error: p.raw.is_error,
         })
         .collect();
-    // `sections` already opens with its own blank line when non-empty, and is empty
-    // outright on a triage carrying no riders — so trim rather than always joining with a
-    // gap, which left the block opening on stray whitespace.
+    // The riders follow the ask under their own header, so the block directly after the
+    // result blocks is the ask that names them. `sections` opens with its own blank line
+    // when non-empty and is empty outright on a triage carrying no riders.
     let ask = match sections.trim() {
         "" => instruction,
-        sections => format!("{sections}\n\n{instruction}"),
+        sections => format!("{instruction}\n\n{RIDERS_HEADER}\n\n{sections}"),
     };
     (results, ask)
 }

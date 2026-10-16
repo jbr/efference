@@ -5,7 +5,7 @@
 //! varied with the inbox, the background set, or the roster would re-key the request
 //! envelope mid-session and split the cache lineage, which is the exact defect the
 //! shared array exists to close. Field descriptions are self-contained ("if a section
-//! named X appears above…") since their referent sections aren't always shown; invented
+//! named X is shown in this request…") since their referent sections aren't always shown; invented
 //! dispositions are dropped harness-side regardless (docs/triage.md).
 //!
 //! Both descriptions carry the same standing clause — the tools are answered only when
@@ -20,7 +20,7 @@ use super::*;
 pub(super) fn inbox_schema_field() -> Value {
     json!({
         "type": "object",
-        "description": "If a section named \"inbox\" appears above, triage those pending notifications by [id]. Unlisted ids are left for the next decision point. Omit when no inbox section is shown.",
+        "description": "If a section named \"inbox\" is shown in this request, triage those pending notifications by [id]. Unlisted ids are left for the next decision point. Omit when no inbox section is shown.",
         "properties": {
             "pin": {
                 "type": "array",
@@ -41,7 +41,7 @@ pub(super) fn inbox_schema_field() -> Value {
 pub(super) fn background_schema_field() -> Value {
     json!({
         "type": "object",
-        "description": "If a section named \"background\" appears above, triage those live background processes by [p#n] handle. Unlisted handles keep streaming their tail at the next decision point. Omit when no background section is shown.",
+        "description": "If a section named \"background\" is shown in this request, triage those live background processes by [p#n] handle. Unlisted handles keep streaming their tail at the next decision point. Omit when no background section is shown.",
         "properties": {
             "pin": {
                 "type": "array",
@@ -64,7 +64,7 @@ pub(super) fn surfaced_schema_field() -> Value {
     json!({
         "type": "array",
         "items": { "type": "string" },
-        "description": "If a section named \"context\" appears above, the names of the items listed there that genuinely bear on what you're doing now — each is surfaced as a reminder to read it. Omit when no context section is shown or none apply."
+        "description": "If a section named \"context\" is shown in this request, the names of the items listed there that genuinely bear on what you're doing now — each is surfaced as a reminder to read it. Omit when no context section is shown or none apply."
     })
 }
 

@@ -14,6 +14,7 @@ pub(super) fn bash_call(command: &str) -> ToolCall {
 
 mod ask;
 mod cascade;
+mod expiry;
 mod grants;
 mod images;
 mod title;

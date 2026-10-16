@@ -39,6 +39,19 @@ step rather than per result — so they ride the trailing text block and their d
 land on the last `Triage` of the batch. That placement is tail-ward, keeping the wire
 append-only, and is identical to where they land when a completion carried one call.
 
+**The trailing user turn reads result blocks, then the ask, then the riders.** Anthropic's
+format wants `tool_result` blocks first in a user turn, so the riders stay after the
+results; what is ordered is the ask against them. The ask follows the result blocks
+directly and names them by their header ("the block headed `═══ result` above"). The
+riders follow the ask under `═══ also pending · not the output of the call above ═══`,
+which says they are separate from the result and are answered in the `inbox`,
+`background`, and `surfaced` fields. Riders placed between the result and the ask left the
+block directly above the ask's "the output of the call you just made" as the last rider,
+and verdicts' notes described it: a test-exit notification re-shown at every gate was
+summarized as the output of unrelated reads, and real output was dropped as "not shown".
+With no riders the text block is the ask alone and carries no header. The standalone idle
+triage has no result and keeps its sections ahead of its instruction.
+
 ```
 [cached prefix through tool_use]  ──┬──►  + [full raw result] + [retain prompt]   (throwaway: 1 turn, tail uncached)
                                     └──►  + [triaged result]                     (canonical: appended, cached)

@@ -9,6 +9,7 @@ behind a change, see [`journal/`](journal/).
 
 ### Added
 
+- A triage request reads result blocks, then the ask, then the riders under an `also pending` header; a notification no verdict mentions across 3 triages is dismissed with a `telemetry.inbox_expired` entry (docs/triage.md, docs/inbox.md).
 - `efference dev triage` replays a triage with the inbox rider the live one was shown, and notes when a replayed triage had background processes whose tails were not logged (docs/triage.md).
 - A triage primer cut at its output cap is recorded as an ended request with its finish word, not `failed`; `failed` is kept for a primer that got no response (docs/transport.md).
 - Compactions are logged (`telemetry.compaction_requested`, `telemetry.compaction_failed`) and their state is folded from the log, so a compaction failure survives a host restart (docs/summary.md).

@@ -130,8 +130,9 @@ shown-and-active layer reconstructs from the log.
 
 ## Triage: pin · dismiss · leave
 
-Pending and active-shown notifications appear in the triage view beneath the
-line-numbered tool output, each item labelled with its arrival `seq` handle. The
+Pending and active-shown notifications appear in the triage view after the ask, under the
+riders header that marks them as not the tool output (docs/triage.md), each item labelled
+with its arrival `seq` handle. The
 `retain` verdict (see `triage.md`) gains an `inbox` field; the model may give
 each notification one of three dispositions:
 
@@ -140,10 +141,23 @@ each notification one of three dispositions:
 - **Dismiss** — clear it. The disposition is recorded; the notification no longer resurfaces.
 - **Leave** — simply omit the item from the `inbox` field. The notification stays active
   and resurfaces at the next triage unchanged. This is the no-effort default; deferral costs
-  nothing.
+  nothing, up to a bound: a notification that no verdict mentions across
+  `MAX_UNMENTIONED_SHOWS` (3) triages is dismissed by the harness (below).
 
 All dispositions are recorded on the `Triage` log entry (`inbox: Vec<(Seq, Disposition)>`),
 making the fork's verdict durable even though the fork's transcript is throwaway.
+
+## Unmentioned notifications expire
+
+Without a bound, a notification no verdict mentions is shown at every triage for the rest
+of the session (one session re-showed a test-exit notice from seq 423 to seq 467). After the third
+triage that shows a notification and does not pin or dismiss it, the loop appends
+`Telemetry::InboxExpired { seq, shows }` and the notification leaves `active_shown`, as a
+`Dismiss` would. The entry projects to nothing and records that the harness, not the
+model, made the choice. `unmentioned_past_cap` in `src/inbox.rs` folds the count from the
+log: one show per idle `Triage`, and one per run of result-carrying `Triage` entries with
+no `Assistant` or `User` entry between them (a batch writes one per result, and the
+verdict rides the last). The check runs after each triage's entries are written.
 
 ## Must-wake — the disposition the harness declares
 

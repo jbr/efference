@@ -282,6 +282,7 @@ pub(super) async fn land(
         )
         .await?;
     }
+    expire_unmentioned(shared, turn)?;
     // The operator note attached to a handoff lands as a real user turn after the
     // step's results — direction, not tool output (docs/process-monitor.md). Same
     // canonical `Payload::User` as a queued turn delivered mid-task; `project` merges it into the

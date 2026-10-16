@@ -394,6 +394,8 @@ impl Masker {
             // can quote the provider's answer or the request.
             Payload::Telemetry(Telemetry::CompactionRequested { .. }) => {}
             Payload::Telemetry(Telemetry::CompactionFailed { error }) => self.mask_in_place(error),
+            // A notification's seq and a count. Nothing from the environment.
+            Payload::Telemetry(Telemetry::InboxExpired { .. }) => {}
             // A supervisor change carries a session id. Nothing from the environment.
             Payload::Telemetry(Telemetry::SupervisorSet { .. }) => {}
             Payload::Telemetry(Telemetry::Consolidation { outcome, .. }) => {

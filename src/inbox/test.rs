@@ -66,3 +66,75 @@ fn active_shown_ignores_non_ambient_and_unresolved_stay() {
     assert_eq!(active.len(), 1);
     assert_eq!(active[0].seq, 1);
 }
+
+fn assistant(seq: Seq) -> LogEntry {
+    entry(
+        seq,
+        Payload::Assistant {
+            output: crate::log::AssistantOutput::empty(crate::api::WireDialect::Messages),
+            upstream_failure: None,
+        },
+    )
+}
+fn result_triage(seq: Seq, for_result: Seq) -> LogEntry {
+    let mut e = triage(seq, Vec::new());
+    if let Payload::Triage(t) = &mut e.payload {
+        t.for_result = Some(for_result);
+    }
+    e
+}
+fn expired(seq: Seq, of: Seq) -> LogEntry {
+    entry(
+        seq,
+        Payload::Telemetry(Telemetry::InboxExpired { seq: of, shows: 3 }),
+    )
+}
+
+#[test]
+fn unmentioned_counts_one_show_per_batch_not_per_triage_entry() {
+    // Two completions, the first a two-result batch (two `Triage` entries, one show).
+    let log = vec![
+        ambient(0, "left alone"),
+        assistant(1),
+        result_triage(2, 10),
+        result_triage(3, 11),
+        assistant(4),
+        result_triage(5, 12),
+    ];
+    assert!(unmentioned_past_cap(&log).is_empty());
+    let mut log = log;
+    log.push(assistant(6));
+    log.push(result_triage(7, 13));
+    assert_eq!(unmentioned_past_cap(&log), vec![(0, 3)]);
+}
+
+#[test]
+fn unmentioned_counts_idle_triages_and_skips_mentioned_and_expired() {
+    let mut log = vec![
+        ambient(0, "left"),
+        ambient(1, "dismissed"),
+        ambient(2, "expired"),
+        triage(3, vec![(1, Disposition::Dismiss)]),
+        triage(4, Vec::new()),
+        triage(5, Vec::new()),
+    ];
+    assert_eq!(unmentioned_past_cap(&log), vec![(0, 3), (2, 3)]);
+    log.push(expired(6, 2));
+    assert_eq!(unmentioned_past_cap(&log), vec![(0, 3)]);
+    assert_eq!(
+        active_shown(&log).iter().map(|n| n.seq).collect::<Vec<_>>(),
+        vec![0]
+    );
+}
+
+#[test]
+fn a_notification_first_shown_later_counts_only_from_its_arrival() {
+    let log = vec![
+        ambient(0, "old"),
+        triage(1, Vec::new()),
+        triage(2, Vec::new()),
+        ambient(3, "new"),
+        triage(4, Vec::new()),
+    ];
+    assert_eq!(unmentioned_past_cap(&log), vec![(0, 3)]);
+}

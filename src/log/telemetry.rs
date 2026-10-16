@@ -52,6 +52,11 @@ pub enum Telemetry {
     /// The compaction asked for last did not land a summary: the error that ended it,
     /// a superseding turn included (docs/summary.md).
     CompactionFailed { error: String },
+    /// A shown notification no triage verdict mentioned was dismissed by the harness
+    /// after `shows` triages displayed it (docs/inbox.md). The entry resolves the
+    /// notification the way a `Dismiss` would, and records that the model did not make
+    /// the choice.
+    InboxExpired { seq: super::Seq, shows: usize },
     /// The session's supervisor was set or cleared after creation
     /// (docs/permissions.md): the session now named, or `None` when cleared. The
     /// creator a session starts with is in the header and is not recorded here.
@@ -79,6 +84,7 @@ impl Telemetry {
             Telemetry::Cold(_) => "telemetry.cold",
             Telemetry::CompactionRequested { .. } => "telemetry.compaction_requested",
             Telemetry::CompactionFailed { .. } => "telemetry.compaction_failed",
+            Telemetry::InboxExpired { .. } => "telemetry.inbox_expired",
             Telemetry::SupervisorSet { .. } => "telemetry.supervisor_set",
             Telemetry::Consolidation { .. } => "telemetry.consolidation",
         }
