@@ -276,3 +276,45 @@ fn scope_for_request_mirrors_load_probe() {
         cwd.join("custom.toml").to_string_lossy()
     );
 }
+
+fn selection(connection: &str, model: &str) -> crate::inference::ModelSelection {
+    crate::inference::ModelSelection {
+        connection: connection.to_string(),
+        provider: crate::api::Provider::Anthropic,
+        model: model.to_string(),
+    }
+}
+
+/// An explicit separate triage records one row carrying the main model it ran
+/// with; a shared triage (no triage client) and an inherited one record none.
+#[test]
+fn only_an_explicit_separate_triage_is_recorded() {
+    let (store, dir) = history();
+    let scope = scope(&dir);
+    let main = selection("meta", "muse-spark");
+    let triage = selection("openai", "small");
+    let at = 1_800_000_000;
+
+    for (explicit, triage) in [(true, None), (false, Some(&triage))] {
+        if let Some(pick) = TriagePick::for_creation(at, &scope, explicit, &main, triage) {
+            store.record_triage(&pick);
+        }
+    }
+    assert!(store.triage_picks().is_empty());
+
+    let pick = TriagePick::for_creation(at, &scope, true, &main, Some(&triage)).unwrap();
+    store.record_triage(&pick);
+    assert_eq!(
+        store.triage_picks(),
+        vec![TriagePick {
+            at,
+            cwd: scope.cwd.to_string_lossy().into_owned(),
+            config_key: BUILTIN_CONFIG_KEY.to_string(),
+            main_connection: "meta".into(),
+            main_model: "muse-spark".into(),
+            triage_connection: "openai".into(),
+            triage_model: "small".into(),
+        }]
+    );
+    assert!(store.picks().is_empty(), "the main table is untouched");
+}

@@ -34,7 +34,18 @@ const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS model_picks (
         model TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS model_picks_lookup
-        ON model_picks (connection, cwd, config_key, at);";
+        ON model_picks (connection, cwd, config_key, at);
+    CREATE TABLE IF NOT EXISTS triage_picks (
+        at INTEGER NOT NULL,
+        cwd TEXT NOT NULL,
+        config_key TEXT NOT NULL,
+        main_connection TEXT NOT NULL,
+        main_model TEXT NOT NULL,
+        triage_connection TEXT NOT NULL,
+        triage_model TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS triage_picks_lookup
+        ON triage_picks (main_connection, main_model, at);";
 
 /// Single exponential decay, half-life 30 days. Eyeballed, not tuned: ~200
 /// sessions is too little to fit per-person coefficients without overfitting a
@@ -63,6 +74,44 @@ pub struct Pick {
     pub connection: String,
     pub provider: String,
     pub model: String,
+}
+
+/// One explicit separate-triage pick and the main model it ran with. Written
+/// beside the main [`Pick`] at creation; nothing reads it yet (docs/state-store.md).
+#[derive(Clone, Debug, PartialEq)]
+pub struct TriagePick {
+    /// Unix seconds when the session was created.
+    pub at: i64,
+    pub cwd: String,
+    pub config_key: String,
+    pub main_connection: String,
+    pub main_model: String,
+    pub triage_connection: String,
+    pub triage_model: String,
+}
+
+impl TriagePick {
+    /// The row for a creation, when it has one: triage was picked explicitly
+    /// (`explicit`) and resolved to a separate client (`triage` is `Some`). The
+    /// shared-with-main fallback names no triage model and records nothing.
+    pub fn for_creation(
+        at: i64,
+        scope: &Scope,
+        explicit: bool,
+        main: &crate::inference::ModelSelection,
+        triage: Option<&crate::inference::ModelSelection>,
+    ) -> Option<Self> {
+        let triage = triage.filter(|_| explicit)?;
+        Some(Self {
+            at,
+            cwd: scope.cwd.to_string_lossy().into_owned(),
+            config_key: scope.config_key.clone(),
+            main_connection: main.connection.clone(),
+            main_model: main.model.clone(),
+            triage_connection: triage.connection.clone(),
+            triage_model: triage.model.clone(),
+        })
+    }
 }
 
 /// A decayed-weight model candidate: what to offer, and how strongly.
@@ -175,6 +224,61 @@ impl History {
                 ],
             )
             .ok();
+    }
+
+    /// Record one explicit separate-triage pick with its main model. Only
+    /// explicit picks are written, never the shared-with-main fallback, so the
+    /// fallback cannot reinforce itself. Best-effort like [`Self::record`].
+    pub fn record_triage(&self, pick: &TriagePick) {
+        let Some(connection) = self.connect() else {
+            return;
+        };
+        connection
+            .execute(
+                "INSERT INTO triage_picks (at, cwd, config_key, main_connection, main_model,
+                                           triage_connection, triage_model)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                rusqlite::params![
+                    pick.at,
+                    pick.cwd,
+                    pick.config_key,
+                    pick.main_connection,
+                    pick.main_model,
+                    pick.triage_connection,
+                    pick.triage_model,
+                ],
+            )
+            .ok();
+    }
+
+    /// The recorded triage picks, oldest first. Tests read it; no production
+    /// reader exists yet.
+    #[cfg(test)]
+    fn triage_picks(&self) -> Vec<TriagePick> {
+        let Some(connection) = self.connect() else {
+            return Vec::new();
+        };
+        let mut statement = connection
+            .prepare(
+                "SELECT at, cwd, config_key, main_connection, main_model,
+                        triage_connection, triage_model FROM triage_picks ORDER BY rowid",
+            )
+            .unwrap();
+        statement
+            .query_map([], |row| {
+                Ok(TriagePick {
+                    at: row.get(0)?,
+                    cwd: row.get(1)?,
+                    config_key: row.get(2)?,
+                    main_connection: row.get(3)?,
+                    main_model: row.get(4)?,
+                    triage_connection: row.get(5)?,
+                    triage_model: row.get(6)?,
+                })
+            })
+            .unwrap()
+            .filter_map(Result::ok)
+            .collect()
     }
 
     fn picks(&self) -> Vec<Pick> {

@@ -94,6 +94,10 @@ impl Host {
             resolved.effective.main.source,
             Some(crate::inference::SelectionSource::Request)
         );
+        let triage_explicit = matches!(
+            resolved.effective.triage.source,
+            Some(crate::inference::SelectionSource::Request)
+        );
         let inference = match self.inference.prepare(resolved) {
             Ok(inference) => inference,
             Err(error) => return Err(error.to_string()),
@@ -114,6 +118,16 @@ impl Host {
                 model: selection.model.clone(),
             }
         });
+        // The explicit separate triage beside the main model it runs with, kept
+        // for later pairing defaults (docs/state-store.md). Never the shared
+        // fallback, which has no triage client to name.
+        let triage_pick = crate::history::TriagePick::for_creation(
+            crate::history::now(),
+            &scope,
+            triage_explicit,
+            inference.main().0,
+            inference.triage().map(|(selection, _, _)| selection),
+        );
         // Where this session starts, for the index the launch picker reads. Every
         // creation records one — a web launch, a session's own `sessions__create`,
         // a `hand_off` in its predecessor's directory — because they are one
@@ -165,6 +179,9 @@ impl Host {
         // did not happen; best-effort, so neither store fails one that did.
         if let Some(pick) = pick.as_ref() {
             self.inference.history().record(pick);
+        }
+        if let Some(pick) = triage_pick.as_ref() {
+            self.inference.history().record_triage(pick);
         }
         self.remembered.record(&launch);
         log::info!("session {id}: created in {}", scope.cwd.display());

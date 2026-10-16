@@ -16,6 +16,7 @@ schema.
 | Table | One row per | Held by | What reads it |
 |---|---|---|---|
 | `model_picks` | an explicit model pick | `src/history.rs` | the recent menu and the omitted-branch default ([transport.md](transport.md)) |
+| `triage_picks` | an explicit separate triage pick, with the main model it ran with | `src/history.rs` | nothing yet; recorded for a later pairing default |
 | `model_catalog` | a connection | `src/catalog.rs` | the model menus ([model-catalog.md](model-catalog.md)) |
 | `remembered_projects` | a directory a session was started in | `src/remembered.rs` | the launch index, `GET /projects` ([control-api.md](control-api.md)) |
 | `push_subscriptions` | a browser subscription | `src/push.rs` | the sender, per push ([web-push.md](web-push.md)) |
@@ -39,7 +40,7 @@ existing ones, and a new column lands as an `ALTER TABLE` in a follow-up change.
 Nothing is read back at startup, so there is no schema version to number.
 
 An open that fails is the *table's* problem rather than the store's, and the caller
-decides what that means. Four of the five fold the error away: an empty catalog still
+decides what that means. Five of the six fold the error away: an empty catalog still
 serves from memory, absent picks still fall back to the config's choice, an unreadable
 subscription table means nobody is subscribed, a push that does not go out cannot fail a
 turn, and a remembered location that cannot be stored is a picker entry that does not
@@ -64,7 +65,7 @@ with.
 ## When it goes wrong
 
 The file is ordinary sqlite, so `sqlite3 ~/.efference/state.db` is a working way to look
-at it, and deleting it discards all five tables. What that costs differs by table: model
+at it, and deleting it discards every table. What that costs differs by table: model
 picks and catalog listings rebuild themselves within days, remembered launch locations
 rebuild as sessions are started there again, push subscriptions need one resubscribe from
 the browser's service worker, and the burn ledger re-opens at most the
