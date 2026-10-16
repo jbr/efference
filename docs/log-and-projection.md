@@ -64,6 +64,8 @@ enum Telemetry {
     RequestStage(RequestStage),        // one stage of one upstream request
     Push(PushRecord),                  // one step of a moment's push (see web-push.md)
     Cold(ColdEvent),                   // one step of the cold check (see control-api.md)
+    CompactionRequested { warm: bool, cut: Seq }, // a compaction accepted, and its cut (see summary.md)
+    CompactionFailed { error: String },           // the compaction asked for last ended without a summary
     SupervisorSet { supervisor: Option<String> }, // the supervisor pointer set or cleared (see permissions.md)
     Consolidation { from: Seq, upto: Seq, context: Seq, tool_bytes: usize, outcome: String, account_bytes: usize },
 }
@@ -75,7 +77,8 @@ shares a name with a state topic. The family is the payloads every reader that r
 session skips: the wire projection, the agent and TUI transcripts, and the web tree each
 have one `Telemetry(_)` arm, so a new event of this kind is one variant. A reader that uses
 a variant's contents matches it by name — the `[env]` masker (a failed request's reason),
-the `current_operations` fold, the web client attaching `Tool` to its call. Payloads that
+the `current_operations` fold (which also folds the compaction's entries), the web client
+attaching `Tool` to its call. Payloads that
 project to nothing but are rendered somewhere (`ProcessEvent`, `Worktree`, `Title`,
 `ImagesRefused`) stay top-level.
 

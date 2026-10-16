@@ -292,3 +292,125 @@ fn a_session_opened_from_a_log_folds_it() {
     session.append(1, resumed()).unwrap();
     assert_eq!(state(&session), Value::Null);
 }
+
+fn compaction_requested(cut: u64) -> Payload {
+    Payload::Telemetry(Telemetry::CompactionRequested { warm: true, cut })
+}
+
+fn compaction_failed(error: &str) -> Payload {
+    Payload::Telemetry(Telemetry::CompactionFailed {
+        error: error.into(),
+    })
+}
+
+fn compaction_summary(upto: u64) -> Payload {
+    let model = crate::log::LoggedInference::new("c", crate::api::Provider::Anthropic, "m");
+    Payload::Summary(crate::log::Summary::compaction(upto, "account", model))
+}
+
+/// A compaction waits from its request until its summarizing request is sent, writes
+/// until its summary lands, and is closed by that summary (docs/summary.md).
+#[test]
+fn a_compaction_waits_then_writes_then_closes() {
+    use RequestOrigin::Compaction;
+    let waiting = fold(vec![(100, compaction_requested(4))]);
+    assert_eq!(
+        waiting.compaction(),
+        Some(&CompactionState::Waiting {
+            warm: true,
+            cut: 4,
+            since: 100
+        })
+    );
+
+    let writing = fold(vec![
+        (100, compaction_requested(4)),
+        (150, stage(0, Compaction, RequestStageKind::Sent)),
+    ]);
+    assert_eq!(
+        writing.compaction(),
+        Some(&CompactionState::Writing {
+            warm: true,
+            cut: 4,
+            since: 150
+        })
+    );
+
+    let landed = fold(vec![
+        (100, compaction_requested(4)),
+        (150, stage(0, Compaction, RequestStageKind::Sent)),
+        (200, stage(0, Compaction, RequestStageKind::Ended)),
+        (210, compaction_summary(4)),
+    ]);
+    assert_eq!(landed.compaction(), None);
+}
+
+/// The agent's own summary is not the compaction's, and does not close it.
+#[test]
+fn a_consolidation_does_not_close_a_compaction() {
+    let ops = fold(vec![
+        (100, compaction_requested(4)),
+        (
+            120,
+            Payload::Summary(crate::log::Summary::consolidation(2, 3, "span")),
+        ),
+    ]);
+    assert!(ops.compaction().is_some_and(CompactionState::open));
+}
+
+/// A failure stands until a turn's request goes out or another compaction is asked
+/// for; a triage or title request leaves it.
+#[test]
+fn a_failure_stands_until_a_turn_request_or_another_compaction() {
+    let failed = vec![
+        (100, compaction_requested(4)),
+        (150, compaction_failed("boom")),
+        (160, stage(0, RequestOrigin::Triage, RequestStageKind::Sent)),
+    ];
+    assert_eq!(
+        fold(failed.clone()).compaction(),
+        Some(&CompactionState::Failed {
+            error: "boom".into(),
+            at: 150
+        })
+    );
+
+    let mut turned = failed.clone();
+    turned.push((170, stage(1, RequestOrigin::Turn, RequestStageKind::Sent)));
+    assert_eq!(fold(turned).compaction(), None);
+
+    let mut again = failed;
+    again.push((170, compaction_requested(5)));
+    assert!(
+        matches!(
+            fold(again).compaction(),
+            Some(CompactionState::Waiting { cut: 5, .. })
+        ),
+        "a new compaction replaces the failure"
+    );
+}
+
+/// A failure is in the log, so it survives a restart; a compaction open when the host
+/// stopped does not, since the process writing it is gone.
+#[test]
+fn a_failure_survives_a_restart_and_an_open_compaction_does_not() {
+    let failed = fold(vec![
+        (100, compaction_requested(4)),
+        (150, compaction_failed("boom")),
+        (200, resumed()),
+    ]);
+    assert!(matches!(
+        failed.compaction(),
+        Some(CompactionState::Failed { .. })
+    ));
+
+    let open = fold(vec![
+        (100, compaction_requested(4)),
+        (
+            150,
+            stage(0, RequestOrigin::Compaction, RequestStageKind::Sent),
+        ),
+        (200, resumed()),
+    ]);
+    assert_eq!(open.compaction(), None);
+}

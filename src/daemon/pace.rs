@@ -102,7 +102,6 @@ impl Session {
                 Some(pos) => {
                     if mark_running {
                         self.running.store(true, Ordering::SeqCst);
-                        self.clear_failed_compaction();
                     }
                     q.remove(pos);
                     true

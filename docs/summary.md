@@ -147,7 +147,20 @@ compaction routes the text and thinking to the session's `output` broadcast as
 main loop's `AssistantText` and `ThinkingText` and exempt from the rule that a committed
 `Assistant` entry retires block deltas. They are not logged and not projected: the
 summary entry stays the only record. `efference dev compact` passes a callback that
-ignores them. Progress is the `compaction` state topic.
+ignores them.
+
+## What the log records
+
+A compaction is three kinds of entry, all projecting to nothing but the summary's text. An
+accepted `POST /loop/compact` appends `CompactionRequested`, carrying the `warm` flag and
+the cut, and the compaction is written at that cut. Its request's `RequestStage` entries
+follow under the `compaction` origin. It ends with the compaction's `Summary`, or with a
+`CompactionFailed` carrying the error (a superseding turn is one). The compaction's state
+— waiting for its request, writing, or failed — is folded from these with the open
+requests (`daemon/operations.rs`) rather than held in memory, so a failure is still
+reported after a host restart; a compaction open when the host stopped is not, since the
+process writing it is gone. A failure stands until a turn's request goes out or another
+compaction is asked for. Progress is published on `/state` (docs/control-api.md).
 
 ## What is not here
 

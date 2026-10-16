@@ -42,6 +42,16 @@ pub enum Telemetry {
     /// One step of the cold check: the loop parked, a person released it, the park
     /// ended (docs/control-api.md). The entry's `at` is the step's time.
     Cold(ColdEvent),
+    /// A compaction was asked for and accepted (`POST /loop/compact`, docs/summary.md):
+    /// whether the operator gave up a warm cache for it, and the last seq the summary
+    /// will cover. Its summarizing request follows as `RequestStage` entries with the
+    /// `compaction` origin, then the compaction's `Summary` on success or a
+    /// [`CompactionFailed`](Self::CompactionFailed). The compaction's state on
+    /// `/state` is folded from these (docs/control-api.md).
+    CompactionRequested { warm: bool, cut: super::Seq },
+    /// The compaction asked for last did not land a summary: the error that ended it,
+    /// a superseding turn included (docs/summary.md).
+    CompactionFailed { error: String },
     /// The session's supervisor was set or cleared after creation
     /// (docs/permissions.md): the session now named, or `None` when cleared. The
     /// creator a session starts with is in the header and is not recorded here.
@@ -67,6 +77,8 @@ impl Telemetry {
             Telemetry::RequestStage(_) => "telemetry.request_stage",
             Telemetry::Push(_) => "telemetry.push",
             Telemetry::Cold(_) => "telemetry.cold",
+            Telemetry::CompactionRequested { .. } => "telemetry.compaction_requested",
+            Telemetry::CompactionFailed { .. } => "telemetry.compaction_failed",
             Telemetry::SupervisorSet { .. } => "telemetry.supervisor_set",
             Telemetry::Consolidation { .. } => "telemetry.consolidation",
         }

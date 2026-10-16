@@ -390,6 +390,10 @@ impl Masker {
             // A cold-check record: a reason, instants, a token count, and a gesture
             // name. Nothing from the environment.
             Payload::Telemetry(Telemetry::Cold(_)) => {}
+            // A compaction request is a flag and a seq; its failure is error text that
+            // can quote the provider's answer or the request.
+            Payload::Telemetry(Telemetry::CompactionRequested { .. }) => {}
+            Payload::Telemetry(Telemetry::CompactionFailed { error }) => self.mask_in_place(error),
             // A supervisor change carries a session id. Nothing from the environment.
             Payload::Telemetry(Telemetry::SupervisorSet { .. }) => {}
             Payload::Telemetry(Telemetry::Consolidation { outcome, .. }) => {

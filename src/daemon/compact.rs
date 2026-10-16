@@ -7,21 +7,14 @@
 //! never starts a request of its own afterwards: an idle session stays idle, and a loop
 //! parked at its cold check stays parked until the operator's next turn or continue.
 
+use super::operations::CompactionState;
 use super::*;
-use crate::log::{Audience, LogEntry, Seq, Summary, Timestamp};
+use crate::log::{Audience, LogEntry, Seq, Summary, Telemetry, Timestamp};
 
 /// Roughly how many tokens of the most recent history a compaction keeps verbatim. Estimated
 /// from each entry's recorded size, which overstates a result its verdict trimmed, so
 /// the tail errs short.
 pub(crate) const COMPACTION_TAIL_TOKENS: usize = 15_000;
-
-/// The compaction in progress, or the last one's failure, as the `compaction` topic.
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
-#[serde(tag = "state", rename_all = "snake_case")]
-pub(crate) enum CompactionState {
-    Writing,
-    Failed { error: String },
-}
 
 /// Why a `POST /loop/compact` was declined.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -118,31 +111,36 @@ impl Session {
             .map(|e| e.at)
     }
 
+    /// The compaction open now, or the last one's failure, folded from the log
+    /// (`operations.rs`).
     pub(crate) fn compaction_state(&self) -> Option<CompactionState> {
-        self.compaction_state.lock().unwrap().clone()
+        self.operations.lock().unwrap().compaction().cloned()
     }
 
-    /// The `compaction` topic: `{state: "writing"}` while a summary is being written,
-    /// `{state: "failed", error}` after one failed until the next turn or compaction,
-    /// else `null`. Independent of the `cold` topic: a compaction can run on a warm
-    /// session.
+    /// The `compaction` topic: `{state: "writing"}` while a compaction is waiting or
+    /// writing, `{state: "failed", error}` after one failed until the next turn's
+    /// request or compaction, else `null`. Independent of the `cold` topic: a
+    /// compaction can run on a warm session.
     pub(super) fn compaction_json(&self) -> Value {
-        serde_json::to_value(self.compaction_state()).unwrap_or(Value::Null)
-    }
-
-    /// Drop a failed compaction's report once the session moves on: a turn starting
-    /// makes the failure stale. A compaction still writing is left alone.
-    pub(super) fn clear_failed_compaction(&self) {
-        let mut state = self.compaction_state.lock().unwrap();
-        if matches!(*state, Some(CompactionState::Failed { .. })) {
-            *state = None;
-            drop(state);
-            self.touch_state();
+        match self.compaction_state() {
+            None => Value::Null,
+            Some(CompactionState::Failed { error, .. }) => {
+                serde_json::json!({"state": "failed", "error": error})
+            }
+            Some(_) => serde_json::json!({"state": "writing"}),
         }
     }
 
     pub(crate) fn compacting(&self) -> bool {
-        self.compaction_state() == Some(CompactionState::Writing)
+        self.compaction_state().is_some_and(|state| state.open())
+    }
+
+    /// The cut of the compaction waiting to be written, if one is.
+    fn waiting_compaction(&self) -> Option<Seq> {
+        match self.compaction_state()? {
+            CompactionState::Waiting { cut, .. } => Some(cut),
+            _ => None,
+        }
     }
 
     /// Whether the loop is held at a triage that produced no verdict
@@ -180,43 +178,53 @@ impl Session {
         if !warm && self.cold_since().is_none() {
             return Err(NotCompactable::NotCold);
         }
-        if compaction_cut(&self.snapshot(), COMPACTION_TAIL_TOKENS).is_none() {
+        let Some(cut) = compaction_cut(&self.snapshot(), COMPACTION_TAIL_TOKENS) else {
             return Err(NotCompactable::Nothing);
-        }
-        *self.compaction_state.lock().unwrap() = Some(CompactionState::Writing);
+        };
+        self.record_compaction(Telemetry::CompactionRequested { warm, cut });
         self.compaction_signal.notify_one();
-        self.settle_changed.notify_waiters();
-        self.touch_state();
         Ok(())
     }
 
-    fn finish_compaction(&self, outcome: Option<CompactionState>) {
-        *self.compaction_state.lock().unwrap() = outcome;
+    /// Append one compaction event and wake whoever reads the state it folds into
+    /// (docs/summary.md). A failed write is reported and dropped, like the cold
+    /// check's records.
+    fn record_compaction(&self, event: Telemetry) {
+        let turn = self.latest_turn();
+        if let Err(e) = self.append(turn, Payload::Telemetry(event)) {
+            log::warn!("compaction record: append failed: {e}");
+        }
         self.settle_changed.notify_waiters();
         self.touch_state();
     }
 }
 
 /// Write compactions as they are asked for, on the session's own client (docs/summary.md).
-/// One at a time; the request's outcome lands on the `cold` topic.
+/// One at a time, at the cut its `CompactionRequested` recorded; the outcome is the
+/// compaction's `Summary` or a `CompactionFailed`.
 pub(crate) async fn compact_loop(client: Arc<Client>, session: Arc<Session>, tools: Vec<Value>) {
     loop {
         session.compaction_signal.notified().await;
-        if !session.compacting() {
+        let Some(cut) = session.waiting_compaction() else {
             continue;
-        }
-        let outcome = match compact_once(&client, &session, &tools).await {
-            Ok(()) => None,
-            Err(error) => Some(CompactionState::Failed { error }),
         };
-        session.finish_compaction(outcome);
+        match compact_once(&client, &session, &tools, cut).await {
+            Ok(()) => {
+                session.settle_changed.notify_waiters();
+                session.touch_state();
+            }
+            Err(error) => session.record_compaction(Telemetry::CompactionFailed { error }),
+        }
     }
 }
 
-async fn compact_once(client: &Client, session: &Session, tools: &[Value]) -> Result<(), String> {
+async fn compact_once(
+    client: &Client,
+    session: &Session,
+    tools: &[Value],
+    cut: Seq,
+) -> Result<(), String> {
     let entries = session.snapshot();
-    let cut = compaction_cut(&entries, COMPACTION_TAIL_TOKENS)
-        .ok_or_else(|| NotCompactable::Nothing.message().to_string())?;
     let turns_before = session.metrics.lock().unwrap().turn_requests;
     // The summary as it is written goes to `output` subscribers and nowhere else: the
     // entry below stays its only durable record (docs/summary.md).

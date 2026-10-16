@@ -144,9 +144,8 @@ pub struct Session {
     cold_parked: AtomicBool,
     /// Wakes the cold check and the held inbox wake when a person acts.
     cold_signal: Notify,
-    /// The compaction in progress or its last failure (`daemon/compact.rs`).
-    compaction_state: Mutex<Option<compact::CompactionState>>,
-    /// Wakes the compaction task when a compaction is asked for.
+    /// Wakes the compaction task when a compaction is asked for; the compaction's
+    /// state is folded from the log with the operations (`daemon/operations.rs`).
     compaction_signal: Notify,
     /// The loop appends under this lock; handlers snapshot it for `GET /log`.
     /// The lock is only ever held across the

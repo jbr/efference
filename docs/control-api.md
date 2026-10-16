@@ -548,7 +548,9 @@ cannot throw a live cache away by accident.
 
 - `202 {"status":"compacting"}` — the session's model is writing the summary; progress is
   the `compaction` topic (`writing`, then `null` once the summary lands, or `failed` with the
-  error, which stays until the next turn or compaction). A failure changes nothing: compact
+  error, which stays until a turn's request goes out or another compaction is asked for, and
+  across a host restart: the topic is folded from the compaction's log entries,
+  [summary.md](summary.md)). A failure changes nothing: compact
   again, or send and read the cache uncached. A summary written while a turn read the cache anyway
   is discarded as superseded; a keepalive ping does not count as one. While it writes,
   the model's fragments arrive on the `output` class as `compaction_delta` and
@@ -874,7 +876,8 @@ not a topic — it is the log's cursor rather than control state, and sits outsi
                                    //   parked
   "compaction": null,              // {"state":"writing"} while POST /loop/compact runs, or
                                    //   {"state":"failed","error":"…"} after one failed
-                                   //   (until the next turn or compaction); independent of
+                                   //   (until a turn's request or the next compaction; folded
+                                   //   from the log, so it survives a restart); independent of
                                    //   `cold`, since a compaction can be asked of a warm session
   "config_repair": {               // null whenever the config file parses (permissions.md)
     "path": "/repo/.efference/work/config.toml",  // the file a human has to fix

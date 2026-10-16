@@ -8,6 +8,13 @@
 //! `bash`) `command` the assistant entry carried. Parked waits (a gate, an `ask`, a park, a stall) have
 //! their own topics and are not repeated here.
 //!
+//! The same fold keeps the **compaction** (docs/summary.md): a `CompactionRequested`
+//! entry opens one, waiting until its summarizing request is sent and writing after;
+//! the compaction's `Summary` closes it, and a `CompactionFailed` leaves its failure
+//! standing until a turn's request goes out or another compaction is asked for. A
+//! failure is in the log, so it survives a restart; a compaction open when the host
+//! stopped does not, because the process writing it is gone.
+//!
 //! The fold is kept incrementally: [`Session::append`] feeds each new entry to
 //! [`Operations::observe`] under its own lock, and a session opened from an existing
 //! log builds the same state with [`Operations::fold`]. Re-folding the whole log on
@@ -24,7 +31,8 @@ use serde_json::{Value, json};
 use super::Session;
 use crate::api::{StageRecorder, StageSink};
 use crate::log::{
-    CallId, LogEntry, Payload, RequestOrigin, RequestStage, RequestStageKind, Timestamp,
+    CallId, LogEntry, MadeBy, Payload, RequestOrigin, RequestStage, RequestStageKind, Seq, Summary,
+    Timestamp,
 };
 use crate::persist::Log;
 
@@ -67,11 +75,32 @@ struct IssuedCall {
     command: Option<String>,
 }
 
+/// Where the compaction asked for last stands (docs/summary.md), folded from its
+/// entries. `since` and `at` are the instants of the entries that moved it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum CompactionState {
+    /// Accepted (`CompactionRequested`); its summarizing request not yet sent.
+    Waiting { warm: bool, cut: Seq, since: u64 },
+    /// Its summarizing request has been sent; no summary or failure yet.
+    Writing { warm: bool, cut: Seq, since: u64 },
+    /// It ended without a summary (`CompactionFailed`).
+    Failed { error: String, at: u64 },
+}
+
+impl CompactionState {
+    /// Whether the compaction is still to land: waiting or writing.
+    pub(crate) fn open(&self) -> bool {
+        !matches!(self, Self::Failed { .. })
+    }
+}
+
 /// The open requests and running tools, as of the last entry observed.
 #[derive(Debug, Default)]
 pub(crate) struct Operations {
     requests: Vec<OpenRequest>,
     tools: Vec<RunningTool>,
+    /// The compaction open now, or the last one's failure.
+    compaction: Option<CompactionState>,
     /// The latest completion's calls by id, so `CallStarted` can name the tool.
     issued: HashMap<CallId, IssuedCall>,
     /// The next request id to mint: past every id the log has used.
@@ -141,13 +170,58 @@ impl Operations {
                 self.requests.clear();
                 self.tools.clear();
                 self.issued.clear();
+                // The process writing an open compaction is gone; a failure stands.
+                if self.compaction.as_ref().is_some_and(CompactionState::open) {
+                    self.compaction = None;
+                }
             }
+            Payload::Telemetry(Telemetry::CompactionRequested { warm, cut }) => {
+                // A second request while one is open is the same compaction.
+                if !self.compaction.as_ref().is_some_and(CompactionState::open) {
+                    self.compaction = Some(CompactionState::Waiting {
+                        warm: *warm,
+                        cut: *cut,
+                        since: at,
+                    });
+                }
+            }
+            Payload::Telemetry(Telemetry::CompactionFailed { error }) => {
+                self.compaction = Some(CompactionState::Failed {
+                    error: error.clone(),
+                    at,
+                });
+            }
+            Payload::Summary(Summary {
+                made_by: MadeBy::Compaction(_),
+                ..
+            }) => self.compaction = None,
             _ => {}
         }
     }
 
+    /// The compaction open now, or the last one's failure.
+    pub(crate) fn compaction(&self) -> Option<&CompactionState> {
+        self.compaction.as_ref()
+    }
+
     fn observe_stage(&mut self, at: u64, stage: &RequestStage) {
         self.next_request = self.next_request.max(stage.request + 1);
+        if stage.stage == RequestStageKind::Sent {
+            match (&self.compaction, stage.origin) {
+                (Some(CompactionState::Waiting { warm, cut, .. }), RequestOrigin::Compaction) => {
+                    self.compaction = Some(CompactionState::Writing {
+                        warm: *warm,
+                        cut: *cut,
+                        since: at,
+                    });
+                }
+                // A turn going out makes the last failure stale: the session moved on.
+                (Some(CompactionState::Failed { .. }), RequestOrigin::Turn) => {
+                    self.compaction = None;
+                }
+                _ => {}
+            }
+        }
         if stage.stage.closes() {
             self.requests.retain(|open| open.request != stage.request);
             return;

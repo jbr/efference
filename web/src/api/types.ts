@@ -111,8 +111,6 @@ export type ColdEvent =
     }
   | { event: "unparked"; cause: "person" | "warm" };
 
-/** One stage of one upstream request (docs/log-and-projection.md). Telemetry:
- * the transcript does not draw it; the `current_operations` topic folds it. */
 /** How the session ran rather than what it said (docs/log-and-projection.md):
  * projects to nothing, and the transcript renders none of it. */
 export type Telemetry =
@@ -121,6 +119,9 @@ export type Telemetry =
   | { RequestStage: RequestStage }
   | { Push: unknown }
   | { Cold: ColdEvent }
+  | { CompactionRequested: { warm: boolean; cut: Seq } }
+  | { CompactionFailed: { error: string } }
+  | { SupervisorSet: { supervisor: string | null } }
   | {
       Consolidation: {
         from: Seq;
@@ -132,6 +133,8 @@ export type Telemetry =
       };
     };
 
+/** One stage of one upstream request (docs/log-and-projection.md). Telemetry:
+ * the transcript does not draw it; the `current_operations` topic folds it. */
 export interface RequestStage {
   request: number;
   origin: RequestOrigin;

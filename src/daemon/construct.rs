@@ -202,7 +202,6 @@ impl Session {
             person_acted: AtomicBool::new(false),
             cold_parked: AtomicBool::new(false),
             cold_signal: Notify::new(),
-            compaction_state: Mutex::new(None),
             compaction_signal: Notify::new(),
             operations: Mutex::new(operations::Operations::fold(log.entries())),
             log: Mutex::new(log),

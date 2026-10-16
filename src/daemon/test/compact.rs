@@ -78,7 +78,7 @@ fn the_cut_does_not_split_a_call_from_its_result() {
 
 /// Nothing to compact when everything fits, or when what is left was compacted already.
 #[test]
-fn nothing_to_fold_when_the_tail_holds_it_all() {
+fn nothing_to_compact_when_the_tail_holds_it_all() {
     let log = [user(1, 100), user(2, 100)];
     assert_eq!(compaction_cut(&log, COMPACTION_TAIL_TOKENS), None);
 
@@ -98,7 +98,7 @@ fn nothing_to_fold_when_the_tail_holds_it_all() {
 /// After a compaction the session is in the state of one that has sent nothing: not cold,
 /// and nothing for the keepalive to ping.
 #[tokio::test]
-async fn a_fold_resets_the_cold_belief_and_the_keepalive() {
+async fn a_compaction_resets_the_cold_belief_and_the_keepalive() {
     let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
     shared.set_cache_ttl(Duration::ZERO);
     append_compactable_history(&shared);
@@ -120,7 +120,7 @@ async fn a_fold_resets_the_cold_belief_and_the_keepalive() {
 /// A warm session has nothing to compact: the compaction is the cold session's alternative to
 /// an uncached read.
 #[test]
-fn a_fold_needs_a_cold_session() {
+fn a_compaction_needs_a_cold_session() {
     let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
     assert_eq!(
         shared.request_compaction(false),
@@ -131,7 +131,7 @@ fn a_fold_needs_a_cold_session() {
 /// `warm: true` is the operator's explicit request to compact a session whose cache is
 /// not believed expired; the progress shows on the `compaction` topic, not the `cold` one.
 #[tokio::test]
-async fn a_warm_fold_is_accepted_on_request_and_reports_on_the_fold_topic() {
+async fn a_warm_compaction_is_accepted_on_request_and_reports_on_its_topic() {
     let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
     shared.set_cache_ttl(Duration::from_secs(3_600));
     append_compactable_history(&shared);
@@ -155,7 +155,7 @@ async fn a_warm_fold_is_accepted_on_request_and_reports_on_the_fold_topic() {
 /// does not. The held triage's state was the `dry-linnet` case: a compaction refused as
 /// "the loop is running" left a cold read or an archive as the only ways forward.
 #[test]
-fn a_held_triage_accepts_a_fold() {
+fn a_held_triage_accepts_a_compaction() {
     let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
     shared.set_cache_ttl(Duration::from_secs(3_600));
     append_compactable_history(&shared);
@@ -176,7 +176,7 @@ fn a_held_triage_accepts_a_fold() {
 /// A warm compaction with nothing past the tail still declines: warm lifts only the cache
 /// guard.
 #[test]
-fn a_warm_fold_still_needs_something_to_fold() {
+fn a_warm_compaction_still_needs_something_to_compact() {
     let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
     shared.set_cache_ttl(Duration::from_secs(3_600));
     assert_eq!(
@@ -185,25 +185,64 @@ fn a_warm_fold_still_needs_something_to_fold() {
     );
 }
 
-/// A failed compaction is reported until a turn starts, then dropped.
+/// A failed compaction is reported until a turn's request goes out, then dropped; the
+/// failure is a log entry, so it is what a reopened session reports too.
 #[test]
-fn a_failed_fold_clears_when_a_turn_starts() {
+fn a_failed_compaction_clears_when_a_turn_starts() {
     let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
-    *shared.compaction_state.lock().unwrap() =
-        Some(crate::daemon::compact::CompactionState::Failed {
-            error: "boom".into(),
-        });
+    shared
+        .append(
+            1,
+            Payload::Telemetry(crate::log::Telemetry::CompactionFailed {
+                error: "boom".into(),
+            }),
+        )
+        .unwrap();
     assert_eq!(
         shared.topic_json(Topic::Compaction),
         serde_json::json!({"state": "failed", "error": "boom"})
     );
-    shared.take_continue();
+    shared
+        .append(
+            1,
+            Payload::Telemetry(crate::log::Telemetry::RequestStage(
+                crate::log::RequestStage::new(
+                    0,
+                    RequestOrigin::Turn,
+                    crate::log::RequestStageKind::Sent,
+                ),
+            )),
+        )
+        .unwrap();
     assert_eq!(shared.topic_json(Topic::Compaction), Value::Null);
+}
+
+/// An accepted compaction is a `CompactionRequested` entry naming the cut and the warm
+/// flag (docs/summary.md), so the request is in the session's record.
+#[tokio::test]
+async fn an_accepted_compaction_is_logged_with_its_cut() {
+    let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    shared.set_cache_ttl(Duration::from_secs(3_600));
+    append_compactable_history(&shared);
+    let expected = compaction_cut(&shared.snapshot(), COMPACTION_TAIL_TOKENS).unwrap();
+    assert_eq!(shared.request_compaction(true), Ok(()));
+    let requested: Vec<(bool, u64)> = shared
+        .snapshot()
+        .iter()
+        .filter_map(|e| match &e.payload {
+            Payload::Telemetry(crate::log::Telemetry::CompactionRequested { warm, cut }) => {
+                Some((*warm, *cut))
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(requested, [(true, expected)]);
+    assert!(shared.compacting());
 }
 
 /// The client reads a refusal as a decline with the daemon's message, not an error.
 #[tokio::test]
-async fn the_client_reads_a_fold_refusal_as_a_decline() {
+async fn the_client_reads_a_compaction_refusal_as_a_decline() {
     let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
     let client = test_client(&shared).await;
     assert_eq!(
@@ -218,7 +257,7 @@ async fn the_client_reads_a_fold_refusal_as_a_decline() {
 /// session's `output` broadcast as writer deltas, in the order they streamed
 /// (docs/summary.md), never as the main loop's response.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_fold_streams_the_narrators_deltas() {
+async fn a_compaction_streams_its_writers_deltas() {
     use super::upstream_hold::{Answer, events, scripted, wait_until};
     let requests = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let addr = scripted(Arc::clone(&requests), |_| {
