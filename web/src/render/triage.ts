@@ -47,16 +47,29 @@ export function normalize(ranges: Range[], n: number): Range[] {
 const hunkHeader = (start: number, end: number) =>
   start === end ? `@@ line ${start} @@` : `@@ lines ${start}-${end} @@`;
 
+/** Mirrors `NOTHING_KEPT`. */
+export const NOTHING_KEPT = "(output dropped by triage)";
+
 /** Mirrors `render_hunks`. */
 export function renderHunks(
   lines: string[],
   ranges: Range[],
   note: string | null,
 ): string {
+  const norm = normalize(ranges, lines.length);
+  const contentEnd = lines.findLastIndex((l) => l.trim() !== "") + 1;
+  const first = norm[0];
+  const spansEverything =
+    norm.length === 1 && first[0] === 1 && first[1] >= contentEnd;
   const parts: string[] = [];
-  for (const [start, end] of normalize(ranges, lines.length)) {
-    parts.push(hunkHeader(start, end));
+  if (norm.length === 0 && lines.length > 0) parts.push(NOTHING_KEPT);
+  for (const [start, end] of norm) {
+    if (!spansEverything) parts.push(hunkHeader(start, end));
     for (let i = start; i <= end; i++) parts.push(lines[i - 1]);
+  }
+  const last = norm.at(-1);
+  if (!spansEverything && last && last[1] < contentEnd) {
+    parts.push(`@@ ${lines.length} lines total @@`);
   }
   const trimmed = note?.trim();
   if (trimmed) parts.push(`⟢ ${trimmed}`);

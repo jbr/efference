@@ -261,8 +261,9 @@ fn boot_inference_identity_does_not_project() {
 /// shared fixture's only result is `WireState::Raw`, so a render change to the
 /// triaged shape would otherwise pass every byte pin.
 ///
-/// Three properties are fixed here. A partial verdict carries `@@ lines a-b @@` per
-/// span. A verdict spanning the whole result carries **no header** — the marker exists
+/// Four properties are fixed here. A partial verdict carries `@@ lines a-b @@` per
+/// span and, when it stops before the last line, a closing `@@ n lines total @@`. A
+/// verdict that keeps nothing opens with `(output dropped by triage)` ahead of its note. A verdict spanning the whole result carries **no header** — the marker exists
 /// to show where curation cut, and one that spans everything states only "all of it"
 /// (docs/triage.md). A note renders as a trailing `⟢` breadcrumb.
 ///
@@ -277,7 +278,7 @@ fn triaged_tool_result_matches_expected_wire_bytes() {
     .unwrap();
     assert_eq!(
         partial,
-        r#"[{"role":"user","content":[{"type":"text","text":"hello"}]},{"role":"assistant","content":[{"type":"text","text":"let me check"},{"type":"tool_use","id":"toolu_1","name":"bash","input":{"command":"ls","timeout":5}}]},{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_1","content":"[2] @@ lines 2-3 @@\nbeta\ngamma\n⟢ the middle mattered"}]}]"#
+        r#"[{"role":"user","content":[{"type":"text","text":"hello"}]},{"role":"assistant","content":[{"type":"text","text":"let me check"},{"type":"tool_use","id":"toolu_1","name":"bash","input":{"command":"ls","timeout":5}}]},{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_1","content":"[2] @@ lines 2-3 @@\nbeta\ngamma\n@@ 4 lines total @@\n⟢ the middle mattered"}]}]"#
     );
 
     let whole = serde_json::to_string(&project(&triaged_log(Keep::All, None))).unwrap();
@@ -290,7 +291,7 @@ fn triaged_tool_result_matches_expected_wire_bytes() {
         serde_json::to_string(&project(&triaged_log(Keep::None, Some("no signal")))).unwrap();
     assert_eq!(
         nothing,
-        r#"[{"role":"user","content":[{"type":"text","text":"hello"}]},{"role":"assistant","content":[{"type":"text","text":"let me check"},{"type":"tool_use","id":"toolu_1","name":"bash","input":{"command":"ls","timeout":5}}]},{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_1","content":"[2] ⟢ no signal"}]}]"#
+        r#"[{"role":"user","content":[{"type":"text","text":"hello"}]},{"role":"assistant","content":[{"type":"text","text":"let me check"},{"type":"tool_use","id":"toolu_1","name":"bash","input":{"command":"ls","timeout":5}}]},{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_1","content":"[2] (output dropped by triage)\n⟢ no signal"}]}]"#
     );
 }
 

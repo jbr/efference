@@ -29,7 +29,7 @@ fn render_triaged_covers_all_none_and_ranges() {
     assert_eq!(all, c, "a fully-retained result is the result: {all}");
 
     let none = render_triaged(c, &verdict(Keep::None, Some("nothing useful here"), None));
-    assert_eq!(none, "⟢ nothing useful here");
+    assert_eq!(none, "(output dropped by triage)\n⟢ nothing useful here");
 
     let ranges = render_triaged(c, &verdict(Keep::Ranges(vec![(2, 3)]), None, None));
     assert!(ranges.contains("@@ lines 2-3 @@"), "{ranges}");
@@ -99,6 +99,74 @@ fn a_range_spanning_everything_gets_no_header() {
     );
 }
 
+/// A result triaged to nothing opens with a fixed marker, with or without a note, so
+/// the note is never the whole result.
+#[test]
+fn nothing_kept_opens_with_the_marker() {
+    let ls = lines("a\nb\nc");
+    assert_eq!(
+        render_hunks(&ls, &[], &verdict(Keep::None, None, None)),
+        "(output dropped by triage)"
+    );
+    assert_eq!(
+        render_hunks(&ls, &[], &verdict(Keep::None, Some("a build log"), None)),
+        "(output dropped by triage)\n⟢ a build log"
+    );
+    // Ranges that all fall outside the output keep nothing too.
+    assert_eq!(
+        render_hunks(&ls, &[(9, 10)], &verdict(Keep::None, None, None)),
+        "(output dropped by triage)"
+    );
+    // An empty output had nothing to drop.
+    assert_eq!(
+        render_hunks(&[], &[], &verdict(Keep::None, None, None)),
+        "(nothing kept)"
+    );
+}
+
+/// The end of a cut result is marked: a range stopping short of the last line is
+/// followed by the line total.
+#[test]
+fn a_cut_tail_closes_with_the_line_total() {
+    let body = (1..=120)
+        .map(|i| format!("line{i}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let ls = lines(&body);
+    let wire = render_hunks(&ls, &[(30, 40)], &verdict(Keep::All, Some("n"), None));
+    assert!(wire.starts_with("@@ lines 30-40 @@\nline30\n"), "{wire}");
+    assert!(
+        wire.ends_with("line40\n@@ 120 lines total @@\n⟢ n"),
+        "{wire}"
+    );
+    // A range that reaches the last line has no closing marker.
+    let tail = render_hunks(&ls, &[(110, 120)], &verdict(Keep::All, None, None));
+    assert!(!tail.contains("lines total"), "{tail}");
+}
+
+/// Trailing blank lines count as covered: the `read` frame ends in an empty line, and
+/// a keep stopping before it cut nothing.
+#[test]
+fn trailing_blank_lines_count_as_covered() {
+    let mut body = (1..=100)
+        .map(|i| format!("line{i}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    body.push_str("\n\n");
+    let ls = lines(&body);
+    assert_eq!(ls.len(), 101, "{body:?}");
+    let wire = render_hunks(&ls, &[(1, 100)], &verdict(Keep::All, None, None));
+    assert!(!wire.contains("@@"), "unheaded, no closing marker: {wire}");
+    assert!(
+        wire.starts_with("line1\n") && wire.ends_with("line100"),
+        "{wire}"
+    );
+
+    // Content beyond the range still closes it.
+    let cut = render_hunks(&ls, &[(1, 99)], &verdict(Keep::All, None, None));
+    assert!(cut.ends_with("@@ 101 lines total @@"), "{cut}");
+}
+
 /// A partial range keeps its header — that is the case the marker exists for.
 #[test]
 fn a_partial_range_keeps_its_header() {
@@ -149,11 +217,11 @@ fn note_appends_and_empty_falls_back_to_breadcrumb() {
     );
     assert_eq!(
         render_hunks(&ls, &[], &verdict(Keep::All, Some("wrong file"), None)),
-        "⟢ wrong file"
+        "(output dropped by triage)\n⟢ wrong file"
     );
     assert_eq!(
         render_hunks(&ls, &[], &verdict(Keep::All, None, None)),
-        "(nothing kept)"
+        "(output dropped by triage)"
     );
 }
 
@@ -292,11 +360,11 @@ fn intent_feedback_follows_the_note_under_its_own_lead() {
             &[],
             &verdict(Keep::All, None, Some("no question to keep against"))
         ),
-        "⟢ re your intent: no question to keep against"
+        "(output dropped by triage)\n⟢ re your intent: no question to keep against"
     );
     assert_eq!(
         render_hunks(&ls, &[], &verdict(Keep::All, None, Some("  "))),
-        "(nothing kept)"
+        "(output dropped by triage)"
     );
 }
 

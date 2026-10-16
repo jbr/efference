@@ -29,6 +29,10 @@ pub fn render_triage_failure(why: &str) -> String {
     )
 }
 
+/// The first line of a result triage kept nothing of (docs/triage.md). A bare `⟢`
+/// note would read as the harness's ask for `retain`.
+pub const NOTHING_KEPT: &str = "(output dropped by triage)";
+
 /// The fixed lead on a rendered `intent_feedback` line (docs/triage.md).
 pub const INTENT_FEEDBACK_LEAD: &str = "⟢ re your intent: ";
 
@@ -101,7 +105,9 @@ pub fn selection<'c>(content: &'c str, keep: &Keep) -> Selection<'c> {
 /// Render kept ranges as diff-style hunks: a `@@ lines a-b @@` header per contiguous
 /// span (`@@ line n @@` for one line), then those lines *verbatim* (unnumbered). The
 /// header carries the position anchor at one line per *range*; gaps between hunks are
-/// implied by the jump in the headers, as in a unified diff. The verdict's optional
+/// implied by the jump in the headers, as in a unified diff, and a closing
+/// `@@ n lines total @@` follows when the last range stops before the last line with
+/// content. A verdict that keeps nothing opens with [`NOTHING_KEPT`] before any note. The verdict's optional
 /// trailing note is the breadcrumb kept even when nothing is retained
 /// (docs/triage.md) — one overall note, so it survives the empty-hunks case.
 /// Its `intent_feedback`, when present, follows the note under the same `⟢` sign with a
@@ -110,13 +116,23 @@ pub fn selection<'c>(content: &'c str, keep: &Keep) -> Selection<'c> {
 /// off `verdict.keep`, since the caller has already clamped it against the cap.
 pub(super) fn render_hunks(lines: &[&str], ranges: &[(usize, usize)], verdict: &Triaged) -> String {
     let ranges = normalize(ranges, lines.len());
+    // The last line with content. Blank lines after it carry nothing to cut, so a
+    // range reaching it covers the result (the shape `read`'s frame produces ends in
+    // an empty line).
+    let content_end = lines
+        .iter()
+        .rposition(|l| !l.trim().is_empty())
+        .map_or(0, |i| i + 1);
     // A header marks *where* curation cut. One range spanning everything cut nothing,
     // so its header states only "all of it" — noise on every fully-retained result,
     // and on a one-line result it is longer than the line it labels. Truncation is
     // reported separately by the caller, so suppressing this hides nothing
     // (docs/triage.md).
-    let spans_everything = matches!(ranges.as_slice(), [(1, end)] if *end == lines.len());
+    let spans_everything = matches!(ranges.as_slice(), [(1, end)] if *end >= content_end);
     let mut parts: Vec<String> = Vec::new();
+    if ranges.is_empty() && !lines.is_empty() {
+        parts.push(NOTHING_KEPT.to_string());
+    }
     for &(start, end) in &ranges {
         if !spans_everything {
             parts.push(hunk_header(start, end));
@@ -124,6 +140,11 @@ pub(super) fn render_hunks(lines: &[&str], ranges: &[(usize, usize)], verdict: &
         for i in start..=end {
             parts.push(lines[i - 1].to_string());
         }
+    }
+    // Nothing marks the cut after the last range otherwise: the headers only show
+    // jumps between ranges.
+    if !spans_everything && ranges.last().is_some_and(|&(_, end)| end < content_end) {
+        parts.push(format!("@@ {} lines total @@", lines.len()));
     }
     if let Some(note) = verdict
         .note

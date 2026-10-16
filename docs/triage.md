@@ -494,8 +494,13 @@ therefore split:
 - **`render_hunks`** (the canonical wire form) — a `@@ lines a-b @@` header per
   contiguous kept span, then those lines verbatim. One header per range (not per
   line); gaps between hunks are implied by the jump in headers, as in a unified
-  diff. A keep-all result is one header plus verbatim body, approximately equal to
-  raw. This is the form for a reader that has only text; the TUI resolves the same
+  diff. A range covering every line with content (trailing blank lines count as
+  covered) renders without a header, so a keep-all result is the raw body. When the
+  last range ends before the last line with content, a closing `@@ n lines total @@`
+  follows it; the headers alone only show jumps between ranges. A verdict that keeps
+  nothing opens with `(output dropped by triage)` ahead of any note, so a note is
+  never the whole result: a bare `⟢` block reads as the harness's ask for `retain`.
+  An empty output has nothing to drop and renders only its note. This is the form for a reader that has only text; the TUI resolves the same
   verdict through the shared `selection` and renders the kept lines with their
   numbers in a gutter instead ([tui.md](tui.md)). Both go through `selection`, so
   the two views can differ in form but never in *which* lines they show.

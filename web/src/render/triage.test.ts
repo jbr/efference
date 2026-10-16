@@ -8,6 +8,7 @@ import {
   normalize,
   renderTriaged,
   renderHunks,
+  rustLines,
   renderTriageFailure,
   wireView,
 } from "./triage.ts";
@@ -17,12 +18,10 @@ const lines = (s: string) => s.split("\n");
 test("render_triaged covers all, none, and ranges", () => {
   const c = "a\nb\nc\nd\ne";
   const all = renderTriaged(c, "All", null);
-  expect(all).toContain("@@ lines 1-5 @@");
-  expect(all.split("\n")).toContain("a");
-  expect(all.split("\n")).toContain("e");
+  expect(all).toBe(c);
 
   const none = renderTriaged(c, "None", "nothing useful here");
-  expect(none).toBe("⟢ nothing useful here");
+  expect(none).toBe("(output dropped by triage)\n⟢ nothing useful here");
 
   const ranges = renderTriaged(c, { Ranges: [[2, 3]] }, null);
   expect(ranges).toContain("@@ lines 2-3 @@");
@@ -49,9 +48,9 @@ test("render_triaged truncates past the cap", () => {
   expect(past).not.toContain(`line${TRIAGE_LINE_CAP + 3}`);
 });
 
-test("canonical hunk is verbatim under a diff header", () => {
+test("a range spanning everything gets no header", () => {
   const wire = renderHunks(lines("alpha\nbeta\ngamma"), [[1, 3]], null);
-  expect(wire).toContain("@@ lines 1-3 @@");
+  expect(wire).toBe("alpha\nbeta\ngamma");
   expect(wire.split("\n")).toContain("alpha");
   expect(wire.split("\n")).toContain("gamma");
 });
@@ -83,8 +82,33 @@ test("note appends and empty falls back to breadcrumb", () => {
   expect(renderHunks(ls, [[2, 2]], "the b line").endsWith("⟢ the b line")).toBe(
     true,
   );
-  expect(renderHunks(ls, [], "wrong file")).toBe("⟢ wrong file");
-  expect(renderHunks(ls, [], null)).toBe("(nothing kept)");
+  expect(renderHunks(ls, [], "wrong file")).toBe(
+    "(output dropped by triage)\n⟢ wrong file",
+  );
+  expect(renderHunks(ls, [], null)).toBe("(output dropped by triage)");
+  expect(renderHunks([], [], null)).toBe("(nothing kept)");
+});
+
+test("a cut tail closes with the line total", () => {
+  const body = Array.from({ length: 120 }, (_, i) => `line${i + 1}`).join("\n");
+  const wire = renderHunks(lines(body), [[30, 40]], "n");
+  expect(wire.startsWith("@@ lines 30-40 @@\nline30\n")).toBe(true);
+  expect(wire.endsWith("line40\n@@ 120 lines total @@\n⟢ n")).toBe(true);
+  expect(renderHunks(lines(body), [[110, 120]], null)).not.toContain(
+    "lines total",
+  );
+});
+
+test("trailing blank lines count as covered", () => {
+  const body =
+    Array.from({ length: 100 }, (_, i) => `line${i + 1}`).join("\n") + "\n\n";
+  const ls = rustLines(body);
+  expect(ls.length).toBe(101);
+  const wire = renderHunks(ls, [[1, 100]], null);
+  expect(wire).not.toContain("@@");
+  expect(
+    renderHunks(ls, [[1, 99]], null).endsWith("@@ 101 lines total @@"),
+  ).toBe(true);
 });
 
 test("normalize clamps, sorts, and merges", () => {
