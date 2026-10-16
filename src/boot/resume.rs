@@ -44,6 +44,8 @@ pub struct ResumeRequest<'a> {
     /// The connections the recorded role selections are re-resolved against.
     pub inference: &'a InferenceRegistry,
     pub reauth: Vec<String>,
+    /// What an MCP server asking for authorization meets (docs/mcp-auth.md).
+    pub authorization: super::mcp_mount::AuthorizationHandling,
     /// Spotter and triage selections to resume on instead of the recorded ones; empty
     /// keeps the recorded roles (docs/resumption.md).
     pub switch: ResumeSwitch,
@@ -62,13 +64,11 @@ pub async fn resume(
     request: ResumeRequest<'_>,
 ) -> Result<(SessionBoot<MountedSpotter>, SessionOptions), Error> {
     let mut minted = Minted::default();
-    match resume_minting(request, &mut minted).await {
-        Ok(boot) => Ok(boot),
-        Err(error) => {
-            minted.roll_back();
-            Err(error)
-        }
-    }
+    // On an error, and when this future is dropped mid-await, `minted` rolls back as
+    // it drops.
+    let boot = resume_minting(request, &mut minted).await?;
+    minted.keep();
+    Ok(boot)
 }
 
 async fn resume_minting(
@@ -80,6 +80,7 @@ async fn resume_minting(
         base_env,
         inference: registry,
         reauth,
+        authorization,
         switch,
         host,
     } = request;
@@ -220,6 +221,7 @@ async fn resume_minting(
         host,
         session_id: &session_id,
         reauth: &reauth,
+        authorization: &authorization,
     })
     .await?;
     let client = parts::build_client(

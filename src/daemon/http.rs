@@ -143,10 +143,26 @@ pub(crate) fn shared_of(conn: &Conn) -> Option<Arc<Session>> {
         .map(Arc::clone)
 }
 
-/// The answer when the server-global state is absent — the one condition every route
-/// shares, and the reason it has a helper rather than a body constant.
+/// The starting session a conn addresses, when the host's `/sessions/:id` stage
+/// resolved one that is still being prepared (`starting.rs`).
+pub(crate) fn starting_of(conn: &Conn) -> Option<Arc<super::starting::Starting>> {
+    conn.state::<Arc<super::starting::Starting>>()
+        .map(Arc::clone)
+}
+
+/// The answer when no session is in conn state — the one condition every route
+/// shares, and the reason it has a helper rather than a body constant. A session that
+/// is still starting has none yet, so every route that does not serve a starting
+/// session answers `409 starting` through here (docs/control-api.md); otherwise it is
+/// a wiring bug.
 fn missing_state(conn: Conn) -> Conn {
-    fail(conn, ErrorCode::Internal, "missing shared state")
+    match starting_of(&conn) {
+        Some(starting) => {
+            let refusal = starting.refusal();
+            fail(conn, ErrorCode::Starting, refusal)
+        }
+        None => fail(conn, ErrorCode::Internal, "missing shared state"),
+    }
 }
 
 /// How long `/events` may sit silent before it sends an SSE comment (docs/control-api.md).
@@ -317,6 +333,23 @@ pub(crate) fn wants_wait(query: &str) -> bool {
 pub(crate) async fn settle_and_state(shared: &Arc<Session>, conn: Conn) -> Conn {
     let _ = tokio::time::timeout(SETTLE_TIMEOUT, shared.await_settled()).await;
     conn.with_status(200).with_body(shared.state_json()).halt()
+}
+
+/// [`settle_and_state`] for a session still starting: wait for it to start and then to
+/// settle, under the one cap. A failure is where it stops, and the starting state that
+/// carries it is the answer (docs/control-api.md).
+pub(crate) async fn settle_starting(starting: &super::starting::Starting, conn: Conn) -> Conn {
+    let settled = tokio::time::timeout(SETTLE_TIMEOUT, async {
+        let session = starting.finished().await.ok()?;
+        session.await_settled().await;
+        Some(session)
+    })
+    .await;
+    let body = match settled {
+        Ok(Some(session)) => session.state_json(),
+        _ => starting.state_json(),
+    };
+    conn.with_status(200).with_body(body).halt()
 }
 
 #[cfg(test)]

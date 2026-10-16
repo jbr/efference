@@ -1,11 +1,13 @@
 //! The host: one process owning many sessions and serving as their control
 //! endpoint (docs/control-channel.md).
 //!
-//! A [`Host`] holds a map of started [`SessionRuntime`]s under one root `Swansong`.
-//! Its routes are the listener's own surface — the session list, creation, ending
-//! a session — plus `/sessions/<id>/…`, which resolves the session into conn state
-//! and dispatches into the unchanged control routes (docs/control-api.md). Nothing
-//! is forwarded: the session's handlers run in this process against its `Session`.
+//! A [`Host`] holds a map of sessions under one root `Swansong`: each one starting
+//! while its environment and MCP mounts are prepared (`entries.rs`,
+//! `preparation.rs`), then a started [`SessionRuntime`]. Its routes are the
+//! listener's own surface — the session list, creation, ending a session — plus
+//! `/sessions/<id>/…`, which resolves the session into conn state and dispatches into
+//! the unchanged control routes (docs/control-api.md). Nothing is forwarded: the
+//! session's handlers run in this process against its `Session`.
 
 use super::errors::{ErrorCode, fail};
 use super::files::Files;
@@ -47,6 +49,15 @@ use listing::listing_stream;
 mod supervise;
 pub use supervise::SupervisorRefused;
 
+mod entries;
+use entries::{Entry, Sessions};
+
+mod preparation;
+
+mod routes;
+pub(crate) use routes::host_routes;
+use routes::{host_of, missing_host, no_such_session};
+
 /// One process's sessions and the `Swansong` they all hang under.
 pub struct Host {
     swansong: Swansong,
@@ -60,7 +71,17 @@ pub struct Host {
     /// The host-wide register of session ids, in the same database
     /// (`session_ids.rs`, docs/session-title.md).
     session_ids: crate::session_ids::SessionIds,
-    sessions: Mutex<BTreeMap<String, Hosted>>,
+    /// Every session on this host, starting or hosted (`entries.rs`).
+    sessions: Mutex<Sessions>,
+    /// Starting sessions whose preparation failed, kept for [`FAILURE_KEPT`] after
+    /// they left the map so a client that attaches after the failure still reads it
+    /// (`preparation.rs`). Served on `/state` and `/events` only; neither listed nor
+    /// holding an id.
+    failed: Mutex<BTreeMap<String, (Arc<crate::daemon::starting::Starting>, std::time::Instant)>>,
+    /// Why the last resume of a dormant session failed, by project root and id, until
+    /// a resume succeeds or the session is archived. The dormant listing carries it as
+    /// `resume_failure` (`archived.rs`).
+    resume_failures: Mutex<BTreeMap<(PathBuf, String), String>>,
     /// Scanned rows of the dormant sessions under each root asked about
     /// (`archived.rs`, docs/log-and-projection.md).
     inventory: crate::inventory::Inventory,
@@ -168,7 +189,9 @@ impl Host {
             remembered,
             session_ids,
             inference,
-            sessions: Mutex::new(BTreeMap::new()),
+            sessions: Mutex::new(Sessions::default()),
+            failed: Mutex::new(BTreeMap::new()),
+            resume_failures: Mutex::new(BTreeMap::new()),
             inventory: crate::inventory::Inventory::new(),
             host_env,
             listing_changed: Notify::new(),
@@ -228,6 +251,19 @@ impl Host {
         created_by: Option<String>,
         detached: bool,
     ) -> Result<(), String> {
+        self.adopt_prepared(id, runtime, created_by, detached, None)
+    }
+
+    /// [`adopt_with`](Self::adopt_with) for a runtime prepared from the starting entry
+    /// `from`, which the session replaces under its id.
+    pub(crate) fn adopt_prepared(
+        self: &Arc<Self>,
+        id: String,
+        runtime: SessionRuntime,
+        created_by: Option<String>,
+        detached: bool,
+        from: Option<&Arc<crate::daemon::starting::Starting>>,
+    ) -> Result<(), String> {
         let session = Arc::clone(runtime.session());
         // The web client addresses an adopted session under the host's own
         // mount, and a push notification opens that path (docs/web-push.md).
@@ -244,20 +280,20 @@ impl Host {
             subscribers: BTreeMap::new(),
             options: crate::inference::SessionOptions::default(),
         };
+        // First one in wins: an id held by anything but the starting entry this
+        // runtime was prepared from refuses, rather than being replaced and leaving a
+        // running session unreachable. Creation and resume reserve the id as a
+        // starting entry before they prepare, so this is the backstop.
+        if !self
+            .sessions
+            .lock()
+            .unwrap()
+            .insert_hosted(&id, hosted, from)
         {
-            let mut sessions = self.sessions.lock().unwrap();
-            // First one in wins. A create checks this id is free *before* it awaits
-            // the hook and prepares, so two creates naming the same id in different
-            // directories both pass that check and arrive here together; the loser's
-            // insert would otherwise replace the winner's entry and leave a running
-            // session unreachable.
-            if sessions.contains_key(&id) {
-                // This runtime is live and will never be in the map, so it is shut
-                // down here rather than left running unhosted.
-                runtime.swansong().shut_down();
-                return Err(format!("session {id:?} is already hosted"));
-            }
-            sessions.insert(id.clone(), hosted);
+            // This runtime is live and will never be in the map, so it is shut
+            // down here rather than left running unhosted.
+            runtime.swansong().shut_down();
+            return Err(format!("session {id:?} is already hosted"));
         }
         self.touch_listing();
         // The link to the supervisor pointer is made for every adopted session, root or
@@ -309,7 +345,7 @@ impl Host {
                     done.await;
                 }
             }
-            host.sessions.lock().unwrap().remove(&id);
+            host.sessions.lock().unwrap().remove_hosted(&id);
             host.touch_listing();
             // A session this one supervised now has nothing to resolve its `supervisor`
             // position to, so it reviews as `spotter_human` from here
@@ -327,7 +363,7 @@ impl Host {
     }
 
     /// The session map, locked — for the subscription table (`subscriptions.rs`).
-    pub(super) fn sessions_mut(&self) -> std::sync::MutexGuard<'_, BTreeMap<String, Hosted>> {
+    pub(super) fn sessions_mut(&self) -> std::sync::MutexGuard<'_, Sessions> {
         self.sessions.lock().unwrap()
     }
 
@@ -336,18 +372,18 @@ impl Host {
         self.sessions
             .lock()
             .unwrap()
-            .get(id)
+            .hosted(id)
             .and_then(|hosted| hosted.succeeds.clone())
     }
 
     /// The session that commissioned `id`, when a session did (docs/tools.md).
-    /// Control state — the creation tree, never logged or projected.
+    /// Control state — the creation tree, never logged or projected. A starting
+    /// session's creator is the one its creation named.
     pub fn created_by(&self, id: &str) -> Option<String> {
-        self.sessions
-            .lock()
-            .unwrap()
-            .get(id)
-            .and_then(|hosted| hosted.created_by.clone())
+        match self.sessions.lock().unwrap().entry(id)? {
+            Entry::Hosted(hosted) => hosted.created_by.clone(),
+            Entry::Starting(starting) => starting.created_by().map(str::to_string),
+        }
     }
     /// Hand `from`'s work to a new session (docs/tools.md): one in the same
     /// directory, placed where `from` sits rather than under it — its creator is
@@ -374,7 +410,11 @@ impl Host {
             created_by: hosted.created_by.clone(),
             succeeds: Some(from.to_string()),
         };
-        let id = self.create(body, lineage).await?;
+        // The succession is recorded once the successor has started, so a predecessor
+        // never names a session that failed to.
+        let starting = self.create(body, lineage)?;
+        starting.finished().await?;
+        let id = starting.id().to_string();
         self.record_succession(from, &id, brief);
         Ok(id)
     }
@@ -382,7 +422,7 @@ impl Host {
     /// Record the inference options `id` was created with, which a `hand_off`
     /// successor is created with in turn.
     pub(super) fn record_options(&self, id: &str, options: crate::inference::SessionOptions) {
-        if let Some(hosted) = self.sessions.lock().unwrap().get_mut(id) {
+        if let Some(hosted) = self.sessions.lock().unwrap().hosted_mut(id) {
             hosted.options = options;
         }
     }
@@ -391,7 +431,7 @@ impl Host {
     /// exists: it may archive `from`, its first turn is `brief` attributed to
     /// `from`, and `from` names it for the clients to follow.
     pub(crate) fn record_succession(&self, from: &str, successor: &str, brief: String) {
-        if let Some(hosted) = self.sessions.lock().unwrap().get_mut(successor) {
+        if let Some(hosted) = self.sessions.lock().unwrap().hosted_mut(successor) {
             hosted.succeeds = Some(from.to_string());
         }
         if let Some(session) = self.session(successor) {
@@ -406,21 +446,58 @@ impl Host {
         self.touch_listing();
     }
 
-    /// The hosted session ids, sorted (docs/control-api.md).
+    /// The ids of the sessions on this host, starting or hosted, sorted
+    /// (docs/control-api.md).
     pub fn ids(&self) -> Vec<String> {
-        self.sessions.lock().unwrap().keys().cloned().collect()
+        self.sessions.lock().unwrap().ids()
     }
 
+    /// The running session under `id`; `None` for one still starting.
     pub fn session(&self, id: &str) -> Option<Arc<Session>> {
         self.sessions
             .lock()
             .unwrap()
-            .get(id)
+            .hosted(id)
             .map(|h| Arc::clone(&h.session))
     }
 
     fn hosted(&self, id: &str) -> Option<Hosted> {
-        self.sessions.lock().unwrap().get(id).cloned()
+        self.sessions.lock().unwrap().hosted(id).cloned()
+    }
+
+    /// The entry under `id`, starting or hosted.
+    fn entry(&self, id: &str) -> Option<Entry> {
+        self.sessions.lock().unwrap().entry(id).cloned()
+    }
+
+    /// Put a starting entry under `id`, working in `cwd`, with no preparation behind
+    /// it: a test drives its end itself, by adopting a runtime as a preparation does.
+    #[cfg(test)]
+    pub(crate) fn reserve_starting(
+        &self,
+        id: &str,
+        cwd: &std::path::Path,
+    ) -> Arc<crate::daemon::starting::Starting> {
+        let starting =
+            crate::daemon::starting::Starting::new(crate::daemon::starting::StartingParts {
+                id: id.to_string(),
+                directories: crate::policy::Directories::at(cwd),
+                resume: false,
+                created_by: None,
+                detached: false,
+            });
+        assert!(self.sessions.lock().unwrap().insert_starting(&starting));
+        self.touch_listing();
+        starting
+    }
+
+    /// The session under `id` while it is starting.
+    #[cfg(test)]
+    pub(crate) fn starting(&self, id: &str) -> Option<Arc<crate::daemon::starting::Starting>> {
+        match self.entry(id)? {
+            Entry::Starting(starting) => Some(starting),
+            Entry::Hosted(_) => None,
+        }
     }
 
     /// Archive one session: shut it down, then retire its own worktree when it made
@@ -433,12 +510,29 @@ impl Host {
     /// leaves every worktree in place, including through the cascade that ends a
     /// stopped session's children: those reach here with the host already shutting
     /// down, and retire nothing.
-    pub fn end(&self, id: &str) -> Option<impl std::future::Future<Output = Ended>> {
-        let hosted = self.hosted(id)?;
-        let id = id.to_string();
+    ///
+    /// A session still starting has its preparation cancelled instead
+    /// (`preparation.rs`), leaving nothing a creation minted and a resumed session as
+    /// dormant as it was.
+    pub fn end(
+        self: &Arc<Self>,
+        id: &str,
+    ) -> Option<Pin<Box<dyn std::future::Future<Output = Ended> + Send>>> {
+        Some(match self.entry(id)? {
+            Entry::Hosted(hosted) => Box::pin(self.end_hosted(hosted, id.to_string())),
+            Entry::Starting(starting) => Box::pin(Arc::clone(self).archive_starting(starting)),
+        })
+    }
+
+    /// [`end`](Self::end) for a hosted session.
+    fn end_hosted(
+        &self,
+        hosted: Hosted,
+        id: String,
+    ) -> impl std::future::Future<Output = Ended> + use<> {
         let archiving = self.swansong.state().is_running();
         let ids = self.session_ids.clone();
-        Some(async move {
+        async move {
             hosted.swansong.shut_down().await;
             let retired = if archiving {
                 retire_worktree(&hosted.session, &id).await
@@ -485,7 +579,7 @@ impl Host {
                 retired,
                 discarded: false,
             }
-        })
+        }
     }
 }
 
@@ -512,197 +606,6 @@ async fn retire_worktree(session: &Arc<Session>, id: &str) -> Option<crate::work
         log::warn!("session {id}: could not log the worktree outcome: {e}");
     }
     (retired != crate::worktree::Retired::Absent).then_some(retired)
-}
-
-/// The host's routes (docs/control-api.md). `POST /sessions` is mounted on every
-/// host listener, socket and network alike: creation's environment is
-/// established per request (docs/env.md), so what it needs is the hook or the
-/// host's own baseline rather than a local caller. `files` serves each session's
-/// `/files` under its prefix — the web transport, as on a session bind.
-pub(crate) fn host_routes(files: bool) -> impl trillium::Handler {
-    let router = Router::new()
-        .get("/inference", inference_inventory)
-        .get("/inference/catalog", catalog_all)
-        .get("/inference/catalog/:connection", catalog_one)
-        .with_route(trillium::Method::Query, "/sessions", preview_session)
-        .get("/sessions", list_sessions())
-        // Registered before the `/sessions/:session/*` wildcard below, which would
-        // resolve the session into conn state and 404 a patch that is what
-        // makes it live in the first place (and a read of a dormant session).
-        .get("/sessions/:session", read_session)
-        .patch("/sessions/:session", patch_session)
-        .delete("/sessions/:session", end_session)
-        // Where sessions have been started, and forgetting one. Registered
-        // before the `/sessions/:session/*` wildcard below, which is a different
-        // prefix but the same reader of a path's first segment.
-        .get("/projects", list_projects)
-        // Clients report whether a person is attending (`attention.rs`).
-        .post("/attention", report_attention)
-        .delete("/projects", forget_project)
-        // The wildcard remainder becomes the conn's path, so the control routes
-        // match `/v1/…` exactly as they do at a session bind's root.
-        //
-        // The session segment is `:session`, never `:id`: the wildcard rewrites
-        // the *path* but leaves this capture in the conn's params, and a
-        // same-named capture inside `control_routes` (`/v1/processes/:id`,
-        // `/v1/notifications/:id`) would then read the session name where the
-        // route means an ordinal — every such route answering 400
-        // "process id must be an integer" for a well-formed id.
-        .all(
-            "/sessions/:session/*",
-            (
-                move |conn: Conn| async move { resolve_session(conn, files).await },
-                control_routes(),
-                files.then_some(session_files),
-            ),
-        );
-    router.post("/sessions", create_session)
-}
-
-fn host_of(conn: &Conn) -> Option<Arc<Host>> {
-    conn.shared_state::<Arc<Host>>().map(Arc::clone)
-}
-
-fn missing_host(conn: Conn) -> Conn {
-    fail(conn, ErrorCode::Internal, "missing host state")
-}
-
-/// `GET /inference`: configured host connections, sorted by name. The registry is
-/// loaded once at host startup, so this never reads config or credentials per request.
-async fn inference_inventory(conn: Conn) -> Conn {
-    match host_of(&conn) {
-        Some(host) => conn
-            .with_status(200)
-            .with_body(serde_json::json!({ "connections": host.inference.inventory() }).to_string())
-            .halt(),
-        None => missing_host(conn),
-    }
-}
-
-/// `POST /attention`: one client's report of whether a person is attending, and
-/// which session it has open (`attention.rs`, docs/web-push.md). `204` on
-/// success; a malformed body is a `400` naming the problem.
-async fn report_attention(mut conn: Conn) -> Conn {
-    let Some(host) = host_of(&conn) else {
-        return missing_host(conn);
-    };
-    let body = conn.request_body_string().await.unwrap_or_default();
-    match super::attention::AttentionReport::parse(&body) {
-        Ok(report) => {
-            host.report_attention(&report);
-            conn.with_status(204).halt()
-        }
-        Err(message) => fail(conn, ErrorCode::BadRequest, message),
-    }
-}
-
-/// `GET /sessions`: the listing (`listing.rs`) — one row per hosted session,
-/// sorted by id.
-///
-/// The route is a tuple so the same URL serves both readings of the one
-/// resource. The `Sse` half negotiates on `Accept`: a request naming
-/// `text/event-stream` subscribes to the listing and receives it whole on every
-/// change, and any other request passes through untouched to the JSON half
-/// below (docs/control-api.md). A `state` query is read first (`archived.rs`):
-/// `archived` answers the dormant listing as JSON whatever the `Accept`.
-fn list_sessions() -> impl trillium::Handler {
-    (
-        archived_listing,
-        sse(|conn: &mut Conn| match host_of(conn) {
-            Some(host) => listing_stream(Arc::downgrade(&host)),
-            // Unreachable through the mounted router, which always carries the
-            // host as shared state; an empty stream closes rather than hangs.
-            None => Box::pin(futures_lite::stream::empty()),
-        })
-        .with_heartbeat(super::http::EVENTS_HEARTBEAT),
-        read_sessions,
-    )
-}
-
-/// The JSON half of [`list_sessions`].
-async fn read_sessions(conn: Conn) -> Conn {
-    match host_of(&conn) {
-        Some(host) => conn.with_status(200).with_body(host.listing_json()).halt(),
-        None => missing_host(conn),
-    }
-}
-
-/// The per-session `/files` view, handed from [`resolve_session`] through conn
-/// state so one stage serves every session. `Files` is a handle over shared
-/// watcher and ignore state, so cloning it per request is cheap.
-struct HostedFiles(Files);
-
-/// `/sessions/:session/*`: put the session into conn state for the control
-/// routes, or `404` when no hosted session has that id. Exact public web-shell
-/// routes pass through even without a session (docs/web-client.md).
-async fn resolve_session(conn: Conn, web: bool) -> Conn {
-    let Some(host) = host_of(&conn) else {
-        return missing_host(conn);
-    };
-    let id = conn.param("session").unwrap_or_default().to_string();
-    match host.hosted(&id) {
-        Some(hosted) => conn
-            .with_state(hosted.session)
-            .with_state(HostedFiles(hosted.files)),
-        // The router has stripped the session prefix. These exact routes carry
-        // only the public shell; the client then observes the API's 404 and goes
-        // home (docs/web-client.md). Control and file paths still fail here.
-        None if web
-            && conn.method() == trillium::Method::Get
-            && super::tcp::Surface::Session
-                .spa_route(&format!("/{}", conn.path().trim_start_matches('/'))) =>
-        {
-            conn
-        }
-        None => no_such_session(conn, &id),
-    }
-}
-
-async fn session_files(mut conn: Conn) -> Conn {
-    match conn.take_state::<HostedFiles>() {
-        Some(HostedFiles(files)) => files.handler().run(conn).await,
-        None => conn,
-    }
-}
-
-/// `DELETE /sessions/:session`: archive the session. The same transition as
-/// `PATCH {"state": "archived"}`, in the imperative spelling, and answering once
-/// teardown has run — background children reaped, scratch removed — so a client
-/// that then lists sessions or reads the dir sees the finished state.
-///
-/// Archiving rather than ending is what it does: the runtime stops, and the
-/// directory and log stay, so the session is resumable by patching it `active`
-/// again (docs/log-and-projection.md).
-async fn end_session(conn: Conn) -> Conn {
-    let Some(host) = host_of(&conn) else {
-        return missing_host(conn);
-    };
-    let id = conn.param("session").unwrap_or_default().to_string();
-    match host.end(&id) {
-        Some(completion) => {
-            let ended = completion.await;
-            archived(conn, &id, ended)
-        }
-        None => no_such_session(conn, &id),
-    }
-}
-
-/// The `200` an archive answers with, carrying `worktree` when the session had its own
-/// (docs/control-api.md).
-fn archived(conn: Conn, id: &str, ended: Ended) -> Conn {
-    let mut body = serde_json::json!({ "id": id, "state": ended.state() });
-    if let Some(worktree) = ended.retired.and_then(|retired| retired.response()) {
-        body["worktree"] = worktree;
-    }
-    conn.with_status(200).with_body(body.to_string()).halt()
-}
-
-fn no_such_session(conn: Conn, id: &str) -> Conn {
-    fail(
-        conn,
-        ErrorCode::NotFound,
-        format!("no hosted session {id:?}; read GET /sessions for the current list"),
-    )
 }
 
 /// Run a host: bind the control socket and the optional TCP listener over

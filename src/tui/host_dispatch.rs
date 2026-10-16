@@ -234,6 +234,7 @@ async fn create_session(
         upstream: Vec::new(),
         autonomous: false,
         reauth: Vec::new(),
+        refuse_authorization: false,
         keep_scratch: false,
         worktree,
         // A session created by a person at a keyboard has no creator to end with

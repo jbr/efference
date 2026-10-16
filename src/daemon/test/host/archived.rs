@@ -8,7 +8,7 @@ use crate::log::{ContentBlock, Payload, Title, TitleAuthor};
 use crate::persist::Log;
 
 /// A resumable titled log for session `id` under `root`.
-fn write_session(root: &Path, id: &str, title: &str) {
+pub(super) fn write_session(root: &Path, id: &str, title: &str) {
     let dir = root.join(".efference").join(id);
     std::fs::create_dir_all(&dir).unwrap();
     let mut log = Log::create(dir.join("log.jsonl"), None).unwrap();

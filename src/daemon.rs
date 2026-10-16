@@ -697,6 +697,7 @@ mod paths;
 mod review;
 mod runtime;
 pub mod slug;
+mod starting;
 pub use host::{
     ArchivedSession, CreateSession, Host, ListedSession, PatchSession, SessionOptionsRequest,
     SessionState, serve_host,

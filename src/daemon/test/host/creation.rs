@@ -9,7 +9,8 @@ use super::*;
 
 /// An omitted environment is established for the request's own directory: the
 /// hook runs there, inheriting the launch baseline, and its failure fails the
-/// creation before anything is minted (docs/env.md).
+/// creation before anything is minted (docs/env.md). The creation answers once its
+/// id is reserved; the failure is read from the starting session's state.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn an_omitted_environment_runs_the_hook_for_that_directory() {
     let roots = Roots::new();
@@ -27,12 +28,8 @@ async fn an_omitted_environment_runs_the_hook_for_that_directory() {
     let host = Host::new(registry_with_hook(&hook), marked_baseline());
     let server = host_server(&host).await;
 
-    server
-        .post("/sessions")
-        .with_json_body(&stops_at_boot(&roots.0.join("one")))
-        .await
-        .assert_status(400)
-        .assert_body_contains("exited 7");
+    let state = created_state(&server, &stops_at_boot(&roots.0.join("one"))).await;
+    assert!(failure_reason(&state).contains("exited 7"), "{state}");
     assert!(host.ids().is_empty(), "a failed launch mints no session");
     assert!(
         !roots.0.join("one/.efference").exists(),
@@ -70,12 +67,8 @@ async fn a_worktree_cwd_runs_the_hook_at_the_project() {
     let host = Host::new(registry_with_hook(&hook), marked_baseline());
     let server = host_server(&host).await;
 
-    server
-        .post("/sessions")
-        .with_json_body(&stops_at_boot(&worktree))
-        .await
-        .assert_status(400)
-        .assert_body_contains("exited 7");
+    let state = created_state(&server, &stops_at_boot(&worktree)).await;
+    assert!(failure_reason(&state).contains("exited 7"), "{state}");
 
     let seen = std::fs::read_to_string(&ran).expect("the hook ran");
     assert!(
@@ -103,19 +96,22 @@ async fn a_supplied_environment_never_runs_the_hook() {
     let host = Host::new(registry_with_hook(&hook), marked_baseline());
     let server = host_server(&host).await;
 
-    server
-        .post("/sessions")
-        .with_json_body(&serde_json::json!({
+    let state = created_state(
+        &server,
+        &serde_json::json!({
             "name": "fresh",
             "cwd": roots.0.join("one"),
             "model": "test/m",
             "config": "missing.toml",
             "env": {"HOME": "/h"},
-        }))
-        .await
-        // Fails at boot, on the same missing config every branch here uses.
-        .assert_status(400)
-        .assert_body_contains("could not prepare session");
+        }),
+    )
+    .await;
+    // Fails at boot, on the same missing config every branch here uses.
+    assert!(
+        failure_reason(&state).contains("could not prepare session"),
+        "{state}"
+    );
     assert!(
         !ran.exists(),
         "a request carrying its own environment must not run the hook"
@@ -203,7 +199,7 @@ async fn a_preview_never_runs_the_hook() {
     host.swansong().shut_down().await;
 }
 
-/// Host shutdown cancels an establishment in progress, and the creation fails
+/// Host shutdown cancels an establishment in progress, and the creation ends
 /// without minting. The hook here is killed mid-run — nothing about that rolls
 /// back whatever the hook had already done outside the process (docs/env.md).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -225,12 +221,19 @@ async fn host_shutdown_cancels_an_establishment_in_progress() {
         shutting_down.swansong().shut_down().await;
     });
 
-    server
+    let created = server
         .post("/sessions")
         .with_json_body(&stops_at_boot(&roots.0.join("one")))
-        .await
-        .assert_status(400)
-        .assert_body_contains("cancelled");
+        .await;
+    created.assert_status(201);
+    let starting = host
+        .starting("fresh")
+        .expect("starting while the hook runs");
+    let ended = starting.finished().await;
+    assert!(
+        ended.is_err_and(|reason| reason.contains("the host shut down")),
+        "the shutdown cancelled the preparation"
+    );
     assert!(
         host.ids().is_empty(),
         "a cancelled establishment mints no session"
@@ -255,12 +258,8 @@ async fn without_a_hook_creation_reaches_preparation() {
     let host = Host::new(one_connection_registry(), marked_baseline());
     let server = host_server(&host).await;
 
-    let response = server
-        .post("/sessions")
-        .with_json_body(&stops_at_boot(&roots.0.join("one")))
-        .await;
-    response.assert_status(400);
-    let body = response.body();
+    let state = created_state(&server, &stops_at_boot(&roots.0.join("one"))).await;
+    let body = failure_reason(&state);
     assert!(
         body.contains("could not prepare session"),
         "an omitted environment with no hook reaches boot rather than failing at \
@@ -276,10 +275,11 @@ async fn without_a_hook_creation_reaches_preparation() {
     );
 }
 
-/// Creation is validated before anything is prepared: a malformed body, an id that
-/// is not a plain segment, a relative cwd, a taken id, and a config that does not
-/// exist each answer `400` with the reason and mint nothing. Validation is a
-/// property of the request, so a network listener answers the same way.
+/// Creation is validated before anything is reserved: a malformed body, an id that
+/// is not a plain segment, a relative cwd, and a taken id each answer `400` with the
+/// reason and mint nothing. Validation is a property of the request, so a network
+/// listener answers the same way. A config that does not exist is preparation's to
+/// find, and fails the starting session instead (`a_supplied_environment_…`).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn creation_validates_its_body_on_every_listener() {
     let roots = Roots::new();
@@ -303,14 +303,6 @@ async fn creation_validates_its_body_on_every_listener() {
         (base("../up", &roots.0), "not a single plain path segment"),
         (base("fresh", Path::new("relative")), "cwd must be absolute"),
         (base("one", &roots.0), "already hosted"),
-        (
-            {
-                let mut b = base("fresh", &roots.0.join("two"));
-                b["config"] = Value::String("missing.toml".into());
-                b
-            },
-            "could not prepare session",
-        ),
     ];
     for (body, reason) in &cases {
         server
@@ -394,12 +386,11 @@ async fn an_explicit_name_held_under_another_root_is_refused() {
         .assert_body_contains("is taken by a session under");
 
     register.release("fresh", &roots.0.join("two"));
-    server
-        .post("/sessions")
-        .with_json_body(&stops_at_boot(&roots.0.join("one")))
-        .await
-        .assert_status(400)
-        .assert_body_contains("could not prepare session");
+    let state = created_state(&server, &stops_at_boot(&roots.0.join("one"))).await;
+    assert!(
+        failure_reason(&state).contains("could not prepare session"),
+        "{state}"
+    );
     assert_eq!(
         register.holder("fresh"),
         None,

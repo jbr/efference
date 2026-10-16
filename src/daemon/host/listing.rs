@@ -40,8 +40,9 @@ pub struct ListedSession {
     /// (docs/tools.md). Absent for a human root.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub created_by: Option<String>,
-    /// What the session is doing, as a single word: `running`, `idle`,
-    /// `gated`, `asking`, `stalled`, `parked`, or `blocked`.
+    /// What the session is doing, as a single word: `starting` while it is
+    /// prepared, then `running`, `idle`, `gated`, `asking`, `stalled`, `parked`, or
+    /// `blocked`.
     pub status: String,
     /// Live background processes the session holds (docs/process-monitor.md). Ending
     /// it reaps them, which is why a listing carries the count.
@@ -76,10 +77,26 @@ impl Host {
             .collect()
     }
 
-    /// One hosted session's row — what `GET /sessions/:id` answers and what the
-    /// listing holds for it. `None` when this host is not running `id`.
+    /// One session's row — what `GET /sessions/:id` answers and what the listing
+    /// holds for it. `None` when this host is neither running nor starting `id`. A
+    /// starting session's row says `starting`, and has no title or processes yet.
     pub fn listed(&self, id: &str) -> Option<ListedSession> {
-        let session = self.session(id)?;
+        let session = match self.entry(id)? {
+            Entry::Hosted(hosted) => hosted.session,
+            Entry::Starting(starting) => {
+                let project = starting.project();
+                return Some(ListedSession {
+                    id: id.to_string(),
+                    title: None,
+                    cwd: Some(project.to_string_lossy().into_owned()),
+                    working: (starting.working() != project)
+                        .then(|| starting.working().to_string_lossy().into_owned()),
+                    created_by: starting.created_by().map(str::to_string),
+                    status: "starting".to_string(),
+                    processes: 0,
+                });
+            }
+        };
         let identity = session.identity();
         let directories = session.directories();
         Some(ListedSession {

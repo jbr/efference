@@ -7,7 +7,9 @@
 //! and in what they read: every option here is the caller's to choose, where a
 //! resumed session has none.
 
+use super::preparation::authorization_for;
 use super::*;
+use crate::daemon::starting::{Stage, Starting, StartingParts};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -16,13 +18,18 @@ impl Host {
     /// (docs/control-api.md) and the in-session `sessions__create` tool
     /// (docs/tools.md). `lineage` names the calling session as creator when a
     /// session commissioned this one, and the predecessor for a `hand_off`;
-    /// default for a human root. Returns the minted id, or the reason nothing was
-    /// minted.
-    pub async fn create(
+    /// default for a human root.
+    ///
+    /// Returns once the id is reserved and the session is in the map as starting:
+    /// what can be refused from the request alone — the cwd, the name, a supplied
+    /// environment, the role selections — is refused here, with nothing minted. The
+    /// environment and preparation run after, in the background, and how they end is
+    /// [`Starting::finished`](crate::daemon::starting::Starting::finished).
+    pub(crate) fn create(
         self: &Arc<Self>,
-        body: CreateSession,
+        mut body: CreateSession,
         lineage: crate::env::Lineage,
-    ) -> std::result::Result<String, String> {
+    ) -> std::result::Result<Arc<Starting>, String> {
         if !body.cwd.is_absolute() {
             return Err(format!("cwd must be absolute: {}", body.cwd.display()));
         }
@@ -31,6 +38,14 @@ impl Host {
         // (docs/worktrees.md).
         let project = crate::worktree::project_of(&body.cwd).unwrap_or_else(|| body.cwd.clone());
         let directories = crate::policy::Directories::new(project.clone(), body.cwd.clone());
+        // An environment the caller supplied is the base, and nothing is run.
+        let supplied_env = match body.env.take() {
+            Some(env) => {
+                Some(crate::env_table::EnvSnapshot::new(env).map_err(|e| format!("env: {e}"))?)
+            }
+            None => None,
+        };
+        let plan = self.plan_creation(&body, &project)?;
         // The session base is what an unnamed id must be free in, on disk and in
         // the live map — a dead session's directory still holds its name
         // (docs/session-title.md).
@@ -46,7 +61,7 @@ impl Host {
                         "session name {id:?} is not a single plain path segment"
                     ));
                 }
-                if self.session(&id).is_some() {
+                if self.entry(&id).is_some() {
                     return Err(format!("session {id:?} is already hosted"));
                 }
                 if let Err(held) = self.session_ids.reserve(&id, &project) {
@@ -58,66 +73,46 @@ impl Host {
                 id
             }
             None => slug::mint(|id| {
-                self.session(id).is_some()
+                self.entry(id).is_some()
                     || base.join(id).exists()
                     || self.session_ids.reserve(id, &project).is_err()
             }),
         };
-        let started = self
-            .create_reserved(body, lineage, id.clone(), project.clone(), directories)
-            .await;
-        if started.is_err() {
+        let starting = Starting::new(StartingParts {
+            id: id.clone(),
+            directories: directories.clone(),
+            resume: false,
+            created_by: lineage.created_by.clone(),
+            detached: body.detached,
+        });
+        if !self.sessions.lock().unwrap().insert_starting(&starting) {
             self.session_ids.release(&id, &project);
+            return Err(format!("session {id:?} is already hosted"));
         }
-        started
+        self.touch_listing();
+        log::info!("session {id}: starting in {}", body.cwd.display());
+        let host = Arc::clone(self);
+        let preparing = Arc::clone(&starting);
+        self.prepare_in_background(&starting, async move {
+            host.prepare_creation(&preparing, body, plan, lineage, supplied_env, directories)
+                .await
+        });
+        Ok(starting)
     }
 
-    /// The rest of a creation, once `id` is reserved for `project`.
-    async fn create_reserved(
-        self: &Arc<Self>,
-        body: CreateSession,
-        lineage: crate::env::Lineage,
-        id: String,
-        project: PathBuf,
-        directories: crate::policy::Directories,
-    ) -> std::result::Result<String, String> {
-        let base = project.join(SESSION_BASE);
-        // An environment the caller supplied is the base, and nothing is run. An
-        // omitted one is established here, for the session's project, from the
-        // user-wide `env_hook` or the host environment (docs/env.md). The project, not
-        // the working directory: resume establishes it there too, before the header
-        // says where the session works, so a session gets one environment either way.
-        let base_env = match body.env {
-            Some(env) => match crate::env_table::EnvSnapshot::new(env) {
-                Ok(base) => base,
-                Err(e) => return Err(format!("env: {e}")),
-            },
-            None => {
-                // Host shutdown cancels the establishment, which fails the
-                // creation before an id is minted. Nothing else races it: a
-                // client that disconnects does not cancel this work, so an
-                // accepted creation completes and mints its session even with no
-                // reader on the response.
-                let abort = self.swansong.shutting_down();
-                match crate::env_table::environment_at(
-                    &project,
-                    self.inference.env_hook(),
-                    &self.host_env,
-                    abort,
-                )
-                .await
-                {
-                    Ok(base) => base,
-                    Err(e) => return Err(format!("env: {e}")),
-                }
-            }
-        };
+    /// What a creation resolves from its request alone, before anything is reserved:
+    /// the role selections and the history and index records a started session
+    /// leaves.
+    fn plan_creation(
+        &self,
+        body: &CreateSession,
+        project: &std::path::Path,
+    ) -> std::result::Result<CreationPlan, String> {
         // The same resolution preview reports, then credentials for the roles it
         // selected. Project effort is boot's to apply, so it is not resolved here.
         // History is resolved here: the omitted branch defaults to past picks
         // in this project, and the write below records an explicit pick.
-        let options = body.options.clone();
-        let scope = crate::history::Scope::for_request(&project, body.config.as_deref());
+        let scope = crate::history::Scope::for_request(project, body.config.as_deref());
         let resolved = self.inference.resolve_options(
             &body.options,
             None,
@@ -134,13 +129,13 @@ impl Host {
             resolved.effective.triage.source,
             Some(crate::inference::SelectionSource::Request)
         );
-        let inference = match self.inference.prepare(resolved) {
-            Ok(inference) => inference,
-            Err(error) => return Err(error.to_string()),
-        };
+        let inference = self
+            .inference
+            .prepare(resolved)
+            .map_err(|error| error.to_string())?;
         // Remember the pick this creation made, for the omitted-branch default
         // and the recent menus. Built before the request moves the inference
-        // away; recorded below, after the session starts, so only sessions that
+        // away; recorded after the session starts, so only sessions that
         // actually started are remembered. Best-effort either way: the store
         // never fails a creation.
         let pick = main_explicit.then(|| {
@@ -167,19 +162,56 @@ impl Host {
         // Where this session starts, for the index the launch picker reads. Every
         // creation records one — a web launch, a session's own `sessions__create`,
         // a `hand_off` in its predecessor's directory — because they are one
-        // path here and a launch is what puts a directory on the list. Built
-        // before the request takes `body.config`, which is also what keeps the row
-        // naming the template configuration rather than the session's own copy;
-        // `config` is the spelling, so the index can hand a client back exactly
-        // what to create with. Recorded below, with the pick.
+        // path here and a launch is what puts a directory on the list. `config` is
+        // the template configuration's spelling, never the session's own copy, so
+        // the index can hand a client back exactly what to create with.
         let launch = crate::remembered::Project {
             last_used_at: crate::history::now(),
             cwd: scope.cwd.clone(),
             config_key: scope.config_key.clone(),
             config: body.config.clone(),
         };
+        Ok(CreationPlan {
+            options: body.options.clone(),
+            inference,
+            pick,
+            triage_pick,
+            launch,
+        })
+    }
+
+    /// The rest of a creation, once `starting` holds its id: establish the
+    /// environment, prepare, start, and adopt.
+    async fn prepare_creation(
+        self: &Arc<Self>,
+        starting: &Arc<Starting>,
+        body: CreateSession,
+        plan: CreationPlan,
+        lineage: crate::env::Lineage,
+        supplied_env: Option<crate::env_table::EnvSnapshot>,
+        directories: crate::policy::Directories,
+    ) -> std::result::Result<(), String> {
+        let id = starting.id().to_string();
+        let project = directories.project().to_path_buf();
+        // An omitted environment is established here, for the session's project,
+        // from the user-wide `env_hook` or the host environment (docs/env.md). The
+        // project, not the working directory: resume establishes it there too, before
+        // the header says where the session works, so a session gets one environment
+        // either way.
+        let base_env = match supplied_env {
+            Some(base) => base,
+            None => self.establish_environment(starting, &project).await?,
+        };
+        starting.set_stage(Stage::Preparing);
+        let CreationPlan {
+            options,
+            inference,
+            pick,
+            triage_pick,
+            launch,
+        } = plan;
         let request = crate::boot::SessionRequest {
-            session_dir: base.join(&id),
+            session_dir: project.join(SESSION_BASE).join(&id),
             directories,
             base_env,
             config: body.config,
@@ -189,6 +221,7 @@ impl Host {
             upstream: body.upstream,
             autonomous: body.autonomous,
             reauth: body.reauth,
+            authorization: authorization_for(starting, body.refuse_authorization),
             keep_scratch: body.keep_scratch,
             detached: body.detached,
             worktree: body.worktree,
@@ -196,19 +229,25 @@ impl Host {
             // this host, with the new session itself as the caller (docs/tools.md).
             host: Some(Arc::clone(self)),
             // The creator and predecessor reach the identity line
-            // (docs/context.md); `adopt_with` below records the same values as
+            // (docs/context.md); adoption below records the same values as
             // control state.
             lineage: lineage.clone(),
         };
-        let boot = match crate::boot::prepare(request).await {
-            Ok(boot) => boot,
-            Err(e) => return Err(format!("could not prepare session: {e}")),
-        };
+        let boot = crate::boot::prepare(request)
+            .await
+            .map_err(|e| format!("could not prepare session: {e}"))?;
         let runtime = SessionRuntime::start(boot, self.swansong());
-        // `adopt_with` refuses an id already hosted, and shuts the new runtime down
-        // when it does, so nothing here records options or a model pick for a
-        // session that will not exist. The reservation makes that a backstop.
-        self.adopt_with(id.clone(), runtime, lineage.created_by, body.detached)?;
+        let session = Arc::clone(runtime.session());
+        // Adoption replaces this creation's starting entry, and refuses — shutting
+        // the runtime down — when anything else holds the id, so nothing here
+        // records options or a model pick for a session that will not exist.
+        self.adopt_prepared(
+            id.clone(),
+            runtime,
+            lineage.created_by,
+            body.detached,
+            Some(starting),
+        )?;
         self.record_options(&id, options);
         // Remember the pick this creation made, for the omitted-branch default
         // and the recent menus, and the directory it started in, for the index.
@@ -221,9 +260,20 @@ impl Host {
             self.inference.history().record_triage(pick);
         }
         self.remembered.record(&launch);
-        log::info!("session {id}: created in {}", scope.cwd.display());
-        Ok(id)
+        log::info!("session {id}: created in {}", launch.cwd.display());
+        // Last, so whoever waits on the start finds everything above in place.
+        starting.started(session);
+        Ok(())
     }
+}
+
+/// What [`Host::plan_creation`] resolved, carried into the background preparation.
+struct CreationPlan {
+    options: crate::inference::SessionOptions,
+    inference: crate::inference::SessionInference,
+    pick: Option<crate::history::Pick>,
+    triage_pick: Option<crate::history::TriagePick>,
+    launch: crate::remembered::Project,
 }
 
 /// Body of `POST /sessions` (docs/control-api.md): a `SessionRequest` as a
@@ -262,6 +312,11 @@ pub struct CreateSession {
     pub autonomous: bool,
     #[serde(default)]
     pub reauth: Vec<String>,
+    /// Fail the mount of an MCP server that asks for authorization, naming why, instead
+    /// of starting the authorization dance on the host (docs/mcp-auth.md): for a
+    /// preparation nobody may be at the host to finish.
+    #[serde(default)]
+    pub refuse_authorization: bool,
     #[serde(default)]
     pub keep_scratch: bool,
     /// Give the session its own git worktree and start it there
@@ -278,12 +333,36 @@ pub struct CreateSession {
     pub env: Option<BTreeMap<String, String>>,
 }
 
-/// `POST /sessions`: prepare and start a session from the body. Mounted on every
-/// host listener, so a network caller reaches this too.
+impl CreateSession {
+    /// A creation in `cwd` with every other field at its default: a minted name, the
+    /// probed config, the host's defaults for every role, the environment established
+    /// by the host.
+    pub fn new(cwd: PathBuf) -> Self {
+        Self {
+            name: None,
+            cwd,
+            config: None,
+            options: SessionOptions::default(),
+            upstream: Vec::new(),
+            autonomous: false,
+            reauth: Vec::new(),
+            refuse_authorization: false,
+            keep_scratch: false,
+            worktree: false,
+            detached: false,
+            env: None,
+        }
+    }
+}
+
+/// `POST /sessions`: reserve a session from the body and prepare it in the
+/// background. Mounted on every host listener, so a network caller reaches this too.
+/// `201 {"id"}` once the id is reserved; the preparation shows on the session's own
+/// `/state` and `/events` as the `starting` topic (docs/control-api.md).
 ///
 /// Preparation reports to this process's stderr and may open a browser for an MCP
-/// authorization, on the host — which a network caller cannot see or answer
-/// (docs/control-api.md).
+/// authorization, on the host — which a network caller cannot answer, though the
+/// `starting` topic names the server it waits on (docs/control-api.md).
 pub(super) async fn create_session(mut conn: Conn) -> Conn {
     let Some(host) = host_of(&conn) else {
         return missing_host(conn);
@@ -301,10 +380,10 @@ pub(super) async fn create_session(mut conn: Conn) -> Conn {
     };
     // A human root: no session commissioned it, so it has no `created_by`
     // (docs/tools.md).
-    match host.create(body, crate::env::Lineage::default()).await {
-        Ok(id) => conn
+    match host.create(body, crate::env::Lineage::default()) {
+        Ok(starting) => conn
             .with_status(201)
-            .with_body(serde_json::json!({ "id": id }).to_string())
+            .with_body(serde_json::json!({ "id": starting.id() }).to_string())
             .halt(),
         Err(reason) => fail(conn, ErrorCode::BadRequest, reason),
     }

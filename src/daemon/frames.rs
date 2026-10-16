@@ -158,6 +158,11 @@ pub(crate) enum Topic {
     /// the tool calls executing, and a compaction waiting or writing. `null` when
     /// nothing is open. Where the loop itself waits is [`LoopPhase`](Self::LoopPhase).
     CurrentOperations,
+    /// The session's preparation, while it is starting (`starting.rs`,
+    /// docs/control-api.md): the stage, the MCP server awaiting authorization, and a
+    /// failure with the turns it hands back. `null` once the session has started, which
+    /// is every value a running session publishes.
+    Starting,
 }
 
 impl Topic {
@@ -166,7 +171,7 @@ impl Topic {
     /// walking it, so a topic added here reaches both surfaces or neither — which is
     /// what keeps `GET /state` equal to the fold of every state frame
     /// (docs/control-api.md).
-    pub(crate) const ALL: [Topic; 23] = [
+    pub(crate) const ALL: [Topic; 24] = [
         Self::Gate,
         Self::Ask,
         Self::Processes,
@@ -190,6 +195,7 @@ impl Topic {
         Self::ConfigRepair,
         Self::SessionIdentity,
         Self::CurrentOperations,
+        Self::Starting,
     ];
 
     /// The topic named by a `?include=state:<topic>` token, or `None` if there is no such
@@ -225,6 +231,7 @@ impl Topic {
             Self::ConfigRepair => "config_repair",
             Self::SessionIdentity => "session_identity",
             Self::CurrentOperations => "current_operations",
+            Self::Starting => "starting",
         }
     }
 }

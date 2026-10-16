@@ -14,6 +14,7 @@ mod preview;
 mod projects;
 mod resume;
 mod shell;
+mod starting;
 mod supervise;
 mod worktree;
 
@@ -188,6 +189,38 @@ fn json(body: &str) -> Value {
     serde_json::from_str(body).unwrap_or_else(|e| panic!("{e}: {body}"))
 }
 
+/// Post a creation, which answers once the id is reserved, and read where its
+/// preparation ended from the session's own `/state?wait=settled`, as a client would:
+/// a started session's state, or the starting state carrying the failure
+/// (docs/control-api.md).
+async fn created_state(server: &TestServer<impl trillium::Handler>, body: &Value) -> Value {
+    let created = server.post("/sessions").with_json_body(body).await;
+    created.assert_status(201);
+    let id = json(created.body())["id"]
+        .as_str()
+        .expect("a creation answers its id")
+        .to_string();
+    settled_state(server, &id).await
+}
+
+/// `GET /sessions/<id>/v1/state?wait=settled`.
+async fn settled_state(server: &TestServer<impl trillium::Handler>, id: &str) -> Value {
+    let state = server
+        .get(&format!("/sessions/{id}/v1/state?wait=settled"))
+        .await;
+    state.assert_status(200);
+    json(state.body())
+}
+
+/// The reason a starting session's preparation failed, from its state; empty when
+/// it did not fail.
+fn failure_reason(state: &Value) -> String {
+    state["starting"]["failure"]["reason"]
+        .as_str()
+        .unwrap_or_default()
+        .to_string()
+}
+
 /// Two hosted sessions select different provider/auth/model tuples from the one
 /// host registry, `session_identity` names every role by connection, a triage
 /// selection on a foreign dialect is refused before anything is minted, and the
@@ -305,7 +338,8 @@ auth = { kind = "env", key = "MESSAGES_KEY" }
             .contains("platform-canary-secret")
     );
 
-    let state_a = server.get("/sessions/a/v1/state").await;
+    // Settled, so through the start: creation answers once the id is reserved.
+    let state_a = server.get("/sessions/a/v1/state?wait=settled").await;
     state_a.assert_status(200);
     let body_a = state_a.body().to_string();
     assert_eq!(
@@ -317,7 +351,7 @@ auth = { kind = "env", key = "MESSAGES_KEY" }
         })
     );
     assert_eq!(json(&body_a)["session_identity"]["model"], "gpt-5.6-terra");
-    let state_b = server.get("/sessions/b/v1/state").await;
+    let state_b = server.get("/sessions/b/v1/state?wait=settled").await;
     state_b.assert_status(200);
     let body_b = state_b.body().to_string();
     assert_eq!(

@@ -40,6 +40,8 @@ impl Session {
             Topic::ConfigRepair => self.config_repair_json(),
             Topic::SessionIdentity => self.session_identity_json(),
             Topic::CurrentOperations => self.current_operations_json(),
+            // A session exists only once it has started (`starting.rs`).
+            Topic::Starting => Value::Null,
         }
     }
 

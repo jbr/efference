@@ -184,19 +184,12 @@ async fn a_prefixed_client_joins_v1_only() {
 
     let request = CreateSession {
         name: Some("minted".into()),
-        cwd: PathBuf::from("/work"),
-        config: None,
         options: crate::inference::SessionOptions {
             model: Some("m".into()),
             ..Default::default()
         },
-        upstream: vec![],
-        autonomous: false,
-        reauth: vec![],
-        keep_scratch: false,
-        worktree: false,
-        detached: false,
         env: Some([("HOME".to_string(), "/h".to_string())].into()),
+        ..CreateSession::new(PathBuf::from("/work"))
     };
     let id = Client::new(&socket).create_session(&request).await.unwrap();
     assert_eq!(id, "minted");

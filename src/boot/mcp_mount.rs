@@ -25,7 +25,24 @@ use crate::mcp::auth::{self, AuthorizationRequired};
 use crate::tools::Toolbox;
 use trillium_client::Url;
 
-/// Mount every declared server, authorizing any that asks for it.
+/// Told which server an authorization waits on as the wait begins, and `None` as it
+/// ends — how a starting session names the server in its state (docs/control-api.md).
+pub type AuthorizationWaiting = std::sync::Arc<dyn Fn(Option<&str>) + Send + Sync>;
+
+/// How a mount meets a server that asks for authorization (docs/mcp-auth.md).
+/// The default runs the dance and tells nobody.
+#[derive(Clone, Default)]
+pub struct AuthorizationHandling {
+    /// Fail the server's mount, naming why, instead of starting the dance: for a
+    /// preparation nobody may be at the host to finish, where several sessions would
+    /// otherwise each open a browser for one server.
+    pub refuse: bool,
+    /// Told about each wait the dance enters.
+    pub waiting: Option<AuthorizationWaiting>,
+}
+
+/// Mount every declared server, authorizing any that asks for it unless
+/// `authorization` refuses.
 ///
 /// Returns the servers that did not mount and were allowed not to. A server
 /// that did not mount and was *not* optional returns `Err` — the operator
@@ -36,6 +53,7 @@ pub async fn mount_all(
     cwd: &std::path::Path,
     store: &dyn TokenStore,
     reauth: &[String],
+    authorization: &AuthorizationHandling,
 ) -> Result<Vec<Unmounted>, Box<dyn std::error::Error + Send + Sync>> {
     let mut unmounted = Vec::new();
     for (name, entry) in servers {
@@ -47,7 +65,7 @@ pub async fn mount_all(
             log::debug!("mcp: `{name}` credentials cleared; re-authorizing");
         }
 
-        let reason = match mount_one(toolbox, name, entry, cwd, store).await {
+        let reason = match mount_one(toolbox, name, entry, cwd, store, authorization).await {
             Ok(()) => continue,
             Err(e) => format!("{e:#}"),
         };
@@ -80,6 +98,7 @@ async fn mount_one(
     entry: &crate::config::McpServerEntry,
     cwd: &std::path::Path,
     store: &dyn TokenStore,
+    authorization: &AuthorizationHandling,
 ) -> anyhow::Result<()> {
     let header = auth::stored_header(store, name).await?;
     let first = toolbox
@@ -99,12 +118,25 @@ async fn mount_one(
         crate::config::McpTransport::Stdio { .. } => return Err(e),
     };
 
+    if authorization.refuse {
+        anyhow::bail!(
+            "it asks for authorization, which this preparation does not start; resume the \
+             session from a client to authorize it"
+        );
+    }
     eprintln!("[mcp: `{name}` requires authorization]");
-    let header =
+    if let Some(waiting) = &authorization.waiting {
+        waiting(Some(name));
+    }
+    let authorized =
         auth::authorize_and_store(store, name, &url, challenge.as_ref(), |authorization_url| {
             present(name, authorization_url)
         })
-        .await?;
+        .await;
+    if let Some(waiting) = &authorization.waiting {
+        waiting(None);
+    }
+    let header = authorized?;
     eprintln!("[mcp: `{name}` authorized]");
 
     toolbox

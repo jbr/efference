@@ -14,7 +14,9 @@
 //! `supervisor` is the other field a patch changes: which session supervises this
 //! one (`supervise.rs`, docs/permissions.md). It is a separate patch from `state`.
 
+use super::preparation::authorization_for;
 use super::*;
+use crate::daemon::starting::{Stage, Starting, StartingParts};
 use crate::inference::ResumeSwitch;
 use serde::{Deserialize, Serialize};
 
@@ -58,6 +60,11 @@ pub struct PatchSession {
     /// that reopens a session says what to bring up with it.
     #[serde(default)]
     pub reauth: Vec<String>,
+    /// Fail the mount of an MCP server that asks for authorization instead of
+    /// starting the dance on the host (docs/mcp-auth.md). Only read by an `active`
+    /// patch: a resume nobody may be at the host to finish.
+    #[serde(default)]
+    pub refuse_authorization: bool,
     /// This attempt's base environment, when the caller supplies one
     /// (docs/env.md). `None` asks the host to establish it for `cwd`, as a
     /// creation's is.
@@ -95,6 +102,7 @@ impl PatchSession {
             state: Some(SessionState::Active),
             cwd: Some(cwd),
             reauth: Vec::new(),
+            refuse_authorization: false,
             env: None,
             switch: ResumeSwitch::default(),
             supervisor: None,
@@ -107,6 +115,7 @@ impl PatchSession {
             state: None,
             cwd: None,
             reauth: Vec::new(),
+            refuse_authorization: false,
             env: None,
             switch: ResumeSwitch::default(),
             supervisor: Some(supervisor),
@@ -122,10 +131,10 @@ impl Host {
     /// taken-but-dormant, and this is the last one — a session whose directory is
     /// still on disk with nothing hosting it. Its log is reopened rather than
     /// created and its own `config.toml` is the live config, so no option in
-    /// `body` is read except `reauth`, `env` and the spotter and triage `switch`: the main
-    /// model, effort and temperature come from the header the session was created with
-    /// (docs/log-and-projection.md), and a role a switch leaves out keeps the
-    /// recorded selection.
+    /// `body` is read except `reauth`, `refuse_authorization`, `env` and the spotter and
+    /// triage `switch`: the main model, effort and temperature come from the header the
+    /// session was created with (docs/log-and-projection.md), and a role a switch
+    /// leaves out keeps the recorded selection.
     ///
     /// That is why the patch that reaches here carries no field for the main model, effort
     /// or temperature — an omitted one that resolved from history would quietly
@@ -133,11 +142,14 @@ impl Host {
     /// come from the caller, and not as a preference: the host serves several
     /// roots and cannot tell which one a dormant id belongs to.
     ///
-    /// Returns `AlreadyActive` when this host is already running the session, so
-    /// the route can answer a repeat patch with the state it asked for rather than
-    /// an error — and `Conflict` when the session is live under a different root,
-    /// which is a disagreement about which session this is rather than a repeat.
-    pub(super) async fn resume(
+    /// Returns once the session is in the map as starting, like a creation; the
+    /// environment and `boot::resume` run in the background (`preparation.rs`).
+    /// Returns `AlreadyActive` when this host is already running or starting the
+    /// session, so the route can answer a repeat patch with the state it asked for
+    /// rather than an error — and `Conflict` when the session is live under a
+    /// different root, which is a disagreement about which session this is rather
+    /// than a repeat.
+    pub(super) fn resume(
         self: &Arc<Self>,
         id: String,
         body: PatchSession,
@@ -147,7 +159,7 @@ impl Host {
                 "session name {id:?} is not a single plain path segment"
             )));
         }
-        let Some(cwd) = body.cwd else {
+        let Some(cwd) = body.cwd.clone() else {
             return Err(ResumeRefused::Refused(
                 "an `active` patch needs `cwd`: the root whose .efference holds this session"
                     .into(),
@@ -163,18 +175,20 @@ impl Host {
         // writer the writer lock exists to prevent, so this answers with the state
         // the caller asked for instead — but only when the root agrees, since a
         // session hosted elsewhere is a different session that happens to share an
-        // id, and quietly claiming it would attach a client to the wrong one.
-        if let Some(hosted) = self.hosted(&id) {
-            // The patch's `cwd` names the root holding the session's `.efference`: its
-            // project, which differs from the working directory in a worktree.
-            let hosted = hosted.session.directories();
-            let hosted_cwd = hosted.project();
-            return if hosted_cwd == cwd {
+        // id, and quietly claiming it would attach a client to the wrong one. The
+        // patch's `cwd` names the root holding the session's `.efference`: its
+        // project, which differs from the working directory in a worktree.
+        if let Some(entry) = self.entry(&id) {
+            let held = match &entry {
+                Entry::Hosted(hosted) => hosted.session.directories().project().to_path_buf(),
+                Entry::Starting(starting) => starting.project().to_path_buf(),
+            };
+            return if held == cwd {
                 Err(ResumeRefused::AlreadyActive)
             } else {
                 Err(ResumeRefused::Conflict(format!(
                     "session {id:?} is hosted under {}, not {}",
-                    hosted_cwd.display(),
+                    held.display(),
                     cwd.display()
                 )))
             };
@@ -199,90 +213,143 @@ impl Host {
                 session_dir.display()
             )));
         }
-        // An environment the caller supplied is the base, and nothing is run. An
-        // omitted one is established here, for this session's own directory, on
-        // the same terms a creation's is (docs/env.md).
-        let base_env = match body.env {
-            Some(env) => match crate::env_table::EnvSnapshot::new(env) {
-                Ok(base) => base,
-                Err(e) => return Err(ResumeRefused::Refused(format!("env: {e}"))),
-            },
-            None => {
-                let abort = self.swansong.shutting_down();
-                match crate::env_table::environment_at(
-                    &cwd,
-                    self.inference.env_hook(),
-                    &self.host_env,
-                    abort,
-                )
+        // An environment the caller supplied is the base, and nothing is run.
+        let supplied_env = match body.env.clone() {
+            Some(env) => Some(
+                crate::env_table::EnvSnapshot::new(env)
+                    .map_err(|e| ResumeRefused::Refused(format!("env: {e}")))?,
+            ),
+            None => None,
+        };
+        // Creator, `detached`, and where the session works, as the header recorded them.
+        let recorded = self.recorded_lineage(&session_dir);
+        let starting = Starting::new(StartingParts {
+            id: id.clone(),
+            directories: crate::policy::Directories::new(
+                cwd.clone(),
+                recorded.working.clone().unwrap_or_else(|| cwd.clone()),
+            ),
+            resume: true,
+            created_by: recorded.created_by.clone(),
+            detached: recorded.detached,
+        });
+        if !self.sessions.lock().unwrap().insert_starting(&starting) {
+            return Err(ResumeRefused::AlreadyActive);
+        }
+        self.touch_listing();
+        log::info!("session {id}: resuming");
+        let host = Arc::clone(self);
+        let preparing = Arc::clone(&starting);
+        self.prepare_in_background(&starting, async move {
+            host.prepare_resume(&preparing, session_dir, body, supplied_env, recorded)
                 .await
-                {
-                    Ok(base) => base,
-                    Err(e) => return Err(ResumeRefused::Refused(format!("env: {e}"))),
-                }
+        });
+        Ok(Resume::Starting)
+    }
+
+    /// The rest of a resume, once `starting` holds its id: establish the
+    /// environment, reopen, start, and adopt.
+    async fn prepare_resume(
+        self: &Arc<Self>,
+        starting: &Arc<Starting>,
+        session_dir: PathBuf,
+        body: PatchSession,
+        supplied_env: Option<crate::env_table::EnvSnapshot>,
+        recorded: RecordedLineage,
+    ) -> std::result::Result<(), String> {
+        let id = starting.id().to_string();
+        // An omitted environment is established for this session's own directory, on
+        // the same terms a creation's is (docs/env.md).
+        let base_env = match supplied_env {
+            Some(base) => base,
+            None => {
+                self.establish_environment(starting, starting.project())
+                    .await?
             }
         };
-        // Creator and `detached` as the header recorded them.
-        let (created_by, detached) = self.recorded_lineage(&session_dir);
-        let (boot, options) = match crate::boot::resume(crate::boot::ResumeRequest {
+        starting.set_stage(Stage::Preparing);
+        let (boot, options) = crate::boot::resume(crate::boot::ResumeRequest {
             session_dir,
             base_env,
             inference: &self.inference,
             reauth: body.reauth,
+            authorization: authorization_for(starting, body.refuse_authorization),
             switch: body.switch,
             host: Some(Arc::clone(self)),
         })
         .await
-        {
-            Ok(boot) => boot,
-            Err(e) => {
-                return Err(ResumeRefused::Refused(format!(
-                    "could not resume the session: {e}"
-                )));
-            }
-        };
+        .map_err(|e| format!("could not resume the session: {e}"))?;
         let runtime = SessionRuntime::start(boot, self.swansong());
-        self.adopt_with(id.clone(), runtime, created_by, detached)?;
+        let session = Arc::clone(runtime.session());
+        self.adopt_prepared(
+            id.clone(),
+            runtime,
+            recorded.created_by,
+            recorded.detached,
+            Some(starting),
+        )?;
         // The options `boot::resume` inferred from the header, recorded so a
         // `hand_off` from this session hands its successor the same place rather
         // than the host's defaults (docs/tools.md). A resume adopts, so this is
         // where its `Hosted.options` comes from.
         self.record_options(&id, options);
+        self.clear_resume_failure(starting.project(), &id);
+        starting.started(session);
         log::info!("session {id}: resumed");
-        Ok(Resume::Resumed)
+        Ok(())
     }
 }
 
+/// What a dormant session's header recorded about where it sits.
+pub(crate) struct RecordedLineage {
+    /// The creator, kept only while this host holds it.
+    pub(crate) created_by: Option<String>,
+    pub(crate) detached: bool,
+    /// The working directory, when it is not the project (docs/worktrees.md).
+    pub(crate) working: Option<PathBuf>,
+}
+
 impl Host {
-    /// The creator and `detached` flag the session's header recorded.
+    /// The creator, `detached` flag, and working directory the session's header
+    /// recorded.
     ///
     /// The creator is kept only while this host still holds it. A `created_by`
     /// naming a session that is not here would end the resumed one when a session
     /// nobody is running goes away, so a dangling one is dropped and the session
-    /// stands on its own. A header that cannot be read yields neither, and is
+    /// stands on its own. A header that cannot be read yields none of them, and is
     /// left to `boot::resume`, which refuses with the real reason.
-    pub(crate) fn recorded_lineage(&self, session_dir: &std::path::Path) -> (Option<String>, bool) {
+    pub(crate) fn recorded_lineage(&self, session_dir: &std::path::Path) -> RecordedLineage {
+        let unread = RecordedLineage {
+            created_by: None,
+            detached: false,
+            working: None,
+        };
         let Some(recording) =
             crate::persist::load_recording(session_dir.join(crate::boot::LOG_NAME)).ok()
         else {
-            return (None, false);
+            return unread;
         };
         let Some(metadata) = recording.header.metadata() else {
-            return (None, false);
+            return unread;
         };
         let created_by = metadata
             .created_by
             .clone()
             .filter(|creator| self.session(creator).is_some());
-        (created_by, metadata.detached)
+        RecordedLineage {
+            created_by,
+            detached: metadata.detached,
+            working: metadata.working.clone(),
+        }
     }
 }
 
 /// What an `active` patch did.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(super) enum Resume {
-    /// The log was reopened and the session started.
-    Resumed,
+    /// The session is starting: its log will be reopened once the environment and
+    /// its MCP servers are prepared.
+    Starting,
 }
 
 /// Why an `active` patch did not reopen anything, apart from the reason it
@@ -346,10 +413,10 @@ pub(super) async fn patch_session(mut conn: Conn) -> Conn {
         (Some(state), None) => state,
     };
     match state {
-        SessionState::Active => match host.resume(id.clone(), body).await {
+        SessionState::Active => match host.resume(id.clone(), body) {
             // Both outcomes are the state the caller asked for, so both answer
             // 200; `resumed` is what tells a repeat apart from the change.
-            Ok(Resume::Resumed) => active(conn, id, true),
+            Ok(Resume::Starting) => active(conn, id, true),
             Err(ResumeRefused::AlreadyActive) => active(conn, id, false),
             Err(ResumeRefused::Conflict(reason)) => fail(conn, ErrorCode::StateMismatch, reason),
             Err(ResumeRefused::Refused(reason)) => fail(conn, ErrorCode::BadRequest, reason),

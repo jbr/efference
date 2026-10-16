@@ -32,6 +32,7 @@ fn resume_request<'a>(root: &Root, id: &str, registry: &'a InferenceRegistry) ->
         base_env: super::super::test::base_env(),
         inference: registry,
         reauth: Vec::new(),
+        authorization: Default::default(),
         switch: Default::default(),
         host: None,
     }

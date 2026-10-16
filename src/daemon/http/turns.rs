@@ -4,85 +4,97 @@
 use super::*;
 
 /// Enqueue a user turn (also seeds turn 1). 202 — watch the stream for the
-/// response; submission is decoupled from inference.
+/// response; submission is decoupled from inference. A session still starting queues
+/// it, and it is the first turn the session runs (`starting.rs`).
 pub(super) async fn submit_turn(mut conn: Conn) -> Conn {
-    let Some(shared) = shared_of(&conn) else {
+    let shared = shared_of(&conn);
+    let starting = starting_of(&conn);
+    if shared.is_none() && starting.is_none() {
         return missing_state(conn);
-    };
+    }
     let wait = wants_wait(conn.querystring());
     let body = conn.request_body_string().await.unwrap_or_default();
-    match serde_json::from_str::<TurnBody>(&body) {
-        Ok(TurnBody {
-            text,
-            submission_id,
-            source,
-            attachments,
-        }) => {
-            if submission_id
-                .as_ref()
-                .is_some_and(|id| id.len() > SUBMISSION_ID_MAX || id.is_empty())
-            {
-                return fail(
-                    conn,
-                    ErrorCode::BadRequest,
-                    format!("submission_id must be 1–{SUBMISSION_ID_MAX} bytes"),
-                );
-            }
-            // The kickoff's source is the harness's alone: the clients leave a turn
-            // carrying it out of the transcript, so a client claiming it would be
-            // submitting a turn the operator never sees (docs/context.md).
-            if source.as_deref() == Some(crate::frontend::KICKOFF_SOURCE) {
-                return fail(
-                    conn,
-                    ErrorCode::BadRequest,
-                    format!(
-                        "source `{}` is reserved for the harness's first turn",
-                        crate::frontend::KICKOFF_SOURCE
-                    ),
-                );
-            }
-            // Likewise a hand-off brief's: the clients render it as the
-            // predecessor's brief, which only `hand_off` writes (docs/tools.md).
-            if source
-                .as_deref()
-                .and_then(crate::frontend::handoff_predecessor)
-                .is_some()
-            {
-                return fail(
-                    conn,
-                    ErrorCode::BadRequest,
-                    "a `handoff[…]` source is reserved for a hand-off brief".to_string(),
-                );
-            }
+    let TurnBody {
+        text,
+        submission_id,
+        source,
+        attachments,
+    } = match parse_turn(&body) {
+        Ok(turn) => turn,
+        Err(message) => return fail(conn, ErrorCode::BadRequest, message),
+    };
+    let submission_id = submission_id.unwrap_or_else(mint_submission_id);
+    let turn = SubmittedTurn::new(text, submission_id.clone()).sourced(source);
+    match (shared, starting) {
+        (Some(shared), _) => {
             let attachments = match resolve_attachments(&shared, &attachments) {
                 Ok(attachments) => attachments,
                 Err(message) => return fail(conn, ErrorCode::BadRequest, message),
             };
-            let submission_id = submission_id.unwrap_or_else(mint_submission_id);
-            shared.submit_client_turn(
-                SubmittedTurn::new(text, submission_id.clone())
-                    .sourced(source)
-                    .with_attachments(attachments),
-            );
+            shared.submit_client_turn(turn.with_attachments(attachments));
             // `?wait`: hold the connection until the turn reaches a gate or completes,
-            // then answer with the resulting state — "act → read state" in one round-trip
-            // (docs/permissions.md).
+            // then answer with the resulting state — "act → read state" in one
+            // round-trip (docs/permissions.md).
             if wait {
-                settle_and_state(&shared, conn).await
-            } else {
-                // The id is informational here: the turn's effects — including
-                // the `User` entry carrying this id — can arrive on the stream
-                // before this body resolves, so clients must not sequence
-                // state on it (docs/control-api.md).
-                let body = serde_json::json!({
-                    "status": "accepted",
-                    "submission_id": submission_id,
-                });
-                conn.with_status(202).with_body(body.to_string()).halt()
+                return settle_and_state(&shared, conn).await;
             }
         }
-        Err(e) => fail(conn, ErrorCode::BadRequest, format!("bad /turns body: {e}")),
+        (None, Some(starting)) => {
+            // The attachment store is the session's, and exists once it has started.
+            if !attachments.is_empty() {
+                let refusal = starting.refusal();
+                return fail(conn, ErrorCode::Starting, refusal);
+            }
+            if let Err(refusal) = starting.submit(turn) {
+                return fail(conn, ErrorCode::Starting, refusal);
+            }
+            if wait {
+                return settle_starting(&starting, conn).await;
+            }
+        }
+        (None, None) => return missing_state(conn),
     }
+    // The id is informational here: the turn's effects — including the `User` entry
+    // carrying this id — can arrive on the stream before this body resolves, so
+    // clients must not sequence state on it (docs/control-api.md).
+    let body = serde_json::json!({
+        "status": "accepted",
+        "submission_id": submission_id,
+    });
+    conn.with_status(202).with_body(body.to_string()).halt()
+}
+
+/// Parse a `POST /turns` body and check what a body alone can be refused for.
+fn parse_turn(body: &str) -> Result<TurnBody, String> {
+    let turn =
+        serde_json::from_str::<TurnBody>(body).map_err(|e| format!("bad /turns body: {e}"))?;
+    if turn
+        .submission_id
+        .as_ref()
+        .is_some_and(|id| id.len() > SUBMISSION_ID_MAX || id.is_empty())
+    {
+        return Err(format!("submission_id must be 1–{SUBMISSION_ID_MAX} bytes"));
+    }
+    // The kickoff's source is the harness's alone: the clients leave a turn carrying
+    // it out of the transcript, so a client claiming it would be submitting a turn the
+    // operator never sees (docs/context.md).
+    if turn.source.as_deref() == Some(crate::frontend::KICKOFF_SOURCE) {
+        return Err(format!(
+            "source `{}` is reserved for the harness's first turn",
+            crate::frontend::KICKOFF_SOURCE
+        ));
+    }
+    // Likewise a hand-off brief's: the clients render it as the predecessor's brief,
+    // which only `hand_off` writes (docs/tools.md).
+    if turn
+        .source
+        .as_deref()
+        .and_then(crate::frontend::handoff_predecessor)
+        .is_some()
+    {
+        return Err("a `handoff[…]` source is reserved for a hand-off brief".to_string());
+    }
+    Ok(turn)
 }
 
 /// Describe each named upload as the turn will carry it. Described at submission rather than when
@@ -112,17 +124,17 @@ fn resolve_attachments(
 /// and "popped nothing" is a race outcome the client renders, not an error. The
 /// response is authoritative — a client splices only what came back.
 pub(super) async fn withdraw_turns(conn: Conn) -> Conn {
-    let Some(shared) = shared_of(&conn) else {
-        return missing_state(conn);
-    };
+    let shared = shared_of(&conn);
+    let starting = starting_of(&conn);
     let Some(id) = conn.param("submission_id").map(str::to_string) else {
         return fail(conn, ErrorCode::BadRequest, "missing submission id");
     };
-    let withdrawn: Vec<Value> = shared
-        .withdraw_turns(&id)
-        .into_iter()
-        .map(|t| t.pending_json())
-        .collect();
+    let popped = match (shared, starting) {
+        (Some(shared), _) => shared.withdraw_turns(&id),
+        (None, Some(starting)) => starting.withdraw(&id),
+        (None, None) => return missing_state(conn),
+    };
+    let withdrawn: Vec<Value> = popped.into_iter().map(|t| t.pending_json()).collect();
     let body = serde_json::json!({ "withdrawn": withdrawn });
     conn.with_status(200).with_body(body.to_string()).halt()
 }

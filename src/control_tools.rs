@@ -478,8 +478,16 @@ impl HostExecutor {
             created_by: Some(self.caller.clone()),
             succeeds: None,
         };
-        let created = host.create(body, lineage).await;
-        created.map_err(|reason| anyhow!("{reason}"))
+        // Waits out the preparation, so the calling agent reads a failure as this
+        // call's error rather than finding the child gone later.
+        let starting = host
+            .create(body, lineage)
+            .map_err(|reason| anyhow!("{reason}"))?;
+        starting
+            .finished()
+            .await
+            .map_err(|reason| anyhow!("{reason}"))?;
+        Ok(starting.id().to_string())
     }
 
     /// `hand_off` in-session: the caller's work goes to a new session in its own

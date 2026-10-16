@@ -65,6 +65,8 @@ pub struct SessionRequest {
     pub upstream: Vec<String>,
     pub autonomous: bool,
     pub reauth: Vec<String>,
+    /// What an MCP server asking for authorization meets (docs/mcp-auth.md).
+    pub authorization: mcp_mount::AuthorizationHandling,
     pub keep_scratch: bool,
     /// Whether the session outlives its creator (docs/tools.md); recorded in the
     /// header so a resume reads it back.
@@ -92,17 +94,13 @@ pub struct SessionRequest {
 /// Spawned resources need no entry in [`Minted`]: an stdio MCP server's child is
 /// killed when the toolbox holding it drops, which the error return does.
 pub async fn prepare(request: SessionRequest) -> Result<SessionBoot<MountedSpotter>, Error> {
-    let mut minted = Minted {
-        keep_scratch: request.keep_scratch,
-        ..Minted::default()
-    };
-    match prepare_minting(request, &mut minted).await {
-        Ok(boot) => Ok(boot),
-        Err(error) => {
-            minted.roll_back();
-            Err(error)
-        }
-    }
+    let mut minted = Minted::default();
+    minted.keep_scratch = request.keep_scratch;
+    // On an error, and when this future is dropped mid-await, `minted` rolls back as
+    // it drops.
+    let boot = prepare_minting(request, &mut minted).await?;
+    minted.keep();
+    Ok(boot)
 }
 
 /// [`prepare`], recording what it mints as it goes.
@@ -129,6 +127,7 @@ async fn prepare_minting(
         upstream,
         autonomous,
         reauth,
+        authorization,
         keep_scratch,
         // Already in `metadata`, which carries it to the header.
         detached: _,
@@ -274,6 +273,7 @@ async fn prepare_minting(
         host,
         session_id: &session_id,
         reauth: &reauth,
+        authorization: &authorization,
     })
     .await?;
     let parts::MountedTools {

@@ -219,19 +219,24 @@ async fn a_refused_resume_leaves_the_session_directory_alone() {
     let server = host_server(&host).await;
     let dir = dormant(&roots, "dormant");
 
-    for body in [
-        // A log that cannot be opened — boot's refusal, reached after the route
-        // found the directory.
-        resume(&roots.0),
-        // Unknown name in this root: refused before the directory is consulted.
-        serde_json::json!({"state": "active", "cwd": roots.0.join("elsewhere")}),
-    ] {
-        server
-            .patch("/sessions/dormant")
-            .with_json_body(&body)
-            .await
-            .assert_status(400);
-    }
+    // Unknown name in this root: refused before the directory is consulted.
+    server
+        .patch("/sessions/dormant")
+        .with_json_body(&serde_json::json!({"state": "active", "cwd": roots.0.join("elsewhere")}))
+        .await
+        .assert_status(400);
+    // A log that cannot be opened — boot's refusal, reached after the route found the
+    // directory, so the patch answers and the failure is the starting session's.
+    server
+        .patch("/sessions/dormant")
+        .with_json_body(&resume(&roots.0))
+        .await
+        .assert_status(200);
+    let state = settled_state(&server, "dormant").await;
+    assert!(
+        failure_reason(&state).contains("could not resume the session"),
+        "{state}"
+    );
     assert!(dir.is_dir(), "the session directory survives a refusal");
     assert!(
         !dir.join("log.jsonl").exists(),
@@ -344,13 +349,17 @@ async fn a_resumed_child_keeps_the_detached_its_header_recorded() {
         dir
     };
 
+    let lineage = |dir: &std::path::Path| {
+        let recorded = host.recorded_lineage(dir);
+        (recorded.created_by, recorded.detached)
+    };
     let kept = recorded("kept", true, "one");
-    assert_eq!(host.recorded_lineage(&kept), (Some("one".into()), true));
+    assert_eq!(lineage(&kept), (Some("one".into()), true));
     let bound = recorded("bound", false, "one");
-    assert_eq!(host.recorded_lineage(&bound), (Some("one".into()), false));
+    assert_eq!(lineage(&bound), (Some("one".into()), false));
     // A creator this host no longer holds is dropped; `detached` still reads.
     let orphan = recorded("orphan", true, "gone");
-    assert_eq!(host.recorded_lineage(&orphan), (None, true));
+    assert_eq!(lineage(&orphan), (None, true));
 
     // Adopted as the resume does, the detached child outlives its creator.
     host.adopt_with(
@@ -360,7 +369,7 @@ async fn a_resumed_child_keeps_the_detached_its_header_recorded() {
             host.swansong(),
         ),
         Some("one".into()),
-        host.recorded_lineage(&kept).1,
+        host.recorded_lineage(&kept).detached,
     )
     .unwrap();
     host.end("one").unwrap().await;

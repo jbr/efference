@@ -25,6 +25,7 @@ pub(super) struct ToolboxInputs<'a> {
     pub host: Option<std::sync::Arc<crate::daemon::Host>>,
     pub session_id: &'a str,
     pub reauth: &'a [String],
+    pub authorization: &'a mcp_mount::AuthorizationHandling,
 }
 
 /// The toolbox, and the preamble section naming what did not mount.
@@ -50,6 +51,7 @@ pub(super) async fn mount_toolbox(inputs: ToolboxInputs<'_>) -> Result<MountedTo
         host,
         session_id,
         reauth,
+        authorization,
     } = inputs;
     let mut toolbox = Toolbox::bash_and_mcps(cwd.to_path_buf(), Some(scratch.to_path_buf()))?
         .with_bash_limits(loaded.role.bash)
@@ -70,8 +72,15 @@ pub(super) async fn mount_toolbox(inputs: ToolboxInputs<'_>) -> Result<MountedTo
     let store = crate::mcp::auth::store::KeychainStore::new(std::sync::Arc::new(
         crate::secrets::Secrets::detect()?,
     ));
-    let unmounted =
-        mcp_mount::mount_all(&mut toolbox, &loaded.role.mcp_servers, cwd, &store, reauth).await?;
+    let unmounted = mcp_mount::mount_all(
+        &mut toolbox,
+        &loaded.role.mcp_servers,
+        cwd,
+        &store,
+        reauth,
+        authorization,
+    )
+    .await?;
     let unmounted_section = crate::mcp::unmounted_section(&unmounted);
     // The frozen toolbox against the dialect's name rule (docs/tools.md): a name the
     // request would reject fails the boot here, by its display name, instead of the

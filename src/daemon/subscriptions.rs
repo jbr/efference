@@ -28,7 +28,7 @@ impl Host {
             return false;
         };
         let mut sessions = self.sessions_mut();
-        let Some(hosted) = sessions.get_mut(target) else {
+        let Some(hosted) = sessions.hosted_mut(target) else {
             return false;
         };
         match hosted.subscribers.entry(subscriber.to_string()) {
@@ -47,7 +47,7 @@ impl Host {
     pub fn unsubscribe(&self, target: &str, subscriber: &str) -> bool {
         let removed = self
             .sessions_mut()
-            .get_mut(target)
+            .hosted_mut(target)
             .is_some_and(|hosted| hosted.subscribers.remove(subscriber).is_some());
         if removed && let Some(session) = self.session(subscriber) {
             session.subscription_removed();
@@ -58,7 +58,7 @@ impl Host {
     /// `target`'s subscribers and their terms, sorted by id.
     pub(crate) fn subscribers(&self, target: &str) -> Vec<(String, Subscription)> {
         self.sessions_mut()
-            .get(target)
+            .hosted(target)
             .map(|hosted| {
                 hosted
                     .subscribers
@@ -126,11 +126,11 @@ impl Host {
     pub(super) fn drop_subscriptions_of(&self, id: &str) {
         let subscribers = {
             let mut sessions = self.sessions_mut();
-            for hosted in sessions.values_mut() {
+            for hosted in sessions.hosted_values_mut() {
                 hosted.subscribers.remove(id);
             }
             sessions
-                .get_mut(id)
+                .hosted_mut(id)
                 .map(|hosted| std::mem::take(&mut hosted.subscribers))
                 .unwrap_or_default()
         };
@@ -142,13 +142,18 @@ impl Host {
     }
 
     /// The sessions `id` commissioned that end with it (docs/tools.md): every
-    /// child not created `detached`.
+    /// child not created `detached`, a child still starting included.
     pub(super) fn cascade_of(&self, id: &str) -> Vec<String> {
-        self.sessions_mut()
-            .iter()
+        let sessions = self.sessions_mut();
+        let hosted = sessions
+            .hosted_iter()
             .filter(|(_, hosted)| hosted.created_by.as_deref() == Some(id) && !hosted.detached)
-            .map(|(child, _)| child.clone())
-            .collect()
+            .map(|(child, _)| child.clone());
+        let starting = sessions
+            .starting_iter()
+            .filter(|starting| starting.created_by() == Some(id) && !starting.detached())
+            .map(|starting| starting.id().to_string());
+        hosted.chain(starting).collect()
     }
 }
 

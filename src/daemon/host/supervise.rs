@@ -32,7 +32,7 @@ impl Host {
     /// live-resolved value gate routing reads.
     pub fn supervisor_of(&self, id: &str) -> Option<String> {
         self.sessions_mut()
-            .get(id)
+            .hosted(id)
             .and_then(|hosted| hosted.supervisor.clone())
     }
 
@@ -40,7 +40,7 @@ impl Host {
     /// `supervisor` review position resolves through it.
     pub(super) fn supervised_by(&self, id: &str) -> Vec<String> {
         self.sessions_mut()
-            .iter()
+            .hosted_iter()
             .filter(|(_, hosted)| hosted.supervisor.as_deref() == Some(id))
             .map(|(supervised, _)| supervised.clone())
             .collect()
@@ -64,12 +64,12 @@ impl Host {
     ) -> std::result::Result<Option<String>, SupervisorRefused> {
         let (session, previous) = {
             let mut sessions = self.sessions_mut();
-            let Some(hosted) = sessions.get(id) else {
+            let Some(hosted) = sessions.hosted(id) else {
                 return Err(SupervisorRefused::NotHosted(id.to_string()));
             };
             let session = Arc::clone(&hosted.session);
             if let Some(next) = &supervisor {
-                let Some(candidate) = sessions.get(next) else {
+                let Some(candidate) = sessions.hosted(next) else {
                     return Err(SupervisorRefused::Refused(format!(
                         "no session {next:?} on this host"
                     )));
@@ -88,7 +88,7 @@ impl Host {
                 }
             }
             let hosted = sessions
-                .get_mut(id)
+                .hosted_mut(id)
                 .expect("checked above, under this lock");
             let previous = std::mem::replace(&mut hosted.supervisor, supervisor.clone());
             (session, previous)
@@ -120,7 +120,7 @@ impl Host {
 /// would: `next`'s supervisor pointers are followed until they reach `id`, end, or
 /// leave the host. A pre-existing loop that does not pass through `id` ends the walk
 /// rather than spinning.
-fn cycle_through(sessions: &BTreeMap<String, Hosted>, id: &str, next: &str) -> Option<Vec<String>> {
+fn cycle_through(sessions: &super::Sessions, id: &str, next: &str) -> Option<Vec<String>> {
     let mut chain = vec![id.to_string(), next.to_string()];
     let mut seen = std::collections::HashSet::new();
     let mut current = next.to_string();
@@ -131,7 +131,7 @@ fn cycle_through(sessions: &BTreeMap<String, Hosted>, id: &str, next: &str) -> O
         if !seen.insert(current.clone()) {
             return None;
         }
-        let up = sessions.get(&current)?.supervisor.clone()?;
+        let up = sessions.hosted(&current)?.supervisor.clone()?;
         chain.push(up.clone());
         current = up;
     }

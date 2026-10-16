@@ -531,17 +531,8 @@ async fn a_successor_is_created_with_its_predecessors_options() {
         },
     );
     let body = CreateSession {
-        name: None,
-        cwd: fixture.root.join("a"),
-        config: None,
-        options: crate::inference::SessionOptions::default(),
-        upstream: Vec::new(),
-        autonomous: false,
-        reauth: Vec::new(),
-        keep_scratch: false,
-        worktree: false,
-        detached: false,
         env: Default::default(),
+        ..CreateSession::new(fixture.root.join("a"))
     };
     let err = fixture
         .host

@@ -51,6 +51,10 @@ pub(crate) enum ErrorCode {
     /// is. A session already running under the root the request *names* is not this
     /// — that is the state it asked for, and it answers 200.
     StateMismatch,
+    /// The session is still being prepared (docs/control-api.md): its env hook and MCP
+    /// mounts are running, so only `/state`, `/events`, and a turn are served. 409. A
+    /// client acts by waiting for the `starting` topic to clear, not by retrying now.
+    Starting,
     /// The daemon failed at something it was supposed to be able to do (a log append,
     /// a config write, absent shared state). 500.
     Internal,
@@ -83,9 +87,11 @@ impl ErrorCode {
             Self::Unauthorized => 401,
             Self::Forbidden => 403,
             Self::NotFound => 404,
-            Self::GateMoved | Self::NotContinuable | Self::NotCompactable | Self::StateMismatch => {
-                409
-            }
+            Self::GateMoved
+            | Self::NotContinuable
+            | Self::NotCompactable
+            | Self::StateMismatch
+            | Self::Starting => 409,
             Self::TooLarge => 413,
             Self::UnsupportedContent => 415,
             Self::RateLimited => 429,

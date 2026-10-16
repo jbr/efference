@@ -77,6 +77,7 @@ impl Tool<Control> for HandOff {
                     upstream: Vec::new(),
                     autonomous: false,
                     reauth: Vec::new(),
+                    refuse_authorization: false,
                     keep_scratch: false,
                     worktree: false,
                     // The host sets this from the caller's own placement.

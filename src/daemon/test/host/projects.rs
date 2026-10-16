@@ -309,11 +309,8 @@ async fn a_creation_that_does_not_start_remembers_nothing() {
     let host = host_with_store(&roots);
     let server = host_server(&host).await;
 
-    server
-        .post("/sessions")
-        .with_json_body(&stops_at_boot(&roots.0.join("one")))
-        .await
-        .assert_status(400);
+    let state = created_state(&server, &stops_at_boot(&roots.0.join("one"))).await;
+    assert!(!failure_reason(&state).is_empty(), "{state}");
 
     assert!(
         store(&roots).recent().is_empty(),

@@ -10,7 +10,10 @@ use crate::api::Error;
 /// A path is recorded here only after an exclusive `create_dir` returned success,
 /// which is what makes it this attempt's: a dir an existing session or a racing
 /// attempt holds makes the create fail, so it is never recorded and never removed.
-/// A boot that succeeds hands these to the session instead.
+/// A boot that succeeds hands these to the session instead ([`Minted::keep`]); any
+/// other end rolls them back when this drops — a failure, and also a preparation
+/// abandoned mid-await, which is how archiving a starting session cancels it
+/// (docs/resumption.md).
 #[derive(Default)]
 pub(super) struct Minted {
     pub(super) session_dir: Option<PathBuf>,
@@ -30,23 +33,30 @@ pub(super) struct MintedWorktree {
 }
 
 impl Minted {
+    /// Hand what this attempt minted to the session it booted: nothing is removed.
+    pub(super) fn keep(mut self) {
+        self.worktree = None;
+        self.session_dir = None;
+        self.scratch = None;
+    }
+
     /// Remove what this attempt minted, naming anything that resists on the log
     /// (`warn`). A failed removal is not escalated: the
     /// preparation error the caller is already returning is the one that matters.
-    pub(super) fn roll_back(self) {
-        if let Some(w) = &self.worktree {
+    fn roll_back(&mut self) {
+        if let Some(w) = self.worktree.take() {
             crate::worktree::remove(&w.project, &w.path, &w.branch, &w.env);
         }
-        if let Some(dir) = &self.session_dir
-            && let Err(e) = std::fs::remove_dir_all(dir)
+        if let Some(dir) = self.session_dir.take()
+            && let Err(e) = std::fs::remove_dir_all(&dir)
             && e.kind() != std::io::ErrorKind::NotFound
         {
             log::warn!("session dir: could not remove {}: {e}", dir.display());
         }
-        match (&self.scratch, self.keep_scratch) {
+        match (self.scratch.take(), self.keep_scratch) {
             (Some(scratch), true) => log::debug!("scratch kept: {}", scratch.display()),
             (Some(scratch), false) => {
-                if let Err(e) = std::fs::remove_dir_all(scratch)
+                if let Err(e) = std::fs::remove_dir_all(&scratch)
                     && e.kind() != std::io::ErrorKind::NotFound
                 {
                     log::warn!("scratch: could not remove {}: {e}", scratch.display());
@@ -54,6 +64,12 @@ impl Minted {
             }
             (None, _) => {}
         }
+    }
+}
+
+impl Drop for Minted {
+    fn drop(&mut self) {
+        self.roll_back();
     }
 }
 

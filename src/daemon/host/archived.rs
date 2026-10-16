@@ -18,6 +18,11 @@ pub struct ArchivedSession {
     #[serde(flatten)]
     pub row: InventoryRow,
     pub state: SessionState,
+    /// Why this host's last attempt to resume the session failed, until one
+    /// succeeds (`preparation.rs`). Unlike the row's `problem`, the session is still
+    /// resumable: this is what the last try met, not what the directory is.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resume_failure: Option<String>,
 }
 
 impl Host {
@@ -39,6 +44,7 @@ impl Host {
         sort_rows(&mut rows);
         rows.into_iter()
             .map(|row| ArchivedSession {
+                resume_failure: self.resume_failure(&row.cwd, &row.id),
                 row,
                 state: SessionState::Archived,
             })
