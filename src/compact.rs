@@ -147,7 +147,7 @@ pub fn with_header(account: &str) -> String {
 
 /// A compaction's account without the harness's header: what an earlier compaction
 /// told the reader, for the next one to read as context.
-fn account_of(text: &str) -> &str {
+pub(crate) fn account_of(text: &str) -> &str {
     text.strip_prefix(HEADER.trim_end()).unwrap_or(text).trim()
 }
 

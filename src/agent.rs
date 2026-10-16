@@ -583,14 +583,14 @@ pub async fn run<F: Frontend, S: Spotter>(
             // Triaging between calls would build a triage request whose trailing
             // assistant message still carries unanswered `tool_use` blocks, which the
             // API rejects (docs/triage.md).
-            // The triage-lineage primer replays this completion's input on the own
-            // triage's client (docs/transport.md). Borrowed, so the
-            // primer is byte-identical to the request above; armed only on the own
-            // triage, whose lineage the main request never warms. Shared triages skip it
-            // without spending a request.
-            let primer = triager.is_own().then(|| TriagePrimerInput {
+            // The triage-lineage primer plants the text view's history through this
+            // completion on the own triage's client (docs/transport.md), so the
+            // triage's request extends one that ended there. Armed only where the own
+            // client plants one; shared triages skip it without spending a request.
+            let primer_turns = triager.primer_turns(&shared.snapshot(), &calls);
+            let primer = primer_turns.as_deref().map(|turns| TriagePrimerInput {
                 triager: &triager,
-                turns: &turns,
+                turns,
             });
             let Batch {
                 steps,

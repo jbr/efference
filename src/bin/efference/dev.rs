@@ -232,11 +232,13 @@ pub(crate) enum DevCommand {
         /// With --triage-model: its reasoning level (implies thinking on).
         #[arg(long, value_name = "LEVEL")]
         triage_effort: Option<String>,
-        /// The history the triage request reads: `transcript` (the live triage's view),
-        /// or an experiment arm (backlog/inbox/triage-ground-truth): `digest` (the trajectory
-        /// digest), `tail:N` (the digest of the last N assistant turns), `intent` (none).
-        #[arg(long, default_value = "transcript")]
-        view: String,
+        /// The history the triage request reads: `transcript` (the shared triage's view),
+        /// `text` (the separate triage's text view: digest, triaged tail, current step),
+        /// or an experiment arm: `tail:N` (the digest of the last N assistant turns before
+        /// the triage's own), `intent` (none). Omitted, the view the replayed
+        /// configuration reads live: `text` with --triage-model, else `transcript`.
+        #[arg(long)]
+        view: Option<String>,
         /// Write every compared result-draw as a JSON line to this file.
         #[arg(long)]
         out: Option<PathBuf>,
@@ -570,9 +572,13 @@ pub(crate) async fn run<F: Future<Output = Result<ClientTarget, CliError>>>(
                 auto_choice: triage_auto_choice,
                 effort: triage_effort,
             });
-            let view = efference::triage::TriageView::parse(&view).ok_or_else(|| {
-                format!("--view {view}: expected transcript, digest, tail:N or intent")
-            })?;
+            let view = match view {
+                Some(view) => efference::triage::TriageView::parse(&view).ok_or_else(|| {
+                    format!("--view {view}: expected transcript, text, tail:N or intent")
+                })?,
+                None if triage.is_some() => efference::triage::TriageView::Text,
+                None => efference::triage::TriageView::Transcript,
+            };
             triage_replay::triage(
                 path, seq, repeat, limit, dry_run, &model, triage, view, out, table,
             )

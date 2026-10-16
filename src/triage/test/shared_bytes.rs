@@ -47,10 +47,11 @@ fn the_shared_triage_request_is_pinned() {
         source: "timer".into(),
         body: "rang".into(),
     }];
+    let shared = Triager::shared();
     let turns = triage_request(
         &prefix,
-        Reader::Main,
-        TriageView::Transcript,
+        shared.reader(),
+        shared.view(),
         &pending,
         &inbox,
         &[],

@@ -49,81 +49,77 @@ fn session() -> (Vec<LogEntry>, ToolCall) {
     (prefix, triage)
 }
 
-/// The request's text, and its parts.
-fn render(view: TriageView) -> (String, Vec<UserPart>) {
+/// The request's text, and its turns' parts.
+fn render(view: TriageView) -> (String, Vec<Vec<UserPart>>) {
     let (prefix, triage) = session();
     let raw = RawResult::text("test result: ok. 3 passed");
     let pending = [Pending {
         call: &triage,
         raw: &raw,
     }];
-    let turns = digest_triage_messages(&prefix, Reader::Main, view, &pending, &[], &[], &[]);
-    let [WireTurn::User(parts)] = turns.as_slice() else {
-        panic!("one user turn, no assistant turn: {turns:?}");
-    };
+    let turns = text_only_messages(&prefix, Reader::Main, view, &pending, &[], &[], &[]);
+    let parts: Vec<Vec<UserPart>> = turns
+        .iter()
+        .map(|t| match t {
+            WireTurn::User(parts) => parts.clone(),
+            other => panic!("user turns only, no assistant turn: {other:?}"),
+        })
+        .collect();
     let text = parts
         .iter()
+        .flatten()
         .filter_map(|p| match p {
             UserPart::Text(t) => Some(t.as_str()),
             _ => None,
         })
         .collect::<Vec<_>>()
         .join("\n");
-    let (_, ask) = triage_parts(&pending, &[], &[], &[], Reader::Main);
+    let (_, ask) = triage_parts(&pending, &[], &[], &[], Reader::Main, Framing::ThirdPerson);
     assert!(text.ends_with(&ask), "every view closes on the same ask");
     assert!(text.contains("cargo test") && text.contains("3 passed"));
-    (text, parts.clone())
+    (text, parts)
 }
 
-/// The digest view sends text only — no assistant turn, no tool block — so it encodes on
-/// any dialect. It carries the earlier call as its digest line, the triage's call with its
-/// arguments, the triage's result, and the same ask the transcript view sends.
-#[test]
-fn the_digest_view_is_text_with_the_digest_the_gate_and_the_ask() {
-    let (text, parts) = render(TriageView::Digest);
-    assert!(
-        parts
-            .iter()
-            .all(|p| !matches!(p, UserPart::ToolResult { .. })),
-        "no tool blocks"
-    );
-    assert!(
-        matches!(parts[1], UserPart::Breakpoint),
-        "the breakpoint follows the digest"
-    );
-    for expected in [
-        "fix it",
-        "Looking around first.",
-        "• [bash] see the files",
-        "→ Two files.",
-        "Now the tests.",
-    ] {
-        assert!(text.contains(expected), "missing {expected:?} in:\n{text}");
-    }
-}
-
-/// `tail:1` carries only the triage's own turn; `intent` carries no history at all.
+/// `tail:1` carries only the turn before the triage's own; `intent` carries no history
+/// at all. The triage's own prose rides the current step in both.
 #[test]
 fn the_tail_and_intent_views_cut_the_history() {
     let (tail, _) = render(TriageView::Tail(1));
-    assert!(tail.contains("Now the tests."));
-    for absent in ["fix it", "Looking around first.", "Two files."] {
-        assert!(!tail.contains(absent), "tail:1 carried {absent:?}");
-    }
-    let (wider, _) = render(TriageView::Tail(2));
-    assert!(wider.contains("Looking around first.") && wider.contains("Two files."));
+    assert!(tail.contains("Now the tests.") && tail.contains("Two files."));
+    assert!(
+        !tail.contains("fix it"),
+        "tail:1 carried the operator's turn"
+    );
 
     let (intent, parts) = render(TriageView::Intent);
-    assert!(!parts.iter().any(|p| matches!(p, UserPart::Breakpoint)));
-    for absent in ["fix it", "Looking around first.", "Now the tests."] {
+    assert_eq!(parts.len(), 1, "no history turn");
+    for absent in ["fix it", "Looking around first.", "Two files."] {
         assert!(!intent.contains(absent), "intent carried {absent:?}");
     }
 }
 
 #[test]
 fn views_parse_from_their_flag_spelling() {
+    assert_eq!(TriageView::parse("text"), Some(TriageView::Text));
     assert_eq!(TriageView::parse("tail:3"), Some(TriageView::Tail(3)));
     assert_eq!(TriageView::parse("intent"), Some(TriageView::Intent));
+    assert_eq!(TriageView::parse("digest"), None);
     assert_eq!(TriageView::parse("tail:0"), None);
     assert_eq!(TriageView::parse("tail"), None);
+}
+
+/// The shared triage reads the agent's transcript, so its fork reads the agent's cache;
+/// a separate triage model reads the text view.
+#[test]
+fn the_view_follows_the_triage_configuration() {
+    let endpoint = crate::api::Endpoint::from_credentials(
+        crate::api::Provider::Anthropic,
+        "sk-ant-xyz".into(),
+        None,
+        None,
+    )
+    .unwrap();
+    assert_eq!(Triager::shared().view(), TriageView::Transcript);
+    let own = Triager::own(Client::new(endpoint.for_triage(), "small", "persona", None));
+    assert_eq!(own.view(), TriageView::Text);
 }

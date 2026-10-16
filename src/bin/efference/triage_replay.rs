@@ -10,6 +10,7 @@
 //! session depth, and replaying one is a single warm prefix read.
 
 mod compare;
+mod layout;
 mod record;
 
 use super::*;
@@ -123,6 +124,16 @@ pub(crate) async fn triage(
     let toolbox = Toolbox::bash_and_mcps(std::env::current_dir()?, None)?;
     let tools = efference::agent::tool_definitions(&toolbox);
 
+    // The projection the replayed triage reads: the triage reader's on a separate model,
+    // the main one on the shared triage (docs/summary.md).
+    let reader = match triage {
+        Some(_) => Reader::Triage,
+        None => Reader::Main,
+    };
+    if dry_run && view == TriageView::Text {
+        layout::report(&entries, &selected, reader);
+    }
+
     // A dry run over the whole session costs nothing and answers the other half of the
     // question a variant raises: what it costs. The tail is the fresh part of every triage's
     // request, so its mean size is what a cheaper roster is trying to move — and reading
@@ -139,7 +150,7 @@ pub(crate) async fn triage(
                     .collect();
                 tail_chars(&triage_request(
                     &entries[..g.prefix_end],
-                    Reader::Main,
+                    reader,
                     view,
                     &pending,
                     &g.inbox,
@@ -165,7 +176,7 @@ pub(crate) async fn triage(
             .collect();
         let messages = triage_request(
             &entries[..g.prefix_end],
-            Reader::Main,
+            reader,
             view,
             &pending,
             &g.inbox,
@@ -176,11 +187,13 @@ pub(crate) async fn triage(
             g.seq,
             pending.len()
         );
-        let messages = efference::project::encode_messages(
-            &messages[messages.len() - 1..],
-            placement,
-            breakpoint,
-        );
+        // The transcript view's prefix is the session's own wire, so only its fork tail
+        // is printed; a text-only view is printed whole.
+        let shown = match view {
+            TriageView::Transcript => &messages[messages.len() - 1..],
+            _ => &messages[..],
+        };
+        let messages = efference::project::encode_messages(shown, placement, breakpoint);
         println!("{}", efference::api::render_messages_pretty(&messages)?);
         return Ok(());
     }
@@ -274,6 +287,13 @@ pub(crate) async fn triage(
             &g.inbox,
             &[],
         )) as u64;
+        if view == TriageView::Text {
+            println!(
+                "seq {:>4} · {}",
+                g.seq,
+                layout::describe(&entries, g, reader)
+            );
+        }
         let mut passes = 0usize;
         for draw in 1..=repeat {
             // A transport error is this draw's problem, not the sweep's. Propagating it

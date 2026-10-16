@@ -222,7 +222,8 @@ fn system_prompt_names_the_creating_session_when_there_is_one() {
 fn triage_system_prompt_names_both_models_and_carries_the_context() {
     let prompt = triage_system_prompt("small", "big", Some("<ctx>x</ctx>"));
     assert!(prompt.starts_with("You are small.\n\n"));
-    assert!(prompt.contains("produced by the agent, big,"));
+    assert!(prompt.contains("The agent, big, is a different model"));
+    assert!(prompt.contains("a record of its work"));
     assert!(prompt.ends_with("\n\n<ctx>x</ctx>"));
     assert!(!prompt.contains(PREAMBLE.trim_end()));
     assert!(!triage_system_prompt("small", "big", None).ends_with("\n\n"));

@@ -82,12 +82,6 @@ pub(super) struct AskVariant {
     verdict_channel: bool,
     /// Additive candidate: the output above is complete, nothing further is coming.
     output_final: bool,
-    /// The shape sentence says "the call the agent just made" instead of "the call you
-    /// just made" — the separate-model triage's alternative framing
-    /// (backlog/inbox/distiller-experiment.md). Off: the tail keeps its first-person frame for
-    /// both the shared and the separate-model triage (their `keep`/`note` rows differ by
-    /// reader, [`REPORT_FIELDS`]).
-    third_person: bool,
 }
 
 impl Default for AskVariant {
@@ -102,7 +96,6 @@ impl Default for AskVariant {
             block: true,
             verdict_channel: true,
             output_final: false,
-            third_person: false,
         }
     }
 }
@@ -140,7 +133,6 @@ impl AskVariant {
                 "no-verdict-channel" => v.verdict_channel = false,
                 "+verdict-channel" => v.verdict_channel = true,
                 "+output-final" => v.output_final = true,
-                "+third-person" => v.third_person = true,
                 other => panic!("EFFERENCE_TRIAGE_ASK: unknown variant {other:?}"),
             }
         }
@@ -152,14 +144,21 @@ impl AskVariant {
     /// `no-block` collapses the same rows into one paragraph rather than restoring the
     /// pre-reshape wording, so the ablation isolates *formatting* and holds content fixed;
     /// swapping the old sentences back would confound the two.
-    pub(super) fn assemble(&self, shape: &str, fields: &[&str]) -> String {
+    ///
+    /// `framing` words the stance's "the task continues" for whom it addresses: the
+    /// agent's own next turn, or the agent's next turn as a separate model sees it.
+    pub(super) fn assemble(&self, shape: &str, fields: &[&str], framing: Framing) -> String {
         let mut stance = String::new();
         if self.stance {
-            stance.push_str(
-                " This is a triage turn, not a work turn: the task continues on your NEXT turn, \
-from whatever you keep here. No other tool will run until you have called `retain` — a call to \
-anything else is rejected and this ask comes back.",
-            );
+            let continues = match framing {
+                Framing::FirstPerson => "the task continues on your NEXT turn",
+                Framing::ThirdPerson => "the agent's task continues on its NEXT turn",
+            };
+            stance.push_str(&format!(
+                " This is a triage turn, not a work turn: {continues}, from whatever you keep \
+here. No other tool will run until you have called `retain` — a call to anything else is \
+rejected and this ask comes back."
+            ));
         }
         if self.verdict_channel {
             stance.push_str(
@@ -167,16 +166,12 @@ anything else is rejected and this ask comes back.",
 read. Describing what to keep instead of calling `retain` leaves the result untriaged.",
             );
         }
-        let shape = match self.third_person {
-            true => shape.replace("you just made", "the agent just made"),
-            false => shape.to_string(),
-        };
         let shape = match self.output_final {
             true => format!(
                 "{shape} That call has finished and the output above is complete — nothing \
 further is coming, so decide on what is there."
             ),
-            false => shape,
+            false => shape.to_string(),
         };
 
         let fields = match self.block {

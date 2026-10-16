@@ -69,8 +69,16 @@ impl Triager {
         prefix: &[LogEntry],
         current: Option<&str>,
     ) -> TitlePeek {
-        let mut messages = project_semantic_for(prefix, self.reader());
-        messages.push(WireTurn::Breakpoint);
+        // The own model reads the text view's history, as its result triages do; the
+        // shared peek reads the agent's transcript (docs/session-title.md).
+        let mut messages = match self.view() {
+            TriageView::Transcript => {
+                let mut turns = project_semantic_for(prefix, self.reader());
+                turns.push(WireTurn::Breakpoint);
+                turns
+            }
+            _ => vec![text_view::history(prefix, prefix.len(), self.reader()).turn()],
+        };
         messages.push(WireTurn::text(title_instruction(current)));
         let mut record = TriageRecord::default();
         let parsed = triage_with_retries(

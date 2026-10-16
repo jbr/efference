@@ -129,7 +129,7 @@ fn no_riders_means_no_riders_header() {
         call: &call,
         raw: &raw,
     }];
-    let (_, ask) = triage_parts(&pending, &[], &[], &[], Reader::Main);
+    let (_, ask) = triage_parts(&pending, &[], &[], &[], Reader::Main, Framing::FirstPerson);
     assert!(ask.starts_with("⟢ triage"), "{ask}");
     assert!(!ask.contains("also pending"), "{ask}");
 }
@@ -137,12 +137,17 @@ fn no_riders_means_no_riders_header() {
 /// The shape sentence names the result blocks by header in both answer shapes.
 #[test]
 fn both_shapes_name_the_result_blocks_by_header() {
-    let one = retain_instruction(&["r1".to_string()], &[], Reader::Main);
+    let one = retain_instruction(&["r1".to_string()], &[], Reader::Main, Framing::FirstPerson);
     assert!(
         one.contains("The block headed `═══ result` above is the FULL"),
         "{one}"
     );
-    let many = retain_instruction(&["r1".to_string(), "r2".to_string()], &[], Reader::Main);
+    let many = retain_instruction(
+        &["r1".to_string(), "r2".to_string()],
+        &[],
+        Reader::Main,
+        Framing::FirstPerson,
+    );
     assert!(
         many.contains("The blocks headed `═══ result` above are the FULL"),
         "{many}"
@@ -171,6 +176,7 @@ fn image_results_are_marked_and_the_ask_says_they_pass_through() {
         &[],
         &[],
         Reader::Main,
+        Framing::FirstPerson,
     );
     assert!(
         results[0]
@@ -198,6 +204,7 @@ fn image_results_are_marked_and_the_ask_says_they_pass_through() {
         &[],
         &[],
         Reader::Main,
+        Framing::FirstPerson,
     );
     assert!(
         !results[0].content.contains("images:"),

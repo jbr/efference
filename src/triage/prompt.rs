@@ -14,6 +14,27 @@ is cleared for good, you will not see it again, and no turn runs."
     };
 }
 
+/// [`dispositions!`] in the third person, for the text view a separate triage model reads
+/// (docs/triage.md): the same three choices, said of the agent.
+macro_rules! dispositions_third_person {
+    () => {
+        "`pin` — it enters the agent's working context and the agent resumes work on it now. \
+`leave` (list nothing for it) — it stays pending and is shown again at the next triage, \
+no turn runs, and the harness may dismiss it if it keeps going unmentioned. `dismiss` — it \
+is cleared for good, the agent will not see it again, and no turn runs."
+    };
+}
+
+/// Whom a triage request's wording addresses (docs/triage.md). The agent triaging its
+/// own results reads its own transcript and is asked about "the call you just made"; a
+/// separate triage model reads the text view, a record of the agent's work, and is asked
+/// about the agent's calls.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Framing {
+    FirstPerson,
+    ThirdPerson,
+}
+
 pub(super) const TRIAGE_INSTRUCTION: &str = concat!(
     "You're between tasks and have been woken to triage out-of-band events. Review the \
 pending notifications (and any running background processes) above and call `triage` now. \
@@ -159,19 +180,37 @@ pub(super) const REPORT_FIELDS: &str =
 /// `reader` says who answers: the agent's own model (`Reader::Main`, the shared triage) is
 /// asked for a note to self ([`KEEP_FIELDS`]); a separate triage model
 /// (`Reader::Triage`) for a report ([`REPORT_FIELDS`]).
-pub(super) fn retain_instruction(offered: &[String], riders: &[&str], reader: Reader) -> String {
+///
+/// `framing` says whom the wording addresses: the shared triage's own transcript is
+/// first person, the text view third person ([`Framing`]). The text view carries no
+/// `[n]` tags, so its scope sentence does not mention them.
+pub(super) fn retain_instruction(
+    offered: &[String],
+    riders: &[&str],
+    reader: Reader,
+    framing: Framing,
+) -> String {
     let v = AskVariant::from_env();
-    let scope = "Nothing earlier in this conversation is being triaged — those results are \
-already decided, and their [n] tags are not result labels.";
+    let (who, scope) = match framing {
+        Framing::FirstPerson => (
+            "you",
+            "Nothing earlier in this conversation is being triaged — those results are \
+already decided, and their [n] tags are not result labels.",
+        ),
+        Framing::ThirdPerson => (
+            "the agent",
+            "Nothing earlier in the record is being triaged — those results are already decided.",
+        ),
+    };
     let shape = match offered {
         [_one] => format!(
-            "The block headed `═══ result` above is the FULL, line-numbered output of the one call you \
+            "The block headed `═══ result` above is the FULL, line-numbered output of the one call {who} \
 just made. {scope} Answer with a top-level `keep` and `note`: no `results` array and no label, since \
 there is only one result in question."
         ),
         many => format!(
             "The blocks headed `═══ result` above are the FULL, line-numbered output of the {n} calls \
-you just made, each under a header naming its label. Line numbers restart at 1 within each result, so ranges \
+{who} just made, each under a header naming its label. Line numbers restart at 1 within each result, so ranges \
 are always relative to the result you are deciding. {scope} Answer with exactly {n} `results` \
 entries, one per label listed here and no others: {labels}.",
             n = many.len(),
@@ -194,7 +233,7 @@ entries, one per label listed here and no others: {labels}.",
         .chain(riders.iter().copied())
         .collect();
     let lines = LineView::from_env();
-    lines.rewrite(&v.assemble(&lines.rewrite(&shape), &fields))
+    lines.rewrite(&v.assemble(&lines.rewrite(&shape), &fields, framing))
 }
 
 /// The triage-scoped riders, as field rows for [`retain_instruction`]'s block. Each is added
@@ -203,6 +242,13 @@ pub(super) const INBOX_FIELD: &str = concat!(
     "  inbox       The pending notifications under \"inbox\" in the sections after this ask, an
               [id] each. ",
     dispositions!()
+);
+
+/// [`INBOX_FIELD`] in the third person ([`Framing`]).
+pub(super) const INBOX_FIELD_THIRD_PERSON: &str = concat!(
+    "  inbox       The pending notifications under \"inbox\" in the sections after this ask, an
+              [id] each. ",
+    dispositions_third_person!()
 );
 
 /// Offered when a result in the triage carries images. They reach the agent whatever the
@@ -227,6 +273,21 @@ pub(super) const SURFACE_FIELD: &str =
               not yet loaded, each listed with the path to read. Name any that genuinely bear on
               what you're doing right now and it will be surfaced as a reminder to read it
               before you rely on memory. Name nothing if none apply.";
+
+/// [`BACKGROUND_FIELD`] in the third person ([`Framing`]).
+pub(super) const BACKGROUND_FIELD_THIRD_PERSON: &str =
+    "  background  The processes under \"background\" in the sections after this ask, a [p#n]
+              handle each. `pin` the handles whose current output the agent needs captured onto
+              the record now, and `mute` the ones whose tail it no longer needs (they keep running,
+              and still notify the agent when they exit). Anything you don't list keeps streaming
+              its latest tail to the agent at the next decision point.";
+
+/// [`SURFACE_FIELD`] in the third person ([`Framing`]).
+pub(super) const SURFACE_FIELD_THIRD_PERSON: &str =
+    "  surfaced    The files under \"context\" in the sections after this ask — available to the
+              agent, not yet loaded, each listed with the path to read. Name any that genuinely
+              bear on what the agent is doing right now and it will be surfaced to the agent as a
+              reminder to read it before it relies on memory. Name nothing if none apply.";
 
 /// Render the inbox + background sections of a triage view (docs/inbox.md, docs/process-monitor.md) — shared by the
 /// tool-result-riding triage and the standalone idle triage. Each item by its `[seq]` /
@@ -382,7 +443,7 @@ pub(super) fn result_view(label: &str, call: &ToolCall, raw: &RawResult) -> Stri
 /// the output itself is not shown: it is going to the wire verbatim, so showing it would
 /// spend the fork's uncached tail on text no verdict can change, and offering it beside
 /// the results that *are* in question invites a verdict on it.
-pub(super) fn bypassed_view(call: &ToolCall, shape: &str) -> String {
+pub(super) fn bypassed_view(call: &ToolCall, shape: &str, framing: Framing) -> String {
     if is_reply(call) {
         return format!(
             "═══ result · {} ═══\nnot triaged — this is the operator's reply to a question the \
@@ -391,9 +452,13 @@ pub(super) fn bypassed_view(call: &ToolCall, shape: &str) -> String {
             call.name
         );
     }
+    let to = match framing {
+        Framing::FirstPerson => "you",
+        Framing::ThirdPerson => "the agent",
+    };
     format!(
         "═══ result · {} ═══\nnot triaged — this result carries a {shape}, a value that \
-         only works reproduced exactly, so its full output goes to you unchanged. It is not \
+         only works reproduced exactly, so its full output goes to {to} unchanged. It is not \
          one of the results you are deciding about below.",
         call.name
     )
@@ -421,7 +486,14 @@ pub(super) fn triage_messages(
     background: &[BgView],
     roster: &[Item],
 ) -> Vec<WireTurn> {
-    let (results, ask) = triage_parts(pending, inbox, background, roster, reader);
+    let (results, ask) = triage_parts(
+        pending,
+        inbox,
+        background,
+        roster,
+        reader,
+        Framing::FirstPerson,
+    );
     // The prefix hits cache; only the raws and the instruction are fresh, and they are
     // discarded — the canonical lineage never sees raw (docs/triage.md). The
     // frontier sits before that raw tail: the shared prefix is read, the throwaway
@@ -461,6 +533,7 @@ pub(super) fn triage_parts(
     background: &[BgView],
     roster: &[Item],
     reader: Reader,
+    framing: Framing,
 ) -> (Vec<TriageResult>, String) {
     let mut sections = String::new();
     append_inbox_and_background(&mut sections, inbox, background);
@@ -478,16 +551,24 @@ pub(super) fn triage_parts(
     {
         riders.push(IMAGES_FIELD);
     }
+    let (inbox_field, background_field, surface_field) = match framing {
+        Framing::FirstPerson => (INBOX_FIELD, BACKGROUND_FIELD, SURFACE_FIELD),
+        Framing::ThirdPerson => (
+            INBOX_FIELD_THIRD_PERSON,
+            BACKGROUND_FIELD_THIRD_PERSON,
+            SURFACE_FIELD_THIRD_PERSON,
+        ),
+    };
     if !inbox.is_empty() {
-        riders.push(INBOX_FIELD);
+        riders.push(inbox_field);
     }
     if !background.is_empty() {
-        riders.push(BACKGROUND_FIELD);
+        riders.push(background_field);
     }
     if roster_shown(roster) {
-        riders.push(SURFACE_FIELD);
+        riders.push(surface_field);
     }
-    let instruction = retain_instruction(&offered, &riders, reader);
+    let instruction = retain_instruction(&offered, &riders, reader, framing);
 
     // A bypassed result answers with a stand-in rather than its output: the harness
     // already decided it (docs/triage.md), and the ask does not offer it.
@@ -497,7 +578,7 @@ pub(super) fn triage_parts(
         .map(|(p, label)| TriageResult {
             call_id: p.call.id.clone(),
             content: match (bypassed(p), label) {
-                (Some(shape), _) => bypassed_view(p.call, shape),
+                (Some(shape), _) => bypassed_view(p.call, shape, framing),
                 (None, Some(label)) => result_view(label, p.call, p.raw),
                 (None, None) => unreachable!("labels() labels every unbypassed result"),
             },

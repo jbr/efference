@@ -57,8 +57,8 @@ impl TriageAttempt {
 /// Split out for the `triage` dev tool's dry run, which reviews an ask without spending a
 /// request on it.
 ///
-/// `view` picks the rendering of the history: the live triage's transcript, or the digest
-/// arm under evaluation (`digest_view.rs`).
+/// `view` picks the rendering of the history: the transcript the shared triage reads, the
+/// text view a separate triage reads, or an arm under evaluation (`digest_view.rs`).
 pub fn triage_request(
     prefix: &[LogEntry],
     reader: Reader,
@@ -72,7 +72,7 @@ pub fn triage_request(
         TriageView::Transcript => {
             triage_messages(prefix, reader, pending, inbox, background, &roster)
         }
-        view => digest_view::digest_triage_messages(
+        view => digest_view::text_only_messages(
             prefix, reader, view, pending, inbox, background, &roster,
         ),
     }

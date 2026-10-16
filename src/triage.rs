@@ -268,14 +268,14 @@ struct OwnTriage {
 /// prompt. Generous enough for a thinking triage model's reasoning.
 pub const TRIAGE_MAX_OUTPUT: u64 = 16_384;
 
-/// Everything the triage-lineage primer replays (docs/transport.md):
-/// the completion's own input, borrowed — byte-identical to the main request by
-/// construction rather than by re-projection (which, built after the assistant turn
-/// landed, would end on an unanswered call and be refused).
+/// Everything the triage-lineage primer sends (docs/transport.md): the text view's
+/// history through the completion whose calls the batch runs, which the triage's
+/// request then extends.
 pub struct TriagePrimerInput<'a> {
     /// The triage whose own client carries the triage lineage.
     pub triager: &'a Triager,
-    /// The main request's turns, through the breakpoint it sent.
+    /// The text view's history through the completion whose calls the batch runs
+    /// ([`Triager::primer_turns`]): the turns the triage's request opens with.
     pub turns: &'a [WireTurn],
 }
 
@@ -370,6 +370,31 @@ impl Triager {
         }
     }
 
+    /// The view this triage's result requests read (docs/triage.md): the agent's
+    /// transcript on the shared triage, whose fork reads the agent's cached prefix; the
+    /// text view on its own model, which shares no cache with the agent and may speak
+    /// another wire format.
+    pub fn view(&self) -> TriageView {
+        if self.is_own() {
+            TriageView::Text
+        } else {
+            TriageView::Transcript
+        }
+    }
+
+    /// The history half of the text view through the turn that made `calls`, as the
+    /// primer plants it (docs/transport.md): the own triage's next request opens with
+    /// exactly these turns. `None` where no primer is sent: on the shared triage, which
+    /// reads the transcript, and on an own client that plants none.
+    pub fn primer_turns(&self, entries: &[LogEntry], calls: &[ToolCall]) -> Option<Vec<WireTurn>> {
+        let first = calls.first()?;
+        let plants = self.own.as_ref().is_some_and(|o| o.client.plants_primer());
+        plants.then(|| {
+            let end = text_view::history_end(entries, Some(first));
+            vec![text_view::history(entries, end, self.reader()).turn()]
+        })
+    }
+
     /// The model the triage runs on when it has its own, for the boot line and
     /// `GET /state`.
     pub fn own_model(&self) -> Option<&str> {
@@ -386,8 +411,8 @@ impl Triager {
     }
 
     /// Send the triage-lineage primer over the own client
-    /// (docs/transport.md): the turn's input replayed, capped,
-    /// so the triage extends a request that ended where the main one did. `None`
+    /// (docs/transport.md): the text view's history ([`Self::primer_turns`]), capped,
+    /// so the triage extends a request that ended where its history does. `None`
     /// on the shared triage — it rides the agent lineage, which the main request
     /// already warmed — or where the own client has no implicit lineage to plant in;
     /// a failed send warns and resolves unprimed rather than failing the batch.
@@ -523,8 +548,15 @@ impl Triager {
         let offered = offered_labels(pending);
         let shown_lines = shown_lines(pending, &labels);
 
+        let messages = triage_request(
+            prefix,
+            self.reader(),
+            self.view(),
+            pending,
+            inbox,
+            background,
+        );
         let roster = surfaceable_roster(prefix);
-        let messages = triage_messages(prefix, self.reader(), pending, inbox, background, &roster);
 
         let mut record = TriageRecord::default();
         let parsed = triage_with_retries(
@@ -650,7 +682,8 @@ impl Triager {
         view.push_str("\n\n");
         view.push_str(TRIAGE_INSTRUCTION);
 
-        let mut messages = project_semantic_for(prefix, self.reader());
+        // The agent's projection: the idle triage sends on the agent's client.
+        let mut messages = project_semantic_for(prefix, Reader::Main);
         messages.push(WireTurn::Breakpoint);
         messages.push(WireTurn::text(view));
 
@@ -720,6 +753,7 @@ mod prompt;
 mod replay;
 mod request;
 mod schema;
+mod text_view;
 mod title;
 mod validate;
 
@@ -737,4 +771,7 @@ pub use own::TriageModel;
 pub use replay::{ReplayVerdict, TriageAttempt, triage_request};
 pub use request::{TRIAGE_RESTARTS, TriageFailure};
 pub use schema::{retain_tool, triage_tool};
+pub use text_view::{
+    TRIAGED_TAIL_HIGH_WATER, TRIAGED_TAIL_LOW_WATER, TextViewLayout, text_view_layout,
+};
 pub use title::{TITLE_MAX_CHARS, TitlePeek};
