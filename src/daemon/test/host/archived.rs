@@ -199,3 +199,74 @@ async fn the_client_reads_archived_rows() {
 
     host.swansong().shut_down().await;
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn one_session_reads_as_its_hosted_or_dormant_row() {
+    let roots = Roots::new();
+    let host = Host::new(one_connection_registry(), baseline_env());
+    let root = roots.0.join("one");
+    write_session(&root, "dormant", "Asleep");
+    host.adopt(
+        "live".into(),
+        SessionRuntime::start(runtime::boot(&root), host.swansong()),
+    )
+    .unwrap();
+    let server = host_server(&host).await;
+
+    let live = server.get("/sessions/live").await;
+    live.assert_status(200);
+    let row = json(live.body());
+    assert_eq!(row["id"], "live");
+    assert_eq!(row["status"], "idle");
+    assert_eq!(row["cwd"], root.to_string_lossy().as_ref());
+
+    let url = format!("/sessions/dormant?cwd={}", encode(&root));
+    let dormant = server.get(&url).await;
+    dormant.assert_status(200);
+    let row = json(dormant.body());
+    assert_eq!(row["id"], "dormant");
+    assert_eq!(row["state"], "archived");
+    assert_eq!(row["title"], "Asleep");
+    assert!(row.get("status").is_none());
+
+    // The dormant row carries what the listing's does, `problem` included.
+    std::fs::create_dir_all(root.join(".efference/broken")).unwrap();
+    let url = format!("/sessions/broken?cwd={}", encode(&root));
+    let broken = server.get(&url).await;
+    broken.assert_status(200);
+    assert_eq!(json(broken.body())["problem"], "no log.jsonl");
+
+    let url = format!("/sessions/nobody?cwd={}", encode(&root));
+    server.get(&url).await.assert_status(404);
+    server.get("/sessions/nobody").await.assert_status(404);
+    server
+        .get("/sessions/dormant?cwd=relative/path")
+        .await
+        .assert_status(400);
+
+    host.swansong().shut_down().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_dormant_session_is_found_under_a_remembered_root() {
+    let roots = Roots::new();
+    let host = Host::new(
+        one_connection_registry()
+            .with_history(crate::history::History::at(roots.0.join("state.db"))),
+        baseline_env(),
+    );
+    let server = host_server(&host).await;
+    write_session(&roots.0.join("two"), "b", "B");
+    crate::remembered::Projects::at(roots.0.join("state.db")).record(&crate::remembered::Project {
+        last_used_at: 1,
+        cwd: roots.0.join("two"),
+        config_key: "k".into(),
+        config: None,
+    });
+
+    let response = server.get("/sessions/b").await;
+    response.assert_status(200);
+    assert_eq!(json(response.body())["title"], "B");
+
+    host.swansong().shut_down().await;
+}

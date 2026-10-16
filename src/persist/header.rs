@@ -94,6 +94,10 @@ pub struct SessionMetadata {
     pub autonomous: bool,
     #[serde(default, skip_serializing_if = "is_false")]
     pub keep_scratch: bool,
+    /// Whether the session outlives its creator (docs/tools.md). A resume reads it
+    /// from here; a header without it is a session that ends with its creator.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub detached: bool,
 }
 
 impl SessionMetadata {
@@ -122,6 +126,7 @@ impl SessionMetadata {
             succeeds: None,
             autonomous: false,
             keep_scratch: false,
+            detached: false,
         }
     }
 }

@@ -32,7 +32,7 @@ pub use resume::{PatchSession, SessionState};
 
 mod archived;
 pub use archived::ArchivedSession;
-use archived::archived_listing;
+use archived::{archived_listing, read_session};
 
 mod catalog;
 use catalog::{catalog_all, catalog_one};
@@ -443,7 +443,8 @@ pub(crate) fn host_routes(files: bool) -> impl trillium::Handler {
         .get("/sessions", list_sessions())
         // Registered before the `/sessions/:session/*` wildcard below, which would
         // resolve the session into conn state and 404 a patch that is what
-        // makes it live in the first place.
+        // makes it live in the first place (and a read of a dormant session).
+        .get("/sessions/:session", read_session)
         .patch("/sessions/:session", patch_session)
         .delete("/sessions/:session", end_session)
         // Where sessions have been started, and forgetting one. Registered

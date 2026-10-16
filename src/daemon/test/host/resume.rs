@@ -314,3 +314,52 @@ async fn an_archive_releases_the_log_while_a_stream_holds_the_session() {
 
     host.swansong().shut_down().await;
 }
+
+/// A resume takes `detached` from the header the session was created with, so a
+/// detached child keeps outliving its creator without the caller repeating it
+/// (docs/resumption.md).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_resumed_child_keeps_the_detached_its_header_recorded() {
+    let roots = Roots::new();
+    let (host, _server) = hosting_one(&roots).await;
+    let recorded = |id: &str, detached: bool, created_by: &str| {
+        let dir = roots.0.join(".efference").join(id);
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut metadata = crate::persist::SessionMetadata::new(
+            id,
+            &roots.0,
+            crate::log::LoggedInference::new("c", crate::api::Provider::Anthropic, "m"),
+            crate::log::LoggedInference::new("c", crate::api::Provider::Anthropic, "m"),
+            crate::persist::TriageModel::shared(),
+        );
+        metadata.created_by = Some(created_by.into());
+        metadata.detached = detached;
+        crate::persist::Log::create(dir.join(crate::boot::LOG_NAME), Some(metadata)).unwrap();
+        dir
+    };
+
+    let kept = recorded("kept", true, "one");
+    assert_eq!(host.recorded_lineage(&kept), (Some("one".into()), true));
+    let bound = recorded("bound", false, "one");
+    assert_eq!(host.recorded_lineage(&bound), (Some("one".into()), false));
+    // A creator this host no longer holds is dropped; `detached` still reads.
+    let orphan = recorded("orphan", true, "gone");
+    assert_eq!(host.recorded_lineage(&orphan), (None, true));
+
+    // Adopted as the resume does, the detached child outlives its creator.
+    host.adopt_with(
+        "kept".into(),
+        SessionRuntime::start(
+            runtime::boot_in(&roots.0.join("one"), &roots.0.join("one/scratch")),
+            host.swansong(),
+        ),
+        Some("one".into()),
+        host.recorded_lineage(&kept).1,
+    )
+    .unwrap();
+    host.end("one").unwrap().await;
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    assert!(host.session("kept").is_some());
+
+    host.swansong().shut_down().await;
+}

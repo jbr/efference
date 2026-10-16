@@ -479,7 +479,7 @@ separate concern from parsing and recovery.
 does not share the main model, with the reasoning settings that inference is
 called with), and the knobs and lineage a reader needs to describe the run —
 temperature, effort, upstream sessions, `created_by`/`succeeds`, `autonomous`,
-`keep_scratch`. These are deliberately **not** the live configuration or
+`keep_scratch`, `detached`. These are deliberately **not** the live configuration or
 registry types: those describe what a host will do next, while a header
 records what a past run did, and either side grows fields. Fields with an
 obvious "off" value are skipped when unset, so a file records what was

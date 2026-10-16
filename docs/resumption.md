@@ -139,8 +139,11 @@ triage.
 lifecycle, `active` or `archived`, separate from the `status` a listing reports for what
 a live session is doing. `DELETE /sessions/:id` is the same transition as
 `{"state": "archived"}`. The body carries `cwd`, since the path alone can't locate a
-dormant session's directory, plus the inputs a revival needs (`env`, `reauth`,
-`detached`), and no model options: a resume reads them from the header.
+dormant session's directory, plus the inputs a revival needs (`env`, `reauth`),
+and no model options: a resume reads them from the header. The header also holds
+`detached`, which decides whether the resumed session ends with its creator when
+the header's `created_by` names a session this host still runs; a creator that is
+gone is dropped.
 
 The PATCH is idempotent. On a live session it answers `200` with `resumed: false`; the
 revival itself answers `resumed: true`. The same id live under a different root is `409`
@@ -150,6 +153,8 @@ revival itself answers `resumed: true`. The same id live under a different root 
 remembered root, from a scan of each log's header, first and last entries and last title
 (`src/inventory.rs`; [log-and-projection.md](log-and-projection.md), "Inventory of dormant
 sessions"). A directory that can't be resumed is listed with a `problem`.
+`GET /sessions/:id` answers one session's row, the hosted listing's for a hosted session
+and this listing's for a dormant one, so a dormant session is addressable by id.
 
 ## Clients
 

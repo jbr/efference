@@ -41,5 +41,6 @@ pub(super) fn metadata(request: &SessionRequest) -> SessionMetadata {
     metadata.succeeds = request.lineage.succeeds.clone();
     metadata.autonomous = request.autonomous;
     metadata.keep_scratch = request.keep_scratch;
+    metadata.detached = request.detached;
     metadata
 }

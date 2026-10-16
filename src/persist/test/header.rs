@@ -50,6 +50,7 @@ fn session_metadata_round_trips_through_the_header() {
         succeeds: Some("brave-heron".into()),
         autonomous: true,
         keep_scratch: true,
+        detached: true,
         ..SessionMetadata::new(
             "swift-lynx",
             "/work/project",
@@ -123,6 +124,7 @@ fn unset_metadata_fields_are_skipped() {
         "succeeds",
         "autonomous",
         "keep_scratch",
+        "detached",
     ] {
         assert!(
             !line.contains(absent),

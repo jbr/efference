@@ -242,13 +242,20 @@ sessions from one process. Its own routes are the listener's, not a session's:
   taken as stored rather than recomputed from `cwd` and `config`, because
   recomputing re-probes the filesystem and a directory that gained an
   `efference.toml` since its launch resolves to a different key.
+- `GET /sessions/:id` — one session's row. A hosted session answers its row of the
+  listing above; otherwise the dormant row for the id (the shape above, with
+  `state: "archived"` and a `problem` when the directory is unreadable), looked up
+  under `cwd` when the query names one and under the remembered roots when it does
+  not, the most recently active when several hold the id. `404` when neither does,
+  `400` for a relative `cwd`.
 - `PATCH /sessions/:id` — change one session's state, the session resource
   carrying the change: `{"state": "active"}` reopens a dormant session under its
   own id, reading its model, effort and configuration from its own header rather
   than from this request, and `{"state": "archived"}` is `DELETE` below in the
   spelling of what it does. `active` also needs `cwd`, the root whose
   `.efference/<id>` holds the session — a host serving several roots cannot tell
-  which one a dormant id belongs to. Answers `200 {"id", "state"}`; `400` naming
+  which one a dormant id belongs to. The body takes no `detached`: whether the
+  session outlives its creator is read from its header. Answers `200 {"id", "state"}`; `400` naming
   the reason when the body is malformed, patches nothing, or names a session that
   cannot be resumed; `404` for an `archived` patch on an id that is not hosted.
   An `archived` patch answers as `DELETE` does, including the `worktree` field

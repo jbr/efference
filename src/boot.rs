@@ -66,6 +66,9 @@ pub struct SessionRequest {
     pub autonomous: bool,
     pub reauth: Vec<String>,
     pub keep_scratch: bool,
+    /// Whether the session outlives its creator (docs/tools.md); recorded in the
+    /// header so a resume reads it back.
+    pub detached: bool,
     /// Create the session's own git worktree and start it there (docs/worktrees.md).
     pub worktree: bool,
     /// The host this session is created on, when it is: the in-session
@@ -127,6 +130,8 @@ async fn prepare_minting(
         autonomous,
         reauth,
         keep_scratch,
+        // Already in `metadata`, which carries it to the header.
+        detached: _,
         worktree,
         host,
         lineage,

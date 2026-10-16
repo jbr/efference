@@ -154,6 +154,7 @@ impl Host {
             autonomous: body.autonomous,
             reauth: body.reauth,
             keep_scratch: body.keep_scratch,
+            detached: body.detached,
             worktree: body.worktree,
             // The new session's toolbox mounts the `sessions` provider against
             // this host, with the new session itself as the caller (docs/tools.md).

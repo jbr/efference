@@ -71,26 +71,30 @@ impl Host {
     pub fn listing(&self) -> Vec<ListedSession> {
         self.ids()
             .into_iter()
-            .filter_map(|id| {
-                let session = self.session(&id)?;
-                let identity = session.identity();
-                let directories = session.directories();
-                Some(ListedSession {
-                    title: identity.as_ref().and_then(|i| i.title.clone()),
-                    cwd: Some(directories.project().to_string_lossy().into_owned()),
-                    working: (directories.working() != directories.project())
-                        .then(|| directories.working().to_string_lossy().into_owned()),
-                    created_by: self.created_by(&id),
-                    status: status_word(&session.status()).to_string(),
-                    processes: session
-                        .process_states()
-                        .iter()
-                        .filter(|process| process.background)
-                        .count(),
-                    id,
-                })
-            })
+            .filter_map(|id| self.listed(&id))
             .collect()
+    }
+
+    /// One hosted session's row — what `GET /sessions/:id` answers and what the
+    /// listing holds for it. `None` when this host is not running `id`.
+    pub fn listed(&self, id: &str) -> Option<ListedSession> {
+        let session = self.session(id)?;
+        let identity = session.identity();
+        let directories = session.directories();
+        Some(ListedSession {
+            title: identity.as_ref().and_then(|i| i.title.clone()),
+            cwd: Some(directories.project().to_string_lossy().into_owned()),
+            working: (directories.working() != directories.project())
+                .then(|| directories.working().to_string_lossy().into_owned()),
+            created_by: self.created_by(id),
+            status: status_word(&session.status()).to_string(),
+            processes: session
+                .process_states()
+                .iter()
+                .filter(|process| process.background)
+                .count(),
+            id: id.to_string(),
+        })
     }
 
     /// The listing as the bytes both readings send.

@@ -100,6 +100,7 @@ pub(super) fn request(root: &Path, id: &str, effort: Option<&str>) -> SessionReq
         autonomous: false,
         reauth: Vec::new(),
         keep_scratch: false,
+        detached: false,
         worktree: false,
         host: None,
         lineage: crate::env::Lineage::default(),
@@ -288,6 +289,7 @@ auth = {{ kind = "env", key = "EFFERENCE_BOOT_TEST_KEY" }}
         autonomous: false,
         reauth: Vec::new(),
         keep_scratch: false,
+        detached: false,
         worktree: false,
         host: None,
         lineage: crate::env::Lineage::default(),
@@ -553,4 +555,13 @@ fn the_attachment_store_is_readable_through_the_self_surface_deny() {
     assert_eq!(call("write", attached), Gate);
     assert_eq!(call("read", session_dir.join(LOG_NAME)), Gate);
     assert_eq!(call("read", session_dir.join(CONFIG_NAME)), Clear);
+}
+
+#[test]
+fn the_header_records_detached() {
+    let root = Root::new("detached-header");
+    let mut detached = request(root.path(), "free", None);
+    assert!(!super::metadata::metadata(&detached).detached);
+    detached.detached = true;
+    assert!(super::metadata::metadata(&detached).detached);
 }

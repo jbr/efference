@@ -57,10 +57,6 @@ pub struct PatchSession {
     /// that reopens a session says what to bring up with it.
     #[serde(default)]
     pub reauth: Vec<String>,
-    /// Outlive the session whose header recorded a creator (docs/tools.md).
-    /// Only read by an `active` patch, for the same reason.
-    #[serde(default)]
-    pub detached: bool,
     /// This attempt's base environment, when the caller supplies one
     /// (docs/env.md). `None` asks the host to establish it for `cwd`, as a
     /// creation's is.
@@ -93,7 +89,6 @@ impl PatchSession {
             state: Some(SessionState::Active),
             cwd: Some(cwd),
             reauth: Vec::new(),
-            detached: false,
             env: None,
             supervisor: None,
         }
@@ -105,7 +100,6 @@ impl PatchSession {
             state: None,
             cwd: None,
             reauth: Vec::new(),
-            detached: false,
             env: None,
             supervisor: Some(supervisor),
         }
@@ -206,20 +200,8 @@ impl Host {
                 }
             }
         };
-        // The creator the header recorded, kept only while this host still holds
-        // it. A `created_by` naming a session that is not here would end this one
-        // when a session nobody is running goes away, so a dangling one is dropped
-        // and the resumed session stands on its own. A failure to read the header
-        // is left to `boot::resume`, which refuses with the real reason.
-        let created_by = crate::persist::load_recording(session_dir.join(crate::boot::LOG_NAME))
-            .ok()
-            .and_then(|recording| {
-                recording
-                    .header
-                    .metadata()
-                    .and_then(|metadata| metadata.created_by.clone())
-            })
-            .filter(|creator| self.session(creator).is_some());
+        // Creator and `detached` as the header recorded them.
+        let (created_by, detached) = self.recorded_lineage(&session_dir);
         let (boot, options) = match crate::boot::resume(crate::boot::ResumeRequest {
             session_dir,
             base_env,
@@ -237,7 +219,7 @@ impl Host {
             }
         };
         let runtime = SessionRuntime::start(boot, self.swansong());
-        self.adopt_with(id.clone(), runtime, created_by, body.detached)?;
+        self.adopt_with(id.clone(), runtime, created_by, detached)?;
         // The options `boot::resume` inferred from the header, recorded so a
         // `hand_off` from this session hands its successor the same place rather
         // than the host's defaults (docs/tools.md). A resume adopts, so this is
@@ -245,6 +227,31 @@ impl Host {
         self.record_options(&id, options);
         log::info!("session {id}: resumed");
         Ok(Resume::Resumed)
+    }
+}
+
+impl Host {
+    /// The creator and `detached` flag the session's header recorded.
+    ///
+    /// The creator is kept only while this host still holds it. A `created_by`
+    /// naming a session that is not here would end the resumed one when a session
+    /// nobody is running goes away, so a dangling one is dropped and the session
+    /// stands on its own. A header that cannot be read yields neither, and is
+    /// left to `boot::resume`, which refuses with the real reason.
+    pub(crate) fn recorded_lineage(&self, session_dir: &std::path::Path) -> (Option<String>, bool) {
+        let Some(recording) =
+            crate::persist::load_recording(session_dir.join(crate::boot::LOG_NAME)).ok()
+        else {
+            return (None, false);
+        };
+        let Some(metadata) = recording.header.metadata() else {
+            return (None, false);
+        };
+        let created_by = metadata
+            .created_by
+            .clone()
+            .filter(|creator| self.session(creator).is_some());
+        (created_by, metadata.detached)
     }
 }
 

@@ -1,4 +1,4 @@
-//! `GET /sessions?state=archived`: the sessions on disk that nothing here is
+//! `GET /sessions?state=archived` and `GET /sessions/:session`: the sessions on disk that nothing here is
 //! running (docs/control-api.md).
 //!
 //! The same collection as the live listing, filtered by the lifecycle word
@@ -46,6 +46,81 @@ impl Host {
     }
 }
 
+/// The roots an archived read covers: the `cwd` query when given, else every
+/// remembered root, most recently used first.
+fn scan_roots(host: &Host, query: &str) -> Result<Vec<PathBuf>, &'static str> {
+    match crate::daemon::http::query_value(query, "cwd") {
+        Some(cwd) => {
+            let cwd = PathBuf::from(cwd);
+            if !cwd.is_absolute() {
+                return Err("cwd must be absolute");
+            }
+            Ok(vec![cwd])
+        }
+        None => {
+            let mut roots: Vec<PathBuf> = Vec::new();
+            for project in host.remembered.recent() {
+                if !roots.contains(&project.cwd) {
+                    roots.push(project.cwd);
+                }
+            }
+            Ok(roots)
+        }
+    }
+}
+
+/// `GET /sessions/:session`: one session's row. A hosted session answers its
+/// [`ListedSession`]; otherwise the dormant row for the id under `cwd` or the
+/// remembered roots (the same roots, and the same row, as
+/// `GET /sessions?state=archived`), and `404` when neither holds it. An id kept
+/// under several roots answers the most recently active one.
+pub(super) async fn read_session(conn: Conn) -> Conn {
+    // `/sessions/:session/` is the session's web shell, which the router also
+    // offers this route; it belongs to the wildcard below.
+    if conn.path().ends_with('/') {
+        return conn;
+    }
+    let Some(host) = host_of(&conn) else {
+        return missing_host(conn);
+    };
+    let id = conn.param("session").unwrap_or_default().to_string();
+    if let Some(row) = host.listed(&id) {
+        return match serde_json::to_string(&row) {
+            Ok(body) => conn.with_status(200).with_body(body).halt(),
+            Err(error) => fail(conn, ErrorCode::Internal, error.to_string()),
+        };
+    }
+    let roots = match scan_roots(&host, conn.querystring()) {
+        Ok(roots) => roots,
+        Err(message) => return fail(conn, ErrorCode::BadRequest, message),
+    };
+    let wanted = id.clone();
+    let found = tokio::task::spawn_blocking(move || {
+        host.archived(&roots)
+            .into_iter()
+            .find(|archived| archived.row.id == wanted)
+    })
+    .await;
+    match found {
+        Ok(Some(row)) => match serde_json::to_string(&row) {
+            Ok(body) => conn.with_status(200).with_body(body).halt(),
+            Err(error) => fail(conn, ErrorCode::Internal, error.to_string()),
+        },
+        Ok(None) => fail(
+            conn,
+            ErrorCode::NotFound,
+            format!(
+                "no session {id:?}, hosted or archived; read GET /sessions for the current list"
+            ),
+        ),
+        Err(error) => fail(
+            conn,
+            ErrorCode::Internal,
+            format!("the archived scan did not finish: {error}"),
+        ),
+    }
+}
+
 /// The first stage of the `GET /sessions` route: answers `state=archived` and
 /// refuses an unknown `state`, and passes everything else — including no `state`
 /// and `state=active` — to the live listing untouched.
@@ -61,23 +136,9 @@ pub(super) async fn archived_listing(conn: Conn) -> Conn {
             let Some(host) = host_of(&conn) else {
                 return missing_host(conn);
             };
-            let roots = match crate::daemon::http::query_value(&query, "cwd") {
-                Some(cwd) => {
-                    let cwd = PathBuf::from(cwd);
-                    if !cwd.is_absolute() {
-                        return fail(conn, ErrorCode::BadRequest, "cwd must be absolute");
-                    }
-                    vec![cwd]
-                }
-                None => {
-                    let mut roots: Vec<PathBuf> = Vec::new();
-                    for project in host.remembered.recent() {
-                        if !roots.contains(&project.cwd) {
-                            roots.push(project.cwd);
-                        }
-                    }
-                    roots
-                }
+            let roots = match scan_roots(&host, &query) {
+                Ok(roots) => roots,
+                Err(message) => return fail(conn, ErrorCode::BadRequest, message),
             };
             let rows = match tokio::task::spawn_blocking(move || host.archived(&roots)).await {
                 Ok(rows) => rows,
