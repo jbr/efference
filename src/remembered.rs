@@ -176,6 +176,23 @@ impl Projects {
             .unwrap_or_default()
     }
 
+    /// Every distinct remembered root, most recently used first, without the
+    /// index's cap: the roots a session-id backfill scans (`crate::session_ids`).
+    pub fn roots(&self) -> Vec<PathBuf> {
+        let Some(connection) = self.connect() else {
+            return Vec::new();
+        };
+        let Ok(mut statement) = connection.prepare(
+            "SELECT cwd FROM remembered_projects GROUP BY cwd ORDER BY MAX(last_used_at) DESC",
+        ) else {
+            return Vec::new();
+        };
+        statement
+            .query_map([], |row| row.get::<_, String>(0))
+            .map(|rows| rows.filter_map(Result::ok).map(PathBuf::from).collect())
+            .unwrap_or_default()
+    }
+
     /// Whether `identity` — a `cwd` and a `config_key` as the index reported them
     /// — is remembered.
     pub fn contains(&self, cwd: &Path, config_key: &str) -> bool {

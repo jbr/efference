@@ -217,7 +217,9 @@ effort refuses the resume.
 
 The PATCH is idempotent. On a live session it answers `200` with `resumed: false`; the
 revival itself answers `resumed: true`. The same id live under a different root is `409`
-(`state_mismatch`).
+(`state_mismatch`), and so is a dormant directory whose id the `session_ids` register holds
+under another root ([session-title.md](session-title.md)); a root the register has not seen
+claims the id.
 
 `GET /sessions?state=archived` lists the dormant sessions under a root, or under every
 remembered root, from a scan of each log's header, first and last entries and last title

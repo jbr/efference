@@ -23,6 +23,9 @@ impl Host {
         body: CreateSession,
         lineage: crate::env::Lineage,
     ) -> std::result::Result<String, String> {
+        if !body.cwd.is_absolute() {
+            return Err(format!("cwd must be absolute: {}", body.cwd.display()));
+        }
         // The session is rooted at its project and works in the directory the client
         // sent: they differ when that directory is inside a worktree
         // (docs/worktrees.md).
@@ -32,20 +35,53 @@ impl Host {
         // the live map — a dead session's directory still holds its name
         // (docs/session-title.md).
         let base = project.join(SESSION_BASE);
-        let id = body.name.unwrap_or_else(|| {
-            slug::mint(|id| self.session(id).is_some() || base.join(id).exists())
-        });
-        if !super::tcp::plain_id(&id) {
-            return Err(format!(
-                "session name {id:?} is not a single plain path segment"
-            ));
+        // The id is reserved in the host-wide register before anything is awaited,
+        // so two creates racing for one name cannot both get it: a minted id is
+        // reserved by the draw that found it free, and an explicit one is refused
+        // when any root holds it.
+        let id = match body.name.clone() {
+            Some(id) => {
+                if !super::tcp::plain_id(&id) {
+                    return Err(format!(
+                        "session name {id:?} is not a single plain path segment"
+                    ));
+                }
+                if self.session(&id).is_some() {
+                    return Err(format!("session {id:?} is already hosted"));
+                }
+                if let Err(held) = self.session_ids.reserve(&id, &project) {
+                    return Err(format!(
+                        "session name {id:?} is taken by a session under {}",
+                        held.root.display()
+                    ));
+                }
+                id
+            }
+            None => slug::mint(|id| {
+                self.session(id).is_some()
+                    || base.join(id).exists()
+                    || self.session_ids.reserve(id, &project).is_err()
+            }),
+        };
+        let started = self
+            .create_reserved(body, lineage, id.clone(), project.clone(), directories)
+            .await;
+        if started.is_err() {
+            self.session_ids.release(&id, &project);
         }
-        if self.session(&id).is_some() {
-            return Err(format!("session {id:?} is already hosted"));
-        }
-        if !body.cwd.is_absolute() {
-            return Err(format!("cwd must be absolute: {}", body.cwd.display()));
-        }
+        started
+    }
+
+    /// The rest of a creation, once `id` is reserved for `project`.
+    async fn create_reserved(
+        self: &Arc<Self>,
+        body: CreateSession,
+        lineage: crate::env::Lineage,
+        id: String,
+        project: PathBuf,
+        directories: crate::policy::Directories,
+    ) -> std::result::Result<String, String> {
+        let base = project.join(SESSION_BASE);
         // An environment the caller supplied is the base, and nothing is run. An
         // omitted one is established here, for the session's project, from the
         // user-wide `env_hook` or the host environment (docs/env.md). The project, not
@@ -169,9 +205,9 @@ impl Host {
             Err(e) => return Err(format!("could not prepare session: {e}")),
         };
         let runtime = SessionRuntime::start(boot, self.swansong());
-        // A name another create took while this one awaited the hook and
-        // preparation: the loser is shut down inside `adopt_with`, so nothing
-        // here records options or a model pick for a session that will not exist.
+        // `adopt_with` refuses an id already hosted, and shuts the new runtime down
+        // when it does, so nothing here records options or a model pick for a
+        // session that will not exist. The reservation makes that a backstop.
         self.adopt_with(id.clone(), runtime, lineage.created_by, body.detached)?;
         self.record_options(&id, options);
         // Remember the pick this creation made, for the omitted-branch default

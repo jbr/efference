@@ -19,6 +19,7 @@ schema.
 | `triage_picks` | an explicit separate triage pick, with the main model it ran with | `src/history.rs` | nothing yet; recorded for a later pairing default |
 | `model_catalog` | a connection | `src/catalog.rs` | the model menus ([model-catalog.md](model-catalog.md)) |
 | `remembered_projects` | a directory a session was started in | `src/remembered.rs` | the launch index, `GET /projects` ([control-api.md](control-api.md)) |
+| `session_ids` | a session id and the root holding it | `src/session_ids.rs` | id minting, explicit names and resume ([session-title.md](session-title.md)) |
 | `push_subscriptions` | a browser subscription | `src/push.rs` | the sender, per push ([web-push.md](web-push.md)) |
 | `totp_burns` | an accepted TOTP timestep | `src/auth.rs` | the bind's token check ([web-bind.md](web-bind.md)) |
 

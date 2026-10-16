@@ -57,6 +57,9 @@ pub struct Host {
     /// Where sessions have been launched, in the same database (docs/control-api.md).
     /// Written by every successful creation and read by the index route.
     remembered: crate::remembered::Projects,
+    /// The host-wide register of session ids, in the same database
+    /// (`session_ids.rs`, docs/session-title.md).
+    session_ids: crate::session_ids::SessionIds,
     sessions: Mutex<BTreeMap<String, Hosted>>,
     /// Scanned rows of the dormant sessions under each root asked about
     /// (`archived.rs`, docs/log-and-projection.md).
@@ -124,17 +127,26 @@ impl Host {
         let catalog =
             crate::catalog::Catalog::new(inference.history().state_path().map(ToOwned::to_owned));
         let inference = inference.with_catalog(catalog.clone());
+        let session_ids = inference
+            .history()
+            .state_path()
+            .map_or_else(crate::session_ids::SessionIds::disabled, |path| {
+                crate::session_ids::SessionIds::at(path.to_owned())
+            });
+        let remembered = inference
+            .history()
+            .state_path()
+            .map_or_else(crate::remembered::Projects::disabled, |path| {
+                crate::remembered::Projects::at(path.to_owned())
+            });
+        Self::backfill_session_ids(&session_ids, &remembered);
         Arc::new(Self {
             swansong: Swansong::new(),
             catalog,
             // The same file as the catalog and the picks, and disabled with them:
             // a config that named no home directory names no place to remember.
-            remembered: inference
-                .history()
-                .state_path()
-                .map_or_else(crate::remembered::Projects::disabled, |path| {
-                    crate::remembered::Projects::at(path.to_owned())
-                }),
+            remembered,
+            session_ids,
             inference,
             sessions: Mutex::new(BTreeMap::new()),
             inventory: crate::inventory::Inventory::new(),
@@ -142,6 +154,27 @@ impl Host {
             listing_changed: Notify::new(),
             attention: Arc::default(),
         })
+    }
+
+    /// Register the session directories under the remembered roots in a
+    /// background thread, so a slow volume does not hold up boot. A collision —
+    /// one id under two roots — is reported and nothing else happens
+    /// (docs/session-title.md).
+    fn backfill_session_ids(
+        session_ids: &crate::session_ids::SessionIds,
+        remembered: &crate::remembered::Projects,
+    ) {
+        let (session_ids, remembered) = (session_ids.clone(), remembered.clone());
+        std::thread::spawn(move || {
+            for collision in session_ids.backfill(&remembered.roots()) {
+                log::warn!(
+                    "session id {:?} is under both {} and {}; the id stays with the first",
+                    collision.id,
+                    collision.holder.display(),
+                    collision.other.display()
+                );
+            }
+        });
     }
 
     /// The root every session runtime is a child of. Listeners are configured

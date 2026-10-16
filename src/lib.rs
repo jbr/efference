@@ -41,6 +41,7 @@ pub mod push;
 pub mod recovery;
 pub mod remembered;
 pub mod secrets;
+pub mod session_ids;
 pub mod setup;
 pub mod spawn;
 pub mod spotter;

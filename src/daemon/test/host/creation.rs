@@ -362,3 +362,47 @@ async fn creation_enforces_the_temperature_range() {
     assert!(host.ids().is_empty());
     host.swansong().shut_down().await;
 }
+
+/// A host whose state database, and so its session-id register, is a file under
+/// this test's root.
+fn host_with_register(roots: &Roots) -> Arc<Host> {
+    Host::new(
+        one_connection_registry()
+            .with_history(crate::history::History::at(roots.0.join("state.db"))),
+        baseline_env(),
+    )
+}
+
+/// An explicit name is reserved host-wide: another root holding it refuses the
+/// creation before anything is prepared, and a creation that fails after
+/// reserving gives the name back (docs/session-title.md).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_explicit_name_held_under_another_root_is_refused() {
+    let roots = Roots::new();
+    let host = host_with_register(&roots);
+    let server = host_server(&host).await;
+    let register = crate::session_ids::SessionIds::at(roots.0.join("state.db"));
+    register
+        .reserve("fresh", &roots.0.join("two"))
+        .expect("the name is free");
+
+    server
+        .post("/sessions")
+        .with_json_body(&stops_at_boot(&roots.0.join("one")))
+        .await
+        .assert_status(400)
+        .assert_body_contains("is taken by a session under");
+
+    register.release("fresh", &roots.0.join("two"));
+    server
+        .post("/sessions")
+        .with_json_body(&stops_at_boot(&roots.0.join("one")))
+        .await
+        .assert_status(400)
+        .assert_body_contains("could not prepare session");
+    assert_eq!(
+        register.holder("fresh"),
+        None,
+        "a creation that failed released the name it reserved"
+    );
+}

@@ -445,3 +445,30 @@ async fn a_host_shutdown_does_not_log_archived() {
 
     assert!(matches!(last_payload(&path), crate::log::Payload::User(_)));
 }
+
+/// A dormant directory whose id the register holds under another root is a
+/// different session sharing the name: refused as a clash, not resumed
+/// (docs/session-title.md).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_active_patch_for_an_id_registered_elsewhere_is_a_conflict() {
+    let roots = Roots::new();
+    let host = Host::new(
+        one_connection_registry()
+            .with_history(crate::history::History::at(roots.0.join("state.db"))),
+        baseline_env(),
+    );
+    let server = host_server(&host).await;
+    dormant(&roots, "shared");
+    crate::session_ids::SessionIds::at(roots.0.join("state.db"))
+        .reserve("shared", &roots.0.join("other"))
+        .expect("the id is free");
+
+    server
+        .patch("/sessions/shared")
+        .with_json_body(&resume(&roots.0))
+        .await
+        .assert_status(409)
+        .assert_body_contains("is registered under");
+
+    host.swansong().shut_down().await;
+}

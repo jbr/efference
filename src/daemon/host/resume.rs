@@ -180,6 +180,18 @@ impl Host {
             };
         }
         let session_dir = cwd.join(SESSION_BASE).join(&id);
+        // The register holds the id under one root. A directory of the same name
+        // under another is a different session sharing the name, which the host
+        // cannot key (docs/session-title.md); a root never registered claims it.
+        if session_dir.is_dir()
+            && let Err(held) = self.session_ids.claim(&id, &cwd)
+        {
+            return Err(ResumeRefused::Conflict(format!(
+                "session id {id:?} is registered under {}, not {}",
+                held.root.display(),
+                cwd.display()
+            )));
+        }
         if !session_dir.is_dir() {
             return Err(ResumeRefused::Refused(format!(
                 "no session {id:?} in {}: nothing at {}",

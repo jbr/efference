@@ -11,14 +11,35 @@ apart is what lets the id be short and stable while the title stays true.
 ## The id: a random word pair
 
 When `POST /sessions` carries no `name`, the host mints `adjective-noun` from two
-short lists (`daemon/slug.rs`): common words, unambiguous to spell, safe to say
+lists of about 150 words each (`daemon/slug.rs`): common words, unambiguous to spell, safe to say
 aloud, so an id can be typed from memory or read over a shoulder. The pair must be
-free both in the host's live map and on disk under the session base — a dead
-session's directory still holds its name — and a taken pair is redrawn: a random
+free in the host's live map, on disk under the session base — a dead
+session's directory still holds its name — and in the host-wide register
+described below; a taken pair is redrawn: a random
 name carries nothing worth keeping through a collision. Only when a bounded run
 of draws all collide does the last pair take a numeric suffix (`amber-heron-2`),
-so minting terminates in a directory that has used up most of the space. An explicit `name` is accepted as before, subject
-to the same single-path-segment rule.
+so minting terminates in a directory that has used up most of the space. An explicit `name` is subject to the
+same single-path-segment rule and to the register: it is refused when any root holds it.
+
+### One id, one host
+
+The `session_ids` table of the user state database (`src/session_ids.rs`,
+[state-store.md](state-store.md)) holds each id and the root whose `.efference`
+holds its session, so an id names one session on the host and not one per project. A
+creation reserves its id by inserting the row before it awaits the environment hook
+or prepares anything; the primary key makes the reservation atomic, so two creates
+racing for one name cannot both take it. A creation that fails after reserving
+removes its row. Resume claims the id for its root: a root that already holds it
+resumes, a root the register has not seen is recorded, and a root whose directory
+shares an id registered under another root is refused as a clash
+([resumption.md](resumption.md)). An archived session keeps its row; only discarding an
+empty session releases one.
+
+At host start a background pass registers the session directories (those holding a
+log) under every remembered root that the register lacks. An id found under two roots
+keeps its first row and is logged as a warning; boot goes on. Without a state database
+(a config naming no home directory) nothing is reserved and the live-map and on-disk
+checks stand alone.
 
 There is no rename. A peer that was handed the id in a message and has not yet
 sent to it would be reaching a name nobody could see was still in use; a mutable
