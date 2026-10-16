@@ -65,9 +65,9 @@ sessions from one process. Its own routes are the listener's, not a session's:
   written ([session-title.md](session-title.md)) and, when a session created it,
   the calling session's id as `created_by`. `created_by` is host control state —
   the creation tree — never logged or projected; a human-created root omits it
-  ([tools.md](tools.md)). `status` is one word — `running`, `idle`, `gated`,
-  `asking`, `stalled`, `parked`, `blocked` — read off the loop phase (`loop_phase`,
-  below), and `processes` counts the background processes the session holds
+  ([tools.md](tools.md)). `status` is one word — `starting` while the session is
+  prepared (below), then `running`, `idle`, `gated`, `asking`, `stalled`, `parked`,
+  `blocked`, read off the loop phase (`loop_phase`, below) — and `processes` counts the background processes the session holds
   ([process-monitor.md](process-monitor.md)). `running` is a request, a batch of calls,
   or a timed delay; `stalled` is an idle loop whose last trajectory gave up, or a triage
   held without a verdict; `parked` is a loop stopped at its cold check mid-turn
@@ -98,7 +98,7 @@ sessions from one process. Its own routes are the listener's, not a session's:
   collection filtered by the lifecycle word `PATCH /sessions/:id` carries. `state`
   absent or `active` is the listing above; any other value is `400`. The answer is a
   JSON array, most recently active first, of
-  `{"id", "cwd", "state": "archived", "title"?, "created_at"?, "last_active_at"?, "interrupted"?, "problem"?}`
+  `{"id", "cwd", "state": "archived", "title"?, "created_at"?, "last_active_at"?, "interrupted"?, "problem"?, "resume_failure"?}`
   — one row per directory under `<cwd>/.efference/`, read from the logs on disk
   ([log-and-projection.md](log-and-projection.md), "Inventory of dormant sessions").
   `created_at` and `last_active_at` are epoch milliseconds from entries; `interrupted` is
@@ -106,9 +106,12 @@ sessions from one process. Its own routes are the listener's, not a session's:
   was open when its host stopped, not archived on purpose). A row
   carrying a `problem` is a directory that could not be read as a session (no log,
   an empty one, a header this build does not read, an entry line that does not
-  parse); it keeps whatever was learned and sorts last. Without `cwd` the answer
-  covers every remembered project root once. A session this host is running (same
-  id, same working directory) is not in it. The row is its own shape, not a
+  parse); it keeps whatever was learned and sorts last. A row carrying a
+  `resume_failure` is a session this host last failed to resume, with the reason
+  (below); it is still resumable, and the field clears when a resume starts it or an
+  archive ends one in progress. Without `cwd` the answer
+  covers every remembered project root once. A session this host is running or starting
+  (same id, same working directory) is not in it. The row is its own shape, not a
   `ListedSession`: it has no `status` or `processes`. The answer is always the
   JSON array, including to a request that also names `text/event-stream`: there is
   no stream of the archived set. The scan runs off the executor, and the host keeps
@@ -192,8 +195,15 @@ sessions from one process. Its own routes are the listener's, not a session's:
   `reauth`, `keep_scratch`, and `detached` (meaningful for a session-driven create
   only: whether the new session outlives its creator, docs/tools.md).
   `name` omitted mints an `adjective-noun` id free on the host and under the
-  session base ([session-title.md](session-title.md)). `201 {"id": …}`; `400` with the reason when the body, the name, the cwd, the
-  environment, or preparation is unusable, in which case nothing was minted.
+  session base ([session-title.md](session-title.md)). `refuse_authorization: true`
+  fails the mount of an MCP server that asks for authorization instead of starting
+  the authorization dance (below). `201 {"id": …}` as soon as the id is reserved: the
+  session is in the listing as `starting` and its preparation — the environment,
+  then `boot::prepare` with the MCP mounts — runs after the answer (*A starting
+  session*, below). `400` with the reason when what the request alone decides is
+  unusable — the body, the name, the cwd, a supplied environment, a role
+  selection — in which case nothing was reserved. A failure during preparation is
+  the starting session's, read from its `starting` topic.
   `env` is the session's complete base environment and is optional: supplied, it
   is used outright and no hook runs; omitted, the host establishes one for `cwd`
   from the user-wide `env_hook`, or from the environment the host itself started
@@ -205,20 +215,25 @@ sessions from one process. Its own routes are the listener's, not a session's:
   channel, and a caller that can approve a gate can already have a session run
   anything. Nothing about creation widens that. The environment is applied and
   dropped, never logged or echoed.
-  A creation whose client disconnects still completes and still mints; only the
-  hook is bounded. Host shutdown cancels an establishment in progress, which fails
-  the creation without minting.
-  A creation that mints also records its directory in `GET /projects` — whatever
+  A creation's preparation does not depend on its client staying connected; only
+  the hook is bounded. Archiving the starting session or the host shutting down
+  cancels it, leaving nothing minted.
+  A creation that starts also records its directory in `GET /projects` — whatever
   asked for it, a web launch, a session's own `sessions__create`, or a `hand_off`
   in its predecessor's directory, since they are one path here — and one that
-  fails records nothing. The write is best-effort like the model pick beside it:
+  fails records nothing. The in-session `sessions__create` and `hand_off` wait for
+  the preparation to end, so the calling agent reads a failure as the call's
+  error. The write is best-effort like the model pick beside it:
   a store that cannot be opened never fails a creation that did start.
   One preparation step is not yet answerable by a network caller: an MCP server
   that answers `401` sends the harness into an authorization dance that prints to
   the host's stderr and opens a browser on the host's desktop, which that caller
-  cannot see. Such a creation blocks until the authorization finishes or the host
-  shuts down; a caller that disconnects does not cancel it, and nothing else
-  bounds the wait. `backlog/inbox/remote-mcp-authorization.md` records the fix.
+  cannot see. While it waits, the starting session's `starting` topic names the
+  server as `authorizing`, so every client sees the wait, and archiving the session
+  ends it; nothing else bounds it. A request with `refuse_authorization` never
+  starts the dance: the server's mount fails, naming why, which is fatal unless the
+  server is `optional = true`. `backlog/inbox/remote-mcp-authorization.md` records
+  the fix for the remote caller.
 - `GET /projects` — the remembered launch locations: every successful `POST
   /sessions` records the directory it started in, keyed by that directory plus the
   *source* configuration the boot consumed (never the per-session copy under
@@ -246,8 +261,8 @@ sessions from one process. Its own routes are the listener's, not a session's:
   taken as stored rather than recomputed from `cwd` and `config`, because
   recomputing re-probes the filesystem and a directory that gained an
   `efference.toml` since its launch resolves to a different key.
-- `GET /sessions/:id` — one session's row. A hosted session answers its row of the
-  listing above; otherwise the dormant row for the id (the shape above, with
+- `GET /sessions/:id` — one session's row. A hosted or starting session answers its
+  row of the listing above; otherwise the dormant row for the id (the shape above, with
   `state: "archived"` and a `problem` when the directory is unreadable), looked up
   under `cwd` when the query names one and under the remembered roots when it does
   not, the most recently active when several hold the id. `404` when neither does,
@@ -263,9 +278,14 @@ sessions from one process. Its own routes are the listener's, not a session's:
   spelling of what it does. `active` also needs `cwd`, the root whose
   `.efference/<id>` holds the session — a host serving several roots cannot tell
   which one a dormant id belongs to. The body takes no `detached`: whether the
-  session outlives its creator is read from its header. Answers `200 {"id", "state"}`; `400` naming
-  the reason when the body is malformed, patches nothing, or names a session that
-  cannot be resumed; `404` for an `archived` patch on an id that is not hosted.
+  session outlives its creator is read from its header; it may carry `reauth`, `env`
+  and `refuse_authorization` as a creation does. An `active` patch answers
+  `200 {"id", "state": "active", "resumed"}` as soon as the session is reserved as
+  starting; the environment and `boot::resume` run after, as a creation's
+  preparation does, and a failure there leaves the session dormant, listed with its
+  `resume_failure`. `400` naming the reason when the body is malformed, patches
+  nothing, or names a session that cannot be resumed from the request alone (no
+  such directory); `404` for an `archived` patch on an id that is not hosted.
   An `archived` patch answers as `DELETE` does, including the `worktree` field
   below; resuming a session that made its own worktree re-creates the worktree at
   its original path, from the kept branch when there is one.
@@ -292,6 +312,10 @@ sessions from one process. Its own routes are the listener's, not a session's:
   its directory is removed, its id is free again, and the answer is `200 {"id",
   "state": "discarded"}` ([resumption.md](resumption.md)); a worktree it kept makes it an
   ordinary archive.
+  Archiving a session that is still starting cancels its preparation instead: a
+  creation leaves nothing — no directory, the id free — and answers `"state":
+  "discarded"`, and a resume leaves the session dormant with its log ending in
+  `Archived` ([resumption.md](resumption.md)), answering `"state": "archived"`.
   A session that made its own git worktree also gets a `worktree` field: its
   directory is removed when `git status --porcelain` there is empty, answering
   `{"removed": true, "branch_deleted": <bool>}` (the branch is deleted only when
@@ -311,7 +335,68 @@ sessions from one process. Its own routes are the listener's, not a session's:
 - `/sessions/:id/v1/…` and, on the web listener, `/sessions/:id/files/…` — that
   session's own routes, unchanged. The host resolves the session into conn state
   and dispatches into the same route table a session bind serves at its root;
-  `404 not_found` for an unhosted id.
+  `404 not_found` for an id that is neither hosted nor starting. A starting session
+  serves part of the table (below).
+
+#### A starting session
+
+Creation and an `active` patch put the session's id in the host's map as a
+**starting** entry before anything is prepared, and answer then; preparation runs
+in the background (`src/daemon/starting.rs`, `src/daemon/host/preparation.rs`).
+Starting is a lifecycle state beside active and dormant, not a loop phase: no loop
+exists yet. While starting, the session is listed with `status: "starting"` and
+`GET /sessions/:id` answers its row, and its routes are:
+
+- `GET /state` — a smaller snapshot: `last_seq` (`null`) and the three topics a
+  starting session publishes, `verbs`, `queued`, and `starting`. `?wait=settled`
+  waits through the start and then for the session to settle, under the one cap; a
+  failure ends the wait with the starting snapshot carrying it.
+- `GET /events` — those three topics as `state` frames as they move. Once the
+  session starts, the same connection continues into the session's own stream from
+  the request's `since`, whose connect snapshot carries every topic, `starting:
+  null` among them. A failure ends the stream after the frame that carries it.
+- `POST /turns` — the turn is queued (`verbs.turn.delivery` is `queued`) and handed
+  to the session in submission order when it starts, so a turn sent while starting
+  is the first turn the session runs (after a configured `first-turn` kickoff,
+  [context.md](context.md)). A turn naming attachments is refused, since the
+  attachment store is the session's. `DELETE /turns/:submission_id` withdraws from
+  that queue.
+- Every other route answers `409 starting` with a message saying the session is
+  starting, and `verbs` refuses `continue` and `compact` with the same message.
+
+The `starting` topic:
+
+```jsonc
+"starting": {                     // null once the session has started
+  "id": "amber-heron",
+  "cwd": "/work",                 // the project root holding the session
+  "since": 1754300000000,         // absolute Unix millis the preparation began
+  "resume": false,                // reopening a dormant session, not creating one
+  "stage": "environment",         // "environment": the env hook | "preparing": boot
+  "authorizing": null,            // the MCP server whose authorization the dance waits on
+  "failure": {                    // null unless preparation failed
+    "reason": "env: the env hook exited 7",
+    "at": 1754300004000,
+    "withdrawn": [ { "submission_id": "…", "text": "…" } ]   // the turns queued while
+  }                                                           //   starting, as DELETE /turns returns them
+}
+```
+
+**A failure** takes the session out of the map: a creation leaves no directory
+(`boot::prepare` rolls back what it minted) and its id is free again; a resume
+leaves the session dormant, listed with the reason as its `resume_failure`. The
+reasons are preparation's own, verbatim: an env hook failure ([env.md](env.md)),
+a declared MCP server that did not mount, with the `optional = true` fix in the
+message, a config that does not load, the provider lookup. The failed entry still
+answers `/state` and `/events` for five minutes, so a client that attaches after
+the failure reads it; it is not listed, and a turn sent to it is refused with the
+reason. The clients put the withdrawn turns back in a composer and offer a retry
+([tui.md](tui.md), [web-client.md](web-client.md)).
+
+**Archiving** a starting session cancels its preparation, as host shutdown does:
+the env hook's process group is killed, a mount in progress or an authorization
+wait is dropped, and what a creation minted is rolled back as its preparation
+drops.
 
 A client treats its control endpoint as an opaque base, so the session-prefixed
 form and the socket-root form are the same client code with a different base.
@@ -964,7 +1049,9 @@ not a topic — it is the log's cursor rather than control state, and sits outsi
       "cut": 412,                  // the last seq the summary covers
       "since": 1754300050000       // absolute Unix millis at which this state began
     }
-  }
+  },
+  "starting": null                 // always null on a running session; a session still being
+                                   //   prepared publishes it (*A starting session*, above)
 }
 ```
 
@@ -1502,6 +1589,7 @@ returning the same code cannot disagree about the status:
 | `not_found` | 404 | no such notification id, proposal `seq`, process id, or mounted tool name |
 | `gate_moved` | 409 | `PUT /approvals/:call_id` whose id is not the pending gate; `detail` carries the current gate |
 | `not_continuable` | 409 | `POST /loop/continue` at a moment with no continue in it — busy, gated, asking, or a wire tail that means nothing to re-prompt |
+| `starting` | 409 | a route a starting session does not serve: everything but `/state`, `/events`, and `/turns` until it has started (*A starting session*) |
 | `too_large` | 413 | `/files` was asked for a file past the view limit ([web-bind.md](web-bind.md)) |
 | `unsupported_content` | 415 | `/files` was asked for something it does not serve as text — today, a file that is not valid UTF-8 |
 | `internal` | 500 | a log append or config write failed; absent shared state |

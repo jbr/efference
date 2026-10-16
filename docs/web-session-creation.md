@@ -117,7 +117,11 @@ Start is disabled without an issue-free preview for the current draft and while
 creation is in flight. The latter prevents duplicate submissions: creation is
 not idempotent. A refusal keeps the page and edits intact and displays the
 host's reason. During creation the button reads **Starting…**, adding elapsed
-seconds after five seconds. Success opens `/sessions/<id>/`.
+seconds after five seconds. The host answers once it has reserved the session, so
+success opens `/sessions/<id>/` while the session is still being prepared, and a
+preparation that fails is shown there ([web-client.md](web-client.md), "A session
+that is starting"). Its retry reopens this form on the draft that made the session
+(`ui/launchRetry.ts`), with the failure's reason beside **Start session**.
 
 ## Model browsing
 

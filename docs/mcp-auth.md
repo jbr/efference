@@ -122,7 +122,7 @@ what makes the sequence testable.
 
 ## When the dance runs
 
-At boot, inside the mount loop (`src/bin/efference/mcp_mount.rs`), which is the only
+At boot, inside the mount loop (`src/boot/mcp_mount.rs`), which is the only
 place the harness stops and waits for a human mid-startup. Per server:
 
 1. Mount with whatever credentials are stored, refreshing a stale grant first — one
@@ -131,6 +131,15 @@ place the harness stops and waits for a human mid-startup. Per server:
    the boot step has to recognize it among every other way a mount fails, and
    read the challenge out of it), run the dance and mount again with the token.
 3. Anything else is a mount failure like any other: fatal unless `optional = true`.
+
+How a mount meets step 2 is the preparation's `AuthorizationHandling`. On a host the
+session is *starting* while it mounts ([control-api.md](control-api.md), "A starting
+session"): the dance names the server it waits on in the session's `starting` topic
+(`authorizing`) as it begins, and clears it as it ends, so the wait shows in every
+client, and archiving the starting session drops the wait. A preparation that
+`refuse`s authorization — a creation or resume sent with `refuse_authorization`, for
+when nobody may be at the host — never starts the dance: the server's mount fails
+saying it asks for authorization, which is a mount failure like step 3.
 
 `efference dev spotter --tool` mounts through the plain path with no credentials and no
 dance, so a spotter check can never open a browser; a server needing authorization

@@ -115,7 +115,11 @@ parks the connector for login; a `404` marks the session `missing` and stops
 retries. `SessionView` replaces a missing host session's page with the root,
 without a toast, so Back does not return to the absent session. A known handoff
 successor takes precedence over going home. Network failures and other HTTP
-errors stay on the reconnect path rather than triggering navigation.
+errors stay on the reconnect path rather than triggering navigation — the `409
+starting` a starting session answers the catch-up read with among them, so its
+stream opens from zero. A stream that ends after a failed start (the `starting`
+topic carries a `failure`) marks the connection `ended` and stops retries: nothing
+is behind it to reconnect to (*A session that is starting*, below).
 
 ### Earlier transcript windows
 
@@ -1947,6 +1951,28 @@ CSRF is a different threat and is already answered: the session cookie is `Secur
 `HttpOnly`, `SameSite=Strict`, `Path=/` ([web-bind.md](web-bind.md)). A CSRF token
 would not help against injection — script running in this origin can read one out
 of the DOM.
+
+## A session that is starting
+
+Creation and resume answer once the host has reserved the session, so the view opens
+while it is prepared ([control-api.md](control-api.md), "A starting session"). While the
+`starting` topic is set, `ui/StartingBanner.tsx` takes the connection banner's place and
+says what preparation is doing (`ui/startingLine.ts`): running the env hook, loading the
+config and mounting MCP servers, or waiting for a named MCP server to be authorized in a
+browser on the host. The composer works: a turn sent now is queued and is the first the
+session runs. When the topic clears the session has started, and the view reconnects the
+ordinary way — the bounded tail, then the stream from its cursor — rather than reading a
+resumed session's whole log through the stream it opened at zero. The overview lists a
+starting session as working, "is starting".
+
+A failure's banner says why and offers the retry. The turns the failure hands back reach
+the composer the way a recall's do, once per failure. For a resume the retry is the same
+`PATCH` again, then a reconnect on the same view, composer intact. For a creation it is
+**Back to the form**: the form reopens on the draft that made the session
+(`ui/launchRetry.ts`, which keeps each creation's draft by the id it made) with the
+failure's reason beside **Start session**, and the session it next creates receives the
+failed view's composer text. An archived card whose last resume did not start says so,
+with the reason (`resume_failure`).
 
 ## Following a hand-off
 

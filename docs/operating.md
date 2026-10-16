@@ -202,9 +202,10 @@ island. An island leaves the terminal as it found it: while the host starts the 
 shows one status line, erased before the TUI takes the screen, and the host's output goes
 to `host.log`. Echoed before the TUI, it was left on the normal screen when the TUI gave the
 terminal back. The log is printed only when startup fails — the host refuses to start or
-creation fails — where it is the explanation; by default it carries session lifecycle and
-failures, and a creation refusal's detail rides the refusal itself
-([control-channel.md](control-channel.md)). A setup offer that launches the session erases
+refuses the creation — where it is the explanation; by default it carries session lifecycle
+and failures. A creation refusal's detail rides the refusal itself, and a preparation that
+fails after the session is reserved shows its reason in the TUI, which opens on the
+session while it starts ([control-channel.md](control-channel.md)). A setup offer that launches the session erases
 its own questions first (`setup::terminal::Terminal::erase`, which counts the rows its
 prompts leave), keeping only the line naming a file the wizard wrote.
 

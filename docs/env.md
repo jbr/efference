@@ -138,10 +138,13 @@ and what the hook itself inherits; both are taken once, at host start, rather th
 per request.
 
 Creation consults this when a request omits `env`, on every listener: a supplied
-environment is used outright and no hook runs. Establishment is cancelled by host
-shutdown, which fails the creation before an id is minted. A client that
-disconnects does **not** cancel it — the deadline bounds the hook, and the session
-is minted either way.
+environment is used outright and no hook runs. Establishment runs while the session
+is *starting*, after its id is reserved ([control-api.md](control-api.md), "A
+starting session"), and its failure — a nonzero exit, unusable or truncated output,
+the deadline, an unresolvable reference — is that starting session's failure, with
+the reason verbatim and nothing minted. Archiving the starting session or host
+shutdown cancels it, killing the hook's process group. A client that disconnects
+does **not** cancel it — the deadline bounds the hook.
 
 ## Threat model: accidental capture
 

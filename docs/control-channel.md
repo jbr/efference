@@ -152,10 +152,13 @@ listener topology decides where a session request — which carries the caller's
 environment — is accepted, rather than a per-conn check. `POST /sessions` resolves
 the body's `model`, `spotter_model`, and `triage` selections (each optional) against
 the host's `InferenceRegistry` ([transport.md](transport.md)) before anything is
-minted, builds a `SessionRequest` carrying the resolved endpoints, runs
-`boot::prepare`, starts the runtime, and adopts it. The `Host` is constructed with
-the registry its launch loaded; the sessions mutex is not held across creation.
-An MCP authorization opens a browser on the host's machine.
+minted, reserves the id as a starting entry in the host's map and answers, then — on
+a task of its own — establishes the environment, builds a `SessionRequest` carrying
+the resolved endpoints, runs `boot::prepare`, starts the runtime, and adopts it in
+place of the starting entry ([control-api.md](control-api.md), "A starting session").
+The `Host` is constructed with the registry its launch loaded; the sessions mutex is
+not held across preparation. An MCP authorization opens a browser on the host's
+machine.
 
 The host's output is logging, not a transcript. With `RUST_LOG` unset it
 announces session lifecycle — created, resumed, archived, ended (`info`) — and
@@ -165,7 +168,7 @@ the shape the lifecycle announcements set; a session without an id — tests,
 offline — prints unattributed.
 Per-session detail — the boot report, turn-loop chatter, keepalive, model prose
 — logs at `debug`, so `RUST_LOG=efference=debug` restores it; a boot failure's
-detail rides the refusal the create response returns rather than a print. The
+detail rides the starting session's failure rather than a print. The
 one direct print is the interactive MCP authorization prompt. An island host's
 output is its `host.log`, which the
 launcher prints only when startup fails ([operating.md](operating.md));

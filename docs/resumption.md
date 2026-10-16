@@ -241,8 +241,19 @@ person's action ([control-api.md](control-api.md); a compaction before it also e
 belief). Effort and temperature are the header's, so a model that refuses the recorded
 effort refuses the resume.
 
-The PATCH is idempotent. On a live session it answers `200` with `resumed: false`; the
-revival itself answers `resumed: true`. The same id live under a different root is `409`
+The PATCH answers once the session is reserved as **starting**
+([control-api.md](control-api.md), "A starting session"): the environment and
+`boot::resume` run after the answer, the session is listed as `starting` meanwhile, and a
+turn sent then is the first it runs. A resume that fails there leaves the session
+dormant: the starting entry leaves the host's map, its stream ends with the reason, and
+the dormant listing carries the reason as the row's `resume_failure` until a resume starts
+the session. That is not a `problem`: the session reads fine and stays resumable, and a
+retry is the same PATCH. Archiving a session while it is starting cancels the resume and
+ends its log in `Archived` unless that is already its last lifecycle entry, so it reads as
+archived rather than interrupted.
+
+The PATCH is idempotent. On a live or starting session it answers `200` with
+`resumed: false`; the revival itself answers `resumed: true`. The same id live under a different root is `409`
 (`state_mismatch`), and so is a dormant directory whose id the `session_ids` register holds
 under another root ([session-title.md](session-title.md)); a root the register has not seen
 claims the id.
@@ -250,7 +261,8 @@ claims the id.
 `GET /sessions?state=archived` lists the dormant sessions under a root, or under every
 remembered root, from a scan of each log's header, first and last entries and last title
 (`src/inventory.rs`; [log-and-projection.md](log-and-projection.md), "Inventory of dormant
-sessions"). A directory that can't be resumed is listed with a `problem`.
+sessions"). A directory that can't be resumed is listed with a `problem`; a session
+whose last resume on this host failed is listed with its `resume_failure`.
 `GET /sessions/:id` answers one session's row, the hosted listing's for a hosted session
 and this listing's for a dormant one, so a dormant session is addressable by id.
 
@@ -261,7 +273,7 @@ and this listing's for a dormant one, so a dormant session is addressable by id.
   revives the session and attaches; with no host running, it resumes into a terminal
   island ([operating.md](operating.md)).
 - **The TUI's session switcher**: `r` opens the same page (`src/tui/resume_list.rs`) as a
-  modal, and a pick switches to the revived session ([tui.md](tui.md)).
+  modal, and a pick switches to the revived session while it starts ([tui.md](tui.md)).
 - **Web client**: dormant sessions surface on the overview across four continuum bands:
   active cards, recently archived cards (< 1h, capped), compact listed rows (< 1w),
   and a full-screen filterable picker (`?resume=picker&cwd=...`). A top-bar `Resume…`

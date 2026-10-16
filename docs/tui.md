@@ -309,6 +309,7 @@ Contents are **one relevance-ordered list per state** — the state's context ve
 | state | context verbs (most → least relevant) |
 |---|---|
 | idle | *(none; `resume` when held)* |
+| start failed | `retry r` (*A session that is starting*, below) |
 | gate pending | `approve ⏎ · allow… · abort`, with a dim `type below to redirect` note |
 | running — foreground `bash` | `background b · kill ⎋⎋ · pause ⎋` |
 | running — any other tool, or still generating | `interrupt ⎋⎋ · pause ⎋` |
@@ -346,7 +347,7 @@ The focused item fills a reserved marker cell with `▸` (a space when unfocused
 
 `⏎` **switches**. The TUI streams exactly one session, and the per-session contract is one cursor per handshake, so a switch is not a second subscription: the UI loop returns a destination, the entry point (`tui::run`) tears the attach down — aborting the bridge drops the SSE stream, which closes the connection — and re-attaches with the client re-based onto the new prefix over the same transport. `⏎` on the attached row closes the overlay instead, since re-attaching where the client already is would only cost the transcript its scrollback.
 
-The hand-off call itself draws its brief under "to the new session:" as prose rather than as a code-style argument, so it does not read as the agent addressing the operator. A session that hands off (docs/tools.md) is followed: when its `session_identity` names a successor, the TUI leaves by the switcher's own exit and attaches to it, and the successor's transcript opens on the predecessor's brief, drawn as a harness annotation ("⟢ handed off from `<id>` · its brief:") rather than as the operator's turn. `r` opens the **resume page** as a modal over the listing, the way `n` opens the form: archived sessions under the TUI's working root (`GET /sessions?state=archived&cwd=<root>`, [control-api.md](control-api.md)), read through a host command when the key is pressed, with a "reading…" line until they land and the host's error as the note if the read fails. The page is `tui/resume_list.rs`, the same state, filter rule, keys, and rows the bare-`efference` picker's resume page draws (`bin/efference/picker/app.rs`): title, dim id, dim age, a query line filtering on title and id, Esc clearing a non-empty query first. It owns every key while open, Esc and Ctrl-C included; Esc on an empty query closes it back to the listing. `⏎` on a row sends `PATCH /sessions/:id {"state":"active","cwd":<root>}` and shows `resuming <id>…` while the host re-establishes the environment and mounts MCP servers (seconds); on success the TUI switches to the revived session exactly as `⏎` on a live row does, and on failure the page stays with the host's message and the same row can be tried again. `a` **archives**, and is the only destructive thing the TUI can do: the session stops and leaves the list, and its log stays on disk for a later resume. `DELETE /sessions/:id` reaps the session's background processes and removes its scratch, and the host answers only once that teardown has run — so the confirm exists, and its rule is the listing's own two fields: a session that is doing something (`running`, `gated`, `asking`, `stalled`, `parked`) or that holds background processes is confirmed, naming which; an idle session with nothing running is archived on the first press. While a confirm is up it owns every key — `y` or `⏎` goes through, **anything else cancels** — so a mistyped key can only ever back out. Archiving the attached session needs no special case: its stream dies, which is the ordinary disconnect.
+The hand-off call itself draws its brief under "to the new session:" as prose rather than as a code-style argument, so it does not read as the agent addressing the operator. A session that hands off (docs/tools.md) is followed: when its `session_identity` names a successor, the TUI leaves by the switcher's own exit and attaches to it, and the successor's transcript opens on the predecessor's brief, drawn as a harness annotation ("⟢ handed off from `<id>` · its brief:") rather than as the operator's turn. `r` opens the **resume page** as a modal over the listing, the way `n` opens the form: archived sessions under the TUI's working root (`GET /sessions?state=archived&cwd=<root>`, [control-api.md](control-api.md)), read through a host command when the key is pressed, with a "reading…" line until they land and the host's error as the note if the read fails. The page is `tui/resume_list.rs`, the same state, filter rule, keys, and rows the bare-`efference` picker's resume page draws (`bin/efference/picker/app.rs`): title, dim id, dim age, a query line filtering on title and id, Esc clearing a non-empty query first. It owns every key while open, Esc and Ctrl-C included; Esc on an empty query closes it back to the listing. `⏎` on a row sends `PATCH /sessions/:id {"state":"active","cwd":<root>}` and shows `resuming <id>…` until the host answers; on success — once the host has the session starting — the TUI switches to it exactly as `⏎` on a live row does, and a refusal leaves the page with the host's message and the same row to try again; a resume that fails while starting is shown on the session's own view (*A session that is starting*). `a` **archives**, and is the only destructive thing the TUI can do: the session stops and leaves the list, and its log stays on disk for a later resume. `DELETE /sessions/:id` reaps the session's background processes and removes its scratch, and the host answers only once that teardown has run — so the confirm exists, and its rule is the listing's own two fields: a session that is doing something (`running`, `gated`, `asking`, `stalled`, `parked`) or that holds background processes is confirmed, naming which; an idle session with nothing running is archived on the first press. While a confirm is up it owns every key — `y` or `⏎` goes through, **anything else cancels** — so a mistyped key can only ever back out. Archiving the attached session needs no special case: its stream dies, which is the ordinary disconnect.
 
 Esc closes the overlay, and a confirm it was holding goes with it. That is the direction Esc is allowed to move a destructive verb.
 
@@ -424,6 +425,26 @@ The **session drawer** is what used to be a docked right sidebar: closed by defa
 
 **`view` on a process row** jumps transcript focus to the entry the process came from, resolved through the call↔process mapping the daemon carries on each process (`call_id`, [process monitor](process-monitor.md)). The landing target is the entry keyed by that `call_id` — the tool result, which for a backgrounded command is the handoff result naming `p#<n>`, directly under the call that issued it. It closes the drawer, lands the keyboard cursor on that unit, and scrolls it into view; focus is all it does, and the unit's own block menu is one `→` away. Unlike the other row verbs it sends nothing to the daemon — it is this client's focus and nothing else — and it leads the row's verbs so a bare `⏎` on a process reads rather than sending SIGKILL. A process the daemon reported without a `call_id` carries no `view` verb at all, and an entry outside the transcript window the client holds is a status note rather than a jump to some other unit.
 
+
+## A session that is starting
+
+Creation and resume answer once the host has reserved the session, so the TUI attaches
+while the session is still being prepared ([control-api.md](control-api.md), "A starting
+session"; `tui/starting.rs`). The bridge decodes the `starting` topic, and while it is set
+the status line leads with what preparation is doing — `starting — running the env hook`,
+`starting — loading the config and mounting MCP servers`, or `starting — waiting for
+`<server>` to be authorized in a browser on the host` — in the slot the cold line takes on
+a started session. The composer works as anywhere: a turn sent now is queued and is the
+first the session runs, and the `verbs` topic refuses `⏎`-continue and `C-o` with the
+host's message.
+
+A failure keeps the view. The turns the failure hands back go into the composer the way a
+recall's do, the status line reads `did not start: <reason>`, and the stream ending after
+that frame does not close the TUI as a disconnect otherwise would. The strip's one context
+verb is `retry`: for a resume it sends the same `PATCH` again and switches back to the
+session once the host has it starting; for a creation it opens the new-session form, and
+the session that form creates is attached with the composer's text carried over
+(`Exit::SwitchWithDraft`), so the turns reach the session the retry made.
 
 ## Iterating the display without being blind
 
@@ -562,9 +583,10 @@ connection per visit to the picker, so a model released since the last read show
 the time its id is typed. Both containers forward that request (`Action::RefreshCatalog`
 to `HostCmd::Catalog`), and a failed read marks the entry `failed` and keeps its rows.
 
-Creating switches to the new session, the same one-cursor-per-handshake switch `⏎`
-performs. A refused creation keeps the form open with its edits and the host's reason,
-because nothing was minted to reconcile with.
+Creating switches to the new session as soon as the host has reserved it, the same
+one-cursor-per-handshake switch `⏎` performs; the session's preparation shows there
+(*A session that is starting*, below). A refused creation keeps the form open with its
+edits and the host's reason, because nothing was reserved to reconcile with.
 
 The appearance is shared with the bare-`efference` session picker
 (docs/operating.md), which is built on the same pieces: `inline.rs` (raw mode, the inline
