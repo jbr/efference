@@ -229,6 +229,18 @@ in stage 1, before any prefix is consulted. This ordering is what makes a blanke
   program. Re-lexing a handful of keys is free next to parsing the command itself. The
   stance of the **longest** matching key is the answer (below).
 
+**The hand-off's completion.** A `sessions__archive` call that names the caller's own
+predecessor clears on the fast path, ahead of the rungs below it, with no spotter round-trip
+and no `Spot` entry (`judge` in `src/agent/step.rs`, `Toolbox::completes_hand_off`). A hand-off
+is a conversation, and only the successor knows when no clarification remains, so its
+archiving the predecessor is the completion the successor's brief tells it to make
+([tools.md](tools.md), "Hand-off"). The rule reads the host's succession record, written
+at `hand_off` and never taken from the call, so it cannot be pointed at a sibling, a
+descendant, or the predecessor from any session but its successor; those go through the
+ladder as any `archive` does. The record is host state and is not restored on a resume
+or host restart, so across one the archive goes to the spotter as before. The archived log
+stays on disk and resumable.
+
 ### `[commands]`: the stance vocabulary, resolved longest-prefix-wins
 
 A `[commands]` value is a **stance**, spelled with the same four words the spotter's verdict

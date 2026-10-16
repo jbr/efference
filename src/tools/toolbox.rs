@@ -147,6 +147,15 @@ impl Toolbox {
         })
     }
 
+    /// Whether `call` archives this session's own predecessor, by the host's record of
+    /// the hand-off (docs/permissions.md). False when no sessions provider is mounted.
+    pub fn completes_hand_off(&self, call: &ToolCall) -> bool {
+        self.providers.iter().any(|p| match p {
+            Provider::Sessions(s) => s.state.completes_hand_off(call),
+            _ => false,
+        })
+    }
+
     /// Bind a `sessions__approve` call to the leaf action its target holds
     /// (docs/permissions.md). The loop asks the mounted sessions provider, which
     /// holds the in-process host and the caller's identity; a target that is not

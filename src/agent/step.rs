@@ -534,6 +534,12 @@ pub(super) async fn judge<F: Frontend, S: Spotter>(
     if bound.is_some() && policy::tool_granted(&role, &call.name) {
         return Ok(Approval::Approve);
     }
+    // A successor archiving its own predecessor is the hand-off's completion
+    // (docs/permissions.md): the host wrote the link at `hand_off`, so the call clears on
+    // the fast path, before the spotter or the human is asked.
+    if bound.is_none() && toolbox.completes_hand_off(call) {
+        return Ok(Approval::Approve);
+    }
     // The judged call: the child's leaf when bound, else the parent's own call.
     // The id stays the parent's, so the `Spot` audit entry and the gate correlate
     // to the call actually held. The leaf's own directories classify it; the parent's are used otherwise.

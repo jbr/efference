@@ -329,7 +329,10 @@ child is inverted:
   reaches descendants, or sessions the caller supervises": `archive` also reaches the caller's
   own predecessor. The
   successor's identity line says so ([context.md](context.md)); it asks the predecessor what
-  the brief leaves open with `notify` first, if anything.
+  the brief leaves open with `notify` first, if anything. That archive is the hand-off's
+  completion and clears on the fast path, with no spotter request, because the host's
+  succession record names the predecessor ([permissions.md](permissions.md)); the record is
+  not restored after a host restart.
 - **Always the operator's call.** `sessions__hand_off` bypasses the fast path and the spotter
   to the human gate, as a write to the session's own config does (docs/permissions.md).
 

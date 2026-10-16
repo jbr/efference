@@ -343,3 +343,41 @@ async fn a_call_naming_no_tool_is_answered_ahead_of_the_cascade() {
         );
     }
 }
+
+/// An `archive` with no recorded succession behind it is an ordinary gated call: it
+/// reaches the spotter and then the gate, as any other session-control call does
+/// (docs/permissions.md).
+#[tokio::test]
+async fn an_archive_without_a_succession_goes_to_the_spotter() {
+    let shared = parent_with(crate::config::Config::default());
+    let mut frontend = RecordingFrontend {
+        decisions: Vec::new(),
+        decision: Approval::Abort,
+    };
+    let spotter = crate::spotter::StaticSpotter {
+        stance: Stance::Gate,
+        reason: "would gate".into(),
+    };
+    let call = ToolCall::new(
+        crate::control_tools::ARCHIVE_WIRE_NAME,
+        "toolu_archive",
+        serde_json::json!({ "session": "brisk-raven" }),
+    );
+    let approval = super::step::judge(
+        &mut frontend,
+        &shared,
+        &spotter,
+        &Toolbox::bash_only(),
+        1,
+        &call,
+        None,
+    )
+    .await
+    .unwrap();
+    assert_eq!(approval, Approval::Abort);
+    assert_eq!(
+        frontend.decisions.len(),
+        1,
+        "the spotter's gate reached the human"
+    );
+}

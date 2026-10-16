@@ -103,6 +103,11 @@ pub const APPROVE_WIRE_NAME: &str = "sessions__approve";
 /// (docs/permissions.md).
 pub const HAND_OFF_WIRE_NAME: &str = "sessions__hand_off";
 
+/// `archive`'s wire name in a session's toolbox. A call to it naming the caller's own
+/// predecessor is the hand-off's completion and clears on the fast path
+/// (docs/permissions.md).
+pub const ARCHIVE_WIRE_NAME: &str = "sessions__archive";
+
 /// The leaf action a `sessions__approve` call authorizes (docs/permissions.md).
 ///
 /// `sessions__approve` carries only a `call_id`, so the parent's ladder would
@@ -179,6 +184,17 @@ impl Control {
     fn is_cli(&self) -> bool {
         self.cli
     }
+    /// Whether `call` is this session archiving its own predecessor — the session whose
+    /// recorded succession names the caller (docs/permissions.md). Only the in-process
+    /// [`Executor::Host`] knows the caller; the host wrote the link at `hand_off`, so the
+    /// agent cannot assert it.
+    pub(crate) fn completes_hand_off(&self, call: &ToolCall) -> bool {
+        match &self.executor {
+            Executor::Host(state) => state.completes_hand_off(call),
+            Executor::Client(_) => false,
+        }
+    }
+
     /// Resolve a `sessions__approve` call to the leaf action it authorizes
     /// (docs/permissions.md). Only the in-process [`Executor::Host`] can: it knows
     /// the caller and can read the target's pending gate. The HTTP executor never
@@ -313,6 +329,22 @@ impl HostExecutor {
             ));
         }
         Ok(session)
+    }
+
+    /// Whether `call` is an `archive` of the caller's predecessor, by the host's
+    /// succession record. False when the host holds no record — after a host restart the
+    /// link is not restored, so nothing clears here then.
+    fn completes_hand_off(&self, call: &ToolCall) -> bool {
+        if call.name != ARCHIVE_WIRE_NAME {
+            return false;
+        }
+        let Some(target) = call.input.get("session").and_then(Value::as_str) else {
+            return false;
+        };
+        let Ok(host) = self.host() else {
+            return false;
+        };
+        host.predecessor(&self.caller).as_deref() == Some(target)
     }
 
     /// The target for `archive`: a mutating verb's rules, with one more session in

@@ -463,6 +463,49 @@ async fn a_successor_gets_the_brief_and_may_archive_its_predecessor() {
     fixture.host.swansong().shut_down().await;
 }
 
+/// The hand-off's completion clears on the fast path (docs/permissions.md): only an
+/// `archive` of the caller's own predecessor, by the host's record, counts. The same call
+/// naming a sibling or a descendant, or from a session that is not the successor, does not.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn only_a_successors_archive_of_its_predecessor_completes_the_hand_off() {
+    let fixture = Fixture::new();
+    fixture
+        .host
+        .record_succession("parent", "peer", "carry on".into());
+    let toolbox_for = |caller: &str| {
+        let mut toolbox = crate::tools::Toolbox::bash_only();
+        toolbox.mount_sessions(Arc::clone(&fixture.host), caller.to_string());
+        toolbox
+    };
+    let archive = |target: &str| {
+        crate::log::ToolCall::new(
+            crate::control_tools::ARCHIVE_WIRE_NAME,
+            "toolu_1",
+            serde_json::json!({ "session": target }),
+        )
+    };
+
+    assert!(toolbox_for("peer").completes_hand_off(&archive("parent")));
+    // The successor's other targets, and another session's archive of the predecessor.
+    assert!(!toolbox_for("peer").completes_hand_off(&archive("stranger")));
+    assert!(!toolbox_for("peer").completes_hand_off(&archive("child")));
+    assert!(!toolbox_for("child").completes_hand_off(&archive("parent")));
+    assert!(!toolbox_for("stranger").completes_hand_off(&archive("parent")));
+    // The predecessor is not the successor of its successor.
+    assert!(!toolbox_for("parent").completes_hand_off(&archive("peer")));
+    // Another tool naming the predecessor is not the completion.
+    let turn = crate::log::ToolCall::new(
+        "sessions__turn",
+        "toolu_2",
+        serde_json::json!({ "session": "parent" }),
+    );
+    assert!(!toolbox_for("peer").completes_hand_off(&turn));
+    // No sessions provider mounted: nothing clears.
+    assert!(!crate::tools::Toolbox::bash_only().completes_hand_off(&archive("parent")));
+
+    fixture.host.swansong().shut_down().await;
+}
+
 async fn wait_for(what: &str, mut done: impl FnMut() -> bool) {
     for _ in 0..250 {
         if done() {
