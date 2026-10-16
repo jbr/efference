@@ -3,6 +3,8 @@ use crate::log::Stance;
 use questions::{Reading, decide, level_of};
 use serde_json::json;
 
+mod stages;
+
 /// Parse a config from TOML for a test that needs one as an *input* — the
 /// operator's own vocabulary, checked by the real parser.
 fn role(toml: &str) -> Config {

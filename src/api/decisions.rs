@@ -27,7 +27,9 @@ use std::time::Duration;
 use trillium::Status;
 use trillium_client_retry::RetryHandler;
 
+use super::stages::{ActiveTrace, StageSink, Trace};
 use super::*;
+use crate::log::RequestOrigin;
 
 /// How long a decisions request may spend retrying before the spotter gives up
 /// and the gate falls to the human (docs/permissions.md). Far shorter than the
@@ -374,6 +376,47 @@ impl Endpoint {
         state: &Value,
         questions: &BTreeMap<String, Question>,
     ) -> Result<Decisions, Error> {
+        self.decide_traced(None, RequestOrigin::Spot, model, state, questions)
+            .await
+    }
+
+    /// [`Self::decide`], reporting the request's stages to `stages` under `origin`
+    /// (docs/log-and-projection.md): `sent` before the POST, `first_byte` when the
+    /// response arrives, then `ended` once its body parsed, or `failed` with the error.
+    /// The route is one request and one body, so there is no stream to open: the
+    /// response's arrival is the first byte. Retries inside the transport's budget
+    /// record no `attempt_failed`; the retry handler here is not wired to the trace.
+    pub async fn decide_traced(
+        &self,
+        stages: Option<&StageSink>,
+        origin: RequestOrigin,
+        model: &str,
+        state: &Value,
+        questions: &BTreeMap<String, Question>,
+    ) -> Result<Decisions, Error> {
+        let trace = Trace::begin(stages, origin, &ActiveTrace::default());
+        if let Some(trace) = &trace {
+            trace.sent();
+        }
+        let result = self
+            .post_decisions(trace.as_ref(), model, state, questions)
+            .await;
+        if let Some(trace) = trace {
+            match &result {
+                Ok(_) => trace.ended(None),
+                Err(error) => trace.failed(&error.to_string()),
+            }
+        }
+        result
+    }
+
+    async fn post_decisions(
+        &self,
+        trace: Option<&Trace>,
+        model: &str,
+        state: &Value,
+        questions: &BTreeMap<String, Question>,
+    ) -> Result<Decisions, Error> {
         let url = self
             .provider
             .decisions_url(self.base.as_deref())
@@ -414,6 +457,9 @@ impl Endpoint {
         let mut conn = conn
             .await
             .map_err(|e| -> Error { format!("POST {url} failed: {e}").into() })?;
+        if let Some(trace) = trace {
+            trace.first_byte();
+        }
         let status = conn.status();
         let response = conn.response_body().read_string().await?;
         if !status.is_some_and(|s| s.is_success()) {

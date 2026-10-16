@@ -36,7 +36,7 @@
 
 use crate::api::Endpoint;
 use crate::config::Config;
-use crate::log::{Origin, ToolCall};
+use crate::log::{Origin, RequestOrigin, ToolCall};
 use crate::tools::ToolBrief;
 
 use super::{Read, Spotter, Spotting};
@@ -63,6 +63,9 @@ pub struct JevSpot {
     /// this process's: the offline eval replays cases recorded in other checkouts
     /// (docs/permissions.md). `None` falls back to the process cwd as both.
     directories: Option<crate::policy::Directories>,
+    /// Where this spotter's requests report their stages, under
+    /// [`RequestOrigin::Spot`] (docs/log-and-projection.md). `None` records nothing.
+    stages: Option<crate::api::StageSink>,
 }
 
 impl JevSpot {
@@ -72,6 +75,7 @@ impl JevSpot {
             model: model.into(),
             scratch: None,
             directories: None,
+            stages: None,
         }
     }
 
@@ -87,6 +91,10 @@ impl JevSpot {
 }
 
 impl Spotter for JevSpot {
+    fn set_stage_sink(&mut self, sink: crate::api::StageSink) {
+        self.stages = Some(sink);
+    }
+
     async fn assess(
         &self,
         role: &Config,
@@ -115,13 +123,25 @@ impl Spotter for JevSpot {
         let relation_state =
             relation::state(call, dirs.as_ref().map(|d| d.judged_working()).as_deref());
         let relation_questions = relation::questions(&candidates);
-        let cold = self.endpoint.decide(&self.model, &state, &questions);
+        let cold = self.endpoint.decide_traced(
+            self.stages.as_ref(),
+            RequestOrigin::Spot,
+            &self.model,
+            &state,
+            &questions,
+        );
         let relation = async {
             match candidates.is_empty() {
                 true => None,
                 false => Some(
                     self.endpoint
-                        .decide(&self.model, &relation_state, &relation_questions)
+                        .decide_traced(
+                            self.stages.as_ref(),
+                            RequestOrigin::Spot,
+                            &self.model,
+                            &relation_state,
+                            &relation_questions,
+                        )
                         .await,
                 ),
             }

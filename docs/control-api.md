@@ -960,8 +960,9 @@ belonged to the previous host process. Several requests can be open at once (a t
 and the spotter, a background title ask); parallel calls of one completion are all
 in `tools`. Parked waits keep their own topics (`gate`, `ask`, `park`, `stall`,
 `compaction`) and are not repeated here; the topic is `null` rather than empty when
-nothing is open. The decisions-rung spotter, which does not pass through `Client`, reports no
-stages.
+nothing is open. The decisions-rung spotter does not pass through `Client`; its decisions
+request records `sent`, `first_byte` (the response arriving), and `ended` or `failed`
+under the `spot` origin itself, without `attempt_failed` for the transport's retries.
 
 **`stall` distinguishes the idle conditions `running: false` collapses.**
 When a turn's stream-abort budget is exhausted, the request itself fails past

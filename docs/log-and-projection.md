@@ -156,7 +156,10 @@ re-send), `first_byte` (the first stream event), `ended` (the stream finalized),
 about who sent it), or a request future dropped before it
 finished; the reason is capped at 160 characters and passes the `[env]` masker). The
 entry's own `at` is the stage's time. Streaming sub-stages (thinking, text, a tool
-call) are not recorded; the ephemeral `output` class distinguishes them.
+call) are not recorded; the ephemeral `output` class distinguishes them. The
+decision-rung spotter's decisions request (docs/permissions.md) is one POST and one JSON
+body: it records `sent`, `first_byte` when the response arrives, then `ended` or `failed`
+under `spot`, one request id per POST (the cold question set and the relation set are two).
 
 `Interrupt` records where an interrupt came from: `{source?, control?}`, both
 client-asserted labels as `POST /loop/interrupt` received them (`source` spelled as a
