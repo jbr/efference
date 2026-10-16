@@ -51,6 +51,20 @@ impl Session {
         self.log.lock().unwrap().is_closed()
     }
 
+    /// Record a deliberate archive: `Archived` under the turn of the log's last entry,
+    /// so the turn counter a later resume continues from does not move
+    /// (docs/resumption.md).
+    pub(crate) fn append_archived(&self) -> io::Result<Seq> {
+        let turn = self
+            .log
+            .lock()
+            .unwrap()
+            .entries()
+            .last()
+            .map_or(0, |entry| entry.turn);
+        self.append(turn, Payload::Archived {})
+    }
+
     /// Append to the log (durably) and wake SSE tailers. The single appender is
     /// the loop; handlers only read.
     pub fn append(&self, turn: Turn, payload: Payload) -> io::Result<Seq> {

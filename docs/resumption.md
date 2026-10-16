@@ -132,6 +132,19 @@ break the wire. While the batch is pending, an inbox wake does not run the idle 
 (its triage would project the unanswered wire): the notification waits and rides the batch's
 triage.
 
+## Archived and interrupted
+
+Two non-projecting entries record the lifecycle. `Resumed` is appended on a reopen;
+`Archived` is appended when a session is archived on purpose: `DELETE /sessions/:id`,
+`PATCH {"state": "archived"}`, and a child that ends with its creator. It is the last
+append of the archive, after the worktree outcome, under the turn of the log's last
+entry. A host shutdown stops its sessions without appending it, and so does a session
+whose loop ends on its own.
+
+The later of the two is the session's lifecycle. A log whose last lifecycle entry is not
+`Archived` (including one with neither) was open when its host stopped, and the dormant
+listing marks its row `interrupted` (`src/inventory.rs`).
+
 ## The session as a resource
 
 `PATCH /sessions/:id` with `{"state": "active"}` revives a session

@@ -94,6 +94,7 @@ export type Payload =
   | { Preamble: { system: string; context: unknown } }
   | { Title: Title }
   | { Resumed: Resumed }
+  | { Archived: Record<string, never> }
   | { Worktree: WorktreeEvent };
 
 /** One step of the cold check (docs/control-api.md). Not drawn: the `park`

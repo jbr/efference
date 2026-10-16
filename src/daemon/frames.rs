@@ -373,6 +373,7 @@ pub(crate) fn payload_kind(payload: &Payload) -> &'static str {
         Payload::Spot(_) => "spot",
         Payload::Telemetry(telemetry) => telemetry.kind(),
         Payload::Resumed(_) => "resumed",
+        Payload::Archived {} => "archived",
         Payload::ProcessEvent(_) => "process_event",
         Payload::Worktree(_) => "worktree",
         Payload::ImagesRefused { .. } => "images_refused",

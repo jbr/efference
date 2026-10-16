@@ -363,3 +363,79 @@ async fn a_resumed_child_keeps_the_detached_its_header_recorded() {
 
     host.swansong().shut_down().await;
 }
+
+/// A session hosted over a fresh file log at `<roots>/<name>/log.jsonl`.
+fn adopt_logged(host: &Arc<Host>, roots: &Roots, name: &str, created_by: Option<&str>) -> PathBuf {
+    let cwd = roots.0.join(name);
+    std::fs::create_dir_all(&cwd).unwrap();
+    let path = cwd.join("log.jsonl");
+    let mut boot = runtime::boot(&cwd);
+    boot.log = crate::persist::Log::create(&path, None).expect("a fresh log");
+    host.adopt_with(
+        name.into(),
+        SessionRuntime::start(boot, host.swansong()),
+        created_by.map(String::from),
+        false,
+    )
+    .expect("the id is free in this test");
+    path
+}
+
+fn last_payload(path: &Path) -> crate::log::Payload {
+    let recording = crate::persist::load_recording(path).expect("the log loads");
+    recording.entries.last().expect("an entry").payload.clone()
+}
+
+/// An archive is recorded as the log's last entry, and so is the end of a child that
+/// ends with its creator (docs/resumption.md).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_archive_and_a_cascaded_child_end_log_archived() {
+    let roots = Roots::new();
+    let host = Host::new(one_connection_registry(), baseline_env());
+    let creator = adopt_logged(&host, &roots, "creator", None);
+    let child = adopt_logged(&host, &roots, "child", Some("creator"));
+    host.session("creator")
+        .unwrap()
+        .append(3, crate::log::Payload::User(vec![]))
+        .unwrap();
+
+    host.end("creator").expect("hosted").await;
+    for _ in 0..100 {
+        if host.session("child").is_none() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+
+    for path in [&creator, &child] {
+        let recording = crate::persist::load_recording(path).unwrap();
+        let last = recording.entries.last().unwrap();
+        assert!(matches!(last.payload, crate::log::Payload::Archived {}));
+    }
+    let recording = crate::persist::load_recording(&creator).unwrap();
+    let last = recording.entries.last().unwrap();
+    assert_eq!(
+        last.turn, 3,
+        "the archive keeps the turn of the entry before it"
+    );
+
+    host.swansong().shut_down().await;
+}
+
+/// A host shutdown stops its sessions without archiving them: they are what a
+/// restarted host resumes.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_host_shutdown_does_not_log_archived() {
+    let roots = Roots::new();
+    let host = Host::new(one_connection_registry(), baseline_env());
+    let path = adopt_logged(&host, &roots, "open", None);
+    host.session("open")
+        .unwrap()
+        .append(0, crate::log::Payload::User(vec![]))
+        .unwrap();
+
+    host.swansong().shut_down().await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    assert!(matches!(last_payload(&path), crate::log::Payload::User(_)));
+}

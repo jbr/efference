@@ -43,6 +43,7 @@ enum Payload {
     ToolResult { call_id: CallId, raw: RawResult, wire: WireState },
     ResultVerdict { for_result: Seq, wire: WireState },  // the final wire for a `Pending` result (see triage.md)
     Resumed(Resumed),  // the session was reopened by a later host process — projects a restart notice
+    Archived {},       // the session was archived on purpose — never projected (see resumption.md)
     Summary(Summary),  // text replacing a range of the transcript — consolidation or compaction (see summary.md)
     Ambient(Notification),  // an out-of-band notification (see inbox.md)
     Triage(Triage),    // a triage verdict — the audit record (see triage.md)
@@ -108,6 +109,13 @@ and lands in the same user turn after them (resumption.md). Entries
 with a seq after `resumes_after` and before the `Resumed` entry are skipped by
 `project_semantic` (`skipped_seqs`); a log with no such range projects exactly as
 before. Each `Resumed` entry skips its own range.
+
+`Archived` is appended when a session is archived on purpose (`DELETE /sessions/:id`,
+`PATCH {"state": "archived"}`, or a non-detached child ending with its creator), under
+the turn of the log's last entry. It projects to nothing. The later of `Resumed` and
+`Archived` is the session's lifecycle, which tells a deliberate archive from a session
+that was open when its host stopped; a host shutdown appends neither
+([resumption.md](resumption.md)).
 
 `Telemetry` and `ProcessEvent` are log metadata in the same sense timestamps
 are: both project to nothing, which is what lets them be appended mid-session —
@@ -468,6 +476,10 @@ rewrites `usage.jsonl`) is `scripts/migrate-log-v3.py`, and the 3→4 pass (like
 2026-10-02 corpus migration (journal/2026-10-02-resumption-foundation-and-corpus-migration.md)
 — and a file a pass missed is refused as the unsupported version it is.
 
+Adding a payload variant is not a version bump: the one-time `scripts/migrate-log-archived.py`
+appended `Archived` to every existing version 4 log, so the first host that resumes at boot
+reopens none of them.
+
 There is no hash chain over the entries. A chain stored in the file doesn't stop an
 editor from recomputing it or truncating the file, and every migration would have to
 recompute it; tamper evidence would need an independently trusted checkpoint, which is a
@@ -591,8 +603,9 @@ operations, and only the second has to reason about who else may be writing.
 row per directory under `<root>/.efference/` (`GET /sessions?state=archived`,
 [control-api.md](control-api.md)). Per log it reads the header line, the first
 entry, and the last complete entry by seeking from the end, then reads backwards
-in 64 KiB chunks for the last line containing `"Title"` that parses as a
-`Payload::Title`; the log is not loaded whole. `created_at` is the `at` of the
+in 64 KiB chunks for the last `Payload::Title` and the last lifecycle entry
+(`Resumed` or `Archived`), which sets the row's `interrupted`; the log is not loaded
+whole. `created_at` is the `at` of the
 first entry and `last_active_at` the `at` of the last complete one — file mtime
 is not consulted, since a rewrite moves it without any session being active. A
 torn final line without a newline that does not parse is skipped back over (see

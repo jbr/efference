@@ -454,6 +454,8 @@ pub(crate) fn entry_nodes(
             // Read through the transcript view; the placeholder in each result
             // already says what was withheld.
             Payload::ImagesRefused { .. } => {}
+            // Lifecycle record (docs/resumption.md); the session is gone from the TUI.
+            Payload::Archived {} => {}
             // The boot preamble snapshot (docs/context.md) — session boot record,
             // not conversation; the human inspects it via `efference dev wire`, not the transcript.
             Payload::Preamble { .. } => {}

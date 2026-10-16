@@ -54,6 +54,12 @@ pub struct InventoryRow {
     /// `at` of the last complete entry, epoch milliseconds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_active_at: Option<u64>,
+    /// Set when the last lifecycle entry (`Resumed` or `Archived`) is not `Archived`:
+    /// the session was open when its host went away, rather than archived on purpose.
+    /// A log with neither entry is a session that was never resumed or archived, so
+    /// it counts as open too (docs/resumption.md).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub interrupted: bool,
     /// Why this directory is not a readable session, when it is not. A row with
     /// a problem keeps whatever the scan did learn.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -68,6 +74,7 @@ impl InventoryRow {
             title: None,
             created_at: None,
             last_active_at: None,
+            interrupted: false,
             problem: None,
         }
     }
@@ -266,20 +273,28 @@ fn scan_log(log: &Path, id: &str, root: &Path) -> io::Result<(InventoryRow, u64)
         }
     }
 
+    // One backwards pass finds the last title and the last lifecycle entry, and stops
+    // once it has both. A log with no `Resumed` or `Archived` reads to its header.
+    let mut lifecycle = None;
     let mut tail = Tail::new(&file, header_len, len);
     while let Some(line) = tail.next_line()? {
-        if !contains(&line, b"\"Title\"") {
+        let titled = row.title.is_none() && contains(&line, b"\"Title\"");
+        let marked = lifecycle.is_none()
+            && (contains(&line, b"{\"Archived\"") || contains(&line, b"{\"Resumed\""));
+        if !titled && !marked {
             continue;
         }
-        if let Ok(LogEntry {
-            payload: Payload::Title(title),
-            ..
-        }) = parse_entry(&line)
-        {
-            row.title = Some(title.text);
+        match parse_entry(&line).map(|entry| entry.payload) {
+            Ok(Payload::Title(title)) if titled => row.title = Some(title.text),
+            Ok(Payload::Archived {}) => lifecycle = lifecycle.or(Some(false)),
+            Ok(Payload::Resumed(_)) => lifecycle = lifecycle.or(Some(true)),
+            _ => {}
+        }
+        if row.title.is_some() && lifecycle.is_some() {
             break;
         }
     }
+    row.interrupted = lifecycle != Some(false);
     Ok((row, len))
 }
 

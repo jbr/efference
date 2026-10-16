@@ -290,3 +290,61 @@ fn a_refresh_rescans_only_the_log_that_grew() {
     );
     assert_eq!(inventory.scans(), 4);
 }
+
+fn resumed(log: &mut Log) {
+    tick();
+    log.append(
+        0,
+        Payload::Resumed(crate::log::Resumed {
+            gap_ms: 1,
+            lost_processes: Vec::new(),
+            resumes_after: None,
+            pending_calls: Vec::new(),
+        }),
+    )
+    .unwrap();
+}
+
+#[test]
+fn the_last_lifecycle_entry_says_whether_a_session_was_interrupted() {
+    let root = Root::new("lifecycle");
+    let mut never = root.session("never");
+    title(&mut never, "never");
+    let mut archived = root.session("archived");
+    tick();
+    archived.append(0, Payload::Archived {}).unwrap();
+    let mut reopened = root.session("reopened");
+    tick();
+    reopened.append(0, Payload::Archived {}).unwrap();
+    resumed(&mut reopened);
+    let mut again = root.session("again");
+    resumed(&mut again);
+    tick();
+    again.append(0, Payload::Archived {}).unwrap();
+    // A title after the archive does not hide it.
+    title(&mut again, "late title");
+    drop((never, archived, reopened, again));
+
+    let rows = Inventory::new().refresh(&root.0);
+    assert!(row(&rows, "never").interrupted);
+    assert!(!row(&rows, "archived").interrupted);
+    assert!(row(&rows, "reopened").interrupted);
+    let again = row(&rows, "again");
+    assert!(!again.interrupted);
+    assert_eq!(again.title.as_deref(), Some("late title"));
+}
+
+#[test]
+fn a_lifecycle_word_inside_text_is_not_a_lifecycle_entry() {
+    let root = Root::new("lifecycle-text");
+    let mut log = root.session("quoted");
+    log.append(
+        0,
+        Payload::User(vec![ContentBlock::Text("\"Archived\" {\"Resumed\"".into())]),
+    )
+    .unwrap();
+    drop(log);
+
+    let rows = Inventory::new().refresh(&root.0);
+    assert!(row(&rows, "quoted").interrupted);
+}

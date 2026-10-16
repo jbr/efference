@@ -425,7 +425,7 @@ impl Masker {
             // The provider's error text, which may quote the request back.
             Payload::ImagesRefused { refusal } => self.mask_in_place(refusal),
             // A gap, handle ids, and call ids: nothing from the environment.
-            Payload::Resumed(_) => {}
+            Payload::Resumed(_) | Payload::Archived {} => {}
             // A process lifecycle record (docs/process-monitor.md) carries one piece
             // of free text — the command line, which is exactly where an
             // interpolated secret would ride (docs/env.md). The rest is an

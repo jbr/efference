@@ -195,6 +195,14 @@ pub enum Payload {
     /// long the session sat, which background processes it no longer monitors, and
     /// which calls were dropped because they started and never returned.
     Resumed(Resumed),
+    /// The session was archived on purpose (`DELETE /sessions/:id`, `PATCH {"state":
+    /// "archived"}`, or the end of its creator): the counterpart of [`Resumed`]. The later
+    /// of the two is the session's lifecycle, which a host restart reads to tell a
+    /// deliberate archive from a session interrupted by the host's loss
+    /// (docs/resumption.md). Projects to nothing, like [`Telemetry`].
+    ///
+    /// [`Telemetry`]: Payload::Telemetry
+    Archived {},
     /// Text that replaces a range of the transcript, made by the agent's
     /// `consolidate` call or by the harness's compaction (docs/summary.md).
     /// Projects the text where the range ends and elides the range

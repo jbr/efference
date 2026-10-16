@@ -206,3 +206,21 @@ fn telemetry_nests_under_one_key() {
         Payload::Telemetry(Telemetry::CallStarted { call_id }) if call_id == CallId::from("toolu_a")
     ));
 }
+
+/// `scripts/migrate-log-archived.py` appends this exact line to an existing log, so the
+/// serialized form of an `Archived` entry is pinned here.
+#[test]
+fn an_archived_entry_has_a_stable_json_shape() {
+    let entry = LogEntry {
+        seq: 8,
+        turn: 2,
+        at: Timestamp(1_782_260_379_694),
+        submission_id: None,
+        source: None,
+        payload: Payload::Archived {},
+    };
+    assert_eq!(
+        serde_json::to_string(&entry).unwrap(),
+        r#"{"seq":8,"turn":2,"at":1782260379694,"payload":{"Archived":{}}}"#
+    );
+}

@@ -389,7 +389,12 @@ impl Host {
             } else {
                 None
             };
-            // The retirement above is the last append. Closing here rather than at
+            // A deliberate archive is recorded last, so a restarted host leaves the
+            // session dormant (docs/resumption.md); a host shutdown records nothing.
+            if archiving && let Err(e) = hosted.session.append_archived() {
+                log::warn!("session {id}: could not log the archive: {e}");
+            }
+            // The archive record is the last append. Closing here rather than at
             // the `Session`'s drop is what lets a resume follow the archive at once:
             // an open SSE stream or a handler can still be holding the session.
             hosted.session.close_log();

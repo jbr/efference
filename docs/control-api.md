@@ -96,10 +96,12 @@ sessions from one process. Its own routes are the listener's, not a session's:
   collection filtered by the lifecycle word `PATCH /sessions/:id` carries. `state`
   absent or `active` is the listing above; any other value is `400`. The answer is a
   JSON array, most recently active first, of
-  `{"id", "cwd", "state": "archived", "title"?, "created_at"?, "last_active_at"?, "problem"?}`
+  `{"id", "cwd", "state": "archived", "title"?, "created_at"?, "last_active_at"?, "interrupted"?, "problem"?}`
   — one row per directory under `<cwd>/.efference/`, read from the logs on disk
   ([log-and-projection.md](log-and-projection.md), "Inventory of dormant sessions").
-  `created_at` and `last_active_at` are epoch milliseconds from entries, and a row
+  `created_at` and `last_active_at` are epoch milliseconds from entries; `interrupted` is
+  present, as `true`, when the log's last lifecycle entry is not `Archived` (the session
+  was open when its host stopped, not archived on purpose). A row
   carrying a `problem` is a directory that could not be read as a session (no log,
   an empty one, a header this build does not read, an entry line that does not
   parse); it keeps whatever was learned and sorts last. Without `cwd` the answer
