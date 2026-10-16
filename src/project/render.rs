@@ -47,7 +47,7 @@ pub fn render_triaged(content: &str, verdict: &Triaged) -> String {
         ranges,
         dropped,
     } = selection(content, &verdict.keep);
-    let mut out = render_hunks(&shown, &ranges, verdict);
+    let mut out = render_hunks(&shown, &ranges, verdict, shown.len() + dropped);
     if dropped > 0 {
         out.push('\n');
         out.push_str(&format!("… [{dropped} more lines truncated before triage]"));
@@ -106,7 +106,7 @@ pub fn selection<'c>(content: &'c str, keep: &Keep) -> Selection<'c> {
 /// span (`@@ line n @@` for one line), then those lines *verbatim* (unnumbered). The
 /// header carries the position anchor at one line per *range*; gaps between hunks are
 /// implied by the jump in the headers, as in a unified diff, and a closing
-/// `@@ n lines total @@` follows when the last range stops before the last line with
+/// `@@ n lines total @@` (`total` counts lines the cap dropped before triage too) follows when the last range stops before the last line with
 /// content. A verdict that keeps nothing opens with [`NOTHING_KEPT`] before any note. The verdict's optional
 /// trailing note is the breadcrumb kept even when nothing is retained
 /// (docs/triage.md) — one overall note, so it survives the empty-hunks case.
@@ -114,7 +114,12 @@ pub fn selection<'c>(content: &'c str, keep: &Keep) -> Selection<'c> {
 /// fixed `re your intent:` lead, so the agent reads it as the curator's remark about the
 /// channel rather than about the output. `ranges` is passed resolved rather than read
 /// off `verdict.keep`, since the caller has already clamped it against the cap.
-pub(super) fn render_hunks(lines: &[&str], ranges: &[(usize, usize)], verdict: &Triaged) -> String {
+pub(super) fn render_hunks(
+    lines: &[&str],
+    ranges: &[(usize, usize)],
+    verdict: &Triaged,
+    total: usize,
+) -> String {
     let ranges = normalize(ranges, lines.len());
     // The last line with content. Blank lines after it carry nothing to cut, so a
     // range reaching it covers the result (the shape `read`'s frame produces ends in
@@ -144,7 +149,7 @@ pub(super) fn render_hunks(lines: &[&str], ranges: &[(usize, usize)], verdict: &
     // Nothing marks the cut after the last range otherwise: the headers only show
     // jumps between ranges.
     if !spans_everything && ranges.last().is_some_and(|&(_, end)| end < content_end) {
-        parts.push(format!("@@ {} lines total @@", lines.len()));
+        parts.push(format!("@@ {total} lines total @@"));
     }
     if let Some(note) = verdict
         .note

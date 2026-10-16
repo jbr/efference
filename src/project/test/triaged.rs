@@ -13,10 +13,15 @@ fn verdict(keep: Keep, note: Option<&str>, intent_feedback: Option<&str>) -> Tri
     }
     v
 }
-use crate::project::render::{normalize, render_hunks};
+use crate::project::render::normalize;
 
 fn lines(s: &str) -> Vec<&str> {
     s.lines().collect()
+}
+
+/// `render_hunks` over lines that were all shown to triage.
+fn render_hunks(lines: &[&str], ranges: &[(usize, usize)], verdict: &Triaged) -> String {
+    crate::project::render::render_hunks(lines, ranges, verdict, lines.len())
 }
 
 /// The canonical render over a stored verdict (docs/triage.md): `all` is the
@@ -70,6 +75,16 @@ fn render_triaged_truncates_past_the_cap() {
     assert!(
         !past.contains(&format!("line{}", TRIAGE_LINE_CAP + 3)),
         "beyond-cap line unreachable: {past}"
+    );
+
+    // The closing marker's total includes the lines the cap dropped.
+    let cut = render_triaged(&body, &verdict(Keep::Ranges(vec![(1, 10)]), None, None));
+    let total = TRIAGE_LINE_CAP + 5;
+    assert!(
+        cut.ends_with(&format!(
+            "@@ {total} lines total @@\n… [5 more lines truncated before triage]"
+        )),
+        "{cut}"
     );
 }
 
