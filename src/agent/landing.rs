@@ -1,4 +1,4 @@
-//! Landing a batch's outcomes (docs/redaction-fork.md): the gate over its results, the
+//! Landing a batch's outcomes (docs/triage.md): the gate over its results, the
 //! inbox triage that rides it, and the log entries that follow, in call order.
 
 use super::*;
@@ -15,7 +15,7 @@ pub(super) async fn land(
     primer: Option<TriagePrimerOutcome>,
 ) -> Result<(), Error> {
     let mut turn = *turn_at;
-    // The gate (docs/redaction-fork.md): one peek over every result this
+    // The gate (docs/triage.md): one peek over every result this
     // completion produced. Nothing to triage means no round-trip.
     let pending: Vec<Pending<'_>> = steps
         .iter()
@@ -63,7 +63,7 @@ pub(super) async fn land(
         // A gate that is only `ask` replies has no peek to carry the inbox
         // (docs/supervisor.md): triage runs after the results are logged, below,
         // and takes the must-wake pins with it.
-        if crate::distill::reply_only_gate(&pending) {
+        if crate::triage::reply_only_gate(&pending) {
             deferred = Some((shown.clone(), shared.bg_snapshot(), forced));
         } else {
             forced_pins = forced;
@@ -72,12 +72,12 @@ pub(super) async fn land(
         // (docs/supervisor.md) — re-sampled now, never logged unless pinned.
         let background = shared.bg_snapshot();
         // A gate without a verdict holds rather than reaching the agent
-        // (docs/redaction-fork.md): the stall names it, and the operator's
+        // (docs/triage.md): the stall names it, and the operator's
         // continue runs the gate again from the top.
         let mut carried = Carried::default();
         Some(loop {
             match distiller
-                .distill(client, tools, &entries, &pending, &shown, &background)
+                .triage_results(client, tools, &entries, &pending, &shown, &background)
                 .await
             {
                 Ok(outcome) => break carried.onto(outcome),
@@ -157,7 +157,7 @@ pub(super) async fn land(
 
     // Append in call order: each step's own payloads, and for a triaged result
     // its `ToolResult` followed by the `Triage` audit entry keyed to that
-    // result's seq (docs/redaction-fork.md). The gate-scoped riders — inbox
+    // result's seq (docs/triage.md). The gate-scoped riders — inbox
     // dispositions and surfaced context — ride the **last** `Triage` of the batch:
     // they were decided once for the whole step, and tail-ward placement keeps the
     // wire append-only (docs/inbox.md), which is exactly where they already land
@@ -173,14 +173,14 @@ pub(super) async fn land(
         .unwrap_or_default();
     // Gate-scoped like the inbox riders: the non-compliant-attempt breadcrumbs
     // land on the last `Triage` of the batch — durable even when a retry
-    // recovered (docs/redaction-fork.md).
+    // recovered (docs/triage.md).
     let mut retries = gate
         .as_mut()
         .map(|g| std::mem::take(&mut g.retries))
         .unwrap_or_default();
     // Gate-scoped for the same reason: one peek reasoned about the whole batch,
     // so its thinking rides the last `Triage` rather than being copied per
-    // result (docs/redaction-fork.md).
+    // result (docs/triage.md).
     let mut thinking = gate
         .as_mut()
         .map(|g| std::mem::take(&mut g.thinking))
@@ -194,14 +194,14 @@ pub(super) async fn land(
         match step {
             Step::Direct => {
                 // Its payloads went down as the step was decided, with a verdict already
-                // in them or none needed (docs/redaction-fork.md).
+                // in them or none needed (docs/triage.md).
             }
             Step::Ran {
                 result_seq,
                 handoff,
                 ..
             } => {
-                // The verdict, appended against the result it decides (docs/redaction-fork.md):
+                // The verdict, appended against the result it decides (docs/triage.md):
                 // the output is on the log from the moment it existed, so what lands now is
                 // the decision alone and the two can never disagree about it.
                 //

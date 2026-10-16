@@ -327,7 +327,7 @@ orientation `exec` entry.
   snapshot, sort order is a pure semantic choice, never a stability constraint. The entry
   also carries the **structured** `Resolved` listing (the `Section`/`Item` tree) beside the
   flat string — additive, so the byte-exact string stays the wire truth while the structure
-  survives as a fold for the surfacing rider ([redaction-fork.md](redaction-fork.md)).
+  survives as a fold for the surfacing rider ([triage.md](triage.md)).
   The same boot entry carries the session's fixed connection/provider/native-model
   identity as unprojected metadata; offline readers derive wire placement from it
   rather than from the current config.

@@ -1,8 +1,8 @@
 use super::*;
 use crate::log::Telemetry;
 use crate::log::{
-    AssistantOutput, ConfigEdit, ContentBlock, Disposition, Distilled, Keep, Notification, Origin,
-    Timestamp, ToolTelemetry, Triage,
+    AssistantOutput, ConfigEdit, ContentBlock, Disposition, Keep, Notification, Origin, Timestamp,
+    ToolTelemetry, Triage, Triaged,
 };
 
 fn entry(seq: u64, payload: Payload) -> LogEntry {
@@ -73,7 +73,7 @@ fn a_turn_renders_prose_calls_and_verdicts_without_bodies() {
             Payload::tool_result(
                 "toolu_1",
                 RawResult::text(big.clone()),
-                Distilled::new(Keep::Ranges(vec![(10, 14)]))
+                Triaged::new(Keep::Ranges(vec![(10, 14)]))
                     .with_note("the enum")
                     .into(),
             ),
@@ -81,7 +81,7 @@ fn a_turn_renders_prose_calls_and_verdicts_without_bodies() {
         entry(
             4,
             assistant(
-                "Four variants.\nRaw, Distilled, Elided, TriageFailed.",
+                "Four variants.\nRaw, Triaged, Elided, TriageFailed.",
                 vec![],
             ),
         ),
@@ -93,7 +93,7 @@ fn a_turn_renders_prose_calls_and_verdicts_without_bodies() {
          \x20     2 call      read paths=\"[\\\"src/log.rs\\\"]\"  intent: Find WireState\n\
          \x20     3 result    ok 310 B, kept 5/40 lines: the enum\n\
          \x20     4 assistant Four variants.\n\
-         \x20                 Raw, Distilled, Elided, TriageFailed.\n"
+         \x20                 Raw, Triaged, Elided, TriageFailed.\n"
     );
     assert!(
         !text.contains("line 12"),

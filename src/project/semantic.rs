@@ -10,7 +10,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use super::{Reader, extract_boundaries, render_distilled, render_triage_failure};
+use super::{Reader, extract_boundaries, render_triage_failure, render_triaged};
 use crate::api::WireDialect;
 use crate::context::Item;
 use crate::log::{
@@ -145,12 +145,12 @@ pub fn render_result(
     let (content, is_error) = match wire {
         WireState::Raw => (raw.content.clone(), raw.is_error),
         WireState::Pending => ("[awaiting triage]".to_string(), false),
-        WireState::Distilled(verdict) => (render_distilled(&raw.content, verdict), raw.is_error),
+        WireState::Triaged(verdict) => (render_triaged(&raw.content, verdict), raw.is_error),
         WireState::Elided => ("[elided]".to_string(), false),
         WireState::TriageFailed { why } => (render_triage_failure(why), true),
     };
     let images = match wire {
-        WireState::Raw | WireState::Distilled(_) => raw.images.clone(),
+        WireState::Raw | WireState::Triaged(_) => raw.images.clone(),
         WireState::Pending | WireState::Elided | WireState::TriageFailed { .. } => Vec::new(),
     };
     UserPart::ToolResult {
@@ -214,7 +214,7 @@ pub fn project_semantic_for(log: &[LogEntry], reader: Reader) -> Vec<WireTurn> {
         })
         .collect();
     // The `[context]` listing by item name — (description, path) for each read-on-demand
-    // stub — so a `Triage` can re-render a surfaced context item (docs/redaction-fork.md)
+    // stub — so a `Triage` can re-render a surfaced context item (docs/triage.md)
     // at cache-read cost, mirroring the notification body map. Sourced from the last boot
     // `Preamble`'s structured snapshot (context.md); only looked up by name, so `HashMap`
     // order can't reach the wire.
@@ -422,7 +422,7 @@ pub fn project_semantic_for(log: &[LogEntry], reader: Reader) -> Vec<WireTurn> {
             // A fork verdict emits a block per **pinned** notification and per
             // **surfaced** context item at its own position — notification bodies
             // looked up from the `Ambient` arrival (docs/inbox.md), surfaced items
-            // re-rendered from the boot listing (docs/redaction-fork.md). This
+            // re-rendered from the boot listing (docs/triage.md). This
             // tail-ward placement keeps the wire append-only: content acknowledged
             // at a later gate than its origin never splices behind a breakpoint
             // (docs/log-and-projection.md). Dismissed / left / already-surfaced

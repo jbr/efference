@@ -4,7 +4,7 @@
 //! session runs long. The raw transcript survives in the log for reversibility.
 //!
 //! It acts on the **log**, not the world: it produces a
-//! `Mark`, not a [`RawResult`] to distill, so the loop handles it structurally
+//! `Mark`, not a [`RawResult`] to triage, so the loop handles it structurally
 //! (`agent.rs`) rather than through the world-facing [`Toolbox`].
 //!
 //! [`Mark`]: crate::log::Mark
@@ -32,7 +32,7 @@ pub const NAME: &str = "consolidate";
 /// reversible in the log but not on the wire, and neither honest answer fits a
 /// one-bit hint.
 ///
-/// Framed per the **"distillate IS the output"** lesson (docs/redaction-fork.md): the
+/// Framed per the **"selection IS the output"** lesson (docs/triage.md): the
 /// summary *becomes* the record — deliberately no "you can re-read it later", which
 /// manufactured anxiety and over-dropping when the peek believed its work was
 /// recoverable. The raw transcript does survive in the log, but that is an

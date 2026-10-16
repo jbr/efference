@@ -1,7 +1,7 @@
-//! Tool-result rendering: whole results, distilled verdicts, and errors.
+//! Tool-result rendering: whole results, triaged verdicts, and errors.
 
 use super::*;
-use crate::log::Distilled;
+use crate::log::Triaged;
 
 /// The baseline for how a tool call and its result render: the call's command as a
 /// shell block, the result whole under its own status header.
@@ -175,14 +175,14 @@ fn transcript_read_image_call() {
     );
 }
 
-/// A distilled tool result — the `WireState::Distilled` path, where the
+/// A triaged tool result — the `WireState::Triaged` path, where the
 /// transcript shows the curated summary in place of the raw output.
 #[test]
-fn transcript_distilled_result() {
+fn transcript_triaged_result() {
     let mut play = Screenplay::new(80, 24);
     play.user("Summarize the dependency tree.");
     play.assistant(
-        "Pulling the tree, then I'll distill it.",
+        "Pulling the tree, then I'll triage it.",
         vec![ToolCall::new(
             "bash",
             "toolu_03",
@@ -193,19 +193,19 @@ fn transcript_distilled_result() {
         "toolu_03",
         "efference v0.1.0\n├── anyhow v1.0.86\n├── clap v4.5.4\n│   ├── …600 more lines…",
         false,
-        WireState::from(Distilled::new(Keep::None).with_note(
+        WireState::from(Triaged::new(Keep::None).with_note(
             "12 direct deps; heaviest subtrees are tokio and trillium. Nothing outdated.",
         )),
     );
-    play.snapshot("transcript_distilled_result");
+    play.snapshot("transcript_triaged_result");
 }
 
 /// Triage's request for a better intent renders as a second annotation after the
 /// note, under the same `⟢` sign with its `re your intent:` lead — rare, and shown by
 /// default because "triage couldn't tell what you wanted" is useful to a human on its
-/// own (docs/redaction-fork.md).
+/// own (docs/triage.md).
 #[test]
-fn transcript_distilled_result_shows_intent_feedback() {
+fn transcript_triaged_result_shows_intent_feedback() {
     let mut play = Screenplay::new(80, 20);
     play.user("Look around.");
     play.assistant(
@@ -222,14 +222,14 @@ src
 docs",
         false,
         WireState::from(
-            Distilled::new(Keep::All)
+            Triaged::new(Keep::All)
                 .with_note("3 entries: Cargo.toml, src, docs")
                 .with_intent_feedback(
                     "it said what the call does, not what you needed; kept everything",
                 ),
         ),
     );
-    play.snapshot("transcript_distilled_result_with_intent_feedback");
+    play.snapshot("transcript_triaged_result_with_intent_feedback");
 }
 
 /// When triage kept every line, the header presents the result like any whole
@@ -237,7 +237,7 @@ docs",
 /// triage ran; nothing on screen may imply the operator is seeing less than
 /// the model did, and here they are not.
 #[test]
-fn transcript_complete_distillate_shows_a_plain_size() {
+fn transcript_complete_selection_shows_a_plain_size() {
     let mut play = Screenplay::new(80, 22);
     play.user("Tail the log.");
     play.assistant(
@@ -252,11 +252,11 @@ fn transcript_complete_distillate_shows_a_plain_size() {
         "toolu_k1",
         "line one\nline two\nline three",
         false,
-        WireState::from(Distilled::new(Keep::All)),
+        WireState::from(Triaged::new(Keep::All)),
     );
 
     let frame = play.render();
-    play.snapshot("transcript_complete_distillate_shows_a_plain_size");
+    play.snapshot("transcript_complete_selection_shows_a_plain_size");
     assert!(
         frame.contains("result") && !frame.contains("result ("),
         "a kept-everything result is a bare `result`, like any whole one:\n{frame}"
@@ -267,11 +267,11 @@ fn transcript_complete_distillate_shows_a_plain_size() {
     );
 }
 
-/// A distilled result shows the **triaged** lines, for every tool — the default
+/// A triaged result shows the **triaged** lines, for every tool — the default
 /// view is the agent's view (docs/tui.md). Triage kept only the prose line here, so
 /// the diff section is gone and what survived renders numbered.
 #[test]
-fn a_partial_distillate_of_an_edit_shows_the_triaged_lines() {
+fn a_partial_selection_of_an_edit_shows_the_triaged_lines() {
     let mut play = Screenplay::new(80, 24);
     play.user("Add the line.");
     play.assistant(
@@ -293,13 +293,13 @@ fn a_partial_distillate_of_an_edit_shows_the_triaged_lines() {
          \x20- Interactive TUI (`efference tui`).",
         false,
         WireState::from(
-            Distilled::new(Keep::Ranges(vec![(1, 1)]))
+            Triaged::new(Keep::Ranges(vec![(1, 1)]))
                 .with_note("inserted the read line-range entry"),
         ),
     );
 
     let frame = play.render();
-    play.snapshot("transcript_partial_distillate_of_an_edit");
+    play.snapshot("transcript_partial_selection_of_an_edit");
     assert!(
         !frame.contains("+- `read` tool line-range support"),
         "the dropped diff lines are not shown — the agent doesn't have them:\n{frame}"
@@ -340,7 +340,7 @@ fn a_partly_kept_diff_is_still_a_diff() {
          +- `read` tool line-range support in `fs-mcp`.\n\
          \x20- Interactive TUI (`efference tui`).",
         false,
-        WireState::from(Distilled::new(Keep::Ranges(vec![(4, 6)]))),
+        WireState::from(Triaged::new(Keep::Ranges(vec![(4, 6)]))),
     );
 
     let frame = play.render();
@@ -359,12 +359,12 @@ fn a_partly_kept_diff_is_still_a_diff() {
     );
 }
 
-/// A distillate that dropped nothing is the same case, and the one that surfaced it:
+/// A selection that dropped nothing is the same case, and the one that surfaced it:
 /// the fork returns `retain(all)` more often than not, and that was turning an
 /// edit's colored diff into verbatim text with a bare `===DIFF===` line sitting in
 /// the middle of it. Nothing was dropped here, so there is no divergence to state.
 #[test]
-fn a_complete_distillate_keeps_its_per_tool_rendering() {
+fn a_complete_selection_keeps_its_per_tool_rendering() {
     let mut play = Screenplay::new(80, 22);
     play.user("Add the line.");
     play.assistant(
@@ -389,11 +389,11 @@ fn a_complete_distillate_keeps_its_per_tool_rendering() {
          +- `read` tool line-range support in `fs-mcp`.\n\
          \x20- Interactive TUI (`efference tui`).",
         false,
-        WireState::from(Distilled::new(Keep::All)),
+        WireState::from(Triaged::new(Keep::All)),
     );
 
     let frame = play.render();
-    play.snapshot("transcript_complete_distillate_of_an_edit");
+    play.snapshot("transcript_complete_selection_of_an_edit");
     assert!(
         !frame.contains("===DIFF==="),
         "the marker is consumed by the diff renderer, not printed:\n{frame}"
@@ -409,12 +409,12 @@ fn a_complete_distillate_keeps_its_per_tool_rendering() {
     );
 }
 
-/// A distillate that keeps **non-contiguous** ranges renders them as numbered
+/// A selection that keeps **non-contiguous** ranges renders them as numbered
 /// lines, with the gaps stated by the jump in the gutter rather than by a
 /// `@@ lines a-b @@` header (docs/tui.md). The wire still gets the headers — it has
 /// only text to say it with; a terminal has a gutter.
 #[test]
-fn transcript_distilled_keeps_numbered_lines() {
+fn transcript_triaged_keeps_numbered_lines() {
     let mut play = Screenplay::new(80, 24);
     play.user("Which tests failed?");
     play.assistant(
@@ -438,13 +438,13 @@ fn transcript_distilled_keeps_numbered_lines() {
         &output,
         false,
         WireState::from(
-            Distilled::new(Keep::Ranges(vec![(7, 7), (22, 23)]))
+            Triaged::new(Keep::Ranges(vec![(7, 7), (22, 23)]))
                 .with_note("2 failures, both in the tui wrap/gutter work."),
         ),
     );
 
     let frame = play.render();
-    play.snapshot("transcript_distilled_keeps_numbered_lines");
+    play.snapshot("transcript_triaged_keeps_numbered_lines");
     assert!(
         !frame.contains("@@"),
         "no hunk headers in the TUI form:\n{frame}"
@@ -455,16 +455,16 @@ fn transcript_distilled_keeps_numbered_lines() {
     );
 }
 
-/// The same distilled result after flipping it to raw (`r`, docs/tui.md): the
+/// The same triaged result after flipping it to raw (`r`, docs/tui.md): the
 /// header gains a `· raw` marker and the body shows the full raw output the
-/// distillate replaced — the human's escape hatch back to what the tool actually
+/// selection replaced — the human's escape hatch back to what the tool actually
 /// returned, a pure client-side re-render (both forms are already local).
 #[test]
-fn transcript_raw_view_of_distilled() {
+fn transcript_raw_view_of_triaged() {
     let mut play = Screenplay::new(80, 24);
     play.user("Summarize the dependency tree.");
     play.assistant(
-        "Pulling the tree, then I'll distill it.",
+        "Pulling the tree, then I'll triage it.",
         vec![ToolCall::new(
             "bash",
             "toolu_03",
@@ -476,12 +476,12 @@ fn transcript_raw_view_of_distilled() {
         "efference v0.1.0\n├── anyhow v1.0.86\n├── clap v4.5.4\n└── tokio v1.38.0",
         false,
         WireState::from(
-            Distilled::new(Keep::None)
+            Triaged::new(Keep::None)
                 .with_note("12 direct deps; tokio + trillium are the heaviest."),
         ),
     );
     play.show_raw("toolu_03");
-    play.snapshot("transcript_raw_view_of_distilled");
+    play.snapshot("transcript_raw_view_of_triaged");
 }
 
 /// The file tools render tool-specifically: `read`/`search`/`list` calls show
@@ -541,7 +541,7 @@ fn transcript_file_tools() {
     play.snapshot("transcript_file_tools");
 }
 
-/// A distilled `read` keeps its per-tool rendering too — sentinel framing dropped,
+/// A triaged `read` keeps its per-tool rendering too — sentinel framing dropped,
 /// highlighted by extension — over just the kept lines, in a gutter numbered by the
 /// *result's* line numbers (the coordinate system the verdict was expressed in, so
 /// the operator's view and the agent's name the same lines).
@@ -567,7 +567,7 @@ fn a_partly_kept_read_keeps_its_highlighting() {
              ==MK7 END /Users/jbr/code/efference/src/tui/state.rs MK7==",
         false,
         WireState::from(
-            Distilled::new(Keep::Ranges(vec![(2, 3)]))
+            Triaged::new(Keep::Ranges(vec![(2, 3)]))
                 .with_note("the struct head and its first field"),
         ),
     );
@@ -612,7 +612,7 @@ fn transcript_error_result() {
     play.snapshot("transcript_error_result");
 }
 
-/// A `WireState::TriageFailed` result (docs/redaction-fork.md) surfaces to the
+/// A `WireState::TriageFailed` result (docs/triage.md) surfaces to the
 /// operator like a failed call: the error prompt shows even though the tool itself
 /// succeeded (`is_error: false` on the raw), the withheld message is on screen, and
 /// the untriaged raw is not.
@@ -650,7 +650,7 @@ fn a_triage_failed_result_reads_as_a_failed_call() {
     );
 }
 
-/// A recovered in-fork retry is not silent (docs/redaction-fork.md): the `Triage`
+/// A recovered in-fork retry is not silent (docs/triage.md): the `Triage`
 /// entry's `retries` breadcrumbs render as annotations beside the result, so the
 /// operator sees the compliance signal even though the gate ultimately succeeded.
 #[test]

@@ -2,7 +2,7 @@
 //! and the tool run, up to but not including triage.
 //!
 //! A completion may make several calls (docs/README.md), so the loop runs each call
-//! here and triages the whole batch at one gate (docs/redaction-fork.md). Splitting execution
+//! here and triages the whole batch at one gate (docs/triage.md). Splitting execution
 //! from triage is what keeps the fork's request valid: a peek fired between calls would
 //! carry unanswered `tool_use` blocks and be rejected.
 
@@ -51,7 +51,7 @@ pub(super) enum Step {
     Ran {
         call: ToolCall,
         /// The seq the result was captured at, which the verdict it is still waiting
-        /// for names (docs/redaction-fork.md).
+        /// for names (docs/triage.md).
         result_seq: crate::log::Seq,
         /// What the log holds for that result — masked on the way in (docs/env.md),
         /// so triage reads the durable bytes rather than the tool's own output.
@@ -75,7 +75,7 @@ impl Step {
 /// Take one call through the permission cascade and, if approved, run it
 /// (docs/permissions.md, docs/tools.md). Appends only the audit entries the cascade
 /// itself owns — the `Spot` verdict and any `ConfigEdit` — never the result, which the
-/// caller captures the moment this returns (docs/redaction-fork.md).
+/// caller captures the moment this returns (docs/triage.md).
 #[allow(clippy::too_many_arguments)] // each is a distinct party to the one call
 pub(super) async fn run_call<F: Frontend, S: Spotter>(
     frontend: &mut F,
@@ -87,7 +87,7 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
     ask_at: AskPosition,
     primer_go: Option<&tokio::sync::watch::Sender<bool>>,
 ) -> Result<Decision, Error> {
-    // An un-asked peek tool (docs/redaction-fork.md) never enters the cascade — there
+    // An un-asked peek tool (docs/triage.md) never enters the cascade — there
     // is nothing to judge or run; the paired nudge result tells the model to carry on.
     if is_peek_tool(&call.name) {
         return Ok(Decision::Direct(vec![unasked(call)]));
@@ -206,7 +206,7 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
 
     match approval {
         // `consolidate` acts on the log, not the world (docs/consolidate.md): record the
-        // boundary mark + pair the `tool_use`. No world-run, no distill — there is no tool
+        // boundary mark + pair the `tool_use`. No world-run, no triage — there is no tool
         // output to curate, so it never reaches the gate.
         Approval::Approve if call.name == consolidate::NAME => {
             let note = consolidate::summary(&call.input).unwrap_or_default();

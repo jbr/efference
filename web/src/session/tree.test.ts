@@ -145,8 +145,8 @@ describe("the transcript tree", () => {
   });
 
   describe("result verdicts", () => {
-    const distilled: WireState = {
-      Distilled: { keep: { Ranges: [[1, 2]] }, note: "n" },
+    const triaged: WireState = {
+      Triaged: { keep: { Ranges: [[1, 2]] }, note: "n" },
     };
     const issued = assistant(1, { calls: [{ id: "a", name: "bash" }] });
     const pending = entry(2, {
@@ -157,8 +157,8 @@ describe("the transcript tree", () => {
         ResultVerdict: {
           for_result: forResult,
           wire,
-          ...(typeof wire === "object" && "Distilled" in wire
-            ? { distillate: { total_lines: 40, kept_lines: 2 } }
+          ...(typeof wire === "object" && "Triaged" in wire
+            ? { selection: { total_lines: 40, kept_lines: 2 } }
             : {}),
         },
       });
@@ -173,12 +173,12 @@ describe("the transcript tree", () => {
     });
 
     it("folds the verdict onto the result's slot, never as a leaf", () => {
-      const nodes = buildTree([issued, pending, verdict(3, 2, distilled)]);
+      const nodes = buildTree([issued, pending, verdict(3, 2, triaged)]);
       expect(nodes).toHaveLength(1);
       const call = onlyCall(nodes);
       expect(call.result?.seq).toBe(2);
-      expect(wireOf(call)?.wire).toEqual(distilled);
-      expect(wireOf(call)?.distillate).toEqual({
+      expect(wireOf(call)?.wire).toEqual(triaged);
+      expect(wireOf(call)?.selection).toEqual({
         total_lines: 40,
         kept_lines: 2,
       });
@@ -188,10 +188,10 @@ describe("the transcript tree", () => {
       const nodes = buildTree([
         issued,
         pending,
-        verdict(3, 2, distilled),
+        verdict(3, 2, triaged),
         verdict(4, 2, "Elided"),
       ]);
-      expect(wireOf(onlyCall(nodes))?.wire).toEqual(distilled);
+      expect(wireOf(onlyCall(nodes))?.wire).toEqual(triaged);
     });
 
     it("ignores a Pending verdict, and a verdict for a decided result", () => {

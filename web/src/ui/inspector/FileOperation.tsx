@@ -27,9 +27,7 @@ export function FileOperation({
       : [];
   const paths = openablePaths(name, input);
   const note =
-    typeof wire === "object" && "Distilled" in wire
-      ? wire.Distilled.note
-      : null;
+    typeof wire === "object" && "Triaged" in wire ? wire.Triaged.note : null;
   const content = typeof obj.contents === "string" ? obj.contents : null;
   const diff = raw !== null && !raw.is_error ? diffRows(raw.content) : null;
   return (

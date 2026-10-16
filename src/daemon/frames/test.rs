@@ -32,9 +32,9 @@ fn a_verdict_frame_carries_the_counts_of_the_result_it_names() {
         1,
         Payload::ResultVerdict {
             for_result: 0,
-            wire: WireState::from(crate::log::Distilled::new(crate::log::Keep::Ranges(vec![
-                (1, 6),
-            ]))),
+            wire: WireState::from(crate::log::Triaged::new(crate::log::Keep::Ranges(vec![(
+                1, 6,
+            )]))),
         },
     )
     .expect("in-memory append");
@@ -47,7 +47,7 @@ fn a_verdict_frame_carries_the_counts_of_the_result_it_names() {
     let window: Vec<Value> =
         serde_json::from_str(&shared.log_json(&LogSelect::default())).expect("a JSON array");
 
-    let counts = &window[1]["payload"]["ResultVerdict"]["distillate"];
+    let counts = &window[1]["payload"]["ResultVerdict"]["selection"];
     assert_eq!(counts["total_lines"], 40);
     assert_eq!(counts["kept_lines"], 6);
     // Byte-identity is with the view the `/log` route serializes; a `Value`

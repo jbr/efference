@@ -73,10 +73,10 @@ expression: self.render()
 65 │ ╰─────────────────────────────────────────────────╯                            │
 66 │                                                                                │
 67 │                                                                                │
-68 │   A distilled result shows its summary, not the raw bytes:                     │
+68 │   A triaged result shows its summary, not the raw bytes:                       │
 69 │                                                                                │
 70 │   › cargo tree                                                                 │
-71 │   result (distilled, kept 0 of 1 line)                                         │
+71 │   result (triaged, kept 0 of 1 line)                                           │
 72 │   ⟢ 12 direct deps; heaviest subtrees are tokio and trillium. Nothing          │
 73 │   outdated.                                                                    │
 74 │                                                                                │

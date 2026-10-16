@@ -39,8 +39,8 @@ fn only_the_toolbox_half_of_the_catalog_carries_injected_intent() {
     for name in [
         consolidate::NAME,
         supervisor::CHECK_INBOX,
-        crate::distill::retain_tool()["name"].as_str().unwrap(),
-        crate::distill::triage_tool()["name"].as_str().unwrap(),
+        crate::triage::retain_tool()["name"].as_str().unwrap(),
+        crate::triage::triage_tool()["name"].as_str().unwrap(),
     ] {
         let entry = &catalog[name];
         assert!(
@@ -164,7 +164,7 @@ pub(super) fn cap_head_is_char_boundary_safe() {
 
 /// The callable set is read off the turn's own `tools[]`, minus the peek tools — which
 /// stand in every array for cache-lineage reasons but are never asked for on an agent
-/// turn (docs/redaction-fork.md). Reading the same array is what keeps the check from
+/// turn (docs/triage.md). Reading the same array is what keeps the check from
 /// rejecting a tool the model was just shown.
 #[test]
 pub(super) fn callable_names_are_the_advertised_ones_minus_the_peek_tools() {

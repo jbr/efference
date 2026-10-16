@@ -115,7 +115,7 @@ impl Resolved {
 /// Render one item as its `<name>…</name>` tag: an inlined file holds its verbatim body (trimmed of
 /// surrounding blank space); a listed file holds its summary and a read pointer.
 ///
-/// The fork peek's surfacing roster (docs/redaction-fork.md) renders through here too, so
+/// The fork peek's surfacing roster (docs/triage.md) renders through here too, so
 /// an item the model meets mid-session is spelled exactly as it was in the boot preamble.
 /// A bare name reads as a *capability* rather than a file to open, and gets built into a
 /// tool call (journal/2026-08-07-session-key-review.md).

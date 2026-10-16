@@ -25,7 +25,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::log::LoggedInference;
 
-/// Which inference the triage step ran on (docs/redaction-fork.md).
+/// Which inference the triage step ran on (docs/triage.md).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TriageModel {
     /// Triage ran on the session's main inference.

@@ -178,8 +178,6 @@ mod island;
 
 #[cfg(feature = "dev")]
 mod paint;
-#[cfg(feature = "dev")]
-mod peek_replay;
 mod picker;
 #[cfg(feature = "dev")]
 mod primer_ladder;
@@ -190,6 +188,8 @@ mod spot_report;
 #[cfg(feature = "dev")]
 mod spotter_eval;
 mod stop_report;
+#[cfg(feature = "dev")]
+mod triage_replay;
 mod verbs;
 
 #[cfg(test)]

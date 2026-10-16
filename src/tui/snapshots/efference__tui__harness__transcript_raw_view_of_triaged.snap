@@ -8,16 +8,16 @@ expression: self.render()
  0 │ efference                                                             session  │
  1 │ ┃ Summarize the dependency tree.                                               │
  2 │                                                                                │
- 3 │   Pulling the tree, then I'll distill it.                                      │
+ 3 │   Pulling the tree, then I'll triage it.                                       │
  4 │                                                                                │
  5 │   › cargo tree                                                                 │
- 6 │   result (distilled, kept 0 of 4 lines)                                        │
- 7 │   ⟢ 12 direct deps; heaviest subtrees are tokio and trillium. Nothing          │
- 8 │   outdated.                                                                    │
- 9 │                                                                                │
-10 │                                                                                │
-11 │                                                                                │
-12 │                                                                                │
+ 6 │   result (raw)                                                                 │
+ 7 │ ╭────────────────────╮                                                         │
+ 8 │ │ efference v0.1.0   │                                                         │
+ 9 │ │ ├── anyhow v1.0.86 │                                                         │
+10 │ │ ├── clap v4.5.4    │                                                         │
+11 │ │ └── tokio v1.38.0  │                                                         │
+12 │ ╰────────────────────╯                                                         │
 13 │                                                                                │
 14 │                                                                                │
 15 │                                                                                │

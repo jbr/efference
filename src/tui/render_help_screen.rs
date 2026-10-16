@@ -38,7 +38,7 @@ impl<'a> InteractiveState<'a> {
             ("  ← , →", "Choose among the block's verbs", key_style),
             (
                 "  Enter, Space",
-                "Fire it — raw / distilled, or full / peek",
+                "Fire it — raw / triaged, or full / peek",
                 key_style,
             ),
             ("", "", bg_style),

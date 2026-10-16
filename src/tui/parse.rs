@@ -423,7 +423,7 @@ pub(super) fn parse_usage(usage: &serde_json::Value) -> Option<UsageStats> {
     let context = usage.get("context").filter(|c| !c.is_null());
     // Session cost: null when the provider has no per-request accounting surface.
     let cost = usage.get("cost").filter(|c| !c.is_null());
-    // Triage retention (docs/redaction-fork.md). Absent on a daemon predating the
+    // Triage retention (docs/triage.md). Absent on a daemon predating the
     // field; a missing counter reads as 0, which the sidebar renders as absent.
     let retention = |field: &str| {
         usage

@@ -37,7 +37,7 @@ fn the_sentinel_without_a_digest_is_not_a_handle() {
 }
 
 /// An ordinary tool result — a file listing, a build log — carries no handle and
-/// stays the fork's to distill.
+/// stays the fork's to triage.
 #[test]
 fn ordinary_output_carries_no_handle() {
     assert_eq!(verbatim_handle("src/main.rs\nsrc/lib.rs\n"), None);

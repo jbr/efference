@@ -4,7 +4,7 @@
 
 use super::*;
 use crate::log::{
-    ContentBlock, Distilled, LogEntry, Payload, RawResult, Timestamp, ToolCall, WireState,
+    ContentBlock, LogEntry, Payload, RawResult, Timestamp, ToolCall, Triaged, WireState,
 };
 use crate::tui::document::Document;
 use crate::tui::projection::project;
@@ -187,7 +187,7 @@ fn a_raw_toggle_rebuilds_only_its_own_exchange() {
             Payload::tool_result(
                 "call-1",
                 RawResult::text("a\nb\nc"),
-                WireState::from(Distilled::new(crate::log::Keep::None).with_note("three files")),
+                WireState::from(Triaged::new(crate::log::Keep::None).with_note("three files")),
             ),
         ),
         user(2, "ok"),

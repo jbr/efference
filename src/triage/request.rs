@@ -1,21 +1,21 @@
-//! Round-trips against the model with bounded in-fork retries (docs/redaction-fork.md).
+//! Round-trips against the model with bounded in-fork retries (docs/triage.md).
 
 use super::*;
 
 /// Fork round-trips per fork: the ask plus bounded in-fork retries
-/// (docs/redaction-fork.md). Each retry re-reads the warm prefix and appends only to
+/// (docs/triage.md). Each retry re-reads the warm prefix and appends only to
 /// the throwaway tail.
 pub(super) const PEEK_ATTEMPTS: usize = 3;
 
 /// Forks per peek: when every in-fork retry of one fork comes back unusable, the
 /// fork is discarded and a fresh one starts from the top — the ask alone, with none
-/// of the rejected turns in its tail (docs/redaction-fork.md). A fork that has
+/// of the rejected turns in its tail (docs/triage.md). A fork that has
 /// argued itself into a wrong shape tends to stay there; a fresh one has not.
 /// Exhausting every fork is a harness defect, not an upstream condition: the model
 /// answered each time, and the ask or the parse is what failed.
 pub const PEEK_FORKS: usize = 3;
 
-/// How long a peek keeps trying (docs/redaction-fork.md). The gate waits failures
+/// How long a peek keeps trying (docs/triage.md). The gate waits failures
 /// out, because its results reach the agent only through a verdict; the asides —
 /// the idle triage and the title — give up early, because each has a harmless
 /// fallback and the loop is blocked on it meanwhile.
@@ -40,7 +40,7 @@ impl Patience {
     };
 }
 
-/// Why a peek produced no verdict (docs/redaction-fork.md). Never shown to the agent:
+/// Why a peek produced no verdict (docs/triage.md). Never shown to the agent:
 /// the gate holds its results until a verdict arrives, or the operator interrupts.
 #[derive(Debug)]
 pub enum PeekFailure {
@@ -64,7 +64,7 @@ impl std::fmt::Display for PeekFailure {
 
 /// What one gate accumulates across its attempts, whatever the verdict turns out to be:
 /// the billing record, the compliance breadcrumbs, and the peek's reasoning
-/// (docs/redaction-fork.md). The three travel together because every attempt appends to
+/// (docs/triage.md). The three travel together because every attempt appends to
 /// all of them and the outcome carries all of them onto the gate's `Triage`.
 #[derive(Default)]
 pub(super) struct PeekRecord {
@@ -78,13 +78,13 @@ pub(super) struct PeekRecord {
     pub(super) thinking: Vec<String>,
 }
 
-/// The renewal sentence for a peek that asks for `tool` (docs/redaction-fork.md).
+/// The renewal sentence for a peek that asks for `tool` (docs/triage.md).
 pub(super) fn call_now(tool: &str) -> String {
     format!("Call `{tool}` now, as instructed above.")
 }
 
 /// Run one peek to a usable verdict, with bounded in-fork retries inside bounded
-/// fresh forks (docs/redaction-fork.md). `renew` is the sentence that re-asks after a
+/// fresh forks (docs/triage.md). `renew` is the sentence that re-asks after a
 /// non-compliant attempt ([`call_now`] for a tool ask); `parse` decodes a usable verdict out of a completion, or says why it couldn't —
 /// the `Err` doubles as the retry nudge and, on exhaustion, the failure breadcrumb.
 /// Every request's [`RequestUsage`] is pushed onto `record.usage` whether or not its
@@ -113,7 +113,7 @@ pub(super) fn call_now(tool: &str) -> String {
 /// gate that took two attempts records the reasoning of both — the retried attempt's
 /// reasoning is what says whether the nudge landed. Text only: the fork's transcript,
 /// signatures included, stays throwaway, and this is a record rather than a replay input
-/// (docs/redaction-fork.md).
+/// (docs/triage.md).
 #[allow(clippy::too_many_arguments)] // each is a distinct input of the one round-trip
 pub(super) async fn peek_with_retries<T>(
     client: &Client,
@@ -147,7 +147,7 @@ pub(super) async fn peek_with_retries<T>(
                 Err(why) => why,
             };
             // Durable even when the next attempt recovers: a runtime triage
-            // failure is a harness defect signal (docs/redaction-fork.md), so
+            // failure is a harness defect signal (docs/triage.md), so
             // it lands on the gate's `Triage`, not just the daemon's stderr.
             record.retries.push(format!(
                 "fork {fork} of {forks}, attempt {attempt} of {PEEK_ATTEMPTS}: {why}"
@@ -303,7 +303,7 @@ pub(super) fn extend_with_retry(
 
 /// The text of every thinking block one peek attempt emitted, joined — the reasoning
 /// behind that attempt's verdict, recorded on the gate's `Triage`
-/// (docs/redaction-fork.md). `None` when the attempt thought nothing (or thought only in
+/// (docs/triage.md). `None` when the attempt thought nothing (or thought only in
 /// redacted blocks, which carry no text), so a gate that didn't think records nothing
 /// rather than an empty string.
 ///

@@ -1,5 +1,5 @@
 use super::*;
-use crate::log::{AssistantOutput, ContentBlock, Distilled, Keep, RawResult, Timestamp, ToolCall};
+use crate::log::{AssistantOutput, ContentBlock, Keep, RawResult, Timestamp, ToolCall, Triaged};
 use serde_json::json;
 
 fn entry(seq: u64, payload: Payload) -> LogEntry {
@@ -41,7 +41,7 @@ fn session() -> (Vec<LogEntry>, ToolCall) {
             Payload::ToolResult {
                 call_id: "c1".into(),
                 raw: RawResult::text("a.rs\nb.rs"),
-                wire: WireState::Distilled(Distilled::new(Keep::All).with_note("Two files.")),
+                wire: WireState::Triaged(Triaged::new(Keep::All).with_note("Two files.")),
             },
         ),
         assistant(4, "Now the tests.", vec![gate.clone()]),

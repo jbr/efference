@@ -2,8 +2,8 @@ use super::*;
 use crate::context::Item;
 use crate::log::Telemetry;
 use crate::log::{
-    AssistantOutput, CallId, ContentBlock, Disposition, Distilled, Keep, LogEntry, Mark,
-    Notification, Origin, Payload, RawResult, Timestamp, ToolCall, Triage, WireState,
+    AssistantOutput, CallId, ContentBlock, Disposition, Keep, LogEntry, Mark, Notification, Origin,
+    Payload, RawResult, Timestamp, ToolCall, Triage, Triaged, WireState,
 };
 use serde_json::json;
 
@@ -214,11 +214,11 @@ fn image_tool_result_matches_expected_wire_bytes() {
 }
 
 /// A log whose tool result carries a multi-line body under the given verdict.
-fn distilled_log(keep: Keep, note: Option<&str>) -> Vec<LogEntry> {
+fn triaged_log(keep: Keep, note: Option<&str>) -> Vec<LogEntry> {
     let mut log = sample_log();
     if let Payload::ToolResult { raw, wire, .. } = &mut log[2].payload {
         raw.content = "alpha\nbeta\ngamma\ndelta".into();
-        let mut verdict = Distilled::new(keep);
+        let mut verdict = Triaged::new(keep);
         if let Some(note) = note {
             verdict = verdict.with_note(note);
         }
@@ -256,21 +256,21 @@ fn boot_inference_identity_does_not_project() {
     );
 }
 
-/// Pins the exact wire bytes of a **distilled** tool result — the shape most
+/// Pins the exact wire bytes of a **triaged** tool result — the shape most
 /// results take once their gate has run, and the one the other pins miss: the
 /// shared fixture's only result is `WireState::Raw`, so a render change to the
-/// distilled shape would otherwise pass every byte pin.
+/// triaged shape would otherwise pass every byte pin.
 ///
 /// Three properties are fixed here. A partial verdict carries `@@ lines a-b @@` per
 /// span. A verdict spanning the whole result carries **no header** — the marker exists
 /// to show where curation cut, and one that spans everything states only "all of it"
-/// (docs/redaction-fork.md). A note renders as a trailing `⟢` breadcrumb.
+/// (docs/triage.md). A note renders as a trailing `⟢` breadcrumb.
 ///
-/// Distilled results sit in `messages`, ahead of the cache breakpoint, so a change here
+/// Triaged results sit in `messages`, ahead of the cache breakpoint, so a change here
 /// moves the production prefix silently. It must break this test first.
 #[test]
-fn distilled_tool_result_matches_expected_wire_bytes() {
-    let partial = serde_json::to_string(&project(&distilled_log(
+fn triaged_tool_result_matches_expected_wire_bytes() {
+    let partial = serde_json::to_string(&project(&triaged_log(
         Keep::Ranges(vec![(2, 3)]),
         Some("the middle mattered"),
     )))
@@ -280,14 +280,14 @@ fn distilled_tool_result_matches_expected_wire_bytes() {
         r#"[{"role":"user","content":[{"type":"text","text":"hello"}]},{"role":"assistant","content":[{"type":"text","text":"let me check"},{"type":"tool_use","id":"toolu_1","name":"bash","input":{"command":"ls","timeout":5}}]},{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_1","content":"[2] @@ lines 2-3 @@\nbeta\ngamma\n⟢ the middle mattered"}]}]"#
     );
 
-    let whole = serde_json::to_string(&project(&distilled_log(Keep::All, None))).unwrap();
+    let whole = serde_json::to_string(&project(&triaged_log(Keep::All, None))).unwrap();
     assert_eq!(
         whole,
         r#"[{"role":"user","content":[{"type":"text","text":"hello"}]},{"role":"assistant","content":[{"type":"text","text":"let me check"},{"type":"tool_use","id":"toolu_1","name":"bash","input":{"command":"ls","timeout":5}}]},{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_1","content":"[2] alpha\nbeta\ngamma\ndelta"}]}]"#
     );
 
     let nothing =
-        serde_json::to_string(&project(&distilled_log(Keep::None, Some("no signal")))).unwrap();
+        serde_json::to_string(&project(&triaged_log(Keep::None, Some("no signal")))).unwrap();
     assert_eq!(
         nothing,
         r#"[{"role":"user","content":[{"type":"text","text":"hello"}]},{"role":"assistant","content":[{"type":"text","text":"let me check"},{"type":"tool_use","id":"toolu_1","name":"bash","input":{"command":"ls","timeout":5}}]},{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_1","content":"[2] ⟢ no signal"}]}]"#
@@ -399,12 +399,12 @@ fn after_interposed_turn_keeps_roles_alternating() {
     );
 }
 
-/// Images ride `Raw` and `Distilled` (a distill verdict addresses text lines,
+/// Images ride `Raw` and `Triaged` (a triage verdict addresses text lines,
 /// not the image the model pulled on purpose) and are shed by `Elided` and
 /// `TriageFailed` — whose results project in the bare-string form, byte-identical
 /// to a text-only result in the same state.
 #[test]
-fn image_survives_distill_and_is_shed_by_elision() {
+fn image_survives_triage_and_is_shed_by_elision() {
     let keeps = |state: WireState| {
         serde_json::to_string(&project(&image_log(state)))
             .unwrap()
@@ -412,7 +412,7 @@ fn image_survives_distill_and_is_shed_by_elision() {
     };
     assert!(keeps(WireState::Raw));
     assert!(keeps(WireState::from(
-        Distilled::new(Keep::Ranges(vec![(1, 1)])).with_note("kept the header")
+        Triaged::new(Keep::Ranges(vec![(1, 1)])).with_note("kept the header")
     )));
     assert!(!keeps(WireState::Elided));
     assert!(!keeps(WireState::TriageFailed {
@@ -842,8 +842,8 @@ mod cache;
 mod coalesce;
 mod consolidate;
 mod dialect;
-mod distilled;
 mod notifications;
+mod triaged;
 
 /// A `Resumed` entry projects one harness text block at its position and leaves
 /// every earlier turn's bytes unchanged (docs/log-and-projection.md).

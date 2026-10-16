@@ -17,11 +17,11 @@ pub enum StallReason {
     UpstreamRefused,
     /// The triage gate could not reach its model — the schedule ran out, or the
     /// upstream refused — so the loop holds the batch's results, unshown, until a
-    /// retry succeeds or the operator interrupts (docs/redaction-fork.md).
+    /// retry succeeds or the operator interrupts (docs/triage.md).
     TriageUnavailable,
     /// The triage model answered every fork and never usably: a harness defect,
     /// logged as one. The loop holds the results the same way
-    /// (docs/redaction-fork.md).
+    /// (docs/triage.md).
     TriageDefect,
 }
 
@@ -92,7 +92,7 @@ impl Session {
     /// Clear the stall: a trajectory is starting, or a held gate is retrying, so the
     /// last outcome is no longer the current condition. Called when the work
     /// resumes rather than on a successful completion; the one time the topic is set
-    /// while the loop runs is a held triage gate (docs/redaction-fork.md).
+    /// while the loop runs is a held triage gate (docs/triage.md).
     pub(crate) fn clear_stall(&self) {
         let mut stall = self.stall.lock().unwrap();
         if stall.is_none() {

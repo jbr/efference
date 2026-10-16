@@ -101,7 +101,7 @@ async fn disk_roundtrip_projects_identically() {
 }
 
 /// The boot preamble snapshots the **structured** `[context]` listing beside the flat
-/// `system` string (docs/redaction-fork.md), so a listed item's name / path /
+/// `system` string (docs/triage.md), so a listed item's name / path /
 /// description survive the log's serde and `project` can later fold them back into a
 /// surfacing reminder. The flat `system` stays the byte-exact wire truth; this pins the
 /// additive structured half.
@@ -253,7 +253,7 @@ fn submission_id_never_reaches_the_projection() {
     );
 }
 
-/// The fork's recorded reasoning (`Triage.thinking`, docs/redaction-fork.md) survives the
+/// The fork's recorded reasoning (`Triage.thinking`, docs/triage.md) survives the
 /// jsonl round-trip, one entry per peek attempt that thought.
 #[test]
 fn triage_thinking_round_trips() {

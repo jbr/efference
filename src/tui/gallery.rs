@@ -4,7 +4,7 @@
 //! It builds a [`LogEntry`] sequence that exercises every transcript shape — rich
 //! markdown prose (headings, lists, quote, table, code, rule, inline styles), a
 //! `bash` call rendered as a shell block, an edit tool's colored diff, a long
-//! result collapsed under the disclosure triangle, an error result, a distilled
+//! result collapsed under the disclosure triangle, an error result, a triaged
 //! result, and a consolidation mark — then runs the real [`ui_loop`](super::ui_loop)
 //! against it with no daemon behind it. The snapshot harness (`harness.rs`) covers
 //! the same shapes headlessly; this is for seeing them live, in color, scrollable.
@@ -12,8 +12,8 @@
 pub mod stream;
 
 use crate::log::{
-    AssistantOutput, ContentBlock, Distilled, Keep, LogEntry, Mark, MessagesOutputBlock, Payload,
-    RawResult, Timestamp, ToolCall, WireState,
+    AssistantOutput, ContentBlock, Keep, LogEntry, Mark, MessagesOutputBlock, Payload, RawResult,
+    Timestamp, ToolCall, Triaged, WireState,
 };
 
 /// A committed user turn carrying markdown prose.
@@ -265,10 +265,10 @@ pub(super) fn log() -> Vec<LogEntry> {
             true,
             WireState::Raw,
         ),
-        // A distilled result (curated summary supersedes the raw output).
+        // A triaged result (curated summary supersedes the raw output).
         assistant(
             10,
-            "A distilled result shows its summary, not the raw bytes:",
+            "A triaged result shows its summary, not the raw bytes:",
             vec![ToolCall::new(
                 "bash",
                 "toolu_g5",
@@ -280,7 +280,7 @@ pub(super) fn log() -> Vec<LogEntry> {
             "toolu_g5",
             "…600 lines of dependency tree…",
             false,
-            Distilled::new(Keep::None)
+            Triaged::new(Keep::None)
                 .with_note(
                     "12 direct deps; heaviest subtrees are tokio and trillium. Nothing outdated.",
                 )

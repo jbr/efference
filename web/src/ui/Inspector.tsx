@@ -15,7 +15,7 @@ import { useEffect, useMemo, useState } from "react";
 import type {
   CallId,
   Process,
-  DistillateLines,
+  SelectionLines,
   Keep,
   RawResult,
   ToolOutcome,
@@ -33,7 +33,7 @@ import { callView } from "./signature.ts";
 import { layoutSignature } from "./signatureLayout.ts";
 import { openablePaths } from "../session/touchedFiles.ts";
 import { useWholeResult } from "./wholeResult.ts";
-import { rustLines } from "../render/distill.ts";
+import { rustLines } from "../render/triage.ts";
 import { fetchProcessOutput } from "../api/http.ts";
 
 // Generic tools retain result/args/raw/spot views; file operations use captured
@@ -54,29 +54,29 @@ const surfacedLines = (keep: Keep, total: number): number => {
 };
 
 /** "What the fork returned": the verdict's account of the result — raw size,
- * what survived, the keep, the wire state (docs/redaction-fork.md is the
+ * what survived, the keep, the wire state (docs/triage.md is the
  * mechanism; this is its audit view). */
 function ForkPanel({
   raw,
   wire,
-  distillate,
+  selection,
 }: {
   raw: RawResult;
   wire: WireState;
-  distillate?: DistillateLines;
+  selection?: SelectionLines;
 }) {
   // The daemon's count when it sent one; the local split is only right when the
   // content on hand is whole.
-  const total = distillate?.total_lines ?? rustLines(raw.content).length;
+  const total = selection?.total_lines ?? rustLines(raw.content).length;
   const rows: [string, string][] = [
     ["raw", `${total} ${total === 1 ? "line" : "lines"}`],
   ];
-  if (typeof wire === "object" && "Distilled" in wire) {
+  if (typeof wire === "object" && "Triaged" in wire) {
     rows.push([
       "surfaced",
-      `${distillate?.kept_lines ?? surfacedLines(wire.Distilled.keep, total)} lines`,
+      `${selection?.kept_lines ?? surfacedLines(wire.Triaged.keep, total)} lines`,
     ]);
-    rows.push(["keep", keepLabel(wire.Distilled.keep)]);
+    rows.push(["keep", keepLabel(wire.Triaged.keep)]);
   }
   rows.push(["wire", wireLabel(wire)]);
   return (
@@ -91,11 +91,11 @@ function ForkPanel({
         ))}
       </div>
       {typeof wire === "object" &&
-        "Distilled" in wire &&
-        wire.Distilled.note !== null && (
+        "Triaged" in wire &&
+        wire.Triaged.note !== null && (
           <div className="note">
             <span className="note-glyph">✧</span>
-            <span className="note-text">{wire.Distilled.note}</span>
+            <span className="note-text">{wire.Triaged.note}</span>
           </div>
         )}
     </div>
@@ -115,7 +115,7 @@ const formatBytes = (n: number): string =>
  * (docs/tools.md), as distinct from `ForkPanel`, which reports what the fork did
  * to the result afterwards. `duration_ms` excludes the permission cascade, so a
  * call that waited at a gate does not read as a slow call; `result_bytes` is the
- * raw size before distillation, which is what makes the pair with the fork panel
+ * raw size before triage, which is what makes the pair with the fork panel
  * legible. */
 function TelemetryPanel({ telemetry }: { telemetry: ToolTelemetry }) {
   const rows: [string, string][] = [
@@ -328,7 +328,7 @@ export function Inspector({
   const rendered = useMemo(
     () =>
       result !== null
-        ? resultRender(node.name, result.raw, result.wire, result.distillate)
+        ? resultRender(node.name, result.raw, result.wire, result.selection)
         : null,
     [node.name, result],
   );
@@ -548,7 +548,7 @@ export function Inspector({
           <ForkPanel
             raw={result.raw}
             wire={result.wire}
-            distillate={result.distillate}
+            selection={result.selection}
           />
         )}
       </Disclosure>

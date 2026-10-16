@@ -339,7 +339,7 @@ impl Masker {
             }
             Payload::ToolResult { raw, .. } => self.mask_in_place(&mut raw.content),
             Payload::ResultVerdict { wire, .. } => match wire {
-                crate::log::WireState::Distilled(verdict) => {
+                crate::log::WireState::Triaged(verdict) => {
                     self.mask_opt(&mut verdict.note);
                     self.mask_opt(&mut verdict.intent_feedback);
                 }

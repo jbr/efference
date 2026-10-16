@@ -2,7 +2,7 @@
 //! prefix, for one line saying what the session is for.
 //!
 //! A text answer, not a tool: a tool would have to ride the shared `tools[]`
-//! (docs/redaction-fork.md), which the agent turn also sends, so the agent would
+//! (docs/triage.md), which the agent turn also sends, so the agent would
 //! see a schema that is never for it and the envelope pin would move for a job
 //! unrelated to results. The ask lives in the discarded tail and the answer is
 //! the completion's text; `tool_choice` stays `auto` on both lineages, so the

@@ -18,7 +18,7 @@ Resumption reads only the log ([log-and-projection.md](log-and-projection.md)):
   without one can't be resumed.
 - **Result capture.** A call's result is appended `Pending` as soon as the call returns,
   and its decision lands later as a `ResultVerdict`
-  ([redaction-fork.md](redaction-fork.md), "Capture, then verdict").
+  ([triage.md](triage.md), "Capture, then verdict").
 - **`CallStarted`**, a non-projecting entry appended after the permission cascade clears
   a call and before the tool runs (never for `ask`). It records which calls may have
   touched the world: a call with it and no result is the one case that rolls back.

@@ -38,7 +38,7 @@ fn sidebar_shows_processes_and_stats() {
         // Billed session cost from the provider's accounting → `cost $0.0421`.
         cost_usd: Some(0.0421),
         cost_unpriced: Some(0),
-        // Triage retention (docs/redaction-fork.md): 13.2k of 24.1k lines kept →
+        // Triage retention (docs/triage.md): 13.2k of 24.1k lines kept →
         // the `kept 55% · 13k/24k lines` line. No gate failed, so nothing withheld.
         kept_lines: 13_276,
         shown_lines: 24_114,
@@ -77,7 +77,7 @@ fn sidebar_folds_control_characters_in_a_process_command() {
 
 /// Retention is absent, not 0%, before the first result is triaged — and a withheld
 /// result is reported as its own condition rather than folded into the ratio
-/// (docs/redaction-fork.md).
+/// (docs/triage.md).
 #[test]
 fn sidebar_retention_before_any_triage_and_after_a_failed_gate() {
     use crate::tui::{TuiEvent, UsageStats};

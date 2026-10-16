@@ -140,7 +140,7 @@ pub(super) async fn triage_and_record(
             raw_keep: String::new(),
             inbox,
             // The idle triage rides no tool result and shows no surfacing roster — the
-            // nudge is powered by proximity to work in flight (docs/redaction-fork.md).
+            // nudge is powered by proximity to work in flight (docs/triage.md).
             surfaced: Vec::new(),
             retries: triage.retries,
             thinking: triage.thinking,

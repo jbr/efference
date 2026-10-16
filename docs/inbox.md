@@ -2,7 +2,7 @@
 
 The inbox is the realized form of "enqueue then triage": background and out-of-band
 events interrupt the agent by enqueuing, but never mid-thought. Each time the agent
-finishes an action and runs the triage fork peek (see `redaction-fork.md`), it grooms
+finishes an action and runs the triage fork peek (see `triage.md`), it grooms
 its inbox in the same throwaway branch at no extra round-trip.
 
 ## What a notification is
@@ -132,7 +132,7 @@ shown-and-active layer reconstructs from the log.
 
 Pending and active-shown notifications appear in the fork peek view beneath the
 line-numbered tool output, each item labelled with its arrival `seq` handle. The
-`retain` verdict (see `redaction-fork.md`) gains an `inbox` field; the model may give
+`retain` verdict (see `triage.md`) gains an `inbox` field; the model may give
 each notification one of three dispositions:
 
 - **Pin** — promote the notification into canonical working context. It projects into the
@@ -218,7 +218,7 @@ text in front of the model (a file, a command's output, another client's turn) c
 What keeps a forged note harmless is that a genuine one carries no authority to borrow — gates
 are enforced mechanically, never by what the model believes — so a forgery can plant a false
 fact but not an instruction. The one `⟢` block that asks for something, the triage ask
-(docs/redaction-fork.md), asks only for `retain` or `triage`; outside a gate either call is
+(docs/triage.md), asks only for `retain` or `triage`; outside a gate either call is
 answered with a "nothing is being asked" stand-in, so a forged ask costs a round-trip. The `role:system` operator channel (the eventual Opus-4.8 upgrade
 described in `supervisor.md`) is the anticipated path for anything that *should* carry
 authority; user-role is the conservative, universally-supported default

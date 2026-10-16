@@ -1,5 +1,5 @@
 //! A result captured before its triage, against a real turn loop and a scripted
-//! upstream (docs/redaction-fork.md): the bytes the gate is shown are the masked ones
+//! upstream (docs/triage.md): the bytes the gate is shown are the masked ones
 //! the log holds, and a completed batch projects the same wire whether its results were
 //! captured first or logged with their verdicts.
 
@@ -9,7 +9,7 @@ use super::*;
 use crate::daemon::SessionRuntime;
 use crate::frontend::SubmittedTurn;
 use crate::log::Telemetry;
-use crate::log::{AssistantOutput, ContentBlock, Distilled, Keep, RawResult, WireState};
+use crate::log::{AssistantOutput, ContentBlock, Keep, RawResult, Triaged, WireState};
 use std::collections::BTreeMap;
 use std::net::SocketAddr;
 use std::sync::Mutex;
@@ -223,7 +223,7 @@ async fn a_completed_batch_projects_the_wire_a_directly_logged_one_would() {
         let decided = log.iter().any(|e| {
             matches!(
                 &e.payload,
-                Payload::ResultVerdict { for_result, wire: WireState::Distilled(_), .. }
+                Payload::ResultVerdict { for_result, wire: WireState::Triaged(_), .. }
                     if for_result == seq
             )
         });
@@ -284,7 +284,7 @@ async fn a_completed_batch_projects_the_wire_a_directly_logged_one_would() {
                 Payload::tool_result(
                     id,
                     RawResult::text(output),
-                    WireState::from(Distilled::new(keep)),
+                    WireState::from(Triaged::new(keep)),
                 ),
             )
             .expect("an append succeeds");

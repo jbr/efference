@@ -7,11 +7,11 @@ use std::path::Path;
 use super::{describe_window, mcp_mount};
 use crate::api::{Client, Endpoint, Error, ModelCapabilities, TokenPrices, UNKNOWN_OUTPUT_CAP};
 use crate::config::LoadedConfig;
-use crate::distill::ForkPeek;
 use crate::env_table::EnvPolicy;
 use crate::inference::SessionInference;
 use crate::spotter::MountedSpotter;
 use crate::tools::Toolbox;
+use crate::triage::ForkPeek;
 
 /// What [`mount_toolbox`] needs from the boot so far.
 pub(super) struct ToolboxInputs<'a> {
@@ -202,7 +202,7 @@ pub(super) fn build_client(
         // the fork peek shares, so both stream surfaces are bounded alike.
         .with_stream_ceiling(loaded.role.transport.stream_ceiling)
         // The effort level rides the agent client, so the turn and the fork peek send
-        // one envelope (docs/redaction-fork.md). The spotter's client is built
+        // one envelope (docs/triage.md). The spotter's client is built
         // separately and never carries it; the keepalive omits it by construction.
         .with_effort(effort)
         .with_thinking(capabilities.thinking)
@@ -291,10 +291,10 @@ pub(super) async fn mount_spotter(
     Ok(spotter)
 }
 
-/// The model-driven fork (docs/redaction-fork.md): every tool result is peeked and the
+/// The model-driven fork (docs/triage.md): every tool result is peeked and the
 /// canonical wire keeps only what the model retains.
 ///
-/// Sharing is explicit (docs/redaction-fork.md): an omitted triage selection
+/// Sharing is explicit (docs/triage.md): an omitted triage selection
 /// uses the main client; a configured selection always gets its own endpoint
 /// and retry state, even when it names the same native model.
 pub(super) async fn mount_distiller(

@@ -65,23 +65,23 @@ export type Payload =
         raw: RawResult;
         wire: WireState;
         /** The verdict's line arithmetic against the *whole* content, computed
-         * by the daemon (docs/control-api.md). Present only on a `Distilled`
+         * by the daemon (docs/control-api.md). Present only on a `Triaged`
          * result. The authority for "kept N of M lines" when `raw.content` is
          * a truncated prefix, which cannot be counted client-side. */
-        distillate?: DistillateLines;
+        selection?: SelectionLines;
       };
     }
   | {
-      /** The decision for a result captured as `Pending` (docs/redaction-fork.md
+      /** The decision for a result captured as `Pending` (docs/triage.md
        * "Capture, then verdict"). The tree folds it onto the result's slot;
        * it is never an item of its own. */
       ResultVerdict: {
         /** The seq of the `ToolResult` this decides. */
         for_result: Seq;
         wire: WireState;
-        /** The line arithmetic of a `Distilled` wire, against the result's
+        /** The line arithmetic of a `Triaged` wire, against the result's
          * whole content — the same keys a directly-logged result carries. */
-        distillate?: DistillateLines;
+        selection?: SelectionLines;
       };
     }
   | { Mark: Mark }
@@ -332,7 +332,7 @@ export interface ToolCall {
   input: unknown;
 }
 
-export interface DistillateLines {
+export interface SelectionLines {
   total_lines: number;
   kept_lines: number;
 }
@@ -363,10 +363,10 @@ export interface ResultImage {
 
 export type WireState =
   /** Captured, triage not yet decided: the result is its raw output until a
-   * `ResultVerdict` names it (docs/redaction-fork.md). */
+   * `ResultVerdict` names it (docs/triage.md). */
   | "Pending"
   | "Raw"
-  | { Distilled: { keep: Keep; note: string | null } }
+  | { Triaged: { keep: Keep; note: string | null } }
   | "Elided"
   | { TriageFailed: { why: string } };
 
@@ -399,7 +399,7 @@ export type Stance = "clear" | "watch" | "gate" | "clear_always";
 /** What one tool call cost and how it came out (docs/tools.md) — the harness's
  * own measurement of the dispatch, joined to its call by `call_id`. `duration_ms`
  * excludes the permission cascade, and `result_bytes` is the raw result before
- * the fork peek distills it, so the pair (this, the rendered result) is what
+ * the fork peek triages it, so the pair (this, the rendered result) is what
  * says how much a gate saved. Additive by construction on the Rust side: fields
  * may appear here that this client does not read yet. */
 export interface ToolTelemetry {
@@ -693,7 +693,7 @@ export interface UpstreamRetry {
 // paths the loop returns to idle, so `running: false`, no gate, and an empty
 // inbox look exactly like a finished run; this topic is the difference. A
 // triage gate held on the upstream (the `triage_*` reasons) stalls with the
-// loop still running (docs/redaction-fork.md). Either way `POST
+// loop still running (docs/triage.md). Either way `POST
 // /loop/continue` retries. Level-triggered: `null` once the work resumes.
 export interface Stall {
   // Why it stopped short.

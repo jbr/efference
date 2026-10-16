@@ -115,7 +115,7 @@ pub struct UpstreamRetry {
 /// The retry cell, its change signal, and the operator's "retry now".
 ///
 /// The signal is here rather than on `Session` because the fork peek publishes retry
-/// state from inside `distill`, which holds a `Client` and no `Session` — and unlike
+/// state from inside `triage`, which holds a `Client` and no `Session` — and unlike
 /// the upstream-failure cell, a retry is *not* followed by an append, so the
 /// daemon's wake-on-`appended` fallback would leave the topic late for the whole
 /// pause (daemon/topics.rs). "Retry now" lives here for the same reason: the waits it

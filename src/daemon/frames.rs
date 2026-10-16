@@ -245,7 +245,7 @@ impl Frame {
     /// entry's [`EntryView::new`] (image `data` omitted, oversized result text
     /// truncated and tagged; entry_view.rs). `result_raw` is the bytes of the result
     /// a [`Payload::ResultVerdict`] names, which that entry does not carry itself
-    /// (docs/redaction-fork.md); both call sites resolve it from the log.
+    /// (docs/triage.md); both call sites resolve it from the log.
     pub(crate) fn log(entry: &LogEntry, result_raw: Option<&RawResult>) -> Self {
         Self {
             class: Class::Log,

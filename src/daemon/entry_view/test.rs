@@ -1,7 +1,7 @@
 //! Tests for `entry_view.rs`.
 
 use super::*;
-use crate::log::{ContentBlock, ContentElision, Distilled, Timestamp, WireState};
+use crate::log::{ContentBlock, ContentElision, Timestamp, Triaged, WireState};
 
 fn entry(seq: u64, submission_id: Option<&str>, payload: Payload) -> LogEntry {
     LogEntry {
@@ -210,43 +210,42 @@ fn an_elided_prefix_ends_on_a_character_boundary() {
     );
 }
 
-/// A distilled result's view carries the verdict's line arithmetic over the *whole*
+/// A triaged result's view carries the verdict's line arithmetic over the *whole*
 /// content — the same numbers the wire and the TUI render from — so a client holding
 /// the truncated prefix still states them. A raw result carries no such field, which
 /// keeps its view the derived bytes.
 #[test]
-fn a_distilled_view_carries_the_line_counts_the_prefix_cannot_yield() {
+fn a_triaged_view_carries_the_line_counts_the_prefix_cannot_yield() {
     // 400 lines of 100 bytes: well past the threshold, so the window carries a prefix.
     let content: String = (1..=400).map(|i| format!("{i:0>99}\n")).collect();
-    let distilled = entry(
+    let triaged = entry(
         10,
         None,
         Payload::tool_result(
-            "toolu_distilled",
+            "toolu_triaged",
             RawResult::text(content.clone()),
-            WireState::from(Distilled::new(crate::log::Keep::Ranges(vec![
+            WireState::from(Triaged::new(crate::log::Keep::Ranges(vec![
                 (300, 309),
                 (350, 400),
             ]))),
         ),
     );
     let windowed: serde_json::Value =
-        serde_json::from_str(&serde_json::to_string(&EntryView::new(&distilled)).unwrap()).unwrap();
+        serde_json::from_str(&serde_json::to_string(&EntryView::new(&triaged)).unwrap()).unwrap();
     let result = &windowed["payload"]["ToolResult"];
     assert!(
         result["raw"]["content_elided"].is_object(),
         "the window carries a prefix, which holds none of the kept lines"
     );
     assert_eq!(
-        result["distillate"],
+        result["selection"],
         serde_json::json!({ "total_lines": 400, "kept_lines": 61 }),
         "the counts are over the whole content"
     );
     let full: serde_json::Value =
-        serde_json::from_str(&serde_json::to_string(&EntryView::full(&distilled)).unwrap())
-            .unwrap();
+        serde_json::from_str(&serde_json::to_string(&EntryView::full(&triaged)).unwrap()).unwrap();
     assert_eq!(
-        full["payload"]["ToolResult"]["distillate"], result["distillate"],
+        full["payload"]["ToolResult"]["selection"], result["selection"],
         "the same on the dereference view"
     );
     let parsed: LogEntry = serde_json::from_str(&windowed.to_string()).unwrap();
@@ -257,6 +256,6 @@ fn a_distilled_view_carries_the_line_counts_the_prefix_cannot_yield() {
 
     let raw = entry(11, None, text_result("one\ntwo".into()));
     let view = serde_json::to_string(&EntryView::new(&raw)).unwrap();
-    assert!(!view.contains("distillate"), "absent on a raw result");
+    assert!(!view.contains("selection"), "absent on a raw result");
     assert_eq!(view, serde_json::to_string(&raw).unwrap());
 }

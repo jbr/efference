@@ -215,7 +215,7 @@ impl<'a> InteractiveState<'a> {
     ///
     /// A completion may make several calls (docs/README.md), and the loop appends
     /// *no* result until every call has run and the gate has closed
-    /// (docs/redaction-fork.md). So on a multi-call step this reports the entry's first
+    /// (docs/triage.md). So on a multi-call step this reports the entry's first
     /// call for the whole step, not whichever call is currently executing — exact for a
     /// single call; on a batch the cost is a stale label rather than a wrong lifecycle
     /// state. A gate
@@ -262,7 +262,7 @@ impl<'a> InteractiveState<'a> {
             "Select theme (↑/↓ to navigate, Enter to save, Esc to cancel)".into();
     }
 
-    /// Flip the focused tool result between its wire (distilled) output and
+    /// Flip the focused tool result between its wire (triaged) output and
     /// its full raw output (docs/tui.md). Both are already client-side, so this is a
     /// pure re-render — but the content source changes, so it reprojects rather than
     /// editing the document in place. No-op unless a keyed tool-result entry is
@@ -273,9 +273,9 @@ impl<'a> InteractiveState<'a> {
         };
         let now_raw = self.view.toggle_raw(&call_id);
         self.ui.debug_message = if now_raw {
-            "showing raw output — r to show the distilled view".into()
+            "showing raw output — r to show the triaged view".into()
         } else {
-            "showing distilled output — r to show raw".into()
+            "showing triaged output — r to show raw".into()
         };
         self.reproject();
     }

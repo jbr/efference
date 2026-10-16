@@ -129,7 +129,7 @@ stance is a parse error rather than a silently-ignored entry.
 
 Two calls never enter the cascade at all, because neither poses a permission question.
 A peek tool (`retain`/`triage`) called when nothing was asked of it is paired with the
-nudge result ([redaction-fork.md](redaction-fork.md)). And a call naming **no tool this
+nudge result ([triage.md](triage.md)). And a call naming **no tool this
 turn advertised** is answered with `tools::unknown_tool_message` — the mounted names, plus
 a pointer at `bash` for a name that is a program — as a `Direct` payload, so the correction
 reaches the wire verbatim rather than through the triage gate.
@@ -703,10 +703,10 @@ status) is first retried up to three attempts, one and two seconds apart: a shor
 worth absorbing, and an outage is not worth waiting out when the fallback is a prompt the
 operator answers faster. (The distiller has no fallback that is safe to show, so it
 waits instead: a triage gate without a verdict holds its results until one arrives —
-[redaction-fork.md](redaction-fork.md) — never a silent keep-all.)
+[triage.md](triage.md) — never a silent keep-all.)
 
 **Each verdict is logged** as a `Payload::Spot` audit entry (the audit answer to "why did
-this get through — or stop?", and the corpus for any future distilled approval model). It
+this get through — or stop?", and the corpus for any future triaged approval model). It
 projects to nothing — audit-only, never on the canonical wire. This is the *first* permission
 decision that earns a log line: fast-path clears stay deliberately unlogged. `efference
 spotter --scope … --watch-for … --path … "<cmd>"` runs the exact `assess` path on one move,

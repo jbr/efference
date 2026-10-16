@@ -17,7 +17,7 @@ pub(super) struct Batch {
     pub tools_end: std::time::Instant,
 }
 
-/// Run every call of a completion, capturing each result as it exists (docs/redaction-fork.md)
+/// Run every call of a completion, capturing each result as it exists (docs/triage.md)
 /// so one gate can triage them together. Once a call aborts or redirects, the rest are paired
 /// with stand-ins rather than run.
 ///
@@ -155,7 +155,7 @@ async fn run_calls<F: Frontend, S: Spotter>(
                 handoff,
                 reply,
             } => {
-                // The capture (docs/redaction-fork.md): the result is durable before
+                // The capture (docs/triage.md): the result is durable before
                 // anything judges it, as `Pending` — on the wire it is nothing yet, so
                 // no request built before the gate's verdict can carry a partial batch.
                 let payload = Payload::tool_result(call.id.clone(), result, WireState::Pending);

@@ -306,10 +306,10 @@ export function buildTree(entries: LogEntry[]): TranscriptNode[] {
         "ToolResult" in held &&
         p.ResultVerdict.wire !== "Pending"
       ) {
-        const { distillate, wire } = p.ResultVerdict;
-        const result = { ...held.ToolResult, wire, distillate };
+        const { selection, wire } = p.ResultVerdict;
+        const result = { ...held.ToolResult, wire, selection };
         // A Pending result carries no counts of its own; absent stays absent.
-        if (distillate === undefined) delete result.distillate;
+        if (selection === undefined) delete result.selection;
         owner.result = { ...owner.result!, payload: { ToolResult: result } };
         pending.delete(p.ResultVerdict.for_result);
       }

@@ -234,7 +234,7 @@ impl<'a> InteractiveState<'a> {
     }
 
     /// The same box, with each line's **original number** in a dimmed gutter — the
-    /// TUI's form for a distilled result (docs/tui.md). `numbers` is parallel to
+    /// TUI's form for a triaged result (docs/tui.md). `numbers` is parallel to
     /// `code`'s lines; a gap in it is a gap in the source, stated by the jump rather
     /// than by a `@@` header.
     pub(super) fn render_numbered_code(

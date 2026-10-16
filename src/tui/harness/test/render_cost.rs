@@ -8,7 +8,7 @@
 //! say anyway, without being a timing test.
 
 use super::*;
-use crate::log::Distilled;
+use crate::log::Triaged;
 
 /// A session of `turns` tool exchanges, stream-followed to the bottom the way a
 /// live session sits.
@@ -196,7 +196,7 @@ fn a_re_rendered_result_drops_its_cached_layout() {
         "call-1",
         "RAW-ONE\nRAW-TWO\nRAW-THREE",
         false,
-        crate::log::WireState::from(Distilled::new(crate::log::Keep::None).with_note("three deps")),
+        crate::log::WireState::from(Triaged::new(crate::log::Keep::None).with_note("three deps")),
     );
     play.pin_to_bottom();
     let before = play.render();

@@ -320,7 +320,7 @@ async fn fs_read_and_list_roundtrip() {
 /// A refused write reaches the model as an **error** result carrying the refusal
 /// verbatim (docs/tools.md). The two halves are separable and both matter: the flag
 /// says a write did not happen — a success-shaped refusal read as a success, and
-/// distillation keeping only the first line sharpened that — and the body still
+/// triage keeping only the first line sharpened that — and the body still
 /// carries the retry token, which is the only way to confirm the same bytes without
 /// re-sending them.
 #[tokio::test]

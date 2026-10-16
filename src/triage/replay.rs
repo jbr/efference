@@ -1,9 +1,9 @@
-//! Dev-tool inspection and single-shot replay without retries (docs/redaction-fork.md).
+//! Dev-tool inspection and single-shot replay without retries (docs/triage.md).
 
 use super::*;
 
 /// What one un-retried fork peek came back with — the `peek` dev tool's measurement
-/// primitive (docs/redaction-fork.md).
+/// primitive (docs/triage.md).
 ///
 /// The gate's own machinery retries, so a session's `Triage.retries` records *that* a
 /// first attempt failed but never lets you compare two asks: a change that halves
@@ -53,7 +53,7 @@ impl PeekAttempt {
 }
 
 /// Rebuild the exact request a recorded gate's peek sent — the same `peek_messages` the
-/// live gate calls, so a replay can't drift from production (docs/redaction-fork.md).
+/// live gate calls, so a replay can't drift from production (docs/triage.md).
 /// Split out for the `peek` dev tool's dry run, which reviews an ask without spending a
 /// request on it.
 ///
@@ -80,7 +80,7 @@ pub fn peek_request(
 
 impl ForkPeek {
     /// One fork-peek round trip against a recorded gate, with **no retries**
-    /// (docs/redaction-fork.md). Same request, same client, tools and `tool_choice`
+    /// (docs/triage.md). Same request, same client, tools and `tool_choice`
     /// as the live gate under this configuration (shared or own), same validity rule
     /// (`parse_retain` plus [`require_coverage`] and [`require_in_bounds`]) — only the
     /// retry loop is absent, because the first attempt is the measurement.

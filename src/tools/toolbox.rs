@@ -71,7 +71,7 @@ impl Toolbox {
     /// edits) — each with its session cwd seeded to `cwd` and an in-memory session
     /// store (no shared `~/.ai-tools` writes). The agent gets real file +
     /// structured-edit tools that lean on the fork instead of piping to
-    /// `head`/`grep` (docs/redaction-fork.md, docs/tools.md). `scratch` is the
+    /// `head`/`grep` (docs/triage.md, docs/tools.md). `scratch` is the
     /// session scratch dir bash exports as `$TMPDIR` (docs/tools.md); `None` for
     /// contexts that never execute (the `wire` dev view).
     pub fn bash_and_mcps(cwd: PathBuf, scratch: Option<PathBuf>) -> anyhow::Result<Self> {

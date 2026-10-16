@@ -296,7 +296,7 @@ pub(crate) fn anthropic_def(schema: &ToolDefinition) -> Value {
 /// would work. In the incident this is drawn from, `ferritin` was an allowed
 /// **bash prefix** listed in the session's boot context as a skill, and the model
 /// built a structured call out of the name rather than running it as a command.
-/// Nothing on the path corrected it — the result text didn't, and the distillate
+/// Nothing on the path corrected it — the result text didn't, and the selection
 /// then wrote down a false lesson the raw never claimed ("not available in this
 /// environment"). The correction belongs in the result text because a text that
 /// carries it is one a summary can only compress, not invent past (docs/tools.md).

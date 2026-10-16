@@ -1,12 +1,12 @@
-//! The JSON tool schemas of the peek tools (docs/redaction-fork.md).
+//! The JSON tool schemas of the peek tools (docs/triage.md).
 //!
 //! Both schemas are **static** — zero-argument builders, every field unconditional —
-//! because they ride the agent turn's `tools[]` (docs/redaction-fork.md): a schema that
+//! because they ride the agent turn's `tools[]` (docs/triage.md): a schema that
 //! varied with the inbox, the background set, or the roster would re-key the request
 //! envelope mid-session and split the cache lineage, which is the exact defect the
 //! shared array exists to close. Field descriptions are self-contained ("if a section
 //! named X appears above…") since their referent sections aren't always shown; invented
-//! dispositions are dropped harness-side regardless (docs/redaction-fork.md).
+//! dispositions are dropped harness-side regardless (docs/triage.md).
 //!
 //! Both descriptions carry the same standing clause — the tools are answered only when
 //! the peek's tail instruction asks. Phrased as permission ("do not call unless asked"),
@@ -59,7 +59,7 @@ pub(super) fn background_schema_field() -> Value {
 
 /// The `surfaced` schema field (name-keyed). A plain string array: names are validated
 /// against the roster in code (invented ones dropped), not by a schema enum, keeping
-/// the guard harness-side (docs/redaction-fork.md).
+/// the guard harness-side (docs/triage.md).
 pub(super) fn surfaced_schema_field() -> Value {
     json!({
         "type": "array",
@@ -68,7 +68,7 @@ pub(super) fn surfaced_schema_field() -> Value {
     })
 }
 
-/// The fork gate's tool (docs/redaction-fork.md). Static — see the module doc.
+/// The fork gate's tool (docs/triage.md). Static — see the module doc.
 ///
 /// Two answer shapes, because the schema is static while gate size is not. A gate
 /// carrying one result — the overwhelming majority — is answered with the **flat**

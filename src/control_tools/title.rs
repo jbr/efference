@@ -59,10 +59,10 @@ impl Tool<Control> for Title {
                 if text.is_empty() {
                     return Err(anyhow!("title must not be empty"));
                 }
-                if text.chars().count() > crate::distill::TITLE_MAX_CHARS {
+                if text.chars().count() > crate::triage::TITLE_MAX_CHARS {
                     return Err(anyhow!(
                         "title must be at most {} characters",
-                        crate::distill::TITLE_MAX_CHARS
+                        crate::triage::TITLE_MAX_CHARS
                     ));
                 }
                 let title = crate::log::Title {

@@ -8,7 +8,7 @@
 
 use super::*;
 use crate::api::{Client, Error, ModelCapabilities};
-use crate::distill::ForkPeek;
+use crate::triage::ForkPeek;
 use tokio::sync::oneshot;
 use trillium_tokio::Swansong;
 

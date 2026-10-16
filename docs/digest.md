@@ -7,7 +7,7 @@ head and the compaction-fidelity evaluation (`eval/compaction/`) both start from
 `src/digest.rs` implements it; `efference dev digest <session> [--upto <seq>] [--seqs]`
 prints it. `efference dev peek --view digest` replays a session's triage gates with the
 history rendered as this digest instead of the transcript (an experiment arm,
-`src/distill/digest_view.rs`); the digest at a gate extends the digest at every earlier
+`src/triage/digest_view.rs`); the digest at a gate extends the digest at every earlier
 gate byte for byte, which is what would let such a request resume a cached prefix.
 
 ## What a line carries
@@ -17,13 +17,13 @@ gate byte for byte, which is what would let such a request resume a cached prefi
 <the turn, verbatim>
 
 • [read src/a.rs, src/b.rs] <the call's intent>
-    → <the note triage distilled from its result>
+    → <the note triage triaged from its result>
 ### agent
 <the prose of any turn, including one that goes on to make calls>
 ```
 
 - **A call** renders as its tool name, the paths it named, its `intent`
-  ([tools.md](tools.md)), and its distilled note ([redaction-fork.md](redaction-fork.md)).
+  ([tools.md](tools.md)), and its triaged note ([triage.md](triage.md)).
   Paths are read from the per-tool key the permission classifier reads (`path_spec`),
   so a tool with no path key renders its name alone. A result that failed is marked
   `(error)`; one with no note says so.

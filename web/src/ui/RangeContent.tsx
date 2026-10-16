@@ -1,6 +1,6 @@
 import { Fragment, useMemo, useState } from "react";
 import { useHighlight } from "./highlight.ts";
-import { rustLines } from "../render/distill.ts";
+import { rustLines } from "../render/triage.ts";
 import "./RangeContent.css";
 import { mergeRanges, type LineRange } from "./lineRanges.ts";
 

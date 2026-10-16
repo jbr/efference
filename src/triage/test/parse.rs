@@ -132,7 +132,7 @@ fn parse_retain_is_none_without_a_retain_call() {
 fn parse_retain_reads_surfaced_names() {
     let offered = [CALL_ID.to_string()];
     // The `surfaced` field carries context-item names the model judged relevant
-    // (docs/redaction-fork.md); parse_retain reads them unfiltered.
+    // (docs/triage.md); parse_retain reads them unfiltered.
     let p = parse_retain(
         &retain_completion(
             RETAIN,

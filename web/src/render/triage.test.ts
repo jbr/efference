@@ -1,30 +1,30 @@
-// Mirrors `src/project/test/distilled.rs` case for case (the cordon's
-// divergence check — see distill.ts). If a case changes there, change it
+// Mirrors `src/project/test/triaged.rs` case for case (the cordon's
+// divergence check — see triage.ts). If a case changes there, change it
 // here; if it can't be mirrored, the port has drifted.
 
 import { expect, test } from "vitest";
 import {
   PEEK_LINE_CAP,
   normalize,
-  renderDistilled,
+  renderTriaged,
   renderHunks,
   renderTriageFailure,
   wireView,
-} from "./distill.ts";
+} from "./triage.ts";
 
 const lines = (s: string) => s.split("\n");
 
-test("render_distilled covers all, none, and ranges", () => {
+test("render_triaged covers all, none, and ranges", () => {
   const c = "a\nb\nc\nd\ne";
-  const all = renderDistilled(c, "All", null);
+  const all = renderTriaged(c, "All", null);
   expect(all).toContain("@@ lines 1-5 @@");
   expect(all.split("\n")).toContain("a");
   expect(all.split("\n")).toContain("e");
 
-  const none = renderDistilled(c, "None", "nothing useful here");
+  const none = renderTriaged(c, "None", "nothing useful here");
   expect(none).toBe("⟢ nothing useful here");
 
-  const ranges = renderDistilled(c, { Ranges: [[2, 3]] }, null);
+  const ranges = renderTriaged(c, { Ranges: [[2, 3]] }, null);
   expect(ranges).toContain("@@ lines 2-3 @@");
   expect(ranges.split("\n")).toContain("b");
   expect(ranges.split("\n")).toContain("c");
@@ -32,16 +32,16 @@ test("render_distilled covers all, none, and ranges", () => {
   expect(ranges).not.toContain("@@ line 1 ");
 });
 
-test("render_distilled truncates past the cap", () => {
+test("render_triaged truncates past the cap", () => {
   const body = Array.from(
     { length: PEEK_LINE_CAP + 5 },
     (_, i) => `line${i + 1}`,
   ).join("\n");
-  const out = renderDistilled(body, { Ranges: [[1, 1]] }, null);
+  const out = renderTriaged(body, { Ranges: [[1, 1]] }, null);
   expect(out.split("\n")).toContain("line1");
   expect(out).toContain("5 more lines truncated");
 
-  const past = renderDistilled(
+  const past = renderTriaged(
     body,
     { Ranges: [[PEEK_LINE_CAP + 2, PEEK_LINE_CAP + 4]] },
     null,
@@ -128,12 +128,12 @@ test("wireView dispatches per wire state like tool_result_block", () => {
   expect(wireView(raw, "Raw")).toBeNull();
   expect(wireView(raw, "Elided")).toEqual({ text: "[elided]", isError: false });
 
-  const distilled = wireView(raw, {
-    Distilled: { keep: { Ranges: [[1, 1]] }, note: "summary" },
+  const triaged = wireView(raw, {
+    Triaged: { keep: { Ranges: [[1, 1]] }, note: "summary" },
   });
-  expect(distilled?.text).toContain("the gist line");
-  expect(distilled?.text).toContain("⟢ summary");
-  expect(distilled?.text).not.toContain("ten thousand lines");
+  expect(triaged?.text).toContain("the gist line");
+  expect(triaged?.text).toContain("⟢ summary");
+  expect(triaged?.text).not.toContain("ten thousand lines");
 
   const failed = wireView(raw, {
     TriageFailed: { why: "peek called no tool (attempt 3 of 3)" },

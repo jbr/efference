@@ -25,7 +25,7 @@ pub struct ConfigEdit {
     /// key, last-write-wins, so replaying a log in order materializes the table deterministically.
     pub change: ConfigChange,
     /// The orchestrator's one-line rationale, addressed to the session (and the corpus byproduct:
-    /// the labeled `(change, why)` pair for any future distilled approval model).
+    /// the labeled `(change, why)` pair for any future triaged approval model).
     pub note: String,
 }
 

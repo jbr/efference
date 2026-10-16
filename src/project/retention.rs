@@ -1,20 +1,20 @@
-//! How much of what triage saw survives onto the wire (docs/redaction-fork.md).
+//! How much of what triage saw survives onto the wire (docs/triage.md).
 //!
 //! One rule, one place. What triage saw and what it kept are counted together,
-//! against the same [`distillate`] the transcript renders in its gutter — so these
+//! against the same [`selection`] the transcript renders in its gutter — so these
 //! are the numbers the gutter shows rather than a second, drifting definition of
 //! "kept".
 //!
 //! A result's verdict is not always on the result: a result captured before its
 //! triage carries [`WireState::Pending`] until the [`Payload::ResultVerdict`] entry
-//! that decides it (docs/redaction-fork.md). The fold counts a result from whichever
+//! that decides it (docs/triage.md). The fold counts a result from whichever
 //! of the two carries a final wire — its own entry (a result logged before capture
 //! existed, or a fixture) or the verdict naming it — which is the same resolution
 //! [`project`](crate::project::project) makes, so the ratio counts each result once
 //! whichever shape wrote it.
 //!
 //! **Withheld results are not low retention.** A [`WireState::TriageFailed`] result
-//! retained nothing because nothing was *recorded* (docs/redaction-fork.md), not
+//! retained nothing because nothing was *recorded* (docs/triage.md), not
 //! because triage was aggressive; folding it into the ratio would make a failed gate
 //! read as excellent compression. It counts as [`Retention::withheld`] instead, and
 //! stays out of both sides of the ratio.
@@ -24,14 +24,14 @@
 //! names it — so a caller may consume entries incrementally from a cursor and never
 //! needs to invalidate what it already folded.
 
-use super::distillate;
+use super::selection;
 use crate::log::{LogEntry, Payload, RawResult, WireState};
 
 /// Lines kept vs. lines triage was shown, plus the count of results whose output was
 /// withheld outright. Cumulative over some span of the log.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize)]
 pub struct Retention {
-    /// Lines surviving on the wire, summed over distilled results.
+    /// Lines surviving on the wire, summed over triaged results.
     pub kept_lines: u64,
     /// Lines triage was shown, summed over the same results — the peek, so already
     /// capped at `PEEK_LINE_CAP`. Lines the cap dropped before triage ever saw them
@@ -76,7 +76,7 @@ impl Retention {
         }
     }
 
-    /// Kept as a fraction of shown, or `None` before the first distilled result —
+    /// Kept as a fraction of shown, or `None` before the first triaged result —
     /// which is *unknown*, not zero, and renders as absent rather than as 0%.
     pub fn ratio(&self) -> Option<f64> {
         (self.shown_lines > 0).then(|| self.kept_lines as f64 / self.shown_lines as f64)
@@ -85,8 +85,8 @@ impl Retention {
     /// Count one result under the wire it was decided with.
     fn count(&mut self, raw: &RawResult, wire: &WireState) {
         match wire {
-            WireState::Distilled(verdict) => {
-                let d = distillate(&raw.content, &verdict.keep);
+            WireState::Triaged(verdict) => {
+                let d = selection(&raw.content, &verdict.keep);
                 self.kept_lines += d
                     .ranges
                     .iter()
@@ -97,7 +97,7 @@ impl Retention {
             }
             WireState::TriageFailed { .. } => self.withheld += 1,
             // Awaiting triage (the captured result's own state until its verdict
-            // lands), bypassed (the known-shape rule, docs/redaction-fork.md — never
+            // lands), bypassed (the known-shape rule, docs/triage.md — never
             // shown to triage) and elided results are not verdicts about line-level
             // relevance, so none of them counts.
             WireState::Pending | WireState::Raw | WireState::Elided => {}

@@ -4,7 +4,7 @@ mod session;
 
 use super::*;
 use crate::api::TokenPrices;
-use crate::distill::ForkPeek;
+use crate::triage::ForkPeek;
 
 /// How long the cached prefix may go untouched before the keepalive pings it,
 /// absent a `[transport] keepalive-interval` (docs/transport.md): four fifths of the

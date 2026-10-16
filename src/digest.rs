@@ -2,7 +2,7 @@
 //! (docs/digest.md).
 //!
 //! Each call renders as its tool name, the paths it named, its `intent`, and the note
-//! triage distilled from its result; operator turns render verbatim, and the prose that
+//! triage triaged from its result; operator turns render verbatim, and the prose that
 //! ended a turn renders as the agent's reply. Bodies — arguments that are not paths,
 //! result content — are left out, so the digest's size follows the number of calls
 //! rather than the volume of work they did. It is a deterministic fold over the log and
@@ -172,10 +172,10 @@ fn tag(call: &ToolCall) -> String {
     }
 }
 
-/// The distilled note, or what stood in for one.
+/// The triaged note, or what stood in for one.
 fn outcome(is_error: bool, wire: &WireState) -> String {
     let note = match wire {
-        WireState::Distilled(d) => d.note.as_deref().map(str::trim).filter(|n| !n.is_empty()),
+        WireState::Triaged(d) => d.note.as_deref().map(str::trim).filter(|n| !n.is_empty()),
         _ => None,
     };
     match (note, is_error) {

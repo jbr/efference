@@ -1,10 +1,10 @@
-//! Rendering a distilled verdict back to wire text (docs/redaction-fork.md).
+//! Rendering a triaged verdict back to wire text (docs/triage.md).
 
 use super::*;
 
 /// A verdict for the renderer under test, from the three values a case varies.
-fn verdict(keep: Keep, note: Option<&str>, intent_feedback: Option<&str>) -> Distilled {
-    let mut v = Distilled::new(keep);
+fn verdict(keep: Keep, note: Option<&str>, intent_feedback: Option<&str>) -> Triaged {
+    let mut v = Triaged::new(keep);
     if let Some(note) = note {
         v = v.with_note(note);
     }
@@ -19,19 +19,19 @@ fn lines(s: &str) -> Vec<&str> {
     s.lines().collect()
 }
 
-/// The canonical render over a stored verdict (docs/redaction-fork.md): `all` is the
+/// The canonical render over a stored verdict (docs/triage.md): `all` is the
 /// content verbatim and *unheaded*, `none` collapses to the breadcrumb note, ranges keep
 /// only their spans.
 #[test]
-fn render_distilled_covers_all_none_and_ranges() {
+fn render_triaged_covers_all_none_and_ranges() {
     let c = "a\nb\nc\nd\ne";
-    let all = render_distilled(c, &verdict(Keep::All, None, None));
+    let all = render_triaged(c, &verdict(Keep::All, None, None));
     assert_eq!(all, c, "a fully-retained result is the result: {all}");
 
-    let none = render_distilled(c, &verdict(Keep::None, Some("nothing useful here"), None));
+    let none = render_triaged(c, &verdict(Keep::None, Some("nothing useful here"), None));
     assert_eq!(none, "⟢ nothing useful here");
 
-    let ranges = render_distilled(c, &verdict(Keep::Ranges(vec![(2, 3)]), None, None));
+    let ranges = render_triaged(c, &verdict(Keep::Ranges(vec![(2, 3)]), None, None));
     assert!(ranges.contains("@@ lines 2-3 @@"), "{ranges}");
     assert!(
         ranges.lines().any(|l| l == "b") && ranges.lines().any(|l| l == "c"),
@@ -47,19 +47,19 @@ fn render_distilled_covers_all_none_and_ranges() {
 /// pointing into the truncated tail can't reach those lines (the verdict only ever
 /// addressed the shown prefix).
 #[test]
-fn render_distilled_truncates_past_the_cap() {
+fn render_triaged_truncates_past_the_cap() {
     let body = (1..=PEEK_LINE_CAP + 5)
         .map(|i| format!("line{i}"))
         .collect::<Vec<_>>()
         .join("\n");
-    let out = render_distilled(&body, &verdict(Keep::Ranges(vec![(1, 1)]), None, None));
+    let out = render_triaged(&body, &verdict(Keep::Ranges(vec![(1, 1)]), None, None));
     assert!(out.lines().any(|l| l == "line1"), "kept line present");
     assert!(
         out.contains("5 more lines truncated"),
         "truncation noted: {out}"
     );
 
-    let past = render_distilled(
+    let past = render_triaged(
         &body,
         &verdict(
             Keep::Ranges(vec![(PEEK_LINE_CAP + 2, PEEK_LINE_CAP + 4)]),
@@ -75,7 +75,7 @@ fn render_distilled_truncates_past_the_cap() {
 
 /// A hunk header marks *where* curation cut, so a single range spanning the whole
 /// result carries none: it would state only "all of it", and on a one-line result
-/// the header is longer than the line it labels (docs/redaction-fork.md).
+/// the header is longer than the line it labels (docs/triage.md).
 #[test]
 fn a_range_spanning_everything_gets_no_header() {
     let ls = lines("alpha\nbeta\ngamma");
@@ -170,10 +170,10 @@ fn normalize_clamps_sorts_and_merges() {
     assert!(normalize(&[(50, 60)], 10).is_empty());
 }
 
-/// Distillation projects the *verdict* re-rendered from `raw` (docs/redaction-fork.md): the
+/// TriageOutcome projects the *verdict* re-rendered from `raw` (docs/triage.md): the
 /// kept line and note land; the dropped lines never reach the wire.
 #[test]
-fn distilled_projects_the_verdict_not_raw() {
+fn triaged_projects_the_verdict_not_raw() {
     let log = vec![
         entry(
             0,
@@ -193,7 +193,7 @@ fn distilled_projects_the_verdict_not_raw() {
             Payload::tool_result(
                 "x",
                 RawResult::text("the gist line\nten thousand lines of output"),
-                WireState::from(Distilled::new(Keep::Ranges(vec![(1, 1)])).with_note("summary")),
+                WireState::from(Triaged::new(Keep::Ranges(vec![(1, 1)])).with_note("summary")),
             ),
         ),
     ];
@@ -210,7 +210,7 @@ fn distilled_projects_the_verdict_not_raw() {
 }
 
 /// A [`WireState::TriageFailed`] result projects a **hard error in place of the
-/// output** (docs/redaction-fork.md): the untriaged raw never reaches the wire,
+/// output** (docs/triage.md): the untriaged raw never reaches the wire,
 /// `is_error` is forced true regardless of the tool's own outcome, and the message
 /// carries the why plus the stable greppable prefix.
 #[test]
@@ -269,7 +269,7 @@ fn triage_failed_projects_an_error_never_the_raw() {
 
 /// `intent_feedback` renders after the note under the same `⟢` sign with a fixed lead,
 /// so the agent reads it as a remark about the channel; blank feedback renders nothing
-/// (docs/redaction-fork.md).
+/// (docs/triage.md).
 #[test]
 fn intent_feedback_follows_the_note_under_its_own_lead() {
     let ls = lines("a\nb");
@@ -299,22 +299,22 @@ fn intent_feedback_follows_the_note_under_its_own_lead() {
     );
 }
 
-/// A `Distilled` state written before `intent_feedback` existed deserializes with it
+/// A `Triaged` state written before `intent_feedback` existed deserializes with it
 /// absent, and an absent field is not written — recorded logs and their bytes are
 /// unchanged by the field's arrival (docs/log-and-projection.md).
 #[test]
 fn intent_feedback_is_absent_from_older_states_and_omitted_when_none() {
-    let old = r#"{"Distilled":{"keep":"All","note":"n"}}"#;
+    let old = r#"{"Triaged":{"keep":"All","note":"n"}}"#;
     let wire: WireState = serde_json::from_str(old).unwrap();
     assert!(matches!(
         &wire,
-        WireState::Distilled(Distilled {
+        WireState::Triaged(Triaged {
             intent_feedback: None,
             ..
         })
     ));
     assert_eq!(serde_json::to_string(&wire).unwrap(), old);
-    let with = WireState::from(Distilled::new(Keep::All).with_intent_feedback("fb"));
+    let with = WireState::from(Triaged::new(Keep::All).with_intent_feedback("fb"));
     assert!(
         serde_json::to_string(&with)
             .unwrap()

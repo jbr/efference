@@ -20,9 +20,6 @@ use crate::bash;
 use crate::config::Refreshed;
 use crate::consolidate;
 use crate::daemon::{RequestOrigin, Session, Stall, StallReason, StreamDelta};
-use crate::distill::{
-    BgVerdict, ForkPeek, Pending, TriagePrimerInput, TriagePrimerOutcome, is_peek_tool,
-};
 use crate::frontend::{Approval, Frontend, SubmittedTurn};
 use crate::inbox::{ShownNotification, active_shown};
 use crate::log::{
@@ -34,6 +31,9 @@ use crate::project::WireTurn;
 use crate::spotter::Spotter;
 use crate::supervisor;
 use crate::tools::Toolbox;
+use crate::triage::{
+    BgVerdict, ForkPeek, Pending, TriagePrimerInput, TriagePrimerOutcome, is_peek_tool,
+};
 
 /// Hard cap on a single tool result's bytes (defense in depth). The fork peek caps
 /// *line count* (`PEEK_LINE_CAP`), but not a pathological single huge line; an
@@ -54,7 +54,7 @@ const IDLE_TRIAGE_DEBOUNCE_MS: u64 = 250;
 /// to nothing, so the replay re-sends byte-identical messages over the still-warm
 /// prefix), then the request goes again after a [`stream_abort_backoff`] pause.
 /// The fork peek's gate reaches for the same constant and the same schedule
-/// (`distill/peek.rs`): one stated policy, whichever surface the failure lands on.
+/// (`triage/peek.rs`): one stated policy, whichever surface the failure lands on.
 ///
 /// Sized to **wait the failure out**. An upstream failure is usually an ephemeral
 /// condition, and the alternative on exhaustion — a stall the operator has to
@@ -584,7 +584,7 @@ pub async fn run<F: Frontend, S: Spotter>(
             // A completion may carry several calls (docs/README.md). Run them all
             // here, holding the results, and triage them together at one gate below. Triaging between calls would build
             // a fork request whose trailing assistant message still carries unanswered
-            // `tool_use` blocks, which the API rejects (docs/redaction-fork.md).
+            // `tool_use` blocks, which the API rejects (docs/triage.md).
             // The triage-lineage primer replays this completion's input on the own
             // peek's client (docs/transport.md). Borrowed, so the
             // primer is byte-identical to the request above; armed only on the own

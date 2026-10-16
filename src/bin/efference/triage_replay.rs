@@ -1,4 +1,4 @@
-//! `efference dev peek` — replay a recorded session's fork gates (docs/redaction-fork.md).
+//! `efference dev peek` — replay a recorded session's fork gates (docs/triage.md).
 //!
 //! A dev tool, like `wire`/`gallery`/`spotter`. The live gate retries, so a session's
 //! `Triage.retries` records *that* a first attempt failed but can't compare two asks —
@@ -10,9 +10,9 @@
 //! session depth, and replaying one is a single warm prefix read.
 
 use super::*;
-use efference::distill::{ForkPeek, Pending, ReplayVerdict, TriageModel, TriageView, peek_request};
 use efference::log::{Keep, Payload, RawResult, ToolCall, WireState};
-use efference::project::{Reader, distillate};
+use efference::project::{Reader, selection};
+use efference::triage::{ForkPeek, Pending, ReplayVerdict, TriageModel, TriageView, peek_request};
 use std::collections::BTreeSet;
 use std::io::Write;
 
@@ -50,7 +50,7 @@ pub(crate) struct Gate {
 /// A gate is a completion's tool calls plus their results, which is exactly the grouping
 /// the live loop opens a gate over: the peek's prefix ends with an assistant message
 /// carrying one `tool_use` per call, and the API rejects a request that leaves any of
-/// them unanswered (docs/redaction-fork.md).
+/// them unanswered (docs/triage.md).
 pub(crate) fn gates(entries: &[efference::log::LogEntry]) -> Vec<Gate> {
     // Every result, by call id, and every gate's recorded first-attempt breadcrumb. A
     // result logged `Pending` takes the verdict a later `ResultVerdict` gave it, as the
@@ -100,7 +100,7 @@ pub(crate) fn gates(entries: &[efference::log::LogEntry]) -> Vec<Gate> {
         };
         // The recorded first attempt, off this gate's `Triage` breadcrumbs. A batch
         // writes one `Triage` per result but its `retries` ride the **last** of them
-        // (docs/redaction-fork.md), so every `Triage` between here and the next
+        // (docs/triage.md), so every `Triage` between here and the next
         // completion is searched — reading only the first undercounts multi-result gates.
         let recorded_first_failure = entries[prefix_end..]
             .iter()
@@ -150,7 +150,7 @@ fn tail_chars(turns: &[efference::project::WireTurn]) -> usize {
 }
 
 /// The one-line description of what a replayed attempt did.
-fn outcome(attempt: &efference::distill::PeekAttempt) -> String {
+fn outcome(attempt: &efference::triage::PeekAttempt) -> String {
     match &attempt.why {
         None => format!(
             "ok · keep {}",
@@ -162,7 +162,7 @@ fn outcome(attempt: &efference::distill::PeekAttempt) -> String {
 
 /// The 1-based line numbers a verdict keeps over `content`, after the cap.
 fn kept_set(content: &str, keep: &Keep) -> BTreeSet<usize> {
-    distillate(content, keep)
+    selection(content, keep)
         .ranges
         .iter()
         .flat_map(|&(a, b)| a..=b)
@@ -201,7 +201,7 @@ struct Compared {
 /// A bypassed (`Raw`) or withheld result has no reference to compare against.
 fn recorded_keep(wire: &WireState) -> Option<(&Keep, Option<&str>)> {
     match wire {
-        WireState::Distilled(v) => Some((&v.keep, v.note.as_deref())),
+        WireState::Triaged(v) => Some((&v.keep, v.note.as_deref())),
         _ => None,
     }
 }
@@ -234,7 +234,7 @@ fn compare(gate: &Gate, draw: usize, verdicts: &[ReplayVerdict], seconds: f64) -
         let Some(candidate) = verdicts.iter().find(|v| v.call_id == call.id.0) else {
             continue;
         };
-        let shown = distillate(&raw.content, &Keep::All).shown.len();
+        let shown = selection(&raw.content, &Keep::All).shown.len();
         let r = kept_set(&raw.content, reference);
         let c = kept_set(&raw.content, &candidate.keep);
         out.push(Compared {
@@ -464,7 +464,7 @@ pub(crate) async fn peek(
     if let Some(dir) = path.parent() {
         endpoint.session_id = Some(efference::api::sticky_session_id(dir));
     }
-    // The own peek replays the exact live shape (docs/redaction-fork.md): the same
+    // The own peek replays the exact live shape (docs/triage.md): the same
     // constructor boot uses, the same system prompt over the recorded context
     // block, the session's own model named as the agent. The shared peek replays on
     // the agent client, whose model is `--model`.

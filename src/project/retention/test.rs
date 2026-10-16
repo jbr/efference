@@ -1,5 +1,5 @@
 use super::*;
-use crate::log::{Distilled, Keep, RawResult, Timestamp};
+use crate::log::{Keep, RawResult, Timestamp, Triaged};
 
 /// A tool result of `lines` numbered lines, under the given verdict.
 fn result(seq: u64, lines: usize, wire: WireState) -> LogEntry {
@@ -17,13 +17,13 @@ fn result(seq: u64, lines: usize, wire: WireState) -> LogEntry {
     }
 }
 
-/// The two shapes of one session's log (docs/redaction-fork.md): a result whose
+/// The two shapes of one session's log (docs/triage.md): a result whose
 /// verdict rides its own entry — every log written before capture existed, and every
 /// fixture — and a result captured `Pending` with the verdict appended after it. Which
 /// one wrote the session is not something the ratio may depend on.
 #[test]
 fn a_captured_result_counts_as_the_same_result_logged_with_its_verdict() {
-    let verdict = WireState::from(Distilled::new(Keep::Ranges(vec![(1, 10), (91, 100)])));
+    let verdict = WireState::from(Triaged::new(Keep::Ranges(vec![(1, 10), (91, 100)])));
     let decided = [result(0, 100, verdict.clone())];
 
     let mut direct = Retention::default();
@@ -45,7 +45,7 @@ fn a_captured_result_counts_as_the_same_result_logged_with_its_verdict() {
 /// final wire is not a second decision, and does not count again.
 #[test]
 fn a_verdict_for_an_already_decided_result_does_not_count_twice() {
-    let verdict = WireState::from(Distilled::new(Keep::Ranges(vec![(1, 10)])));
+    let verdict = WireState::from(Triaged::new(Keep::Ranges(vec![(1, 10)])));
     let log = [result(0, 100, verdict.clone()), verdict_for(1, 0, verdict)];
 
     let mut r = Retention::default();
@@ -65,7 +65,7 @@ fn a_result_awaiting_its_verdict_counts_as_nothing() {
     assert_eq!(r.ratio(), None);
 }
 
-/// The `ResultVerdict` a captured result waits for (docs/redaction-fork.md).
+/// The `ResultVerdict` a captured result waits for (docs/triage.md).
 fn verdict_for(seq: u64, for_result: u64, wire: WireState) -> LogEntry {
     LogEntry {
         seq,
@@ -90,9 +90,9 @@ fn ranges_sum_across_results() {
         result(
             0,
             100,
-            WireState::from(Distilled::new(Keep::Ranges(vec![(1, 10), (91, 100)]))),
+            WireState::from(Triaged::new(Keep::Ranges(vec![(1, 10), (91, 100)]))),
         ),
-        result(1, 100, WireState::from(Distilled::new(Keep::All))),
+        result(1, 100, WireState::from(Triaged::new(Keep::All))),
     ];
     r.fold_all(&log, &log);
     assert_eq!(r.kept_lines, 120);
@@ -101,25 +101,25 @@ fn ranges_sum_across_results() {
 }
 
 #[test]
-fn kept_lines_match_the_rendered_distillate() {
+fn kept_lines_match_the_rendered_selection() {
     // The one invariant worth pinning: this must not become a second definition of
     // "kept" that drifts from what the transcript's gutter shows.
     let entry = result(
         0,
         50,
-        WireState::from(Distilled::new(Keep::Ranges(vec![(5, 9), (20, 20)]))),
+        WireState::from(Triaged::new(Keep::Ranges(vec![(5, 9), (20, 20)]))),
     );
     let Payload::ToolResult { raw, wire, .. } = &entry.payload else {
         unreachable!()
     };
-    let WireState::Distilled(Distilled { keep, .. }) = wire else {
+    let WireState::Triaged(Triaged { keep, .. }) = wire else {
         unreachable!()
     };
     let mut r = Retention::default();
     r.fold(&entry, std::slice::from_ref(&entry));
     assert_eq!(
         r.kept_lines as usize,
-        distillate(&raw.content, keep).numbered_lines().len()
+        selection(&raw.content, keep).numbered_lines().len()
     );
 }
 
@@ -131,7 +131,7 @@ fn overlapping_ranges_are_not_double_counted() {
     let entry = result(
         0,
         100,
-        WireState::from(Distilled::new(Keep::Ranges(vec![(1, 10), (5, 15)]))),
+        WireState::from(Triaged::new(Keep::Ranges(vec![(1, 10), (5, 15)]))),
     );
     r.fold(&entry, std::slice::from_ref(&entry));
     assert_eq!(r.kept_lines, 15);
@@ -145,7 +145,7 @@ fn a_withheld_result_is_counted_apart_from_the_ratio() {
         result(
             0,
             100,
-            WireState::from(Distilled::new(Keep::Ranges(vec![(1, 50)]))),
+            WireState::from(Triaged::new(Keep::Ranges(vec![(1, 50)]))),
         ),
         result(
             1,
@@ -180,7 +180,7 @@ fn lines_past_the_cap_are_truncated_not_dropped_silently() {
     let entry = result(
         0,
         super::super::PEEK_LINE_CAP + 25,
-        WireState::from(Distilled::new(Keep::All)),
+        WireState::from(Triaged::new(Keep::All)),
     );
     r.fold(&entry, std::slice::from_ref(&entry));
     assert_eq!(r.shown_lines as usize, super::super::PEEK_LINE_CAP);
@@ -196,9 +196,9 @@ fn folding_incrementally_equals_folding_the_whole_span() {
         result(
             0,
             40,
-            WireState::from(Distilled::new(Keep::Ranges(vec![(1, 10)]))),
+            WireState::from(Triaged::new(Keep::Ranges(vec![(1, 10)]))),
         ),
-        result(1, 60, WireState::from(Distilled::new(Keep::None))),
+        result(1, 60, WireState::from(Triaged::new(Keep::None))),
         result(
             2,
             10,
@@ -206,7 +206,7 @@ fn folding_incrementally_equals_folding_the_whole_span() {
                 why: "retries exhausted".into(),
             },
         ),
-        result(3, 80, WireState::from(Distilled::new(Keep::All))),
+        result(3, 80, WireState::from(Triaged::new(Keep::All))),
     ];
     let mut whole = Retention::default();
     whole.fold_all(&log, &log);

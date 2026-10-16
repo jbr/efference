@@ -181,7 +181,7 @@ impl Session {
     }
 
     /// A clone of the entries — handed to the fork distiller, which awaits the
-    /// model and so can't borrow across the lock (docs/redaction-fork.md).
+    /// model and so can't borrow across the lock (docs/triage.md).
     pub fn snapshot(&self) -> Vec<LogEntry> {
         self.log.lock().unwrap().entries().to_vec()
     }
@@ -203,7 +203,7 @@ impl Session {
     /// A clone of the single entry at `seq` (== its index in the log), or `None`
     /// if the log hasn't reached it yet. The `/events` tail reads one entry at a
     /// time, so it never clones the whole log. The loop reads back the result it
-    /// just captured, to hand triage the bytes the log holds (docs/redaction-fork.md).
+    /// just captured, to hand triage the bytes the log holds (docs/triage.md).
     pub(crate) fn entry_at(&self, seq: u64) -> Option<LogEntry> {
         self.log
             .lock()

@@ -1,7 +1,7 @@
 use super::*;
 use crate::log::MessagesOutputBlock;
 use crate::log::{
-    AssistantOutput, ContentBlock, Distilled, Mark, RawResult, Timestamp, ToolCall, WireState,
+    AssistantOutput, ContentBlock, Mark, RawResult, Timestamp, ToolCall, Triaged, WireState,
 };
 use serde_json::json;
 
@@ -164,7 +164,7 @@ fn budget_counts_projected_verdict_text_and_json_not_raw_output() {
         5,
         Payload::ResultVerdict {
             for_result: 2,
-            wire: WireState::Distilled(Distilled::new(crate::log::Keep::None).with_note("short")),
+            wire: WireState::Triaged(Triaged::new(crate::log::Keep::None).with_note("short")),
         },
     ));
     let projected = project_semantic(&log);

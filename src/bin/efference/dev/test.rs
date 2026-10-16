@@ -474,9 +474,9 @@ fn describe_call_prefers_the_obvious_field() {
     assert!(other.contains("\"a\""));
 }
 
-// ---- `peek` gate reconstruction (docs/redaction-fork.md) ----
+// ---- `peek` gate reconstruction (docs/triage.md) ----
 
-use crate::peek_replay::gates;
+use crate::triage_replay::gates;
 use efference::log::{LogEntry, Origin, Payload, RawResult, ToolCall, Triage, WireState};
 
 fn call(id: &str) -> ToolCall {

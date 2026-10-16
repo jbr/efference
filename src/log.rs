@@ -54,7 +54,7 @@ pub use upstream::{
     CAPTURED_HEADERS, FRAME_CAPTURE_CAP, StreamDiagnostics, UpstreamFailureRecord,
     is_captured_header,
 };
-pub use wire_state::{Distilled, Keep, WireState};
+pub use wire_state::{Keep, Triaged, WireState};
 pub use worktree::{Checkout, WorktreeEvent, WorktreeEventKind};
 
 /// Monotonic per-entry sequence number; the address space [`project`] reads over.
@@ -184,7 +184,7 @@ pub enum Payload {
         wire: WireState,
     },
     /// The final wire decision for a previously captured pending result.
-    /// Raw output stays on the referenced entry (docs/redaction-fork.md).
+    /// Raw output stays on the referenced entry (docs/triage.md).
     ResultVerdict { for_result: Seq, wire: WireState },
     /// A fact about how the session ran rather than what it said (the
     /// [`Telemetry`] family): projects to nothing, and every reader that renders a
@@ -202,7 +202,7 @@ pub enum Payload {
     /// (`Boundary`) and inclusive working-span (`Span`) replacement ranges,
     /// injecting their account as a user message (docs/consolidate.md).
     Mark(Mark),
-    /// A fork verdict (docs/redaction-fork.md) — the durable record of a throwaway
+    /// A fork verdict (docs/triage.md) — the durable record of a throwaway
     /// peek's decision. The fork's *transcript* stays throwaway; its *decision* is
     /// logged here for audit / introspection / distiller-quality work. Projects as
     /// audit only, except it emits a block per **pinned** notification (its `inbox`)
@@ -218,7 +218,7 @@ pub enum Payload {
     /// independent permission rung's decision on one gated tool call. Like
     /// [`Triage`], the deciding round-trip is throwaway but its *verdict* is logged:
     /// the audit answer to "why did this call get through (or stop)?" and the corpus
-    /// for any future distilled approval model. Projects to nothing — it is audit
+    /// for any future triaged approval model. Projects to nothing — it is audit
     /// only, never on the canonical wire. Fast-path clears are deliberately *not*
     /// logged; the spotter is the first permission rung that earns an entry.
     Spot(Spot),
@@ -265,7 +265,7 @@ pub enum Payload {
     /// `context` carries the **structured** `[context]` listing (name / `path` / description
     /// per item) the flat `system` string was rendered from, snapshotted **additively** so the
     /// listing survives as a fold over the log — the source `project` re-renders a surfaced
-    /// context item from (docs/redaction-fork.md), the same way it looks up pinned
+    /// context item from (docs/triage.md), the same way it looks up pinned
     /// notification bodies. `system` stays the byte-exact wire truth; `context` never touches
     /// the wire. `#[serde(default)]`: logs predating the field read back an empty listing.
     Preamble {

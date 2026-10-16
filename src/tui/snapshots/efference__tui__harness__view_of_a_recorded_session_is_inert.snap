@@ -19,7 +19,7 @@ expression: self.render()
 10 │   › touch /tmp/efference-smoke-test                                                                │
 11 │   spotter gated · Writing to `/tmp` is outside the repository and outside the allowed scope; keep  │
 12 │   artifacts and tests within the working directory.                                                │
-13 │   result (distilled, kept 0 of 1 line)                                                             │
+13 │   result (triaged, kept 0 of 1 line)                                                               │
 14 │   ⟢ touch command succeeded with no output; file created at /tmp/efference-smoke-test              │
 15 │                                                                                                   ╻│
 16 │   Done! I've created an empty file at /tmp/efference-smoke-test using the touch command.          ┃│

@@ -1,7 +1,7 @@
 //! Tests for which client and lineage a peek runs on.
 use super::*;
 
-/// What the gate records as the peek's reasoning (docs/redaction-fork.md): every thinking
+/// What the gate records as the peek's reasoning (docs/triage.md): every thinking
 /// block's text, joined — prose and redacted blocks excluded (a redacted block carries no
 /// text), and `None` when the attempt thought nothing, so a gate that didn't think records
 /// nothing rather than an empty entry. Signatures are dropped: this is a record, not a
@@ -46,14 +46,14 @@ fn peek_thinking_joins_thinking_text_only() {
 }
 
 /// The Responses analogue of the canonical-versus-peek prefix rule
-/// (docs/redaction-fork.md): under explicit caching the peek's one marker sits at the
+/// (docs/triage.md): under explicit caching the peek's one marker sits at the
 /// shared pre-fork frontier, nothing in the fork-local raw tail carries one, and the
 /// next canonical request is that same prefix, content for content, followed by the
-/// distillate — never the raw output or the peek's ask.
+/// selection — never the raw output or the peek's ask.
 #[test]
-fn a_responses_peek_marks_the_shared_frontier_and_the_canonical_wire_carries_only_the_distillate() {
+fn a_responses_peek_marks_the_shared_frontier_and_the_canonical_wire_carries_only_the_selection() {
     use crate::api::{PromptCachePolicy, encode_responses};
-    use crate::log::{Distilled, Keep, ResponsesOutputItem, WireState};
+    use crate::log::{Keep, ResponsesOutputItem, Triaged, WireState};
 
     let call = ToolCall::new("bash", "call_1", json!({ "command": "ls" }));
     let prefix = vec![
@@ -131,7 +131,7 @@ fn a_responses_peek_marks_the_shared_frontier_and_the_canonical_wire_carries_onl
         Payload::tool_result(
             call.id.clone(),
             raw.clone(),
-            WireState::from(Distilled::new(Keep::Ranges(vec![(1, 1)])).with_note("kept the first")),
+            WireState::from(Triaged::new(Keep::Ranges(vec![(1, 1)])).with_note("kept the first")),
         ),
     ));
     let mut canonical = crate::project::project_semantic(&log);
@@ -176,7 +176,7 @@ fn a_responses_peek_marks_the_shared_frontier_and_the_canonical_wire_carries_onl
     assert_eq!(
         canonical_marked,
         vec![canonical_json.len() - 1],
-        "the canonical marker moved to the distillate at the tail: {canonical_json:#?}"
+        "the canonical marker moved to the selection at the tail: {canonical_json:#?}"
     );
     let text = serde_json::to_string(&canonical_json).unwrap();
     assert!(
@@ -201,7 +201,7 @@ fn a_responses_peek_marks_the_shared_frontier_and_the_canonical_wire_carries_onl
     );
 }
 
-/// The peek's request surface follows its configuration (docs/redaction-fork.md):
+/// The peek's request surface follows its configuration (docs/triage.md):
 /// shared borrows the agent's client and `tools[]`; own sends its own client and
 /// only the two peek tools.
 #[test]
@@ -242,7 +242,7 @@ fn own_peek_sends_its_own_client_and_only_the_peek_tools() {
 }
 
 /// The standalone idle triage rides the agent lineage even when a separate triage
-/// model is configured (docs/redaction-fork.md): the agent's client, the agent's
+/// model is configured (docs/triage.md): the agent's client, the agent's
 /// full `tools[]`, and `auto`.
 #[test]
 fn the_idle_triage_rides_the_agent_lineage_whatever_the_triage_model() {

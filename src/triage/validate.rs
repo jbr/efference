@@ -1,8 +1,8 @@
-//! Verdict validation against gate offerings and bounds (docs/redaction-fork.md).
+//! Verdict validation against gate offerings and bounds (docs/triage.md).
 
 use super::*;
 
-/// Verdict validity includes **coverage** (docs/redaction-fork.md): every offered
+/// Verdict validity includes **coverage** (docs/triage.md): every offered
 /// label must be answered, or the verdict is rejected and retried in-fork. This gate has no
 /// keep-all fallback, so a result silently left untriaged has nowhere to land.
 ///
@@ -41,7 +41,7 @@ pub(super) fn require_coverage(
 
 /// The number of numbered lines the peek view shows for a raw result — the bound a
 /// `keep` range must land inside. Counts the way [`result_view`] numbers and
-/// `distillate` caps (docs/redaction-fork.md): all three must agree or the verdict's
+/// `selection` caps (docs/triage.md): all three must agree or the verdict's
 /// coordinates drift from what the model saw.
 pub(super) fn shown_line_count(raw: &RawResult) -> usize {
     raw.content.lines().count().min(PEEK_LINE_CAP)
@@ -60,7 +60,7 @@ pub(super) fn shown_lines(
         .collect()
 }
 
-/// Verdict validity also includes **bounds** (docs/redaction-fork.md): a `keep` range
+/// Verdict validity also includes **bounds** (docs/triage.md): a `keep` range
 /// lying wholly outside the shown line numbers is a coordinate mistake, not a decision
 /// (a peek adopting the file line numbers embedded in `grep -n` output as its retain
 /// coordinates) — and render-time normalization would drop it, turning

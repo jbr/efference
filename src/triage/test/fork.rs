@@ -1,8 +1,8 @@
 //! Tests for the fork's gate mechanics, including the known-result-shape rule
-//! (docs/redaction-fork.md).
+//! (docs/triage.md).
 use super::*;
 
-/// The invariant the batched gate exists to hold (docs/redaction-fork.md): when a
+/// The invariant the batched gate exists to hold (docs/triage.md): when a
 /// completion carries several calls, the peek's request must answer **every** one of
 /// them.
 ///

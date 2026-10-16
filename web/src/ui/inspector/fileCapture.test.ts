@@ -4,7 +4,7 @@ test("maps raw-result curation positions into each captured file", () => {
   const raw =
     "==t BEGIN a.rs, LENGTH: 10 t==\none\ntwo\nthree\n==t END a.rs t==\n==t BEGIN b.txt, LENGTH: 10 t==\nfour\nfive\n==t END b.txt t==";
   const files = capturedReads(raw, {
-    Distilled: {
+    Triaged: {
       keep: {
         Ranges: [
           [3, 3],
@@ -36,7 +36,7 @@ test("does not mislabel error output as captured file contents", () => {
 test("ranged read prefixes become file coordinates, not duplicated code text", () => {
   const [file] = capturedReads(
     "==t BEGIN /root/src/a.rs, LENGTH: 200, LINES: 40-42 t==\n40\tfirst\n41\tsecond\n42\tthird\n==t END /root/src/a.rs t==",
-    { Distilled: { keep: { Ranges: [[3, 3]] }, note: null } },
+    { Triaged: { keep: { Ranges: [[3, 3]] }, note: null } },
   );
   expect(file.text).toBe("first\nsecond\nthird");
   expect(file.startLine).toBe(40);

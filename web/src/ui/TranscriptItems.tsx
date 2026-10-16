@@ -208,8 +208,8 @@ function ActionHead({ node }: { node: CallNode }) {
 function noteOf(node: CallNode): string | null {
   const payload = node.result?.payload;
   if (!payload || !("ToolResult" in payload)) return null;
-  const { raw, wire, distillate } = payload.ToolResult;
-  return resultRender(node.name, raw, wire, distillate).note;
+  const { raw, wire, selection } = payload.ToolResult;
+  return resultRender(node.name, raw, wire, selection).note;
 }
 
 function Note({ node }: { node: CallNode }) {

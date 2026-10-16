@@ -73,7 +73,7 @@ const result = entry(4, {
       is_error: false,
     },
     wire: {
-      Distilled: {
+      Triaged: {
         keep: { Ranges: [[4, 7]] },
         note: "The web check passed: types, lint, formatting, and 472 tests.",
       },

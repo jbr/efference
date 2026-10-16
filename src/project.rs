@@ -14,7 +14,7 @@ use serde_json::Value;
 use std::collections::HashSet;
 
 use crate::log::{
-    Audience, Distilled, Keep, LogEntry, Mark, MarkKind, MessagesOutputBlock, Payload, Seq,
+    Audience, Keep, LogEntry, Mark, MarkKind, MessagesOutputBlock, Payload, Seq, Triaged,
 };
 
 /// Which client a projection feeds (docs/summary-head.md). `Main` is the agent's own
@@ -214,8 +214,8 @@ pub use semantic::{
 };
 
 pub use render::{
-    Distillate, INTENT_FEEDBACK_LEAD, distillate, render_distilled, render_resumed,
-    render_triage_failure,
+    INTENT_FEEDBACK_LEAD, Selection, render_resumed, render_triage_failure, render_triaged,
+    selection,
 };
 pub use retention::Retention;
 pub use wire::{

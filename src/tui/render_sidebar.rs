@@ -247,8 +247,8 @@ impl<'a> InteractiveState<'a> {
                 format!("in {} · out {}", num(u.input_tokens), num(u.output_tokens)),
                 text,
             ));
-            // Triage retention (docs/redaction-fork.md): how much of what the gate
-            // showed is still on the agent's record. Absent until the first distilled
+            // Triage retention (docs/triage.md): how much of what the gate
+            // showed is still on the agent's record. Absent until the first triaged
             // result — zero shown is unknown, not 0%.
             if let Some(percent) = (u.kept_lines * 100).checked_div(u.shown_lines) {
                 rows.push((

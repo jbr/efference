@@ -1,4 +1,4 @@
-//! Resolving captured results from their appended verdicts (docs/redaction-fork.md).
+//! Resolving captured results from their appended verdicts (docs/triage.md).
 
 use std::collections::{HashMap, HashSet};
 

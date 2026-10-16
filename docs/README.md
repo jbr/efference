@@ -44,7 +44,7 @@ Each session is an append-only log; the wire transcript sent to the API is
 from it is how most harnesses work; what efference commits to on top of that is:
 
 - **Rendering decisions are stored as per-entry verdicts, not content edits.**
-  Redaction flips a `WireState` (`Raw → Distilled → Elided`) carrying the
+  Redaction flips a `WireState` (`Raw → Triaged → Elided`) carrying the
   *verdict* (`keep` ranges + an optional note); `project` re-renders from the
   immutable `raw` each turn. Because the raw result survives in the log, every
   redaction is reversible and auditable.
@@ -67,7 +67,7 @@ enum Payload {
 
 enum WireState {
     Raw,                                             // project the full raw result
-    Distilled(Distilled),                            // a verdict (keep, note, intent_feedback), re-rendered by project
+    Triaged(Triaged),                            // a verdict (keep, note, intent_feedback), re-rendered by project
     Elided,                                          // project a placeholder; still recoverable
 }
 
@@ -80,7 +80,7 @@ changes rather than log rewrites:
 | Behavior | Becomes |
 | --- | --- |
 | Intent-aware compaction (drop dead-end deliberation, keep the conclusion) | a projection that keeps `Mark`s and elides the spans they summarize |
-| Continuous scrubbing (drop the irrelevant lines of a result) | a projection that `Elide`s or `Distill`s those entries |
+| Continuous scrubbing (drop the irrelevant lines of a result) | a projection that `Elide`s or `Triaged` those entries |
 | Progressive doc/tool reveal | a projection where a subtree / tool-def hasn't been expanded yet |
 | Reversibility of all of the above | raw output is never overwritten |
 
@@ -89,7 +89,7 @@ The log projects to more than one view: the model's context
 the same log to a renderable tree, [tui.md](tui.md)), and a reconnecting
 control-channel client's catch-up replay ([control-channel.md](control-channel.md)).
 See [log-and-projection.md](log-and-projection.md) for the full type set and
-[redaction-fork.md](redaction-fork.md) for how verdicts are produced.
+[triage.md](triage.md) for how verdicts are produced.
 
 ## The invariants (do not break these)
 
@@ -111,7 +111,7 @@ Violating any one silently breaks caching or correctness:
    free to call tools in parallel: the request does not set `disable_parallel_tool_use`
    (Messages) and sends `parallel_tool_calls: true` (Responses). The loop runs every call
    a completion made, holding the results, then triages them together at one gate
-   ([redaction-fork.md](redaction-fork.md)) — a peek fired between calls would carry
+   ([triage.md](triage.md)) — a peek fired between calls would carry
    unanswered `tool_use` blocks, which the API rejects. What *is* invariant is the
    pairing — every `tool_use` gets exactly one `tool_result`, or projection orphans it
    and the API rejects the request. A forced tool choice (the spotter's `spot`) still
@@ -134,11 +134,11 @@ everything, raw) and the **WIRE** (`project(LOG)`; what is sent):
 | `A` | assistant prose |
 | `t(cmd)` | `tool_use` — a tool call |
 | `R(…)` | a **raw** tool result (full content) — lives in the LOG only |
-| `r(…)` | a **distilled** tool result — what the WIRE carries, e.g. `r(L40-52)` |
+| `r(…)` | a **triaged** tool result — what the WIRE carries, e.g. `r(L40-52)` |
 | `┃` | a cache breakpoint |
 | `_` | an elided entry (projects to a placeholder) |
 
-Example — a big `cat` distilled to two line ranges, a small `grep` kept whole, breakpoint
+Example — a big `cat` triaged to two line ranges, a small `grep` kept whole, breakpoint
 at the tail:
 
 ```
@@ -153,13 +153,13 @@ Read top-down; open the subsystem doc you need.
 | Subsystem | Doc | Governing modules |
 | --- | --- | --- |
 | The log, the projection, the caching constraint | [log-and-projection.md](log-and-projection.md) | `src/log.rs`, `src/project.rs`, `src/persist.rs` |
-| Per-result triage — how every tool result is distilled | [redaction-fork.md](redaction-fork.md) | `src/distill.rs`, `src/project.rs` |
+| Per-result triage — how every tool result is triaged | [triage.md](triage.md) | `src/triage.rs`, `src/project.rs` |
 | Tools (in-process `Tool` trait; in-process MCP; per-call telemetry) | [tools.md](tools.md) | `src/tools.rs`, `src/bash.rs`, `src/agent/telemetry.rs` |
 | Trajectory consolidation (completed working spans and juncture checks) | [consolidate.md](consolidate.md) | `src/consolidate.rs`, `src/agent.rs` |
 | Trajectory digest (one line per call, the summarization substrate) | [digest.md](digest.md) | `src/digest.rs` |
 | Summary head (a model-written account of the trajectory, spliced in as a boundary mark) | [summary-head.md](summary-head.md) | `src/narrate.rs`, `src/project.rs`, `assets/prompts/` |
 | Ambient notifications — the inbox (enqueue then triage), and the attachment store | [inbox.md](inbox.md) | `src/inbox.rs`, `src/daemon/notifications.rs`, `src/attachments.rs`, `src/daemon/attachments.rs` |
-| Session id and title — the minted word-pair address, and the triage-kept one-line title | [session-title.md](session-title.md) | `src/daemon/slug.rs`, `src/agent/title.rs`, `src/distill/title.rs` |
+| Session id and title — the minted word-pair address, and the triage-kept one-line title | [session-title.md](session-title.md) | `src/daemon/slug.rs`, `src/agent/title.rs`, `src/triage/title.rs` |
 | Session resumption — reopening a persisted session under its id, and listing the archived ones | [resumption.md](resumption.md) | `src/boot/resume.rs`, `src/daemon/host/resume.rs`, `src/daemon/host/archived.rs`, `src/inventory.rs`, `src/tui/resume_list.rs` |
 | Worktree sessions — a session's own git checkout, and the project/working directory pair | [worktrees.md](worktrees.md) | `src/worktree.rs`, `src/policy/directories.rs`, `src/boot.rs`, `src/daemon/host.rs` |
 | Background processes — the supervisor | [supervisor.md](supervisor.md) | `src/supervisor.rs`, `src/bash.rs`, `src/daemon/background.rs` |
@@ -180,7 +180,7 @@ Read top-down; open the subsystem doc you need.
 | The TUI client | [tui.md](tui.md) | `src/tui/` |
 
 Where a module has grown a directory beside it (`src/api/`, `src/config/`, `src/policy/`,
-`src/project/`, `src/distill/`, `src/context/`, `src/daemon/`, `src/tui/*/`), the `.rs` file
+`src/project/`, `src/triage/`, `src/context/`, `src/daemon/`, `src/tui/*/`), the `.rs` file
 holds the subsystem's vocabulary and public surface and the directory holds one file per
 concern; each module's tests live in its own `test.rs`.
 

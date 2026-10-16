@@ -1,17 +1,17 @@
 // ! CORDON — a literal port of the TUI's per-tool parsing and dispatch
-// (`src/tui/projection/tools.rs`, plus the distilled-header composition in
+// (`src/tui/projection/tools.rs`, plus the triaged-header composition in
 // `src/tui/projection.rs`; docs/web-client.md "The cordon"). Same deletion
-// covenant as distill.ts: structured tool output deletes this directory
+// covenant as triage.ts: structured tool output deletes this directory
 // whole. Ports stay literal — same names, same classifications — so
 // divergence is findable by diffing against tools.rs.
 
-import type { DistillateLines, RawResult, WireState } from "../api/types.ts";
+import type { SelectionLines, RawResult, WireState } from "../api/types.ts";
 import {
-  distillateKept,
+  selectionKept,
   renderTriageFailure,
   rustLines,
   type NumberedLine,
-} from "./distill.ts";
+} from "./triage.ts";
 
 export type DiffLineKind = "added" | "removed" | "hunk" | "context";
 export interface DiffLine {
@@ -25,7 +25,7 @@ export const wireLabel = (wire: WireState) => {
   if (wire === "Pending") return "awaiting triage";
   if (wire === "Raw") return "raw";
   if (wire === "Elided") return "elided";
-  if ("Distilled" in wire) return "distilled";
+  if ("Triaged" in wire) return "triaged";
   return `triage failed: ${wire.TriageFailed.why}`;
 };
 
@@ -144,13 +144,13 @@ export type ResultView =
 
 export interface ResultRender {
   body: ResultView;
-  /** The wire state's word on a result head ("raw", "distilled", "elided").
+  /** The wire state's word on a result head ("raw", "triaged", "elided").
    * Null when the state is not worth naming: triage kept every line, so the
    * head presents like any whole result and nothing may imply the operator
    * sees less than the model did. The inspector's wire row keeps the
    * unconditional `wireLabel` — there it is metadata, not noise. */
   stateWord: string | null;
-  /** The TUI's size half-label — "kept N of M lines" — distilled only, and
+  /** The TUI's size half-label — "kept N of M lines" — triaged only, and
    * null alongside a null `stateWord` when nothing was dropped. */
   sizeLabel: string | null;
   /** The distiller's note; true of the output whichever form is shown. */
@@ -199,10 +199,10 @@ function richRaw(tool: string | null, raw: RawResult): ResultView {
   return { kind: "text", text: raw.content };
 }
 
-/** Mirrors `distilled_body`: the same tool-specific parse over the whole
+/** Mirrors `triaged_body`: the same tool-specific parse over the whole
  * raw, restricted to the rows whose line numbers the verdict kept; numbered
  * plain lines otherwise. */
-function distilledBody(
+function triagedBody(
   tool: string | null,
   raw: RawResult,
   kept: NumberedLine[],
@@ -235,7 +235,7 @@ export function resultRender(
    * present: `raw.content` may be a truncated prefix, over which the local
    * count reads "kept 0 of 198" for a result whose kept lines all lie past
    * it. Optional so a client of an older daemon still renders. */
-  distillate?: DistillateLines,
+  selection?: SelectionLines,
 ): ResultRender {
   if (wire === "Raw" || wire === "Pending") {
     const body = richRaw(tool, raw);
@@ -260,13 +260,13 @@ export function resultRender(
       isError: false,
     };
   }
-  if ("Distilled" in wire) {
-    const { keep, note } = wire.Distilled;
-    const local = distillateKept(raw.content, keep);
+  if ("Triaged" in wire) {
+    const { keep, note } = wire.Triaged;
+    const local = selectionKept(raw.content, keep);
     const kept = local.kept;
-    const keptCount = distillate?.kept_lines ?? kept.length;
-    const total = distillate?.total_lines ?? local.total;
-    // When triage kept everything, "distilled · kept n of n lines" says only
+    const keptCount = selection?.kept_lines ?? kept.length;
+    const total = selection?.total_lines ?? local.total;
+    // When triage kept everything, "triaged · kept n of n lines" says only
     // that triage ran — a third of real results. The view is everything the
     // model saw, so the head presents like any whole result.
     const complete = keptCount === total;
@@ -280,8 +280,8 @@ export function resultRender(
               kind: "text",
               text: `the ${keptCount} kept line${keptCount === 1 ? "" : "s"} lie past the loaded prefix`,
             }
-          : distilledBody(tool, raw, kept),
-      stateWord: complete ? null : "distilled",
+          : triagedBody(tool, raw, kept),
+      stateWord: complete ? null : "triaged",
       sizeLabel: complete
         ? null
         : `kept ${keptCount} of ${total} line${total === 1 ? "" : "s"}`,

@@ -451,8 +451,8 @@ pub(crate) struct UsageStats {
     /// nonzero marks `cost_usd` as an undercount.
     pub cost_unpriced: Option<u64>,
     /// Lines kept vs. lines triage was shown, cumulative over the session, from
-    /// `usage.retention` (docs/redaction-fork.md). `(0, 0)` before the first
-    /// distilled result — unknown, and rendered as absent rather than as 0%.
+    /// `usage.retention` (docs/triage.md). `(0, 0)` before the first
+    /// triaged result — unknown, and rendered as absent rather than as 0%.
     pub kept_lines: u64,
     pub shown_lines: u64,
     /// Results whose output a failed gate withheld, from `usage.retention.withheld`.

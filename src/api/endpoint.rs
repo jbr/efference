@@ -308,7 +308,7 @@ impl Endpoint {
         }
     }
 
-    /// The endpoint the separate-model fork peek dials (docs/redaction-fork.md): the
+    /// The endpoint the separate-model fork peek dials (docs/triage.md): the
     /// same provider and credentials, under a sticky key the agent lineage never
     /// shares. A triage model is a wholly separate cache lineage over the same
     /// transcript, so routing it with the agent's key would only pin two models to

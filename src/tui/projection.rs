@@ -3,7 +3,7 @@
 //! a sibling of the wire projection in `crate::project`).
 //!
 //! This mirrors one rule from the wire projection ([`crate::project`]): a tool
-//! result shows its *distillate* when present, else its raw content. Unlike the
+//! result shows its *selection* when present, else its raw content. Unlike the
 //! wire projection it does not coalesce or elide — every entry renders, whole, so
 //! the human sees the whole record (docs/positions.md).
 
@@ -11,8 +11,8 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::frontend::SubmittedTurn;
 use crate::log::{
-    AssistantOutput, ContentBlock, Distilled, LogEntry, MarkKind, MessagesOutputBlock, Payload,
-    RawResult, ToolCall, WireState,
+    AssistantOutput, ContentBlock, LogEntry, MarkKind, MessagesOutputBlock, Payload, RawResult,
+    ToolCall, Triaged, WireState,
 };
 use crate::tui::document::{
     DiffLine, DiffLineKind, Document, DocumentNode, EntryKind, Span, SpanStyle,
@@ -22,7 +22,7 @@ use crate::tui::markdown::MarkdownRenderer;
 /// Fold the log + live tail into a flat sequence of transcript
 /// [`Entry`](DocumentNode::Entry) nodes — one per top-level thing on the wire,
 /// decorated for presentation (docs/tui.md). `view` carries the human's per-result
-/// raw-vs-distilled flips across this rebuild.
+/// raw-vs-triaged flips across this rebuild.
 ///
 /// `pending_call` is the `call_id` the agent is blocked on for approval. The loop
 /// appends the assistant `tool_use` **before** it gates and one tool call runs per
@@ -377,8 +377,8 @@ pub(crate) fn entry_nodes(
                         // The distiller's note is *about* the result, not part of it
                         // — the same rung distinction the spotter's verdict gets — so
                         // it is its own entry rather than a trailing line boxed in
-                        // with the output (docs/redaction-fork.md).
-                        nodes.extend(distillate_note(call, raw, wire, view));
+                        // with the output (docs/triage.md).
+                        nodes.extend(selection_note(call, raw, wire, view));
                     }
                     let item = std::mem::replace(&mut nodes, outer);
                     nodes.push(call_item(
@@ -413,7 +413,7 @@ pub(crate) fn entry_nodes(
                 ],
             }),
             // The verdict is internal — audit-only on the transcript — except the
-            // compliance signal (docs/redaction-fork.md): a peek that needed retries
+            // compliance signal (docs/triage.md): a peek that needed retries
             // is a harness defect worth the operator's eyes even when a retry
             // recovered, so each non-compliant attempt renders as an annotation.
             Payload::Triage(t) => {
@@ -600,7 +600,7 @@ fn call_item(
     });
     let flagged = spot.is_some_and(|s| matches!(s.stance, Stance::Gate | Stance::Watch));
     let note = match result {
-        Some((_, _, WireState::Distilled(verdict))) => verdict
+        Some((_, _, WireState::Triaged(verdict))) => verdict
             .note
             .as_deref()
             .map(str::trim)
@@ -625,10 +625,10 @@ fn call_item(
 ///
 /// The header is a quiet `result (…)` row naming the wire state and how much was
 /// kept, as the web client's result head does: `raw` (natural, or the operator's
-/// flip), `distilled, kept 3 of 412 lines`, nothing when triage kept every line. It
+/// flip), `triaged, kept 3 of 412 lines`, nothing when triage kept every line. It
 /// carries the `✗` marker when the call failed (the entry that failed is the result,
 /// not the call, which is a call regardless of how it went), and it is the focus
-/// target the raw/distilled verb hangs off.
+/// target the raw/triaged verb hangs off.
 ///
 /// Keyed by `call_id`, which is what carries the raw flip across the re-projection
 /// every streamed token triggers.
@@ -640,40 +640,40 @@ fn result_entry(
     view: &ViewState,
 ) -> DocumentNode<'static> {
     let call_id = call.id.0.as_str();
-    // The human can flip a distilled result to its full raw output (docs/tui.md)
+    // The human can flip a triaged result to its full raw output (docs/tui.md)
     // — both are already client-side, so this is a pure render choice. A
     // forced-raw view passes a synthetic `Raw` wire so `result_body` gives it the
     // same rich tool-specific rendering (diff/read) a natural raw result gets.
     let show_raw = view.is_raw(call_id);
 
-    // A distilled result is built from the *verdict*, not from the wire's rendering
+    // A triaged result is built from the *verdict*, not from the wire's rendering
     // of it: the wire says "these lines came from there" as `@@ lines a-b @@` headers
     // because text is all it has, and a terminal has a gutter (docs/tui.md). Both
-    // views resolve the verdict through `project::distillate`, so they can differ in
+    // views resolve the verdict through `project::selection`, so they can differ in
     // form but never in which lines they show.
     //
-    // **The triaged lines are what a distilled result shows**, for every tool — the
+    // **The triaged lines are what a triaged result shows**, for every tool — the
     // default view is the agent's view. A tool with its own representation keeps it:
     // the tool-specific parse runs over the whole output and the kept-line filter is
-    // applied to the rows it produced (`distilled_body`), so a `read` is still
+    // applied to the rows it produced (`triaged_body`), so a `read` is still
     // highlighted and framing-stripped and an edit's diff is still colored, at
     // whatever subset survived triage.
     //
     // The note still shows either way: it is the distiller's account of the output,
     // and it is true regardless of which form of the output is on screen.
     // The header names the state and the size, the way the web client's result head
-    // does (docs/web-client.md): `result (distilled, kept 3 of 412 lines)`. When
+    // does (docs/web-client.md): `result (triaged, kept 3 of 412 lines)`. When
     // triage kept every line both go quiet and the head is a bare `result` — the
     // view is everything the model saw (a third of real results), and nothing may
     // imply the operator sees less.
     let mut parts: Vec<String> = Vec::new();
     let mut body = match wire {
-        WireState::Distilled(verdict) if !show_raw => {
-            let distillate = crate::project::distillate(&raw.content, &verdict.keep);
-            let kept = distillate.numbered_lines();
-            let total = distillate.shown.len() + distillate.dropped;
+        WireState::Triaged(verdict) if !show_raw => {
+            let selection = crate::project::selection(&raw.content, &verdict.keep);
+            let kept = selection.numbered_lines();
+            let total = selection.shown.len() + selection.dropped;
             if kept.len() != total {
-                parts.push("distilled".to_string());
+                parts.push("triaged".to_string());
                 // Verb first, so which number is which is unambiguous — `3 of
                 // 412` alone could be read either way round.
                 parts.push(format!(
@@ -682,7 +682,7 @@ fn result_entry(
                     if total == 1 { "" } else { "s" }
                 ));
             }
-            distilled_body(call.name.as_str(), raw, &kept)
+            triaged_body(call.name.as_str(), raw, &kept)
         }
         _ => {
             // A forced-raw view renders the full output, so it passes a synthetic
@@ -711,10 +711,10 @@ fn result_entry(
                         parts.push(format!("triage failed: {why}"));
                         crate::project::render_triage_failure(why)
                     }
-                    // Unreachable: a distilled result is handled above unless it is
+                    // Unreachable: a triaged result is handled above unless it is
                     // being shown raw, which this branch already excluded.
-                    WireState::Distilled(verdict) => {
-                        crate::project::render_distilled(&raw.content, verdict)
+                    WireState::Triaged(verdict) => {
+                        crate::project::render_triaged(&raw.content, verdict)
                     }
                 };
                 (content, wire)
@@ -790,16 +790,16 @@ fn result_entry(
 /// The wire has to fold these into the result text, because a tool result is one
 /// string there; the transcript does not. Empty while the result is flipped to raw:
 /// raw is what the tool actually returned, and the note is not part of that.
-fn distillate_note(
+fn selection_note(
     call: &ToolCall,
     raw: &RawResult,
     wire: &WireState,
     view: &ViewState,
 ) -> Vec<DocumentNode<'static>> {
-    let WireState::Distilled(verdict) = wire else {
+    let WireState::Triaged(verdict) = wire else {
         return Vec::new();
     };
-    let Distilled {
+    let Triaged {
         keep,
         note,
         intent_feedback,
@@ -820,11 +820,11 @@ fn distillate_note(
     {
         nodes.push(annotation_line(crate::project::INTENT_FEEDBACK_LEAD, fb));
     }
-    let distillate = crate::project::distillate(&raw.content, keep);
-    if distillate.dropped > 0 {
+    let selection = crate::project::selection(&raw.content, keep);
+    if selection.dropped > 0 {
         nodes.push(annotation_line(
             "… ",
-            &format!("{} more lines truncated before triage", distillate.dropped),
+            &format!("{} more lines truncated before triage", selection.dropped),
         ));
     }
     nodes

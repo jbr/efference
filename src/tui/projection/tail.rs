@@ -1,4 +1,4 @@
-//! The live pre-commit tail and the per-result raw-vs-distilled view state
+//! The live pre-commit tail and the per-result raw-vs-triaged view state
 //! (docs/tui.md).
 
 use super::*;
@@ -146,7 +146,7 @@ impl LiveTail {
 /// next streamed fragment re-projects it back to its default.
 #[derive(Debug, Default)]
 pub(crate) struct ViewState {
-    /// `call_id`s the human flipped to **raw** output — the wire distillate is the
+    /// `call_id`s the human flipped to **raw** output — the wire selection is the
     /// default, raw is shown on demand (both are already client-side; this is a
     /// pure render choice, no round-trip).
     raw: HashSet<String>,

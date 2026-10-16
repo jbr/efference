@@ -289,7 +289,7 @@ explicitly pins it.
 There is also a structural constraint: output arriving after the spawn's `tool_use`
 has already been answered has no `tool_use` to pair with, so it *cannot* be a
 `ToolResult`. Late output is structurally a live view or a notification — never a
-distilled result. The same argument applies to exit events, which is why the exit
+triaged result. The same argument applies to exit events, which is why the exit
 reaches the model through the Ambient inbox. The `ProcessEvent` record above is
 not a second route to the model: it projects to nothing, and exists for readers
 that arrive after the session.
@@ -364,7 +364,7 @@ the loop is parked, an arriving event wakes a **triage gate that rides no tool
 result** — the inbox/background section plus an ask for the triage-only tool (`keep`
 absent; nothing to retain), appended as a plain user message; like every peek the
 ask rides the tail instruction, never a forced `tool_choice`
-([redaction-fork.md](redaction-fork.md), the shared envelope). It is a throwaway
+([triage.md](triage.md), the shared envelope). It is a throwaway
 fork: it logs `Ambient` + `Triage` (audit grows) but **projects to nothing unless
 it pins** — the prefix stays byte-identical and cache-hot.
 
@@ -419,7 +419,7 @@ permission to ask would gate a question behind a question.
   existed, so `begin_ask` withdraws them from the queue as `DELETE /turns/:id` would and
   publishes them on the `ask` state topic as `recalled`; the submitting client puts them
   back in its composer.
-- **Notifications do not interrupt it.** The reply bypasses the peek (`distill::bypassed`
+- **Notifications do not interrupt it.** The reply bypasses the peek (`triage::bypassed`
   names its shape `operator reply`); the inbox is still triaged. In a batch with other
   results the peek runs as usual with a stand-in for the reply. When every result in the
   batch bypasses, the loop appends them and then runs the standalone triage peek that

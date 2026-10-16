@@ -79,7 +79,7 @@ A `Mark` gains two fields, both defaulted so existing logs deserialize unchanged
 - **`audience`** — which projection the mark applies to: `All` (the default) or `Triage`.
 
 A `Triage` boundary exists for a triage model that runs on its own client
-(`ForkPeek::own`, [redaction-fork.md](redaction-fork.md)) with a smaller or earlier-degrading
+(`ForkPeek::own`, [triage.md](triage.md)) with a smaller or earlier-degrading
 window than the main model. It folds the span for that client only. The main projection
 ignores it and is byte-identical to the projection of the same log without it; a peek that
 shares the agent's client reads the main projection and has no notion of it, since a fold

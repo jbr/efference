@@ -147,13 +147,13 @@ it. Everything else sends the model's spelling of off: a forced `tool_choice`
 (Anthropic answers forced choice with thinking on with a 400), a model without
 adaptive, and a client built `without_thinking`. The main agent turn and the
 fork peek both send `auto` —
-the shared envelope ([redaction-fork.md](redaction-fork.md)): identical
+the shared envelope ([triage.md](triage.md)): identical
 `tool_choice` and thinking are part of what lets the peek read the agent lineage's
 cache — so both may think (the fork's thinking is discarded with its throwaway
 tail); the spotter still forces its `spot` tool → thinking off; a separate-model
 peek sends thinking off unless `--triage-thinking` or `--triage-effort` — for the
 per-result peeks only; the idle triage rides the agent's client and thinks as the
-agent does ([redaction-fork.md](redaction-fork.md)). Where off is omitted on
+agent does ([triage.md](triage.md)). Where off is omitted on
 OpenRouter, a client built `without_thinking` sends OpenRouter's own
 `reasoning: {enabled: false}` beside it.
 
@@ -264,7 +264,7 @@ known coupling and passes through.
 
 **Which envelopes carry it.** The effort rides the agent `Client`, so every
 request that client makes carries it — the main turn and the fork peek, which is
-the shared envelope ([redaction-fork.md](redaction-fork.md)): if one carried it
+the shared envelope ([triage.md](triage.md)): if one carried it
 and the other didn't, the peek would stop reading the agent lineage's cache — and
 the keepalive, which sends the turn's envelope (above). The spotter forces its
 tool, sends thinking off, and runs on its own client, which is never given an
@@ -465,7 +465,7 @@ has to be committed to arrange the replay). On exhaustion — or a terminal
 failure, above — the gate does not give the agent anything: it **holds** the
 batch's results, unappended, and stalls with `StallReason::TriageUnavailable`
 while the loop keeps running, until a continue retries it or an interrupt ends
-the turn ([redaction-fork.md](redaction-fork.md)). Withholding the
+the turn ([triage.md](triage.md)). Withholding the
 results as a hard error instead is expensive in a way the turn path is not: a withheld result asks the agent to re-issue a call whose side effects
 already stand. In a controlled run a withheld conformance `PASS` was re-earned by
 re-running the suite against a still-live server whose counters the invisible
@@ -616,7 +616,7 @@ level-triggered state topic, `upstream_retry` on `GET /state`
 that just failed, the budget it is spending, the absolute instant the next
 attempt fires, a lead line — *attempt 2 of 12 failed upstream, retrying* — and the
 upstream's own error text as `detail`. Both retry loops publish it (`agent.rs`
-for a turn, `distill/peek.rs` for a fork peek, on the agent's cell even when
+for a turn, `triage/peek.rs` for a fork peek, on the agent's cell even when
 triage runs on its own model) through one shared constructor, so the surfaces
 differ only in the name they carry; the distinction is kept because a triage wait
 sits between tool results, where an operator would otherwise read it as the model
@@ -1477,7 +1477,7 @@ serialization entirely, so adding it moved no Anthropic session's bytes.
 
 The spotter takes a **distinct** key (`Endpoint::for_spotter`, a `-spot` suffix), and
 so does the separate-model fork peek when one is configured (`Endpoint::for_triage`,
-`-triage`; [redaction-fork.md](redaction-fork.md)).
+`-triage`; [triage.md](triage.md)).
 It has its own system prompt and shares no prefix with the agent turn, so the two
 are separate conversations over one endpoint; message-hash derivation separated
 them for free, and an explicit key overrides that, so the separation has to be
@@ -1783,8 +1783,8 @@ build progress, test output, etc.) and preserves the process-group abort path.
 **The TUI renders both classes from one connection.** Live fragments
 print first; the committed entry finalizes the line when the turn closes. Tool
 output is intentionally not deduped against the committed `tool_result`: the
-stream shows raw live output, the result shows the fork's distillate (see
-[redaction-fork.md](redaction-fork.md)). Both carry signal.
+stream shows raw live output, the result shows the fork's selection (see
+[triage.md](triage.md)). Both carry signal.
 
 ---
 

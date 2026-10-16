@@ -1,5 +1,5 @@
 //! Upstream failures against a real turn loop and a scripted upstream
-//! (docs/transport.md, docs/redaction-fork.md): a failed request takes the retry
+//! (docs/transport.md, docs/triage.md): a failed request takes the retry
 //! schedule instead of stalling at once, a triage gate without a verdict holds
 //! its results rather than showing the agent an error, and the operator's
 //! continue retries either wait now.
@@ -98,7 +98,7 @@ pub(super) fn scripted(requests: Arc<AtomicUsize>, script: fn(usize) -> Answer) 
 }
 
 /// [`scripted`] keeping every request body it read, for a test that asserts what the
-/// fork was shown (docs/redaction-fork.md).
+/// fork was shown (docs/triage.md).
 pub(super) fn recording(
     requests: Arc<AtomicUsize>,
     script: fn(usize) -> Answer,
@@ -279,7 +279,7 @@ async fn a_gate_without_a_verdict_holds_until_continue() {
     assert!(
         log.iter().any(|e| matches!(
             &e.payload,
-            Payload::ResultVerdict { for_result, wire: WireState::Distilled(_), .. }
+            Payload::ResultVerdict { for_result, wire: WireState::Triaged(_), .. }
                 if *for_result == captured_seq
         )),
         "the verdict names the result it was decided for"
@@ -421,7 +421,7 @@ async fn a_failed_request_is_retried_and_continue_skips_the_wait() {
 /// `TriageDefect`, and still nothing reaches the agent.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_peek_that_never_answers_usably_is_held_as_a_defect() {
-    use crate::distill::PEEK_FORKS;
+    use crate::triage::PEEK_FORKS;
     let requests = Arc::new(AtomicUsize::new(0));
     let addr = scripted(Arc::clone(&requests), |n| match n {
         0 => Answer::Stream(tool_call("toolu_1", "bash", r#"{"command":"echo hi"}"#)),

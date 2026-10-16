@@ -117,7 +117,7 @@ struct Request<'a> {
     thinking: Thinking,
     /// OpenRouter's normalized reasoning switch, sent as `{"enabled": false}` only
     /// by a client built `without_thinking` on OpenRouter where `thinking` is
-    /// omitted (docs/redaction-fork.md, docs/transport.md): a model whose
+    /// omitted (docs/triage.md, docs/transport.md): a model whose
     /// reasoning is mandatory or undeclared, whose default is on. A per-client constant, and `None` skips serialization, so no existing
     /// session's bytes move.
     #[serde(skip_serializing_if = "Option::is_none")]

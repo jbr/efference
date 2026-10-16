@@ -15,7 +15,7 @@
 use std::path::Path;
 
 /// The system preamble. Explains the curation model so the agent stops defending
-/// against context bloat the old way (docs/redaction-fork.md) — the run that
+/// against context bloat the old way (docs/triage.md) — the run that
 /// motivated this watched the model reflexively `grep`/`head` its own tool output.
 /// The prose lives in `assets/prompts/session.md` so it can be edited as markdown
 /// rather than an escaped Rust literal (the same `include_str!` pattern the spotter
@@ -23,7 +23,7 @@ use std::path::Path;
 /// newline so the joined prompt stays byte-clean.
 const PREAMBLE: &str = include_str!("../assets/prompts/session.md");
 
-/// The separate-model fork peek's persona (docs/redaction-fork.md). `{agent_model}`
+/// The separate-model fork peek's persona (docs/triage.md). `{agent_model}`
 /// is substituted with the main model's id.
 const TRIAGE_PERSONA: &str = include_str!("../assets/prompts/triage.md");
 
@@ -167,7 +167,7 @@ pub fn system_prompt(
     prompt
 }
 
-/// The system prompt of the separate-model fork peek (docs/redaction-fork.md): the
+/// The system prompt of the separate-model fork peek (docs/triage.md): the
 /// triage model's own identity line, the persona that discloses the model seam once
 /// and then reads the transcript as its own, and the session's `[context]` block
 /// verbatim. No curation preamble, role section, or unmounted list — those describe

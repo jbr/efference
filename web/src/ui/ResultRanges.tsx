@@ -1,6 +1,6 @@
 import { memo } from "react";
 import type { RawResult, WireState } from "../api/types.ts";
-import { rustLines } from "../render/distill.ts";
+import { rustLines } from "../render/triage.ts";
 import { diffRows, readRows, isDiffTool } from "../render/parse.ts";
 import { RangeContent } from "./RangeContent.tsx";
 import { mergeRanges } from "./lineRanges.ts";
@@ -27,9 +27,7 @@ export const ResultRanges = memo(function ResultRanges({
     ? diff.map(([n, l]) => [n, l.text])
     : (read?.lines ?? rustLines(raw.content).map((line, i) => [i + 1, line]));
   const keep =
-    typeof wire === "object" && "Distilled" in wire
-      ? wire.Distilled.keep
-      : "All";
+    typeof wire === "object" && "Triaged" in wire ? wire.Triaged.keep : "All";
   const selected = rows.flatMap(([n], i) =>
     keep === "All" ||
     (keep !== "None" && keep.Ranges.some(([a, b]) => n >= a && n <= b))

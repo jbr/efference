@@ -480,7 +480,7 @@ async fn the_keepalive_sends_the_turns_thinking_and_effort() {
 }
 
 /// `Client::without_thinking` takes the model's spelling of off on every turn,
-/// adaptive or not (docs/redaction-fork.md, docs/transport.md), and on OpenRouter
+/// adaptive or not (docs/triage.md, docs/transport.md), and on OpenRouter
 /// an omitted `thinking` is said in OpenRouter's own word, `reasoning: {enabled:
 /// false}`. A client that never asked sends nothing extra.
 #[test]

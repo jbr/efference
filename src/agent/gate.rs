@@ -1,4 +1,4 @@
-//! Holding a triage gate until it has a verdict (docs/redaction-fork.md).
+//! Holding a triage gate until it has a verdict (docs/triage.md).
 //!
 //! A gate that produced no verdict is never shown to the agent. The results stay in
 //! the loop, unappended, while the trajectory is stalled on the `stall` topic; the
@@ -9,7 +9,7 @@
 
 use super::*;
 
-use crate::distill::{GateFailure, GateOutcome, PEEK_FORKS, PeekFailure};
+use crate::triage::{GateFailure, GateOutcome, PEEK_FORKS, PeekFailure};
 
 /// What the held gate's attempts accumulated before one of them succeeded: carried
 /// onto the successful gate's `Triage`, so a recovered hold is still in the record.

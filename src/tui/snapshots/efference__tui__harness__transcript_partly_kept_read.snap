@@ -11,7 +11,7 @@ expression: self.render()
  3 │   Reading the file:                                                            │
  4 │                                                                                │
  5 │   › read("src/tui/state.rs")                                                   │
- 6 │   result (distilled, kept 2 of 6 lines)                                        │
+ 6 │   result (triaged, kept 2 of 6 lines)                                          │
  7 │ ╭─────────────────────────────────❬rust❭─╮                                     │
  8 │ │ 2 pub struct InteractiveState<'a> {    │                                     │
  9 │ │ 3     pub document: DocumentState<'a>, │                                     │

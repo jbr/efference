@@ -11,7 +11,7 @@ fn peek_view_numbers_every_line() {
     assert!(view.contains("     3\tgamma"), "{view}");
 }
 
-/// The peek tools' schemas are static (docs/redaction-fork.md): they ride every turn's
+/// The peek tools' schemas are static (docs/triage.md): they ride every turn's
 /// `tools[]`, so any variation would re-key the request envelope and split the cache
 /// lineage. Byte-identical across calls, every rider field unconditional, and the
 /// standing description defers use until the harness asks.
@@ -98,7 +98,7 @@ fn names(roster: &[Item]) -> Vec<&str> {
 
 #[test]
 fn roster_excludes_already_surfaced_names() {
-    // Surfaced-once dedup (docs/redaction-fork.md): a name any prior
+    // Surfaced-once dedup (docs/triage.md): a name any prior
     // `Triage.surfaced` carried drops out of the roster — folded from the log alone.
     let prefix = vec![
         preamble_with(vec![listed("ferritin"), listed("jsonl-prose")]),
@@ -130,7 +130,7 @@ fn roster_is_empty_without_a_preamble() {
 
 /// A single-result gate asks for the flat form and names no label at all: naming the
 /// result when only one is in question is transcription with no decision in it
-/// (docs/redaction-fork.md).
+/// (docs/triage.md).
 #[test]
 fn a_single_result_gate_asks_for_the_flat_form_and_no_label() {
     let instruction = retain_instruction(&["r1".to_string()], &[], Reader::Main);
@@ -163,7 +163,7 @@ fn a_multi_result_gate_lists_every_offered_label_and_the_count() {
 /// headers once used for call ids, and an unbounded "every [call id] above" was read by a live model
 /// as "re-triage the whole transcript" — twenty-odd entries keyed by `[seq]` tags and
 /// invented ids, with the gate's own id missing, so coverage failed and the gate
-/// hard-errored (docs/redaction-fork.md).
+/// hard-errored (docs/triage.md).
 #[test]
 fn every_retain_ask_excludes_the_transcript_behind_it() {
     for offered in [
@@ -187,7 +187,7 @@ fn every_retain_ask_excludes_the_transcript_behind_it() {
 /// survives onto the wire — a multi-match search kept down to one line, with the note
 /// describing a different match. A reader who catches that once re-verifies by hand from
 /// then on, so the cost of an unauditable summary is paid on every later result too
-/// (docs/redaction-fork.md).
+/// (docs/triage.md).
 #[test]
 fn the_ask_grounds_the_note_in_the_kept_lines_and_flags_a_partial_enumeration() {
     for offered in [
@@ -289,7 +289,7 @@ fn the_roster_gives_each_item_a_path_but_not_its_summary() {
 }
 
 /// `intent_feedback` is the one channel from triage back to the agent about the *intent*
-/// rather than the output (docs/redaction-fork.md). It is optional in both answer shapes
+/// rather than the output (docs/triage.md). It is optional in both answer shapes
 /// and lands on the verdict beside the note, so it reaches the wire under the `⟢` sign.
 #[test]
 fn intent_feedback_is_carried_in_both_answer_shapes_and_absent_by_default() {
@@ -364,7 +364,7 @@ fn title_instruction_quotes_the_standing_title() {
     assert!(kept.contains("Keep it verbatim"), "{kept}");
 }
 
-/// Who answers decides what the note is (docs/redaction-fork.md): the agent's own model
+/// Who answers decides what the note is (docs/triage.md): the agent's own model
 /// writes a note to self; a separate triage model writes a report that says what the
 /// output shows and never what to do next. Both keep the grounding rule.
 #[test]

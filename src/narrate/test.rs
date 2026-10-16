@@ -1,7 +1,7 @@
 use super::*;
 use crate::api::{Completion, FailureClass, Usage};
 use crate::log::{
-    AssistantOutput, ContentBlock, Distilled, Keep, Payload, RawResult, Timestamp, ToolCall,
+    AssistantOutput, ContentBlock, Keep, Payload, RawResult, Timestamp, ToolCall, Triaged,
     WireState,
 };
 use crate::project::UserPart;
@@ -36,7 +36,7 @@ fn log() -> Vec<LogEntry> {
     let result = |id: &str| Payload::ToolResult {
         call_id: id.into(),
         raw: RawResult::text("body"),
-        wire: WireState::Distilled(Distilled::new(Keep::All).with_note("read it")),
+        wire: WireState::Triaged(Triaged::new(Keep::All).with_note("read it")),
     };
     vec![
         entry(

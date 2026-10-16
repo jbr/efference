@@ -35,7 +35,7 @@ pub(super) fn cap_tool_result(shared: &Session, call: &ToolCall, result: RawResu
 /// Run a harness supervisor/inbox tool (docs/supervisor.md) against daemon state, or `None`
 /// if `call` isn't one (so the caller falls through to the world toolbox). Like
 /// `consolidate` these act on `Session`, not the world — but unlike it their result
-/// distills through the universal fork like any tool (no bypass).
+/// triages through the universal fork like any tool (no bypass).
 pub(super) async fn supervisor_tool_result(
     shared: &Arc<Session>,
     call: &ToolCall,
@@ -118,7 +118,7 @@ pub(super) fn background_command(call: &ToolCall) -> Option<String> {
         .map(str::to_string)
 }
 
-/// A `tool_result` for an un-asked peek-tool call (docs/redaction-fork.md): `retain`
+/// A `tool_result` for an un-asked peek-tool call (docs/triage.md): `retain`
 /// and `triage` stand in every turn's `tools[]` for cache-lineage sharing, but on an
 /// agent turn nothing is asked of them, so the call is paired with this nudge instead
 /// of entering the cascade. One call per turn means the cost is a wasted round-trip,

@@ -6,19 +6,19 @@ expression: self.render()
     01234567890123456789012345678901234567890123456789012345678901234567890123456789
    ┌────────────────────────────────────────────────────────────────────────────────┐
  0 │ efference                                                             session  │
- 1 │ ┃ Which tests failed?                                                          │
+ 1 │ ┃ Add the line.                                                                │
  2 │                                                                                │
- 3 │   Running them.                                                                │
+ 3 │   Editing.                                                                     │
  4 │                                                                                │
- 5 │   › cargo test                                                                 │
- 6 │   result (distilled, kept 3 of 40 lines)                                       │
- 7 │ ╭────────────────────────────────────────────────────╮                         │
- 8 │ │  7 test tui::wrap::breaks_on_whitespace ... FAILED │                         │
- 9 │ │ 22 test tui::gutter::numbers_are_dimmed ... FAILED │                         │
-10 │ │ 23 test result: FAILED. 38 passed; 2 failed        │                         │
-11 │ ╰────────────────────────────────────────────────────╯                         │
+ 5 │   › edit("CHANGELOG.md", operation: "insert_after")                            │
+ 6 │   result (triaged, kept 1 of 7 lines)                                          │
+ 7 │ ╭─────────────────────────────────────────────────────╮                        │
+ 8 │ │ 1 Applied insert after — the file has been updated. │                        │
+ 9 │ ╰─────────────────────────────────────────────────────╯                        │
+10 │                                                                                │
+11 │   ⟢ inserted the read line-range entry                                         │
 12 │                                                                                │
-13 │   ⟢ 2 failures, both in the tui wrap/gutter work.                              │
+13 │                                                                                │
 14 │                                                                                │
 15 │                                                                                │
 16 │                                                                                │

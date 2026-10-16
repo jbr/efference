@@ -516,7 +516,7 @@ after it (about 15k tokens, the cut moved earlier so no call is separated from i
 result) stay verbatim. The fold appends one boundary mark and starts no request: an
 idle session stays idle, and a loop parked at its cold check stays parked until the
 next turn or continue. A loop held at a triage gate without a verdict (the
-`triage_unavailable` or `triage_defect` stall, docs/redaction-fork.md) is running but
+`triage_unavailable` or `triage_defect` stall, docs/triage.md) is running but
 sends nothing, so it accepts a fold the same way: it stays held, and the continue
 that retries it peeks the folded projection rather than the history the account
 replaced. After a fold the
@@ -1065,21 +1065,21 @@ boundary, so it is a valid string rather than a split code point). A client
 holding one renders the prefix, says what it is, and fetches `/log/:seq` when it
 wants the rest.
 
-**A distilled result's view carries the verdict's line arithmetic.** On every
-route, a `ToolResult` whose `wire` is `Distilled` gains one field beside it:
+**A triaged result's view carries the verdict's line arithmetic.** On every
+route, a `ToolResult` whose `wire` is `Triaged` gains one field beside it:
 
 ```jsonc
-"distillate": { "total_lines": 937, "kept_lines": 364 }
+"selection": { "total_lines": 937, "kept_lines": 364 }
 ```
 
 The counts are over the *whole* `content`, computed by the daemon through the
-same `distillate` the wire and the TUI render from (`src/project/render.rs`), so
+same `selection` the wire and the TUI render from (`src/project/render.rs`), so
 a client holding only the 16 KiB prefix states the same "kept 364 of 937 lines"
 the model's view had — counted locally over the prefix, a verdict whose kept
 ranges lie past it reads as "kept 0". Absent on a raw or elided result, so those
 views stay the derived bytes. Derived on every read rather than stored: the log
 is the record, and the view is where a count belongs. The per-line structure of
-the distillate — which rows survived, numbered — is not served yet; the web
+the selection — which rows survived, numbered — is not served yet; the web
 client still resolves that from the content it holds
 ([web-client.md](web-client.md) "The cordon").
 

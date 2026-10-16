@@ -1,4 +1,4 @@
-//! Decoding the fork's tool call back into a verdict (docs/redaction-fork.md).
+//! Decoding the fork's tool call back into a verdict (docs/triage.md).
 
 use super::*;
 
@@ -13,7 +13,7 @@ pub(super) struct ResultVerdict {
     pub(super) keep: Keep,
     pub(super) note: Option<String>,
     /// Triage's request for a better `intent`, when the one it was given left it
-    /// nothing to decide against (docs/redaction-fork.md).
+    /// nothing to decide against (docs/triage.md).
     pub(super) intent_feedback: Option<String>,
     pub(super) raw_keep: String,
 }
@@ -44,14 +44,14 @@ pub(super) struct ResultInput {
 
 /// The `retain` tool's input.
 ///
-/// Both answer shapes stand in one static schema (docs/redaction-fork.md). `keep` /
+/// Both answer shapes stand in one static schema (docs/triage.md). `keep` /
 /// `note` at the top level are the **flat form**, which the tail instruction asks for on
 /// a single-result gate — the overwhelming majority — since naming the one call in
 /// question is transcription with no decision in it. `results` is the keyed form, asked
 /// for when a gate carries several. Either may arrive for either gate size (nothing
 /// enforces the schema — the tool isn't `strict`), so both are always accepted; a parse
 /// failure would mean the result's output withheld as a hard error
-/// (docs/redaction-fork.md).
+/// (docs/triage.md).
 #[derive(Deserialize)]
 pub(super) struct RetainInput {
     #[serde(default)]
@@ -150,11 +150,11 @@ pub(super) fn collect_dispositions(
 /// - a lone `results` entry whose `result` doesn't match, which is re-keyed to the one
 ///   offered label. With a single target there is nothing to mis-attribute *to*, so
 ///   rejecting a decided verdict over a mistyped label would withhold output the model
-///   plainly triaged (docs/redaction-fork.md).
+///   plainly triaged (docs/triage.md).
 ///
 /// Verdicts naming a label that was never offered are otherwise left in place — the
 /// caller reconciles, the same harness-side guard used for invented notification ids
-/// and roster names (docs/redaction-fork.md).
+/// and roster names (docs/triage.md).
 pub(super) fn parse_retain(completion: &Completion, offered: &[String]) -> Option<ParsedRetain> {
     let Payload::Assistant { output, .. } = &completion.assistant else {
         return None;

@@ -28,7 +28,7 @@ is dropped, the same harness-side guard applied to notification ids and roster n
 [the two answer shapes](#two-answer-shapes-and-one-scoped-ask) below.
 
 Labels are `r1`, `r2`, … over the gate's offered results in call order, assigned and
-mapped back to calls harness-side (`distill::labels`); the provider's call id stays on
+mapped back to calls harness-side (`triage::labels`); the provider's call id stays on
 the `tool_result` pairing and never appears in the view or the ask. Keying by call id
 asks the model to copy back a 24–36 character opaque string, which verdicts got wrong
 by dropped or altered characters under both UUID-shaped and `call_…` ids; each miss
@@ -41,7 +41,7 @@ append-only, and is identical to where they land when a completion carried one c
 
 ```
 [cached prefix through tool_use]  ──┬──►  + [full raw result] + [retain prompt]   (throwaway: 1 turn, tail uncached)
-                                    └──►  + [distilled result]                     (canonical: appended, cached)
+                                    └──►  + [triaged result]                     (canonical: appended, cached)
 ```
 
 The fork's prefix hits cache; only its tail — raw output plus the extraction
@@ -84,7 +84,7 @@ completed batch's wire are otherwise unchanged.
 ## Universal, with no small-result exemption
 
 The fork is not an optimisation applied selectively above a threshold. Every tool
-result is peeked once, and only the distillate is appended. Peeking a small result
+result is peeked once, and only the selection is appended. Peeking a small result
 is cheap, and uniformity removes a special case. The payoff is **window economy**
 and cache-chain longevity: the canonical context stays maximally lean. The cost is
 one extra round-trip per result — latency, not tokens — explicitly accepted. The
@@ -101,7 +101,7 @@ judges such a result reasonably — a short refusal is exactly the boilerplate t
 compresses — and the paraphrase is silently useless.
 
 So the decision is taken away from the fork rather than delegated to a prompt.
-`src/distill/handles.rs` holds one entry per known handle-bearing shape, matched as a
+`src/triage/handles.rs` holds one entry per known handle-bearing shape, matched as a
 sentinel plus a fixed-width hex digest anywhere in the result text. The shipped entry is
 fs-mcp's refused-`write` retry token, `write-retry-` followed by 16 hex digits: a `write`
 refused because the path exists (or because `overwrite` and `append` were both set)
@@ -127,7 +127,7 @@ undispositioned notification stays active and is re-shown there ([inbox.md](inbo
 
 Two alternatives were rejected. **Prompting the fork** to preserve identifiers is exactly
 the instruction a summarizer follows unreliably, and the failure is silent. **A
-tool-declared not-distillable property** is the general answer if a third-party tool ever
+tool-declared not-triageable property** is the general answer if a third-party tool ever
 mints handles, but it is a new trust surface — a tool that over-claims it defeats triage
 wholesale — so it waits for that case. Removing the handle from the tool instead (having
 `write` default to overwrite, or confirming a refusal by path and flag alone) is also not
@@ -177,7 +177,7 @@ What forcing bought is re-bought harness-side:
   recovered from** — is recorded attempt-stamped on the gate's `Triage` (`retries`)
   and rendered as a `⚠ triage retry` annotation in the TUI transcript: a runtime
   triage failure is a harness defect signal, never silently accepted, and the
-  compliance record is a fold over that field. Implemented in `src/distill/peek.rs`.
+  compliance record is a fold over that field. Implemented in `src/triage/peek.rs`.
 
 Un-forcing also lifts the forced-choice-excludes-thinking constraint
 ([transport.md](transport.md)): the fork may think, and the thinking is discarded with
@@ -268,7 +268,7 @@ smaller than the agent's (backlog/inbox/distiller-experiment.md).
 ## Two answer shapes, and one scoped ask
 
 The schema is static while gate size is not, so `retain` carries both shapes and the
-tail instruction (`retain_instruction` in `src/distill/prompt.rs`) names which one this
+tail instruction (`retain_instruction` in `src/triage/prompt.rs`) names which one this
 gate wants.
 
 **The ask is shaped against the pull of the turn it interrupts.** It carries its own
@@ -331,7 +331,7 @@ line belongs in `keep`"), and `keep` is told that a partial keep of an enumerati
 match list, a listing, a candidate set — reads afterwards as the whole set, so either the
 enumeration is kept whole or the note says how many of how many survived. That is the case
 where a lean verdict changes the answer rather than shortening it. Both clauses are pinned
-in `src/distill/test.rs`. Where the result header carries the call's `intent`, the note
+in `src/triage/test.rs`. Where the result header carries the call's `intent`, the note
 answers it, and when the output does not contain what the intent asked for the ask prefers
 saying so over summarizing what the output does contain.
 
@@ -459,7 +459,7 @@ calls ([README.md](README.md)), so a peek may answer a batch in several `retain`
 
 All tool output is line-numbered before it is shown in the fork peek. Line
 numbers are the coordinate system `retain(lines=…)` addresses, and
-the distillate preserves original numbers across elisions so any kept line maps
+the selection preserves original numbers across elisions so any kept line maps
 back to the raw. The raw in the log stays pristine; numbering is a render transform
 applied only inside the throwaway branch.
 
@@ -470,18 +470,18 @@ small result would be larger than the raw it replaces. The two renderings are
 therefore split:
 
 - **`number_lines`** (`cat -n` per line) — shown only in the throwaway fork peek;
-  the coordinate system `retain(lines=…)` addresses. Implemented in `src/distill/prompt.rs`.
+  the coordinate system `retain(lines=…)` addresses. Implemented in `src/triage/prompt.rs`.
 
 - **`render_hunks`** (the canonical wire form) — a `@@ lines a-b @@` header per
   contiguous kept span, then those lines verbatim. One header per range (not per
   line); gaps between hunks are implied by the jump in headers, as in a unified
   diff. A keep-all result is one header plus verbatim body, approximately equal to
   raw. This is the form for a reader that has only text; the TUI resolves the same
-  verdict through the shared `distillate` and renders the kept lines with their
-  numbers in a gutter instead ([tui.md](tui.md)). Both go through `distillate`, so
+  verdict through the shared `selection` and renders the kept lines with their
+  numbers in a gutter instead ([tui.md](tui.md)). Both go through `selection`, so
   the two views can differ in form but never in *which* lines they show.
   `render_hunks` runs at **projection time** over the stored verdict
-    (`WireState::Distilled(Distilled { keep, note, intent_feedback })`), not at append — the wire
+    (`WireState::Triaged(Triaged { keep, note, intent_feedback })`), not at append — the wire
   form is re-derived from `raw` plus the verdict each turn, so the kept bytes are never
   stored twice. When a note survives, `render_hunks` prefixes it with the `⟢`
   provenance sigil — the same marker surfaced-context lines carry (`⟢ context ·
@@ -494,10 +494,10 @@ therefore split:
 
 ## The verdict is the stored form
 
-`WireState::Distilled` carries the **verdict** as one `Distilled` struct (the `keep`
+`WireState::Triaged` carries the **verdict** as one `Triaged` struct (the `keep`
 ranges, optional `note`, and optional `intent_feedback`, the last serialized only when
 set so recorded logs are byte-unchanged by its arrival), not the rendered bytes. The
-struct is what `render_distilled` takes and what the builders construct, so a field
+struct is what `render_triaged` takes and what the builders construct, so a field
 added to the verdict is one setter and one render clause rather than a change to every
 site that names the variant. Two payoffs from one move: the kept bytes are
 never persisted twice, and the structured decision is itself the record.
@@ -509,7 +509,7 @@ the fork's audit record of it as a `Triage` entry right after (in `src/log.rs`):
 
 | field | meaning |
 | --- | --- |
-| `for_result` | `seq` of the `ToolResult` this verdict distilled (`None` for a standalone idle triage) |
+| `for_result` | `seq` of the `ToolResult` this verdict triaged (`None` for a standalone idle triage) |
 | `origin` | `Model` (a real `retain` call) or `Fallback` (the peek failed — the result projects a withheld-output error) |
 | `raw_keep` | the model's exact `keep` string, pre-parse — the audit breadcrumb |
 | `inbox` | per-notification dispositions chosen in this peek, by arrival `seq` |
@@ -543,7 +543,7 @@ and a count of results whose output a failed gate withheld. `GET /state` reports
 Two properties make the fold the cheap kind. It counts each result once, from
 whichever entry carries its final wire — the `ToolResult` itself for a result logged
 with its verdict, or the `ResultVerdict` naming a captured one, looked up by `seq`
-(an index) for the bytes — and resolves the verdict through the same `distillate` the
+(an index) for the bytes — and resolves the verdict through the same `selection` the
 transcript renders from, rather than becoming a second definition of "kept" that can
 drift from what the gutter shows. Its rule for which verdict counts mirrors
 `log::result_verdicts` rather than calling it, because rebuilding that map per entry
@@ -570,7 +570,7 @@ own context; none of it acts irreversibly on the world, so none of it needs the
 approval gate, and all of it is safe to settle off-main.
 
 The fork's invariant holds throughout: prefix cached, tail discarded, except an
-explicit structured result appended to canonical (the `Distilled` verdict, a pinned
+explicit structured result appended to canonical (the `Triaged` verdict, a pinned
 `Ambient`). The line that bounds this: the moment the fork would do something
 irreversible to the world (`kill -9` a process), that is a main-branch, gated
 action, not perception management.
@@ -582,7 +582,7 @@ Deciding what to perceive next also runs *forward*: the same peek can pull an
 [context.md](context.md)) into view when it bears on the work in flight. A cheap
 model that recalls a stub's description but answers from memory anyway is missing a
 *decision* step, not a fact; the rider lands the nudge adjacent to the moment of
-need. Implemented in `src/distill.rs` (the roster + verdict) and `src/project.rs`
+need. Implemented in `src/triage.rs` (the roster + verdict) and `src/project.rs`
 (the render).
 
 - **Roster.** The peek view lists the surfaceable items — every `Item::Listed`

@@ -41,11 +41,11 @@ enum Payload {
     User(Vec<ContentBlock>),
     Assistant { output: AssistantOutput, upstream_failure: Option<UpstreamFailureRecord> },
     ToolResult { call_id: CallId, raw: RawResult, wire: WireState },
-    ResultVerdict { for_result: Seq, wire: WireState },  // the final wire for a `Pending` result (see redaction-fork.md)
+    ResultVerdict { for_result: Seq, wire: WireState },  // the final wire for a `Pending` result (see triage.md)
     Resumed(Resumed),  // the session was reopened by a later host process — projects a restart notice
     Mark(Mark),        // a salience annotation
     Ambient(Notification),  // an out-of-band notification (see inbox.md)
-    Triage(Triage),    // a fork verdict — the audit record (see redaction-fork.md)
+    Triage(Triage),    // a fork verdict — the audit record (see triage.md)
     Spot(Spot),        // a spotter permission verdict — audit only (see permissions.md)
     Telemetry(Telemetry),  // how the session ran, not what it said — never projected (below)
     ProcessEvent(ProcessEvent),    // a background process's mint or exit (see supervisor.md)
@@ -250,11 +250,11 @@ is still read back rather than re-resolved from files on disk.
 enum WireState {
     Pending,                                          // captured, awaiting its verdict: projects nothing
     Raw,                                              // project the full `raw`
-    Distilled(Distilled),                             // the verdict, re-rendered by project
+    Triaged(Triaged),                             // the verdict, re-rendered by project
     Elided,                                           // project a placeholder
     TriageFailed { why: String },                     // no longer written (a gate without a verdict holds); older logs project a hard error
 }
-struct Distilled { keep: Keep, note: Option<String>, intent_feedback: Option<String> }
+struct Triaged { keep: Keep, note: Option<String>, intent_feedback: Option<String> }
 enum Keep { All, None, Ranges(Vec<(usize, usize)>) }
 ```
 
@@ -268,7 +268,7 @@ A result the loop captured before its triage carries `Pending`, and its decision
 arrives later as a separate `ResultVerdict` entry naming the result's `seq`.
 Projection resolves a result's wire through that entry (`log::result_verdicts`) and
 skips a result still pending; the verdict entry projects nothing at its own position.
-The mechanism is in [redaction-fork.md](redaction-fork.md).
+The mechanism is in [triage.md](triage.md).
 
 `RawResult` carries `content: String`, `is_error: bool`, and `images:
 Vec<ResultImage>` — each image the tool returned as `{media_type, data, width,
@@ -314,7 +314,7 @@ makes this the one arm that writes wire content no log entry produced; the
 does not. In every placement a text-only result projects the bare-string form
 it always had, so adding images moved no existing bytes, and the placements are
 byte-identical on any image-free log. Images ride `Raw`
-and `Distilled` states — a distill verdict addresses text lines, and must not
+and `Triaged` states — a triage verdict addresses text lines, and must not
 silently eat an image the model pulled deliberately — and are shed by `Elided`
 and `TriageFailed`, which is what makes elision the cost-recovery lever for
 accumulated visual tokens. The fork peek projects the canonical prefix with
@@ -332,12 +332,12 @@ Folding masking into a `WireState` variant would reintroduce that artifact.
 Byte-determinism of `project` is untouched either way: the filtering happens
 upstream, so by the time projection reads an entry its text is already final.
 
-Crucially, `Distilled` stores the **verdict** — which line ranges survive
+Crucially, `Triaged` stores the **verdict** — which line ranges survive
 (`keep`) and an optional breadcrumb (`note`) — not the rendered bytes.
 `project` re-renders the kept hunks from `raw` each turn, so the wire is a
 genuine pure projection, and the kept bytes are never persisted twice. The
 structured decision doubles as the audit record. See [the redaction
-fork](redaction-fork.md) for how verdicts are produced.
+fork](triage.md) for how verdicts are produced.
 
 **Note on `Elided`:** `WireState::Elided` projects the placeholder `[elided]` —
 a block with no content, present only so the paired `tool_use` isn't orphaned.
@@ -377,7 +377,7 @@ fn project(log) -> Vec<ApiMessage>   // = encode_messages(project_semantic(log),
 Projection is two stages. `project_semantic` (`src/project/semantic.rs`) is the
 dialect-neutral fold: it decides **selection** — which entries reach the wire, the
 compaction fold driven by a pre-pass over applicable `Mark` ranges, result verdicts
-(`Distilled` re-rendered from `keep` + `raw`, `Elided`, `TriageFailed`), pinned
+(`Triaged` re-rendered from `keep` + `raw`, `Elided`, `TriageFailed`), pinned
 notifications, surfaced context, and every audit-only exclusion — and renders what
 every dialect sends identically (result text with its `[seq]` handle, and the
 `source:` prefix opening a sourced `User` turn's first prose part). Its output is
@@ -755,15 +755,15 @@ under a different current config still has the historical shape. The log does
 not store either derived value. The consequence for the byte pins is that the
 pinned bytes are pinned **per placement** — `project/test/cache.rs` covers the
 arms and asserts the marker count stays one for each. On the Responses wire the fork peek's frontier has its own
-pin (`distill/test.rs`): the peek's one marker sits on the last carrier before the
+pin (`triage/test.rs`): the peek's one marker sits on the last carrier before the
 fork-local tail and never in it, and the next canonical request repeats the pre-fork
-items content for content, marks its own tail, and carries the distillate rather
+items content for content, marks its own tail, and carries the selection rather
 than the raw output or the peek's ask. The marker is a write instruction, not
 content, so the two requests differ only in where it sits.
 
 One request shape rides this marker everywhere: agent turns, fork peeks, and
 keepalive pings send the same `tools[]`, `tool_choice: auto`, and thinking policy
-([redaction-fork.md](redaction-fork.md), the shared envelope), so a session's
+([triage.md](triage.md), the shared envelope), so a session's
 requests read and extend a **single cache lineage** rather than keying one per
 request shape.
 
@@ -892,7 +892,7 @@ this:
 Because redaction-at-append never touches a committed entry, no explicit freeze
 primitive is needed yet. A `Commit` payload that freezes a boundary is
 anticipated (see `Payload` above) but not built. Keeping the canonical lineage
-lean — distilled, not raw — also keeps consecutive breakpoints inside the
+lean — triaged, not raw — also keeps consecutive breakpoints inside the
 20-block window longer.
 
 ---

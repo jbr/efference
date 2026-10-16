@@ -19,7 +19,7 @@ use super::utils::find_node_at_path;
 /// exists without the menu (the `r` raw flip).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum BlockVerb {
-    /// Flip the focused tool result between its distilled and raw output.
+    /// Flip the focused tool result between its triaged and raw output.
     ToggleRaw,
     /// Flip a *running* tool's output between the trailing-lines peek and the whole
     /// output so far (docs/tui.md).
@@ -27,7 +27,7 @@ pub(super) enum BlockVerb {
 }
 
 /// One menu item: the label shown, and the verb `⏎` (or a click) fires. Labels
-/// name the *destination* state (`expand` on a collapsed block, `distilled` on one
+/// name the *destination* state (`expand` on a collapsed block, `triaged` on one
 /// already showing raw), like the strip's `pause`/`resume`.
 #[derive(Debug, Clone, Copy)]
 pub(super) struct MenuItem {
@@ -39,7 +39,7 @@ pub(super) struct MenuItem {
 /// — the only entries with a per-entry mechanism behind them.
 ///
 /// - `kind`: what the entry is. A [`ToolResult`](EntryKind::ToolResult) has the
-///   distillate/raw fork (docs/redaction-fork.md); a
+///   selection/raw fork (docs/triage.md); a
 ///   [`RunningTool`](EntryKind::RunningTool) has the peek/full fork (docs/tui.md).
 /// - `key`: the entry's durable identity — the `call_id` the flip is recorded
 ///   against. An entry with none carries no verbs, because the toggle would not
@@ -50,7 +50,7 @@ pub(super) struct MenuItem {
 pub(super) fn menu_items(kind: EntryKind, key: Option<&str>, flipped: bool) -> Vec<MenuItem> {
     match (kind, key) {
         (EntryKind::ToolResult, Some(_)) => vec![MenuItem {
-            label: if flipped { "distilled" } else { "raw" },
+            label: if flipped { "triaged" } else { "raw" },
             verb: BlockVerb::ToggleRaw,
         }],
         (EntryKind::RunningTool, Some(_)) => vec![MenuItem {

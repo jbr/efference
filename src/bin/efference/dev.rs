@@ -68,7 +68,7 @@ pub(crate) enum DevCommand {
         all: bool,
     },
     /// Print a session's trajectory digest (docs/digest.md): one line per tool call —
-    /// its tool, paths, intent and distilled note — plus verbatim operator turns and
+    /// its tool, paths, intent and triaged note — plus verbatim operator turns and
     /// the agent's turn-ending replies. A deterministic fold over the log; offline, no
     /// daemon, no model.
     Digest {
@@ -152,7 +152,7 @@ pub(crate) enum DevCommand {
     },
     /// Element gallery: launch the TUI on a fixed "one of each" transcript (rich
     /// markdown, a shell call, a colored diff, a collapsed long result, an error, a
-    /// distilled result, a consolidation mark) — no daemon. A live design page for
+    /// triaged result, a consolidation mark) — no daemon. A live design page for
     /// iterating on transcript rendering. q quits, ? for help, t for the theme picker.
     Gallery {
         /// Syntax/UI theme — a built-in name or a `.tmTheme` path. Defaults to
@@ -182,7 +182,7 @@ pub(crate) enum DevCommand {
         #[arg(long)]
         frame_cost: bool,
     },
-    /// Replay a recorded session's fork-gate peeks (docs/redaction-fork.md) and report **first-attempt** compliance — did the peek
+    /// Replay a recorded session's fork-gate peeks (docs/triage.md) and report **first-attempt** compliance — did the peek
     /// answer with a verdict, or reach for a work tool? The live gate retries, so a
     /// session's own record shows that a first attempt failed but can't score one ask
     /// against another. Each gate carries its own prefix at its own session depth, and
@@ -563,16 +563,16 @@ pub(crate) async fn run<F: Future<Output = Result<ClientTarget, CliError>>>(
             out,
             table,
         } => {
-            let triage = triage_model.map(|model| efference::distill::TriageModel {
+            let triage = triage_model.map(|model| efference::triage::TriageModel {
                 model,
                 thinking: triage_thinking,
                 auto_choice: triage_auto_choice,
                 effort: triage_effort,
             });
-            let view = efference::distill::TriageView::parse(&view).ok_or_else(|| {
+            let view = efference::triage::TriageView::parse(&view).ok_or_else(|| {
                 format!("--view {view}: expected transcript, digest, tail:N or intent")
             })?;
-            peek_replay::peek(
+            triage_replay::peek(
                 path, seq, repeat, limit, dry_run, &model, triage, view, out, table,
             )
             .await
@@ -589,7 +589,7 @@ pub(crate) async fn run<F: Future<Output = Result<ClientTarget, CliError>>>(
             triage_effort,
             out,
         } => {
-            let triage = triage_model.map(|model| efference::distill::TriageModel {
+            let triage = triage_model.map(|model| efference::triage::TriageModel {
                 model,
                 thinking: triage_thinking,
                 auto_choice: triage_auto_choice,

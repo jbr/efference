@@ -3,7 +3,7 @@
 Present-tense like the rest of this tree: the positions currently held, and the
 observed failures behind them. These are positions, not theses — each is
 checkable against decisions recorded in this repo, and none is a claim about
-the world. (Distilled from the operator's own words, 2026-07-21.)
+the world. (Triaged from the operator's own words, 2026-07-21.)
 
 ## Origin: observed friction in existing harnesses
 
@@ -19,7 +19,7 @@ Agent-facing:
 - `cargo test | tail -3`: the agent doesn't want noise, but cannot know in
   advance what will be noise. Piping through `tail` loses liveness (no output
   until exit) and loses the failure detail, forcing a re-run. *(Answered by
-  the redaction fork — [redaction-fork.md](redaction-fork.md).)*
+  the redaction fork — [triage.md](triage.md).)*
 - Grepping a file repeatedly to find a needle, spending more tokens than
   reading it once would have. Navigating and reading code is a coding
   harness's bread-and-butter operation, not an optional add-on.
@@ -73,7 +73,7 @@ recency").
 
 **Agent behavior is user feedback.** We don't know what, if anything, the
 subjective experience of a model is like — so observe and respond instead of
-assuming. This is the working methodology: the "treat the distillate as the
+assuming. This is the working methodology: the "treat the selection as the
 output" framing came from watching a model burn a turn chasing content it had
 been told was recoverable; the fd-duplication carve-out in the bash fast-path
 came from watching a habitual `2>&1` knock commands off the allowlist.

@@ -1,32 +1,32 @@
-//! Distillation — what a raw tool result projects to on the canonical wire
-//! (docs/redaction-fork.md, docs/README.md), and the inbox triage that rides the
+//! TriageOutcome — what a raw tool result projects to on the canonical wire
+//! (docs/triage.md, docs/README.md), and the inbox triage that rides the
 //! same fork peek (docs/inbox.md).
 //!
-//! Every tool result is distilled at append; the durable wire never carries raw
+//! Every tool result is triaged at append; the durable wire never carries raw
 //! output, and a result's `wire` is fixed once and never mutated (so caching is
 //! safe by construction). The distiller's job is to produce a **verdict** — which
 //! lines survive (`keep`) plus a `note` — not rendered bytes: the wire form is
 //! re-rendered from `raw` + the verdict at projection time
-//! ([`crate::project::render_distilled`], docs/redaction-fork.md), so the kept bytes
+//! ([`crate::project::render_triaged`], docs/triage.md), so the kept bytes
 //! are never stored twice and the structured decision doubles as the audit record.
 //!
 //! The same throwaway peek also triages the **inbox** (docs/inbox.md): the pending
 //! ambient notifications are shown under the output, and the `retain` verdict's
 //! `inbox` field pins / dismisses them by `[seq]`. The dispositions ride back on the
-//! [`Distillation`] and land on the logged [`Triage`](crate::log::Triage). One type
-//! does the distilling:
+//! [`TriageOutcome`] and land on the logged [`Triage`](crate::log::Triage). One type
+//! does the triaging:
 //!
-//! - [`ForkPeek`] — the universal triage gate (docs/redaction-fork.md): fork a
+//! - [`ForkPeek`] — the universal triage gate (docs/triage.md): fork a
 //!   throwaway branch off the cached prefix, show the model the line-numbered raw
 //!   output + the inbox, and ask it (via the tail instruction, never a forced
 //!   `tool_choice`) to call `retain` to choose what the canonical wire keeps and which
 //!   notifications to pin. The peek sends the *same* request envelope as an agent turn —
 //!   one shared `tools[]`, `tool_choice: auto`, the same thinking policy — so both
-//!   shapes read one cache lineage (docs/redaction-fork.md, docs/log-and-projection.md).
+//!   shapes read one cache lineage (docs/triage.md, docs/log-and-projection.md).
 //!   A non-compliant response gets a bounded in-fork retry, then a fresh fork; an
 //!   upstream failure takes the main loop's schedule. A gate that still has no verdict
 //!   returns a [`GateFailure`] and the loop **holds** the results — nothing reaches
-//!   the agent until a verdict does (docs/redaction-fork.md). The full untriaged raw
+//!   the agent until a verdict does (docs/triage.md). The full untriaged raw
 //!   is never welded onto the canonical wire.
 
 use std::collections::HashSet;
@@ -41,8 +41,8 @@ use crate::api::{Client, Completion, RequestUsage, RetrySurface, ToolChoice, Ups
 use crate::context::Item;
 use crate::inbox::ShownNotification;
 use crate::log::{
-    AssistantOutput, Disposition, Distilled, Keep, LogEntry, Origin, Payload, RawResult, Seq,
-    ToolCall, WireState,
+    AssistantOutput, Disposition, Keep, LogEntry, Origin, Payload, RawResult, Seq, ToolCall,
+    Triaged, WireState,
 };
 use crate::project::{PEEK_LINE_CAP, Reader, UserPart, WireTurn, project_semantic_for};
 use crate::supervisor::BgView;
@@ -60,7 +60,7 @@ fn primer_choice() -> ToolChoice {
 const TRIAGE: &str = "triage";
 
 /// Whether `name` is a peek tool. Both stand in every turn's `tools[]` (the shared
-/// envelope, docs/redaction-fork.md) but are answered only when a peek's tail
+/// envelope, docs/triage.md) but are answered only when a peek's tail
 /// instruction asks — the agent loop pairs an un-asked call with a nudge result
 /// instead of running the cascade.
 pub fn is_peek_tool(name: &str) -> bool {
@@ -82,27 +82,27 @@ pub enum BgVerdict {
 }
 
 /// One tool result awaiting triage: the call that produced it and its raw output.
-/// A gate covers every result a single completion produced (docs/redaction-fork.md),
+/// A gate covers every result a single completion produced (docs/triage.md),
 /// so the loop hands the distiller a slice of these rather than one at a time.
 pub struct Pending<'a> {
     pub call: &'a ToolCall,
     pub raw: &'a RawResult,
 }
 
-/// The verdict on **one** tool result (docs/redaction-fork.md): the wire form plus the
+/// The verdict on **one** tool result (docs/triage.md): the wire form plus the
 /// audit pieces the loop stamps into that result's [`Triage`](crate::log::Triage)
 /// entry. `raw` is never mutated — it stays in the log.
-pub struct Distillation {
-    /// The canonical wire form — a [`WireState::Distilled`] verdict ([`Distilled`]:
-    /// kept ranges, note, feedback), re-rendered from `raw` at projection time (docs/redaction-fork.md).
+pub struct TriageOutcome {
+    /// The canonical wire form — a [`WireState::Triaged`] verdict ([`Triaged`]:
+    /// kept ranges, note, feedback), re-rendered from `raw` at projection time (docs/triage.md).
     pub wire: WireState,
-    /// Whether the verdict is the model's or a harness fallback (docs/redaction-fork.md).
+    /// Whether the verdict is the model's or a harness fallback (docs/triage.md).
     pub origin: Origin,
     /// The model's exact `keep` string, pre-parse — empty for a model-free distiller.
     pub raw_keep: String,
 }
 
-/// The outcome of one triage gate (docs/redaction-fork.md). A gate rides the results of
+/// The outcome of one triage gate (docs/triage.md). A gate rides the results of
 /// a single completion — one or several calls (docs/README.md), all of them triaged
 /// together in one peek. That grouping is what keeps the peek's request valid: every `tool_use` in
 /// the trailing assistant message is answered by a real result in the same tail, so
@@ -110,13 +110,13 @@ pub struct Distillation {
 ///
 /// The inbox / background / surfacing riders are **gate-scoped**, not per-result: they
 /// are decided once for the step, which is why they sit here rather than on
-/// [`Distillation`]. `Default` is the outcome of a gate with nothing to triage.
+/// [`TriageOutcome`]. `Default` is the outcome of a gate with nothing to triage.
 #[derive(Default)]
 pub struct GateOutcome {
     /// One verdict per [`Pending`] handed in, in the same order. Always the same
     /// length as the input — a gate without a verdict for every result is a
     /// [`GateFailure`], never a short vector — so the loop can zip them without checking.
-    pub results: Vec<Distillation>,
+    pub results: Vec<TriageOutcome>,
     /// Per-notification dispositions this peek chose, by arrival `seq` (docs/inbox.md) —
     /// filtered to notifications actually shown. Empty when nothing was pinned or
     /// dismissed (everything left for the next gate).
@@ -125,7 +125,7 @@ pub struct GateOutcome {
     /// filtered to processes actually shown. The loop materializes a `Pin` into a
     /// snapshot `Ambient` and applies a `Mute` to the supervisor.
     pub background: Vec<(String, BgVerdict)>,
-    /// Context-item names this peek chose to surface (docs/redaction-fork.md) —
+    /// Context-item names this peek chose to surface (docs/triage.md) —
     /// filtered to the roster actually shown (invented names dropped). Stored on the
     /// `Triage` (`surfaced`); `project` re-renders each as a read-me reminder. Empty
     /// when nothing was surfaced.
@@ -136,20 +136,20 @@ pub struct GateOutcome {
     /// folds them all into the cache telemetry (docs/log-and-projection.md).
     pub usage: Vec<RequestUsage>,
     /// One attempt-stamped breadcrumb per peek attempt that had to be retried —
-    /// recorded even when a retry recovered (docs/redaction-fork.md). Two families,
+    /// recorded even when a retry recovered (docs/triage.md). Two families,
     /// distinguishable by wording: a non-compliant verdict (wrong tool, no tool,
     /// malformed input), and a stream that died before finalizing. The loop lands
     /// these on the gate's `Triage` (`retries`), the durable record; a runtime triage
     /// failure is never accepted silently, recovered or not.
     pub retries: Vec<String>,
     /// The reasoning behind the verdict — one entry per peek attempt that emitted
-    /// thinking, in attempt order (docs/redaction-fork.md). The loop lands these on the
+    /// thinking, in attempt order (docs/triage.md). The loop lands these on the
     /// gate's `Triage` (`thinking`), which is the only record of why a verdict came out
     /// the way it did; the fork's transcript is still discarded.
     pub thinking: Vec<String>,
 }
 
-/// A gate that produced no verdict (docs/redaction-fork.md): why, plus the audit
+/// A gate that produced no verdict (docs/triage.md): why, plus the audit
 /// pieces its attempts accumulated, which the loop carries onto the `Triage` of the
 /// attempt that finally succeeds. The results are never shown to the agent in this
 /// state; the loop holds them.
@@ -181,7 +181,7 @@ impl GateOutcome {
     pub fn interrupted(count: usize, retries: Vec<String>, thinking: Vec<String>) -> Self {
         Self {
             results: (0..count)
-                .map(|_| Distillation {
+                .map(|_| TriageOutcome {
                     wire: WireState::Elided,
                     origin: Origin::Fallback,
                     raw_keep: "interrupted by the operator before a verdict".to_string(),
@@ -214,7 +214,7 @@ pub struct InboxTriage {
     pub thinking: Vec<String>,
 }
 
-/// The model peek — the universal triage gate (docs/redaction-fork.md) realized.
+/// The model peek — the universal triage gate (docs/triage.md) realized.
 ///
 /// The gate is a concrete type, not a trait object. It was built behind a
 /// single-method `Distiller` trait threaded as a generic bound through
@@ -225,7 +225,7 @@ pub struct InboxTriage {
 /// another implementation; a materially different peek *shape* (a compacted second
 /// projection, a different transcript budget) is what would earn the indirection back.
 ///
-/// Two configurations, chosen at boot (docs/redaction-fork.md):
+/// Two configurations, chosen at boot (docs/triage.md):
 ///
 /// - [`Self::shared`] — the default. The peek borrows the agent turn's client and
 ///   `tools[]`, so it sends the agent's envelope with a different tail and reads the
@@ -259,7 +259,7 @@ struct OwnPeek {
     force_choice: bool,
 }
 
-/// The separate-model peek's output cap (docs/redaction-fork.md): a verdict is one
+/// The separate-model peek's output cap (docs/triage.md): a verdict is one
 /// small tool call, so reserving the model's whole output cap against the window
 /// only brings the overflow forward — a 65k cap on a 131k model overran at a 66k
 /// prompt. Generous enough for a thinking triage model's reasoning.
@@ -453,7 +453,7 @@ impl ForkPeek {
 
     /// The `tool_choice` a peek sends for `tool`: forced on the own peek unless
     /// [`Self::with_auto_choice`]; always `auto` on the shared peek, whose envelope
-    /// must match the agent turn's (docs/redaction-fork.md).
+    /// must match the agent turn's (docs/triage.md).
     fn choice(&self, tool: &'static str) -> ToolChoice {
         match &self.own {
             Some(own) if own.force_choice => ToolChoice::force(tool),
@@ -463,7 +463,7 @@ impl ForkPeek {
 
     /// The envelope of the standalone idle triage: the agent's client, the agent's
     /// `tools[]`, and `auto`, whether or not a separate triage model is configured
-    /// (docs/redaction-fork.md). The idle ask decides whether the session wakes at
+    /// (docs/triage.md). The idle ask decides whether the session wakes at
     /// all, and a wrong dismiss there is silent; it runs on the agent's own lineage,
     /// at the agent's thinking, reading the cache the keepalive holds warm. The
     /// separate model keeps the per-result peeks, which are the volume.
@@ -476,17 +476,17 @@ impl ForkPeek {
     }
 
     /// Decide the wire form of the results a completion produced, and triage the inbox +
-    /// live background processes (docs/redaction-fork.md, docs/inbox.md, docs/supervisor.md).
+    /// live background processes (docs/triage.md, docs/inbox.md, docs/supervisor.md).
     /// `tools` is the turn's full `tools[]` — the fork sends the *same* array as the agent
-    /// turn so both shapes share one cache lineage (docs/redaction-fork.md); `prefix` is the
+    /// turn so both shapes share one cache lineage (docs/triage.md); `prefix` is the
     /// log through the assistant turn that made the calls (the fork's cached head);
     /// `pending` is every result that turn produced, in call order; `inbox` is the pending
     /// notifications and `background` the running processes' fresh tails to show.
     ///
     /// Taking `pending` as a slice rather than one result is what makes the peek valid for a
     /// multi-call completion: the trailing assistant message carries N `tool_use` blocks, so
-    /// the peek's tail must answer all N (docs/redaction-fork.md). One gate, N verdicts.
-    pub async fn distill(
+    /// the peek's tail must answer all N (docs/triage.md). One gate, N verdicts.
+    pub async fn triage_results(
         &self,
         agent: &Client,
         agent_tools: &[Value],
@@ -533,7 +533,7 @@ impl ForkPeek {
 
         let verdict = match parsed {
             Ok(v) => v,
-            // No verdict: the loop holds the results (docs/redaction-fork.md) — never
+            // No verdict: the loop holds the results (docs/triage.md) — never
             // kept untriaged, which would weld the full raw into the cached prefix, and
             // never withheld as an error the agent would have to reason about.
             Err(failure) => return Err(GateFailure::new(failure, record)),
@@ -548,7 +548,7 @@ impl ForkPeek {
             .zip(&labels)
             .map(|(p, label)| match bypassed(p) {
                 // Decided by the shape rule before the fork was consulted
-                // (docs/redaction-fork.md) — a `retain` entry for it, had the peek
+                // (docs/triage.md) — a `retain` entry for it, had the peek
                 // written one unasked, finds no home.
                 Some(shape) => Some(bypass_verdict(shape)),
                 None => match verdict
@@ -557,12 +557,12 @@ impl ForkPeek {
                     .find(|v| Some(&v.label) == label.as_ref())
                 {
                     Some(v) => {
-                        let wire = WireState::Distilled(Distilled {
+                        let wire = WireState::Triaged(Triaged {
                             keep: v.keep.clone(),
                             note: v.note.clone(),
                             intent_feedback: v.intent_feedback.clone(),
                         });
-                        Some(Distillation {
+                        Some(TriageOutcome {
                             wire,
                             origin: Origin::Model,
                             raw_keep: v.raw_keep.clone(),
@@ -701,23 +701,23 @@ mod digest_view;
 mod handles;
 mod own;
 mod parse;
-mod peek;
 mod prompt;
 mod replay;
+mod request;
 mod schema;
 mod title;
 mod validate;
 
 use handles::*;
 use parse::*;
-use peek::*;
 use prompt::*;
+use request::*;
 use validate::*;
 
 pub use digest_view::TriageView;
 pub use handles::reply_only_gate;
 pub use own::TriageModel;
-pub use peek::{PEEK_FORKS, PeekFailure};
 pub use replay::{PeekAttempt, ReplayVerdict, peek_request};
+pub use request::{PEEK_FORKS, PeekFailure};
 pub use schema::{retain_tool, triage_tool};
 pub use title::{TITLE_MAX_CHARS, TitlePeek};

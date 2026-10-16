@@ -72,7 +72,7 @@ pub(in crate::tui) fn intent_header(intent: &str) -> Vec<Span<'static>> {
 /// The body shown under a tool-result header. Known tools get a tool-specific
 /// representation of their raw output — an edit tool's `===DIFF===` becomes a
 /// colored [`DocumentNode::Diff`], and a `read` result drops its sentinel framing
-/// and highlights by file type. Distilled / elided / error results, and anything
+/// and highlights by file type. Triaged / elided / error results, and anything
 /// unrecognized, fall back to the content as a plain code block.
 pub(in crate::tui) fn result_body(
     tool: Option<&str>,
@@ -98,7 +98,7 @@ pub(in crate::tui) fn result_body(
     vec![code_block(None, content)]
 }
 
-/// The body shown under a **distilled** tool-result header: the same tool-specific
+/// The body shown under a **triaged** tool-result header: the same tool-specific
 /// representation [`result_body`] gives the raw output, restricted to the lines the
 /// verdict kept (docs/tui.md). The parse runs over the whole result — so a `read`
 /// still loses its sentinel framing and is highlighted by extension, and an edit's
@@ -107,10 +107,10 @@ pub(in crate::tui) fn result_body(
 /// from. That ordering is what lets a triaged view keep the tool's rendering
 /// instead of falling back to plain text.
 ///
-/// `kept` is the verdict resolved against the content (`project::distillate`), as
+/// `kept` is the verdict resolved against the content (`project::selection`), as
 /// `(1-based content line, text)`. Falls back to a plain numbered block for an
 /// unrecognized tool, an error result, or a parse that found no marker.
-pub(in crate::tui) fn distilled_body(
+pub(in crate::tui) fn triaged_body(
     tool: &str,
     raw: &RawResult,
     kept: &[(u32, &str)],
@@ -256,7 +256,7 @@ pub(in crate::tui) fn parse_diff(content: &str) -> Option<DocumentNode<'static>>
 
 /// The diff section's lines, classified, each paired with its **1-based line number
 /// in the raw result** — the coordinate system the triage verdict is expressed in,
-/// so [`distilled_body`] can restrict them without re-parsing. The prose above the
+/// so [`triaged_body`] can restrict them without re-parsing. The prose above the
 /// `===DIFF===` marker, and the marker itself, are not diff lines and carry no row.
 fn diff_rows(content: &str) -> Option<Vec<(u32, DiffLine)>> {
     let mut lines = content.lines().enumerate();

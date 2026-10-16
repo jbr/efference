@@ -25,7 +25,7 @@ pub struct ToolTelemetry {
     pub duration_ms: u64,
     pub outcome: ToolOutcome,
     /// Bytes of result text as the tool produced it — **before** the fork peek
-    /// distills it (docs/redaction-fork.md). The pair (this, the distillate's
+    /// triages it (docs/triage.md). The pair (this, the selection's
     /// size) is what says how much a gate actually saved.
     pub result_bytes: usize,
     /// Realized image blocks the result carried. Zero for every text tool;

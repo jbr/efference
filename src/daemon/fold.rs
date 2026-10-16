@@ -146,7 +146,7 @@ impl Session {
     }
 
     /// Whether the loop is held at a triage gate that produced no verdict
-    /// (docs/redaction-fork.md): running, but sending nothing until the operator
+    /// (docs/triage.md): running, but sending nothing until the operator
     /// retries. The held gate is the one stall set while the loop runs.
     pub(crate) fn held_at_gate(&self) -> bool {
         self.stall().is_some_and(|stall| {

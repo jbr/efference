@@ -1,5 +1,5 @@
 use super::*;
-use crate::log::{ContentBlock, Distilled, Keep, RawResult};
+use crate::log::{ContentBlock, Keep, RawResult, Triaged};
 use crate::persist::Log;
 use crate::project::project;
 
@@ -27,7 +27,7 @@ fn captured_output_stays_off_wire_until_a_verdict() {
         1,
         Payload::ResultVerdict {
             for_result: result,
-            wire: WireState::Distilled(Distilled::new(Keep::Ranges(vec![(1, 1)]))),
+            wire: WireState::Triaged(Triaged::new(Keep::Ranges(vec![(1, 1)]))),
         },
     )
     .unwrap();

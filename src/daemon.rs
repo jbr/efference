@@ -291,7 +291,7 @@ pub struct Session {
     /// carried them (`api/plan.rs`), shared with the HTTP client and published
     /// under `usage.plan`. `None` for every other provider. Transport-only.
     plan: crate::api::PlanState,
-    /// Cumulative triage retention (docs/redaction-fork.md), folded lazily from the
+    /// Cumulative triage retention (docs/triage.md), folded lazily from the
     /// log behind a cursor rather than accumulated at the append sites. Unlike the
     /// transport telemetry above this is **derived from the canonical record**, so a
     /// resumed session reports the whole session's ratio instead of restarting at
@@ -540,7 +540,7 @@ impl Session {
         *self.capabilities.lock().unwrap() = Some(capabilities);
     }
 
-    /// Cumulative triage retention over the whole session (docs/redaction-fork.md),
+    /// Cumulative triage retention over the whole session (docs/triage.md),
     /// advancing the fold over entries appended since the last call.
     ///
     /// Deriving this from the log rather than accumulating it at the gate's append

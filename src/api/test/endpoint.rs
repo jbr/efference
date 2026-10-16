@@ -199,7 +199,7 @@ fn only_openrouter_carries_the_sticky_key() {
 
 /// The separate-model peek's key is its own: distinct from the agent's and the
 /// spotter's, under the same cap, and absent when the agent has none
-/// (docs/redaction-fork.md, docs/transport.md).
+/// (docs/triage.md, docs/transport.md).
 #[test]
 fn triage_endpoint_takes_a_distinct_key_under_the_cap() {
     let mut e = Endpoint::from_credentials(Provider::OpenRouter, "sk-or-v1-abc".into(), None, None)

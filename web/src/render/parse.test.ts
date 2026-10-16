@@ -1,6 +1,6 @@
 // Mirrors the behaviors `src/tui/projection/tools.rs` pins (its coverage
 // lives in the TUI snapshot harness, `src/tui/harness/test/transcript/
-// results.rs`) — the cordon's divergence check, like distill.test.ts.
+// results.rs`) — the cordon's divergence check, like triage.test.ts.
 
 import { expect, test } from "vitest";
 import {
@@ -74,38 +74,38 @@ test("a raw read result drops framing and carries the language hook", () => {
   expect(view.body).toEqual({ kind: "code", lang: "python", text: "print(1)" });
 });
 
-test("distilled: the parse runs whole, the kept filter applies to its rows", () => {
-  // Mirrors transcript_distilled_edit_keeps_diff_rendering: 7 raw lines,
+test("triaged: the parse runs whole, the kept filter applies to its rows", () => {
+  // Mirrors transcript_triaged_edit_keeps_diff_rendering: 7 raw lines,
   // one kept — the diff line classification survives the filter.
   const content = "summary\nof edit\n===DIFF===\n@@ -1 +1 @@\n-old\n+new\n ctx";
   const view = resultRender("edit", ok(content), {
-    Distilled: { keep: { Ranges: [[6, 6]] }, note: "kept the addition" },
+    Triaged: { keep: { Ranges: [[6, 6]] }, note: "kept the addition" },
   });
   expect(view.body).toEqual({
     kind: "diff",
     lines: [{ kind: "added", text: "+new" }],
   });
   expect(view.sizeLabel).toBe("kept 1 of 7 lines");
-  expect(view.stateWord).toBe("distilled");
+  expect(view.stateWord).toBe("triaged");
   expect(view.note).toBe("kept the addition");
 });
 
-test("a distillate that kept everything presents like any whole result", () => {
+test("a selection that kept everything presents like any whole result", () => {
   const content = "one\ntwo\nthree";
   const view = resultRender("bash", ok(content), {
-    Distilled: { keep: "All", note: null },
+    Triaged: { keep: "All", note: null },
   });
   expect(view.sizeLabel).toBeNull();
   expect(view.stateWord).toBeNull();
   expect(view.body.kind).toBe("numbered");
 });
 
-test("distilled non-diff results fall back to numbered kept lines", () => {
+test("triaged non-diff results fall back to numbered kept lines", () => {
   const content = Array.from({ length: 40 }, (_, i) => `line${i + 1}`).join(
     "\n",
   );
   const view = resultRender("bash", ok(content), {
-    Distilled: {
+    Triaged: {
       keep: {
         Ranges: [
           [2, 3],
@@ -245,7 +245,7 @@ test("an elided result is labelled from its tag, not from its content", () => {
   expect(byteSize(1024)).toBe("1 KiB");
 });
 
-test("the daemon's distillate counts win over a prefix that holds none of the kept lines", () => {
+test("the daemon's selection counts win over a prefix that holds none of the kept lines", () => {
   // A 3-line prefix of a 937-line result whose verdict kept lines 321..338: the
   // local count reads 0 of 3; the daemon's reads 18 of 937 and the body says
   // where the lines are rather than presenting as a verdict that kept nothing.
@@ -255,7 +255,7 @@ test("the daemon's distillate counts win over a prefix that holds none of the ke
     content_elided: { kept_bytes: 5, total_bytes: 59_670 },
   };
   const wire = {
-    Distilled: {
+    Triaged: {
       keep: { Ranges: [[321, 338]] as [number, number][] },
       note: null,
     },
@@ -265,7 +265,7 @@ test("the daemon's distillate counts win over a prefix that holds none of the ke
     kept_lines: 18,
   });
   expect(view.sizeLabel).toBe("kept 18 of 937 lines");
-  expect(view.stateWord).toBe("distilled");
+  expect(view.stateWord).toBe("triaged");
   expect(view.body).toEqual({
     kind: "text",
     text: "the 18 kept lines lie past the loaded prefix",
@@ -290,11 +290,11 @@ test("the verdict's wire re-renders the same raw with kept counts", () => {
   const decided = resultRender(
     "bash",
     ok(content),
-    { Distilled: { keep: { Ranges: [[1, 2]] }, note: "n" } },
+    { Triaged: { keep: { Ranges: [[1, 2]] }, note: "n" } },
     { total_lines: 4, kept_lines: 2 },
   );
   expect(pending.stateWord).toBe("awaiting triage");
-  expect(decided.stateWord).toBe("distilled");
+  expect(decided.stateWord).toBe("triaged");
   expect(decided.sizeLabel).toBe("kept 2 of 4 lines");
   expect(decided.note).toBe("n");
 });

@@ -17,15 +17,15 @@
 //!   `content_elided: {kept_bytes, total_bytes}`, so a client reads "content, cut at
 //!   N of M bytes" rather than inferring it from a length.
 //!
-//! And one addition: a result's view carries `distillate: {total_lines, kept_lines}`
+//! And one addition: a result's view carries `selection: {total_lines, kept_lines}`
 //! — the line arithmetic of the verdict against the whole `content`, computed here
-//! from the same [`distillate`] the wire and the TUI render through, so a client
+//! from the same [`selection`] the wire and the TUI render through, so a client
 //! holding only the truncated prefix still states the count the model's view had.
 //! Derived on every read rather than stored: the log stays the record, and a counting
 //! bug is fixed by a build rather than baked into a session.
 //!
 //! Which entry carries those counts is a property of when triage ran
-//! (docs/redaction-fork.md). A result logged with its own verdict — every log written
+//! (docs/triage.md). A result logged with its own verdict — every log written
 //! before capture, and every fixture — carries them on its own entry. A result
 //! captured first carries them on the [`Payload::ResultVerdict`] that decides it, so a
 //! client updating its slot from one frame gets the same numbers; the result's own
@@ -46,7 +46,7 @@
 
 use super::*;
 use crate::log::{ContentElision, RawResult, ResultImage, WireState};
-use crate::project::distillate;
+use crate::project::selection;
 use serde::ser::{SerializeStruct, SerializeStructVariant, Serializer};
 
 /// How much of a tool result's `content` rides a window read or a `log` frame before
@@ -97,7 +97,7 @@ impl<'a> EntryView<'a> {
     }
 
     /// Attach the bytes of the result a [`Payload::ResultVerdict`] names, so the
-    /// view can count the lines that verdict keeps (docs/redaction-fork.md). The
+    /// view can count the lines that verdict keeps (docs/triage.md). The
     /// caller resolves them from the log — a verdict entry holds none of its own —
     /// and `None` leaves the view as the log alone describes it.
     pub(crate) fn with_result_raw(mut self, raw: Option<&'a RawResult>) -> Self {
@@ -138,7 +138,7 @@ impl Serialize for PayloadView<'_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         match self.0 {
             Payload::ToolResult { call_id, raw, wire } => {
-                let lines = DistillateLines::of(raw, wire);
+                let lines = SelectionLines::of(raw, wire);
                 let fields = 3 + usize::from(lines.is_some());
                 let mut s =
                     serializer.serialize_struct_variant("Payload", 2, "ToolResult", fields)?;
@@ -146,22 +146,22 @@ impl Serialize for PayloadView<'_> {
                 s.serialize_field("raw", &RawResultView(raw, self.1))?;
                 s.serialize_field("wire", wire)?;
                 if let Some(lines) = lines {
-                    s.serialize_field("distillate", &lines)?;
+                    s.serialize_field("selection", &lines)?;
                 }
                 s.end()
             }
             // The line counts land on whichever entry decided the result, so a client
             // reading one frame of a captured result's life sees the same numbers at
-            // both ends (docs/redaction-fork.md).
+            // both ends (docs/triage.md).
             Payload::ResultVerdict { for_result, wire } => {
-                let lines = self.2.and_then(|raw| DistillateLines::of(raw, wire));
+                let lines = self.2.and_then(|raw| SelectionLines::of(raw, wire));
                 let fields = 2 + usize::from(lines.is_some());
                 let mut s =
                     serializer.serialize_struct_variant("Payload", 3, "ResultVerdict", fields)?;
                 s.serialize_field("for_result", for_result)?;
                 s.serialize_field("wire", wire)?;
                 if let Some(lines) = lines {
-                    s.serialize_field("distillate", &lines)?;
+                    s.serialize_field("selection", &lines)?;
                 }
                 s.end()
             }
@@ -183,21 +183,21 @@ pub(crate) fn result_raw<'e>(entry: &LogEntry, log: &'e [LogEntry]) -> Option<&'
     }
 }
 
-/// The line arithmetic of a `Distilled` verdict against the whole `content`: how many
+/// The line arithmetic of a `Triaged` verdict against the whole `content`: how many
 /// lines the result has, and how many the model's view kept. Present only on a
-/// distilled result, so a raw or elided one serializes as before.
+/// triaged result, so a raw or elided one serializes as before.
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
-pub struct DistillateLines {
+pub struct SelectionLines {
     pub total_lines: usize,
     pub kept_lines: usize,
 }
 
-impl DistillateLines {
+impl SelectionLines {
     fn of(raw: &RawResult, wire: &WireState) -> Option<Self> {
-        let WireState::Distilled(verdict) = wire else {
+        let WireState::Triaged(verdict) = wire else {
             return None;
         };
-        let d = distillate(&raw.content, &verdict.keep);
+        let d = selection(&raw.content, &verdict.keep);
         Some(Self {
             total_lines: d.shown.len() + d.dropped,
             kept_lines: d.ranges.iter().map(|&(a, b)| b - a + 1).sum(),

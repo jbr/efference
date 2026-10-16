@@ -12,14 +12,14 @@ pub fn tool_definitions(toolbox: &Toolbox) -> Vec<Value> {
     let mut tools = toolbox.definitions();
     tools.push(consolidate::definition());
     tools.extend(supervisor::tool_definitions());
-    // The peek tools (docs/redaction-fork.md) stand in every turn's array even though
+    // The peek tools (docs/triage.md) stand in every turn's array even though
     // only a fork peek's tail instruction ever asks for them: with the tools array,
     // `tool_choice`, and thinking policy identical, the fork peek is the same
     // conversation continued with a different tail and reads the agent lineage's cache
     // instead of keying its own (docs/log-and-projection.md). Their schemas are static
     // for the same reason. An un-asked call is paired with a nudge result in the loop.
-    tools.push(crate::distill::retain_tool());
-    tools.push(crate::distill::triage_tool());
+    tools.push(crate::triage::retain_tool());
+    tools.push(crate::triage::triage_tool());
     tools
 }
 
@@ -29,12 +29,12 @@ pub fn tool_definitions(toolbox: &Toolbox) -> Vec<Value> {
 /// The peek tools are excluded: `retain`/`triage` stand in every array for
 /// cache-lineage reasons but nothing is ever asked of them on an agent turn, and an
 /// un-asked call is short-circuited before this is consulted
-/// (docs/redaction-fork.md). What is left is what a call can name and have run.
+/// (docs/triage.md). What is left is what a call can name and have run.
 pub fn callable_names(toolbox: &Toolbox) -> Vec<String> {
     tool_definitions(toolbox)
         .iter()
         .filter_map(|d| d.get("name")?.as_str().map(str::to_string))
-        .filter(|name| !crate::distill::is_peek_tool(name))
+        .filter(|name| !crate::triage::is_peek_tool(name))
         .collect()
 }
 
@@ -103,7 +103,7 @@ pub fn tool_catalog(
             );
         }
     }
-    for raw in [crate::distill::retain_tool(), crate::distill::triage_tool()] {
+    for raw in [crate::triage::retain_tool(), crate::triage::triage_tool()] {
         if let Some(name) = raw.get("name").and_then(Value::as_str) {
             catalog.insert(
                 name.to_string(),

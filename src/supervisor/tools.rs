@@ -164,7 +164,7 @@ static SCHEMAS: LazyLock<Vec<ToolDefinition>> = LazyLock::new(|| {
 
 /// The harness-level supervisor/inbox tools (docs/supervisor.md). Like `consolidate`, these
 /// act on daemon state (the registry, the inbox), not the world, so the agent loop
-/// dispatches them structurally — but their results distill through the universal
+/// dispatches them structurally — but their results triage through the universal
 /// fork like any tool (no bypass). Derived from the same [`SCHEMAS`] the brief
 /// reads, through the same `anthropic_def` a provider's wire entries go through
 /// (sorted keys, annotations dropped — the wire has no slot for them), so

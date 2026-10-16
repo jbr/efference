@@ -21,7 +21,7 @@ test("captured reads start with retained lines and open current file only on req
             is_error: false,
           }}
           wire={{
-            Distilled: { keep: { Ranges: [[3, 3]] }, note: "selected middle" },
+            Triaged: { keep: { Ranges: [[3, 3]] }, note: "selected middle" },
           }}
           onCurrent={onCurrent}
         />,
@@ -74,7 +74,7 @@ test("edit inspection shows recorded removal and addition, not just triaged rows
           input={{ file_path: "a.rs" }}
           raw={{ content: "edited\n===DIFF===\n-old\n+new", is_error: false }}
           wire={{
-            Distilled: { keep: { Ranges: [[4, 4]] }, note: "kept addition" },
+            Triaged: { keep: { Ranges: [[4, 4]] }, note: "kept addition" },
           }}
           onCurrent={onCurrent}
         />,

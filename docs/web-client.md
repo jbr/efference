@@ -27,7 +27,7 @@ For UI polish and transient-state debugging in a dev build:
   faithful: every log entry renders, because a gate resolved over a snippet is not an
   informed choice. What it does not copy is the TUI's furniture — control strip, focus
   model, block menu — which is form-factor idiom, not shared invariant.
-- **A tool result's primary view is what the model saw.** The distillate is the
+- **A tool result's primary view is what the model saw.** The selection is the
   output; raw is the audit view, one tap away. Rendering that view client-side
   runs through the cordon (below) — decided, deletable debt, not the "shared
   home" a promoted UI finding normally gets. The long-term shared home is
@@ -470,19 +470,19 @@ A deliberate, temporary duplicate of daemon and TUI rendering logic, kept in
 one directory so it can be deleted whole when structured tool output lands.
 Two residents:
 
-- `distill.ts` — a literal port of `src/project/render.rs` (the verdict
+- `triage.ts` — a literal port of `src/project/render.rs` (the verdict
   renderer: keep-ranges resolution, `@@` hunks, the `⟢` note, the truncation
   breadcrumb, triage-failure and elision texts), tests mirroring
-  `src/project/test/distilled.rs` case for case.
+  `src/project/test/triaged.rs` case for case.
 - `parse.ts` — a literal port of the TUI's per-tool parsing and dispatch
   (`src/tui/projection/tools.rs` + the per-wire-state match in
   `src/tui/projection.rs`): the `===DIFF===` classification for the edit
   tools, `read`'s sentinel stripping and extension→language map, the call
-  signature below with the `intent` leading the entry, and the distilled
+  signature below with the `intent` leading the entry, and the triaged
   composition — the parse runs over the whole raw, the verdict's kept line
   numbers filter the rows it produced, so a triaged view keeps its tool's
   rendering. The `kept N of M lines` header takes its numbers from the entry
-  view's `distillate` field when the daemon sent one
+  view's `selection` field when the daemon sent one
   ([control-api.md](control-api.md)) — the local count is over whatever
   content is on hand, which for an elided result is a prefix that may hold
   none of the kept lines; the body then says where they are instead of
@@ -545,7 +545,7 @@ silently dropped — but it means every additive log variant needs a decision he
 `ToolTelemetry` shipped without one and put a raw JSON block after every call.
 
 A result captured before its triage decides (`wire: "Pending"`,
-[redaction-fork.md](redaction-fork.md) "Capture, then verdict") renders its raw
+[triage.md](triage.md) "Capture, then verdict") renders its raw
 output at once, in the pinned bounded box a running command's tail uses, under a
 `result (awaiting triage)` head. The `ResultVerdict` entry that decides it is
 folded in `buildTree` onto the slot of the result it names — the slot's entry
@@ -958,7 +958,7 @@ Three decisions:
   line, which the components render as spans. `codeToHtml` would return a markup
   string, and nothing on this page turns untrusted text into markup. The line
   grouping is also the shape the numbered-gutter view already wanted, so a
-  distilled `read` is highlighted *and* keeps its per-line original line numbers.
+  triaged `read` is highlighted *and* keeps its per-line original line numbers.
 
 Highlighting is best-effort: until the grammars load, and permanently if they
 fail to, every caller renders the plain text it did before. The one rule carried
@@ -1642,7 +1642,7 @@ Below the tabs,
 **what the fork returned**: the raw line count, the surfaced count computed
 from the keep, the keep itself (`All` / `None` / `Ranges(a..b, …)`), the
 wire state, and the distiller's note — the audit view of
-[redaction-fork.md](redaction-fork.md)'s output. Stepping between calls from
+[triage.md](triage.md)'s output. Stepping between calls from
 the drawer waits on the deferred key binds.
 
 With the inspector holding the whole body, **read and write results
@@ -2007,7 +2007,7 @@ working, answer-needed, and approval-needed states. Input-arriving shows an
 unfinished single-line scalar argument to exercise transient wrapping. It uses
 `TranscriptContent`, the
 production transcript body without window follow-tail, built from fixture log
-entries through the normal tree projection. Tool output includes the distilled
+entries through the normal tree projection. Tool output includes the triaged
 kept-line rendering and its note; working shows live output, asking shows the
 question's answering mark, and approval controls occupy the call's gate slot.
 Answer-needed contains two questions, with local controls to show either as

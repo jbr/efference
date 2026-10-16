@@ -1,5 +1,5 @@
 use super::*;
-use crate::log::{AssistantOutput, Distilled, Keep, Mark, RawResult, Resumed, Timestamp};
+use crate::log::{AssistantOutput, Keep, Mark, RawResult, Resumed, Timestamp, Triaged};
 use serde_json::json;
 
 fn entry(seq: u64, payload: Payload) -> LogEntry {
@@ -32,13 +32,13 @@ fn assistant(seq: u64, text: &str, calls: Vec<ToolCall>) -> LogEntry {
     )
 }
 
-fn distilled(seq: u64, call: &str, raw: RawResult, note: &str) -> LogEntry {
+fn triaged(seq: u64, call: &str, raw: RawResult, note: &str) -> LogEntry {
     entry(
         seq,
         Payload::ToolResult {
             call_id: call.into(),
             raw,
-            wire: WireState::Distilled(Distilled::new(Keep::All).with_note(note)),
+            wire: WireState::Triaged(Triaged::new(Keep::All).with_note(note)),
         },
     )
 }
@@ -55,7 +55,7 @@ fn a_call_renders_its_paths_intent_and_note_without_bodies() {
     let log = [
         user(1, "find the enum"),
         assistant(2, "Looking.", vec![read_call("c1")]),
-        distilled(
+        triaged(
             3,
             "c1",
             RawResult::text("BODY ".repeat(500)),
@@ -81,7 +81,7 @@ fn upto_cuts_and_seqs_label() {
             "",
             vec![ToolCall::new("bash", "c1", json!({"command": "ls"}))],
         ),
-        distilled(3, "c1", RawResult::error("nope"), "ls failed"),
+        triaged(3, "c1", RawResult::error("nope"), "ls failed"),
         user(4, "second"),
     ];
     let options = Options {
@@ -111,7 +111,7 @@ fn a_verdict_resolves_a_pending_result_and_resumption_skips_are_omitted() {
             3,
             Payload::ResultVerdict {
                 for_result: 2,
-                wire: WireState::Distilled(Distilled::new(Keep::All).with_note("late note")),
+                wire: WireState::Triaged(Triaged::new(Keep::All).with_note("late note")),
             },
         ),
         user(4, "set aside"),
@@ -204,13 +204,13 @@ fn the_cut_marks_the_first_rendered_block_past_it() {
     let log = [
         user(1, "find the enum"),
         assistant(2, "", vec![read_call("c1")]),
-        distilled(3, "c1", RawResult::text("x"), "Defined in a.rs."),
+        triaged(3, "c1", RawResult::text("x"), "Defined in a.rs."),
         // Past the cut, but renders nothing: the marker waits for the next block.
         entry(
             4,
             Payload::ResultVerdict {
                 for_result: 3,
-                wire: WireState::Distilled(Distilled::new(Keep::All).with_note("Defined in a.rs.")),
+                wire: WireState::Triaged(Triaged::new(Keep::All).with_note("Defined in a.rs.")),
             },
         ),
         assistant(5, "It is in a.rs.", vec![]),
@@ -244,11 +244,11 @@ fn the_digest_at_a_gate_extends_the_digest_at_every_earlier_gate() {
     let log = [
         user(1, "find the enum"),
         assistant(2, "Looking.", vec![read_call("c1")]),
-        distilled(3, "c1", RawResult::text("a"), "Defined in a.rs."),
+        triaged(3, "c1", RawResult::text("a"), "Defined in a.rs."),
         assistant(4, "Now its uses.", vec![read_call("c2")]),
-        distilled(5, "c2", RawResult::text("b"), "Used twice."),
+        triaged(5, "c2", RawResult::text("b"), "Used twice."),
         assistant(6, "", vec![read_call("c3")]),
-        distilled(7, "c3", RawResult::text("c"), "Nothing else."),
+        triaged(7, "c3", RawResult::text("c"), "Nothing else."),
         assistant(8, "Done: it is in a.rs.", vec![]),
         user(9, "thanks"),
         assistant(10, "One more look.", vec![read_call("c4")]),

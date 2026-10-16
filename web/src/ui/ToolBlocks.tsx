@@ -12,7 +12,7 @@ import { useMemo } from "react";
 import { join } from "../api/base.ts";
 import type {
   CallId,
-  DistillateLines,
+  SelectionLines,
   RawResult,
   ResultImage,
   ToolCall,
@@ -316,14 +316,14 @@ export function ResultBlock({
   seq,
   raw,
   wire,
-  distillate,
+  selection,
 }: {
   tool: string | null;
   /** The result entry's seq — the address images resolve through. */
   seq: number;
   raw: RawResult;
   wire: WireState;
-  distillate?: DistillateLines;
+  selection?: SelectionLines;
 }) {
   // An oversized result arrives truncated (docs/control-api.md); the whole one
   // is one fetch away, on demand rather than eagerly — most truncated
@@ -336,14 +336,14 @@ export function ResultBlock({
   // entry, so without this a streamed token re-parses every result in the
   // session.
   const view = useMemo(
-    () => resultRender(tool, shown, wire, distillate),
-    [tool, shown, wire, distillate],
+    () => resultRender(tool, shown, wire, selection),
+    [tool, shown, wire, selection],
   );
   const expandable =
     wire === "Pending" ||
     wire === "Raw" ||
     (typeof wire === "object" &&
-      "Distilled" in wire &&
+      "Triaged" in wire &&
       !(shown.content_elided && view.body.kind === "text"));
   const ranges = (
     <ResultRanges
@@ -414,8 +414,8 @@ export function ResultBlock({
         // The distiller's note sits beside the result as its own annotation
         // row — that rung's account *of* the output, not something the tool
         // printed (docs/tui.md renders it as an `Annotation` entry for the
-        // same reason). The ✧ is display chrome; the wire's distillate keeps
-        // its ⟢ (render/distill.ts).
+        // same reason). The ✧ is display chrome; the wire's selection keeps
+        // its ⟢ (render/triage.ts).
         <div className="note">
           <span className="note-glyph">✧</span>
           <span className="note-text">

@@ -1,12 +1,12 @@
 // ⚠ CORDON — a deliberate, temporary duplicate of the daemon's projection
 // renderer (`src/project/render.rs`; docs/web-client.md "The cordon").
-// The distilled view must show what the model saw, and until tool results
+// The triaged view must show what the model saw, and until tool results
 // are structured (audience-tagged content blocks, or per-tool result
 // schemas), the only client-side source is a mirror of the Rust renderer.
 // Everything under `web/src/render/` is planned deletion: when structured
 // output lands, drop the directory whole. Ports are literal — same names,
 // same order, same strings — so divergence is findable by diffing against
-// render.rs; the tests mirror `src/project/test/distilled.rs` case for case.
+// render.rs; the tests mirror `src/project/test/triaged.rs` case for case.
 
 import type { Keep, RawResult, WireState } from "../api/types.ts";
 
@@ -64,8 +64,8 @@ export function renderHunks(
   return parts.join("\n");
 }
 
-/** Mirrors `render_distilled`. */
-export function renderDistilled(
+/** Mirrors `render_triaged`. */
+export function renderTriaged(
   content: string,
   keep: Keep,
   note: string | null,
@@ -85,9 +85,9 @@ export function renderDistilled(
 /** A kept line paired with its 1-based line number in the raw content. */
 export type NumberedLine = [number, string];
 
-/** Mirrors `distillate` + `Distillate::numbered_lines`, plus the total the
+/** Mirrors `selection` + `Selection::numbered_lines`, plus the total the
  * TUI's "kept N of M lines" header divides by (shown + truncated). */
-export function distillateKept(
+export function selectionKept(
   content: string,
   keep: Keep,
 ): { kept: NumberedLine[]; total: number } {
@@ -127,13 +127,9 @@ export interface WireViewText {
 export function wireView(raw: RawResult, wire: WireState): WireViewText | null {
   if (wire === "Raw" || wire === "Pending") return null;
   if (wire === "Elided") return { text: "[elided]", isError: false };
-  if ("Distilled" in wire) {
+  if ("Triaged" in wire) {
     return {
-      text: renderDistilled(
-        raw.content,
-        wire.Distilled.keep,
-        wire.Distilled.note,
-      ),
+      text: renderTriaged(raw.content, wire.Triaged.keep, wire.Triaged.note),
       isError: raw.is_error,
     };
   }

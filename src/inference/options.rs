@@ -17,7 +17,7 @@ use super::{
     SessionInference, TriageChoice, role_secret_values,
 };
 use crate::api::Error;
-use crate::distill::TriageModel;
+use crate::triage::TriageModel;
 
 /// The accepted temperature, stated once. Both control routes and the CLI reach
 /// it through [`InferenceRegistry::resolve_options`], so none of them carries its

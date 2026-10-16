@@ -1,7 +1,7 @@
 //! Tests for what gets rejected and what retries.
 use super::*;
 
-/// The in-fork retry (docs/redaction-fork.md) must keep the fork conversation
+/// The in-fork retry (docs/triage.md) must keep the fork conversation
 /// API-valid: replay the non-compliant assistant turn, answer each of its calls with an
 /// error `tool_result`, and renew the ask — so the retry extends the warm prefix
 /// instead of opening a new request shape.
@@ -108,7 +108,7 @@ fn an_empty_response_is_terminal_not_an_invalid_retry() {
     assert!(messages.is_empty());
 }
 
-/// Coverage is part of verdict validity (docs/redaction-fork.md): a verdict that
+/// Coverage is part of verdict validity (docs/triage.md): a verdict that
 /// leaves any offered result unanswered is rejected — naming the missing ids so the
 /// retry nudge is actionable — rather than letting the result fall through untriaged.
 #[test]
@@ -141,7 +141,7 @@ fn an_incomplete_verdict_is_rejected_naming_the_missing_ids() {
     assert!(why.contains("[b]"), "names the unanswered id: {why}");
 }
 
-/// Bounds are part of verdict validity (docs/redaction-fork.md): a `keep` range wholly
+/// Bounds are part of verdict validity (docs/triage.md): a `keep` range wholly
 /// beyond the shown line count is a coordinate mistake — the shape it catches is a peek
 /// adopting `grep -n`'s embedded file line numbers over the rendering's own — and
 /// render-time normalization would drop it silently. The rejection names the bound
@@ -246,7 +246,7 @@ fn an_interrupted_gate_withholds_every_result_without_blaming_triage() {
 /// The coverage rejection names what the verdict *did* answer, not only what it missed.
 /// "Answered nothing" and "answered a pile of ids that were never offered" are different
 /// defects — the second is a prompt-scoping failure — and the breadcrumb is the only
-/// place a later reader can tell them apart (docs/redaction-fork.md).
+/// place a later reader can tell them apart (docs/triage.md).
 #[test]
 fn a_coverage_rejection_reports_what_was_answered() {
     let offered = ["wanted".to_string()];

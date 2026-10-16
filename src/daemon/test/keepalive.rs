@@ -570,7 +570,7 @@ async fn a_triage_ping_replays_the_primed_turns_under_the_primers_envelope() {
 #[test]
 fn the_triage_keepalive_arms_only_where_a_primer_plants() {
     use crate::api::{Client, Endpoint, PromptCachePolicy, Provider};
-    use crate::distill::ForkPeek;
+    use crate::triage::ForkPeek;
     assert!(KeepaliveSpec::triage(&ForkPeek::shared(), None, None).is_none());
     let messages = ForkPeek::own(Client::new(
         messages_endpoint("127.0.0.1:9".parse().unwrap()),

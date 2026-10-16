@@ -49,7 +49,7 @@ below depends on that.
 The title is asked of the triage model, not the agent: the agent is not given a
 tool for it (every tool on the main session is noise for the work it is doing),
 and the ask never enters its transcript. The peek is the fork's shape
-([redaction-fork.md](redaction-fork.md)) with a different tail: the log projected
+([triage.md](triage.md)) with a different tail: the log projected
 through whatever has landed, a cache breakpoint, and a user-role ask for one
 line of at most six words saying what the session is for as a whole, with the
 standing title quoted and an instruction to keep it verbatim unless the purpose

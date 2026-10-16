@@ -63,10 +63,10 @@ test("an unfinished scalar input uses the wrapping content body", () => {
   );
 });
 
-test("pending and distilled results use the same line gutter", () => {
+test("pending and triaged results use the same line gutter", () => {
   for (const wire of [
     "Pending",
-    { Distilled: { keep: "All", note: null } },
+    { Triaged: { keep: "All", note: null } },
   ] as const) {
     const markup = renderToStaticMarkup(
       <ResultBlock tool="bash" seq={2} raw={raw} wire={wire} />,
@@ -88,7 +88,7 @@ test("short results display whole; longer results start with ten expandable rows
           ),
           is_error: false,
         }}
-        wire={{ Distilled: { keep: "All", note: null } }}
+        wire={{ Triaged: { keep: "All", note: null } }}
       />,
     );
     expect(markup.match(/class="line-body"/g)).toHaveLength(
@@ -108,7 +108,7 @@ test("read ranges strip sentinels but retain raw verdict coordinates", () => {
           "==token BEGIN example.ts, LENGTH: 2==\nconst a = 1;\nconst b = 2;\n==token END example.ts==",
         is_error: false,
       }}
-      wire={{ Distilled: { keep: { Ranges: [[3, 3]] }, note: null } }}
+      wire={{ Triaged: { keep: { Ranges: [[3, 3]] }, note: null } }}
     />,
   );
   expect(markup).toContain('data-line="3"');
@@ -124,7 +124,7 @@ test("edit ranges preserve diff classification and raw coordinates", () => {
       tool="undo_edit"
       seq={2}
       raw={{ content: "changed\n===DIFF===\n-old\n+new", is_error: false }}
-      wire={{ Distilled: { keep: { Ranges: [[4, 4]] }, note: null } }}
+      wire={{ Triaged: { keep: { Ranges: [[4, 4]] }, note: null } }}
     />,
   );
   expect(markup).toContain('data-line="4"');

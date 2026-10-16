@@ -69,7 +69,7 @@ fn enter_flips_to_raw() {
         .iter()
         .map(|i| i.label)
         .collect();
-    assert_eq!(labels, vec!["distilled"], "the flip back is offered");
+    assert_eq!(labels, vec!["triaged"], "the flip back is offered");
 }
 
 /// The reserved marker cell means moving the selection never shifts the item

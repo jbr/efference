@@ -1,4 +1,4 @@
-//! Result shapes the gate does not get to decide about (docs/redaction-fork.md).
+//! Result shapes the gate does not get to decide about (docs/triage.md).
 //!
 //! A result whose value is a machine-precise handle the model must reproduce
 //! exactly cannot pass through a summarizer: a paraphrase keeps the meaning and
@@ -54,7 +54,7 @@ const SHAPES: &[Shape] = &[Shape {
 }];
 
 /// The name of the first handle shape `text` carries, or `None` if it carries
-/// none — in which case the result is the fork's to distill as usual.
+/// none — in which case the result is the fork's to triage as usual.
 pub(super) fn verbatim_handle(text: &str) -> Option<&'static str> {
     SHAPES
         .iter()
@@ -62,7 +62,7 @@ pub(super) fn verbatim_handle(text: &str) -> Option<&'static str> {
         .map(|s| s.name)
 }
 
-/// The known-shape rule (docs/redaction-fork.md): the name of the verbatim handle
+/// The known-shape rule (docs/triage.md): the name of the verbatim handle
 /// this result carries, if any. A handle-bearing result is **bypassed** — kept out
 /// of the ask, decided by the harness, and delivered raw — because the peek has
 /// nothing in front of it that says the text is unsummarizable.
@@ -90,7 +90,7 @@ pub fn reply_only_gate(pending: &[Pending<'_>]) -> bool {
     pending.iter().any(|p| is_reply(p.call)) && pending.iter().all(|p| bypassed(p).is_some())
 }
 
-/// Each pending result's label in the ask (docs/redaction-fork.md), in call order:
+/// Each pending result's label in the ask (docs/triage.md), in call order:
 /// `r1`, `r2`, … across the results the shape rule did not bypass, `None` for a bypassed
 /// one. This is the verdict's coordinate system — the peek view heads each block with its
 /// label and the verdict answers by label, mapped back to the call harness-side. The
@@ -118,12 +118,12 @@ pub(super) fn offered_labels(pending: &[Pending<'_>]) -> Vec<String> {
     labels(pending).into_iter().flatten().collect()
 }
 
-/// The harness's verdict on a bypassed result (docs/redaction-fork.md):
+/// The harness's verdict on a bypassed result (docs/triage.md):
 /// [`WireState::Raw`], so the whole body — handle included — projects verbatim.
 /// `origin` is `Fallback` because no model produced it; `raw_keep` names the shape,
 /// which is what separates a bypass from a failed gate in the log after the fact.
-pub(super) fn bypass_verdict(shape: &str) -> Distillation {
-    Distillation {
+pub(super) fn bypass_verdict(shape: &str) -> TriageOutcome {
+    TriageOutcome {
         wire: WireState::Raw,
         origin: Origin::Fallback,
         raw_keep: format!("bypassed triage: {shape} — delivered verbatim"),
@@ -139,7 +139,7 @@ pub(super) fn bypass_verdict(shape: &str) -> Distillation {
 /// gate: an undispositioned notification stays active and is re-shown there
 /// (docs/inbox.md), so nothing is lost by not opening a peek for them here.
 pub(super) fn bypassed_gate(pending: &[Pending<'_>]) -> Option<GateOutcome> {
-    let results: Vec<Distillation> = pending
+    let results: Vec<TriageOutcome> = pending
         .iter()
         .map_while(|p| bypassed(p).map(bypass_verdict))
         .collect();

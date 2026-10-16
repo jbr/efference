@@ -161,9 +161,9 @@ pub enum DocumentNode<'a> {
     /// gutter. Gaps between non-contiguous runs are implied by the jump in the
     /// numbers, the way a `@@` header would have stated them (docs/tui.md).
     ///
-    /// This is the TUI's form for a distilled tool result. The wire has to say
+    /// This is the TUI's form for a triaged tool result. The wire has to say
     /// "these lines came from there" in text, so it uses `@@ lines a-b @@` headers
-    /// (docs/redaction-fork.md); a terminal has a gutter, and can say the same thing
+    /// (docs/triage.md); a terminal has a gutter, and can say the same thing
     /// without spending a row on it.
     NumberedCode {
         lang: Option<Cow<'a, str>>,
@@ -284,7 +284,7 @@ pub enum DocumentNode<'a> {
         /// A stable identity that survives re-projection (docs/tui.md). The
         /// transcript re-projects on every streamed token, rebuilding the tree, so
         /// the *positional* [`NodePath`] is ephemeral — `key` lets `tui::state`
-        /// carry per-entry view-state (raw-vs-distilled) across rebuilds, keyed by
+        /// carry per-entry view-state (raw-vs-triaged) across rebuilds, keyed by
         /// the result's `call_id`. `None` for entries with nothing to carry.
         key: Option<Cow<'a, str>>,
     },
@@ -316,7 +316,7 @@ pub enum EntryKind {
     /// unbounded and untriaged and so is the one entry the transcript may show a
     /// peek of (docs/tui.md). Distinct from [`ToolResult`](Self::ToolResult)
     /// because the two carry different verbs: a committed result forks
-    /// distilled-vs-raw, a running one forks peek-vs-full.
+    /// triaged-vs-raw, a running one forks peek-vs-full.
     RunningTool,
     /// Something the *harness* says about a call — a spotter verdict, the approval
     /// affordance. Not agent-generated, so it is never a focus stop and never a

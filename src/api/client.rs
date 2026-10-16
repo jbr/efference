@@ -87,7 +87,7 @@ fn cache_chain() -> CacheChain {
 /// A thin Anthropic Messages client, holding the resolved endpoint, the model,
 /// and the session's system prompt. The system is byte-stable across the
 /// session, so it stays in the cached prefix (docs/log-and-projection.md); the
-/// fork (docs/redaction-fork.md) shares the same endpoint and system, so its
+/// fork (docs/triage.md) shares the same endpoint and system, so its
 /// prefix matches and hits cache.
 ///
 /// `Clone` is a cheap hand-off of *the same* client: the Arc-backed live states
@@ -106,7 +106,7 @@ pub struct Client {
     /// on Responses whether the `reasoning` object is sent at all.
     /// [`ThinkingSupport::UNKNOWN`] until [`Self::with_thinking`] sets it.
     thinking: ThinkingSupport,
-    /// Never think, whatever the model would do on its own (docs/redaction-fork.md):
+    /// Never think, whatever the model would do on its own (docs/triage.md):
     /// the separate-model fork peek's default, where the peek's reasoning is
     /// discarded with the tail and costs latency and tokens on every gate.
     pub(super) thinking_off: bool,
@@ -136,7 +136,7 @@ pub struct Client {
     abort: Option<Arc<tokio::sync::Notify>>,
     /// The session's effort level, when one is set (docs/transport.md). Rides
     /// every request this client makes — the turn loop and the fork peek, so the
-    /// peek's prefix still matches the agent lineage's (docs/redaction-fork.md),
+    /// peek's prefix still matches the agent lineage's (docs/triage.md),
     /// and the keepalive, which sends the turn's envelope. The spotter's client
     /// never sets it.
     effort: Option<String>,
@@ -587,7 +587,7 @@ impl Client {
     }
 
     /// Send every request with thinking off, whatever the model would do on its
-    /// own (docs/redaction-fork.md): the separate-model fork peek's default. Spelled
+    /// own (docs/triage.md): the separate-model fork peek's default. Spelled
     /// the way the model's metadata says ([`ThinkingSupport::off`]), so set the
     /// capability answer with [`Self::with_thinking`] as well.
     pub fn without_thinking(mut self) -> Self {

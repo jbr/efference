@@ -14,9 +14,9 @@ use serde::Deserialize;
 use crate::api::{
     AuthValue, Endpoint, Error, Provider, Reload, RequestOptions, Reread, WireDialect,
 };
-use crate::distill::TriageModel;
 use crate::env_table::EnvSnapshot;
 use crate::secrets::Secrets;
+use crate::triage::TriageModel;
 
 /// The triage choice a session creator makes. Omission inherits the configured
 /// default; `Shared` explicitly bypasses a configured separate default; `Separate`

@@ -14,7 +14,7 @@ use crate::log::{
     ProcessEventKind, RawResult, ResponsesMessageContent, ResponsesOutputItem, Stance, ToolCall,
     WireState,
 };
-use crate::project::distillate;
+use crate::project::selection;
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write as _;
@@ -32,7 +32,7 @@ const ARG_CAP: usize = 120;
 /// only the keys in [`BODY_KEYS`] are cut at [`ARG_CAP`].
 const ARG_WIDE: usize = 400;
 /// Argument keys whose value is a body rather than an address or a command. A
-/// heuristic by name, like the verbatim-handle shapes in `distill/handles.rs`: a tool
+/// heuristic by name, like the verbatim-handle shapes in `triage/handles.rs`: a tool
 /// that names its body something else gets the wide cut, which is a longer line, not
 /// a wrong one.
 const BODY_KEYS: &[&str] = &[
@@ -396,8 +396,8 @@ fn result(raw: &RawResult, wire: &WireState) -> String {
         WireState::TriageFailed { why } => {
             let _ = write!(body, ", triage failed: {why}");
         }
-        WireState::Distilled(verdict) => {
-            let d = distillate(&raw.content, &verdict.keep);
+        WireState::Triaged(verdict) => {
+            let d = selection(&raw.content, &verdict.keep);
             let kept: usize = d.ranges.iter().map(|&(a, b)| b - a + 1).sum();
             let _ = write!(body, ", kept {kept}/{} lines", d.shown.len() + d.dropped);
             if let Some(note) = &verdict.note {

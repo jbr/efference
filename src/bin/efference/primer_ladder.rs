@@ -8,8 +8,8 @@
 //! primer is the v1.1 verdict live. Sends real requests unless `--dry-run`.
 
 use super::*;
-use efference::distill::{ForkPeek, Pending, TriageModel, TriageView};
 use efference::log::Payload;
+use efference::triage::{ForkPeek, Pending, TriageModel, TriageView};
 use std::io::Write;
 
 /// Parse `--gaps` (`"0,120,300,480"`) into seconds between primer pairs.
@@ -79,7 +79,7 @@ pub(crate) async fn ladder(
     );
     let recorded_identity = efference::log::recorded_inference(&entries);
 
-    let all = super::peek_replay::gates(&entries);
+    let all = super::triage_replay::gates(&entries);
     let gate = match seq {
         Some(seq) => all
             .iter()
@@ -144,7 +144,7 @@ pub(crate) async fn ladder(
     }
     let agent_model = recorded_identity
         .map(|identity| identity.model.clone())
-        .or_else(|| super::peek_replay::session_model(&system))
+        .or_else(|| super::triage_replay::session_model(&system))
         .unwrap_or_else(|| model.to_string());
     let triage_selection = inference.triage().ok_or(
         "the ladder plants on the own triage lineage; this session resolves a shared peek",
@@ -225,7 +225,7 @@ pub(crate) async fn ladder(
     // peek tools plus forced choice, sharing only the input prefix. If the backend
     // keys the full envelope, this is the plant the peek resumes.
     {
-        use efference::distill::{retain_tool, triage_tool};
+        use efference::triage::{retain_tool, triage_tool};
         let peek_tools = vec![retain_tool(), triage_tool()];
         match plant(
             &peek,

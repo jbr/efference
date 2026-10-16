@@ -67,7 +67,7 @@ fn pinned_notification_projects_at_triage_position() {
 }
 
 /// A surfaced context item projects as a `⟢ context · …` read-me reminder **at its
-/// `Triage`'s position** (docs/redaction-fork.md) — the one-line description and
+/// `Triage`'s position** (docs/triage.md) — the one-line description and
 /// read path re-rendered from the boot `Preamble` listing, not stored on the verdict.
 /// This is the byte pin the surfacing slice moves: change the render and it fails here
 /// first, before it can silently break the cache. A surfaced name absent from the
@@ -158,7 +158,7 @@ fn unpinned_ambient_projects_to_nothing() {
     );
 }
 
-/// The fork's recorded reasoning (`Triage.thinking`, docs/redaction-fork.md) is invisible
+/// The fork's recorded reasoning (`Triage.thinking`, docs/triage.md) is invisible
 /// to the wire: a log whose gate recorded thinking projects **byte-identically** to the
 /// same log without it. Recording it is an audit move, so it must not be able to move the
 /// cached prefix — this is the pin that says so, in the same spirit as the three envelope

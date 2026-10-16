@@ -1,5 +1,5 @@
 use super::*;
-use crate::log::{Distilled, Keep, RawResult, Timestamp, ToolCall};
+use crate::log::{Keep, RawResult, Timestamp, ToolCall, Triaged};
 
 fn entry(seq: u64, payload: Payload) -> LogEntry {
     LogEntry {
@@ -219,8 +219,8 @@ fn a_failed_result_is_marked_on_the_result_not_the_call() {
 }
 
 #[test]
-fn distilled_wire_supersedes_raw() {
-    // A call and its distilled result (a result is only rendered as part of its
+fn triaged_wire_supersedes_raw() {
+    // A call and its triaged result (a result is only rendered as part of its
     // call's exchange, so the call must be present).
     let log = vec![
         entry(
@@ -240,7 +240,7 @@ fn distilled_wire_supersedes_raw() {
                 "toolu_9",
                 RawResult::text("RAW-NOISE\nthe kept line"),
                 WireState::from(
-                    Distilled::new(Keep::Ranges(vec![(2, 2)])).with_note("the distilled summary"),
+                    Triaged::new(Keep::Ranges(vec![(2, 2)])).with_note("the triaged summary"),
                 ),
             ),
         ),
@@ -265,7 +265,7 @@ fn distilled_wire_supersedes_raw() {
     // The distiller's note is *about* the result, so it is its own annotation entry
     // beside it rather than a line inside the result's body (docs/tui.md).
     assert!(
-        !code.contains("the distilled summary"),
+        !code.contains("the triaged summary"),
         "the note is not part of the result's content: {code}"
     );
     let annotations: String = flat(&doc.nodes)
@@ -282,14 +282,14 @@ fn distilled_wire_supersedes_raw() {
         .map(|n| collect_text(std::slice::from_ref(n)))
         .collect();
     assert!(
-        annotations.contains("the distilled summary"),
+        annotations.contains("the triaged summary"),
         "the note renders as its own annotation: {annotations}"
     );
 }
 
 #[test]
-fn raw_toggle_shows_full_raw_over_the_distillate() {
-    // A distilled result (the same shape as `distilled_wire_supersedes_raw`).
+fn raw_toggle_shows_full_raw_over_the_selection() {
+    // A triaged result (the same shape as `triaged_wire_supersedes_raw`).
     let log = vec![
         entry(
             4,
@@ -308,17 +308,17 @@ fn raw_toggle_shows_full_raw_over_the_distillate() {
                 "toolu_9",
                 RawResult::text("RAW-NOISE\nthe kept line"),
                 WireState::from(
-                    Distilled::new(Keep::Ranges(vec![(2, 2)])).with_note("the distilled summary"),
+                    Triaged::new(Keep::Ranges(vec![(2, 2)])).with_note("the triaged summary"),
                 ),
             ),
         ),
     ];
     let mut view = ViewState::default();
 
-    // Default: the distillate, raw hidden, no `· raw` marker on the header.
+    // Default: the selection, raw hidden, no `· raw` marker on the header.
     let doc = project(&log, &LiveTail::default(), &view, Gate::default(), &[]);
     let code = collect_code(&doc.nodes);
-    assert!(code.contains("the kept line"), "distillate shown: {code}");
+    assert!(code.contains("the kept line"), "selection shown: {code}");
     assert!(
         !code.contains("RAW-NOISE"),
         "dropped raw line hidden: {code}"
@@ -454,7 +454,7 @@ fn collect_code(nodes: &[DocumentNode<'_>]) -> String {
                 out.push_str(code);
                 out.push('\n');
             }
-            // A distilled result's kept lines (docs/tui.md) — content like any other
+            // A triaged result's kept lines (docs/tui.md) — content like any other
             // code body, just carrying its original line numbers.
             DocumentNode::NumberedCode { lines, .. } => {
                 for (_, text) in lines {

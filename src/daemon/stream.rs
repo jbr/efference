@@ -413,7 +413,7 @@ impl Session {
 
 /// The bytes of the result a [`Payload::ResultVerdict`] names, read one entry at a
 /// time — the same lookup [`entry_view::result_raw`] does over a borrowed log, in the
-/// owned form a frame's `data` needs (docs/redaction-fork.md).
+/// owned form a frame's `data` needs (docs/triage.md).
 pub(crate) fn result_raw(entry: &LogEntry, shared: &Session) -> Option<RawResult> {
     let Payload::ResultVerdict { for_result, .. } = &entry.payload else {
         return None;

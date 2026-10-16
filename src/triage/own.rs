@@ -1,4 +1,4 @@
-//! Building the separate-model peek from a model name (docs/redaction-fork.md) —
+//! Building the separate-model peek from a model name (docs/triage.md) —
 //! one constructor for the daemon's boot and the replay tool, so the replayed shape
 //! cannot drift from the live one.
 
@@ -26,7 +26,7 @@ pub struct TriageModel {
 }
 
 impl ForkPeek {
-    /// The separate-model peek for `triage` (docs/redaction-fork.md): the model's
+    /// The separate-model peek for `triage` (docs/triage.md): the model's
     /// capabilities looked up like the agent's, a client on [`Endpoint::for_triage`]
     /// with the given `system`, thinking off unless asked, a peek-sized output cap,
     /// and the asked-for tool forced unless asked otherwise. Returns the capabilities

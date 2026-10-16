@@ -1,4 +1,4 @@
-//! The instruction text and the rosters appended to a fork peek (docs/redaction-fork.md).
+//! The instruction text and the rosters appended to a fork peek (docs/triage.md).
 
 use super::*;
 
@@ -14,7 +14,7 @@ what truly warrants picking the work back up.";
 /// in the view formatted as a trailing note about the sections above it. It opens on the
 /// harness's `⟢` because the preamble names a `⟢ triage` block as the harness's one ask
 /// (assets/prompts/session.md); without that, the ask arrives in an unprefixed user turn
-/// the preamble attributes to the operator (docs/redaction-fork.md).
+/// the preamble attributes to the operator (docs/triage.md).
 pub(super) const ASK_BANNER: &str = "⟢ triage · the harness asks: answer, don't act";
 
 /// The `keep`/`note` rows of the field block. `note` says *only what it showed* because a
@@ -57,7 +57,7 @@ const KEEP_FIELDS: &str =
               one you can act on. This is about the intent, never about the task: do
               not suggest what to call next or what the output means.";
 
-/// The `keep`/`note` rows a **separate triage model** is asked (docs/redaction-fork.md):
+/// The `keep`/`note` rows a **separate triage model** is asked (docs/triage.md):
 /// the note is a report for the agent, not a note to self. A different model chiming in
 /// with what to do next is noise at best and steering at worst, so it reports what the
 /// output shows — what was dropped and whether that is safe, the answers to the intent's
@@ -99,7 +99,7 @@ const REPORT_FIELDS: &str =
               not suggest what to call next or what the output means.";
 
 /// The `retain` ask, scoped to the results **this gate** is deciding
-/// (docs/redaction-fork.md).
+/// (docs/triage.md).
 ///
 /// Two properties the text must hold, each answering a live failure on a long transcript:
 ///
@@ -175,7 +175,7 @@ entries, one per label listed here and no others: {labels}.",
 }
 
 /// How much of a roster item the peek view spells out — the cost axis
-/// (docs/redaction-fork.md). The roster is re-sent on **every** gate and lives in the
+/// (docs/triage.md). The roster is re-sent on **every** gate and lives in the
 /// fork's uncached tail, so its size is paid per tool result for the whole session.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum RosterStyle {
@@ -229,7 +229,7 @@ fn first_sentence(s: &str) -> &str {
 }
 
 /// Which features of the ask are on — the ablation axis the `peek` rig varies
-/// (docs/redaction-fork.md).
+/// (docs/triage.md).
 ///
 /// Experiment scaffolding. It lives here
 /// rather than in the dev tool because the shape (single vs multi result) and the rider
@@ -430,7 +430,7 @@ pub(super) fn append_inbox_and_background(
     }
 }
 
-/// The fork's surfacing roster (docs/redaction-fork.md): the **listed** `[context]` items
+/// The fork's surfacing roster (docs/triage.md): the **listed** `[context]` items
 /// — stub files carrying a `path`, read on demand — that no prior gate has surfaced yet.
 /// A pure fold over the prefix: the boot `Preamble`'s structured listing (last one wins on
 /// a multi-boot log) minus every name any prior `Triage.surfaced` already carried (the
@@ -478,7 +478,7 @@ pub(super) fn roster_shown(roster: &[Item]) -> bool {
     !roster.is_empty() && AskVariant::from_env().roster != RosterStyle::Off
 }
 
-/// Render the surfacing roster section of a peek view (docs/redaction-fork.md): the
+/// Render the surfacing roster section of a peek view (docs/triage.md): the
 /// available-but-unloaded context items, each spelled exactly as the boot preamble spelled
 /// it, through the preamble's own renderer so the two can't drift. Only in the tool-result
 /// gate — the idle triage rides no work in flight.
@@ -498,7 +498,7 @@ pub(super) fn append_roster(view: &mut String, roster: &[Item]) {
     }
 }
 
-/// One result's block in a peek view (docs/redaction-fork.md): a header naming the
+/// One result's block in a peek view (docs/triage.md): a header naming the
 /// result's label ([`labels`](super::labels)) and tool, then the capped, line-numbered
 /// output.
 ///
@@ -507,7 +507,7 @@ pub(super) fn append_roster(view: &mut String, roster: &[Item]) {
 /// continuous coordinate system would invite the model to keep lines from one result
 /// under another's verdict — a silent mis-attribution, since a wrong verdict renders
 /// exactly like a right one. Per-block numbering makes the coordinate systems visibly
-/// separate. The cap matches `render_distilled`'s, so the verdict's coordinates stay
+/// separate. The cap matches `render_triaged`'s, so the verdict's coordinates stay
 /// aligned with what the model saw.
 pub(super) fn result_view(label: &str, call: &ToolCall, raw: &RawResult) -> String {
     let all: Vec<&str> = raw.content.lines().collect();
@@ -532,7 +532,7 @@ pub(super) fn result_view(label: &str, call: &ToolCall, raw: &RawResult) -> Stri
     view
 }
 
-/// A bypassed result's block in the peek view (docs/redaction-fork.md). The call must
+/// A bypassed result's block in the peek view (docs/triage.md). The call must
 /// still be answered — the API rejects a request that leaves a `tool_use` unpaired — but
 /// the output itself is not shown: it is going to the wire verbatim, so showing it would
 /// spend the fork's uncached tail on text no verdict can change, and offering it beside
@@ -555,10 +555,10 @@ pub(super) fn bypassed_view(call: &ToolCall, shape: &str) -> String {
 }
 
 /// Render every line `cat -n`-style (1-based, 6-wide, tab-separated). This is the
-/// coordinate system the fork-peek gate (docs/redaction-fork.md) addresses with
+/// coordinate system the fork-peek gate (docs/triage.md) addresses with
 /// `retain(lines=…)`, so it is shown ONLY in the throwaway fork — never on the
 /// canonical wire, which uses the leaner `@@`-hunks in
-/// [`render_distilled`](crate::project::render_distilled).
+/// [`render_triaged`](crate::project::render_triaged).
 pub(super) fn number_lines(lines: &[&str]) -> String {
     lines
         .iter()
@@ -568,7 +568,7 @@ pub(super) fn number_lines(lines: &[&str]) -> String {
         .join("\n")
 }
 
-/// Build the fork peek's request (docs/redaction-fork.md): the cached
+/// Build the fork peek's request (docs/triage.md): the cached
 /// prefix-through-`tool_use`, then one user message carrying every result plus the
 /// gate-scoped riders and the retain prompt.
 ///
@@ -592,7 +592,7 @@ pub(super) fn peek_messages(
 ) -> Vec<WireTurn> {
     let (results, ask) = gate_parts(pending, inbox, background, roster, reader);
     // The prefix hits cache; only the raws and the instruction are fresh, and they are
-    // discarded — the canonical lineage never sees raw (docs/redaction-fork.md). The
+    // discarded — the canonical lineage never sees raw (docs/triage.md). The
     // frontier sits before that raw tail: the shared prefix is read, the throwaway
     // suffix is never written.
     let mut messages = project_semantic_for(prefix, reader);
@@ -636,7 +636,7 @@ pub(super) fn gate_parts(
     append_roster(&mut sections, roster);
 
     // Scoped to exactly this gate's ids, and shape-selected on its size — the tail is
-    // discarded with the fork, so nothing here is cache-keyed (docs/redaction-fork.md).
+    // discarded with the fork, so nothing here is cache-keyed (docs/triage.md).
     // A rider's field row is offered only when its section is actually above.
     let labels = labels(pending);
     let offered: Vec<String> = labels.iter().flatten().cloned().collect();
@@ -653,7 +653,7 @@ pub(super) fn gate_parts(
     let instruction = retain_instruction(&offered, &riders, reader);
 
     // A bypassed result answers with a stand-in rather than its output: the harness
-    // already decided it (docs/redaction-fork.md), and the ask does not offer it.
+    // already decided it (docs/triage.md), and the ask does not offer it.
     let results = pending
         .iter()
         .zip(&labels)

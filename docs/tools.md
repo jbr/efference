@@ -27,7 +27,7 @@ cache-prefix invariant). The real cost to watch is discoverability failure: a
 capability that never fires because its hint did not trigger — hints deserve
 the same iteration as the tools themselves.
 
-The redaction policy is the most-iterated knob; see `redaction-fork.md`. It is
+The redaction policy is the most-iterated knob; see `triage.md`. It is
 one concrete type (`ForkPeek`), not a trait: the single-implementation
 `Distiller` bound it was built behind was threaded through three signatures for
 a polymorphism nothing exercised, and the swap the backlog names — a smaller
@@ -94,13 +94,13 @@ call that produces rather than reads — a write, an edit — the why is the who
 and the guidance says that is expected rather than a shortfall. So the field is never
 legitimately empty, which is consistent with it staying required. The preamble also
 tells the agent that triage may answer with a request for a better question
-(`intent_feedback`, [redaction-fork.md](redaction-fork.md)) and that this is about
+(`intent_feedback`, [triage.md](triage.md)) and that this is about
 the intent, not the task. Collision is stated in one sentence: a tool that declares
 its own `intent` keeps it.
 
 **Readers.** The TUI leads a call entry's body with it. The fork peek's `result_view`
 puts it in the result header so the triage `note` answers it rather than restating
-what the tool did ([redaction-fork.md](redaction-fork.md)); the two halves are written
+what the tool did ([triage.md](triage.md)); the two halves are written
 at different times by different requests, so they can disagree, and a `note` that does
 not answer its `intent` is the signal that the call went sideways. When triage runs on
 a separate model, the intent is the only place the agent's reasoning for a call
@@ -379,7 +379,7 @@ error's body, unchanged: fs-mcp's write-retry token still rides in it, and an
 edit rejection still carries its diff and syntax errors. What changes is only the
 flag, and the flag is what a reader sees first — a refusal shaped like a success
 was read as a success, and the triage fork keeping the first line or two of the
-body sharpened that (see `redaction-fork.md`).
+body sharpened that (see `triage.md`).
 
 An outcome is a success when it answers the call on its own terms even though it
 changed nothing: a `search` with zero matches, a `find_anchor` that matched
@@ -443,7 +443,7 @@ What it records:
 
 - **Common, every call**: tool name, `call_id`, duration (the permission cascade
   excluded — a call that waited an hour at a human gate did not *run* for an
-  hour), outcome class, result bytes **before** distillation, and realized image
+  hour), outcome class, result bytes **before** triage, and realized image
   count.
 - **Outcome class** is derived generically rather than per tool. Since built-in
   negative outcomes became `is_error: true` (above), `is_error` *is* the
