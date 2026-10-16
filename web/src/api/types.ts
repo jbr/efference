@@ -399,7 +399,7 @@ export type Stance = "clear" | "watch" | "gate" | "clear_always";
  * own measurement of the dispatch, joined to its call by `call_id`. `duration_ms`
  * excludes the permission cascade, and `result_bytes` is the raw result before
  * triage has run, so the pair (this, the rendered result) is what
- * says how much a gate saved. Additive by construction on the Rust side: fields
+ * says how much triage saved. Additive by construction on the Rust side: fields
  * may appear here that this client does not read yet. */
 export interface ToolTelemetry {
   call_id: CallId;
@@ -691,7 +691,7 @@ export interface UpstreamRetry {
 // A trajectory that stopped short (docs/transport.md). On the turn's failure
 // paths the loop returns to idle, so `running: false`, no gate, and an empty
 // inbox look exactly like a finished run; this topic is the difference. A
-// triage gate held on the upstream (the `triage_*` reasons) stalls with the
+// triage held on the upstream (the `triage_*` reasons) stalls with the
 // loop still running (docs/triage.md). Either way `POST
 // /loop/continue` retries. Level-triggered: `null` once the work resumes.
 export interface Stall {

@@ -26,7 +26,7 @@ pub struct ToolTelemetry {
     pub outcome: ToolOutcome,
     /// Bytes of result text as the tool produced it — **before** the triage
     /// triages it (docs/triage.md). The pair (this, the selection's
-    /// size) is what says how much a gate actually saved.
+    /// size) is what says how much a triage actually saved.
     pub result_bytes: usize,
     /// Realized image blocks the result carried. Zero for every text tool;
     /// defaulted and skipped so those entries stay small.

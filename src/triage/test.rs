@@ -19,7 +19,7 @@ fn lines(s: &str) -> Vec<&str> {
     s.lines().collect()
 }
 
-/// The id of the result a single-result gate is triaging. Arbitrary — what matters is
+/// The id of the result a single-result triage is triaging. Arbitrary — what matters is
 /// that exactly one id is offered, which is the condition under which `parse_retain`
 /// adopts the id-free shapes — the flat `keep`/`note`, or a lone mis-keyed entry.
 const CALL_ID: &str = "toolu_x";

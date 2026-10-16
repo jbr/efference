@@ -40,7 +40,7 @@ impl Session {
     /// `slot` (or an explicit `replaces` id) matching a pending entry, that entry is
     /// **superseded**: archived-and-replaced, never edited (records are immutable,
     /// docs/log-and-projection.md). A superseded-while-pending entry is simply dropped — it never reached a
-    /// gate, so from the log's perspective it never happened. Returns the new id.
+    /// triage, so from the log's perspective it never happened. Returns the new id.
     pub(crate) fn notify(
         &self,
         source: String,
@@ -134,10 +134,10 @@ impl Session {
         self.inbox.lock().unwrap().pending.clone()
     }
 
-    /// Drain the un-shown notifications for a triage gate (docs/inbox.md): take and clear
+    /// Drain the un-shown notifications for a triage (docs/inbox.md): take and clear
     /// the ephemeral queue. The loop logs each as a first-show `Ambient` entry (its
     /// `seq` becoming its durable id) and shows it to the model, so the queue holds
-    /// only what's arrived since the last gate. Returned in arrival order, each a
+    /// only what's arrived since the last triage. Returned in arrival order, each a
     /// [`Notification`](crate::log::Notification) ready to wrap in a payload plus
     /// its must-wake flag, which the loop applies after the verdict.
     pub fn drain_inbox(&self) -> Vec<Drained> {
@@ -157,7 +157,7 @@ impl Session {
     }
 
     /// The directed inbox read (docs/inbox.md — `check_inbox`): the active shown
-    /// notifications (left at earlier gates) plus the newly-arrived ephemeral ones,
+    /// notifications (left at earlier triages) plus the newly-arrived ephemeral ones,
     /// so the model can survey what's waiting on demand. The triage for this
     /// tool's own result is where they're actually triaged.
     pub fn inbox_summary(&self) -> String {

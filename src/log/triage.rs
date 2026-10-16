@@ -12,7 +12,7 @@ use super::*;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Triage {
     /// The `seq` of the [`Payload::ToolResult`] this verdict triaged — `None` for a
-    /// **standalone** triage (the idle-triggered inbox-only triage, docs/inbox.md: a gate
+    /// **standalone** triage (the idle-triggered inbox-only triage, docs/inbox.md: a triage
     /// that rides no tool result). Backward-compatible: serde reads an old bare `seq` as `Some`.
     pub for_result: Option<Seq>,
     /// Whether the verdict came from the model or a harness fallback. For a
@@ -23,28 +23,28 @@ pub struct Triage {
     /// The model's exact `keep` string, pre-parse (empty for a model-free triager).
     pub raw_keep: String,
     /// Per-notification dispositions chosen in this triage, by the notification's
-    /// arrival `seq` (docs/inbox.md). Empty on a gate that was shown nothing.
+    /// arrival `seq` (docs/inbox.md). Empty on a triage that was shown nothing.
     pub inbox: Vec<(Seq, Disposition)>,
     /// Context items this triage chose to **surface** — names from the boot `Preamble`'s
     /// structured listing (stub files with a `path`) the model judged relevant to the
     /// work in flight (docs/triage.md). `project` re-renders each as a
     /// read-me reminder at this entry's tail-ward position, off the listing (like a
-    /// pinned notification's body). Also the surfaced-once dedup source: a later gate's
+    /// pinned notification's body). Also the surfaced-once dedup source: a later triage's
     /// roster excludes any name already here. `#[serde(default)]`: old logs read empty.
     #[serde(default)]
     pub surfaced: Vec<String>,
-    /// One breadcrumb per **non-compliant triage attempt** this gate saw, in order,
+    /// One breadcrumb per **non-compliant triage attempt** this triage saw, in order,
     /// attempt-stamped — recorded even when an in-fork retry recovered
     /// (docs/triage.md). A runtime triage failure is a harness defect
     /// signal, so it must survive to the log rather than only the daemon's stderr;
-    /// the compliance record is a fold over this field. Gate-scoped: rides the last
+    /// the compliance record is a fold over this field. Triage-scoped: rides the last
     /// `Triage` of a batch, like `inbox`. `#[serde(default)]`: old logs read empty.
     #[serde(default)]
     pub retries: Vec<String>,
     /// The triage's own reasoning — the text of every thinking block the fork emitted,
     /// one entry per attempt that produced any, in attempt order (docs/triage.md).
     /// The fork runs under the same thinking policy as an agent turn (the shared
-    /// envelope), so most gates think; without this the log records *what* was decided
+    /// envelope), so most triages think; without this the log records *what* was decided
     /// and never *why*. Signatures are not kept: this is a record, not a replay input —
     /// the fork's transcript stays throwaway. Operator/developer observability only;
     /// [`project`] never reads it, so recording it cannot move the wire.

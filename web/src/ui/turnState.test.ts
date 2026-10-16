@@ -23,7 +23,7 @@ describe("the turn-state readout", () => {
     expect(state.title).toBe(stall.detail);
   });
 
-  it("reports a stall while running — a triage gate held on the upstream", () => {
+  it("reports a stall while running — a triage held on the upstream", () => {
     expect(turnState(true, stall).kind).toBe("stalled");
   });
 

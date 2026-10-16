@@ -206,7 +206,7 @@ async fn a_childs_gate_wakes_the_parent_and_is_pinned_whatever_the_triage_says()
 
     // The wake is declared, not judged: the triage fails outright here, and the
     // loop pins the status regardless (docs/inbox.md).
-    wait_until("the parent's idle triage pinned the gate", || {
+    wait_until("the parent's idle triage pinned the triage", || {
         parent
             .snapshot()
             .iter()

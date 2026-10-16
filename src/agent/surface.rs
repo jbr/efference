@@ -45,7 +45,7 @@ pub fn callable_names(toolbox: &Toolbox) -> Vec<String> {
 /// the loop-owned family once was, and the spotter judged `check_inbox` and
 /// `list_processes` as bare names, calling them opaque (docs/permissions.md).
 /// Bash stays brief-less by design (judged as command text), and the triage tools
-/// never reach a gate (an un-asked call pairs with a nudge result).
+/// never reach a triage (an un-asked call pairs with a nudge result).
 pub fn brief<'a>(toolbox: &'a Toolbox, name: &str) -> Option<crate::tools::ToolBrief<'a>> {
     toolbox
         .brief(name)
@@ -66,7 +66,7 @@ pub fn brief<'a>(toolbox: &'a Toolbox, name: &str) -> Option<crate::tools::ToolB
 /// spotter (`check_inbox`/`list_processes` once judged as bare names because
 /// the lookup consulted only the providers). Composed from the same brief
 /// sources `brief` reads, plus the two triage tools, which `brief` excludes
-/// (they never reach a gate) but this route does not: `retain`/`triage` still
+/// (they never reach a triage) but this route does not: `retain`/`triage` still
 /// ride every turn's `tools[]`, so a reader destructuring the triage's own
 /// call wants their schema too.
 ///

@@ -669,7 +669,7 @@ page's length and DOM weight stay bounded as a session grows.
   the median block is about that size, and folding it costs a click and saves
   nothing (backlog/inbox/web-thinking-autocollapse.md).
 - **Always whole, at any distance**: user turns and assistant prose; a call
-  still running or held at a gate; a failed call; a result withheld by a triage
+  still running or held at a triage; a failed call; a result withheld by a triage
   failure; a call the spotter gated or watched. Errors, gates, and refusals
   render at every density.
 
@@ -1405,7 +1405,7 @@ your answer` in muted, upright UI text while a gate or an `ask` is pending (it o
 the operation text, since the operator is what the loop waits on; a stall and a
 park still come first), and the daemon's own sentence plus `· send to retry` in the warn
 color when the `stall` topic is set — a trajectory that stopped short, or a
-triage gate held with the loop still running ([transport.md](transport.md)),
+triage held with the loop still running ([transport.md](transport.md)),
 which `running` alone cannot say; the upstream's words ride along as the hover
 title. An empty send is the continue, which retries either wait. The choice is
 `ui/turnState.ts`, a pure function of `running`, `stall`, whether a retry

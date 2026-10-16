@@ -5,7 +5,7 @@ use super::*;
 /// What one un-retried triage came back with — the `triage` dev tool's measurement
 /// primitive (docs/triage.md).
 ///
-/// The gate's own machinery retries, so a session's `Triage.retries` records *that* a
+/// The triage's own machinery retries, so a session's `Triage.retries` records *that* a
 /// first attempt failed but never lets you compare two asks: a change that halves
 /// first-attempt non-compliance and one that changes nothing both end in a usable
 /// verdict. This runs exactly one round trip and reports the first attempt's verdict,
@@ -52,12 +52,12 @@ impl TriageAttempt {
     }
 }
 
-/// Rebuild the exact request a recorded gate's triage sent — the same `triage_messages` the
-/// live gate calls, so a replay can't drift from production (docs/triage.md).
+/// Rebuild the exact request a recorded triage sent — the same `triage_messages` the
+/// live triage calls, so a replay can't drift from production (docs/triage.md).
 /// Split out for the `triage` dev tool's dry run, which reviews an ask without spending a
 /// request on it.
 ///
-/// `view` picks the rendering of the history: the live gate's transcript, or the digest
+/// `view` picks the rendering of the history: the live triage's transcript, or the digest
 /// arm under evaluation (`digest_view.rs`).
 pub fn triage_request(
     prefix: &[LogEntry],
@@ -79,12 +79,12 @@ pub fn triage_request(
 }
 
 impl Triager {
-    /// One triage round trip against a recorded gate, with **no retries**
+    /// One triage round trip against a recorded triage, with **no retries**
     /// (docs/triage.md). Same request, same client, tools and `tool_choice`
-    /// as the live gate under this configuration (shared or own), same validity rule
+    /// as the live triage under this configuration (shared or own), same validity rule
     /// (`parse_retain` plus [`require_coverage`] and [`require_in_bounds`]) — only the
     /// retry loop is absent, because the first attempt is the measurement.
-    #[allow(clippy::too_many_arguments)] // the gate's own inputs plus the view under test
+    #[allow(clippy::too_many_arguments)] // the triage's own inputs plus the view under test
     pub async fn attempt(
         &self,
         agent: &Client,

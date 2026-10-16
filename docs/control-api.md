@@ -479,7 +479,7 @@ idling** — a blank submit never lands a `User` entry and never starts a turn.
 
   It is also **"retry now"** ([transport.md](transport.md)). While the loop is
   running but waiting on the upstream — an `upstream_retry` pause, or a triage
-  gate held under a `stall` — the continue is accepted and ends that wait, so the
+  held under a `stall` — the continue is accepted and ends that wait, so the
   next attempt fires at once; after a stall that returned the loop to idle, it
   re-sends the failed request. It can be repeated as often as the operator
   likes.
@@ -515,7 +515,7 @@ instead of paying the uncached read; for a warm one, at the operator's request. 
 after it (about 15k tokens, the cut moved earlier so no call is separated from its
 result) stay verbatim. The fold appends one boundary mark and starts no request: an
 idle session stays idle, and a loop parked at its cold check stays parked until the
-next turn or continue. A loop held at a triage gate without a verdict (the
+next turn or continue. A loop held at a triage without a verdict (the
 `triage_unavailable` or `triage_defect` stall, docs/triage.md) is running but
 sends nothing, so it accepts a fold the same way: it stays held, and the continue
 that retries it triages the folded projection rather than the history the account
@@ -692,7 +692,7 @@ bootstraps; a client holding the stream needs never request it.
 
 **`?wait=settled`** turns the read into a long-poll: block until the daemon
 reaches a **decision point** (a gate is pending, the loop is stalled — which
-includes a triage gate held on the upstream, waiting on a continue — or the loop
+includes a triage held on the upstream, waiting on a continue — or the loop
 is idle with nothing queued), then return the snapshot. Returns immediately if already
 settled; capped server-side at **300 s** (on timeout it returns current state
 and the client re-polls). The same predicate backs the `?wait` flags on
@@ -812,7 +812,7 @@ not a topic — it is the log's cursor rather than control state, and sits outsi
                                    //   `POST /loop/continue` retries it
     "reason": "retries_exhausted", // "retries_exhausted" | "request_failed" | "upstream_refused"
                                    //   | "triage_unavailable" | "triage_defect" — the triage
-                                   //   reasons hold a gate with the loop still running
+                                   //   reasons hold a triage with the loop still running
     "attempts": 12,                // attempts spent, where the path counts them; else null
     "at": 1754300000000,           // absolute Unix millis at which the loop gave up
     "message": "the trajectory stopped: 12 attempts in a row failed upstream",
@@ -1122,7 +1122,7 @@ an orphaned `tool_result`. `404 not_found` if no entry carries it. Validated by
 
 The scale of the orphan problem is bounded by the batch: a completion's calls
 share one assistant entry, and their results are appended together after the
-gate ([README.md](README.md)), so a cut orphans **at most one batch of results,
+triage ([README.md](README.md)), so a cut orphans **at most one batch of results,
 at the boundary itself**.
 
 #### `GET /proposals`

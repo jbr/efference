@@ -424,7 +424,7 @@ pub fn project_semantic_for(log: &[LogEntry], reader: Reader) -> Vec<WireTurn> {
             // looked up from the `Ambient` arrival (docs/inbox.md), surfaced items
             // re-rendered from the boot listing (docs/triage.md). This
             // tail-ward placement keeps the wire append-only: content acknowledged
-            // at a later gate than its origin never splices behind a breakpoint
+            // at a later triage than its origin never splices behind a breakpoint
             // (docs/log-and-projection.md). Dismissed / left / already-surfaced
             // dispositions don't project. The verdict is otherwise audit-only.
             Payload::Triage(t) => {

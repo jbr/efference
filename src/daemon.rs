@@ -334,7 +334,7 @@ pub struct Session {
     config_repaired: Notify,
 
     /// The ephemeral inbox of pending ambient notifications (docs/inbox.md): out-of-band
-    /// events awaiting their first triage gate. Control state, *not* a log payload —
+    /// events awaiting their first triage. Control state, *not* a log payload —
     /// a notification only becomes a durable `Ambient` entry when a triage first
     /// shows it. Superseded/dismissed-while-pending entries are dropped here
     /// (the "never-happened" case); only shown ones reach the audit log.
@@ -345,7 +345,7 @@ pub struct Session {
     /// `Proposed` entry is durable in the log, but its *pending* status lives here until resolved.
     proposals: Mutex<Vec<PendingProposal>>,
     /// The background-process registry (docs/supervisor.md): live children whose running tail
-    /// is re-sampled fresh each triage gate. Ephemeral control state like `inbox` /
+    /// is re-sampled fresh each triage. Ephemeral control state like `inbox` /
     /// `metrics` — never logged, never projected (a running tail forced through the
     /// immutable notification model would pile up stale snapshots). Pinned tails and
     /// exits *do* reach the durable log, but as `Ambient` notifications, not from here.

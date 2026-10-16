@@ -1,13 +1,13 @@
-//! Tests for the fork's gate mechanics, including the known-result-shape rule
+//! Tests for the fork's triage mechanics, including the known-result-shape rule
 //! (docs/triage.md).
 use super::*;
 
-/// The invariant the batched gate exists to hold (docs/triage.md): when a
+/// The invariant the batched triage exists to hold (docs/triage.md): when a
 /// completion carries several calls, the triage's request must answer **every** one of
 /// them.
 ///
 /// Peeking between calls builds a request whose trailing assistant message still carries
-/// unanswered `tool_use` blocks, which the API rejects. The whole gate then fails, and
+/// unanswered `tool_use` blocks, which the API rejects. The whole triage then fails, and
 /// because `WireState` is fixed once, whatever the failure path leaves behind stays in the
 /// cached prefix for the rest of the session — one mis-timed triage is not recoverable later.
 #[test]
@@ -96,7 +96,7 @@ fn a_gate_over_a_multi_call_step_answers_every_tool_use() {
         views[1]
     );
 
-    // The gate-scoped riders and the instruction ride the trailing text block — they
+    // The triage-scoped riders and the instruction ride the trailing text block — they
     // belong to the step, not to any one result.
     assert!(matches!(tail.content.last(), Some(ApiBlock::Text { .. })));
 }
@@ -108,7 +108,7 @@ intend to replace it.\n\nYour 8772 bytes of contents are preserved under \
 `write-retry-9f3a1c04be27d5e8`: repeat the call with \"overwrite\": true and \"contents\": \
 \"write-retry-9f3a1c04be27d5e8\" to confirm this exact write.";
 
-/// A gate carrying nothing but handle-bearing results is decided by the harness with no
+/// A triage carrying nothing but handle-bearing results is decided by the harness with no
 /// request at all — the skipped verdict is also a skipped round-trip — and each result
 /// projects `WireState::Raw`, so the token reaches the model exactly as the tool wrote it.
 #[test]
@@ -119,7 +119,7 @@ fn a_gate_of_only_handle_bearing_results_is_decided_without_a_triage() {
         call: &call,
         raw: &raw,
     }];
-    let outcome = bypassed_gate(&pending).expect("every result is bypassed");
+    let outcome = bypassed_triage(&pending).expect("every result is bypassed");
     assert_eq!(outcome.results.len(), 1);
     assert!(matches!(outcome.results[0].wire, WireState::Raw));
     assert_eq!(outcome.results[0].origin, Origin::Fallback);
@@ -128,7 +128,7 @@ fn a_gate_of_only_handle_bearing_results_is_decided_without_a_triage() {
             .raw_keep
             .contains("fs-mcp write retry token"),
         "the breadcrumb names the shape, which is what separates a bypass from a \
-         failed gate in the log: {}",
+         failed triage in the log: {}",
         outcome.results[0].raw_keep
     );
     // No request was made, so there is nothing to bill and no retry to record.
@@ -144,11 +144,11 @@ fn an_ordinary_result_still_goes_through_the_fork() {
         call: &call,
         raw: &raw,
     }];
-    assert!(bypassed_gate(&pending).is_none());
+    assert!(bypassed_triage(&pending).is_none());
     assert_eq!(offered_labels(&pending), vec!["r1".to_string()]);
 }
 
-/// A mixed gate still runs — the handle-bearing result is answered (an unpaired
+/// A mixed triage still runs — the handle-bearing result is answered (an unpaired
 /// `tool_use` makes the request invalid) but with a stand-in and no label, and only the
 /// other result is offered, so the triage is never asked to decide the one the harness already decided.
 #[test]
@@ -181,7 +181,7 @@ fn a_handle_bearing_result_is_answered_but_never_offered() {
         .collect();
 
     assert!(
-        bypassed_gate(&pending).is_none(),
+        bypassed_triage(&pending).is_none(),
         "one result still needs a verdict"
     );
     assert_eq!(labels(&pending), vec![None, Some("r1".to_string())]);
@@ -308,7 +308,7 @@ fn an_ask_reply_is_bypassed_and_still_answered_in_the_triage() {
     assert_eq!(bypassed(&pending[0]), Some("operator reply"));
     assert_eq!(bypassed(&pending[1]), None);
     assert!(
-        !reply_only_gate(&pending),
+        !reply_only_triage(&pending),
         "a search result is still the triage's"
     );
     assert_eq!(offered_labels(&pending), vec!["r1"]);
@@ -344,7 +344,7 @@ fn an_ask_reply_is_bypassed_and_still_answered_in_the_triage() {
     assert!(views[1].1.starts_with("═══ result r1 · search ═══"));
 }
 
-/// A gate holding only ask replies has every verdict decided without a request, and
+/// A triage holding only ask replies has every verdict decided without a request, and
 /// says so, so the loop knows it must triage the inbox itself.
 #[test]
 fn a_gate_of_only_ask_replies_needs_no_triage_and_delivers_them_raw() {
@@ -354,8 +354,8 @@ fn a_gate_of_only_ask_replies_needs_no_triage_and_delivers_them_raw() {
         call: &call,
         raw: &raw,
     }];
-    assert!(reply_only_gate(&pending));
-    let outcome = bypassed_gate(&pending).expect("decided without a request");
+    assert!(reply_only_triage(&pending));
+    let outcome = bypassed_triage(&pending).expect("decided without a request");
     assert_eq!(outcome.results.len(), 1);
     assert!(matches!(outcome.results[0].wire, WireState::Raw));
     assert!(
@@ -363,9 +363,9 @@ fn a_gate_of_only_ask_replies_needs_no_triage_and_delivers_them_raw() {
         "{}",
         outcome.results[0].raw_keep
     );
-    // A gate with no ask in it is not this case, whatever else was bypassed.
+    // A triage with no ask in it is not this case, whatever else was bypassed.
     let other = ToolCall::new("search", "s", json!({}));
-    assert!(!reply_only_gate(&[Pending {
+    assert!(!reply_only_triage(&[Pending {
         call: &other,
         raw: &raw
     }]));

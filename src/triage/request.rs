@@ -15,7 +15,7 @@ pub(super) const TRIAGE_ATTEMPTS: usize = 3;
 /// answered each time, and the ask or the parse is what failed.
 pub const TRIAGE_RESTARTS: usize = 3;
 
-/// How long a triage keeps trying (docs/triage.md). The gate waits failures
+/// How long a triage keeps trying (docs/triage.md). The triage waits failures
 /// out, because its results reach the agent only through a verdict; the asides —
 /// the idle triage and the title — give up early, because each has a harmless
 /// fallback and the loop is blocked on it meanwhile.
@@ -28,8 +28,8 @@ pub(super) struct Patience {
 }
 
 impl Patience {
-    /// The gate's: every fork, and the main loop's full upstream schedule.
-    pub(super) const GATE: Self = Self {
+    /// The triage's: every fork, and the main loop's full upstream schedule.
+    pub(super) const TRIAGE: Self = Self {
         forks: TRIAGE_RESTARTS,
         upstream: STREAM_ABORT_ATTEMPTS,
     };
@@ -41,7 +41,7 @@ impl Patience {
 }
 
 /// Why a triage produced no verdict (docs/triage.md). Never shown to the agent:
-/// the gate holds its results until a verdict arrives, or the operator interrupts.
+/// the triage holds its results until a verdict arrives, or the operator interrupts.
 #[derive(Debug)]
 pub enum TriageFailure {
     /// The upstream could not answer — the transient schedule ran out, or it refused
@@ -62,13 +62,13 @@ impl std::fmt::Display for TriageFailure {
     }
 }
 
-/// What one gate accumulates across its attempts, whatever the verdict turns out to be:
+/// What one triage accumulates across its attempts, whatever the verdict turns out to be:
 /// the billing record, the compliance breadcrumbs, and the triage's reasoning
 /// (docs/triage.md). The three travel together because every attempt appends to
-/// all of them and the outcome carries all of them onto the gate's `Triage`.
+/// all of them and the outcome carries all of them onto the triage's `Triage`.
 #[derive(Default)]
 pub(super) struct TriageRecord {
-    /// One [`RequestUsage`] per request the gate made, in-fork retries and aborted
+    /// One [`RequestUsage`] per request the triage made, in-fork retries and aborted
     /// streams included — the request happened and slid the prefix's cache TTL.
     pub(super) usage: Vec<RequestUsage>,
     /// One attempt-stamped breadcrumb per attempt that had to be retried, recovered or
@@ -110,7 +110,7 @@ pub(super) fn call_now(tool: &str) -> String {
 /// "retry now" lands, whichever client the triage sends through.
 ///
 /// Each attempt's thinking is pushed onto `record.thinking` before its verdict is judged, so a
-/// gate that took two attempts records the reasoning of both — the retried attempt's
+/// triage that took two attempts records the reasoning of both — the retried attempt's
 /// reasoning is what says whether the nudge landed. Text only: the fork's transcript,
 /// signatures included, stays throwaway, and this is a record rather than a replay input
 /// (docs/triage.md).
@@ -150,7 +150,7 @@ pub(super) async fn triage_with_retries<T>(
             };
             // Durable even when the next attempt recovers: a runtime triage
             // failure is a harness defect signal (docs/triage.md), so
-            // it lands on the gate's `Triage`, not just the daemon's stderr.
+            // it lands on the triage's `Triage`, not just the daemon's stderr.
             record.retries.push(format!(
                 "fork {fork} of {forks}, attempt {attempt} of {TRIAGE_ATTEMPTS}: {why}"
             ));
@@ -172,7 +172,7 @@ pub(super) async fn triage_with_retries<T>(
 /// One triage round-trip, retried while the **upstream fails transiently**
 /// (docs/transport.md) — a stream that dies before finalizing, or a request that
 /// could not open one — with the same treatment, on the same budget
-/// ([`STREAM_ABORT_ATTEMPTS`], for the gate) and the same [`stream_abort_backoff`]
+/// ([`STREAM_ABORT_ATTEMPTS`], for the triage) and the same [`stream_abort_backoff`]
 /// schedule that the main loop gives its own turns. `budget` is the attempt count.
 ///
 /// The partial is discarded rather than replayed: whatever arrived is untrusted, and
@@ -211,7 +211,7 @@ pub(super) async fn triage_completion(
                 if completion.operator_abort() {
                     // The operator interrupted during the triage (docs/control-channel.md):
                     // the latch the press set is left for the loop, which consumes it
-                    // after the gate and ends the turn.
+                    // after the triage and ends the turn.
                     record
                         .retries
                         .push(format!("triage ended by the operator: {why}"));
@@ -304,9 +304,9 @@ pub(super) fn extend_with_retry(
 }
 
 /// The text of every thinking block one triage attempt emitted, joined — the reasoning
-/// behind that attempt's verdict, recorded on the gate's `Triage`
+/// behind that attempt's verdict, recorded on the triage's `Triage`
 /// (docs/triage.md). `None` when the attempt thought nothing (or thought only in
-/// redacted blocks, which carry no text), so a gate that didn't think records nothing
+/// redacted blocks, which carry no text), so a triage that didn't think records nothing
 /// rather than an empty string.
 ///
 /// Only the text: a `signature` is what the API requires to *replay* a thinking block,

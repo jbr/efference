@@ -53,7 +53,7 @@ const IDLE_TRIAGE_DEBOUNCE_MS: u64 = 250;
 /// (docs/transport.md): each failed attempt is appended record-only (it projects
 /// to nothing, so the replay re-sends byte-identical messages over the still-warm
 /// prefix), then the request goes again after a [`stream_abort_backoff`] pause.
-/// The triage's gate reaches for the same constant and the same schedule
+/// Triage reaches for the same constant and the same schedule
 /// (`triage/request.rs`): one stated policy, whichever surface the failure lands on.
 ///
 /// Sized to **wait the failure out**. An upstream failure is usually an ephemeral
@@ -188,7 +188,7 @@ pub async fn run<F: Frontend, S: Spotter>(
         // A resumed session's unfinished batch, derived from the log each time
         // (docs/resumption.md). While it waits, the wire ends in unanswered `tool_use`
         // blocks, so no triage may project it: an event stays in the inbox and rides the
-        // batch's own gate.
+        // batch's own triage.
         let mut replay = shared.pending_batch();
         let next = if let Some(submitted) = replay.is_none().then(|| held.pop_front()).flatten() {
             IdleWake::Turn(submitted)
@@ -275,7 +275,7 @@ pub async fn run<F: Frontend, S: Spotter>(
             shared.await_config_repair().await;
             // A resumed session's first action brings its pending batch back
             // (docs/resumption.md): the calls that never ran go through the permission
-            // cascade, and everything captured is triaged with them at one gate, with no
+            // cascade, and everything captured is triaged with them at one triage, with no
             // model request first. The next pass round-trips as after any batch.
             if let Some(pending) = replay.take() {
                 first_step = false;
@@ -579,7 +579,7 @@ pub async fn run<F: Frontend, S: Spotter>(
             }
 
             // A completion may carry several calls (docs/README.md). Run them all
-            // here, holding the results, and triage them together at one gate below. Triaging between calls would build
+            // here, holding the results, and triage them together at one triage below. Triaging between calls would build
             // a fork request whose trailing assistant message still carries unanswered
             // `tool_use` blocks, which the API rejects (docs/triage.md).
             // The triage-lineage primer replays this completion's input on the own
@@ -623,7 +623,6 @@ mod ask;
 mod batch;
 mod config_edit;
 mod consolidation;
-mod gate;
 mod images;
 mod landing;
 mod replay;
@@ -633,11 +632,11 @@ mod surface;
 mod telemetry;
 mod title;
 mod triage;
+mod triage_hold;
 
 use ask::*;
 use batch::*;
 use config_edit::*;
-use gate::*;
 use images::*;
 use landing::*;
 use replay::*;
@@ -646,3 +645,4 @@ use step::*;
 pub use surface::{brief, callable_names, tool_catalog, tool_definitions};
 use title::*;
 use triage::*;
+use triage_hold::*;

@@ -624,7 +624,7 @@ fn state_reports_triage_retention() {
     assert_eq!(v["usage"]["retention"]["kept_lines"], 140);
     assert_eq!(v["usage"]["retention"]["shown_lines"], 200);
 
-    // A failed gate withheld 900 lines. Counted, but on neither side of the ratio —
+    // A failed triage withheld 900 lines. Counted, but on neither side of the ratio —
     // folding it in would read as compression rather than as failure.
     result(
         2,

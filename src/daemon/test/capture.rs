@@ -1,5 +1,5 @@
 //! A result captured before its triage, against a real turn loop and a scripted
-//! upstream (docs/triage.md): the bytes the gate is shown are the masked ones
+//! upstream (docs/triage.md): the bytes the triage is shown are the masked ones
 //! the log holds, and a completed batch projects the same wire whether its results were
 //! captured first or logged with their verdicts.
 
@@ -17,7 +17,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use trillium_tokio::Swansong;
 
 /// A completion making `calls` bash calls in one turn — the shape that forces a
-/// multi-result gate.
+/// multi-result triage.
 fn completion(calls: &[(&str, &str)]) -> String {
     let events: Vec<String> = calls
         .iter()
@@ -48,7 +48,7 @@ fn completion(calls: &[(&str, &str)]) -> String {
     super::upstream_hold::events(&data)
 }
 
-/// A `retain` call answering for each label of a multi-result gate.
+/// A `retain` call answering for each label of a multi-result triage.
 pub(super) fn verdict(keeps: &[&str]) -> String {
     let results: Vec<serde_json::Value> = keeps
         .iter()
@@ -109,7 +109,7 @@ fn masking(value: &str) -> crate::env_table::EnvPolicy {
     crate::env_table::EnvPolicy::build(&table).policy
 }
 
-/// **The gate reads the bytes the log holds.** A result is masked on the way into the
+/// **The triage reads the bytes the log holds.** A result is masked on the way into the
 /// log (docs/env.md), so what the fork is shown is already the masked form — triage
 /// never sees a value the log would refuse to show a client either.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -152,7 +152,7 @@ async fn triage_is_shown_the_masked_result() {
     );
     assert!(
         !triage.contains(secret),
-        "the gate is shown the masked bytes: {triage}"
+        "the triage is shown the masked bytes: {triage}"
     );
     assert!(
         triage.contains("API_TOKEN"),
@@ -171,7 +171,7 @@ async fn triage_is_shown_the_masked_result() {
     assert!(!logged.content.contains(secret), "the log is masked too");
 }
 
-/// **A completed batch projects the wire it always did.** Two calls, one gate, two
+/// **A completed batch projects the wire it always did.** Two calls, one triage, two
 /// verdicts — and the result is byte-identical to a log written with each verdict on
 /// its own result, which is the shape every session before capture has. This is the
 /// property the cached prefix rests on: what decides a result cannot change what the

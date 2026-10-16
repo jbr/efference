@@ -257,7 +257,7 @@ fn boot_inference_identity_does_not_project() {
 }
 
 /// Pins the exact wire bytes of a **triaged** tool result — the shape most
-/// results take once their gate has run, and the one the other pins miss: the
+/// results take once their triage has run, and the one the other pins miss: the
 /// shared fixture's only result is `WireState::Raw`, so a render change to the
 /// triaged shape would otherwise pass every byte pin.
 ///
@@ -353,7 +353,7 @@ fn after_interposed_turn_matches_expected_wire_bytes() {
 }
 
 /// The interposed turn exists only when images survive to the wire: a state that
-/// sheds them (elision, a failed gate) leaves no fabricated assistant turn behind,
+/// sheds them (elision, a failed triage) leaves no fabricated assistant turn behind,
 /// and a text-only log projects byte-identically under this placement too — so
 /// sessions that never pull an image see the same bytes as before the arm existed.
 #[test]

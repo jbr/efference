@@ -191,11 +191,11 @@ impl Session {
             // plan and its two usage windows as of the last response that named
             // them, resets as absolute millis. null on every other provider.
             "plan": *self.plan.lock().unwrap(),
-            // Triage retention (docs/triage.md): how much of what the gate
+            // Triage retention (docs/triage.md): how much of what the triage
             // showed survives on the wire, derived from the log rather than from
             // transport telemetry. `withheld` counts results whose output a failed
-            // gate suppressed — a distinct condition from a low ratio, and kept out
-            // of it, so a failing gate can't read as excellent compression.
+            // triage suppressed — a distinct condition from a low ratio, and kept out
+            // of it, so a failing triage can't read as excellent compression.
             "retention": retention,
         })
     }

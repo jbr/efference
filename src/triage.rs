@@ -16,7 +16,7 @@
 //! [`TriageOutcome`] and land on the logged [`Triage`](crate::log::Triage). One type
 //! does the triaging:
 //!
-//! - [`Triager`] — the universal triage gate (docs/triage.md): fork a
+//! - [`Triager`] — the universal triage (docs/triage.md): fork a
 //!   throwaway branch off the cached prefix, show the model the line-numbered raw
 //!   output + the inbox, and ask it (via the tail instruction, never a forced
 //!   `tool_choice`) to call `retain` to choose what the canonical wire keeps and which
@@ -24,8 +24,8 @@
 //!   one shared `tools[]`, `tool_choice: auto`, the same thinking policy — so both
 //!   shapes read one cache lineage (docs/triage.md, docs/log-and-projection.md).
 //!   A non-compliant response gets a bounded in-fork retry, then a fresh fork; an
-//!   upstream failure takes the main loop's schedule. A gate that still has no verdict
-//!   returns a [`GateFailure`] and the loop **holds** the results — nothing reaches
+//!   upstream failure takes the main loop's schedule. A triage that still has no verdict
+//!   returns a [`HoldFailure`] and the loop **holds** the results — nothing reaches
 //!   the agent until a verdict does (docs/triage.md). The full untriaged raw
 //!   is never welded onto the canonical wire.
 
@@ -82,7 +82,7 @@ pub enum BgVerdict {
 }
 
 /// One tool result awaiting triage: the call that produced it and its raw output.
-/// A gate covers every result a single completion produced (docs/triage.md),
+/// A triage covers every result a single completion produced (docs/triage.md),
 /// so the loop hands the triager a slice of these rather than one at a time.
 pub struct Pending<'a> {
     pub call: &'a ToolCall,
@@ -102,24 +102,24 @@ pub struct TriageOutcome {
     pub raw_keep: String,
 }
 
-/// The outcome of one triage gate (docs/triage.md). A gate rides the results of
+/// The outcome of one triage (docs/triage.md). A triage rides the results of
 /// a single completion — one or several calls (docs/README.md), all of them triaged
 /// together in one triage. That grouping is what keeps the triage's request valid: every `tool_use` in
 /// the trailing assistant message is answered by a real result in the same tail, so
 /// nothing is ever orphaned.
 ///
-/// The inbox / background / surfacing riders are **gate-scoped**, not per-result: they
+/// The inbox / background / surfacing riders are **triage-scoped**, not per-result: they
 /// are decided once for the step, which is why they sit here rather than on
-/// [`TriageOutcome`]. `Default` is the outcome of a gate with nothing to triage.
+/// [`TriageOutcome`]. `Default` is the outcome of a triage with nothing to triage.
 #[derive(Default)]
-pub struct GateOutcome {
+pub struct HoldOutcome {
     /// One verdict per [`Pending`] handed in, in the same order. Always the same
-    /// length as the input — a gate without a verdict for every result is a
-    /// [`GateFailure`], never a short vector — so the loop can zip them without checking.
+    /// length as the input — a triage without a verdict for every result is a
+    /// [`HoldFailure`], never a short vector — so the loop can zip them without checking.
     pub results: Vec<TriageOutcome>,
     /// Per-notification dispositions this triage chose, by arrival `seq` (docs/inbox.md) —
     /// filtered to notifications actually shown. Empty when nothing was pinned or
-    /// dismissed (everything left for the next gate).
+    /// dismissed (everything left for the next triage).
     pub inbox: Vec<(Seq, Disposition)>,
     /// Live-process dispositions this triage chose, by `p#<n>` handle (docs/supervisor.md) —
     /// filtered to processes actually shown. The loop materializes a `Pin` into a
@@ -130,7 +130,7 @@ pub struct GateOutcome {
     /// `Triage` (`surfaced`); `project` re-renders each as a read-me reminder. Empty
     /// when nothing was surfaced.
     pub surfaced: Vec<String>,
-    /// The [`RequestUsage`] of every request this gate made — empty for a model-free
+    /// The [`RequestUsage`] of every request this triage made — empty for a model-free
     /// triager, one entry per fork round-trip (in-fork retries included). Each fork
     /// request reads the shared canonical prefix (sliding its cache TTL), and the loop
     /// folds them all into the cache telemetry (docs/log-and-projection.md).
@@ -139,28 +139,28 @@ pub struct GateOutcome {
     /// recorded even when a retry recovered (docs/triage.md). Two families,
     /// distinguishable by wording: a non-compliant verdict (wrong tool, no tool,
     /// malformed input), and a stream that died before finalizing. The loop lands
-    /// these on the gate's `Triage` (`retries`), the durable record; a runtime triage
+    /// these on the triage's `Triage` (`retries`), the durable record; a runtime triage
     /// failure is never accepted silently, recovered or not.
     pub retries: Vec<String>,
     /// The reasoning behind the verdict — one entry per triage attempt that emitted
     /// thinking, in attempt order (docs/triage.md). The loop lands these on the
-    /// gate's `Triage` (`thinking`), which is the only record of why a verdict came out
+    /// triage's `Triage` (`thinking`), which is the only record of why a verdict came out
     /// the way it did; the fork's transcript is still discarded.
     pub thinking: Vec<String>,
 }
 
-/// A gate that produced no verdict (docs/triage.md): why, plus the audit
+/// A triage that produced no verdict (docs/triage.md): why, plus the audit
 /// pieces its attempts accumulated, which the loop carries onto the `Triage` of the
 /// attempt that finally succeeds. The results are never shown to the agent in this
 /// state; the loop holds them.
-pub struct GateFailure {
+pub struct HoldFailure {
     pub failure: TriageFailure,
     pub usage: Vec<RequestUsage>,
     pub retries: Vec<String>,
     pub thinking: Vec<String>,
 }
 
-impl GateFailure {
+impl HoldFailure {
     fn new(failure: TriageFailure, record: TriageRecord) -> Self {
         Self {
             failure,
@@ -171,8 +171,8 @@ impl GateFailure {
     }
 }
 
-impl GateOutcome {
-    /// The outcome of a gate the operator interrupted before any verdict
+impl HoldOutcome {
+    /// The outcome of a triage the operator interrupted before any verdict
     /// (docs/control-channel.md): every result is withheld from the wire exactly as
     /// the interrupt's *after* juncture withholds one — [`WireState::Elided`], the raw
     /// kept in the log — and the operator's own message is the next thing the agent
@@ -197,7 +197,7 @@ impl GateOutcome {
     }
 }
 
-/// The verdict of a **standalone** idle triage (docs/supervisor.md) — a gate that rides no
+/// The verdict of a **standalone** idle triage (docs/supervisor.md) — a triage that rides no
 /// tool result, so it has no [`WireState`]; just the inbox/background dispositions (and
 /// the audit pieces the loop stamps into a [`Triage`](crate::log::Triage) with
 /// `for_result: None`).
@@ -206,17 +206,17 @@ pub struct InboxTriage {
     pub background: Vec<(String, BgVerdict)>,
     pub origin: Origin,
     /// One entry per request the triage made (in-fork retries included), like
-    /// [`GateOutcome::usage`]; empty for a model-free triager or a transport failure.
+    /// [`HoldOutcome::usage`]; empty for a model-free triager or a transport failure.
     pub usage: Vec<RequestUsage>,
-    /// Non-compliant-attempt breadcrumbs, like [`GateOutcome::retries`].
+    /// Non-compliant-attempt breadcrumbs, like [`HoldOutcome::retries`].
     pub retries: Vec<String>,
-    /// Per-attempt triage reasoning, like [`GateOutcome::thinking`].
+    /// Per-attempt triage reasoning, like [`HoldOutcome::thinking`].
     pub thinking: Vec<String>,
 }
 
-/// The model triage — the universal triage gate (docs/triage.md) realized.
+/// The model triage — the universal triage (docs/triage.md) realized.
 ///
-/// The gate is a concrete type, not a trait object. It was built behind a
+/// The triage is a concrete type, not a trait object. It was built behind a
 /// single-method `Triager` trait threaded as a generic bound through
 /// `agent::run`, `daemon::serve`, and `run_idle_triage`; the second implementation
 /// that bound existed for never arrived, and the one that briefly did (a model-free
@@ -252,7 +252,7 @@ struct OwnTriage {
     client: Client,
     tools: Vec<Value>,
     /// Force the asked-for tool (`tool_choice: {type: tool}`) rather than `auto`.
-    /// The default: the first separate-model run opened five of eight gates with an
+    /// The default: the first separate-model run opened five of eight triages with an
     /// invented work call (backlog/inbox/triager-experiment.md), and forcing removes that
     /// path by construction. `auto` is the knob, kept for the ablation and for a
     /// Claude triage model that should think (a forced choice disables thinking).
@@ -276,7 +276,7 @@ pub struct TriagePrimerInput<'a> {
     pub turns: &'a [WireTurn],
 }
 
-/// What the triage-lineage primer did before its gate (docs/transport.md).
+/// What the triage-lineage primer did before its triage (docs/transport.md).
 pub struct TriagePrimerOutcome {
     /// The primer request's usage, when the backend answered one. `None` when the
     /// lineage needed no planting or the send failed (warned at the send site) —
@@ -284,10 +284,10 @@ pub struct TriagePrimerOutcome {
     pub usage: Option<RequestUsage>,
     /// Milliseconds the primer request spent in flight.
     pub send_ms: u64,
-    /// When the primer resolved, for the serial residue the gate path paid.
+    /// When the primer resolved, for the serial residue the triage path paid.
     pub done_at: std::time::Instant,
     /// Milliseconds of the primer's flight still unfinished when the batch's tools
-    /// were all done — the floor the gate path paid. Zero when tool runtime covered
+    /// were all done — the floor the triage path paid. Zero when tool runtime covered
     /// it; the distribution of this number says whether a speculative (pre-execution)
     /// primer is ever worth building.
     pub residue_ms: u64,
@@ -374,7 +374,7 @@ impl Triager {
 
     /// Send the triage-lineage primer over the own client
     /// (docs/transport.md): the turn's input replayed, capped,
-    /// so the gate's triage extends a request that ended where the main one did. `None`
+    /// so the triage extends a request that ended where the main one did. `None`
     /// on the shared triage — it rides the agent lineage, which the main request
     /// already warmed — or where the own client has no implicit lineage to plant in;
     /// a failed send warns and resolves unprimed rather than failing the batch.
@@ -407,7 +407,7 @@ impl Triager {
     }
 
     /// `prime` with an explicit choice: the ladder verb's `auto` arm replays v1
-    /// as it shipped, against the forced choice live gates send now
+    /// as it shipped, against the forced choice live triages send now
     /// (docs/transport.md). Live code always uses `prime`.
     pub async fn prime_with(
         &self,
@@ -485,7 +485,7 @@ impl Triager {
     ///
     /// Taking `pending` as a slice rather than one result is what makes the triage valid for a
     /// multi-call completion: the trailing assistant message carries N `tool_use` blocks, so
-    /// the triage's tail must answer all N (docs/triage.md). One gate, N verdicts.
+    /// the triage's tail must answer all N (docs/triage.md). One triage, N verdicts.
     pub async fn triage_results(
         &self,
         agent: &Client,
@@ -494,16 +494,16 @@ impl Triager {
         pending: &[Pending<'_>],
         inbox: &[ShownNotification],
         background: &[BgView],
-    ) -> Result<GateOutcome, GateFailure> {
+    ) -> Result<HoldOutcome, HoldFailure> {
         if pending.is_empty() {
-            return Ok(GateOutcome::default());
+            return Ok(HoldOutcome::default());
         }
-        // The labels this gate is asking about, in call order — the `retain` verdict's
+        // The labels this triage is asking about, in call order — the `retain` verdict's
         // coordinate system ([`labels`]), minus the results the shape rule bypassed.
         // Coverage of every offered label is part of verdict *validity*
         // ([`require_coverage`]): an incomplete verdict retries in-fork rather than
         // leaving a result untriaged.
-        if let Some(outcome) = bypassed_gate(pending) {
+        if let Some(outcome) = bypassed_triage(pending) {
             return Ok(outcome);
         }
         let labels = labels(pending);
@@ -517,7 +517,7 @@ impl Triager {
         let parsed = triage_with_retries(
             &self.client(agent, RequestOrigin::Triage),
             &agent.upstream_retry(),
-            Patience::GATE,
+            Patience::TRIAGE,
             messages,
             self.tools(agent_tools),
             self.choice(RETAIN),
@@ -536,7 +536,7 @@ impl Triager {
             // No verdict: the loop holds the results (docs/triage.md) — never
             // kept untriaged, which would weld the full raw into the cached prefix, and
             // never withheld as an error the agent would have to reason about.
-            Err(failure) => return Err(GateFailure::new(failure, record)),
+            Err(failure) => return Err(HoldFailure::new(failure, record)),
         };
 
         // Apply the model's verdicts in call order. Coverage was validated above, so
@@ -569,13 +569,13 @@ impl Triager {
                         })
                     }
                     // Unreachable in practice (coverage validated); a gap is a
-                    // harness defect, answered like any other gate without a verdict.
+                    // harness defect, answered like any other triage without a verdict.
                     None => None,
                 },
             })
             .collect::<Option<Vec<_>>>();
         let Some(results) = results else {
-            return Err(GateFailure::new(
+            return Err(HoldFailure::new(
                 TriageFailure::Unusable("a validated verdict left a result unanswered".into()),
                 record,
             ));
@@ -605,7 +605,7 @@ impl Triager {
             .filter(|n| offered_names.contains(n.as_str()) && kept.insert(n.clone()))
             .collect();
 
-        Ok(GateOutcome {
+        Ok(HoldOutcome {
             results,
             inbox: dispositions,
             background: bg,
@@ -715,7 +715,7 @@ use request::*;
 use validate::*;
 
 pub use digest_view::TriageView;
-pub use handles::reply_only_gate;
+pub use handles::reply_only_triage;
 pub use own::TriageModel;
 pub use replay::{ReplayVerdict, TriageAttempt, triage_request};
 pub use request::{TRIAGE_RESTARTS, TriageFailure};

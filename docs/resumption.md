@@ -122,15 +122,15 @@ continue or a submitted turn then enters the trajectory without a model request:
 batch's never-started calls go through the permission cascade in call order under the
 completion's turn (a gate reappears, held for the operator and judged against current
 policy), the captured-undecided results are rebuilt as steps from the log's masked bytes,
-and one gate triages them all, as at the end of any batch. The next pass then projects and
-requests as usual. The spotter and the triage gate are model requests, so the gate
+and one triage covers them all, as at the end of any batch. The next pass then projects and
+requests as usual. The spotter and triage are model requests, so the gate
 reappears on this first action, not when the session opens. `POST /loop/continue` accepts
 a pending batch even though the wire ends in a `tool_use`, since the replay answers it.
 A turn submitted first is held and delivered at the seam after the batch, as one submitted
 during a live gate is; a `User` entry ahead of the unanswered `tool_use` blocks would
 break the wire. While the batch is pending, an inbox wake does not run the idle triage
 (its triage would project the unanswered wire): the notification waits and rides the batch's
-gate.
+triage.
 
 ## The session as a resource
 

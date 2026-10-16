@@ -1,12 +1,12 @@
-//! `efference dev triage` — replay a recorded session's fork gates (docs/triage.md).
+//! `efference dev triage` — replay a recorded session's fork triages (docs/triage.md).
 //!
-//! A dev tool, like `wire`/`gallery`/`spotter`. The live gate retries, so a session's
+//! A dev tool, like `wire`/`gallery`/`spotter`. The live triage retries, so a session's
 //! `Triage.retries` records *that* a first attempt failed but can't compare two asks —
 //! a change that halves first-attempt non-compliance and one that changes nothing both
-//! end in a usable verdict. This re-sends a recorded gate's exact request, once, and
+//! end in a usable verdict. This re-sends a recorded triage's exact request, once, and
 //! reports whether the first attempt answered.
 //!
-//! The eval set is the session itself: every gate carries its own prefix, at its own
+//! The eval set is the session itself: every triage carries its own prefix, at its own
 //! session depth, and replaying one is a single warm prefix read.
 
 use super::*;
@@ -16,21 +16,21 @@ use efference::triage::{Pending, ReplayVerdict, TriageModel, TriageView, Triager
 use std::collections::BTreeSet;
 use std::io::Write;
 
-/// One recorded gate, rebuilt from the log: the prefix the triage saw, and the results it
+/// One recorded triage, rebuilt from the log: the prefix the triage saw, and the results it
 /// was asked to triage.
 ///
-/// The prefix ends **before** the gate's tool results, because that is where the live
+/// The prefix ends **before** the triage's tool results, because that is where the live
 /// loop snapshots it — `triage_messages` appends the results itself as fresh
 /// `tool_result` blocks, so a prefix that already contained them would double them.
-pub(crate) struct Gate {
-    /// Index into the log of the first result this gate carries — the prefix boundary.
+pub(crate) struct Recorded {
+    /// Index into the log of the first result this triage carries — the prefix boundary.
     pub(crate) prefix_end: usize,
-    /// Index into the log of the assistant turn whose calls this gate triages. A
+    /// Index into the log of the assistant turn whose calls this triage covers. A
     /// primer replays the main request's input, which ends *before* those calls —
     /// including them without their results is an unanswered `tool_use` the API
     /// rejects — so primer turns project `entries[..calls_at]`, not the triage prefix.
     pub(crate) calls_at: usize,
-    /// The `seq` of the first result, which is how `--seq` addresses a gate and how the
+    /// The `seq` of the first result, which is how `--seq` addresses a triage and how the
     /// recorded `Triage.for_result` names it.
     pub(crate) seq: u64,
     pub(crate) calls: Vec<ToolCall>,
@@ -45,18 +45,18 @@ pub(crate) struct Gate {
     pub(crate) recorded_first_failure: Option<String>,
 }
 
-/// Rebuild every gate in a log, in order.
+/// Rebuild every triage in a log, in order.
 ///
-/// A gate is a completion's tool calls plus their results, which is exactly the grouping
-/// the live loop opens a gate over: the triage's prefix ends with an assistant message
+/// A triage is a completion's tool calls plus their results, which is exactly the grouping
+/// the live loop opens a triage over: the triage's prefix ends with an assistant message
 /// carrying one `tool_use` per call, and the API rejects a request that leaves any of
 /// them unanswered (docs/triage.md).
-pub(crate) fn gates(entries: &[efference::log::LogEntry]) -> Vec<Gate> {
-    // Every result, by call id, and every gate's recorded first-attempt breadcrumb. A
+pub(crate) fn recorded_triages(entries: &[efference::log::LogEntry]) -> Vec<Recorded> {
+    // Every result, by call id, and every triage's recorded first-attempt breadcrumb. A
     // result logged `Pending` takes the verdict a later `ResultVerdict` gave it, as the
     // projection resolves it (docs/log-and-projection.md).
     let verdicts = efference::log::result_verdicts(entries);
-    let mut gates = Vec::new();
+    let mut triages = Vec::new();
     for (i, entry) in entries.iter().enumerate() {
         let Payload::Assistant { output, .. } = &entry.payload else {
             continue;
@@ -90,7 +90,7 @@ pub(crate) fn gates(entries: &[efference::log::LogEntry]) -> Vec<Gate> {
                         );
                     }
                 }
-                // The next completion starts a new gate.
+                // The next completion starts a new triage.
                 Payload::Assistant { .. } => break,
                 _ => {}
             }
@@ -98,10 +98,10 @@ pub(crate) fn gates(entries: &[efference::log::LogEntry]) -> Vec<Gate> {
         let Some(prefix_end) = prefix_end else {
             continue; // a completion whose calls never ran (aborted, withheld)
         };
-        // The recorded first attempt, off this gate's `Triage` breadcrumbs. A batch
+        // The recorded first attempt, off this triage's `Triage` breadcrumbs. A batch
         // writes one `Triage` per result but its `retries` ride the **last** of them
         // (docs/triage.md), so every `Triage` between here and the next
-        // completion is searched — reading only the first undercounts multi-result gates.
+        // completion is searched — reading only the first undercounts multi-result triages.
         let recorded_first_failure = entries[prefix_end..]
             .iter()
             .take_while(|e| !matches!(&e.payload, Payload::Assistant { .. }))
@@ -109,7 +109,7 @@ pub(crate) fn gates(entries: &[efference::log::LogEntry]) -> Vec<Gate> {
                 Payload::Triage(t) => t.retries.first().cloned(),
                 _ => None,
             });
-        gates.push(Gate {
+        triages.push(Recorded {
             prefix_end,
             calls_at: i,
             seq,
@@ -119,7 +119,7 @@ pub(crate) fn gates(entries: &[efference::log::LogEntry]) -> Vec<Gate> {
             recorded_first_failure,
         });
     }
-    gates
+    triages
 }
 
 /// Collapse `s` onto one line and cap it at `max` characters — a failing draw's arguments
@@ -133,7 +133,7 @@ fn one_line(s: &str, max: usize) -> String {
 }
 
 /// The size of the peek's trailing user message — the part of the request that is fresh
-/// on every gate, as against the prefix it re-reads warm.
+/// on every triage, as against the prefix it re-reads warm.
 fn tail_chars(turns: &[efference::project::WireTurn]) -> usize {
     use efference::project::{UserPart, WireTurn};
     let Some(WireTurn::User(parts)) = turns.last() else {
@@ -224,10 +224,15 @@ fn keep_label(keep: &Keep) -> String {
     }
 }
 
-/// Compare one draw's verdicts against the gate's recorded ones, result by result.
-fn compare(gate: &Gate, draw: usize, verdicts: &[ReplayVerdict], seconds: f64) -> Vec<Compared> {
+/// Compare one draw's verdicts against the triage's recorded ones, result by result.
+fn compare(
+    triage: &Recorded,
+    draw: usize,
+    verdicts: &[ReplayVerdict],
+    seconds: f64,
+) -> Vec<Compared> {
     let mut out = Vec::new();
-    for ((call, raw), wire) in gate.calls.iter().zip(&gate.raws).zip(&gate.recorded) {
+    for ((call, raw), wire) in triage.calls.iter().zip(&triage.raws).zip(&triage.recorded) {
         let Some((reference, reference_note)) = recorded_keep(wire) else {
             continue;
         };
@@ -238,7 +243,7 @@ fn compare(gate: &Gate, draw: usize, verdicts: &[ReplayVerdict], seconds: f64) -
         let r = kept_set(&raw.content, reference);
         let c = kept_set(&raw.content, &candidate.keep);
         out.push(Compared {
-            seq: gate.seq,
+            seq: triage.seq,
             draw,
             call_id: call.id.0.clone(),
             tool: call.name.clone(),
@@ -308,7 +313,7 @@ fn print_table(rows_cap: usize, compared: &[Compared]) {
     }
 }
 
-/// Replay one gate or every gate in a recorded session, `repeat` draws each.
+/// Replay one triage or every triage in a recorded session, `repeat` draws each.
 #[allow(clippy::too_many_arguments)] // one flag, one parameter; the CLI is the arity
 pub(crate) async fn triage(
     path: PathBuf,
@@ -359,13 +364,13 @@ pub(crate) async fn triage(
     let breakpoint = provider
         .map(|p| p.breakpoint_placement(placement_model))
         .unwrap_or_default();
-    let all = gates(&entries);
-    let mut selected: Vec<&Gate> = match seq {
+    let all = recorded_triages(&entries);
+    let mut selected: Vec<&Recorded> = match seq {
         Some(s) => all.iter().filter(|g| g.seq == s).collect(),
         None => all.iter().collect(),
     };
     // Evenly spaced, not the first N. Failure rate climbs with session depth, so a prefix
-    // of the gates samples the easy end and flatters the model.
+    // of the triages samples the easy end and flatters the model.
     if let Some(limit) = limit.filter(|n| *n < selected.len() && *n > 0) {
         let step = selected.len() as f64 / limit as f64;
         selected = (0..limit)
@@ -374,8 +379,8 @@ pub(crate) async fn triage(
     }
     if selected.is_empty() {
         return Err(match seq {
-            Some(s) => format!("no gate triaging result seq {s} in {}", path.display()).into(),
-            None => format!("no gates in {}", path.display()).into(),
+            Some(s) => format!("no triage triaging result seq {s} in {}", path.display()).into(),
+            None => format!("no triages in {}", path.display()).into(),
         });
     }
 
@@ -396,7 +401,7 @@ pub(crate) async fn triage(
     let tools = efference::agent::tool_definitions(&toolbox);
 
     // A dry run over the whole session costs nothing and answers the other half of the
-    // question a variant raises: what it costs. The tail is the fresh part of every gate's
+    // question a variant raises: what it costs. The tail is the fresh part of every triage's
     // request, so its mean size is what a cheaper roster is trying to move — and reading
     // it here rather than off `usage` keeps it free of cache jitter.
     if dry_run && seq.is_none() {
@@ -420,7 +425,7 @@ pub(crate) async fn triage(
             })
             .sum();
         println!(
-            "{} gates · mean tail {} chars · {} chars per session",
+            "{} triages · mean tail {} chars · {} chars per session",
             selected.len(),
             total / selected.len(),
             total
@@ -443,7 +448,11 @@ pub(crate) async fn triage(
             &[],
             &[],
         );
-        eprintln!("note: gate at seq {} · {} result(s)", g.seq, pending.len());
+        eprintln!(
+            "note: triage at seq {} · {} result(s)",
+            g.seq,
+            pending.len()
+        );
         let messages = efference::project::encode_messages(
             &messages[messages.len() - 1..],
             placement,
@@ -510,7 +519,7 @@ pub(crate) async fn triage(
     let mut compared: Vec<Compared> = Vec::new();
 
     eprintln!(
-        "replaying {} gate(s) from {label} × {repeat} on {model} — first attempt only, no retries",
+        "replaying {} triage(s) from {label} × {repeat} on {model} — first attempt only, no retries",
         selected.len()
     );
     let (mut draws, mut compliant, mut cache_read, mut uncached) = (0usize, 0usize, 0u64, 0u64);
@@ -522,7 +531,7 @@ pub(crate) async fn triage(
     // decode" are different defects.
     let mut transport_errors = 0usize;
     let mut seconds_total = 0f64;
-    // Gates whose recorded first attempt failed, and whose replays now all pass (and the
+    // Triages whose recorded first attempt failed, and whose replays now all pass (and the
     // reverse) — the discordant pairs, which are what a paired comparison actually rests on.
     let (mut fixed, mut broke) = (0usize, 0usize);
     for g in &selected {
@@ -533,7 +542,7 @@ pub(crate) async fn triage(
             .map(|(call, raw)| Pending { call, raw })
             .collect();
         // The fork tail — result blocks, roster, ask — is uncached by construction, so
-        // its size is what a gate costs beyond re-reading the prefix, on every tool result.
+        // its size is what a triage costs beyond re-reading the prefix, on every tool result.
         uncached += tail_chars(&triage_request(
             &entries[..g.prefix_end],
             triage.reader(),
@@ -644,16 +653,16 @@ pub(crate) async fn triage(
         .filter(|g| g.recorded_first_failure.is_some())
         .count();
     println!("\nTRIAGE REPLAY · {model}");
-    // The fork tail is uncached by construction, so this is what a gate costs beyond
+    // The fork tail is uncached by construction, so this is what a triage costs beyond
     // re-reading the prefix — paid on every tool result, for the whole session. It is the
     // number a cheaper roster has to move, and it belongs next to the failure rate because
     // the two are the trade.
     println!(
-        "  tail      {} chars per gate, uncached (result + roster + ask)",
+        "  tail      {} chars per triage, uncached (result + roster + ask)",
         uncached / selected.len().max(1) as u64
     );
     println!(
-        "  recorded  {recorded_failures}/{} gates failed their first attempt  ({:.0}%)",
+        "  recorded  {recorded_failures}/{} triages failed their first attempt  ({:.0}%)",
         selected.len(),
         100.0 * recorded_failures as f64 / selected.len() as f64
     );
@@ -663,9 +672,9 @@ pub(crate) async fn triage(
         100.0 * (draws - compliant) as f64 / draws as f64
     );
     // The paired view: an aggregate rate can move without any gate changing behaviour,
-    // so the gates that flipped are reported separately from the totals.
+    // so the triages that flipped are reported separately from the totals.
     println!(
-        "  flipped   {fixed} recorded-failure gates now pass every draw · {broke} recorded-pass gates now fail every draw"
+        "  flipped   {fixed} recorded-failure triages now pass every draw · {broke} recorded-pass triages now fail every draw"
     );
     // Output carries reasoning tokens, which differ by an order of magnitude between
     // models and are the term that makes a borrowed cost estimate wrong. A short

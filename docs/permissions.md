@@ -132,7 +132,7 @@ A triage tool (`retain`/`triage`) called when nothing was asked of it is paired 
 nudge result ([triage.md](triage.md)). And a call naming **no tool this
 turn advertised** is answered with `tools::unknown_tool_message` — the mounted names, plus
 a pointer at `bash` for a name that is a program — as a `Direct` payload, so the correction
-reaches the wire verbatim rather than through the triage gate.
+reaches the wire verbatim rather than through the triage.
 
 The membership test reads the names off `agent::tool_definitions` itself, minus the triage
 tools, so what the check accepts and what the request advertised cannot drift.
@@ -702,7 +702,7 @@ upstream failure (a dropped stream, a timed-out or refused connection, an overlo
 status) is first retried up to three attempts, one and two seconds apart: a short burst is
 worth absorbing, and an outage is not worth waiting out when the fallback is a prompt the
 operator answers faster. (The triager has no fallback that is safe to show, so it
-waits instead: a triage gate without a verdict holds its results until one arrives —
+waits instead: a triage without a verdict holds its results until one arrives —
 [triage.md](triage.md) — never a silent keep-all.)
 
 **Each verdict is logged** as a `Payload::Spot` audit entry (the audit answer to "why did

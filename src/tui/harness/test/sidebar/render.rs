@@ -79,7 +79,7 @@ fn sidebar_folds_control_characters_in_a_process_command() {
 /// result is reported as its own condition rather than folded into the ratio
 /// (docs/triage.md).
 #[test]
-fn sidebar_retention_before_any_triage_and_after_a_failed_gate() {
+fn sidebar_retention_before_any_triage_and_after_a_failed_triage() {
     use crate::tui::{TuiEvent, UsageStats};
     let stats = |kept, shown, withheld| UsageStats {
         input_tokens: 100,

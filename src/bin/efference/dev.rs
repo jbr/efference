@@ -182,28 +182,28 @@ pub(crate) enum DevCommand {
         #[arg(long)]
         frame_cost: bool,
     },
-    /// Replay a recorded session's fork-gate triages (docs/triage.md) and report **first-attempt** compliance — did the triage
-    /// answer with a verdict, or reach for a work tool? The live gate retries, so a
+    /// Replay a recorded session's triages (docs/triage.md) and report **first-attempt** compliance — did the triage
+    /// answer with a verdict, or reach for a work tool? The live triage retries, so a
     /// session's own record shows that a first attempt failed but can't score one ask
-    /// against another. Each gate carries its own prefix at its own session depth, and
+    /// against another. Each triage carries its own prefix at its own session depth, and
     /// replaying one is a single warm prefix read, so a whole session is an eval set.
     /// Sends real requests unless `--dry-run`.
     Triage {
-        /// Path to a session dir or a `log.jsonl` whose gates to replay.
+        /// Path to a session dir or a `log.jsonl` whose triages to replay.
         path: PathBuf,
-        /// Replay only the gate triaging this result `seq` (as `Triage.for_result`
-        /// names it, and as the listing prints it). Omit to sweep every gate.
+        /// Replay only the triage covering this result `seq` (as `Triage.for_result`
+        /// names it, and as the listing prints it). Omit to sweep every triage.
         #[arg(long)]
         seq: Option<u64>,
-        /// Draws per gate. A triage is sampled, not deterministic, so one draw per gate
-        /// resolves only large differences; repeats buy a per-gate rate instead of a
+        /// Draws per triage. A triage is sampled, not deterministic, so one draw per triage
+        /// resolves only large differences; repeats buy a per-triage rate instead of a
         /// coin flip.
         #[arg(long, default_value = "3")]
         repeat: usize,
-        /// Sample this many gates instead of sweeping all of them — for pricing a new
+        /// Sample this many triages instead of sweeping all of them — for pricing a new
         /// model before committing to a full run. Sampled **evenly across the session**,
         /// never the first N: first-attempt failures climb with session depth, so a
-        /// prefix of the gates measures the easy end and reads as a better rate than the
+        /// prefix of the triages measures the easy end and reads as a better rate than the
         /// model earns.
         #[arg(long)]
         limit: Option<usize>,
@@ -219,7 +219,7 @@ pub(crate) enum DevCommand {
         /// the same shape `--triage-model` boots. Every draw's verdict is
         /// compared line-for-line against the session's recorded verdict — what the
         /// agent chose to see — and the summary reports kept fractions, over- and
-        /// under-retention, and a table of the gates that disagreed most.
+        /// under-retention, and a table of the triages that disagreed most.
         #[arg(long)]
         triage_model: Option<String>,
         /// With --triage-model: let it think.
@@ -231,7 +231,7 @@ pub(crate) enum DevCommand {
         /// With --triage-model: its reasoning level (implies thinking on).
         #[arg(long, value_name = "LEVEL")]
         triage_effort: Option<String>,
-        /// The history the triage request reads: `transcript` (the live gate's view),
+        /// The history the triage request reads: `transcript` (the live triage's view),
         /// or an experiment arm (backlog/inbox/triage-ground-truth): `digest` (the trajectory
         /// digest), `tail:N` (the digest of the last N assistant turns), `intent` (none).
         #[arg(long, default_value = "transcript")]
@@ -243,7 +243,7 @@ pub(crate) enum DevCommand {
         #[arg(long, default_value = "15")]
         table: usize,
     },
-    /// Plant triage primers at controlled gaps against one recorded gate and replay
+    /// Plant triage primers at controlled gaps against one recorded triage and replay
     /// the recorded triage per rung, reporting cache reads
     /// (docs/transport.md). Decides eviction vs
     /// write-visibility lag vs envelope keying: a back-to-back primer pair that
@@ -252,10 +252,10 @@ pub(crate) enum DevCommand {
     /// requests unless `--dry-run`. An experiment verb; remove it once the question
     /// it answers is settled.
     PrimerLadder {
-        /// Path to a session dir or a `log.jsonl` holding the gate to plant before.
+        /// Path to a session dir or a `log.jsonl` holding the triage to plant before.
         path: PathBuf,
-        /// Plant before the gate triaging this result `seq`. Omit for the deepest
-        /// gate, where a cold prefix hurts most.
+        /// Plant before the triage covering this result `seq`. Omit for the deepest
+        /// triage, where a cold prefix hurts most.
         #[arg(long)]
         seq: Option<u64>,
         /// Seconds between primer pairs per ladder rung, comma-separated.

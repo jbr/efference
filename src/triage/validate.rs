@@ -1,9 +1,9 @@
-//! Verdict validation against gate offerings and bounds (docs/triage.md).
+//! Verdict validation against triage offerings and bounds (docs/triage.md).
 
 use super::*;
 
 /// Verdict validity includes **coverage** (docs/triage.md): every offered
-/// label must be answered, or the verdict is rejected and retried in-fork. This gate has no
+/// label must be answered, or the verdict is rejected and retried in-fork. This triage has no
 /// keep-all fallback, so a result silently left untriaged has nowhere to land.
 ///
 /// The rejection names what the verdict *did* answer, not only what it missed. Without

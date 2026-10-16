@@ -247,7 +247,7 @@ impl<'a> InteractiveState<'a> {
                 format!("in {} · out {}", num(u.input_tokens), num(u.output_tokens)),
                 text,
             ));
-            // Triage retention (docs/triage.md): how much of what the gate
+            // Triage retention (docs/triage.md): how much of what the triage
             // showed is still on the agent's record. Absent until the first triaged
             // result — zero shown is unknown, not 0%.
             if let Some(percent) = (u.kept_lines * 100).checked_div(u.shown_lines) {
@@ -261,7 +261,7 @@ impl<'a> InteractiveState<'a> {
                     text,
                 ));
             }
-            // A result an older harness withheld on a failed gate (`TriageFailed`,
+            // A result an older harness withheld on a failed triage (`TriageFailed`,
             // no longer written) carries no output at all — a distinct condition
             // from a low ratio, so it is stated rather than folded into one.
             if u.withheld_results > 0 {

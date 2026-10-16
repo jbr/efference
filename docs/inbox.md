@@ -20,7 +20,7 @@ same pattern as pending-approval state (see `control-channel.md`): in-flight inb
 is control state until the log needs it.
 
 This verb is also the inter-agent channel. One agent `POST /notifications`s another agent's
-control socket; the receiving agent sees the notification at its next triage gate exactly
+control socket; the receiving agent sees the notification at its next triage exactly
 as it would any other ambient event.
 
 A connected MCP server is another in-process producer: each of its
@@ -28,7 +28,7 @@ A connected MCP server is another in-process producer: each of its
 server name as `source` and `mcp:<server>` as `slot`, so a burst supersedes
 itself instead of piling up ([tools.md](tools.md) "the client protocol"). Its
 progress ticks do not come here — they are live output on the running call,
-and by a gate they describe the past.
+and by the time triage runs they describe the past.
 
 `GET /state` surfaces the pending (not-yet-shown) inbox alongside other control state.
 `DELETE /notifications/:id` clears a pending notification out-of-band, before it
@@ -106,9 +106,9 @@ gets to replace.
 
 ## Event-sourced, logged at first-show
 
-A notification is appended to the log as a `Payload::Ambient` entry the moment a fork
+A notification is appended to the log as a `Payload::Ambient` entry the moment a
 triage first shows it to the model — not at arrival. A notification created and then
-superseded or dismissed before any gate sees it never enters the log: from the log's
+superseded or dismissed before any triage sees it never enters the log: from the log's
 perspective it never happened.
 
 Once shown, a notification is logged forever, dismissed ones included. The log is
@@ -122,7 +122,7 @@ The live inbox is the union of two layers:
 - **Shown, unresolved**: a fold over the log, collected by `active_shown` in `src/inbox.rs`.
   Every `Ambient` entry whose `seq` no `Triage` verdict has yet pinned or dismissed is
   active. "Left" notifications — not named in any `Triage` inbox field — stay active and
-  resurface at the next gate.
+  resurface at the next triage.
 - **Pending, not yet shown**: the ephemeral queue in `Session`, layered on top.
 
 A restart drops only the un-shown layer, which were "never happened" anyway. The
@@ -139,7 +139,7 @@ each notification one of three dispositions:
   wire transcript at the pinning `Triage` entry's position (see below).
 - **Dismiss** — clear it. The disposition is recorded; the notification no longer resurfaces.
 - **Leave** — simply omit the item from the `inbox` field. The notification stays active
-  and resurfaces at the next gate unchanged. This is the no-effort default; deferral costs
+  and resurfaces at the next triage unchanged. This is the no-effort default; deferral costs
   nothing.
 
 All dispositions are recorded on the `Triage` log entry (`inbox: Vec<(Seq, Disposition)>`),
@@ -151,7 +151,7 @@ A notification may be enqueued **must-wake** (`wake` on the pending record, surf
 on `GET /state` only when set). At its first show the loop pins it whatever the
 fork's verdict — a dismiss is overridden, a leave is filled in — so an idle agent
 escalates to a real turn on it and a running one carries it into the wire at the
-next gate. Whether the agent wakes is thereby declared by the sender, not judged by
+next triage. Whether the agent wakes is thereby declared by the sender, not judged by
 the triage; the triage keeps everything downstream of that: the rest of the inbox, the
 background tails, its note. A triage that fails outright changes nothing here, since
 the pin is applied by the loop after the verdict returns. An escalated trajectory
@@ -193,8 +193,8 @@ Pinned notifications project into the wire transcript at the **pinning `Triage` 
 position**, not at the arrival entry's position. Arrival entries (`Payload::Ambient`)
 project to nothing — they are audit-only.
 
-This placement is what keeps pinning cache-safe. A notification may be shown at one gate,
-left, left again, and pinned at a third gate. Projecting the block at the arrival position
+This placement is what keeps pinning cache-safe. A notification may be shown at one triage,
+left, left again, and pinned at a third triage. Projecting the block at the arrival position
 would splice new content behind an earlier point in the transcript — behind the cache head
 if any boundary has been committed — invalidating the cached prefix (see `log-and-projection.md`).
 Projecting at the `Triage` position is always tail-ward: the wire grows only at the tail.
@@ -218,7 +218,7 @@ text in front of the model (a file, a command's output, another client's turn) c
 What keeps a forged note harmless is that a genuine one carries no authority to borrow — gates
 are enforced mechanically, never by what the model believes — so a forgery can plant a false
 fact but not an instruction. The one `⟢` block that asks for something, the triage ask
-(docs/triage.md), asks only for `retain` or `triage`; outside a gate either call is
+(docs/triage.md), asks only for `retain` or `triage`; outside a triage either call is
 answered with a "nothing is being asked" stand-in, so a forged ask costs a round-trip. The `role:system` operator channel (the eventual Opus-4.8 upgrade
 described in `supervisor.md`) is the anticipated path for anything that *should* carry
 authority; user-role is the conservative, universally-supported default

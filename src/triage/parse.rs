@@ -2,7 +2,7 @@
 
 use super::*;
 
-/// The verdict on one result of a gate: which result it addresses (by its label —
+/// The verdict on one result of a triage: which result it addresses (by its label —
 /// [`labels`](super::labels)), the structured
 /// `keep`, the optional `note`, and the model's exact pre-parse `keep` string (for
 /// that result's [`Triage`] audit entry).
@@ -19,7 +19,7 @@ pub(super) struct ResultVerdict {
 }
 
 /// A parsed `retain` call: one verdict per result the model addressed, plus the
-/// gate-scoped inbox / background / surfacing dispositions (unfiltered — the caller
+/// triage-scoped inbox / background / surfacing dispositions (unfiltered — the caller
 /// drops ids it didn't show).
 pub(super) struct ParsedRetain {
     /// Verdicts keyed by label. May be short, over-long, or carry labels that were
@@ -46,9 +46,9 @@ pub(super) struct ResultInput {
 ///
 /// Both answer shapes stand in one static schema (docs/triage.md). `keep` /
 /// `note` at the top level are the **flat form**, which the tail instruction asks for on
-/// a single-result gate — the overwhelming majority — since naming the one call in
+/// a single-result triage — the overwhelming majority — since naming the one call in
 /// question is transcription with no decision in it. `results` is the keyed form, asked
-/// for when a gate carries several. Either may arrive for either gate size (nothing
+/// for when a triage carries several. Either may arrive for either triage size (nothing
 /// enforces the schema — the tool isn't `strict`), so both are always accepted; a parse
 /// failure would mean the result's output withheld as a hard error
 /// (docs/triage.md).
@@ -146,7 +146,7 @@ pub(super) fn collect_dispositions(
 /// one result is in flight and are ignored otherwise:
 ///
 /// - a bare top-level `keep`/`note` — the **flat form**, which is what the tail
-///   instruction asks for on a single-result gate;
+///   instruction asks for on a single-result triage;
 /// - a lone `results` entry whose `result` doesn't match, which is re-keyed to the one
 ///   offered label. With a single target there is nothing to mis-attribute *to*, so
 ///   rejecting a decided verdict over a mistyped label would withhold output the model
@@ -202,13 +202,13 @@ pub(super) fn parse_retain(completion: &Completion, offered: &[String]) -> Optio
         bg.extend(b);
         surfaced.extend(named);
     }
-    // Both id-free shapes resolve only against a single-result gate, and only when the
+    // Both id-free shapes resolve only against a single-result triage, and only when the
     // array didn't already answer it.
     if let [only] = offered
         && !verdicts.iter().any(|v| v.label == *only)
     {
         match (flat, verdicts.as_mut_slice()) {
-            // Flat form — the shape the tail instruction asks for on a single gate.
+            // Flat form — the shape the tail instruction asks for on a single triage.
             (Some((keep, note, intent_feedback)), _) => verdicts.push(ResultVerdict {
                 label: only.clone(),
                 keep: parse_keep(&keep),

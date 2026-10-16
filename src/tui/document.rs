@@ -215,7 +215,7 @@ pub enum DocumentNode<'a> {
 
     /// One tool call as a transcript item (docs/tui.md, "Detail by recency"): the
     /// call entry and everything that reads as part of it — what the spotter made of
-    /// it, the gate affordance, the result, the triage note — kept together so the
+    /// it, the triage affordance, the result, the triage note — kept together so the
     /// renderer can fold the whole item by its distance from the tail. Folding is a
     /// render-time choice; the children are exactly the entries a whole call renders.
     CallItem {

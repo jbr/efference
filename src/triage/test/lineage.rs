@@ -1,9 +1,9 @@
 //! Tests for which client and lineage a triage runs on.
 use super::*;
 
-/// What the gate records as the triage's reasoning (docs/triage.md): every thinking
+/// What the triage records as the triage's reasoning (docs/triage.md): every thinking
 /// block's text, joined — prose and redacted blocks excluded (a redacted block carries no
-/// text), and `None` when the attempt thought nothing, so a gate that didn't think records
+/// text), and `None` when the attempt thought nothing, so a triage that didn't think records
 /// nothing rather than an empty entry. Signatures are dropped: this is a record, not a
 /// replay input.
 #[test]
@@ -13,7 +13,7 @@ fn triage_thinking_joins_thinking_text_only() {
     let assistant = |thinking: Vec<ContentBlock>| Payload::Assistant {
         output: AssistantOutput::from_legacy_messages(
             thinking,
-            vec![ContentBlock::Text("prose the gate never reads".into())],
+            vec![ContentBlock::Text("prose the triage never reads".into())],
             Vec::new(),
         ),
         upstream_failure: None,

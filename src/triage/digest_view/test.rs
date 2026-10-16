@@ -27,11 +27,11 @@ fn assistant(seq: u64, text: &str, calls: Vec<ToolCall>) -> LogEntry {
     )
 }
 
-/// An operator turn, one triaged call, then the gate's turn: the history every view
-/// renders from, and the gate's call.
+/// An operator turn, one triaged call, then the triage's turn: the history every view
+/// renders from, and the triage's call.
 fn session() -> (Vec<LogEntry>, ToolCall) {
     let first = ToolCall::new("bash", "c1", json!({"command": "ls"})).with_intent("see the files");
-    let gate =
+    let triage =
         ToolCall::new("bash", "c2", json!({"command": "cargo test"})).with_intent("run the tests");
     let prefix = vec![
         entry(1, Payload::User(vec![ContentBlock::Text("fix it".into())])),
@@ -44,17 +44,17 @@ fn session() -> (Vec<LogEntry>, ToolCall) {
                 wire: WireState::Triaged(Triaged::new(Keep::All).with_note("Two files.")),
             },
         ),
-        assistant(4, "Now the tests.", vec![gate.clone()]),
+        assistant(4, "Now the tests.", vec![triage.clone()]),
     ];
-    (prefix, gate)
+    (prefix, triage)
 }
 
 /// The request's text, and its parts.
 fn render(view: TriageView) -> (String, Vec<UserPart>) {
-    let (prefix, gate) = session();
+    let (prefix, triage) = session();
     let raw = RawResult::text("test result: ok. 3 passed");
     let pending = [Pending {
-        call: &gate,
+        call: &triage,
         raw: &raw,
     }];
     let turns = digest_triage_messages(&prefix, Reader::Main, view, &pending, &[], &[], &[]);
@@ -69,15 +69,15 @@ fn render(view: TriageView) -> (String, Vec<UserPart>) {
         })
         .collect::<Vec<_>>()
         .join("\n");
-    let (_, ask) = gate_parts(&pending, &[], &[], &[], Reader::Main);
+    let (_, ask) = triage_parts(&pending, &[], &[], &[], Reader::Main);
     assert!(text.ends_with(&ask), "every view closes on the same ask");
     assert!(text.contains("cargo test") && text.contains("3 passed"));
     (text, parts.clone())
 }
 
 /// The digest view sends text only — no assistant turn, no tool block — so it encodes on
-/// any dialect. It carries the earlier call as its digest line, the gate's call with its
-/// arguments, the gate's result, and the same ask the transcript view sends.
+/// any dialect. It carries the earlier call as its digest line, the triage's call with its
+/// arguments, the triage's result, and the same ask the transcript view sends.
 #[test]
 fn the_digest_view_is_text_with_the_digest_the_gate_and_the_ask() {
     let (text, parts) = render(TriageView::Digest);
@@ -102,7 +102,7 @@ fn the_digest_view_is_text_with_the_digest_the_gate_and_the_ask() {
     }
 }
 
-/// `tail:1` carries only the gate's own turn; `intent` carries no history at all.
+/// `tail:1` carries only the triage's own turn; `intent` carries no history at all.
 #[test]
 fn the_tail_and_intent_views_cut_the_history() {
     let (tail, _) = render(TriageView::Tail(1));

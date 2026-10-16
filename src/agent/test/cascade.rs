@@ -332,7 +332,7 @@ async fn a_call_naming_no_tool_is_answered_ahead_of_the_cascade() {
     };
     assert_eq!(call_id, &call.id);
     assert!(raw.is_error, "the call was not cogent");
-    // `Direct` payloads never enter the triage gate, so the correction reaches the wire
+    // `Direct` payloads never enter the triage, so the correction reaches the wire
     // verbatim — no summary stands between it and the model (docs/triage.md).
     assert!(matches!(wire, WireState::Raw));
     for expected in ["unknown tool: ferritin", "Mounted tools: bash", "`bash`"] {

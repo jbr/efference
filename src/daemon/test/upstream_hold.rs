@@ -1,6 +1,6 @@
 //! Upstream failures against a real turn loop and a scripted upstream
 //! (docs/transport.md, docs/triage.md): a failed request takes the retry
-//! schedule instead of stalling at once, a triage gate without a verdict holds
+//! schedule instead of stalling at once, a triage without a verdict holds
 //! its results rather than showing the agent an error, and the operator's
 //! continue retries either wait now.
 
@@ -203,10 +203,10 @@ pub(super) fn start(addr: std::net::SocketAddr) -> (Swansong, SessionRuntime) {
 const REFUSED: &str = r#"{"type":"error","error":{"type":"invalid_request_error","message":"no"}}"#;
 const OVERLOADED: &str = r#"{"type":"error","error":{"type":"overloaded_error","message":"busy"}}"#;
 
-/// **A triage gate without a verdict holds; continue retries it.** The triage's
-/// request is refused, so the gate has no verdict. Nothing reaches the log for the
+/// **A triage without a verdict holds; continue retries it.** The triage's
+/// request is refused, so the triage has no verdict. Nothing reaches the log for the
 /// call — no error result the agent would read — and the session reports a stall
-/// while its loop still runs. The operator's continue runs the gate again, the
+/// while its loop still runs. The operator's continue runs the triage again, the
 /// verdict lands, and the held attempt's breadcrumb rides the `Triage`.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_gate_without_a_verdict_holds_until_continue() {
@@ -221,13 +221,13 @@ async fn a_gate_without_a_verdict_holds_until_continue() {
     let session = Arc::clone(runtime.session());
     session.submit_turn(SubmittedTurn::new("go", "s1"));
 
-    wait_until("the gate is held", || session.stall().is_some()).await;
+    wait_until("the triage is held", || session.stall().is_some()).await;
     let stall = session.stall().unwrap();
     assert_eq!(stall.reason, StallReason::TriageUnavailable);
     assert!(session.running.load(Ordering::SeqCst), "held, not parked");
-    assert!(session.is_settled(), "a held gate is a decision point");
+    assert!(session.is_settled(), "a held triage is a decision point");
     // The result is durable from the moment it existed, but undecided: the entry is
-    // there to read and projects to nothing, so a request built before the gate's
+    // there to read and projects to nothing, so a request built before the triage's
     // verdict could not carry half a batch.
     let captured = session
         .snapshot()
@@ -236,7 +236,7 @@ async fn a_gate_without_a_verdict_holds_until_continue() {
             Payload::ToolResult { raw, wire, .. } => Some((raw, wire)),
             _ => None,
         })
-        .expect("the captured result is on the log while the gate holds");
+        .expect("the captured result is on the log while the triage holds");
     assert!(
         captured.0.content.contains("hi"),
         "the output itself survives the hold: {:?}",
@@ -306,7 +306,7 @@ async fn a_gate_without_a_verdict_holds_until_continue() {
             Payload::Triage(t) if t.for_result.is_some() => Some(t),
             _ => None,
         })
-        .expect("the gate's triage");
+        .expect("the triage");
     assert_eq!(triage.origin, Origin::Model);
     assert!(
         triage.retries.iter().any(|r| r.starts_with("held: ")),
@@ -316,9 +316,9 @@ async fn a_gate_without_a_verdict_holds_until_continue() {
     host.shut_down().await;
 }
 
-/// **A fold written during a hold is what the retried triage forks.** The gate holds,
+/// **A fold written during a hold is what the retried triage forks.** The triage holds,
 /// a fold's mark lands (as `fold_once` appends it), and the operator retries: the
-/// retried triage carries the account, not the history it replaced. The gate's first
+/// retried triage carries the account, not the history it replaced. The triage's first
 /// snapshot predates the mark, so a retry that reused it would still read the whole
 /// unfolded prefix, which is the cold read the fold exists to avoid.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -339,7 +339,7 @@ async fn a_fold_during_a_hold_is_what_the_retry_triages() {
     let session = Arc::clone(runtime.session());
     session.submit_turn(SubmittedTurn::new("zebra history to fold away", "s1"));
 
-    wait_until("the gate is held", || session.stall().is_some()).await;
+    wait_until("the triage is held", || session.stall().is_some()).await;
     let upto = session
         .snapshot()
         .iter()
@@ -417,7 +417,7 @@ async fn a_failed_request_is_retried_and_continue_skips_the_wait() {
 
 /// **Fresh forks, then a harness defect.** A triage that answers every attempt of
 /// every fork without a usable verdict is not an upstream condition: after
-/// `TRIAGE_RESTARTS` fresh forks of `TRIAGE_ATTEMPTS` each, the gate holds under
+/// `TRIAGE_RESTARTS` fresh forks of `TRIAGE_ATTEMPTS` each, the triage holds under
 /// `TriageDefect`, and still nothing reaches the agent.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_triage_that_never_answers_usably_is_held_as_a_defect() {
@@ -432,12 +432,12 @@ async fn a_triage_that_never_answers_usably_is_held_as_a_defect() {
     let session = Arc::clone(runtime.session());
     session.submit_turn(SubmittedTurn::new("go", "s1"));
 
-    wait_until("the gate is held", || session.stall().is_some()).await;
+    wait_until("the triage is held", || session.stall().is_some()).await;
     assert_eq!(session.stall().unwrap().reason, StallReason::TriageDefect);
     // The tool call, then three attempts in each fork.
     assert_eq!(requests.load(Ordering::SeqCst), 1 + 3 * TRIAGE_RESTARTS);
     // Every fork is spent and the result is still undecided: durable in the log, since
-    // it was captured before the gate opened, and absent from the wire, since no fork
+    // it was captured before the triage opened, and absent from the wire, since no fork
     // answered for it.
     let captured = session
         .snapshot()
@@ -446,7 +446,7 @@ async fn a_triage_that_never_answers_usably_is_held_as_a_defect() {
             Payload::ToolResult { raw, wire, .. } => Some((raw, wire)),
             _ => None,
         })
-        .expect("the captured result is on the log while the gate holds");
+        .expect("the captured result is on the log while the triage holds");
     assert!(
         captured.0.content.contains("hi"),
         "the output itself survives the hold: {:?}",

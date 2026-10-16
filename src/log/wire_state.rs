@@ -28,8 +28,8 @@ pub enum WireState {
     Triaged(Triaged),
     /// Project nothing of substance; still recoverable from the log.
     Elided,
-    /// A result an earlier harness withheld as a hard error because its gate had no
-    /// verdict. **No longer written**: a gate without a verdict now holds its
+    /// A result an earlier harness withheld as a hard error because its triage had no
+    /// verdict. **No longer written**: a triage without a verdict now holds its
     /// results until it has one (docs/triage.md). Kept so logs that carry it
     /// still load and project as they did — a hard error in place of the output
     /// (`is_error` forced true), `raw` still in the log.

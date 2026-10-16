@@ -5,10 +5,10 @@ operator wrote and the agent's prose. It is the substrate for
 summarizing a session without reading its whole context — the cold session's fold summary
 head and the compaction-fidelity evaluation (`eval/compaction/`) both start from it.
 `src/digest.rs` implements it; `efference dev digest <session> [--upto <seq>] [--seqs]`
-prints it. `efference dev triage --view digest` replays a session's triage gates with the
+prints it. `efference dev triage --view digest` replays a session's triages with the
 history rendered as this digest instead of the transcript (an experiment arm,
-`src/triage/digest_view.rs`); the digest at a gate extends the digest at every earlier
-gate byte for byte, which is what would let such a request resume a cached prefix.
+`src/triage/digest_view.rs`); the digest at a triage extends the digest at every earlier
+triage byte for byte, which is what would let such a request resume a cached prefix.
 
 ## What a line carries
 

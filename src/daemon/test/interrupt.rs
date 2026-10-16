@@ -168,7 +168,7 @@ async fn wait_until(what: &str, mut ready: impl FnMut() -> bool) {
 /// **An interrupt during the triage ends the turn there.** The press ends the triage's
 /// read and the results are withheld as the interrupt's *after* juncture withholds
 /// one (`Elided`, nothing blaming triage); the loop then consumes the latch after
-/// the gate and goes idle without another request. Left set, the latch rides into the
+/// the triage and goes idle without another request. Left set, the latch rides into the
 /// next completion and stops its first call as "aborted by user" — the model's
 /// answer to whatever the operator queued to explain the press.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -217,12 +217,12 @@ async fn an_interrupt_during_the_triage_ends_the_turn_at_the_gate() {
     assert_eq!(
         requests.load(Ordering::SeqCst),
         2,
-        "the turn ended at the gate: no request after the interrupted triage"
+        "the turn ended at the triage: no request after the interrupted triage"
     );
     assert!(!session.interrupt_pending(), "the press was consumed");
     let log = session.snapshot();
     // Withheld as at the interrupt's after juncture: the raw stays in the log, captured
-    // before the gate, and the verdict that keeps it off the wire names its seq.
+    // before the triage, and the verdict that keeps it off the wire names its seq.
     let captured_seq = log
         .iter()
         .find_map(|e| match &e.payload {
@@ -235,7 +235,7 @@ async fn an_interrupt_during_the_triage_ends_the_turn_at_the_gate() {
             &e.payload,
             Payload::ResultVerdict { for_result, wire: WireState::Elided } if *for_result == captured_seq
         )),
-        "the interrupted gate withholds the result it captured"
+        "the interrupted triage withholds the result it captured"
     );
 
     host.shut_down().await;

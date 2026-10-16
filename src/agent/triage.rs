@@ -84,7 +84,7 @@ pub(super) struct Sight<'a> {
 /// dispositions, and log the verdict as a `Triage` with `for_result: None`. Returns
 /// whether it pinned something. `entries` is the prefix the triage forks from, which must
 /// already hold every result the wire owes. The shared tail of the idle wake and of the
-/// gate an `ask` reply rides (which has no triage of its own, docs/supervisor.md).
+/// triage an `ask` reply rides (which has no triage of its own, docs/supervisor.md).
 pub(super) async fn triage_and_record(
     client: &Client,
     tools: &[Value],

@@ -15,7 +15,7 @@
 //!
 //! **Withheld results are not low retention.** A [`WireState::TriageFailed`] result
 //! retained nothing because nothing was *recorded* (docs/triage.md), not
-//! because triage was aggressive; folding it into the ratio would make a failed gate
+//! because triage was aggressive; folding it into the ratio would make a failed triage
 //! read as excellent compression. It counts as [`Retention::withheld`] instead, and
 //! stays out of both sides of the ratio.
 //!
@@ -40,14 +40,14 @@ pub struct Retention {
     /// Lines the triage cap dropped before triage saw them. Reported separately: they
     /// are not a decision anyone made, so they belong in neither side of the ratio.
     pub truncated_lines: u64,
-    /// Results whose output was withheld because the gate failed
+    /// Results whose output was withheld because the triage failed
     /// ([`WireState::TriageFailed`]).
     pub withheld: u64,
 }
 
 impl Retention {
     /// Fold one log entry. Entries that aren't a result or a verdict about one, and
-    /// results still projecting raw (untriaged — the tail, before its gate runs),
+    /// results still projecting raw (untriaged — the tail, before its triage runs),
     /// contribute nothing. `log` is the whole log: a verdict is counted against the
     /// bytes at the result's own address, which is the one thing it does not carry.
     pub fn fold(&mut self, entry: &LogEntry, log: &[LogEntry]) {

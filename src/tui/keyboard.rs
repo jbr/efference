@@ -211,7 +211,7 @@ impl<'a> InteractiveState<'a> {
             // Empty composer, operator's turn: `⏎` hands control back with no input
             // (docs/tui.md) — the zero-token continue, which the composer would
             // otherwise swallow as a no-op. Gated on the loop being idle or waiting
-            // on the upstream (a retry pause, a held triage gate — where the continue
+            // on the upstream (a retry pause, a held triage — where the continue
             // retries now), so a stray `⏎` during a generation stays the silent no-op
             // it has always been; the daemon re-checks the same preconditions and
             // declines a race.

@@ -47,7 +47,7 @@ fn outcome_classes_derive_generically() {
 }
 
 /// The common fields are the same four for every tool, and `result_bytes` is the
-/// pre-triage size — the number the gate's saving is measured against.
+/// pre-triage size — the number the triage's saving is measured against.
 #[test]
 fn common_fields_are_populated_for_any_tool() {
     let t = observe(

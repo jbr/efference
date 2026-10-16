@@ -3,9 +3,9 @@
 //! The pending inbox is **event-sourced**: a notification a triage has shown is an
 //! [`Payload::Ambient`] log entry, and it stays *active* until a [`Triage`] verdict
 //! pins or dismisses its `seq`. [`active_shown`] folds the log to that active set —
-//! the shown-but-unresolved notifications a gate re-shows ("left" / bumped, docs/inbox.md).
+//! the shown-but-unresolved notifications a triage re-shows ("left" / bumped, docs/inbox.md).
 //! Not-yet-shown notifications live in the daemon's ephemeral queue (docs/control-channel.md)
-//! until a gate logs them as `Ambient` (first-show); the loop concatenates the two.
+//! until a triage logs them as `Ambient` (first-show); the loop concatenates the two.
 //!
 //! [`Triage`]: crate::log::Triage
 
@@ -25,7 +25,7 @@ pub struct ShownNotification {
 /// Fold the log to the **active** shown notifications: every `Ambient` entry whose
 /// `seq` no [`Triage`](crate::log::Triage) verdict has yet pinned or dismissed.
 /// Pinned/dismissed seqs are resolved (gone); unmentioned ("left") seqs stay active,
-/// so a later gate re-shows them. In log order.
+/// so a later triage re-shows them. In log order.
 pub fn active_shown(log: &[LogEntry]) -> Vec<ShownNotification> {
     // Every seq any Triage dispositioned (pin or dismiss) is resolved — off the inbox.
     let resolved: HashSet<Seq> = log

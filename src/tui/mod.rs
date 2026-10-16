@@ -455,7 +455,7 @@ pub(crate) struct UsageStats {
     /// triaged result — unknown, and rendered as absent rather than as 0%.
     pub kept_lines: u64,
     pub shown_lines: u64,
-    /// Results whose output a failed gate withheld, from `usage.retention.withheld`.
+    /// Results whose output a failed triage withheld, from `usage.retention.withheld`.
     /// Not folded into the ratio; rendered only when nonzero.
     pub withheld_results: u64,
     /// Consecutive main-loop requests that read nothing from the cache with no

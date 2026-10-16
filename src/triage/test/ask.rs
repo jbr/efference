@@ -128,7 +128,7 @@ fn roster_is_empty_without_a_preamble() {
     assert!(surfaceable_roster(&[]).is_empty());
 }
 
-/// A single-result gate asks for the flat form and names no label at all: naming the
+/// A single-result triage asks for the flat form and names no label at all: naming the
 /// result when only one is in question is transcription with no decision in it
 /// (docs/triage.md).
 #[test]
@@ -145,8 +145,8 @@ fn a_single_result_gate_asks_for_the_flat_form_and_no_label() {
     );
 }
 
-/// A multi-result gate asks for the keyed form and interpolates exactly the labels this
-/// gate offered — the tail is discarded with the fork, so nothing here is cache-keyed.
+/// A multi-result triage asks for the keyed form and interpolates exactly the labels this
+/// triage offered — the tail is discarded with the fork, so nothing here is cache-keyed.
 #[test]
 fn a_multi_result_gate_lists_every_offered_label_and_the_count() {
     let offered = ["r1".to_string(), "r2".to_string()];
@@ -158,11 +158,11 @@ fn a_multi_result_gate_lists_every_offered_label_and_the_count() {
     );
 }
 
-/// Both shapes bound the ask to *this* gate. Every prior `tool_result` on the canonical
+/// Both shapes bound the ask to *this* triage. Every prior `tool_result` on the canonical
 /// wire carries a `[seq]` block-addressing tag in the same bracket syntax the result
 /// headers once used for call ids, and an unbounded "every [call id] above" was read by a live model
 /// as "re-triage the whole transcript" — twenty-odd entries keyed by `[seq]` tags and
-/// invented ids, with the gate's own id missing, so coverage failed and the gate
+/// invented ids, with the triage's own id missing, so coverage failed and the triage
 /// hard-errored (docs/triage.md).
 #[test]
 fn every_retain_ask_excludes_the_transcript_behind_it() {
@@ -213,7 +213,7 @@ fn the_ask_grounds_the_note_in_the_kept_lines_and_flags_a_partial_enumeration() 
 /// The ask opens on a banner and the imperative, and closes on the imperative. Every other
 /// section of a triage view carries a banner; the ask carrying none left the only
 /// *instruction* in the view reading as a trailing note. A session answered 29% of its
-/// gates with a work tool instead of a verdict (journal/2026-08-07-session-key-review.md).
+/// triages with a work tool instead of a verdict (journal/2026-08-07-session-key-review.md).
 #[test]
 fn the_ask_is_bannered_and_opens_and_closes_on_the_imperative() {
     let instruction = retain_instruction(&["call_x".to_string()], &[], Reader::Main);

@@ -68,16 +68,16 @@ pub(super) fn surfaced_schema_field() -> Value {
     })
 }
 
-/// The fork gate's tool (docs/triage.md). Static — see the module doc.
+/// The fork triage's tool (docs/triage.md). Static — see the module doc.
 ///
-/// Two answer shapes, because the schema is static while gate size is not. A gate
+/// Two answer shapes, because the schema is static while triage size is not. A triage
 /// carrying one result — the overwhelming majority — is answered with the **flat**
 /// top-level `keep`/`note`: naming the one call whose result is right there is
 /// transcription work with no decision in it, and the id it asks for is the id most
-/// likely to come back wrong. A gate carrying several is answered with the `results`
+/// likely to come back wrong. A triage carrying several is answered with the `results`
 /// array, where a `result` label per entry (`r1`, `r2` — [`labels`](super::labels)) is
 /// what makes the verdicts attributable.
-/// Neither is `required`: the schema can't know the gate size, so the triage's tail
+/// Neither is `required`: the schema can't know the triage size, so the triage's tail
 /// instruction ([`retain_instruction`](super::retain_instruction)) names the shape.
 pub fn retain_tool() -> Value {
     json!({

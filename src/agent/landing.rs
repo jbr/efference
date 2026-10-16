@@ -1,9 +1,9 @@
-//! Landing a batch's outcomes (docs/triage.md): the gate over its results, the
+//! Landing a batch's outcomes (docs/triage.md): the triage over its results, the
 //! inbox triage that rides it, and the log entries that follow, in call order.
 
 use super::*;
 
-/// Triage the batch's results at one gate and append them to the log with their verdicts,
+/// Triage the batch's results at one triage and append them to the log with their verdicts,
 /// telemetry, and any handoff notes. Nothing to triage means no round-trip.
 pub(super) async fn land(
     client: &Client,
@@ -15,7 +15,7 @@ pub(super) async fn land(
     primer: Option<TriagePrimerOutcome>,
 ) -> Result<(), Error> {
     let mut turn = *turn_at;
-    // The gate (docs/triage.md): one triage over every result this
+    // The triage (docs/triage.md): one triage over every result this
     // completion produced. Nothing to triage means no round-trip.
     let pending: Vec<Pending<'_>> = steps
         .iter()
@@ -24,7 +24,7 @@ pub(super) async fn land(
             Step::Direct => None,
         })
         .collect();
-    // The must-wake notifications this gate first-shows (docs/inbox.md):
+    // The must-wake notifications this triage first-shows (docs/inbox.md):
     // pinned below whatever the triage decides.
     let mut forced_pins: Vec<crate::log::Seq> = Vec::new();
     let mut deferred: Option<(
@@ -32,7 +32,7 @@ pub(super) async fn land(
         Vec<crate::supervisor::BgView>,
         Vec<crate::log::Seq>,
     )> = None;
-    let mut gate = if pending.is_empty() {
+    let mut triage = if pending.is_empty() {
         None
     } else {
         // `Triager` re-enters the model here — the prefix is the log through
@@ -43,8 +43,8 @@ pub(super) async fn land(
             shared.await_warm_or_person().await;
         }
         let mut entries = shared.snapshot();
-        // Open the triage gate (docs/inbox.md): re-show the still-active
-        // notifications (left at earlier gates), then log any newly arrived
+        // Open the triage (docs/inbox.md): re-show the still-active
+        // notifications (left at earlier triages), then log any newly arrived
         // (ephemeral) ones as first-show `Ambient` entries — each entry's seq
         // becomes its durable id, the handle the verdict pins/dismisses by. (They
         // project to nothing, so the fork prefix `entries` stays byte-identical,
@@ -60,10 +60,10 @@ pub(super) async fn land(
                 forced.push(seq);
             }
         }
-        // A gate that is only `ask` replies has no triage to carry the inbox
+        // A triage that is only `ask` replies has no triage to carry the inbox
         // (docs/supervisor.md): triage runs after the results are logged, below,
         // and takes the must-wake pins with it.
-        if crate::triage::reply_only_gate(&pending) {
+        if crate::triage::reply_only_triage(&pending) {
             deferred = Some((shown.clone(), shared.bg_snapshot(), forced));
         } else {
             forced_pins = forced;
@@ -71,9 +71,9 @@ pub(super) async fn land(
         // The live background processes' fresh tails ride the same triage
         // (docs/supervisor.md) — re-sampled now, never logged unless pinned.
         let background = shared.bg_snapshot();
-        // A gate without a verdict holds rather than reaching the agent
+        // A triage without a verdict holds rather than reaching the agent
         // (docs/triage.md): the stall names it, and the operator's
-        // continue runs the gate again from the top.
+        // continue runs the triage again from the top.
         let mut carried = Carried::default();
         Some(loop {
             match triager
@@ -97,20 +97,20 @@ pub(super) async fn land(
             }
         })
     };
-    let gated = !pending.is_empty();
+    let triaged = !pending.is_empty();
     drop(pending);
 
-    // The gate's usage: each fork request reads the shared canonical prefix
+    // The triage's usage: each fork request reads the shared canonical prefix
     // (sliding its TTL), so it belongs in the docs/log-and-projection.md telemetry.
-    if let Some(g) = &gate {
+    if let Some(g) = &triage {
         for u in &g.usage {
             shared.record_triage(!triager.is_own(), u.clone());
         }
     }
     // The primer's usage and timing (docs/transport.md): its own
-    // origin so `dev cache` prices the warmup separately, and one log line per gate
-    // carrying the floor the gate paid (`residue_ms`) plus whether the spend had a
-    // gate to warm. The residue distribution is what says if a speculative
+    // origin so `dev cache` prices the warmup separately, and one log line per triage
+    // carrying the floor the triage paid (`residue_ms`) plus whether the spend had a
+    // triage to warm. The residue distribution is what says if a speculative
     // (pre-execution) primer is ever worth building.
     if let Some(outcome) = primer {
         let primed = outcome.usage.is_some();
@@ -118,10 +118,10 @@ pub(super) async fn land(
             shared.record_request(RequestOrigin::TriagePrimer, usage);
         }
         log::debug!(
-            "triage primer: send {}ms, residue {}ms, primed {primed}, gated {}",
+            "triage primer: send {}ms, residue {}ms, primed {primed}, triaged {}",
             outcome.send_ms,
             outcome.residue_ms,
-            gated
+            triaged
         );
     }
     // Apply the background verdicts before writing the `Triage`s: a `Pin`
@@ -129,12 +129,12 @@ pub(super) async fn land(
     // disposition into the inbox verdict — so it projects at the `Triage`
     // position, reusing the notification pin path (docs/supervisor.md). A `Mute`
     // just flags the supervisor.
-    let mut inbox_verdict = gate
+    let mut inbox_verdict = triage
         .as_mut()
         .map(|g| std::mem::take(&mut g.inbox))
         .unwrap_or_default();
     force_pins(&mut inbox_verdict, &forced_pins);
-    if let Some(g) = &gate {
+    if let Some(g) = &triage {
         for (handle, verdict) in &g.background {
             match verdict {
                 BgVerdict::Mute => shared.mute_bg(handle),
@@ -157,31 +157,31 @@ pub(super) async fn land(
 
     // Append in call order: each step's own payloads, and for a triaged result
     // its `ToolResult` followed by the `Triage` audit entry keyed to that
-    // result's seq (docs/triage.md). The gate-scoped riders — inbox
+    // result's seq (docs/triage.md). The triage-scoped riders — inbox
     // dispositions and surfaced context — ride the **last** `Triage` of the batch:
     // they were decided once for the whole step, and tail-ward placement keeps the
     // wire append-only (docs/inbox.md), which is exactly where they already land
     // when a completion carried a single call.
-    let mut verdicts = gate
+    let mut verdicts = triage
         .as_mut()
         .map(|g| std::mem::take(&mut g.results))
         .unwrap_or_default()
         .into_iter();
-    let surfaced = gate
+    let surfaced = triage
         .as_ref()
         .map(|g| g.surfaced.clone())
         .unwrap_or_default();
-    // Gate-scoped like the inbox riders: the non-compliant-attempt breadcrumbs
+    // Triage-scoped like the inbox riders: the non-compliant-attempt breadcrumbs
     // land on the last `Triage` of the batch — durable even when a retry
     // recovered (docs/triage.md).
-    let mut retries = gate
+    let mut retries = triage
         .as_mut()
         .map(|g| std::mem::take(&mut g.retries))
         .unwrap_or_default();
-    // Gate-scoped for the same reason: one triage reasoned about the whole batch,
+    // Triage-scoped for the same reason: one triage reasoned about the whole batch,
     // so its thinking rides the last `Triage` rather than being copied per
     // result (docs/triage.md).
-    let mut thinking = gate
+    let mut thinking = triage
         .as_mut()
         .map(|g| std::mem::take(&mut g.thinking))
         .unwrap_or_default();
@@ -205,18 +205,18 @@ pub(super) async fn land(
                 // the output is on the log from the moment it existed, so what lands now is
                 // the decision alone and the two can never disagree about it.
                 //
-                // A gate that answered for fewer results than it was offered would leave a
+                // A triage that answered for fewer results than it was offered would leave a
                 // captured result pending forever, which projects to nothing and orphans its
                 // `tool_use` on the next request (docs/README.md). The triager does not do
-                // that — one result short of a verdict is a `GateFailure`, which holds or
+                // that — one result short of a verdict is a `HoldFailure`, which holds or
                 // withholds the whole batch — so this is the breach's last line of defence:
-                // withhold the result, the same way an interrupted gate does, and say so in
+                // withhold the result, the same way an interrupted triage does, and say so in
                 // the log rather than leaving a silent hole.
                 let (wire, origin, raw_keep) = match verdicts.next() {
                     Some(verdict) => (verdict.wire, verdict.origin, verdict.raw_keep),
                     None => {
                         log::error!(
-                            "the gate answered for fewer results than the batch captured; \
+                            "the triage answered for fewer results than the batch captured; \
                              one result is withheld from the wire"
                         );
                         (WireState::Elided, Origin::Fallback, String::new())
@@ -260,7 +260,7 @@ pub(super) async fn land(
             }
         }
     }
-    // The inbox an `ask` reply's gate could not triage (docs/supervisor.md): the
+    // The inbox an `ask` reply's triage could not triage (docs/supervisor.md): the
     // results are in the log now, so the triage forks from a prefix that answers
     // every call.
     if let Some((shown, background, forced)) = deferred
@@ -319,8 +319,8 @@ pub(super) fn after_landing(
         *turn += 1;
         shared.append(*turn, Payload::User(vec![ContentBlock::Text(message)]))?;
     }
-    // The juncture after the gate (docs/control-channel.md): an interrupt
-    // pressed during the triage or a held gate ended it with the latch still
+    // The juncture after the triage (docs/control-channel.md): an interrupt
+    // pressed during the triage or a held triage ended it with the latch still
     // set. Consumed here, the turn ends with the results logged withheld;
     // left set, the next completion's first call would take it, after a
     // paid request and after any turn the operator queued to explain the

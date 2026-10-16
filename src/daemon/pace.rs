@@ -211,7 +211,7 @@ impl Session {
     }
 
     /// Whether the daemon is at a **decision point** a client can act on: a gate is pending, the
-    /// loop is stalled (a triage gate held on the upstream waits on the operator's continue,
+    /// loop is stalled (a triage held on the upstream waits on the operator's continue,
     /// docs/triage.md), or the loop is idle with nothing queued. Mid-turn —
     /// running, no gate, no stall — is *not* settled. The predicate behind `/settle` and the
     /// `?wait` flag (docs/permissions.md).

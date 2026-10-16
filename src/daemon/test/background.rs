@@ -4,7 +4,7 @@ use super::*;
 
 /// A backgrounded command runs end-to-end through the supervisor (docs/supervisor.md): it
 /// spawns, its output drains into the registry, and on exit it fires an `Ambient`
-/// exit notification into the inbox — status + final tail — where a triage gate
+/// exit notification into the inbox — status + final tail — where a triage
 /// would adjudicate it. Exercises the real spawn/drain/finish/notify path with no
 /// model in the loop.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

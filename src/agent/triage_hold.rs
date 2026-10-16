@@ -1,18 +1,18 @@
-//! Holding a triage gate until it has a verdict (docs/triage.md).
+//! Holding a triage until it has a verdict (docs/triage.md).
 //!
-//! A gate that produced no verdict is never shown to the agent. The results stay in
+//! A triage that produced no verdict is never shown to the agent. The results stay in
 //! the loop, unappended, while the trajectory is stalled on the `stall` topic; the
-//! operator's continue ("retry now") runs the gate again from the top, and the
+//! operator's continue ("retry now") runs the triage again from the top, and the
 //! operator's interrupt ends the turn with the results withheld the way the
 //! interrupt's *after* juncture withholds one. The loop is still running throughout,
 //! so a host that stops here loses the results as it would mid-tool.
 
 use super::*;
 
-use crate::triage::{GateFailure, GateOutcome, TRIAGE_RESTARTS, TriageFailure};
+use crate::triage::{HoldFailure, HoldOutcome, TRIAGE_RESTARTS, TriageFailure};
 
-/// What the held gate's attempts accumulated before one of them succeeded: carried
-/// onto the successful gate's `Triage`, so a recovered hold is still in the record.
+/// What the held triage's attempts accumulated before one of them succeeded: carried
+/// onto the successful triage's `Triage`, so a recovered hold is still in the record.
 #[derive(Default)]
 pub(super) struct Carried {
     retries: Vec<String>,
@@ -20,9 +20,9 @@ pub(super) struct Carried {
 }
 
 impl Carried {
-    /// The successful gate's outcome, with the held attempts' breadcrumbs and
+    /// The successful triage's outcome, with the held attempts' breadcrumbs and
     /// reasoning ahead of its own.
-    pub(super) fn onto(mut self, mut outcome: GateOutcome) -> GateOutcome {
+    pub(super) fn onto(mut self, mut outcome: HoldOutcome) -> HoldOutcome {
         self.retries.append(&mut outcome.retries);
         self.thinking.append(&mut outcome.thinking);
         outcome.retries = self.retries;
@@ -30,33 +30,33 @@ impl Carried {
         outcome
     }
 
-    /// The outcome of a gate the operator interrupted (docs/control-channel.md).
-    pub(super) fn interrupted(self, count: usize) -> GateOutcome {
-        GateOutcome::interrupted(count, self.retries, self.thinking)
+    /// The outcome of a triage the operator interrupted (docs/control-channel.md).
+    pub(super) fn interrupted(self, count: usize) -> HoldOutcome {
+        HoldOutcome::interrupted(count, self.retries, self.thinking)
     }
 }
 
-/// How a held gate resumed.
+/// How a held triage resumed.
 pub(super) enum Held {
-    /// Run the gate again: the operator asked to retry now.
+    /// Run the triage again: the operator asked to retry now.
     Retry,
-    /// The operator interrupted; the latch stays set for the juncture after the gate,
+    /// The operator interrupted; the latch stays set for the juncture after the triage,
     /// which ends the turn.
     Interrupted,
 }
 
-/// Hold a gate that produced no verdict until the operator retries or interrupts.
+/// Hold a triage that produced no verdict until the operator retries or interrupts.
 /// Records the failed attempts' usage, carries their breadcrumbs, and publishes the
 /// hold as a stall while it lasts. `on_agent_client` is whether the failed triages ran on
-/// the agent's own client, as the gate's successful ones did.
+/// the agent's own client, as the triage's successful ones did.
 pub(super) async fn hold(
     shared: &Arc<Session>,
     client: &Client,
     on_agent_client: bool,
-    failure: GateFailure,
+    failure: HoldFailure,
     carried: &mut Carried,
 ) -> Held {
-    let GateFailure {
+    let HoldFailure {
         failure,
         usage,
         retries,

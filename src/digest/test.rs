@@ -235,8 +235,8 @@ fn the_cut_marks_the_first_rendered_block_past_it() {
     assert!(!render(&log, options).contains(CUT));
 }
 
-/// The digest at one triage gate extends the digest at every earlier one, byte for byte:
-/// the gate's history ends at the assistant turn that made its calls, and every earlier
+/// The digest at one triage extends the digest at every earlier one, byte for byte:
+/// the triage's history ends at the assistant turn that made its calls, and every earlier
 /// result has its verdict by then. That is what lets a triage request that reads the
 /// digest resume a cached prefix (backlog: separate-triage-reads-text.md).
 #[test]
@@ -253,8 +253,8 @@ fn the_digest_at_a_gate_extends_the_digest_at_every_earlier_gate() {
         user(9, "thanks"),
         assistant(10, "One more look.", vec![read_call("c4")]),
     ];
-    // Each gate's history: through an assistant turn that made calls.
-    let gates: Vec<usize> = log
+    // Each triage's history: through an assistant turn that made calls.
+    let triages: Vec<usize> = log
         .iter()
         .enumerate()
         .filter(|(_, e)| {
@@ -263,15 +263,15 @@ fn the_digest_at_a_gate_extends_the_digest_at_every_earlier_gate() {
         })
         .map(|(i, _)| i + 1)
         .collect();
-    assert_eq!(gates.len(), 4);
-    let digests: Vec<String> = gates
+    assert_eq!(triages.len(), 4);
+    let digests: Vec<String> = triages
         .iter()
         .map(|&end| render(&log[..end], Options::default()))
         .collect();
     for pair in digests.windows(2) {
         assert!(
             pair[1].starts_with(&pair[0]),
-            "a later gate's digest rewrote an earlier one's:\n{}\n---\n{}",
+            "a later triage's digest rewrote an earlier one's:\n{}\n---\n{}",
             pair[0],
             pair[1]
         );

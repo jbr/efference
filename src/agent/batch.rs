@@ -18,12 +18,12 @@ pub(super) struct Batch {
 }
 
 /// Run every call of a completion, capturing each result as it exists (docs/triage.md)
-/// so one gate can triage them together. Once a call aborts or redirects, the rest are paired
+/// so one triage can triage them together. Once a call aborts or redirects, the rest are paired
 /// with stand-ins rather than run.
 ///
 /// When `primer` is armed, its send is fired at the first execution start and runs
 /// against the batch's tools: the triage's warmup hides behind tool runtime instead of
-/// landing on the gate path (docs/transport.md). The sender rides
+/// landing on the triage path (docs/transport.md). The sender rides
 /// inside the batch future, so every exit — including an early `?` — drops it and lets
 /// an unfired primer resolve to nothing sent.
 pub(super) async fn run_batch<'a, F: Frontend, S: Spotter>(
@@ -157,7 +157,7 @@ async fn run_calls<F: Frontend, S: Spotter>(
             } => {
                 // The capture (docs/triage.md): the result is durable before
                 // anything judges it, as `Pending` — on the wire it is nothing yet, so
-                // no request built before the gate's verdict can carry a partial batch.
+                // no request built before the triage's verdict can carry a partial batch.
                 let payload = Payload::tool_result(call.id.clone(), result, WireState::Pending);
                 // An `ask`'s result is a submitted turn's words, so its entry names the
                 // submission and the submitter like a `User` entry does
@@ -206,7 +206,7 @@ async fn run_calls<F: Frontend, S: Spotter>(
             Decision::Withheld(payload) => {
                 // The interrupt's *after* juncture (docs/control-channel.md). The
                 // call finished but its output stops at the log — taken before the
-                // gate, so the discarded result is never triaged at and costs no
+                // triage, so the discarded result is never triaged at and costs no
                 // round-trip, which is the point of the verb. Its verdict is already
                 // final, so the entry goes down as it stands.
                 steps.push(Step::direct(shared, turn, payload)?);
@@ -231,14 +231,14 @@ async fn run_calls<F: Frontend, S: Spotter>(
     })
 }
 
-/// Resolve results that were captured but that no gate will ever see: the batch ended
+/// Resolve results that were captured but that no triage will ever see: the batch ended
 /// in an error, so the turn ends with it and there is no verdict to wait for.
 ///
 /// Withheld rather than dropped, because a result with no verdict projects to nothing
 /// and so orphans its `tool_use` on the next request (docs/README.md) — and the log
 /// keeps the bytes either way, which is the whole of what capture changed about them.
 /// `Elided` says what every other undecided path says (the interrupt's *after*
-/// juncture, an interrupted gate): the output is not on the wire, and nothing about
+/// juncture, an interrupted triage): the output is not on the wire, and nothing about
 /// triage or the tool failed.
 fn undecided(shared: &Session, turn: Turn, captured: &[crate::log::Seq]) -> std::io::Result<()> {
     for seq in captured {

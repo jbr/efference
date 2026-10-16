@@ -228,12 +228,12 @@ fn bounds_skip_keywords_and_unoffered_ids() {
     assert!(require_in_bounds(p, &shown).is_ok());
 }
 
-/// A gate the operator interrupted before a verdict (docs/control-channel.md) withholds
+/// A triage the operator interrupted before a verdict (docs/control-channel.md) withholds
 /// every result as the interrupt's *after* juncture does — `Elided`, never an error that
 /// blames triage, never the untriaged raw — and keeps the held attempts' breadcrumbs.
 #[test]
 fn an_interrupted_gate_withholds_every_result_without_blaming_triage() {
-    let outcome = GateOutcome::interrupted(2, vec!["held: overloaded".into()], Vec::new());
+    let outcome = HoldOutcome::interrupted(2, vec!["held: overloaded".into()], Vec::new());
     assert_eq!(outcome.results.len(), 2);
     for d in &outcome.results {
         assert!(matches!(d.wire, WireState::Elided), "withheld, not kept");
@@ -318,8 +318,8 @@ fn an_aborted_triage_stream_backs_off_on_the_main_loops_budget() {
 }
 
 /// Parallel calls are allowed on the shared envelope (docs/README.md), so a triage may
-/// answer a two-result gate in two `retain` calls; the verdicts merge, and the merged
-/// verdict covers the gate.
+/// answer a two-result triage in two `retain` calls; the verdicts merge, and the merged
+/// verdict covers the triage.
 #[test]
 fn a_verdict_split_across_parallel_retain_calls_merges() {
     let offered = ["a".to_string(), "b".to_string()];

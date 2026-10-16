@@ -145,10 +145,10 @@ impl Session {
         self.fold_state() == Some(FoldState::Writing)
     }
 
-    /// Whether the loop is held at a triage gate that produced no verdict
+    /// Whether the loop is held at a triage that produced no verdict
     /// (docs/triage.md): running, but sending nothing until the operator
-    /// retries. The held gate is the one stall set while the loop runs.
-    pub(crate) fn held_at_gate(&self) -> bool {
+    /// retries. The held triage is the one stall set while the loop runs.
+    pub(crate) fn held_at_triage(&self) -> bool {
         self.stall().is_some_and(|stall| {
             matches!(
                 stall.reason,
@@ -159,8 +159,8 @@ impl Session {
 
     /// Ask for a fold (`POST /loop/fold`), or say why it cannot run. A fold already
     /// writing is accepted again, as one request. A loop parked at its cold check or
-    /// held at a triage gate sends nothing while the account is written, so either
-    /// accepts a fold; the held gate's retry then triages the folded projection. `warm` is the operator's explicit
+    /// held at a triage sends nothing while the account is written, so either
+    /// accepts a fold; the held triage's retry then triages the folded projection. `warm` is the operator's explicit
     /// choice to fold a session whose cache is not believed expired, giving up the
     /// cached prefix; without it a warm session declines.
     pub(crate) fn request_fold(&self, warm: bool) -> Result<(), NotFoldable> {
@@ -173,7 +173,7 @@ impl Session {
         if self.asking().is_some() {
             return Err(NotFoldable::Asking);
         }
-        if self.running.load(Ordering::SeqCst) && !self.cold_parked() && !self.held_at_gate() {
+        if self.running.load(Ordering::SeqCst) && !self.cold_parked() && !self.held_at_triage() {
             return Err(NotFoldable::Busy);
         }
         if !warm && self.cold_since().is_none() {

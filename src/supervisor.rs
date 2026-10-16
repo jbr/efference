@@ -1,7 +1,7 @@
 //! The background-process supervisor (docs/supervisor.md).
 //!
 //! A backgrounded command is a *live entity*, not a log record: its running tail is
-//! re-sampled fresh at each triage gate, never frozen into the log (forcing a live
+//! re-sampled fresh at each triage, never frozen into the log (forcing a live
 //! tail through the immutable notification model would pile up stale snapshots,
 //! docs/supervisor.md). So this registry is **ephemeral daemon state** — a sibling of the
 //! inbox queue and the cache `Metrics` in [`Session`](crate::daemon): dropped on
@@ -9,7 +9,7 @@
 //!
 //! This module holds the state: the registry, its one bounded per-process
 //! capture buffer, and the read projections over it — [`Supervisor::views`] (the
-//! ambient auto-show the triage renders each gate), [`Supervisor::pin_snapshot`] (a
+//! ambient auto-show the triage renders each triage), [`Supervisor::pin_snapshot`] (a
 //! frozen tail when the model pins), and [`Supervisor::finish`] (the exit
 //! notification). The async spawn/drain orchestration — which needs `Arc<Session>`
 //! and the `POST /notifications` path — lives in `daemon.rs`.

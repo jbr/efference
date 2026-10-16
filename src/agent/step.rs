@@ -2,7 +2,7 @@
 //! and the tool run, up to but not including triage.
 //!
 //! A completion may make several calls (docs/README.md), so the loop runs each call
-//! here and triages the whole batch at one gate (docs/triage.md). Splitting execution
+//! here and triages the whole batch at one triage (docs/triage.md). Splitting execution
 //! from triage is what keeps the fork's request valid: a triage fired between calls would
 //! carry unanswered `tool_use` blocks and be rejected.
 
@@ -13,7 +13,7 @@ use crate::log::ToolTelemetry;
 
 /// What running one call produced, before triage.
 pub(super) enum Decision {
-    /// A real result to triage at the gate.
+    /// A real result to triage at the triage.
     Ran {
         result: RawResult,
         /// What the call cost and how it came out (docs/tools.md) — measured
@@ -27,12 +27,12 @@ pub(super) enum Decision {
         /// Who answered, when the call was an `ask` (docs/supervisor.md).
         reply: Option<Box<Reply>>,
     },
-    /// Payloads to append as they stand — they never reach the gate, because there is
+    /// Payloads to append as they stand — they never reach the triage, because there is
     /// no world output to curate (`consolidate`) or the call never ran. The caller
     /// appends them, so each is durable before the next call runs.
     Direct(Vec<Payload>),
     /// The operator interrupted while this call ran (docs/control-channel.md): it
-    /// finished, but its output stops at the log. Taken *before* the gate, so the
+    /// finished, but its output stops at the log. Taken *before* the triage, so the
     /// discarded result is never triaged at and costs no round-trip.
     Withheld(Payload),
     /// The human aborted at the gate; the turn ends.
@@ -46,7 +46,7 @@ pub(super) enum Decision {
 /// so what a step carries is that verdict's address rather than its output.
 pub(super) enum Step {
     /// Nothing left to land: the step's payloads are on the log already, and there is
-    /// no world output for a gate to curate.
+    /// no world output for a triage to curate.
     Direct,
     Ran {
         call: ToolCall,
@@ -100,7 +100,7 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
     // (journal/2026-08-07-session-key-review.md) — a confabulated verdict that
     // `spotter-log` then counted as a clean clear. The corrective result text
     // (`tools::unknown_tool_message`) is the whole answer, and it reaches the wire
-    // verbatim: a `Direct` payload never enters the gate, so no summary stands between
+    // verbatim: a `Direct` payload never enters the triage, so no summary stands between
     // the correction and the model.
     let callable = super::callable_names(toolbox);
     if !callable.contains(&call.name) {
@@ -110,7 +110,7 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
     // world to authorize, so it skips the cascade, and the wait for the reply is the
     // call. The interrupt's *after* juncture applies as for any call.
     if call.name == supervisor::ASK {
-        // An answered ask lands in the gate, so its triage is certain short of an
+        // An answered ask lands in the triage, so its triage is certain short of an
         // interrupt — fire the primer over the operator's deliberation window
         // (docs/transport.md).
         if let Some(go) = primer_go {
@@ -207,7 +207,7 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
     match approval {
         // `consolidate` acts on the log, not the world (docs/consolidate.md): record the
         // boundary mark + pair the `tool_use`. No world-run, no triage — there is no tool
-        // output to curate, so it never reaches the gate.
+        // output to curate, so it never reaches the triage.
         Approval::Approve if call.name == consolidate::NAME => {
             let note = consolidate::summary(&call.input).unwrap_or_default();
             let log = shared.snapshot();
@@ -276,14 +276,14 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
                     call_id: call.id.clone(),
                 }),
             )?;
-            // Approved, so a result the gate triages will follow short of an
+            // Approved, so a result triage handles will follow short of an
             // interrupt — fire the primer over the execution window
             // (docs/transport.md).
             if let Some(go) = primer_go {
                 let _ = go.send(true);
             };
             // Acquire the result. A backgrounded bash spawn returns immediately — the child
-            // runs on under the supervisor and its output surfaces at later gates
+            // runs on under the supervisor and its output surfaces at later triages
             // (docs/supervisor.md); everything else runs to completion through the toolbox.
             // `interrupted()` resolves on a `POST /loop/interrupt` — the tool's kill trigger
             // (kills the process group). Tool output streams to the control stream's `output` class

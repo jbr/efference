@@ -1,5 +1,5 @@
 //! Tests for the `dev` group (docs/operating.md) — the wire view, the spotter-log
-//! survey, and `triage`'s gate reconstruction. They live with the group so the
+//! survey, and `triage`'s triage reconstruction. They live with the group so the
 //! feature-off build compiles no test that names a feature-off item.
 
 use super::*;
@@ -474,9 +474,9 @@ fn describe_call_prefers_the_obvious_field() {
     assert!(other.contains("\"a\""));
 }
 
-// ---- `triage` gate reconstruction (docs/triage.md) ----
+// ---- `triage` triage reconstruction (docs/triage.md) ----
 
-use crate::triage_replay::gates;
+use crate::triage_replay::recorded_triages;
 use efference::log::{LogEntry, Origin, Payload, RawResult, ToolCall, Triage, WireState};
 
 fn call(id: &str) -> ToolCall {
@@ -505,12 +505,12 @@ fn triage(seq: u64, for_result: u64, retries: Vec<String>) -> LogEntry {
     )
 }
 
-/// A gate is a completion's calls **plus their results**, and its prefix ends *before* the
+/// A triage is a completion's calls **plus their results**, and its prefix ends *before* the
 /// first of those results: the live loop snapshots the log at the assistant turn, and
 /// `triage_messages` appends the results itself as fresh `tool_result` blocks. A prefix that
 /// already carried them would double every result in the replayed request.
 #[test]
-fn a_gate_carries_a_completions_results_and_a_prefix_that_stops_short_of_them() {
+fn a_triage_carries_a_completions_results_and_a_prefix_that_stops_short_of_them() {
     let log = vec![
         entry(
             1,
@@ -527,20 +527,20 @@ fn a_gate_carries_a_completions_results_and_a_prefix_that_stops_short_of_them() 
         result(3, "b"),
         triage(4, 2, vec![]),
     ];
-    let gates = gates(&log);
-    assert_eq!(gates.len(), 1);
-    assert_eq!(gates[0].seq, 2, "addressed by its first result's seq");
-    assert_eq!(gates[0].calls.len(), 2, "the whole completion's batch");
+    let recorded = recorded_triages(&log);
+    assert_eq!(recorded.len(), 1);
+    assert_eq!(recorded[0].seq, 2, "addressed by its first result's seq");
+    assert_eq!(recorded[0].calls.len(), 2, "the whole completion's batch");
     assert_eq!(
-        gates[0].prefix_end, 1,
+        recorded[0].prefix_end, 1,
         "the prefix is the assistant turn alone — the results are appended by the triage"
     );
 }
 
 /// The recorded first attempt is the baseline each replay is scored against, so it has to
-/// come off the gate's own `Triage` rather than the session's aggregate.
+/// come off the triage's own `Triage` rather than the session's aggregate.
 #[test]
-fn a_gate_carries_its_recorded_first_attempt() {
+fn a_triage_carries_its_recorded_first_attempt() {
     let log = vec![
         entry(
             1,
@@ -573,24 +573,24 @@ fn a_gate_carries_its_recorded_first_attempt() {
         result(5, "b"),
         triage(6, 5, vec![]),
     ];
-    let gates = gates(&log);
-    assert_eq!(gates.len(), 2, "one gate per completion");
+    let recorded = recorded_triages(&log);
+    assert_eq!(recorded.len(), 2, "one triage per completion");
     assert!(
-        gates[0]
+        recorded[0]
             .recorded_first_failure
             .as_deref()
             .is_some_and(|w| w.contains("edit"))
     );
     assert_eq!(
-        gates[1].recorded_first_failure, None,
+        recorded[1].recorded_first_failure, None,
         "this one complied first try"
     );
 }
 
-/// A completion whose calls never ran — aborted, interrupted, withheld — opens no gate,
+/// A completion whose calls never ran — aborted, interrupted, withheld — opens no triage,
 /// so it must not appear as one with an empty result set.
 #[test]
-fn a_completion_with_no_results_opens_no_gate() {
+fn a_completion_with_no_results_opens_no_triage() {
     let log = vec![entry(
         1,
         Payload::Assistant {
@@ -602,7 +602,7 @@ fn a_completion_with_no_results_opens_no_gate() {
             upstream_failure: None,
         },
     )];
-    assert!(gates(&log).is_empty());
+    assert!(recorded_triages(&log).is_empty());
 }
 
 #[test]

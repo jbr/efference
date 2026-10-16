@@ -2,7 +2,7 @@
 // conditions, from three level-triggered topics: the loop is running, it is
 // waiting to retry the upstream, it is idle after finishing, or it has stopped
 // short (docs/transport.md). A stall is the one `running` alone cannot say — a
-// stalled session and a finished one are the same `false`, and a triage gate
+// stalled session and a finished one are the same `false`, and a triage
 // held on the upstream is stalled while still `true` — so the `stall` topic
 // decides it. A pending gate or ask reads as `waiting`, after those two. A loop parked at the cold check (the `park` topic) is `running` too, and
 // reads as its own condition: it waits on the operator. A fold in flight (the `fold` topic) reads as running: the loop is

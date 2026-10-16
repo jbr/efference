@@ -214,7 +214,7 @@ impl<'a> InteractiveState<'a> {
     /// flight.
     ///
     /// A completion may make several calls (docs/README.md), and the loop appends
-    /// *no* result until every call has run and the gate has closed
+    /// *no* result until every call has run and the triage has closed
     /// (docs/triage.md). So on a multi-call step this reports the entry's first
     /// call for the whole step, not whichever call is currently executing — exact for a
     /// single call; on a batch the cost is a stale label rather than a wrong lifecycle

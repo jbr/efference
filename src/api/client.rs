@@ -108,7 +108,7 @@ pub struct Client {
     thinking: ThinkingSupport,
     /// Never think, whatever the model would do on its own (docs/triage.md):
     /// the separate-model triage's default, where the triage's reasoning is
-    /// discarded with the tail and costs latency and tokens on every gate.
+    /// discarded with the tail and costs latency and tokens on every triage.
     pub(super) thinking_off: bool,
     /// The per-turn output cap. Defaults to the pre-reasoning-era 4096;
     /// [`Self::with_max_output`] raises it to the model's reported cap — a

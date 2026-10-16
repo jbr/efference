@@ -5,7 +5,7 @@ use super::*;
 /// The detached drain task for one backgrounded process (docs/supervisor.md): feed every
 /// output chunk into the registry's capture buffer until the child exits (EOF —
 /// reached naturally, or because a kill closed the pipes), then mark it exited and
-/// fire its exit notification into the inbox, where the next triage gate adjudicates
+/// fire its exit notification into the inbox, where the next triage adjudicates
 /// it like any notification. The supervisor lock is taken per chunk and never held
 /// across an await.
 pub(crate) async fn drain_background(
@@ -64,7 +64,7 @@ pub(crate) async fn drain_background(
 impl Session {
     /// Spawn a backgrounded bash command into the supervisor (docs/supervisor.md). Returns
     /// its `p#<n>` handle immediately; a detached task drains the child's output
-    /// into the registry (re-surfaced live at each triage gate) and fires an exit
+    /// into the registry (re-surfaced live at each triage) and fires an exit
     /// notification when it ends. The child leads a fresh process group, so one
     /// `killpg` reaps it and any grandchildren on teardown.
     /// `call_id` is the `tool_use` this spawn answers — the call↔process mapping

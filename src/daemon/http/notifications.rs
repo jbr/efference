@@ -3,7 +3,7 @@
 use super::*;
 
 /// Enqueue an ambient notification into the inbox (docs/inbox.md). 202 — it waits
-/// for the next triage gate; a client watches the `notifications` topic.
+/// for the next triage; a client watches the `notifications` topic.
 pub(super) async fn notify(mut conn: Conn) -> Conn {
     let Some(shared) = shared_of(&conn) else {
         return missing_state(conn);

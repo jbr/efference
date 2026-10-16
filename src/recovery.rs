@@ -19,7 +19,7 @@ use crate::project::skipped_seqs;
 pub enum CallState {
     /// A result with its decision: nothing left to do.
     Decided,
-    /// A `Pending` result with no `ResultVerdict`: triaged at the resumed gate, the call
+    /// A `Pending` result with no `ResultVerdict`: triaged at the resumed triage, the call
     /// does not run again.
     Captured { result_seq: Seq },
     /// No result and no sign it ran: goes through the permission cascade again.

@@ -1,9 +1,9 @@
 //! Timed primer/triage cache ladder (docs/transport.md).
 //!
 //! Experiment verb, dev-gated: plants triage primers at controlled gaps against one
-//! recorded gate and replays the recorded triage per rung, reporting cache reads.
+//! recorded triage and replays the recorded triage per rung, reporting cache reads.
 //! Decides eviction vs write-visibility lag vs envelope keying without spending
-//! survey gates: a back-to-back primer pair that chains proves truncated primers
+//! survey triages: a back-to-back primer pair that chains proves truncated primers
 //! plant; a gapped pair that misses bounds the lifetime; a triage after a forced
 //! primer is the v1.1 verdict live. Sends real requests unless `--dry-run`.
 
@@ -50,7 +50,7 @@ async fn plant(
     }))
 }
 
-/// Run the ladder against one recorded gate: the deepest gate by default, which is
+/// Run the ladder against one recorded triage: the deepest triage by default, which is
 /// where a cold prefix hurts most.
 #[allow(clippy::too_many_arguments)] // one flag, one parameter; the CLI is the arity
 pub(crate) async fn ladder(
@@ -79,15 +79,15 @@ pub(crate) async fn ladder(
     );
     let recorded_identity = efference::log::recorded_inference(&entries);
 
-    let all = super::triage_replay::gates(&entries);
-    let gate = match seq {
+    let all = super::triage_replay::recorded_triages(&entries);
+    let triage = match seq {
         Some(seq) => all
             .iter()
             .find(|g| g.seq == seq)
-            .ok_or_else(|| format!("no gate triaging result seq {seq} in {}", path.display()))?,
+            .ok_or_else(|| format!("no triage triaging result seq {seq} in {}", path.display()))?,
         None => all
             .last()
-            .ok_or_else(|| format!("no gates in {}", path.display()))?,
+            .ok_or_else(|| format!("no triages in {}", path.display()))?,
     };
 
     let (system, context_block) = entries
@@ -103,17 +103,17 @@ pub(crate) async fn ladder(
     let toolbox = Toolbox::bash_and_mcps(std::env::current_dir()?, None)?;
     let tools = efference::agent::tool_definitions(&toolbox);
 
-    // The primer input: the main request's turns through this gate's calls, borrowed
+    // The primer input: the main request's turns through this triage's calls, borrowed
     // the way the live loop borrows them — byte-identical by construction. Through
     // the assistant turn's *callers*, not its calls: the live input ends before the
     // calls it produced, and replaying them without their results is refused.
-    let prefix = &entries[..gate.prefix_end];
-    let mut turns = efference::project::project_semantic(&entries[..gate.calls_at]);
+    let prefix = &entries[..triage.prefix_end];
+    let mut turns = efference::project::project_semantic(&entries[..triage.calls_at]);
     turns.push(efference::project::WireTurn::Breakpoint);
-    let pending: Vec<Pending<'_>> = gate
+    let pending: Vec<Pending<'_>> = triage
         .calls
         .iter()
-        .zip(&gate.raws)
+        .zip(&triage.raws)
         .map(|(call, raw)| Pending { call, raw })
         .collect();
 
@@ -123,8 +123,8 @@ pub(crate) async fn ladder(
         rows.push(row);
     };
     emit(format!(
-        "ladder on {label} gate seq {} · {} primer turns · {} result(s)",
-        gate.seq,
+        "ladder on {label} triage seq {} · {} primer turns · {} result(s)",
+        triage.seq,
         turns.len(),
         pending.len()
     ));

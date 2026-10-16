@@ -22,7 +22,7 @@ pub(super) const ASK_BANNER: &str = "⟢ triage · the harness asks: answer, don
 /// tool in this environment" — false, and the raw is discarded, so the invented claim was
 /// the only thing that survived onto the canonical wire
 /// (journal/2026-08-07-session-key-review.md). Dropping the wrong lines is the failure this
-/// gate is designed against; asserting past the output is worse, because nothing
+/// triage is designed against; asserting past the output is worse, because nothing
 /// downstream can detect it.
 ///
 /// Two clauses answer a second shape of the same failure, where the note is true of the
@@ -98,7 +98,7 @@ const REPORT_FIELDS: &str =
               one you can act on. This is about the intent, never about the task: do
               not suggest what to call next or what the output means.";
 
-/// The `retain` ask, scoped to the results **this gate** is deciding
+/// The `retain` ask, scoped to the results **this triage** is deciding
 /// (docs/triage.md).
 ///
 /// Two properties the text must hold, each answering a live failure on a long transcript:
@@ -109,11 +109,11 @@ const REPORT_FIELDS: &str =
 ///   for call ids. A
 ///   model deep in a session answered by re-triaging the entire transcript — twenty-odd
 ///   entries keyed by `[seq]` tags, its own dialect's internal tool names, and invented
-///   ids — and the id actually under the gate was often not among them, so coverage
-///   failed and the gate hard-errored. Saying what is *not* in scope is what stops it.
-/// - **A single-result gate should not ask for a label at all.** Naming the result when
+///   ids — and the id actually under the triage was often not among them, so coverage
+///   failed and the triage hard-errored. Saying what is *not* in scope is what stops it.
+/// - **A single-result triage should not ask for a label at all.** Naming the result when
 ///   only one is in question is transcription with no decision in it. The flat top-level
-///   `keep`/`note` is asked for instead; the `results` array is for gates that genuinely
+///   `keep`/`note` is asked for instead; the `results` array is for triages that genuinely
 ///   carry several, keyed by the short labels of [`labels`](super::labels) rather than
 ///   provider call ids, which models copied back with characters dropped. The labels
 ///   are interpolated in that case — the triage's tail is thrown
@@ -132,7 +132,7 @@ const REPORT_FIELDS: &str =
 /// non-`retain` call is answered with an error `tool_result` and the ask is renewed
 /// (`extend_with_retry`). Saying so non-optionally beats hinting, and stays true.
 ///
-/// `riders` are the field rows for whatever else this gate carries (inbox, background,
+/// `riders` are the field rows for whatever else this triage carries (inbox, background,
 /// surfacing roster), placed inside the block rather than appended after it.
 /// `reader` says who answers: the agent's own model (`Reader::Main`, the shared triage) is
 /// asked for a note to self ([`KEEP_FIELDS`]); a separate triage model
@@ -175,7 +175,7 @@ entries, one per label listed here and no others: {labels}.",
 }
 
 /// How much of a roster item the triage view spells out — the cost axis
-/// (docs/triage.md). The roster is re-sent on **every** gate and lives in the
+/// (docs/triage.md). The roster is re-sent on **every** triage and lives in the
 /// fork's uncached tail, so its size is paid per tool result for the whole session.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum RosterStyle {
@@ -190,7 +190,7 @@ enum RosterStyle {
     NamePath,
     /// `[name]` alone, as the roster shipped before.
     Name,
-    /// No roster section at all, and so no `surfaced` decision this gate.
+    /// No roster section at all, and so no `surfaced` decision this triage.
     Off,
 }
 
@@ -236,7 +236,7 @@ fn first_sentence(s: &str) -> &str {
 /// rows must stay exactly what production sends — a variant assembled anywhere else would
 /// drift from `retain_instruction`, which is the one divergence the replay rig exists to
 /// rule out. A full-text override was the other candidate and can't work: a fifth of the
-/// gates in a real session carry several results and need their ids interpolated.
+/// triages in a real session carry several results and need their ids interpolated.
 struct AskVariant {
     roster: RosterStyle,
     banner: bool,
@@ -248,7 +248,7 @@ struct AskVariant {
     block: bool,
     /// The verdict is the call's arguments; prose is not read. Ships on — measured
     /// against the all-features-off base, where there was headroom to see it: 14% → 5%,
-    /// 15 gates improved to 4 regressed (p ≈ 0.02).
+    /// 15 triages improved to 4 regressed (p ≈ 0.02).
     verdict_channel: bool,
     /// Additive candidate: the output above is complete, nothing further is coming.
     output_final: bool,
@@ -317,7 +317,7 @@ impl AskVariant {
         v
     }
 
-    /// Assemble the ask from the gate's `shape` sentence and its `fields` rows.
+    /// Assemble the ask from the triage's `shape` sentence and its `fields` rows.
     ///
     /// `no-block` collapses the same rows into one paragraph rather than restoring the
     /// pre-reshape wording, so the ablation isolates *formatting* and holds content fixed;
@@ -377,7 +377,7 @@ further is coming, so decide on what is there."
     }
 }
 
-/// The gate-scoped riders, as field rows for [`retain_instruction`]'s block. Each is added
+/// The triage-scoped riders, as field rows for [`retain_instruction`]'s block. Each is added
 /// only when its section is actually present in the view above.
 pub(super) const INBOX_FIELD: &str =
     "  inbox       The pending notifications under \"inbox\" above, an [id] each. `pin` the ids
@@ -399,7 +399,7 @@ pub(super) const SURFACE_FIELD: &str =
               before you rely on memory. Name nothing if none apply.";
 
 /// Render the inbox + background sections of a triage view (docs/inbox.md, docs/supervisor.md) — shared by the
-/// tool-result-riding gate and the standalone idle triage. Each item by its `[seq]` /
+/// tool-result-riding triage and the standalone idle triage. Each item by its `[seq]` /
 /// `[p#n]` handle, with running-process tails indented.
 pub(super) fn append_inbox_and_background(
     view: &mut String,
@@ -431,7 +431,7 @@ pub(super) fn append_inbox_and_background(
 }
 
 /// The fork's surfacing roster (docs/triage.md): the **listed** `[context]` items
-/// — stub files carrying a `path`, read on demand — that no prior gate has surfaced yet.
+/// — stub files carrying a `path`, read on demand — that no prior triage has surfaced yet.
 /// A pure fold over the prefix: the boot `Preamble`'s structured listing (last one wins on
 /// a multi-boot log) minus every name any prior `Triage.surfaced` already carried (the
 /// surfaced-once dedup, `Triage`-only — no path-load tracking). Inlined and exec items are
@@ -471,7 +471,7 @@ pub(super) fn roster_name(item: &Item) -> &str {
     }
 }
 
-/// Whether this gate actually shows a roster section — and so whether the ask should offer
+/// Whether this triage actually shows a roster section — and so whether the ask should offer
 /// a `surfaced` field at all. Not the same as "the roster is non-empty": a style that
 /// renders nothing must also drop the field, or the ask names a section that isn't there.
 pub(super) fn roster_shown(roster: &[Item]) -> bool {
@@ -481,7 +481,7 @@ pub(super) fn roster_shown(roster: &[Item]) -> bool {
 /// Render the surfacing roster section of a triage view (docs/triage.md): the
 /// available-but-unloaded context items, each spelled exactly as the boot preamble spelled
 /// it, through the preamble's own renderer so the two can't drift. Only in the tool-result
-/// gate — the idle triage rides no work in flight.
+/// triage — the idle triage rides no work in flight.
 ///
 /// The path rides alongside the name because a name alone under-describes what the item
 /// *is*: a session met a listed skill as a bare `[ferritin]` and built a tool call out of
@@ -503,7 +503,7 @@ pub(super) fn append_roster(view: &mut String, roster: &[Item]) {
 /// output.
 ///
 /// Numbering restarts at 1 in every block, and the header is what the `retain`
-/// verdict's `result` addresses. A gate can carry several results, so a single
+/// verdict's `result` addresses. A triage can carry several results, so a single
 /// continuous coordinate system would invite the model to keep lines from one result
 /// under another's verdict — a silent mis-attribution, since a wrong verdict renders
 /// exactly like a right one. Per-block numbering makes the coordinate systems visibly
@@ -555,7 +555,7 @@ pub(super) fn bypassed_view(call: &ToolCall, shape: &str) -> String {
 }
 
 /// Render every line `cat -n`-style (1-based, 6-wide, tab-separated). This is the
-/// coordinate system the triage gate (docs/triage.md) addresses with
+/// coordinate system the triage (docs/triage.md) addresses with
 /// `retain(lines=…)`, so it is shown ONLY in the throwaway fork — never on the
 /// canonical wire, which uses the leaner `@@`-hunks in
 /// [`render_triaged`](crate::project::render_triaged).
@@ -570,16 +570,16 @@ pub(super) fn number_lines(lines: &[&str]) -> String {
 
 /// Build the triage's request (docs/triage.md): the cached
 /// prefix-through-`tool_use`, then one user message carrying every result plus the
-/// gate-scoped riders and the retain prompt.
+/// triage-scoped riders and the retain prompt.
 ///
 /// **The invariant this exists to hold:** the trailing assistant message carries one
 /// `tool_use` per call the completion made, and the API rejects a request that leaves
 /// any of them unanswered. So the tail emits one `tool_result` per [`Pending`] — which
 /// is only correct because the loop runs *every* call of a completion before opening the
-/// gate. Triaging between calls would leave the later ones orphaned, which is exactly the
+/// triage. Triaging between calls would leave the later ones orphaned, which is exactly the
 /// failure this replaced.
 ///
-/// The riders (inbox, background, surfacing roster) are gate-scoped, so they ride the
+/// The riders (inbox, background, surfacing roster) are triage-scoped, so they ride the
 /// trailing text block rather than any one result. Pure and separate from the round-trip
 /// so the pairing invariant is testable without a live client.
 pub(super) fn triage_messages(
@@ -590,7 +590,7 @@ pub(super) fn triage_messages(
     background: &[BgView],
     roster: &[Item],
 ) -> Vec<WireTurn> {
-    let (results, ask) = gate_parts(pending, inbox, background, roster, reader);
+    let (results, ask) = triage_parts(pending, inbox, background, roster, reader);
     // The prefix hits cache; only the raws and the instruction are fresh, and they are
     // discarded — the canonical lineage never sees raw (docs/triage.md). The
     // frontier sits before that raw tail: the shared prefix is read, the throwaway
@@ -615,27 +615,27 @@ pub(super) fn triage_messages(
 
 /// One result as the triage request shows it: labelled and line-numbered, or a stand-in
 /// for a bypassed result.
-pub(super) struct GateResult {
+pub(super) struct TriageResult {
     pub(super) call_id: crate::log::CallId,
     pub(super) content: String,
     pub(super) is_error: bool,
 }
 
-/// The gate-scoped half of a triage request, shared by every view of the history: each
+/// The triage-scoped half of a triage request, shared by every view of the history: each
 /// result as triage reads it, and the trailing text carrying the riders (inbox,
 /// background, surfacing roster) and the retain instruction.
-pub(super) fn gate_parts(
+pub(super) fn triage_parts(
     pending: &[Pending<'_>],
     inbox: &[ShownNotification],
     background: &[BgView],
     roster: &[Item],
     reader: Reader,
-) -> (Vec<GateResult>, String) {
+) -> (Vec<TriageResult>, String) {
     let mut sections = String::new();
     append_inbox_and_background(&mut sections, inbox, background);
     append_roster(&mut sections, roster);
 
-    // Scoped to exactly this gate's ids, and shape-selected on its size — the tail is
+    // Scoped to exactly this triage's ids, and shape-selected on its size — the tail is
     // discarded with the fork, so nothing here is cache-keyed (docs/triage.md).
     // A rider's field row is offered only when its section is actually above.
     let labels = labels(pending);
@@ -657,7 +657,7 @@ pub(super) fn gate_parts(
     let results = pending
         .iter()
         .zip(&labels)
-        .map(|(p, label)| GateResult {
+        .map(|(p, label)| TriageResult {
             call_id: p.call.id.clone(),
             content: match (bypassed(p), label) {
                 (Some(shape), _) => bypassed_view(p.call, shape),
@@ -668,7 +668,7 @@ pub(super) fn gate_parts(
         })
         .collect();
     // `sections` already opens with its own blank line when non-empty, and is empty
-    // outright on a gate carrying no riders — so trim rather than always joining with a
+    // outright on a triage carrying no riders — so trim rather than always joining with a
     // gap, which left the block opening on stray whitespace.
     let ask = match sections.trim() {
         "" => instruction,

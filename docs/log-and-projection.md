@@ -252,7 +252,7 @@ enum WireState {
     Raw,                                              // project the full `raw`
     Triaged(Triaged),                             // the verdict, re-rendered by project
     Elided,                                           // project a placeholder
-    TriageFailed { why: String },                     // no longer written (a gate without a verdict holds); older logs project a hard error
+    TriageFailed { why: String },                     // no longer written (a triage without a verdict holds); older logs project a hard error
 }
 struct Triaged { keep: Keep, note: Option<String>, intent_feedback: Option<String> }
 enum Keep { All, None, Ranges(Vec<(usize, usize)>) }

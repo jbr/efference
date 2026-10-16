@@ -64,7 +64,7 @@ impl Session {
     /// is idempotent — the loop has one to consume either way.
     ///
     /// One case is accepted while the loop runs: it is **waiting on the upstream**
-    /// — a backoff pause between attempts, or a triage gate held after its budget
+    /// — a backoff pause between attempts, or a triage held after its budget
     /// ran out. The same gesture that retries a stalled trajectory then retries
     /// that wait now (docs/transport.md), so the operator has one "try again"
     /// whichever side of the give-up they are on.

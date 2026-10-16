@@ -4,18 +4,18 @@ Every tool result enters the canonical lineage through a fork: a throwaway branc
 that shares a cached prefix with canonical but whose raw content and extraction
 prompt are never appended to it.
 
-## The gate covers a completion's results, not one result
+## The triage covers a completion's results, not one result
 
-A gate is opened once per completion and carries every result that completion produced.
+A triage is opened once per completion and carries every result that completion produced.
 Usually that is one, since every request asks for a single call
 ([README.md](README.md)) — but the ask is not enforceable, so the loop runs all of a
-completion's calls first and opens the gate over the batch.
+completion's calls first and opens the triage over the batch.
 
 This grouping is load-bearing, not a convenience. The triage's prefix ends with the
 assistant message, which carries one `tool_use` per call; the API rejects a request that
 leaves any of them unanswered. A triage fired *between* calls therefore builds an invalid
 request whenever a completion made more than one — the later calls have no results yet.
-Running every call before opening the gate means the tail can answer all of them with
+Running every call before opening the triage means the tail can answer all of them with
 real output, so nothing is orphaned and no placeholder is needed.
 
 Each result is rendered as its own block, headed by a short **label** (`result r1 ·
@@ -24,17 +24,17 @@ lines from one result under another's verdict — a mis-attribution that renders
 like a correct verdict, so nothing downstream could detect it. A multi-result verdict is
 correspondingly an array keyed by label; a verdict naming a label that was never offered
 is dropped, the same harness-side guard applied to notification ids and roster names. A
-**single-result** gate — the overwhelming majority — asks for no label at all; see
+**single-result** triage — the overwhelming majority — asks for no label at all; see
 [the two answer shapes](#two-answer-shapes-and-one-scoped-ask) below.
 
-Labels are `r1`, `r2`, … over the gate's offered results in call order, assigned and
+Labels are `r1`, `r2`, … over the triage's offered results in call order, assigned and
 mapped back to calls harness-side (`triage::labels`); the provider's call id stays on
 the `tool_result` pairing and never appears in the view or the ask. Keying by call id
 asks the model to copy back a 24–36 character opaque string, which verdicts got wrong
 by dropped or altered characters under both UUID-shaped and `call_…` ids; each miss
 failed coverage and withheld a result the model had decided on.
 
-The inbox, background tails, and surfacing roster are **gate-scoped** — decided once per
+The inbox, background tails, and surfacing roster are **triage-scoped** — decided once per
 step rather than per result — so they ride the trailing text block and their dispositions
 land on the last `Triage` of the batch. That placement is tail-ward, keeping the wire
 append-only, and is identical to where they land when a completion carried one call.
@@ -52,26 +52,26 @@ invalidated. What would otherwise be a mutation problem becomes an append proble
 
 A result is on the log before anything judges it. The loop appends each call's
 `ToolResult` the moment the call returns (`agent/batch.rs`), with
-`WireState::Pending`, and after the gate decides, appends a
+`WireState::Pending`, and after the triage decides, appends a
 `Payload::ResultVerdict { for_result, wire }` naming that result's `seq`
 (`agent/landing.rs`). The raw output is written once; the verdict carries only the
 decision. Projection resolves each result through its verdict
 (`log::result_verdicts`: the first non-pending verdict for a pending result wins, and
 a verdict naming a result that already carries a final wire is ignored) and skips a
 result still pending, so the main agent never sees untriaged output and no request
-built during the gate can carry half a batch. A result logged with its final wire, as
+built during the triage can carry half a batch. A result logged with its final wire, as
 every result was before capture, projects as it always did.
 
 What the capture buys: clients can show a result while its triage runs (the entry is
-on `/events` as soon as it exists), a gate held for minutes holds nothing that exists
-only in memory, and a session that stops mid-gate leaves its results on disk for a
+on `/events` as soon as it exists), a triage held for minutes holds nothing that exists
+only in memory, and a session that stops mid-triage leaves its results on disk for a
 later resume to triage rather than rerun. Triage reads the result back from the log
 (`Session::entry_at`) rather than from the tool's return value, so it sees the masked
 bytes every other reader sees ([env.md](env.md)).
 
 Every captured result gets exactly one final verdict. A batch that ends in an error
-before its gate resolves what it already captured as `Elided` (`undecided` in
-`agent/batch.rs`), the same verdict an interrupted gate gives; a gate that answered
+before its triage resolves what it already captured as `Elided` (`undecided` in
+`agent/batch.rs`), the same verdict an interrupted triage gives; a triage that answered
 for fewer results than it was offered (which the triager reports as a failure rather
 than returning) is backstopped the same way and logged at error level. A pending result
 with no verdict would project to nothing and orphan its `tool_use`.
@@ -97,7 +97,7 @@ Size is not an exemption; **shape** is the one that is. A result whose value is 
 machine-precise handle the model must reproduce exactly cannot pass through a
 summarizer: a paraphrase preserves the meaning and destroys the function, and the
 information that this result is unsummarizable is not present in the result. The triage
-judges such a result reasonably — a short refusal is exactly the boilerplate the gate
+judges such a result reasonably — a short refusal is exactly the boilerplate the triage
 compresses — and the paraphrase is silently useless.
 
 So the decision is taken away from the fork rather than delegated to a prompt.
@@ -112,17 +112,17 @@ handle-bearing format is one more entry in that list, not another mechanism.
 
 A matched result is **bypassed**:
 
-- It gets no label and is not in the gate's `offered` list, so the ask never mentions it
+- It gets no label and is not in the triage's `offered` list, so the ask never mentions it
   and coverage never requires a verdict for it.
 - Its block in the triage view is a stand-in — the call must still be answered or the
   request is invalid, but its output is not shown, since no verdict can change it.
 - Its wire form is `WireState::Raw`: the whole body reaches the model byte-for-byte.
 - The `Triage` records `origin: Fallback` with a `raw_keep` breadcrumb naming the shape,
-  which is what distinguishes a bypass from a failed gate in the log after the fact. Its
+  which is what distinguishes a bypass from a failed triage in the log after the fact. Its
   lines count toward neither side of the retention ratio: nobody triaged them.
 
-When **every** result in a gate is bypassed the triage is not sent at all — the skipped
-verdict is also a skipped round-trip. The gate-scoped riders wait for the next gate; an
+When **every** result in a triage is bypassed the triage is not sent at all — the skipped
+verdict is also a skipped round-trip. The triage-scoped riders wait for the next triage; an
 undispositioned notification stays active and is re-shown there ([inbox.md](inbox.md)).
 
 Two alternatives were rejected. **Prompting the fork** to preserve identifiers is exactly
@@ -154,7 +154,7 @@ What forcing bought is re-bought harness-side:
   with session state would re-key the envelope mid-session. Invented dispositions were
   already dropped harness-side, so conditionality guarded nothing the filters don't.
   The **tail instruction** is under no such constraint — it is discarded with the fork —
-  so what varies per gate (the ask's scope, its answer shape, the offered ids) lives
+  so what varies per triage (the ask's scope, its answer shape, the offered ids) lives
   there, and the schema carries every shape unconditionally with nothing `required`.
 - **A standing permission clause** on both descriptions — "do not call this tool
   unless asked to do so by the harness." Permission-phrased, not identity-phrased
@@ -174,7 +174,7 @@ What forcing bought is re-bought harness-side:
   with an error `tool_result` carrying the why, the ask is renewed, and the request
   goes again — a warm prefix re-read on the same lineage. Exhaustion is a hard error
   (below), never a keep-all. Every non-compliant attempt — **including ones a retry
-  recovered from** — is recorded attempt-stamped on the gate's `Triage` (`retries`)
+  recovered from** — is recorded attempt-stamped on the triage's `Triage` (`retries`)
   and rendered as a `⚠ triage retry` annotation in the TUI transcript: a runtime
   triage failure is a harness defect signal, never silently accepted, and the
   compliance record is a fold over that field. Implemented in `src/triage/request.rs`.
@@ -199,14 +199,14 @@ drops the parts of it that only served that:
   or unmounted list — those describe the agent's perimeter.
 - **A `tools[]` of only `retain` and `triage`**, and the asked-for tool **forced**
   (`tool_choice: {type: tool}`), so a wrong-tool answer cannot happen. The first run
-  under `auto` opened five of eight gates with an invented `read` or `bash`;
+  under `auto` opened five of eight triages with an invented `read` or `bash`;
   `--triage-auto-choice` restores `auto` as the ablation, and is what a Claude
   triage model needs if it is to think.
 - **Its own sticky key** (`Endpoint::for_triage`, a `-triage` suffix), for the same
   reason as the spotter's ([transport.md](transport.md)).
 - **Thinking off** (`Client::without_thinking`) unless `--triage-thinking` or
   `--triage-effort`: the triage's reasoning is discarded with the tail, so it is latency
-  and tokens per gate. How "off" is spelled follows the model's metadata
+  and tokens per triage. How "off" is spelled follows the model's metadata
   (`ModelCapabilities::thinking`, [transport.md](transport.md)): `thinking: disabled`
   where the model takes it, `between_tools` for an Anthropic model that refuses
   `disabled`, and the field omitted where reasoning is mandatory or the source
@@ -231,7 +231,7 @@ opposite verdicts on the same self-scheduled timer exit two cycles apart
 (journal/2026-09-14-idle-triage-on-the-agent-lineage.md).
 
 The prefix is the same canonical projection either way, so the own lineage is warm
-across gates: each triage writes the newest assistant turn and reads the rest, at the
+across triages: each triage writes the newest assistant turn and reads the rest, at the
 triage model's rate. The tail ask keeps its frame — first person, "the call you just
 made"; the `+third-person` ask variant is the framing alternative, an ablation, not a
 default — but its **`keep`/`note` rows differ by who answers**. The agent's own model
@@ -244,10 +244,10 @@ asks to *see* (kept) from what it asks as a *question* (answered in the note, ke
 one line that proves it), lets a fact replace lines that only witness it (a run of
 passing tests), and never lets prose replace a line the agent may copy, search for, or
 edit from. The grounding rules below hold for both. The split came out of replaying
-hand-labelled gates (backlog: triage-ground-truth).
+hand-labelled triages (backlog: triage-ground-truth).
 
 **Evaluating a candidate offline.** `efference dev triage <session> --triage-model X`
-replays every recorded gate under the separate-model shape — the same constructor
+replays every recorded triage under the separate-model shape — the same constructor
 boot uses (`Triager::for_triage_model`), the session's own preamble context and
 model name in the triage system prompt — and compares each draw's verdict against the
 **recorded** one, line for line after the cap. The reference is what the session's own
@@ -257,7 +257,7 @@ both, over-retention (lines the candidate kept that the reference dropped) and
 under-retention (the reverse) as separate fractions since they are different failures,
 exact-match count, and `none` verdicts against a reference that kept something. A
 table sorts every compared result by disagreement with both notes beside it; `--out`
-writes every row as JSON. Per-gate judgment against the same prefix is what this
+writes every row as JSON. Per-triage judgment against the same prefix is what this
 measures; a candidate triaging from turn one would build a different prefix, and only
 a live session measures that.
 
@@ -267,24 +267,24 @@ smaller than the agent's (backlog/inbox/triager-experiment.md).
 
 ## Two answer shapes, and one scoped ask
 
-The schema is static while gate size is not, so `retain` carries both shapes and the
+The schema is static while triage size is not, so `retain` carries both shapes and the
 tail instruction (`retain_instruction` in `src/triage/prompt.rs`) names which one this
-gate wants.
+triage wants.
 
 **The ask is shaped against the pull of the turn it interrupts.** It carries its own
 banner, like every other section of the view; it opens on the imperative and
 repeats it last; it states that this is a triage turn and not a work turn; and the
 per-field asks (`keep`, `note`, and whichever of `inbox`/`background`/`surfaced` this
-gate carries) are a scannable block rather than prose appended after the fact. What
+triage carries) are a scannable block rather than prose appended after the fact. What
 shipped first was one unbroken paragraph assembled from four separately-authored
 fragments, opening on a description and closing on a tangent — the only *instruction* in
 the view formatted as a trailing note about the sections above it. A session answered 29%
-of its gates with a work tool instead of a verdict, usually the tool it went on to call
+of its triages with a work tool instead of a verdict, usually the tool it went on to call
 on the next canonical turn, at a rate that climbed with session depth; every structural
 signal in the request said "ordinary tool result", including `tools[]` carrying the whole
 world toolset under `tool_choice: auto`.
 
-Measured by replaying a recorded session's gates one feature at a time
+Measured by replaying a recorded session's triages one feature at a time
 (`efference dev triage`), **no single one of those is necessary** — ablating any one of the
 banner, the leading/closing imperative, the triage-turn stance, or the field block leaves
 the failure rate where it is, while ablating all four costs about twelve points. The
@@ -292,13 +292,13 @@ shaping is redundant rather than resting on a particular sentence, which is the 
 thing to know before editing it.
 
 **The ask says it is the harness's.** The banner is `⟢ triage · the harness asks: answer,
-don't act`, on both the gate's ask and the idle `triage` view, and the preamble names a
+don't act`, on both the triage's ask and the idle `triage` view, and the preamble names a
 `⟢ triage` block as the one `⟢` line that asks for something, spelling out `retain` and
 `triage` (`assets/prompts/session.md`). The ask rides an unprefixed user turn, which the
 preamble otherwise attributes to the operator, and the triage tools' descriptions say to call
 them only when the harness asks; without a stated provenance a model can deliberate over
 whether this is that moment and come out calling a work tool. Replayed on a session whose
-first attempts failed at 46% (space-bunny-alpha, 15 gates × 5 draws), the banner and
+first attempts failed at 46% (space-bunny-alpha, 15 triages × 5 draws), the banner and
 sentence took first-attempt compliance from 47/75 to 74/75; a variant whose sentence said
 "the tool it names" instead of naming `retain` scored 58/75
 (journal/2026-10-02-triage-failures-root-caused.md).
@@ -317,7 +317,7 @@ error `tool_result` and the ask is renewed (below). `note` asks for what the out
 showed *and only that*, because a triage once turned a raw `unknown tool: ferritin` into
 "ferritin is not available as a CLI tool in this environment" — false, and since the raw
 is discarded, the invented claim was the only thing that reached the canonical wire.
-Dropping the wrong lines is the failure this gate is built against; asserting past the
+Dropping the wrong lines is the failure this triage is built against; asserting past the
 output is worse, because nothing downstream can detect it.
 
 Two further clauses answer the same failure in its second observed shape, where the note
@@ -353,12 +353,12 @@ per session and per triage model is a reading of how often intents are degenerat
 - **One result** — top-level `keep`/`note`, **no label**. Naming the one result whose
   output is right there is transcription with no decision in it.
 - **Several results** — the `results` array, one entry per `result` label. Here the
-  label is the only attribution there is, so it is asked for and the gate's labels are
+  label is the only attribution there is, so it is asked for and the triage's labels are
   listed in the ask.
 
 Neither field is `required`; the harness accepts either shape for either size, because
 nothing enforces the schema and a parse failure costs a withheld result. On a
-single-result gate two id-free shapes resolve unambiguously and are adopted: a bare
+single-result triage two id-free shapes resolve unambiguously and are adopted: a bare
 top-level `keep`, and a **lone** `results` entry whose `result` doesn't match, which is
 re-keyed onto the one offered label — with a single target there is nothing to
 mis-attribute *to*, so rejecting a decided verdict over a mistyped label withholds output
@@ -371,9 +371,9 @@ carries a `[seq]` block-addressing tag (below) in the same bracket syntax the re
 headers then used for call ids. Observed against a live model on a long transcript: it
 answered by re-triaging the whole conversation — twenty-odd entries keyed by `[seq]`
 tags, its own dialect's internal tool names (`functions.read`, `multi_tool_use.parallel`),
-and fabricated ids — with the gate's own id usually absent, so coverage failed, the retries
+and fabricated ids — with the triage's own id usually absent, so coverage failed, the retries
 exhausted, and the result's output was withheld. The pull scaled with transcript length:
-clean early in a session, then most gates failing. Gates that happened to pass were no
+clean early in a session, then most triages failing. Triages that happened to pass were no
 better, deciding the real result inside a pile of invented ones. Naming the count, the
 labels, and the exclusion is what bounds it.
 
@@ -392,9 +392,9 @@ is no freeform parsing. The verdict is one of three forms:
 `retain(none)` is not silent: the note stays on the canonical wire so the agent
 doesn't re-run what it just disowned — inline dead-end shedding at the source.
 
-### A gate that cannot triage holds
+### A triage that cannot triage holds
 
-The gate never shows the agent a triage failure, and never falls back to the untriaged
+The triage never shows the agent a triage failure, and never falls back to the untriaged
 raw. It retries until it has a verdict or the operator stops the turn:
 
 - **Upstream failures** — an aborted triage stream, or a triage request that failed
@@ -407,11 +407,11 @@ raw. It retries until it has a verdict or the operator stops the turn:
   none of the rejected turns in its tail. A fork that has argued itself into a wrong
   shape tends to stay there.
 - **Still no verdict** — the upstream schedule ran out or the upstream refused, or
-  every fork came back unusable — and the loop **holds** (`agent/gate.rs`). The batch's
+  every fork came back unusable — and the loop **holds** (`agent/triage.rs`). The batch's
   results are on the log as `Pending` and their verdicts are not; the session stalls with
   `StallReason::TriageUnavailable` (upstream) or `StallReason::TriageDefect` (every
   fork unusable, which is a harness defect and is logged at error level as one) while
-  the loop keeps running. The operator's continue runs the gate again from the top,
+  the loop keeps running. The operator's continue runs the triage again from the top,
   over the log as it stands then: a fold written during the hold (`POST /loop/fold`
   accepts one there, docs/control-api.md) is what the retried triage forks, so a hold
   that outlived the cache can be retried without reading the whole history uncached;
@@ -448,7 +448,7 @@ verdict, a wrong-tool call and a 429 are indistinguishable in the log after the 
 **coverage** rejection names what the verdict did answer as well as what it missed, for
 the same reason: "answered nothing" and "answered twenty-six ids that were never
 offered" are different defects, and the second is a prompt-scoping failure the first
-gives no hint of — a session's worth of gates failed that way with nothing in the log
+gives no hint of — a session's worth of triages failed that way with nothing in the log
 to say so.
 
 **A verdict may arrive in parallel calls.** The shared envelope allows parallel tool
@@ -513,11 +513,11 @@ the fork's audit record of it as a `Triage` entry right after (in `src/log.rs`):
 | `origin` | `Model` (a real `retain` call) or `Fallback` (the triage failed — the result projects a withheld-output error) |
 | `raw_keep` | the model's exact `keep` string, pre-parse — the audit breadcrumb |
 | `inbox` | per-notification dispositions chosen in this triage, by arrival `seq` |
-| `retries` | one attempt-stamped breadcrumb per non-compliant triage attempt, recovered or not — the durable compliance record (gate-scoped; rides the last `Triage` of a batch, like `inbox`) |
-| `thinking` | the text of the triage's thinking blocks, one entry per attempt that thought (gate-scoped, like `retries`) |
+| `retries` | one attempt-stamped breadcrumb per non-compliant triage attempt, recovered or not — the durable compliance record (triage-scoped; rides the last `Triage` of a batch, like `inbox`) |
+| `thinking` | the text of the triage's thinking blocks, one entry per attempt that thought (triage-scoped, like `retries`) |
 
 The fork runs under the same thinking policy as an agent turn (the shared envelope above),
-so most gates think. That thinking is recorded on the `Triage` entry and **never
+so most triages think. That thinking is recorded on the `Triage` entry and **never
 projected** — it is what answers "why did *that* verdict happen", where replay
 (`efference dev triage`) answers "how does the fork reason about this class of result". Text
 only: a thinking block's `signature` is what the API needs to replay it, and the fork's
@@ -536,7 +536,7 @@ the wire or the cache.
 
 `Retention` (`src/project/retention.rs`) folds the log into cumulative
 `kept_lines` / `shown_lines`, the lines the triage cap dropped before triage saw them,
-and a count of results whose output a failed gate withheld. `GET /state` reports it as
+and a count of results whose output a failed triage withheld. `GET /state` reports it as
 `usage.retention` and the TUI session drawer renders it as `kept  55% · 13k/24k lines`
 ([tui.md](tui.md)).
 
@@ -555,7 +555,7 @@ zero — this is derived from the canonical record, unlike the transport telemet
 it in STATS.
 
 A withheld result is **not** low retention. It retained nothing because nothing was
-recorded, so folding it into the ratio would make a failing gate read as excellent
+recorded, so folding it into the ratio would make a failing triage read as excellent
 compression; it is counted separately and stays out of both sides. Lines past the triage
 cap are likewise excluded from both sides — nobody decided about them — but are
 reported rather than silently absent.
@@ -586,7 +586,7 @@ need. Implemented in `src/triage.rs` (the roster + verdict) and `src/project.rs`
 (the render).
 
 - **Roster.** The triage view lists the surfaceable items — every `Item::Listed`
-  (those with a `path`) in the boot listing that no prior gate has surfaced — and
+  (those with a `path`) in the boot listing that no prior triage has surfaced — and
   `retain` gains an optional `surfaced` field over those names. The roster is a pure
   fold over the prefix; names double as the constrained output vocabulary, validated
   against the roster (invented names dropped). Each item renders through

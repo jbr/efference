@@ -10,7 +10,7 @@ a matched pattern.
 
 A process-specific blocking `wait(until=…)` makes the agent inert to a *different*
 process failing while it waits. "Wait for exit" is the idle agent being woken by the
-exit notification (the idle-triggered triage gate, below). "Wait for a pattern" is
+exit notification (the idle-triggered triage, below). "Wait for a pattern" is
 the non-blocking `watch_process(handle, pattern)` — the drain task matches output and
 fires a notification (see [watches](#watches), below).
 
@@ -281,9 +281,9 @@ Supersession only touches the un-shown queue; refreshing an already-shown body i
 unbuilt by design (the projection invariants depend on immutable bodies).
 
 A tail's whole value is that it *updates*. Forcing it through notifications would
-pile up one stale, frozen snapshot per process per gate — defeating the purpose.
+pile up one stale, frozen snapshot per process per triage — defeating the purpose.
 The escape is to not log the tail at all: render it live from the registry at each
-gate, in its own triage section, and materialize a durable record only when the model
+triage, in its own triage section, and materialize a durable record only when the model
 explicitly pins it.
 
 There is also a structural constraint: output arriving after the spawn's `tool_use`
@@ -306,10 +306,10 @@ un-muted process: `[p#<id>]` with a fresh tail, running time, and idle time
 loop). This is awareness that arrives *while the model is doing something else*.
 
 **Directed** — `list_processes` and `read_process(handle, cursor)` are normal read
-tools whose results ride the normal gate: the model reaching for a process on
+tools whose results ride the normal triage: the model reaching for a process on
 purpose. The directed `list_processes` view includes muted processes (annotated),
 because the model asked explicitly — the ambient auto-show hides muted processes.
-This retires the `bash(echo "")` antipattern (issuing a no-op to trip a gate just
+This retires the `bash(echo "")` antipattern (issuing a no-op to trip a triage just
 to see notifications). The missing piece was a *direct projection*, not another poll
 verb.
 
@@ -339,7 +339,7 @@ economy free.
 
 ## Triage of a live process
 
-The triage gate tool carries a `background` verdict keyed by handle (distinct
+The triage tool carries a `background` verdict keyed by handle (distinct
 from the `inbox` verdict keyed by arrival seq — live handles and frozen arrival seqs
 are different identity models). Three dispositions:
 
@@ -354,13 +354,13 @@ snapshot — building the honest `running…→finished…` timeline. `pin_snaps
 running, and its *exit still notifies*. Killing is separate and explicit
 (`kill_process(handle)`), never conflated with "stop showing me this."
 
-**leave** (the default when unlisted) — re-show a fresh tail at the next gate.
+**leave** (the default when unlisted) — re-show a fresh tail at the next triage.
 
 ## Idle-triggered triage
 
-A gate fires on a tool result, so without an explicit mechanism an idle agent cannot
+A triage fires on a tool result, so without an explicit mechanism an idle agent cannot
 perceive an arriving event without manufacturing a spurious tool call. The fix: when
-the loop is parked, an arriving event wakes a **triage gate that rides no tool
+the loop is parked, an arriving event wakes a **triage that rides no tool
 result** — the inbox/background section plus an ask for the triage-only tool (`keep`
 absent; nothing to retain), appended as a plain user message; like every triage the
 ask rides the tail instruction, never a forced `tool_choice`
@@ -377,12 +377,12 @@ no actionable work costs one cheap ack turn; the model avoids it by leaving
 
 Throttles prevent idle-triage from thrashing: **debounce** coalesces events in a
 small window into a single triage; **urgency** lets low-urgency events wait for the
-next natural gate rather than waking a fork. Because tails
+next natural triage rather than waking a fork. Because tails
 are *not* notifications, idle-triage fires only on discrete lifecycle events,
 operator nudges, and inter-agent messages — low-frequency by construction. Had tails
 been notifications, every refresh would wake a fork.
 
-When `wait()` returns, its ordinary tool-result gate renders the same pending inbox
+When `wait()` returns, its ordinary tool-result triage renders the same pending inbox
 items for triage. The wait does not drain or disposition them; it only keeps the turn
 open until one arrives.
 
@@ -423,8 +423,8 @@ permission to ask would gate a question behind a question.
   names its shape `operator reply`); the inbox is still triaged. In a batch with other
   results the triage runs as usual with a stand-in for the reply. When every result in the
   batch bypasses, the loop appends them and then runs the standalone triage that
-  idle triage uses (`agent::triage_and_record`) — which, unlike the per-result gate,
-  does not hold on failure: notifications stay pending for the next gate.
+  idle triage uses (`agent::triage_and_record`) — which, unlike the per-result triage,
+  does not hold on failure: notifications stay pending for the next triage.
 - **Several asks in one completion are put one at a time**, in call order, each carrying
   its position (`n` of `of`). The tool description tells the model the order is
   unspecified, so they should be independent. A driving agent (a parent session, an MCP
@@ -445,7 +445,7 @@ question, the session's status is `asking` (waking a subscribed parent as a gate
 `watch_process(handle, pattern)` registers a pattern against a running process and
 returns immediately. Nothing blocks: the drain scan matches the process's output as
 it arrives and posts a hit to the [inbox](inbox.md), where it reaches the model the
-same way an exit does — at the next gate, or by waking an idle agent. It is the
+same way an exit does — at the next triage, or by waking an idle agent. It is the
 pattern half of wake-on-notification; the exit half needs no tool at all.
 
 Four decisions define what a watch is:

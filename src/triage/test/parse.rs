@@ -182,7 +182,7 @@ fn parse_retain_keys_verdicts_by_call_id() {
 /// flight. With several offered there is no way to know which it meant, so it is dropped
 /// rather than guessed onto the wrong result.
 #[test]
-fn flat_keep_is_adopted_only_for_a_single_result_gate() {
+fn flat_keep_is_adopted_only_for_a_single_result_triage() {
     let one = ["only".to_string()];
     let p = parse_retain(&retain_completion(RETAIN, json!({ "keep": "all" })), &one).unwrap();
     assert_eq!(p.results.len(), 1);
@@ -197,12 +197,12 @@ fn flat_keep_is_adopted_only_for_a_single_result_gate() {
     );
 }
 
-/// A lone keyed entry whose `call_id` doesn't match is re-keyed on a single-result gate:
+/// A lone keyed entry whose `call_id` doesn't match is re-keyed on a single-result triage:
 /// with one target there is nothing to mis-attribute *to*, so withholding output the
 /// model plainly triaged over a mistyped id buys nothing. With several offered the same
 /// entry stays where the model put it — there the id is the only attribution there is.
 #[test]
-fn a_lone_mis_keyed_verdict_is_re_keyed_only_for_a_single_result_gate() {
+fn a_lone_mis_keyed_verdict_is_re_keyed_only_for_a_single_result_triage() {
     let one = ["only".to_string()];
     let p = parse_retain(
         &retain_completion(
@@ -217,7 +217,7 @@ fn a_lone_mis_keyed_verdict_is_re_keyed_only_for_a_single_result_gate() {
     assert_eq!(p.results[0].keep, Keep::Ranges(vec![(1, 4)]));
     assert!(require_coverage(p, &one).is_ok());
 
-    // Two entries are ambiguous even on a single gate, where one is not.
+    // Two entries are ambiguous even on a single triage, where one is not.
     let p = parse_retain(
         &retain_completion(
             RETAIN,

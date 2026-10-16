@@ -491,8 +491,8 @@ impl ToolCall {
     }
 }
 
-/// What the agent chose to do with one notification at a triage gate (docs/inbox.md).
-/// "Leave" (bump to the next gate) is the *absence* of an entry, so it isn't a variant.
+/// What the agent chose to do with one notification at a triage (docs/inbox.md).
+/// "Leave" (bump to the next triage) is the *absence* of an entry, so it isn't a variant.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Disposition {
     /// Promote into canonical working context (projects at the [`Triage`] position).

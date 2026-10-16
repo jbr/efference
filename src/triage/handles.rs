@@ -1,4 +1,4 @@
-//! Result shapes the gate does not get to decide about (docs/triage.md).
+//! Result shapes the triage does not get to decide about (docs/triage.md).
 //!
 //! A result whose value is a machine-precise handle the model must reproduce
 //! exactly cannot pass through a summarizer: a paraphrase keeps the meaning and
@@ -82,11 +82,11 @@ pub(super) fn is_reply(call: &ToolCall) -> bool {
     call.name == crate::supervisor::ASK
 }
 
-/// Whether this gate holds an `ask` reply and nothing else the triage would decide
-/// about, so the batch reaches the gate with every result already decided
-/// ([`bypassed_gate`]). The loop then triages the inbox itself, after the results are
+/// Whether this triage holds an `ask` reply and nothing else the triage would decide
+/// about, so the batch reaches the triage with every result already decided
+/// ([`bypassed_triage`]). The loop then triages the inbox itself, after the results are
 /// logged, because the triage that would have carried it does not run.
-pub fn reply_only_gate(pending: &[Pending<'_>]) -> bool {
+pub fn reply_only_triage(pending: &[Pending<'_>]) -> bool {
     pending.iter().any(|p| is_reply(p.call)) && pending.iter().all(|p| bypassed(p).is_some())
 }
 
@@ -113,7 +113,7 @@ pub(super) fn labels(pending: &[Pending<'_>]) -> Vec<Option<String>> {
         .collect()
 }
 
-/// The labels this gate asks about: [`labels`] without the bypassed gaps.
+/// The labels this triage asks about: [`labels`] without the bypassed gaps.
 pub(super) fn offered_labels(pending: &[Pending<'_>]) -> Vec<String> {
     labels(pending).into_iter().flatten().collect()
 }
@@ -121,7 +121,7 @@ pub(super) fn offered_labels(pending: &[Pending<'_>]) -> Vec<String> {
 /// The harness's verdict on a bypassed result (docs/triage.md):
 /// [`WireState::Raw`], so the whole body — handle included — projects verbatim.
 /// `origin` is `Fallback` because no model produced it; `raw_keep` names the shape,
-/// which is what separates a bypass from a failed gate in the log after the fact.
+/// which is what separates a bypass from a failed triage in the log after the fact.
 pub(super) fn bypass_verdict(shape: &str) -> TriageOutcome {
     TriageOutcome {
         wire: WireState::Raw,
@@ -130,22 +130,22 @@ pub(super) fn bypass_verdict(shape: &str) -> TriageOutcome {
     }
 }
 
-/// The whole gate's outcome when the shape rule bypassed **every** result: decided
+/// The whole triage's outcome when the shape rule bypassed **every** result: decided
 /// without a request at all, since there is nothing left to ask about — a skipped
 /// verdict is also a skipped round-trip. `None` means at least one result is still
 /// the fork's, and the triage runs.
 ///
-/// The gate-scoped riders (inbox, background, surfacing) simply wait for the next
-/// gate: an undispositioned notification stays active and is re-shown there
+/// The triage-scoped riders (inbox, background, surfacing) simply wait for the next
+/// triage: an undispositioned notification stays active and is re-shown there
 /// (docs/inbox.md), so nothing is lost by not opening a triage for them here.
-pub(super) fn bypassed_gate(pending: &[Pending<'_>]) -> Option<GateOutcome> {
+pub(super) fn bypassed_triage(pending: &[Pending<'_>]) -> Option<HoldOutcome> {
     let results: Vec<TriageOutcome> = pending
         .iter()
         .map_while(|p| bypassed(p).map(bypass_verdict))
         .collect();
-    (results.len() == pending.len()).then(|| GateOutcome {
+    (results.len() == pending.len()).then(|| HoldOutcome {
         results,
-        ..GateOutcome::default()
+        ..HoldOutcome::default()
     })
 }
 

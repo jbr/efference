@@ -405,7 +405,7 @@ count and the upstream's own words.
 client's send, each on an empty composer — retries whatever is waiting on the
 upstream, as often as the operator repeats it. After a stall it re-enters the
 trajectory with nothing appended, which re-sends the failed request. While a
-backoff pause is running (or a triage gate is held, below) it ends the wait, so the
+backoff pause is running (or a triage is held, below) it ends the wait, so the
 next attempt fires at once; the daemon accepts it then even though the loop is
 running. The signal lives on the retry cell (`UpstreamRetryCell::hurry`), beside
 the retry state both loops already publish, because the triage's wait runs
@@ -428,7 +428,7 @@ but the return to idle otherwise looks exactly like a finished run to a client:
 `running: false` and no gate. So the loop sets the **`stall` state topic**
 (control-api.md): the reason, the attempts spent, the instant it gave up, a lead
 line naming what happened, and the upstream's words as `detail`. It is
-cleared when the work resumes — the top of the next trajectory, or a held gate
+cleared when the work resumes — the top of the next trajectory, or a held triage
 retrying — rather than on a successful completion, so it reports the condition
 now. A stall is a decision point for `?wait=settled`. The topic is addressed to whatever
 is supervising the daemon from outside, which is the rung that can actually send
@@ -462,7 +462,7 @@ stream or a transiently failed triage request is retried up to
 `STREAM_ABORT_ATTEMPTS` times on the same capped schedule, re-sending
 byte-identical messages over the warm prefix (its tail is throwaway, so nothing
 has to be committed to arrange the replay). On exhaustion — or a terminal
-failure, above — the gate does not give the agent anything: it **holds** the
+failure, above — triage does not give the agent anything: it **holds** the
 batch's results, unappended, and stalls with `StallReason::TriageUnavailable`
 while the loop keeps running, until a continue retries it or an interrupt ends
 the turn ([triage.md](triage.md)). Withholding the
@@ -904,12 +904,12 @@ another cap. OpenAI exposes no per-generation cost endpoint, so cost tracking st
 its own model (`Triager::own`), the batch fires the turn's own input on the triage
 client at the first execution start — post-approval, so nothing speculative is ever
 sent — capped at the same backend minimum (`Client::prime`, Responses with an
-implicit policy only). The gate's triage then extends a triage-lineage request that
+implicit policy only). The triage then extends a triage-lineage request that
 ended where the main one did, and reads everything before the current calls from
 cache. A primer the upstream refuses, or a lineage with no implicit cache, resolves
 unprimed and the triage goes out as before. Primer spend records under its own
-`triage_primer` usage origin, with one log line per gate carrying the send time, the
-serial residue the gate path paid, and whether a gate followed. The primer forces
+`triage_primer` usage origin, with one log line per triage carrying the send time, the
+serial residue the triage path paid, and whether a triage followed. The primer forces
 `retain` rather than the turn's `auto`: the backend keys the resume on
 `tool_choice`, so the plant must match the triage's head, not the main request it
 replays. It tolerates the truncated output: a 16-token budget at a call-eliciting
