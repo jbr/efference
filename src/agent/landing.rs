@@ -107,7 +107,7 @@ pub(super) async fn land(
             shared.record_peek(!distiller.is_own(), u.clone());
         }
     }
-    // The primer's usage and timing (backlog/separate-triage-cold-prefix.md): its own
+    // The primer's usage and timing (docs/transport.md): its own
     // origin so `dev cache` prices the warmup separately, and one log line per gate
     // carrying the floor the gate paid (`residue_ms`) plus whether the spend had a
     // gate to warm. The residue distribution is what says if a speculative

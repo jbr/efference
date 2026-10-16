@@ -124,7 +124,7 @@ fn mistral_thinking_parts_continue_and_the_answer_becomes_a_text_part() {
 
 /// Reasoning and a call in one turn: the thinking part is the whole `content`,
 /// and the call beside it. Mistral accepted this message replayed verbatim and
-/// counted the thinking in the prompt (backlog/completions-dialect.md).
+/// counted the thinking in the prompt (backlog/inbox/completions-dialect.md).
 #[test]
 fn mistral_thinking_beside_a_tool_call() {
     let (completion, _) = assemble(include_str!("../mistral_reasoning_tool.sse"));

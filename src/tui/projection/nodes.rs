@@ -348,7 +348,7 @@ pub(in crate::tui) fn annotation_line(marker: &str, text: &str) -> DocumentNode<
 /// Git's setup `output` is deliberately not shown: the line states the outcome,
 /// and a failed setup's exit status is on the line itself because that failure is
 /// the reason the entry exists. The whole output is in the log (`efference dev`),
-/// and surfacing it is backlog/worktree-setup-detail.md.
+/// and surfacing it is backlog/inbox/worktree-setup-detail.md.
 pub(in crate::tui) fn worktree_notice(event: &crate::log::WorktreeEvent) -> DocumentNode<'static> {
     use crate::log::WorktreeEventKind;
     let mut spans = vec![dim_span("⟢ worktree ")];

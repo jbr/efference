@@ -498,7 +498,7 @@ The operator does not have to wait for it: `POST /loop/interrupt` (the TUI's
 second `Esc`) ends a read in flight the same way, marked `Aborted` rather than
 retryable, and the loop returns to idle ([control-channel.md](control-channel.md)).
 An unattended hang still waits on the ceiling. Two shorter clocks are possible
-and bound different hangs (backlog/hung-stream-abort.md): a transport-level idle
+and bound different hangs (backlog/inbox/hung-stream-abort.md): a transport-level idle
 timeout catches a dead socket, but OpenRouter's `: OPENROUTER PROCESSING`
 comment keepalives reset it — the decoder consumes them without yielding an
 event — so a live edge in front of a dead upstream is bounded only by a clock on
@@ -738,7 +738,7 @@ harness does about an ending: `Finished`, `ToolCalls`, `OutputCap`, `ContextWind
 mapping table. A request's `Ended` stage entry records the provider's word
 (`end_turn`, `tool_calls`, `incomplete:max_output_tokens`), and the loop reads only
 the neutral reason (`Completion::hit_output_cap`). Places where the Messages shape
-is still the internal one are listed in backlog/no-native-dialect.md.
+is still the internal one are listed in backlog/inbox/no-native-dialect.md.
 
 The recorded log carries its dialect in every assistant entry
 (`AssistantOutput::dialect`), and each encoder skips the other dialect's assistant
@@ -895,7 +895,7 @@ openai-provider/validation.md).
 streamed envelope with `max_output_tokens` fixed at 16, the Codex backend's minimum
 (`Provider::keepalive_output_cap`), sent on the Codex profile too though a turn there omits the
 field. The backend resumes a cached prefix only where an earlier request ended
-(backlog: separate-triage-cold-prefix.md), and the keepalive loop's lopped projection is
+(journal/2026-10-06-triage-primer-v1.md), and the keepalive loop's lopped projection is
 exactly the last request's input, so the ping reads it whole and refreshes it: a cached
 read plus 16 output tokens. A capped request that the upstream refuses is not retried at
 another cap. OpenAI exposes no per-generation cost endpoint, so cost tracking stays off.
@@ -1036,7 +1036,7 @@ fields merged into every request after every encoder-written key
 (`parallel_tool_calls`, `safe_prompt`). It may not set a key the encoder writes, so
 it cannot replace `messages` or `tools`. That includes `reasoning_effort`, because the
 effort is the session's knob and may become mutable per request
-(backlog/effort-in-the-composer.md), where a copy fixed in `body` would shadow it.
+(backlog/inbox/effort-in-the-composer.md), where a copy fixed in `body` would shadow it.
 Both settings are fixed for the session, so neither moves a cached prefix, and both
 are refused at load on any other dialect. `request_options_shape_the_envelope` pins
 where each lands. The dialect has no per-part cache marker, so

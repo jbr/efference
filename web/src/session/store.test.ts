@@ -486,7 +486,7 @@ describe("pending turns", () => {
 // block — and once a delta costs more than the interval between deltas the
 // backlog outlives the stream: the frames already buffered in the fetch body
 // keep folding at full length after the producer has gone quiet, which is why
-// the page never recovered on its own (backlog/web-streaming-hot-loop.md).
+// the page never recovered on its own (docs/web-client.md).
 describe("coalescing the fold", () => {
   /** A scheduler under the test's control: nothing flushes until it says so. */
   function manual() {

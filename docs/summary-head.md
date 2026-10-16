@@ -46,7 +46,7 @@ A request that fails, stops at the output cap, calls a tool or returns no text i
 error, reported as one. Nothing in
 this path substitutes another summary, another model, or an unsummarized read: whether to
 retry, edit or accept the cost of a cold read is the operator's, and whatever asks for the
-head asks the operator (the cold session's fold, not yet built, is the intended caller; backlog/cold-session.md).
+head asks the operator (the cold session's fold, not yet built, is the intended caller; backlog/inbox/cold-session.md).
 
 ## The cut
 
@@ -57,7 +57,7 @@ it: the record after the cut follows the account in full, so the account does no
 it but covers what it refers back to, and dates "where things stand" to the cut. A cut
 that would separate a call from its result is refused before any request
 (`consolidate::split_calls`), since a boundary there could not project. Choosing the cut
-belongs to the caller (backlog/cold-session.md).
+belongs to the caller (backlog/inbox/cold-session.md).
 
 ## A session folded more than once
 
@@ -115,4 +115,4 @@ stays the only record. `efference dev narrate` passes a callback that ignores th
 ## What is not here
 
 When a fold is offered, and the clients' controls for it, belong to the cold session
-(backlog/cold-session.md).
+(backlog/inbox/cold-session.md).

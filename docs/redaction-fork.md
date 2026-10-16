@@ -263,7 +263,7 @@ a live session measures that.
 
 What is *not* built: the own client's retry and reservation state is not reported
 on `GET /state`, and nothing acts on the triage model's context window being
-smaller than the agent's (backlog/distiller-experiment.md).
+smaller than the agent's (backlog/inbox/distiller-experiment.md).
 
 ## Two answer shapes, and one scoped ask
 
@@ -614,29 +614,12 @@ the agent has drifted away from, which a constrained single turn can't manufactu
 is a dogfooding question, not a single-turn test — while its cheap complement,
 stronger stub descriptions, works on its own at boot.
 
-## `reread` — agent-initiated re-peek, tail-additive
-
-A `reread(seq, focus?)` tool re-runs the existing `ForkPeek` on the raw still in
-the log and **appends** the new, fuller distillate at the tail — pure append,
-prefix untouched, cache-clean. The same call serves "more of X" and "all of it
-now" (`retain(all)`). The content reappearing at the tail is correct: the agent
-re-read it, mirroring re-opening a file.
-
-The naive alternative — flipping a committed `WireState` back to `Raw` or a fuller
-distillate — mutates a cached prefix entry and invalidates everything downstream
-(see [log-and-projection.md](log-and-projection.md) on cache-prefix immutability), so it is
-rejected. `reread` reuses the universal fork verbatim; only
-the trigger differs (agent-initiated vs. at-append).
-
-Building `reread` is gated on evidence of over-redaction causing a wrong or
-incomplete answer; tracked in the backlog.
-
 ## Block addressing — the visible `seq` handle
 
 Each tool result carries its `seq` as a visible handle on the wire: `tool_result`
 content is prefixed `[<seq>] …` (e.g. `[2] file.txt`), a render-time tag requiring
-no schema change. This is what makes "reread 14" / "branch from 14" / "compare to
-block 14" describable across the model wire, the TUI, and the control plane.
+no schema change. This is what makes "branch from 14" / "compare to block 14"
+describable across the model wire, the TUI, and the control plane.
 
 These tags once shared their bracket syntax with the peek's call-id headers, which is
 what made an unbounded peek ask resolve against them; the ask is scoped rather than the

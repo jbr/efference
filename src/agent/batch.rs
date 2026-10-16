@@ -11,7 +11,7 @@ pub(super) struct Batch {
     pub abort_turn: bool,
     pub redirect: Option<String>,
     /// What the triage-lineage primer did while the tools ran
-    /// (backlog/separate-triage-cold-prefix.md), when one was armed.
+    /// (docs/transport.md), when one was armed.
     pub primer: Option<TriagePrimerOutcome>,
     /// When the last tool resolved, for the primer's serial residue.
     pub tools_end: std::time::Instant,
@@ -23,7 +23,7 @@ pub(super) struct Batch {
 ///
 /// When `primer` is armed, its send is fired at the first execution start and runs
 /// against the batch's tools: the peek's warmup hides behind tool runtime instead of
-/// landing on the gate path (backlog/separate-triage-cold-prefix.md). The sender rides
+/// landing on the gate path (docs/transport.md). The sender rides
 /// inside the batch future, so every exit — including an early `?` — drops it and lets
 /// an unfired primer resolve to nothing sent.
 pub(super) async fn run_batch<'a, F: Frontend, S: Spotter>(

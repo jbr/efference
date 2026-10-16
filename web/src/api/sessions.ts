@@ -99,7 +99,7 @@ export interface CardFeed {
  * accumulated state and each batch of new log entries.
  *
  * One of these per card until the host serves an overview stream
- * (backlog/host-overview-stream.md).
+ * (backlog/inbox/host-overview-stream.md).
  */
 export function openSessionCard(
   id: string,

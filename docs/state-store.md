@@ -6,7 +6,7 @@ subscribed to push, and the TOTP timesteps already spent. The values that *are* 
 the machine root, API keys, OAuth grants — are in the OS credential store instead
 ([secrets.md](secrets.md)). The configuration is still a text file
 (`config.toml`, [config-format.md](../assets/guide/config-format.md)); whether it should move here is an
-open question ([backlog/user-state-store.md](../backlog/user-state-store.md)).
+open question ([backlog/inbox/user-state-store.md](../backlog/inbox/user-state-store.md)).
 
 Module: `src/state.rs` owns the path and the open; each table's own module owns its
 schema.

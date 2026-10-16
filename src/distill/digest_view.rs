@@ -1,4 +1,4 @@
-//! The digest view of a triage request (backlog: triage-reads-the-digest.md): the
+//! The digest view of a triage request (backlog: separate-triage-reads-text.md): the
 //! history as the trajectory digest renders it (docs/digest.md) instead of as the
 //! agent's transcript. An experiment arm of `efference dev peek`; the live gate reads the
 //! transcript view.

@@ -306,7 +306,7 @@ fn redacted_thinking_says_so_rather_than_rendering_nothing() {
 /// A session's worktree life renders as one muted notice line per event
 /// (docs/worktrees.md): the branch on an add or restore, a failed setup's exit
 /// status on the line itself, and git's setup output nowhere (it stays in the
-/// log; surfacing it is backlog/worktree-setup-detail.md).
+/// log; surfacing it is backlog/inbox/worktree-setup-detail.md).
 #[test]
 fn transcript_worktree_notices() {
     use crate::log::{Checkout, Payload, WorktreeEvent, WorktreeEventKind};

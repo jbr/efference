@@ -1,4 +1,4 @@
-//! Timed primer/peek cache ladder (backlog/separate-triage-cold-prefix.md).
+//! Timed primer/peek cache ladder (docs/transport.md).
 //!
 //! Experiment verb, dev-gated: plants triage primers at controlled gaps against one
 //! recorded gate and replays the recorded peek per rung, reporting cache reads.

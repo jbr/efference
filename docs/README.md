@@ -14,7 +14,8 @@ The docs are present-tense and describe how the system works now. One of them is
 architecture: [operating.md](operating.md) is the *usage* document — how to drive a
 running session from the outside — and it is also compiled into the binary and served to
 sessions through the guide overlay ([context.md](context.md)). The design
-positions behind it are in [positions.md](positions.md); planned work lives in
+positions behind it are in [positions.md](positions.md); where a word in use differs from
+the identifiers behind it, [glossary.md](glossary.md) pairs them; planned work lives in
 [`../backlog/`](../backlog/); the terse record of shipped features is
 [`../CHANGELOG.md`](../CHANGELOG.md); session narrative memory is
 [`../journal/`](../journal/).

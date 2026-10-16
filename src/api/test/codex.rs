@@ -423,7 +423,7 @@ async fn codex_keepalive_caps_output_where_a_turn_sends_no_cap() {
     );
 }
 
-/// The triage primer (backlog/separate-triage-cold-prefix.md) replays the turn's own
+/// The triage primer (docs/transport.md) replays the turn's own
 /// envelope with the backend-minimum cap: its input bytes match the turn's exactly,
 /// so the Codex backend resumes where the main request ended. Its `tool_choice`
 /// differs on purpose — forced `retain`, matching the peek's head rather than the
@@ -586,7 +586,7 @@ async fn primer_sends_nothing_without_an_implicit_responses_lineage() {
 /// The primer wants the write, not the read: a 16-token budget at a call-eliciting
 /// position truncates the model's function call mid-arguments, which marks the
 /// completion without unmaking its input prefix. The primer still plants.
-/// (backlog/separate-triage-cold-prefix.md — pinned after the first live run
+/// (docs/transport.md — pinned after the first live run
 /// showed every primer failing this way.)
 #[tokio::test]
 async fn primer_plants_despite_truncated_output() {

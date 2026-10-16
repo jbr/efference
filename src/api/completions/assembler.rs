@@ -23,7 +23,7 @@ mod test;
 /// Keys a server repeats whole in every fragment rather than splitting: the last
 /// value wins instead of concatenating. OpenRouter repeats `role` in every delta
 /// and `type` / `format` in every `reasoning_details` fragment (measured,
-/// backlog/completions-dialect.md).
+/// backlog/inbox/completions-dialect.md).
 const IDENTITY: [&str; 5] = ["id", "type", "role", "format", "index"];
 
 /// Live-view indices. Completions has no block index of its own, so each kind of
@@ -330,7 +330,7 @@ impl CompletionsAssembler {
     }
 }
 
-/// Merge one delta into what has arrived (backlog/completions-dialect.md,
+/// Merge one delta into what has arrived (backlog/inbox/completions-dialect.md,
 /// where each clause's measured cause is recorded):
 ///
 /// - `null` is absent and never overwrites;

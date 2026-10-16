@@ -95,7 +95,7 @@ unaffected.
 The line is also where a knowledge-cutoff note would attach; provider
 metadata has a slot for one (OpenRouter's `knowledge_cutoff`) that is
 unpopulated today, so the cutoff is not rendered
-([../backlog/model-identity.md](../backlog/model-identity.md) holds the
+([../backlog/inbox/model-identity.md](../backlog/inbox/model-identity.md) holds the
 render-when-present remainder).
 
 ## One mechanism, three config shapes
@@ -203,7 +203,7 @@ before the file listing. Inlined bodies ride verbatim inside their tag, so a bod
 `#`/`---`/``` cannot blur a boundary. The
 format is byte-pinned and deliberately cheap to flip: whether tags actually beat markdown
 here is an unverified assumption, recorded for A/B in
-`backlog/preamble-format-experiment.md`. The block splices into the system prompt after
+`backlog/inbox/preamble-format-experiment.md`. The block splices into the system prompt after
 the curation preamble and before the role scope (*what it may do*) — knowledge before
 perimeter (`env::system_prompt`). The curation preamble itself (`assets/prompts/session.md`)
 states the turn-attribution convention in one sentence, so a prefix is read as an
@@ -339,5 +339,5 @@ orientation `exec` entry.
 
 ## Deferred
 
-Live mid-session discovery of context files (`backlog/live-context-update.md`) and glob
-paths (`backlog/context-globs.md`).
+Live mid-session discovery of context files (`backlog/inbox/live-context-update.md`) and glob
+paths (`backlog/inbox/context-globs.md`).

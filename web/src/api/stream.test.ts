@@ -85,7 +85,7 @@ describe("the dispatch loop", () => {
     // awaiting anything else — so without an explicit yield a producer faster
     // than the consumer holds the thread against timers, input, paint, and the
     // animation frame the store's coalescing flushes on
-    // (backlog/web-streaming-hot-loop.md).
+    // (docs/web-client.md).
     const total = 8;
     const body = streamOf(
       ...Array.from(

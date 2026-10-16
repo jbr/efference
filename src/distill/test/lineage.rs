@@ -266,7 +266,7 @@ fn the_idle_triage_rides_the_agent_lineage_whatever_the_triage_model() {
 }
 
 /// The shared peek rides the agent lineage the main request already warmed, so there
-/// is no triage lineage to plant a primer in (backlog/separate-triage-cold-prefix.md).
+/// is no triage lineage to plant a primer in (docs/transport.md).
 #[tokio::test]
 async fn the_shared_peek_takes_no_primer() {
     assert!(

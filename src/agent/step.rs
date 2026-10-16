@@ -112,7 +112,7 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
     if call.name == supervisor::ASK {
         // An answered ask lands in the gate, so its triage is certain short of an
         // interrupt — fire the primer over the operator's deliberation window
-        // (backlog/separate-triage-cold-prefix.md).
+        // (docs/transport.md).
         if let Some(go) = primer_go {
             let _ = go.send(true);
         }
@@ -278,7 +278,7 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
             )?;
             // Approved, so a result the gate triages will follow short of an
             // interrupt — fire the primer over the execution window
-            // (backlog/separate-triage-cold-prefix.md).
+            // (docs/transport.md).
             if let Some(go) = primer_go {
                 let _ = go.send(true);
             };

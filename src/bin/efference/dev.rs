@@ -232,7 +232,7 @@ pub(crate) enum DevCommand {
         #[arg(long, value_name = "LEVEL")]
         triage_effort: Option<String>,
         /// The history the triage request reads: `transcript` (the live gate's view),
-        /// or an experiment arm (backlog/triage-ground-truth): `digest` (the trajectory
+        /// or an experiment arm (backlog/inbox/triage-ground-truth): `digest` (the trajectory
         /// digest), `tail:N` (the digest of the last N assistant turns), `intent` (none).
         #[arg(long, default_value = "transcript")]
         view: String,
@@ -245,7 +245,7 @@ pub(crate) enum DevCommand {
     },
     /// Plant triage primers at controlled gaps against one recorded gate and replay
     /// the recorded peek per rung, reporting cache reads
-    /// (backlog/separate-triage-cold-prefix.md). Decides eviction vs
+    /// (docs/transport.md). Decides eviction vs
     /// write-visibility lag vs envelope keying: a back-to-back primer pair that
     /// chains proves truncated primers plant; a gapped pair that misses bounds the
     /// lifetime; a peek after a forced primer is the v1.1 verdict live. Sends real
@@ -702,7 +702,7 @@ pub(crate) enum WireFormat {
 /// A dialect the `wire` view can translate a recorded session into.
 #[derive(Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
 pub(crate) enum ViewDialect {
-    /// Chat Completions (backlog/completions-dialect.md).
+    /// Chat Completions (backlog/inbox/completions-dialect.md).
     Completions,
 }
 

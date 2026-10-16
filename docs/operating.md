@@ -97,7 +97,10 @@ it lands in the caller's inbox and wakes it ([tools.md](tools.md)). `subscribe` 
 any session in the project the same way, without the wake; `unsubscribe` drops
 either. `settle` is not mounted, and the `wait` flags are refused in-session: a
 session has its own inbox to be woken through rather than a client that must block.
-A child ends with its creator unless created `detached`.
+A child ends with its creator unless created `detached`. A session created in a
+directory with no project config (`efference.toml`) is the setup profile, whoever
+creates it: it opens with the new-user experience, which is not optional. To create a
+working session in such a directory, write an `efference.toml` there first.
 
 ## Where a session lives
 

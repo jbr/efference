@@ -238,7 +238,7 @@ fn the_cut_marks_the_first_rendered_block_past_it() {
 /// The digest at one triage gate extends the digest at every earlier one, byte for byte:
 /// the gate's history ends at the assistant turn that made its calls, and every earlier
 /// result has its verdict by then. That is what lets a triage request that reads the
-/// digest resume a cached prefix (backlog: triage-reads-the-digest.md).
+/// digest resume a cached prefix (backlog: separate-triage-reads-text.md).
 #[test]
 fn the_digest_at_a_gate_extends_the_digest_at_every_earlier_gate() {
     let log = [

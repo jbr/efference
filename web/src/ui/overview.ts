@@ -51,7 +51,7 @@ export type Activity =
 
 /** What the log's recent entries say that `/state` does not: the latest tool
  * call's intent and the latest assistant prose. Read off a log tail per card
- * until the host serves them (backlog/host-overview-stream.md). */
+ * until the host serves them (backlog/inbox/host-overview-stream.md). */
 export interface Recent {
   intent?: string;
   lastReply?: string;

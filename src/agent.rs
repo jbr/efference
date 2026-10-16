@@ -586,7 +586,7 @@ pub async fn run<F: Frontend, S: Spotter>(
             // a fork request whose trailing assistant message still carries unanswered
             // `tool_use` blocks, which the API rejects (docs/redaction-fork.md).
             // The triage-lineage primer replays this completion's input on the own
-            // peek's client (backlog/separate-triage-cold-prefix.md). Borrowed, so the
+            // peek's client (docs/transport.md). Borrowed, so the
             // primer is byte-identical to the request above; armed only on the own
             // peek, whose lineage the main request never warms. Shared peeks skip it
             // without spending a request.

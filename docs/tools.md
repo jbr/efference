@@ -514,7 +514,7 @@ on.
 
 Deferred tool discovery is the case where the reasoning inverts, because a
 deferred call is not on the wire and so is never constrained-decoded; validating
-against the fetched schema is part of that design (`backlog/deferred-tool-discovery.md`).
+against the fetched schema is part of that design (`backlog/inbox/deferred-tool-discovery.md`).
 
 ### Working directory: a root per mount
 

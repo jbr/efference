@@ -428,7 +428,7 @@ pub(crate) async fn host(
 ///
 /// The remedy is named, not performed: this host has nobody to ask. A host
 /// launched by a TUI for one session can offer the repair inline once that
-/// exists (backlog/host-process.md).
+/// exists (backlog/inbox/host-process.md).
 fn refuse_broken_connections(
     inference: &efference::inference::InferenceRegistry,
 ) -> Result<(), efference::api::Error> {

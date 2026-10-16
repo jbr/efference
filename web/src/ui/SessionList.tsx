@@ -6,7 +6,7 @@ import { AppSettingsLink } from "./AppSettings.tsx";
 // ended anywhere appears or leaves on its own. Each card's richer state — the
 // gate's ask, usage, models, the latest intent and reply — comes from that
 // session's own state topics and log tail, one connection per card, until the
-// host serves an overview stream (backlog/host-overview-stream.md).
+// host serves an overview stream (backlog/inbox/host-overview-stream.md).
 
 import { type RefObject, useEffect, useMemo, useRef, useState } from "react";
 import { openSessionCard, openSessions } from "../api/sessions.ts";

@@ -10,7 +10,7 @@ the mechanism reads.
 This doc covers what is built now: the config (`src/config.rs`), the deterministic
 approval fast-path (`src/policy.rs`), and the independent spotter (`src/spotter.rs`),
 wired into the turn loop's gate (`src/agent.rs`). The watch-window and the rest of the
-config-edit loop are planned; see [`../backlog/permissions/`](../backlog/permissions/).
+config-edit loop are planned; see [`../backlog/inbox/permissions/`](../backlog/inbox/permissions/).
 
 ## Threat model: error, not deception
 
@@ -399,7 +399,7 @@ control-channel HTTP from bash; every legitimate control interaction is a tool. 
 layers above are what enforce that, and the rule is written to cover a session's *own*
 socket, a *peer's*, and a *parent's* uniformly — so the property survives into multiagent
 topologies without a second mechanism (see
-[`../backlog/multiagent/`](../backlog/multiagent/README.md)).
+[`../backlog/inbox/multiagent/`](../backlog/inbox/multiagent/README.md)).
 
 Boot injects one more grant alongside the self-surface stack: the per-session **scratch
 dir** ([tools.md](tools.md)) is always granted rw. It lives outside `.` and outside the
@@ -967,7 +967,7 @@ then fast-path clears and never reaches the spotter again. `K`/`N` are the dials
 human-out-of-the-loop promotion (each probe is a *fresh* spotter, so probing a prefix across its
 recurrences is independent-judge consensus accruing in the ledger). `efference dev spotter --probe
 <prefix> …` exercises one probe. See
-[`../backlog/permissions/prefix-promotion.md`](../backlog/permissions/prefix-promotion.md).
+[`../backlog/inbox/permissions/prefix-promotion.md`](../backlog/inbox/permissions/prefix-promotion.md).
 
 ## What is not built yet
 
@@ -978,7 +978,7 @@ the watch-window will map it to an intervention latency instead. The spotter cur
 the raw command + config context; a neutral effect-preview is the planned input upgrade. Fleet-wide
 persona caching (a second breakpoint isolating the persona so it's shared across differently-scoped
 sessions) is a deferred optimization — per-session caching works today. See
-[`../backlog/permissions/README.md`](../backlog/permissions/README.md).
+[`../backlog/inbox/permissions/README.md`](../backlog/inbox/permissions/README.md).
 
 [`toml_edit`]: https://docs.rs/toml_edit
 [`DocumentMut`]: https://docs.rs/toml_edit/latest/toml_edit/struct.DocumentMut.html

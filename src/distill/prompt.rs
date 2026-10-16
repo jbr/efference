@@ -156,7 +156,7 @@ entries, one per label listed here and no others: {labels}.",
             labels = many.join(", "),
         ),
     };
-    // An experiment's replacement for the `keep`/`note` rows (backlog/triage-ground-truth),
+    // An experiment's replacement for the `keep`/`note` rows (backlog/inbox/triage-ground-truth),
     // read from a file so a wording mutation is a text edit; unset, the shipped rows.
     let keep_fields = match std::env::var("EFFERENCE_PEEK_FIELDS") {
         Ok(path) => std::fs::read_to_string(&path)
@@ -254,7 +254,7 @@ struct AskVariant {
     output_final: bool,
     /// The shape sentence says "the call the agent just made" instead of "the call you
     /// just made" — the separate-model peek's alternative framing
-    /// (backlog/distiller-experiment.md). Off: the tail keeps its first-person frame for
+    /// (backlog/inbox/distiller-experiment.md). Off: the tail keeps its first-person frame for
     /// both the shared and the separate-model peek (their `keep`/`note` rows differ by
     /// reader, [`REPORT_FIELDS`]).
     third_person: bool,

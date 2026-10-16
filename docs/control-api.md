@@ -15,7 +15,7 @@
 > never as a rename of them. A multi-session host is that prefix —
 > `/sessions/<id>/` in front of everything below — so the same client code
 > addresses a session daemon at a socket root or a host at a prefix, differing
-> only in configuration. The host itself is planned work (`backlog/host-process.md`).
+> only in configuration. The host itself is planned work (`backlog/inbox/host-process.md`).
 
 ## Transport & addressing
 
@@ -91,7 +91,7 @@ sessions from one process. Its own routes are the listener's, not a session's:
   merge of per-session streams — the per-session contract is one cursor per
   handshake, and nothing here holds one. A client that wants a session's own
   entries opens that session's `/v1/events` beside this
-  (backlog/host-process.md).
+  (backlog/inbox/host-process.md).
 - `GET /sessions?state=archived&cwd=<abs root>` — the dormant sessions: the same
   collection filtered by the lifecycle word `PATCH /sessions/:id` carries. `state`
   absent or `active` is the listing above; any other value is `400`. The answer is a
@@ -215,7 +215,7 @@ sessions from one process. Its own routes are the listener's, not a session's:
   the host's stderr and opens a browser on the host's desktop, which that caller
   cannot see. Such a creation blocks until the authorization finishes or the host
   shuts down; a caller that disconnects does not cancel it, and nothing else
-  bounds the wait. `backlog/remote-mcp-authorization.md` records the fix.
+  bounds the wait. `backlog/inbox/remote-mcp-authorization.md` records the fix.
 - `GET /projects` — the remembered launch locations: every successful `POST
   /sessions` records the directory it started in, keyed by that directory plus the
   *source* configuration the boot consumed (never the per-session copy under

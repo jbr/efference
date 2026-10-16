@@ -222,4 +222,4 @@ fact but not an instruction. The one `⟢` block that asks for something, the tr
 answered with a "nothing is being asked" stand-in, so a forged ask costs a round-trip. The `role:system` operator channel (the eventual Opus-4.8 upgrade
 described in `supervisor.md`) is the anticipated path for anything that *should* carry
 authority; user-role is the conservative, universally-supported default
-(backlog/harness-note-authority.md).
+(backlog/inbox/harness-note-authority.md).

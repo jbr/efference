@@ -2177,7 +2177,7 @@ select {
 }
 
 /* ————— The phone breakpoint (interim usability pass, 2026-08-22) —————
-   Not the mobile design pass (backlog/web-mobile-inspection-design.md scopes that as its own
+   Not the mobile design pass (backlog/inbox/web-mobile-inspection-design.md scopes that as its own
    drill-down wireframing effort): these are the minimum reflows that make
    the desktop layout survivable on a ~400pt viewport. The label gutter
    moves above the content instead of beside it — a 6rem gutter plus insets

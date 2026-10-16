@@ -200,7 +200,7 @@ impl Client {
         self.dialect() == WireDialect::Responses && self.prompt_cache == PromptCachePolicy::Implicit
     }
 
-    /// The triage-lineage primer (backlog/separate-triage-cold-prefix.md): the turn's
+    /// The triage-lineage primer (docs/transport.md): the turn's
     /// own input replayed so a later peek extends a request that ended where the main
     /// one did. Shaped exactly like the keepalive's Responses ping — the turn envelope
     /// with the backend-minimum output cap — because it is the same write: a cached

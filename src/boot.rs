@@ -12,7 +12,7 @@
 //! A host's session-creation handler builds the request from a control-channel
 //! body after resolving its role selections against the host's connections.
 //! Boot progress is reported on stderr, the host's surface; a hosted creation
-//! will need that report returned instead (backlog/host-process.md).
+//! will need that report returned instead (backlog/inbox/host-process.md).
 
 use std::path::PathBuf;
 

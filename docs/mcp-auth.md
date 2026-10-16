@@ -170,4 +170,4 @@ of its quieter advantages.
 
 Mid-session refresh (a token that expires during a long session fails the tool call
 rather than refreshing), `403 insufficient_scope` step-up, pre-registered client
-credentials in config, and the subagent case. See `backlog/mcp-auth.md`.
+credentials in config, and the subagent case. See `backlog/inbox/mcp-auth.md`.

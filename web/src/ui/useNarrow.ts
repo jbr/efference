@@ -2,7 +2,7 @@
 // `@media (max-width: 700px)` block in index.css — change both together).
 // Display components use it for what CSS alone can't switch: truncation
 // depth, placeholder copy. Interim usability pass; the real mobile design
-// pass may replace it (backlog/web-mobile-inspection-design.md).
+// pass may replace it (backlog/inbox/web-mobile-inspection-design.md).
 
 import { useSyncExternalStore } from "react";
 

@@ -375,7 +375,7 @@ fn only_a_shared_peek_touches_the_streaks_idle_window() {
 
 /// A primer plants a resume point on the triage lineage, not the loop's: it neither
 /// counts as prefix evidence nor stamps the touch clock, so the main prefix still
-/// reads evicted after an idle gap (backlog/separate-triage-cold-prefix.md).
+/// reads evicted after an idle gap (docs/transport.md).
 #[test]
 fn primer_neither_counts_nor_touches_the_main_prefix() {
     let mut streak = ColdStreak::default();

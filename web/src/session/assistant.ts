@@ -4,7 +4,7 @@
 // whichever wire dialect answered. Provider replay credentials — a Messages
 // thinking signature, a Responses `encrypted_content` — are not part of the
 // view. Ordered rendering across the three groups is deferred with the TUI's
-// (backlog/openai-provider/ordered-clients.md).
+// (backlog/inbox/openai-provider/ordered-clients.md).
 
 import type {
   AssistantOutput,

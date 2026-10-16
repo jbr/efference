@@ -159,7 +159,7 @@ in the suite's environment, past a delta's arrival interval well before a block
 of that size finishes. Once the folding thread is behind, the deltas already
 buffered in the fetch body keep it saturated after the producer has gone quiet —
 so the page did not recover when the stream ended, only when it was reloaded
-([../backlog/web-streaming-hot-loop.md](../backlog/web-streaming-hot-loop.md)).
+([../journal/2026-08-27-web-streaming-freeze.md](../journal/2026-08-27-web-streaming-freeze.md)).
 
 Two mechanisms bound that, both below `ui/`:
 
@@ -200,7 +200,7 @@ the page's own location, because the page was served *from* its base: a path und
 daemon at a socket root and a host at a prefix are then the same client code, and
 nothing above `api/` names a binding. No host serves the page today; the session
 list view and the prefixed base are held for the in-process host
-(`backlog/host-process.md`). `/auth/…` and
+(`backlog/inbox/host-process.md`). `/auth/…` and
 `/sessions` are deliberately *not* joined: they are the listener's own surfaces,
 at its root under either binding — one credential covers every session behind a
 host.
@@ -291,7 +291,7 @@ page's own report says ([web-push.md](web-push.md)), not what it has open.
 `foldRecent` reads the latest intent and reply off the log; a user entry retires the
 reply it answers, and a record-only assistant entry says nothing. That is N
 connections and the whole log for a card that reads two fields, accepted while
-whether the intent line earns its place is learned (`backlog/host-overview-stream.md`).
+whether the intent line earns its place is learned (`backlog/inbox/host-overview-stream.md`).
 
 **Ending is the one thing here that is not a navigation**, so it sits behind the card's
 menu rather than beside the title. `DELETE /sessions/:id` reaps the session's
@@ -382,7 +382,7 @@ are ordinary backlog units. What remains open is whether a phone eventually want
 more than a reflow: fitting a harness's worth of information onto a phone may
 need drill-down views that depart far enough from the desktop layout to be their
 own wireframing pass, which has not run
-([../backlog/web-mobile-inspection-design.md](../backlog/web-mobile-inspection-design.md)
+([../backlog/inbox/web-mobile-inspection-design.md](../backlog/inbox/web-mobile-inspection-design.md)
 is that unit). The breakpoint's cheapest workable moves — terse results with
 tap-to-detail, the inspector as a full-screen sheet — already landed on that
 drill-down shape, which is evidence for the prediction, not a substitute for the
@@ -462,7 +462,7 @@ transcript below the desktop sibling breakpoint.
 Known nit: wire-vocabulary glyphs quoted in an *inline-code span* (a model
 writing `` `⟢` `` in its own prose) render as tofu on iOS — IBM Plex Mono lacks
 U+27E2 and the iOS mono fallbacks don't fill it; the serif covers it, as does
-the renderer's own `✧` note chrome (backlog/icebox.md holds the fix candidates).
+the renderer's own `✧` note chrome (backlog/parked/icebox.md holds the fix candidates).
 
 ## The cordon — `web/src/render/`
 
@@ -667,7 +667,7 @@ page's length and DOM weight stay bounded as a session grows.
 - **Thinking**: trimmed is a three-line preview under the same fade; brief is a
   "Thought · N words" pill. Thinking of 120 words or fewer is never folded —
   the median block is about that size, and folding it costs a click and saves
-  nothing (backlog/web-thinking-autocollapse.md).
+  nothing (backlog/inbox/web-thinking-autocollapse.md).
 - **Always whole, at any distance**: user turns and assistant prose; a call
   still running or held at a gate; a failed call; a result withheld by a triage
   failure; a call the spotter gated or watched. Errors, gates, and refusals
@@ -678,7 +678,7 @@ than dropping: every entry still renders, as the positions require, and a gate
 decides a call, never a result, so no pending decision rests on a folded body.
 Levels are not yet anchored against the scroll: folding an item above the
 viewport while the reader is scrolled up moves the page — harmless while
-following the tail, and the open item in backlog/web-thinking-autocollapse.md.
+following the tail, and the open item in backlog/inbox/web-thinking-autocollapse.md.
 
 **A call's parts, top to bottom**: the intent as its title (upright serif,
 inline markdown), the signature under it at a smaller size, then what came
@@ -1057,7 +1057,7 @@ Lilac's dot is a white bead shading out to the hue, since a white core with
 only a rim read as the idle outline on a light page.
 Adding a theme
 is authoring an override block plus a select option
-([backlog/web-plain-themes.md](../backlog/web-plain-themes.md) is the pending
+([backlog/inbox/web-plain-themes.md](../backlog/inbox/web-plain-themes.md) is the pending
 pair).
 
 Strings and paths use misty blue (`--code-path`), while semantic diff additions
@@ -1872,7 +1872,7 @@ approve, abort, and redirect with steering text. The route also takes a
 `config_edit` grant, which the web client does not offer: a grant guessed from
 the call's input was a command prefix whatever the call gated on, so
 "always allow" waits for the host to propose the grant itself
-([../backlog/permissions/gate-grant-proposal.md](../backlog/permissions/gate-grant-proposal.md)).
+([../backlog/inbox/permissions/gate-grant-proposal.md](../backlog/inbox/permissions/gate-grant-proposal.md)).
 A `409 gate_moved` is handled in
 `session/actions.ts` by folding the response's corrective `detail` into the
 store as a synthetic state frame — no second round-trip; `resolveGate` returns
@@ -2101,7 +2101,7 @@ results included. `tapes()` lists them; `restore()` replays the newest earlier o
 (or a named key) held at its end, and stops recording live frames until reload so
 a replay never mixes with the stream. Serving a recorded session through the
 daemon's own code remains the only way the TUI gets the same
-([../backlog/session-replay.md](../backlog/session-replay.md)).
+([../backlog/inbox/session-replay.md](../backlog/inbox/session-replay.md)).
 
 The whole module sits behind `import.meta.env.DEV` in `useSession.ts`, which a
 production build folds to `false`; the branch and the module go with it.
