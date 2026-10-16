@@ -206,7 +206,7 @@ fn an_interrupt_latches_and_is_consumed_exactly_once() {
     let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
     assert!(!shared.take_interrupt(), "nothing latched at rest");
 
-    shared.interrupt(); // no waiter registered — the notify half reaches nobody
+    shared.interrupt(Default::default()); // no waiter registered — the notify half reaches nobody
     assert!(
         shared.take_interrupt(),
         "the flag survived the dropped wakeup"
@@ -214,8 +214,8 @@ fn an_interrupt_latches_and_is_consumed_exactly_once() {
     assert!(!shared.take_interrupt(), "one press, one stop");
 
     // Repeated presses before anyone reads still amount to one interrupt.
-    shared.interrupt();
-    shared.interrupt();
+    shared.interrupt(Default::default());
+    shared.interrupt(Default::default());
     assert!(shared.take_interrupt());
     assert!(!shared.take_interrupt());
 }

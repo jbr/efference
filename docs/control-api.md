@@ -565,7 +565,21 @@ equivalent; kills its process group) and the turn continues from its withheld
 result; a generation in flight is ended — the stream is dropped, what streamed is
 kept as a record-only entry, and the loop returns to idle, where a queued turn
 lands at once. A no-op only when the loop is idle. A verb-route on the loop
-resource because it *is* a verb — it signals, it doesn't delete state. No body.
+resource because it *is* a verb — it signals, it doesn't delete state.
+
+- Body, optional: `{ "source"?: "<string>", "control"?: "<string>" }`. `source` names who
+  is interrupting, spelled as a turn's `source` is (`web`, `mcp[<clientInfo.name>]`,
+  `session[<id>]`); `control` names the affordance (`stop-button`, `status-bar-stop`,
+  `esc`, `control-cli`). Both are client-asserted and unverified; absent means the
+  operator's own command line or TUI, with no affordance named. The web client's two
+  stop buttons send `web` with their own label, the TUI's Esc sends `esc`,
+  `efference control interrupt` sends `control-cli`, and the interrupt tool sends the mounting
+  harness (over MCP) or the calling session (in-session) as `source`.
+- The host appends the origin as a `Telemetry::Interrupt` entry before it signals, so
+  the entry precedes the `failed: interrupted` stage the signal causes
+  ([log-and-projection.md](log-and-projection.md)); it is appended whether or not
+  anything was running.
+- `400 bad_request` — a body that is not an origin; nothing is signalled.
 
 - `200 {"status":"interrupted"}`
 

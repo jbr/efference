@@ -107,6 +107,63 @@ async fn turn_source_reaches_the_queued_turn() {
     assert_eq!(queued.source, None);
 }
 
+/// `POST /loop/interrupt` records where the interrupt came from
+/// (docs/control-api.md): the body's `source` and `control` land on a
+/// `Telemetry::Interrupt` entry, an empty body records an origin that names
+/// neither, and a body that is not an origin is refused without signalling.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_interrupt_over_http_records_its_origin() {
+    let (shared, _turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let app = test_server(&shared).await;
+    let recorded = |shared: &Session| -> Vec<crate::log::InterruptOrigin> {
+        shared
+            .snapshot()
+            .iter()
+            .filter_map(|e| match &e.payload {
+                Payload::Telemetry(crate::log::Telemetry::Interrupt(origin)) => {
+                    Some(origin.clone())
+                }
+                _ => None,
+            })
+            .collect()
+    };
+
+    app.post("/v1/loop/interrupt")
+        .with_body(r#"{"source":"web","control":"stop-button"}"#)
+        .await
+        .assert_status(200);
+    app.post("/v1/loop/interrupt").await.assert_status(200);
+    app.post("/v1/loop/interrupt")
+        .with_body(r#"{"source":7}"#)
+        .await
+        .assert_status(400);
+
+    assert_eq!(
+        recorded(&shared),
+        [
+            crate::log::InterruptOrigin {
+                source: Some("web".into()),
+                control: Some("stop-button".into()),
+            },
+            crate::log::InterruptOrigin::default(),
+        ]
+    );
+    let entry = shared
+        .snapshot()
+        .into_iter()
+        .find(|e| {
+            matches!(
+                &e.payload,
+                Payload::Telemetry(crate::log::Telemetry::Interrupt(_))
+            )
+        })
+        .unwrap();
+    assert_eq!(
+        serde_json::to_string(&entry.payload).unwrap(),
+        r#"{"Telemetry":{"Interrupt":{"source":"web","control":"stop-button"}}}"#
+    );
+}
+
 /// The kickoff's source is the harness's alone: the clients leave a turn carrying
 /// it out of the transcript, so a client claiming it is refused (docs/context.md).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

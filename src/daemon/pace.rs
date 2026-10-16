@@ -257,7 +257,15 @@ impl Session {
         Arc::clone(&self.interrupt)
     }
 
-    pub(crate) fn interrupt(&self) {
+    /// Record where the interrupt came from, then signal it. The entry is appended
+    /// first, so it precedes the `failed: interrupted` stage the signal causes in
+    /// the log (docs/log-and-projection.md). A failed write is reported and
+    /// dropped: the record must not stop what it describes.
+    pub(crate) fn interrupt(&self, origin: crate::log::InterruptOrigin) {
+        let entry = crate::log::Payload::Telemetry(crate::log::Telemetry::Interrupt(origin));
+        if let Err(e) = self.append(self.latest_turn(), entry) {
+            log::warn!("interrupt record: append failed: {e}");
+        }
         // Latch first, then wake: a bash tool racing the abort future must never
         // resolve and reach the loop's juncture check before the flag is visible.
         self.interrupt_latch.store(true, Ordering::SeqCst);

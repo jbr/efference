@@ -40,15 +40,28 @@ impl ToolMeta for Interrupt {
 impl Tool<Control> for Interrupt {
     type Output = String;
 
-    async fn execute(self, control: Control, _context: RequestContext) -> Result<String> {
+    async fn execute(self, control: Control, context: RequestContext) -> Result<String> {
         match &control.executor {
             Executor::Client(state) => {
                 let client = state.client(self.session.as_deref()).await?;
-                client.interrupt().await?;
+                // As a turn does: a call over MCP names the mounting harness from its
+                // clientInfo; the command line's empty context is the operator's own
+                // `efference control interrupt`.
+                let source = super::turn::turn_source(None, &context);
+                let control = source.is_none().then(|| "control-cli".to_string());
+                client
+                    .interrupt(&crate::log::InterruptOrigin { source, control })
+                    .await?;
                 Ok("interrupted".into())
             }
             Executor::Host(state) => {
-                state.resolve_mutating(self.session.as_deref())?.interrupt();
+                // Attributed to the calling session, as its turns are (docs/tools.md).
+                state
+                    .resolve_mutating(self.session.as_deref())?
+                    .interrupt(crate::log::InterruptOrigin {
+                        source: Some(format!("session[{}]", state.caller)),
+                        control: None,
+                    });
                 Ok("interrupted".into())
             }
         }

@@ -5,11 +5,28 @@ use super::*;
 /// Signal the running tool (docs/control-channel.md). A verb-route on the
 /// loop resource because it *is* a verb — it signals, it doesn't delete
 /// state.
-pub(super) async fn interrupt(conn: Conn) -> Conn {
+pub(super) async fn interrupt(mut conn: Conn) -> Conn {
     let Some(shared) = shared_of(&conn) else {
         return missing_state(conn);
     };
-    shared.interrupt();
+    // The body is optional: a client that says nothing about itself interrupts
+    // as the operator, with no control named (docs/control-api.md).
+    let body = conn.request_body_string().await.unwrap_or_default();
+    let origin = if body.trim().is_empty() {
+        crate::log::InterruptOrigin::default()
+    } else {
+        match serde_json::from_str::<crate::log::InterruptOrigin>(&body) {
+            Ok(origin) => origin,
+            Err(e) => {
+                return fail(
+                    conn,
+                    ErrorCode::BadRequest,
+                    format!("bad /loop/interrupt body: {e}"),
+                );
+            }
+        }
+    };
+    shared.interrupt(origin);
     conn.with_status(200)
         .with_body(r#"{"status":"interrupted"}"#)
         .halt()

@@ -205,8 +205,7 @@ export function buildTree(entries: LogEntry[]): TranscriptNode[] {
       // attempts belong to transport chrome, not the conversation.
       if (
         upstream_failure !== undefined &&
-        (upstreamFailureWhy(upstream_failure) ===
-          "generation ended by the operator's interrupt" ||
+        (upstreamFailureWhy(upstream_failure) === "generation interrupted" ||
           thinking.length > 0 ||
           text.length > 0 ||
           calls.length > 0)

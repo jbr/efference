@@ -241,8 +241,11 @@ impl Client {
         serde_json::from_str(&resp).map_err(|_| anyhow!("bad /title response: {resp}"))
     }
 
-    pub async fn interrupt(&self) -> Result<()> {
-        self.post("/loop/interrupt", String::new()).await.map(drop)
+    /// Interrupt the loop (`POST /loop/interrupt`, docs/control-api.md), saying
+    /// who is asking and through which affordance; the host records both.
+    pub async fn interrupt(&self, origin: &crate::log::InterruptOrigin) -> Result<()> {
+        let body = serde_json::to_string(origin)?;
+        self.post("/loop/interrupt", body).await.map(drop)
     }
 
     /// Compact a cold session's history into a summary (`POST /loop/compact`,

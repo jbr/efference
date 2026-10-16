@@ -138,7 +138,7 @@ async fn turns_queued_before_the_ask_are_recalled_and_published() {
 async fn an_interrupt_ends_the_ask_and_leaves_nothing_pending() {
     let shared = session();
     let task = start(&shared, ask_call("ask_1", "Sure?"), ONE).await;
-    shared.interrupt();
+    shared.interrupt(Default::default());
     let (result, reply) = task.await.unwrap();
     assert!(result.is_error);
     assert!(result.content.contains("interrupted"), "{result:?}");
@@ -281,7 +281,7 @@ async fn run_call_skips_the_cascade_and_carries_the_reply() {
         }
         tokio::time::sleep(std::time::Duration::from_millis(5)).await;
     }
-    shared.interrupt();
+    shared.interrupt(Default::default());
     assert!(matches!(runner.await.unwrap(), Decision::Withheld(_)));
     assert!(shared.asking().is_none());
 

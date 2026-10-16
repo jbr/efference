@@ -415,7 +415,7 @@ impl Client {
                 }
             },
             _ = abort.as_mut() => {
-                let why = "generation ended by the operator's interrupt".to_string();
+                let why = "generation interrupted".to_string();
                 log::debug!("{why}");
                 assembler.fail(why);
                 operator_abort = true;

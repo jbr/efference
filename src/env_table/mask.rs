@@ -398,6 +398,15 @@ impl Masker {
             Payload::Telemetry(Telemetry::InboxExpired { .. }) => {}
             // A supervisor change carries a session id. Nothing from the environment.
             Payload::Telemetry(Telemetry::SupervisorSet { .. }) => {}
+            // An interrupt's origin is two client-asserted labels.
+            Payload::Telemetry(Telemetry::Interrupt(origin)) => {
+                if let Some(source) = origin.source.as_mut() {
+                    self.mask_in_place(source);
+                }
+                if let Some(control) = origin.control.as_mut() {
+                    self.mask_in_place(control);
+                }
+            }
             Payload::Telemetry(Telemetry::Consolidation { outcome, .. }) => {
                 self.mask_in_place(outcome)
             }

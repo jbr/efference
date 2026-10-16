@@ -205,7 +205,10 @@ async fn an_interrupt_during_the_triage_ends_the_turn_at_the_gate() {
         requests.load(Ordering::SeqCst) == 2
     })
     .await;
-    session.interrupt();
+    session.interrupt(crate::log::InterruptOrigin {
+        source: Some("web".into()),
+        control: Some("stop-button".into()),
+    });
     wait_until("the loop is idle", || {
         !session.running.load(Ordering::SeqCst)
     })
@@ -221,6 +224,31 @@ async fn an_interrupt_during_the_triage_ends_the_turn_at_the_gate() {
     );
     assert!(!session.interrupt_pending(), "the press was consumed");
     let log = session.snapshot();
+    // The origin is recorded before the signal it describes, so it precedes the
+    // triage request's `failed: interrupted` stage.
+    let recorded = log
+        .iter()
+        .position(|e| {
+            matches!(
+                &e.payload,
+                Payload::Telemetry(crate::log::Telemetry::Interrupt(origin))
+                    if origin.source.as_deref() == Some("web")
+                        && origin.control.as_deref() == Some("stop-button")
+            )
+        })
+        .expect("the interrupt is in the log");
+    let failed = log
+        .iter()
+        .position(|e| {
+            matches!(
+                &e.payload,
+                Payload::Telemetry(crate::log::Telemetry::RequestStage(stage))
+                    if matches!(&stage.stage, crate::log::RequestStageKind::Failed { reason }
+                        if reason.contains("interrupt"))
+            )
+        })
+        .expect("the interrupted request recorded its failure");
+    assert!(recorded < failed, "{recorded} before {failed}");
     // Withheld as at the interrupt's after juncture: the raw stays in the log, captured
     // before the triage, and the verdict that keeps it off the wire names its seq.
     let captured_seq = log
@@ -286,7 +314,7 @@ async fn an_interrupt_before_the_triage_stream_opens_still_ends_it() {
         requests.load(Ordering::SeqCst) == 2
     })
     .await;
-    session.interrupt();
+    session.interrupt(Default::default());
     open.store(true, Ordering::SeqCst);
     wait_until("the loop is idle", || {
         !session.running.load(Ordering::SeqCst)

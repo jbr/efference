@@ -9,6 +9,7 @@ behind a change, see [`journal/`](journal/).
 
 ### Added
 
+- An interrupt appends a `Telemetry::Interrupt` entry naming its `source` and `control` (the web stop buttons, Esc, `efference control interrupt`, the interrupt tool) before it signals; the failure text now reads `generation interrupted` instead of blaming the operator (docs/control-api.md, docs/log-and-projection.md).
 - An explicit separate triage pick is recorded with the main model it ran with, in the `triage_picks` table of the user state database; the shared-with-main fallback records nothing, and nothing reads the table yet (docs/state-store.md).
 - A separate triage model on any dialect is kept warm through idle: the triage keepalive re-sends the last triage request as sent, ending at its last breakpoint, under the main keepalive's cadence, output cap, affordability check, and give-up; the Codex primer is still re-sent where it plants (docs/transport.md).
 - A separate triage model reads a text view — head summaries, the digest up to a view cut, the recent steps in full, then the current step — instead of the agent's transcript, so a triage model of any wire format can triage for any other; the view cut keeps the recent steps between 32 and 64 KiB (docs/triage.md).

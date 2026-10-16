@@ -144,7 +144,7 @@ pub enum RequestStageKind {
     /// The stream finalized.
     Ended,
     /// The request ended without a finalized stream: an open failure, a stream that
-    /// died or ran past its ceiling, or `interrupted` (the operator's interrupt, or
+    /// died or ran past its ceiling, or `interrupted` (an interrupt, or
     /// the request's future dropped).
     Failed { reason: String },
 }

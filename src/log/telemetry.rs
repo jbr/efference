@@ -61,6 +61,11 @@ pub enum Telemetry {
     /// (docs/permissions.md): the session now named, or `None` when cleared. The
     /// creator a session starts with is in the header and is not recorded here.
     SupervisorSet { supervisor: Option<String> },
+    /// An interrupt reached the loop (`POST /loop/interrupt`, docs/control-api.md):
+    /// who sent it and through which affordance, appended before the signal fires so
+    /// it precedes the `failed: interrupted` stage it causes. Appended whether or not
+    /// anything was running.
+    Interrupt(InterruptOrigin),
     /// A main-model consolidation check and its disposition (docs/consolidate.md).
     Consolidation {
         from: super::Seq,
@@ -70,6 +75,21 @@ pub enum Telemetry {
         outcome: String,
         account_bytes: usize,
     },
+}
+
+/// Where an interrupt came from. Both fields are client-asserted and unverified,
+/// like a turn's `source`; a client that says nothing leaves both absent
+/// (docs/control-api.md).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InterruptOrigin {
+    /// Who interrupted, spelled as a turn's `source` is: `web`, `mcp[<name>]`,
+    /// `session[<id>]`. Absent for the operator's own command line or TUI.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
+    /// The affordance that sent it: `stop-button`, `status-bar-stop`, `esc`,
+    /// `control-cli`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub control: Option<String>,
 }
 
 impl Telemetry {
@@ -86,6 +106,7 @@ impl Telemetry {
             Telemetry::CompactionFailed { .. } => "telemetry.compaction_failed",
             Telemetry::InboxExpired { .. } => "telemetry.inbox_expired",
             Telemetry::SupervisorSet { .. } => "telemetry.supervisor_set",
+            Telemetry::Interrupt(_) => "telemetry.interrupt",
             Telemetry::Consolidation { .. } => "telemetry.consolidation",
         }
     }

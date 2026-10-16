@@ -68,6 +68,7 @@ enum Telemetry {
     CompactionFailed { error: String },           // the compaction asked for last ended without a summary
     InboxExpired { seq: Seq, shows: usize },      // a shown notification no verdict mentioned, dismissed by the harness (see inbox.md)
     SupervisorSet { supervisor: Option<String> }, // the supervisor pointer set or cleared (see permissions.md)
+    Interrupt(InterruptOrigin),                   // an interrupt reached the loop: who sent it, through which control (see control-api.md)
     Consolidation { from: Seq, upto: Seq, context: Seq, tool_bytes: usize, outcome: String, account_bytes: usize },
 }
 ```
@@ -132,10 +133,17 @@ generation id arrives late or never). `origin` is the same `RequestOrigin` the
 transport), `attempt_failed {attempt, status}` (a refused attempt the transport may
 re-send), `first_byte` (the first stream event), `ended` (the stream finalized), or
 `failed {reason}` (an open failure, a stream that died or passed its ceiling, or
-`interrupted`: the operator's interrupt, or a request future dropped before it
+`interrupted`: an interrupt (the reason reads `generation interrupted`, and says nothing
+about who sent it), or a request future dropped before it
 finished; the reason is capped at 160 characters and passes the `[env]` masker). The
 entry's own `at` is the stage's time. Streaming sub-stages (thinking, text, a tool
 call) are not recorded; the ephemeral `output` class distinguishes them.
+
+`Interrupt` records where an interrupt came from: `{source?, control?}`, both
+client-asserted labels as `POST /loop/interrupt` received them (`source` spelled as a
+turn's is, `control` naming the button or key). It is appended before the signal fires, so it
+precedes the `failed: interrupted` stage of the request the signal ends, and it is
+appended when nothing was running too. The `[env]` masker passes both labels.
 
 `Push` records one step of a moment's push (decided, held, escalated, cancelled, or the
 push services' per-device answers). It projects to nothing, like `RequestStage`

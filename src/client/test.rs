@@ -104,7 +104,7 @@ async fn verbs_round_trip_over_the_unix_connector() {
         .approve("toolu_7", &Approval::Redirect("try the other file".into()))
         .await
         .unwrap();
-    client.interrupt().await.unwrap();
+    client.interrupt(&Default::default()).await.unwrap();
 
     let state = client.state().await.unwrap();
     assert!(state.contains(r#""last_seq":3"#));

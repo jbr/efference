@@ -252,7 +252,12 @@ async fn attach(
         while let Some(intent) = interrupt_rx.recv().await {
             match intent {
                 crate::frontend::Interrupt::Kill => {
-                    let _ = interrupt_client.interrupt().await;
+                    let _ = interrupt_client
+                        .interrupt(&crate::log::InterruptOrigin {
+                            source: None,
+                            control: Some("esc".into()),
+                        })
+                        .await;
                 }
                 crate::frontend::Interrupt::Detach => {
                     let _ = interrupt_client.background(None).await;

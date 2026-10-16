@@ -6,7 +6,7 @@ use crate::control_tools::{Approve, Control, Executor, Interrupt, Turn};
 use crate::daemon::host::SupervisorRefused;
 use crate::daemon::{Host, SessionRuntime};
 use crate::frontend::Approval;
-use crate::log::Telemetry;
+use crate::log::{InterruptOrigin, Telemetry};
 use crate::policy::ReviewLevel;
 use mcplease::traits::Tool as _;
 use mcplease::types::RequestContext;
@@ -98,6 +98,18 @@ fn supervisor_records(session: &Session) -> Vec<Option<String>> {
         .iter()
         .filter_map(|e| match &e.payload {
             Payload::Telemetry(Telemetry::SupervisorSet { supervisor }) => Some(supervisor.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+/// The `Interrupt` records in `session`'s log, in order.
+fn interrupt_origins(session: &Session) -> Vec<InterruptOrigin> {
+    session
+        .snapshot()
+        .iter()
+        .filter_map(|e| match &e.payload {
+            Payload::Telemetry(Telemetry::Interrupt(origin)) => Some(origin.clone()),
             _ => None,
         })
         .collect()
@@ -215,6 +227,14 @@ async fn a_supervisor_may_turn_and_interrupt_and_reaches_no_further() {
     .execute(b.clone(), RequestContext::default())
     .await
     .expect("the supervisor may interrupt");
+    assert_eq!(
+        interrupt_origins(&fixture.session("a")),
+        [InterruptOrigin {
+            source: Some("session[b]".into()),
+            control: None,
+        }],
+        "the interrupt tool records the calling session"
+    );
 
     let err = turn("a")
         .execute(fixture.control("c"), RequestContext::default())

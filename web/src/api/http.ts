@@ -199,9 +199,12 @@ export const patchLoop = ({ speedMs, held, reviewLevel }: LoopPatch) =>
       : {}),
     ...(reviewLevel !== undefined ? { review_level: reviewLevel } : {}),
   });
-// Signals the running tool; it deletes no state.
-export const interruptLoop = () =>
-  post<{ status: string }>("/v1/loop/interrupt", {});
+// Signals the running tool; it deletes no state. The body names this client and
+// the affordance, which the host records on an `Interrupt` entry
+// (docs/control-api.md).
+export type InterruptControl = "stop-button" | "status-bar-stop";
+export const interruptLoop = (control: InterruptControl) =>
+  post<{ status: string }>("/v1/loop/interrupt", { source: "web", control });
 // Hand control back with no input (docs/control-api.md): the idle loop takes
 // another turn on the wire it already has — nothing is submitted and nothing is
 // appended, so this is not a turn with empty text. A moment with no continue in

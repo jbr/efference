@@ -384,7 +384,7 @@ export function Composer({
               held={pace?.held ?? false}
               uploading={attachments.uploading}
               onAttach={() => picker.current?.click()}
-              onInterrupt={() => act(interruptLoop())}
+              onInterrupt={() => act(interruptLoop("stop-button"))}
               holdPending={holdPending}
               onHoldChange={(held) => void changeHold(held)}
             />
@@ -403,7 +403,7 @@ export function Composer({
               className="interrupt-btn composer-icon-button"
               aria-label="Interrupt current operation"
               title="Interrupt current operation"
-              onClick={() => act(interruptLoop())}
+              onClick={() => act(interruptLoop("status-bar-stop"))}
             >
               <ComposerActionIcon kind="stop" />
             </button>

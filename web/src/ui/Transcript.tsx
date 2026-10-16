@@ -270,8 +270,7 @@ function Leaf({
         <Entry label={null}>
           <div className="record-only">
             {record !== undefined &&
-            upstreamFailureWhy(record) ===
-              "generation ended by the operator's interrupt"
+            upstreamFailureWhy(record) === "generation interrupted"
               ? "Generation interrupted — recorded, not in context"
               : "Incomplete response — recorded, not in context"}
           </div>

@@ -93,7 +93,7 @@ describe("record-only entries", () => {
         entry(1, {
           Assistant: {
             ...messagesAssistant([], [], []),
-            upstream_failure: "generation ended by the operator's interrupt",
+            upstream_failure: "generation interrupted",
           },
         }),
       ]).map((node) => node.key),

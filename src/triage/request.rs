@@ -57,7 +57,7 @@ impl std::fmt::Display for TriageFailure {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Upstream(why) | Self::Unusable(why) => f.write_str(why),
-            Self::Interrupted => f.write_str("triage ended by the operator's interrupt"),
+            Self::Interrupted => f.write_str("triage interrupted"),
         }
     }
 }
@@ -215,9 +215,7 @@ pub(super) async fn triage_completion(
                     // The operator interrupted during the triage (docs/control-channel.md):
                     // the latch the press set is left for the loop, which consumes it
                     // after the triage and ends the turn.
-                    record
-                        .retries
-                        .push(format!("triage ended by the operator: {why}"));
+                    record.retries.push(format!("triage ended: {why}"));
                     retry.clear(RetrySurface::Triage);
                     return Err(TriageFailure::Interrupted);
                 }

@@ -126,7 +126,7 @@ impl Tool<Control> for Turn {
 /// the caller sent, so a mounting harness is named without saying anything.
 /// `None` (the command line's empty context, or a caller that declared no name)
 /// means the operator, whose turns render no prefix.
-fn turn_source(explicit: Option<String>, context: &RequestContext) -> Option<String> {
+pub(super) fn turn_source(explicit: Option<String>, context: &RequestContext) -> Option<String> {
     explicit.or_else(|| {
         context
             .client_info()

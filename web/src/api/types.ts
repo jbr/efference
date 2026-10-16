@@ -123,6 +123,7 @@ export type Telemetry =
   | { CompactionFailed: { error: string } }
   | { InboxExpired: { seq: Seq; shows: number } }
   | { SupervisorSet: { supervisor: string | null } }
+  | { Interrupt: { source?: string; control?: string } }
   | {
       Consolidation: {
         from: Seq;
