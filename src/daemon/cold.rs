@@ -100,7 +100,7 @@ impl Session {
 
     /// Why the loop is parked at its cold check, or `None` when it is not.
     pub(super) fn park_reason(&self) -> Option<ParkReason> {
-        if !self.cold_parked() {
+        if self.loop_phase() != LoopPhase::ColdParked {
             return None;
         }
         Some(match self.cold_since() {
@@ -152,6 +152,7 @@ impl Session {
         if self.cold_since().is_some() {
             self.record_cold(ColdEvent::Released { by });
             self.person_acted.store(true, Ordering::SeqCst);
+            self.end_cold_park();
             self.cold_signal.notify_waiters();
         } else {
             self.wake_cold_check();
@@ -180,9 +181,20 @@ impl Session {
     /// Let a parked cold check look again: after a compaction the session is not cold,
     /// and the operator's next turn or continue resumes it.
     pub(crate) fn wake_cold_check(&self) {
-        if self.cold_parked() {
+        if self.cold_parked.load(Ordering::SeqCst) {
+            self.end_cold_park();
             self.cold_signal.notify_waiters();
         }
+    }
+
+    /// A person's action ends the park now, before the loop wakes to it, so a `settle`
+    /// racing the wake does not read the park that just ended (`phase.rs`). The loop
+    /// goes on to the request the check stood before.
+    fn end_cold_park(&self) {
+        self.end_wait(
+            |phase| phase == LoopPhase::ColdParked,
+            LoopPhase::Requesting,
+        );
     }
 
     /// Hold until the cache is believed warm (docs/session-title.md):
@@ -200,10 +212,6 @@ impl Session {
             }
             notified.await;
         }
-    }
-
-    pub(crate) fn cold_parked(&self) -> bool {
-        self.cold_parked.load(Ordering::SeqCst)
     }
 
     /// The loop's cold check, before any request on the main prefix: returns at once
@@ -232,8 +240,7 @@ impl Session {
                     since,
                     context_tokens: self.cold_context_tokens(),
                 });
-                self.settle_changed.notify_waiters();
-                self.touch_state();
+                self.set_phase(LoopPhase::ColdParked);
             }
             notified.await;
         }
@@ -242,8 +249,7 @@ impl Session {
     fn unpark_cold(&self, cause: UnparkCause) {
         if self.cold_parked.swap(false, Ordering::SeqCst) {
             self.record_cold(ColdEvent::Unparked { cause });
-            self.settle_changed.notify_waiters();
-            self.touch_state();
+            self.end_cold_park();
         }
     }
 

@@ -112,6 +112,13 @@ pub(crate) enum Topic {
     /// supervisor ends, without anyone turning the dial; carried as its own topic for
     /// the same reason as [`ResolvedReviewLevel`](Self::ResolvedReviewLevel).
     Supervisor,
+    /// Where the loop is (docs/control-api.md): one exclusive phase, tagged by
+    /// `phase` — `idle`, `requesting`, `executing`, `delayed` (with `until`), `gated`,
+    /// `asking`, `cold_parked`, or `blocked` (with `reason`).
+    LoopPhase,
+    /// What each loop route would answer now (docs/control-api.md): `turn`,
+    /// `continue`, and `compact`, each accepted or refused with the route's message.
+    Verbs,
     /// Whether the loop is executing a turn.
     Running,
     /// Turns submitted but not yet dequeued, in submission order — `[{submission_id, text}]`
@@ -140,6 +147,9 @@ pub(crate) enum Topic {
     /// Separate from [`Cold`](Self::Cold), which is `null` after a compaction though the
     /// loop stays parked until the next turn or continue.
     Park,
+    /// The last compaction's failure (docs/summary.md): `{error, at}`, or `null` —
+    /// cleared when a turn's request goes out or another compaction is asked for.
+    CompactionFailure,
     /// A compaction in progress, or the last one's failure (docs/control-api.md):
     /// `{state: "writing"}`, `{state: "failed", error}`, or `null`. Separate from
     /// [`Cold`](Self::Cold) because a compaction can be asked of a warm session.
@@ -167,7 +177,7 @@ impl Topic {
     /// walking it, so a topic added here reaches both surfaces or neither — which is
     /// what keeps `GET /state` equal to the fold of every state frame
     /// (docs/control-api.md).
-    pub(crate) const ALL: [Topic; 23] = [
+    pub(crate) const ALL: [Topic; 26] = [
         Self::Gate,
         Self::Ask,
         Self::Processes,
@@ -179,6 +189,8 @@ impl Topic {
         Self::ReviewLevel,
         Self::ResolvedReviewLevel,
         Self::Supervisor,
+        Self::LoopPhase,
+        Self::Verbs,
         Self::Running,
         Self::Queued,
         Self::Stall,
@@ -188,6 +200,7 @@ impl Topic {
         Self::Cold,
         Self::Park,
         Self::Compaction,
+        Self::CompactionFailure,
         Self::ConfigRepair,
         Self::SessionIdentity,
         Self::CurrentOperations,
@@ -214,6 +227,8 @@ impl Topic {
             Self::ReviewLevel => "review_level",
             Self::ResolvedReviewLevel => "resolved_review_level",
             Self::Supervisor => "supervisor",
+            Self::LoopPhase => "loop_phase",
+            Self::Verbs => "verbs",
             Self::Running => "running",
             Self::Queued => "queued",
             Self::Stall => "stall",
@@ -223,6 +238,7 @@ impl Topic {
             Self::Cold => "cold",
             Self::Park => "park",
             Self::Compaction => "compaction",
+            Self::CompactionFailure => "compaction_failure",
             Self::ConfigRepair => "config_repair",
             Self::SessionIdentity => "session_identity",
             Self::CurrentOperations => "current_operations",

@@ -140,7 +140,7 @@ async fn triage_is_shown_the_masked_result() {
     // what it did rather than by `running`, which is false in both states.
     wait_until("the turn has run", || requests.load(Ordering::SeqCst) >= 3).await;
     wait_until("the turn finishes", || {
-        !session.running.load(Ordering::SeqCst)
+        session.loop_phase() == crate::daemon::LoopPhase::Idle
     })
     .await;
     host.shut_down().await;
@@ -197,7 +197,7 @@ async fn a_completed_batch_projects_the_wire_a_directly_logged_one_would() {
 
     wait_until("the turn has run", || requests.load(Ordering::SeqCst) >= 3).await;
     wait_until("the turn finishes", || {
-        !session.running.load(Ordering::SeqCst)
+        session.loop_phase() == crate::daemon::LoopPhase::Idle
     })
     .await;
     let through_the_loop = session.project_messages();

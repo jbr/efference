@@ -97,7 +97,7 @@ async fn the_topic_differ_publishes_an_ask_and_its_end() {
 #[test]
 fn asking_is_a_status_and_a_decision_point() {
     let shared = session();
-    shared.running.store(true, Ordering::SeqCst);
+    shared.set_phase(crate::daemon::LoopPhase::Requesting);
     assert!(!shared.is_settled());
 
     let wait = shared.begin_ask("ask_1", "Sure?".into(), 1, 1);

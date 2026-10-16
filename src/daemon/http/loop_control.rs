@@ -42,7 +42,6 @@ pub(super) async fn continue_loop(conn: Conn) -> Conn {
     let Some(shared) = shared_of(&conn) else {
         return missing_state(conn);
     };
-    shared.person_acted(crate::daemon::PersonAction::Continue);
     match shared.request_continue() {
         Ok(()) => conn
             .with_status(202)
@@ -77,7 +76,10 @@ pub(super) async fn compaction(mut conn: Conn) -> Conn {
     };
     let wait = wants_wait(conn.querystring());
     match shared.request_compaction(body.warm) {
-        Ok(()) if wait => settle_and_state(&shared, conn).await,
+        Ok(()) if wait => {
+            let _ = tokio::time::timeout(SETTLE_TIMEOUT, shared.await_compaction()).await;
+            conn.with_status(200).with_body(shared.state_json()).halt()
+        }
         Ok(()) => conn
             .with_status(202)
             .with_body(r#"{"status":"compacting"}"#)

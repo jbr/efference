@@ -261,7 +261,13 @@ pub(super) async fn triage_completion(
             pause,
             &why,
         ));
-        retry.pause(Some(pause)).await;
+        // The loop's own wait, published as its `delayed` phase; a title ask is a
+        // detached aside, so its wait is not the loop's (docs/control-api.md).
+        if client.origin() == RequestOrigin::Title {
+            retry.pause(Some(pause)).await;
+        } else {
+            retry.delay(pause).await;
+        }
     }
 }
 

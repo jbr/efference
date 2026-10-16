@@ -168,6 +168,10 @@ impl Host {
 /// routing carries the news.
 pub(super) async fn watch_status(host: std::sync::Weak<Host>, id: String, session: Arc<Session>) {
     let mut last: Option<(SessionStatus, Routing)> = None;
+    // How many trajectories had ended at the last idle this watcher read: an idle is
+    // news when one has ended since, and not when an idle triage that pinned nothing
+    // passed through `running` and back without a turn having run.
+    let mut idle_seen = session.turns_ended();
     loop {
         // Arm before reading, so a change landing between the read and the await
         // cannot be lost — the same discipline the topic differ uses.
@@ -182,10 +186,14 @@ pub(super) async fn watch_status(host: std::sync::Weak<Host>, id: String, sessio
         appended.as_mut().enable();
 
         let status = session.status();
+        // Read after the status: the count moves before the phase reaches idle
+        // (`going_idle`), so an idle read here already counts the turn it ended.
+        let ended = session.turns_ended();
         let routing = (session.resolved_review_level(), session.supervisor());
         let notable = match (&last, &status) {
             (_, SessionStatus::Running) => false,
             (None, SessionStatus::Idle) => false,
+            (Some(_), SessionStatus::Idle) => ended != idle_seen,
             (Some((previous, routed)), current) => {
                 previous != current
                     || (matches!(current, SessionStatus::Gated { .. }) && *routed != routing)
@@ -201,6 +209,9 @@ pub(super) async fn watch_status(host: std::sync::Weak<Host>, id: String, sessio
             // already wakes on — so every wake pings it. Subscribers diff for
             // themselves, so a wake that moved nothing costs a comparison.
             host.touch_listing();
+        }
+        if status == SessionStatus::Idle {
+            idle_seen = ended;
         }
         last = Some((status, routing));
 

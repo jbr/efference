@@ -42,6 +42,7 @@ pub(super) async fn land(
         if !triager.is_own() {
             shared.await_warm_or_person().await;
         }
+        shared.set_phase(LoopPhase::Requesting);
         let mut entries = shared.snapshot();
         // Open the triage (docs/inbox.md): re-show the still-active
         // notifications (left at earlier triages), then log any newly arrived

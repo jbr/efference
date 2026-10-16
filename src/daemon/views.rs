@@ -28,6 +28,8 @@ impl Session {
             Topic::ReviewLevel => self.review_level_json(),
             Topic::ResolvedReviewLevel => self.resolved_review_level_json(),
             Topic::Supervisor => self.supervisor_json(),
+            Topic::LoopPhase => self.loop_phase_json(),
+            Topic::Verbs => self.verbs_json(),
             Topic::Running => self.running_json(),
             Topic::Queued => self.queued_json(),
             Topic::Stall => self.stall_json(),
@@ -37,6 +39,7 @@ impl Session {
             Topic::Cold => self.cold_json(),
             Topic::Park => self.park_json(),
             Topic::Compaction => self.compaction_json(),
+            Topic::CompactionFailure => self.compaction_failure_json(),
             Topic::ConfigRepair => self.config_repair_json(),
             Topic::SessionIdentity => self.session_identity_json(),
             Topic::CurrentOperations => self.current_operations_json(),
@@ -66,6 +69,7 @@ impl Session {
         serde_json::json!({
             "pace": self.topic_json(Topic::Pace),
             "review_level": self.topic_json(Topic::ReviewLevel),
+            "loop_phase": self.topic_json(Topic::LoopPhase),
             "running": self.topic_json(Topic::Running),
         })
         .to_string()
@@ -265,7 +269,7 @@ impl Session {
     /// (docs/tui.md). Unlike streaming deltas, this stays true through a *silent*
     /// long-running tool, so Esc can still reach it.
     fn running_json(&self) -> Value {
-        Value::from(self.running.load(Ordering::SeqCst))
+        Value::from(self.loop_phase() != LoopPhase::Idle)
     }
 
     /// The pending turn queue in submission order: `[{"submission_id":…,"text":…}]`, `[]` when

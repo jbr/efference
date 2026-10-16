@@ -53,6 +53,8 @@ impl Drop for AskWait<'_> {
                 *ask = None;
             }
         }
+        self.session
+            .end_wait(|phase| phase == LoopPhase::Asking, LoopPhase::Executing);
         // However the ask ended, its push has nothing left to announce
         // (docs/web-push.md).
         self.session
@@ -93,8 +95,8 @@ impl Session {
                 reply: tx,
             });
         }
-        self.settle_changed.notify_waiters();
-        self.touch_state();
+        // After the ask is stored, so a `settle` the phase wakes reads it.
+        self.set_phase(LoopPhase::Asking);
         // The session is waiting on a person, as it is when a turn ends
         // (docs/web-push.md); the message is the question.
         self.push(
@@ -127,7 +129,7 @@ impl Session {
             self.submit_turn(turn);
             return;
         }
-        self.settle_changed.notify_waiters();
-        self.touch_state();
+        // The answer ends the wait now (`phase.rs`).
+        self.end_wait(|phase| phase == LoopPhase::Asking, LoopPhase::Executing);
     }
 }

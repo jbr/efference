@@ -24,8 +24,12 @@ impl Frontend for RemoteFrontend {
             let turn = self.turns.recv().await?;
             // The channel cannot be searched, so a withdrawn turn still surfaces here; the
             // pending queue is the authority (docs/control-channel.md). An unclaimed turn was
-            // recalled while in flight — drop it and keep waiting, still parked.
-            if self.shared.claim_turn(&turn.submission_id, true) {
+            // recalled while in flight — drop it and keep waiting, still parked. A blank
+            // turn keeps the loop idle, so claiming one leaves the phase where it is.
+            if self
+                .shared
+                .claim_turn(&turn.submission_id, !turn.is_blank())
+            {
                 return Some(turn);
             }
         }
@@ -33,9 +37,8 @@ impl Frontend for RemoteFrontend {
 
     fn drain_queued_turns(&mut self) -> Vec<SubmittedTurn> {
         // Non-blocking pull of everything queued right now (docs/control-channel.md).
-        // Each drained turn is claimed off the pending queue — the loop is already running, so
-        // `running` is left alone (unlike the idle path), or `/settle` would read "busy" forever
-        // after the trajectory ends. A turn withdrawn while in flight fails the claim and is
+        // Each drained turn is claimed off the pending queue — the loop is already mid-trajectory,
+        // so the phase is left alone (unlike the idle path). A turn withdrawn while in flight fails the claim and is
         // dropped. Blank turns are dropped (still claimed): a mid-trajectory empty submit mirrors
         // the idle path's blank-keep-idling, never landing an empty `User` entry on the wire.
         let mut turns = Vec::new();
@@ -51,7 +54,11 @@ impl Frontend for RemoteFrontend {
         let rx = self.shared.register_pending(call, bound);
         // A dropped sender (shouldn't happen on the live daemon) defaults to abort
         // — never run a call we couldn't get a decision for.
-        rx.await.unwrap_or(Approval::Abort)
+        let approval = rx.await.unwrap_or(Approval::Abort);
+        // The decision ended the wait already (`resolve_approval`); a dropped sender did not.
+        self.shared
+            .end_wait(|phase| phase == LoopPhase::Gated, LoopPhase::Executing);
+        approval
     }
 
     async fn interrupted(&mut self) -> Interrupt {

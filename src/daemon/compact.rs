@@ -131,6 +131,17 @@ impl Session {
         }
     }
 
+    /// The `compaction_failure` topic: `{error, at}` after a compaction failed, until a
+    /// turn's request goes out or another compaction is asked for (docs/summary.md).
+    pub(super) fn compaction_failure_json(&self) -> Value {
+        match self.compaction_state() {
+            Some(CompactionState::Failed { error, at }) => {
+                serde_json::json!({"error": error, "at": at})
+            }
+            _ => Value::Null,
+        }
+    }
+
     pub(crate) fn compacting(&self) -> bool {
         self.compaction_state().is_some_and(|state| state.open())
     }
@@ -143,47 +154,61 @@ impl Session {
         }
     }
 
-    /// Whether the loop is held at a triage that produced no verdict
-    /// (docs/triage.md): running, but sending nothing until the operator
-    /// retries. The held triage is the one stall set while the loop runs.
-    pub(crate) fn held_at_triage(&self) -> bool {
-        self.stall().is_some_and(|stall| {
-            matches!(
-                stall.reason,
-                StallReason::TriageUnavailable | StallReason::TriageDefect
-            )
-        })
-    }
-
-    /// Ask for a compaction (`POST /loop/compact`), or say why it cannot run. One
-    /// already writing is accepted again, as one request. A loop parked at its cold
-    /// check or held at a triage sends nothing while the summary is written, so either
-    /// accepts a compaction; the held triage's retry then triages the compacted
-    /// projection. `warm` is the operator's explicit choice to compact a session whose
-    /// cache is not believed expired, giving up the cached prefix; without it a warm
-    /// session declines.
-    pub(crate) fn request_compaction(&self, warm: bool) -> Result<(), NotCompactable> {
+    /// Whether `POST /loop/compact` accepts now with this `warm`, and at which cut — the
+    /// route's whole precondition, which the `verbs` topic publishes
+    /// (docs/control-api.md). `Ok(None)` is a compaction already open, accepted again as
+    /// the same request. A loop parked at its cold check or held at a triage sends
+    /// nothing while the summary is written, so either accepts a compaction; the held
+    /// triage's retry then triages the compacted projection. `warm` is the operator's
+    /// explicit choice to compact a session whose cache is not believed expired, giving
+    /// up the cached prefix; without it a warm session declines.
+    pub(crate) fn compaction_verdict(&self, warm: bool) -> Result<Option<Seq>, NotCompactable> {
         if self.compacting() {
-            return Ok(());
+            return Ok(None);
         }
-        if self.pending.lock().unwrap().is_some() {
-            return Err(NotCompactable::Gated);
-        }
-        if self.asking().is_some() {
-            return Err(NotCompactable::Asking);
-        }
-        if self.running.load(Ordering::SeqCst) && !self.cold_parked() && !self.held_at_triage() {
-            return Err(NotCompactable::Busy);
+        match self.loop_phase() {
+            LoopPhase::Gated => return Err(NotCompactable::Gated),
+            LoopPhase::Asking => return Err(NotCompactable::Asking),
+            LoopPhase::Idle
+            | LoopPhase::ColdParked
+            | LoopPhase::Blocked {
+                reason: BlockedReason::TriageUnavailable | BlockedReason::TriageDefect,
+            } => {}
+            _ => return Err(NotCompactable::Busy),
         }
         if !warm && self.cold_since().is_none() {
             return Err(NotCompactable::NotCold);
         }
-        let Some(cut) = compaction_cut(&self.snapshot(), COMPACTION_TAIL_TOKENS) else {
-            return Err(NotCompactable::Nothing);
+        let log = self.log.lock().unwrap();
+        match compaction_cut(log.entries(), COMPACTION_TAIL_TOKENS) {
+            Some(cut) => Ok(Some(cut)),
+            None => Err(NotCompactable::Nothing),
+        }
+    }
+
+    /// Ask for a compaction (`POST /loop/compact`), or say why it cannot run
+    /// ([`Self::compaction_verdict`]).
+    pub(crate) fn request_compaction(&self, warm: bool) -> Result<(), NotCompactable> {
+        let Some(cut) = self.compaction_verdict(warm)? else {
+            return Ok(());
         };
         self.record_compaction(Telemetry::CompactionRequested { warm, cut });
         self.compaction_signal.notify_one();
         Ok(())
+    }
+
+    /// Wait until no compaction is open: the compact route's `?wait`, which answers once
+    /// the summary lands or the compaction fails (docs/control-api.md).
+    pub(super) async fn await_compaction(&self) {
+        loop {
+            let notified = self.settle_changed.notified();
+            tokio::pin!(notified);
+            notified.as_mut().enable();
+            if !self.compacting() {
+                return;
+            }
+            notified.await;
+        }
     }
 
     /// Append one compaction event and wake whoever reads the state it folds into

@@ -84,8 +84,9 @@ impl Session {
             reason,
             acting_on: bound.cloned(),
         });
-        // A gate is a settled state — wake any `/settle` waiter (the `?wait` on `/turn` returns here).
-        self.settle_changed.notify_waiters();
+        // A gate is a settled state: the phase wakes any `/settle` waiter (the `?wait` on
+        // `/turn` returns here). Moved after the gate is stored, so a waiter it wakes reads it.
+        self.set_phase(LoopPhase::Gated);
         // …and one of the two moments worth a push (docs/web-push.md). Spawned, so
         // the loop reaches its `rx.await` without waiting on a push service.
         self.push(crate::log::MomentKind::Gate, push_body);
@@ -109,6 +110,9 @@ impl Session {
                 *pending = None;
             }
         }
+        // The decision ends the wait now, so a `settle` racing the loop's wake does not
+        // read a gate that is already answered (`phase.rs`).
+        self.end_wait(|phase| phase == LoopPhase::Gated, LoopPhase::Executing);
         // The gate topic and the status watchers (`subscriptions.rs`) read the
         // resolution now rather than at the loop's next append, which on an
         // approved long-running command is some time away.

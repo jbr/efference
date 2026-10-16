@@ -320,6 +320,11 @@ impl Client {
         }
     }
 
+    /// The origin this client's requests are recorded under.
+    pub fn origin(&self) -> RequestOrigin {
+        self.origin
+    }
+
     /// Clone the subscription-window cell the daemon publishes as `usage.plan`
     /// (docs/transport.md).
     pub fn plan_state(&self) -> PlanState {

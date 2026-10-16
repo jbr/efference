@@ -54,51 +54,97 @@ impl NotContinuable {
     }
 }
 
+/// What an accepted continue does, decided by [`Session::continue_verdict`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Continues {
+    /// A continue is already waiting for the loop: the two are one.
+    Already,
+    /// The loop is parked at its cold check; the person's action the route notes is
+    /// what wakes it.
+    Release,
+    /// The loop is waiting on the upstream — a pause between attempts, or a triage held
+    /// without a verdict — and the continue retries now (docs/transport.md).
+    RetryNow,
+    /// The idle loop takes another turn on the wire it already has.
+    Start,
+}
+
 impl Session {
-    /// Ask the idle loop to re-enter its trajectory with nothing appended, or say
-    /// why it cannot (docs/control-api.md).
+    /// Whether `POST /loop/continue` accepts now, and what it would do — the route's
+    /// whole precondition, which the `verbs` topic publishes (docs/control-api.md).
     ///
-    /// Preconditions, in the order a client would want them named: no pending
-    /// gate, the loop idle with nothing queued, and a **continuable tail**
-    /// ([`continuable_tail`](Self::continuable_tail)). A continue already pending
-    /// is idempotent — the loop has one to consume either way.
+    /// Read off the loop phase, in the order a client would want the refusals named:
+    /// a pending gate or question, then a loop doing something with nothing to retry,
+    /// then a tail with no continue in it ([`continuable_tail`](Self::continuable_tail)).
+    /// A continue already pending is idempotent — the loop has one to consume either way.
     ///
-    /// One case is accepted while the loop runs: it is **waiting on the upstream**
-    /// — a backoff pause between attempts, or a triage held after its budget
-    /// ran out. The same gesture that retries a stalled trajectory then retries
-    /// that wait now (docs/transport.md), so the operator has one "try again"
-    /// whichever side of the give-up they are on.
+    /// The cases accepted while the loop is not idle are the loop parked at its cold
+    /// check, and the loop **waiting on the upstream** — a backoff pause between
+    /// attempts, or a triage held after its budget ran out. The same gesture that
+    /// retries a stalled trajectory then retries that wait now (docs/transport.md), so
+    /// the operator has one "try again" whichever side of the give-up they are on.
+    pub(crate) fn continue_verdict(&self) -> Result<Continues, NotContinuable> {
+        if self.continue_pending() {
+            return Ok(Continues::Already);
+        }
+        match self.loop_phase() {
+            LoopPhase::Gated => Err(NotContinuable::Gated),
+            LoopPhase::Asking => Err(NotContinuable::Asking),
+            LoopPhase::ColdParked => Ok(Continues::Release),
+            LoopPhase::Blocked {
+                reason: BlockedReason::TriageUnavailable | BlockedReason::TriageDefect,
+            } => Ok(Continues::RetryNow),
+            // A request between attempts, or re-sent after a pause, is still the retry
+            // the topic names.
+            LoopPhase::Delayed { .. } | LoopPhase::Requesting
+                if self.upstream_retry.get().is_some() =>
+            {
+                Ok(Continues::RetryNow)
+            }
+            LoopPhase::Idle if self.queue.lock().unwrap().is_empty() => {
+                match self.continuable_tail() {
+                    Some(why) => Err(why),
+                    None => Ok(Continues::Start),
+                }
+            }
+            _ => Err(NotContinuable::Busy),
+        }
+    }
+
+    /// Ask the loop to re-enter its trajectory with nothing appended, or say why it
+    /// cannot (docs/control-api.md). The verdict is read before the person's action is
+    /// noted, since noting it releases a cold park the verdict reads.
     pub(super) fn request_continue(&self) -> Result<(), NotContinuable> {
-        if self.continue_pending.load(Ordering::SeqCst) {
-            return Ok(());
+        let verdict = self.continue_verdict();
+        self.person_acted(super::PersonAction::Continue);
+        match verdict? {
+            Continues::Already | Continues::Release => {}
+            Continues::RetryNow => {
+                self.upstream_retry.hurry();
+                // A held triage's wait ends now (`phase.rs`); a pause between attempts
+                // ends when the hurried wait returns.
+                self.end_wait(
+                    |phase| {
+                        matches!(
+                            phase,
+                            LoopPhase::Blocked {
+                                reason: BlockedReason::TriageUnavailable
+                                    | BlockedReason::TriageDefect
+                            }
+                        )
+                    },
+                    LoopPhase::Requesting,
+                );
+            }
+            Continues::Start => {
+                self.continue_pending.store(true, Ordering::SeqCst);
+                self.continue_signal.notify_waiters();
+                // The daemon is no longer at a decision point, so a `?wait=settled`
+                // long-poll must not answer with this instant.
+                self.settle_changed.notify_waiters();
+                self.touch_state();
+            }
         }
-        if self.pending.lock().unwrap().is_some() {
-            return Err(NotContinuable::Gated);
-        }
-        if self.asking().is_some() {
-            return Err(NotContinuable::Asking);
-        }
-        let running = self.running.load(Ordering::SeqCst);
-        // Parked at the cold check: the route already noted the person's action that wakes it.
-        if running && self.cold_parked() {
-            return Ok(());
-        }
-        if running && (self.upstream_retry.get().is_some() || self.stall().is_some()) {
-            self.upstream_retry.hurry();
-            return Ok(());
-        }
-        if !self.is_settled() {
-            return Err(NotContinuable::Busy);
-        }
-        if let Some(why) = self.continuable_tail() {
-            return Err(why);
-        }
-        self.continue_pending.store(true, Ordering::SeqCst);
-        self.continue_signal.notify_waiters();
-        // The daemon is no longer at a decision point, so a `?wait=settled`
-        // long-poll must not answer with this instant.
-        self.settle_changed.notify_waiters();
-        self.touch_state();
         Ok(())
     }
 
@@ -163,12 +209,13 @@ impl Session {
         }
     }
 
-    /// The loop took the continue: clear the flag and mark itself running, the
-    /// way [`dequeued_turn`](Self::dequeued_turn) does for a submitted turn.
+    /// The loop took the continue: leave idle, then clear the flag — in that order, so
+    /// [`is_settled`](Self::is_settled) never reads an idle loop with no continue
+    /// pending in between, the way `claim_turn` orders it for a submitted turn.
     /// Clearing is what keeps one gesture to one extra turn — a flag left set
     /// would re-continue at every return to idle.
     pub fn take_continue(&self) {
-        self.running.store(true, Ordering::SeqCst);
+        self.set_phase(LoopPhase::Requesting);
         self.continue_pending.store(false, Ordering::SeqCst);
     }
 

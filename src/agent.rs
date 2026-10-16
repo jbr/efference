@@ -19,7 +19,9 @@ use crate::api::{Client, Error, RetrySurface, Streamed, ToolChoice, UpstreamRetr
 use crate::bash;
 use crate::config::Refreshed;
 use crate::consolidate;
-use crate::daemon::{RequestOrigin, Session, Stall, StallReason, StreamDelta};
+use crate::daemon::{
+    BlockedReason, LoopPhase, RequestOrigin, Session, Stall, StallReason, StreamDelta,
+};
 use crate::frontend::{Approval, Frontend, SubmittedTurn};
 use crate::inbox::{ShownNotification, active_shown};
 use crate::log::{
@@ -205,13 +207,15 @@ pub async fn run<F: Frontend, S: Spotter>(
             IdleWake::Event => {
                 // Standalone triage. Escalate to a trajectory only if it changed the
                 // wire (pinned something); otherwise back to idle, the prefix still hot.
+                // A request either way, so the loop reads `requesting` throughout
+                // (docs/control-api.md).
+                shared.idle_triage_started();
                 if !run_idle_triage(client, &tools, &shared, &triager, &mut turn).await? {
+                    shared.idle_triage_settled();
                     continue;
                 }
                 // Escalated: fall into the trajectory with no new user turn — the model
-                // responds to the pinned event at the wire tail. No turn was claimed, so
-                // nothing else marks the loop running (docs/control-api.md).
-                shared.escalated();
+                // responds to the pinned event at the wire tail.
             }
             IdleWake::Continue => {
                 // The zero-token continue (docs/control-api.md): the operator handed
@@ -351,6 +355,7 @@ pub async fn run<F: Frontend, S: Spotter>(
             // generation was `idle`, which reads as *finished*. The cost of a stale `idle` isn't
             // cosmetic: it invites interrupting or abandoning a live session on false signal.
             log::debug!("generating — turn {turn}");
+            shared.set_phase(LoopPhase::Requesting);
             // Bounded retry for a stream that dies before finalizing
             // (docs/transport.md). Each aborted attempt commits its partial as a
             // record-only entry — the only copy of that content anywhere — which
@@ -502,7 +507,7 @@ pub async fn run<F: Frontend, S: Spotter>(
                     pause,
                     &why,
                 ));
-                retry.pause(Some(pause)).await;
+                retry.delay(pause).await;
             };
             // The all-clear, on every exit from the loop: the attempt that finalized,
             // the exhausted budget (its own visible outcome, via the stall topic and

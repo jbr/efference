@@ -152,7 +152,9 @@ pub struct Session {
     /// A person acted while the session was believed cold (a turn, continue, decision or
     /// answer), consumed by the loop's next cold check (`daemon/cold.rs`).
     person_acted: AtomicBool,
-    /// The loop is parked at its cold check, waiting for a person: a decision point.
+    /// The cold check has recorded a park and not yet its end: its own bookkeeping.
+    /// What clients read is the `cold_parked` loop phase, which a person's action ends
+    /// before the loop wakes (`phase.rs`).
     cold_parked: AtomicBool,
     /// Wakes the cold check and the held inbox wake when a person acts.
     cold_signal: Notify,
@@ -217,15 +219,18 @@ pub struct Session {
     /// that append push records, the moment counter, and the test stand-in for
     /// the push services.
     pushes: push::PushState,
-    /// Whether the loop is **executing a turn** (vs. parked awaiting one). Together with
-    /// `queued`, this drives the `/settle` long-poll's "at a decision point?" predicate
-    /// ([`Session::is_settled`], docs/permissions.md). The loop owns it:
-    /// set true when it dequeues a turn, false when it parks.
-    running: AtomicBool,
+    /// Where the loop is (`phase.rs`, docs/control-api.md): one exclusive value the loop
+    /// sets from its control flow. With `queue`, it drives the `/settle` long-poll's
+    /// "at a decision point?" predicate ([`Session::is_settled`]).
+    phase: Mutex<phase::LoopPhase>,
+    /// How many trajectories have ended into idle: what tells a status watcher that the
+    /// idle it reads followed a turn, rather than an idle triage that pinned nothing
+    /// (`subscriptions.rs`).
+    turns_ended: std::sync::atomic::AtomicU64,
     /// Turns submitted (`POST /turns`) but not yet dequeued by the loop, in submission order —
     /// the **authority** on what is pending, mirroring what was pushed into `turns_tx`. It closes
     /// the cross-task race in [`Session::is_settled`] (a turn exists even in the instant before the
-    /// loop marks itself `running`), it is what `GET /state`'s `queued` topic reads, and it is
+    /// loop leaves idle), it is what `GET /state`'s `queued` topic reads, and it is
     /// what a withdraw removes from (docs/control-channel.md). Because the channel cannot be
     /// searched, the loop **claims** each received turn against this queue and drops one that is
     /// no longer here — that is how a withdrawn turn is never appended. A pending turn is
@@ -631,6 +636,7 @@ mod notifications;
 mod operations;
 mod pace;
 mod person;
+mod phase;
 mod status;
 mod subscriptions;
 // Whether any client is attending the host (docs/web-push.md), and how a moment's
@@ -642,6 +648,7 @@ mod stream;
 pub(crate) mod tcp;
 mod topics;
 mod transcript;
+mod verbs;
 mod views;
 mod watch;
 
@@ -667,6 +674,7 @@ pub use metrics::{COLD_STREAK_WARN, CacheRead, ColdStart, ColdStreak, UsageLine}
 use metrics::{CostCell, Metrics};
 use notifications::Inbox;
 use pace::Pace;
+pub use phase::{BlockedReason, LoopPhase};
 pub use stall::{ConfigRepair, Stall, StallReason};
 use stream::{Include, control_stream};
 use topics::{StateUpdate, watch_topics};

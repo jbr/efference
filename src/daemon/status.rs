@@ -2,9 +2,9 @@
 //!
 //! A subscriber to a session receives its *status* — a current condition, never
 //! an event stream — as an inbox notification on the slot `session:<id>`. The
-//! statuses a subscriber hears are the decision points: a gate, a turn completing
-//! into idle, a stall, and the end. `Running` is observed to detect the
-//! transitions but never posted.
+//! statuses a subscriber hears are the decision points: a gate, a question, a turn
+//! completing into idle, a stall, a park or a block, and the end. `Running` is
+//! observed to detect the transitions but never posted.
 
 use super::*;
 
@@ -37,8 +37,12 @@ pub(crate) enum SessionStatus {
     Stalled { message: String },
     /// The loop stopped at its cold check mid-turn and waits for a person to act
     /// before it reads the expired cache, or for a compaction (backlog: cold-session.md); after a compaction it
-    /// waits for the next turn or continue. The `park` topic.
+    /// waits for the next turn or continue. The `cold_parked` loop phase.
     Parked { reason: super::cold::ParkReason },
+    /// The loop is stopped until someone outside acts, for a reason that is neither a
+    /// held triage (which is [`Stalled`](Self::Stalled)) nor a park: the config file
+    /// needs repair, or the operator's pace is held. The `blocked` loop phase.
+    Blocked { reason: BlockedReason },
     /// The runtime returned cleanly.
     Ended,
     /// The runtime returned with an error.
@@ -46,46 +50,69 @@ pub(crate) enum SessionStatus {
 }
 
 impl Session {
-    /// The session's status now. A gate outranks a stall — nothing runs while a
-    /// call is held — and a stall outranks the running flag, since the loop sets
-    /// the stall before it parks. A cold park ranks after those three and before the
-    /// running flag, which stays set while the loop waits.
+    /// The session's status now, read off the loop phase (docs/control-api.md). A triage
+    /// held without a verdict is the stall it publishes, and an idle loop whose last
+    /// trajectory gave up is stalled; every phase that is neither waiting nor idle is
+    /// running.
     pub(crate) fn status(&self) -> SessionStatus {
-        if let Some(pending) = self.pending.lock().unwrap().as_ref() {
-            let intent = pending
-                .input
-                .get(crate::tools::INTENT)
-                .and_then(Value::as_str)
-                .map(str::to_string);
-            return SessionStatus::Gated {
-                call_id: pending.call_id.clone(),
-                name: pending.name.clone(),
-                intent,
-                reason: pending.reason.clone(),
-            };
+        match self.loop_phase() {
+            LoopPhase::Requesting | LoopPhase::Executing | LoopPhase::Delayed { .. } => {
+                SessionStatus::Running
+            }
+            LoopPhase::Idle => match self.stall() {
+                Some(stall) => SessionStatus::Stalled {
+                    message: stall.message,
+                },
+                None => SessionStatus::Idle,
+            },
+            LoopPhase::Gated => self.gated_status().unwrap_or(SessionStatus::Running),
+            LoopPhase::Asking => {
+                self.asking()
+                    .map_or(SessionStatus::Running, |ask| SessionStatus::Asking {
+                        question: ask.question,
+                        n: ask.n,
+                        of: ask.of,
+                    })
+            }
+            LoopPhase::ColdParked => {
+                self.park_reason()
+                    .map_or(SessionStatus::Running, |reason| SessionStatus::Parked {
+                        reason,
+                    })
+            }
+            LoopPhase::Blocked {
+                reason: BlockedReason::TriageUnavailable | BlockedReason::TriageDefect,
+            } => match self.stall() {
+                Some(stall) => SessionStatus::Stalled {
+                    message: stall.message,
+                },
+                None => SessionStatus::Running,
+            },
+            LoopPhase::Blocked { reason } => SessionStatus::Blocked { reason },
         }
-        // A pending question outranks a stall for the same reason a gate does: the loop
-        // is parked on the operator, and nothing runs until they answer.
-        if let Some(ask) = self.asking() {
-            return SessionStatus::Asking {
-                question: ask.question,
-                n: ask.n,
-                of: ask.of,
-            };
-        }
-        if let Some(stall) = self.stall() {
-            return SessionStatus::Stalled {
-                message: stall.message,
-            };
-        }
-        if let Some(reason) = self.park_reason() {
-            return SessionStatus::Parked { reason };
-        }
-        if self.running.load(Ordering::SeqCst) {
-            SessionStatus::Running
-        } else {
-            SessionStatus::Idle
-        }
+    }
+
+    /// The pending gate as a status, or `None` when the gate has already been answered.
+    fn gated_status(&self) -> Option<SessionStatus> {
+        let pending = self.pending.lock().unwrap();
+        let pending = pending.as_ref()?;
+        let intent = pending
+            .input
+            .get(crate::tools::INTENT)
+            .and_then(Value::as_str)
+            .map(str::to_string);
+        Some(SessionStatus::Gated {
+            call_id: pending.call_id.clone(),
+            name: pending.name.clone(),
+            intent,
+            reason: pending.reason.clone(),
+        })
+    }
+
+    /// How many trajectories have ended into idle — what tells a status watcher that an
+    /// idle followed a turn (`subscriptions.rs`).
+    pub(crate) fn turns_ended(&self) -> u64 {
+        self.turns_ended.load(Ordering::SeqCst)
     }
 
     /// The notification body a subscriber reads for `status` (docs/tools.md):
@@ -165,6 +192,16 @@ impl Session {
                      releases it; a compaction summarizes the history instead."
                 )
             }
+            SessionStatus::Blocked {
+                reason: BlockedReason::PaceHeld,
+            } => format!(
+                "{id} is held by its operator's pace ({at}). Nothing runs until the hold is \
+                 released or a turn is sent."
+            ),
+            SessionStatus::Blocked { .. } => format!(
+                "{id} is blocked ({at}): its config file does not parse and could not be \
+                 restored. Nothing runs until a human repairs the file; sessions__state names it."
+            ),
             SessionStatus::Ended => format!("{id} ended ({at}); its log stays on disk."),
             SessionStatus::Failed { error } => {
                 format!("{id} ended with an error ({at}): {error}")

@@ -221,6 +221,8 @@ async fn a_childs_gate_wakes_the_parent_and_is_pinned_whatever_the_triage_says()
     .await;
 
     assert!(child.resolve_approval(&CallId("toolu_leaf".into()), Approval::Abort));
+    // The abort unwinds the turn, and the trajectory ends.
+    child.going_idle();
     wait_until("the idle reached the parent", || {
         heard(&parent, |source, body, slot| {
             source == "child"
@@ -263,6 +265,8 @@ async fn a_childs_question_wakes_the_parent() {
     child.submit_turn(SubmittedTurn::new("main", "s1"));
     assert!(wait.reply().await.is_some());
     drop(wait);
+    // The loop takes the reply as the call's result and its trajectory ends.
+    child.going_idle();
     wait_until("the parent heard the child move on", || {
         heard(&parent, |source, body, slot| {
             source == "child"

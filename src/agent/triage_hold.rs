@@ -95,6 +95,16 @@ pub(super) async fn hold(
     log::debug!("{message}: {why}");
     carried.retries.push(format!("held: {why}"));
     shared.set_stall(stalled(reason, None, message.to_string(), why));
+    // Blocked until the operator retries or interrupts, named after the stall it is
+    // (docs/control-api.md); the continue that retries ends the wait (`request_continue`).
+    let blocked = match reason {
+        StallReason::TriageDefect => BlockedReason::TriageDefect,
+        _ => BlockedReason::TriageUnavailable,
+    };
+    let _blocked = shared.wait_phase(
+        LoopPhase::Blocked { reason: blocked },
+        LoopPhase::Requesting,
+    );
 
     // Armed before the latch is read, so an interrupt between the two still wakes this.
     let interrupt = shared.interrupt_signal();

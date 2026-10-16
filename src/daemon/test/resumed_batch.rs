@@ -175,7 +175,8 @@ async fn a_continue_replays_the_batch_through_the_gate() {
     continue_when_parked(&session).await;
     approve_the_gate(&session, "c2").await;
     wait_until("the turn finishes", || {
-        requests.load(Ordering::SeqCst) >= 2 && !session.running.load(Ordering::SeqCst)
+        requests.load(Ordering::SeqCst) >= 2
+            && session.loop_phase() == crate::daemon::LoopPhase::Idle
     })
     .await;
     host.shut_down().await;
@@ -228,7 +229,8 @@ async fn a_captured_result_is_triaged_without_running_again() {
 
     continue_when_parked(&session).await;
     wait_until("the turn finishes", || {
-        requests.load(Ordering::SeqCst) >= 2 && !session.running.load(Ordering::SeqCst)
+        requests.load(Ordering::SeqCst) >= 2
+            && session.loop_phase() == crate::daemon::LoopPhase::Idle
     })
     .await;
     host.shut_down().await;
@@ -275,7 +277,8 @@ async fn a_submitted_turn_is_delivered_after_the_batch() {
     session.submit_turn(SubmittedTurn::new("carry on", "s1"));
     approve_the_gate(&session, "c2").await;
     wait_until("the turn finishes", || {
-        requests.load(Ordering::SeqCst) >= 2 && !session.running.load(Ordering::SeqCst)
+        requests.load(Ordering::SeqCst) >= 2
+            && session.loop_phase() == crate::daemon::LoopPhase::Idle
     })
     .await;
     host.shut_down().await;

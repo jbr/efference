@@ -162,6 +162,7 @@ mod in_session;
 mod interrupt;
 mod keepalive;
 mod log_reads;
+mod loop_phase;
 mod metrics;
 mod notifications;
 mod pace;
@@ -177,6 +178,7 @@ mod triage_client;
 mod triage_keepalive;
 mod triage_stream;
 mod upstream_hold;
+mod verbs;
 mod views;
 
 mod host;

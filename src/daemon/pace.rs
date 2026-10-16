@@ -52,7 +52,25 @@ impl Session {
             let mut p = self.pace.lock().unwrap();
             p.held = false;
         }
+        self.end_pace_wait();
         self.pace_interrupt.notify_waiters();
+    }
+
+    /// A submit or a release ends the juncture's pace wait, held or timed, at the moment
+    /// it is taken (`phase.rs`).
+    fn end_pace_wait(&self) {
+        self.end_wait(
+            |phase| {
+                matches!(
+                    phase,
+                    LoopPhase::Delayed { .. }
+                        | LoopPhase::Blocked {
+                            reason: BlockedReason::PaceHeld
+                        }
+                )
+            },
+            LoopPhase::Requesting,
+        );
     }
 
     /// The pending queue, in submission order — the `queued` state topic's source and the
@@ -91,17 +109,18 @@ impl Session {
 
     /// Claim a turn the loop just received off the channel: `true` when it is still pending (and
     /// it is removed from the queue), `false` when it was withdrawn while in flight — the caller
-    /// then drops it unappended. `running` is set **before** the removal so [`is_settled`] never
-    /// sees an empty queue and a not-running loop while a turn is in flight.
+    /// then drops it unappended. With `leaves_idle` (a turn the idle loop is about to run) the
+    /// phase moves to `requesting` **before** the removal, so [`is_settled`] never sees an empty
+    /// queue and an idle loop while a turn is in flight.
     ///
     /// [`is_settled`]: Session::is_settled
-    pub(super) fn claim_turn(&self, submission_id: &str, mark_running: bool) -> bool {
+    pub(super) fn claim_turn(&self, submission_id: &str, leaves_idle: bool) -> bool {
         let claimed = {
             let mut q = self.queue.lock().unwrap();
             match q.iter().position(|t| t.submission_id == submission_id) {
                 Some(pos) => {
-                    if mark_running {
-                        self.running.store(true, Ordering::SeqCst);
+                    if leaves_idle {
+                        self.set_phase(LoopPhase::Requesting);
                     }
                     q.remove(pos);
                     true
@@ -141,6 +160,7 @@ impl Session {
             (p.speed, p.held)
         };
         if wake {
+            self.end_pace_wait();
             self.pace_interrupt.notify_waiters();
         }
         self.touch_state();
@@ -169,9 +189,17 @@ impl Session {
         let (speed, held) = self.pace_snapshot();
         if held {
             // Infinite hold: wait until released or a turn is submitted, then proceed.
+            let _held = self.wait_phase(
+                LoopPhase::Blocked {
+                    reason: BlockedReason::PaceHeld,
+                },
+                LoopPhase::Requesting,
+            );
             interrupt.await;
         } else if !speed.is_zero() {
             // Paced: proceed when the delay elapses or an interrupt (submit/release) ends it early.
+            let until = crate::log::Timestamp::now().0 + speed.as_millis() as u64;
+            let _delayed = self.wait_phase(LoopPhase::Delayed { until }, LoopPhase::Requesting);
             tokio::select! {
                 _ = tokio::time::sleep(speed) => {}
                 _ = interrupt => {}
@@ -180,28 +208,39 @@ impl Session {
         // Not held, no delay → proceed at once.
     }
 
-    /// An idle triage escalated to a trajectory (docs/process-monitor.md): the loop is
-    /// running with no submitted turn to have claimed, so it says so here. Without
-    /// this, `running`, `/settle`, and the status watcher read the whole
-    /// wake-driven trajectory as idle, and a turn submitted meanwhile sits in
-    /// `queued` until the next mid-task delivery with nothing to explain the wait.
-    pub(crate) fn escalated(&self) {
-        self.running.store(true, Ordering::SeqCst);
-        self.touch_state();
+    /// The idle loop woke for an inbox triage (docs/inbox.md): a request on the main
+    /// prefix, so the loop is `requesting` until it either escalates to a trajectory
+    /// or returns to idle with nothing pinned ([`Self::idle_triage_settled`]).
+    pub(crate) fn idle_triage_started(&self) {
+        self.set_phase(LoopPhase::Requesting);
     }
 
-    /// The loop is going idle (about to await the next user turn): mark not-running and wake any
-    /// `/settle` waiter. If a turn is already queued, `recv` resolves at once and [`claim_turn`]
-    /// re-sets running, so a transient `running == false` with a non-empty queue still reads as
-    /// busy.
+    /// An idle triage pinned nothing: back to idle without a turn having run, so the
+    /// return is not a turn ending — no push, and no idle for a status subscriber.
+    pub(crate) fn idle_triage_settled(&self) {
+        self.set_phase(LoopPhase::Idle);
+    }
+
+    /// The loop is going idle (about to await the next user turn): move the phase to idle and
+    /// wake any `/settle` waiter. If a turn is already queued, `recv` resolves at once and
+    /// [`claim_turn`] moves the phase on again, and [`is_settled`] reads the non-empty queue as
+    /// busy meanwhile.
     ///
     /// [`claim_turn`]: Session::claim_turn
+    /// [`is_settled`]: Session::is_settled
     pub(super) fn going_idle(&self) {
-        // The swap is what distinguishes the two ways the loop arrives here: a turn
-        // just ended (`running` was true) or the daemon booted and has never run one.
-        // Only the first is worth a push (docs/web-push.md) — a settle notification on
-        // boot idle would fire every time a session starts, saying nothing happened.
-        let a_turn_just_ended = self.running.swap(false, Ordering::SeqCst);
+        // The phase left is what distinguishes the two ways the loop arrives here: a turn
+        // just ended, or the daemon booted (or an idle triage pinned nothing) and no turn
+        // ran. Only the first is worth a push (docs/web-push.md) — a settle notification
+        // on boot idle would fire every time a session starts, saying nothing happened.
+        // Only the loop moves the phase out of a step, so reading it before the move
+        // cannot race. The count moves first, so whoever reads the idle reads the turn
+        // it ended (`subscriptions.rs`).
+        let a_turn_just_ended = *self.phase.lock().unwrap() != LoopPhase::Idle;
+        if a_turn_just_ended {
+            self.turns_ended.fetch_add(1, Ordering::SeqCst);
+        }
+        self.set_phase(LoopPhase::Idle);
         self.settle_changed.notify_waiters();
         if a_turn_just_ended {
             let body = super::push::settle_body(self.log.lock().unwrap().entries());
@@ -209,27 +248,20 @@ impl Session {
         }
     }
 
-    /// Whether the daemon is at a **decision point** a client can act on: a gate is pending, the
-    /// loop is stalled (a triage held on the upstream waits on the operator's continue,
-    /// docs/triage.md), or the loop is idle with nothing queued. Mid-turn —
-    /// running, no gate, no stall — is *not* settled. The predicate behind `/settle` and the
-    /// `?wait` flag (docs/permissions.md).
+    /// Whether the daemon is at a **decision point** a client can act on: the loop phase is one
+    /// that waits on someone outside the loop — gated, asking, cold-parked, blocked — or idle
+    /// with nothing queued (docs/control-api.md). A request, a running batch, and a timed delay
+    /// are *not* settled. The predicate behind `/settle` and the `?wait` flag.
     pub(super) fn is_settled(&self) -> bool {
-        // A compaction being written is work in progress, whatever else holds.
-        if self.compacting() {
-            return false;
+        match self.loop_phase() {
+            LoopPhase::Idle => {
+                self.queue.lock().unwrap().is_empty()
+                    // An accepted `POST /loop/continue` (docs/control-api.md) is a turn
+                    // about to run, exactly as a queued submission is.
+                    && !self.continue_pending()
+            }
+            phase => phase.settles(),
         }
-        self.pending.lock().unwrap().is_some()
-            // A pending `ask` is the loop waiting on the operator (docs/process-monitor.md).
-            || self.asking().is_some()
-            || self.stall().is_some()
-            // Parked at the cold check, waiting for a person (backlog: cold-session.md).
-            || self.cold_parked()
-            || (!self.running.load(Ordering::SeqCst)
-                && self.queue.lock().unwrap().is_empty()
-                // An accepted `POST /loop/continue` (docs/control-api.md) is a turn
-                // about to run, exactly as a queued submission is.
-                && !self.continue_pending())
     }
 
     /// Block until [`is_settled`]. Uses `Notified::enable` to register the waiter **before** the

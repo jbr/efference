@@ -86,7 +86,7 @@ async fn run(own: bool) -> (Vec<(&'static str, Vec<String>, String)>, Arc<Sessio
     session.submit_turn(SubmittedTurn::new("go", "s1"));
     wait_until("the turn finishes", || {
         main_requests.load(Ordering::SeqCst) >= if own { 2 } else { 3 }
-            && !session.running.load(Ordering::SeqCst)
+            && session.loop_phase() == crate::daemon::LoopPhase::Idle
     })
     .await;
     host.shut_down().await;

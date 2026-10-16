@@ -89,7 +89,7 @@ async fn the_cold_check_parks_until_a_person_acts() {
         async move { shared.await_warm_or_person().await }
     });
     tokio::time::timeout(Duration::from_secs(2), async {
-        while !shared.cold_parked() {
+        while shared.loop_phase() != crate::daemon::LoopPhase::ColdParked {
             tokio::task::yield_now().await;
         }
     })
@@ -97,9 +97,8 @@ async fn the_cold_check_parks_until_a_person_acts() {
     .expect("parks");
     assert!(shared.is_settled());
 
-    // The park is its own status, ranked ahead of the running flag, and rides the
-    // `cold` topic so a session view can tell it from a slow request.
-    shared.running.store(true, Ordering::SeqCst);
+    // The park is its own phase and status, and rides the `cold` topic so a session
+    // view can tell it from a slow request.
     let crate::daemon::status::SessionStatus::Parked {
         reason: ParkReason::Expired { since, .. },
     } = shared.status()
@@ -108,6 +107,7 @@ async fn the_cold_check_parks_until_a_person_acts() {
     };
     assert_eq!(Some(since), shared.cold_since());
     let state: serde_json::Value = serde_json::from_str(&shared.state_json()).unwrap();
+    assert_eq!(state["loop_phase"]["phase"], "cold_parked");
     assert_eq!(state["park"]["reason"], "expired");
     assert_eq!(state["park"]["since"], state["cold"]["since"]);
     assert!(
@@ -115,15 +115,23 @@ async fn the_cold_check_parks_until_a_person_acts() {
             .status_body("s1", &shared.status())
             .contains("parked mid-turn")
     );
-    shared.running.store(false, Ordering::SeqCst);
 
     shared.release_cold(crate::log::ReleasedBy::Turn);
+    assert_eq!(
+        shared.loop_phase(),
+        crate::daemon::LoopPhase::Requesting,
+        "the person's action ends the park before the loop wakes"
+    );
+    assert!(!shared.is_settled());
     tokio::time::timeout(Duration::from_secs(2), check)
         .await
         .expect("released")
         .unwrap();
-    assert!(!shared.cold_parked());
-    assert_eq!(shared.status(), crate::daemon::status::SessionStatus::Idle);
+    assert_eq!(shared.loop_phase(), crate::daemon::LoopPhase::Requesting);
+    assert_eq!(
+        shared.status(),
+        crate::daemon::status::SessionStatus::Running
+    );
     assert!(!shared.person_acted.load(Ordering::SeqCst), "consumed");
 }
 
@@ -137,7 +145,7 @@ async fn a_fold_leaves_the_park_folded() {
         async move { shared.await_warm_or_person().await }
     });
     tokio::time::timeout(Duration::from_secs(2), async {
-        while !shared.cold_parked() {
+        while shared.loop_phase() != crate::daemon::LoopPhase::ColdParked {
             tokio::task::yield_now().await;
         }
     })
@@ -239,7 +247,7 @@ async fn an_approval_releases_the_next_check_and_no_park_follows() {
     tokio::time::timeout(Duration::from_secs(2), shared.await_warm_or_person())
         .await
         .expect("the approval releases the check at once");
-    assert!(!shared.cold_parked());
+    assert!(shared.loop_phase() != crate::daemon::LoopPhase::ColdParked);
     assert_eq!(
         cold_records(&shared),
         vec![
@@ -268,7 +276,7 @@ async fn every_person_action_releases_a_park_and_is_recorded() {
             async move { shared.await_warm_or_person().await }
         });
         tokio::time::timeout(Duration::from_secs(2), async {
-            while !shared.cold_parked() {
+            while shared.loop_phase() != crate::daemon::LoopPhase::ColdParked {
                 tokio::task::yield_now().await;
             }
         })

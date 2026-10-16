@@ -159,9 +159,7 @@ fn a_held_triage_accepts_a_compaction() {
     let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
     shared.set_cache_ttl(Duration::from_secs(3_600));
     append_compactable_history(&shared);
-    shared
-        .running
-        .store(true, std::sync::atomic::Ordering::SeqCst);
+    shared.set_phase(crate::daemon::LoopPhase::Requesting);
     assert_eq!(shared.request_compaction(true), Err(NotCompactable::Busy));
 
     shared.set_stall(crate::agent::stalled(
@@ -170,6 +168,12 @@ fn a_held_triage_accepts_a_compaction() {
         "triage could not reach its model".into(),
         "429".into(),
     ));
+    let _held = shared.wait_phase(
+        crate::daemon::LoopPhase::Blocked {
+            reason: crate::daemon::BlockedReason::TriageUnavailable,
+        },
+        crate::daemon::LoopPhase::Requesting,
+    );
     assert_eq!(shared.request_compaction(true), Ok(()));
 }
 

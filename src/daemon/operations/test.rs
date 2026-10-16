@@ -63,7 +63,7 @@ fn a_request_is_open_until_it_closes() {
     assert_eq!(
         sent.json(),
         json!({"requests": [{"request": 0, "origin": "turn", "stage": "sent", "since": 100}],
-               "tools": []})
+               "tools": [], "compaction": null})
     );
 
     let streaming = fold(vec![
@@ -344,6 +344,37 @@ fn a_compaction_waits_then_writes_then_closes() {
         (210, compaction_summary(4)),
     ]);
     assert_eq!(landed.compaction(), None);
+}
+
+/// An open compaction is one of `current_operations`, beside its own request; nothing
+/// else open still makes the topic non-null. A failure is not in flight, so it leaves
+/// the topic (docs/control-api.md).
+#[test]
+fn an_open_compaction_is_an_operation_and_a_failure_is_not() {
+    use RequestOrigin::Compaction;
+    assert_eq!(
+        fold(vec![(100, compaction_requested(4))]).json(),
+        json!({"requests": [], "tools": [],
+               "compaction": {"state": "waiting", "warm": true, "cut": 4, "since": 100}})
+    );
+    let writing = fold(vec![
+        (100, compaction_requested(4)),
+        (150, stage(0, Compaction, RequestStageKind::Sent)),
+    ])
+    .json();
+    assert_eq!(
+        writing["compaction"],
+        json!({"state": "writing", "warm": true, "cut": 4, "since": 150})
+    );
+    assert_eq!(writing["requests"][0]["origin"], "compaction");
+    assert_eq!(
+        fold(vec![
+            (100, compaction_requested(4)),
+            (150, compaction_failed("boom")),
+        ])
+        .json(),
+        Value::Null
+    );
 }
 
 /// The agent's own summary is not the compaction's, and does not close it.

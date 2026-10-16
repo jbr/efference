@@ -5,13 +5,15 @@
 //! has a `Sent` stage and no closing one (`RequestStage`, docs/log-and-projection.md),
 //! each with the stage it is in and when that stage began. **Tools**: calls with a
 //! `CallStarted` entry and no result yet, with the tool name, `intent`, and (for
-//! `bash`) `command` the assistant entry carried. Parked waits (a gate, an `ask`, a park, a stall) have
-//! their own topics and are not repeated here.
+//! `bash`) `command` the assistant entry carried. Where the loop itself waits (a gate, an
+//! `ask`, a park, a hold) is the `loop_phase` topic, not repeated here.
 //!
-//! The same fold keeps the **compaction** (docs/summary.md): a `CompactionRequested`
-//! entry opens one, waiting until its summarizing request is sent and writing after;
-//! the compaction's `Summary` closes it, and a `CompactionFailed` leaves its failure
-//! standing until a turn's request goes out or another compaction is asked for. A
+//! The same fold keeps the **compaction** (docs/summary.md), the third kind of open
+//! operation: a `CompactionRequested` entry opens one, waiting until its summarizing
+//! request is sent and writing after; the compaction's `Summary` closes it. A
+//! `CompactionFailed` closes it too and leaves its failure standing — the
+//! `compaction_failure` topic, not an operation — until a turn's request goes out or
+//! another compaction is asked for. A
 //! failure is in the log, so it survives a restart; a compaction open when the host
 //! stopped does not, because the process writing it is gone.
 //!
@@ -256,9 +258,19 @@ impl Operations {
         }
     }
 
-    /// The topic's value: `null` when nothing is open, else `{requests, tools}`.
+    /// The topic's value: `null` when nothing is open, else `{requests, tools,
+    /// compaction}`, `compaction` being `null` unless one is waiting or writing.
     pub(crate) fn json(&self) -> Value {
-        if self.requests.is_empty() && self.tools.is_empty() {
+        let compaction = match &self.compaction {
+            Some(CompactionState::Waiting { warm, cut, since }) => {
+                json!({"state": "waiting", "warm": warm, "cut": cut, "since": since})
+            }
+            Some(CompactionState::Writing { warm, cut, since }) => {
+                json!({"state": "writing", "warm": warm, "cut": cut, "since": since})
+            }
+            Some(CompactionState::Failed { .. }) | None => Value::Null,
+        };
+        if self.requests.is_empty() && self.tools.is_empty() && compaction.is_null() {
             return Value::Null;
         }
         let requests: Vec<Value> = self
@@ -299,7 +311,7 @@ impl Operations {
                 value
             })
             .collect();
-        json!({ "requests": requests, "tools": tools })
+        json!({ "requests": requests, "tools": tools, "compaction": compaction })
     }
 }
 

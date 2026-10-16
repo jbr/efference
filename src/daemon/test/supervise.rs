@@ -190,6 +190,8 @@ async fn a_set_supervisor_receives_the_gate_approves_it_and_hears_the_idle() {
         .await
         .expect("the supervisor may resolve the gate");
     assert!(matches!(gate.await, Ok(Approval::Approve)));
+    // The loop runs the approved call and its trajectory ends.
+    a.going_idle();
 
     wait_until("a's idle reached b", || {
         heard(&b, "a", |body| {

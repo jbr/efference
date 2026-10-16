@@ -129,6 +129,11 @@ pub struct UpstreamRetryCell {
     /// is not lost.
     hurried: AtomicBool,
     hurry: Notify,
+    /// When the loop's own wait between attempts ends (absolute Unix millis), while
+    /// one lasts: the `delayed` loop phase (docs/control-api.md). Set by
+    /// [`delay`](Self::delay) only, so a detached aside retrying on the same cell
+    /// does not read as the loop waiting.
+    delaying: Mutex<Option<u64>>,
 }
 
 /// Shared retry state: written by both retry loops, read by `GET /state`.
@@ -210,10 +215,41 @@ impl UpstreamRetryCell {
         }
     }
 
+    /// [`pause`](Self::pause) for `pause`, as the loop's own wait between attempts:
+    /// [`delaying`](Self::delaying) names when it ends for as long as it lasts, which
+    /// is what the `delayed` loop phase reads (docs/control-api.md). The end is the
+    /// published retry's `next_attempt_at`, so the phase and the retry topic agree.
+    pub async fn delay(&self, pause: Duration) -> bool {
+        let until = self.get().map_or_else(
+            || crate::log::Timestamp::now().0 + pause.as_millis() as u64,
+            |retry| retry.next_attempt_at,
+        );
+        *self.delaying.lock().unwrap() = Some(until);
+        self.changed.notify_waiters();
+        // Cleared on every exit, a dropped wait included, so the phase never outlives it.
+        let _clear = DelayEnds(self);
+        self.pause(Some(pause)).await
+    }
+
+    /// When the loop's wait between attempts ends, while one lasts.
+    pub fn delaying(&self) -> Option<u64> {
+        *self.delaying.lock().unwrap()
+    }
+
     /// Wait for the next change. Arm this **before** reading the value, like every
     /// other lost-wakeup-sensitive wait in the daemon.
     pub fn changed(&self) -> Notified<'_> {
         self.changed.notified()
+    }
+}
+
+/// Clears [`UpstreamRetryCell::delaying`] when the wait it marks ends, however it ends.
+struct DelayEnds<'a>(&'a UpstreamRetryCell);
+
+impl Drop for DelayEnds<'_> {
+    fn drop(&mut self) {
+        *self.0.delaying.lock().unwrap() = None;
+        self.0.changed.notify_waiters();
     }
 }
 

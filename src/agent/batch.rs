@@ -35,6 +35,9 @@ pub(super) async fn run_batch<'a, F: Frontend, S: Spotter>(
     calls: &[ToolCall],
     primer: Option<TriagePrimerInput<'a>>,
 ) -> Result<Batch, Error> {
+    // The calls run from here until the batch lands; a gate or an `ask` inside it is
+    // its own wait (docs/control-api.md).
+    shared.set_phase(LoopPhase::Executing);
     let (primer_go, mut primer_rx) = tokio::sync::watch::channel(false);
     let primer_fut = async {
         if primer_rx.wait_for(|fired| *fired).await.is_err() {

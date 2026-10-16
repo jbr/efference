@@ -128,6 +128,15 @@ impl Session {
         }
         *repair = None;
         drop(repair);
+        self.end_wait(
+            |phase| {
+                phase
+                    == LoopPhase::Blocked {
+                        reason: BlockedReason::ConfigRepair,
+                    }
+            },
+            LoopPhase::Requesting,
+        );
         self.config_repaired.notify_waiters();
         self.touch_state();
     }
@@ -145,6 +154,7 @@ impl Session {
     /// the wait. Re-checks after each wake, so a spurious notify cannot release a
     /// park that is still warranted.
     pub async fn await_config_repair(&self) {
+        let mut blocked = None;
         loop {
             let repaired = self.config_repaired.notified();
             tokio::pin!(repaired);
@@ -153,6 +163,14 @@ impl Session {
                 return;
             };
             log::debug!("config: parked — {}", repair.message);
+            blocked.get_or_insert_with(|| {
+                self.wait_phase(
+                    LoopPhase::Blocked {
+                        reason: BlockedReason::ConfigRepair,
+                    },
+                    LoopPhase::Requesting,
+                )
+            });
             repaired.await;
         }
     }
