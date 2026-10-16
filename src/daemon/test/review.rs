@@ -1,4 +1,4 @@
-//! The `upstream` review position: who answers a gate, and when that is decided
+//! The `supervisor` review position: who answers a gate, and when that is decided
 //! (docs/permissions.md).
 
 use super::*;
@@ -93,16 +93,16 @@ fn leaf() -> ToolCall {
 }
 
 /// A session another session commissioned answers to it; a human root has no
-/// upstream to answer to and stays on the supervised default.
+/// supervisor to answer to and stays on the supervised default.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_commissioned_session_defaults_to_upstream_and_a_root_does_not() {
+async fn a_commissioned_session_defaults_to_supervisor_and_a_root_does_not() {
     let fixture = Fixture::new();
 
     assert_eq!(
         fixture.session("root").review_level(),
         ReviewLevel::SpotterHuman
     );
-    assert_eq!(fixture.session("root").upstream(), None);
+    assert_eq!(fixture.session("root").supervisor(), None);
     assert_eq!(
         fixture.session("root").resolved_review_level(),
         ReviewLevel::SpotterHuman
@@ -111,13 +111,13 @@ async fn a_commissioned_session_defaults_to_upstream_and_a_root_does_not() {
     for child in ["child", "outliver"] {
         assert_eq!(
             fixture.session(child).review_level(),
-            ReviewLevel::Upstream,
+            ReviewLevel::Supervisor,
             "{child}"
         );
-        assert_eq!(fixture.session(child).upstream().as_deref(), Some("root"));
+        assert_eq!(fixture.session(child).supervisor().as_deref(), Some("root"));
         assert_eq!(
             fixture.session(child).resolved_review_level(),
-            ReviewLevel::Upstream,
+            ReviewLevel::Supervisor,
             "{child}"
         );
     }
@@ -132,17 +132,20 @@ async fn a_commissioned_session_defaults_to_upstream_and_a_root_does_not() {
 /// a held call with nobody to answer it. Resolving at creation is exactly what
 /// this proves is not happening: the dial itself never moves.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn upstream_resolves_when_a_call_is_routed_not_when_the_session_is_created() {
+async fn supervisor_resolves_when_a_call_is_routed_not_when_the_session_is_created() {
     let fixture = Fixture::new();
     let root = fixture.session("root");
     let outliver = fixture.session("outliver");
 
+    let state: Value = serde_json::from_str(&outliver.state_json()).unwrap();
+    assert_eq!(state["supervisor"], "root", "the topic names the creator");
+
     let _gate = outliver.register_pending(&leaf(), None);
-    wait_until("the gate reached its upstream reviewer", || {
-        heard(&root, |body| body.contains("You are its upstream reviewer"))
+    wait_until("the gate reached its supervisor", || {
+        heard(&root, |body| body.contains("You are its supervisor"))
     })
     .await;
-    assert_eq!(outliver.resolved_review_level(), ReviewLevel::Upstream);
+    assert_eq!(outliver.resolved_review_level(), ReviewLevel::Supervisor);
 
     // The creator ends. `outliver` is detached, so it keeps running — and keeps
     // holding the call.
@@ -154,18 +157,22 @@ async fn upstream_resolves_when_a_call_is_routed_not_when_the_session_is_created
 
     assert_eq!(
         outliver.review_level(),
-        ReviewLevel::Upstream,
+        ReviewLevel::Supervisor,
         "the dial is untouched — only what it resolves to moved"
     );
-    assert_eq!(outliver.upstream(), None);
+    assert_eq!(outliver.supervisor(), None);
     assert_eq!(
         outliver.resolved_review_level(),
         ReviewLevel::SpotterHuman,
         "an unresolvable position moves toward the operator, never toward autonomous"
     );
     let state: Value = serde_json::from_str(&outliver.state_json()).unwrap();
-    assert_eq!(state["review_level"], "upstream");
+    assert_eq!(state["review_level"], "supervisor");
     assert_eq!(state["resolved_review_level"], "spotter_human");
+    assert!(
+        state["supervisor"].is_null(),
+        "no live supervisor reads null"
+    );
     assert!(
         !state["gate"].is_null(),
         "the held call is still held, for the operator to answer"
@@ -195,7 +202,7 @@ async fn a_level_change_reroutes_a_pending_gate() {
     // The dial moves toward the creator with the call still held.
     let operator = fixture.control("root");
     ReviewLevelTool {
-        level: "upstream".into(),
+        level: "supervisor".into(),
         session: Some("child".into()),
     }
     .execute(operator.clone(), RequestContext::default())
@@ -204,7 +211,7 @@ async fn a_level_change_reroutes_a_pending_gate() {
 
     wait_until("the held call was re-routed to the creator", || {
         heard(&root, |body| {
-            body.contains("You are its upstream reviewer") && body.contains("toolu_leaf")
+            body.contains("You are its supervisor") && body.contains("toolu_leaf")
         })
     })
     .await;
@@ -237,7 +244,7 @@ async fn the_reviewer_resolves_the_routed_gate_through_approve() {
 
     let gate = child.register_pending(&leaf(), None);
     wait_until("the gate reached its reviewer", || {
-        heard(&root, |body| body.contains("You are its upstream reviewer"))
+        heard(&root, |body| body.contains("You are its supervisor"))
     })
     .await;
 
@@ -274,7 +281,7 @@ async fn an_unsubscribed_creator_still_receives_the_gate_it_reviews() {
 
     let _gate = child.register_pending(&leaf(), None);
     wait_until("the gate reached its reviewer regardless", || {
-        heard(&root, |body| body.contains("You are its upstream reviewer"))
+        heard(&root, |body| body.contains("You are its supervisor"))
     })
     .await;
 

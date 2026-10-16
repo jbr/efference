@@ -94,7 +94,7 @@ pub(crate) struct DecisionBody {
 /// optional so one call can move either or both. `pace` is itself partial —
 /// `{"pace":{"speed_ms":10000}}` slows, `{"pace":{"held":true}}` pauses,
 /// `{"pace":{"held":false}}` resumes; `review_level` is one of `autonomous` /
-/// `upstream` / `spotter_human` / `human_only` (docs/permissions.md).
+/// `supervisor` / `spotter_human` / `human_only` (docs/permissions.md).
 #[derive(Deserialize)]
 pub(crate) struct LoopPatchBody {
     #[serde(default)]

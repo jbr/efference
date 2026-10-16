@@ -637,7 +637,7 @@ export interface Pace {
 }
 
 export type ReviewLevel =
-  "autonomous" | "upstream" | "spotter_human" | "human_only";
+  "autonomous" | "supervisor" | "spotter_human" | "human_only";
 
 // Latest upstream failure: optional HTTP status, consecutive occurrences and
 // error detail. Ephemeral diagnostics (docs/transport.md).
@@ -773,9 +773,12 @@ export interface StateTopics {
   usage?: Usage | null;
   pace?: Pace | null;
   review_level?: ReviewLevel | null;
-  // The position in force, which is the dial's own value except that `upstream`
-  // with no live upstream reviews as `spotter_human` (docs/permissions.md).
+  // The position in force, which is the dial's own value except that `supervisor`
+  // with no live supervisor reviews as `spotter_human` (docs/permissions.md).
   resolved_review_level?: ReviewLevel | null;
+  // The session that answers this one's gates under `supervisor`, or null when
+  // there is none (docs/permissions.md).
+  supervisor?: string | null;
   running?: boolean | null;
   stall?: Stall | null;
   upstream_failure?: UpstreamFailure | null;

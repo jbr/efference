@@ -369,7 +369,7 @@ impl Client {
     }
 
     /// Set the operator's review-level dial (`PATCH /loop {review_level}`,
-    /// docs/permissions.md): `autonomous` / `upstream` / `spotter_human` / `human_only`.
+    /// docs/permissions.md): `autonomous` / `supervisor` / `spotter_human` / `human_only`.
     /// Returns the daemon's resulting level.
     pub async fn review_level(&self, level: &str) -> Result<String> {
         let payload = serde_json::json!({ "review_level": level });

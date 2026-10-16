@@ -210,7 +210,7 @@ impl Session {
             turns_tx,
             approvals: Mutex::new(HashMap::new()),
             pending: Mutex::new(None),
-            upstream: Mutex::new(None),
+            supervisor: Mutex::new(None),
             interrupt: Arc::new(Notify::new()),
             interrupt_latch: AtomicBool::new(false),
             detach: Notify::new(),

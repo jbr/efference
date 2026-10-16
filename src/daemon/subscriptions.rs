@@ -74,7 +74,7 @@ impl Host {
     ///
     /// A gate is the one status that is more than observation. **Who answers it is the
     /// review-level dial's to say, not the subscription's** (docs/permissions.md): a
-    /// session whose position resolves to `upstream` sends the call it is holding to
+    /// session whose position resolves to `supervisor` sends the call it is holding to
     /// its creator, subscribed or not, with the wake a held call warrants and a body
     /// that says the recipient is the one to resolve it. That reviewer is skipped in
     /// the subscriber loop so the two posts do not race on one slot. Every other
@@ -100,23 +100,23 @@ impl Host {
         {
             inbox.notify_wake(
                 id.to_string(),
-                session.upstream_gate_body(id, status),
+                session.supervisor_gate_body(id, status),
                 Some(status_slot(id)),
             );
         }
     }
 
     /// The session this status is *routed to*, as against merely reported: the live
-    /// upstream of a session holding a gate whose position resolves to `upstream`
+    /// supervisor of a session holding a gate whose position resolves to `supervisor`
     /// (docs/permissions.md). `None` for every other status and position — including a
     /// session whose creator has ended, whose gate the operator answers.
     fn gate_reviewer(&self, session: &Session, status: &SessionStatus) -> Option<String> {
         if !matches!(status, SessionStatus::Gated { .. })
-            || session.resolved_review_level() != crate::policy::ReviewLevel::Upstream
+            || session.resolved_review_level() != crate::policy::ReviewLevel::Supervisor
         {
             return None;
         }
-        session.upstream()
+        session.supervisor()
     }
 
     /// Forget every subscription `id` holds on other sessions, and release its
@@ -151,7 +151,7 @@ impl Host {
     }
 
     /// Every session `id` commissioned, detached or not — the sessions whose
-    /// `upstream` review position resolves through `id` (docs/permissions.md).
+    /// `supervisor` review position resolves through `id` (docs/permissions.md).
     pub(super) fn children_of(&self, id: &str) -> Vec<String> {
         self.sessions_mut()
             .iter()
@@ -171,7 +171,7 @@ impl Host {
 ///
 /// The resolved review position is part of the level, not just the status, because it
 /// decides where a gate is *routed* (docs/permissions.md). A held call whose position
-/// moves — the dial turned to hand the child back, or the upstream ending — is
+/// moves — the dial turned to hand the child back, or the supervisor ending — is
 /// re-routed rather than dropped: the status has not changed, so only the position
 /// carries the news.
 pub(super) async fn watch_status(host: std::sync::Weak<Host>, id: String, session: Arc<Session>) {

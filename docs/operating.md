@@ -607,7 +607,7 @@ its own.
 ## The dials
 
 - **`efference control review-level <level>`** — who reviews a call the fast path did not clear.
-  `spotter_human` is the supervised default (fast path → spotter → you). `upstream` sends
+  `spotter_human` is the supervised default (fast path → spotter → you). `supervisor` sends
   what the spotter will not clear to the session that created this one, which answers it with
   `approve`; it is the default for a session another session created, and setting a child back
   to `spotter_human` is how a creating agent hands it to you. A session with no live creator

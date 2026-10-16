@@ -238,7 +238,7 @@ the task text ([context.md](context.md)). `create` from a session runs in the ca
 working directory — the caller's worktree, when it has one — unless `worktree: true`
 gives the child its own checkout and branch ([worktrees.md](worktrees.md)); it takes the
 caller's child environment as the new session's base, records the caller as the
-child's `created_by`, subscribes the caller to the child's status (below), and defaults the child's review level to `upstream` — so a call the child's spotter holds comes back to the caller as a gate to answer with `approve` ([permissions.md](permissions.md)). Reach is the project: `sessions` lists, and every target
+child's `created_by`, subscribes the caller to the child's status (below), and defaults the child's review level to `supervisor` — so a call the child's spotter holds comes back to the caller as a gate to answer with `approve` ([permissions.md](permissions.md)). Reach is the project: `sessions` lists, and every target
 resolves, only among sessions whose `.efference/` storage base is the caller's, so
 another project's id is not found rather than forbidden. `create` is bounded the same
 way at the other end: a `cwd` whose `.efference/` base is not the caller's is refused
@@ -307,7 +307,7 @@ child is inverted:
 - **Placement.** The successor's creator is the caller's creator, and it is detached exactly
   when the caller was: a successor of a human root is a human root, reviewing as
   `spotter_human` with its gates reaching the operator, where a child would default to
-  `upstream` and answer to its creator. The caller is not subscribed to it.
+  `supervisor` and answer to its creator. The caller is not subscribed to it.
 - **Inference.** The successor is created with the options the caller was created with —
   model, spotter, triage, effort, temperature — and resolves them as the caller did, so a
   model named at creation carries across and one that came from the host's defaults or

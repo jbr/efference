@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 pub struct ReviewLevel {
     /// `autonomous` — the spotter hands an unclear call back to the model with a
     /// pointer at its config file, so nothing blocks on an absent human.
-    /// `upstream` — the spotter judges first and escalates to the session that
+    /// `supervisor` — the spotter judges first and escalates to the session that
     /// created this one, which answers the gate with `approve`; with no live
     /// creator this reviews as `spotter_human`. The default for a session another
     /// session created, and `spotter_human` is how you hand one back to the operator.
@@ -55,7 +55,7 @@ impl Tool<Control> for ReviewLevel {
                 let session = state.resolve_mutating(self.session.as_deref())?;
                 let level = crate::policy::ReviewLevel::parse(&self.level).ok_or_else(|| {
                     anyhow!(
-                        "review_level must be autonomous | upstream | spotter_human | human_only"
+                        "review_level must be autonomous | supervisor | spotter_human | human_only"
                     )
                 })?;
                 session.set_review_level(level);

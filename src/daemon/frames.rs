@@ -100,11 +100,17 @@ pub(crate) enum Topic {
     /// The review-level dial (docs/permissions.md).
     ReviewLevel,
     /// The review position **in force**, which is the dial's own value except that
-    /// `upstream` with no live upstream reviews as `spotter_human` (docs/permissions.md).
+    /// `supervisor` with no live supervisor reviews as `spotter_human` (docs/permissions.md).
     /// Carried beside the dial rather than folded into it because the two answer
     /// different questions — what was set, and who answers a gate open right now —
     /// and because this one moves without anyone turning the dial.
     ResolvedReviewLevel,
+    /// The session whose `supervisor` review position answers this one's gates, or
+    /// `null` when there is none (docs/permissions.md). Today it is the creating
+    /// session while that session is hosted, so it moves to `null` when the creator
+    /// ends without anyone turning the dial; carried as its own topic for the same
+    /// reason as [`ResolvedReviewLevel`](Self::ResolvedReviewLevel).
+    Supervisor,
     /// Whether the loop is executing a turn.
     Running,
     /// Turns submitted but not yet dequeued, in submission order — `[{submission_id, text}]`
@@ -157,7 +163,7 @@ impl Topic {
     /// walking it, so a topic added here reaches both surfaces or neither — which is
     /// what keeps `GET /state` equal to the fold of every state frame
     /// (docs/control-api.md).
-    pub(crate) const ALL: [Topic; 21] = [
+    pub(crate) const ALL: [Topic; 22] = [
         Self::Gate,
         Self::Ask,
         Self::Processes,
@@ -168,6 +174,7 @@ impl Topic {
         Self::Pace,
         Self::ReviewLevel,
         Self::ResolvedReviewLevel,
+        Self::Supervisor,
         Self::Running,
         Self::Queued,
         Self::Stall,
@@ -201,6 +208,7 @@ impl Topic {
             Self::Pace => "pace",
             Self::ReviewLevel => "review_level",
             Self::ResolvedReviewLevel => "resolved_review_level",
+            Self::Supervisor => "supervisor",
             Self::Running => "running",
             Self::Queued => "queued",
             Self::Stall => "stall",

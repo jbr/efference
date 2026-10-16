@@ -9,6 +9,7 @@ behind a change, see [`journal/`](journal/).
 
 ### Added
 
+- The session that reviews another's gates is its supervisor (docs/permissions.md): the review level `upstream` is `supervisor` on `PATCH /loop`, `resolved_review_level`, `efference control review-level` and the `review_level` tool, and a `supervisor` state topic names the session that would answer, `null` once the creator has ended; "upstream" keeps only the model-endpoint sense.
 - Background-process supervision is the process monitor: `src/supervisor.rs` is `src/process_monitor.rs`, `Supervisor` is `ProcessMonitor`, and docs/supervisor.md is docs/process-monitor.md, freeing "supervisor" for a session that oversees another.
 - One name for the role that selects what of each tool result reaches the agent: triage. `src/distill/` is `src/triage/`, `ForkPeek` is `Triager`, `WireState::Distilled` is `Triaged`, the `peek` and idle-triage request origins are one `triage` origin, `docs/triage.md` is `docs/triage.md`, and `efference dev peek` is `efference dev triage`; log version 3 with `scripts/migrate-log-v3.py` for existing sessions.
 - Web transport failures appear once in readable header chrome instead of accumulating in the transcript, clearing on HTTP recovery and updating if the stream fails.

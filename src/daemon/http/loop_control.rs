@@ -102,7 +102,7 @@ pub(super) async fn patch_loop(mut conn: Conn) -> Conn {
                 return fail(
                     conn,
                     ErrorCode::BadRequest,
-                    "review_level must be autonomous | upstream | spotter_human | human_only",
+                    "review_level must be autonomous | supervisor | spotter_human | human_only",
                 );
             }
         },

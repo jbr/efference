@@ -53,8 +53,8 @@ pub enum Verdict {
 /// any combination is meaningful (autonomous-but-slow, human-only-and-held). Pause is *not* a
 /// position here; that's the `held` overlay.
 ///
-/// The order is by how much a position costs a human, which an upstream agent reduces without
-/// eliminating: an `Upstream` gate is answered by another session, but that session's own dial
+/// The order is by how much a position costs a human, which a supervising agent reduces without
+/// eliminating: a `Supervisor` gate is answered by another session, but that session's own dial
 /// still terminates at the operator.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReviewLevel {
@@ -66,10 +66,10 @@ pub enum ReviewLevel {
     /// (docs/permissions.md). The default for a session another session created.
     ///
     /// The position **resolves at routing time, never at creation**: a session with no live
-    /// upstream — a root, or a creator that has since ended — reviews as
+    /// supervisor — a root, or a creator that has since ended — reviews as
     /// [`SpotterHuman`](Self::SpotterHuman) instead ([`crate::daemon::Session::resolved_review_level`]).
     /// Resolving once at creation would leave a child whose creator died effectively unreviewed.
-    Upstream,
+    Supervisor,
     /// The supervised default: fast-path → spotter → human gate.
     SpotterHuman,
     /// The human takes the spotter's role **entirely** — skip the spotter (pay no tokens, log no
@@ -85,7 +85,7 @@ impl ReviewLevel {
     pub fn as_u8(self) -> u8 {
         match self {
             ReviewLevel::Autonomous => 0,
-            ReviewLevel::Upstream => 1,
+            ReviewLevel::Supervisor => 1,
             ReviewLevel::SpotterHuman => 2,
             ReviewLevel::HumanOnly => 3,
         }
@@ -96,7 +96,7 @@ impl ReviewLevel {
     pub fn from_u8(n: u8) -> Self {
         match n {
             0 => ReviewLevel::Autonomous,
-            1 => ReviewLevel::Upstream,
+            1 => ReviewLevel::Supervisor,
             3 => ReviewLevel::HumanOnly,
             _ => ReviewLevel::SpotterHuman,
         }
@@ -107,7 +107,7 @@ impl ReviewLevel {
     pub fn as_str(self) -> &'static str {
         match self {
             ReviewLevel::Autonomous => "autonomous",
-            ReviewLevel::Upstream => "upstream",
+            ReviewLevel::Supervisor => "supervisor",
             ReviewLevel::SpotterHuman => "spotter_human",
             ReviewLevel::HumanOnly => "human_only",
         }
@@ -118,7 +118,7 @@ impl ReviewLevel {
     pub fn parse(s: &str) -> Option<Self> {
         match s {
             "autonomous" => Some(ReviewLevel::Autonomous),
-            "upstream" => Some(ReviewLevel::Upstream),
+            "supervisor" => Some(ReviewLevel::Supervisor),
             "spotter_human" => Some(ReviewLevel::SpotterHuman),
             "human_only" => Some(ReviewLevel::HumanOnly),
             _ => None,
