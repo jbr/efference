@@ -3,7 +3,8 @@
 // `GET /log?tail=N`, then `GET /events?since=last_seq+1`. Reconnect inside the
 // stream reader replays by cursor; a 401 anywhere parks the session as
 // unauthenticated until Login mints a cookie and calls retry(). A 404 marks the
-// session missing and stops retries. The stream stays
+// session missing and stops retries, and so does a stream that ended on a failed
+// start. The stream stays
 // open while the tab is hidden: whether a person is attending is reported
 // separately (attention.ts), not inferred from the connection.
 
@@ -111,6 +112,11 @@ export function connect(
               ...s,
               connection: error.status === 404 ? "missing" : "unauthenticated",
             }));
+          } else if (store.snapshot().topics.starting?.failure) {
+            // A failed start ends its stream after the frame that says why, and
+            // there is nothing behind it to reconnect to (docs/control-api.md).
+            stream?.close();
+            store.update((s) => ({ ...s, connection: "ended" }));
           } else {
             store.update((s) => ({ ...s, connection: "reconnecting" }));
           }

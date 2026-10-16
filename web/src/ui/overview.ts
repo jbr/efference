@@ -114,6 +114,7 @@ export function gatePreview(input: unknown): string {
  * "amber-lattice needs approval" — or nothing: working is the default state and
  * needs no words, and a new session's title already says it. */
 export function statusPhrase(card: CardModel): string | null {
+  if (card.status === "starting") return "is starting";
   if (card.status === "gated") return "needs approval";
   if (card.status === "asking") return "has a question";
   if (card.status === "stalled") return "has stalled";
@@ -156,7 +157,8 @@ export function cardModel(
     entry.status === "parked" ||
     entry.status === "blocked"
       ? "blocked"
-      : entry.status === "running"
+      : // Being prepared is work the operator waits on, like a running turn.
+        entry.status === "running" || entry.status === "starting"
         ? "working"
         : // A question is a turn ending, so it waits on the operator like one.
           entry.status === "asking"

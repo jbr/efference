@@ -58,7 +58,14 @@ export interface Streaming {
 }
 
 export type Connection =
-  "connecting" | "live" | "reconnecting" | "unauthenticated" | "missing";
+  | "connecting"
+  | "live"
+  | "reconnecting"
+  | "unauthenticated"
+  | "missing"
+  // The stream ended after a failed start: nothing is left to reconnect to
+  // (docs/control-api.md).
+  | "ended";
 
 export interface Session {
   connection: Connection;

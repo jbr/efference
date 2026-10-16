@@ -857,6 +857,37 @@ export interface StateTopics {
   compaction_failure?: CompactionFailure | null;
   session_identity?: SessionIdentity | null;
   current_operations?: CurrentOperations | null;
+  // The session's preparation while it is starting; null once it has started
+  // (docs/control-api.md).
+  starting?: Starting | null;
+}
+
+/** The `starting` topic (docs/control-api.md): a session reserved on the host
+ * whose environment and MCP servers are being prepared, or whose preparation
+ * failed. A starting session publishes this, `verbs`, and `queued` only. */
+export interface Starting {
+  id: string;
+  /** The project root holding the session, which a resume names. */
+  cwd: string;
+  since: number;
+  /** Reopening a dormant session rather than creating one. */
+  resume: boolean;
+  stage: "environment" | "preparing";
+  /** The MCP server whose authorization preparation waits on. */
+  authorizing: string | null;
+  failure: StartFailure | null;
+}
+
+/** Why a preparation ended without a session, and the turns sent while it was
+ * starting, handed back in the shape `DELETE /turns/:id` answers with. */
+export interface StartFailure {
+  reason: string;
+  at: number;
+  withdrawn: {
+    submission_id: string;
+    text: string;
+    attachments?: Attachment[];
+  }[];
 }
 
 /** The `ask` topic (docs/control-api.md): the question the loop is blocked on.
@@ -916,6 +947,7 @@ export interface ErrorEnvelope {
     | "gate_moved"
     | "not_continuable"
     | "not_compactable"
+    | "starting"
     | "cold"
     | "unauthorized"
     | "forbidden"

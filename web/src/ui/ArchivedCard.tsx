@@ -31,6 +31,11 @@ export function ArchivedCard({
       </h3>
 
       <footer className="card-meta">
+        {session.resume_failure !== undefined && (
+          <div className="card-line" role="note">
+            last resume did not start: {session.resume_failure}
+          </div>
+        )}
         <div className="card-line">
           <span className="card-archived-age">
             {session.last_active_at ? (

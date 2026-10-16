@@ -310,9 +310,17 @@ export interface SessionEntry {
   title?: string;
   cwd?: string;
   created_by?: string;
-  /** What the session is doing, in one word. */
+  /** What the session is doing, in one word: `starting` while its environment
+   * and MCP servers are prepared (docs/control-api.md). */
   status:
-    "running" | "idle" | "gated" | "asking" | "stalled" | "parked" | "blocked";
+    | "starting"
+    | "running"
+    | "idle"
+    | "gated"
+    | "asking"
+    | "stalled"
+    | "parked"
+    | "blocked";
   /** Live background processes the session holds; archiving it reaps them. */
   processes: number;
 }
@@ -324,6 +332,9 @@ export interface ArchivedSession {
   created_at?: number;
   last_active_at?: number;
   problem?: string;
+  /** Why this host's last attempt to resume the session failed; unlike a
+   * `problem`, the session is still resumable (docs/control-api.md). */
+  resume_failure?: string;
   state: "archived";
 }
 

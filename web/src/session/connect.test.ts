@@ -130,3 +130,44 @@ it("retains a fetched tail and opens its stream when a boundary reference is mis
     expect.anything(),
   );
 });
+
+it("stops at a failed start instead of reconnecting to it", async () => {
+  vi.useFakeTimers();
+  const frame = {
+    class: "state",
+    kind: "starting",
+    data: {
+      id: "test",
+      cwd: "/work",
+      since: 1,
+      resume: false,
+      stage: "environment",
+      authorizing: null,
+      failure: { reason: "env: the hook exited 7", at: 2, withdrawn: [] },
+    },
+  };
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(
+        new TextEncoder().encode(`data: ${JSON.stringify(frame)}\n\n`),
+      );
+      controller.close();
+    },
+  });
+  const starting = Response.json(
+    { code: "starting", message: 'session "test" is starting' },
+    { status: 409 },
+  );
+  const { store, fetch } = start(starting, new Response(body));
+  try {
+    await vi.advanceTimersByTimeAsync(0);
+    expect(store.snapshot().connection).toBe("ended");
+    expect(store.snapshot().topics.starting?.failure?.reason).toBe(
+      "env: the hook exited 7",
+    );
+    await vi.advanceTimersByTimeAsync(30000);
+    expect(fetch).toHaveBeenCalledTimes(2);
+  } finally {
+    vi.useRealTimers();
+  }
+});

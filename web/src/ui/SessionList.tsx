@@ -32,6 +32,7 @@ import {
 } from "../api/http.ts";
 import { sessionHref } from "../api/base.ts";
 import { navigate } from "./route.ts";
+import { reopenedLaunch } from "./launchRetry.ts";
 import "./SessionList.css";
 
 interface Feed {
@@ -128,7 +129,11 @@ export function SessionList({
   // and only a reload discards it (docs/web-session-creation.md). `requested`
   // is the directory a workspace `+` asked for, applied once the form knows
   // which configuration that directory was last launched with.
-  const [draft, setDraft] = useState<Draft | null>(null);
+  // A retry of a creation that did not start reopens on the draft that made it
+  // (ui/launchRetry.ts).
+  const [draft, setDraft] = useState<Draft | null>(
+    () => reopenedLaunch()?.draft ?? null,
+  );
   const [requested, setRequested] = useState<string | null>(null);
   const launch = useLaunchNavigation();
   const resume = useResumeNavigation();

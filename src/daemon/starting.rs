@@ -315,6 +315,7 @@ impl Starting {
         };
         serde_json::json!({
             "id": self.id,
+            "cwd": self.project,
             "since": self.since,
             "resume": self.resume,
             "stage": inner.stage,

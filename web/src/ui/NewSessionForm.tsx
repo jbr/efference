@@ -11,6 +11,7 @@ import {
 } from "../api/sessionForm.ts";
 import { sessionHref } from "../api/base.ts";
 import { navigate } from "./route.ts";
+import { launchedFrom, reopenedLaunch } from "./launchRetry.ts";
 import {
   type Answered,
   type Draft,
@@ -65,6 +66,11 @@ export function NewSessionForm({
   const [typed, setTyped] = useState("");
   const [answered, setAnswered] = useState<Answered | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  // Why the last start from this draft failed, when the form reopened for a retry
+  // (ui/launchRetry.ts). Apart from `note`, which a resolved preview clears.
+  const [retrying, setRetrying] = useState(
+    () => reopenedLaunch()?.reason ?? null,
+  );
   const [creating, setCreating] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   // The counter that pairs a reply with the draft it answers. State, because
@@ -217,10 +223,14 @@ export function NewSessionForm({
     setElapsed(0);
     setCreating(true);
     setNote(null);
+    setRetrying(null);
     try {
       const created = await createSession(sessionRequest(draft));
+      // Kept by the id, so a start that fails can reopen the form on it.
+      launchedFrom(created.id, draft);
       // A navigation, like opening a card: the base changes, so the page loads
-      // again against the new session's control endpoint (api/base.ts).
+      // again against the new session's control endpoint (api/base.ts). The
+      // session opens starting, and its preparation shows there.
       navigate(sessionHref(created.id));
     } catch (failure) {
       // Nothing was minted, so every edit stays and only the reason is added.
@@ -428,6 +438,11 @@ export function NewSessionForm({
             {note !== null && (
               <p className="new-session-issue" role="alert">
                 {note}
+              </p>
+            )}
+            {retrying !== null && (
+              <p className="new-session-issue" role="alert">
+                The last start did not finish: {retrying}
               </p>
             )}
             {surface === "settings" && (

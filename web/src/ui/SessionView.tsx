@@ -7,9 +7,13 @@ import { useHistoricalCall } from "./inspector/useHistoricalCall.ts";
 // page was served by a session daemon at its root or by the host under
 // `/sessions/<id>/`; `App.tsx` decides which of the two it is.
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiBase, clientRoute, sessionHref, sessionId } from "../api/base.ts";
 import type { CallId } from "../api/types.ts";
+import { resumeSession } from "../api/http.ts";
+import { acquireDraft } from "./drafts.ts";
+import { reopenLaunch } from "./launchRetry.ts";
+import { StartingBanner } from "./StartingBanner.tsx";
 import { spotFor } from "../session/store.ts";
 import {
   anchorForCall,
@@ -173,6 +177,55 @@ export function SessionView() {
     }
   }
 
+  // A start that failed hands back the turns sent while it was starting
+  // (docs/control-api.md); they reach the composer the way a recall does, once
+  // per failure.
+  const starting = session.topics.starting ?? null;
+  const failure = starting?.failure ?? null;
+  const [seenFailure, setSeenFailure] = useState<number | null>(null);
+  if ((failure?.at ?? null) !== seenFailure) {
+    setSeenFailure(failure?.at ?? null);
+    if (failure !== null && failure.withdrawn.length > 0) {
+      setRecalled((prev) => ({
+        text: failure.withdrawn.map((t) => t.text).join("\n"),
+        attachments: [],
+        nonce: (prev?.nonce ?? 0) + 1,
+      }));
+    }
+  }
+  // Once started, the view reconnects the ordinary way — a bounded tail and the
+  // stream from its cursor — rather than reading a resumed session's whole log
+  // through the stream the starting session opened at zero.
+  const wasStarting = useRef(false);
+  useEffect(() => {
+    if (starting !== null) wasStarting.current = true;
+    else if (wasStarting.current) {
+      wasStarting.current = false;
+      connector.retry();
+    }
+  }, [starting, connector]);
+  const [retrying, setRetrying] = useState(false);
+  const [retryError, setRetryError] = useState<string | null>(null);
+  // A resume is asked for again, here; a creation goes back to the form it came
+  // from, carrying the composer's text to the session the retry makes
+  // (ui/launchRetry.ts).
+  const retryStart = useCallback(() => {
+    if (starting === null || starting.failure === null) return;
+    if (!starting.resume) {
+      const draft = acquireDraft(apiBase());
+      reopenLaunch(starting.id, starting.failure.reason, draft.snapshot().text);
+      draft.setText("");
+      navigate("/?new=settings");
+      return;
+    }
+    setRetrying(true);
+    setRetryError(null);
+    resumeSession(starting.id, starting.cwd)
+      .then(() => connector.retry())
+      .catch((error: unknown) => setRetryError(String(error)))
+      .finally(() => setRetrying(false));
+  }, [starting, connector]);
+
   // One open request: the path, the call that asked (which is where the edit's
   // anchor comes from — session/editAnchor.ts), and a key that changes even
   // when the path does not, so a second call's `open ⤢` on the same file still
@@ -277,10 +330,19 @@ export function SessionView() {
             failure: session.topics.compaction_failure ?? null,
           }}
         />
-        {session.connection !== "live" && (
-          <div className="banner">
-            <div className="col">{session.connection}…</div>
-          </div>
+        {starting !== null ? (
+          <StartingBanner
+            starting={starting}
+            retrying={retrying}
+            retryError={retryError}
+            onRetry={retryStart}
+          />
+        ) : (
+          session.connection !== "live" && (
+            <div className="banner">
+              <div className="col">{session.connection}…</div>
+            </div>
+          )
         )}
         {inspectionError && (
           <div className="banner" role="alert">
