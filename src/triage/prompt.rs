@@ -8,7 +8,7 @@ use super::*;
 macro_rules! dispositions {
     () => {
         "`pin` — it enters your working context and you resume work on it now. `leave` \
-(list nothing for it) — it stays pending and is shown to triage again at the next triage, \
+(list nothing for it) — it stays pending and is shown again at the next triage, \
 no turn runs, and the harness may dismiss it if it keeps going unmentioned. `dismiss` — it \
 is cleared for good, you will not see it again, and no turn runs."
     };
