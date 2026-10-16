@@ -75,6 +75,12 @@ pub enum Telemetry {
         outcome: String,
         account_bytes: usize,
     },
+    /// The `tools[]` the session advertises, as sent: appended at boot, and at a resume
+    /// when it differs from the last one recorded (docs/resumption.md). The array is
+    /// kept as `Value`s, whose object keys serialize sorted, so equal tool sets are
+    /// equal values. Offline readers (`dev wire`, the triage replay) rebuild the request
+    /// from it instead of from current code.
+    Tools { tools: Vec<serde_json::Value> },
 }
 
 /// Where an interrupt came from. Both fields are client-asserted and unverified,
@@ -108,6 +114,7 @@ impl Telemetry {
             Telemetry::SupervisorSet { .. } => "telemetry.supervisor_set",
             Telemetry::Interrupt(_) => "telemetry.interrupt",
             Telemetry::Consolidation { .. } => "telemetry.consolidation",
+            Telemetry::Tools { .. } => "telemetry.tools",
         }
     }
 }

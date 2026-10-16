@@ -23,6 +23,20 @@ pub fn tool_definitions(toolbox: &Toolbox) -> Vec<Value> {
     tools
 }
 
+/// The `tools[]` an offline reader (`dev wire`, the triage replay) sends for a recorded
+/// session: the array the log recorded when it holds one (docs/log-and-projection.md),
+/// else `rebuild`'s, which is the current code's with none of the session's connected
+/// servers. The flag says which.
+pub fn recorded_or_rebuilt_tools<E>(
+    entries: &[crate::log::LogEntry],
+    rebuild: impl FnOnce() -> Result<Toolbox, E>,
+) -> Result<(Vec<Value>, bool), E> {
+    match crate::log::recorded_tools(entries) {
+        Some(tools) => Ok((tools.to_vec(), true)),
+        None => Ok((tool_definitions(&rebuild()?), false)),
+    }
+}
+
 /// The names a turn's `tools[]` carries that a call may actually name — read off
 /// [`tool_definitions`] itself, so the advertised array and this list cannot drift.
 ///

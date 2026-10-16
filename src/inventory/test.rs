@@ -300,6 +300,7 @@ fn resumed(log: &mut Log) {
             lost_processes: Vec::new(),
             resumes_after: None,
             pending_calls: Vec::new(),
+            tools_changed: Default::default(),
         }),
     )
     .unwrap();

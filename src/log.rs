@@ -24,6 +24,7 @@ pub mod stops;
 mod summary;
 mod telemetry;
 mod tool_telemetry;
+mod tools;
 mod triage;
 mod upstream;
 mod wire_state;
@@ -49,6 +50,7 @@ pub use stops::Stop;
 pub use summary::{Audience, MadeBy, Summary};
 pub use telemetry::{InterruptOrigin, Telemetry};
 pub use tool_telemetry::{BashTelemetry, EditTelemetry, ToolOutcome, ToolTelemetry};
+pub use tools::{ToolsChange, recorded_tools};
 pub use triage::{Origin, Triage};
 pub use upstream::{
     CAPTURED_HEADERS, FRAME_CAPTURE_CAP, StreamDiagnostics, UpstreamFailureRecord,
@@ -337,6 +339,11 @@ pub struct Resumed {
     /// (docs/resumption.md). A log written before the field existed reads as empty.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub pending_calls: Vec<CallId>,
+    /// How the tools the resumed session advertises differ from the last `tools[]` the
+    /// log recorded (docs/resumption.md). Empty (and absent from the entry) when they are
+    /// the same, or when the log never recorded one.
+    #[serde(default, skip_serializing_if = "ToolsChange::is_empty")]
+    pub tools_changed: ToolsChange,
 }
 
 impl Resumed {

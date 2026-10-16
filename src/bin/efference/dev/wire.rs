@@ -38,9 +38,9 @@ pub(super) fn wire_model(identity: Option<&efference::log::LoggedInference>) -> 
 /// fold it to `messages`, place the trailing cache breakpoint, and render the
 /// envelope a real turn would send (`tool_choice: auto`, docs/transport.md).
 /// The recorded identity supplies the historical model, provider, and placement;
-/// the recorded `system` is read back, while the current code and cwd rebuild
-/// `tools[]` and the other envelope values. Notes on stderr flag the parts that
-/// may differ from the session's environment.
+/// the recorded `system` and `tools[]` are read back, while the current code and cwd
+/// rebuild the other envelope values (and `tools[]` for a log that never recorded one).
+/// Notes on stderr flag the parts that may differ from the session's environment.
 pub(crate) async fn wire(
     path: PathBuf,
     messages_only: bool,
@@ -124,9 +124,14 @@ pub(crate) async fn wire(
     let system = if let Some(system) = recorded_system {
         eprintln!(
             "note: {} log entries → {} wire messages. `system` is the recorded boot \
-             preamble; `tools[]` is rebuilt from the current code and cwd.",
+             preamble; `tools[]` is {}.",
             entries.len(),
-            messages.len()
+            messages.len(),
+            if efference::log::recorded_tools(&entries).is_some() {
+                "the recorded array"
+            } else {
+                "rebuilt from the current code and cwd"
+            }
         );
         system
     } else {
@@ -186,11 +191,13 @@ pub(crate) async fn wire(
     // The full tools[] a real turn sends — world tools + the harness tools
     // (`consolidate`, the docs/process-monitor.md and docs/inbox.md tools) — so the dev view matches.
     // (No scratch dir: the wire view renders, it never executes.) One known gap:
-    // config-declared connected providers (docs/tools.md) are not mounted here —
+    // the recorded array is preferred (docs/log-and-projection.md); a rebuild mounts no
+    // config-declared connected providers (docs/tools.md) —
     // mounting spawns processes / opens connections, which an offline view must
     // not — so a session with `[mcp.servers.*]` has more tools[] than this shows.
-    let toolbox = Toolbox::bash_and_mcps(cwd, None)?;
-    let tools = efference::agent::tool_definitions(&toolbox);
+    let (tools, _) = efference::agent::recorded_or_rebuilt_tools(&entries, || {
+        Toolbox::bash_and_mcps(cwd, None)
+    })?;
 
     let choice = efference::api::ToolChoice::auto();
     let rendered = match (view_dialect, dialect, format) {

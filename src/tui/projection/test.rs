@@ -670,6 +670,7 @@ fn a_resumed_notice_carries_one_glyph() {
             lost_processes: Vec::new(),
             resumes_after: None,
             pending_calls: Vec::new(),
+            tools_changed: Default::default(),
         }),
     )];
     let doc = project(

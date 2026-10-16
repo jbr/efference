@@ -224,3 +224,22 @@ fn an_archived_entry_has_a_stable_json_shape() {
         r#"{"seq":8,"turn":2,"at":1782260379694,"payload":{"Archived":{}}}"#
     );
 }
+
+/// A `tools[]` difference is named by tool: added, removed, changed, or only reordered.
+#[test]
+fn tools_change_names_what_moved() {
+    use super::ToolsChange;
+    let tool = |name: &str, d: &str| serde_json::json!({"name": name, "description": d});
+    let before = vec![tool("a", "x"), tool("b", "x"), tool("c", "x")];
+    let now = vec![tool("a", "x"), tool("b", "y"), tool("d", "x")];
+    let change = ToolsChange::between(&before, &now);
+    assert_eq!(change.added, vec!["d"]);
+    assert_eq!(change.removed, vec!["c"]);
+    assert_eq!(change.changed, vec!["b"]);
+    assert!(!change.reordered);
+    assert!(ToolsChange::between(&before, &before).is_empty());
+    let mut swapped = before.clone();
+    swapped.swap(0, 1);
+    let change = ToolsChange::between(&before, &swapped);
+    assert!(change.reordered && change.added.is_empty());
+}

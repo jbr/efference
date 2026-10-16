@@ -312,6 +312,15 @@ async fn prepare_minting(
         },
     )?;
 
+    // The tools[] this session advertises, kept so a resume can say what changed
+    // (docs/resumption.md) and offline readers need not rebuild it.
+    log.append(
+        0,
+        crate::log::Payload::Telemetry(crate::log::Telemetry::Tools {
+            tools: crate::agent::tool_definitions(&toolbox),
+        }),
+    )?;
+
     if let Some(added) = worktree_added {
         log.append(0, crate::log::Payload::Worktree(added.into_event(false)))?;
     }

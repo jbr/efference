@@ -860,6 +860,7 @@ fn resumed_projects_a_notice_after_the_prefix() {
             lost_processes: vec!["p#1".into()],
             resumes_after: None,
             pending_calls: vec![],
+            tools_changed: Default::default(),
         }),
     ));
     let after = serde_json::to_string(&project(&log)).unwrap();
@@ -903,6 +904,7 @@ fn a_pending_batch_notice_follows_its_results() {
                 lost_processes: vec![],
                 resumes_after: None,
                 pending_calls: vec!["b".into()],
+                tools_changed: Default::default(),
             }),
         ),
     ];
@@ -975,6 +977,7 @@ fn a_rolled_back_range_is_not_projected() {
             lost_processes: vec![],
             resumes_after: Some(3),
             pending_calls: vec![],
+            tools_changed: Default::default(),
         }),
     ));
     let wire = project(&log);
@@ -1022,6 +1025,7 @@ fn a_rolled_back_range_is_not_projected() {
             lost_processes: vec![],
             resumes_after: Some(7),
             pending_calls: vec![],
+            tools_changed: Default::default(),
         }),
     ));
     let bytes = serde_json::to_string(&project(&log)).unwrap();

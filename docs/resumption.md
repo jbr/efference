@@ -36,7 +36,13 @@ the ones that mint:
   running.
 - **Config** is the session's own `config.toml`, the live policy, not the template.
 - **Environment and scratch** are established fresh; neither is persisted.
-- **MCP servers** are mounted from config, as at creation.
+- **MCP servers** are mounted from config, as at creation. The `tools[]` that results is
+  compared with the last one the log recorded (`Telemetry::Tools`, recorded at boot): the
+  resume proceeds on a difference, and the restart notice names the tools added, removed
+  or changed. The new array is then recorded, so the next resume compares with it; a
+  resume with an equal array records nothing, and a log that never recorded one has
+  nothing to compare with. The cache is cold on a resume with a difference, since the
+  prefix moved.
 - **The log** is opened with `Log::open` (writer lock, torn-tail repair), as the last
   fallible step. Everything before it reads without writing, so a resume that fails
   leaves the directory byte-identical, and rollback removes only the scratch directory
@@ -78,6 +84,7 @@ and `Log::open`'s file lock refuses a second writer, in-process included.
 The loader appends one **`Resumed`** entry, which projects a restart notice:
 how long the session sat, which background processes are no longer monitored (handles
 with a `Spawned` event and no `Exited`, over the whole log, skipped entries included),
+when the tools differ from the recorded ones (by name, as `added`, `removed`, `changed`),
 when it resumed at a pending batch, that it stopped with N tool calls pending and the
 operator's next action brings them back, and, when entries were skipped, that the session
 did not end cleanly, that N entries after seq S were not restored, and that they may

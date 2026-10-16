@@ -109,8 +109,9 @@ pub(crate) async fn triage(
     }
 
     // The envelope a real turn sends. `system` is the recorded boot preamble, so the
-    // replay reads the same cached prefix the session did; `tools[]` is rebuilt from the
-    // current code and cwd, exactly as `wire` does and with the same caveat.
+    // replay reads the same cached prefix the session did; `tools[]` is the recorded array,
+    // else rebuilt from the current code and cwd, exactly as `wire` does and with the same
+    // caveat.
     let (system, context_block) = entries
         .iter()
         .rev()
@@ -121,8 +122,9 @@ pub(crate) async fn triage(
             _ => None,
         })
         .ok_or("log predates the boot-preamble snapshot; no recorded system prompt to replay")?;
-    let toolbox = Toolbox::bash_and_mcps(std::env::current_dir()?, None)?;
-    let tools = efference::agent::tool_definitions(&toolbox);
+    let (tools, _) = efference::agent::recorded_or_rebuilt_tools(&entries, || {
+        Toolbox::bash_and_mcps(std::env::current_dir()?, None)
+    })?;
 
     // The projection the replayed triage reads: the triage reader's on a separate model,
     // the main one on the shared triage (docs/summary.md).

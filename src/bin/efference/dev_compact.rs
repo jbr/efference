@@ -44,8 +44,9 @@ pub(crate) async fn compact(target: &str, upto: Option<u64>, cut: Option<u64>) -
         .with_prompt_cache(caps.prompt_cache)
         .with_max_output(caps.max_output_tokens.unwrap_or(UNKNOWN_OUTPUT_CAP))
         .with_context_window(caps.context_length);
-    let toolbox = efference::tools::Toolbox::bash_and_mcps(std::env::current_dir()?, None)?;
-    let tools = efference::agent::tool_definitions(&toolbox);
+    let (tools, _) = efference::agent::recorded_or_rebuilt_tools(&entries, || {
+        efference::tools::Toolbox::bash_and_mcps(std::env::current_dir()?, None)
+    })?;
 
     eprintln!(
         "compacting {label} on {selection}{}",

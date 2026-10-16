@@ -9,6 +9,7 @@ behind a change, see [`journal/`](journal/).
 
 ### Added
 
+- The session log records the `tools[]` it advertises (`Telemetry::Tools`), a resume names the tools that were added, removed or changed since, and `dev wire` and the replays send the recorded array (docs/resumption.md, docs/log-and-projection.md).
 - `GET /sessions/:id` answers one session's row, hosted or dormant, and the header records `detached` so a resume reads it from there instead of the PATCH body (docs/control-api.md, docs/resumption.md).
 - An interrupt appends a `Telemetry::Interrupt` entry naming its `source` and `control` (the web stop buttons, Esc, `efference control interrupt`, the interrupt tool) before it signals; the failure text now reads `generation interrupted` instead of blaming the operator (docs/control-api.md, docs/log-and-projection.md).
 - An explicit separate triage pick is recorded with the main model it ran with, in the `triage_picks` table of the user state database; the shared-with-main fallback records nothing, and nothing reads the table yet (docs/state-store.md).

@@ -239,6 +239,30 @@ pub fn render_resumed(resumed: &crate::log::Resumed, at: crate::log::Seq) -> Str
              action brings {pronoun} back."
         ));
     }
+    let change = &resumed.tools_changed;
+    if !change.is_empty() {
+        let mut parts = Vec::new();
+        for (label, names) in [
+            ("added", &change.added),
+            ("removed", &change.removed),
+            ("changed", &change.changed),
+        ] {
+            if !names.is_empty() {
+                let names: Vec<String> = names
+                    .iter()
+                    .map(|name| crate::mcp::display_name(name))
+                    .collect();
+                parts.push(format!("{label}: {}", names.join(", ")));
+            }
+        }
+        if change.reordered {
+            parts.push("same tools in a different order".to_string());
+        }
+        out.push_str(&format!(
+            " The tools available differ from before the restart ({}).",
+            parts.join("; ")
+        ));
+    }
     let skipped = resumed.skipped(at);
     if !skipped.is_empty() {
         let count = skipped.end - skipped.start;

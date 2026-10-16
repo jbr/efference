@@ -100,8 +100,9 @@ pub(crate) async fn ladder(
             _ => None,
         })
         .ok_or("log predates the boot-preamble snapshot; no recorded system prompt to replay")?;
-    let toolbox = Toolbox::bash_and_mcps(std::env::current_dir()?, None)?;
-    let tools = efference::agent::tool_definitions(&toolbox);
+    let (tools, _) = efference::agent::recorded_or_rebuilt_tools(&entries, || {
+        Toolbox::bash_and_mcps(std::env::current_dir()?, None)
+    })?;
 
     // The primer input: the main request's turns through this triage's calls, borrowed
     // the way the live loop borrows them — byte-identical by construction. Through

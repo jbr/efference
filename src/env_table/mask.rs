@@ -407,6 +407,9 @@ impl Masker {
                     self.mask_in_place(control);
                 }
             }
+            // Tool definitions are what the tools advertise, the same bytes the
+            // provider receives unmasked; nothing in them is read from the environment.
+            Payload::Telemetry(Telemetry::Tools { .. }) => {}
             Payload::Telemetry(Telemetry::Consolidation { outcome, .. }) => {
                 self.mask_in_place(outcome)
             }

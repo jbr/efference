@@ -643,7 +643,9 @@ use landing::*;
 use replay::*;
 use results::*;
 use step::*;
-pub use surface::{brief, callable_names, tool_catalog, tool_definitions};
+pub use surface::{
+    brief, callable_names, recorded_or_rebuilt_tools, tool_catalog, tool_definitions,
+};
 use title::*;
 use triage::*;
 use triage_hold::*;

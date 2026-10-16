@@ -46,6 +46,7 @@ fn stopped_log(calls: Vec<ToolCall>, pending: &[&str], extra: impl FnOnce(&mut L
             lost_processes: vec![],
             resumes_after: None,
             pending_calls: pending.iter().map(|id| CallId((*id).into())).collect(),
+            tools_changed: Default::default(),
         }),
     )
     .unwrap();

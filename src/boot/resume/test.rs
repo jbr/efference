@@ -603,3 +603,76 @@ async fn a_held_log_is_refused() {
     assert_eq!(dir_contents(&root.session_dir("held")), before);
     drop_boot(first);
 }
+
+/// A created session records the `tools[]` it advertises, and a resume with the same set
+/// adds neither a notice line nor a second record.
+#[tokio::test]
+async fn an_unchanged_tool_set_adds_nothing_on_resume() {
+    let _serial = PREPARING.lock().await;
+    let root = Root::new("resume-tools-same");
+    left_behind(&root, "same", |_| {}).await;
+    let dir = root.session_dir("same");
+    let before = crate::persist::load(dir.join(LOG_NAME)).unwrap();
+    let recorded = crate::log::recorded_tools(&before).expect("boot records tools[]");
+    assert!(!recorded.is_empty());
+
+    let registry = codex_registry(root.path(), "same");
+    let (boot, _) = resume(resume_request(&root, "same", &registry))
+        .await
+        .expect("resumes");
+    let entries = boot.log.entries();
+    let Payload::Resumed(resumed) = &entries.last().unwrap().payload else {
+        panic!("Resumed is last: no second tools record");
+    };
+    assert!(resumed.tools_changed.is_empty());
+    assert!(!crate::project::render_resumed(resumed, 99).contains("tools available"));
+    drop_boot(boot);
+}
+
+/// One tool whose schema changed and one that is gone are both named in the notice, and
+/// the array now advertised is recorded for the next resume to compare with.
+#[tokio::test]
+async fn a_changed_tool_set_is_named_in_the_notice() {
+    let _serial = PREPARING.lock().await;
+    let root = Root::new("resume-tools-changed");
+    left_behind(&root, "changed", |log| {
+        let mut tools = crate::log::recorded_tools(log.entries()).unwrap().to_vec();
+        tools[0]["description"] = serde_json::json!("an older description");
+        tools.push(serde_json::json!({"name": "ghost__lookup", "input_schema": {}}));
+        log.append(0, Payload::Telemetry(Telemetry::Tools { tools }))
+            .unwrap();
+    })
+    .await;
+    let changed_name = {
+        let entries = crate::persist::load(root.session_dir("changed").join(LOG_NAME)).unwrap();
+        crate::log::recorded_tools(&entries).unwrap()[0]["name"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    };
+
+    let registry = codex_registry(root.path(), "changed");
+    let (boot, _) = resume(resume_request(&root, "changed", &registry))
+        .await
+        .expect("resumes");
+    let entries = boot.log.entries();
+    let resumed = entries
+        .iter()
+        .rev()
+        .find_map(|e| match &e.payload {
+            Payload::Resumed(r) => Some(r),
+            _ => None,
+        })
+        .unwrap();
+    assert_eq!(resumed.tools_changed.removed, vec!["ghost__lookup"]);
+    assert_eq!(resumed.tools_changed.changed, vec![changed_name.clone()]);
+    let notice = crate::project::render_resumed(resumed, 99);
+    assert!(
+        notice.contains(&format!("changed: {changed_name}"))
+            && notice.contains("removed: ghost.lookup"),
+        "{notice}"
+    );
+    let now = crate::log::recorded_tools(entries).unwrap();
+    assert!(now.iter().all(|t| t["name"] != "ghost__lookup"));
+    drop_boot(boot);
+}

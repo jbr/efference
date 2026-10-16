@@ -71,6 +71,7 @@ enum Telemetry {
     SupervisorSet { supervisor: Option<String> }, // the supervisor pointer set or cleared (see permissions.md)
     Interrupt(InterruptOrigin),                   // an interrupt reached the loop: who sent it, through which control (see control-api.md)
     Consolidation { from: Seq, upto: Seq, context: Seq, tool_bytes: usize, outcome: String, account_bytes: usize },
+    Tools { tools: Vec<Value> },                  // the tools[] the session advertises, as sent (below)
 }
 ```
 
@@ -92,6 +93,14 @@ notice an ambient arrival carries ([inbox.md](inbox.md)). The notice is derived
 from the recorded fields at projection time, so a change to its wording moves
 the prefix only for a session that restarts on the new binary.
 
+`Tools` records the `tools[]` the session advertises (`agent::tool_definitions`): appended
+right after the boot `Preamble`, and at a resume when the array differs from the last one
+recorded (resumption.md). The array is `Value`s, whose object keys serialize sorted, so equal
+tool sets compare equal. It never reaches the wire; `dev wire` and the triage, primer and
+compaction replays send the latest recorded array in place of one rebuilt from current code,
+which carries none of the session's connected servers. A log that never recorded one falls
+back to the rebuild.
+
 `CallStarted` is appended after the permission cascade clears a call and before the
 tool runs; an `ask` never gets one, since it waits on the operator and touches
 nothing. A call with the marker and no result may have had side effects, which is
@@ -102,7 +111,9 @@ completion. A call without it never ran, and resumption brings it back (resumpti
 since the last entry, the background handles (`p#<n>`) with no recorded exit, and,
 when the log ended uncleanly, `resumes_after`, the seq of the last entry the session
 continues from, or, when the session resumed at an unfinished batch, `pending_calls`, the
-calls still to come back. It projects as one text block at its own position
+calls still to come back, and, when the tools the session now advertises differ from the
+last `Tools` record, `tools_changed`: the tool names added, removed or changed (or a bare
+reorder), which the notice states. It projects as one text block at its own position
 (`render_resumed`), appended to the wire like any later turn, so the prefix before it is
 unchanged; with `pending_calls` the block is held until the results of those calls project
 and lands in the same user turn after them (resumption.md). Entries

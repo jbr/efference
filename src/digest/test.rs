@@ -122,6 +122,7 @@ fn a_verdict_resolves_a_pending_result_and_resumption_skips_are_omitted() {
                 lost_processes: vec![],
                 resumes_after: Some(3),
                 pending_calls: vec![],
+                tools_changed: Default::default(),
             }),
         ),
         entry(6, Payload::Summary(Summary::consolidation(0, 3, "summary"))),

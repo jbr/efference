@@ -229,8 +229,23 @@ async fn resume_minting(
     let resumption = resume_point(log.entries())
         .map_err(|why| format!("cannot resume {}: {why}", session_dir.display()))?;
     log.set_masker(env_policy.masker());
-    let (turn, resumed) = resumed_entry(log.entries(), resumption);
+    let (turn, mut resumed) = resumed_entry(log.entries(), resumption);
+    // Against the last `tools[]` the log recorded: a difference is named in the notice,
+    // and the new array is recorded so the next resume compares with it. A log that
+    // never recorded one has nothing to compare with.
+    let advertised = crate::agent::tool_definitions(&tools.toolbox);
+    let recorded = crate::log::recorded_tools(log.entries());
+    if let Some(recorded) = recorded {
+        resumed.tools_changed = crate::log::ToolsChange::between(recorded, &advertised);
+    }
+    let record_tools = recorded.is_none_or(|recorded| recorded != advertised.as_slice());
     log.append(turn, Payload::Resumed(resumed))?;
+    if record_tools {
+        log.append(
+            turn,
+            Payload::Telemetry(crate::log::Telemetry::Tools { tools: advertised }),
+        )?;
+    }
     // After `Resumed`, so the gap and turn it records still read the log as it was left.
     if let Some(added) = restored {
         log.append(turn, Payload::Worktree(added.into_event(true)))?;
@@ -373,6 +388,7 @@ fn resumed_entry(entries: &[LogEntry], resumption: Resumption) -> (crate::log::T
                 .collect(),
             resumes_after: resumption.resumes_after,
             pending_calls: resumption.pending,
+            tools_changed: Default::default(),
         },
     )
 }

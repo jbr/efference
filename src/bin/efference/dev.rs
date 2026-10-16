@@ -295,9 +295,9 @@ pub(crate) enum DevCommand {
     /// `tools` + `messages`) exactly as a real turn POSTs it: `project(log)` with
     /// the trailing cache breakpoint placed and `tool_choice: auto`. The recorded
     /// boot identity supplies the historical model, provider, and placement; the
-    /// `tools[]` block isn't stored in the log, so it is rebuilt from the current
-    /// code and cwd — flagged on stderr, since the recorded session may have run
-    /// elsewhere.
+    /// recorded `tools[]` is read back; a log that never recorded one gets it rebuilt
+    /// from the current code and cwd — flagged on stderr, since the recorded session
+    /// may have run elsewhere.
     Wire {
         /// Path to a session JSONL log (e.g. `.efference/session-<millis>.jsonl`).
         path: PathBuf,
