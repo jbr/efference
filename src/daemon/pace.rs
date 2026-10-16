@@ -1,4 +1,4 @@
-//! Operator pacing, the turn seam, and settle/interrupt (docs/control-channel.md).
+//! Operator pacing, the between-step juncture, and settle/interrupt (docs/control-channel.md).
 
 use super::*;
 
@@ -159,7 +159,7 @@ impl Session {
     /// release/submit racing the read still wakes the wait (mirrors [`await_settled`]).
     ///
     /// [`await_settled`]: Session::await_settled
-    pub async fn pace_at_seam(&self) {
+    pub async fn pace_at_juncture(&self) {
         let interrupt = self.pace_interrupt.notified();
         tokio::pin!(interrupt);
         interrupt.as_mut().enable(); // register before reading state, so a racing wake isn't lost
@@ -185,7 +185,7 @@ impl Session {
     /// running with no submitted turn to have claimed, so it says so here. Without
     /// this, `running`, `/settle`, and the status watcher read the whole
     /// wake-driven trajectory as idle, and a turn submitted meanwhile sits in
-    /// `queued` until the next seam-drain with nothing to explain the wait.
+    /// `queued` until the next mid-task delivery with nothing to explain the wait.
     pub(crate) fn escalated(&self) {
         self.running.store(true, Ordering::SeqCst);
         self.touch_state();

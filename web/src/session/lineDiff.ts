@@ -16,7 +16,7 @@ export interface LineChanges {
   changed: [number, number][];
   /** New-text line numbers *after which* old lines were deleted with nothing
    * inserted in their place — 0 for a deletion before the first line. A pure
-   * deletion leaves no line to tint, so it is reported as a seam instead. */
+   * deletion leaves no line to tint, so it is reported as a deletion point instead. */
   removedAt: number[];
 }
 
@@ -74,7 +74,7 @@ export function diffLines(
 
 /** Group the edit script into maximal non-`eq` runs; a run that inserted
  * anything is a changed range over its inserted new lines (deletions in the
- * same run are the "modified" half), a run of only deletions is a seam. */
+ * same run are the "modified" half), a run of only deletions is a deletion point. */
 function collect(ops: Op[], prefix: number): LineChanges {
   const changed: [number, number][] = [];
   const removedAt: number[] = [];

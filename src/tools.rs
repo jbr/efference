@@ -351,7 +351,7 @@ pub struct Toolbox {
     /// Held on the toolbox rather than on the image-producing tools because two
     /// unrelated backends produce images (`read_image`, and any MCP server whose
     /// result carries an image block), and the gate has to answer the same way
-    /// for both. Applied at [`Toolbox::run`], the one seam every call passes
+    /// for both. Applied at [`Toolbox::run`], the one function every call passes
     /// through (docs/tools.md).
     image_input: bool,
 }

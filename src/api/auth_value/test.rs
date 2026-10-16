@@ -55,7 +55,7 @@ async fn an_unreadable_source_carries_its_own_words() {
     assert_eq!(value.get(), "old");
 }
 
-/// The seam's whole point: a session holds a clone, and replacing the value at
+/// The interface's whole point: a session holds a clone, and replacing the value at
 /// the connection is visible through it without rebuilding anything.
 #[tokio::test]
 async fn a_clone_reads_through_to_the_replacement() {

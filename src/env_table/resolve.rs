@@ -125,7 +125,7 @@ fn shell_quote(s: &str) -> String {
 }
 
 /// Runs one resolution command and returns its stdout, or a printable failure.
-/// The seam tests replace — a test must never invoke a real vault binary.
+/// The interface tests replace — a test must never invoke a real vault binary.
 pub type Runner = Box<dyn Fn(&str) -> Result<String, String> + Send + Sync>;
 
 /// The session's reference resolver: the command runner plus the

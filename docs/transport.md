@@ -881,7 +881,7 @@ turned out to be the missing `session-id` key instead. The client holds the toke
 cell (`api::TurnRoutingState`) that the response handler fills on the first
 successful response of a turn (later values do not replace it), `Client::post`
 replays on every request, and the agent loop clears through `Client::begin_turn`
-at each trajectory start and each seam-drained user turn. The triage shares the
+at each trajectory start and each queued user turn delivered mid-task. The triage shares the
 agent's client and so the token; the spotter's client is built
 `without_turn_routing`, since each of its requests is its own conversation. Every
 Codex request also names its model in `x-codex-routing-hint` (`model=<slug>`), as

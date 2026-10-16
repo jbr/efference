@@ -109,7 +109,7 @@ impl<'a> InteractiveState<'a> {
     /// to detach the in-flight tool into the background supervisor — keep it
     /// running as a `p#<n>` process instead of killing it or waiting it out.
     /// Fire-and-forget like the interrupt: the daemon no-ops if nothing is
-    /// mid-tool. A message typed right after rides the seam-drain, so it reaches
+    /// mid-tool. A message typed right after is delivered mid-task, so it reaches
     /// the model alongside the handoff — no separate note-capture flow.
     pub(in crate::tui) fn background_detach(&mut self) {
         if self.is_loop_active() {

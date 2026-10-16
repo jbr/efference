@@ -401,7 +401,7 @@ Whether a session's model accepts images is `ModelCapabilities::supports_image_i
 (`Toolbox::with_image_input`). It is `false` only where the metadata declares no
 image input; unknown reads as capable, and an endpoint that then refuses an image
 closes the gate mid-session (`Toolbox::refuse_images`, from the client's refusal
-recovery in transport.md). It is applied at `Toolbox::run` — the one seam
+recovery in transport.md). It is applied at `Toolbox::run` — the one function
 every call passes through — rather than inside the image-producing tools,
 because two unrelated backends produce images (`read_image`, and any MCP server
 whose result carries an image block) and the gate must answer alike for both.
@@ -427,7 +427,7 @@ says it worked.
 ### Per-call telemetry
 
 Every completed tool call appends a `Payload::ToolTelemetry` entry beside its
-result (`src/agent/telemetry.rs`, derived at the dispatch seam in
+result (`src/agent/telemetry.rs`, derived at the dispatch point in
 `src/agent/step.rs`). It **projects to nothing** — log metadata in the same sense
 timestamps are — which is what lets it be written unconditionally; the pin that
 says so is `project::test::tool_telemetry_projects_to_identical_bytes`, the same
@@ -469,7 +469,7 @@ The point is that grepping result *prose* answers none of them: "did that edit a
 plus a count of `===TIP===` markers that turned out to be a throttle cap rather
 than a measure. Prose written for a model is not a measurement surface.
 
-**Not recorded in this cut**, because the data is not at the dispatch seam and
+**Not recorded in this cut**, because the data is not at the dispatch point and
 getting it means plumbing it out of the tool crates: the edit *rejection kind*
 (anchor-not-found / syntax-guard / stale), and the shorter-anchor-sufficed
 predicate behind the throttled tip. Both would be a change to what

@@ -78,7 +78,7 @@ fn consecutive_tool_results_coalesce_into_one_user_message() {
     );
 }
 
-/// The seam-drain projection shape (docs/log-and-projection.md): a `User`
+/// The projection shape of a queued turn delivered mid-task (docs/log-and-projection.md): a `User`
 /// entry appended right after a turn's `tool_result`s projects as **one** user
 /// message `[tool_result…, text]`, not two consecutive user-role messages —
 /// preserving role-alternation and byte-stability. This is the shape both the

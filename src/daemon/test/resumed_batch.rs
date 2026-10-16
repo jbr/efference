@@ -255,7 +255,7 @@ async fn a_captured_result_is_triaged_without_running_again() {
 
 /// **A submitted turn waits behind the batch.** It is not appended before the calls'
 /// results, since a `User` entry after unanswered `tool_use` blocks breaks the wire; it is
-/// delivered at the seam after them, and the triage does not carry it.
+/// delivered after them, and the triage does not carry it.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_submitted_turn_is_delivered_after_the_batch() {
     let log = stopped_log(

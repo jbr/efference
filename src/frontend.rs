@@ -184,7 +184,7 @@ pub trait Frontend {
     /// whole trajectory ends. Returns the queued turns in submission order (blank
     /// turns filtered); empty when nothing is queued. Default: none — a frontend with
     /// no out-of-band turn queue never has anything to drain.
-    fn drain_injected_turns(&mut self) -> Vec<SubmittedTurn> {
+    fn drain_queued_turns(&mut self) -> Vec<SubmittedTurn> {
         Vec::new()
     }
 

@@ -340,7 +340,7 @@ impl Client {
     /// A user turn is starting (docs/transport.md): forget the previous turn's
     /// routing token so the first request of this one goes out without a header
     /// and the backend issues a fresh token. Called by the agent loop at each
-    /// trajectory start and each seam-drained user turn; the triage shares this
+    /// trajectory start and each queued user turn delivered mid-task; the triage shares this
     /// client and so the token, which is the point — the triage is a request of the
     /// same turn.
     pub fn begin_turn(&self) {

@@ -78,7 +78,7 @@ session list all truncate longer lines.
 ## When it runs
 
 `agent/title.rs` holds one predicate, `should_solicit_title`. The **title check**
-tests it at each turn start, each seam-drain (a user turn delivered between a
+tests it at each turn start, each queued turn delivered mid-task (a user turn delivered between a
 completion's results and the next request), and each trajectory end, however it
 ends — the model answered, gave up, or the turn was aborted. Those are junctures
 where a main request's cache is already warm. It says yes:

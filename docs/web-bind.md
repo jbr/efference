@@ -17,7 +17,7 @@ enumerated, so every path outside it takes a credential whatever its name. What 
 surface settles is the two paths that name a bind's shape rather than its content —
 `/files` is a session bind's narrower cookie-only surface, and `GET /sessions` is the
 probe that has to reach a session bind's router so its `404` says "not a host".
-`Surface::Host` is the seam the in-process host mounts its session routes behind, so
+`Surface::Host` is the interface the in-process host mounts its session routes behind, so
 the gate's decision is the same shape on both.
 
 The bind is configured by the `[host]` table of the user configuration,

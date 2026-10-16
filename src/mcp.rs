@@ -224,7 +224,7 @@ impl ConnectedProvider {
         Self::mount_transport(name, transport).await
     }
 
-    /// Negotiation + discovery over an already-open transport (the seam the
+    /// Negotiation + discovery over an already-open transport (the interface the
     /// loopback tests use).
     async fn mount_transport(name: &str, transport: Transport) -> anyhow::Result<Self> {
         let mut session = Session::new(transport);

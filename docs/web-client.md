@@ -903,7 +903,7 @@ register it needed to do so).
 A mark's note has no such caveat:
 the projection re-injects it as a user-role text message, so it is prose on
 the wire already. Distinct wire blocks within one prose body are joined with a
-blank line, since a single newline would soft-wrap the seam between them.
+blank line, since a single newline would soft-wrap the join between them.
 
 The renderer must produce a **React element tree, never an HTML string**. The
 text is model-authored and the page holds a session credential, so a markup-
@@ -1672,7 +1672,7 @@ elsewhere on the system), not a resolution gap. The `session_identity` topic
 ([control-api.md](control-api.md)) now names the cwd, so it is the mapping
 available if the scope ever widens.
 
-**Highlight sources do not mix.** With a selected edit anchor, an exact location highlights its surviving added lines; approximate/unlocated matches show a qualification and no confidently located-line tint. Refreshes keep resolving that selected anchor. Without an anchor, `session/lineDiff.ts` compares fetched content with the last content shown for the same session/path, marking observed changes and deletion seams. This is changes since viewing, not the selected operation's historical diff. Source mode tints numbered lines; rendered Markdown uses block-level highlights.
+**Highlight sources do not mix.** With a selected edit anchor, an exact location highlights its surviving added lines; approximate/unlocated matches show a qualification and no confidently located-line tint. Refreshes keep resolving that selected anchor. Without an anchor, `session/lineDiff.ts` compares fetched content with the last content shown for the same session/path, marking observed changes and deletion points. This is changes since viewing, not the selected operation's historical diff. Source mode tints numbered lines; rendered Markdown uses block-level highlights.
 
 **Freshness is two sources through one mechanism.** A committed, non-errored
 edit in the log (the `lastEdit` derivation) supplies a new target while following; the daemon's change stream covers edits from outside — an

@@ -46,7 +46,7 @@ pub struct StoredAuth {
     pub registration: Option<Registration>,
 }
 
-/// Load, save, and forget one server's credentials. The seam the auth flow is
+/// Load, save, and forget one server's credentials. The interface the auth flow is
 /// written against; [`KeychainStore`] is the one implementation.
 pub trait TokenStore: Send + Sync {
     fn load(&self, server: &str) -> anyhow::Result<Option<StoredAuth>>;

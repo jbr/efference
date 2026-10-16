@@ -23,23 +23,23 @@ describe("diffLines", () => {
     });
   });
 
-  it("a pure deletion is a seam, not a range", () => {
+  it("a pure deletion is a deletion point, not a range", () => {
     expect(diffLines(join("a", "b", "c", "d"), join("a", "d"))).toEqual({
       changed: [],
       removedAt: [1],
     });
   });
 
-  it("deletion before the first line seams at 0", () => {
+  it("deletion before the first line points at 0", () => {
     expect(diffLines(join("x", "a", "b"), join("a", "b"))).toEqual({
       changed: [],
       removedAt: [0],
     });
   });
 
-  it("a replacement counts as changed, not as a seam", () => {
+  it("a replacement counts as changed, not as a deletion point", () => {
     // Two old lines become one new line: the run has an insertion, so the
-    // deletions fold into "modified" rather than reporting a seam too.
+    // deletions fold into "modified" rather than reporting a deletion point too.
     expect(diffLines(join("a", "x", "y", "d"), join("a", "z", "d"))).toEqual({
       changed: [[2, 2]],
       removedAt: [],

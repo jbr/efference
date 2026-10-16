@@ -119,7 +119,7 @@ export function NumberedCode({
   lines: [number, string][];
   lang: string | null;
   /** Extra class per line number — the file viewer's change tint and
-   * deletion seam; absent everywhere else. */
+   * deletion point; absent everywhere else. */
   lineClass?: (n: number) => string | undefined;
 }) {
   const highlight = useHighlight();

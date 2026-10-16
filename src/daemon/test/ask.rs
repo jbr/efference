@@ -11,7 +11,7 @@ fn session() -> Arc<Session> {
 
 /// A reply answers a held session's question and releases the hold, as any submit does
 /// (docs/control-channel.md): otherwise the operator's answer would leave the loop
-/// parked at the next seam.
+/// parked at the next juncture.
 #[tokio::test]
 async fn a_reply_resumes_a_held_session() {
     let shared = session();
@@ -19,17 +19,17 @@ async fn a_reply_resumes_a_held_session() {
     let mut wait = shared.begin_ask("ask_1", "Proceed?".into(), 1, 1);
     assert!(shared.pace_snapshot().1, "still held while asking");
 
-    // A hold that is waiting at the seam wakes on the reply, too.
-    let seam = {
+    // A hold that is waiting at the juncture wakes on the reply, too.
+    let waiter = {
         let shared = Arc::clone(&shared);
-        tokio::spawn(async move { shared.pace_at_seam().await })
+        tokio::spawn(async move { shared.pace_at_juncture().await })
     };
     tokio::time::sleep(Duration::from_millis(30)).await;
     shared.submit_turn(SubmittedTurn::new("yes", "sub-1"));
     assert!(!shared.pace_snapshot().1, "the reply dropped the hold");
-    tokio::time::timeout(Duration::from_millis(500), seam)
+    tokio::time::timeout(Duration::from_millis(500), waiter)
         .await
-        .expect("the reply woke the held seam")
+        .expect("the reply woke the held juncture")
         .unwrap();
     assert_eq!(wait.reply().await.unwrap().text, "yes");
 }

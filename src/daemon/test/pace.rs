@@ -68,14 +68,14 @@ async fn await_settled_returns_when_the_loop_parks() {
         .expect("waiter task panicked");
 }
 
-/// The seam-drain (docs/control-channel.md): turns submitted while the loop
+/// Mid-task delivery (docs/control-channel.md): turns submitted while the loop
 /// is mid-trajectory sit in the turn inbox until the loop drains them at a juncture. The
 /// non-blocking drain must (a) return every non-blank queued turn in submission order,
 /// (b) drop blank turns, and (c) balance the `queued` settle-counter for *every* drained
 /// turn — so once the trajectory ends `/settle` can settle instead of reading "busy"
 /// forever. Without the counter balance the last assertion fails.
 #[test]
-fn drain_injected_turns_delivers_queued_turns_and_balances_settle() {
+fn drain_queued_turns_delivers_queued_turns_and_balances_settle() {
     let (shared, turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
     let mut frontend = RemoteFrontend {
         shared: Arc::clone(&shared),
@@ -91,7 +91,7 @@ fn drain_injected_turns_delivers_queued_turns_and_balances_settle() {
         "queued turns → not settled while they wait"
     );
 
-    let drained = frontend.drain_injected_turns();
+    let drained = frontend.drain_queued_turns();
     assert_eq!(
         drained.iter().map(|t| t.text.as_str()).collect::<Vec<_>>(),
         vec!["first", "second"],
@@ -103,7 +103,7 @@ fn drain_injected_turns_delivers_queued_turns_and_balances_settle() {
     );
 
     // A second drain with nothing queued is an empty, no-op pull.
-    assert!(frontend.drain_injected_turns().is_empty());
+    assert!(frontend.drain_queued_turns().is_empty());
 }
 
 /// Pace (docs/control-channel.md) is operator-view state: `set_pace` moves the
@@ -127,44 +127,44 @@ fn set_pace_moves_the_dials_and_retains_speed_under_a_hold() {
     assert_eq!(v["pace"]["held"], false);
 }
 
-/// Default pace never blocks the seam (fast path: no hold, zero speed).
+/// Default pace never blocks the juncture (fast path: no hold, zero speed).
 #[tokio::test]
-async fn pace_at_seam_is_a_noop_by_default() {
+async fn pace_at_juncture_is_a_noop_by_default() {
     let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
-    tokio::time::timeout(Duration::from_millis(200), shared.pace_at_seam())
+    tokio::time::timeout(Duration::from_millis(200), shared.pace_at_juncture())
         .await
-        .expect("default pace does not block the seam");
+        .expect("default pace does not block the juncture");
 }
 
-/// A hold blocks the seam indefinitely; a **release** ends it immediately (the resume trigger).
+/// A hold blocks the juncture indefinitely; a **release** ends it immediately (the resume trigger).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn hold_blocks_the_seam_until_released() {
+async fn hold_blocks_the_juncture_until_released() {
     let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
     shared.set_pace(None, Some(true)); // hold
 
-    // While held, the seam does not return.
+    // While held, the juncture does not return.
     assert!(
-        tokio::time::timeout(Duration::from_millis(100), shared.pace_at_seam())
+        tokio::time::timeout(Duration::from_millis(100), shared.pace_at_juncture())
             .await
             .is_err(),
-        "a held seam blocks"
+        "a held juncture blocks"
     );
 
-    // A release from another task wakes the waiting seam.
+    // A release from another task wakes the waiting juncture.
     let s2 = Arc::clone(&shared);
-    let seam = tokio::spawn(async move { s2.pace_at_seam().await });
-    tokio::time::sleep(Duration::from_millis(20)).await; // let the seam arm + await
+    let waiter = tokio::spawn(async move { s2.pace_at_juncture().await });
+    tokio::time::sleep(Duration::from_millis(20)).await; // let the pace wait arm + await
     shared.set_pace(None, Some(false)); // release
-    tokio::time::timeout(Duration::from_millis(500), seam)
+    tokio::time::timeout(Duration::from_millis(500), waiter)
         .await
-        .expect("release wakes the held seam")
-        .expect("seam task joined");
+        .expect("release wakes the held juncture")
+        .expect("waiter task joined");
 }
 
-/// Submit ⇒ resume, always: a submitted turn drops the hold, and a queued turn skips the seam
+/// Submit ⇒ resume, always: a submitted turn drops the hold, and a queued turn skips the juncture
 /// wait outright (never pace over pending input).
 #[tokio::test]
-async fn a_submit_resumes_and_skips_the_seam() {
+async fn a_submit_resumes_and_skips_the_juncture() {
     let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
     shared.set_pace(None, Some(true));
     assert!(shared.pace_snapshot().1, "held before submit");
@@ -172,10 +172,10 @@ async fn a_submit_resumes_and_skips_the_seam() {
     shared.submit_turn(SubmittedTurn::new("go", "sub-test"));
     assert!(!shared.pace_snapshot().1, "submit dropped the hold");
 
-    // A turn is queued, so the seam returns at once even though we had been held.
-    tokio::time::timeout(Duration::from_millis(200), shared.pace_at_seam())
+    // A turn is queued, so the juncture returns at once even though we had been held.
+    tokio::time::timeout(Duration::from_millis(200), shared.pace_at_juncture())
         .await
-        .expect("a queued turn ends the seam wait immediately");
+        .expect("a queued turn ends the pace wait immediately");
 }
 
 /// A finite paced sleep is interruptible: a submitted message ends the delay early rather than
@@ -186,14 +186,14 @@ async fn a_submit_interrupts_a_finite_paced_sleep() {
     shared.set_pace(Some(Duration::from_secs(30)), None); // slow, not held
 
     let s2 = Arc::clone(&shared);
-    let seam = tokio::spawn(async move { s2.pace_at_seam().await });
-    tokio::time::sleep(Duration::from_millis(20)).await; // let the seam enter its sleep
+    let waiter = tokio::spawn(async move { s2.pace_at_juncture().await });
+    tokio::time::sleep(Duration::from_millis(20)).await; // let the pace wait enter its sleep
     shared.submit_turn(SubmittedTurn::new("urgent", "sub-test")); // fires the pace interrupt
 
-    tokio::time::timeout(Duration::from_millis(500), seam)
+    tokio::time::timeout(Duration::from_millis(500), waiter)
         .await
         .expect("submit ends the 30s paced sleep early")
-        .expect("seam task joined");
+        .expect("waiter task joined");
 }
 
 /// `POST /loop/interrupt` **latches** (docs/control-channel.md). The `Notify` half wakes only a
@@ -275,10 +275,10 @@ async fn a_withdrawn_turn_is_dropped_rather_than_delivered() {
         "suffix pop takes both"
     );
     // Both are still sitting in the channel; neither may be delivered.
-    assert!(frontend.drain_injected_turns().is_empty());
+    assert!(frontend.drain_queued_turns().is_empty());
 
     shared.submit_turn(SubmittedTurn::new("fresh", "s3"));
-    let delivered = frontend.drain_injected_turns();
+    let delivered = frontend.drain_queued_turns();
     assert_eq!(delivered.len(), 1);
     assert_eq!(delivered[0].text, "fresh");
 }

@@ -31,7 +31,7 @@ impl Frontend for RemoteFrontend {
         }
     }
 
-    fn drain_injected_turns(&mut self) -> Vec<SubmittedTurn> {
+    fn drain_queued_turns(&mut self) -> Vec<SubmittedTurn> {
         // Non-blocking pull of everything queued right now (docs/control-channel.md).
         // Each drained turn is claimed off the pending queue — the loop is already running, so
         // `running` is left alone (unlike the idle path), or `/settle` would read "busy" forever

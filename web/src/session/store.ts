@@ -478,7 +478,7 @@ const frameScheduler: Scheduler = (flush) => {
   else setTimeout(flush, 16);
 };
 
-/** A subscribable holder for the fold — the seam useSyncExternalStore binds to.
+/** A subscribable holder for the fold — the interface useSyncExternalStore binds to.
  *
  * Folding and notifying are separate steps, and only the notify is batched
  * (docs/web-client.md, "Coalescing the fold"). The fold stays synchronous, so

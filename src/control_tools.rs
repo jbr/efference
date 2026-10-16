@@ -159,7 +159,7 @@ impl Control {
         Self { executor, cli }
     }
 
-    /// Bind the tools to an already-built client — the seam a test drives the real
+    /// Bind the tools to an already-built client — the interface a test drives the real
     /// control router through on an in-memory transport. The host is a path
     /// nothing listens on.
     #[cfg(test)]

@@ -7,7 +7,7 @@
 //! each credential comes from, checks what it can check live, and writes the
 //! secret-free file the host loads at launch (`src/inference.rs`).
 //!
-//! The flow is written against two seams so it can be exercised without a tty or
+//! The flow is written against two interfaces so it can be exercised without a tty or
 //! a network: [`Prompter`] is how it asks (the terminal implementation is
 //! `setup/terminal.rs`; tests script answers), and [`Probe`] is how it looks
 //! (`setup/probe.rs` dials the providers; tests answer from a table). The

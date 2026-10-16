@@ -216,7 +216,7 @@ fn system_prompt_names_the_creating_session_when_there_is_one() {
 }
 
 /// The separate-model triage's system prompt (docs/triage.md): the triage
-/// model's own identity line, the agent named where the seam is disclosed, the
+/// model's own identity line, the agent named where the model boundary is disclosed, the
 /// context block verbatim, and none of the agent's curation preamble.
 #[test]
 fn triage_system_prompt_names_both_models_and_carries_the_context() {

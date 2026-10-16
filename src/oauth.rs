@@ -8,7 +8,7 @@
 //! identification. What is MCP-specific is *when* the dance runs and what the
 //! resource indicator points at, and that lives in `crate::mcp::auth`.
 //!
-//! The seam is drawn so this half can be lifted into a standalone crate once a
+//! The interface is drawn so this half can be lifted into a standalone crate once a
 //! second consumer exists; the eventual home is a `trillium-oauth-client`
 //! alongside the rest of the ecosystem. Keep MCP types out of it.
 //!

@@ -284,7 +284,7 @@ pub(super) async fn land(
     }
     // The operator note attached to a handoff lands as a real user turn after the
     // step's results — direction, not tool output (docs/supervisor.md). Same
-    // canonical `Payload::User` as the seam-drain; `project` merges it into the
+    // canonical `Payload::User` as a queued turn delivered mid-task; `project` merges it into the
     // trailing tool_result message.
     for note in handoffs {
         turn += 1;

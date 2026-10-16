@@ -350,13 +350,17 @@ export function FileView({
     for (const [a, b] of ranges) {
       for (let n = a; n <= b; n++) changed.add(n);
     }
-    // A pure deletion has no line to tint; the seam is drawn on the line
+    // A pure deletion has no line to tint; the deletion point is drawn on the line
     // after it.
-    const seams = new Set(
+    const deletionPoints = new Set(
       shown.anchored !== null ? [] : shown.changed.removedAt.map((n) => n + 1),
     );
     return (n: number) =>
-      changed.has(n) ? "changed" : seams.has(n) ? "removed-before" : undefined;
+      changed.has(n)
+        ? "changed"
+        : deletionPoints.has(n)
+          ? "removed-before"
+          : undefined;
   }, [shown]);
 
   const note = shown?.anchored == null ? null : anchorNote(shown.anchored);

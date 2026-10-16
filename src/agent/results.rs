@@ -191,7 +191,7 @@ pub(super) fn expansion_error(call: &ToolCall, message: &str) -> Payload {
 /// A `tool_result` for a call the user rejected in favor of a redirect message.
 /// Like [`aborted`] it pairs the orphaned `tool_use`; the human's actual words
 /// follow as a separate `Payload::User` entry, which `project` merges into this
-/// result's user message as `[tool_result…, text]` (the same seam-drain merge the
+/// result's user message as `[tool_result…, text]` (the same merge a queued turn delivered mid-task gets the
 /// mid-trajectory injection relies on, docs/control-channel.md) — so the
 /// model reads this as context for the steer that follows rather than as tool output
 /// (docs/README.md).

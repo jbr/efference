@@ -78,12 +78,12 @@ impl Client {
     /// Bind a client to an arbitrary [`Connector`] rather than to a socket path.
     ///
     /// Every verb below is transport-agnostic — the connector decides what "dial" means
-    /// — so this is the seam a test uses to drive the control router over
+    /// — so this is the interface a test uses to drive the control router over
     /// `trillium_testing::connector(handler)`'s in-memory transport. [`HttpClient`]
     /// type-erases its connector, so this adds no type parameter to [`Client`] or to
     /// anything holding one.
     ///
-    /// The same seam carries a non-UDS binding (TCP + TLS, docs/web-bind.md): the API
+    /// The same interface carries a non-UDS binding (TCP + TLS, docs/web-bind.md): the API
     /// surface is identical across bindings, and only the connector differs.
     pub fn with_connector(connector: impl Connector) -> Self {
         // The connector targets a fixed endpoint, so the URL host is irrelevant — but a

@@ -1,6 +1,6 @@
 //! The title peek (docs/session-title.md): ask the triage model, off the cached
 //! prefix, for one line saying what the session is for. The title check runs at
-//! each turn start, seam-drain, and trajectory end, and the ask runs as a
+//! each turn start, each queued turn delivered mid-task, and trajectory end, and the ask runs as a
 //! detached task, so the loop never waits for it.
 
 use super::*;
@@ -72,7 +72,7 @@ impl TitleAsk {
 
 /// The title check: test the cadence and, when it asks, run the title peek as a
 /// detached task (docs/session-title.md). The loop calls this at each turn
-/// start, seam-drain, and trajectory end, and never waits:
+/// start, each queued turn delivered mid-task, and trajectory end, and never waits:
 /// the task owns the session handle and the request surface, holds while the
 /// cache is believed cold the way the idle triage holds, and appends the answer
 /// whenever it lands.

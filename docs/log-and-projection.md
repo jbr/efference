@@ -150,7 +150,7 @@ since, context_tokens}` when the loop stops before a request on the main prefix,
 `warm` when a fold or another request ended the belief). It projects
 to nothing (`cold_records_project_to_identical_bytes`).
 
-The stages are written from one seam, `Client::send_request` in `api/client/send.rs` (and the
+The stages are written from one place, `Client::send_request` in `api/client/send.rs` (and the
 Messages keepalive in `api/client/keepalive.rs`), into a `StageSink` the session installs on the agent
 client, the own-triage client, and the spotter's client. The caller tags the request
 with `Client::with_origin`; the keepalive and the triage primer tag themselves. A
@@ -394,7 +394,7 @@ enum UserPart { Text(String), ToolResult { call_id, seq, content, is_error, imag
 Consecutive `ToolResult` entries coalesce into one `User` turn, and a `User` entry
 that directly follows them merges into that *same* turn as `[result…, text]` rather
 than forming a second consecutive user turn, so role-alternation and byte-stability
-hold when a user turn is appended right after a turn's results (the seam-drain,
+hold when a user turn is appended right after a turn's results (a queued turn delivered mid-task,
 [operator participation](control-channel.md#operator-participation--the-intervention-points) —
 the mid-trajectory injection and the redirect steer both rely on this shape).
 
@@ -749,7 +749,7 @@ a bare-string `function_call_output` is lifted to its parts form to carry it —
 the physical marker can sit earlier than the logical frontier. Under any other
 policy the encoder places nothing and the provider's implicit breakpoint governs.
 
-The placements are the same seam `ImagePlacement` uses. A live session fixes
+The placements are the same interface `ImagePlacement` uses. A live session fixes
 both choices at boot so its cached prefix cannot move under it; an offline
 reader re-derives them from the recorded provider and model, so a log rendered
 under a different current config still has the historical shape. The log does

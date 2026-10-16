@@ -375,7 +375,7 @@ fn render_context_names_the_scratch_alias() {
     assert!(ctx.contains("scratch"), "{ctx}");
 }
 
-/// The artifact this seam exists to remove (docs/permissions.md): a session
+/// The artifact this exists to remove (docs/permissions.md): a session
 /// recorded in another checkout grants `.` there and reads a file by absolute path.
 /// Rendered against that session's cwd, the grant covers the file; rendered against
 /// some *other* directory — what an eval process's own cwd is — the same grant

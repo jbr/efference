@@ -2,7 +2,7 @@
 
 use super::*;
 
-/// The seam-drain's operator-facing half (docs/tui.md): a
+/// The operator-facing half of mid-task delivery (docs/tui.md): a
 /// submitted turn echoes **immediately** as a pending unit — dimmed, led by a `⋯`
 /// marker — so a mid-trajectory message never vanishes into the void. When its
 /// matching `User` entry streams back (the entry *is* on the wire), the echo

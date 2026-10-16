@@ -395,7 +395,7 @@ impl EnvPolicy {
         )
     }
 
-    /// [`build`](Self::build) over an explicit environment snapshot — the seam
+    /// [`build`](Self::build) over an explicit environment snapshot — the interface
     /// the tests drive, and what keeps resolution a pure function of
     /// `(table, environment, resolved values)`.
     pub fn build_from(user: &BTreeMap<String, EnvEntry>, vars: &[(String, String)]) -> EnvReport {

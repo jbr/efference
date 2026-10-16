@@ -1,4 +1,4 @@
-//! The client's seam for recording a request's lifecycle (docs/log-and-projection.md).
+//! The client's interface for recording a request's lifecycle (docs/log-and-projection.md).
 //!
 //! Every upstream request passes `Client::send` (or the Messages keepalive beside
 //! it), so that is where its stages are noticed: handed to the transport, an attempt

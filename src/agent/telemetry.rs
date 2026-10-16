@@ -1,6 +1,6 @@
-//! Deriving one call's [`ToolTelemetry`] at the dispatch seam (docs/tools.md).
+//! Deriving one call's [`ToolTelemetry`] at the dispatch point (docs/tools.md).
 //!
-//! Everything here reads what the seam already holds — the call's own `input`,
+//! Everything here reads what the dispatch point already holds — the call's own `input`,
 //! the [`RawResult`] the backend returned, and a clock started immediately
 //! before dispatch. Nothing is plumbed out of the tool crates for it, which is
 //! what keeps the record cheap enough to write on **every** call rather than on

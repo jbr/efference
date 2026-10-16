@@ -45,7 +45,7 @@ fn is_zero(n: &usize) -> bool {
 }
 
 /// How one tool call came out (docs/tools.md). Derived generically at the
-/// dispatch seam from `is_error`, which means *refusal* for built-in negative
+/// dispatch point from `is_error`, which means *refusal* for built-in negative
 /// outcomes — so the three classes are readable off every tool without per-tool
 /// knowledge.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

@@ -8,7 +8,7 @@ laid out here, and which invariants the layout exists to protect.
 Stdio providers are out of scope by the spec's own direction: they take credentials
 from the environment, not from this flow.
 
-## Three layers, drawn as three seams
+## Three layers, drawn as three interfaces
 
 The dance is almost entirely generic OAuth. Keeping that separated from the MCP
 parts is deliberate — each layer has a different eventual home, and mixing them
@@ -154,7 +154,7 @@ exactly where the escape is least likely to be honored.
 
 `src/mcp/auth/store.rs` keeps one item per server in the secret store
 ([secrets.md](secrets.md)), named `mcp:<server>` and holding the `StoredAuth`
-record as JSON. `TokenStore` is the seam the flow is written against;
+record as JSON. `TokenStore` is the interface the flow is written against;
 `KeychainStore` is its one implementation. The item is per user: an authorization
 belongs to the operator and the server, so a second checkout of a project reuses
 the grant. A record that does not parse is a hard error, not "no credentials" —

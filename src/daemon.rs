@@ -404,9 +404,9 @@ pub struct Session {
     /// wall-clock control that is *transparent to the agent*. Pure operator-view state — never a
     /// log entry, never projected — so a held or slowed loop is byte-identical on the wire to a
     /// fast one (that, plus timestamps-never-projected, is the invisibility guarantee). Read at the
-    /// seam by [`Session::pace_at_seam`].
+    /// between-step juncture by [`Session::pace_at_juncture`].
     pace: Mutex<Pace>,
-    /// Wakes an in-flight [`pace_at_seam`](Session::pace_at_seam) sleep so a release or a submitted
+    /// Wakes an in-flight [`pace_at_juncture`](Session::pace_at_juncture) sleep so a release or a submitted
     /// turn ends the wait *immediately* rather than after the remaining delay. Fired by
     /// [`submit_turn`](Session::submit_turn) (submit ⇒ resume, always) and by a release
     /// (`set_pace` dropping `held`); a pure speed change or a *hold* does not fire it (those take

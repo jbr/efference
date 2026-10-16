@@ -2117,7 +2117,7 @@ select {
 }
 
 /* "What changed since you last looked" — the diff tint on re-fetch
-   (session/lineDiff.ts). A pure deletion has no line to tint, so the seam
+   (session/lineDiff.ts). A pure deletion has no line to tint, so the deletion point
    is a rule on the line after it. */
 .numbered-line.changed {
   background: var(--diff-add-bg);

@@ -112,7 +112,7 @@ impl Default for HookLimits {
     }
 }
 
-/// [`environment_at`] with the bounds spelled out — the seam that lets the
+/// [`environment_at`] with the bounds spelled out — the interface that lets the
 /// timeout and output-limit tests run in milliseconds.
 async fn run_hook(
     cwd: &Path,

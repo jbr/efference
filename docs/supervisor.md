@@ -224,7 +224,7 @@ because the foreground chunk sink already fed them — and spawns the same drain
 task as a spawned background process. From the flip on, the two paths are
 indistinguishable: tail in the triage, cursor reads, exit notification.
 
-The seam loses nothing and duplicates nothing: the drain select only completes a
+The handoff loses nothing and duplicates nothing: the drain select only completes a
 read after its bytes are delivered to the sink, so everything read before the
 detach won the race is already in the capture, and the surrendered pipes resume
 from exactly that byte boundary.
@@ -244,7 +244,7 @@ A foreground call also detaches **on its own** once it outruns a deadline. The
 timer resolves the same `Interrupt::Detach` into the same cancel slot as the
 operator's, so a timer detach and an operator detach are one path; only the
 handoff wording differs (`DetachedBash::auto_after` carries which it was).
-Nothing is killed and no output is lost — the seam property above is what makes
+Nothing is killed and no output is lost — the no-loss, no-duplicate property above is what makes
 that true.
 
 The deadline exists because a foreground call waits for its **output** to close,

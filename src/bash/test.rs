@@ -221,7 +221,7 @@ async fn named_values_are_injected_into_the_child() {
 /// A detach surrenders the live child instead of killing it: the outcome
 /// carries the already-drained bytes as the seed, the child is still
 /// running, and the surrendered pipes keep delivering output produced
-/// *after* the detach — the no-gap/no-dup seam the handoff depends on
+/// *after* the detach — the no-gap/no-dup property the handoff depends on
 /// (docs/supervisor.md).
 #[tokio::test]
 async fn detach_surrenders_a_live_child_with_its_output_so_far() {

@@ -1,4 +1,4 @@
-//! Tests for the request-stage seam (`api/stages.rs`, docs/log-and-projection.md):
+//! Tests for the request-stage interface (`api/stages.rs`, docs/log-and-projection.md):
 //! the stages a request passes, in order, for a normal request, a retried one, an
 //! interrupted one, a cancelled one, and two that overlap.
 

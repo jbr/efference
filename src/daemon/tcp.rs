@@ -92,7 +92,7 @@ pub(crate) fn arm(bind: TcpBind) -> (Arc<TcpAuth>, Listener) {
     arm_with_ledger(bind, ledger)
 }
 
-/// [`arm`] with the burn ledger injected — the seam a test uses to keep burns out of
+/// [`arm`] with the burn ledger injected — the interface a test uses to keep burns out of
 /// the real user-scoped file.
 pub(crate) fn arm_with_ledger(bind: TcpBind, ledger: BurnLedger) -> (Arc<TcpAuth>, Listener) {
     let TcpBind {

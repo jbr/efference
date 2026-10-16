@@ -126,7 +126,7 @@ and one triage covers them all, as at the end of any batch. The next pass then p
 requests as usual. The spotter and triage are model requests, so the gate
 reappears on this first action, not when the session opens. `POST /loop/continue` accepts
 a pending batch even though the wire ends in a `tool_use`, since the replay answers it.
-A turn submitted first is held and delivered at the seam after the batch, as one submitted
+A turn submitted first is held and delivered after the batch, as one submitted
 during a live gate is; a `User` entry ahead of the unanswered `tool_use` blocks would
 break the wire. While the batch is pending, an inbox wake does not run the idle triage
 (its triage would project the unanswered wire): the notification waits and rides the batch's

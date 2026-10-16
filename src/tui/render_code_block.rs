@@ -483,7 +483,7 @@ impl<'a> InteractiveState<'a> {
     ///
     /// Wrapping goes through [`wrap_points`], the renderer's shared break policy, so
     /// a code block breaks where prose and the composer break: at whitespace when it
-    /// can, at punctuation or a camelCase seam when it can't, and hard-cut only for a
+    /// can, at punctuation or a camelCase word boundary when it can't, and hard-cut only for a
     /// run wider than the box. Row boundaries partition the line with no gaps, so
     /// clipping each token to a row loses nothing.
     fn render_code_line(

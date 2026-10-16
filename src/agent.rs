@@ -174,9 +174,9 @@ pub async fn run<F: Frontend, S: Spotter>(
     // resumed one, so a resumed session's new turns do not reuse a recorded number.
     let mut turn: Turn = shared.latest_turn();
     // Turns submitted while a resumed session's pending batch waited for the operator's
-    // first action (docs/resumption.md). Delivered at the seam after the batch, the way a
+    // first action (docs/resumption.md). Delivered after the batch, the way a
     // turn submitted during a live gate is; one still held when the trajectory ends
-    // before that seam starts the next.
+    // before that delivery starts the next.
     let mut held: std::collections::VecDeque<SubmittedTurn> = std::collections::VecDeque::new();
 
     loop {
@@ -222,7 +222,7 @@ pub async fn run<F: Frontend, S: Spotter>(
                 shared.take_continue();
             }
             // The batch comes first: a `User` entry after unanswered `tool_use` blocks
-            // breaks the wire, so the turn waits for the seam after it.
+            // breaks the wire, so the turn waits until after the results.
             IdleWake::Turn(submitted) if replay.is_some() => held.push_back(submitted),
             IdleWake::Turn(submitted) => {
                 turn += 1;
@@ -294,10 +294,10 @@ pub async fn run<F: Frontend, S: Spotter>(
             }
             let first_step_of_turn = first_step;
             if !first_step {
-                shared.pace_at_seam().await;
+                shared.pace_at_juncture().await;
             }
             first_step = false;
-            // Seam-drain (docs/control-channel.md): deliver any user turns
+            // Mid-task delivery of queued turns (docs/control-channel.md): deliver any user turns
             // submitted while this trajectory was in flight, at the juncture — after the
             // last tool's results landed, before the next model call. Each lands as a
             // canonical `Payload::User` (never the inbox/triage path — a user turn is
@@ -307,9 +307,9 @@ pub async fn run<F: Frontend, S: Spotter>(
             // The cold check (backlog: cold-session.md): no request reads a cache
             // believed expired until a person has acted. Parks here, a decision
             // point, until a turn, continue, decision or answer arrives; before the
-            // drain, so a turn sent meanwhile lands at this seam.
+            // drain, so a turn sent meanwhile is delivered at this juncture.
             shared.await_warm_or_person().await;
-            let injected = frontend.drain_injected_turns();
+            let injected = frontend.drain_queued_turns();
             let mut landed = 0;
             for submitted in held.drain(..).chain(injected) {
                 landed += 1;
@@ -325,8 +325,8 @@ pub async fn run<F: Frontend, S: Spotter>(
                     submitted.source,
                 )?;
             }
-            // A user turn just landed — at the turn's start, or drained here at
-            // the seam: the moment the title peek reads the message and the
+            // A user turn just landed — at the turn's start, or delivered here
+            // mid-task: the moment the title peek reads the message and the
             // prefix behind it (docs/session-title.md). Detached, so the ask
             // never delays the response to the message.
             if first_step_of_turn || landed > 0 {

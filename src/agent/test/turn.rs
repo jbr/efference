@@ -12,7 +12,7 @@ use super::*;
 /// 3. The operator's next message merges into the **same** user message, so
 ///    the model reads `[tool_result, "…"]` in one breath — the person who
 ///    interrupted says why, in their own words, right where the output would
-///    have been. That merge is `project`'s existing seam-drain behavior; this
+///    have been. That merge is `project`'s existing behavior for a queued turn delivered mid-task; this
 ///    pins that it survives the turn boundary an interrupt introduces.
 #[test]
 pub(super) fn an_interrupted_call_is_paired_but_says_nothing_and_the_operator_speaks_next() {

@@ -244,7 +244,7 @@ pub fn project_semantic_for(log: &[LogEntry], reader: Reader) -> Vec<WireTurn> {
     // The user turn currently being assembled. Tool results coalesce here (the
     // results answering one assistant turn's calls form the following user turn),
     // and a `User` entry that immediately follows them merges into the *same* turn
-    // rather than forming a second consecutive user turn — the seam-drain shape
+    // rather than forming a second consecutive user turn — the shape of a queued turn delivered mid-task
     // (docs/log-and-projection.md): an injected/redirect user turn appended right
     // after a turn's results must project as one turn `[result…, text]`, preserving
     // role-alternation and byte-stability. Flushed at the next assistant / boundary /
