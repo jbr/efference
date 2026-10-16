@@ -54,7 +54,7 @@ pub struct Triage {
     #[serde(default)]
     pub thinking: Vec<String>,
     /// The last arrival this triage's rider showed (docs/inbox.md): every notification
-    /// whose arrival `seq` is at or below it, and not yet dispositioned, was in front of
+    /// whose arrival `seq` is at or below it, and with no verdict yet, was in front of
     /// the model. Absent means this entry's own `seq`, which is what a log written before
     /// the field recorded (a notification was logged when a triage first showed it, so it
     /// sat just ahead of that triage). A triage that showed no rider records `Some(0)` (seq 0 is the boot `Preamble`),

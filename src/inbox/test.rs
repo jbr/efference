@@ -56,7 +56,7 @@ fn active_shown_ignores_non_ambient_and_unresolved_stay() {
         ),
         ambient(1, "still pending"),
     ];
-    // No triage has shown it, so it is in the rider but not yet active.
+    // No triage has shown it, so it is in the rider but is not active.
     assert!(active_shown(&log).is_empty());
     let pending = rider(&log);
     assert_eq!(pending.len(), 1);
