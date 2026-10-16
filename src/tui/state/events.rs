@@ -224,6 +224,7 @@ impl<'a> InteractiveState<'a> {
                 self.dirty = true;
                 return false;
             }
+            TuiEvent::Starting(starting) => self.apply_starting(starting),
             TuiEvent::Verbs(verbs) => {
                 self.verbs = Some(verbs);
                 self.dirty = true;
@@ -297,7 +298,12 @@ impl<'a> InteractiveState<'a> {
                 self.dirty = true;
                 return self.apply_resumed(resumed);
             }
-            TuiEvent::Disconnected => return true,
+            // A failed start ends its stream after the frame that says why; the view
+            // stays, with the reason and the retry (`starting.rs`).
+            TuiEvent::Disconnected => {
+                self.dirty = true;
+                return !self.start_failed();
+            }
         }
         false
     }

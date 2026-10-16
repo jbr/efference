@@ -17,7 +17,7 @@ pub async fn run(
     theme: Option<String>,
     images: ImageMode,
     frame_cost: bool,
-    attached: Attached,
+    mut attached: Attached,
 ) -> Result<()> {
     let mut client = client;
     loop {
@@ -33,6 +33,11 @@ pub async fn run(
             Exit::Quit => return Ok(()),
             Exit::Switch { id } => {
                 client = client.with_prefix(&format!("/sessions/{id}"));
+                attached.draft = None;
+            }
+            Exit::SwitchWithDraft { id, draft } => {
+                client = client.with_prefix(&format!("/sessions/{id}"));
+                attached.draft = Some(draft);
             }
         }
     }
@@ -45,6 +50,9 @@ pub struct Attached {
     /// session on it (docs/operating.md): the island owner. `detach` would be
     /// false there, so the strip says `quit`.
     pub owns_host: bool,
+    /// Text for the composer as the attach opens: the turns a failed start handed
+    /// back, carried to the session its retry made (`starting.rs`).
+    pub draft: Option<String>,
 }
 
 /// One attach: open the stream, run the UI, and tear every task down on the way

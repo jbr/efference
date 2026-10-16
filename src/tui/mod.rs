@@ -67,6 +67,7 @@ pub(crate) mod sessions;
 pub(crate) mod sidebar;
 pub(crate) mod span_style;
 pub(crate) mod staged;
+pub(crate) mod starting;
 pub(crate) mod state;
 pub(crate) mod table_layout;
 pub(crate) mod theme;
@@ -185,6 +186,10 @@ pub(crate) enum TuiEvent {
     /// The session's cache is believed expired, or no longer (the `cold` topic,
     /// backlog: cold-session.md). Level-triggered: `None` is warm or never-sent.
     CacheExpired(Option<ColdView>),
+    /// The session's preparation (the `starting` topic, docs/control-api.md):
+    /// `None` once it has started. Level-triggered, status-bar chrome — and a
+    /// failure's turns go back in the composer (`starting.rs`).
+    Starting(Option<starting::StartingView>),
     /// Where the loop is (the `loop_phase` topic, docs/control-api.md). The "is
     /// something happening" signal graduated Esc reads to choose pause-vs-swallow
     /// (docs/tui.md) — reliable through a silent tool, unlike streaming deltas.
@@ -332,6 +337,9 @@ pub(crate) enum Exit {
     Quit,
     /// Attach to a different session on the same host.
     Switch { id: String },
+    /// Attach to `id` with `draft` in the composer: the turns a failed start handed
+    /// back, carried to the session its retry made (`starting.rs`).
+    SwitchWithDraft { id: String, draft: String },
 }
 
 /// How the TUI picks its graphics protocol for result images (docs/tui.md).

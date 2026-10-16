@@ -130,6 +130,7 @@ impl<'a> InteractiveState<'a> {
             ask_restored: None,
             ask: None,
             pending_gate: None,
+            starting: None,
             approve_tx,
             pace_tx,
             interrupt_tx,

@@ -249,7 +249,7 @@ async fn archiving_a_starting_creation_cancels_it_and_leaves_nothing() {
 
 /// A resume that fails leaves the session dormant, listed with why the resume
 /// failed — still resumable, unlike a row with a `problem` — and archiving one still
-/// starting ends its log in `Archived`, so it no longer reads as interrupted.
+/// starting ends its log in `Archived`, so it reads as archived rather than interrupted.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_failed_resume_is_listed_dormant_with_its_reason() {
     let roots = Roots::new();

@@ -104,6 +104,9 @@ pub(super) fn ui_loop(
 
     let mut state = InteractiveState::new(events, senders, render_context, theme);
     state.owns_host = attached.owns_host;
+    if let Some(draft) = &attached.draft {
+        state.composer.set_text(draft);
+    }
     if let Some(label) = viewing {
         state.set_viewing(label);
     }

@@ -314,6 +314,7 @@ impl Starting {
             _ => Value::Null,
         };
         serde_json::json!({
+            "id": self.id,
             "since": self.since,
             "resume": self.resume,
             "stage": inner.stage,

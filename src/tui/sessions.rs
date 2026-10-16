@@ -203,7 +203,7 @@ impl InteractiveState<'_> {
         };
         match created {
             Ok(id) => {
-                self.switch_to = Some(Exit::Switch { id });
+                self.switch_to = Some(self.switch_exit(id));
                 true
             }
             Err(error) => {
@@ -239,6 +239,20 @@ impl InteractiveState<'_> {
     /// revived one, as `⏎` on a live row does; on failure the page stays, with
     /// the host's message. Dropped when the page was closed meanwhile.
     pub(super) fn apply_resumed(&mut self, resumed: Result<String, String>) -> bool {
+        let page_open = matches!(&self.ui_mode, UiMode::Sessions(menu) if menu.resume.is_some());
+        // The retry of a failed resume, from its own view (`starting.rs`).
+        if !page_open && self.start_failed() {
+            return match resumed {
+                Ok(id) => {
+                    self.switch_to = Some(self.switch_exit(id));
+                    true
+                }
+                Err(error) => {
+                    self.ui.debug_message = error.into();
+                    false
+                }
+            };
+        }
         let UiMode::Sessions(menu) = &mut self.ui_mode else {
             return false;
         };

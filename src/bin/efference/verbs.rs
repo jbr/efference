@@ -90,7 +90,10 @@ pub(crate) async fn attach_created(
         theme,
         images,
         frame_cost,
-        efference::tui::Attached { owns_host },
+        efference::tui::Attached {
+            owns_host,
+            ..Default::default()
+        },
     )
     .await?;
     Ok(())
@@ -110,7 +113,7 @@ pub(crate) async fn tui(
         theme,
         images,
         frame_cost,
-        efference::tui::Attached { owns_host: false },
+        efference::tui::Attached::default(),
     )
     .await?;
     Ok(())

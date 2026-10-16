@@ -571,6 +571,9 @@ pub(super) struct InteractiveState<'a> {
     /// The pending tool-approval gate, if any — the `gate` state topic
     /// (docs/control-api.md).
     pub pending_gate: Option<PendingGate>,
+    /// The session's preparation while it is starting, or its failure — the
+    /// `starting` topic (`starting.rs`, docs/control-api.md). `None` once started.
+    pub starting: Option<crate::tui::starting::StartingView>,
     /// Sends an approval decision (`call_id`, decision) to the tokio side, which
     /// resolves it via `PUT /approvals/:call_id`.
     pub approve_tx: UnboundedSender<(String, Approval)>,

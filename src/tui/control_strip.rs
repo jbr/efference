@@ -47,6 +47,9 @@ pub(crate) enum StripVerb {
     Sessions,
     /// Leave the TUI; the daemon and session keep running.
     Detach,
+    /// Try a failed start again (`starting.rs`): resume it again, or reopen the
+    /// new-session form for a creation.
+    Retry,
 }
 
 /// One strip item: a label and the fast-path key it teaches (empty when there is
@@ -210,6 +213,9 @@ impl InteractiveState<'_> {
         } else {
             item("pause", "⎋", StripVerb::PauseToggle)
         };
+        if self.start_failed() {
+            return vec![item("retry", "r", StripVerb::Retry)];
+        }
         if self.pending_gate.is_some() {
             return vec![
                 item("approve", "⏎", StripVerb::ApproveGate),
@@ -289,6 +295,7 @@ impl InteractiveState<'_> {
             StripVerb::Theme => self.open_theme_picker(),
             StripVerb::Help => self.ui_mode = UiMode::Help,
             StripVerb::Detach => self.ui.quit_requested = true,
+            StripVerb::Retry => self.retry_start(),
         }
         self.dirty = true;
     }

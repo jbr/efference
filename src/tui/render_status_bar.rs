@@ -76,7 +76,13 @@ impl<'a> InteractiveState<'a> {
 
         // While the session is believed cold, the cold line leads in the warning weight:
         // what a send, an approval or an answer reads uncached (`cold_line`, docs/tui.md).
-        let lead = self.cold_line();
+        // A session still starting, or one that did not, leads instead: there is no
+        // cache to be cold yet.
+        let lead = self
+            .starting
+            .as_ref()
+            .map(|starting| starting.line())
+            .or_else(|| self.cold_line());
         let lead_len = lead.as_ref().map_or(0, |l| l.chars().count());
         let text = match &lead {
             Some(lead) => format!("{lead}  {text}"),

@@ -146,7 +146,7 @@ impl Host {
             .cloned()
     }
 
-    /// A resume started: its last failure no longer describes it.
+    /// A resume started: forget why the last one failed.
     pub(super) fn clear_resume_failure(&self, root: &std::path::Path, id: &str) {
         self.resume_failures
             .lock()

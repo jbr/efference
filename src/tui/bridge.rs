@@ -170,6 +170,10 @@ fn decode_frame(
                 .ok()
                 .map(|phase| send(TuiEvent::Phase(phase))),
             "verbs" => Some(send(TuiEvent::Verbs(super::VerbsView::parse(data)))),
+            // Level-triggered: `null` once the session has started.
+            "starting" => Some(send(TuiEvent::Starting(
+                super::starting::StartingView::parse(data),
+            ))),
             // The three policy-shaped topics update the held copy, then re-emit the
             // merged view. The connect snapshot delivers them in topic order (role
             // first), so the first emission already has a role to merge around.
