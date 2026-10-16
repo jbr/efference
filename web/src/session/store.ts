@@ -42,8 +42,8 @@ export interface Streaming {
   /** Live tool output by call id, cleared when the result commits. */
   toolOutput: Record<CallId, string>;
   processOutput: Record<number, string>;
-  /** Bytes the supervisor dropped at its retention cap before the seed read,
-   * per process — reported rather than silently skipped (docs/supervisor.md). */
+  /** Bytes the process monitor dropped at its retention cap before the seed read,
+   * per process — reported rather than silently skipped (docs/process-monitor.md). */
   processLost: Record<number, number>;
   /** True from an `Assistant` commit until the next log entry: `log` has strict
    * priority over `output` in `Tail::next_frame` (src/daemon/stream.rs), so the
@@ -87,7 +87,7 @@ export interface Session {
   /** What that restore put back, for the composer to splice; `nonce` makes a
    * second restore a new event. */
   askRecall: AskRecall | null;
-  /** Process id by the `tool_use` id that spawned it (docs/supervisor.md) —
+  /** Process id by the `tool_use` id that spawned it (docs/process-monitor.md) —
    * accumulated from the `processes` topic and **never removed**.
    *
    * The topic carries only *running* processes, so an exited one leaves it; its

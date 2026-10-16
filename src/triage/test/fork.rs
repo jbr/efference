@@ -284,11 +284,15 @@ fn a_bypassed_result_reaches_the_wire_verbatim() {
 
 /// An `ask` reply is the operator's own words: the shape rule keeps it out of the
 /// triage's offered results and delivers it raw, while the triage's request still answers
-/// its `tool_use` (docs/supervisor.md).
+/// its `tool_use` (docs/process-monitor.md).
 #[test]
 fn an_ask_reply_is_bypassed_and_still_answered_in_the_triage() {
     let calls = vec![
-        ToolCall::new(crate::supervisor::ASK, "ask_1", json!({"question": "ok?"})),
+        ToolCall::new(
+            crate::process_monitor::ASK,
+            "ask_1",
+            json!({"question": "ok?"}),
+        ),
         ToolCall::new("search", "search_2", json!({})),
     ];
     let prefix = vec![entry(
@@ -348,7 +352,11 @@ fn an_ask_reply_is_bypassed_and_still_answered_in_the_triage() {
 /// says so, so the loop knows it must triage the inbox itself.
 #[test]
 fn a_gate_of_only_ask_replies_needs_no_triage_and_delivers_them_raw() {
-    let call = ToolCall::new(crate::supervisor::ASK, "ask_1", json!({"question": "ok?"}));
+    let call = ToolCall::new(
+        crate::process_monitor::ASK,
+        "ask_1",
+        json!({"question": "ok?"}),
+    );
     let raw = RawResult::text("yes");
     let pending = [Pending {
         call: &call,

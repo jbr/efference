@@ -1,4 +1,4 @@
-# Background processes — the supervisor
+# Background processes — the process monitor
 
 ## The poll-loop antipattern and the fix
 
@@ -38,7 +38,7 @@ of a new one.
 The id has two faces:
 
 - **In prose** — tool results, the triage, `list_processes`, notification sources —
-  it renders as `p#<n>` (`supervisor::handle`). The prefix distinguishes it from an
+  it renders as `p#<n>` (`process_monitor::handle`). The prefix distinguishes it from an
   OS pid where the id floats free of context; `parse_handle` is the model-boundary
   inverse, and an unparseable handle answers like an unknown process.
 - **Machine-facing** — the `processes` state topic, `process_output` frames, and
@@ -74,7 +74,7 @@ register a process; every process the harness spawns today has one.
 
 The **OS pid is an attribute, not the identifier**: the `processes` topic carries
 it so a client or the agent can reach the process directly (signals, `lsof`) when
-the supervisor doesn't model what it needs. It cannot be the identity because pids
+the process monitor doesn't model what it needs. It cannot be the identity because pids
 are recycled and the log is durable — a logged pid stops resolving after reuse,
 resumption, or a reboot.
 
@@ -92,8 +92,8 @@ ordinal, which costs nothing, while an under-match would collide.
 Every spawn is placed in a fresh process group (`process_group(0)` — the child pid
 equals its pgid). On teardown the daemon calls `killpg` with that pgid, taking down
 the command and any grandchildren it spawned. The `kill_group` helper in `bash.rs`
-is shared between the foreground abort path and the supervisor's kill/teardown path.
-The supervisor registry exposes `running_pgids()` — the set of all still-running
+is shared between the foreground abort path and the process monitor's kill/teardown path.
+The process monitor registry exposes `running_pgids()` — the set of all still-running
 pgids — for the teardown sweep.
 
 ### Teardown waits for the reap, not the signal
@@ -149,15 +149,15 @@ compressed start→watch→kill turn has been attempted, and a short process can
 exit before the follow-up calls composed in the same turn reach it.
 
 **The running tail** — the last N lines of output plus timing — is a *live,
-re-sampled* view held in an ephemeral `Supervisor` registry inside `Session` (a
+re-sampled* view held in an ephemeral `ProcessMonitor` registry inside `Session` (a
 sibling to `Inbox` and `Metrics`). It is never written to the log. It is dropped on
 restart, at which point `killpg`-on-teardown reaps the children. The async
 spawn/drain orchestration — which needs `Arc<Session>` and the `POST /notifications` path
-— lives in `daemon.rs`; `supervisor.rs` holds the state: the registry,
+— lives in `daemon.rs`; `process_monitor.rs` holds the state: the registry,
 the bounded per-process capture buffer, and the read projections over it.
 
 **The exit** — status, duration, and final tail — is a discrete immutable event.
-The supervisor posts it to `POST /notifications` on slot `p#<id>`, using the control
+The process monitor posts it to `POST /notifications` on slot `p#<id>`, using the control
 socket just as any other client would. This folds into the existing `Ambient`
 [inbox](inbox.md). Spawn = `ToolResult`, exit and pinned tail = `Ambient`, the
 live state = ephemeral registry.
@@ -201,14 +201,14 @@ ordinal survives on that call's `ToolTelemetry` (`bash.handle`,
 
 The read side is `GET /processes/:id` ([control-api.md](control-api.md)), which
 answers from the live registry when it has the process and from a fold over these
-entries (`supervisor::from_log`) when it does not — one URL for a handle whether
+entries (`process_monitor::from_log`) when it does not — one URL for a handle whether
 its daemon is running, restarted, or gone.
 
 ## Foreground → background handoff
 
 A command is foreground-or-background at spawn time (the model's `background:
 true`), but the operator can also move a **running foreground** command into the
-supervisor mid-flight, instead of the only mid-run lever being kill.
+process monitor mid-flight, instead of the only mid-run lever being kill.
 
 The interrupt that races a running tool carries an **intent**
 (`frontend::Interrupt`): `Kill` — `POST /loop/interrupt`, `killpg` the group —
@@ -296,7 +296,7 @@ that arrive after the session.
 
 ## One registry, two projections
 
-The `Supervisor` registry is read two ways — ambient awareness
+The `ProcessMonitor` registry is read two ways — ambient awareness
 and directed query — mirroring the [inbox](inbox.md)'s own ephemeral-queue vs.
 logged-Ambient split.
 
@@ -347,7 +347,7 @@ are different identity models). Three dispositions:
 the same `Triage`. Projects as `⟢ p#3 (cargo watch): <tail>` at the `Triage`
 position. This is cache-safe tail-ward growth. Pinning again later appends a newer
 snapshot — building the honest `running…→finished…` timeline. `pin_snapshot` in
-`supervisor.rs` produces the `(source, body)` pair ready to wrap in a
+`process_monitor.rs` produces the `(source, body)` pair ready to wrap in a
 `Notification`.
 
 **mute** — stop surfacing the running tail in the ambient triage; the process keeps
@@ -389,10 +389,10 @@ open until one arrives.
 ## Tool surface
 
 `bash` gains `background: true` as an optional boolean input. The command is the
-same, the approval gate is the same; the loop registers the child in the `Supervisor`
+same, the approval gate is the same; the loop registers the child in the `ProcessMonitor`
 instead of awaiting it and returns the `p#<id>` handle immediately.
 
-The supervisor verbs: `list_processes`, `read_process(handle, cursor)`,
+The process monitor verbs: `list_processes`, `read_process(handle, cursor)`,
 `kill_process(handle)`, `watch_process(handle, pattern)` ([watches](#watches)),
 `check_inbox` (surface pending inbox notifications on demand), and `wait()` (block
 until the next notification and return the pending notifications; refuse without a

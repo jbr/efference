@@ -222,7 +222,7 @@ async fn named_values_are_injected_into_the_child() {
 /// carries the already-drained bytes as the seed, the child is still
 /// running, and the surrendered pipes keep delivering output produced
 /// *after* the detach — the no-gap/no-dup property the handoff depends on
-/// (docs/supervisor.md).
+/// (docs/process-monitor.md).
 #[tokio::test]
 async fn detach_surrenders_a_live_child_with_its_output_so_far() {
     let detach = async {
@@ -308,11 +308,11 @@ fn impatient(after: Duration, max: Duration) -> Bash {
 }
 
 /// **The loop-safety property.** A foreground command that outlives its deadline
-/// stops blocking the turn: it detaches into the supervisor exactly as an
+/// stops blocking the turn: it detaches into the process monitor exactly as an
 /// operator detach does, rather than parking the loop forever. Before this, a
 /// command whose grandchild held the pipes open never finalized and only an
 /// operator could recover it — which an autonomous session has none of
-/// (docs/supervisor.md).
+/// (docs/process-monitor.md).
 #[tokio::test]
 async fn a_command_past_its_deadline_detaches_instead_of_blocking() {
     let outcome = impatient(Duration::from_millis(50), Duration::from_secs(60))

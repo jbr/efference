@@ -76,7 +76,7 @@ use toml_edit::{Array, DocumentMut, InlineTable, Item, Value, value};
 
 use crate::log::ConfigChange;
 
-/// How long a foreground `bash` command may block the turn (docs/supervisor.md).
+/// How long a foreground `bash` command may block the turn (docs/process-monitor.md).
 ///
 /// Two numbers rather than one, because they answer different questions.
 /// `background_after` is a *default* — what a call gets when it names no
@@ -256,7 +256,7 @@ pub struct Config {
     /// faithful record of the file. Keys may be exact names or `*` globs.
     pub env: BTreeMap<String, crate::env_table::EnvEntry>,
 
-    /// Foreground-lifetime limits for the `bash` tool (docs/supervisor.md).
+    /// Foreground-lifetime limits for the `bash` tool (docs/process-monitor.md).
     pub bash: BashLimits,
     /// Transport limits — the SSE stream duration ceiling
     /// (docs/transport.md). TOML `[transport]` table.

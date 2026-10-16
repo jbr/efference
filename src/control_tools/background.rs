@@ -6,7 +6,7 @@ use mcplease::{
 };
 use serde::{Deserialize, Serialize};
 
-/// Detach the tool the session is running into the background supervisor: it keeps
+/// Detach the tool the session is running into the background process monitor: it keeps
 /// running as a `p#<n>` process and stops blocking the turn. The alternative to
 /// `interrupt` for a command that should finish but should not be waited on. No-op
 /// when nothing is mid-tool, and it lands only while the call is still running.

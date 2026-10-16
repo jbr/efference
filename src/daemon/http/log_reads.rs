@@ -98,7 +98,7 @@ pub(super) async fn read_tool_call(conn: Conn) -> Conn {
 
 /// One tool's full definition, for any name the turn's `tools[]` can
 /// carry — mounted providers and the harness's own loop-owned family
-/// (`consolidate`, the supervisor/inbox tools, the two triage tools)
+/// (`consolidate`, the process-monitor/inbox tools, the two triage tools)
 /// alike (docs/control-api.md): the description, input_schema,
 /// annotations, title, and which server mounted it (`null` for a
 /// loop-owned tool). A lazy per-tool fetch, not a table pushed at

@@ -40,11 +40,11 @@ use crate::config::{ConfigSource, LoadedConfig, Refreshed};
 use crate::frontend::{Approval, Frontend, Interrupt, SubmittedTurn};
 use crate::log::{CallId, EditState, LogEntry, Payload, RawResult, Seq, ToolCall, Turn};
 use crate::persist::Log;
+use crate::process_monitor::{BgView, ProcessMonitor};
 use crate::project::{
     ApiMessage, ImagePlacement, Retention, WireTurn, project_semantic, project_with,
 };
 use crate::spotter::Spotter;
-use crate::supervisor::{BgView, Supervisor};
 use crate::tools::Toolbox;
 
 /// A live, pre-commit output fragment streamed to clients as the control stream's
@@ -86,7 +86,7 @@ pub enum StreamDelta {
     /// A chunk of a running tool's combined output, tagged by its `tool_use` id.
     ToolOutput { call_id: String, chunk: String },
     /// A chunk of a running background process's output, tagged by the process's
-    /// spawn-minted id — rendered `p#<n>` in prose, bare here (docs/supervisor.md).
+    /// spawn-minted id — rendered `p#<n>` in prose, bare here (docs/process-monitor.md).
     /// Demuxed by id exactly like
     /// [`ToolOutput`](Self::ToolOutput) is by `call_id`. Lossy: a cold-opened client
     /// seeds its tail from the process resource and layers these on top.
@@ -183,12 +183,12 @@ pub struct Session {
     /// Latching also closes the window between a bash spawn and the abort future's first poll.
     interrupt_latch: AtomicBool,
     /// Fired by `PATCH /processes/:id {background: true}` — the detach half of the interrupt intent
-    /// (docs/supervisor.md, the foreground→background handoff). Like `interrupt`,
+    /// (docs/process-monitor.md, the foreground→background handoff). Like `interrupt`,
     /// `notify_waiters` reaches only a *currently-awaited* race, so a detach
     /// request with no foreground tool running is lost harmlessly.
     detach: Notify,
     /// The operator note optionally attached to a `PATCH /processes/:id {background: true}`
-    /// (docs/supervisor.md): stashed by the handler, consumed by the loop only
+    /// (docs/process-monitor.md): stashed by the handler, consumed by the loop only
     /// when a detach actually lands, and cleared when a fresh foreground bash
     /// starts so a request that never found a running tool can't mislabel a
     /// later handoff.
@@ -221,7 +221,7 @@ pub struct Session {
     /// no longer here — that is how a withdrawn turn is never appended. A pending turn is
     /// ephemeral: it is not in the log, so withdrawing one leaves no trace to retract.
     queue: Mutex<std::collections::VecDeque<SubmittedTurn>>,
-    /// The `ask` awaiting a reply, if any (docs/supervisor.md). Taken by the next
+    /// The `ask` awaiting a reply, if any (docs/process-monitor.md). Taken by the next
     /// submitted turn, which it resolves instead of queueing. Lock order: this before
     /// `queue`.
     ask: Mutex<Option<ask::AskState>>,
@@ -245,7 +245,7 @@ pub struct Session {
     continue_signal: Notify,
     /// How many sessions this one is subscribed to (docs/tools.md) — host control
     /// state mirrored here so the `wait` tool can count a subscribed session as
-    /// something that may wake it (docs/supervisor.md).
+    /// something that may wake it (docs/process-monitor.md).
     subscriptions: std::sync::atomic::AtomicUsize,
     /// Pinged when a notification is enqueued (docs/inbox.md — `notify`). The agent loop's
     /// idle path awaits this to wake an idle agent for a standalone triage (the
@@ -344,16 +344,16 @@ pub struct Session {
     /// (docs/permissions.md). Ephemeral control state like `inbox` — a
     /// `Proposed` entry is durable in the log, but its *pending* status lives here until resolved.
     proposals: Mutex<Vec<PendingProposal>>,
-    /// The background-process registry (docs/supervisor.md): live children whose running tail
+    /// The background-process registry (docs/process-monitor.md): live children whose running tail
     /// is re-sampled fresh each triage. Ephemeral control state like `inbox` /
     /// `metrics` — never logged, never projected (a running tail forced through the
     /// immutable notification model would pile up stale snapshots). Pinned tails and
     /// exits *do* reach the durable log, but as `Ambient` notifications, not from here.
-    supervisor: Mutex<Supervisor>,
+    process_monitor: Mutex<ProcessMonitor>,
     /// Fired each time a background child is reaped (`drain_background` after
     /// `child.wait()`), so teardown can await the children actually being gone
     /// rather than the kill signal merely having been sent
-    /// (docs/supervisor.md).
+    /// (docs/process-monitor.md).
     reaped: tokio::sync::Notify,
     /// The resolved role config and where it came from (docs/permissions.md).
     /// Read-only for the session's lifetime — the scope is already frozen into the
@@ -424,7 +424,7 @@ pub struct Session {
     expander: crate::expand::Expander,
     /// The session's full tool catalog, keyed by wire name — every name the
     /// turn's `tools[]` can carry, the toolbox's mounted providers *and* the
-    /// harness's own loop-owned family (`consolidate`, the supervisor/inbox
+    /// harness's own loop-owned family (`consolidate`, the process-monitor/inbox
     /// tools, the two triage tools). Snapshotted by [`Session::set_tool_catalog`]
     /// (`agent::tool_catalog`) before the toolbox moves into the loop, and
     /// read back by `GET /v1/tools/:name` (docs/control-api.md). The mounted
@@ -516,7 +516,7 @@ impl Session {
     /// Snapshot the full session tool catalog for `GET /v1/tools/:name`
     /// (docs/control-api.md) — `agent::tool_catalog`, which mirrors
     /// `agent::tool_definitions`: the toolbox's mounted tools *and* the
-    /// harness's own loop-owned family (`consolidate`, the supervisor/inbox
+    /// harness's own loop-owned family (`consolidate`, the process-monitor/inbox
     /// tools, the two triage tools), the same union `tools[]` advertises.
     /// Called once by the runtime, before `toolbox` moves into the loop — the
     /// same "only a served session has this" reason as

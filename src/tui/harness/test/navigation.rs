@@ -321,7 +321,7 @@ fn graduated_esc_is_state_driven_return_pause_interrupt() {
 }
 
 /// The foreground→background handoff, now the strip's `background` item and its
-/// scoped mnemonic (docs/tui.md, docs/supervisor.md): `b` fires the detach
+/// scoped mnemonic (docs/tui.md, docs/process-monitor.md): `b` fires the detach
 /// (`PATCH /processes/:id {background: true}`) exactly where the item is shown, and matches nothing
 /// anywhere else. The handoff only exists for a foreground `bash` child, so the
 /// item's presence — and therefore the mnemonic's — tracks the in-flight tool,
@@ -349,7 +349,7 @@ fn b_mnemonic_backgrounds_a_foreground_bash_and_noops_elsewhere() {
     play.route_key(KeyCode::Char('b'), none);
     assert!(
         !play.took_background(),
-        "a non-bash tool can't be handed to the supervisor"
+        "a non-bash tool can't be handed to the process monitor"
     );
 
     // Foreground bash: the strip shows `background b`, so `b` fires the detach.
@@ -360,6 +360,6 @@ fn b_mnemonic_backgrounds_a_foreground_bash_and_noops_elsewhere() {
     play.route_key(KeyCode::Char('b'), none);
     assert!(
         play.took_background(),
-        "b detaches the running command into the supervisor"
+        "b detaches the running command into the process monitor"
     );
 }

@@ -12,7 +12,7 @@
 //! host's `Swansong` exists there are no sessions to tear down and the process
 //! exits outright; after, it is the same graceful shutdown a signal starts, which
 //! reaps every session's tool processes before the listener completes
-//! (docs/supervisor.md).
+//! (docs/process-monitor.md).
 
 use std::io::Read;
 use std::path::{Path, PathBuf};

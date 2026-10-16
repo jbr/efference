@@ -5,7 +5,7 @@ use super::*;
 /// The per-tool path rule — the acknowledged wart (see the module docs): which JSON input key holds
 /// the target path, whether it is a read or a write, and the fallback when the key is absent (the
 /// optional-path tools default to cwd `"."`; `None` means the path is required). Tools absent from
-/// this map (`undo_edit`, `retarget_edit`, `consolidate`, the supervisor/inbox tools) carry no path
+/// this map (`undo_edit`, `retarget_edit`, `consolidate`, the process-monitor/inbox tools) carry no path
 /// and clear on the name grant alone. The string literals are centralized here so the coupling to
 /// each built-in's schema lives in one place, shared by both clearance sources.
 pub(crate) fn path_spec(name: &str) -> Option<(&'static str, Perm, Option<&'static str>)> {

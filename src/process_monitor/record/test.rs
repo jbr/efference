@@ -1,5 +1,5 @@
 //! The log fold behind `GET /processes/:id` on a session with no daemon
-//! (docs/supervisor.md).
+//! (docs/process-monitor.md).
 
 use super::*;
 

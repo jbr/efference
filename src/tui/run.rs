@@ -244,7 +244,7 @@ async fn attach(
 
     // Interrupt sender: the operator's intent over the in-flight tool. `Kill`
     // (the hard rung of graduated Esc, docs/tui.md) fires the loop interrupt;
-    // `Detach` (the foreground→background handoff, docs/supervisor.md) resolves
+    // `Detach` (the foreground→background handoff, docs/process-monitor.md) resolves
     // the foreground process and patches it background — the client verb owns
     // that resolution.
     let interrupt_client = client.clone();

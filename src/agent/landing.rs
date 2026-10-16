@@ -29,7 +29,7 @@ pub(super) async fn land(
     let mut forced_pins: Vec<crate::log::Seq> = Vec::new();
     let mut deferred: Option<(
         Vec<ShownNotification>,
-        Vec<crate::supervisor::BgView>,
+        Vec<crate::process_monitor::BgView>,
         Vec<crate::log::Seq>,
     )> = None;
     let mut triage = if pending.is_empty() {
@@ -61,7 +61,7 @@ pub(super) async fn land(
             }
         }
         // A triage that is only `ask` replies has no triage to carry the inbox
-        // (docs/supervisor.md): triage runs after the results are logged, below,
+        // (docs/process-monitor.md): triage runs after the results are logged, below,
         // and takes the must-wake pins with it.
         if crate::triage::reply_only_triage(&pending) {
             deferred = Some((shown.clone(), shared.bg_snapshot(), forced));
@@ -69,7 +69,7 @@ pub(super) async fn land(
             forced_pins = forced;
         }
         // The live background processes' fresh tails ride the same triage
-        // (docs/supervisor.md) — re-sampled now, never logged unless pinned.
+        // (docs/process-monitor.md) — re-sampled now, never logged unless pinned.
         let background = shared.bg_snapshot();
         // A triage without a verdict holds rather than reaching the agent
         // (docs/triage.md): the stall names it, and the operator's
@@ -127,8 +127,8 @@ pub(super) async fn land(
     // Apply the background verdicts before writing the `Triage`s: a `Pin`
     // snapshots the process's current tail into an `Ambient` and folds a `Pin`
     // disposition into the inbox verdict — so it projects at the `Triage`
-    // position, reusing the notification pin path (docs/supervisor.md). A `Mute`
-    // just flags the supervisor.
+    // position, reusing the notification pin path (docs/process-monitor.md). A `Mute`
+    // just flags the process monitor.
     let mut inbox_verdict = triage
         .as_mut()
         .map(|g| std::mem::take(&mut g.inbox))
@@ -260,7 +260,7 @@ pub(super) async fn land(
             }
         }
     }
-    // The inbox an `ask` reply's triage could not triage (docs/supervisor.md): the
+    // The inbox an `ask` reply's triage could not triage (docs/process-monitor.md): the
     // results are in the log now, so the triage forks from a prefix that answers
     // every call.
     if let Some((shown, background, forced)) = deferred
@@ -283,7 +283,7 @@ pub(super) async fn land(
         .await?;
     }
     // The operator note attached to a handoff lands as a real user turn after the
-    // step's results — direction, not tool output (docs/supervisor.md). Same
+    // step's results — direction, not tool output (docs/process-monitor.md). Same
     // canonical `Payload::User` as a queued turn delivered mid-task; `project` merges it into the
     // trailing tool_result message.
     for note in handoffs {

@@ -409,7 +409,7 @@ impl Masker {
             Payload::ImagesRefused { refusal } => self.mask_in_place(refusal),
             // A gap, handle ids, and call ids: nothing from the environment.
             Payload::Resumed(_) => {}
-            // A process lifecycle record (docs/supervisor.md) carries one piece
+            // A process lifecycle record (docs/process-monitor.md) carries one piece
             // of free text — the command line, which is exactly where an
             // interpolated secret would ride (docs/env.md). The rest is an
             // ordinal, an exit status, and stamps.

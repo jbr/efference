@@ -67,7 +67,7 @@ sessions from one process. Its own routes are the listener's, not a session's:
   the creation tree — never logged or projected; a human-created root omits it
   ([tools.md](tools.md)). `status` is one word — `running`, `idle`, `gated`,
   `asking`, `stalled`, `parked` — and `processes` counts the background processes the session holds
-  ([supervisor.md](supervisor.md)). `parked` is a loop stopped at its cold check
+  ([process-monitor.md](process-monitor.md)). `parked` is a loop stopped at its cold check
   mid-turn (the `park` topic, below): it ranks after `gated`, `asking` and
   `stalled` and before `running`, which stays true while the loop waits, so a list
   surface does not read it as working. A status subscriber is told once, with the
@@ -320,7 +320,7 @@ carries the gate, processes, usage, and effective policy in the same stream.
 Enqueue a user turn. Also seeds turn 1 on an idle daemon. Submission is
 decoupled from inference. While an `ask` is pending (the `ask` topic below), a
 non-blank turn is instead that ask's reply: it becomes the call's result, never a
-`User` entry, and never appears in `queued` ([supervisor.md](supervisor.md)).
+`User` entry, and never appears in `queued` ([process-monitor.md](process-monitor.md)).
 
 - Body: `{ "text": "<string>", "submission_id": "<string, optional>", "source": "<string, optional>", "attachments": ["<name>", …] }` —
   `submission_id` identifies this submission: adopted when the client minted
@@ -348,7 +348,7 @@ non-blank turn is instead that ask's reply: it becomes the call's result, never 
   cold check (`by: turn`) and releases a loop parked at its cold check, or the next
   check the loop reaches. It is dropped if the session is warm when it arrives.
 - **An answer to an `ask`** is this same route: while an `ask` is pending the
-  turn resolves it instead of opening a user turn ([supervisor.md](supervisor.md)).
+  turn resolves it instead of opening a user turn ([process-monitor.md](process-monitor.md)).
   The release is logged with `by: ask` rather than `turn`.
 - `202 {"status":"accepted","submission_id":"<string>"}` — enqueued; watch
   `/events` (or `/state`) for the result. The echoed id is informational: any
@@ -590,7 +590,7 @@ is injected, a state unreachable through a bind that requires one.
 ### The processes resource
 
 Every running tool-spawned process — **foreground and background share one
-namespace** ([supervisor.md](supervisor.md)): the foreground bash command is
+namespace** ([process-monitor.md](process-monitor.md)): the foreground bash command is
 registered and listed from the moment it spawns, and backgrounding is a
 *property change* on it, not the appearance of a new resource. `:id` is the
 bare spawn-minted ordinal (`GET /processes/3/output`); the `p#<n>` rendering is
@@ -604,14 +604,14 @@ The running processes, as a JSON array of the same representation the
 ```jsonc
 [ { "id": 1,                     // spawn-minted ordinal; rendered "p#1" in prose
     "command": "cargo watch -x test",
-    "call_id": "toolu_01ab",     // the tool_use that spawned it, or null (supervisor.md); survives the handoff
+    "call_id": "toolu_01ab",     // the tool_use that spawned it, or null (process-monitor.md); survives the handoff
     "pid": 4242,                 // OS pid — an attribute for direct interaction, never the identifier
     "spawned_at": 1754300000000, // absolute Unix millis; clients compute elapsed
     "background": true,          // false = the loop's in-flight foreground tool
     "muted": false } ]           // dismissed-from-view; still running, still notifies on exit
 ```
 
-`call_id` is the call↔process mapping ([supervisor.md](supervisor.md)): a client
+`call_id` is the call↔process mapping ([process-monitor.md](process-monitor.md)): a client
 holding a transcript entry finds the process that answers it, and a client holding
 a process row finds the entry to jump to. The listing carries only *running*
 processes — a process leaving it is how an exit is represented, which is what
@@ -621,7 +621,7 @@ addresses it directly, below.
 #### `GET /processes/:id`
 One process's record — running or exited. Once a handle is minted it stays
 addressable at this one URL for the life of the session
-([supervisor.md](supervisor.md)), including in a session whose daemon has
+([process-monitor.md](process-monitor.md)), including in a session whose daemon has
 restarted or is long gone: the live registry answers when it has the process, and
 a fold over the log's lifecycle records answers when it does not.
 
@@ -667,7 +667,7 @@ Set a process's properties.
 - `{"muted": true}` / `{"muted": false}` — dismiss the running tail from view /
   undo that; applies synchronously, `200` with the representation.
 - `{"background": true}` on the **foreground** entry is the
-  foreground→background handoff ([supervisor.md](supervisor.md)): `202` with
+  foreground→background handoff ([process-monitor.md](process-monitor.md)): `202` with
   the representation, because the flip lands only when the detach wake reaches
   the running tool's race. On an already-background process it is an idempotent
   `200` no-op. An optional `note` rides the handoff and is delivered to the
@@ -723,7 +723,7 @@ not a topic — it is the log's cursor rather than control state, and sits outsi
       "chain": ["child", "grand"] //   that target down to the session holding the leaf
     }
   },
-  "ask": {                         // null unless an `ask` is pending (docs/supervisor.md)
+  "ask": {                         // null unless an `ask` is pending (docs/process-monitor.md)
     "call_id": "toolu_…",
     "question": "…",
     "n": 1, "of": 2,               // its place among one completion's asks
@@ -742,7 +742,7 @@ not a topic — it is the log's cursor rather than control state, and sits outsi
   "processes": [                   // every running tool-spawned process: STRUCTURE ONLY
     { "id": 1,                     // spawn-minted ordinal; rendered "p#1" in prose
       "command": "cargo watch -x test",
-      "call_id": "toolu_01ab",     // the tool_use that spawned it, or null (supervisor.md)
+      "call_id": "toolu_01ab",     // the tool_use that spawned it, or null (process-monitor.md)
       "pid": 4242,                 // OS pid — an attribute for direct interaction, never the identifier
       "spawned_at": 1754300000000, // no tail, no last-chunk: both would re-emit per chunk
       "background": true,          // false = the in-flight foreground tool (flagged, not filtered)
@@ -1134,7 +1134,7 @@ One tool's full definition, for **any** name the turn's `tools[]` can carry —
 description, `input_schema` (with per-property descriptions and `required`),
 `annotations`, `title`, and `server` (the mounting server's name, `null` for
 one of the harness's own tools: `bash`, `read_image`, the fs/semantic-edit MCP
-servers, `consolidate`, the supervisor/inbox family, the two triage tools).
+servers, `consolidate`, the process-monitor/inbox family, the two triage tools).
 Lazily fetched, one at a time, rather than a table pushed at session start: an
 MCP server may mount dozens of tools with long descriptions, and a consumer
 usually wants exactly the one behind a call it's showing.
@@ -1151,7 +1151,7 @@ pre-injection schema, so a consumer comparing a call's arguments against
 distinction cuts one way: a `Toolbox`-mounted tool's schema carries the
 injected [`intent`] property ([tools.md](tools.md) "The `intent` property"),
 because `with_intent` runs over every entry `Toolbox::definitions` advertises
-— but the harness's own loop-owned family (`consolidate`, the supervisor/inbox
+— but the harness's own loop-owned family (`consolidate`, the process-monitor/inbox
 tools, the two triage tools) is pushed onto the wire array *after* that, with no
 injection, so their served schemas carry no `intent` property either.
 
@@ -1183,7 +1183,7 @@ falls back to showing only what a call sent, not an error state.
 
 **A mounted server's description, annotations, and title are third-party
 prose** — written by whoever wrote the server, not by efference
-(`src/supervisor.rs` draws the same line for the built-ins' own annotations).
+(`src/process_monitor.rs` draws the same line for the built-ins' own annotations).
 A client renders them as plain text, never markdown, and attributes them to
 `server`.
 
@@ -1344,7 +1344,7 @@ publishes nothing at all — indistinguishable from a hung harness.
   the operator and is the one entry field that reaches the wire.
 - **`ConfigChange`** — one of `command` / `path` / `tool` / `scope` (see
   [permissions.md](permissions.md)).
-- **`BgView`** — a background-process view (see [supervisor.md](supervisor.md)).
+- **`BgView`** — a background-process view (see [process-monitor.md](process-monitor.md)).
 - **`Usage`** — the four Anthropic token counters.
 
 ## Identifiers
@@ -1354,7 +1354,7 @@ publishes nothing at all — indistinguishable from a hung harness.
 | `seq` | durable, monotonic per session | the log | `/events` `id`, `/log?since`, proposal addressing |
 | `call_id` | a tool call (the `tool_use` id) | the model | `/approvals/:call_id`, `tool_output` deltas |
 | notification id | **queue-local**, not durable | the inbox | `/notifications` response, `DELETE /notifications/:id` |
-| process id | a tool-spawned process; survives property changes | the supervisor, minted at spawn | the `/processes/:id` routes, `process_output` deltas, the `processes` topic; rendered `p#<n>` in prose |
+| process id | a tool-spawned process; survives property changes | the process monitor, minted at spawn | the `/processes/:id` routes, `process_output` deltas, the `processes` topic; rendered `p#<n>` in prose |
 
 ## Error model
 

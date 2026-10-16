@@ -161,7 +161,7 @@ async fn run_calls<F: Frontend, S: Spotter>(
                 let payload = Payload::tool_result(call.id.clone(), result, WireState::Pending);
                 // An `ask`'s result is a submitted turn's words, so its entry names the
                 // submission and the submitter like a `User` entry does
-                // (docs/supervisor.md).
+                // (docs/process-monitor.md).
                 let result_seq = match reply {
                     Some(reply) => shared.append_submission(
                         turn,

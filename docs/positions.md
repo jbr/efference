@@ -26,7 +26,7 @@ Agent-facing:
 - Backgrounding a process and waking on a condition so awkward that agents
   write bash watch-loops — working around the tool — and lack awareness of
   their own background processes even when asked directly. *(Answered by the
-  supervisor and inbox — [supervisor.md](supervisor.md), [inbox.md](inbox.md).)*
+  process monitor and inbox — [process-monitor.md](process-monitor.md), [inbox.md](inbox.md).)*
 - Compaction summaries that make second sessions worse than first sessions:
   verbatim user messages quoted out of context, self-reported mistakes of
   dubious forward relevance, details of intermediate shapes that were

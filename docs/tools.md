@@ -284,7 +284,7 @@ projected — and the host runs one watcher per session that reads its status on
 every control-state change and posts it when it moves (`src/daemon/subscriptions.rs`,
 `src/daemon/status.rs`). A subscribed session counts as something that may wake
 the subscriber, so its `wait` tool is not refused while one exists
-(docs/supervisor.md).
+(docs/process-monitor.md).
 
 ##### Lifecycle: children end with their creator
 
@@ -456,8 +456,8 @@ What it records:
   out of the result text by `bash::reported_exit_status`, which sits beside the
   writer that emits the marker — it never left that module in structured form,
   and widening `Outcome` to carry it would touch every backend for a field only
-  telemetry reads. Also the `p#<n>` **handle** the supervisor minted for the
-  command, when it reached a spawn ([supervisor.md](supervisor.md)) — the join
+  telemetry reads. Also the `p#<n>` **handle** the process monitor minted for the
+  command, when it reached a spawn ([process-monitor.md](process-monitor.md)) — the join
   from a call to the process namespace, and for a foreground command (whose
   registry entry is dropped when the call completes) the only typed place its
   ordinal survives.
@@ -730,7 +730,7 @@ Boot mints a private per-session scratch directory (`<system-temp>/efference-<ra
 mkdtemp-style: random name, create-or-retry, mode `0700`) and projects that one value
 three ways — the env var, the path grant, and the expansion value are all views of it:
 
-- **`$TMPDIR` in every tool child.** The foreground `Bash` spawn and the supervisor's
+- **`$TMPDIR` in every tool child.** The foreground `Bash` spawn and the process monitor's
   background spawn both override `TMPDIR` in the child environment. The ecosystem
   already respects it (`mktemp`, `std::env::temp_dir()`, Python `tempfile`), so
   incidental and deliberate temp files land in the sanctioned dir with no agent

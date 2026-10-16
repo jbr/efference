@@ -406,7 +406,7 @@ fn the_drawer_opens_on_demand() {
     }
 }
 
-/// The live background-process panel (docs/supervisor.md): a `Processes` event renders a
+/// The live background-process panel (docs/process-monitor.md): a `Processes` event renders a
 /// persistent strip above the composer — one row per running process with handle,
 /// command, running/idle timing, and the last output line. Fed by the `processes`
 /// topic, it is chrome, not transcript (no reproject).

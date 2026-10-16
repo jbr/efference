@@ -8,7 +8,7 @@
 
 use super::*;
 
-/// The `processes` topic's wire shape (`supervisor::ProcessState`): structure only.
+/// The `processes` topic's wire shape (`process_monitor::ProcessState`): structure only.
 /// `pid` is on the wire too — an attribute for direct OS interaction — but the panel
 /// has no use for it yet, and serde ignores what isn't named.
 #[derive(serde::Deserialize)]
@@ -16,15 +16,15 @@ struct WireProcess {
     id: u64,
     command: String,
     /// The `tool_use` that spawned it — the call-to-process mapping the sidebar's
-    /// `view` verb jumps by (docs/supervisor.md). Absent on an older daemon.
+    /// `view` verb jumps by (docs/process-monitor.md). Absent on an older daemon.
     #[serde(default)]
-    call_id: Option<String>, // the tool_use id; see the mapping in docs/supervisor.md
+    call_id: Option<String>, // the tool_use id; see the mapping in docs/process-monitor.md
     spawned_at: u64,
     background: bool,
     muted: bool,
 }
 
-/// Parse the `processes` topic's array into [`BgProc`]s (docs/supervisor.md). A
+/// Parse the `processes` topic's array into [`BgProc`]s (docs/process-monitor.md). A
 /// missing/malformed field is an empty list — the panel just hides.
 ///
 /// The topic carries every running process, flagged rather than filtered

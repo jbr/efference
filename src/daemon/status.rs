@@ -26,7 +26,7 @@ pub(crate) enum SessionStatus {
         /// The spotter's reason for routing it to the gate, when one preceded it.
         reason: Option<String>,
     },
-    /// Waiting on the operator's reply to an `ask` (docs/supervisor.md): question `n` of
+    /// Waiting on the operator's reply to an `ask` (docs/process-monitor.md): question `n` of
     /// `of` from one completion.
     Asking {
         question: String,

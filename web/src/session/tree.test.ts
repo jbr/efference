@@ -234,7 +234,7 @@ describe("the transcript tree", () => {
   it("keeps a process lifecycle record out of the transcript", () => {
     // The mint and the exit are already in the transcript as prose — the
     // backgrounding result and the exit notification. The record behind them
-    // (docs/supervisor.md) is what `GET /processes/:id` reads; rendering it
+    // (docs/process-monitor.md) is what `GET /processes/:id` reads; rendering it
     // would put a raw-JSON block beside every backgrounded command.
     const nodes = buildTree([
       assistant(1, { calls: [{ id: "toolu_a", name: "bash" }] }),

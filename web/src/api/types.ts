@@ -427,12 +427,12 @@ export interface BashTelemetry {
   /** Whether the call asked to be backgrounded, in which case `duration_ms`
    * measures the spawn and `result_bytes` the handle message. */
   background: boolean;
-  /** The `p#<n>` the supervisor minted for this command, when it reached a
-   * spawn (docs/supervisor.md). Absent for a call that never spawned. */
+  /** The `p#<n>` the process monitor minted for this command, when it reached a
+   * spawn (docs/process-monitor.md). Absent for a call that never spawned. */
   handle?: string;
 }
 
-/** One lifecycle fact about a background process (docs/supervisor.md): the mint
+/** One lifecycle fact about a background process (docs/process-monitor.md): the mint
  * when it enters the background namespace, or the exit when it ends. The durable
  * answer to "what was `p#3`" for a reader with no daemon — the transcript already
  * carries both events in prose, so this is a record, not an entry to render. */
@@ -546,7 +546,7 @@ export interface Process {
   id: number;
   command: string;
   /** The `tool_use` id of the call that spawned it — the call↔process mapping
-   * (docs/supervisor.md). `null` for a process registered outside a tool call,
+   * (docs/process-monitor.md). `null` for a process registered outside a tool call,
    * and absent from a daemon that predates the mapping. */
   call_id?: string | null;
   pid: number;
@@ -556,7 +556,7 @@ export interface Process {
 }
 
 /** One process, running or exited — what `GET /processes/:id` answers with
- * (docs/control-api.md, docs/supervisor.md). The listing's representation plus
+ * (docs/control-api.md, docs/process-monitor.md). The listing's representation plus
  * the two fields it has no need for, because it carries only running
  * processes. A log-derived answer (no live registry, or a restarted daemon)
  * reads `running: false` and `muted: false`; `exit: null` beside

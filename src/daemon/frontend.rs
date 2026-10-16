@@ -56,7 +56,7 @@ impl Frontend for RemoteFrontend {
 
     async fn interrupted(&mut self) -> Interrupt {
         // Race the two operator intents over the running tool: `POST /loop/interrupt`
-        // kills, `PATCH /processes/:id {background: true}` detaches into the supervisor (docs/supervisor.md).
+        // kills, `PATCH /processes/:id {background: true}` detaches into the process monitor (docs/process-monitor.md).
         tokio::select! {
             _ = self.shared.interrupt.notified() => Interrupt::Kill,
             _ = self.shared.detach.notified() => Interrupt::Detach,

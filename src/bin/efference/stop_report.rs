@@ -30,7 +30,7 @@ pub(crate) struct StopReport {
     /// Sessions with at least one barren stop, over sessions with any stop at all.
     pub(crate) sessions_with_barren: usize,
     pub(crate) sessions_with_stops: usize,
-    /// `ask` calls (docs/supervisor.md), counted beside the turn endings and graded by
+    /// `ask` calls (docs/process-monitor.md), counted beside the turn endings and graded by
     /// the same test: what the reply carried. `asks_ungraded` are the interrupted,
     /// errored, or never-answered ones.
     pub(crate) asks_answered: u64,

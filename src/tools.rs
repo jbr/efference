@@ -174,7 +174,7 @@ pub struct ToolBrief<'a> {
 /// `description` and `annotations`/`title` are third-party prose for a
 /// mounted server (`server.is_some()`): a consumer renders them as plain
 /// text, never markdown, and attributes them to `server`
-/// (`src/supervisor.rs` draws the same untrusted-server line for the
+/// (`src/process_monitor.rs` draws the same untrusted-server line for the
 /// built-ins' own annotations).
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct ToolEntry {
@@ -206,7 +206,7 @@ impl ToolEntry {
     /// actually did with this schema: `true` for a `Toolbox`-mounted tool
     /// (`with_intent` runs over every entry in [`Toolbox::definitions`]),
     /// `false` for the harness's own loop-owned tools (`agent::tool_catalog`
-    /// — `consolidate`, the supervisor/inbox family — which
+    /// — `consolidate`, the process-monitor/inbox family — which
     /// [`agent::tool_definitions`](crate::agent::tool_definitions) advertises
     /// *without* running them through [`with_intent`]).
     pub(crate) fn from_definition(

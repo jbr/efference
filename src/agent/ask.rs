@@ -1,4 +1,4 @@
-//! The loop-owned `ask` (docs/supervisor.md): a question to the operator that blocks
+//! The loop-owned `ask` (docs/process-monitor.md): a question to the operator that blocks
 //! like a tool call. The reply is the next turn a client submits, delivered here as the
 //! call's result.
 
@@ -16,7 +16,7 @@ impl AskPosition {
     /// The position of `calls[index]` among the asks of `calls` (1 of 1 for a call
     /// that is not one, which nothing reads).
     pub(super) fn of_call(calls: &[ToolCall], index: usize) -> Self {
-        let is_ask = |c: &&ToolCall| c.name == supervisor::ASK;
+        let is_ask = |c: &&ToolCall| c.name == process_monitor::ASK;
         Self {
             n: calls[..index].iter().filter(is_ask).count() + 1,
             of: calls.iter().filter(is_ask).count(),

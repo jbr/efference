@@ -1,5 +1,5 @@
 //! Tests for the `/processes` resource routes (`http.rs`, docs/control-api.md,
-//! docs/supervisor.md).
+//! docs/process-monitor.md).
 
 use super::*;
 
@@ -69,7 +69,7 @@ async fn processes_listing_and_output_read() {
 }
 
 /// A minted handle stays addressable at one URL for the life of the session
-/// (docs/supervisor.md): the live registry answers while the process runs and
+/// (docs/process-monitor.md): the live registry answers while the process runs and
 /// after it exits, and a log fold answers when the registry never had it — which
 /// is what a recorded session and a restarted daemon are.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -306,7 +306,7 @@ async fn a_process_carries_the_call_that_spawned_it() {
     shared.kill_all_bg();
 }
 
-/// A watch fires into the inbox (docs/supervisor.md): the drain scan matches a line
+/// A watch fires into the inbox (docs/process-monitor.md): the drain scan matches a line
 /// of a live background process and posts an ambient notification, which is what
 /// wakes an idle agent. No slot — a hit must not supersede, or be superseded by, the
 /// process's exit notification on the `p#<n>` slot.

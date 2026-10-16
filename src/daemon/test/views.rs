@@ -527,7 +527,7 @@ fn state_reports_the_review_level_dial() {
     assert_eq!(v["review_level"], "autonomous");
 }
 
-/// `GET /state` surfaces the live background processes (docs/supervisor.md) — the data the
+/// `GET /state` surfaces the live background processes (docs/process-monitor.md) — the data the
 /// TUI process panel reads. A running child appears with its id/command, its OS pid,
 /// and an absolute spawn stamp; `process_states`/`state_json` read the registry
 /// synchronously after spawn.

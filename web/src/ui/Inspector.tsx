@@ -164,13 +164,13 @@ function TelemetryPanel({ telemetry }: { telemetry: ToolTelemetry }) {
 }
 
 /** What the command itself printed, for the two cases where the call's
- * `ToolResult` is not it (docs/supervisor.md):
+ * `ToolResult` is not it (docs/process-monitor.md):
  *
  * - **running**: no result has committed yet, and the live tail is already in the
  *   store as `streaming.toolOutput[callId]` — the transcript's inline peek renders
  *   it, and this reads the same buffer.
  * - **backgrounded**: the committed `ToolResult` is the *handoff* result ("moved to
- *   the background as p#3"), not the output. The output lives in the supervisor's
+ *   the background as p#3"), not the output. The output lives in the process monitor's
  *   retained capture, reached through the call↔process mapping the daemon carries
  *   on each process row.
  *
@@ -182,7 +182,7 @@ interface OutputRead {
   lost: number;
 }
 
-/** The supervisor's capture for a process, if we can reach it.
+/** The process monitor's capture for a process, if we can reach it.
  *
  * While the process is live the store already holds its tail (seeded cold from the
  * same route by `ProcessSeeder`, then extended by `process_output` deltas), so that

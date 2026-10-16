@@ -102,7 +102,7 @@ async fn wait_until(what: &str, mut ready: impl FnMut() -> bool) {
 /// `alive` is `killpg(pgid, 0)`, which stays true for a killed process until it
 /// is waited — so asserting it directly after a shutdown is asserting that
 /// teardown waited for the reap, not merely that it sent the signal. That is
-/// the invariant (`reap_all_bg`, docs/supervisor.md), and this test was
+/// the invariant (`reap_all_bg`, docs/process-monitor.md), and this test was
 /// intermittently failing on it while teardown only signalled.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn one_runtime_stops_without_touching_its_sibling() {
@@ -114,7 +114,7 @@ async fn one_runtime_stops_without_touching_its_sibling() {
     let pgid_of = |runtime: &SessionRuntime| {
         let session = Arc::clone(runtime.session());
         session.spawn_background("sleep 30".into(), None).unwrap();
-        session.supervisor.lock().unwrap().running_pgids()[0]
+        session.process_monitor.lock().unwrap().running_pgids()[0]
     };
     let child_one = pgid_of(&one);
     let child_two = pgid_of(&two);
@@ -136,7 +136,7 @@ async fn one_runtime_stops_without_touching_its_sibling() {
         .unwrap();
     wait_until("second child registered", || {
         two.session()
-            .supervisor
+            .process_monitor
             .lock()
             .unwrap()
             .running_pgids()

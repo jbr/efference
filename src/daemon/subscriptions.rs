@@ -121,7 +121,7 @@ impl Host {
 
     /// Forget every subscription `id` holds on other sessions, and release its
     /// own subscribers' hold on it — it has ended, so it can wake nobody. The
-    /// subscribers' `wait` source counts drop with it (docs/supervisor.md).
+    /// subscribers' `wait` source counts drop with it (docs/process-monitor.md).
     pub(super) fn drop_subscriptions_of(&self, id: &str) {
         let subscribers = {
             let mut sessions = self.sessions_mut();
@@ -222,7 +222,7 @@ pub(super) async fn watch_status(host: std::sync::Weak<Host>, id: String, sessio
 
 impl Session {
     /// Whether this session is subscribed to any other (docs/tools.md) — a source
-    /// that may wake it, as the `wait` tool counts them (docs/supervisor.md).
+    /// that may wake it, as the `wait` tool counts them (docs/process-monitor.md).
     pub fn has_subscriptions(&self) -> bool {
         self.subscriptions.load(Ordering::SeqCst) > 0
     }

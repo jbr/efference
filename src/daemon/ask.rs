@@ -1,4 +1,4 @@
-//! The pending `ask` (docs/supervisor.md): a question the loop has put to the operator
+//! The pending `ask` (docs/process-monitor.md): a question the loop has put to the operator
 //! and is blocked on. The next submitted turn resolves it instead of opening a user turn.
 
 use super::*;
@@ -68,7 +68,7 @@ impl Drop for AskWait<'_> {
 }
 
 impl Session {
-    /// Start an ask and recall the turns queued before it (docs/supervisor.md): they
+    /// Start an ask and recall the turns queued before it (docs/process-monitor.md): they
     /// were written before the question existed, so they are neither its answer nor
     /// left behind it. Nothing is logged; the recalled turns are published on the ask
     /// ([`Session::asking`]).

@@ -50,7 +50,7 @@ pub fn mint_submission_id() -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
-/// Body of `PATCH /processes/:id` (docs/supervisor.md, docs/control-api.md): the
+/// Body of `PATCH /processes/:id` (docs/process-monitor.md, docs/control-api.md): the
 /// settable properties of a process resource. `background: true` on the foreground
 /// entry is the foreground→background handoff; `note` is the operator note the
 /// handoff delivers as the next user message — a turn-injection concern riding

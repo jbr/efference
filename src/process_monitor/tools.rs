@@ -1,4 +1,4 @@
-//! The supervisor/inbox tool family's mounted-table entries (docs/supervisor.md).
+//! The process-monitor/inbox tool family's mounted-table entries (docs/process-monitor.md).
 //!
 //! The loop dispatches this family structurally, outside the `Toolbox`, so its
 //! definitions live here rather than on a provider — read by the wire array
@@ -12,7 +12,7 @@ use super::{ASK, CHECK_INBOX, KILL, LIST, READ, WAIT, WATCH};
 use crate::tools::{ToolBrief, anthropic_def};
 use mcplease::types::{Tool as ToolDefinition, ToolAnnotations};
 
-/// The mounted-table entries for the supervisor/inbox tools — the same
+/// The mounted-table entries for the process-monitor/inbox tools — the same
 /// [`ToolDefinition`] shape a provider's mount snapshots, so the spotter's brief
 /// (docs/permissions.md) can read them like any other tool's. The loop dispatches
 /// this family structurally, outside the `Toolbox`, so a brief lookup that
@@ -162,7 +162,7 @@ static SCHEMAS: LazyLock<Vec<ToolDefinition>> = LazyLock::new(|| {
     vec![list, read, kill, watch, inbox, wait, ask]
 });
 
-/// The harness-level supervisor/inbox tools (docs/supervisor.md). Like `consolidate`, these
+/// The harness-level process-monitor/inbox tools (docs/process-monitor.md). Like `consolidate`, these
 /// act on daemon state (the registry, the inbox), not the world, so the agent loop
 /// dispatches them structurally — but their results triage through the universal
 /// fork like any tool (no bypass). Derived from the same [`SCHEMAS`] the brief
@@ -173,7 +173,7 @@ pub fn tool_definitions() -> Vec<Value> {
     SCHEMAS.iter().map(anthropic_def).collect()
 }
 
-/// The spotter's brief for a supervisor/inbox tool (docs/permissions.md); `None`
+/// The spotter's brief for a process-monitor/inbox tool (docs/permissions.md); `None`
 /// outside the family. `server: None` — these are the harness's own.
 pub fn brief(name: &str) -> Option<ToolBrief<'static>> {
     let schemas: &'static Vec<ToolDefinition> = &SCHEMAS;

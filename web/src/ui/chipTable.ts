@@ -26,8 +26,8 @@ const pathChip: ChipOf = (value) => {
   return path === null ? null : { kind: "path", path };
 };
 
-/** A supervisor handle, spelled `p#<n>` as the model writes it (mirrors
- * `supervisor::parse_handle`). A bare ordinal is accepted too — the tools take
+/** A process monitor handle, spelled `p#<n>` as the model writes it (mirrors
+ * `process_monitor::parse_handle`). A bare ordinal is accepted too — the tools take
  * the string form, but nothing here depends on that. */
 const processChip: ChipOf = (value) => {
   const id =

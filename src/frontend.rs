@@ -16,7 +16,7 @@
 //!   unwinds the turn.
 //! - [`Frontend::interrupted`] — resolves when the user interrupts a *running*
 //!   tool, carrying the intent: kill the process group, or detach it into the
-//!   background supervisor (docs/supervisor.md).
+//!   background process monitor (docs/process-monitor.md).
 
 use crate::control_tools::BoundAction;
 use crate::log::{ConfigChange, ContentBlock, ToolCall};
@@ -116,7 +116,7 @@ impl SubmittedTurn {
 }
 
 impl SubmittedTurn {
-    /// The turn as an `ask`'s tool-result text (docs/supervisor.md): the prose, then
+    /// The turn as an `ask`'s tool-result text (docs/process-monitor.md): the prose, then
     /// each attachment as the notice line a `User` entry projects, so a reply carries
     /// what a turn would have.
     pub fn reply_text(&self) -> String {
@@ -130,7 +130,7 @@ impl SubmittedTurn {
     }
 }
 
-/// The operator's intent when interrupting a *running* tool (docs/supervisor.md).
+/// The operator's intent when interrupting a *running* tool (docs/process-monitor.md).
 /// Both reach the one intervention point pace can't — mid-tool — but differ in
 /// what happens to the child.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -138,8 +138,8 @@ pub enum Interrupt {
     /// Kill the process group now (`POST /loop/interrupt`, the Ctrl-C guardrail).
     Kill,
     /// Keep the child running but stop blocking on it: hand it to the background
-    /// supervisor as a `p#<n>` process (`PATCH /processes/:id {background: true}`, the
-    /// foreground→background handoff, docs/supervisor.md).
+    /// process monitor as a `p#<n>` process (`PATCH /processes/:id {background: true}`, the
+    /// foreground→background handoff, docs/process-monitor.md).
     Detach,
 }
 
@@ -199,7 +199,7 @@ pub trait Frontend {
     ) -> impl Future<Output = Approval> + Send;
 
     /// Resolve when the user interrupts a *running* tool, with the intent: kill
-    /// its process group, or detach it into the background supervisor. The loop
-    /// passes this as the bash tool's `abort` future (docs/supervisor.md).
+    /// its process group, or detach it into the background process monitor. The loop
+    /// passes this as the bash tool's `abort` future (docs/process-monitor.md).
     fn interrupted(&mut self) -> impl Future<Output = Interrupt> + Send;
 }

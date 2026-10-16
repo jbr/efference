@@ -223,7 +223,7 @@ pub enum Payload {
     /// logged; the spotter is the first permission rung that earns an entry.
     Spot(Spot),
     /// One lifecycle fact about a background process — its mint or its exit
-    /// (docs/supervisor.md). The supervisor's registry is ephemeral, but a
+    /// (docs/process-monitor.md). The process monitor's registry is ephemeral, but a
     /// `p#<n>` handle appears in prose (the backgrounding result, the exit
     /// notification) that outlives it, so these entries are what a reader of a
     /// recorded session — or a restarted daemon — resolves the handle against.

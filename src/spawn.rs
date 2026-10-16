@@ -1,4 +1,4 @@
-//! Serialized process spawning (docs/supervisor.md).
+//! Serialized process spawning (docs/process-monitor.md).
 //!
 //! Every child this crate starts goes through one lock. `Command::spawn` creates
 //! the child's stdio pipes and then starts the process; on platforms without an

@@ -22,7 +22,7 @@ use super::{InteractiveState, SidebarCmd, SidebarReturn, SidebarRow};
 pub(super) enum SidebarVerb {
     Kill,
     /// Jump the transcript focus to the entry whose call spawned this process
-    /// (docs/supervisor.md, the call↔process mapping). Chrome-only: it moves this
+    /// (docs/process-monitor.md, the call↔process mapping). Chrome-only: it moves this
     /// client's focus and touches no daemon state, so unlike `kill` it never
     /// travels over [`SidebarCmd`](super::SidebarCmd).
     View,
@@ -91,7 +91,7 @@ impl<'a> InteractiveState<'a> {
     }
 
     /// The `tool_use` id of the call that spawned a listed process, if the daemon
-    /// carried one (docs/supervisor.md).
+    /// carried one (docs/process-monitor.md).
     fn process_call_id(&self, id: u64) -> Option<String> {
         self.processes
             .iter()
@@ -304,7 +304,7 @@ impl<'a> InteractiveState<'a> {
 
     /// The `view` verb: leave the sidebar and focus the transcript unit whose entry
     /// carries this process's spawning `call_id` (docs/tui.md "Focus model",
-    /// docs/supervisor.md for the mapping).
+    /// docs/process-monitor.md for the mapping).
     ///
     /// The landing target is the entry keyed by `call_id`, i.e. the result. A miss is
     /// a status note, never a jump somewhere else: the entry may be outside the

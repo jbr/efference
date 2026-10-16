@@ -2,9 +2,9 @@
 
 use super::*;
 
-use crate::supervisor::BgView;
+use crate::process_monitor::BgView;
 
-/// How the idle loop was woken (docs/supervisor.md): a user turn, a blank line (keep idling),
+/// How the idle loop was woken (docs/process-monitor.md): a user turn, a blank line (keep idling),
 /// a notification event (run a standalone triage), a zero-token continue, or shutdown.
 pub(super) enum IdleWake {
     Turn(SubmittedTurn),
@@ -27,7 +27,7 @@ impl IdleWake {
     }
 }
 
-/// The standalone idle triage (docs/supervisor.md — wake-on-notification). Drains the newly
+/// The standalone idle triage (docs/process-monitor.md — wake-on-notification). Drains the newly
 /// arrived notifications (logging them first-show) alongside the still-active ones and
 /// the running background tails, runs the tool-result-free triage peek, applies the
 /// dispositions, and logs the verdict as a `Triage` with `for_result: None`. Returns
@@ -84,7 +84,7 @@ pub(super) struct Sight<'a> {
 /// dispositions, and log the verdict as a `Triage` with `for_result: None`. Returns
 /// whether it pinned something. `entries` is the prefix the triage forks from, which must
 /// already hold every result the wire owes. The shared tail of the idle wake and of the
-/// triage an `ask` reply rides (which has no triage of its own, docs/supervisor.md).
+/// triage an `ask` reply rides (which has no triage of its own, docs/process-monitor.md).
 pub(super) async fn triage_and_record(
     client: &Client,
     tools: &[Value],

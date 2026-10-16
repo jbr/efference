@@ -5,13 +5,13 @@ use super::*;
 
 /// The exact `tools[]` a turn advertises: the world tools (`toolbox`) plus the
 /// harness tools handled structurally in the loop — `consolidate` (docs/consolidate.md)
-/// and the supervisor/inbox tools (docs/supervisor.md). One source of truth so the
+/// and the process-monitor/inbox tools (docs/process-monitor.md). One source of truth so the
 /// keepalive ping (docs/log-and-projection.md) and the real turns send a byte-identical prefix;
 /// drift here silently breaks the tools cache tier.
 pub fn tool_definitions(toolbox: &Toolbox) -> Vec<Value> {
     let mut tools = toolbox.definitions();
     tools.push(consolidate::definition());
-    tools.extend(supervisor::tool_definitions());
+    tools.extend(process_monitor::tool_definitions());
     // The triage tools (docs/triage.md) stand in every turn's array even though
     // only a triage's tail instruction ever asks for them: with the tools array,
     // `tool_choice`, and thinking policy identical, the triage is the same
@@ -40,7 +40,7 @@ pub fn callable_names(toolbox: &Toolbox) -> Vec<String> {
 
 /// The spotter's brief for any tool a turn advertises — the lookup mirror of
 /// [`tool_definitions`]: the toolbox providers, then the loop-owned tools
-/// (`consolidate`, the supervisor/inbox family). One lookup covering the whole
+/// (`consolidate`, the process-monitor/inbox family). One lookup covering the whole
 /// array, so a tool in `tools[]` can't be invisible to the permission rung —
 /// the loop-owned family once was, and the spotter judged `check_inbox` and
 /// `list_processes` as bare names, calling them opaque (docs/permissions.md).
@@ -50,7 +50,7 @@ pub fn brief<'a>(toolbox: &'a Toolbox, name: &str) -> Option<crate::tools::ToolB
     toolbox
         .brief(name)
         .or_else(|| consolidate::brief(name))
-        .or_else(|| supervisor::brief(name))
+        .or_else(|| process_monitor::brief(name))
 }
 
 /// The full definition behind every wire name a turn's `tools[]` can carry —
@@ -72,7 +72,7 @@ pub fn brief<'a>(toolbox: &'a Toolbox, name: &str) -> Option<crate::tools::ToolB
 ///
 /// None of these five sources inject [`crate::tools::INTENT`] the way a
 /// `Toolbox`-mounted tool's wire entry does — [`tool_definitions`] pushes
-/// `consolidate::definition()`, `supervisor::tool_definitions()`, and the triage
+/// `consolidate::definition()`, `process_monitor::tool_definitions()`, and the triage
 /// tools onto `toolbox.definitions()` *after* `with_intent` has already run
 /// over the toolbox half — so each is served with `inject_intent: false`,
 /// matching the schema the model was actually sent.
@@ -88,15 +88,15 @@ pub fn tool_catalog(
         );
     }
     for name in [
-        supervisor::LIST,
-        supervisor::READ,
-        supervisor::KILL,
-        supervisor::WATCH,
-        supervisor::CHECK_INBOX,
-        supervisor::WAIT,
-        supervisor::ASK,
+        process_monitor::LIST,
+        process_monitor::READ,
+        process_monitor::KILL,
+        process_monitor::WATCH,
+        process_monitor::CHECK_INBOX,
+        process_monitor::WAIT,
+        process_monitor::ASK,
     ] {
-        if let Some(brief) = supervisor::brief(name) {
+        if let Some(brief) = process_monitor::brief(name) {
             catalog.insert(
                 name.to_string(),
                 crate::tools::ToolEntry::from_definition(brief.definition, None, false),

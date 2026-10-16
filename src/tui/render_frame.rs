@@ -63,7 +63,7 @@ impl<'a> InteractiveState<'a> {
         // Top to bottom: the header row; the transcript; then the bottom chrome —
         // [process panel?] / staged / control strip / composer / status. The composer
         // grows with its content (1 row, up to a cap). The rightmost column of the
-        // transcript is the scrollbar. The process panel (docs/supervisor.md) is one
+        // transcript is the scrollbar. The process panel (docs/process-monitor.md) is one
         // row per running process, capped, hidden when none run. The approval gate is
         // *not* chrome: it renders inline in the transcript at the pending call
         // (docs/tui.md). The session drawer (what the docked sidebar used to carry)
@@ -237,7 +237,7 @@ impl<'a> InteractiveState<'a> {
             Rect::new(full.x, full.y, full.width, header_height),
         );
 
-        // Live background-process panel, between the transcript and the gate (docs/supervisor.md).
+        // Live background-process panel, between the transcript and the gate (docs/process-monitor.md).
         if proc_height > 0 {
             self.render_processes_panel(frame.buffer_mut(), proc_area);
         }
@@ -372,7 +372,7 @@ impl<'a> InteractiveState<'a> {
         }
     }
 
-    /// Render the live background-process panel (docs/supervisor.md): one row per running
+    /// Render the live background-process panel (docs/process-monitor.md): one row per running
     /// process — `▶ p#3  cargo watch · 4m12s · idle 8s │ <last output line>` — the
     /// handle/header in the accent style, the last tail line muted. Fed by the
     /// `processes` topic; capped at [`PROC_PANEL_MAX`] rows (the rest are still in the

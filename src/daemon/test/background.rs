@@ -2,7 +2,7 @@
 
 use super::*;
 
-/// A backgrounded command runs end-to-end through the supervisor (docs/supervisor.md): it
+/// A backgrounded command runs end-to-end through the process monitor (docs/process-monitor.md): it
 /// spawns, its output drains into the registry, and on exit it fires an `Ambient`
 /// exit notification into the inbox — status + final tail — where a triage
 /// would adjudicate it. Exercises the real spawn/drain/finish/notify path with no
@@ -46,7 +46,7 @@ async fn background_process_drains_and_notifies_on_exit() {
     shared.kill_all_bg(); // no-op (nothing running) — must not panic.
 }
 
-/// The foreground→background handoff end to end (docs/supervisor.md): a foreground
+/// The foreground→background handoff end to end (docs/process-monitor.md): a foreground
 /// bash command is registered at spawn and its chunks fed to the capture (the loop's
 /// wiring, mirrored here), it is detached mid-run and flipped to background under
 /// the same id, the continuing drain lands the post-detach output in the same
@@ -138,7 +138,7 @@ async fn background_spawn_exports_the_scratch_tmpdir() {
     }
 }
 
-/// The detach note (docs/supervisor.md): stashed by `PATCH /processes/:id {background: true}`,
+/// The detach note (docs/process-monitor.md): stashed by `PATCH /processes/:id {background: true}`,
 /// consumed exactly once by the loop when a handoff lands; a blank note is
 /// dropped at the door.
 #[test]
@@ -151,7 +151,7 @@ fn detach_note_is_stashed_and_consumed_once() {
     assert_eq!(shared.take_detach_note(), None, "blank note dropped");
 }
 
-/// The directed Slice-2 reads/acts (docs/supervisor.md, docs/inbox.md): `kill_bg` finds a running child
+/// The directed Slice-2 reads/acts (docs/process-monitor.md, docs/inbox.md): `kill_bg` finds a running child
 /// (and rejects unknown handles), and `inbox_summary` lists pending notifications.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn kill_bg_and_inbox_summary() {

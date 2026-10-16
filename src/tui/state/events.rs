@@ -109,7 +109,7 @@ impl<'a> InteractiveState<'a> {
             }
             TuiEvent::Processes(mut processes) => {
                 // Ephemeral chrome, not transcript content — repaint, no reproject
-                // (the running tail is never in the log, docs/supervisor.md).
+                // (the running tail is never in the log, docs/process-monitor.md).
                 //
                 // Carry each process's accumulated tail across the replacement. The
                 // `processes` topic is structure only — it cannot carry the tail without

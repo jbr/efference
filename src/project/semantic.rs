@@ -131,7 +131,7 @@ impl WireTurn {
 /// Render a logged result the way the model reads it: the verdict applied, the
 /// `[seq]` handle prefixed, images kept only where the verdict keeps content.
 ///
-/// An `ask`'s reply (docs/supervisor.md) is framed as an answer: `asked: <question>` on
+/// An `ask`'s reply (docs/process-monitor.md) is framed as an answer: `asked: <question>` on
 /// the first line, so a reply names its question rather than leaning on call order,
 /// then the reply prefixed `source: ` when a client other than the operator sent it,
 /// as a sourced `User` turn is. Any other result leaves the bytes as they were.
@@ -198,7 +198,7 @@ pub fn project_semantic_for(log: &[LogEntry], reader: Reader) -> Vec<WireTurn> {
             _ => None,
         })
         .flatten()
-        .filter(|call| call.name == crate::supervisor::ASK)
+        .filter(|call| call.name == crate::process_monitor::ASK)
         .filter_map(|call| {
             let question = call.input.get("question")?.as_str()?.trim().to_string();
             Some((call.id, question))
@@ -395,7 +395,7 @@ pub fn project_semantic_for(log: &[LogEntry], reader: Reader) -> Vec<WireTurn> {
                     resumed, entry.seq,
                 )));
             }
-            // A process lifecycle record (docs/supervisor.md) is audit metadata
+            // A process lifecycle record (docs/process-monitor.md) is audit metadata
             // beside events the wire already carries in prose — the backgrounding
             // result and the exit notification. It projects to nothing, so a
             // spawn or an exit mid-session cannot move the cached prefix

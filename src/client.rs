@@ -232,7 +232,7 @@ impl Client {
     }
 
     /// Interrupt a running tool (`POST /loop/interrupt`) — the SIGINT equivalent that
-    /// kills the tool's process group (docs/supervisor.md).
+    /// kills the tool's process group (docs/process-monitor.md).
     /// Set the session's title (`PUT /title`, docs/session-title.md). Answers
     /// with the `session_identity` topic as it now reads.
     pub async fn set_title(&self, title: &str) -> Result<serde_json::Value> {
@@ -291,7 +291,7 @@ impl Client {
         })))
     }
 
-    /// The running processes (`GET /processes`, docs/supervisor.md) — foreground and
+    /// The running processes (`GET /processes`, docs/process-monitor.md) — foreground and
     /// background in one namespace, flagged. Raw JSON array body, the same
     /// representation the `processes` state topic carries.
     pub async fn processes(&self) -> Result<String> {
@@ -310,7 +310,7 @@ impl Client {
     }
 
     /// Detach the running foreground tool into the background
-    /// (`PATCH /processes/:id {background: true}`, docs/supervisor.md) — keep it
+    /// (`PATCH /processes/:id {background: true}`, docs/process-monitor.md) — keep it
     /// running as a `p#<n>` process instead of killing it or waiting it out.
     /// Resolves the one foreground entry from `GET /processes` first; backgrounding
     /// is a property change on a process that is addressable from spawn. `note`, if
@@ -336,7 +336,7 @@ impl Client {
         Ok(Some(id))
     }
 
-    /// Kill a background process (`DELETE /processes/:id`, docs/supervisor.md) —
+    /// Kill a background process (`DELETE /processes/:id`, docs/process-monitor.md) —
     /// SIGKILL to its whole process group; the drain task sees EOF and fires the
     /// exit notification like any other exit. A stale id answers 404 and is the
     /// caller's cue to drop focus from the vanished row.

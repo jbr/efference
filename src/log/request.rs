@@ -27,7 +27,7 @@ pub enum RequestOrigin {
     Turn,
     /// A triage round-trip (docs/triage.md): the one riding a completion's tool
     /// results, retries included, or the standalone idle triage that rides none
-    /// (docs/supervisor.md).
+    /// (docs/process-monitor.md).
     Triage,
     /// A title peek (docs/session-title.md) — the triage model asked, off the
     /// cached prefix, what the session is for.

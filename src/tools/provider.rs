@@ -134,7 +134,7 @@ impl Provider {
     /// resolving with the operator's intent (kill or detach); backends that
     /// can't be interrupted ignore it. `on_spawn` fires with the child's pid when
     /// the backend spawns an OS process (only bash does — the daemon registers it
-    /// in the supervisor's process namespace, docs/supervisor.md). `on_output` is
+    /// in the process monitor's process namespace, docs/process-monitor.md). `on_output` is
     /// the live-stream sink (docs/README.md): the long-running, interruptible
     /// bash tool streams its output and a connected server streams its progress
     /// ticks; the rest resolve whole as [`Outcome::Done`]. `on_notify` is the

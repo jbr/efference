@@ -398,7 +398,7 @@ pub(super) const SURFACE_FIELD: &str =
               what you're doing right now and it will be surfaced as a reminder to read it
               before you rely on memory. Name nothing if none apply.";
 
-/// Render the inbox + background sections of a triage view (docs/inbox.md, docs/supervisor.md) — shared by the
+/// Render the inbox + background sections of a triage view (docs/inbox.md, docs/process-monitor.md) — shared by the
 /// tool-result-riding triage and the standalone idle triage. Each item by its `[seq]` /
 /// `[p#n]` handle, with running-process tails indented.
 pub(super) fn append_inbox_and_background(

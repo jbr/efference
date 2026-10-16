@@ -184,7 +184,7 @@ pub(crate) async fn wire(
         )
     };
     // The full tools[] a real turn sends — world tools + the harness tools
-    // (`consolidate`, the docs/supervisor.md and docs/inbox.md tools) — so the dev view matches.
+    // (`consolidate`, the docs/process-monitor.md and docs/inbox.md tools) — so the dev view matches.
     // (No scratch dir: the wire view renders, it never executes.) One known gap:
     // config-declared connected providers (docs/tools.md) are not mounted here —
     // mounting spawns processes / opens connections, which an offline view must

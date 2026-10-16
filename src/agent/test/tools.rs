@@ -22,7 +22,7 @@ fn tool_catalog_covers_every_advertised_name() {
 
 /// A `Toolbox`-mounted tool's served schema carries the `intent` `with_intent`
 /// injected on the real wire; a loop-owned tool's does not — `tool_definitions`
-/// pushes `consolidate`/the supervisor family/the triage tools onto the array
+/// pushes `consolidate`/the process monitor family/the triage tools onto the array
 /// *after* `with_intent` already ran over the toolbox half, so the model never
 /// saw `intent` declared on any of them.
 #[test]
@@ -38,7 +38,7 @@ fn only_the_toolbox_half_of_the_catalog_carries_injected_intent() {
 
     for name in [
         consolidate::NAME,
-        supervisor::CHECK_INBOX,
+        process_monitor::CHECK_INBOX,
         crate::triage::retain_tool()["name"].as_str().unwrap(),
         crate::triage::triage_tool()["name"].as_str().unwrap(),
     ] {
@@ -63,9 +63,9 @@ async fn wait_refuses_when_no_known_source_can_wake_it() {
         std::env::current_dir().unwrap(),
         crate::persist::Log::in_memory(),
     );
-    let result = supervisor_tool_result(&shared, &call(supervisor::WAIT))
+    let result = process_monitor_tool_result(&shared, &call(process_monitor::WAIT))
         .await
-        .expect("wait is a supervisor tool");
+        .expect("wait is a process monitor tool");
 
     assert!(result.is_error, "a wait with no wake source must refuse");
     assert!(result.content.contains("nothing can wake"), "{result:?}");
@@ -96,11 +96,11 @@ async fn wait_wakes_for_a_notification_and_returns_its_body() {
 
     let result = tokio::time::timeout(
         std::time::Duration::from_secs(2),
-        supervisor_tool_result(&shared, &call(supervisor::WAIT)),
+        process_monitor_tool_result(&shared, &call(process_monitor::WAIT)),
     )
     .await
     .expect("wait wakes when notify enqueues")
-    .expect("wait is a supervisor tool");
+    .expect("wait is a process monitor tool");
     assert!(!result.is_error, "notification wakes wait: {result:?}");
     assert!(
         result.content.contains("ci · build completed"),

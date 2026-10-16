@@ -3,7 +3,7 @@
 // running when the client connected — or that has simply been quiet, which is
 // usually why it was backgrounded — has no deltas to build a tail from and the
 // pane renders an empty <pre>. `GET /processes/:id/output` is the seed the
-// daemon provides for exactly this (docs/supervisor.md); the TUI does the same
+// daemon provides for exactly this (docs/process-monitor.md); the TUI does the same
 // thing from its bridge.
 
 import { fetchProcessOutput } from "../api/http.ts";

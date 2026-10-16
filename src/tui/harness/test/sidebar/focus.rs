@@ -321,7 +321,7 @@ fn tab_leaves_an_open_unselected_sidebar() {
     assert!(play.state.sidebar_open, "Tab re-entered");
 }
 
-/// The `view` verb (docs/supervisor.md's call↔process mapping): a process row whose
+/// The `view` verb (docs/process-monitor.md's call↔process mapping): a process row whose
 /// daemon representation carries a `call_id` leads with `view`, and `⏎` there leaves
 /// the sidebar and lands transcript focus on that call's entry — no daemon command
 /// is sent, because the jump is this client's focus and nothing else.

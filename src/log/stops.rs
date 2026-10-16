@@ -87,7 +87,7 @@ pub fn classify(entries: &[LogEntry]) -> Vec<(Stop, Option<String>)> {
 /// `Some(Stop::Barren)`. An ask that was interrupted or errored, or never answered, is
 /// counted with `None` — it bought nothing and asked nothing of the reply, so it is
 /// not graded. Kept apart from [`classify`] so the turn-ending counts do not move for
-/// a log with no asks (docs/supervisor.md).
+/// a log with no asks (docs/process-monitor.md).
 pub fn classify_asks(entries: &[LogEntry]) -> Vec<(Option<Stop>, Option<String>)> {
     let mut open: Vec<String> = Vec::new();
     let mut asks = Vec::new();
@@ -103,7 +103,7 @@ pub fn classify_asks(entries: &[LogEntry]) -> Vec<(Option<Stop>, Option<String>)
                         .tool_calls()
                         .unwrap_or_default()
                         .into_iter()
-                        .filter(|c| c.name == crate::supervisor::ASK)
+                        .filter(|c| c.name == crate::process_monitor::ASK)
                         .map(|c| c.id.0),
                 );
             }

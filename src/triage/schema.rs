@@ -132,7 +132,7 @@ pub fn retain_tool() -> Value {
     })
 }
 
-/// The standalone idle triage's tool (docs/supervisor.md, docs/inbox.md):
+/// The standalone idle triage's tool (docs/process-monitor.md, docs/inbox.md):
 /// inbox/background dispositions only, no `keep` (there's no tool output). Static —
 /// see the module doc.
 pub fn triage_tool() -> Value {

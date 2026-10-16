@@ -373,8 +373,8 @@ export function SessionView() {
           onClose={() => setInspecting(null)}
           onOpenFile={onOpenFile}
           // The three ways a call's own output can be reached when its
-          // `ToolResult` is not it (docs/supervisor.md): the live tail while it
-          // runs, and — through the call↔process mapping — the supervisor's
+          // `ToolResult` is not it (docs/process-monitor.md): the live tail while it
+          // runs, and — through the call↔process mapping — the process monitor's
           // capture for a command that was backgrounded.
           liveOutput={session.streaming.toolOutput[inspected.callId]}
           processId={session.processCalls[inspected.callId]}

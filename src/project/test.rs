@@ -631,7 +631,7 @@ fn tool_telemetry_projects_to_identical_bytes() {
     }
 }
 
-/// A process lifecycle record (docs/supervisor.md) is log metadata too: the mint
+/// A process lifecycle record (docs/process-monitor.md) is log metadata too: the mint
 /// and the exit are appended mid-session, so if either moved a projected byte it
 /// would invalidate the cached prefix of every session that backgrounds a command
 /// (docs/log-and-projection.md).

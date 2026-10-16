@@ -1,5 +1,5 @@
 // Resolving a `p#<n>` handle to what it was (docs/web-client.md "An argument
-// can carry a chip"; docs/supervisor.md for the record itself).
+// can carry a chip"; docs/process-monitor.md for the record itself).
 //
 // A handle is opaque in the transcript, so the chip that annotates it needs one
 // fetch per handle — lazily, because most calls carry none. Answers are memoized

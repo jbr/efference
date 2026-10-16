@@ -43,7 +43,7 @@ pub struct SessionSummary {
     /// What the session is doing, as a single word: `running`, `idle`,
     /// `gated`, `asking`, `stalled`, or `parked`.
     pub status: String,
-    /// Live background processes the session holds (docs/supervisor.md). Ending
+    /// Live background processes the session holds (docs/process-monitor.md). Ending
     /// it reaps them, which is why a listing carries the count.
     #[serde(default)]
     pub processes: usize,

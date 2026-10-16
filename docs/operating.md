@@ -193,7 +193,7 @@ Ctrl-C and hangup never reach it; stdout and stderr to `host.log`, so nothing it
 over the full-screen UI; and stdin a pipe the TUI holds and never writes. That pipe is the
 ownership connection. The kernel closes it however the TUI ends — quitting, a crash, SIGKILL —
 and the host reads EOF and shuts down as a signal would, reaping every session's processes
-([supervisor.md](supervisor.md)). Owner loss is watched from before the host initializes, so
+([process-monitor.md](process-monitor.md)). Owner loss is watched from before the host initializes, so
 a TUI that dies during startup leaves nothing running. No other client carries ownership: a
 second TUI, the web client, or an agent attaching and leaving does not extend or end the
 island. An island leaves the terminal as it found it: while the host starts the launcher
@@ -626,7 +626,7 @@ its own.
   in the log for you — the answer when a cleared call is about to put several thousand
   tokens of the wrong thing into the transcript.
 - **`efference control background [--note …]`** — hand the running foreground command to the
-  background supervisor instead of killing it. It keeps running as `p#<n>`, its output
+  background process monitor instead of killing it. It keeps running as `p#<n>`, its output
   surfaces at later steps, and the optional note is delivered to the model as a user
   message alongside the handoff.
 

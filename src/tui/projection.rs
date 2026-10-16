@@ -321,7 +321,7 @@ pub(crate) fn entry_nodes(
                 for (i, call) in calls.iter().enumerate() {
                     // A question put to the operator is drawn as the assistant's prose
                     // and the operator's reply, not as a call (docs/tui.md).
-                    if let Some(question) = crate::supervisor::ask_of_call(&calls, i) {
+                    if let Some(question) = crate::process_monitor::ask_of_call(&calls, i) {
                         let reply = index.result_entry(log, call.id.0.as_str());
                         let state = ask::AskState::pending(call.id.0.as_str(), gate.ask);
                         nodes.extend(ask::ask_nodes(question, reply, state));
@@ -442,7 +442,7 @@ pub(crate) fn entry_nodes(
                     &crate::project::render_resumed(resumed, entry.seq),
                 ));
             }
-            // A process lifecycle record (docs/supervisor.md) — the durable half
+            // A process lifecycle record (docs/process-monitor.md) — the durable half
             // of what the transcript already shows in prose (the backgrounding
             // result, the exit notification), kept for readers with no daemon.
             // It draws nothing here.
@@ -519,7 +519,7 @@ pub(crate) fn tail_nodes(
     for call in live.calls() {
         // An `ask` is drawn as prose once committed (docs/tui.md); its arguments
         // arriving as a call would show the plumbing.
-        if call.name == crate::supervisor::ASK {
+        if call.name == crate::process_monitor::ASK {
             continue;
         }
         nodes.push(live_call_entry(call));

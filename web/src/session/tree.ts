@@ -69,7 +69,7 @@ export interface AskQuestion {
 }
 
 /** The question an `ask` call puts, when `calls[index]` is one with a usable
- * `question` — `supervisor::ask_of_call` in src/supervisor.rs. Anything else,
+ * `question` — `process_monitor::ask_of_call` in src/process_monitor.rs. Anything else,
  * including an ask the loop answers with an error, stays an ordinary call. */
 export function askOfCall(
   calls: ToolCall[],
@@ -344,7 +344,7 @@ export function buildTree(entries: LogEntry[]): TranscriptNode[] {
     // leaf's (docs/web-client.md).
     if ("Triage" in p) continue;
 
-    // A process lifecycle record (docs/supervisor.md) is not rendered either:
+    // A process lifecycle record (docs/process-monitor.md) is not rendered either:
     // the transcript already carries both of its events in prose — the
     // backgrounding result and the exit notification — and this is the durable
     // record behind them, read by `GET /processes/:id`, not a block to show.

@@ -145,7 +145,7 @@ fn lines(
             for (i, call) in calls.iter().enumerate() {
                 // A question put to the operator reads as a turn ending: its text, not
                 // the call (docs/control-api.md).
-                let mut l = match crate::supervisor::ask_of_call(&calls, i) {
+                let mut l = match crate::process_monitor::ask_of_call(&calls, i) {
                     Some((question, n, of)) => {
                         asks.insert(call.id.clone());
                         let place = if of > 1 {

@@ -163,13 +163,14 @@ impl Session {
         let probes = crate::policy::probe_ledger(&directories, &effective, log.entries());
         // Seed the process-id mint past every `p#<n>` a resumed log mentions, so a restarted
         // daemon never re-mints an ordinal the durable record already refers to
-        // (docs/supervisor.md). Scanned over the serialized entry because
+        // (docs/process-monitor.md). Scanned over the serialized entry because
         // handles land in prose (tool results, notification sources), not in a typed field.
         let minted = log
             .entries()
             .iter()
             .map(|e| {
-                serde_json::to_string(e).map_or(0, |s| crate::supervisor::max_handle_mention(&s))
+                serde_json::to_string(e)
+                    .map_or(0, |s| crate::process_monitor::max_handle_mention(&s))
             })
             .max()
             .unwrap_or(0);
@@ -243,7 +244,7 @@ impl Session {
             inbox: Mutex::new(Inbox::default()),
 
             proposals: Mutex::new(Vec::new()),
-            supervisor: Mutex::new(Supervisor::with_minted(minted)),
+            process_monitor: Mutex::new(ProcessMonitor::with_minted(minted)),
             reaped: tokio::sync::Notify::new(),
             role,
             effective: Mutex::new(effective),

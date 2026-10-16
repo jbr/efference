@@ -224,7 +224,7 @@ impl InteractiveState<'_> {
             // is always shown. On a foreground bash it *additionally* kills the
             // process group, which is the stronger promise and the one worth
             // naming, so there it reads `kill`. `background` stays bash-only: the
-            // handoff adopts a live child into the supervisor, and there is no
+            // handoff adopts a live child into the process monitor, and there is no
             // child to adopt anywhere else.
             let bash_foreground = self
                 .in_flight_call()

@@ -32,19 +32,19 @@ pub(super) fn cap_tool_result(shared: &Session, call: &ToolCall, result: RawResu
     ))
 }
 
-/// Run a harness supervisor/inbox tool (docs/supervisor.md) against daemon state, or `None`
+/// Run a harness process-monitor/inbox tool (docs/process-monitor.md) against daemon state, or `None`
 /// if `call` isn't one (so the caller falls through to the world toolbox). Like
 /// `consolidate` these act on `Session`, not the world — but unlike it their result
 /// triages through the universal fork like any tool (no bypass).
-pub(super) async fn supervisor_tool_result(
+pub(super) async fn process_monitor_tool_result(
     shared: &Arc<Session>,
     call: &ToolCall,
 ) -> Option<RawResult> {
     let handle = || call.input.get("handle").and_then(Value::as_str);
     match call.name.as_str() {
-        supervisor::LIST => Some(RawResult::text(shared.bg_list_text())),
-        supervisor::CHECK_INBOX => Some(RawResult::text(shared.inbox_summary())),
-        supervisor::WAIT => Some(
+        process_monitor::LIST => Some(RawResult::text(shared.bg_list_text())),
+        process_monitor::CHECK_INBOX => Some(RawResult::text(shared.inbox_summary())),
+        process_monitor::WAIT => Some(
             if !shared.has_pending_notifications()
                 && !shared.has_running_background()
                 && !shared.has_subscriptions()
@@ -55,7 +55,7 @@ pub(super) async fn supervisor_tool_result(
                 )
             } else {
                 // `inbox_wake` is the idle-triage signal: it arms before checking the queue,
-                // then awaits without holding either the inbox or supervisor lock. Arm the
+                // then awaits without holding either the inbox or process monitor lock. Arm the
                 // interrupt waiter before its latch check for the same lost-wakeup protection.
                 let interrupt = shared.interrupt_signal();
                 let interrupted = interrupt.notified();
@@ -70,7 +70,7 @@ pub(super) async fn supervisor_tool_result(
                 }
             },
         ),
-        supervisor::READ => Some(match handle() {
+        process_monitor::READ => Some(match handle() {
             Some(h) => {
                 match shared.bg_read_since(h, call.input.get("cursor").and_then(Value::as_u64)) {
                     Some(text) => RawResult::text(text),
@@ -79,10 +79,10 @@ pub(super) async fn supervisor_tool_result(
             }
             None => RawResult::error("read_process requires a `handle`"),
         }),
-        // `watch_process` registers and returns (docs/supervisor.md) — it never waits.
+        // `watch_process` registers and returns (docs/process-monitor.md) — it never waits.
         // The hit arrives as an inbox notification, which is what wakes an idle agent;
         // the result here only confirms the registration.
-        supervisor::WATCH => Some(
+        process_monitor::WATCH => Some(
             match (handle(), call.input.get("pattern").and_then(Value::as_str)) {
                 (Some(h), Some(pattern)) if !pattern.is_empty() => {
                     match shared.watch_bg(h, pattern.to_string()) {
@@ -99,7 +99,7 @@ pub(super) async fn supervisor_tool_result(
                 _ => RawResult::error("watch_process requires a non-empty `pattern`"),
             },
         ),
-        supervisor::KILL => Some(match handle() {
+        process_monitor::KILL => Some(match handle() {
             Some(h) if shared.kill_bg(h) => RawResult::text(format!(
                 "killed {h} (SIGKILL to its process group); its exit will be confirmed in your inbox."
             )),

@@ -136,7 +136,7 @@ pub(crate) enum TuiEvent {
     /// The pending tool-approval gate changed (the `gate` topic).
     Gate(Option<PendingGate>),
     /// The live background processes changed (the `processes` topic,
-    /// docs/supervisor.md — the running tail is ephemeral, never logged, so it has no
+    /// docs/process-monitor.md — the running tail is ephemeral, never logged, so it has no
     /// `log` entry; [`ProcessOutput`](TuiEvent::ProcessOutput) deltas layer the content
     /// on top).
     Processes(Vec<BgProc>),
@@ -359,7 +359,7 @@ pub(crate) struct BgProc {
     pub id: u64,
     pub command: String,
     /// The `tool_use` id of the call that spawned this process, from the wire
-    /// (docs/supervisor.md). `None` on a daemon that predates the mapping; the
+    /// (docs/process-monitor.md). `None` on a daemon that predates the mapping; the
     /// sidebar's `view` verb is the one thing that needs it, and says so when it
     /// is missing rather than jumping somewhere arbitrary.
     pub call_id: Option<String>,
@@ -386,7 +386,7 @@ impl BgProc {
     /// The prose form of the id (`p#3`) — what the panel shows, matching the
     /// vocabulary the model and the transcript use.
     pub fn handle(&self) -> String {
-        crate::supervisor::handle(self.id)
+        crate::process_monitor::handle(self.id)
     }
 }
 
@@ -594,7 +594,7 @@ pub(crate) enum SidebarReturn {
 /// issues the matching control-channel call (docs/tui.md).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SidebarCmd {
-    /// `DELETE /processes/:id` — SIGKILL the process group (docs/supervisor.md).
+    /// `DELETE /processes/:id` — SIGKILL the process group (docs/process-monitor.md).
     KillProcess(u64),
     /// `PATCH /proposals/:seq {state:"committed"}` — fold the change into the
     /// effective config (docs/permissions.md).

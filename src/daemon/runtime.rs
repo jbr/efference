@@ -164,7 +164,7 @@ impl SessionRuntime {
         // identical prefix.
         let client = Arc::new(client);
         // The exact tools[] a real turn sends — world tools + the harness tools
-        // (`consolidate`, the supervisor/inbox tools, docs/supervisor.md, docs/inbox.md).
+        // (`consolidate`, the process-monitor/inbox tools, docs/process-monitor.md, docs/inbox.md).
         // Built from the one source (`agent::tool_definitions`) so the keepalive ping
         // warms the *same* cache prefix a real turn reads; any drift here silently
         // breaks idle cache-warming (docs/log-and-projection.md).
@@ -287,7 +287,7 @@ impl SessionRuntime {
                 }
             };
             // Reap any background children before the session is gone so a
-            // stopped session doesn't orphan a process group (docs/supervisor.md).
+            // stopped session doesn't orphan a process group (docs/process-monitor.md).
             // Awaited, not merely signalled: the scratch removal below would
             // otherwise race a child still writing under it, and `shut_down()`
             // would resolve while the processes were still in the table.

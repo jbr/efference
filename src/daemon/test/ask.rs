@@ -1,4 +1,4 @@
-//! A pending `ask` as the daemon reports it (docs/supervisor.md): the state topic,
+//! A pending `ask` as the daemon reports it (docs/process-monitor.md): the state topic,
 //! the status a subscriber hears, settle, and the resume a reply performs.
 
 use super::*;

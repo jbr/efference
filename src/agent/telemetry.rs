@@ -27,8 +27,8 @@ const CONTENT_KEYS: [&str; 4] = ["content", "new_content", "new_text", "new_stri
 /// is a datum about the model). It is set at the two sites that construct a
 /// harness-authored failure — never inferred from the text, which would put the
 /// classification back where it started.
-/// `handle` is the `p#<n>` the supervisor minted for this call's process, when
-/// it reached a spawn (docs/supervisor.md) — the join from a telemetry row to
+/// `handle` is the `p#<n>` the process monitor minted for this call's process, when
+/// it reached a spawn (docs/process-monitor.md) — the join from a telemetry row to
 /// the process namespace, which for a foreground command is the only typed place
 /// its handle appears.
 pub(super) fn observe(

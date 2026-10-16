@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn register_mints_ids_and_tails_recent_output() {
-    let mut s = Supervisor::new();
+    let mut s = ProcessMonitor::new();
     let id = s.register_background("cargo watch".into(), Some(123), None);
     assert_eq!(id, 1);
     assert_eq!(handle(id), "p#1");
@@ -33,7 +33,7 @@ fn max_handle_mention_over_matches_safely() {
 
 #[test]
 fn with_minted_starts_past_the_seed() {
-    let mut s = Supervisor::with_minted(4);
+    let mut s = ProcessMonitor::with_minted(4);
     assert_eq!(
         s.register_background("x".into(), None, None),
         5,
@@ -43,7 +43,7 @@ fn with_minted_starts_past_the_seed() {
 
 #[test]
 fn mute_drops_from_the_triage_but_keeps_it_running() {
-    let mut s = Supervisor::new();
+    let mut s = ProcessMonitor::new();
     let id = s.register_background("x".into(), Some(7), None);
     s.set_muted(id, true);
     assert!(s.views().is_empty(), "muted → off the ambient show");
@@ -56,7 +56,7 @@ fn mute_drops_from_the_triage_but_keeps_it_running() {
 
 #[test]
 fn finish_marks_exited_summarizes_and_leaves_the_show() {
-    let mut s = Supervisor::new();
+    let mut s = ProcessMonitor::new();
     let id = s.register_background("x".into(), Some(7), None);
     s.push_chunk(id, b"done\n");
     let finished = s.finish(id, None).unwrap();
@@ -80,7 +80,7 @@ fn finish_marks_exited_summarizes_and_leaves_the_show() {
 
 #[test]
 fn pin_snapshot_carries_command_and_current_tail() {
-    let mut s = Supervisor::new();
+    let mut s = ProcessMonitor::new();
     let id = s.register_background("npm test".into(), None, None);
     s.push_chunk(id, b"PASS\n");
     let (source, body) = s.pin_snapshot(id).unwrap();
@@ -90,7 +90,7 @@ fn pin_snapshot_carries_command_and_current_tail() {
 
 #[test]
 fn handoff_flips_the_property_and_reads_span_the_whole_run() {
-    let mut s = Supervisor::new();
+    let mut s = ProcessMonitor::new();
     let id = s.register_foreground("cargo test".into(), Some(9), None);
     s.push_chunk(id, b"pre-detach output\n");
     assert!(s.make_background(id), "the entry exists to flip");
@@ -109,7 +109,7 @@ fn handoff_flips_the_property_and_reads_span_the_whole_run() {
 
 #[test]
 fn foreground_is_listed_but_kept_out_of_model_views() {
-    let mut s = Supervisor::new();
+    let mut s = ProcessMonitor::new();
     let id = s.register_foreground("cargo build".into(), Some(11), None);
     let states = s.process_states();
     assert_eq!(states.len(), 1, "addressable and listed from spawn");
@@ -128,7 +128,7 @@ fn foreground_is_listed_but_kept_out_of_model_views() {
 
 #[test]
 fn front_drop_is_counted_not_silent() {
-    let mut s = Supervisor::new();
+    let mut s = ProcessMonitor::new();
     let id = s.register_background("noisy".into(), None, None);
     // Overflow the cap so the front is dropped.
     let chunk = vec![b'.'; BUFFER_CAP + 10];
@@ -141,14 +141,14 @@ fn front_drop_is_counted_not_silent() {
 
 #[test]
 fn empty_capture_reads_as_no_output_yet() {
-    let mut s = Supervisor::new();
+    let mut s = ProcessMonitor::new();
     s.register_background("slow".into(), None, None);
     assert!(s.views()[0].tail.contains("no output yet"));
 }
 
 #[test]
 fn list_text_shows_running_and_marks_muted() {
-    let mut s = Supervisor::new();
+    let mut s = ProcessMonitor::new();
     s.register_background("cargo watch".into(), Some(1), None);
     let b = s.register_background("sleep 9".into(), Some(2), None);
     s.set_muted(b, true);
@@ -162,7 +162,7 @@ fn list_text_shows_running_and_marks_muted() {
 
 #[test]
 fn process_states_carry_id_and_pid() {
-    let mut s = Supervisor::new();
+    let mut s = ProcessMonitor::new();
     s.register_background("cargo watch".into(), Some(4242), None);
     let states = s.process_states();
     assert_eq!(states.len(), 1);
@@ -172,7 +172,7 @@ fn process_states_carry_id_and_pid() {
 
 #[test]
 fn read_since_advances_a_cursor_and_reports_no_new() {
-    let mut s = Supervisor::new();
+    let mut s = ProcessMonitor::new();
     let id = s.register_background("x".into(), None, None);
     s.push_chunk(id, b"hello world\n");
     let first = s.read_since(id, None).unwrap();
@@ -201,24 +201,24 @@ fn read_since_advances_a_cursor_and_reports_no_new() {
 
 #[test]
 fn read_since_unknown_id_is_none() {
-    assert!(Supervisor::new().read_since(99, None).is_none());
+    assert!(ProcessMonitor::new().read_since(99, None).is_none());
 }
 
 #[test]
 fn pgid_of_only_running() {
-    let mut s = Supervisor::new();
+    let mut s = ProcessMonitor::new();
     let id = s.register_background("x".into(), Some(42), None);
     assert_eq!(s.pgid_of(id), Some(42));
     s.finish(id, None);
     assert_eq!(s.pgid_of(id), None, "exited → no kill target");
 }
 
-/// The family's briefs (docs/permissions.md): every supervisor/inbox tool the loop
+/// The family's briefs (docs/permissions.md): every process-monitor/inbox tool the loop
 /// dispatches structurally answers `brief` — the spotter once judged these as bare
 /// names because only the providers were consulted — and the annotations carry the
 /// harness's own claims: reads are reads, `kill_process` is the destructive member.
 #[test]
-fn every_supervisor_tool_has_a_brief_with_honest_annotations() {
+fn every_process_monitor_tool_has_a_brief_with_honest_annotations() {
     for name in [LIST, READ, KILL, WATCH, CHECK_INBOX, WAIT] {
         let b = brief(name).unwrap_or_else(|| panic!("no brief for {name}"));
         assert!(b.server.is_none(), "{name} is the harness's own");
@@ -284,12 +284,12 @@ fn wire_definitions_carry_no_annotations() {
 }
 
 /// A watch fires **once**, on the first line containing the pattern, and reports the
-/// line it matched (docs/supervisor.md). Once-then-done is what makes it compose with
+/// line it matched (docs/process-monitor.md). Once-then-done is what makes it compose with
 /// wake-on-notification: a repeating watch on a chatty stream would wake the idle
 /// triage fork per line.
 #[test]
 fn a_watch_fires_once_on_the_matching_line() {
-    let mut s = Supervisor::new();
+    let mut s = ProcessMonitor::new();
     let id = s.register_background("cargo watch".into(), None, None);
     assert!(s.watch(id, "test result".into()));
     assert_eq!(s.watch_count(id), 1);
@@ -317,7 +317,7 @@ fn a_watch_fires_once_on_the_matching_line() {
 /// immediate, stale hit.
 #[test]
 fn a_watch_does_not_match_output_that_already_arrived() {
-    let mut s = Supervisor::new();
+    let mut s = ProcessMonitor::new();
     let id = s.register_background("server".into(), None, None);
     s.push_chunk(id, b"listening on 8080\n");
     assert!(s.watch(id, "listening".into()));
@@ -334,7 +334,7 @@ fn a_watch_does_not_match_output_that_already_arrived() {
 /// and then waits is watchable. Re-scanning it is free — the watch is already gone.
 #[test]
 fn a_watch_matches_a_line_with_no_newline_yet() {
-    let mut s = Supervisor::new();
+    let mut s = ProcessMonitor::new();
     let id = s.register_background("installer".into(), None, None);
     assert!(s.watch(id, "continue?".into()));
     let hits = s.push_chunk(id, b"press y to continue? ");
@@ -346,7 +346,7 @@ fn a_watch_matches_a_line_with_no_newline_yet() {
 /// process is refused rather than accepted-and-never-fired.
 #[test]
 fn watches_are_independent_and_refused_after_exit() {
-    let mut s = Supervisor::new();
+    let mut s = ProcessMonitor::new();
     let id = s.register_background("build".into(), None, None);
     assert!(s.watch(id, "warning".into()));
     assert!(s.watch(id, "error".into()));
@@ -379,7 +379,7 @@ fn a_hit_renders_as_a_notification_naming_the_pattern() {
 /// One pathological line does not become the whole turn.
 #[test]
 fn a_matching_line_is_capped() {
-    let mut s = Supervisor::new();
+    let mut s = ProcessMonitor::new();
     let id = s.register_background("noisy".into(), None, None);
     assert!(s.watch(id, "needle".into()));
     let mut line = b"needle".to_vec();
@@ -391,13 +391,13 @@ fn a_matching_line_is_capped() {
     assert!(hits[0].line.ends_with("[line truncated]"));
 }
 
-/// The call↔process mapping (docs/supervisor.md): the spawning `tool_use` id is
+/// The call↔process mapping (docs/process-monitor.md): the spawning `tool_use` id is
 /// stamped at the mint and survives the foreground→background flip, which is what
 /// lets a client that saw the process while it was running resolve either half from
 /// the other.
 #[test]
 fn the_spawning_call_id_rides_the_process_and_survives_the_handoff() {
-    let mut s = Supervisor::new();
+    let mut s = ProcessMonitor::new();
     let id = s.register_foreground("cargo build".into(), Some(3), Some("toolu_7".into()));
     assert_eq!(s.process_states()[0].call_id.as_deref(), Some("toolu_7"));
     assert!(s.make_background(id));

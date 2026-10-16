@@ -1,6 +1,6 @@
-//! The durable half of a background process's record (docs/supervisor.md).
+//! The durable half of a background process's record (docs/process-monitor.md).
 //!
-//! The supervisor's registry is ephemeral — it dies with the daemon — but a
+//! The process monitor's registry is ephemeral — it dies with the daemon — but a
 //! `p#<n>` handle is minted into prose the moment a command is backgrounded, and
 //! that prose outlives the registry in the log. These entries are what a later
 //! reader resolves the handle against: a **mint** record when a process enters
@@ -26,11 +26,11 @@ use serde::{Deserialize, Serialize};
 use super::{CallId, Timestamp};
 
 /// One lifecycle fact about one background process, addressed by the
-/// spawn-minted ordinal (docs/supervisor.md).
+/// spawn-minted ordinal (docs/process-monitor.md).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProcessEvent {
     /// The spawn-minted ordinal — bare, as routes and frames carry it; rendered
-    /// `p#<n>` in prose by [`crate::supervisor::handle`].
+    /// `p#<n>` in prose by [`crate::process_monitor::handle`].
     pub id: u64,
     pub kind: ProcessEventKind,
 }
@@ -41,19 +41,19 @@ pub struct ProcessEvent {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ProcessEventKind {
     /// The process entered the background namespace — spawned with `background:
-    /// true`, or adopted by the handoff (docs/supervisor.md).
+    /// true`, or adopted by the handoff (docs/process-monitor.md).
     Spawned(ProcessSpawn),
     /// The process ended. Written by the drain task that saw the exit.
     Exited(ProcessExit),
 }
 
 /// What a process was, recorded at the moment its handle became a fact a reader
-/// can encounter (docs/supervisor.md).
+/// can encounter (docs/process-monitor.md).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProcessSpawn {
     pub command: String,
     /// The `tool_use` id of the call that spawned it — the call↔process mapping
-    /// (docs/supervisor.md), here in a typed field rather than recoverable only
+    /// (docs/process-monitor.md), here in a typed field rather than recoverable only
     /// from result prose. `None` for a process registered outside a tool call.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub call_id: Option<CallId>,
@@ -67,8 +67,8 @@ pub struct ProcessSpawn {
     pub at: Timestamp,
 }
 
-/// How a process ended and how long it ran (docs/supervisor.md). Also the
-/// exit half of a [`ProcessRecord`](crate::supervisor::ProcessRecord), so the
+/// How a process ended and how long it ran (docs/process-monitor.md). Also the
+/// exit half of a [`ProcessRecord`](crate::process_monitor::ProcessRecord), so the
 /// live registry and a log fold answer with one type.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProcessExit {
@@ -79,7 +79,7 @@ pub struct ProcessExit {
     pub at: Timestamp,
 }
 
-/// How a process ended (docs/supervisor.md) — the structured form of the prose
+/// How a process ended (docs/process-monitor.md) — the structured form of the prose
 /// the exit notification carries.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]

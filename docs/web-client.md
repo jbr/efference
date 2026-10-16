@@ -825,7 +825,7 @@ Two renderers cover the table's seven entries.
 - **A `p#<n>` handle resolves to what it was** — `handle` on `kill_process`,
   `read_process`, `watch_process`. The handle is opaque in the transcript, and
   `GET /v1/processes/:id` answers for any handle ever minted, running or exited
-  ([supervisor.md](supervisor.md)), so the chip states the spawning command
+  ([process-monitor.md](process-monitor.md)), so the chip states the spawning command
   beside it, truncated to a recognizable head. One renderer serves three tools.
 
 `ui/processRecord.ts` is the fetch behind the handle chip: lazy (most calls
@@ -1164,7 +1164,7 @@ entry with its id already folded; and a re-seed (`seed`) settles pending
 turns against the entries it absorbs, since those never pass through
 `applyLog`. (The TUI mints and keys the same way.)
 
-**An `ask` reads as a turn ending** (`session/tree.ts`, `ui/Transcript.tsx`). A call named `ask` (docs/supervisor.md) with a usable `question` is not a call node: `buildTree` emits a leaf carrying the question and its place among the asks of one completion (`askOfCall`, the counterpart of `supervisor::ask_of_call`), drawn as the assistant's prose with a mark, after the step's other calls. The mark (`ui/askMark.ts`) says where the question stands: `answering` (above the prose in a softly lit current-question frame, with ` · question n of m` when `of > 1`) for the ask the live `ask` topic's `call_id` names, which is the one the composer's send answers; `next · question n of m`, dim, for an unresolved ask while the topic names a sibling; `asked` (with the position) once its result has committed (`AskQuestion.resolved`, set by `buildTree`) or when there is no topic to say more, as in a replay. While the topic is non-null the composer's placeholder reads `your reply answers question n of m`, or `your reply answers the question` for a lone ask. Its result entry becomes a second leaf at its log position: with a `submission_id` it is the reply, drawn as the operator's message from `raw.content` (attributed as a `User` turn is, which on this client is not at all); without one — an interrupt, a malformed call — a dim `not answered`. An ask with no usable question stays an ordinary call. A call whose arguments are still streaming is not drawn until it commits. The composer needs nothing for it: a send while the `ask` topic is non-null is the reply. Its echo is keyed like any other, and because the fold settles on any entry carrying the id, the reply's `ToolResult` settles it; the echo reads "Sent · answering the question" and carries no Recall, since a reply is never queued. (The daemon's refusal to continue past a question, `409 not_continuable`, reaches the composer's error line like the other continue refusals.)
+**An `ask` reads as a turn ending** (`session/tree.ts`, `ui/Transcript.tsx`). A call named `ask` (docs/process-monitor.md) with a usable `question` is not a call node: `buildTree` emits a leaf carrying the question and its place among the asks of one completion (`askOfCall`, the counterpart of `process_monitor::ask_of_call`), drawn as the assistant's prose with a mark, after the step's other calls. The mark (`ui/askMark.ts`) says where the question stands: `answering` (above the prose in a softly lit current-question frame, with ` · question n of m` when `of > 1`) for the ask the live `ask` topic's `call_id` names, which is the one the composer's send answers; `next · question n of m`, dim, for an unresolved ask while the topic names a sibling; `asked` (with the position) once its result has committed (`AskQuestion.resolved`, set by `buildTree`) or when there is no topic to say more, as in a replay. While the topic is non-null the composer's placeholder reads `your reply answers question n of m`, or `your reply answers the question` for a lone ask. Its result entry becomes a second leaf at its log position: with a `submission_id` it is the reply, drawn as the operator's message from `raw.content` (attributed as a `User` turn is, which on this client is not at all); without one — an interrupt, a malformed call — a dim `not answered`. An ask with no usable question stays an ordinary call. A call whose arguments are still streaming is not drawn until it commits. The composer needs nothing for it: a send while the `ask` topic is non-null is the reply. Its echo is keyed like any other, and because the fold settles on any entry carrying the id, the reply's `ToolResult` settles it; the echo reads "Sent · answering the question" and carries no Recall, since a reply is never queued. (The daemon's refusal to continue past a question, `409 not_continuable`, reaches the composer's error line like the other continue refusals.)
 
 **An ask's recalled turns return to the composer once.** Turns queued before the question began are withdrawn by the daemon and published on the `ask` topic as `recalled`. Submission ids are recorded on the session (`minted`) **before** the POST, so a turn whose 202 has not resolved is still recognised as this client's; a restarted client has none and restores nothing. `applyFrame` on an `ask` frame with a `call_id` not yet seen (`askRestored`) drops the echoes of the minted ids among `recalled`, records them in `withdrawn` (so a late 202 does not queue an echo nothing will settle), and sets `askRecall`, which `SessionView` hands to the composer's `{text, attachments, nonce}` splice like a manual recall.
 
@@ -1522,7 +1522,7 @@ explicit interaction.
 
 ## Process output seeding
 
-`session/processSeed.ts` reads `GET /v1/processes/:id/output` once when the processes topic first names a process, folding retained bytes beneath deltas already received. Warm buffers are skipped to avoid duplicating the retained snapshot. Supervisor retention loss is stated above the output. Task shortcuts and the call inspector provide process access; there is no separate session-details panel.
+`session/processSeed.ts` reads `GET /v1/processes/:id/output` once when the processes topic first names a process, folding retained bytes beneath deltas already received. Warm buffers are skipped to avoid duplicating the retained snapshot. Process monitor retention loss is stated above the output. Task shortcuts and the call inspector provide process access; there is no separate session-details panel.
 
 The gate cue's bottom offset is measured from the dock's height with a
 `ResizeObserver` rather than guessed in CSS — the composer changes that
@@ -1617,14 +1617,14 @@ retry spinner.
 
 Historical operation and explicitly current-file context are separate views in the same sidebar. The `result` and `raw` tabs also carry **the command's own output**, under
 whatever the committed result showed, for the two cases where a `ToolResult` is
-not the output ([supervisor.md](supervisor.md)):
+not the output ([process-monitor.md](process-monitor.md)):
 
 - **A call still running** has no committed result at all. Its live tail is
   already in the store as `streaming.toolOutput[callId]` — the transcript's
   inline peek renders it — and the drawer reads the same buffer instead of
   saying "no result yet".
 - **A backgrounded call**'s committed result is the *handoff* result naming
-  `p#<n>`, not the output; the output lives in the supervisor's retained
+  `p#<n>`, not the output; the output lives in the process monitor's retained
   capture. The drawer reaches it through the call↔process mapping: the daemon
   carries the spawning `call_id` on each process, and `store.ts` folds every
   pair it has seen into `session.processCalls` — kept after the process leaves

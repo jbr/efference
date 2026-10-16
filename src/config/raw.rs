@@ -51,7 +51,7 @@ pub(super) struct RawConfig {
 }
 
 /// The `[bash]` table: how long a foreground command may block the turn before
-/// it is moved to the background (docs/supervisor.md). Two numbers, because one
+/// it is moved to the background (docs/process-monitor.md). Two numbers, because one
 /// value cannot be both the default and the clamp — `background_after` is what a
 /// call gets when it names nothing, and `background_after_max` is the ceiling a
 /// call's own `background_after` is clamped to. The ceiling is the loop-safety

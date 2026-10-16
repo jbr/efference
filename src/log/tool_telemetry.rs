@@ -85,8 +85,8 @@ pub struct BashTelemetry {
     /// measures the spawn and `result_bytes` the handle message — not the
     /// command.
     pub background: bool,
-    /// The `p#<n>` handle of the process this call spawned (docs/supervisor.md),
-    /// as the supervisor minted it. Present for every bash command that reached
+    /// The `p#<n>` handle of the process this call spawned (docs/process-monitor.md),
+    /// as the process monitor minted it. Present for every bash command that reached
     /// a spawn — foreground included, since foreground and background share one
     /// namespace — so the handle↔call join is readable off the telemetry row
     /// without parsing result prose. `None` for a call that never spawned (a

@@ -77,9 +77,9 @@ pub(super) fn bypassed(pending: &Pending<'_>) -> Option<&'static str> {
 const REPLY_SHAPE: &str = "operator reply";
 
 /// Whether `call` is an `ask`, whose result is the operator's own words
-/// (docs/supervisor.md). Operator words are never the triage's to summarize.
+/// (docs/process-monitor.md). Operator words are never the triage's to summarize.
 pub(super) fn is_reply(call: &ToolCall) -> bool {
-    call.name == crate::supervisor::ASK
+    call.name == crate::process_monitor::ASK
 }
 
 /// Whether this triage holds an `ask` reply and nothing else the triage would decide

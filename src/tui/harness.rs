@@ -194,7 +194,7 @@ impl Screenplay<'_> {
     }
 
     /// Whether the background-handoff key fired a `PATCH /processes/:id {background: true}` since the last
-    /// check (docs/supervisor.md) — the detach intent on the same channel.
+    /// check (docs/process-monitor.md) — the detach intent on the same channel.
     pub(crate) fn took_background(&mut self) -> bool {
         matches!(
             self.receivers.interrupt.try_recv(),

@@ -1,8 +1,8 @@
-//! `/processes`: the tool-spawned process resource (docs/supervisor.md, docs/control-api.md).
+//! `/processes`: the tool-spawned process resource (docs/process-monitor.md, docs/control-api.md).
 
 use super::*;
 
-/// The process resource (docs/supervisor.md, docs/control-api.md): every
+/// The process resource (docs/process-monitor.md, docs/control-api.md): every
 /// running tool-spawned process — foreground and background share the one
 /// namespace, `:id` is the bare spawn-minted ordinal. The listing is the
 /// same representation the `processes` state topic carries.
@@ -15,7 +15,7 @@ pub(super) async fn list_processes(conn: Conn) -> Conn {
 }
 
 /// One process's record — running or exited, live registry or log fold
-/// (docs/supervisor.md): once a handle is minted it stays addressable at
+/// (docs/process-monitor.md): once a handle is minted it stays addressable at
 /// one URL for the life of the session, including in a recorded session
 /// whose daemon is long gone.
 pub(super) async fn read_process(conn: Conn) -> Conn {
@@ -63,9 +63,9 @@ pub(super) async fn read_process_output(conn: Conn) -> Conn {
 }
 
 /// Set a process's properties. `{"muted": …}` applies synchronously (the
-/// supervisor's dismiss-a-live-process, and its inverse). `{"background":
+/// process monitor's dismiss-a-live-process, and its inverse). `{"background":
 /// true}` on the foreground entry is the foreground→background handoff
-/// (docs/supervisor.md): answered 202, because the flip lands only when the
+/// (docs/process-monitor.md): answered 202, because the flip lands only when the
 /// detach wake reaches the running tool's race — on a process that is
 /// already background it is an idempotent no-op. An optional `note` rides
 /// the handoff as the next user message. `background: false` has no
@@ -124,7 +124,7 @@ pub(super) async fn patch_process(mut conn: Conn) -> Conn {
 }
 
 /// Kill a running process: `killpg` its group; the drain task then sees EOF
-/// and fires the exit notification (docs/supervisor.md).
+/// and fires the exit notification (docs/process-monitor.md).
 pub(super) async fn kill_process(conn: Conn) -> Conn {
     let Some(shared) = shared_of(&conn) else {
         return missing_state(conn);

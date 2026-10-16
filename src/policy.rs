@@ -230,7 +230,7 @@ fn classify_structured(role: &Config, call: &ToolCall, dirs: &Directories) -> Ve
     }
     let Some((key, perm, default)) = path_spec(&call.name) else {
         // A structured tool with no path target (`kill_process`, `retarget_edit`, `consolidate`,
-        // the supervisor/inbox tools): the name grant alone suffices.
+        // the process-monitor/inbox tools): the name grant alone suffices.
         return verdict(tool_granted(role, &call.name));
     };
     let Some(targets) = input_targets(&call.input, key, default) else {

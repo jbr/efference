@@ -77,7 +77,7 @@ fn strip_context_verbs_swap_over_a_fixed_tail() {
 }
 
 /// `background` is foreground-bash-only — it adopts a live child into the
-/// supervisor, and there is no child to adopt anywhere else. The interrupt is
+/// process monitor, and there is no child to adopt anywhere else. The interrupt is
 /// not: it stops the loop and withholds the call's output whatever the tool
 /// (docs/control-channel.md), so it stays, reading `interrupt` where it isn't
 /// also killing a process group.
@@ -102,8 +102,8 @@ fn strip_offers_background_only_for_foreground_bash_but_always_an_interrupt() {
         "a non-bash tool still offers the interrupt, without the handoff"
     );
 
-    // A *backgrounded* bash call returns at once and runs under the supervisor
-    // (docs/supervisor.md) — it is never the foreground tool either.
+    // A *backgrounded* bash call returns at once and runs under the process monitor
+    // (docs/process-monitor.md) — it is never the foreground tool either.
     play.running_tool(
         "toolu_g",
         crate::bash::NAME,

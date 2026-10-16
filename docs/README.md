@@ -162,7 +162,7 @@ Read top-down; open the subsystem doc you need.
 | Session id and title — the minted word-pair address, and the triage-kept one-line title | [session-title.md](session-title.md) | `src/daemon/slug.rs`, `src/agent/title.rs`, `src/triage/title.rs` |
 | Session resumption — reopening a persisted session under its id, and listing the archived ones | [resumption.md](resumption.md) | `src/boot/resume.rs`, `src/daemon/host/resume.rs`, `src/daemon/host/archived.rs`, `src/inventory.rs`, `src/tui/resume_list.rs` |
 | Worktree sessions — a session's own git checkout, and the project/working directory pair | [worktrees.md](worktrees.md) | `src/worktree.rs`, `src/policy/directories.rs`, `src/boot.rs`, `src/daemon/host.rs` |
-| Background processes — the supervisor | [supervisor.md](supervisor.md) | `src/supervisor.rs`, `src/bash.rs`, `src/daemon/background.rs` |
+| Background processes — the process monitor | [process-monitor.md](process-monitor.md) | `src/process_monitor.rs`, `src/bash.rs`, `src/daemon/background.rs` |
 | Control channel & the `Frontend` trait (HTTP over a Unix socket) | [control-channel.md](control-channel.md) | `src/daemon.rs` (+ `src/daemon/`), `src/client.rs`, `src/frontend.rs`, `src/agent.rs` |
 | Permissions — role config & the approval fast-path | [permissions.md](permissions.md) | `src/config.rs`, `src/policy.rs`, `src/agent.rs`, `src/daemon/config_edits.rs` |
 | The `[context]` preamble builder — what the session boots knowing | [context.md](context.md) | `src/context.rs`, `src/config.rs`, `src/env.rs`, `src/policy.rs` |
@@ -197,7 +197,7 @@ control <tool>` for the calls that drive a running session — the same tools
 serves lives in a `src/daemon/` submodule named for its governing doc — `handler.rs`
 (the one handler stack every listener mounts), `http.rs` with one file per route
 family under `http/`, and `stream.rs` (the control channel), `config_edits.rs` (permissions), `notifications.rs` (the
-inbox), `background.rs` (the supervisor), plus `pace.rs`, `approvals.rs`, `metrics.rs`,
+inbox), `background.rs` (the process monitor), plus `pace.rs`, `approvals.rs`, `metrics.rs`,
 `keepalive.rs`, `watch.rs`, and `views.rs` (the `/state` and `/log` readouts).
 
 ## Repository layout

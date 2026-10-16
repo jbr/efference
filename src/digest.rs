@@ -96,7 +96,9 @@ pub fn render(entries: &[LogEntry], options: Options) -> String {
                     let _ = writeln!(out, "{prose}\n");
                 }
                 for (i, call) in turn_calls.iter().enumerate() {
-                    if let Some((question, _, _)) = crate::supervisor::ask_of_call(&turn_calls, i) {
+                    if let Some((question, _, _)) =
+                        crate::process_monitor::ask_of_call(&turn_calls, i)
+                    {
                         asks.insert(call.id.clone());
                         heading(&mut out, "agent asked", seq, options);
                         let _ = writeln!(out, "{question}\n");

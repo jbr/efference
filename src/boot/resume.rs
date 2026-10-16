@@ -367,7 +367,10 @@ fn resumed_entry(entries: &[LogEntry], resumption: Resumption) -> (crate::log::T
         last.map_or(0, |e| e.turn),
         Resumed {
             gap_ms,
-            lost_processes: running.into_iter().map(crate::supervisor::handle).collect(),
+            lost_processes: running
+                .into_iter()
+                .map(crate::process_monitor::handle)
+                .collect(),
             resumes_after: resumption.resumes_after,
             pending_calls: resumption.pending,
         },

@@ -95,7 +95,7 @@ impl Session {
         serde_json::to_value(self.pending.lock().unwrap().clone()).unwrap_or(Value::Null)
     }
 
-    /// The pending `ask` (docs/supervisor.md), or `null` when none is open.
+    /// The pending `ask` (docs/process-monitor.md), or `null` when none is open.
     fn ask_json(&self) -> Value {
         match self.asking() {
             Some(ask) => serde_json::json!({
@@ -109,7 +109,7 @@ impl Session {
         }
     }
 
-    /// The live background processes (docs/supervisor.md), as structure only — no tail
+    /// The live background processes (docs/process-monitor.md), as structure only — no tail
     /// and no last-chunk stamp, both of which change per output chunk and would make
     /// this topic re-emit at the rate of the output it describes. That content rides
     /// `process_output` on the ephemeral `output` class instead (docs/control-api.md).

@@ -1,8 +1,8 @@
-//! The bash tool (docs/tools.md, docs/supervisor.md).
+//! The bash tool (docs/tools.md, docs/process-monitor.md).
 //!
 //! Two concerns meet here. The *capability* is trivial: run a shell command,
 //! return its combined output. The critical part is *ownership*
-//! (docs/supervisor.md): the child is spawned with `process_group(0)` so it leads a fresh
+//! (docs/process-monitor.md): the child is spawned with `process_group(0)` so it leads a fresh
 //! process group (child pid == pgid), and [`Bash::run`] races completion against
 //! an injected `abort` future — on abort it `killpg`s the whole group with
 //! `SIGKILL`, taking down any grandchildren the command spawned.
@@ -28,14 +28,14 @@ use std::time::Duration;
 
 /// What a tool run resolved to. Every path still pairs the `tool_use` with
 /// exactly one `tool_result` — a detach just isn't the *tool's* result to
-/// produce: the loop adopts the child into the supervisor and writes the
-/// handoff result itself (docs/supervisor.md).
+/// produce: the loop adopts the child into the process monitor and writes the
+/// handoff result itself (docs/process-monitor.md).
 pub enum Outcome {
     /// The call finished (success, error, or killed): its one paired result.
     Done(RawResult),
     /// The operator detached the still-running command mid-flight
-    /// (docs/supervisor.md, the foreground→background handoff). Carries
-    /// everything the supervisor needs to adopt it without losing a byte.
+    /// (docs/process-monitor.md, the foreground→background handoff). Carries
+    /// everything the process monitor needs to adopt it without losing a byte.
     /// Boxed: the child + pipes + seed dwarf `Done` (clippy::large_enum_variant),
     /// same reasoning as the MCP variants in `tools.rs`.
     Detached(Box<DetachedBash>),
@@ -49,7 +49,7 @@ impl From<RawResult> for Outcome {
 
 /// A live child surrendered by [`Bash::run`] on detach — not reaped, not
 /// killed. `seed` is everything drained before the detach won the select;
-/// the supervisor's capture is pre-filled with it, and the continuing drain
+/// the process monitor's capture is pre-filled with it, and the continuing drain
 /// resumes from exactly that byte boundary (no gap, no dup — the select only
 /// completes a read after its bytes are in `seed`).
 pub struct DetachedBash {
@@ -61,7 +61,7 @@ pub struct DetachedBash {
     /// `Some(deadline)` when the *timer* detached this call rather than the
     /// operator — the loop words the handoff differently, because an
     /// auto-detach is the only one the agent did not ask for and is the moment
-    /// `background_after` becomes worth knowing about (docs/supervisor.md).
+    /// `background_after` becomes worth knowing about (docs/process-monitor.md).
     pub auto_after: Option<Duration>,
 }
 
@@ -87,7 +87,7 @@ pub struct Bash {
     pub background_after: Duration,
     /// The clamp on a call-supplied `background_after`. This is the loop-safety
     /// property — no foreground call may park the turn indefinitely — so it is
-    /// deliberately not something a call can raise (docs/supervisor.md).
+    /// deliberately not something a call can raise (docs/process-monitor.md).
     pub background_after_max: Duration,
     /// The `[env]` table's spawn-time answer (docs/env.md): variables removed
     /// from this child's environment, and the values the table names set into
@@ -127,8 +127,8 @@ struct Input {
 }
 
 /// Whether a call is a `bash` invocation asking to be backgrounded
-/// (docs/supervisor.md) — `{ "command": …, "background": true }`. Such a call is
-/// handled structurally by the loop (it registers a child with the supervisor)
+/// (docs/process-monitor.md) — `{ "command": …, "background": true }`. Such a call is
+/// handled structurally by the loop (it registers a child with the process monitor)
 /// rather than run to completion here.
 pub fn is_background_call(call: &crate::log::ToolCall) -> bool {
     call.name == NAME
@@ -184,16 +184,16 @@ impl Bash {
     /// must always have a `tool_result` to pair with the `tool_use`, or the API
     /// rejects the orphan. The exception is a detach ([`Interrupt::Detach`]),
     /// which surrenders the live child as [`Outcome::Detached`]; the loop owns
-    /// the pairing there too (the handoff result, docs/supervisor.md).
+    /// the pairing there too (the handoff result, docs/process-monitor.md).
     ///
     /// `on_spawn` fires once with the child's pid the moment the spawn succeeds —
     /// the hook the daemon uses to register the foreground process in the
-    /// supervisor's namespace so it is addressable from spawn (docs/supervisor.md).
+    /// process monitor's namespace so it is addressable from spawn (docs/process-monitor.md).
     ///
     /// Streams as it runs: instead of buffering with `wait_with_output`, both pipes
     /// are drained incrementally and each raw chunk is forwarded to `on_output` (the
     /// transport-only live sink — the daemon publishes it as `output` frames and
-    /// feeds the supervisor's capture) while the canonical bytes accumulate. Stdout
+    /// feeds the process monitor's capture) while the canonical bytes accumulate. Stdout
     /// and stderr land in **arrival order** (a single interleaved buffer), so
     /// progress output written to stderr — cargo, say — streams too; this is also
     /// more terminal-faithful than the old stdout-block-then-stderr-block rendering.
@@ -207,7 +207,7 @@ impl Bash {
         let (command, background_after) = match Input::deserialize(input) {
             // A call-supplied bound is clamped, never trusted: the ceiling is the
             // property that has to hold at exactly the moment the caller's estimate
-            // turns out wrong (docs/supervisor.md).
+            // turns out wrong (docs/process-monitor.md).
             Ok(input) => (
                 input.command,
                 input
@@ -226,7 +226,7 @@ impl Bash {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             // Lead a fresh process group so one `killpg` reaps the command and
-            // anything it spawns (docs/supervisor.md). child pid == pgid.
+            // anything it spawns (docs/process-monitor.md). child pid == pgid.
             .process_group(0);
         self.child_env.apply_tokio(&mut cmd);
         // The session scratch dir rides `$TMPDIR` into every child (docs/tools.md).
@@ -284,8 +284,8 @@ impl Bash {
                 content.push_str("[aborted by user — process group killed]");
                 RawResult::error(content).into()
             }
-            // Surrender the live child, don't reap it (docs/supervisor.md): no
-            // `killpg`, no `wait`. The loop adopts it into the supervisor, seeding
+            // Surrender the live child, don't reap it (docs/process-monitor.md): no
+            // `killpg`, no `wait`. The loop adopts it into the process monitor, seeding
             // the capture with everything already drained.
             Some(Interrupt::Detach) => Outcome::Detached(Box::new(DetachedBash {
                 command,
@@ -311,9 +311,9 @@ impl Bash {
 /// delivered — a read only consumes bytes when its poll completes, so cancelling
 /// mid-read loses nothing. The shared core of the foreground bash tool (which
 /// accumulates the chunks and races the user's interrupt) and the background
-/// supervisor's drain task (which feeds each chunk into a process's capture
+/// process monitor's drain task (which feeds each chunk into a process's capture
 /// buffer and never cancels — a kill closes the pipes externally, so it ends at
-/// EOF). See docs/supervisor.md.
+/// EOF). See docs/process-monitor.md.
 pub(crate) async fn drain_pipes<T>(
     stdout: &mut tokio::process::ChildStdout,
     stderr: &mut tokio::process::ChildStderr,
@@ -344,7 +344,7 @@ pub(crate) async fn drain_pipes<T>(
 /// `process_group(0)`, so its pid *is* its pgid; killing the group takes down
 /// any grandchildren too. Best-effort — a racing exit may already have reaped
 /// it, in which case `killpg` just returns `ESRCH`. Used by the foreground abort
-/// path and by the supervisor's kill / teardown (docs/supervisor.md).
+/// path and by the process monitor's kill / teardown (docs/process-monitor.md).
 pub(crate) fn kill_group(pgid: u32) {
     // SAFETY: an FFI call with no memory effects; a stale/invalid pgid is a
     // benign `ESRCH`, which we intentionally ignore (best-effort teardown).

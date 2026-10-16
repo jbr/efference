@@ -31,7 +31,7 @@ fn definition_advertises_the_name_and_a_required_summary() {
     assert_eq!(d["input_schema"]["required"], json!(["summary"]));
 }
 
-/// `consolidate` is loop-owned, so its brief rides the same path as the supervisor
+/// `consolidate` is loop-owned, so its brief rides the same path as the process monitor
 /// family's (docs/permissions.md); the wire entry keeps the provider shape with no
 /// annotations leak.
 #[test]

@@ -1,5 +1,5 @@
 //! What one process was, live or exited — the representation `GET /processes/:id`
-//! answers with (docs/supervisor.md, docs/control-api.md).
+//! answers with (docs/process-monitor.md, docs/control-api.md).
 //!
 //! Two sources produce it, in this order:
 //!
@@ -23,7 +23,7 @@ mod test;
 use crate::log::{LogEntry, Payload, ProcessEvent, ProcessEventKind, ProcessExit, Timestamp};
 
 /// One process, running or exited — the durable answer to "what was `p#<n>`"
-/// (docs/supervisor.md).
+/// (docs/process-monitor.md).
 #[derive(Clone, Debug, Serialize)]
 pub struct ProcessRecord {
     /// The spawn-minted ordinal (rendered `p#<n>` in prose; bare here and in routes).
@@ -31,7 +31,7 @@ pub struct ProcessRecord {
     pub command: String,
     /// The `tool_use` id of the call that spawned this process.
     pub call_id: Option<String>,
-    /// The OS pid — an attribute, never the identifier (docs/supervisor.md). For
+    /// The OS pid — an attribute, never the identifier (docs/process-monitor.md). For
     /// a log-derived record it is a breadcrumb for reading contemporaneous system
     /// logs: pids are recycled, so it addresses nothing after the fact.
     pub pid: Option<u32>,
@@ -52,7 +52,7 @@ pub struct ProcessRecord {
     pub exit: Option<ProcessExit>,
 }
 
-/// Fold the log for one process's record (docs/supervisor.md): the mint entry,
+/// Fold the log for one process's record (docs/process-monitor.md): the mint entry,
 /// plus the exit entry if one was written. `None` if no [`ProcessEvent`] names
 /// this id — a handle that was never backgrounded, or a log written before the
 /// record existed. Order-defined and last-write-wins per half, like every other
@@ -76,7 +76,7 @@ pub fn from_log(entries: &[LogEntry], id: u64) -> Option<ProcessRecord> {
                     pid: spawn.pid,
                     spawned_at: spawn.at,
                     // Every recorded mint is a mint into the background namespace
-                    // (docs/supervisor.md): a foreground command's record is its
+                    // (docs/process-monitor.md): a foreground command's record is its
                     // own call and result.
                     background: true,
                     muted: false,

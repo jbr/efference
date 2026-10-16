@@ -18,7 +18,7 @@ pub(super) struct Pace {
 
 impl Session {
     pub(crate) fn submit_turn(&self, turn: SubmittedTurn) {
-        // A pending `ask` takes the turn as its reply instead (docs/supervisor.md). The
+        // A pending `ask` takes the turn as its reply instead (docs/process-monitor.md). The
         // ask lock is held through the queue push below, so a turn cannot slip in between
         // an ask starting and recalling the queue.
         let mut ask = self.ask.lock().unwrap();
@@ -181,7 +181,7 @@ impl Session {
         // Not held, no delay → proceed at once.
     }
 
-    /// An idle triage escalated to a trajectory (docs/supervisor.md): the loop is
+    /// An idle triage escalated to a trajectory (docs/process-monitor.md): the loop is
     /// running with no submitted turn to have claimed, so it says so here. Without
     /// this, `running`, `/settle`, and the status watcher read the whole
     /// wake-driven trajectory as idle, and a turn submitted meanwhile sits in
@@ -221,7 +221,7 @@ impl Session {
             return false;
         }
         self.pending.lock().unwrap().is_some()
-            // A pending `ask` is the loop waiting on the operator (docs/supervisor.md).
+            // A pending `ask` is the loop waiting on the operator (docs/process-monitor.md).
             || self.asking().is_some()
             || self.stall().is_some()
             // Parked at the cold check, waiting for a person (backlog: cold-session.md).

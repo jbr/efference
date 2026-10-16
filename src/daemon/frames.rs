@@ -81,11 +81,11 @@ pub(crate) enum Topic {
     /// The pending approval gate, or `null` when none is open.
     Gate,
     /// The question an `ask` has put to the operator, or `null` when none is pending:
-    /// `{call_id, question, n, of, recalled}` (docs/supervisor.md). `n` of `of` counts
+    /// `{call_id, question, n, of, recalled}` (docs/process-monitor.md). `n` of `of` counts
     /// the asks of one completion, which are put one at a time; `recalled` holds the
     /// turns withdrawn when the ask began, in the shape `DELETE /turns/:id` returns.
     Ask,
-    /// Live background processes (docs/supervisor.md).
+    /// Live background processes (docs/process-monitor.md).
     Processes,
     /// Token/cost telemetry (docs/transport.md).
     Usage,

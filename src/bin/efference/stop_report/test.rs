@@ -115,7 +115,7 @@ fn asks_are_counted_beside_endings_and_leave_them_alone() {
             Vec::new(),
             Vec::new(),
             vec![ToolCall::new(
-                efference::supervisor::ASK,
+                efference::process_monitor::ASK,
                 id,
                 serde_json::json!({ "question": "OK?" }),
             )],

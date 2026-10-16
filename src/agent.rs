@@ -27,9 +27,9 @@ use crate::log::{
     Notification, Origin, Payload, RawResult, Spot, Stance, ToolCall, Triage, Turn, WireState,
 };
 use crate::policy::{self, ReviewLevel, Verdict};
+use crate::process_monitor;
 use crate::project::WireTurn;
 use crate::spotter::Spotter;
-use crate::supervisor;
 use crate::tools::Toolbox;
 use crate::triage::{
     BgVerdict, Pending, TriagePrimerInput, TriagePrimerOutcome, Triager, is_triage_tool,
@@ -45,7 +45,7 @@ use crate::triage::{
 /// crossing it signals something went wrong, so we don't silently truncate.
 const MAX_TOOL_RESULT_BYTES: usize = 256 * 1024;
 
-/// Coalesce a burst of near-simultaneous events into one idle triage (docs/supervisor.md).
+/// Coalesce a burst of near-simultaneous events into one idle triage (docs/process-monitor.md).
 const IDLE_TRIAGE_DEBOUNCE_MS: u64 = 250;
 
 /// Attempts per model call when the upstream fails transiently — a stream that
@@ -162,7 +162,7 @@ pub async fn run<F: Frontend, S: Spotter>(
 ) -> Result<(), Error> {
     restore_image_refusal(&shared, client, &mut toolbox);
     // World-facing tools plus the harness tools (`consolidate`, the
-    // supervisor/inbox tools (docs/supervisor.md)) handled structurally in the loop
+    // process-monitor/inbox tools (docs/process-monitor.md)) handled structurally in the loop
     // below, not by a `Provider`. Built once from the shared source; the defs are
     // constant `json!`, so `tools[]` stays byte-stable across requests (docs/log-and-projection.md).
     let tools = tool_definitions(&toolbox);
@@ -180,7 +180,7 @@ pub async fn run<F: Frontend, S: Spotter>(
     let mut held: std::collections::VecDeque<SubmittedTurn> = std::collections::VecDeque::new();
 
     loop {
-        // Idle: race the next user turn against a notification wake (docs/supervisor.md —
+        // Idle: race the next user turn against a notification wake (docs/process-monitor.md —
         // wake-on-notification, which replaced a blocking `wait`). A user turn drives a
         // normal trajectory; an event wakes a standalone triage that escalates to a
         // trajectory only if it pins something. The first turn arrives here too.

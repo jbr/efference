@@ -5,7 +5,7 @@
 //! already has: no `User` entry, no log append, no projection change. The signal
 //! is a flag plus a wake, read by the agent loop's idle `select!` beside the user
 //! turn and the notification wake — the same escalation shape the pinned-event
-//! path uses (docs/supervisor.md), which also enters a trajectory with no new
+//! path uses (docs/process-monitor.md), which also enters a trajectory with no new
 //! user turn.
 //!
 //! Nothing here writes to the log, so the byte-stability pins cannot move: the

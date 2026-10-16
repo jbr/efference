@@ -579,7 +579,7 @@ pub(super) struct InteractiveState<'a> {
     pub pace_tx: UnboundedSender<PaceCmd>,
     /// Fires the operator's interrupt intent at the in-flight tool: `Kill` →
     /// `POST /loop/interrupt` (the hard rung of graduated Esc, docs/tui.md), `Detach` →
-    /// `PATCH /processes/:id {background: true}` (the foreground→background handoff, docs/supervisor.md).
+    /// `PATCH /processes/:id {background: true}` (the foreground→background handoff, docs/process-monitor.md).
     /// A no-op if nothing is running.
     pub interrupt_tx: UnboundedSender<Interrupt>,
     /// Dispatches a host verb — list the sessions, end one — to the tokio side,
@@ -629,7 +629,7 @@ pub(super) struct InteractiveState<'a> {
     /// surfaced in the status bar (loud to the operator), never in the transcript, and never
     /// projected (a held/slowed loop is byte-identical on the wire to a fast one).
     pub pace: Option<PaceView>,
-    /// The live background processes (docs/supervisor.md), from the `processes` topic. Rendered
+    /// The live background processes (docs/process-monitor.md), from the `processes` topic. Rendered
     /// as a persistent panel above the composer; empty hides it. Ephemeral chrome —
     /// never part of the transcript document, so it never triggers a reproject.
     pub processes: Vec<BgProc>,

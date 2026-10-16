@@ -22,9 +22,9 @@ pub(super) enum Decision {
         /// small, and an unboxed field would size every one of them to it.
         telemetry: Box<ToolTelemetry>,
         /// The operator's note from a foreground→background handoff, delivered as a
-        /// user turn after the step's results (docs/supervisor.md).
+        /// user turn after the step's results (docs/process-monitor.md).
         handoff: Option<String>,
-        /// Who answered, when the call was an `ask` (docs/supervisor.md).
+        /// Who answered, when the call was an `ask` (docs/process-monitor.md).
         reply: Option<Box<Reply>>,
     },
     /// Payloads to append as they stand — they never reach the triage, because there is
@@ -106,10 +106,10 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
     if !callable.contains(&call.name) {
         return Ok(Decision::Direct(vec![unknown_tool(call, &callable)]));
     }
-    // `ask` puts a question to the operator (docs/supervisor.md): there is nothing in the
+    // `ask` puts a question to the operator (docs/process-monitor.md): there is nothing in the
     // world to authorize, so it skips the cascade, and the wait for the reply is the
     // call. The interrupt's *after* juncture applies as for any call.
-    if call.name == supervisor::ASK {
+    if call.name == process_monitor::ASK {
         // An answered ask lands in the triage, so its triage is certain short of an
         // interrupt — fire the primer over the operator's deliberation window
         // (docs/transport.md).
@@ -283,15 +283,15 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
                 let _ = go.send(true);
             };
             // Acquire the result. A backgrounded bash spawn returns immediately — the child
-            // runs on under the supervisor and its output surfaces at later triages
-            // (docs/supervisor.md); everything else runs to completion through the toolbox.
+            // runs on under the process monitor and its output surfaces at later triages
+            // (docs/process-monitor.md); everything else runs to completion through the toolbox.
             // `interrupted()` resolves on a `POST /loop/interrupt` — the tool's kill trigger
             // (kills the process group). Tool output streams to the control stream's `output` class
             // chunk-by-chunk as it runs (bash; the MCP tools resolve whole), tagged by call id.
             let mut handoff = None;
-            // The `p#<n>` the supervisor minted for this call, if it reached a
+            // The `p#<n>` the process monitor minted for this call, if it reached a
             // spawn — recorded on the telemetry row so a reader can join the
-            // call to the process namespace (docs/supervisor.md).
+            // call to the process namespace (docs/process-monitor.md).
             let mut process_handle: Option<String> = None;
             // The telemetry clock starts here, after the cascade: a call that
             // waited at a human gate did not *run* for that long (docs/tools.md).
@@ -303,7 +303,7 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
             let result = if bash::is_background_call(call) {
                 match background_command(call) {
                     // The spawning `tool_use` id rides along, so the process and the
-                    // transcript entry can each find the other (docs/supervisor.md).
+                    // transcript entry can each find the other (docs/process-monitor.md).
                     Some(command) => {
                         match shared.spawn_background(command, Some(call.id.0.clone())) {
                             Ok(handle) => {
@@ -312,7 +312,7 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
                                 // is read only after a compressed start→watch→kill turn
                                 // has already been attempted, and a short process can exit
                                 // before the turn composing follow-up calls reaches it
-                                // (docs/supervisor.md).
+                                // (docs/process-monitor.md).
                                 let content = format!(
                                     "backgrounded as {handle}. its recent output will surface in \
                                      your inbox at each step, and you'll get a notification when \
@@ -342,8 +342,8 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
                 // `tool_result`, so triage, the log, and `project` never learn it was
                 // served from anywhere unusual.
                 r
-            } else if let Some(r) = supervisor_tool_result(shared, call).await {
-                // A supervisor/inbox read/act tool (docs/supervisor.md) — resolves against
+            } else if let Some(r) = process_monitor_tool_result(shared, call).await {
+                // A process-monitor/inbox read/act tool (docs/process-monitor.md) — resolves against
                 // daemon state; `wait` yields on the inbox signal while the other tools return.
                 r
             } else {
@@ -353,8 +353,8 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
                     shared.take_detach_note();
                 }
                 // A foreground bash command joins the process namespace the moment it
-                // spawns (docs/supervisor.md): the spawn hook mints its id, and the
-                // chunk sink feeds the supervisor's capture alongside the live stream —
+                // spawns (docs/process-monitor.md): the spawn hook mints its id, and the
+                // chunk sink feeds the process monitor's capture alongside the live stream —
                 // which is what lets `GET /processes/:id/output` seed a cold-opened
                 // client mid-run, and what makes the handoff below a property flip
                 // rather than a re-registration. A `Mutex` (not a `Cell`) so the loop
@@ -405,14 +405,14 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
                         // The paired `tool_result` is the canonical output now; the
                         // registry entry has done its job. Its handle stays on the
                         // telemetry row, which is where a foreground process's
-                        // ordinal survives the removal (docs/supervisor.md).
+                        // ordinal survives the removal (docs/process-monitor.md).
                         if let Some(id) = fg_id.lock().unwrap().take() {
-                            process_handle = Some(crate::supervisor::handle(id));
+                            process_handle = Some(crate::process_monitor::handle(id));
                             shared.conclude_foreground(id);
                         }
                         result
                     }
-                    // The foreground→background handoff (docs/supervisor.md): the operator
+                    // The foreground→background handoff (docs/process-monitor.md): the operator
                     // detached the running command, so flip its registry entry to
                     // background — the capture already spans the whole run — and pair the
                     // `tool_use` with a handoff result (`is_error: false`; unlike Ctrl-C, the
@@ -432,7 +432,7 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
                         // is the deadline the call itself ran past, and is the one moment
                         // `background_after` is worth knowing about — three sessions hit
                         // the pre-timer hang and none learned anything, because the
-                        // failure was silence (docs/supervisor.md).
+                        // failure was silence (docs/process-monitor.md).
                         let content = match auto_after {
                             Some(after) => format!(
                                 "this command was still running after {}s, so it moved to \

@@ -48,7 +48,7 @@ enum Payload {
     Triage(Triage),    // a triage verdict — the audit record (see triage.md)
     Spot(Spot),        // a spotter permission verdict — audit only (see permissions.md)
     Telemetry(Telemetry),  // how the session ran, not what it said — never projected (below)
-    ProcessEvent(ProcessEvent),    // a background process's mint or exit (see supervisor.md)
+    ProcessEvent(ProcessEvent),    // a background process's mint or exit (see process-monitor.md)
     ConfigEdit(ConfigEdit),  // one durable policy change — folded by the classifier (see permissions.md)
     Preamble { system: String, context: Resolved, inference: Option<LoggedInference> },  // boot record — replay/audit only (see context.md)
     Title(Title),      // the session's one-line title — presentation only, never projected (see session-title.md)
@@ -113,7 +113,7 @@ before. Each `Resumed` entry skips its own range.
 are: both project to nothing, which is what lets them be appended mid-session —
 on every tool call, and at every background spawn and exit — without moving the
 cached prefix. `ProcessEvent` is the durable answer to "what was `p#3`" for a
-reader with no daemon ([supervisor.md](supervisor.md)); metadata only, since a
+reader with no daemon ([process-monitor.md](process-monitor.md)); metadata only, since a
 process's output belongs to the registry's bounded best-effort capture.
 
 These payloads are events the session went through that the model

@@ -1719,8 +1719,8 @@ select {
 }
 
 /* The command's own output, under whatever the result tab already showed: the
-   live tail of a running call, or the supervisor's capture for one that was
-   backgrounded (docs/supervisor.md). Separated by a rule rather than a heading
+   live tail of a running call, or the process monitor's capture for one that was
+   backgrounded (docs/process-monitor.md). Separated by a rule rather than a heading
    so it reads as a second section of the same tab, not a second result. */
 .inspector-output {
   margin-top: 0.8rem;

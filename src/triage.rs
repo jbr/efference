@@ -44,8 +44,8 @@ use crate::log::{
     AssistantOutput, Disposition, Keep, LogEntry, Origin, Payload, RawResult, Seq, ToolCall,
     Triaged, WireState,
 };
+use crate::process_monitor::BgView;
 use crate::project::{Reader, TRIAGE_LINE_CAP, UserPart, WireTurn, project_semantic_for};
-use crate::supervisor::BgView;
 
 const RETAIN: &str = "retain";
 
@@ -55,7 +55,7 @@ fn primer_choice() -> ToolChoice {
     ToolChoice::force(RETAIN)
 }
 
-/// The tool of the **standalone** idle triage (docs/supervisor.md): no `keep`
+/// The tool of the **standalone** idle triage (docs/process-monitor.md): no `keep`
 /// (there's no tool output to retain), only inbox/background dispositions.
 const TRIAGE: &str = "triage";
 
@@ -67,7 +67,7 @@ pub fn is_triage_tool(name: &str) -> bool {
     name == RETAIN || name == TRIAGE
 }
 
-/// A live-process triage disposition (docs/supervisor.md) — distinct from the seq-keyed
+/// A live-process triage disposition (docs/process-monitor.md) — distinct from the seq-keyed
 /// notification [`Disposition`] because a running process is addressed by its live
 /// `p#<n>` handle, not a frozen arrival seq, and its "dismiss" is **mute** (stop
 /// surfacing the tail; the process keeps running), not clear.
@@ -121,9 +121,9 @@ pub struct HoldOutcome {
     /// filtered to notifications actually shown. Empty when nothing was pinned or
     /// dismissed (everything left for the next triage).
     pub inbox: Vec<(Seq, Disposition)>,
-    /// Live-process dispositions this triage chose, by `p#<n>` handle (docs/supervisor.md) —
+    /// Live-process dispositions this triage chose, by `p#<n>` handle (docs/process-monitor.md) —
     /// filtered to processes actually shown. The loop materializes a `Pin` into a
-    /// snapshot `Ambient` and applies a `Mute` to the supervisor.
+    /// snapshot `Ambient` and applies a `Mute` to the process monitor.
     pub background: Vec<(String, BgVerdict)>,
     /// Context-item names this triage chose to surface (docs/triage.md) —
     /// filtered to the roster actually shown (invented names dropped). Stored on the
@@ -197,7 +197,7 @@ impl HoldOutcome {
     }
 }
 
-/// The verdict of a **standalone** idle triage (docs/supervisor.md) — a triage that rides no
+/// The verdict of a **standalone** idle triage (docs/process-monitor.md) — a triage that rides no
 /// tool result, so it has no [`WireState`]; just the inbox/background dispositions (and
 /// the audit pieces the loop stamps into a [`Triage`](crate::log::Triage) with
 /// `for_result: None`).
@@ -476,7 +476,7 @@ impl Triager {
     }
 
     /// Decide the wire form of the results a completion produced, and triage the inbox +
-    /// live background processes (docs/triage.md, docs/inbox.md, docs/supervisor.md).
+    /// live background processes (docs/triage.md, docs/inbox.md, docs/process-monitor.md).
     /// `tools` is the turn's full `tools[]` — the fork sends the *same* array as the agent
     /// turn so both shapes share one cache lineage (docs/triage.md); `prefix` is the
     /// log through the assistant turn that made the calls (the fork's cached head);
@@ -616,7 +616,7 @@ impl Triager {
         })
     }
 
-    /// The standalone idle triage (docs/supervisor.md, docs/inbox.md): fork off
+    /// The standalone idle triage (docs/process-monitor.md, docs/inbox.md): fork off
     /// the cached prefix, show the inbox + background with no tool result, and ask for
     /// the `triage` tool via the tail instruction (no `keep` — there is no tool
     /// output). The caller wakes this when an event arrives while idle and escalates to

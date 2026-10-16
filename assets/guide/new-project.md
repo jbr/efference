@@ -250,7 +250,7 @@ when the operator wants one withheld. The set today:
   `undo_edit` (the anchor-based edit pipeline); `read_image`, which drops out on its own on
   a model without image input.
 - **The session's own housekeeping** — `consolidate` (curating the transcript),
-  `check_inbox`, and the process supervisor `list_processes`, `read_process`,
+  `check_inbox`, and the process process monitor `list_processes`, `read_process`,
   `watch_process`, `kill_process`. These act on the session, not the workspace, and there
   is rarely a reason to hold them behind a gate.
 - `bash` is not in this list on purpose: a shell command is judged as command text by

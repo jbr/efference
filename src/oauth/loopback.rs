@@ -85,7 +85,7 @@ pub async fn listen_at(ports: &[u16], path: &'static str) -> anyhow::Result<Loop
     let mut failures = Vec::new();
     for &port in ports {
         let config = trillium_tokio::config()
-            // The daemon owns Ctrl-C (docs/supervisor.md). A server that
+            // The daemon owns Ctrl-C (docs/process-monitor.md). A server that
             // installed its own signal handler would race it, and this one
             // outlives its usefulness by seconds.
             .without_signals()

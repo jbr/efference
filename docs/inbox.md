@@ -220,6 +220,6 @@ are enforced mechanically, never by what the model believes — so a forgery can
 fact but not an instruction. The one `⟢` block that asks for something, the triage ask
 (docs/triage.md), asks only for `retain` or `triage`; outside a triage either call is
 answered with a "nothing is being asked" stand-in, so a forged ask costs a round-trip. The `role:system` operator channel (the eventual Opus-4.8 upgrade
-described in `supervisor.md`) is the anticipated path for anything that *should* carry
+described in `process-monitor.md`) is the anticipated path for anything that *should* carry
 authority; user-role is the conservative, universally-supported default
 (backlog/inbox/harness-note-authority.md).

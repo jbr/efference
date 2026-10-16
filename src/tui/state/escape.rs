@@ -105,8 +105,8 @@ impl<'a> InteractiveState<'a> {
         self.dirty = true;
     }
 
-    /// The foreground→background handoff key (docs/supervisor.md): ask the daemon
-    /// to detach the in-flight tool into the background supervisor — keep it
+    /// The foreground→background handoff key (docs/process-monitor.md): ask the daemon
+    /// to detach the in-flight tool into the background process monitor — keep it
     /// running as a `p#<n>` process instead of killing it or waiting it out.
     /// Fire-and-forget like the interrupt: the daemon no-ops if nothing is
     /// mid-tool. A message typed right after is delivered mid-task, so it reaches

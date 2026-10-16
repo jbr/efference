@@ -660,7 +660,7 @@ moves.
 
 The lookup covers everything a turn advertises, not just the toolbox providers:
 `agent::brief` is the mirror of `agent::tool_definitions`, falling through to the
-loop-owned tools (`consolidate`, the supervisor/inbox family), whose definitions are held
+loop-owned tools (`consolidate`, the process-monitor/inbox family), whose definitions are held
 in the same `ToolDefinition` shape a mount snapshots. That family once joined `tools[]`
 outside the toolbox with no brief path, so the spotter judged `check_inbox` and
 `list_processes` as bare names and called them opaque — the descriptions existed and never
