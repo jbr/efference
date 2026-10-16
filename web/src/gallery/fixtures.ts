@@ -94,6 +94,7 @@ export const card = (over: Partial<CardModel>): CardModel => ({
     detail: "Landed. It wasn't a fast-forward as it stood, so I rebased first:",
   },
   park: null,
+  blocked: null,
   context: { used: 233_000, limit: 1_000_000 },
   cost: null,
   models: { main: "deepseek-flash", spotter: "jev-latest", triage: null },

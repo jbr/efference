@@ -92,7 +92,11 @@ describe("the state fold", () => {
   });
 
   it("is order-insensitive across distinct topics", () => {
-    const running: Frame = { class: "state", kind: "running", data: true };
+    const running: Frame = {
+      class: "state",
+      kind: "loop_phase",
+      data: { phase: "requesting" },
+    };
     const pace: Frame = {
       class: "state",
       kind: "pace",

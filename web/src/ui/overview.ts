@@ -8,13 +8,13 @@
 // should be no further away than working with the session that created it.
 
 import type { ArchivedSession, SessionEntry } from "../api/http.ts";
-import type { LogEntry, StateSnapshot } from "../api/types.ts";
+import type { BlockedReason, LogEntry, StateSnapshot } from "../api/types.ts";
 import { callView } from "./signature.ts";
 import { viewOf } from "../session/assistant.ts";
 import { homeRelative } from "./identity.ts";
 
 /** Where the operator's attention stands with a session, most urgent first.
- * `blocked`: it cannot move until someone acts (a gate, a stall).
+ * `blocked`: it cannot move until someone acts (a gate, a stall, a park, a block).
  * `your_turn`: it finished a turn and is waiting on a reply or an archive.
  * `working`: mid-turn, nothing asked of anyone.
  * `new`: created and never sent a turn. */
@@ -32,8 +32,11 @@ export interface CardModel {
   /** The one line of what is happening: the gate's ask, the stall's message,
    * the running call's intent, or the last reply. `null` when none is known. */
   activity: Activity | null;
-  /** Why a `parked` session is parked (the `park` topic); `null` when not known. */
+  /** Why a `parked` session is parked: the cache still believed expired, or a
+   * compaction that ended the belief; `null` when not known. */
   park: "expired" | "compacted" | null;
+  /** Why a `blocked` session is blocked (the `loop_phase` topic); `null` when not known. */
+  blocked: BlockedReason | null;
   context: { used: number | null; limit: number | null } | null;
   /** The provider's billed running total; `unpriced > 0` makes it a floor. */
   cost: { usd: number; unpriced: number } | null;
@@ -119,6 +122,13 @@ export function statusPhrase(card: CardModel): string | null {
       ? "is paused: summarized, waiting for you to continue"
       : "is paused: its cache expired";
   }
+  if (card.status === "blocked") {
+    return card.blocked === "pace_held"
+      ? "is held"
+      : card.blocked === "config_repair"
+        ? "is stopped: its config file needs repair"
+        : "is stopped until someone acts";
+  }
   if (card.attention === "your_turn") return "is waiting for you";
   return null;
 }
@@ -142,8 +152,9 @@ export function cardModel(
   const attention: Attention =
     entry.status === "gated" ||
     entry.status === "stalled" ||
-    // Parked at the cold check: the loop waits on a person, as at a gate.
-    entry.status === "parked"
+    // Parked at the cold check, or blocked: the loop waits on a person, as at a gate.
+    entry.status === "parked" ||
+    entry.status === "blocked"
       ? "blocked"
       : entry.status === "running"
         ? "working"
@@ -157,7 +168,19 @@ export function cardModel(
   const gate = state?.gate ?? null;
   const stall = state?.stall ?? null;
   const ask = state?.ask ?? null;
-  const park = state?.park ?? null;
+  // The park's reason: the `cold` topic still set is an expired cache, cleared is
+  // a compaction that ended the belief while the loop waited.
+  const cold = state?.cold;
+  const park =
+    entry.status !== "parked" || cold === undefined
+      ? null
+      : cold === null
+        ? ({ reason: "compacted" } as const)
+        : ({
+            reason: "expired",
+            context_tokens: cold.context_tokens,
+          } as const);
+  const phase = state?.loop_phase ?? null;
   const activity: Activity | null =
     gate !== null
       ? {
@@ -198,7 +221,11 @@ export function cardModel(
       .filter((other) => other.created_by === entry.id)
       .map((other) => other.id),
     activity,
-    park: entry.status === "parked" ? (park?.reason ?? null) : null,
+    park: park?.reason ?? null,
+    blocked:
+      entry.status === "blocked" && phase?.phase === "blocked"
+        ? phase.reason
+        : null,
     context: usage?.context ?? null,
     cost: usage?.cost ?? null,
     models: inference

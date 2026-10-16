@@ -19,14 +19,14 @@ afterEach(() => vi.unstubAllGlobals());
 const defaults = {
   recalled: null,
   pace: null,
-  running: false,
+  phase: null,
+  verbs: null,
   stall: null,
   retrying: false,
   gatePending: false,
   ask: null,
   cold: null,
-  park: null,
-  compaction: null,
+  compactionFailure: null,
   operations: null,
   model: "test",
 };
@@ -156,7 +156,7 @@ test("composer hold sends a loop patch without submitting or clearing its draft"
         JSON.stringify({
           pace: { held: true, speed_ms: 0 },
           review_level: "spotter_human",
-          running: false,
+          loop_phase: { phase: "idle" },
         }),
         { status: 200, headers: { "Content-Type": "application/json" } },
       ),
@@ -178,5 +178,46 @@ test("composer hold sends a loop patch without submitting or clearing its draft"
     expect(store.snapshot().text).toBe("keep this draft while holding");
   } finally {
     view.close();
+  }
+});
+
+test("an empty send the verbs topic refuses states the reason without a request", async () => {
+  const id = `draft-${crypto.randomUUID()}`;
+  const fetch = vi.fn();
+  vi.stubGlobal("fetch", fetch);
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  history.replaceState(null, "", `/sessions/${id}/`);
+  const verbs = {
+    turn: { accepted: true, delivery: "now" },
+    continue: {
+      accepted: false,
+      message: "nothing to continue: the last turn completed",
+    },
+    compact: { accepted: true, warm: true },
+  } as const;
+  try {
+    act(() =>
+      root.render(
+        <Composer
+          key={id}
+          {...defaults}
+          phase={{ phase: "idle" }}
+          verbs={verbs}
+          submit={vi.fn(() => Promise.resolve())}
+        />,
+      ),
+    );
+    await act(async () =>
+      host.querySelector<HTMLFormElement>("form")!.requestSubmit(),
+    );
+    expect(fetch).not.toHaveBeenCalled();
+    expect(host.querySelector(".error")?.textContent).toBe(
+      "nothing to continue: the last turn completed",
+    );
+  } finally {
+    act(() => root.unmount());
+    host.remove();
   }
 });

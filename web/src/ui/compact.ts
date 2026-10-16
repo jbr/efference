@@ -1,10 +1,9 @@
 // What the web client offers for a compaction (docs/web-client.md): the one rule both
-// the composer's cold notice and the drawer's standing button read. The daemon
-// owns the real conditions (`409 not_compactable`); this only decides whether to
-// offer the action and what to tell the operator before it runs, from the three
-// topics the answer depends on.
+// the composer's cold notice and the drawer's standing button read. The compact route's
+// own answer is the `verbs` topic's `compact` entry (docs/control-api.md), so the offer
+// is that answer, plus a compaction already in flight from `current_operations`.
 
-import type { Cold, Compaction } from "../api/types.ts";
+import type { Cold, CurrentOperations, Verbs } from "../api/types.ts";
 
 export interface CompactOffer {
   /** `writing`: a compaction is in flight. `blocked`: not now, and `reason` says why. */
@@ -15,38 +14,19 @@ export interface CompactOffer {
 }
 
 export function compactOffer(
+  verbs: Verbs | null,
+  operations: CurrentOperations | null,
   cold: Cold | null,
-  compaction: Compaction | null,
-  running: boolean,
-  gatePending: boolean,
-  asking: boolean,
 ): CompactOffer {
-  const warm = cold === null;
-  if (compaction?.state === "writing") return { kind: "writing", warm };
-  if (gatePending) {
-    return {
-      kind: "blocked",
-      reason: "an approval gate is pending — resolve it first",
-      warm,
-    };
+  const open = operations?.compaction ?? null;
+  if (open !== null) return { kind: "writing", warm: open.warm };
+  const verb = verbs?.compact;
+  // Before the topic lands, the route answers for itself.
+  if (verb === undefined) return { kind: "ready", warm: cold === null };
+  if (!verb.accepted) {
+    return { kind: "blocked", reason: verb.message, warm: cold === null };
   }
-  if (asking) {
-    return {
-      kind: "blocked",
-      reason: "a question is pending — answer it first",
-      warm,
-    };
-  }
-  // A loop parked at its cold check reads as running, and may compact; a warm one
-  // that is running is mid-request.
-  if (running && warm) {
-    return {
-      kind: "blocked",
-      reason: "the loop is running — summarize when it stops",
-      warm,
-    };
-  }
-  return { kind: "ready", warm };
+  return { kind: "ready", warm: verb.warm };
 }
 
 /** The sentence a confirm shows before a compaction runs. */

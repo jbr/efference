@@ -24,10 +24,9 @@ test("context details open on delayed mouse hover, bridge to actions, and suppor
           context={{ used: 50_000, limit: 200_000 }}
           summary={{
             cold: null,
-            compaction: null,
-            running: false,
-            gatePending: false,
-            asking: false,
+            verbs: null,
+            operations: null,
+            failure: null,
           }}
         />,
       ),

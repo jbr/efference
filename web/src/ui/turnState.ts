@@ -1,15 +1,17 @@
-// The composer status bar's turn-state readout (docs/web-client.md). Four
-// conditions, from three level-triggered topics: the loop is running, it is
-// waiting to retry the upstream, it is idle after finishing, or it has stopped
-// short (docs/transport.md). A stall is the one `running` alone cannot say — a
-// stalled session and a finished one are the same `false`, and a triage
-// held on the upstream is stalled while still `true` — so the `stall` topic
-// decides it. A pending gate or ask reads as `waiting`, after those two. A loop parked at the cold check (the `park` topic) is `running` too, and
-// reads as its own condition: it waits on the operator. A compaction in flight (the `compaction` topic) reads as running: the loop is
-// idle, but the session is busy writing its summary. Both the retry wait and the stall name the recovery: an empty
-// send, which the daemon takes as "retry now".
+// The composer status bar's turn-state readout (docs/web-client.md), read off
+// the `loop_phase` topic (docs/control-api.md) with the topics that say more
+// about a phase: `stall` (a trajectory that gave up, idle or with its triage
+// held), `cold` (what a cold park is waiting to read), `upstream_retry` (the
+// pause between attempts), and `current_operations` (what a running loop is
+// waiting on, and a compaction in flight). A stall, a cold park, a gate or ask,
+// and a block wait on the operator, and each names the gesture that moves it on.
 
-import type { CurrentOperations, Park, Stall } from "../api/types.ts";
+import type {
+  Cold,
+  CurrentOperations,
+  LoopPhase,
+  Stall,
+} from "../api/types.ts";
 import { kilotokens } from "./compact.ts";
 import { operationText, operationTitle } from "./operations.ts";
 
@@ -30,21 +32,27 @@ export interface TurnState {
   kind: "running" | "idle" | "stalled" | "parked" | "waiting";
 }
 
+/** What the readout reads besides the phase. */
+export interface TurnTopics {
+  stall?: Stall | null;
+  cold?: Cold | null;
+  /** A retry of the upstream is waiting (the `upstream_retry` topic). */
+  retrying?: boolean;
+  view?: OperationsView | null;
+}
+
 /**
  * The readout for the current topic values. A pure function: no clock is read,
  * so neither the stall's `at` nor the retry's `next_attempt_at` is rendered as
- * a time; the operation's elapsed time is the one place a clock matters, and it
- * arrives as `view.now`.
+ * a time; the operation's elapsed time and a pace delay's remainder are the
+ * places a clock matters, and it arrives as `view.now`.
  */
 export function turnState(
-  running: boolean,
-  stall: Stall | null,
-  retrying = false,
-  compacting = false,
-  park: Park | null = null,
-  view: OperationsView | null = null,
-  pending: "gate" | "ask" | null = null,
+  phase: LoopPhase | null,
+  { stall = null, cold = null, retrying = false, view = null }: TurnTopics = {},
 ): TurnState {
+  const compacting = (view?.operations?.compaction ?? null) !== null;
+  const current = phase ?? { phase: "idle" };
   if (stall !== null) {
     return {
       text: `${stall.message} · send to retry`,
@@ -52,10 +60,10 @@ export function turnState(
       kind: "stalled",
     };
   }
-  // The loop is stopped at its cold check, not slow: `running` stays true while
-  // it waits. The composer's cold notice carries the choice (send or summarize).
-  if (running && !compacting && park !== null) {
-    if (park.reason === "compacted") {
+  // The loop is stopped at its cold check, not slow. The composer's cold notice
+  // carries the choice (send or summarize).
+  if (current.phase === "cold_parked" && !compacting) {
+    if (cold === null) {
       return {
         text: "paused: summarized · send to continue",
         title:
@@ -64,9 +72,9 @@ export function turnState(
       };
     }
     const read =
-      park.context_tokens === null
+      cold.context_tokens === null
         ? "the whole context"
-        : `${kilotokens(park.context_tokens)} tokens`;
+        : `${kilotokens(cold.context_tokens)} tokens`;
     return {
       text: `paused: cache expired · send to continue (reads ${read} uncached)`,
       title:
@@ -76,14 +84,28 @@ export function turnState(
   }
   // An open gate or `ask` is what the operator must act on, ahead of any
   // request or tool the loop has open beside it.
-  if (running && !compacting && pending !== null) {
+  if (current.phase === "gated" || current.phase === "asking") {
     return {
       text:
-        pending === "gate"
+        current.phase === "gated"
           ? "waiting for your approval"
           : "waiting for your answer",
       kind: "waiting",
     };
+  }
+  if (current.phase === "blocked") {
+    return current.reason === "pace_held"
+      ? {
+          text: "held · resume or send to continue",
+          title: "the pace is held; nothing runs until it is resumed",
+          kind: "parked",
+        }
+      : {
+          text: "stopped: the config file needs repair",
+          title:
+            "the config file does not parse and could not be restored; the loop waits until it is fixed",
+          kind: "stalled",
+        };
   }
   if (compacting) {
     return {
@@ -92,24 +114,24 @@ export function turnState(
       kind: "running",
     };
   }
-  if (running && retrying) {
+  if (current.phase === "idle") return { text: "your turn", kind: "idle" };
+  if (retrying) {
     return {
       text: "retrying the upstream · send to retry now",
       kind: "running",
     };
   }
-  if (running) {
-    const operation =
-      view === null
-        ? null
-        : operationText(view.operations, view.model, view.now);
-    return {
-      text: operation ?? "running…",
-      title: view === null ? undefined : operationTitle(view.operations),
-      kind: "running",
-    };
+  if (current.phase === "delayed" && view !== null) {
+    const seconds = Math.max(0, Math.ceil((current.until - view.now) / 1000));
+    return { text: `pacing · next step in ${seconds}s`, kind: "running" };
   }
-  return { text: "your turn", kind: "idle" };
+  const operation =
+    view === null ? null : operationText(view.operations, view.model, view.now);
+  return {
+    text: operation ?? "running…",
+    title: view === null ? undefined : operationTitle(view.operations),
+    kind: "running",
+  };
 }
 
 export function turnClass(kind: TurnState["kind"]): string {

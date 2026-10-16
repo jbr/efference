@@ -12,6 +12,7 @@ import type {
   Decision,
   ErrorEnvelope,
   LogEntry,
+  LoopPhase,
   Process,
   ProcessRecord,
   ReviewLevel,
@@ -193,12 +194,15 @@ export interface LoopPatch {
   reviewLevel?: ReviewLevel;
 }
 export const patchLoop = ({ speedMs, held, reviewLevel }: LoopPatch) =>
-  patch<{ pace: unknown; review_level: string; running: boolean }>("/v1/loop", {
-    ...(speedMs !== undefined || held !== undefined
-      ? { pace: { speed_ms: speedMs, held } }
-      : {}),
-    ...(reviewLevel !== undefined ? { review_level: reviewLevel } : {}),
-  });
+  patch<{ pace: unknown; review_level: string; loop_phase: LoopPhase }>(
+    "/v1/loop",
+    {
+      ...(speedMs !== undefined || held !== undefined
+        ? { pace: { speed_ms: speedMs, held } }
+        : {}),
+      ...(reviewLevel !== undefined ? { review_level: reviewLevel } : {}),
+    },
+  );
 // Signals the running tool; it deletes no state. The body names this client and
 // the affordance, which the host records on an `Interrupt` entry
 // (docs/control-api.md).
@@ -310,7 +314,8 @@ export interface SessionEntry {
   cwd?: string;
   created_by?: string;
   /** What the session is doing, in one word. */
-  status: "running" | "idle" | "gated" | "asking" | "stalled" | "parked";
+  status:
+    "running" | "idle" | "gated" | "asking" | "stalled" | "parked" | "blocked";
   /** Live background processes the session holds; archiving it reaps them. */
   processes: number;
 }

@@ -4,17 +4,22 @@ import { createRoot } from "react-dom/client";
 import { expect, test, vi } from "vitest";
 import { CompactControl } from "./CompactControl.tsx";
 import { compactLoop } from "../api/http.ts";
+import type { Verbs } from "../api/types.ts";
 vi.mock("../api/http.ts", () => ({
   compactLoop: vi.fn(),
   ApiError: class extends Error {},
 }));
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+const verbs = (compact: Verbs["compact"]): Verbs => ({
+  turn: { accepted: true, delivery: "now" },
+  continue: { accepted: true },
+  compact,
+});
 const defaults = {
   cold: null,
-  compaction: null,
-  running: false,
-  gatePending: false,
-  asking: false,
+  verbs: verbs({ accepted: true, warm: true }),
+  operations: null,
+  failure: null,
 };
 
 test("one click directly summarizes and supplies warm consent without confirmation", async () => {
@@ -41,20 +46,28 @@ test("one click directly summarizes and supplies warm consent without confirmati
   }
 });
 
-test("pending approvals and questions block summary, while a cold parked loop can summarize", async () => {
+test("a refusal the route publishes disables summary with its reason, and a cold session summarizes without warm", async () => {
   const host = document.createElement("div");
   const root = createRoot(host);
   vi.mocked(compactLoop).mockClear().mockResolvedValue({ status: "started" });
   try {
-    for (const blocked of [
-      { gatePending: true },
-      { asking: true },
-      { running: true },
+    for (const message of [
+      "an approval gate is pending — resolve it first",
+      "a question is pending — answer it first",
+      "the loop is running — compact when it stops",
     ]) {
-      act(() => root.render(<CompactControl {...defaults} {...blocked} />));
+      act(() =>
+        root.render(
+          <CompactControl
+            {...defaults}
+            verbs={verbs({ accepted: false, message })}
+          />,
+        ),
+      );
       expect(host.querySelector<HTMLButtonElement>("button")!.disabled).toBe(
         true,
       );
+      expect(host.textContent).toContain(message);
       act(() => host.querySelector<HTMLButtonElement>("button")!.click());
     }
     expect(compactLoop).not.toHaveBeenCalled();
@@ -62,7 +75,7 @@ test("pending approvals and questions block summary, while a cold parked loop ca
       root.render(
         <CompactControl
           {...defaults}
-          running
+          verbs={verbs({ accepted: true, warm: false })}
           cold={{ since: 1, context_tokens: 100 }}
         />,
       ),

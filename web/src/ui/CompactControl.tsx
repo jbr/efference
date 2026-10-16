@@ -1,27 +1,32 @@
 // Standing summary action in the context popup (docs/web-client.md).
 import { useState } from "react";
 import { ApiError, compactLoop } from "../api/http.ts";
-import type { Cold, Compaction } from "../api/types.ts";
+import type {
+  Cold,
+  CompactionFailure,
+  CurrentOperations,
+  Verbs,
+} from "../api/types.ts";
 import { compactOffer } from "./compact.ts";
 
 export interface CompactControlProps {
   cold: Cold | null;
-  compaction: Compaction | null;
-  running: boolean;
-  gatePending: boolean;
-  asking: boolean;
+  /** The `verbs` topic: whether the compact route takes a request now. */
+  verbs: Verbs | null;
+  /** `current_operations`: a compaction already in flight. */
+  operations: CurrentOperations | null;
+  failure: CompactionFailure | null;
 }
 
 export function CompactControl({
   cold,
-  compaction,
-  running,
-  gatePending,
-  asking,
+  verbs,
+  operations,
+  failure,
 }: CompactControlProps) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const offer = compactOffer(cold, compaction, running, gatePending, asking);
+  const offer = compactOffer(verbs, operations, cold);
   async function start() {
     if (pending || offer.kind !== "ready") return;
     setPending(true);
@@ -51,8 +56,8 @@ export function CompactControl({
         </button>
       )}
       {offer.kind === "blocked" && <p className="dim">{offer.reason}</p>}
-      {compaction?.state === "failed" && (
-        <div className="error">summary failed: {compaction.error}</div>
+      {failure !== null && (
+        <div className="error">summary failed: {failure.error}</div>
       )}
       {error && (
         <div className="error" role="alert">

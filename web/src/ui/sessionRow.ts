@@ -21,7 +21,9 @@ export function archiveWarning(session: SessionEntry): string | null {
             ? "stalled and has not been answered"
             : session.status === "parked"
               ? "is paused on an expired cache, waiting for you"
-              : null;
+              : session.status === "blocked"
+                ? "is stopped mid-turn until someone acts"
+                : null;
   const held =
     session.processes > 0
       ? `holds ${session.processes} background process${session.processes === 1 ? "" : "es"}`

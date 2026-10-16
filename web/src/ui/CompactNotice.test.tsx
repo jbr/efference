@@ -5,7 +5,7 @@
 import { expect, test, vi } from "vitest";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import type { Cold } from "../api/types.ts";
+import type { Cold, CurrentOperations, Verbs } from "../api/types.ts";
 import { CompactNotice } from "./CompactNotice.tsx";
 import { compactOffer } from "./compact.ts";
 
@@ -17,6 +17,13 @@ const cold: Cold = {
   since: 1_754_300_000_000,
   context_tokens: 120_400,
 };
+
+const verbs = (compact: Verbs["compact"]): Verbs => ({
+  turn: { accepted: true, delivery: "now" },
+  continue: { accepted: true },
+  compact,
+});
+const ready = verbs({ accepted: true, warm: false });
 
 function render(element: React.ReactElement): HTMLElement {
   const host = document.createElement("div");
@@ -30,8 +37,8 @@ test("a cold session states the read and offers the summary beside it, and the b
   const host = render(
     <CompactNotice
       cold={cold}
-      compaction={null}
-      offer={compactOffer(cold, null, false, false, false)}
+      failure={null}
+      offer={compactOffer(ready, null, cold)}
       onCompact={onCompact}
     />,
   );
@@ -43,12 +50,16 @@ test("a cold session states the read and offers the summary beside it, and the b
 });
 
 test("a compaction in flight replaces the choice with its progress", () => {
-  const compaction = { state: "writing" } as const;
+  const writing: CurrentOperations = {
+    requests: [],
+    tools: [],
+    compaction: { state: "writing", warm: false, cut: 4, since: 1 },
+  };
   const host = render(
     <CompactNotice
       cold={cold}
-      compaction={compaction}
-      offer={compactOffer(cold, compaction, false, false, false)}
+      failure={null}
+      offer={compactOffer(ready, writing, cold)}
       onCompact={() => {}}
     />,
   );
@@ -57,12 +68,12 @@ test("a compaction in flight replaces the choice with its progress", () => {
 });
 
 test("a failure states its error and offers another try", () => {
-  const compaction = { state: "failed", error: "upstream 529" } as const;
+  const failure = { error: "upstream 529", at: 1 };
   const host = render(
     <CompactNotice
       cold={cold}
-      compaction={compaction}
-      offer={compactOffer(cold, compaction, false, false, false)}
+      failure={failure}
+      offer={compactOffer(ready, null, cold)}
       onCompact={() => {}}
     />,
   );
@@ -72,12 +83,19 @@ test("a failure states its error and offers another try", () => {
   );
 });
 
-test("a blocked compaction gives the reason instead of a button", () => {
+test("a compaction the route refuses gives its reason instead of a button", () => {
   const host = render(
     <CompactNotice
       cold={cold}
-      compaction={null}
-      offer={compactOffer(cold, null, false, true, false)}
+      failure={null}
+      offer={compactOffer(
+        verbs({
+          accepted: false,
+          message: "an approval gate is pending — resolve it first",
+        }),
+        null,
+        cold,
+      )}
       onCompact={() => {}}
     />,
   );

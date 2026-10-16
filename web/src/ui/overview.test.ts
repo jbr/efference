@@ -60,8 +60,12 @@ test("idle is the operator's turn once a turn has run, and new before", () => {
 
 test("a parked session is blocked, says why, and names the cold read", () => {
   const one = [entry({ status: "parked" })];
-  const park = { reason: "expired", since: 1, context_tokens: 120_000 };
-  const card = cardModel(one[0], one, { park } as StateSnapshot);
+  const cold = { since: 1, context_tokens: 120_000 };
+  const card = cardModel(one[0], one, {
+    last_seq: null,
+    loop_phase: { phase: "cold_parked" },
+    cold,
+  });
   expect(card.attention).toBe("blocked");
   expect(statusPhrase(card)).toBe("is paused: its cache expired");
   expect(card.activity).toEqual({
@@ -73,11 +77,31 @@ test("a parked session is blocked, says why, and names the cold read", () => {
     detail: "continuing reads the whole context uncached",
   });
   const folded = cardModel(one[0], one, {
-    park: { reason: "compacted" },
-  } as StateSnapshot);
+    last_seq: null,
+    loop_phase: { phase: "cold_parked" },
+    cold: null,
+  });
   expect(folded.attention).toBe("blocked");
   expect(statusPhrase(folded)).toBe(
     "is paused: summarized, waiting for you to continue",
+  );
+});
+
+test("a blocked session is blocked and says why", () => {
+  const one = [entry({ status: "blocked" })];
+  const held = cardModel(one[0], one, {
+    last_seq: null,
+    loop_phase: { phase: "blocked", reason: "pace_held" },
+  });
+  expect(held.attention).toBe("blocked");
+  expect(statusPhrase(held)).toBe("is held");
+  const repair = cardModel(one[0], one, {
+    last_seq: null,
+    loop_phase: { phase: "blocked", reason: "config_repair" },
+  });
+  expect(statusPhrase(repair)).toBe("is stopped: its config file needs repair");
+  expect(statusPhrase(cardModel(one[0], one, null))).toBe(
+    "is stopped until someone acts",
   );
 });
 

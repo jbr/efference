@@ -369,13 +369,13 @@ export function GalleryScenes() {
           key={mode}
           running={running}
           turn={turnState(
-            running,
-            null,
-            false,
-            false,
-            null,
-            null,
-            mode === "Answer needed" ? "ask" : gate ? "gate" : null,
+            mode === "Answer needed"
+              ? { phase: "asking" }
+              : gate
+                ? { phase: "gated" }
+                : running
+                  ? { phase: "executing" }
+                  : { phase: "idle" },
           )}
         />
       </div>
@@ -387,10 +387,10 @@ export function ComposerSpecimens() {
   return (
     <div className="g-composer-specimens">
       <Example title="Your turn · rest">
-        <ComposerFixture turn={turnState(false, null)} />
+        <ComposerFixture turn={turnState({ phase: "idle" })} />
       </Example>
       <Example title="Your turn · focused">
-        <ComposerFixture turn={turnState(false, null)} focused />
+        <ComposerFixture turn={turnState({ phase: "idle" })} focused />
       </Example>
       <Example title="Answer needed · multiline draft">
         <ComposerFixture
@@ -399,14 +399,11 @@ export function ComposerSpecimens() {
           initial={
             "Keep it uncommitted for now.\n\nI’d like to compare the mobile layout before we publish it."
           }
-          turn={turnState(true, null, false, false, null, null, "ask")}
+          turn={turnState({ phase: "asking" })}
         />
       </Example>
       <Example title="Approval needed">
-        <ComposerFixture
-          running
-          turn={turnState(true, null, false, false, null, null, "gate")}
-        />
+        <ComposerFixture running turn={turnState({ phase: "gated" })} />
       </Example>
     </div>
   );

@@ -16,7 +16,7 @@ test("phone waiting readout keeps the full condition and omits desktop hints", (
   act(() =>
     root.render(
       <ComposerToolbar
-        turn={turnState(true, null, false, false, null, null, "ask")}
+        turn={turnState({ phase: "asking" })}
         narrow
         running
         held
@@ -54,7 +54,7 @@ test("desktop idle controls retain send hint and disable send while uploading", 
   act(() =>
     root.render(
       <ComposerToolbar
-        turn={turnState(false, null)}
+        turn={turnState({ phase: "idle" })}
         narrow={false}
         running={false}
         uploading
@@ -96,7 +96,7 @@ test("hold requests pause after the step and pending changes cannot be repeated"
   const root = createRoot(host);
   const hold = vi.fn();
   const props = {
-    turn: turnState(false, null),
+    turn: turnState({ phase: "idle" }),
     narrow: true,
     running: false,
     onAttach: () => {},

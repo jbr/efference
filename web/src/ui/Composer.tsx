@@ -26,11 +26,12 @@ import type {
   Ask,
   Attachment,
   Cold,
+  CompactionFailure,
   CurrentOperations,
-  Compaction,
+  LoopPhase,
   Pace,
-  Park,
   Stall,
+  Verbs,
 } from "../api/types.ts";
 import {
   ComposerToolbar,
@@ -66,14 +67,14 @@ export function Composer({
   submit: send,
   recalled,
   pace,
-  running,
+  phase,
+  verbs,
   stall,
   retrying,
   gatePending,
   ask,
   cold,
-  park,
-  compaction,
+  compactionFailure,
   operations,
   model,
 }: {
@@ -82,9 +83,13 @@ export function Composer({
    * draft (docs/web-client.md). */
   recalled: Recalled | null;
   pace: Pace | null;
-  running: boolean;
+  /** The `loop_phase` topic (docs/control-api.md): where the loop is. */
+  phase: LoopPhase | null;
+  /** The `verbs` topic: what the continue and compact routes would answer now,
+   * so a refusal is stated without a round trip. */
+  verbs: Verbs | null;
   /** The trajectory gave up rather than finished (docs/transport.md): the
-   * turn-state readout says so, since `running: false` alone cannot. */
+   * turn-state readout says so, since the idle phase alone cannot. */
   stall: Stall | null;
   /** A retry of the upstream is waiting (docs/transport.md): an empty send
    * retries now, and the readout says so. */
@@ -94,21 +99,21 @@ export function Composer({
   gatePending: boolean;
   /** The pending `ask`: the placeholder says which question a send answers. */
   ask: Pick<Ask, "n" | "of"> | null;
-  /** The `cold` and `compaction` topics (docs/web-client.md): a cold session states
-   * what a send reads and offers a compaction beside it, and a compaction's progress and
-   * failure show. */
+  /** The `cold` and `compaction_failure` topics (docs/web-client.md): a cold session
+   * states what a send reads and offers a compaction beside it, and a compaction's
+   * failure shows. */
   cold: Cold | null;
-  /** The `park` topic: the loop stopped at its cold check. */
-  park: Park | null;
-  compaction: Compaction | null;
+  compactionFailure: CompactionFailure | null;
   /** The `current_operations` topic and the session's model: what the status
-   * bar says the loop is waiting on, in place of a bare "running". */
+   * bar says the loop is waiting on, in place of a bare "running", and a
+   * compaction in flight. */
   operations: CurrentOperations | null;
   model: string;
 }) {
   const store = useMemo(() => acquireDraft(apiBase()), []);
   const snapshot = useSyncExternalStore(store.subscribe, store.snapshot);
   const draft = snapshot.text;
+  const running = phase !== null && phase.phase !== "idle";
   const setDraft = store.setText;
   const [error, setError] = useState<string | null>(null);
   const [holdPending, setHoldPending] = useState(false);
@@ -247,8 +252,15 @@ export function Composer({
     // An empty send hands control back with no input (docs/web-client.md): the
     // loop takes another turn on the wire it already has. A decline is a normal
     // answer — the moment had no continue in it — so its message renders on its
-    // own rather than as a thrown-error string. Attachments alone are a turn.
+    // own rather than as a thrown-error string: from the `verbs` topic without a
+    // round trip, or from the route when the topic had not moved yet.
+    // Attachments alone are a turn.
     if (!text && attachments.ready.length === 0) {
+      const verb = verbs?.continue;
+      if (verb !== undefined && !verb.accepted) {
+        setError(verb.message);
+        return;
+      }
       try {
         await continueLoop();
         setError(null);
@@ -268,34 +280,29 @@ export function Composer({
   }
 
   // The compaction is the alternative to the uncached read (docs/web-client.md); its
-  // progress arrives on the `compaction` topic, so success changes nothing here.
-  const offer = compactOffer(
-    cold,
-    compaction,
-    running,
-    gatePending,
-    ask !== null,
-  );
+  // progress arrives on `current_operations`, so success changes nothing here.
+  const offer = compactOffer(verbs, operations, cold);
   // The ask and the gate carry their own cold lines; the composer's notice is for
-  // a send that opens a turn, or a compaction's progress.
+  // a send that opens a turn, or a compaction's progress or failure.
   const noticeShown =
-    compaction !== null || (cold !== null && ask === null && !gatePending);
+    offer.kind === "writing" ||
+    compactionFailure !== null ||
+    (cold !== null && ask === null && !gatePending);
   function startCompaction() {
     compactLoop(offer.warm)
       .then(() => setError(null))
       .catch((e) => setError(e instanceof ApiError ? e.message : `${e}`));
   }
 
-  const now = useNow(running && operations !== null);
-  const turn = turnState(
-    running,
-    stall,
-    retrying,
-    offer.kind === "writing",
-    park,
-    { operations, model, now },
-    gatePending ? "gate" : ask !== null ? "ask" : null,
+  const now = useNow(
+    running && (operations !== null || phase?.phase === "delayed"),
   );
+  const turn = turnState(phase, {
+    stall,
+    cold,
+    retrying,
+    view: { operations, model, now },
+  });
   return (
     <>
       {collapsed && !gatePending && (
@@ -330,7 +337,7 @@ export function Composer({
           {noticeShown && (
             <CompactNotice
               cold={cold}
-              compaction={compaction}
+              failure={compactionFailure}
               offer={offer}
               onCompact={startCompaction}
             />

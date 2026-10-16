@@ -4,17 +4,18 @@
 // instead — and it is where a compaction's progress and failure are stated. The
 // standing, confirmed compaction is the drawer's.
 
-import type { Cold, Compaction } from "../api/types.ts";
+import type { Cold, CompactionFailure } from "../api/types.ts";
 import { type CompactOffer, kilotokens } from "./compact.ts";
 
 export function CompactNotice({
   cold,
-  compaction,
+  failure,
   offer,
   onCompact,
 }: {
   cold: Cold | null;
-  compaction: Compaction | null;
+  /** The `compaction_failure` topic: the last compaction's error. */
+  failure: CompactionFailure | null;
   offer: CompactOffer;
   onCompact: () => void;
 }) {
@@ -33,24 +34,22 @@ export function CompactNotice({
   const action =
     offer.kind === "ready" ? (
       <button type="button" className="compact-btn" onClick={onCompact}>
-        {compaction?.state === "failed"
-          ? "try summarizing again"
-          : "summarize instead"}
+        {failure !== null ? "try summarizing again" : "summarize instead"}
       </button>
     ) : (
       <span className="dim">{offer.reason}</span>
     );
   return (
     <div className="compact-notice" role="status">
-      {compaction?.state === "failed" && (
-        <div className="error">summary failed: {compaction.error}</div>
+      {failure !== null && (
+        <div className="error">summary failed: {failure.error}</div>
       )}
       {cold !== null ? (
         <>
           cache expired — a send reads {read}, or {action}
         </>
       ) : (
-        compaction?.state === "failed" && action
+        failure !== null && action
       )}
     </div>
   );

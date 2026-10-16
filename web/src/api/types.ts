@@ -168,6 +168,19 @@ export type RequestOrigin =
 export interface CurrentOperations {
   requests: OpenRequest[];
   tools: RunningTool[];
+  /** A compaction waiting for its request to be sent or writing its summary
+   * (docs/summary.md); `null` when none is open. Its failure is not in flight:
+   * that is the `compaction_failure` topic. */
+  compaction: OpenCompaction | null;
+}
+
+export interface OpenCompaction {
+  state: "waiting" | "writing";
+  /** Whether it was asked of a session whose cache was believed live. */
+  warm: boolean;
+  /** The last seq the summary covers. */
+  cut: number;
+  since: number;
 }
 
 export interface OpenRequest {
@@ -677,20 +690,48 @@ export interface Cold {
   context_tokens: number | null;
 }
 
-// The loop is stopped at its cold check mid-turn (docs/control-api.md); `null`
-// otherwise, including an idle cold session.
-// `expired`: waiting for a person to act before the uncached read, or for a compaction.
-// `compacted`: a compaction summarized the history while parked, so `cold` is null and a
-// turn or continue resumes the loop.
-export type Park =
-  | { reason: "expired"; since: number; context_tokens: number | null }
-  | { reason: "compacted" };
+// Where the loop is (docs/control-api.md): one exclusive phase. What is in
+// flight beside it is `current_operations`.
+// `delayed`: a wait that ends on a timer — a pace delay, or the pause between
+// upstream attempts — at `until` (absolute Unix millis).
+// `gated`, `asking`, `cold_parked`, `blocked`: waiting on someone outside the loop.
+export type LoopPhase =
+  | { phase: "idle" }
+  | { phase: "requesting" }
+  | { phase: "executing" }
+  | { phase: "delayed"; until: number }
+  | { phase: "gated" }
+  | { phase: "asking" }
+  | { phase: "cold_parked" }
+  | { phase: "blocked"; reason: BlockedReason };
 
-// A compaction — the session's history replaced by a summary its own model writes —
-// in progress, or the last one's failure (`POST /loop/compact`, docs/control-api.md).
-// `null` otherwise. Independent of `cold`: a compaction can be asked of a warm session.
-export type Compaction =
-  { state: "writing" } | { state: "failed"; error: string };
+export type BlockedReason =
+  "triage_unavailable" | "triage_defect" | "config_repair" | "pace_held";
+
+// What each loop route would answer now (docs/control-api.md), from the check the
+// route itself runs: a client renders a refused verb disabled with its message.
+export interface Verbs {
+  // A turn is always accepted; `delivery` says whether it lands at once or waits
+  // in the queue for the loop's next juncture.
+  turn: { accepted: true; delivery: "now" | "queued" };
+  continue: VerbAnswer;
+  // `warm: true`: accepted only by a request saying `warm: true` — the cache is
+  // believed live, and the compaction gives it up.
+  compact: { accepted: true; warm: boolean } | VerbRefusal;
+}
+
+export type VerbAnswer = { accepted: true } | VerbRefusal;
+export interface VerbRefusal {
+  accepted: false;
+  message: string;
+}
+
+// The last compaction's failure (docs/summary.md); `null` until one fails, and
+// cleared when a turn's request goes out or another compaction is asked for.
+export interface CompactionFailure {
+  error: string;
+  at: number;
+}
 
 // A retry in flight (docs/transport.md). Level-triggered: `null` is the
 // all-clear — the attempt that finalized, or exhaustion.
@@ -711,10 +752,10 @@ export interface UpstreamRetry {
 }
 
 // A trajectory that stopped short (docs/transport.md). On the turn's failure
-// paths the loop returns to idle, so `running: false`, no gate, and an empty
+// paths the loop returns to idle, so the idle phase, no gate, and an empty
 // inbox look exactly like a finished run; this topic is the difference. A
 // triage held on the upstream (the `triage_*` reasons) stalls with the
-// loop still running (docs/triage.md). Either way `POST
+// loop blocked rather than idle (docs/triage.md). Either way `POST
 // /loop/continue` retries. Level-triggered: `null` once the work resumes.
 export interface Stall {
   // Why it stopped short.
@@ -801,7 +842,8 @@ export interface StateTopics {
   // The session that answers this one's gates under `supervisor`, or null when
   // there is none (docs/permissions.md).
   supervisor?: string | null;
-  running?: boolean | null;
+  loop_phase?: LoopPhase | null;
+  verbs?: Verbs | null;
   stall?: Stall | null;
   upstream_failure?: UpstreamFailure | null;
   // A separate triage client's own last failure; null while the triage borrows
@@ -809,8 +851,7 @@ export interface StateTopics {
   triage_upstream_failure?: UpstreamFailure | null;
   upstream_retry?: UpstreamRetry | null;
   cold?: Cold | null;
-  park?: Park | null;
-  compaction?: Compaction | null;
+  compaction_failure?: CompactionFailure | null;
   session_identity?: SessionIdentity | null;
   current_operations?: CurrentOperations | null;
 }
