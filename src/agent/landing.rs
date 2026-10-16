@@ -75,9 +75,21 @@ pub(super) async fn land(
         // (docs/triage.md): the stall names it, and the operator's
         // continue runs the triage again from the top.
         let mut carried = Carried::default();
+        let on_delta = triage_stream(
+            shared,
+            pending.iter().map(|p| p.call.id.0.clone()).collect(),
+        );
         Some(loop {
             match triager
-                .triage_results(client, tools, &entries, &pending, &shown, &background)
+                .triage_results(
+                    client,
+                    tools,
+                    &entries,
+                    &pending,
+                    &shown,
+                    &background,
+                    &on_delta,
+                )
                 .await
             {
                 Ok(outcome) => break carried.onto(outcome),

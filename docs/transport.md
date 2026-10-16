@@ -1782,9 +1782,10 @@ it is transport-only.
 `StreamDelta` and publishes to the broadcast channel. Producers have no
 knowledge of the daemon or the channel.
 
-**The triage passes a no-op sink.** The fork's triage tokens are internal
-bookkeeping; they must never surface on the stream. The no-op `|_| {}` is the
-enforcement.
+**The triage's sink is its own.** The fork's text and thinking go to the `output` class
+as `triage_delta` and `triage_thinking_delta` (docs/control-api.md), tagged with the
+results being triaged, so they are never taken for the main loop's response. The tool-call
+fragments are dropped. The title peek passes a no-op sink.
 
 **Bash streams both pipes, arrival-interleaved.** `bash.rs` drives concurrent
 `tokio::select` reads of stdout and stderr, which is terminal-faithful (cargo

@@ -175,6 +175,7 @@ mod supervise;
 mod tools;
 mod triage_client;
 mod triage_keepalive;
+mod triage_stream;
 mod upstream_hold;
 mod views;
 

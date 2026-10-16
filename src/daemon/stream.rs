@@ -139,7 +139,8 @@ struct Tail {
 /// emitting while a turn commits must still reach the client. The writer's deltas
 /// are excluded too: a compaction's account is not a block of any turn's response, and a
 /// compaction can run while the loop is parked, so a committed `Assistant` entry says
-/// nothing about it.
+/// nothing about it. The triage's deltas are excluded for the same reason: they belong
+/// to a side request, not to a block of the response that committed.
 fn is_block_delta(delta: &StreamDelta) -> bool {
     matches!(
         delta,

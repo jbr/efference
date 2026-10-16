@@ -100,6 +100,15 @@ pub enum StreamDelta {
     /// A fragment of the compaction's extended thinking, the counterpart of
     /// [`CompactionText`](Self::CompactionText).
     CompactionThinking { text: String },
+    /// A fragment of the text a triage request is writing (docs/triage.md), whichever
+    /// shape runs it. Not the main loop's response, so it carries no block `index` and a
+    /// committed `Assistant` entry does not retire it. `call_ids` are the `tool_use` ids
+    /// of the results being triaged; empty for the idle triage, which has none. Lossy and
+    /// never logged: the verdict lands as the `Triage` entries.
+    TriageText { call_ids: Vec<String>, text: String },
+    /// A fragment of the triage request's extended thinking, the counterpart of
+    /// [`TriageText`](Self::TriageText).
+    TriageThinking { call_ids: Vec<String>, text: String },
 }
 
 /// The prefix session-scoped log lines carry, the shape the lifecycle

@@ -91,6 +91,7 @@ impl Triager {
             TITLE_RENEW,
             parse_title,
             &mut record,
+            &|_| {},
         )
         .await;
         let title = match parsed {

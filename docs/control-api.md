@@ -1358,6 +1358,15 @@ the oldest. The committed entry on the `log` class is the authoritative copy.
 - `compaction_thinking_delta` — `{ "text": "<fragment>" }` — the compaction's extended thinking,
   with the same scope. Both end with the compaction: the summary's `log` frame, or the `compaction` topic
   going `failed`, supersedes them.
+- `triage_delta` — `{ "call_ids": ["<tool_use id>", …], "text": "<fragment>" }` — the text a
+  triage request is writing, from the shared triage and the separate-model triage alike.
+  `call_ids` are the results being triaged; the idle triage, which has none, sends `[]`.
+  Not the main loop's response: it carries no `index`, and the `Assistant` entry preemption
+  does not drop it. A triage that retries streams each attempt's fragments in turn.
+- `triage_thinking_delta` — same shape — the triage request's extended thinking. Both end
+  with the triage: its `Triage` and `ResultVerdict` log frames supersede them, and they
+  are logged nowhere themselves. The title peek, which also rides the triage's request
+  path, streams nothing.
 - `tool_output` — `{ "call_id": "…", "chunk": "…" }`
 - `process_output` — `{ "id": <n>, "chunk": "…" }` — a background process's output,
   keyed by the bare process id (rendered `p#<n>` in prose, never in machine-facing

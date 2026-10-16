@@ -316,6 +316,14 @@ impl Frame {
                 "compaction_thinking_delta",
                 serde_json::json!({ "text": text }),
             ),
+            StreamDelta::TriageText { call_ids, text } => (
+                "triage_delta",
+                serde_json::json!({ "call_ids": call_ids, "text": text }),
+            ),
+            StreamDelta::TriageThinking { call_ids, text } => (
+                "triage_thinking_delta",
+                serde_json::json!({ "call_ids": call_ids, "text": text }),
+            ),
         };
         Self {
             class: Class::Output,

@@ -128,6 +128,7 @@ pub(super) async fn triage_with_retries<T>(
     renew: &str,
     parse: impl Fn(&Completion) -> Result<T, String>,
     record: &mut TriageRecord,
+    on_delta: &(dyn Fn(Streamed) + Sync),
 ) -> Result<T, TriageFailure> {
     let mut last = String::new();
     let forks = patience.forks;
@@ -142,6 +143,7 @@ pub(super) async fn triage_with_retries<T>(
                 tools,
                 choice,
                 record,
+                on_delta,
             )
             .await?;
             record
@@ -190,6 +192,7 @@ pub(super) async fn triage_with_retries<T>(
 /// leaves an attempt-stamped breadcrumb in `record.retries`, so a recovered failure is
 /// still visible in the corpus rather than silently absorbed. The wait is published on
 /// `retry` and ends early on the operator's "retry now".
+#[allow(clippy::too_many_arguments)] // each is a distinct input of the one round-trip
 pub(super) async fn triage_completion(
     client: &Client,
     retry: &UpstreamRetryCell,
@@ -198,12 +201,13 @@ pub(super) async fn triage_completion(
     tools: &[Value],
     choice: ToolChoice,
     record: &mut TriageRecord,
+    on_delta: &(dyn Fn(Streamed) + Sync),
 ) -> Result<Completion, TriageFailure> {
     let mut failed: u32 = 0;
     loop {
-        // No-op sink: triage's tokens are internal and must never surface
-        // on the control stream — only the main thread's prose streams.
-        let (why, terminal) = match client.complete(messages, tools, choice, |_| {}).await {
+        // The fragments go to `on_delta`, which publishes them on their own `output`
+        // kinds (docs/control-api.md) — never as the main loop's response.
+        let (why, terminal) = match client.complete(messages, tools, choice, on_delta).await {
             Ok(completion) => {
                 record.usage.push(completion.request_usage());
                 let Some(why) = completion.upstream_failure().map(str::to_string) else {

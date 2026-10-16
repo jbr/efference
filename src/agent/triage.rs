@@ -4,6 +4,28 @@ use super::*;
 
 use crate::process_monitor::BgView;
 
+/// Where a triage request's text and thinking go: the `output` class, as
+/// `triage_delta` and `triage_thinking_delta` (docs/control-api.md). `call_ids` are the
+/// results being triaged, empty for the idle triage. The tool-call fragments are dropped:
+/// a triage's verdict lands as its `Triage` entries.
+pub(super) fn triage_stream(
+    shared: &Arc<Session>,
+    call_ids: Vec<String>,
+) -> impl Fn(Streamed) + Sync {
+    let shared = Arc::clone(shared);
+    move |streamed| match streamed {
+        Streamed::Text { text, .. } => shared.publish_delta(StreamDelta::TriageText {
+            call_ids: call_ids.clone(),
+            text,
+        }),
+        Streamed::Thinking { text, .. } => shared.publish_delta(StreamDelta::TriageThinking {
+            call_ids: call_ids.clone(),
+            text,
+        }),
+        Streamed::ToolStart { .. } | Streamed::ToolInput { .. } => {}
+    }
+}
+
 /// How the idle loop was woken (docs/process-monitor.md): a user turn, a blank line (keep idling),
 /// a notification event (run a standalone triage), a zero-token continue, or shutdown.
 pub(super) enum IdleWake {
@@ -100,7 +122,14 @@ pub(super) async fn triage_and_record(
         background,
     } = sight;
     let triage = triager
-        .triage(client, tools, entries, shown, background)
+        .triage(
+            client,
+            tools,
+            entries,
+            shown,
+            background,
+            &triage_stream(shared, Vec::new()),
+        )
         .await;
     for u in triage.usage {
         shared.record_request(RequestOrigin::Triage, u);

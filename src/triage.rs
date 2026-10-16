@@ -38,8 +38,8 @@ use serde_json::{Value, json};
 
 use crate::agent::{STREAM_ABORT_ATTEMPTS, stream_abort_backoff, stream_abort_retry};
 use crate::api::{
-    Client, Completion, PlanState, RequestUsage, RetrySurface, ToolChoice, UpstreamFailureState,
-    UpstreamRetryCell,
+    Client, Completion, PlanState, RequestUsage, RetrySurface, Streamed, ToolChoice,
+    UpstreamFailureState, UpstreamRetryCell,
 };
 use crate::context::Item;
 use crate::inbox::ShownNotification;
@@ -416,6 +416,7 @@ impl Triager {
     /// Taking `pending` as a slice rather than one result is what makes the triage valid for a
     /// multi-call completion: the trailing assistant message carries N `tool_use` blocks, so
     /// the triage's tail must answer all N (docs/triage.md). One triage, N verdicts.
+    #[allow(clippy::too_many_arguments)] // the turn's results, the shown riders, and the stream sink
     pub async fn triage_results(
         &self,
         agent: &Client,
@@ -424,6 +425,7 @@ impl Triager {
         pending: &[Pending<'_>],
         inbox: &[ShownNotification],
         background: &[BgView],
+        on_delta: &(dyn Fn(Streamed) + Sync),
     ) -> Result<HoldOutcome, HoldFailure> {
         if pending.is_empty() {
             return Ok(HoldOutcome::default());
@@ -473,6 +475,7 @@ impl Triager {
                 require_in_bounds(verdict, &shown_lines)
             },
             &mut record,
+            on_delta,
         )
         .await;
         record.sent = resend
@@ -577,6 +580,7 @@ impl Triager {
         prefix: &[LogEntry],
         inbox: &[ShownNotification],
         background: &[BgView],
+        on_delta: &(dyn Fn(Streamed) + Sync),
     ) -> InboxTriage {
         let mut view = String::new();
         append_inbox_and_background(&mut view, inbox, background);
@@ -603,6 +607,7 @@ impl Triager {
             &call_now(TRIAGE),
             |c| parse_dispositions(c, TRIAGE).ok_or_else(|| unusable(c, TRIAGE)),
             &mut record,
+            on_delta,
         )
         .await;
 
