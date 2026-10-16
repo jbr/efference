@@ -70,4 +70,5 @@ mod line_view;
 mod lineage;
 mod parse;
 mod riders;
+mod shared_bytes;
 mod validation;
