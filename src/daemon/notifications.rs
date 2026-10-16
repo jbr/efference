@@ -111,6 +111,30 @@ impl Session {
         }
     }
 
+    /// Whether a notification that arrived after the session was built waits for a first
+    /// show: a queued slot notification (always in-memory, so always new) or an unshown
+    /// arrival past the restored history. What the idle loop wakes on; a restored unshown
+    /// notification alone does not start a triage (docs/resumption.md).
+    fn has_new_notifications(&self) -> bool {
+        !self.inbox.lock().unwrap().pending.is_empty() || {
+            let log = self.log.lock().unwrap();
+            crate::inbox::unshown(log.entries())
+                .iter()
+                .any(|n| n.seq as usize >= self.restored_len)
+        }
+    }
+
+    /// [`inbox_wake`](Self::inbox_wake) over [`has_new_notifications`](Self::has_new_notifications).
+    pub async fn new_notification_wake(&self) {
+        loop {
+            let waiter = self.notified.notified();
+            if self.has_new_notifications() {
+                return;
+            }
+            waiter.await;
+        }
+    }
+
     /// The current pending inbox, in arrival order — surfaced by `GET /state`: the
     /// arrivals no triage has shown, then the queued slot notifications.
     pub(super) fn pending_notifications(&self) -> Vec<PendingNotification> {

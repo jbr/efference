@@ -198,3 +198,44 @@ fn arrived_notifications_survive_a_reload_and_slot_ones_do_not() {
     reloaded.close_log();
     let _ = std::fs::remove_file(&path);
 }
+
+/// The idle loop's wake ignores a notification the log restored: a resumed session starts
+/// no triage over it, while one that arrives afterward wakes the loop, and the triage that
+/// follows is offered both (docs/resumption.md).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_idle_wake_ignores_a_restored_notification_until_a_new_one_arrives() {
+    let mut log = Log::in_memory();
+    log.append(
+        0,
+        Payload::Ambient(crate::log::Notification::new("ci", "restored", None)),
+    )
+    .unwrap();
+    let (shared, _turns_rx) = Session::new(std::env::current_dir().unwrap(), log);
+
+    tokio::time::timeout(Duration::from_secs(2), shared.inbox_wake())
+        .await
+        .expect("the general wake still sees the unshown notification");
+    assert!(
+        tokio::time::timeout(Duration::from_millis(150), shared.new_notification_wake())
+            .await
+            .is_err(),
+        "a restored notification does not wake the idle loop"
+    );
+
+    let arriving = Arc::clone(&shared);
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        arriving.notify("op".into(), "new".into(), None);
+    });
+    tokio::time::timeout(Duration::from_secs(2), shared.new_notification_wake())
+        .await
+        .expect("a notification that arrives afterward wakes it");
+    assert_eq!(shared.pending_notifications().len(), 2);
+
+    // A slot notification is in memory only, so it is always new.
+    let (slotted, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    slotted.notify("child".into(), "idle".into(), Some("session:child".into()));
+    tokio::time::timeout(Duration::from_secs(2), slotted.new_notification_wake())
+        .await
+        .expect("a slot notification wakes it");
+}

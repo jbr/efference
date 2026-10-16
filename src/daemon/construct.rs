@@ -191,6 +191,7 @@ impl Session {
             },
             ConfigSource::Default => None,
         };
+        let restored_len = log.entries().len();
         let shared = Arc::new_cyclic(|me| Self {
             pushes: push::PushState::new(me.clone()),
             directories,
@@ -227,6 +228,7 @@ impl Session {
             continue_signal: Notify::new(),
             subscriptions: std::sync::atomic::AtomicUsize::new(0),
             notified: Notify::new(),
+            restored_len,
             stream_tx,
             state_changed: Notify::new(),
             state_tx,

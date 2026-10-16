@@ -236,12 +236,12 @@ impl Session {
         }
     }
 
-    /// [`Self::inbox_wake`], held while the cache is believed cold: an idle triage is a
+    /// [`Self::new_notification_wake`], held while the cache is believed cold: an idle triage is a
     /// request on the main prefix, so a notification waits in the inbox until a person
     /// acts (or a compaction makes the session warm again).
     pub(crate) async fn inbox_wake_while_warm(&self) {
         loop {
-            self.inbox_wake().await;
+            self.new_notification_wake().await;
             if self.cold_since().is_none() {
                 return;
             }

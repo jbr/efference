@@ -142,8 +142,9 @@ The live inbox is a fold over the log (`src/inbox.rs`) plus the slot queue:
 
 A restart restores the first two from the log and drops only the queue. Nothing is dropped
 as stale on resume: whether an old exit or message still matters is the next triage's
-judgement. The idle wake treats a restored unshown notification as it treats a live one,
-including waiting while the cache is believed cold (docs/resumption.md).
+judgement. The idle wake ignores a restored unshown notification and wakes only for one
+that arrives after the resume; the triage that wake starts offers the restored ones too,
+and waits while the cache is believed cold (docs/resumption.md).
 
 ## Triage: pin · dismiss · leave
 

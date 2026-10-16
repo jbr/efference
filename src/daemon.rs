@@ -266,6 +266,10 @@ pub struct Session {
     /// idle path awaits this to wake an idle agent for a standalone triage (the
     /// wake-on-notification model that replaced blocking `wait`).
     notified: Notify,
+    /// How many entries the log held when this session was built: a resumed session's
+    /// restored history, `0` for a new one. A notification at or past this seq arrived
+    /// after the resume; the idle wake looks only at those (docs/resumption.md).
+    restored_len: usize,
     /// Fan-out for ephemeral pre-commit output deltas (docs/README.md). Producers (the
     /// loop's `complete` sink and the bash tool) publish via [`Session::publish_delta`];
     /// each control-stream connection wanting `output` frames subscribes. Lossy by
