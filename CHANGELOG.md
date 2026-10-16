@@ -9,6 +9,7 @@ behind a change, see [`journal/`](journal/).
 
 ### Added
 
+- A triage primer cut at its output cap is recorded as an ended request with its finish word, not `failed`; `failed` is kept for a primer that got no response (docs/transport.md).
 - Compactions are logged (`telemetry.compaction_requested`, `telemetry.compaction_failed`) and their state is folded from the log, so a compaction failure survives a host restart (docs/summary.md).
 - One name per thing for replacing a region of the transcript with written text (docs/summary.md): `Payload::Mark` is `Payload::Summary { from, upto, text, made_by, audience }` (log version 4, `scripts/migrate-log-v4.py`); the agent's `consolidate` writes a consolidation and the harness writes a compaction (`POST /loop/compact`, the `compaction` state topic, `efference dev compact`, `src/compact.rs`); "fold", "summary head" and "narrator" are retired, and session-list rows are `ListedSession`.
 - A session's supervisor is settable after creation (docs/permissions.md): `PATCH /sessions/:id {"supervisor"}`, `efference control supervisor`, and the `supervisor` tool on `efference mcp` hand a session to another, which then answers its gates, may drive it (the mutating verbs reach descendants or sessions the caller supervises), and is woken by its status; cycles are refused, and clearing hands the gates back to the operator.

@@ -288,3 +288,49 @@ async fn concurrent_requests_interleave_by_id() {
     let origins: std::collections::HashSet<_> = stages.iter().map(|s| s.origin).collect();
     assert_eq!(origins.len(), 2);
 }
+
+/// A triage primer whose capped output cuts the forced call mid-arguments is its
+/// expected end: the stage is `ended` with the finish word, not `failed`. One that
+/// accounted no input planted nothing and stays `failed` (docs/transport.md).
+#[tokio::test]
+async fn a_truncated_primer_ends_and_an_empty_one_fails() {
+    for (input_tokens, planted) in [(1000, true), (0, false)] {
+        let body = format!(
+            "event: response.completed\ndata: {{\"type\":\"response.completed\",\
+             \"response\":{{\"id\":\"r\",\"status\":\"incomplete\",\
+             \"incomplete_details\":{{\"reason\":\"max_output_tokens\"}},\
+             \"output\":[{{\"type\":\"function_call\",\"call_id\":\"c\",\
+             \"name\":\"retain\",\"arguments\":\"{{not json\"}}],\
+             \"usage\":{{\"input_tokens\":{input_tokens},\"output_tokens\":16}}}}}}\n\n"
+        );
+        let response = format!(
+            "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\nconnection: close\r\n\
+             content-length: {}\r\n\r\n{body}",
+            body.len()
+        );
+        let (url, server) = serve(vec![response]);
+        let recorder = Arc::new(Recorder::default());
+        let mut endpoint = endpoint(url);
+        endpoint.provider = Provider::OpenAICodex;
+        let mut client = Client::new(endpoint, "gpt-6-luna", "sys", None)
+            .with_prompt_cache(PromptCachePolicy::Implicit);
+        client.set_stage_sink(Arc::clone(&recorder) as StageSink);
+        let turns = vec![crate::project::WireTurn::text("hello")];
+        let primed = client
+            .prime(&turns, &[], ToolChoice::auto())
+            .await
+            .expect("an implicit Responses lineage takes a primer");
+        server.join().unwrap();
+
+        assert_eq!(primed.is_ok(), planted);
+        let stages = recorder.stages.lock().unwrap().clone();
+        let last = stages.last().unwrap();
+        assert_eq!(last.origin, RequestOrigin::TriagePrimer);
+        if planted {
+            assert_eq!(last.stage, RequestStageKind::Ended);
+            assert_eq!(last.finish.as_deref(), Some("incomplete:max_output_tokens"));
+        } else {
+            assert!(matches!(last.stage, RequestStageKind::Failed { .. }));
+        }
+    }
+}

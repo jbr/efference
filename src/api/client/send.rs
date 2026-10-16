@@ -39,12 +39,26 @@ impl Client {
                 Err(e) => trace.failed(&e.to_string()),
                 Ok(completion) if completion.operator_abort() => trace.interrupted(),
                 Ok(completion) => match completion.upstream_failure() {
+                    Some(_) if self.primer_planted(completion) => {
+                        trace.ended(completion.finish.as_ref().map(|f| f.raw.as_str()))
+                    }
                     Some(why) => trace.failed(why),
                     None => trace.ended(completion.finish.as_ref().map(|f| f.raw.as_str())),
                 },
             }
         }
         result
+    }
+
+    /// Whether `completion` is a triage primer whose capped output was cut mid-call:
+    /// the failure mark is the expected end, not a failed request, because the
+    /// provider accounted the input and so wrote the replayed prefix
+    /// ([`Self::prime`], docs/transport.md). A primer with no accounted input is
+    /// still a failure.
+    fn primer_planted(&self, completion: &Completion) -> bool {
+        self.origin == RequestOrigin::TriagePrimer
+            && !completion.operator_abort()
+            && completion.request_usage().usage.input_tokens > 0
     }
 
     /// [`Self::send`]'s request itself, reporting the stages it passes to `trace`.

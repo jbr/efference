@@ -915,7 +915,9 @@ serial residue the triage path paid, and whether a triage followed. The primer f
 replays. It tolerates the truncated output: a 16-token budget at a call-eliciting
 position cuts the model's function call mid-arguments, which marks the completion
 without unmaking its input prefix, and only a response with no accounted input
-counts as nothing planted. The primer's turns are kept for the triage keepalive,
+counts as nothing planted. The request's stage is accordingly `ended` with the
+provider's finish word (`incomplete:max_output_tokens`); `failed` is kept for a primer
+that got no response or no accounted input. The primer's turns are kept for the triage keepalive,
 which re-sends them (the last section of this file). The
 spotter model must be one its connection's metadata source knows: with no
 `[defaults].spotter` and no connection reaching jev, the main connection's cheap band applies
