@@ -18,8 +18,8 @@ what truly warrants picking the work back up.";
 pub(super) const ASK_BANNER: &str = "⟢ triage · the harness asks: answer, don't act";
 
 /// The header over the riders (inbox, background, roster), which follow the ask. It says
-/// they are not the output of the call, because the block that used to sit directly above
-/// the ask was the last rider, and notes were written about it (docs/triage.md).
+/// they are not the output of the call: the ask refers to the result blocks above it, and a
+/// rider read as that output gets a note written about it (docs/triage.md).
 pub(super) const RIDERS_HEADER: &str = "═══ also pending · not the output of the call above ═══\n\
 The sections below are separate from the result blocks. Answer them in the matching fields \
 described above; the result's `keep` and `note` are about the result alone.";
