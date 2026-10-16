@@ -22,7 +22,7 @@ pub(super) struct Batch {
 /// with stand-ins rather than run.
 ///
 /// When `primer` is armed, its send is fired at the first execution start and runs
-/// against the batch's tools: the peek's warmup hides behind tool runtime instead of
+/// against the batch's tools: the triage's warmup hides behind tool runtime instead of
 /// landing on the gate path (docs/transport.md). The sender rides
 /// inside the batch future, so every exit — including an early `?` — drops it and lets
 /// an unfired primer resolve to nothing sent.
@@ -206,7 +206,7 @@ async fn run_calls<F: Frontend, S: Spotter>(
             Decision::Withheld(payload) => {
                 // The interrupt's *after* juncture (docs/control-channel.md). The
                 // call finished but its output stops at the log — taken before the
-                // gate, so the discarded result is never peeked at and costs no
+                // gate, so the discarded result is never triaged at and costs no
                 // round-trip, which is the point of the verb. Its verdict is already
                 // final, so the entry goes down as it stands.
                 steps.push(Step::direct(shared, turn, payload)?);

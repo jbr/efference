@@ -15,7 +15,7 @@ pub(super) async fn land(
     primer: Option<TriagePrimerOutcome>,
 ) -> Result<(), Error> {
     let mut turn = *turn_at;
-    // The gate (docs/triage.md): one peek over every result this
+    // The gate (docs/triage.md): one triage over every result this
     // completion produced. Nothing to triage means no round-trip.
     let pending: Vec<Pending<'_>> = steps
         .iter()
@@ -25,7 +25,7 @@ pub(super) async fn land(
         })
         .collect();
     // The must-wake notifications this gate first-shows (docs/inbox.md):
-    // pinned below whatever the peek decides.
+    // pinned below whatever the triage decides.
     let mut forced_pins: Vec<crate::log::Seq> = Vec::new();
     let mut deferred: Option<(
         Vec<ShownNotification>,
@@ -37,7 +37,7 @@ pub(super) async fn land(
     } else {
         // `Triager` re-enters the model here — the prefix is the log through
         // this completion's `tool_use` blocks, so we snapshot it (can't borrow
-        // across the triager's await). A peek on the agent's client reads the
+        // across the triager's await). A triage on the agent's client reads the
         // main prefix, so it waits at the cold check like a turn's request.
         if !triager.is_own() {
             shared.await_warm_or_person().await;
@@ -60,7 +60,7 @@ pub(super) async fn land(
                 forced.push(seq);
             }
         }
-        // A gate that is only `ask` replies has no peek to carry the inbox
+        // A gate that is only `ask` replies has no triage to carry the inbox
         // (docs/supervisor.md): triage runs after the results are logged, below,
         // and takes the must-wake pins with it.
         if crate::triage::reply_only_gate(&pending) {
@@ -68,7 +68,7 @@ pub(super) async fn land(
         } else {
             forced_pins = forced;
         }
-        // The live background processes' fresh tails ride the same peek
+        // The live background processes' fresh tails ride the same triage
         // (docs/supervisor.md) — re-sampled now, never logged unless pinned.
         let background = shared.bg_snapshot();
         // A gate without a verdict holds rather than reaching the agent
@@ -84,7 +84,7 @@ pub(super) async fn land(
                 Err(failure) => {
                     match hold(shared, client, !triager.is_own(), failure, &mut carried).await {
                         // Re-read the log: a fold written during the hold
-                        // (docs/summary-head.md) is what the retried peek forks, not
+                        // (docs/summary-head.md) is what the retried triage forks, not
                         // the history it replaced. The `Ambient` entries appended
                         // above project to nothing, so the prefix is otherwise the same.
                         Held::Retry => {
@@ -104,7 +104,7 @@ pub(super) async fn land(
     // (sliding its TTL), so it belongs in the docs/log-and-projection.md telemetry.
     if let Some(g) = &gate {
         for u in &g.usage {
-            shared.record_peek(!triager.is_own(), u.clone());
+            shared.record_triage(!triager.is_own(), u.clone());
         }
     }
     // The primer's usage and timing (docs/transport.md): its own
@@ -178,7 +178,7 @@ pub(super) async fn land(
         .as_mut()
         .map(|g| std::mem::take(&mut g.retries))
         .unwrap_or_default();
-    // Gate-scoped for the same reason: one peek reasoned about the whole batch,
+    // Gate-scoped for the same reason: one triage reasoned about the whole batch,
     // so its thinking rides the last `Triage` rather than being copied per
     // result (docs/triage.md).
     let mut thinking = gate
@@ -261,7 +261,7 @@ pub(super) async fn land(
         }
     }
     // The inbox an `ask` reply's gate could not triage (docs/supervisor.md): the
-    // results are in the log now, so the peek forks from a prefix that answers
+    // results are in the log now, so the triage forks from a prefix that answers
     // every call.
     if let Some((shown, background, forced)) = deferred
         && (!shown.is_empty() || !background.is_empty() || !forced.is_empty())
@@ -320,7 +320,7 @@ pub(super) fn after_landing(
         shared.append(*turn, Payload::User(vec![ContentBlock::Text(message)]))?;
     }
     // The juncture after the gate (docs/control-channel.md): an interrupt
-    // pressed during the peek or a held gate ended it with the latch still
+    // pressed during the triage or a held gate ended it with the latch still
     // set. Consumed here, the turn ends with the results logged withheld;
     // left set, the next completion's first call would take it, after a
     // paid request and after any turn the operator queued to explain the

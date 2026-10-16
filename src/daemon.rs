@@ -425,7 +425,7 @@ pub struct Session {
     /// The session's full tool catalog, keyed by wire name — every name the
     /// turn's `tools[]` can carry, the toolbox's mounted providers *and* the
     /// harness's own loop-owned family (`consolidate`, the supervisor/inbox
-    /// tools, the two peek tools). Snapshotted by [`Session::set_tool_catalog`]
+    /// tools, the two triage tools). Snapshotted by [`Session::set_tool_catalog`]
     /// (`agent::tool_catalog`) before the toolbox moves into the loop, and
     /// read back by `GET /v1/tools/:name` (docs/control-api.md). The mounted
     /// set is fixed for the session (docs/log-and-projection.md), so this is
@@ -517,7 +517,7 @@ impl Session {
     /// (docs/control-api.md) — `agent::tool_catalog`, which mirrors
     /// `agent::tool_definitions`: the toolbox's mounted tools *and* the
     /// harness's own loop-owned family (`consolidate`, the supervisor/inbox
-    /// tools, the two peek tools), the same union `tools[]` advertises.
+    /// tools, the two triage tools), the same union `tools[]` advertises.
     /// Called once by the runtime, before `toolbox` moves into the loop — the
     /// same "only a served session has this" reason as
     /// [`Self::set_capabilities`]/[`Self::set_identity`], which it sits beside.

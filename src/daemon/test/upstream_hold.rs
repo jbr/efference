@@ -129,7 +129,7 @@ fn serve(
                     // and lands between the scripted requests: answered out of band,
                     // before the script, and not counted — the scripts and their
                     // count assertions describe the main and fork traffic only.
-                    // `end_turn` answers it; the peek's parse takes the text line.
+                    // `end_turn` answers it; the triage's parse takes the text line.
                     if is_title_ask(&body) {
                         let body = end_turn();
                         let _ = write!(
@@ -203,7 +203,7 @@ pub(super) fn start(addr: std::net::SocketAddr) -> (Swansong, SessionRuntime) {
 const REFUSED: &str = r#"{"type":"error","error":{"type":"invalid_request_error","message":"no"}}"#;
 const OVERLOADED: &str = r#"{"type":"error","error":{"type":"overloaded_error","message":"busy"}}"#;
 
-/// **A triage gate without a verdict holds; continue retries it.** The peek's
+/// **A triage gate without a verdict holds; continue retries it.** The triage's
 /// request is refused, so the gate has no verdict. Nothing reaches the log for the
 /// call — no error result the agent would read — and the session reports a stall
 /// while its loop still runs. The operator's continue runs the gate again, the
@@ -316,13 +316,13 @@ async fn a_gate_without_a_verdict_holds_until_continue() {
     host.shut_down().await;
 }
 
-/// **A fold written during a hold is what the retried peek forks.** The gate holds,
+/// **A fold written during a hold is what the retried triage forks.** The gate holds,
 /// a fold's mark lands (as `fold_once` appends it), and the operator retries: the
-/// retried peek carries the account, not the history it replaced. The gate's first
+/// retried triage carries the account, not the history it replaced. The gate's first
 /// snapshot predates the mark, so a retry that reused it would still read the whole
 /// unfolded prefix, which is the cold read the fold exists to avoid.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_fold_during_a_hold_is_what_the_retry_peeks() {
+async fn a_fold_during_a_hold_is_what_the_retry_triages() {
     let requests = Arc::new(AtomicUsize::new(0));
     let bodies = Arc::new(Mutex::new(Vec::new()));
     let addr = recording(
@@ -362,11 +362,11 @@ async fn a_fold_during_a_hold_is_what_the_retry_peeks() {
     let retried = &bodies[2];
     assert!(
         held.contains("zebra history"),
-        "the held peek read the history"
+        "the held triage read the history"
     );
     assert!(
         retried.contains("the folded account") && !retried.contains("zebra history"),
-        "the retried peek reads the fold: {retried}"
+        "the retried triage reads the fold: {retried}"
     );
     host.shut_down().await;
 }
@@ -415,13 +415,13 @@ async fn a_failed_request_is_retried_and_continue_skips_the_wait() {
     host.shut_down().await;
 }
 
-/// **Fresh forks, then a harness defect.** A peek that answers every attempt of
+/// **Fresh forks, then a harness defect.** A triage that answers every attempt of
 /// every fork without a usable verdict is not an upstream condition: after
-/// `PEEK_FORKS` fresh forks of `PEEK_ATTEMPTS` each, the gate holds under
+/// `TRIAGE_RESTARTS` fresh forks of `TRIAGE_ATTEMPTS` each, the gate holds under
 /// `TriageDefect`, and still nothing reaches the agent.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_peek_that_never_answers_usably_is_held_as_a_defect() {
-    use crate::triage::PEEK_FORKS;
+async fn a_triage_that_never_answers_usably_is_held_as_a_defect() {
+    use crate::triage::TRIAGE_RESTARTS;
     let requests = Arc::new(AtomicUsize::new(0));
     let addr = scripted(Arc::clone(&requests), |n| match n {
         0 => Answer::Stream(tool_call("toolu_1", "bash", r#"{"command":"echo hi"}"#)),
@@ -435,7 +435,7 @@ async fn a_peek_that_never_answers_usably_is_held_as_a_defect() {
     wait_until("the gate is held", || session.stall().is_some()).await;
     assert_eq!(session.stall().unwrap().reason, StallReason::TriageDefect);
     // The tool call, then three attempts in each fork.
-    assert_eq!(requests.load(Ordering::SeqCst), 1 + 3 * PEEK_FORKS);
+    assert_eq!(requests.load(Ordering::SeqCst), 1 + 3 * TRIAGE_RESTARTS);
     // Every fork is spent and the result is still undecided: durable in the log, since
     // it was captured before the gate opened, and absent from the wire, since no fork
     // answered for it.

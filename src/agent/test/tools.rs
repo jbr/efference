@@ -22,7 +22,7 @@ fn tool_catalog_covers_every_advertised_name() {
 
 /// A `Toolbox`-mounted tool's served schema carries the `intent` `with_intent`
 /// injected on the real wire; a loop-owned tool's does not — `tool_definitions`
-/// pushes `consolidate`/the supervisor family/the peek tools onto the array
+/// pushes `consolidate`/the supervisor family/the triage tools onto the array
 /// *after* `with_intent` already ran over the toolbox half, so the model never
 /// saw `intent` declared on any of them.
 #[test]
@@ -162,12 +162,12 @@ pub(super) fn cap_head_is_char_boundary_safe() {
     assert!(capped.content.contains('🦀'));
 }
 
-/// The callable set is read off the turn's own `tools[]`, minus the peek tools — which
+/// The callable set is read off the turn's own `tools[]`, minus the triage tools — which
 /// stand in every array for cache-lineage reasons but are never asked for on an agent
 /// turn (docs/triage.md). Reading the same array is what keeps the check from
 /// rejecting a tool the model was just shown.
 #[test]
-pub(super) fn callable_names_are_the_advertised_ones_minus_the_peek_tools() {
+pub(super) fn callable_names_are_the_advertised_ones_minus_the_triage_tools() {
     let toolbox = Toolbox::bash_only();
     let callable = super::callable_names(&toolbox);
     for advertised in [crate::bash::NAME, crate::consolidate::NAME] {
@@ -176,14 +176,14 @@ pub(super) fn callable_names_are_the_advertised_ones_minus_the_peek_tools() {
             "{advertised} is advertised, so a call may name it: {callable:?}"
         );
     }
-    for peek in tool_definitions(&toolbox)
+    for triage in tool_definitions(&toolbox)
         .iter()
         .filter_map(|d| d.get("name")?.as_str())
-        .filter(|n| is_peek_tool(n))
+        .filter(|n| is_triage_tool(n))
     {
         assert!(
-            !callable.iter().any(|n| n == peek),
-            "{peek} is advertised but never asked for on an agent turn"
+            !callable.iter().any(|n| n == triage),
+            "{triage} is advertised but never asked for on an agent turn"
         );
     }
 }

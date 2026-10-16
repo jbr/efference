@@ -488,7 +488,7 @@ pub(crate) struct UpstreamFailureView {
 /// rather than in a single status row.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct UpstreamRetryView {
-    /// `"turn"` or `"peek"` — a triage wait sits between tool results rather than
+    /// `"turn"` or `"triage"` — a triage wait sits between tool results rather than
     /// in a generation, so the surface is rendered, not folded away.
     pub surface: String,
     /// The daemon's lead line, e.g. *attempt 2 of 12 failed upstream, retrying*. It

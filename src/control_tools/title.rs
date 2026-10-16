@@ -54,7 +54,7 @@ impl Tool<Control> for Title {
             Executor::Host(state) => {
                 let session = state.resolve_mutating(self.session.as_deref())?;
                 // The same shape the `PUT /title` route enforces: whitespace-trimmed,
-                // non-empty, within the peek's length cap.
+                // non-empty, within the triage's length cap.
                 let text = self.title.trim();
                 if text.is_empty() {
                     return Err(anyhow!("title must not be empty"));

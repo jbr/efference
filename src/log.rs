@@ -203,7 +203,7 @@ pub enum Payload {
     /// injecting their account as a user message (docs/consolidate.md).
     Mark(Mark),
     /// A triage verdict (docs/triage.md) — the durable record of a throwaway
-    /// peek's decision. The fork's *transcript* stays throwaway; its *decision* is
+    /// triage's decision. The fork's *transcript* stays throwaway; its *decision* is
     /// logged here for audit / introspection / triager-quality work. Projects as
     /// audit only, except it emits a block per **pinned** notification (its `inbox`)
     /// at this entry's tail-ward position (docs/inbox.md).
@@ -284,7 +284,7 @@ pub enum Payload {
     /// (docs/session-title.md). Written by the title peek after a trajectory ends,
     /// or by an operator over the control channel; the latest entry is the current
     /// title, which the `session_identity` topic carries. Appended even when the
-    /// peek kept the previous text, so the log records that the question was asked.
+    /// triage kept the previous text, so the log records that the question was asked.
     /// Log metadata: it projects to nothing, like [`Telemetry`], and never
     /// touches the wire or the cached prefix (docs/log-and-projection.md).
     ///
@@ -351,7 +351,7 @@ pub struct Title {
     pub author: TitleAuthor,
 }
 
-/// Who set a [`Title`]: the triage model's peek, or an operator over the control
+/// Who set a [`Title`]: the triage model's title ask, or an operator over the control
 /// channel (docs/session-title.md).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

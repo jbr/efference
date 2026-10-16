@@ -230,7 +230,7 @@ impl ToolEntry {
     }
 
     /// From a raw wire `Value` (`Bash::definition()`, `ReadImage::definition()`,
-    /// or one of the peek tools' static schemas) — no [`ToolDefinition`] backs
+    /// or one of the triage tools' static schemas) — no [`ToolDefinition`] backs
     /// any of these, so `title`/`annotations` are unavailable rather than
     /// absent-by-choice. `inject_intent` — see [`Self::from_definition`].
     pub(crate) fn from_raw(
@@ -346,7 +346,7 @@ pub struct Toolbox {
     /// Whether the session's model accepts image blocks
     /// (`ModelCapabilities::supports_image_input`, docs/transport.md). `true`
     /// unless a boot lookup said otherwise, which is what the dev views (`wire`,
-    /// `spotter`, `peek`) get — they never run a tool.
+    /// `spotter`, `triage`) get — they never run a tool.
     ///
     /// Held on the toolbox rather than on the image-producing tools because two
     /// unrelated backends produce images (`read_image`, and any MCP server whose

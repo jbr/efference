@@ -25,10 +25,9 @@ use serde::{Deserialize, Serialize};
 pub enum RequestOrigin {
     /// An agent-loop completion (docs/README.md).
     Turn,
-    /// A triage round-trip riding tool results (docs/triage.md), retries
-    /// included.
-    Peek,
-    /// A standalone idle-triage peek (docs/supervisor.md).
+    /// A triage round-trip (docs/triage.md): the one riding a completion's tool
+    /// results, retries included, or the standalone idle triage that rides none
+    /// (docs/supervisor.md).
     Triage,
     /// A title peek (docs/session-title.md) — the triage model asked, off the
     /// cached prefix, what the session is for.
@@ -38,7 +37,7 @@ pub enum RequestOrigin {
     /// A cache keepalive ping (docs/log-and-projection.md).
     Keepalive,
     /// A triage-lineage primer (docs/transport.md): the turn's own
-    /// input replayed on the own peek's client so the result-triage peek resumes where
+    /// input replayed on the own triage's client so the result triage resumes where
     /// the main request ended. Never main-prefix evidence: it plants a resume point on
     /// the triage lineage, not the loop's.
     TriagePrimer,
@@ -68,9 +67,9 @@ pub enum RequestOrigin {
 
 impl RequestOrigin {
     /// Whether every request of this origin read the main loop's own cached prefix, and
-    /// so refreshed it. Turns and keepalive pings do. A peek may run on the agent's own
+    /// so refreshed it. Turns and keepalive pings do. A triage may run on the agent's own
     /// client (it reads the main prefix) or on a separate triage client with a prefix of
-    /// its own; the origin does not say which, so the peek's line carries
+    /// its own; the origin does not say which, so the triage's line carries
     /// [`UsageLine::main_prefix`](crate::daemon::UsageLine) when it ran on the agent's client. Title and triage
     /// requests are left out, which can only make the cache look colder than it is.
     pub fn touches_main_prefix(self) -> bool {
@@ -81,10 +80,10 @@ impl RequestOrigin {
     /// next turn will extend, byte for byte.
     ///
     /// Turns and keepalive pings do: a ping re-sends the turn's envelope verbatim, which
-    /// is what makes it refresh the same cache entry rather than write a new one. A peek
+    /// is what makes it refresh the same cache entry rather than write a new one. A triage
     /// appends its own question before sending, so it rides the same *prefix* without
     /// carrying the same prompt — the distinction [`Self::touches_main_prefix`] does not
-    /// draw, because for the touch clock a peek's read refreshes the prefix it read.
+    /// draw, because for the touch clock a triage's read refreshes the prefix it read.
     /// Cache diagnostics turns on this one: naming a response the loop never sent as the
     /// previous one has the next turn compared against a body that differs in `messages`,
     /// and reported as a divergence (docs/transport.md).
@@ -94,8 +93,8 @@ impl RequestOrigin {
 
     /// Whether every request of this origin read the triage lineage's own cached prefix
     /// (docs/transport.md): the primer and the triage keepalive do, and a result-triage
-    /// peek does only when it ran on its own client, which the origin does not say, so
-    /// `Session::record_peek` decides for it.
+    /// triage does only when it ran on its own client, which the origin does not say, so
+    /// `Session::record_triage` decides for it.
     pub fn touches_triage_prefix(self) -> bool {
         matches!(self, Self::TriagePrimer | Self::TriageKeepalive)
     }

@@ -139,15 +139,15 @@ async fn a_provider_without_the_field_is_sent_no_object() {
     }
 }
 
-/// A peek rides the same client and the same prefix but sends its own prompt, so it must
+/// A triage rides the same client and the same prefix but sends its own prompt, so it must
 /// not add itself to the chain: naming its response as the next turn's comparison base
 /// would have the provider report a difference in `messages` that the loop never made
 /// (docs/transport.md).
 #[tokio::test]
-async fn a_peek_neither_opts_in_nor_extends_the_chain() {
+async fn a_triage_neither_opts_in_nor_extends_the_chain() {
     let (base, requests) = serve(vec![
         stream("msg_turn"),
-        stream("msg_peek"),
+        stream("msg_triage"),
         stream("msg_a"),
     ]);
     let endpoint = endpoint(&base, Provider::Anthropic);
@@ -160,7 +160,7 @@ async fn a_peek_neither_opts_in_nor_extends_the_chain() {
         .expect("the mock stream finalizes");
     // The triage, on the agent's own client, as the triager builds it.
     client
-        .with_origin(crate::log::RequestOrigin::Peek)
+        .with_origin(crate::log::RequestOrigin::Triage)
         .complete(&[], &[], ToolChoice::auto(), |_| {})
         .await
         .expect("the mock stream finalizes");
@@ -170,14 +170,14 @@ async fn a_peek_neither_opts_in_nor_extends_the_chain() {
         .expect("the mock stream finalizes");
 
     let _turn = requests.recv().unwrap();
-    let peek = requests.recv().unwrap();
+    let triage = requests.recv().unwrap();
     assert!(
-        !peek.contains("diagnostics"),
-        "a peek sends its own prompt, so it neither opts in nor is compared: {peek}"
+        !triage.contains("diagnostics"),
+        "a triage sends its own prompt, so it neither opts in nor is compared: {triage}"
     );
     let next = requests.recv().unwrap();
     assert!(
         next.contains(r#""diagnostics":{"previous_message_id":"msg_turn"}"#),
-        "the turn after the peek still names the last *turn*: {next}"
+        "the turn after the triage still names the last *turn*: {next}"
     );
 }

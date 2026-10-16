@@ -29,8 +29,8 @@ pub(super) struct Metrics {
     /// second field rather than a filter on the first.
     pub(super) last_turn_usage: Option<Usage>,
     /// Stamped by requests on the main prefix — real turns, keepalive pings
-    /// ([`RequestOrigin::touches_main_prefix`]), and result-triage peeks that ran on the
-    /// agent's own client ([`Session::record_peek`]). The cache-touch clock: decides when to
+    /// ([`RequestOrigin::touches_main_prefix`]), and result triages that ran on the
+    /// agent's own client ([`Session::record_triage`]). The cache-touch clock: decides when to
     /// ping, and when the session is believed cold (docs/transport.md). Seeded from
     /// `usage.jsonl` when the record is attached, so a restarted host keeps it.
     pub(super) last_request_at: Option<Instant>,
@@ -62,7 +62,7 @@ pub(super) struct Metrics {
     /// Set while the keepalive loop is skipping pings or ended on a rejection (`usage.keepalive_skipped`).
     pub(super) keepalive_skipped: Option<super::keepalive::KeepaliveSkip>,
     /// The triage lineage's touch clock (docs/transport.md): stamped by a primer, a
-    /// keepalive ping, and a result-triage peek on the own client. Idle triage runs on the
+    /// keepalive ping, and a result triage on the own client. Idle triage runs on the
     /// agent's client and does not stamp it. The triage keepalive reads it the way the main
     /// loop reads [`Metrics::last_request_at`]; the give-up cap stays on the real-turn clock.
     pub(super) last_triage_at: Option<Instant>,
@@ -146,10 +146,10 @@ pub enum CacheRead {
 /// `cache` verb reads offline — live, as the daemon records each request.
 ///
 /// Only `RequestOrigin::Turn` moves the streak: the side channels carry their own
-/// prefixes at their own lineages. `Keepalive`, `AbortedAttempt`, and a `Peek` that
+/// prefixes at their own lineages. `Keepalive`, `AbortedAttempt`, and a `Triage` that
 /// ran on the agent's client ride the main-loop prefix without being main-loop
 /// *evidence* — they stamp the touch clock (an idle gap is measured from the last
-/// thing that could have refreshed the prefix) but never count as cold. A peek on a
+/// thing that could have refreshed the prefix) but never count as cold. A triage on a
 /// separate triage client neither stamps nor counts. An aborted attempt in particular often
 /// carries all-zero usage (docs/transport.md), so a zero `cache_read` there says
 /// nothing about whether the prefix moved.
@@ -164,7 +164,7 @@ impl ColdStreak {
     /// Fold one recorded request in, returning its classification for a main-loop
     /// request and `None` for anything else. Takes the fields `usage.jsonl`
     /// persists, so the offline verb replays a recorded session through this exact
-    /// logic. A peek is taken as off the main prefix; [`Self::observe_touching`] is the
+    /// logic. A triage is taken as off the main prefix; [`Self::observe_touching`] is the
     /// form for a request known to have read it.
     pub fn observe(
         &mut self,
@@ -284,7 +284,7 @@ pub struct UsageLine {
     #[serde(default)]
     pub cache_write: u64,
     /// The request read the main prefix although its origin does not imply it: a
-    /// result-triage peek on the agent's own client (`triage = "Shared"`,
+    /// result triage on the agent's own client (`triage = "Shared"`,
     /// docs/transport.md). Omitted when false, and absent on lines written before the
     /// field existed, which read as false. Not written for origins that always touch the
     /// main prefix ([`RequestOrigin::touches_main_prefix`]).
@@ -452,14 +452,14 @@ impl Session {
         );
     }
 
-    /// Record a result-triage peek's usage. `on_agent_client` is whether the peek ran on
+    /// Record a result triage's usage. `on_agent_client` is whether the triage ran on
     /// the agent's own client (`triage = "Shared"`, `!Triager::is_own`): it then read
-    /// the main prefix and refreshed it, so it stamps the touch clock like a turn; a peek
+    /// the main prefix and refreshed it, so it stamps the touch clock like a turn; a triage
     /// on a separate triage client stamps the triage lineage's clock instead
     /// (docs/transport.md).
-    pub fn record_peek(&self, on_agent_client: bool, request: RequestUsage) {
+    pub fn record_triage(&self, on_agent_client: bool, request: RequestUsage) {
         self.record(
-            RequestOrigin::Peek,
+            RequestOrigin::Triage,
             on_agent_client,
             !on_agent_client,
             request,

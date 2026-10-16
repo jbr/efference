@@ -78,7 +78,7 @@ pub(super) struct InboxVerdict {
     pub(super) dismiss: Vec<u64>,
 }
 
-/// Notification ids, accepting `102` and `"102"` alike. The peek reads ids out
+/// Notification ids, accepting `102` and `"102"` alike. The triage reads ids out
 /// of rendered prose (`[seq 102]`), so models stringify them routinely — a fork answer
 /// whose only defect is `"pin": ["102"]` otherwise costs a
 /// full retry. A string that isn't a number still
@@ -138,10 +138,10 @@ pub(super) fn collect_dispositions(
     (ibx, bg)
 }
 
-/// Pull the `retain` verdict out of the peek's completion. `None` when the turn
+/// Pull the `retain` verdict out of the triage's completion. `None` when the turn
 /// didn't call `retain` (or called something else).
 ///
-/// `offered` is the labels the peek actually showed, in order. It is used only to
+/// `offered` is the labels the triage actually showed, in order. It is used only to
 /// resolve verdicts that carry no usable label, both of which are unambiguous exactly when
 /// one result is in flight and are ignored otherwise:
 ///
@@ -160,7 +160,7 @@ pub(super) fn parse_retain(completion: &Completion, offered: &[String]) -> Optio
         return None;
     };
     let calls = output.tool_calls().ok()?;
-    // The shared envelope allows parallel calls (docs/README.md), so a peek may
+    // The shared envelope allows parallel calls (docs/README.md), so a triage may
     // split its verdict across several `retain` calls — one per result, say. Each
     // is read and their answers merged; any that does not parse makes the whole
     // verdict unusable, as a single malformed call does.
@@ -232,7 +232,7 @@ pub(super) fn parse_retain(completion: &Completion, offered: &[String]) -> Optio
 }
 
 /// Pull the inbox/background dispositions from a `triage`-tool completion (the
-/// standalone idle peek). `None` when the turn didn't call the named tool.
+/// standalone idle triage). `None` when the turn didn't call the named tool.
 pub(super) fn parse_dispositions(completion: &Completion, tool: &str) -> Option<Dispositions> {
     let Payload::Assistant { output, .. } = &completion.assistant else {
         return None;

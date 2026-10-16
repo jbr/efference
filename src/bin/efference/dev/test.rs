@@ -1,5 +1,5 @@
 //! Tests for the `dev` group (docs/operating.md) — the wire view, the spotter-log
-//! survey, and `peek`'s gate reconstruction. They live with the group so the
+//! survey, and `triage`'s gate reconstruction. They live with the group so the
 //! feature-off build compiles no test that names a feature-off item.
 
 use super::*;
@@ -474,7 +474,7 @@ fn describe_call_prefers_the_obvious_field() {
     assert!(other.contains("\"a\""));
 }
 
-// ---- `peek` gate reconstruction (docs/triage.md) ----
+// ---- `triage` gate reconstruction (docs/triage.md) ----
 
 use crate::triage_replay::gates;
 use efference::log::{LogEntry, Origin, Payload, RawResult, ToolCall, Triage, WireState};
@@ -507,7 +507,7 @@ fn triage(seq: u64, for_result: u64, retries: Vec<String>) -> LogEntry {
 
 /// A gate is a completion's calls **plus their results**, and its prefix ends *before* the
 /// first of those results: the live loop snapshots the log at the assistant turn, and
-/// `peek_messages` appends the results itself as fresh `tool_result` blocks. A prefix that
+/// `triage_messages` appends the results itself as fresh `tool_result` blocks. A prefix that
 /// already carried them would double every result in the replayed request.
 #[test]
 fn a_gate_carries_a_completions_results_and_a_prefix_that_stops_short_of_them() {
@@ -533,7 +533,7 @@ fn a_gate_carries_a_completions_results_and_a_prefix_that_stops_short_of_them() 
     assert_eq!(gates[0].calls.len(), 2, "the whole completion's batch");
     assert_eq!(
         gates[0].prefix_end, 1,
-        "the prefix is the assistant turn alone — the results are appended by the peek"
+        "the prefix is the assistant turn alone — the results are appended by the triage"
     );
 }
 
@@ -557,7 +557,7 @@ fn a_gate_carries_its_recorded_first_attempt() {
         triage(
             3,
             2,
-            vec!["attempt 1 of 3: peek called edit instead of retain".into()],
+            vec!["attempt 1 of 3: triage called edit instead of retain".into()],
         ),
         entry(
             4,

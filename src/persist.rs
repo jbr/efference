@@ -103,7 +103,7 @@ impl Log {
     /// untouched, never truncated and never appended to. Opening an existing
     /// log for append while starting from an empty `entries` would restart
     /// `seq` at 0 inside a file that already numbers its entries, which every
-    /// offline reader (`view`, `wire`, `peek`, the TUI fold) sees as one
+    /// offline reader (`view`, `wire`, `triage`, the TUI fold) sees as one
     /// sequence with duplicates in it — so the refusal is the only way that
     /// stays unreachable, and it fails before anything is written.
     ///

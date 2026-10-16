@@ -148,11 +148,11 @@ it. Everything else sends the model's spelling of off: a forced `tool_choice`
 adaptive, and a client built `without_thinking`. The main agent turn and the
 triage both send `auto` —
 the shared envelope ([triage.md](triage.md)): identical
-`tool_choice` and thinking are part of what lets the peek read the agent lineage's
+`tool_choice` and thinking are part of what lets the triage read the agent lineage's
 cache — so both may think (the fork's thinking is discarded with its throwaway
 tail); the spotter still forces its `spot` tool → thinking off; a separate-model
-peek sends thinking off unless `--triage-thinking` or `--triage-effort` — for the
-per-result peeks only; the idle triage rides the agent's client and thinks as the
+triage sends thinking off unless `--triage-thinking` or `--triage-effort` — for the
+per-result triages only; the idle triage rides the agent's client and thinks as the
 agent does ([triage.md](triage.md)). Where off is omitted on
 OpenRouter, a client built `without_thinking` sends OpenRouter's own
 `reasoning: {enabled: false}` beside it.
@@ -165,7 +165,7 @@ statuses about the caller rather than the content (`is_request_rejection`) — i
 sent once more as `auto`, with a final user line naming the
 tool (`forced_choice_instruction`) and thinking off, as the forced request had it.
 If that succeeds, the client — and its clones, which share the flag — sends every
-later forced request in that form, so the spotter and the own-model triage peek
+later forced request in that form, so the spotter and the own-model triage
 work on any model that can call a tool. If it fails too, the rejection had another cause:
 the first error is returned and nothing is learned. A caller's parse already
 treats a reply without the asked-for call as unusable, so an `auto` answer that
@@ -265,7 +265,7 @@ known coupling and passes through.
 **Which envelopes carry it.** The effort rides the agent `Client`, so every
 request that client makes carries it — the main turn and the triage, which is
 the shared envelope ([triage.md](triage.md)): if one carried it
-and the other didn't, the peek would stop reading the agent lineage's cache — and
+and the other didn't, the triage would stop reading the agent lineage's cache — and
 the keepalive, which sends the turn's envelope (above). The spotter forces its
 tool, sends thinking off, and runs on its own client, which is never given an
 effort.
@@ -433,7 +433,7 @@ retrying — rather than on a successful completion, so it reports the condition
 now. A stall is a decision point for `?wait=settled`. The topic is addressed to whatever
 is supervising the daemon from outside, which is the rung that can actually send
 the recovering turn — an inbox copy would be addressed to the model, which is
-neither told about upstream failures nor able to act on one. Without the topic, an earlier inbox notice is the only signal, and a triage peek
+neither told about upstream failures nor able to act on one. Without the topic, an earlier inbox notice is the only signal, and a triage
 can dismiss it — leaving a clean idle. Both clients render the
 topic where turn state already shows — the
 TUI's status bar, the web composer's turn-state readout.
@@ -457,8 +457,8 @@ handler decides. An unknown name defaults to transient deliberately, so a code
 this table has not met keeps the bounded retry rather than stalling a session on
 it; the name stays visible in the record-only entry and the stall detail.
 
-The **triage** takes the same treatment on the same budget: an aborted peek
-stream or a transiently failed peek request is retried up to
+The **triage** takes the same treatment on the same budget: an aborted triage
+stream or a transiently failed triage request is retried up to
 `STREAM_ABORT_ATTEMPTS` times on the same capped schedule, re-sending
 byte-identical messages over the warm prefix (its tail is throwaway, so nothing
 has to be committed to arrange the replay). On exhaustion — or a terminal
@@ -471,7 +471,7 @@ already stand. In a controlled run a withheld conformance `PASS` was re-earned b
 re-running the suite against a still-live server whose counters the invisible
 first run had moved, turning the pass into a spurious failure; in another the
 agent read the error as its own tool failing and said so. The asides that ride the
-same peek machinery — the idle triage and the title — keep a short budget (three
+same triage machinery — the idle triage and the title — keep a short budget (three
 attempts, one fork) instead, because each has a harmless fallback and the loop is
 blocked on it meanwhile.
 
@@ -531,7 +531,7 @@ answer this way instead of erroring; committed as-is it reads as the model
 choosing silence, so the loop has nothing to dispatch and goes idle with the task
 unfinished. Because the mark *is* the record-only/retryable signal, marking it in
 the assembler is what makes both surfaces handle it: the turn loop and the fork
-peek each retry on the budget they already have. Zero output tokens is required
+triage each retry on the budget they already have. Zero output tokens is required
 as corroboration, so a turn billed for the thinking behind an empty answer is not
 mistaken for this and retried into exhaustion. Observed 2026-08-22 and again
 2026-08-28, the second time ending a controlled run mid-task, and three more
@@ -612,11 +612,11 @@ is ephemeral, while durable assistant failure records retain the audit trail.
 
 While either loop is waiting out a failed attempt, that wait is its own
 level-triggered state topic, `upstream_retry` on `GET /state`
-(docs/control-api.md). It names the **surface** (`turn` or `peek`), the attempt
+(docs/control-api.md). It names the **surface** (`turn` or `triage`), the attempt
 that just failed, the budget it is spending, the absolute instant the next
 attempt fires, a lead line — *attempt 2 of 12 failed upstream, retrying* — and the
 upstream's own error text as `detail`. Both retry loops publish it (`agent.rs`
-for a turn, `triage/peek.rs` for a triage, on the agent's cell even when
+for a turn, `triage/request.rs` for a triage, on the agent's cell even when
 triage runs on its own model) through one shared constructor, so the surfaces
 differ only in the name they carry; the distinction is kept because a triage wait
 sits between tool results, where an operator would otherwise read it as the model
@@ -871,7 +871,7 @@ Codex response.
 **Turn routing on the Codex backend.** Each response carries an `x-codex-turn-state`
 header: an opaque token the backend issues at the start of a user turn and expects
 back, as a request header, on every later request of that turn — retries, the fork
-peek, each tool round-trip — and not on the next turn. Codex CLI is explicit that
+triage, each tool round-trip — and not on the next turn. Codex CLI is explicit that
 carrying it *across* turns violates the contract and can cause routing bugs, and
 holds it in a `OnceLock` so the turn's first value is the one replayed rather than
 the most recent (`codex-rs/core/src/client.rs`). It is a per-turn token, not a
@@ -900,18 +900,18 @@ exactly the last request's input, so the ping reads it whole and refreshes it: a
 read plus 16 output tokens. A capped request that the upstream refuses is not retried at
 another cap. OpenAI exposes no per-generation cost endpoint, so cost tracking stays off.
 
-**The triage primer is the same write on the triage lineage.** Where the peek runs on
+**The triage primer is the same write on the triage lineage.** Where the triage runs on
 its own model (`Triager::own`), the batch fires the turn's own input on the triage
 client at the first execution start — post-approval, so nothing speculative is ever
 sent — capped at the same backend minimum (`Client::prime`, Responses with an
-implicit policy only). The gate's peek then extends a triage-lineage request that
+implicit policy only). The gate's triage then extends a triage-lineage request that
 ended where the main one did, and reads everything before the current calls from
 cache. A primer the upstream refuses, or a lineage with no implicit cache, resolves
-unprimed and the peek goes out as before. Primer spend records under its own
+unprimed and the triage goes out as before. Primer spend records under its own
 `triage_primer` usage origin, with one log line per gate carrying the send time, the
 serial residue the gate path paid, and whether a gate followed. The primer forces
 `retain` rather than the turn's `auto`: the backend keys the resume on
-`tool_choice`, so the plant must match the peek's head, not the main request it
+`tool_choice`, so the plant must match the triage's head, not the main request it
 replays. It tolerates the truncated output: a 16-token budget at a call-eliciting
 position cuts the model's function call mid-arguments, which marks the completion
 without unmaking its input prefix, and only a response with no accounted input
@@ -1339,7 +1339,7 @@ reader. The provider listings behind the model menus, their normalization, and
 their storage in the same database are described in
 [model-catalog.md](model-catalog.md).
 
-The dev verbs that dial a provider without a host (`dev peek`, `dev spotter`,
+The dev verbs that dial a provider without a host (`dev triage`, `dev spotter`,
 `dev spotter-eval`) load the same file from their own environment and resolve
 their `--model` through it. `dev wire` has no model override: it reads the
 connection, provider, and native model from the log's boot Preamble, derives
@@ -1456,7 +1456,7 @@ enumerate, so a per-request key means the prefix cache is matched on luck alone.
 That arm was grouped with the providers that read no key until 2026-09-10, on the
 reading that it took the key in the body; it accepts the body field and discards
 it, which is why the gap stayed invisible. Measured on one workload run twice,
-minutes apart: turns 30% warm and peeks 40% without the header, 80% and 100% with
+minutes apart: turns 30% warm and triages 40% without the header, 80% and 100% with
 it. Codex CLI's companion `thread-id` sets no key on its own and is not sent.
 
 The same value also rides the **request body** as `prompt_cache_key`, on the
@@ -1628,7 +1628,7 @@ divergence named late enough for an earlier breakpoint to still hit is a real
 finding, and clearing on warmth would erase it.
 
 **Session cost telemetry.** Where the provider has a per-request accounting
-surface, every recorded request (turn, peek, spot, triage, keepalive — plus
+surface, every recorded request (turn, triage, spot, keepalive — plus
 keepalive pings funnel through the same two record methods) spawns a
 best-effort fetch of its **billed** cost, folded into a running total that
 `GET /state` reports as `usage.cost = {usd, unpriced}` and the TUI renders
@@ -1865,7 +1865,7 @@ gets a comparison. But a ping's body differs in `max_tokens` and in being non-st
 and `tool_choice`, `thinking`, and `output_config` are the prompt-affecting parameters
 the provider answers `unavailable` for rather than naming a location; naming a ping as
 the next turn's comparison base would put those differences between the turn and its own
-comparison. A peek sends the object on neither count: it appends its own question before
+comparison. A triage sends the object on neither count: it appends its own question before
 sending, so comparing it against the loop's prompt would report a `messages_changed`
 divergence the loop never made (`RequestOrigin::sends_the_loop_prompt`).
 
@@ -2004,13 +2004,13 @@ a field that ticks with the clock would make the level-triggered `usage` topic
 re-emit forever (docs/control-api.md). Clients subtract from their own clock.
 
 The triage's usage is folded into the metrics cell's totals. Whether it stamps the
-cache-touch clock depends on where it ran: a peek on the agent's own client
-(`triage = "Shared"`) reads the main prefix and refreshes it, so `record_peek` stamps the
-clock as a turn does; a peek on a separate triage client has a prefix of its own and
+cache-touch clock depends on where it ran: a triage on the agent's own client
+(`triage = "Shared"`) reads the main prefix and refreshes it, so `record_triage` stamps the
+clock as a turn does; a triage on a separate triage client has a prefix of its own and
 does not. Turns and keepalive pings always touch the main prefix
-(`RequestOrigin::touches_main_prefix`); a shared peek's `usage.jsonl` line carries
+(`RequestOrigin::touches_main_prefix`); a shared triage's `usage.jsonl` line carries
 `main_prefix: true` (omitted when false) so a restarted host and `efference dev cache`
-make the same call. Without the stamp, a cold read paid at a shared peek
+make the same call. Without the stamp, a cold read paid at a shared triage
 leaves the clock on the earlier turn, and the next turn's cold check parks again.
 
 ### keepalive_loop: two clocks
@@ -2023,11 +2023,11 @@ is the last section of this file.
 Two clocks keep this correct:
 
 - **Cache-touch clock** (main lineage) — stamped by `record_request` for real turns, by
-  `record_peek` for peeks on the agent's own client, and by `record_keepalive`.
+  `record_triage` for triages on the agent's own client, and by `record_keepalive`.
   Tracks when the main prefix was last read; the cache is
   believed cold once it is older than the provider's cache lifetime
   (`keepalive::believed_cold_since`, backlog: cold-session.md).
-- **Real-turn clock** — stamped by `record_request` and `record_peek`, never by
+- **Real-turn clock** — stamped by `record_request` and `record_triage`, never by
   a ping. Tracks when a real turn last occurred.
 
 Both are seeded from `usage.jsonl` when a session's host attaches the record, from
@@ -2060,12 +2060,12 @@ is the primer re-sent:
   from the turn's input, and a projection taken later does not reproduce those bytes.
   With no primer sent, or with the stored one dropped, there is no ping.
 - **Envelope.** The primer's own, from `Triager::primer_envelope`, which `prime` also
-  uses: the own client, the peek's `tools[]`, and forced `retain`. The ping and the
+  uses: the own client, the triage's `tools[]`, and forced `retain`. The ping and the
   primer therefore send the same body. `api/test/triage_ping.rs` pins that over a mock
   Responses backend.
-- **Clocks.** The triage touch clock is stamped by a primer, by a result-triage peek on
+- **Clocks.** The triage touch clock is stamped by a primer, by a result triage on
   the own client, and by the ping (`RequestOrigin::touches_triage_prefix`,
-  `Session::record_peek`, `Session::record_triage_keepalive`). Idle triage runs on the
+  `Session::record_triage`, `Session::record_triage_keepalive`). Idle triage runs on the
   agent's client and does not stamp it. The real-turn clock is the main lineage's, so a
   triage ping does not reset the give-up cap. The cadence is `[transport]
   keepalive-interval` when set, else four fifths of the triage provider's cache
@@ -2086,5 +2086,5 @@ It is not armed on a shared triage, whose requests ride the main prefix that the
 keepalive keeps; on an own triage model whose client plants no primer (a Messages-dialect
 model, where no primer is sent); or at interval zero.
 
-The ping refreshes the point the last primer planted. A result-triage peek after the
+The ping refreshes the point the last primer planted. A result triage after the
 primer writes a resume point at its own breakpoint, which the ping does not refresh.

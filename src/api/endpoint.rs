@@ -143,7 +143,7 @@ const SESSION_ID_MAX: usize = 256;
 /// What distinguishes the spotter's key from the agent's ([`Endpoint::for_spotter`]).
 const SPOTTER_SUFFIX: &str = "-spot";
 
-/// What distinguishes the separate-model peek's key from the agent's
+/// What distinguishes the separate-model triage's key from the agent's
 /// ([`Endpoint::for_triage`]). The longer of the two suffixes is what
 /// [`sticky_session_id`] reserves room for.
 const TRIAGE_SUFFIX: &str = "-triage";

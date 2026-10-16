@@ -9,7 +9,7 @@
 
 use super::*;
 
-use crate::triage::{GateFailure, GateOutcome, PEEK_FORKS, PeekFailure};
+use crate::triage::{GateFailure, GateOutcome, TRIAGE_RESTARTS, TriageFailure};
 
 /// What the held gate's attempts accumulated before one of them succeeded: carried
 /// onto the successful gate's `Triage`, so a recovered hold is still in the record.
@@ -47,7 +47,7 @@ pub(super) enum Held {
 
 /// Hold a gate that produced no verdict until the operator retries or interrupts.
 /// Records the failed attempts' usage, carries their breadcrumbs, and publishes the
-/// hold as a stall while it lasts. `on_agent_client` is whether the failed peeks ran on
+/// hold as a stall while it lasts. `on_agent_client` is whether the failed triages ran on
 /// the agent's own client, as the gate's successful ones did.
 pub(super) async fn hold(
     shared: &Arc<Session>,
@@ -63,20 +63,20 @@ pub(super) async fn hold(
         thinking,
     } = failure;
     for u in usage {
-        shared.record_peek(on_agent_client, u);
+        shared.record_triage(on_agent_client, u);
     }
     carried.retries.extend(retries);
     carried.thinking.extend(thinking);
     let (reason, message, why) = match failure {
-        PeekFailure::Interrupted => return Held::Interrupted,
-        PeekFailure::Upstream(why) => (
+        TriageFailure::Interrupted => return Held::Interrupted,
+        TriageFailure::Upstream(why) => (
             StallReason::TriageUnavailable,
             "triage could not reach its model — the results are held until it does",
             why,
         ),
-        PeekFailure::Unusable(why) => {
+        TriageFailure::Unusable(why) => {
             log::error!(
-                "harness defect: triage produced no usable verdict in {PEEK_FORKS} forks; \
+                "harness defect: triage produced no usable verdict in {TRIAGE_RESTARTS} forks; \
                  holding the results — {why}"
             );
             (

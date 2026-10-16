@@ -413,7 +413,7 @@ pub(crate) fn entry_nodes(
                 ],
             }),
             // The verdict is internal — audit-only on the transcript — except the
-            // compliance signal (docs/triage.md): a peek that needed retries
+            // compliance signal (docs/triage.md): a triage that needed retries
             // is a harness defect worth the operator's eyes even when a retry
             // recovered, so each non-compliant attempt renders as an annotation.
             Payload::Triage(t) => {
@@ -783,7 +783,7 @@ fn result_entry(
     .keyed(call_id.to_string())
 }
 
-/// The triager's note on a result, and the breadcrumb for lines the peek cap
+/// The triager's note on a result, and the breadcrumb for lines the triage cap
 /// dropped before triage ever saw them — each as its own [`Annotation`] entry
 /// beside the result (docs/tui.md).
 ///

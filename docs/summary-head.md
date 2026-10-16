@@ -81,10 +81,10 @@ A `Mark` gains two fields, both defaulted so existing logs deserialize unchanged
 A `Triage` boundary exists for a triage model that runs on its own client
 (`Triager::own`, [triage.md](triage.md)) with a smaller or earlier-degrading
 window than the main model. It folds the span for that client only. The main projection
-ignores it and is byte-identical to the projection of the same log without it; a peek that
+ignores it and is byte-identical to the projection of the same log without it; a triage that
 shares the agent's client reads the main projection and has no notion of it, since a fold
-there would rewrite the cached prefix the peek exists to share. Which projection a reader
-asks for follows from how the peek was constructed, not from the model's identity, so a
+there would rewrite the cached prefix the triage exists to share. Which projection a reader
+asks for follows from how the triage was constructed, not from the model's identity, so a
 session recorded with a separate triage model and later booted with a shared one simply
 passes over its `Triage` marks. For the triage client both audiences apply, folding like
 any other pair of consolidations (the later `upto` subsumes the earlier span).

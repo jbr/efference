@@ -1,4 +1,4 @@
-//! Tests for parsing the peek's answer back.
+//! Tests for parsing the triage's answer back.
 use super::*;
 
 #[test]
@@ -62,7 +62,7 @@ fn parse_retain_reads_inbox_dispositions() {
     );
 }
 
-/// Notification ids arrive stringified: the peek reads them out of rendered
+/// Notification ids arrive stringified: the triage reads them out of rendered
 /// prose, and a live fork answer whose only defect was `"pin": ["102"]` cost
 /// a full retry. `"102"` and `102` parse alike; a
 /// non-numeric string still fails the whole input.
@@ -122,7 +122,7 @@ fn parse_dispositions_reads_triage_inbox_and_background() {
 
 #[test]
 fn parse_retain_is_none_without_a_retain_call() {
-    // The peek asks for `retain` via its tail instruction (never a forced
+    // The triage asks for `retain` via its tail instruction (never a forced
     // tool_choice), so a turn that called something else yields no verdict — the
     // in-fork retry's trigger.
     assert!(parse_retain(&retain_completion("bash", json!({"command": "ls"})), &[]).is_none());

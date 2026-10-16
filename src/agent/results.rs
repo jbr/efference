@@ -118,7 +118,7 @@ pub(super) fn background_command(call: &ToolCall) -> Option<String> {
         .map(str::to_string)
 }
 
-/// A `tool_result` for an un-asked peek-tool call (docs/triage.md): `retain`
+/// A `tool_result` for an un-asked triage-tool call (docs/triage.md): `retain`
 /// and `triage` stand in every turn's `tools[]` for cache-lineage sharing, but on an
 /// agent turn nothing is asked of them, so the call is paired with this nudge instead
 /// of entering the cascade. One call per turn means the cost is a wasted round-trip,

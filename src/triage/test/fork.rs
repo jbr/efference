@@ -3,13 +3,13 @@
 use super::*;
 
 /// The invariant the batched gate exists to hold (docs/triage.md): when a
-/// completion carries several calls, the peek's request must answer **every** one of
+/// completion carries several calls, the triage's request must answer **every** one of
 /// them.
 ///
 /// Peeking between calls builds a request whose trailing assistant message still carries
 /// unanswered `tool_use` blocks, which the API rejects. The whole gate then fails, and
 /// because `WireState` is fixed once, whatever the failure path leaves behind stays in the
-/// cached prefix for the rest of the session — one mis-timed peek is not recoverable later.
+/// cached prefix for the rest of the session — one mis-timed triage is not recoverable later.
 #[test]
 fn a_gate_over_a_multi_call_step_answers_every_tool_use() {
     let calls = vec![
@@ -36,7 +36,7 @@ fn a_gate_over_a_multi_call_step_answers_every_tool_use() {
         .map(|(call, raw)| Pending { call, raw })
         .collect();
 
-    let messages = wire(&peek_messages(
+    let messages = wire(&triage_messages(
         &prefix,
         Reader::Main,
         &pending,
@@ -112,7 +112,7 @@ intend to replace it.\n\nYour 8772 bytes of contents are preserved under \
 /// request at all — the skipped verdict is also a skipped round-trip — and each result
 /// projects `WireState::Raw`, so the token reaches the model exactly as the tool wrote it.
 #[test]
-fn a_gate_of_only_handle_bearing_results_is_decided_without_a_peek() {
+fn a_gate_of_only_handle_bearing_results_is_decided_without_a_triage() {
     let call = ToolCall::new("write", "write_1", json!({}));
     let raw = RawResult::error(HANDLE_RESULT);
     let pending = vec![Pending {
@@ -150,7 +150,7 @@ fn an_ordinary_result_still_goes_through_the_fork() {
 
 /// A mixed gate still runs — the handle-bearing result is answered (an unpaired
 /// `tool_use` makes the request invalid) but with a stand-in and no label, and only the
-/// other result is offered, so the peek is never asked to decide the one the harness already decided.
+/// other result is offered, so the triage is never asked to decide the one the harness already decided.
 #[test]
 fn a_handle_bearing_result_is_answered_but_never_offered() {
     let calls = [
@@ -187,7 +187,7 @@ fn a_handle_bearing_result_is_answered_but_never_offered() {
     assert_eq!(labels(&pending), vec![None, Some("r1".to_string())]);
     assert_eq!(offered_labels(&pending), vec!["r1".to_string()]);
 
-    let messages = wire(&peek_messages(
+    let messages = wire(&triage_messages(
         &prefix,
         Reader::Main,
         &pending,
@@ -283,10 +283,10 @@ fn a_bypassed_result_reaches_the_wire_verbatim() {
 }
 
 /// An `ask` reply is the operator's own words: the shape rule keeps it out of the
-/// peek's offered results and delivers it raw, while the peek's request still answers
+/// triage's offered results and delivers it raw, while the triage's request still answers
 /// its `tool_use` (docs/supervisor.md).
 #[test]
-fn an_ask_reply_is_bypassed_and_still_answered_in_the_peek() {
+fn an_ask_reply_is_bypassed_and_still_answered_in_the_triage() {
     let calls = vec![
         ToolCall::new(crate::supervisor::ASK, "ask_1", json!({"question": "ok?"})),
         ToolCall::new("search", "search_2", json!({})),
@@ -309,11 +309,11 @@ fn an_ask_reply_is_bypassed_and_still_answered_in_the_peek() {
     assert_eq!(bypassed(&pending[1]), None);
     assert!(
         !reply_only_gate(&pending),
-        "a search result is still the peek's"
+        "a search result is still the triage's"
     );
     assert_eq!(offered_labels(&pending), vec!["r1"]);
 
-    let messages = wire(&peek_messages(
+    let messages = wire(&triage_messages(
         &prefix,
         Reader::Main,
         &pending,
@@ -347,7 +347,7 @@ fn an_ask_reply_is_bypassed_and_still_answered_in_the_peek() {
 /// A gate holding only ask replies has every verdict decided without a request, and
 /// says so, so the loop knows it must triage the inbox itself.
 #[test]
-fn a_gate_of_only_ask_replies_needs_no_peek_and_delivers_them_raw() {
+fn a_gate_of_only_ask_replies_needs_no_triage_and_delivers_them_raw() {
     let call = ToolCall::new(crate::supervisor::ASK, "ask_1", json!({"question": "ok?"}));
     let raw = RawResult::text("yes");
     let pending = [Pending {

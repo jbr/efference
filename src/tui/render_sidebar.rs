@@ -124,7 +124,7 @@ impl<'a> InteractiveState<'a> {
             }
             // Hosted: the main role is named by connection; the spotter and
             // triage rows follow, since which account answers a permission check
-            // or a triage peek is as invisible in the transcript as the model.
+            // or a triage is as invisible in the transcript as the model.
             let model = identity
                 .roles
                 .as_ref()

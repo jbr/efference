@@ -85,7 +85,7 @@ include tool calls that ran. It gives the agent no instructions. The notice stan
 everything a restart may have changed.
 
 **Skipped entries.** `Resumed.resumes_after` is present only when entries were skipped;
-projection (`project_semantic`, which both wire dialects, the triage and title peeks and
+projection (`project_semantic`, which both wire dialects, the triage and title asks and
 `dev wire` encode from) drops every entry after it and before the `Resumed` entry, and a
 `Boundary` mark inside the range folds nothing. A log may hold several `Resumed`
 entries, each with its own range; a completion inside an earlier range is not the
@@ -129,7 +129,7 @@ a pending batch even though the wire ends in a `tool_use`, since the replay answ
 A turn submitted first is held and delivered at the seam after the batch, as one submitted
 during a live gate is; a `User` entry ahead of the unanswered `tool_use` blocks would
 break the wire. While the batch is pending, an inbox wake does not run the idle triage
-(its peek would project the unanswered wire): the notification waits and rides the batch's
+(its triage would project the unanswered wire): the notification waits and rides the batch's
 gate.
 
 ## The session as a resource

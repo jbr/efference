@@ -105,14 +105,14 @@ fn a_request_is_open_until_it_closes() {
     }
 }
 
-/// A peek and the spotter open at once are both listed, and closing one leaves the
+/// A triage and the spotter open at once are both listed, and closing one leaves the
 /// other.
 #[test]
 fn concurrent_requests_are_listed_separately() {
     let ops = fold(vec![
-        (10, stage(3, RequestOrigin::Peek, RequestStageKind::Sent)),
+        (10, stage(3, RequestOrigin::Triage, RequestStageKind::Sent)),
         (20, stage(4, RequestOrigin::Spot, RequestStageKind::Sent)),
-        (30, stage(3, RequestOrigin::Peek, RequestStageKind::Ended)),
+        (30, stage(3, RequestOrigin::Triage, RequestStageKind::Ended)),
     ]);
     let json = ops.json();
     let requests = json["requests"].as_array().unwrap();

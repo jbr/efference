@@ -426,7 +426,7 @@ async fn codex_keepalive_caps_output_where_a_turn_sends_no_cap() {
 /// The triage primer (docs/transport.md) replays the turn's own
 /// envelope with the backend-minimum cap: its input bytes match the turn's exactly,
 /// so the Codex backend resumes where the main request ended. Its `tool_choice`
-/// differs on purpose — forced `retain`, matching the peek's head rather than the
+/// differs on purpose — forced `retain`, matching the triage's head rather than the
 /// turn's `auto`, since the backend keys the resume on it.
 #[tokio::test]
 async fn codex_primer_replays_the_turn_envelope_capped() {
@@ -520,12 +520,12 @@ async fn codex_primer_replays_the_turn_envelope_capped() {
     assert_eq!(
         primer_body.get("tool_choice"),
         Some(&serde_json::json!({"type": "function", "name": "retain"})),
-        "the primer forces retain, matching the peek's head rather than the turn's auto"
+        "the primer forces retain, matching the triage's head rather than the turn's auto"
     );
     assert_eq!(
         primer_body.get("parallel_tool_calls"),
         Some(&serde_json::json!(false)),
-        "forcing retain disables parallel calls, as the peek sends it"
+        "forcing retain disables parallel calls, as the triage sends it"
     );
     for field in ["max_output_tokens", "tool_choice", "parallel_tool_calls"] {
         primer_body.as_object_mut().unwrap().remove(field);

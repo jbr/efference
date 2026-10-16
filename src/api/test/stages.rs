@@ -144,7 +144,7 @@ async fn a_retried_request_records_the_refused_attempt() {
     let (url, server) = serve(vec![unavailable(), ok_response()]);
     let recorder = Arc::new(Recorder::default());
     client(url, &recorder)
-        .with_origin(RequestOrigin::Peek)
+        .with_origin(RequestOrigin::Triage)
         .complete(&[], &[], ToolChoice::auto(), |_| {})
         .await
         .unwrap();
@@ -267,10 +267,10 @@ async fn concurrent_requests_interleave_by_id() {
     let (url, server) = serve(vec![ok_response(), ok_response()]);
     let recorder = Arc::new(Recorder::default());
     let base = client(url, &recorder);
-    let peek = base.with_origin(RequestOrigin::Peek);
+    let triage = base.with_origin(RequestOrigin::Triage);
     let title = base.with_origin(RequestOrigin::Title);
     let (a, b) = tokio::join!(
-        peek.complete(&[], &[], ToolChoice::auto(), |_| {}),
+        triage.complete(&[], &[], ToolChoice::auto(), |_| {}),
         title.complete(&[], &[], ToolChoice::auto(), |_| {}),
     );
     a.unwrap();

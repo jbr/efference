@@ -2,7 +2,7 @@
 //! (docs/digest.md).
 //!
 //! Each call renders as its tool name, the paths it named, its `intent`, and the note
-//! triage triaged from its result; operator turns render verbatim, and the prose that
+//! triage wrote for its result; operator turns render verbatim, and the prose that
 //! ended a turn renders as the agent's reply. Bodies — arguments that are not paths,
 //! result content — are left out, so the digest's size follows the number of calls
 //! rather than the volume of work they did. It is a deterministic fold over the log and

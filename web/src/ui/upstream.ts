@@ -10,7 +10,7 @@ export interface UpstreamChip {
 }
 
 export function retryText(retry: UpstreamRetry): string {
-  const surface = retry.surface === "peek" ? "triage · " : "";
+  const surface = retry.surface === "triage" ? "triage · " : "";
   return `${surface}Retrying · attempt ${retry.attempt} of ${retry.budget}`;
 }
 

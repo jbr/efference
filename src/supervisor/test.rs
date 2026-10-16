@@ -42,7 +42,7 @@ fn with_minted_starts_past_the_seed() {
 }
 
 #[test]
-fn mute_drops_from_the_peek_but_keeps_it_running() {
+fn mute_drops_from_the_triage_but_keeps_it_running() {
     let mut s = Supervisor::new();
     let id = s.register_background("x".into(), Some(7), None);
     s.set_muted(id, true);

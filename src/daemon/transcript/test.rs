@@ -148,7 +148,7 @@ fn silent_entries_render_to_nothing_and_verdicts_on_the_inbox_do_not() {
     };
     let mut loud = quiet.clone();
     loud.inbox = vec![(9, Disposition::Dismiss)];
-    loud.retries = vec!["attempt 1 of 3: peek called bash".into()];
+    loud.retries = vec!["attempt 1 of 3: triage called bash".into()];
     let log = [
         entry(1, Payload::Triage(quiet)),
         entry(
@@ -176,7 +176,7 @@ fn silent_entries_render_to_nothing_and_verdicts_on_the_inbox_do_not() {
     ];
     assert_eq!(
         render(&log),
-        "      3 triage    dismissed notification #9; retry: attempt 1 of 3: peek called bash\n\
+        "      3 triage    dismissed notification #9; retry: attempt 1 of 3: triage called bash\n\
          \x20     4 notify    [agent:fable] review level changed\n"
     );
 }

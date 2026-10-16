@@ -37,7 +37,7 @@ of a new one.
 
 The id has two faces:
 
-- **In prose** — tool results, the peek, `list_processes`, notification sources —
+- **In prose** — tool results, the triage, `list_processes`, notification sources —
   it renders as `p#<n>` (`supervisor::handle`). The prefix distinguishes it from an
   OS pid where the id floats free of context; `parse_handle` is the model-boundary
   inverse, and an unparseable handle answers like an unknown process.
@@ -222,7 +222,7 @@ with the entry's id, which **flips the property in place** — the id and the
 capture survive; the surrendered seed bytes are deliberately not re-pushed,
 because the foreground chunk sink already fed them — and spawns the same drain
 task as a spawned background process. From the flip on, the two paths are
-indistinguishable: tail in the peek, cursor reads, exit notification.
+indistinguishable: tail in the triage, cursor reads, exit notification.
 
 The seam loses nothing and duplicates nothing: the drain select only completes a
 read after its bytes are delivered to the sink, so everything read before the
@@ -283,7 +283,7 @@ unbuilt by design (the projection invariants depend on immutable bodies).
 A tail's whole value is that it *updates*. Forcing it through notifications would
 pile up one stale, frozen snapshot per process per gate — defeating the purpose.
 The escape is to not log the tail at all: render it live from the registry at each
-gate, in its own peek section, and materialize a durable record only when the model
+gate, in its own triage section, and materialize a durable record only when the model
 explicitly pins it.
 
 There is also a structural constraint: output arriving after the spawn's `tool_use`
@@ -300,7 +300,7 @@ The `Supervisor` registry is read two ways — ambient awareness
 and directed query — mirroring the [inbox](inbox.md)'s own ephemeral-queue vs.
 logged-Ambient split.
 
-**Ambient** — every peek auto-shows a `background` section for each running,
+**Ambient** — every triage auto-shows a `background` section for each running,
 un-muted process: `[p#<id>]` with a fresh tail, running time, and idle time
 (`running 4m12s · idle 8s`; "idle" = `now − last_chunk_at`, stamped in the drain
 loop). This is awareness that arrives *while the model is doing something else*.
@@ -314,7 +314,7 @@ to see notifications). The missing piece was a *direct projection*, not another 
 verb.
 
 **Two views of one registry.** `BgView` — built under the registry lock — is the
-*model-facing* snapshot: tail inline, times as humanized elapsed counts. A peek is
+*model-facing* snapshot: tail inline, times as humanized elapsed counts. A triage is
 synchronous and point-in-time, so the model has no stream to subscribe to and the tail
 must be there or it does not exist; and absolute Unix millis are unreadable in a prompt.
 
@@ -350,7 +350,7 @@ snapshot — building the honest `running…→finished…` timeline. `pin_snaps
 `supervisor.rs` produces the `(source, body)` pair ready to wrap in a
 `Notification`.
 
-**mute** — stop surfacing the running tail in the ambient peek; the process keeps
+**mute** — stop surfacing the running tail in the ambient triage; the process keeps
 running, and its *exit still notifies*. Killing is separate and explicit
 (`kill_process(handle)`), never conflated with "stop showing me this."
 
@@ -362,7 +362,7 @@ A gate fires on a tool result, so without an explicit mechanism an idle agent ca
 perceive an arriving event without manufacturing a spurious tool call. The fix: when
 the loop is parked, an arriving event wakes a **triage gate that rides no tool
 result** — the inbox/background section plus an ask for the triage-only tool (`keep`
-absent; nothing to retain), appended as a plain user message; like every peek the
+absent; nothing to retain), appended as a plain user message; like every triage the
 ask rides the tail instruction, never a forced `tool_choice`
 ([triage.md](triage.md), the shared envelope). It is a throwaway
 fork: it logs `Ambient` + `Triage` (audit grows) but **projects to nothing unless
@@ -419,10 +419,10 @@ permission to ask would gate a question behind a question.
   existed, so `begin_ask` withdraws them from the queue as `DELETE /turns/:id` would and
   publishes them on the `ask` state topic as `recalled`; the submitting client puts them
   back in its composer.
-- **Notifications do not interrupt it.** The reply bypasses the peek (`triage::bypassed`
+- **Notifications do not interrupt it.** The reply bypasses the triage (`triage::bypassed`
   names its shape `operator reply`); the inbox is still triaged. In a batch with other
-  results the peek runs as usual with a stand-in for the reply. When every result in the
-  batch bypasses, the loop appends them and then runs the standalone triage peek that
+  results the triage runs as usual with a stand-in for the reply. When every result in the
+  batch bypasses, the loop appends them and then runs the standalone triage that
   idle triage uses (`agent::triage_and_record`) — which, unlike the per-result gate,
   does not hold on failure: notifications stay pending for the next gate.
 - **Several asks in one completion are put one at a time**, in call order, each carrying

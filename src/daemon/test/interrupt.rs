@@ -12,7 +12,7 @@ use std::net::{TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, AtomicUsize};
 use trillium_tokio::Swansong;
 
-/// The first request's answer: one bash call, so the loop runs it and opens a peek.
+/// The first request's answer: one bash call, so the loop runs it and opens a triage.
 const TOOL_CALL: &[(&str, &str)] = &[
     (
         "message_start",
@@ -95,7 +95,7 @@ fn read_request(reader: &mut BufReader<TcpStream>) -> Option<String> {
 }
 
 /// A Messages upstream that answers by arrival order: request 0 calls a tool,
-/// request 1 (the peek) opens its stream once `open` is set and then sends nothing
+/// request 1 (the triage) opens its stream once `open` is set and then sends nothing
 /// until `release`, and every later request ends the turn. `requests` counts
 /// arrivals.
 fn scripted_upstream(
@@ -165,14 +165,14 @@ async fn wait_until(what: &str, mut ready: impl FnMut() -> bool) {
     .unwrap_or_else(|_| panic!("timed out waiting: {what}"));
 }
 
-/// **An interrupt during the peek ends the turn there.** The press ends the peek's
+/// **An interrupt during the triage ends the turn there.** The press ends the triage's
 /// read and the results are withheld as the interrupt's *after* juncture withholds
 /// one (`Elided`, nothing blaming triage); the loop then consumes the latch after
 /// the gate and goes idle without another request. Left set, the latch rides into the
 /// next completion and stops its first call as "aborted by user" — the model's
 /// answer to whatever the operator queued to explain the press.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn an_interrupt_during_the_peek_ends_the_turn_at_the_gate() {
+async fn an_interrupt_during_the_triage_ends_the_turn_at_the_gate() {
     use std::hash::{BuildHasher, Hasher, RandomState};
     let nonce = RandomState::new().build_hasher().finish();
     let cwd = std::env::temp_dir().join(format!("efference-interrupt-{nonce:016x}"));
@@ -201,7 +201,10 @@ async fn an_interrupt_during_the_peek_ends_the_turn_at_the_gate() {
     let session = Arc::clone(runtime.session());
     session.submit_turn(SubmittedTurn::new("go", "s1"));
 
-    wait_until("the peek is open", || requests.load(Ordering::SeqCst) == 2).await;
+    wait_until("the triage is open", || {
+        requests.load(Ordering::SeqCst) == 2
+    })
+    .await;
     session.interrupt();
     wait_until("the loop is idle", || {
         !session.running.load(Ordering::SeqCst)
@@ -214,7 +217,7 @@ async fn an_interrupt_during_the_peek_ends_the_turn_at_the_gate() {
     assert_eq!(
         requests.load(Ordering::SeqCst),
         2,
-        "the turn ended at the gate: no request after the interrupted peek"
+        "the turn ended at the gate: no request after the interrupted triage"
     );
     assert!(!session.interrupt_pending(), "the press was consumed");
     let log = session.snapshot();
@@ -240,13 +243,13 @@ async fn an_interrupt_during_the_peek_ends_the_turn_at_the_gate() {
     let _ = std::fs::remove_dir_all(&cwd);
 }
 
-/// The press lands after the peek's request reached the upstream but before its
+/// The press lands after the triage's request reached the upstream but before its
 /// stream opened — the window `notify_waiters`, which stores no permit, would lose
 /// if the client armed its abort only once the stream was open. The upstream holds
-/// the peek's response headers until the interrupt has fired, so this ordering is
+/// the triage's response headers until the interrupt has fired, so this ordering is
 /// forced rather than left to scheduling: the loop must still end the turn.
 #[tokio::test(flavor = "multi_thread")]
-async fn an_interrupt_before_the_peek_stream_opens_still_ends_it() {
+async fn an_interrupt_before_the_triage_stream_opens_still_ends_it() {
     use std::hash::{BuildHasher, Hasher, RandomState};
     let nonce = RandomState::new().build_hasher().finish();
     let cwd = std::env::temp_dir().join(format!("efference-interrupt-open-{nonce:016x}"));
@@ -279,7 +282,7 @@ async fn an_interrupt_before_the_peek_stream_opens_still_ends_it() {
     let session = Arc::clone(runtime.session());
     session.submit_turn(SubmittedTurn::new("go", "s1"));
 
-    wait_until("the peek request reached the upstream", || {
+    wait_until("the triage request reached the upstream", || {
         requests.load(Ordering::SeqCst) == 2
     })
     .await;
@@ -293,7 +296,7 @@ async fn an_interrupt_before_the_peek_stream_opens_still_ends_it() {
     assert_eq!(
         requests.load(Ordering::SeqCst),
         2,
-        "no request after the interrupted peek"
+        "no request after the interrupted triage"
     );
 
     host.shut_down().await;

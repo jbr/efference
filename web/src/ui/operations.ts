@@ -13,9 +13,8 @@ import type {
  * then a running tool, then the side requests by how much they hold the loop. */
 const REQUEST_ORDER: RequestOrigin[] = [
   "turn",
-  "peek",
-  "spot",
   "triage",
+  "spot",
   "narrate",
   "consolidation",
   "title",
@@ -47,12 +46,10 @@ function requestText(request: OpenRequest, model: string, now: number): string {
       if (request.stage === "retrying") return retrying;
       if (request.stage === "streaming") return `${model} streaming`;
       return `waiting on ${model} · ${since}`;
-    case "peek":
+    case "triage":
       return request.stage === "retrying"
         ? retrying
-        : `triage peek · ${request.stage === "sent" ? "waiting " : "streaming "}${since}`;
-    case "triage":
-      return `idle triage · ${since}`;
+        : `triage · ${request.stage === "sent" ? "waiting " : "streaming "}${since}`;
     case "spot":
       return `spotter judging · ${since}`;
     case "title":

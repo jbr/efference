@@ -9,7 +9,7 @@ context and be acted on now, `dismiss` the noise, and leave anything you're defe
 unlisted. If you pin nothing you simply go back to idle and nothing changes — so pin only \
 what truly warrants picking the work back up.";
 
-/// The ask's banner. Every other section of a peek view carries one (`═══ result ═══`,
+/// The ask's banner. Every other section of a triage view carries one (`═══ result ═══`,
 /// `═══ context ═══`, `═══ inbox ═══`); the ask carrying none left the only *instruction*
 /// in the view formatted as a trailing note about the sections above it. It opens on the
 /// harness's `⟢` because the preamble names a `⟢ triage` block as the harness's one ask
@@ -18,7 +18,7 @@ what truly warrants picking the work back up.";
 pub(super) const ASK_BANNER: &str = "⟢ triage · the harness asks: answer, don't act";
 
 /// The `keep`/`note` rows of the field block. `note` says *only what it showed* because a
-/// peek once turned a raw `unknown tool: ferritin` into "ferritin is not available as a CLI
+/// triage once turned a raw `unknown tool: ferritin` into "ferritin is not available as a CLI
 /// tool in this environment" — false, and the raw is discarded, so the invented claim was
 /// the only thing that survived onto the canonical wire
 /// (journal/2026-08-07-session-key-review.md). Dropping the wrong lines is the failure this
@@ -116,7 +116,7 @@ const REPORT_FIELDS: &str =
 ///   `keep`/`note` is asked for instead; the `results` array is for gates that genuinely
 ///   carry several, keyed by the short labels of [`labels`](super::labels) rather than
 ///   provider call ids, which models copied back with characters dropped. The labels
-///   are interpolated in that case — the peek's tail is thrown
+///   are interpolated in that case — the triage's tail is thrown
 ///   away, so nothing here is cache-keyed (docs/log-and-projection.md), unlike the
 ///   static schema it drives.
 ///
@@ -134,7 +134,7 @@ const REPORT_FIELDS: &str =
 ///
 /// `riders` are the field rows for whatever else this gate carries (inbox, background,
 /// surfacing roster), placed inside the block rather than appended after it.
-/// `reader` says who answers: the agent's own model (`Reader::Main`, the shared peek) is
+/// `reader` says who answers: the agent's own model (`Reader::Main`, the shared triage) is
 /// asked for a note to self ([`KEEP_FIELDS`]); a separate triage model
 /// (`Reader::Triage`) for a report ([`REPORT_FIELDS`]).
 pub(super) fn retain_instruction(offered: &[String], riders: &[&str], reader: Reader) -> String {
@@ -158,9 +158,9 @@ entries, one per label listed here and no others: {labels}.",
     };
     // An experiment's replacement for the `keep`/`note` rows (backlog/inbox/triage-ground-truth),
     // read from a file so a wording mutation is a text edit; unset, the shipped rows.
-    let keep_fields = match std::env::var("EFFERENCE_PEEK_FIELDS") {
+    let keep_fields = match std::env::var("EFFERENCE_TRIAGE_FIELDS") {
         Ok(path) => std::fs::read_to_string(&path)
-            .unwrap_or_else(|e| panic!("EFFERENCE_PEEK_FIELDS: {path}: {e}"))
+            .unwrap_or_else(|e| panic!("EFFERENCE_TRIAGE_FIELDS: {path}: {e}"))
             .trim_end()
             .to_string(),
         Err(_) => match reader {
@@ -174,7 +174,7 @@ entries, one per label listed here and no others: {labels}.",
     v.assemble(&shape, &fields)
 }
 
-/// How much of a roster item the peek view spells out — the cost axis
+/// How much of a roster item the triage view spells out — the cost axis
 /// (docs/triage.md). The roster is re-sent on **every** gate and lives in the
 /// fork's uncached tail, so its size is paid per tool result for the whole session.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -228,7 +228,7 @@ fn first_sentence(s: &str) -> &str {
     }
 }
 
-/// Which features of the ask are on — the ablation axis the `peek` rig varies
+/// Which features of the ask are on — the ablation axis the `triage` rig varies
 /// (docs/triage.md).
 ///
 /// Experiment scaffolding. It lives here
@@ -253,9 +253,9 @@ struct AskVariant {
     /// Additive candidate: the output above is complete, nothing further is coming.
     output_final: bool,
     /// The shape sentence says "the call the agent just made" instead of "the call you
-    /// just made" — the separate-model peek's alternative framing
+    /// just made" — the separate-model triage's alternative framing
     /// (backlog/inbox/triager-experiment.md). Off: the tail keeps its first-person frame for
-    /// both the shared and the separate-model peek (their `keep`/`note` rows differ by
+    /// both the shared and the separate-model triage (their `keep`/`note` rows differ by
     /// reader, [`REPORT_FIELDS`]).
     third_person: bool,
 }
@@ -278,13 +278,13 @@ impl Default for AskVariant {
 }
 
 impl AskVariant {
-    /// Read `EFFERENCE_PEEK_ASK`: a comma-separated list of `no-<feature>` ablations and
+    /// Read `EFFERENCE_TRIAGE_ASK`: a comma-separated list of `no-<feature>` ablations and
     /// `+<feature>` additions, or `legacy` for every ablation at once. Unset — the whole
     /// production path — yields [`Self::default`]. An unrecognized token is a hard panic
     /// rather than a silent no-op: a typo'd ablation that quietly measured the shipped ask
     /// would read as "this feature does nothing".
     fn from_env() -> Self {
-        let Ok(spec) = std::env::var("EFFERENCE_PEEK_ASK") else {
+        let Ok(spec) = std::env::var("EFFERENCE_TRIAGE_ASK") else {
             return Self::default();
         };
         let mut v = Self::default();
@@ -311,7 +311,7 @@ impl AskVariant {
                 "+verdict-channel" => v.verdict_channel = true,
                 "+output-final" => v.output_final = true,
                 "+third-person" => v.third_person = true,
-                other => panic!("EFFERENCE_PEEK_ASK: unknown variant {other:?}"),
+                other => panic!("EFFERENCE_TRIAGE_ASK: unknown variant {other:?}"),
             }
         }
         v
@@ -398,7 +398,7 @@ pub(super) const SURFACE_FIELD: &str =
               what you're doing right now and it will be surfaced as a reminder to read it
               before you rely on memory. Name nothing if none apply.";
 
-/// Render the inbox + background sections of a peek view (docs/inbox.md, docs/supervisor.md) — shared by the
+/// Render the inbox + background sections of a triage view (docs/inbox.md, docs/supervisor.md) — shared by the
 /// tool-result-riding gate and the standalone idle triage. Each item by its `[seq]` /
 /// `[p#n]` handle, with running-process tails indented.
 pub(super) fn append_inbox_and_background(
@@ -478,7 +478,7 @@ pub(super) fn roster_shown(roster: &[Item]) -> bool {
     !roster.is_empty() && AskVariant::from_env().roster != RosterStyle::Off
 }
 
-/// Render the surfacing roster section of a peek view (docs/triage.md): the
+/// Render the surfacing roster section of a triage view (docs/triage.md): the
 /// available-but-unloaded context items, each spelled exactly as the boot preamble spelled
 /// it, through the preamble's own renderer so the two can't drift. Only in the tool-result
 /// gate — the idle triage rides no work in flight.
@@ -498,7 +498,7 @@ pub(super) fn append_roster(view: &mut String, roster: &[Item]) {
     }
 }
 
-/// One result's block in a peek view (docs/triage.md): a header naming the
+/// One result's block in a triage view (docs/triage.md): a header naming the
 /// result's label ([`labels`](super::labels)) and tool, then the capped, line-numbered
 /// output.
 ///
@@ -511,7 +511,7 @@ pub(super) fn append_roster(view: &mut String, roster: &[Item]) {
 /// aligned with what the model saw.
 pub(super) fn result_view(label: &str, call: &ToolCall, raw: &RawResult) -> String {
     let all: Vec<&str> = raw.content.lines().collect();
-    let lines = &all[..all.len().min(PEEK_LINE_CAP)];
+    let lines = &all[..all.len().min(TRIAGE_LINE_CAP)];
     let dropped = all.len() - lines.len();
     let mut view = format!("═══ result {label} · {} ═══\n", call.name);
     // The call's `intent` (docs/tools.md), so the verdict's `note` answers the
@@ -532,7 +532,7 @@ pub(super) fn result_view(label: &str, call: &ToolCall, raw: &RawResult) -> Stri
     view
 }
 
-/// A bypassed result's block in the peek view (docs/triage.md). The call must
+/// A bypassed result's block in the triage view (docs/triage.md). The call must
 /// still be answered — the API rejects a request that leaves a `tool_use` unpaired — but
 /// the output itself is not shown: it is going to the wire verbatim, so showing it would
 /// spend the fork's uncached tail on text no verdict can change, and offering it beside
@@ -576,13 +576,13 @@ pub(super) fn number_lines(lines: &[&str]) -> String {
 /// `tool_use` per call the completion made, and the API rejects a request that leaves
 /// any of them unanswered. So the tail emits one `tool_result` per [`Pending`] — which
 /// is only correct because the loop runs *every* call of a completion before opening the
-/// gate. Peeking between calls would leave the later ones orphaned, which is exactly the
+/// gate. Triaging between calls would leave the later ones orphaned, which is exactly the
 /// failure this replaced.
 ///
 /// The riders (inbox, background, surfacing roster) are gate-scoped, so they ride the
 /// trailing text block rather than any one result. Pure and separate from the round-trip
 /// so the pairing invariant is testable without a live client.
-pub(super) fn peek_messages(
+pub(super) fn triage_messages(
     prefix: &[LogEntry],
     reader: Reader,
     pending: &[Pending<'_>],

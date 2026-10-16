@@ -56,7 +56,7 @@ fn two_request_backend() -> (std::net::SocketAddr, std::thread::JoinHandle<Vec<S
     (addr, server)
 }
 
-/// The primer and the triage keepalive, sent over the same turns with the peek's
+/// The primer and the triage keepalive, sent over the same turns with the triage's
 /// envelope, carry byte-identical bodies. A ping that re-sent anything else would
 /// refresh a different entry from the one the primer planted.
 #[tokio::test]

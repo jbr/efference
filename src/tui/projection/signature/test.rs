@@ -127,11 +127,11 @@ fn a_multi_line_value_is_content_gone_from_the_signature_a_body_below() {
 
 #[test]
 fn bash_keeps_its_command_bare() {
-    let view = call_view("bash", &json!({"command": "ls -la", "intent": "peek"}));
+    let view = call_view("bash", &json!({"command": "ls -la", "intent": "triage"}));
     assert_eq!(
         view,
         CallView {
-            intent: Some("peek".into()),
+            intent: Some("triage".into()),
             server: None,
             tool: "bash".into(),
             args: None,

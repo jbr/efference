@@ -32,11 +32,11 @@ use crate::spotter::Spotter;
 use crate::supervisor;
 use crate::tools::Toolbox;
 use crate::triage::{
-    BgVerdict, Pending, TriagePrimerInput, TriagePrimerOutcome, Triager, is_peek_tool,
+    BgVerdict, Pending, TriagePrimerInput, TriagePrimerOutcome, Triager, is_triage_tool,
 };
 
 /// Hard cap on a single tool result's bytes (defense in depth). The triage caps
-/// *line count* (`PEEK_LINE_CAP`), but not a pathological single huge line; an
+/// *line count* (`TRIAGE_LINE_CAP`), but not a pathological single huge line; an
 /// over-cap result is almost always a mistake — e.g. grepping the gitignored session
 /// logs, which embed prior raw results, so one matched line can be hundreds of KB —
 /// and feeding it onward would bloat the triage, blow the request size limit (the
@@ -45,7 +45,7 @@ use crate::triage::{
 /// crossing it signals something went wrong, so we don't silently truncate.
 const MAX_TOOL_RESULT_BYTES: usize = 256 * 1024;
 
-/// Coalesce a burst of near-simultaneous events into one idle-triage peek (docs/supervisor.md).
+/// Coalesce a burst of near-simultaneous events into one idle triage (docs/supervisor.md).
 const IDLE_TRIAGE_DEBOUNCE_MS: u64 = 250;
 
 /// Attempts per model call when the upstream fails transiently — a stream that
@@ -54,7 +54,7 @@ const IDLE_TRIAGE_DEBOUNCE_MS: u64 = 250;
 /// to nothing, so the replay re-sends byte-identical messages over the still-warm
 /// prefix), then the request goes again after a [`stream_abort_backoff`] pause.
 /// The triage's gate reaches for the same constant and the same schedule
-/// (`triage/peek.rs`): one stated policy, whichever surface the failure lands on.
+/// (`triage/request.rs`): one stated policy, whichever surface the failure lands on.
 ///
 /// Sized to **wait the failure out**. An upstream failure is usually an ephemeral
 /// condition, and the alternative on exhaustion — a stall the operator has to
@@ -80,7 +80,7 @@ pub(crate) fn stream_abort_backoff(aborted: u32) -> Option<std::time::Duration> 
 
 /// The retry-in-flight state one aborted attempt publishes (docs/transport.md).
 ///
-/// Both retry loops build their value here, so `turn` and `peek` differ only in
+/// Both retry loops build their value here, so `turn` and `triage` differ only in
 /// the surface they name — the attempt count, the budget, and the lead line stay
 /// the one policy. `next_attempt_at` is absolute, so nothing has to re-emit a
 /// countdown; the client subtracts.
@@ -572,7 +572,7 @@ pub async fn run<F: Frontend, S: Spotter>(
                 consolidation.check(&shared);
                 // The trajectory is ending: a title check, the moment the title
                 // peek reads the whole of it (docs/session-title.md). Detached: the loop breaks
-                // and re-arms at once, and the peek reads the prefix this turn
+                // and re-arms at once, and the triage reads the prefix this turn
                 // just cached while the loop idles.
                 solicit_title_detached(&shared, &title_ask);
                 break; // model is done with this turn → wait for the next.
@@ -583,9 +583,9 @@ pub async fn run<F: Frontend, S: Spotter>(
             // a fork request whose trailing assistant message still carries unanswered
             // `tool_use` blocks, which the API rejects (docs/triage.md).
             // The triage-lineage primer replays this completion's input on the own
-            // peek's client (docs/transport.md). Borrowed, so the
+            // triage's client (docs/transport.md). Borrowed, so the
             // primer is byte-identical to the request above; armed only on the own
-            // peek, whose lineage the main request never warms. Shared peeks skip it
+            // triage, whose lineage the main request never warms. Shared triages skip it
             // without spending a request.
             let primer = triager.is_own().then(|| TriagePrimerInput {
                 triager: &triager,

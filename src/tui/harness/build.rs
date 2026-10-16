@@ -200,7 +200,7 @@ impl Screenplay<'_> {
     }
 
     /// A fragment of a running tool's output, as `tool_output` delivers it —
-    /// demuxed by `call_id`, which is also the peek entry's durable key.
+    /// demuxed by `call_id`, which is also the triage entry's durable key.
     pub(crate) fn tool_output(&mut self, call_id: &str, chunk: &str) -> &mut Self {
         self.event(TuiEvent::ToolOutput {
             call_id: call_id.into(),

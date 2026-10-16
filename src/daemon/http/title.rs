@@ -10,7 +10,7 @@ struct TitleBody {
 /// Set the session's title by hand: one `Title` entry with `author: operator`,
 /// and the `session_identity` topic moves with it. The title peek reads the new
 /// text as the standing title at its next ask. Whitespace-only text is refused,
-/// as is a line over the peek's own cap, so the two authors are held to the
+/// as is a line over the triage's own cap, so the two authors are held to the
 /// same shape.
 pub(super) async fn put_title(mut conn: Conn) -> Conn {
     let Some(shared) = shared_of(&conn) else {

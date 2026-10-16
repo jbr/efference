@@ -34,7 +34,7 @@ pub const NAME: &str = "consolidate";
 ///
 /// Framed per the **"selection IS the output"** lesson (docs/triage.md): the
 /// summary *becomes* the record — deliberately no "you can re-read it later", which
-/// manufactured anxiety and over-dropping when the peek believed its work was
+/// manufactured anxiety and over-dropping when the triage believed its work was
 /// recoverable. The raw transcript does survive in the log, but that is an
 /// operator/audit property, not something the prompt dangles.
 static SCHEMA: LazyLock<ToolDefinition> = LazyLock::new(|| {

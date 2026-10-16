@@ -105,14 +105,14 @@ pub(super) fn upstream_failure_indicator(failure: Option<UpstreamFailureView>) -
 /// The status-bar retry indicator (docs/transport.md). The daemon's `message`
 /// already reads as a sentence — *attempt 2 of 12 failed upstream, retrying* — so
 /// it is shown verbatim and leads; the status code is never the headline. A triage
-/// peek's retry takes a `triage:` prefix, so a wait between tool results is not read
+/// triage's retry takes a `triage:` prefix, so a wait between tool results is not read
 /// as the model generating. The tail says the retry is automatic and that `⏎` on an
 /// empty composer skips the wait.
 pub(super) fn upstream_retry_indicator(retry: Option<&UpstreamRetryView>) -> Option<String> {
     let retry = retry?;
     Some(match retry.surface.as_str() {
         "turn" => format!("↻ {} · ⏎ retries now", retry.message),
-        "peek" => format!("↻ triage: {} · ⏎ retries now", retry.message),
+        "triage" => format!("↻ triage: {} · ⏎ retries now", retry.message),
         surface => format!("↻ {surface}: {} · ⏎ retries now", retry.message),
     })
 }

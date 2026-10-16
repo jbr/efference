@@ -145,18 +145,18 @@ async fn triage_is_shown_the_masked_result() {
     .await;
     host.shut_down().await;
 
-    let peek = bodies.lock().unwrap()[1].clone();
+    let triage = bodies.lock().unwrap()[1].clone();
     assert!(
-        peek.contains("token="),
-        "the peek carries the result: {peek}"
+        triage.contains("token="),
+        "the triage carries the result: {triage}"
     );
     assert!(
-        !peek.contains(secret),
-        "the gate is shown the masked bytes: {peek}"
+        !triage.contains(secret),
+        "the gate is shown the masked bytes: {triage}"
     );
     assert!(
-        peek.contains("API_TOKEN"),
-        "and the marker names what was elided: {peek}"
+        triage.contains("API_TOKEN"),
+        "and the marker names what was elided: {triage}"
     );
 
     // The log holds the masked form too, so nothing downstream can recover it.

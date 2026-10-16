@@ -10,8 +10,8 @@
 
 import type { Keep, RawResult, WireState } from "../api/types.ts";
 
-/** Mirrors `PEEK_LINE_CAP` (src/project.rs). */
-export const PEEK_LINE_CAP = 2000;
+/** Mirrors `TRIAGE_LINE_CAP` (src/project.rs). */
+export const TRIAGE_LINE_CAP = 2000;
 
 type Range = [number, number];
 
@@ -71,7 +71,7 @@ export function renderTriaged(
   note: string | null,
 ): string {
   const all = rustLines(content);
-  const shown = all.slice(0, PEEK_LINE_CAP);
+  const shown = all.slice(0, TRIAGE_LINE_CAP);
   const dropped = all.length - shown.length;
   const ranges: Range[] =
     keep === "All" ? [[1, shown.length]] : keep === "None" ? [] : keep.Ranges;
@@ -92,7 +92,7 @@ export function selectionKept(
   keep: Keep,
 ): { kept: NumberedLine[]; total: number } {
   const all = rustLines(content);
-  const shown = all.slice(0, PEEK_LINE_CAP);
+  const shown = all.slice(0, TRIAGE_LINE_CAP);
   const dropped = all.length - shown.length;
   const ranges = normalize(
     keep === "All" ? [[1, shown.length]] : keep === "None" ? [] : keep.Ranges,

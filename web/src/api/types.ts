@@ -146,7 +146,6 @@ export interface RequestStage {
 /** What a request is for (docs/log-and-projection.md). */
 export type RequestOrigin =
   | "turn"
-  | "peek"
   | "triage"
   | "title"
   | "spot"
@@ -226,7 +225,7 @@ export interface WorktreeCheckout {
 }
 
 /** One title decision (docs/session-title.md). Log metadata: appended even when
- * the peek kept the previous text, so consecutive entries can repeat. */
+ * the triage kept the previous text, so consecutive entries can repeat. */
 export interface Title {
   text: string;
   author: "triage" | "operator";
@@ -399,7 +398,7 @@ export type Stance = "clear" | "watch" | "gate" | "clear_always";
 /** What one tool call cost and how it came out (docs/tools.md) — the harness's
  * own measurement of the dispatch, joined to its call by `call_id`. `duration_ms`
  * excludes the permission cascade, and `result_bytes` is the raw result before
- * the triage triages it, so the pair (this, the rendered result) is what
+ * triage has run, so the pair (this, the rendered result) is what
  * says how much a gate saved. Additive by construction on the Rust side: fields
  * may appear here that this client does not read yet. */
 export interface ToolTelemetry {
@@ -674,9 +673,9 @@ export type Fold = { state: "writing" } | { state: "failed"; error: string };
 // A retry in flight (docs/transport.md). Level-triggered: `null` is the
 // all-clear — the attempt that finalized, or exhaustion.
 export interface UpstreamRetry {
-  // Which loop is retrying. An exhausted peek withholds a verdict; an exhausted
+  // Which loop is retrying. An exhausted triage withholds a verdict; an exhausted
   // turn ends the trajectory.
-  surface: "turn" | "peek";
+  surface: "turn" | "triage";
   // The attempt that just failed, 1-based, of the budget the loop will spend.
   attempt: number;
   budget: number;

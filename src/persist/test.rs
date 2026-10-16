@@ -254,7 +254,7 @@ fn submission_id_never_reaches_the_projection() {
 }
 
 /// The fork's recorded reasoning (`Triage.thinking`, docs/triage.md) survives the
-/// jsonl round-trip, one entry per peek attempt that thought.
+/// jsonl round-trip, one entry per triage attempt that thought.
 #[test]
 fn triage_thinking_round_trips() {
     let thinking = vec![

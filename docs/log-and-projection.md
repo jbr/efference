@@ -128,7 +128,7 @@ to explain what the session did; what streams per token stays on the ephemeral
 `request` is an id minted by the host when the request starts, unique within the
 session and continued past the log's highest after a restart (the provider's
 generation id arrives late or never). `origin` is the same `RequestOrigin` the
-`usage.jsonl` lines carry (`turn`, `peek`, `triage`, `title`, `spot`, `keepalive`,
+`usage.jsonl` lines carry (`turn`, `triage`, `title`, `spot`, `keepalive`,
 `triage_primer`, `triage_keepalive`, `narrate`, `consolidation`, `aborted_attempt`). `stage` is `sent` (handed to the
 transport), `attempt_failed {attempt, status}` (a refused attempt the transport may
 re-send), `first_byte` (the first stream event), `ended` (the stream finalized), or
@@ -480,7 +480,7 @@ header before returning, so a file that exists is already a readable log and
 an existing file is an error left byte-for-byte untouched. Opening an existing
 log for append while starting from an empty `entries` would restart `seq` at 0
 inside a file that already numbers its entries — every offline reader
-(`view`, `wire`, `peek`, the TUI fold) would read that as one sequence with
+(`view`, `wire`, `triage`, the TUI fold) would read that as one sequence with
 duplicates in it — so the refusal is what keeps that unreachable. The session
 directory is minted exclusively for the same reason.
 
@@ -754,10 +754,10 @@ under a different current config still has the historical shape. The log does
 not store either derived value. The consequence for the byte pins is that the
 pinned bytes are pinned **per placement** — `project/test/cache.rs` covers the
 arms and asserts the marker count stays one for each. On the Responses wire the triage's frontier has its own
-pin (`triage/test.rs`): the peek's one marker sits on the last carrier before the
+pin (`triage/test.rs`): the triage's one marker sits on the last carrier before the
 fork-local tail and never in it, and the next canonical request repeats the pre-fork
 items content for content, marks its own tail, and carries the selection rather
-than the raw output or the peek's ask. The marker is a write instruction, not
+than the raw output or the triage's ask. The marker is a write instruction, not
 content, so the two requests differ only in where it sits.
 
 One request shape rides this marker everywhere: agent turns, triages, and
@@ -771,7 +771,7 @@ request shape.
 ## The per-request usage record
 
 Every upstream request appends one JSONL line to the session dir's `usage.jsonl`:
-a wall-clock stamp, the request's origin (`turn` / `peek` / `triage` / `spot` /
+a wall-clock stamp, the request's origin (`turn` / `triage` / `spot` /
 `keepalive` / `aborted_attempt`), the upstream response id (Anthropic `msg_…`; an
 OpenRouter-fronted request's generation id), the model the response named for
 itself, and the four token counts. When the response reported them, the line
@@ -821,7 +821,7 @@ One observation is noise — a retry, an eviction the TTL heuristic misses — s
 signal is the **run**. `ColdStreak` (`src/daemon/metrics.rs`) folds each recorded
 request into a consecutive-unexplained-cold counter: only `turn` requests move it
 (the side channels carry their own prefixes at their own lineages), `keepalive`,
-`aborted_attempt`, and a `peek` that ran on the agent's client (its usage line
+`aborted_attempt`, and a `triage` that ran on the agent's client (its usage line
 carries `main_prefix`) stamp the touch clock the idle test reads without counting,
 and any warm read clears it. An aborted attempt's zero
 `cache_read` is not evidence the prefix moved — counting it drove a false

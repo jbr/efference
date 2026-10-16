@@ -31,7 +31,7 @@ The triage policy is the most-iterated knob; see `triage.md`. It is
 one concrete type (`Triager`), not a trait: the single-implementation
 `Triager` bound it was built behind was threaded through three signatures for
 a polymorphism nothing exercised, and the swap the backlog names — a smaller
-model behind the same peek — is a field and a different client, not a second
+model behind the same triage — is a field and a different client, not a second
 implementation.
 
 ## The `intent` property
@@ -363,7 +363,7 @@ gets exactly one paired `tool_result` — the API rejects orphans.
 that do exist, and — since `bash` is always mounted — a pointer at it for a name
 that is a program rather than a tool. `unknown tool: <name>` alone says what
 failed, not what would work; in the incident behind this, the name was an allowed
-bash prefix the session had met as a listed skill, and the peek then wrote a false
+bash prefix the session had met as a listed skill, and the triage then wrote a false
 lesson the raw never claimed ("not available in this environment") onto the
 canonical wire. A correction the result text states outright is one a summary can
 compress but not invent past. The loop applies it ahead of the permission cascade

@@ -41,7 +41,7 @@ async fn background_process_drains_and_notifies_on_exit() {
     // Exited → no longer in the ambient show or the teardown set.
     assert!(
         shared.bg_snapshot().is_empty(),
-        "exited process off the peek"
+        "exited process off the triage"
     );
     shared.kill_all_bg(); // no-op (nothing running) — must not panic.
 }

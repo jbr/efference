@@ -54,7 +54,7 @@ impl Toolbox {
 
     /// Apply the config's foreground-lifetime limits to the mounted `bash` provider
     /// (docs/supervisor.md). Separate from construction because only a served session
-    /// has a config — the dev views (`wire`, `spotter`, `peek`) build a toolbox to read
+    /// has a config — the dev views (`wire`, `spotter`, `triage`) build a toolbox to read
     /// tool *definitions* and never run a command, so they keep the defaults.
     pub fn with_bash_limits(mut self, limits: crate::config::BashLimits) -> Self {
         for provider in &mut self.providers {

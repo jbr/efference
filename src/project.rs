@@ -18,7 +18,7 @@ use crate::log::{
 };
 
 /// Which client a projection feeds (docs/summary-head.md). `Main` is the agent's own
-/// wire, and the one a peek that shares the agent's client sends; `Triage` is a
+/// wire, and the one a triage that shares the agent's client sends; `Triage` is a
 /// triage model running on its own client. The two differ only in which boundary marks
 /// apply: a mark whose [`Audience`] is `Triage` folds the span for `Triage` and is
 /// absent from `Main`, so the main wire's bytes do not depend on it.
@@ -196,7 +196,7 @@ pub(crate) fn messages_block_to_api(block: &MessagesOutputBlock) -> ApiBlock {
     }
 }
 
-pub const PEEK_LINE_CAP: usize = 2000;
+pub const TRIAGE_LINE_CAP: usize = 2000;
 
 #[cfg(test)]
 mod test;

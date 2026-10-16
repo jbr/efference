@@ -182,7 +182,7 @@ pub fn tool_bytes(log: &[LogEntry], span: Span) -> usize {
         .flat_map(|(seq, calls)| {
             calls
                 .into_iter()
-                .filter(|c| c.name != NAME && !crate::triage::is_peek_tool(&c.name))
+                .filter(|c| c.name != NAME && !crate::triage::is_triage_tool(&c.name))
                 .map(move |c| {
                     (
                         c.id,

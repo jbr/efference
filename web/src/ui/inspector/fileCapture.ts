@@ -1,7 +1,7 @@
 import { viewablePath } from "../../session/touchedFiles.ts";
 import type { WireState } from "../../api/types.ts";
 import { readMarker } from "../../render/parse.ts";
-import { rustLines, normalize, PEEK_LINE_CAP } from "../../render/triage.ts";
+import { rustLines, normalize, TRIAGE_LINE_CAP } from "../../render/triage.ts";
 import type { LineRange } from "../lineRanges.ts";
 export interface CapturedFile {
   path: string;
@@ -19,11 +19,11 @@ export function capturedReads(
     typeof wire === "object" && "Triaged" in wire
       ? normalize(
           wire.Triaged.keep === "All"
-            ? [[1, PEEK_LINE_CAP]]
+            ? [[1, TRIAGE_LINE_CAP]]
             : wire.Triaged.keep === "None"
               ? []
               : wire.Triaged.keep.Ranges,
-          Math.min(rows.length, PEEK_LINE_CAP),
+          Math.min(rows.length, TRIAGE_LINE_CAP),
         )
       : wire === "Elided"
         ? []

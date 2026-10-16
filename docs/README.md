@@ -111,7 +111,7 @@ Violating any one silently breaks caching or correctness:
    free to call tools in parallel: the request does not set `disable_parallel_tool_use`
    (Messages) and sends `parallel_tool_calls: true` (Responses). The loop runs every call
    a completion made, holding the results, then triages them together at one gate
-   ([triage.md](triage.md)) — a peek fired between calls would carry
+   ([triage.md](triage.md)) — a triage fired between calls would carry
    unanswered `tool_use` blocks, which the API rejects. What *is* invariant is the
    pairing — every `tool_use` gets exactly one `tool_result`, or projection orphans it
    and the API rejects the request. A forced tool choice (the spotter's `spot`) still

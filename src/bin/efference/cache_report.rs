@@ -121,11 +121,10 @@ pub(crate) struct CacheReport {
 
 /// The table's row order: the main loop first, then the side channels in the order
 /// they cost tokens.
-const ORIGIN_ORDER: [RequestOrigin; 12] = [
+const ORIGIN_ORDER: [RequestOrigin; 11] = [
     RequestOrigin::Turn,
-    RequestOrigin::Peek,
-    RequestOrigin::Spot,
     RequestOrigin::Triage,
+    RequestOrigin::Spot,
     RequestOrigin::Title,
     RequestOrigin::Keepalive,
     RequestOrigin::TriagePrimer,
@@ -139,9 +138,8 @@ const ORIGIN_ORDER: [RequestOrigin; 12] = [
 fn origin_label(origin: RequestOrigin) -> &'static str {
     match origin {
         RequestOrigin::Turn => "turn",
-        RequestOrigin::Peek => "peek",
-        RequestOrigin::Spot => "spot",
         RequestOrigin::Triage => "triage",
+        RequestOrigin::Spot => "spot",
         RequestOrigin::Title => "title",
         RequestOrigin::Keepalive => "keepalive",
         RequestOrigin::TriagePrimer => "triage_primer",

@@ -8,7 +8,7 @@ use super::*;
 #[test]
 fn a_retry_tail_answers_every_wrong_call_and_renews_the_ask() {
     let completion = retain_completion("bash", json!({"command": "ls"}));
-    let mut messages = vec![WireTurn::text("the peek tail")];
+    let mut messages = vec![WireTurn::text("the triage tail")];
     let why = unusable(&completion, RETAIN);
     assert!(extend_with_retry(
         &mut messages,
@@ -41,7 +41,7 @@ fn a_retry_tail_answers_every_wrong_call_and_renews_the_ask() {
             assert_eq!(tool_use_id, "r", "the wrong call is answered, not orphaned");
             assert!(*is_error);
             assert!(
-                content.contains("not accepted — peek called bash instead of retain"),
+                content.contains("not accepted — triage called bash instead of retain"),
                 "the error result carries the why: {content}"
             );
             assert!(text.contains("Call `retain` now"), "{text}");
@@ -80,7 +80,7 @@ fn a_prose_only_response_retries_with_just_the_renewed_ask() {
     assert!(extend_with_retry(
         &mut messages,
         &completion.assistant,
-        "peek called no tool",
+        "triage called no tool",
         &call_now(TRIAGE)
     ));
     assert_eq!(messages.len(), 2);
@@ -102,7 +102,7 @@ fn an_empty_response_is_terminal_not_an_invalid_retry() {
     assert!(!extend_with_retry(
         &mut messages,
         &empty,
-        "peek called no tool",
+        "triage called no tool",
         &call_now(RETAIN)
     ));
     assert!(messages.is_empty());
@@ -142,7 +142,7 @@ fn an_incomplete_verdict_is_rejected_naming_the_missing_ids() {
 }
 
 /// Bounds are part of verdict validity (docs/triage.md): a `keep` range wholly
-/// beyond the shown line count is a coordinate mistake — the shape it catches is a peek
+/// beyond the shown line count is a coordinate mistake — the shape it catches is a triage
 /// adopting `grep -n`'s embedded file line numbers over the rendering's own — and
 /// render-time normalization would drop it silently. The rejection names the bound
 /// so the retry can re-index against the rendering.
@@ -161,7 +161,7 @@ fn a_wholly_out_of_range_keep_is_rejected_naming_the_bound() {
     assert!(why.contains("25-401"), "names the range: {why}");
     assert!(why.contains("17"), "names the bound: {why}");
 
-    // Overshoot from an in-bounds start is the peek's line accounting running a line
+    // Overshoot from an in-bounds start is the triage's line accounting running a line
     // or two past the rendering's — not a coordinate mistake; render clamps the tail.
     let p = parse_retain(
         &retain_completion(RETAIN, json!({ "keep": "10-19" })),
@@ -287,14 +287,14 @@ fn a_coverage_rejection_reports_what_was_answered() {
 
 /// The triage retries a stream that dies before finalizing on the **same budget and
 /// schedule** as the main loop's own aborted turns (docs/transport.md) — one policy for
-/// one failure, whichever surface it lands on. Before this, an aborted peek withheld on
+/// one failure, whichever surface it lands on. Before this, an aborted triage withheld on
 /// the first abort while an aborted turn got four attempts; a controlled run caught the
 /// asymmetry costing nine turns and a spurious conformance failure (docs/transport.md).
 ///
 /// The cap is the part worth pinning: it is what lets the attempt count be large enough
 /// to wait a flaky provider out without the tail of the schedule becoming a hang.
 #[test]
-fn an_aborted_peek_stream_backs_off_on_the_main_loops_budget() {
+fn an_aborted_triage_stream_backs_off_on_the_main_loops_budget() {
     use crate::agent::{STREAM_ABORT_ATTEMPTS, stream_abort_backoff};
     use std::time::Duration;
     assert_eq!(stream_abort_backoff(1), Some(Duration::from_secs(1)));
@@ -317,7 +317,7 @@ fn an_aborted_peek_stream_backs_off_on_the_main_loops_budget() {
     assert!((120..400).contains(&total), "whole schedule was {total}s");
 }
 
-/// Parallel calls are allowed on the shared envelope (docs/README.md), so a peek may
+/// Parallel calls are allowed on the shared envelope (docs/README.md), so a triage may
 /// answer a two-result gate in two `retain` calls; the verdicts merge, and the merged
 /// verdict covers the gate.
 #[test]

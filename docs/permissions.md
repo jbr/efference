@@ -128,13 +128,13 @@ stance is a parse error rather than a silently-ignored entry.
 ## Ahead of the cascade: the call has to name something (`src/agent/step.rs`)
 
 Two calls never enter the cascade at all, because neither poses a permission question.
-A peek tool (`retain`/`triage`) called when nothing was asked of it is paired with the
+A triage tool (`retain`/`triage`) called when nothing was asked of it is paired with the
 nudge result ([triage.md](triage.md)). And a call naming **no tool this
 turn advertised** is answered with `tools::unknown_tool_message` — the mounted names, plus
 a pointer at `bash` for a name that is a program — as a `Direct` payload, so the correction
 reaches the wire verbatim rather than through the triage gate.
 
-The membership test reads the names off `agent::tool_definitions` itself, minus the peek
+The membership test reads the names off `agent::tool_definitions` itself, minus the triage
 tools, so what the check accepts and what the request advertised cannot drift.
 
 The check is ahead of the rungs rather than inside one because the call cannot run whatever

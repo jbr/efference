@@ -201,12 +201,12 @@ impl Client {
     }
 
     /// The triage-lineage primer (docs/transport.md): the turn's
-    /// own input replayed so a later peek extends a request that ended where the main
+    /// own input replayed so a later triage extends a request that ended where the main
     /// one did. Shaped exactly like the keepalive's Responses ping — the turn envelope
     /// with the backend-minimum output cap — because it is the same write: a cached
     /// read plus the capped output. `None` where no implicit lineage exists to plant
     /// in (anything but Responses-with-implicit-policy), so the caller sends nothing
-    /// speculative there; the peek then goes out unprimed, the failure mode being fixed.
+    /// speculative there; the triage then goes out unprimed, the failure mode being fixed.
     ///
     /// The primer wants the write, not the read, so a marked output does not fail it:
     /// a 16-token budget at a call-eliciting position truncates the model's function

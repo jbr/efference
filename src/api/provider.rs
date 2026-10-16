@@ -151,7 +151,7 @@ impl Provider {
     }
 
     /// Whether this provider can serve a session's main model or its triage
-    /// peek. False only for a decision-model provider, which answers questions
+    /// triage. False only for a decision-model provider, which answers questions
     /// about a state and never produces a turn.
     pub fn serves_inference(&self) -> bool {
         self.inference_dialect().is_some()

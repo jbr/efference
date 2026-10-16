@@ -1395,7 +1395,7 @@ from this client; hold is the composer band's own. The turn state is
 moves (`retrying the upstream · send to retry now` while an `upstream_retry`
 pause runs; while a request or tool is open, the `current_operations` topic's
 leading operation with its elapsed time on the client's clock — `waiting on
-<model> · 2m 10s` before the first byte, `<model> streaming` after it, `triage peek
+<model> · 2m 10s` before the first byte, `<model> streaming` after it, `triage
 · waiting 40s`, `spotter judging · 3s`, `bash: <command> · 45s`, `retrying upstream ·
 attempt 2 (429) · 8s`; the turn's own request leads, then a running tool, then the
 side requests, in `ui/operations.ts`; a `bash` call is labelled by its `command`, cut

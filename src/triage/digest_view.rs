@@ -1,6 +1,6 @@
 //! The digest view of a triage request (backlog: separate-triage-reads-text.md): the
 //! history as the trajectory digest renders it (docs/digest.md) instead of as the
-//! agent's transcript. An experiment arm of `efference dev peek`; the live gate reads the
+//! agent's transcript. An experiment arm of `efference dev triage`; the live gate reads the
 //! transcript view.
 //!
 //! The request carries no assistant turn and no tool block, only text, so it encodes on
@@ -56,7 +56,7 @@ const GATE_HEAD: &str = "The agent's latest calls, and what each returned:";
 /// whole digest, a tail of it, or none), a breakpoint after it (the digest of a longer
 /// log extends a shorter one's, so this is where a cache can resume), then the gate's
 /// calls and results and the same ask the transcript view sends.
-pub(super) fn digest_peek_messages(
+pub(super) fn digest_triage_messages(
     prefix: &[LogEntry],
     reader: Reader,
     view: TriageView,

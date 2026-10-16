@@ -30,7 +30,7 @@ async fn a_built_in_tools_full_definition_is_present() {
 /// A loop-owned tool — `check_inbox`, dispatched structurally by the loop,
 /// outside `Toolbox` — answers too: the catalog `set_tool_catalog` snapshots
 /// is `agent::tool_catalog`, which mirrors `agent::tool_definitions`'s full
-/// union (the toolbox plus `consolidate`/the supervisor family/the peek
+/// union (the toolbox plus `consolidate`/the supervisor family/the triage
 /// tools), not just the toolbox's own providers. This is the coverage gap
 /// `agent::brief`'s doc comment already records for the spotter, pinned here
 /// for the route.

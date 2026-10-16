@@ -1,4 +1,4 @@
-//! Building the separate-model peek from a model name (docs/triage.md) —
+//! Building the separate-model triage from a model name (docs/triage.md) —
 //! one constructor for the daemon's boot and the replay tool, so the replayed shape
 //! cannot drift from the live one.
 
@@ -16,7 +16,7 @@ pub struct TriageModel {
     /// discarded with the fork's tail).
     pub thinking: bool,
     #[serde(default)]
-    /// `--triage-auto-choice`: `tool_choice: auto` instead of forcing the peek tool.
+    /// `--triage-auto-choice`: `tool_choice: auto` instead of forcing the triage tool.
     pub auto_choice: bool,
     #[serde(default)]
     /// `--triage-effort`: the reasoning level, in the model's own vocabulary
@@ -26,11 +26,11 @@ pub struct TriageModel {
 }
 
 impl Triager {
-    /// The separate-model peek for `triage` (docs/triage.md): the model's
+    /// The separate-model triage for `triage` (docs/triage.md): the model's
     /// capabilities looked up like the agent's, a client on [`Endpoint::for_triage`]
-    /// with the given `system`, thinking off unless asked, a peek-sized output cap,
+    /// with the given `system`, thinking off unless asked, a triage-sized output cap,
     /// and the asked-for tool forced unless asked otherwise. Returns the capabilities
-    /// beside the peek so the caller can print the window. `system` is the caller's:
+    /// beside the triage so the caller can print the window. `system` is the caller's:
     /// [`crate::env::triage_system_prompt`], masked by whatever policy applies.
     pub async fn for_triage_model(
         endpoint: &Endpoint,
@@ -59,20 +59,20 @@ impl Triager {
         if !triage.thinking && triage.effort.is_none() {
             client = client.without_thinking();
         }
-        // A verdict is one small call: cap the reservation at the peek's size, not
-        // the model's, so it never crowds the window (`PEEK_MAX_OUTPUT`).
+        // A verdict is one small call: cap the reservation at the triage's size, not
+        // the model's, so it never crowds the window (`TRIAGE_MAX_OUTPUT`).
         let cap = caps
             .max_output_tokens
-            .map_or(PEEK_MAX_OUTPUT, |cap| cap.min(PEEK_MAX_OUTPUT));
+            .map_or(TRIAGE_MAX_OUTPUT, |cap| cap.min(TRIAGE_MAX_OUTPUT));
         client = client
             .with_max_output(cap)
             .with_context_window(caps.context_length);
-        let peek = Triager::own(client);
-        let peek = if triage.auto_choice {
-            peek.with_auto_choice()
+        let triager = Triager::own(client);
+        let triager = if triage.auto_choice {
+            triager.with_auto_choice()
         } else {
-            peek
+            triager
         };
-        Ok((peek, caps))
+        Ok((triager, caps))
     }
 }

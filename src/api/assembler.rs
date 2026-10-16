@@ -410,7 +410,7 @@ impl Assembler {
                             // become the same record-only partial, marked here for the
                             // same reason the empty-finalized stream below is: the mark
                             // *is* the retryable signal, so the turn loop and the fork
-                            // peek each retry it on the budget they already have. An
+                            // triage each retry it on the budget they already have. An
                             // error here instead takes the request-failed path, which
                             // retries nothing (docs/transport.md).
                             //

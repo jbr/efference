@@ -37,7 +37,7 @@ fn the_tail_is_estimated_from_the_calibrated_count() {
     r.calibrate(150_000, 600_000);
     // 3,000 bytes appended → 1,000 tokens at the tail ratio.
     assert_eq!(r.estimate_prompt(603_000), 151_000);
-    // A smaller body (the turn after a peek) estimates downward the same way.
+    // A smaller body (the turn after a triage) estimates downward the same way.
     assert_eq!(r.estimate_prompt(597_000), 149_000);
 }
 

@@ -1,10 +1,10 @@
-//! Timed primer/peek cache ladder (docs/transport.md).
+//! Timed primer/triage cache ladder (docs/transport.md).
 //!
 //! Experiment verb, dev-gated: plants triage primers at controlled gaps against one
-//! recorded gate and replays the recorded peek per rung, reporting cache reads.
+//! recorded gate and replays the recorded triage per rung, reporting cache reads.
 //! Decides eviction vs write-visibility lag vs envelope keying without spending
 //! survey gates: a back-to-back primer pair that chains proves truncated primers
-//! plant; a gapped pair that misses bounds the lifetime; a peek after a forced
+//! plant; a gapped pair that misses bounds the lifetime; a triage after a forced
 //! primer is the v1.1 verdict live. Sends real requests unless `--dry-run`.
 
 use super::*;
@@ -31,15 +31,15 @@ fn line(label: &str, usage: &efference::api::RequestUsage) -> String {
     )
 }
 
-/// One primer send through the own peek. `None` where no implicit lineage exists;
+/// One primer send through the own triage. `None` where no implicit lineage exists;
 /// an `Err` where the send failed (warned at the send site).
 async fn plant(
-    peek: &Triager,
+    triage: &Triager,
     turns: &[efference::project::WireTurn],
     tools: &[serde_json::Value],
     choice: efference::api::ToolChoice,
 ) -> Option<Result<efference::api::RequestUsage, efference::api::Error>> {
-    let outcome = peek.prime_with(turns, tools, choice).await?;
+    let outcome = triage.prime_with(turns, tools, choice).await?;
     Some(outcome.usage.ok_or_else(|| {
         Box::new(std::io::Error::other(
             outcome
@@ -130,7 +130,7 @@ pub(crate) async fn ladder(
     ));
     if dry_run {
         emit(
-            "dry run: A auto/auto · B ladder · C auto→peek · D forced→peek · E peek-tools→peek"
+            "dry run: A auto/auto · B ladder · C auto→triage · D forced→triage · E triage-tools→triage"
                 .into(),
         );
         return Ok(());
@@ -147,13 +147,13 @@ pub(crate) async fn ladder(
         .or_else(|| super::triage_replay::session_model(&system))
         .unwrap_or_else(|| model.to_string());
     let triage_selection = inference.triage().ok_or(
-        "the ladder plants on the own triage lineage; this session resolves a shared peek",
+        "the ladder plants on the own triage lineage; this session resolves a shared triage",
     )?;
     let (_, mut triage_endpoint, t) = triage_selection;
     triage_endpoint.session_id = endpoint.session_id.clone();
     let triage_system =
         efference::env::triage_system_prompt(&t.model, &agent_model, context_block.as_deref());
-    let (peek, _) = Triager::for_triage_model(
+    let (triage, _) = Triager::for_triage_model(
         &triage_endpoint,
         t,
         triage_system,
@@ -166,7 +166,7 @@ pub(crate) async fn ladder(
 
     // eviction; a miss here kills shape theories outright (no-write or drift).
     for label in ["A plant(auto)", "A measure(auto)"] {
-        match plant(&peek, &turns, &tools, efference::api::ToolChoice::auto()).await {
+        match plant(&triage, &turns, &tools, efference::api::ToolChoice::auto()).await {
             Some(Ok(usage)) => emit(line(label, &usage)),
             Some(Err(e)) => emit(format!("{label:<24} ERROR {e}")),
             None => emit(format!("{label:<24} SKIPPED no implicit lineage")),
@@ -175,7 +175,7 @@ pub(crate) async fn ladder(
     // Arm B: the ladder. Each rung plants fresh, sleeps the gap, then measures —
     // every rung is self-contained, so order effects only warm the plants.
     for gap in &gaps {
-        match plant(&peek, &turns, &tools, efference::api::ToolChoice::auto()).await {
+        match plant(&triage, &turns, &tools, efference::api::ToolChoice::auto()).await {
             Some(Ok(usage)) => emit(line("B plant(auto)", &usage)),
             Some(Err(e)) => emit(format!("B plant(auto)            ERROR {e}")),
             None => emit("B plant(auto)            SKIPPED no implicit lineage".into()),
@@ -184,7 +184,7 @@ pub(crate) async fn ladder(
             eprintln!("sleeping {gap}s …");
             tokio::time::sleep(std::time::Duration::from_secs(*gap)).await;
         }
-        match plant(&peek, &turns, &tools, efference::api::ToolChoice::auto()).await {
+        match plant(&triage, &turns, &tools, efference::api::ToolChoice::auto()).await {
             Some(Ok(usage)) => emit(line(&format!("B measure(auto,{gap}s)"), &usage)),
             Some(Err(e)) => emit(format!("B measure(auto,{gap}s)      ERROR {e}")),
             None => emit(format!(
@@ -192,20 +192,23 @@ pub(crate) async fn ladder(
             )),
         }
     }
-    // Arms C and D: the recorded peek after an auto primer (v1 as shipped) and
+    // Arms C and D: the recorded triage after an auto primer (v1 as shipped) and
     // after a forced primer (the choice fix). First attempt only — the measurement.
     for (label, choice) in [
-        ("C auto→peek", efference::api::ToolChoice::auto()),
-        ("D forced→peek", efference::api::ToolChoice::force("retain")),
+        ("C auto→triage", efference::api::ToolChoice::auto()),
+        (
+            "D forced→triage",
+            efference::api::ToolChoice::force("retain"),
+        ),
     ] {
-        match plant(&peek, &turns, &tools, choice).await {
+        match plant(&triage, &turns, &tools, choice).await {
             Some(Ok(usage)) => emit(line(&format!("{label} plant"), &usage)),
             Some(Err(e)) => emit(format!("{label} plant            ERROR {e}")),
             None => emit(format!(
                 "{label} plant            SKIPPED no implicit lineage"
             )),
         }
-        match peek
+        match triage
             .attempt(
                 &client,
                 &tools,
@@ -217,29 +220,29 @@ pub(crate) async fn ladder(
             )
             .await
         {
-            Ok(attempt) => emit(line(&format!("{label} peek"), &attempt.usage)),
-            Err(e) => emit(format!("{label} peek              DEFECT {e}")),
+            Ok(attempt) => emit(line(&format!("{label} triage"), &attempt.usage)),
+            Err(e) => emit(format!("{label} triage              DEFECT {e}")),
         }
     }
-    // Arm E: the recorded peek after a primer sending the peek's own envelope —
-    // peek tools plus forced choice, sharing only the input prefix. If the backend
-    // keys the full envelope, this is the plant the peek resumes.
+    // Arm E: the recorded triage after a primer sending the triage's own envelope —
+    // triage tools plus forced choice, sharing only the input prefix. If the backend
+    // keys the full envelope, this is the plant the triage resumes.
     {
         use efference::triage::{retain_tool, triage_tool};
-        let peek_tools = vec![retain_tool(), triage_tool()];
+        let triage_tools = vec![retain_tool(), triage_tool()];
         match plant(
-            &peek,
+            &triage,
             &turns,
-            &peek_tools,
+            &triage_tools,
             efference::api::ToolChoice::force("retain"),
         )
         .await
         {
-            Some(Ok(usage)) => emit(line("E peek-tools→peek plant", &usage)),
-            Some(Err(e)) => emit(format!("E peek-tools→peek plant   ERROR {e}")),
-            None => emit("E peek-tools→peek plant   SKIPPED no implicit lineage".into()),
+            Some(Ok(usage)) => emit(line("E triage-tools→triage plant", &usage)),
+            Some(Err(e)) => emit(format!("E triage-tools→triage plant   ERROR {e}")),
+            None => emit("E triage-tools→triage plant   SKIPPED no implicit lineage".into()),
         }
-        match peek
+        match triage
             .attempt(
                 &client,
                 &tools,
@@ -251,8 +254,8 @@ pub(crate) async fn ladder(
             )
             .await
         {
-            Ok(attempt) => emit(line("E peek-tools→peek peek", &attempt.usage)),
-            Err(e) => emit(format!("E peek-tools→peek peek     DEFECT {e}")),
+            Ok(attempt) => emit(line("E triage-tools→triage result", &attempt.usage)),
+            Err(e) => emit(format!("E triage-tools→triage result     DEFECT {e}")),
         }
     }
 

@@ -41,8 +41,8 @@ fn a_refused_attempt_reads_as_a_retry() {
 
 #[test]
 fn side_requests_are_named_by_what_they_are() {
-    let peek = json!({"requests": [request("peek", "sent", 40_000)], "tools": []});
-    assert_eq!(text(peek).as_deref(), Some("triage peek · waiting 40s"));
+    let triage = json!({"requests": [request("triage", "sent", 40_000)], "tools": []});
+    assert_eq!(text(triage).as_deref(), Some("triage · waiting 40s"));
     let spot = json!({"requests": [request("spot", "sent", 3_000)], "tools": []});
     assert_eq!(text(spot).as_deref(), Some("spotter judging · 3s"));
 }

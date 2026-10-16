@@ -62,7 +62,7 @@ fn recorded_requests_land_in_the_usage_record() {
         cache_read_input_tokens: 0,
     };
     shared.record_request(
-        RequestOrigin::Peek,
+        RequestOrigin::Triage,
         RequestUsage::new(usage.clone()).with_id("gen-abc123"),
     );
     shared.record_keepalive(RequestUsage::new(usage));
@@ -72,16 +72,16 @@ fn recorded_requests_land_in_the_usage_record() {
         .lines()
         .map(|l| serde_json::from_str(l).expect("each line is JSON"))
         .collect();
-    let [peek, keepalive] = lines.as_slice() else {
+    let [triage, keepalive] = lines.as_slice() else {
         panic!("one line per request, in order: {lines:?}");
     };
-    assert_eq!(peek["origin"], "peek");
-    assert_eq!(peek["id"], "gen-abc123");
-    assert_eq!(peek["input"], 6);
-    assert_eq!(peek["output"], 10);
-    assert_eq!(peek["cache_write"], 9407);
-    assert_eq!(peek["cache_read"], 0);
-    assert!(peek["at_ms"].as_u64().is_some_and(|ms| ms > 0));
+    assert_eq!(triage["origin"], "triage");
+    assert_eq!(triage["id"], "gen-abc123");
+    assert_eq!(triage["input"], 6);
+    assert_eq!(triage["output"], 10);
+    assert_eq!(triage["cache_write"], 9407);
+    assert_eq!(triage["cache_read"], 0);
+    assert!(triage["at_ms"].as_u64().is_some_and(|ms| ms > 0));
     assert_eq!(keepalive["origin"], "keepalive");
     assert!(
         keepalive.get("id").is_none(),
@@ -234,7 +234,7 @@ fn recorded_requests_move_the_published_cold_streak() {
 }
 
 /// Only turns and keepalive pings stamp the cache-touch clock: a spotter assessment
-/// or a peek may have read some other prefix, and counting it would keep the main
+/// or a triage may have read some other prefix, and counting it would keep the main
 /// cache looking warm after it expired.
 #[test]
 fn only_main_prefix_requests_stamp_the_touch_clock() {
@@ -246,7 +246,7 @@ fn only_main_prefix_requests_stamp_the_touch_clock() {
     );
     let request = || RequestUsage::new(Usage::default());
     shared.record_request(RequestOrigin::Spot, request());
-    shared.record_request(RequestOrigin::Peek, request());
+    shared.record_request(RequestOrigin::Triage, request());
     let (touch, turn) = shared.keepalive_clocks(CacheLineage::Main);
     assert_eq!(touch, None, "side requests leave the touch clock alone");
     assert!(turn.is_some(), "but they are activity for the give-up cap");
@@ -292,20 +292,20 @@ fn attaching_the_usage_record_seeds_the_clocks() {
     );
 }
 
-/// A shared peek's usage line says so (`main_prefix`), and a restarted host seeds the
-/// touch clock from it; the same peek without the flag, and the flag's absence on old
+/// A shared triage's usage line says so (`main_prefix`), and a restarted host seeds the
+/// touch clock from it; the same triage without the flag, and the flag's absence on old
 /// lines, leave the clock on the earlier turn.
 #[test]
-fn a_shared_peek_line_seeds_the_touch_clock() {
+fn a_shared_triage_line_seeds_the_touch_clock() {
     let dir = std::env::temp_dir();
-    let usage_path = dir.join("efference-seed-peek-test-usage.jsonl");
+    let usage_path = dir.join("efference-seed-triage-test-usage.jsonl");
     let _ = std::fs::remove_file(&usage_path);
     let request = || RequestUsage::new(Usage::default());
     let new_session = || Session::new(std::env::current_dir().unwrap(), Log::in_memory()).0;
     let first = new_session();
     first.attach_usage_log(&usage_path);
-    first.record_peek(false, request());
-    first.record_peek(true, request());
+    first.record_triage(false, request());
+    first.record_triage(true, request());
     drop(first);
 
     let lines: Vec<Value> = std::fs::read_to_string(&usage_path)
@@ -320,7 +320,7 @@ fn a_shared_peek_line_seeds_the_touch_clock() {
     let now = crate::log::Timestamp::now().0 as u128;
     let minutes_ago = |m: u128| now - m * 60_000;
     let record = format!(
-        "{{\"at_ms\":{},\"origin\":\"turn\"}}\n{{\"at_ms\":{},\"origin\":\"peek\"}}\n",
+        "{{\"at_ms\":{},\"origin\":\"turn\"}}\n{{\"at_ms\":{},\"origin\":\"triage\"}}\n",
         minutes_ago(30),
         minutes_ago(20),
     );
@@ -337,7 +337,7 @@ fn a_shared_peek_line_seeds_the_touch_clock() {
     );
 
     let flagged = format!(
-        "{record}{{\"at_ms\":{},\"origin\":\"peek\",\"main_prefix\":true}}\n",
+        "{record}{{\"at_ms\":{},\"origin\":\"triage\",\"main_prefix\":true}}\n",
         minutes_ago(10),
     );
     std::fs::write(&usage_path, flagged).unwrap();
@@ -354,16 +354,16 @@ fn a_shared_peek_line_seeds_the_touch_clock() {
     );
 }
 
-/// A peek on the agent's client refreshes the idle window the streak measures from; one
+/// A triage on the agent's client refreshes the idle window the streak measures from; one
 /// on a separate triage client does not.
 #[test]
-fn only_a_shared_peek_touches_the_streaks_idle_window() {
+fn only_a_shared_triage_touches_the_streaks_idle_window() {
     let t = 1_800_000_000_000u128;
     let m = Some("claude-haiku-4-5");
     let cold_after_gap = |main_prefix: bool| {
         let mut streak = ColdStreak::default();
         streak.observe(RequestOrigin::Turn, t, m, 5_000);
-        streak.observe_touching(RequestOrigin::Peek, main_prefix, t + 390_000, m, 5_000);
+        streak.observe_touching(RequestOrigin::Triage, main_prefix, t + 390_000, m, 5_000);
         streak.observe(RequestOrigin::Turn, t + 400_000, m, 0)
     };
     assert_eq!(cold_after_gap(true), Some(CacheRead::Cold));
@@ -395,7 +395,7 @@ fn primer_neither_counts_nor_touches_the_main_prefix() {
 }
 
 /// Primer spend lands in the usage record under its own origin so `dev cache` prices
-/// the warmup separately from the peeks it warms.
+/// the warmup separately from the triages it warms.
 #[test]
 fn primer_requests_land_in_the_usage_record_as_triage_primer() {
     let dir = std::env::temp_dir();

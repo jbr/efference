@@ -451,9 +451,9 @@ answers a gate *right now* is the separate `resolved_review_level` topic on
 #### `PUT /title`
 Set the session's title by hand ([session-title.md](session-title.md)): one
 `Title` log entry with `author: "operator"`, and the `session_identity` topic
-moves with it. The title peek reads the new text as the standing title at its
+moves with it. The title ask reads the new text as the standing title at its
 next ask. Body `{ "title": "<one line>" }`; whitespace-trimmed, refused empty or
-over the peek's own length cap, so both authors are held to one shape.
+over the title ask's own length cap, so both authors are held to one shape.
 
 - `200` with the `session_identity` topic as it now reads.
 - `400 bad_request` — bad body, empty title, or one over the cap; also a session
@@ -518,7 +518,7 @@ idle session stays idle, and a loop parked at its cold check stays parked until 
 next turn or continue. A loop held at a triage gate without a verdict (the
 `triage_unavailable` or `triage_defect` stall, docs/triage.md) is running but
 sends nothing, so it accepts a fold the same way: it stays held, and the continue
-that retries it peeks the folded projection rather than the history the account
+that retries it triages the folded projection rather than the history the account
 replaced. After a fold the
 session is neither warm nor cold: nothing has sent the new prefix, so the keepalive
 has nothing to ping and the `cold` topic is `null` until a request ages past the
@@ -752,7 +752,7 @@ not a topic — it is the log's cursor rather than control state, and sits outsi
     "last": { "input_tokens": …, "output_tokens": …,
               "cache_read_input_tokens": …, "cache_creation_input_tokens": … },
     "cumulative": { …same four fields… },
-    "last_request_at": 1754300000000,       // absolute Unix millis of the last request on the main prefix: a turn, a keepalive ping, or a peek on the agent's own client (persists across a host restart), or null before the first
+    "last_request_at": 1754300000000,       // absolute Unix millis of the last request on the main prefix: a turn, a keepalive ping, or a triage on the agent's own client (persists across a host restart), or null before the first
     "last_cache_miss": null,                // the provider's own attribution of the most recent cache miss it
                                             //   named, or null until one arrives (transport.md):
                                             //   {"reason":"tools_changed","cache_missed_input_tokens":12280,
@@ -823,7 +823,7 @@ not a topic — it is the log's cursor rather than control state, and sits outsi
     "count": 2                     // consecutive responses carrying it
   },
   "upstream_retry": {              // null when nothing is being retried (transport.md)
-    "surface": "turn",             // "turn" | "peek" — a peek waits between tool
+    "surface": "turn",             // "turn" | "triage" — a triage waits between tool
                                    //   results; `POST /loop/continue` retries now
     "attempt": 2,                  // the attempt that just failed, 1-based
     "budget": 12,                  // attempts before the loop gives up
@@ -881,7 +881,7 @@ not a topic — it is the log's cursor rather than control state, and sits outsi
   "current_operations": {          // null when no upstream request is open and no tool is executing
     "requests": [{                 // open requests, in the order they were sent
       "request": 57,               // the id its log entries share (log-and-projection.md)
-      "origin": "turn",            // "turn" | "peek" | "triage" | "title" | "spot" | "keepalive" | …
+      "origin": "turn",            // "turn" | "triage" | "title" | "spot" | "keepalive" | …
       "stage": "sent",             // "sent": no stream event yet | "streaming": first event arrived
                                    //   | "retrying": an attempt was refused (adds "attempt", "status")
       "since": 1754300000000       // absolute Unix millis at which this stage began
@@ -896,7 +896,7 @@ not a topic — it is the log's cursor rather than control state, and sits outsi
 ```
 
 **`current_operations` names what the loop is waiting on.** `running: true` alone
-cannot tell a slow first byte from a long tool, a slow triage peek from a hung
+cannot tell a slow first byte from a long tool, a slow triage from a hung
 stream. The topic lists the upstream requests open now and the tools executing,
 each with the instant its stage began, so a client subtracts on its own clock and
 the topic is not re-emitted per tick; it changes only at a transition. It is folded
@@ -904,7 +904,7 @@ from the log's `RequestStage`, `CallStarted`, and `ToolResult` entries
 ([log-and-projection.md](log-and-projection.md)), maintained as entries append
 rather than re-folded per recompute, and rebuilt from the log when a session is
 opened: a `Resumed` entry closes everything open before it, since those requests
-belonged to the previous host process. Several requests can be open at once (a peek
+belonged to the previous host process. Several requests can be open at once (a triage
 and the spotter, a background title ask); parallel calls of one completion are all
 in `tools`. Parked waits keep their own topics (`gate`, `ask`, `park`, `stall`,
 `fold`) and are not repeated here; the topic is `null` rather than empty when
@@ -920,7 +920,7 @@ turn-not-completed notification, and returns to idle
 ([transport.md](transport.md)). The daemon does not exit: the socket stays up
 and one `POST /turns` recovers the session. But every other signal then reads
 as a finished run — `running: false`, `gate: null`, and `notifications: []`
-once a triage peek has dismissed the notice — so a supervising client cannot
+once a triage has dismissed the notice — so a supervising client cannot
 tell "done" from "gave up". This topic is that difference. It carries the
 reason, the attempts spent, the instant it stopped, a `message` in the same
 lead-with-what-happened register as `upstream_retry`, and the upstream's own
@@ -1014,7 +1014,7 @@ call is not a `call` line: it is an `asked` line carrying the question, with
 was sourced) when the result entry carries a `submission_id`, or `result  not
 answered` when it does not (an interrupt, a malformed call). `notify`, `spot`,
 `config`, `process`, `mark`, `preamble` and `title` are one line each; a `triage`
-line appears only when the verdict pinned or dismissed a notification or the peek
+line appears only when the verdict pinned or dismissed a notification or the triage
 retried; telemetry renders to nothing. Every line's `seq` resolves through the
 routes below, which is where the bodies are. The `transcript` control verb reads
 this; the raw window is for clients that render entries themselves.
@@ -1134,7 +1134,7 @@ One tool's full definition, for **any** name the turn's `tools[]` can carry —
 description, `input_schema` (with per-property descriptions and `required`),
 `annotations`, `title`, and `server` (the mounting server's name, `null` for
 one of the harness's own tools: `bash`, `read_image`, the fs/semantic-edit MCP
-servers, `consolidate`, the supervisor/inbox family, the two peek tools).
+servers, `consolidate`, the supervisor/inbox family, the two triage tools).
 Lazily fetched, one at a time, rather than a table pushed at session start: an
 MCP server may mount dozens of tools with long descriptions, and a consumer
 usually wants exactly the one behind a call it's showing.
@@ -1152,7 +1152,7 @@ distinction cuts one way: a `Toolbox`-mounted tool's schema carries the
 injected [`intent`] property ([tools.md](tools.md) "The `intent` property"),
 because `with_intent` runs over every entry `Toolbox::definitions` advertises
 — but the harness's own loop-owned family (`consolidate`, the supervisor/inbox
-tools, the two peek tools) is pushed onto the wire array *after* that, with no
+tools, the two triage tools) is pushed onto the wire array *after* that, with no
 injection, so their served schemas carry no `intent` property either.
 
 This covers everything a session's `tools[]` can name — not just the
@@ -1162,7 +1162,7 @@ missed this whole loop-owned family (`check_inbox`, `list_processes`,
 outside `Toolbox`), the same coverage gap the spotter once had over the same
 family (`agent::brief`'s doc comment, [permissions.md](permissions.md)): a
 lookup that consults only the providers reads a name in `tools[]` as absent.
-The two peek tools (`retain`, `triage`) answer here even though they never
+The two triage tools (`retain`, `triage`) answer here even though they never
 reach a gate and are never the subject of an ordinary logged call — they ride
 every turn's `tools[]` regardless, so a reader inspecting the triage's own
 exchange can still ask what shape it was answering.

@@ -67,8 +67,8 @@ pub fn upstream_failure_state() -> UpstreamFailureState {
     Arc::new(Mutex::new(None))
 }
 
-/// Which loop is retrying. A peek retry and a turn retry have different
-/// consequences — a withheld peek asks the agent to re-run a call whose side
+/// Which loop is retrying. A triage retry and a turn retry have different
+/// consequences — a withheld triage asks the agent to re-run a call whose side
 /// effects already stand, where an exhausted turn ends the trajectory — so the
 /// surface is part of the state rather than a detail folded into prose
 /// (docs/transport.md).
@@ -76,14 +76,14 @@ pub fn upstream_failure_state() -> UpstreamFailureState {
 #[serde(rename_all = "snake_case")]
 pub enum RetrySurface {
     Turn,
-    Peek,
+    Triage,
 }
 
 impl RetrySurface {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Turn => "turn",
-            Self::Peek => "peek",
+            Self::Triage => "triage",
         }
     }
 }
@@ -159,8 +159,8 @@ impl UpstreamRetryCell {
 
     /// The all-clear for one surface: the attempt that finalizes, or exhaustion.
     ///
-    /// Scoped to the surface so a peek's clear cannot erase a turn's live retry.
-    /// The two surfaces do not in fact run concurrently (the peek is awaited inline
+    /// Scoped to the surface so a triage's clear cannot erase a turn's live retry.
+    /// The two surfaces do not in fact run concurrently (the triage is awaited inline
     /// from the loop), which is what makes the scoping cheap insurance rather than a
     /// coordination mechanism.
     pub fn clear(&self, surface: RetrySurface) {

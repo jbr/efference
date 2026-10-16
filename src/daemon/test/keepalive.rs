@@ -515,7 +515,7 @@ async fn wait_until(what: impl Fn() -> bool) {
 }
 
 /// The triage lineage's ping replays the primed turns under the envelope its loop was
-/// given (docs/transport.md): the primer's forced `retain` and the peek's tools, over the
+/// given (docs/transport.md): the primer's forced `retain` and the triage's tools, over the
 /// turns the primer sent and nothing else.
 #[tokio::test]
 async fn a_triage_ping_replays_the_primed_turns_under_the_primers_envelope() {
@@ -549,7 +549,7 @@ async fn a_triage_ping_replays_the_primed_turns_under_the_primers_envelope() {
     assert_eq!(
         body["tool_choice"],
         serde_json::json!({"type": "tool", "name": "retain", "disable_parallel_tool_use": true}),
-        "the forced choice the peek sends, parallel calls off"
+        "the forced choice the triage sends, parallel calls off"
     );
     let tools: Vec<&str> = body["tools"]
         .as_array()
@@ -590,11 +590,11 @@ fn the_triage_keepalive_arms_only_where_a_primer_plants() {
         request: Default::default(),
         base: None,
     };
-    let peek = Triager::own(
+    let triage = Triager::own(
         Client::new(codex, "gpt-6.1-sol", "sys", None)
             .with_prompt_cache(PromptCachePolicy::Implicit),
     );
-    let armed = KeepaliveSpec::triage(&peek, None, None)
+    let armed = KeepaliveSpec::triage(&triage, None, None)
         .expect("an implicit Responses lineage plants a primer");
     assert_eq!(armed.lineage, CacheLineage::Triage);
     assert_eq!(
@@ -607,7 +607,7 @@ fn the_triage_keepalive_arms_only_where_a_primer_plants() {
         [serde_json::json!("retain"), serde_json::json!("triage")]
     );
     assert_eq!(armed.choice.forced(), Some("retain"));
-    let off = KeepaliveSpec::triage(&peek, Some(Duration::ZERO), None).unwrap();
+    let off = KeepaliveSpec::triage(&triage, Some(Duration::ZERO), None).unwrap();
     assert!(off.ping_at.is_zero());
 }
 

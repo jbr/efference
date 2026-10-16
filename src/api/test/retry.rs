@@ -114,7 +114,7 @@ fn retry_topic_tracks_attempts_and_clears_on_finalize() {
 fn exhaustion_leaves_the_retry_topic_cleared() {
     let retry = upstream_retry_state();
     retry.set(crate::agent::stream_abort_retry(
-        RetrySurface::Peek,
+        RetrySurface::Triage,
         crate::agent::STREAM_ABORT_ATTEMPTS - 1,
         crate::agent::STREAM_ABORT_ATTEMPTS,
         std::time::Duration::from_secs(30),
@@ -127,15 +127,15 @@ fn exhaustion_leaves_the_retry_topic_cleared() {
         crate::agent::stream_abort_backoff(crate::agent::STREAM_ABORT_ATTEMPTS),
         None
     );
-    retry.clear(RetrySurface::Peek);
+    retry.clear(RetrySurface::Triage);
     assert_eq!(retry.get(), None);
 }
 
 /// The clear is scoped to its surface, so one loop's all-clear cannot erase the
 /// other's live retry — and the two surfaces stay distinguishable, which is the
-/// asymmetry that motivated giving the peek its own budget (docs/transport.md).
+/// asymmetry that motivated giving the triage its own budget (docs/transport.md).
 #[test]
-fn a_peek_clear_does_not_erase_a_turn_retry() {
+fn a_triage_clear_does_not_erase_a_turn_retry() {
     let retry = upstream_retry_state();
     retry.set(crate::agent::stream_abort_retry(
         RetrySurface::Turn,
@@ -145,12 +145,12 @@ fn a_peek_clear_does_not_erase_a_turn_retry() {
         "aborted",
     ));
 
-    retry.clear(RetrySurface::Peek);
+    retry.clear(RetrySurface::Triage);
 
     assert_eq!(
         retry.get().map(|r| r.surface),
         Some(RetrySurface::Turn),
-        "the turn's retry survives a peek's all-clear"
+        "the turn's retry survives a triage's all-clear"
     );
 }
 

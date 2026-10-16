@@ -326,7 +326,7 @@ fn following_user_block_sheds_on_elision_and_is_identity_for_text() {
     assert!(has_image(WireState::Raw));
     assert!(!has_image(WireState::Elided));
     assert!(!has_image(WireState::TriageFailed {
-        why: "peek died".into(),
+        why: "triage died".into(),
     }));
     let log = sample_log();
     assert_eq!(
@@ -369,7 +369,7 @@ fn after_interposed_turn_is_absent_without_images() {
     for shed in [
         WireState::Elided,
         WireState::TriageFailed {
-            why: "peek died".into(),
+            why: "triage died".into(),
         },
     ] {
         let wire = projected(shed);
@@ -416,7 +416,7 @@ fn image_survives_triage_and_is_shed_by_elision() {
     )));
     assert!(!keeps(WireState::Elided));
     assert!(!keeps(WireState::TriageFailed {
-        why: "peek died".into(),
+        why: "triage died".into(),
     }));
 }
 

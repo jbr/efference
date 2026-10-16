@@ -44,7 +44,7 @@ describe("upstream notice", () => {
   });
   it("distinguishes triage retries", () => {
     expect(
-      upstreamChip(null, { ...retry, surface: "peek" })?.progress,
+      upstreamChip(null, { ...retry, surface: "triage" })?.progress,
     ).toContain("triage");
   });
 });

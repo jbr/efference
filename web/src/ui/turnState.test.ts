@@ -131,14 +131,19 @@ describe("the turn-state readout", () => {
       ).toBe("retrying upstream · attempt 2 (429) · 8s");
     });
 
-    it("names a peek and the spotter by what they are", () => {
+    it("names a triage and the spotter by what they are", () => {
       expect(
         text(
           ops([
-            { request: 2, origin: "peek", stage: "sent", since: now - 40_000 },
+            {
+              request: 2,
+              origin: "triage",
+              stage: "sent",
+              since: now - 40_000,
+            },
           ]),
         ),
-      ).toBe("triage peek · waiting 40s");
+      ).toBe("triage · waiting 40s");
       expect(
         text(
           ops([

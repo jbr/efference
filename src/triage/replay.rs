@@ -2,7 +2,7 @@
 
 use super::*;
 
-/// What one un-retried triage came back with — the `peek` dev tool's measurement
+/// What one un-retried triage came back with — the `triage` dev tool's measurement
 /// primitive (docs/triage.md).
 ///
 /// The gate's own machinery retries, so a session's `Triage.retries` records *that* a
@@ -10,15 +10,15 @@ use super::*;
 /// first-attempt non-compliance and one that changes nothing both end in a usable
 /// verdict. This runs exactly one round trip and reports the first attempt's verdict,
 /// which is the number an instruction change actually moves.
-pub struct PeekAttempt {
-    /// The tools the peek called, in order — empty for a prose-only answer.
+pub struct TriageAttempt {
+    /// The tools the triage called, in order — empty for a prose-only answer.
     pub called: Vec<String>,
-    /// Each call's arguments, alongside `called`. A tool name says the peek reached for
+    /// Each call's arguments, alongside `called`. A tool name says the triage reached for
     /// the wrong thing; the arguments say *what it was reaching for* — whether it was
     /// continuing the task, re-reading what it had just been shown, or something else
     /// entirely. That distinction is the whole diagnosis and the name alone erases it.
     pub inputs: Vec<Value>,
-    /// The prose and thinking the peek emitted, joined. A non-compliant attempt that
+    /// The prose and thinking the triage emitted, joined. A non-compliant attempt that
     /// reasoned about triage first is a different failure from one that never registered
     /// the ask, and only the text separates them.
     pub said: String,
@@ -45,21 +45,21 @@ pub struct ReplayVerdict {
     pub note: Option<String>,
 }
 
-impl PeekAttempt {
+impl TriageAttempt {
     /// A usable, covering verdict on the first try — the thing being measured.
     pub fn compliant(&self) -> bool {
         self.why.is_none()
     }
 }
 
-/// Rebuild the exact request a recorded gate's peek sent — the same `peek_messages` the
+/// Rebuild the exact request a recorded gate's triage sent — the same `triage_messages` the
 /// live gate calls, so a replay can't drift from production (docs/triage.md).
-/// Split out for the `peek` dev tool's dry run, which reviews an ask without spending a
+/// Split out for the `triage` dev tool's dry run, which reviews an ask without spending a
 /// request on it.
 ///
 /// `view` picks the rendering of the history: the live gate's transcript, or the digest
 /// arm under evaluation (`digest_view.rs`).
-pub fn peek_request(
+pub fn triage_request(
     prefix: &[LogEntry],
     reader: Reader,
     view: TriageView,
@@ -70,9 +70,9 @@ pub fn peek_request(
     let roster = surfaceable_roster(prefix);
     match view {
         TriageView::Transcript => {
-            peek_messages(prefix, reader, pending, inbox, background, &roster)
+            triage_messages(prefix, reader, pending, inbox, background, &roster)
         }
-        view => digest_view::digest_peek_messages(
+        view => digest_view::digest_triage_messages(
             prefix, reader, view, pending, inbox, background, &roster,
         ),
     }
@@ -94,10 +94,10 @@ impl Triager {
         pending: &[Pending<'_>],
         inbox: &[ShownNotification],
         background: &[BgView],
-    ) -> Result<PeekAttempt, String> {
-        let messages = peek_request(prefix, self.reader(), view, pending, inbox, background);
-        peek_attempt(
-            &self.client(agent, RequestOrigin::Peek),
+    ) -> Result<TriageAttempt, String> {
+        let messages = triage_request(prefix, self.reader(), view, pending, inbox, background);
+        triage_attempt(
+            &self.client(agent, RequestOrigin::Triage),
             self.tools(agent_tools),
             self.choice(RETAIN),
             &messages,
@@ -107,22 +107,22 @@ impl Triager {
     }
 }
 
-async fn peek_attempt(
+async fn triage_attempt(
     client: &Client,
     tools: &[Value],
     choice: ToolChoice,
     messages: &[WireTurn],
     pending: &[Pending<'_>],
-) -> Result<PeekAttempt, String> {
+) -> Result<TriageAttempt, String> {
     let labels = labels(pending);
     let offered = offered_labels(pending);
     let shown_lines = shown_lines(pending, &labels);
     let completion = client
         .complete(messages, tools, choice, |_| {})
         .await
-        .map_err(|e| format!("peek request failed: {e}"))?;
+        .map_err(|e| format!("triage request failed: {e}"))?;
     if let Some(why) = completion.upstream_failure() {
-        return Err(format!("peek stream aborted upstream: {why}"));
+        return Err(format!("triage stream aborted upstream: {why}"));
     }
 
     let (called, inputs, said) = match &completion.assistant {
@@ -175,7 +175,7 @@ async fn peek_attempt(
         }
         Err(why) => (Some(why), None, None, Vec::new()),
     };
-    Ok(PeekAttempt {
+    Ok(TriageAttempt {
         called,
         inputs,
         said,

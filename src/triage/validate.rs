@@ -39,12 +39,12 @@ pub(super) fn require_coverage(
     ))
 }
 
-/// The number of numbered lines the peek view shows for a raw result — the bound a
+/// The number of numbered lines the triage view shows for a raw result — the bound a
 /// `keep` range must land inside. Counts the way [`result_view`] numbers and
 /// `selection` caps (docs/triage.md): all three must agree or the verdict's
 /// coordinates drift from what the model saw.
 pub(super) fn shown_line_count(raw: &RawResult) -> usize {
-    raw.content.lines().count().min(PEEK_LINE_CAP)
+    raw.content.lines().count().min(TRIAGE_LINE_CAP)
 }
 
 /// Each offered label's shown line count, the bound table [`require_in_bounds`] checks
@@ -62,7 +62,7 @@ pub(super) fn shown_lines(
 
 /// Verdict validity also includes **bounds** (docs/triage.md): a `keep` range
 /// lying wholly outside the shown line numbers is a coordinate mistake, not a decision
-/// (a peek adopting the file line numbers embedded in `grep -n` output as its retain
+/// (a triage adopting the file line numbers embedded in `grep -n` output as its retain
 /// coordinates) — and render-time normalization would drop it, turning
 /// "keep these lines" into silent total loss with no signal on either side. Rejected
 /// here instead, the mistake becomes an in-fork retry whose nudge names the actual
@@ -70,7 +70,7 @@ pub(super) fn shown_lines(
 /// silent loss at smaller scale, and the retry is a warm prefix extension.
 ///
 /// Overshoot from an in-bounds start stays acceptable (render clamps the tail — the
-/// peek's line accounting routinely runs a line or two past the rendering's). A 0 start
+/// triage's line accounting routinely runs a line or two past the rendering's). A 0 start
 /// is rejected rather than clamped: `0-5` under zero-indexing means shown lines 1–6,
 /// as a typo'd lower bound it means 1–5, and guessing either silently keeps the wrong
 /// lines.
@@ -119,16 +119,16 @@ pub(super) fn require_in_bounds(
 /// that is what a future reader needs to tell a malformed verdict from a wrong-tool call.
 pub(super) fn unusable(completion: &Completion, tool: &str) -> String {
     let Payload::Assistant { output, .. } = &completion.assistant else {
-        return "peek returned no assistant payload".into();
+        return "triage returned no assistant payload".into();
     };
     let Ok(calls) = output.tool_calls() else {
-        return "peek returned an unparseable tool call".into();
+        return "triage returned an unparseable tool call".into();
     };
     match calls.iter().find(|c| c.name == tool) {
         Some(c) => format!("unparseable {tool} input: {}", c.input),
-        None if calls.is_empty() => "peek called no tool".into(),
+        None if calls.is_empty() => "triage called no tool".into(),
         None => format!(
-            "peek called {} instead of {tool}",
+            "triage called {} instead of {tool}",
             calls
                 .iter()
                 .map(|c| c.name.as_str())

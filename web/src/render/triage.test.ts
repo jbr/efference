@@ -4,7 +4,7 @@
 
 import { expect, test } from "vitest";
 import {
-  PEEK_LINE_CAP,
+  TRIAGE_LINE_CAP,
   normalize,
   renderTriaged,
   renderHunks,
@@ -34,7 +34,7 @@ test("render_triaged covers all, none, and ranges", () => {
 
 test("render_triaged truncates past the cap", () => {
   const body = Array.from(
-    { length: PEEK_LINE_CAP + 5 },
+    { length: TRIAGE_LINE_CAP + 5 },
     (_, i) => `line${i + 1}`,
   ).join("\n");
   const out = renderTriaged(body, { Ranges: [[1, 1]] }, null);
@@ -43,10 +43,10 @@ test("render_triaged truncates past the cap", () => {
 
   const past = renderTriaged(
     body,
-    { Ranges: [[PEEK_LINE_CAP + 2, PEEK_LINE_CAP + 4]] },
+    { Ranges: [[TRIAGE_LINE_CAP + 2, TRIAGE_LINE_CAP + 4]] },
     null,
   );
-  expect(past).not.toContain(`line${PEEK_LINE_CAP + 3}`);
+  expect(past).not.toContain(`line${TRIAGE_LINE_CAP + 3}`);
 });
 
 test("canonical hunk is verbatim under a diff header", () => {
@@ -136,11 +136,11 @@ test("wireView dispatches per wire state like tool_result_block", () => {
   expect(triaged?.text).not.toContain("ten thousand lines");
 
   const failed = wireView(raw, {
-    TriageFailed: { why: "peek called no tool (attempt 3 of 3)" },
+    TriageFailed: { why: "triage called no tool (attempt 3 of 3)" },
   });
   expect(failed?.isError).toBe(true);
   expect(failed?.text).toContain(
-    "result withheld — triage failed (peek called no tool (attempt 3 of 3))",
+    "result withheld — triage failed (triage called no tool (attempt 3 of 3))",
   );
   expect(failed?.text).toContain("ran to completion");
   expect(failed?.text).not.toContain("ten thousand lines");

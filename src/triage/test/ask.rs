@@ -2,7 +2,7 @@
 use super::*;
 
 #[test]
-fn peek_view_numbers_every_line() {
+fn triage_view_numbers_every_line() {
     // The throwaway fork's view — per-line numbers are the `retain` coordinate
     // system. (Only here; never on the canonical wire.)
     let ls = lines("alpha\nbeta\ngamma");
@@ -11,12 +11,12 @@ fn peek_view_numbers_every_line() {
     assert!(view.contains("     3\tgamma"), "{view}");
 }
 
-/// The peek tools' schemas are static (docs/triage.md): they ride every turn's
+/// The triage tools' schemas are static (docs/triage.md): they ride every turn's
 /// `tools[]`, so any variation would re-key the request envelope and split the cache
 /// lineage. Byte-identical across calls, every rider field unconditional, and the
 /// standing description defers use until the harness asks.
 #[test]
-fn peek_tool_schemas_are_static_and_permission_phrased() {
+fn triage_tool_schemas_are_static_and_permission_phrased() {
     assert_eq!(
         serde_json::to_string(&retain_tool()).unwrap(),
         serde_json::to_string(&retain_tool()).unwrap()
@@ -36,8 +36,8 @@ fn peek_tool_schemas_are_static_and_permission_phrased() {
             "permission-phrased, not identity-phrased: {description}"
         );
     }
-    assert!(is_peek_tool("retain") && is_peek_tool("triage"));
-    assert!(!is_peek_tool("bash"));
+    assert!(is_triage_tool("retain") && is_triage_tool("triage"));
+    assert!(!is_triage_tool("bash"));
 }
 
 fn preamble_with(items: Vec<Item>) -> LogEntry {
@@ -211,7 +211,7 @@ fn the_ask_grounds_the_note_in_the_kept_lines_and_flags_a_partial_enumeration() 
 }
 
 /// The ask opens on a banner and the imperative, and closes on the imperative. Every other
-/// section of a peek view carries a banner; the ask carrying none left the only
+/// section of a triage view carries a banner; the ask carrying none left the only
 /// *instruction* in the view reading as a trailing note. A session answered 29% of its
 /// gates with a work tool instead of a verdict (journal/2026-08-07-session-key-review.md).
 #[test]

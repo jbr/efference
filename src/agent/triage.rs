@@ -41,7 +41,7 @@ pub(super) async fn run_idle_triage(
     triager: &Triager,
     turn: &mut Turn,
 ) -> Result<bool, Error> {
-    // Let a burst settle so several events triage together, not one peek each.
+    // Let a burst settle so several events triage together, not one triage each.
     tokio::time::sleep(std::time::Duration::from_millis(IDLE_TRIAGE_DEBOUNCE_MS)).await;
 
     let entries = shared.snapshot();
@@ -71,7 +71,7 @@ pub(super) async fn run_idle_triage(
     triage_and_record(client, tools, shared, triager, turn, sight).await
 }
 
-/// What a standalone triage peek looks at: the prefix it forks from, the notifications
+/// What a standalone triage looks at: the prefix it forks from, the notifications
 /// and background tails it shows, and the must-wake seqs pinned whatever it says.
 pub(super) struct Sight<'a> {
     pub entries: &'a [crate::log::LogEntry],
@@ -80,11 +80,11 @@ pub(super) struct Sight<'a> {
     pub background: &'a [BgView],
 }
 
-/// Run the tool-result-free triage peek over `shown` and `background`, apply its
+/// Run the tool-result-free triage over `shown` and `background`, apply its
 /// dispositions, and log the verdict as a `Triage` with `for_result: None`. Returns
-/// whether it pinned something. `entries` is the prefix the peek forks from, which must
+/// whether it pinned something. `entries` is the prefix the triage forks from, which must
 /// already hold every result the wire owes. The shared tail of the idle wake and of the
-/// gate an `ask` reply rides (which has no peek of its own, docs/supervisor.md).
+/// gate an `ask` reply rides (which has no triage of its own, docs/supervisor.md).
 pub(super) async fn triage_and_record(
     client: &Client,
     tools: &[Value],
@@ -107,7 +107,7 @@ pub(super) async fn triage_and_record(
     }
 
     // Apply dispositions; escalate iff anything was pinned (the wire grew, docs/inbox.md).
-    // A must-wake item is pinned whatever the peek said — that is what makes the
+    // A must-wake item is pinned whatever the triage said — that is what makes the
     // wake declared rather than judged, so a dismiss cannot swallow it.
     let mut inbox = triage.inbox;
     force_pins(&mut inbox, forced);
@@ -148,8 +148,8 @@ pub(super) async fn triage_and_record(
     )?;
     Ok(escalate)
 }
-/// Override the peek's verdict for the must-wake notifications (docs/inbox.md): each
-/// `forced` seq is pinned, whether the peek pinned it, dismissed it, or left it.
+/// Override the triage's verdict for the must-wake notifications (docs/inbox.md): each
+/// `forced` seq is pinned, whether the triage pinned it, dismissed it, or left it.
 /// Deterministic on purpose — the fork keeps everything downstream of *whether* the
 /// agent wakes (the note, the rest of the inbox), never the whether itself.
 pub(super) fn force_pins(

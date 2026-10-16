@@ -43,12 +43,12 @@ fn render_triaged_covers_all_none_and_ranges() {
     );
 }
 
-/// Past `PEEK_LINE_CAP` the render appends a truncation breadcrumb and a range
+/// Past `TRIAGE_LINE_CAP` the render appends a truncation breadcrumb and a range
 /// pointing into the truncated tail can't reach those lines (the verdict only ever
 /// addressed the shown prefix).
 #[test]
 fn render_triaged_truncates_past_the_cap() {
-    let body = (1..=PEEK_LINE_CAP + 5)
+    let body = (1..=TRIAGE_LINE_CAP + 5)
         .map(|i| format!("line{i}"))
         .collect::<Vec<_>>()
         .join("\n");
@@ -62,13 +62,13 @@ fn render_triaged_truncates_past_the_cap() {
     let past = render_triaged(
         &body,
         &verdict(
-            Keep::Ranges(vec![(PEEK_LINE_CAP + 2, PEEK_LINE_CAP + 4)]),
+            Keep::Ranges(vec![(TRIAGE_LINE_CAP + 2, TRIAGE_LINE_CAP + 4)]),
             None,
             None,
         ),
     );
     assert!(
-        !past.contains(&format!("line{}", PEEK_LINE_CAP + 3)),
+        !past.contains(&format!("line{}", TRIAGE_LINE_CAP + 3)),
         "beyond-cap line unreachable: {past}"
     );
 }
@@ -235,7 +235,7 @@ fn triage_failed_projects_an_error_never_the_raw() {
                 "x",
                 RawResult::text("ten thousand lines of output"),
                 WireState::TriageFailed {
-                    why: "peek called no tool (attempt 3 of 3)".into(),
+                    why: "triage called no tool (attempt 3 of 3)".into(),
                 },
             ),
         ),
@@ -254,7 +254,8 @@ fn triage_failed_projects_an_error_never_the_raw() {
     let (content, is_error) = block;
     assert!(*is_error, "surfaced as a failed call: {content}");
     assert!(
-        content.contains("result withheld — triage failed (peek called no tool (attempt 3 of 3))"),
+        content
+            .contains("result withheld — triage failed (triage called no tool (attempt 3 of 3))"),
         "stable prefix + why: {content}"
     );
     assert!(

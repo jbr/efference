@@ -31,13 +31,13 @@ fn session() -> Arc<Session> {
 
 /// A throwaway socket serving up to two completions, each a one-line text
 /// answer (the codex tests' mock, pointed at a message output item). Two
-/// accepts so a test asserting *no* peek fired fails loudly if one does.
+/// accepts so a test asserting *no* triage fired fails loudly if one does.
 fn mock_client(line: &str) -> Client {
     mock(line, None).0
 }
 
 /// [`mock_client`] with a count of the requests it has read, and, when `hold` is
-/// given, each answer held until the test sends on it — so a peek can be kept in
+/// given, each answer held until the test sends on it — so a triage can be kept in
 /// flight while the test moves the log.
 fn mock(
     line: &str,
@@ -206,7 +206,7 @@ fn user_turn(shared: &Session, text: &str) {
 }
 
 /// Two title checks before the first ask lands — a turn's start and its trajectory's
-/// end on a one-turn session — spend one peek: the second check's predicate still
+/// end on a one-turn session — spend one triage: the second check's predicate still
 /// says yes, since no `Title` exists yet, and only the in-flight guard stops a
 /// second ask.
 #[tokio::test]
@@ -229,9 +229,9 @@ async fn title_checks_during_an_ask_in_flight_spend_one_peek() {
     assert_eq!(titles(&shared), ["Fix title cadence"]);
 }
 
-/// A user turn that lands while the peek is in flight sits before that peek's
+/// A user turn that lands while the triage is in flight sits before that triage's
 /// `Title` in the log, where the predicate counts it as answered; the ask runs
-/// again so the turn the peek never saw is read.
+/// again so the turn the triage never saw is read.
 #[tokio::test]
 async fn a_user_turn_during_the_peek_is_asked_about_again() {
     use std::sync::atomic::Ordering;

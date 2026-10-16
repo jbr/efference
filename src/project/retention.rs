@@ -33,11 +33,11 @@ use crate::log::{LogEntry, Payload, RawResult, WireState};
 pub struct Retention {
     /// Lines surviving on the wire, summed over triaged results.
     pub kept_lines: u64,
-    /// Lines triage was shown, summed over the same results — the peek, so already
-    /// capped at `PEEK_LINE_CAP`. Lines the cap dropped before triage ever saw them
+    /// Lines triage was shown, summed over the same results — the triage, so already
+    /// capped at `TRIAGE_LINE_CAP`. Lines the cap dropped before triage ever saw them
     /// are neither shown nor kept, and are counted in [`Self::truncated_lines`].
     pub shown_lines: u64,
-    /// Lines the peek cap dropped before triage saw them. Reported separately: they
+    /// Lines the triage cap dropped before triage saw them. Reported separately: they
     /// are not a decision anyone made, so they belong in neither side of the ratio.
     pub truncated_lines: u64,
     /// Results whose output was withheld because the gate failed

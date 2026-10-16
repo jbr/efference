@@ -182,20 +182,20 @@ pub(crate) enum DevCommand {
         #[arg(long)]
         frame_cost: bool,
     },
-    /// Replay a recorded session's fork-gate peeks (docs/triage.md) and report **first-attempt** compliance — did the peek
+    /// Replay a recorded session's fork-gate triages (docs/triage.md) and report **first-attempt** compliance — did the triage
     /// answer with a verdict, or reach for a work tool? The live gate retries, so a
     /// session's own record shows that a first attempt failed but can't score one ask
     /// against another. Each gate carries its own prefix at its own session depth, and
     /// replaying one is a single warm prefix read, so a whole session is an eval set.
     /// Sends real requests unless `--dry-run`.
-    Peek {
+    Triage {
         /// Path to a session dir or a `log.jsonl` whose gates to replay.
         path: PathBuf,
         /// Replay only the gate triaging this result `seq` (as `Triage.for_result`
         /// names it, and as the listing prints it). Omit to sweep every gate.
         #[arg(long)]
         seq: Option<u64>,
-        /// Draws per gate. A peek is sampled, not deterministic, so one draw per gate
+        /// Draws per gate. A triage is sampled, not deterministic, so one draw per gate
         /// resolves only large differences; repeats buy a per-gate rate instead of a
         /// coin flip.
         #[arg(long, default_value = "3")]
@@ -207,7 +207,7 @@ pub(crate) enum DevCommand {
         /// model earns.
         #[arg(long)]
         limit: Option<usize>,
-        /// Print the peek's trailing message instead of sending it — what makes an
+        /// Print the triage's trailing message instead of sending it — what makes an
         /// instruction change reviewable without spending a request.
         #[arg(long)]
         dry_run: bool,
@@ -215,7 +215,7 @@ pub(crate) enum DevCommand {
         /// aren't comparable to its record.
         #[arg(long, default_value = "claude-haiku-4-5")]
         model: String,
-        /// Replay under the separate-model peek instead: this model on its own client,
+        /// Replay under the separate-model triage instead: this model on its own client,
         /// the same shape `--triage-model` boots. Every draw's verdict is
         /// compared line-for-line against the session's recorded verdict — what the
         /// agent chose to see — and the summary reports kept fractions, over- and
@@ -225,7 +225,7 @@ pub(crate) enum DevCommand {
         /// With --triage-model: let it think.
         #[arg(long)]
         triage_thinking: bool,
-        /// With --triage-model: `tool_choice: auto` instead of forcing the peek tool.
+        /// With --triage-model: `tool_choice: auto` instead of forcing the triage tool.
         #[arg(long)]
         triage_auto_choice: bool,
         /// With --triage-model: its reasoning level (implies thinking on).
@@ -244,11 +244,11 @@ pub(crate) enum DevCommand {
         table: usize,
     },
     /// Plant triage primers at controlled gaps against one recorded gate and replay
-    /// the recorded peek per rung, reporting cache reads
+    /// the recorded triage per rung, reporting cache reads
     /// (docs/transport.md). Decides eviction vs
     /// write-visibility lag vs envelope keying: a back-to-back primer pair that
     /// chains proves truncated primers plant; a gapped pair that misses bounds the
-    /// lifetime; a peek after a forced primer is the v1.1 verdict live. Sends real
+    /// lifetime; a triage after a forced primer is the v1.1 verdict live. Sends real
     /// requests unless `--dry-run`. An experiment verb; remove it once the question
     /// it answers is settled.
     PrimerLadder {
@@ -270,14 +270,14 @@ pub(crate) enum DevCommand {
         model: String,
         /// The separate triage model whose lineage the ladder plants: this model on
         /// its own client, the same shape `--triage-model` boots. Required — the
-        /// ladder is meaningless on a shared peek.
+        /// ladder is meaningless on a shared triage.
         #[arg(long)]
         triage_model: Option<String>,
         /// With --triage-model: let it think.
         #[arg(long)]
         triage_thinking: bool,
-        /// With --triage-model: `tool_choice: auto` on the replayed peek instead of
-        /// forcing the peek tool.
+        /// With --triage-model: `tool_choice: auto` on the replayed triage instead of
+        /// forcing the triage tool.
         #[arg(long)]
         triage_auto_choice: bool,
         /// With --triage-model: its reasoning level (implies thinking on).
@@ -548,7 +548,7 @@ pub(crate) async fn run<F: Future<Output = Result<ClientTarget, CliError>>>(
             println!("{rendered}");
             Ok(())
         }
-        DevCommand::Peek {
+        DevCommand::Triage {
             path,
             seq,
             repeat,
@@ -572,7 +572,7 @@ pub(crate) async fn run<F: Future<Output = Result<ClientTarget, CliError>>>(
             let view = efference::triage::TriageView::parse(&view).ok_or_else(|| {
                 format!("--view {view}: expected transcript, digest, tail:N or intent")
             })?;
-            triage_replay::peek(
+            triage_replay::triage(
                 path, seq, repeat, limit, dry_run, &model, triage, view, out, table,
             )
             .await

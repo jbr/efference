@@ -107,7 +107,7 @@ pub struct Client {
     /// [`ThinkingSupport::UNKNOWN`] until [`Self::with_thinking`] sets it.
     thinking: ThinkingSupport,
     /// Never think, whatever the model would do on its own (docs/triage.md):
-    /// the separate-model triage's default, where the peek's reasoning is
+    /// the separate-model triage's default, where the triage's reasoning is
     /// discarded with the tail and costs latency and tokens on every gate.
     pub(super) thinking_off: bool,
     /// The per-turn output cap. Defaults to the pre-reasoning-era 4096;
@@ -136,7 +136,7 @@ pub struct Client {
     abort: Option<Arc<tokio::sync::Notify>>,
     /// The session's effort level, when one is set (docs/transport.md). Rides
     /// every request this client makes — the turn loop and the triage, so the
-    /// peek's prefix still matches the agent lineage's (docs/triage.md),
+    /// triage's prefix still matches the agent lineage's (docs/triage.md),
     /// and the keepalive, which sends the turn's envelope. The spotter's client
     /// never sets it.
     effort: Option<String>,
@@ -341,7 +341,7 @@ impl Client {
     /// routing token so the first request of this one goes out without a header
     /// and the backend issues a fresh token. Called by the agent loop at each
     /// trajectory start and each seam-drained user turn; the triage shares this
-    /// client and so the token, which is the point — the peek is a request of the
+    /// client and so the token, which is the point — the triage is a request of the
     /// same turn.
     pub fn begin_turn(&self) {
         if let Some(cell) = &self.turn_routing {
@@ -449,7 +449,7 @@ impl Client {
     /// naming it as the next turn's comparison base would risk the provider answering
     /// `unavailable` for a difference that is ours and not the prefix's.
     ///
-    /// A peek never reaches here: its origin does not send the loop's prompt, so it
+    /// A triage never reaches here: its origin does not send the loop's prompt, so it
     /// neither opts in nor is remembered. Neither does a client taken off the chain
     /// with [`Self::without_cache_chain`], whatever origin it carries.
     pub(super) fn remember_response_id(&self, origin: RequestOrigin, id: Option<&str>) {
@@ -598,7 +598,7 @@ impl Client {
     /// Set how long one response's SSE stream may stay open before the read loop
     /// gives up on it (`[transport] stream-ceiling`, docs/transport.md). Applies
     /// to every request this client makes, so a session's turns and its fork
-    /// peeks are bounded alike.
+    /// triages are bounded alike.
     pub fn with_stream_ceiling(mut self, ceiling: Duration) -> Self {
         self.stream_ceiling = ceiling;
         self

@@ -150,7 +150,7 @@ fn results_of(log: &[crate::log::LogEntry], id: &str) -> usize {
 
 /// **A continue replays the batch.** One call captured its result before the stop and one
 /// was held at the gate. Nothing runs until the continue; then the held call is gated
-/// again with no model request first, the captured call does not run again, one peek
+/// again with no model request first, the captured call does not run again, one triage
 /// triages both results, and the notice follows them on the wire.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_continue_replays_the_batch_through_the_gate() {
@@ -191,10 +191,10 @@ async fn a_continue_replays_the_batch_through_the_gate() {
         .filter(|e| matches!(e.payload, Payload::ResultVerdict { .. }))
         .count();
     assert_eq!(verdicts, 2, "both results were decided at the one gate");
-    let peek = bodies.lock().unwrap()[0].clone();
+    let triage = bodies.lock().unwrap()[0].clone();
     assert!(
-        peek.contains("one") && peek.contains("two"),
-        "the first request is the gate's peek over both results: {peek}"
+        triage.contains("one") && triage.contains("two"),
+        "the first request is the gate's triage over both results: {triage}"
     );
 
     // The wire answers both calls, with the notice after the results.
@@ -255,7 +255,7 @@ async fn a_captured_result_is_triaged_without_running_again() {
 
 /// **A submitted turn waits behind the batch.** It is not appended before the calls'
 /// results, since a `User` entry after unanswered `tool_use` blocks breaks the wire; it is
-/// delivered at the seam after them, and the gate's peek does not carry it.
+/// delivered at the seam after them, and the gate's triage does not carry it.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_submitted_turn_is_delivered_after_the_batch() {
     let log = stopped_log(
@@ -292,7 +292,10 @@ async fn a_submitted_turn_is_delivered_after_the_batch() {
         "the turn follows the batch: {said} vs {last_result}, {last_verdict}"
     );
     let bodies = bodies.lock().unwrap();
-    assert!(!bodies[0].contains("carry on"), "the peek is not shown it");
+    assert!(
+        !bodies[0].contains("carry on"),
+        "the triage is not shown it"
+    );
     assert!(
         bodies[1].contains("carry on"),
         "the next request carries it"

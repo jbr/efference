@@ -67,16 +67,16 @@ fn turn_retry_status_line() {
     play.snapshot("upstream_turn_retry");
 }
 
-/// A triage peek's retry carries a `triage:` prefix — the wait sits between tool
+/// A triage's retry carries a `triage:` prefix — the wait sits between tool
 /// results, not in a generation, so the two are not the same event to an operator
 /// watching a live run.
 #[test]
-fn peek_retry_status_line() {
+fn triage_retry_status_line() {
     let mut play = Screenplay::new(80, 12);
     play.user("do a thing");
     play.event(TuiEvent::Running(true));
-    play.event(retry("peek", "attempt 3 of 12 failed upstream, retrying"));
-    play.snapshot("upstream_peek_retry");
+    play.event(retry("triage", "attempt 3 of 12 failed upstream, retrying"));
+    play.snapshot("upstream_triage_retry");
 }
 
 /// Exhaustion is where the two topics part: the retry clears (nothing is being

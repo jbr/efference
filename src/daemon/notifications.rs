@@ -22,7 +22,7 @@ pub(super) struct PendingNotification {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) slot: Option<String>,
     /// Must-wake (docs/inbox.md): the loop pins this at its first show whatever the
-    /// triage peek decides, so an idle agent gets a turn to act on it. Set by the
+    /// triage decides, so an idle agent gets a turn to act on it. Set by the
     /// harness for a delegated child's status, never by a client.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub(super) wake: bool,
@@ -52,7 +52,7 @@ impl Session {
     }
 
     /// [`notify`](Self::notify) for a notification the agent must get a turn for
-    /// (docs/inbox.md): the loop pins it at first show regardless of the peek's
+    /// (docs/inbox.md): the loop pins it at first show regardless of the triage's
     /// verdict. The harness's own channel — a delegated child's status
     /// (docs/tools.md) — not a client's.
     pub(crate) fn notify_wake(&self, source: String, body: String, slot: Option<String>) -> u64 {

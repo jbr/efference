@@ -12,7 +12,7 @@ use super::*;
 /// Three wording constraints, each one an agent misreading the text can produce.
 /// It must not say the output was *not recorded* — the raw sits in `log.jsonl`,
 /// and only the agent-facing projection lost it. It must attribute the failure to
-/// the harness, or an agent reading a peek's rate limit blames its own tool and
+/// the harness, or an agent reading a triage's rate limit blames its own tool and
 /// re-issues the call in shrinking forms. And the re-issue advice stays
 /// conditional, because re-running is not always safe: a withheld verdict on a
 /// call whose side effects already stand can turn a real pass into a spurious
@@ -59,7 +59,7 @@ pub fn render_triaged(content: &str, verdict: &Triaged) -> String {
 /// is *which lines* each shows — an operator comparing their view against the
 /// agent's is the whole point of the view (docs/positions.md).
 pub struct Selection<'c> {
-    /// The peek the model was shown: the content capped at [`PEEK_LINE_CAP`] lines.
+    /// The triage the model was shown: the content capped at [`TRIAGE_LINE_CAP`] lines.
     pub shown: Vec<&'c str>,
     /// Kept ranges over `shown`, 1-based and inclusive, normalized (clamped,
     /// sorted, overlaps merged).
@@ -83,7 +83,7 @@ impl Selection<'_> {
 pub fn selection<'c>(content: &'c str, keep: &Keep) -> Selection<'c> {
     let all: Vec<&'c str> = content.lines().collect();
     let total = all.len();
-    let shown = all[..total.min(PEEK_LINE_CAP)].to_vec();
+    let shown = all[..total.min(TRIAGE_LINE_CAP)].to_vec();
     let dropped = total - shown.len();
     let ranges: Vec<(usize, usize)> = match keep {
         Keep::All => vec![(1, shown.len())],

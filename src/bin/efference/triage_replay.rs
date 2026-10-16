@@ -1,4 +1,4 @@
-//! `efference dev peek` — replay a recorded session's fork gates (docs/triage.md).
+//! `efference dev triage` — replay a recorded session's fork gates (docs/triage.md).
 //!
 //! A dev tool, like `wire`/`gallery`/`spotter`. The live gate retries, so a session's
 //! `Triage.retries` records *that* a first attempt failed but can't compare two asks —
@@ -12,15 +12,15 @@
 use super::*;
 use efference::log::{Keep, Payload, RawResult, ToolCall, WireState};
 use efference::project::{Reader, selection};
-use efference::triage::{Pending, ReplayVerdict, TriageModel, TriageView, Triager, peek_request};
+use efference::triage::{Pending, ReplayVerdict, TriageModel, TriageView, Triager, triage_request};
 use std::collections::BTreeSet;
 use std::io::Write;
 
-/// One recorded gate, rebuilt from the log: the prefix the peek saw, and the results it
+/// One recorded gate, rebuilt from the log: the prefix the triage saw, and the results it
 /// was asked to triage.
 ///
 /// The prefix ends **before** the gate's tool results, because that is where the live
-/// loop snapshots it — `peek_messages` appends the results itself as fresh
+/// loop snapshots it — `triage_messages` appends the results itself as fresh
 /// `tool_result` blocks, so a prefix that already contained them would double them.
 pub(crate) struct Gate {
     /// Index into the log of the first result this gate carries — the prefix boundary.
@@ -28,7 +28,7 @@ pub(crate) struct Gate {
     /// Index into the log of the assistant turn whose calls this gate triages. A
     /// primer replays the main request's input, which ends *before* those calls —
     /// including them without their results is an unanswered `tool_use` the API
-    /// rejects — so primer turns project `entries[..calls_at]`, not the peek prefix.
+    /// rejects — so primer turns project `entries[..calls_at]`, not the triage prefix.
     pub(crate) calls_at: usize,
     /// The `seq` of the first result, which is how `--seq` addresses a gate and how the
     /// recorded `Triage.for_result` names it.
@@ -36,7 +36,7 @@ pub(crate) struct Gate {
     pub(crate) calls: Vec<ToolCall>,
     pub(crate) raws: Vec<RawResult>,
     /// The recorded verdict per result, alongside `raws` — what the session's own
-    /// peek chose to see. The reference a candidate model is compared against
+    /// triage chose to see. The reference a candidate model is compared against
     /// (backlog/inbox/triager-experiment.md): not an operator's idea of the right keep,
     /// but what the agent that was doing the work kept for itself.
     pub(crate) recorded: Vec<WireState>,
@@ -48,7 +48,7 @@ pub(crate) struct Gate {
 /// Rebuild every gate in a log, in order.
 ///
 /// A gate is a completion's tool calls plus their results, which is exactly the grouping
-/// the live loop opens a gate over: the peek's prefix ends with an assistant message
+/// the live loop opens a gate over: the triage's prefix ends with an assistant message
 /// carrying one `tool_use` per call, and the API rejects a request that leaves any of
 /// them unanswered (docs/triage.md).
 pub(crate) fn gates(entries: &[efference::log::LogEntry]) -> Vec<Gate> {
@@ -150,7 +150,7 @@ fn tail_chars(turns: &[efference::project::WireTurn]) -> usize {
 }
 
 /// The one-line description of what a replayed attempt did.
-fn outcome(attempt: &efference::triage::PeekAttempt) -> String {
+fn outcome(attempt: &efference::triage::TriageAttempt) -> String {
     match &attempt.why {
         None => format!(
             "ok · keep {}",
@@ -188,7 +188,7 @@ struct Compared {
     under: usize,
     reference_note: Option<String>,
     candidate_note: Option<String>,
-    /// Wall-clock seconds the draw took, request to verdict. The peek sits on the
+    /// Wall-clock seconds the draw took, request to verdict. The triage sits on the
     /// critical path of every tool call, so this is one of the three axes beside
     /// judgment and price.
     seconds: f64,
@@ -310,7 +310,7 @@ fn print_table(rows_cap: usize, compared: &[Compared]) {
 
 /// Replay one gate or every gate in a recorded session, `repeat` draws each.
 #[allow(clippy::too_many_arguments)] // one flag, one parameter; the CLI is the arity
-pub(crate) async fn peek(
+pub(crate) async fn triage(
     path: PathBuf,
     seq: Option<u64>,
     repeat: usize,
@@ -409,7 +409,7 @@ pub(crate) async fn peek(
                     .zip(&g.raws)
                     .map(|(call, raw)| Pending { call, raw })
                     .collect();
-                tail_chars(&peek_request(
+                tail_chars(&triage_request(
                     &entries[..g.prefix_end],
                     Reader::Main,
                     view,
@@ -435,7 +435,7 @@ pub(crate) async fn peek(
             .zip(&g.raws)
             .map(|(call, raw)| Pending { call, raw })
             .collect();
-        let messages = peek_request(
+        let messages = triage_request(
             &entries[..g.prefix_end],
             Reader::Main,
             view,
@@ -458,21 +458,21 @@ pub(crate) async fn peek(
     let model = main_selection.model.as_str();
     // The session's sticky-routing key (docs/transport.md), derived from its dir
     // exactly as boot derives it, so the replay reads the session's own prefix on
-    // the upstream that holds it — and the own peek takes its `-triage` suffix, its
+    // the upstream that holds it — and the own triage takes its `-triage` suffix, its
     // own lineage's key. Without it a provider with sticky routing re-derives a key
     // per request and the replay wanders between upstreams, cold every time.
     if let Some(dir) = path.parent() {
         endpoint.session_id = Some(efference::api::sticky_session_id(dir));
     }
-    // The own peek replays the exact live shape (docs/triage.md): the same
+    // The own triage replays the exact live shape (docs/triage.md): the same
     // constructor boot uses, the same system prompt over the recorded context
-    // block, the session's own model named as the agent. The shared peek replays on
+    // block, the session's own model named as the agent. The shared triage replays on
     // the agent client, whose model is `--model`.
     let agent_model = recorded_identity
         .map(|identity| identity.model.clone())
         .or_else(|| session_model(&system))
         .unwrap_or_else(|| model.to_string());
-    let (peek, model) = match inference.triage() {
+    let (triage, model) = match inference.triage() {
         Some((_, mut triage_endpoint, t)) => {
             triage_endpoint.session_id = endpoint.session_id.clone();
             let triage_system = efference::env::triage_system_prompt(
@@ -480,7 +480,7 @@ pub(crate) async fn peek(
                 &agent_model,
                 context_block.as_deref(),
             );
-            let (peek, caps) = Triager::for_triage_model(
+            let (triage, caps) = Triager::for_triage_model(
                 &triage_endpoint,
                 t,
                 triage_system,
@@ -498,7 +498,7 @@ pub(crate) async fn peek(
                 },
                 if t.auto_choice { "auto" } else { "forced" }
             );
-            (peek, t.model.as_str())
+            (triage, t.model.as_str())
         }
         None => (Triager::shared(), model),
     };
@@ -534,9 +534,9 @@ pub(crate) async fn peek(
             .collect();
         // The fork tail — result blocks, roster, ask — is uncached by construction, so
         // its size is what a gate costs beyond re-reading the prefix, on every tool result.
-        uncached += tail_chars(&peek_request(
+        uncached += tail_chars(&triage_request(
             &entries[..g.prefix_end],
-            peek.reader(),
+            triage.reader(),
             view,
             &pending,
             &[],
@@ -550,7 +550,7 @@ pub(crate) async fn peek(
             // response *is* part of what a cross-model comparison is measuring, so it is
             // recorded as a failed draw rather than hidden by aborting.
             let started = std::time::Instant::now();
-            let attempt = match peek
+            let attempt = match triage
                 .attempt(
                     &client,
                     &tools,
@@ -620,7 +620,7 @@ pub(crate) async fn peek(
             }
             compared.extend(rows);
             // A failing draw prints what it reached for and what it said. The tool name
-            // alone says the peek answered with the wrong thing; the arguments and the
+            // alone says the triage answered with the wrong thing; the arguments and the
             // prose say whether it was continuing the task, re-reading what it had just
             // been shown, or never registered the ask at all — which is the diagnosis.
             if !attempt.compliant() {
@@ -643,7 +643,7 @@ pub(crate) async fn peek(
         .iter()
         .filter(|g| g.recorded_first_failure.is_some())
         .count();
-    println!("\nPEEK REPLAY · {model}");
+    println!("\nTRIAGE REPLAY · {model}");
     // The fork tail is uncached by construction, so this is what a gate costs beyond
     // re-reading the prefix — paid on every tool result, for the whole session. It is the
     // number a cheaper roster has to move, and it belongs next to the failure rate because

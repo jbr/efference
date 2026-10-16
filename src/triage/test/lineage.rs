@@ -1,13 +1,13 @@
-//! Tests for which client and lineage a peek runs on.
+//! Tests for which client and lineage a triage runs on.
 use super::*;
 
-/// What the gate records as the peek's reasoning (docs/triage.md): every thinking
+/// What the gate records as the triage's reasoning (docs/triage.md): every thinking
 /// block's text, joined — prose and redacted blocks excluded (a redacted block carries no
 /// text), and `None` when the attempt thought nothing, so a gate that didn't think records
 /// nothing rather than an empty entry. Signatures are dropped: this is a record, not a
 /// replay input.
 #[test]
-fn peek_thinking_joins_thinking_text_only() {
+fn triage_thinking_joins_thinking_text_only() {
     use crate::log::ContentBlock;
 
     let assistant = |thinking: Vec<ContentBlock>| Payload::Assistant {
@@ -19,9 +19,9 @@ fn peek_thinking_joins_thinking_text_only() {
         upstream_failure: None,
     };
 
-    assert_eq!(peek_thinking(&assistant(Vec::new())), None);
+    assert_eq!(triage_thinking(&assistant(Vec::new())), None);
     assert_eq!(
-        peek_thinking(&assistant(vec![
+        triage_thinking(&assistant(vec![
             ContentBlock::Thinking {
                 text: "the head is boilerplate".into(),
                 signature: "sig-a".into(),
@@ -37,7 +37,7 @@ fn peek_thinking_joins_thinking_text_only() {
         Some("the head is boilerplate\nkeep 40-52".to_string())
     );
     assert_eq!(
-        peek_thinking(&assistant(vec![ContentBlock::RedactedThinking {
+        triage_thinking(&assistant(vec![ContentBlock::RedactedThinking {
             data: "opaque".into(),
         }])),
         None,
@@ -45,13 +45,14 @@ fn peek_thinking_joins_thinking_text_only() {
     );
 }
 
-/// The Responses analogue of the canonical-versus-peek prefix rule
-/// (docs/triage.md): under explicit caching the peek's one marker sits at the
+/// The Responses analogue of the canonical-versus-triage prefix rule
+/// (docs/triage.md): under explicit caching the triage's one marker sits at the
 /// shared pre-fork frontier, nothing in the fork-local raw tail carries one, and the
 /// next canonical request is that same prefix, content for content, followed by the
-/// selection — never the raw output or the peek's ask.
+/// selection — never the raw output or the triage's ask.
 #[test]
-fn a_responses_peek_marks_the_shared_frontier_and_the_canonical_wire_carries_only_the_selection() {
+fn a_responses_triage_marks_the_shared_frontier_and_the_canonical_wire_carries_only_the_selection()
+{
     use crate::api::{PromptCachePolicy, encode_responses};
     use crate::log::{Keep, ResponsesOutputItem, Triaged, WireState};
 
@@ -90,8 +91,8 @@ fn a_responses_peek_marks_the_shared_frontier_and_the_canonical_wire_carries_onl
         raw: &raw,
     }];
 
-    // The peek: prefix, frontier, then the fork-local raw and the ask.
-    let peek = peek_request(
+    // The triage: prefix, frontier, then the fork-local raw and the ask.
+    let triage = triage_request(
         &prefix,
         Reader::Main,
         TriageView::Transcript,
@@ -99,29 +100,29 @@ fn a_responses_peek_marks_the_shared_frontier_and_the_canonical_wire_carries_onl
         &[],
         &[],
     );
-    let peek_input = encode_responses(&peek, "", PromptCachePolicy::Explicit);
-    let peek_json: Vec<serde_json::Value> = peek_input
+    let triage_input = encode_responses(&triage, "", PromptCachePolicy::Explicit);
+    let triage_json: Vec<serde_json::Value> = triage_input
         .iter()
         .map(|item| serde_json::to_value(item).unwrap())
         .collect();
-    let marked: Vec<usize> = peek_json
+    let marked: Vec<usize> = triage_json
         .iter()
         .enumerate()
         .filter(|(_, item)| item.to_string().contains("prompt_cache_breakpoint"))
         .map(|(i, _)| i)
         .collect();
-    let first_output = peek_json
+    let first_output = triage_json
         .iter()
         .position(|item| item["type"] == "function_call_output")
         .expect("the raw tail answers the call");
-    assert_eq!(marked.len(), 1, "one marker: {peek_json:#?}");
+    assert_eq!(marked.len(), 1, "one marker: {triage_json:#?}");
     assert!(
         marked[0] < first_output,
         "the marker sits before the fork-local tail, not on it: marked {marked:?}, tail at {first_output}"
     );
-    let tail = serde_json::to_string(&peek_json[first_output..]).unwrap();
+    let tail = serde_json::to_string(&triage_json[first_output..]).unwrap();
     assert!(tail.contains("gamma"), "the raw rides the tail: {tail}");
-    let shared = serde_json::to_string(&peek_json[..first_output]).unwrap();
+    let shared = serde_json::to_string(&triage_json[..first_output]).unwrap();
     assert!(!shared.contains("gamma"), "and never the prefix: {shared}");
 
     // The canonical continuation: the verdict is logged, the raw is not projected.
@@ -141,8 +142,8 @@ fn a_responses_peek_marks_the_shared_frontier_and_the_canonical_wire_carries_onl
         .iter()
         .map(|item| serde_json::to_value(item).unwrap())
         .collect();
-    // The pre-fork items are the peek's, content for content. The marker is a
-    // write instruction, not content: the peek's sits at the frontier, the
+    // The pre-fork items are the triage's, content for content. The marker is a
+    // write instruction, not content: the triage's sits at the frontier, the
     // canonical request's at its own tail, and the provider matches the prefix on
     // what is between them (docs/log-and-projection.md).
     fn unmarked(item: &serde_json::Value) -> serde_json::Value {
@@ -161,11 +162,11 @@ fn a_responses_peek_marks_the_shared_frontier_and_the_canonical_wire_carries_onl
             .iter()
             .map(unmarked)
             .collect::<Vec<_>>(),
-        peek_json[..first_output]
+        triage_json[..first_output]
             .iter()
             .map(unmarked)
             .collect::<Vec<_>>(),
-        "the pre-fork items are the peek's — one cache lineage"
+        "the pre-fork items are the triage's — one cache lineage"
     );
     let canonical_marked: Vec<usize> = canonical_json
         .iter()
@@ -187,25 +188,25 @@ fn a_responses_peek_marks_the_shared_frontier_and_the_canonical_wire_carries_onl
         !text.contains("gamma"),
         "dropped raw stays off the canonical wire: {text}"
     );
-    let ask = peek_json.last().unwrap().to_string();
+    let ask = triage_json.last().unwrap().to_string();
     assert!(
         ask.contains("retain"),
-        "the peek's ask names the retain tool: {ask}"
+        "the triage's ask names the retain tool: {ask}"
     );
-    let ask_text = peek_json.last().unwrap()["content"][0]["text"]
+    let ask_text = triage_json.last().unwrap()["content"][0]["text"]
         .as_str()
         .expect("the ask is a text part");
     assert!(
         !text.contains(ask_text),
-        "the peek's ask never reaches the canonical wire"
+        "the triage's ask never reaches the canonical wire"
     );
 }
 
-/// The peek's request surface follows its configuration (docs/triage.md):
+/// The triage's request surface follows its configuration (docs/triage.md):
 /// shared borrows the agent's client and `tools[]`; own sends its own client and
-/// only the two peek tools.
+/// only the two triage tools.
 #[test]
-fn own_peek_sends_its_own_client_and_only_the_peek_tools() {
+fn own_triage_sends_its_own_client_and_only_the_triage_tools() {
     let endpoint = crate::api::Endpoint::from_credentials(
         crate::api::Provider::Anthropic,
         "sk-ant-xyz".into(),
@@ -219,13 +220,13 @@ fn own_peek_sends_its_own_client_and_only_the_peek_tools() {
     let shared = Triager::shared();
     assert!(!shared.is_own());
     assert_eq!(shared.own_model(), None);
-    assert_eq!(shared.client(&agent, RequestOrigin::Peek).model(), "big");
+    assert_eq!(shared.client(&agent, RequestOrigin::Triage).model(), "big");
     assert_eq!(shared.tools(&agent_tools).len(), 3);
 
     let own = Triager::own(Client::new(endpoint.for_triage(), "small", "persona", None));
     assert!(own.is_own());
     assert_eq!(own.own_model(), Some("small"));
-    assert_eq!(own.client(&agent, RequestOrigin::Peek).model(), "small");
+    assert_eq!(own.client(&agent, RequestOrigin::Triage).model(), "small");
     let names: Vec<&str> = own
         .tools(&agent_tools)
         .iter()
@@ -233,7 +234,7 @@ fn own_peek_sends_its_own_client_and_only_the_peek_tools() {
         .collect();
     assert_eq!(names, ["retain", "triage"]);
 
-    // The own peek forces the asked-for tool; the shared peek never does, and the
+    // The own triage forces the asked-for tool; the shared triage never does, and the
     // knob turns the own one back to `auto`.
     assert_eq!(shared.choice(RETAIN).forced(), None);
     assert_eq!(own.choice(RETAIN).forced(), Some("retain"));
@@ -261,16 +262,16 @@ fn the_idle_triage_rides_the_agent_lineage_whatever_the_triage_model() {
     assert_eq!(client.model(), "big");
     assert_eq!(tools.len(), 3);
     assert_eq!(choice.forced(), None);
-    // The per-result peek still runs on the own model.
-    assert_eq!(own.client(&agent, RequestOrigin::Peek).model(), "small");
+    // The per-result triage still runs on the own model.
+    assert_eq!(own.client(&agent, RequestOrigin::Triage).model(), "small");
 }
 
-/// The shared peek rides the agent lineage the main request already warmed, so there
+/// The shared triage rides the agent lineage the main request already warmed, so there
 /// is no triage lineage to plant a primer in (docs/transport.md).
 #[tokio::test]
-async fn the_shared_peek_takes_no_primer() {
+async fn the_shared_triage_takes_no_primer() {
     assert!(
         Triager::shared().prime(&[]).await.is_none(),
-        "a shared peek never primes"
+        "a shared triage never primes"
     );
 }

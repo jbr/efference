@@ -46,7 +46,7 @@ fn state_reports_the_retry_in_flight() {
     assert!(v["upstream_retry"].is_null());
 
     retry.set(crate::api::UpstreamRetry {
-        surface: crate::api::RetrySurface::Peek,
+        surface: crate::api::RetrySurface::Triage,
         attempt: 2,
         budget: 12,
         next_attempt_at: 1_754_300_000_000,
@@ -57,7 +57,7 @@ fn state_reports_the_retry_in_flight() {
     assert_eq!(
         v["upstream_retry"],
         serde_json::json!({
-            "surface": "peek",
+            "surface": "triage",
             "attempt": 2,
             "budget": 12,
             "next_attempt_at": 1_754_300_000_000u64,
@@ -66,7 +66,7 @@ fn state_reports_the_retry_in_flight() {
         })
     );
 
-    retry.clear(crate::api::RetrySurface::Peek);
+    retry.clear(crate::api::RetrySurface::Triage);
     let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
     assert!(
         v["upstream_retry"].is_null(),
@@ -319,8 +319,8 @@ fn state_reports_context_occupancy_against_the_boot_limit() {
     assert_eq!(v["usage"]["context"]["used"], 196_000);
 }
 
-/// **A side-channel request must not move reported occupancy.** The triage,
-/// the idle triage, and the spotter each carry their own much smaller prefix, so
+/// **A side-channel request must not move reported occupancy.** Triage
+/// and the spotter each carry their own much smaller prefix, so
 /// folding them into the context readout makes it *drop* mid-turn and correct
 /// itself afterwards. Their tokens still belong in the cumulative totals, which
 /// is what this pins on both sides.
@@ -348,11 +348,7 @@ fn context_occupancy_ignores_side_channel_requests() {
     assert_eq!(v["usage"]["context"]["used"], 27_010);
 
     // Every non-turn origin, each with a prefix a fraction of the trajectory's.
-    for origin in [
-        RequestOrigin::Peek,
-        RequestOrigin::Triage,
-        RequestOrigin::Spot,
-    ] {
+    for origin in [RequestOrigin::Triage, RequestOrigin::Spot] {
         shared.record_request(origin, usage(8, 6_800));
         let v: Value = serde_json::from_str(&shared.state_json()).unwrap();
         assert_eq!(
@@ -371,10 +367,10 @@ fn context_occupancy_ignores_side_channel_requests() {
 
     // Side-channel spend is still counted; scoping `context` did not hide it.
     let cumulative = &v["usage"]["cumulative"];
-    assert_eq!(cumulative["input_tokens"], 10 + 8 * 3 + 4 + 12);
+    assert_eq!(cumulative["input_tokens"], 10 + 8 * 2 + 4 + 12);
     assert_eq!(
         cumulative["cache_read_input_tokens"],
-        27_000 + 6_800 * 3 + 100 + 31_000
+        27_000 + 6_800 * 2 + 100 + 31_000
     );
     // And `last` still means the last request of any kind.
     assert_eq!(v["usage"]["last"]["input_tokens"], 12);

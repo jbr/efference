@@ -9,7 +9,7 @@
 //!
 //! This module holds the state: the registry, its one bounded per-process
 //! capture buffer, and the read projections over it — [`Supervisor::views`] (the
-//! ambient auto-show the peek renders each gate), [`Supervisor::pin_snapshot`] (a
+//! ambient auto-show the triage renders each gate), [`Supervisor::pin_snapshot`] (a
 //! frozen tail when the model pins), and [`Supervisor::finish`] (the exit
 //! notification). The async spawn/drain orchestration — which needs `Arc<Session>`
 //! and the `POST /notifications` path — lives in `daemon.rs`.
@@ -102,7 +102,7 @@ pub fn max_handle_mention(text: &str) -> u64 {
     max
 }
 
-/// Lines of tail shown per process in the peek (and carried in a pin / exit
+/// Lines of tail shown per process in the triage (and carried in a pin / exit
 /// snapshot). A tuned constant (docs/supervisor.md).
 const TAIL_LINES: usize = 12;
 
@@ -147,7 +147,7 @@ struct Process {
     /// (docs/control-api.md).
     spawned_wall: crate::log::Timestamp,
     /// Muted (the supervisor's `dismiss` for a live process, docs/supervisor.md): kept running, exit still
-    /// notifies, but the running tail stops surfacing in the peek.
+    /// notifies, but the running tail stops surfacing in the triage.
     muted: bool,
     running: bool,
     /// How this process ended, stamped by [`Supervisor::finish`] — the same
@@ -165,7 +165,7 @@ struct Process {
     scanned: u64,
 }
 
-/// A live snapshot of one running process for the peek's ambient `background`
+/// A live snapshot of one running process for the triage's ambient `background`
 /// section (docs/supervisor.md). Owned (it borrows nothing of the registry) so the loop can
 /// build it under the lock and hand it to the triager, which then awaits.
 ///
@@ -456,7 +456,7 @@ impl Supervisor {
     }
 
     /// Append a freshly-read output chunk to a process's bounded capture, stamp its
-    /// activity clock (the source of the peek's `idle` figure), and scan the new
+    /// activity clock (the source of the triage's `idle` figure), and scan the new
     /// output against any registered watches (docs/supervisor.md).
     ///
     /// Returns the hits, which the caller turns into notifications *after* dropping
@@ -575,8 +575,8 @@ impl Supervisor {
     }
 
     /// The ambient auto-show: a snapshot of every *running, un-muted background*
-    /// process for the peek's `background` section (docs/supervisor.md). Foreground
-    /// entries are excluded — the model reads a peek between calls, when its own
+    /// process for the triage's `background` section (docs/supervisor.md). Foreground
+    /// entries are excluded — the model reads a triage between calls, when its own
     /// in-flight command is not a thing to report to it.
     pub fn views(&self) -> Vec<BgView> {
         let now = Instant::now();

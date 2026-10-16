@@ -11,7 +11,7 @@ use serde_json::Value;
 /// One open upstream request.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct OpenRequestView {
-    /// `turn`, `peek`, `spot`, … — the topic's `origin`.
+    /// `turn`, `triage`, `spot`, … — the topic's `origin`.
     pub origin: String,
     /// `sent`, `retrying`, or `streaming`.
     pub stage: String,
@@ -91,9 +91,8 @@ fn elapsed(ms: u64) -> String {
 fn rank(origin: &str) -> usize {
     [
         "turn",
-        "peek",
-        "spot",
         "triage",
+        "spot",
         "narrate",
         "title",
         "triage_primer",
@@ -102,7 +101,7 @@ fn rank(origin: &str) -> usize {
     ]
     .iter()
     .position(|o| *o == origin)
-    .unwrap_or(8)
+    .unwrap_or(7)
 }
 
 fn request_text(request: &OpenRequestView, model: &str, now: u64) -> String {
@@ -113,16 +112,15 @@ fn request_text(request: &OpenRequestView, model: &str, now: u64) -> String {
         request.status.map_or("?".into(), |s| s.to_string()),
     );
     match request.origin.as_str() {
-        "peek" if request.stage == "retrying" => retrying,
-        "peek" => format!(
-            "triage peek · {}{since}",
+        "triage" if request.stage == "retrying" => retrying,
+        "triage" => format!(
+            "triage · {}{since}",
             if request.stage == "sent" {
                 "waiting "
             } else {
                 "streaming "
             }
         ),
-        "triage" => format!("idle triage · {since}"),
         "spot" => format!("spotter judging · {since}"),
         "title" => format!("writing a title · {since}"),
         "narrate" => format!("writing the summary · {since}"),

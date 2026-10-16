@@ -213,11 +213,11 @@ fn title_is_solicited_after_a_user_turn_and_on_the_fallback() {
     assert!(should_solicit_title(&log));
 }
 
-/// A must-wake notification is pinned whatever the peek decided (docs/inbox.md):
+/// A must-wake notification is pinned whatever the triage decided (docs/inbox.md):
 /// a dismiss is overridden, a leave is filled in, and an ordinary item's verdict
 /// is untouched.
 #[test]
-fn force_pins_overrides_the_peek_for_must_wake_items() {
+fn force_pins_overrides_the_triage_for_must_wake_items() {
     let mut inbox = vec![
         (5, Disposition::Dismiss),
         (6, Disposition::Pin),

@@ -12,7 +12,7 @@ pub fn tool_definitions(toolbox: &Toolbox) -> Vec<Value> {
     let mut tools = toolbox.definitions();
     tools.push(consolidate::definition());
     tools.extend(supervisor::tool_definitions());
-    // The peek tools (docs/triage.md) stand in every turn's array even though
+    // The triage tools (docs/triage.md) stand in every turn's array even though
     // only a triage's tail instruction ever asks for them: with the tools array,
     // `tool_choice`, and thinking policy identical, the triage is the same
     // conversation continued with a different tail and reads the agent lineage's cache
@@ -26,7 +26,7 @@ pub fn tool_definitions(toolbox: &Toolbox) -> Vec<Value> {
 /// The names a turn's `tools[]` carries that a call may actually name — read off
 /// [`tool_definitions`] itself, so the advertised array and this list cannot drift.
 ///
-/// The peek tools are excluded: `retain`/`triage` stand in every array for
+/// The triage tools are excluded: `retain`/`triage` stand in every array for
 /// cache-lineage reasons but nothing is ever asked of them on an agent turn, and an
 /// un-asked call is short-circuited before this is consulted
 /// (docs/triage.md). What is left is what a call can name and have run.
@@ -34,7 +34,7 @@ pub fn callable_names(toolbox: &Toolbox) -> Vec<String> {
     tool_definitions(toolbox)
         .iter()
         .filter_map(|d| d.get("name")?.as_str().map(str::to_string))
-        .filter(|name| !crate::triage::is_peek_tool(name))
+        .filter(|name| !crate::triage::is_triage_tool(name))
         .collect()
 }
 
@@ -44,7 +44,7 @@ pub fn callable_names(toolbox: &Toolbox) -> Vec<String> {
 /// array, so a tool in `tools[]` can't be invisible to the permission rung —
 /// the loop-owned family once was, and the spotter judged `check_inbox` and
 /// `list_processes` as bare names, calling them opaque (docs/permissions.md).
-/// Bash stays brief-less by design (judged as command text), and the peek tools
+/// Bash stays brief-less by design (judged as command text), and the triage tools
 /// never reach a gate (an un-asked call pairs with a nudge result).
 pub fn brief<'a>(toolbox: &'a Toolbox, name: &str) -> Option<crate::tools::ToolBrief<'a>> {
     toolbox
@@ -61,18 +61,18 @@ pub fn brief<'a>(toolbox: &'a Toolbox, name: &str) -> Option<crate::tools::ToolB
 /// ([`crate::daemon::Session::set_tool_catalog`]).
 ///
 /// A catalog built from `toolbox.tool_catalog()` alone once missed this whole
-/// family — `check_inbox`, `list_processes`, `consolidate`, the two peek
+/// family — `check_inbox`, `list_processes`, `consolidate`, the two triage
 /// tools — the same shape of gap [`brief`]'s doc comment records for the
 /// spotter (`check_inbox`/`list_processes` once judged as bare names because
 /// the lookup consulted only the providers). Composed from the same brief
-/// sources `brief` reads, plus the two peek tools, which `brief` excludes
+/// sources `brief` reads, plus the two triage tools, which `brief` excludes
 /// (they never reach a gate) but this route does not: `retain`/`triage` still
 /// ride every turn's `tools[]`, so a reader destructuring the triage's own
 /// call wants their schema too.
 ///
 /// None of these five sources inject [`crate::tools::INTENT`] the way a
 /// `Toolbox`-mounted tool's wire entry does — [`tool_definitions`] pushes
-/// `consolidate::definition()`, `supervisor::tool_definitions()`, and the peek
+/// `consolidate::definition()`, `supervisor::tool_definitions()`, and the triage
 /// tools onto `toolbox.definitions()` *after* `with_intent` has already run
 /// over the toolbox half — so each is served with `inject_intent: false`,
 /// matching the schema the model was actually sent.

@@ -58,11 +58,11 @@ impl KeepaliveSpec {
     /// `[transport] keepalive-interval`, which applies to both lineages; absent, the
     /// cadence is the triage provider's cache lifetime, as the main loop's is.
     pub(crate) fn triage(
-        peek: &Triager,
+        triage: &Triager,
         configured: Option<Duration>,
         prices: Option<TokenPrices>,
     ) -> Option<Self> {
-        let (client, tools, choice) = peek.primer_envelope()?;
+        let (client, tools, choice) = triage.primer_envelope()?;
         let ping_at = configured
             .unwrap_or_else(|| keepalive_interval(client.endpoint().provider.cache_ttl()));
         Some(Self {

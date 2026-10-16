@@ -179,12 +179,12 @@ fn lines_past_the_cap_are_truncated_not_dropped_silently() {
     let mut r = Retention::default();
     let entry = result(
         0,
-        super::super::PEEK_LINE_CAP + 25,
+        super::super::TRIAGE_LINE_CAP + 25,
         WireState::from(Triaged::new(Keep::All)),
     );
     r.fold(&entry, std::slice::from_ref(&entry));
-    assert_eq!(r.shown_lines as usize, super::super::PEEK_LINE_CAP);
-    assert_eq!(r.kept_lines as usize, super::super::PEEK_LINE_CAP);
+    assert_eq!(r.shown_lines as usize, super::super::TRIAGE_LINE_CAP);
+    assert_eq!(r.kept_lines as usize, super::super::TRIAGE_LINE_CAP);
     assert_eq!(r.truncated_lines, 25);
     assert_eq!(r.ratio(), Some(1.0));
 }

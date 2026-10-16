@@ -57,7 +57,7 @@ fn render(view: TriageView) -> (String, Vec<UserPart>) {
         call: &gate,
         raw: &raw,
     }];
-    let turns = digest_peek_messages(&prefix, Reader::Main, view, &pending, &[], &[], &[]);
+    let turns = digest_triage_messages(&prefix, Reader::Main, view, &pending, &[], &[], &[]);
     let [WireTurn::User(parts)] = turns.as_slice() else {
         panic!("one user turn, no assistant turn: {turns:?}");
     };

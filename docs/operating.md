@@ -26,7 +26,7 @@ driven, and it is refined from use rather than written ahead of it.
   the binary for the command line and the stdio server, and by a hosted session's own
   toolbox for its model (below), so the paths cannot drift apart.
 - **`efference dev <verb>`** — instruments for developing efference itself: `wire`,
-  `gallery`, `peek`, `spotter`, `spotter-log`, `spotter-eval`, `cache`, `view` (a recorded log in the TUI, inert), and `open`, the
+  `gallery`, `triage`, `spotter`, `spotter-log`, `spotter-eval`, `cache`, `view` (a recorded log in the TUI, inert), and `open`, the
   web-bind bootstrap-link mint ([web-bind.md](web-bind.md)). Compiled under the `dev`
   cargo feature, which is in `default`; a release build passes `--no-default-features`.
 
@@ -726,7 +726,7 @@ Beyond turns, calls, and results, the log carries the decisions:
   asked to vouch for, and — from the decision rung — every axis probability it answered. Audit-only; it never reaches the wire. `efference dev spotter-log`
   summarizes these across sessions.
 - **`ConfigEdit`** — every proposed, committed, or cancelled policy change, with its note.
-- **`Triage`** — what each result's peek decided to keep, and whether the verdict came from
+- **`Triage`** — what each result's triage decided to keep, and whether the verdict came from
   the model or a fallback.
 - **`Mark`** — today only a consolidation boundary, written by the `consolidate` tool. There
   is no operator verb that writes a mark; salience annotations are the agent's own.

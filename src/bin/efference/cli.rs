@@ -363,22 +363,22 @@ pub(crate) struct SessionFlags {
     pub(crate) triage_shared: bool,
     /// Model for the triage that triages every tool result, selected like --model.
     ///
-    /// Experimental. Omitted, the peek runs on the agent's own client and reads the
+    /// Experimental. Omitted, the triage runs on the agent's own client and reads the
     /// agent's prompt cache (on a host, unless `[defaults].triage` is set). Given, the
-    /// per-result peek runs on its own client even when it names the agent's model:
-    /// its own system prompt, its own session key, and only the two peek tools
+    /// per-result triage runs on its own client even when it names the agent's model:
+    /// its own system prompt, its own session key, and only the two triage tools
     /// offered. Its cache is a separate lineage over the same transcript, paid at
     /// that model's rate. Must share the agent's wire dialect. The idle triage (the
     /// wake decision) stays on the agent's client regardless.
     #[arg(long)]
     pub(crate) triage_model: Option<String>,
-    /// Let the triage model think. Off by default: the peek's reasoning is discarded
+    /// Let the triage model think. Off by default: the triage's reasoning is discarded
     /// with the fork, so thinking there is latency and tokens per tool result. Only
     /// meaningful with --triage-model.
     #[arg(long)]
     pub(crate) triage_thinking: bool,
     /// Send the triage model's ask under `tool_choice: auto` instead of forcing the
-    /// peek tool. Forced is the default: an unforced small model answers the ask
+    /// triage tool. Forced is the default: an unforced small model answers the ask
     /// with an invented work call. Only meaningful with --triage-model.
     #[arg(long)]
     pub(crate) triage_auto_choice: bool,
@@ -533,7 +533,7 @@ pub(crate) enum Command {
     },
     /// Instruments for developing efference itself.
     ///
-    /// The wire view, the element gallery, the spotter and peek testers, the
+    /// The wire view, the element gallery, the spotter and triage testers, the
     /// cache-rate report, the read-only session viewer, and the web-bind
     /// bootstrap-link mint. Compiled only under the `dev` cargo feature.
     #[cfg(feature = "dev")]

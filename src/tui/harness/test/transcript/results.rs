@@ -633,7 +633,7 @@ fn a_triage_failed_result_reads_as_a_failed_call() {
         "ten thousand lines of untriaged output",
         false,
         WireState::TriageFailed {
-            why: "peek called no tool (attempt 3 of 3)".into(),
+            why: "triage called no tool (attempt 3 of 3)".into(),
         },
     );
     assert!(
@@ -673,7 +673,7 @@ fn a_recovered_retry_surfaces_as_an_annotation() {
         raw_keep: "all".into(),
         inbox: Vec::new(),
         surfaced: Vec::new(),
-        retries: vec!["attempt 1 of 3: peek called bash instead of retain".into()],
+        retries: vec!["attempt 1 of 3: triage called bash instead of retain".into()],
         thinking: Vec::new(),
     }));
     assert!(

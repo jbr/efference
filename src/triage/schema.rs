@@ -1,4 +1,4 @@
-//! The JSON tool schemas of the peek tools (docs/triage.md).
+//! The JSON tool schemas of the triage tools (docs/triage.md).
 //!
 //! Both schemas are **static** — zero-argument builders, every field unconditional —
 //! because they ride the agent turn's `tools[]` (docs/triage.md): a schema that
@@ -9,7 +9,7 @@
 //! dispositions are dropped harness-side regardless (docs/triage.md).
 //!
 //! Both descriptions carry the same standing clause — the tools are answered only when
-//! the peek's tail instruction asks. Phrased as permission ("do not call unless asked"),
+//! the triage's tail instruction asks. Phrased as permission ("do not call unless asked"),
 //! not identity: the same model reads this description and, later, the ask, so the
 //! clause must resolve as "now is when" rather than contradict the ask.
 
@@ -77,7 +77,7 @@ pub(super) fn surfaced_schema_field() -> Value {
 /// likely to come back wrong. A gate carrying several is answered with the `results`
 /// array, where a `result` label per entry (`r1`, `r2` — [`labels`](super::labels)) is
 /// what makes the verdicts attributable.
-/// Neither is `required`: the schema can't know the gate size, so the peek's tail
+/// Neither is `required`: the schema can't know the gate size, so the triage's tail
 /// instruction ([`retain_instruction`](super::retain_instruction)) names the shape.
 pub fn retain_tool() -> Value {
     json!({
@@ -132,7 +132,7 @@ pub fn retain_tool() -> Value {
     })
 }
 
-/// The standalone idle-triage peek's tool (docs/supervisor.md, docs/inbox.md):
+/// The standalone idle triage's tool (docs/supervisor.md, docs/inbox.md):
 /// inbox/background dispositions only, no `keep` (there's no tool output). Static —
 /// see the module doc.
 pub fn triage_tool() -> Value {

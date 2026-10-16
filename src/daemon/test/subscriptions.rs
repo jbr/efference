@@ -173,11 +173,11 @@ fn pinned(session: &Session, seq: Seq) -> bool {
 }
 
 /// The child's gate reaches the parent as a must-wake notification on the
-/// child's slot, and the parent's idle loop pins it even though its triage peek
+/// child's slot, and the parent's idle loop pins it even though its triage
 /// cannot reach a model (the stub endpoint refuses connections); the resolution's
 /// idle follows on the same slot. A sibling that did not subscribe hears nothing.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_childs_gate_wakes_the_parent_and_is_pinned_whatever_the_peek_says() {
+async fn a_childs_gate_wakes_the_parent_and_is_pinned_whatever_the_triage_says() {
     let fixture = Fixture::new();
     let parent = fixture.session("parent");
     let child = fixture.session("child");
@@ -204,7 +204,7 @@ async fn a_childs_gate_wakes_the_parent_and_is_pinned_whatever_the_peek_says() {
     .await;
     assert!(fixture.session("peer").pending_notifications().is_empty());
 
-    // The wake is declared, not judged: the peek fails outright here, and the
+    // The wake is declared, not judged: the triage fails outright here, and the
     // loop pins the status regardless (docs/inbox.md).
     wait_until("the parent's idle triage pinned the gate", || {
         parent

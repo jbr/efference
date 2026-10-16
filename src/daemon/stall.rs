@@ -29,7 +29,7 @@ pub enum StallReason {
 ///
 /// The loop returns to idle on both failure paths above, which leaves the
 /// daemon's other signals — `running: false`, no gate, an empty inbox once a
-/// triage peek has dismissed the notification — identical to a run that
+/// triage has dismissed the notification — identical to a run that
 /// finished its work. This topic is the difference a supervising client reads:
 /// set when the loop gives up, cleared when a trajectory next starts, so it
 /// names the *current* condition rather than a past one (the same clear-on-

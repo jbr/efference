@@ -122,7 +122,7 @@ fn a_committed_turn_clears_the_live_tail() {
 }
 
 /// The live tail's line spacing. Every live renderer — a running tool's output
-/// peek, a thinking phase, an arriving tool input — models one source line as one
+/// triage, a thinking phase, an arriving tool input — models one source line as one
 /// `Paragraph` child of its entry, and an entry separates its children by a blank
 /// row (markdown block spacing). So a multi-line live block renders double-spaced,
 /// which reads as the stream having inserted newlines it did not send.
@@ -317,7 +317,7 @@ fn streamed_thinking_persists_and_does_not_reshape_on_commit() {
 ///
 /// A running tool's output shows a peek by default (docs/tui.md), and the operator
 /// can open it to read the whole thing. The choice is held against the entry's
-/// `call_id`: an unkeyed peek entry has nothing durable to record it against, so
+/// `call_id`: an unkeyed triage entry has nothing durable to record it against, so
 /// the next arriving fragment re-projects the block and snaps it shut. The
 /// `call_id` is on the tail already (`tool_output` is demuxed by it).
 #[test]
@@ -331,11 +331,11 @@ fn a_streaming_block_opened_full_stays_open_across_stream_events() {
     play.pin_to_bottom();
     assert!(
         play.find("running · 14 lines, last 10").is_some(),
-        "the default is the peek"
+        "the default is the triage"
     );
     assert!(play.find("line 1\n").is_none(), "…so the head is not shown");
 
-    // Focus the peek (the last unit) and fire its one verb.
+    // Focus the triage (the last unit) and fire its one verb.
     play.route_key(KeyCode::Up, KeyModifiers::NONE); // composer → strip
     play.route_key(KeyCode::Up, KeyModifiers::NONE); // strip → transcript, last unit
     assert_eq!(

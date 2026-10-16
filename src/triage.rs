@@ -10,7 +10,7 @@
 //! ([`crate::project::render_triaged`], docs/triage.md), so the kept bytes
 //! are never stored twice and the structured decision doubles as the audit record.
 //!
-//! The same throwaway peek also triages the **inbox** (docs/inbox.md): the pending
+//! The same throwaway triage also triages the **inbox** (docs/inbox.md): the pending
 //! ambient notifications are shown under the output, and the `retain` verdict's
 //! `inbox` field pins / dismisses them by `[seq]`. The dispositions ride back on the
 //! [`TriageOutcome`] and land on the logged [`Triage`](crate::log::Triage). One type
@@ -20,7 +20,7 @@
 //!   throwaway branch off the cached prefix, show the model the line-numbered raw
 //!   output + the inbox, and ask it (via the tail instruction, never a forced
 //!   `tool_choice`) to call `retain` to choose what the canonical wire keeps and which
-//!   notifications to pin. The peek sends the *same* request envelope as an agent turn —
+//!   notifications to pin. The triage sends the *same* request envelope as an agent turn —
 //!   one shared `tools[]`, `tool_choice: auto`, the same thinking policy — so both
 //!   shapes read one cache lineage (docs/triage.md, docs/log-and-projection.md).
 //!   A non-compliant response gets a bounded in-fork retry, then a fresh fork; an
@@ -44,26 +44,26 @@ use crate::log::{
     AssistantOutput, Disposition, Keep, LogEntry, Origin, Payload, RawResult, Seq, ToolCall,
     Triaged, WireState,
 };
-use crate::project::{PEEK_LINE_CAP, Reader, UserPart, WireTurn, project_semantic_for};
+use crate::project::{Reader, TRIAGE_LINE_CAP, UserPart, WireTurn, project_semantic_for};
 use crate::supervisor::BgView;
 
 const RETAIN: &str = "retain";
 
 /// The tool choice the primer sends (`Triager::prime`) and its keepalive re-sends:
-/// forced `retain`, the peek's own head (docs/transport.md).
+/// forced `retain`, the triage's own head (docs/transport.md).
 fn primer_choice() -> ToolChoice {
     ToolChoice::force(RETAIN)
 }
 
-/// The tool of the **standalone** idle-triage peek (docs/supervisor.md): no `keep`
+/// The tool of the **standalone** idle triage (docs/supervisor.md): no `keep`
 /// (there's no tool output to retain), only inbox/background dispositions.
 const TRIAGE: &str = "triage";
 
-/// Whether `name` is a peek tool. Both stand in every turn's `tools[]` (the shared
-/// envelope, docs/triage.md) but are answered only when a peek's tail
+/// Whether `name` is a triage tool. Both stand in every turn's `tools[]` (the shared
+/// envelope, docs/triage.md) but are answered only when a triage's tail
 /// instruction asks — the agent loop pairs an un-asked call with a nudge result
 /// instead of running the cascade.
-pub fn is_peek_tool(name: &str) -> bool {
+pub fn is_triage_tool(name: &str) -> bool {
     name == RETAIN || name == TRIAGE
 }
 
@@ -104,7 +104,7 @@ pub struct TriageOutcome {
 
 /// The outcome of one triage gate (docs/triage.md). A gate rides the results of
 /// a single completion — one or several calls (docs/README.md), all of them triaged
-/// together in one peek. That grouping is what keeps the peek's request valid: every `tool_use` in
+/// together in one triage. That grouping is what keeps the triage's request valid: every `tool_use` in
 /// the trailing assistant message is answered by a real result in the same tail, so
 /// nothing is ever orphaned.
 ///
@@ -117,15 +117,15 @@ pub struct GateOutcome {
     /// length as the input — a gate without a verdict for every result is a
     /// [`GateFailure`], never a short vector — so the loop can zip them without checking.
     pub results: Vec<TriageOutcome>,
-    /// Per-notification dispositions this peek chose, by arrival `seq` (docs/inbox.md) —
+    /// Per-notification dispositions this triage chose, by arrival `seq` (docs/inbox.md) —
     /// filtered to notifications actually shown. Empty when nothing was pinned or
     /// dismissed (everything left for the next gate).
     pub inbox: Vec<(Seq, Disposition)>,
-    /// Live-process dispositions this peek chose, by `p#<n>` handle (docs/supervisor.md) —
+    /// Live-process dispositions this triage chose, by `p#<n>` handle (docs/supervisor.md) —
     /// filtered to processes actually shown. The loop materializes a `Pin` into a
     /// snapshot `Ambient` and applies a `Mute` to the supervisor.
     pub background: Vec<(String, BgVerdict)>,
-    /// Context-item names this peek chose to surface (docs/triage.md) —
+    /// Context-item names this triage chose to surface (docs/triage.md) —
     /// filtered to the roster actually shown (invented names dropped). Stored on the
     /// `Triage` (`surfaced`); `project` re-renders each as a read-me reminder. Empty
     /// when nothing was surfaced.
@@ -135,14 +135,14 @@ pub struct GateOutcome {
     /// request reads the shared canonical prefix (sliding its cache TTL), and the loop
     /// folds them all into the cache telemetry (docs/log-and-projection.md).
     pub usage: Vec<RequestUsage>,
-    /// One attempt-stamped breadcrumb per peek attempt that had to be retried —
+    /// One attempt-stamped breadcrumb per triage attempt that had to be retried —
     /// recorded even when a retry recovered (docs/triage.md). Two families,
     /// distinguishable by wording: a non-compliant verdict (wrong tool, no tool,
     /// malformed input), and a stream that died before finalizing. The loop lands
     /// these on the gate's `Triage` (`retries`), the durable record; a runtime triage
     /// failure is never accepted silently, recovered or not.
     pub retries: Vec<String>,
-    /// The reasoning behind the verdict — one entry per peek attempt that emitted
+    /// The reasoning behind the verdict — one entry per triage attempt that emitted
     /// thinking, in attempt order (docs/triage.md). The loop lands these on the
     /// gate's `Triage` (`thinking`), which is the only record of why a verdict came out
     /// the way it did; the fork's transcript is still discarded.
@@ -154,14 +154,14 @@ pub struct GateOutcome {
 /// attempt that finally succeeds. The results are never shown to the agent in this
 /// state; the loop holds them.
 pub struct GateFailure {
-    pub failure: PeekFailure,
+    pub failure: TriageFailure,
     pub usage: Vec<RequestUsage>,
     pub retries: Vec<String>,
     pub thinking: Vec<String>,
 }
 
 impl GateFailure {
-    fn new(failure: PeekFailure, record: PeekRecord) -> Self {
+    fn new(failure: TriageFailure, record: TriageRecord) -> Self {
         Self {
             failure,
             usage: record.usage,
@@ -197,7 +197,7 @@ impl GateOutcome {
     }
 }
 
-/// The verdict of a **standalone** idle-triage peek (docs/supervisor.md) — a gate that rides no
+/// The verdict of a **standalone** idle triage (docs/supervisor.md) — a gate that rides no
 /// tool result, so it has no [`WireState`]; just the inbox/background dispositions (and
 /// the audit pieces the loop stamps into a [`Triage`](crate::log::Triage) with
 /// `for_result: None`).
@@ -205,47 +205,47 @@ pub struct InboxTriage {
     pub inbox: Vec<(Seq, Disposition)>,
     pub background: Vec<(String, BgVerdict)>,
     pub origin: Origin,
-    /// One entry per request the peek made (in-fork retries included), like
+    /// One entry per request the triage made (in-fork retries included), like
     /// [`GateOutcome::usage`]; empty for a model-free triager or a transport failure.
     pub usage: Vec<RequestUsage>,
     /// Non-compliant-attempt breadcrumbs, like [`GateOutcome::retries`].
     pub retries: Vec<String>,
-    /// Per-attempt peek reasoning, like [`GateOutcome::thinking`].
+    /// Per-attempt triage reasoning, like [`GateOutcome::thinking`].
     pub thinking: Vec<String>,
 }
 
-/// The model peek — the universal triage gate (docs/triage.md) realized.
+/// The model triage — the universal triage gate (docs/triage.md) realized.
 ///
 /// The gate is a concrete type, not a trait object. It was built behind a
 /// single-method `Triager` trait threaded as a generic bound through
 /// `agent::run`, `daemon::serve`, and `run_idle_triage`; the second implementation
 /// that bound existed for never arrived, and the one that briefly did (a model-free
 /// `HeadTail` stub) had no call sites, tests included. Swapping the *model* behind
-/// the peek is [`Self::own`] — a second `Client` and a peek-only `tools[]`, not
-/// another implementation; a materially different peek *shape* (a compacted second
+/// the triage is [`Self::own`] — a second `Client` and a triage-only `tools[]`, not
+/// another implementation; a materially different triage *shape* (a compacted second
 /// projection, a different transcript budget) is what would earn the indirection back.
 ///
 /// Two configurations, chosen at boot (docs/triage.md):
 ///
-/// - [`Self::shared`] — the default. The peek borrows the agent turn's client and
+/// - [`Self::shared`] — the default. The triage borrows the agent turn's client and
 ///   `tools[]`, so it sends the agent's envelope with a different tail and reads the
 ///   agent lineage's cache. Nothing the request keys a cache on differs.
-/// - [`Self::own`] — the triage model. The peek has its own client (its own model,
-///   system prompt, and session key) and a `tools[]` of just the peek tools. Its
+/// - [`Self::own`] — the triage model. The triage has its own client (its own model,
+///   system prompt, and session key) and a `tools[]` of just the triage tools. Its
 ///   prefix is the same canonical projection, so it has its own warm lineage, but it
 ///   shares nothing with the agent's.
 ///
-/// `Clone` hands the peek's surface to a detached task (the title ask,
+/// `Clone` hands the triager's surface to a detached task (the title ask,
 /// docs/session-title.md): a `Client` clone shares the Arc-backed live states,
 /// and the rest is configuration.
 #[derive(Clone)]
 pub struct Triager {
-    /// The triage model's client and tools when the peek runs on its own model;
+    /// The triage model's client and tools when the triage runs on its own model;
     /// `None` borrows the agent turn's.
     own: Option<OwnTriage>,
 }
 
-/// The separate-model peek's request surface: everything cache-keyed that the shared
+/// The separate-model triage's request surface: everything cache-keyed that the shared
 /// configuration would have borrowed from the agent turn.
 #[derive(Clone)]
 struct OwnTriage {
@@ -259,11 +259,11 @@ struct OwnTriage {
     force_choice: bool,
 }
 
-/// The separate-model peek's output cap (docs/triage.md): a verdict is one
+/// The separate-model triage's output cap (docs/triage.md): a verdict is one
 /// small tool call, so reserving the model's whole output cap against the window
 /// only brings the overflow forward — a 65k cap on a 131k model overran at a 66k
 /// prompt. Generous enough for a thinking triage model's reasoning.
-pub const PEEK_MAX_OUTPUT: u64 = 16_384;
+pub const TRIAGE_MAX_OUTPUT: u64 = 16_384;
 
 /// Everything the triage-lineage primer replays (docs/transport.md):
 /// the completion's own input, borrowed — byte-identical to the main request by
@@ -280,7 +280,7 @@ pub struct TriagePrimerInput<'a> {
 pub struct TriagePrimerOutcome {
     /// The primer request's usage, when the backend answered one. `None` when the
     /// lineage needed no planting or the send failed (warned at the send site) —
-    /// either way the peek goes out unprimed, the failure mode being fixed.
+    /// either way the triage goes out unprimed, the failure mode being fixed.
     pub usage: Option<RequestUsage>,
     /// Milliseconds the primer request spent in flight.
     pub send_ms: u64,
@@ -298,29 +298,29 @@ pub struct TriagePrimerOutcome {
 }
 
 impl Triager {
-    /// Make the own-model peek's reads answer to the operator's interrupt
-    /// (docs/control-channel.md); the shared peek already rides the agent client.
+    /// Make the own-model triage's reads answer to the operator's interrupt
+    /// (docs/control-channel.md); the shared triage already rides the agent client.
     pub fn set_abort(&mut self, abort: std::sync::Arc<tokio::sync::Notify>) {
         if let Some(own) = &mut self.own {
             own.client.set_abort(abort);
         }
     }
 
-    /// Report the own-model peek's request stages to `sink`
-    /// (docs/log-and-projection.md); the shared peek rides the agent client.
+    /// Report the own-model triage's request stages to `sink`
+    /// (docs/log-and-projection.md); the shared triage rides the agent client.
     pub fn set_stage_sink(&mut self, sink: crate::api::StageSink) {
         if let Some(own) = &mut self.own {
             own.client.set_stage_sink(sink);
         }
     }
 
-    /// The shared-lineage peek: the agent's client and `tools[]`, borrowed per call.
+    /// The shared-lineage triage: the agent's client and `tools[]`, borrowed per call.
     pub fn shared() -> Self {
         Triager { own: None }
     }
 
-    /// The separate-model peek over `client`. Its `tools[]` is the two peek tools —
-    /// no world tools, since nothing is ever asked of them in a peek, and this
+    /// The separate-model triage over `client`. Its `tools[]` is the two triage tools —
+    /// no world tools, since nothing is ever asked of them in a triage, and this
     /// lineage shares no cache with the agent turn to keep the arrays identical for.
     pub fn own(client: Client) -> Self {
         Triager {
@@ -332,8 +332,8 @@ impl Triager {
         }
     }
 
-    /// Send the own peek's ask under `tool_choice: auto` instead of forcing the tool
-    /// — the ablation knob. No effect on the shared peek, which is always `auto`.
+    /// Send the own triage's ask under `tool_choice: auto` instead of forcing the tool
+    /// — the ablation knob. No effect on the shared triage, which is always `auto`.
     pub fn with_auto_choice(mut self) -> Self {
         if let Some(own) = &mut self.own {
             own.force_choice = false;
@@ -341,13 +341,13 @@ impl Triager {
         self
     }
 
-    /// Whether the peek runs on its own model.
+    /// Whether the triage runs on its own model.
     pub fn is_own(&self) -> bool {
         self.own.is_some()
     }
 
-    /// The projection this peek reads (docs/summary-head.md): the triage view on its own
-    /// client, the main view on the agent's. A shared peek reads the agent's cached
+    /// The projection this triage reads (docs/summary-head.md): the triage view on its own
+    /// client, the main view on the agent's. A shared triage reads the agent's cached
     /// prefix, so it can have no fold the agent's wire does not.
     pub fn reader(&self) -> Reader {
         if self.is_own() {
@@ -357,7 +357,7 @@ impl Triager {
         }
     }
 
-    /// The model the peek runs on when it has its own, for the boot line and
+    /// The model the triage runs on when it has its own, for the boot line and
     /// `GET /state`.
     pub fn own_model(&self) -> Option<&str> {
         self.own.as_ref().map(|o| o.client.model())
@@ -365,7 +365,7 @@ impl Triager {
 
     /// A user turn is starting: the own client forgets its turn-routing token the
     /// way the agent's does (`Client::begin_turn`, docs/transport.md). The shared
-    /// peek rides the agent's client, whose token the loop already resets.
+    /// triage rides the agent's client, whose token the loop already resets.
     pub fn begin_turn(&self) {
         if let Some(own) = &self.own {
             own.client.begin_turn();
@@ -374,21 +374,21 @@ impl Triager {
 
     /// Send the triage-lineage primer over the own client
     /// (docs/transport.md): the turn's input replayed, capped,
-    /// so the gate's peek extends a request that ended where the main one did. `None`
-    /// on the shared peek — it rides the agent lineage, which the main request
+    /// so the gate's triage extends a request that ended where the main one did. `None`
+    /// on the shared triage — it rides the agent lineage, which the main request
     /// already warmed — or where the own client has no implicit lineage to plant in;
     /// a failed send warns and resolves unprimed rather than failing the batch.
     ///
-    /// The primer forces `retain`, matching the peek's head rather than the main
+    /// The primer forces `retain`, matching the triage's head rather than the main
     /// request it replays: the backend keys the resume on `tool_choice`, so an
-    /// `auto` primer plants points no forced peek resumes (the title-0 row shows
+    /// `auto` primer plants points no forced triage resumes (the title-0 row shows
     /// the head itself is choice-keyed). Forcing costs nothing here — the primer's
-    /// output is discarded — and the peek keeps its own forced choice, so the
+    /// output is discarded — and the triage keeps its own forced choice, so the
     /// anti-invented-call guard stays where it belongs.
     ///
-    /// It also sends the peek's own `tools[]`, not the agent's: the ladder showed
-    /// an identical-input primer planting nothing for the peek while same-envelope
-    /// primers chain, so the plant must match the peek's full envelope (tools and
+    /// It also sends the triage's own `tools[]`, not the agent's: the ladder showed
+    /// an identical-input primer planting nothing for the triage while same-envelope
+    /// primers chain, so the plant must match the triage's full envelope (tools and
     /// choice) and share only the input prefix. The output is discarded either way.
     pub async fn prime(&self, turns: &[WireTurn]) -> Option<TriagePrimerOutcome> {
         let own = self.own.as_ref()?;
@@ -396,8 +396,8 @@ impl Triager {
     }
 
     /// The envelope the primer goes out on, which the triage keepalive re-sends
-    /// (docs/transport.md): the own client, the peek's `tools[]`, and the primer's forced
-    /// choice. `None` on the shared peek and where the own client plants no primer
+    /// (docs/transport.md): the own client, the triage's `tools[]`, and the primer's forced
+    /// choice. `None` on the shared triage and where the own client plants no primer
     /// ([`Client::plants_primer`]), so a `Some` is exactly the case the keepalive arms in.
     pub fn primer_envelope(&self) -> Option<(Client, Vec<Value>, ToolChoice)> {
         let own = self.own.as_ref()?;
@@ -423,7 +423,7 @@ impl Triager {
         let usage = match result {
             Ok(usage) => Some(usage),
             Err(e) => {
-                log::warn!("triage primer failed, the peek goes out unprimed: {e}");
+                log::warn!("triage primer failed, the triage goes out unprimed: {e}");
                 error = Some(e.to_string());
                 None
             }
@@ -437,7 +437,7 @@ impl Triager {
         })
     }
 
-    /// The client a peek sends through: the own one when set, else the agent's,
+    /// The client a triage sends through: the own one when set, else the agent's,
     /// tagged with what the request is for (docs/log-and-projection.md).
     fn client(&self, agent: &Client, origin: RequestOrigin) -> Client {
         self.own
@@ -446,13 +446,13 @@ impl Triager {
             .with_origin(origin)
     }
 
-    /// The `tools[]` a peek sends: the peek-only array when own, else the agent's.
+    /// The `tools[]` a triage sends: the triage-only array when own, else the agent's.
     fn tools<'a>(&'a self, agent: &'a [Value]) -> &'a [Value] {
         self.own.as_ref().map_or(agent, |o| o.tools.as_slice())
     }
 
-    /// The `tool_choice` a peek sends for `tool`: forced on the own peek unless
-    /// [`Self::with_auto_choice`]; always `auto` on the shared peek, whose envelope
+    /// The `tool_choice` a triage sends for `tool`: forced on the own triage unless
+    /// [`Self::with_auto_choice`]; always `auto` on the shared triage, whose envelope
     /// must match the agent turn's (docs/triage.md).
     fn choice(&self, tool: &'static str) -> ToolChoice {
         match &self.own {
@@ -466,7 +466,7 @@ impl Triager {
     /// (docs/triage.md). The idle ask decides whether the session wakes at
     /// all, and a wrong dismiss there is silent; it runs on the agent's own lineage,
     /// at the agent's thinking, reading the cache the keepalive holds warm. The
-    /// separate model keeps the per-result peeks, which are the volume.
+    /// separate model keeps the per-result triages, which are the volume.
     fn idle_envelope<'a>(
         &self,
         agent: &'a Client,
@@ -483,9 +483,9 @@ impl Triager {
     /// `pending` is every result that turn produced, in call order; `inbox` is the pending
     /// notifications and `background` the running processes' fresh tails to show.
     ///
-    /// Taking `pending` as a slice rather than one result is what makes the peek valid for a
+    /// Taking `pending` as a slice rather than one result is what makes the triage valid for a
     /// multi-call completion: the trailing assistant message carries N `tool_use` blocks, so
-    /// the peek's tail must answer all N (docs/triage.md). One gate, N verdicts.
+    /// the triage's tail must answer all N (docs/triage.md). One gate, N verdicts.
     pub async fn triage_results(
         &self,
         agent: &Client,
@@ -511,11 +511,11 @@ impl Triager {
         let shown_lines = shown_lines(pending, &labels);
 
         let roster = surfaceable_roster(prefix);
-        let messages = peek_messages(prefix, self.reader(), pending, inbox, background, &roster);
+        let messages = triage_messages(prefix, self.reader(), pending, inbox, background, &roster);
 
-        let mut record = PeekRecord::default();
-        let parsed = peek_with_retries(
-            &self.client(agent, RequestOrigin::Peek),
+        let mut record = TriageRecord::default();
+        let parsed = triage_with_retries(
+            &self.client(agent, RequestOrigin::Triage),
             &agent.upstream_retry(),
             Patience::GATE,
             messages,
@@ -548,7 +548,7 @@ impl Triager {
             .zip(&labels)
             .map(|(p, label)| match bypassed(p) {
                 // Decided by the shape rule before the fork was consulted
-                // (docs/triage.md) — a `retain` entry for it, had the peek
+                // (docs/triage.md) — a `retain` entry for it, had the triage
                 // written one unasked, finds no home.
                 Some(shape) => Some(bypass_verdict(shape)),
                 None => match verdict
@@ -576,7 +576,7 @@ impl Triager {
             .collect::<Option<Vec<_>>>();
         let Some(results) = results else {
             return Err(GateFailure::new(
-                PeekFailure::Unusable("a validated verdict left a result unanswered".into()),
+                TriageFailure::Unusable("a validated verdict left a result unanswered".into()),
                 record,
             ));
         };
@@ -616,7 +616,7 @@ impl Triager {
         })
     }
 
-    /// The standalone idle-triage peek (docs/supervisor.md, docs/inbox.md): fork off
+    /// The standalone idle triage (docs/supervisor.md, docs/inbox.md): fork off
     /// the cached prefix, show the inbox + background with no tool result, and ask for
     /// the `triage` tool via the tail instruction (no `keep` — there is no tool
     /// output). The caller wakes this when an event arrives while idle and escalates to
@@ -641,10 +641,10 @@ impl Triager {
         messages.push(WireTurn::Breakpoint);
         messages.push(WireTurn::text(view));
 
-        let mut record = PeekRecord::default();
+        let mut record = TriageRecord::default();
         let (client, tools, choice) = self.idle_envelope(agent, agent_tools);
         let client = client.with_origin(RequestOrigin::Triage);
-        let parsed = peek_with_retries(
+        let parsed = triage_with_retries(
             &client,
             &agent.upstream_retry(),
             Patience::ASIDE,
@@ -675,7 +675,7 @@ impl Triager {
                 }
             }
             Err(why) => {
-                log::warn!("idle triage peek produced no usable verdict; back to idle — {why}");
+                log::warn!("idle triage produced no usable verdict; back to idle — {why}");
                 InboxTriage {
                     inbox: Vec::new(),
                     background: Vec::new(),
@@ -717,7 +717,7 @@ use validate::*;
 pub use digest_view::TriageView;
 pub use handles::reply_only_gate;
 pub use own::TriageModel;
-pub use replay::{PeekAttempt, ReplayVerdict, peek_request};
-pub use request::{PEEK_FORKS, PeekFailure};
+pub use replay::{ReplayVerdict, TriageAttempt, triage_request};
+pub use request::{TRIAGE_RESTARTS, TriageFailure};
 pub use schema::{retain_tool, triage_tool};
 pub use title::{TITLE_MAX_CHARS, TitlePeek};

@@ -24,11 +24,11 @@ fn no_usage() -> crate::api::RequestUsage {
     crate::api::RequestUsage::new(crate::api::Usage::default())
 }
 
-/// A peek on the agent's own client reads the main prefix, so it ends the session's
-/// cold belief like a turn; a peek on a separate triage client does not.
+/// A triage on the agent's own client reads the main prefix, so it ends the session's
+/// cold belief like a turn; a triage on a separate triage client does not.
 #[test]
-fn a_shared_peek_refreshes_the_cold_belief_and_an_own_peek_does_not() {
-    let usage_path = std::env::temp_dir().join("efference-cold-peek-test-usage.jsonl");
+fn a_shared_triage_refreshes_the_cold_belief_and_an_own_triage_does_not() {
+    let usage_path = std::env::temp_dir().join("efference-cold-triage-test-usage.jsonl");
     let stale = crate::log::Timestamp::now().0 - 35 * 60_000;
     std::fs::write(
         &usage_path,
@@ -44,16 +44,16 @@ fn a_shared_peek_refreshes_the_cold_belief_and_an_own_peek_does_not() {
         "the 35-minute-old turn is stale"
     );
 
-    shared.record_peek(false, no_usage());
+    shared.record_triage(false, no_usage());
     assert!(
         shared.cold_since().is_some(),
-        "a peek on a separate triage client leaves the main prefix as it was"
+        "a triage on a separate triage client leaves the main prefix as it was"
     );
-    shared.record_peek(true, no_usage());
+    shared.record_triage(true, no_usage());
     assert_eq!(
         shared.cold_since(),
         None,
-        "a shared peek re-warmed the prefix"
+        "a shared triage re-warmed the prefix"
     );
 }
 

@@ -3,7 +3,7 @@
 //!
 //! A completion may make several calls (docs/README.md), so the loop runs each call
 //! here and triages the whole batch at one gate (docs/triage.md). Splitting execution
-//! from triage is what keeps the fork's request valid: a peek fired between calls would
+//! from triage is what keeps the fork's request valid: a triage fired between calls would
 //! carry unanswered `tool_use` blocks and be rejected.
 
 use super::*;
@@ -33,7 +33,7 @@ pub(super) enum Decision {
     Direct(Vec<Payload>),
     /// The operator interrupted while this call ran (docs/control-channel.md): it
     /// finished, but its output stops at the log. Taken *before* the gate, so the
-    /// discarded result is never peeked at and costs no round-trip.
+    /// discarded result is never triaged at and costs no round-trip.
     Withheld(Payload),
     /// The human aborted at the gate; the turn ends.
     Abort(Payload),
@@ -87,9 +87,9 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
     ask_at: AskPosition,
     primer_go: Option<&tokio::sync::watch::Sender<bool>>,
 ) -> Result<Decision, Error> {
-    // An un-asked peek tool (docs/triage.md) never enters the cascade — there
+    // An un-asked triage tool (docs/triage.md) never enters the cascade — there
     // is nothing to judge or run; the paired nudge result tells the model to carry on.
-    if is_peek_tool(&call.name) {
+    if is_triage_tool(&call.name) {
         return Ok(Decision::Direct(vec![unasked(call)]));
     }
     // A call naming no tool this turn advertised is answered here, ahead of the
@@ -460,7 +460,7 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
             };
             let elapsed = started.elapsed();
             // Bound the result before it touches anything (defense in depth): the fork
-            // peek, the wire, and the logged `raw`. An over-cap result becomes a hard error
+            // triage, the wire, and the logged `raw`. An over-cap result becomes a hard error
             // so the model narrows the call.
             let result = cap_tool_result(shared, call, result);
             // A config write is the one call whose *effect* is decided after it runs

@@ -1,5 +1,5 @@
 //! The session's runtime parts: toolbox, preamble, provider client, spotter, and
-//! triage peek. Each is built from resolved config and capabilities and shared
+//! triage. Each is built from resolved config and capabilities and shared
 //! by every way a session boots.
 
 use std::path::Path;
@@ -291,7 +291,7 @@ pub(super) async fn mount_spotter(
     Ok(spotter)
 }
 
-/// The model-driven fork (docs/triage.md): every tool result is peeked and the
+/// The model-driven fork (docs/triage.md): every tool result is triaged and the
 /// canonical wire keeps only what the model retains.
 ///
 /// Sharing is explicit (docs/triage.md): an omitted triage selection
@@ -313,7 +313,7 @@ pub(super) async fn mount_triager(
                 model,
                 context_block,
             ));
-            let (peek, caps) = Triager::for_triage_model(
+            let (triager, caps) = Triager::for_triage_model(
                 &triage_endpoint,
                 triage,
                 system,
@@ -334,7 +334,7 @@ pub(super) async fn mount_triager(
                 },
                 if triage.auto_choice { "auto" } else { "forced" }
             );
-            (peek, caps.prices)
+            (triager, caps.prices)
         }
         None => {
             log::debug!("triage: {model} (shared main client)");

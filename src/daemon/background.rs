@@ -212,13 +212,13 @@ impl Session {
 
     /// What `GET /processes` and the `processes` state topic carry — structure only,
     /// no tail (docs/control-api.md). Distinct from
-    /// [`bg_snapshot`](Self::bg_snapshot), the model-facing peek view; see
+    /// [`bg_snapshot`](Self::bg_snapshot), the model-facing triage view; see
     /// [`ProcessState`](crate::supervisor::ProcessState) for why they diverge.
     pub(crate) fn process_states(&self) -> Vec<crate::supervisor::ProcessState> {
         self.supervisor.lock().unwrap().process_states()
     }
 
-    /// The peek's ambient `background` section (docs/supervisor.md) — a snapshot of
+    /// The triage's ambient `background` section (docs/supervisor.md) — a snapshot of
     /// running, un-muted processes, taken under the lock so the loop can hand it to
     /// the fork, which then awaits.
     pub fn bg_snapshot(&self) -> Vec<BgView> {

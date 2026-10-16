@@ -197,7 +197,7 @@ fn only_openrouter_carries_the_sticky_key() {
     assert_eq!(Provider::OpenAICodex.session_header(), Some("session-id"));
 }
 
-/// The separate-model peek's key is its own: distinct from the agent's and the
+/// The separate-model triage's key is its own: distinct from the agent's and the
 /// spotter's, under the same cap, and absent when the agent has none
 /// (docs/triage.md, docs/transport.md).
 #[test]

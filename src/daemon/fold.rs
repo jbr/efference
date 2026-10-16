@@ -160,7 +160,7 @@ impl Session {
     /// Ask for a fold (`POST /loop/fold`), or say why it cannot run. A fold already
     /// writing is accepted again, as one request. A loop parked at its cold check or
     /// held at a triage gate sends nothing while the account is written, so either
-    /// accepts a fold; the held gate's retry then peeks the folded projection. `warm` is the operator's explicit
+    /// accepts a fold; the held gate's retry then triages the folded projection. `warm` is the operator's explicit
     /// choice to fold a session whose cache is not believed expired, giving up the
     /// cached prefix; without it a warm session declines.
     pub(crate) fn request_fold(&self, warm: bool) -> Result<(), NotFoldable> {

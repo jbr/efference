@@ -84,7 +84,7 @@ impl From<Triaged> for WireState {
 
 /// What of a tool result survives on the canonical wire (docs/triage.md).
 /// Ranges are 1-based inclusive line spans, interpreted against the first
-/// `PEEK_LINE_CAP` lines — the set the triage showed the model.
+/// `TRIAGE_LINE_CAP` lines — the set the triage showed the model.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Keep {
     /// Keep every (shown) line.

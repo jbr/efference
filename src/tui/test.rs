@@ -61,7 +61,7 @@ fn null_upstream_failure_is_absent() {
 #[test]
 fn parses_upstream_retry() {
     let topic = serde_json::json!({
-        "surface": "peek",
+        "surface": "triage",
         "attempt": 2,
         "budget": 12,
         "next_attempt_at": 1754300002000u64,
@@ -69,7 +69,7 @@ fn parses_upstream_retry() {
         "detail": "upstream SSE stream failed mid-stream: connection reset",
     });
     let retry = parse_upstream_retry(&topic).expect("upstream retry");
-    assert_eq!(retry.surface, "peek");
+    assert_eq!(retry.surface, "triage");
     assert_eq!(retry.message, "attempt 2 of 12 failed upstream, retrying");
 }
 
@@ -91,7 +91,7 @@ fn retry_indicator_names_the_surface() {
         "↻ attempt 2 of 12 failed upstream, retrying · ⏎ retries now"
     );
     assert_eq!(
-        upstream_retry_indicator(Some(&view("peek"))).unwrap(),
+        upstream_retry_indicator(Some(&view("triage"))).unwrap(),
         "↻ triage: attempt 2 of 12 failed upstream, retrying · ⏎ retries now"
     );
     assert!(upstream_retry_indicator(None).is_none());

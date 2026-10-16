@@ -2,7 +2,7 @@
 
 The inbox is the realized form of "enqueue then triage": background and out-of-band
 events interrupt the agent by enqueuing, but never mid-thought. Each time the agent
-finishes an action and runs the triage triage (see `triage.md`), it grooms
+finishes an action and runs triage (see `triage.md`), it grooms
 its inbox in the same throwaway branch at no extra round-trip.
 
 ## What a notification is
@@ -107,7 +107,7 @@ gets to replace.
 ## Event-sourced, logged at first-show
 
 A notification is appended to the log as a `Payload::Ambient` entry the moment a fork
-peek first shows it to the model — not at arrival. A notification created and then
+triage first shows it to the model — not at arrival. A notification created and then
 superseded or dismissed before any gate sees it never enters the log: from the log's
 perspective it never happened.
 
@@ -152,8 +152,8 @@ on `GET /state` only when set). At its first show the loop pins it whatever the
 fork's verdict — a dismiss is overridden, a leave is filled in — so an idle agent
 escalates to a real turn on it and a running one carries it into the wire at the
 next gate. Whether the agent wakes is thereby declared by the sender, not judged by
-the peek; the peek keeps everything downstream of that: the rest of the inbox, the
-background tails, its note. A peek that fails outright changes nothing here, since
+the triage; the triage keeps everything downstream of that: the rest of the inbox, the
+background tails, its note. A triage that fails outright changes nothing here, since
 the pin is applied by the loop after the verdict returns. An escalated trajectory
 marks the loop `running` itself, since no submitted turn was claimed to do it: from
 the escalation until the loop parks, `/settle` blocks and the status watcher reports
