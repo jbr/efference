@@ -411,6 +411,14 @@ pub(crate) async fn host(
         tokio::spawn(auth.keep_renewed());
     }
     let host = efference::daemon::Host::new(inference, launch_baseline);
+    // The sessions the last host left open, reopened in the background while this one
+    // serves (docs/resumption.md).
+    tokio::spawn({
+        let host = std::sync::Arc::clone(&host);
+        async move {
+            host.resume_open_sessions().await;
+        }
+    });
     if let Some(owner) = &owner {
         owner.adopt(host.swansong());
     }

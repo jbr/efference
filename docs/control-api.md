@@ -286,6 +286,8 @@ sessions from one process. Its own routes are the listener's, not a session's:
   `resume_failure`. `400` naming the reason when the body is malformed, patches
   nothing, or names a session that cannot be resumed from the request alone (no
   such directory); `404` for an `archived` patch on an id that is not hosted.
+  The host makes this same patch for each session left open when the last host stopped,
+  with `refuse_authorization`, as it starts (the boot resume, [resumption.md](resumption.md)).
   An `archived` patch answers as `DELETE` does, including the `worktree` field
   below; resuming a session that made its own worktree re-creates the worktree at
   its original path, from the kept branch when there is one.

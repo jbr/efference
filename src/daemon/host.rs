@@ -54,6 +54,8 @@ use entries::{Entry, Sessions};
 
 mod preparation;
 
+mod boot_resume;
+
 mod routes;
 pub(crate) use routes::host_routes;
 use routes::{host_of, missing_host, no_such_session};
@@ -85,6 +87,9 @@ pub struct Host {
     /// Scanned rows of the dormant sessions under each root asked about
     /// (`archived.rs`, docs/log-and-projection.md).
     inventory: crate::inventory::Inventory,
+    /// Turns `true` when the host-start pass (the empty-log sweep, then the id backfill)
+    /// has run; the boot resume waits for it (`boot_resume.rs`).
+    start_pass: tokio::sync::watch::Receiver<bool>,
     /// The host's own environment, captured once at start (docs/env.md).
     ///
     /// This is the base a session launched without a caller-supplied environment
@@ -180,7 +185,8 @@ impl Host {
             .map_or_else(crate::remembered::Projects::disabled, |path| {
                 crate::remembered::Projects::at(path.to_owned())
             });
-        Self::backfill_session_ids(&session_ids, &remembered, std::time::SystemTime::now());
+        let start_pass =
+            Self::backfill_session_ids(&session_ids, &remembered, std::time::SystemTime::now());
         Arc::new(Self {
             swansong: Swansong::new(),
             catalog,
@@ -193,6 +199,7 @@ impl Host {
             failed: Mutex::new(BTreeMap::new()),
             resume_failures: Mutex::new(BTreeMap::new()),
             inventory: crate::inventory::Inventory::new(),
+            start_pass,
             host_env,
             listing_changed: Notify::new(),
             attention: Arc::default(),
@@ -203,13 +210,15 @@ impl Host {
     /// the session directories, in a background thread, so a slow volume does not
     /// hold up boot. A collision —
     /// one id under two roots — is reported and nothing else happens
-    /// (docs/session-title.md).
+    /// (docs/session-title.md). The receiver turns `true` when the thread is done,
+    /// which is what the boot resume waits for.
     fn backfill_session_ids(
         session_ids: &crate::session_ids::SessionIds,
         remembered: &crate::remembered::Projects,
         booted: std::time::SystemTime,
-    ) {
+    ) -> tokio::sync::watch::Receiver<bool> {
         let (session_ids, remembered) = (session_ids.clone(), remembered.clone());
+        let (done, passed) = tokio::sync::watch::channel(false);
         std::thread::spawn(move || {
             // Empty logs a previous host left are removed first, so the backfill
             // registers only what stays (docs/resumption.md).
@@ -222,7 +231,9 @@ impl Host {
                     collision.other.display()
                 );
             }
+            let _ = done.send(true);
         });
+        passed
     }
 
     /// The root every session runtime is a child of. Listeners are configured

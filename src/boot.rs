@@ -389,4 +389,4 @@ pub fn describe_window(window: Option<u64>) -> String {
 }
 
 #[cfg(test)]
-mod test;
+pub(crate) mod test;

@@ -120,18 +120,26 @@ own position as before.
 
 ## Nothing runs before the operator's first action
 
-A resumed session starts no trajectory on its own, and no model request on a cold cache
-the operator didn't choose. The idle loop in `agent::run` waits on a user turn, an inbox
-wake or a continue. A notification that arrived without a slot is a log entry, so the
-loader restores the unshown ones with the rest of the log (`inbox::unshown`,
+A resumed session starts no trajectory on its own and sends no model request of its own,
+whether the cache is believed warm or cold, and whether the resume was by hand or at host
+start. The only thing that runs is the keepalive for a cache believed warm
+([transport.md](transport.md)). The idle loop in `agent::run` waits on a user turn, an
+inbox wake or a continue. A notification that arrived without a slot is a log entry, so
+the loader restores the unshown ones with the rest of the log (`inbox::unshown`,
 [inbox.md](inbox.md)): nothing is dropped as stale, and the next triage offers them all,
-whatever their age. A restored unshown notification wakes the idle loop as a live one does.
-That wake waits while the cache is believed cold, so a session resumed past the cache's
-lifetime requests nothing until a person acts; one resumed inside it runs a standalone
-triage at once, as a live session left idle would. A slot notification was only ever in
-memory and is lost, as are subscriptions, which are host state; keepalive waits on clocks
-only a real request sets. The kickoff fires only on a log with no `User` entry, which a
-resume reaches only if the host stopped between submitting the kickoff and appending it.
+whatever their age. The idle wake does not count them: it looks only at a notification
+that arrived after the session was built (a seq at or past the log's length when the
+session was constructed) and at the in-memory slot queue, which a resume starts empty. So
+no idle triage runs over what was restored, no title ask follows it, and no status reaches
+a subscriber (a status is posted when a trajectory ends into idle, and none has run). A
+notification arriving after the resume wakes the idle loop as it would any session, subject
+to the cold hold, and the triage it starts offers the restored ones with it; a restored
+must-wake notification is pinned at its first show as any is. What gets the agent going
+again is an interaction: a turn, an empty turn, a continue. A slot notification was only
+ever in memory and is lost, as are subscriptions, which are host state; keepalive waits on
+clocks only a real request sets. The kickoff fires only on a log with no `User` entry,
+which a resume reaches only if the host stopped between submitting the kickoff and
+appending it.
 
 **The first action replays a pending batch.** At each idle wake the loop derives the
 pending batch from the log (`recovery::pending_batch`), with no flag to drift. A
@@ -251,6 +259,25 @@ the session. That is not a `problem`: the session reads fine and stays resumable
 retry is the same PATCH. Archiving a session while it is starting cancels the resume and
 ends its log in `Archived` unless that is already its last lifecycle entry, so it reads as
 archived rather than interrupted.
+
+**The resume at boot.** After the host-start pass that sweeps empty logs and registers
+ids, a background task (`Host::resume_open_sessions`, `src/daemon/host/boot_resume.rs`)
+reads the remembered roots and resumes every session whose row is `interrupted` and has no
+`problem`, through the same `Host::resume` the PATCH reaches: each is reserved as
+`starting` and prepared in the background while the host serves, with
+`refuse_authorization` set so a server that asks for authorization fails that session's
+resume instead of opening a browser for each. At most four sessions prepare at once
+(`BOOT_PREPARING`); the next starts when one has started or failed. A session that fails
+stays dormant with its `resume_failure`, and nothing in the pass stops the host. The pass
+runs creators before the children that end with them: a session whose header's
+`created_by` names another session in the pass waits until that one is hosted, not merely
+starting, because `recorded_lineage` keeps a creator only while it is hosted. A creator
+that failed leaves its child standing on its own, as one whose creator was archived does,
+and a creator chain that loops back on itself is broken. `detached` is read from the
+header, so a non-detached child ends with its creator again. Session ids are unique
+across roots (the register), so a session is resumed from one root only. The supervisor
+pointer and succession are host state and start again from the creator
+(`Hosted.supervisor`), as after any resume.
 
 The PATCH is idempotent. On a live or starting session it answers `200` with
 `resumed: false`; the revival itself answers `resumed: true`. The same id live under a different root is `409`
