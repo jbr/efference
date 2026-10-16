@@ -142,13 +142,7 @@ pub fn render_result(
     wire: &WireState,
     reply: Option<AskReply<'_>>,
 ) -> UserPart {
-    let (content, is_error) = match wire {
-        WireState::Raw => (raw.content.clone(), raw.is_error),
-        WireState::Pending => ("[awaiting triage]".to_string(), false),
-        WireState::Triaged(verdict) => (render_triaged(&raw.content, verdict), raw.is_error),
-        WireState::Elided => ("[elided]".to_string(), false),
-        WireState::TriageFailed { why } => (render_triage_failure(why), true),
-    };
+    let (content, is_error) = result_content(raw, wire);
     let images = match wire {
         WireState::Raw | WireState::Triaged(_) => raw.images.clone(),
         WireState::Pending | WireState::Elided | WireState::TriageFailed { .. } => Vec::new(),
@@ -165,6 +159,19 @@ pub fn render_result(
         },
         is_error,
         images,
+    }
+}
+
+/// A result's text and error flag as the model reads them, before the `[seq]` handle:
+/// the verdict applied to `raw` (docs/triage.md). The separate triage's text view shows
+/// recent results this way too.
+pub fn result_content(raw: &RawResult, wire: &WireState) -> (String, bool) {
+    match wire {
+        WireState::Raw => (raw.content.clone(), raw.is_error),
+        WireState::Pending => ("[awaiting triage]".to_string(), false),
+        WireState::Triaged(verdict) => (render_triaged(&raw.content, verdict), raw.is_error),
+        WireState::Elided => ("[elided]".to_string(), false),
+        WireState::TriageFailed { why } => (render_triage_failure(why), true),
     }
 }
 

@@ -240,7 +240,7 @@ fn the_cut_marks_the_first_rendered_block_past_it() {
 /// The digest at one triage extends the digest at every earlier one, byte for byte:
 /// the triage's history ends at the assistant turn that made its calls, and every earlier
 /// result has its verdict by then. That is what lets a triage request that reads the
-/// digest resume a cached prefix (backlog: separate-triage-reads-text.md).
+/// digest resume a cached prefix (docs/triage.md).
 #[test]
 fn the_digest_at_a_gate_extends_the_digest_at_every_earlier_gate() {
     let log = [
@@ -278,4 +278,82 @@ fn the_digest_at_a_gate_extends_the_digest_at_every_earlier_gate() {
             pair[1]
         );
     }
+}
+
+/// The verbatim form: each call with its arguments, then its result as the agent read it
+/// — the kept lines and the note, indented under the call — and no `[seq]` handle.
+#[test]
+fn verbatim_renders_each_call_in_full_with_its_kept_lines() {
+    let log = [
+        user(1, "find the enum"),
+        assistant(2, "Looking.", vec![read_call("c1")]),
+        entry(
+            3,
+            Payload::ToolResult {
+                call_id: "c1".into(),
+                raw: RawResult::text("pub enum E {\n    A,\n}\n\nfn other() {}"),
+                wire: WireState::Triaged(
+                    Triaged::new(Keep::Ranges(vec![(1, 3)])).with_note("Defined in a.rs."),
+                ),
+            },
+        ),
+        assistant(
+            4,
+            "",
+            vec![ToolCall::new("bash", "c2", json!({"command": "x"}))],
+        ),
+        triaged(5, "c2", RawResult::error("no such command"), "x is missing"),
+    ];
+    let options = Options {
+        verbatim: true,
+        ..Options::default()
+    };
+    assert_eq!(
+        render(&log, options),
+        "### operator\nfind the enum\n\n\
+         ### agent\nLooking.\n\n\
+         • read {\"intent\":\"find where the enum is defined\",\"paths\":[\"src/a.rs\",\"src/b.rs\"]}\n\
+         \x20   @@ lines 1-3 @@\n\
+         \x20   pub enum E {\n\
+         \x20       A,\n\
+         \x20   }\n\
+         \x20   @@ 5 lines total @@\n\
+         \x20   ⟢ Defined in a.rs.\n\n\
+         • bash {\"command\":\"x\"}\n\
+         \x20   (error)\n\
+         \x20   no such command\n\
+         \x20   ⟢ x is missing\n\n"
+    );
+}
+
+/// A log rendered in spans that each begin at an assistant entry concatenates to the
+/// whole render; a hidden entry is left out of every span.
+#[test]
+fn spans_split_before_assistant_entries_concatenate_to_the_whole() {
+    let log = [
+        user(1, "find the enum"),
+        assistant(2, "Looking.", vec![read_call("c1")]),
+        triaged(3, "c1", RawResult::text("a"), "Defined in a.rs."),
+        user(4, "and its uses"),
+        assistant(5, "Now its uses.", vec![read_call("c2")]),
+        triaged(6, "c2", RawResult::text("b"), "Used twice."),
+        assistant(7, "Done.", vec![]),
+    ];
+    for verbatim in [false, true] {
+        let options = Options {
+            verbatim,
+            ..Options::default()
+        };
+        let fold = Fold::new(&log);
+        let pieces = [0..1, 1..4, 4..6, 6..7]
+            .into_iter()
+            .map(|span| fold.render(span, options))
+            .collect::<String>();
+        assert_eq!(pieces, render(&log, options));
+    }
+    let mut fold = Fold::new(&log);
+    fold.hide([1, 4]);
+    let text = fold.render(0..log.len(), Options::default());
+    assert!(!text.contains("find the enum") && !text.contains("and its uses"));
+    assert!(text.contains("Used twice."));
 }

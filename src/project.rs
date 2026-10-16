@@ -206,7 +206,7 @@ mod wire;
 pub use messages::encode_messages;
 pub use semantic::{
     DialectConflict, UserPart, WireTurn, check_dialect, project_semantic, project_semantic_for,
-    recorded_dialect, render_result,
+    recorded_dialect, render_result, result_content,
 };
 
 pub use render::{
