@@ -257,7 +257,7 @@ There is still no always-allow mode, and `ConfigEdit` is not one: it is a **spec
 
 ```
 (inner loop, per step; pace + drain skipped on the first step of a trajectory)
-pace_at_juncture (interruptible sleep) → drain injected user turns → project → complete → append Assistant →
+pace_at_juncture (interruptible sleep) → drain queued user turns → project → complete → append Assistant →
   { approve     → run → append ToolResult
   | config_edit → append ConfigEdit (fold policy; notify if session-visible) → re-classify → {approve|redirect}
   | abort       → append ToolResult(is_error)
