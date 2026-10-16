@@ -148,3 +148,61 @@ fn both_shapes_name_the_result_blocks_by_header() {
         "{many}"
     );
 }
+
+/// A result carrying images says so in its header and the ask says they pass through; a
+/// result without images gets neither (docs/triage.md).
+#[test]
+fn image_results_are_marked_and_the_ask_says_they_pass_through() {
+    use crate::log::ResultImage;
+    let call = ToolCall::new("read_image", "img_1", json!({}));
+    let image = || ResultImage {
+        media_type: "image/webp".into(),
+        data: "UklGRg==".into(),
+        width: 10,
+        height: 10,
+    };
+    let with = RawResult::text("10×10 image/webp").with_images(vec![image()]);
+    let (results, ask) = triage_parts(
+        &[Pending {
+            call: &call,
+            raw: &with,
+        }],
+        &[],
+        &[],
+        &[],
+        Reader::Main,
+    );
+    assert!(
+        results[0]
+            .content
+            .starts_with("═══ result r1 · read_image ═══\nimages: 1 image — not shown here; reaches the agent as it is\n"),
+        "{}",
+        results[0].content
+    );
+    assert!(
+        ask.contains("  images      A result header that says `images:` is a result that carries images. They reach\n              the agent as they are, whatever you decide, and are not yours to triage:"),
+        "{ask}"
+    );
+    assert!(
+        ask.contains("write no note about the\n              image or whether it was retained."),
+        "{ask}"
+    );
+
+    let plain = RawResult::text("alpha");
+    let (results, ask) = triage_parts(
+        &[Pending {
+            call: &call,
+            raw: &plain,
+        }],
+        &[],
+        &[],
+        &[],
+        Reader::Main,
+    );
+    assert!(
+        !results[0].content.contains("images:"),
+        "{}",
+        results[0].content
+    );
+    assert!(!ask.contains("  images      "), "{ask}");
+}

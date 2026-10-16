@@ -392,6 +392,16 @@ pub(super) const INBOX_FIELD: &str =
               `dismiss` the noise; any id you don't list stays in the inbox and is shown
               again at the next decision point.";
 
+/// Offered when a result in the triage carries images. They reach the agent whatever the
+/// verdict (`render_result` projects `raw.images` for every triaged verdict), and the triage
+/// request does not carry them, so without this row a note says the image "was not retained"
+/// (docs/triage.md).
+pub(super) const IMAGES_FIELD: &str =
+    "  images      A result header that says `images:` is a result that carries images. They reach
+              the agent as they are, whatever you decide, and are not yours to triage: triage the
+              text (for `read_image`, the header line) and the inbox, and write no note about the
+              image or whether it was retained. `keep: none` on such a result drops only its text.";
+
 pub(super) const BACKGROUND_FIELD: &str =
     "  background  The processes under \"background\" in the sections after this ask, a [p#n]
               handle each. `pin` the handles whose current output you want captured onto the
@@ -532,6 +542,14 @@ pub(super) fn result_view(label: &str, call: &ToolCall, raw: &RawResult) -> Stri
     if let Some(intent) = call.intent() {
         view.push_str(&format!("intent: {intent}\n"));
     }
+    // The images are not in this request; the agent receives them whatever the verdict.
+    if !raw.images.is_empty() {
+        let n = raw.images.len();
+        let noun = if n == 1 { "image" } else { "images" };
+        view.push_str(&format!(
+            "images: {n} {noun} — not shown here; reaches the agent as it is\n"
+        ));
+    }
     view.push_str(&number_lines(lines));
     if dropped > 0 {
         view.push_str(&format!("\n       … [{dropped} more lines truncated] …"));
@@ -648,6 +666,12 @@ pub(super) fn triage_parts(
     let labels = labels(pending);
     let offered: Vec<String> = labels.iter().flatten().cloned().collect();
     let mut riders: Vec<&str> = Vec::new();
+    if pending
+        .iter()
+        .any(|p| bypassed(p).is_none() && !p.raw.images.is_empty())
+    {
+        riders.push(IMAGES_FIELD);
+    }
     if !inbox.is_empty() {
         riders.push(INBOX_FIELD);
     }

@@ -9,6 +9,7 @@ behind a change, see [`journal/`](journal/).
 
 ### Added
 
+- A triage view marks a result that carries images, and the ask says they reach the agent as they are, so notes stop claiming an image was not retained (docs/triage.md).
 - A triaged result says what was dropped (docs/triage.md): one that kept nothing opens with `(output dropped by triage)` before its note, a cut result ends with `@@ n lines total @@`, and trailing blank lines count as covered.
 - A triage request reads result blocks, then the ask, then the riders under an `also pending` header; a notification no verdict mentions across 3 triages is dismissed with a `telemetry.inbox_expired` entry (docs/triage.md, docs/inbox.md).
 - `efference dev triage` replays a triage with the inbox rider the live one was shown, and notes when a replayed triage had background processes whose tails were not logged (docs/triage.md).

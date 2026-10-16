@@ -482,6 +482,17 @@ the selection preserves original numbers across elisions so any kept line maps
 back to the raw. The raw in the log stays pristine; numbering is a render transform
 applied only inside the throwaway branch.
 
+## Images pass through triage
+
+A result's images reach the agent whatever the verdict: `keep` selects text lines only,
+and projection carries `raw.images` for every triaged verdict. The triage request does not
+carry them. So that its notes do not describe what the agent has wrongly (`keep: none`
+on a `read_image` result drew notes like "the screenshot was viewed, not retained"), a
+result with images has an `images: N image — not shown here; reaches the agent as it is`
+line in its header, and the ask gains an `images` row saying they are not triage's
+decision: triage the text and the inbox, and write no note about the image. `keep: none`
+stays valid and drops only the text.
+
 ## Two renderings: the fork view and the canonical wire
 
 Line-per-line numbering inflates the canonical wire — a keep-all verdict on a
