@@ -232,7 +232,7 @@ enforceable, and they are enforced by the executor rather than by config:
 
 While `state` shows the `cold` topic, a `turn` or an `approve` (other than `abort`) is
 followed by a request that reads the whole context uncached (`context_tokens`). Both go
-through; a driver that would rather not pay can fold first (`POST /loop/fold`). A turn
+through; a driver that would rather not pay can compact first (`POST /loop/compact`). A turn
 or decision is also the person action that releases a loop parked at its cold check
 ([control-api.md](control-api.md)).
 
@@ -264,7 +264,7 @@ its intent, the spotter's reason, the `call_id`, and that `sessions__approve`
 resolves it), **idle** after a turn completed (with the turn's closing prose,
 truncated), **stalled** (docs/transport.md), **parked** (the loop stopped at its cold
 check mid-turn: the cache is believed expired, so continuing pays the context uncached,
-and a fold summarizes instead; docs/control-api.md), and **ended** or **failed** once the
+and a compaction summarizes instead; docs/control-api.md), and **ended** or **failed** once the
 runtime has returned. `running` is observed to detect the transitions and never
 posted; the boot idle is not posted either. Every body says where the target's log
 stands, so the subscriber pulls the transcript from where it last read. The status

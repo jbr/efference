@@ -43,7 +43,7 @@ enum Payload {
     ToolResult { call_id: CallId, raw: RawResult, wire: WireState },
     ResultVerdict { for_result: Seq, wire: WireState },  // the final wire for a `Pending` result (see triage.md)
     Resumed(Resumed),  // the session was reopened by a later host process — projects a restart notice
-    Mark(Mark),        // a salience annotation
+    Summary(Summary),  // text replacing a range of the transcript — consolidation or compaction (see summary.md)
     Ambient(Notification),  // an out-of-band notification (see inbox.md)
     Triage(Triage),    // a triage verdict — the audit record (see triage.md)
     Spot(Spot),        // a spotter permission verdict — audit only (see permissions.md)
@@ -54,9 +54,6 @@ enum Payload {
     Title(Title),      // the session's one-line title — presentation only, never projected (see session-title.md)
     Worktree(WorktreeEvent),  // the session's git worktree added, restored, removed, or kept — never projected (see worktrees.md)
     ImagesRefused { refusal: String },  // the endpoint refused images; the client withholds them from here — never projected (see transport.md)
-    // Anticipated, not yet built: a frozen cache-breakpoint boundary (`Commit`)
-    // for compaction. Kept here as a forward marker — types land ahead of the
-    // feature that constructs them — not present in the code today.
 }
 ```
 
@@ -81,9 +78,6 @@ a variant's contents matches it by name — the `[env]` masker (a failed request
 the `current_operations` fold, the web client attaching `Tool` to its call. Payloads that
 project to nothing but are rendered somewhere (`ProcessEvent`, `Worktree`, `Title`,
 `ImagesRefused`) stay top-level.
-
-`Commit` is a placeholder: when compaction needs an explicit freeze primitive
-it slots in here without touching any other type.
 
 A `User` entry's blocks are prose and, after it, the files its composer
 attached: `ContentBlock::Attachment` records a file's store name, path, and
@@ -130,7 +124,7 @@ to explain what the session did; what streams per token stays on the ephemeral
 session and continued past the log's highest after a restart (the provider's
 generation id arrives late or never). `origin` is the same `RequestOrigin` the
 `usage.jsonl` lines carry (`turn`, `triage`, `title`, `spot`, `keepalive`,
-`triage_primer`, `triage_keepalive`, `narrate`, `consolidation`, `aborted_attempt`). `stage` is `sent` (handed to the
+`triage_primer`, `triage_keepalive`, `compaction`, `consolidation`, `aborted_attempt`). `stage` is `sent` (handed to the
 transport), `attempt_failed {attempt, status}` (a refused attempt the transport may
 re-send), `first_byte` (the first stream event), `ended` (the stream finalized), or
 `failed {reason}` (an open failure, a stream that died or passed its ceiling, or
@@ -347,23 +341,24 @@ operator stopped a call whose output they did not want in the context, so `raw`
 stays in the log and the wire carries nothing. Elision does *not* fold the paired
 `tool_use` away — the pair is the reason the placeholder exists.
 
-### `Mark` / `MarkKind`
+### `Summary`
 
 ```rust
-struct Mark { kind: MarkKind, note: String }
-enum MarkKind {
-    Boundary { upto: Seq },  // digest/narrator head fold
-    Span { from: Seq, upto: Seq }, // newly completed working span
-    // decision / dead-end / relevance kinds land when they get a construction site
+struct Summary {
+    from: Seq, upto: Seq,   // the inclusive range it replaces; a head summary has from == 0
+    text: String,
+    made_by: MadeBy,        // Consolidation (default, omitted when serialized) | Compaction(LoggedInference)
+    audience: Audience,     // All (default, omitted) | Triage
 }
 ```
 
-A mark drives compaction entirely inside `project`: `Boundary` folds the head
-`seq <= upto`; `Span` replaces only the inclusive `from..=upto` working range.
-Each injects its account before the first retained entry after the range.
-Earlier working-span accounts remain outside later normal consolidation ranges.
-There is no separate mutation of stored entries; the fold is a projection
-concern, not a log mutation. See [consolidate.md](consolidate.md).
+A summary replaces the inclusive range `from..=upto` entirely inside `project`
+and injects its text before the first retained entry after the range. A
+consolidation's text is introduced by a harness-note line; a compaction's is
+projected as written. Earlier summaries remain outside later consolidation
+ranges. There is no mutation of stored entries; the replacement is a projection
+concern, not a log mutation. See [summary.md](summary.md) and
+[consolidate.md](consolidate.md).
 
 ### `project_semantic` and the encoders
 
@@ -376,7 +371,7 @@ fn project(log) -> Vec<ApiMessage>   // = encode_messages(project_semantic(log),
 
 Projection is two stages. `project_semantic` (`src/project/semantic.rs`) is the
 dialect-neutral fold: it decides **selection** — which entries reach the wire, the
-compaction fold driven by a pre-pass over applicable `Mark` ranges, result verdicts
+range replacement driven by a pre-pass over applicable `Summary` ranges, result verdicts
 (`Triaged` re-rendered from `keep` + `raw`, `Elided`, `TriageFailed`), pinned
 notifications, surfaced context, and every audit-only exclusion — and renders what
 every dialect sends identically (result text with its `[seq]` handle, and the
@@ -385,7 +380,7 @@ a list of `WireTurn`s:
 
 ```rust
 enum WireTurn {
-    User(Vec<UserPart>),          // prose, tool results, fold summaries, pins — log order
+    User(Vec<UserPart>),          // prose, tool results, summaries, pins — log order
     Assistant(AssistantOutput),   // one model turn, owned (a fork tail appends synthetic ones)
     Breakpoint,                   // a cache-write boundary requested here
 }
@@ -429,7 +424,7 @@ one.
 ### The header
 
 ```rust
-{"format":"efference-session-log","version":3,"metadata":{…}}
+{"format":"efference-session-log","version":4,"metadata":{…}}
 ```
 
 The header is one JSON object and nothing else. It is **not** a `LogEntry`: it
@@ -448,13 +443,16 @@ so a newer file's incompatible metadata reports as the unsupported version it
 is rather than as a field this build happens not to know. There is no
 importer for an unheadered log and no serializer kept for an old shape.
 
-The reader accepts exactly one version, the current one: 3. Version 2 nested the telemetry
+The reader accepts exactly one version, the current one: 4. Version 2 nested the telemetry
 payloads under `Telemetry`; version 3 renamed `WireState::Distilled` to `Triaged` and the
-`peek` request origin to `triage`. An incompatible change to the entries, including a change of
+`peek` request origin to `triage`; version 4 replaced the `Mark` entry with `Summary`
+(`kind` and `note` became `from`, `upto` and `text`; `writer` became `made_by`) and renamed
+the `narrate` request origin to `compaction`. An incompatible change to the entries, including a change of
 meaning that leaves their shape intact, increments the version. Before launch there is no
 in-harness migration: the existing logs are converted once, outside the harness, with the
-host stopped — the 1→2 pass is `scripts/migrate-log-v2.py` and the 2→3 pass (which also
-rewrites `usage.jsonl`) is `scripts/migrate-log-v3.py`; the unheadered→1 pass was the
+host stopped — the 1→2 pass is `scripts/migrate-log-v2.py`, the 2→3 pass (which also
+rewrites `usage.jsonl`) is `scripts/migrate-log-v3.py`, and the 3→4 pass (likewise) is
+`scripts/migrate-log-v4.py`; the unheadered→1 pass was the
 2026-10-02 corpus migration (journal/2026-10-02-resumption-foundation-and-corpus-migration.md)
 — and a file a pass missed is refused as the unsupported version it is.
 
@@ -878,9 +876,9 @@ this:
   enters the log and never changes — so no cached prefix entry is ever
   mutated. The invariant holds by construction.
 
-- **Compaction replaces a named range.** A `MarkKind::Span` elides
-  `from..=upto` and injects its account; the retained prefix before `from`
-  stays byte-stable. `Boundary` folds the head through `upto`. Both deliberately
+- **A summary replaces a named range.** A `Summary` elides `from..=upto` and
+  injects its text; the retained prefix before `from` stays byte-stable. A head
+  summary (`from == 0`) replaces everything through `upto`. Both deliberately
   invalidate prefix-cache reuse from the replacement's start onward, while
   retaining the content after the range.
 
@@ -892,8 +890,7 @@ this:
   [inbox.md](inbox.md).
 
 Because triage-at-append never touches a committed entry, no explicit freeze
-primitive is needed yet. A `Commit` payload that freezes a boundary is
-anticipated (see `Payload` above) but not built. Keeping the canonical lineage
+primitive is needed. Keeping the canonical lineage
 lean — triaged, not raw — also keeps consecutive breakpoints inside the
 20-block window longer.
 
@@ -907,7 +904,7 @@ Correctness can never depend on the memo.
 
 Its invalidation boundary coincides with the prompt-cache breakpoint: every
 tail append extends the wire only at the tail, and the one event that rewrites
-the prefix — a consolidation mark — is exactly the "one deliberate cache
+the prefix — a summary — is exactly the "one deliberate cache
 write." Incremental re-derivation follows the same prefix/tail boundary the
 cache already imposes.
 
@@ -923,4 +920,4 @@ projected context, with its instruction after the shared-prefix breakpoint
 does not send the loop's exact prompt or become the diagnostics comparison base.
 `Telemetry::Consolidation` records the frozen bounds, examined context sequence,
 post-verdict tool-text budget, disposition and adopted account byte count. It
-projects to nothing; only an adopted span mark contributes account text.
+projects to nothing; only an adopted summary contributes account text.

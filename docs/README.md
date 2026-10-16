@@ -50,7 +50,7 @@ from it is how most harnesses work; what efference commits to on top of that is:
   verdict is reversible and auditable.
 - **`project` is byte-deterministic, and tests pin it** (see the invariants
   below).
-- **Decisions get first-class log entries** — salience marks, triage verdicts,
+- **Decisions get first-class log entries** — summaries, triage verdicts,
   spotter verdicts, config edits — recorded at the moment they're known.
 
 ```rust
@@ -60,7 +60,7 @@ enum Payload {
     User(Vec<ContentBlock>),
     Assistant { text: Vec<ContentBlock>, calls: Vec<ToolCall> },
     ToolResult { call_id: CallId, raw: RawResult, wire: WireState },
-    Mark(Mark),         // a salience annotation (e.g. a consolidation fold-point)
+    Summary(Summary),   // text replacing a range of the transcript (consolidation or compaction)
     Ambient(Notification),  // an out-of-band notification
     Triage(Triage),     // a triage verdict — the audit record
 }
@@ -79,7 +79,7 @@ changes rather than log rewrites:
 
 | Behavior | Becomes |
 | --- | --- |
-| Intent-aware compaction (drop dead-end deliberation, keep the conclusion) | a projection that keeps `Mark`s and elides the spans they summarize |
+| Intent-aware compaction (drop dead-end deliberation, keep the conclusion) | a projection that keeps `Summary` entries and elides the ranges they replace |
 | Continuous scrubbing (drop the irrelevant lines of a result) | a projection that `Elide`s or `Triaged` those entries |
 | Progressive doc/tool reveal | a projection where a subtree / tool-def hasn't been expanded yet |
 | Reversibility of all of the above | raw output is never overwritten |
@@ -157,7 +157,7 @@ Read top-down; open the subsystem doc you need.
 | Tools (in-process `Tool` trait; in-process MCP; per-call telemetry) | [tools.md](tools.md) | `src/tools.rs`, `src/bash.rs`, `src/agent/telemetry.rs` |
 | Trajectory consolidation (completed working spans and juncture checks) | [consolidate.md](consolidate.md) | `src/consolidate.rs`, `src/agent.rs` |
 | Trajectory digest (one line per call, the summarization substrate) | [digest.md](digest.md) | `src/digest.rs` |
-| Summary head (a model-written account of the trajectory, spliced in as a boundary mark) | [summary-head.md](summary-head.md) | `src/narrate.rs`, `src/project.rs`, `assets/prompts/` |
+| Summaries (the record that replaces a range of the transcript) and compaction (the harness writing one from the digest) | [summary.md](summary.md) | `src/log/summary.rs`, `src/compact.rs`, `src/daemon/compact.rs`, `src/project.rs`, `assets/prompts/` |
 | Ambient notifications — the inbox (enqueue then triage), and the attachment store | [inbox.md](inbox.md) | `src/inbox.rs`, `src/daemon/notifications.rs`, `src/attachments.rs`, `src/daemon/attachments.rs` |
 | Session id and title — the minted word-pair address, and the triage-kept one-line title | [session-title.md](session-title.md) | `src/daemon/slug.rs`, `src/agent/title.rs`, `src/triage/title.rs` |
 | Session resumption — reopening a persisted session under its id, and listing the archived ones | [resumption.md](resumption.md) | `src/boot/resume.rs`, `src/daemon/host/resume.rs`, `src/daemon/host/archived.rs`, `src/inventory.rs`, `src/tui/resume_list.rs` |

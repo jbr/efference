@@ -2,8 +2,8 @@
 
 A session's log folded to a compact text: one line per tool call, plus the turns the
 operator wrote and the agent's prose. It is the substrate for
-summarizing a session without reading its whole context — the cold session's fold summary
-head and the compaction-fidelity evaluation (`eval/compaction/`) both start from it.
+summarizing a session without reading its whole context — the cold session's compaction
+and the compaction-fidelity evaluation (`eval/compaction/`) both start from it.
 `src/digest.rs` implements it; `efference dev digest <session> [--upto <seq>] [--seqs]`
 prints it. `efference dev triage --view digest` replays a session's triages with the
 history rendered as this digest instead of the transcript (an experiment arm,
@@ -47,9 +47,9 @@ did: a call that read a megabyte contributes one note.
 
 `--upto` folds only entries at or below a seq, so a digest can be cut at any point in a
 recorded session. `--seqs` labels each block with its entry's seq, for a reader that
-expands entries behind the lines it reads. The `cut` option (no flag; the narrator sets it)
+expands entries behind the lines it reads. The `cut` option (no flag; compaction sets it)
 places a marker line before the first block past a seq, for a summary that ends there
-while the record after it stays verbatim ([summary-head.md](summary-head.md)).
+while the record after it stays verbatim ([summary.md](summary.md)).
 
 ## Determinism
 

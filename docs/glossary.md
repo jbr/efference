@@ -7,7 +7,11 @@ than one current meaning are listed with each sense, so a reader can tell which 
 | word | identifiers | governing doc |
 | --- | --- | --- |
 | **triage primer** — a capped request that plants the triage model's cache | `Triager::prime`, `RequestOrigin::TriagePrimer` | transport.md |
-| **fold** — replacing earlier history with a written account | `POST /loop/fold`, `fold.rs`, `consolidate` (the agent's tool), `Payload::Mark` with `MarkKind::Boundary { upto }`, "summary head", "narrator" (`narrate::narrate`) | consolidate.md, summary-head.md |
+| **summary** — the text that replaces a range of the transcript, and the log entry that carries it | `Payload::Summary(Summary { from, upto, text, made_by, audience })` | summary.md |
+| **consolidation** — the agent replaces a region of its own transcript with a summary, having seen that region in full | the `consolidate` tool, `MadeBy::Consolidation`, `RequestOrigin::Consolidation` | consolidate.md |
+| **compaction** — the harness writes a summary from the digest, without the full transcript | `MadeBy::Compaction`, `src/compact.rs` (`compact::summarize`), `src/daemon/compact.rs`, `POST /loop/compact`, the `compaction` state topic, `efference dev compact`, `RequestOrigin::Compaction` | summary.md |
+| **reasoning summary** — a provider's account of its own reasoning (OpenAI's term); not a *summary* in the sense above | `ResponsesReasoningSummary`, `WireSummaryPart` | transport.md |
+| **session listing** — one row per hosted session in `GET /sessions` | `ListedSession`, `ListingEvent`, `Host::listing`, `src/daemon/host/listing.rs` | control-api.md |
 | **gate** — a tool call held for a permission decision | `Approval`, `/state`'s `gate`, the loop's `Gated` position | permissions.md |
 | **process monitor** — background-process supervision: spawning, tails, exit notifications, `wait`, `read_process`, `kill_process` | `ProcessMonitor`, `src/process_monitor.rs`, `/processes` | process-monitor.md |
 | **upstream** — the model API endpoint | `--upstream`, `api::Upstream`, `upstream_failure`, `upstream_retry` | transport.md |

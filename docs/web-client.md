@@ -263,7 +263,7 @@ a turn — waiting on a reply or an end, not "less important"), `working`, and `
 its subject — `amber-lattice needs approval`, `hollow-birch is waiting for you`,
 `tidal-cipher has stalled`, `amber-lattice is paused: its cache expired` (status
 `parked`; the activity line says `continuing reads 120k tokens uncached`, and after a
-fold `is paused: summarized, waiting for you to continue`) — and working and new say nothing, working being the
+compaction `is paused: summarized, waiting for you to continue`) — and working and new say nothing, working being the
 default. There are no status dots. Colors keep the meanings the session view gives
 them: a gate is `--accent` (and tints the card), a stall or a park `--warn`; the
 switcher dot follows.
@@ -882,7 +882,7 @@ sweep that no prefix ever settles a value the whole document contradicts.
 ## Prose is rendered as prose
 
 `ui/Markdown.tsx` renders user turns, assistant text, thinking, and
-consolidation-mark notes as markdown (`react-markdown` + `remark-gfm`). Tool
+summary text as markdown (`react-markdown` + `remark-gfm`). Tool
 output does not come through it — the cordon gives it per-tool
 representations — and that exclusion is the point of the split.
 
@@ -1198,20 +1198,21 @@ name. The live thinking tail is the pinned box; a long think that commits in the
 recent tier stays in that box, stopped at its last line, with only its header
 changing from "Thinking…" to "Thought · N words · show all".
 
-**The consolidation mark** renders as a boundary: a dashed rule with
-`⊙ consolidated #from–#upto · M entries` (`through #N` for a head fold), then
-the replacing summary as prose between the rules. It is drawn where the
-agent's projection injects the account — after the entry the range ends in,
+**A summary** renders as a boundary: a dashed rule with
+`⊙ consolidated #from–#upto · M entries` (`through #N` for a head summary; `compacted` for a
+compaction), then
+the replacing text as prose between the rules. It is drawn where the
+agent's projection injects it — after the entry the range ends in,
 a result counting as drawn by the entry that issued its call — not at the
-mark's own log position, which for a background check can follow later work
-(docs/consolidate.md). `buildTree` places marks after its main pass, from the
+summary entry's own log position, which for a background check can follow later work
+(docs/consolidate.md). `buildTree` places summaries after its main pass, from the
 node count recorded at each entry. The count is the turns, completions and
 results in the range — client-computed from the window; the wire's token delta
 is provider accounting the client does not hold. There is no expand affordance
 behind it: render-whole means every entry the range replaced is on screen
-above, so the mark's job is to say where the model's context stops carrying
+above, so the rule's job is to say where the model's context stops carrying
 the raw log, not to reveal anything. The `consolidate` call itself collapses to its
-header once resolved — its input is the summary the mark renders in full
+header once resolved — its input is the summary the rule renders in full
 (the pair projects normally, so the log holds the summary twice), and its
 result is a constant acknowledgement. A pending, gated, or failed
 consolidate renders whole: the gate surface expects the call on screen, and
@@ -1474,20 +1475,20 @@ host records it as the person action that releases a parked loop
 A loop parked mid-turn at its cold check (the `park` topic) is `running` to the turn
 state, so `turnState` reads it first and says `paused: cache expired · send to continue
 (reads 120k tokens uncached)` in the warn colour; the composer shows the cold notice
-with the same *summarize instead* button. After a fold the park stays and `cold` is
+with the same *summarize instead* button. After a compaction the park stays and `cold` is
 null; the readout says `paused: summarized · send to continue`, with no notice.
 
-**Summarizing is the fold** (`POST /loop/fold`, [control-api.md](control-api.md);
-`ui/fold.ts`, `ui/FoldNotice.tsx`, `ui/FoldControl.tsx`). Two entry points share
-`foldOffer`: the cold notice's button and the standing action in the context-meter
+**Summarizing is compaction** (`POST /loop/compact`, [control-api.md](control-api.md);
+`ui/compact.ts`, `ui/CompactNotice.tsx`, `ui/CompactControl.tsx`). Two entry points share
+`compactOffer`: the cold notice's button and the standing action in the context-meter
 popup (`ui/ContextPopup.tsx`). Opening the popup then choosing **Summarize history**
 starts the operation without a further confirmation; the request supplies consent
 to spend a live cache when the session is warm. Both entry points are blocked,
 with the reason shown, while a gate or question is pending or a warm loop is
-running; a loop parked at its cold check may fold. The popup prevents duplicate
-clicks while its request is pending. Progress is the `fold` topic: the turn-state
+running; a loop parked at its cold check may compact. The popup prevents duplicate
+clicks while its request is pending. Progress is the `compaction` topic: the turn-state
 readout and popup say `summarizing the history…`, errors remain visible for retry,
-and the account lands as the consolidation mark in the transcript. The hover
+and the summary lands in the transcript. The hover
 panel closes on outside interaction or Escape and stays inside the viewport.
 
 The input is inset into the dock rather than floating on it: the composer

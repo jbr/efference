@@ -71,7 +71,7 @@ sessions from one process. Its own routes are the listener's, not a session's:
   mid-turn (the `park` topic, below): it ranks after `gated`, `asking` and
   `stalled` and before `running`, which stays true while the loop waits, so a list
   surface does not read it as working. A status subscriber is told once, with the
-  cold-read size and that a person's action (a turn, a continue, a decision) or a fold ends it; after a fold the
+  cold-read size and that a person's action (a turn, a continue, a decision) or a compaction ends it; after a compaction the
   body says the history was summarized and a turn or continue resumes it unasked. Those two are what a list surface can show
   without one `GET /sessions/<id>/v1/state` per row, and what a client's
   destructive affordance reads before it asks: ending a session that is doing
@@ -105,7 +105,7 @@ sessions from one process. Its own routes are the listener's, not a session's:
   parse); it keeps whatever was learned and sorts last. Without `cwd` the answer
   covers every remembered project root once. A session this host is running (same
   id, same working directory) is not in it. The row is its own shape, not a
-  `SessionSummary`: it has no `status` or `processes`. The answer is always the
+  `ListedSession`: it has no `status` or `processes`. The answer is always the
   JSON array, including to a request that also names `text/event-stream`: there is
   no stream of the archived set. The scan runs off the executor, and the host keeps
   each root's rows between requests, re-reading only logs whose length changed.
@@ -525,38 +525,38 @@ Re-prompting a *completed* turn is left to the client to not ask for: whether an
 identical wire produces anything but "I'm done" is an open question, and the
 daemon declines rather than spending a round-trip on it.
 
-#### `POST /loop/fold`
-Replace a session's earlier history with an account its own model writes
-([summary-head.md](summary-head.md); backlog: cold-session.md) — for a cold session,
-instead of paying the uncached read; for a warm one, at the operator's request. The account covers everything up to a cut; the most recent payloads
+#### `POST /loop/compact`
+Replace a session's earlier history with a summary its own model writes
+([summary.md](summary.md); backlog: cold-session.md) — for a cold session,
+instead of paying the uncached read; for a warm one, at the operator's request. The summary covers everything up to a cut; the most recent payloads
 after it (about 15k tokens, the cut moved earlier so no call is separated from its
-result) stay verbatim. The fold appends one boundary mark and starts no request: an
+result) stay verbatim. The compaction appends one `Summary` entry and starts no request: an
 idle session stays idle, and a loop parked at its cold check stays parked until the
 next turn or continue. A loop held at a triage without a verdict (the
 `triage_unavailable` or `triage_defect` stall, docs/triage.md) is running but
-sends nothing, so it accepts a fold the same way: it stays held, and the continue
-that retries it triages the folded projection rather than the history the account
-replaced. After a fold the
+sends nothing, so it accepts a compaction the same way: it stays held, and the continue
+that retries it triages the compacted projection rather than the history the summary
+replaced. After a compaction the
 session is neither warm nor cold: nothing has sent the new prefix, so the keepalive
 has nothing to ping and the `cold` topic is `null` until a request ages past the
 cache lifetime.
 
-Optional body `{"warm": true}`: fold a session whose cache is not believed expired,
+Optional body `{"warm": true}`: compact a session whose cache is not believed expired,
 giving up the cached prefix (the next request writes the shorter context uncached).
 Without it a warm session declines, so a client that only means the cold alternative
 cannot throw a live cache away by accident.
 
-- `202 {"status":"folding"}` — the session's model is writing the account; progress is
-  the `fold` topic (`writing`, then `null` once the mark lands, or `failed` with the
-  error, which stays until the next turn or fold). A failure changes nothing: fold
-  again, or send and read the cache uncached. An account written while a turn read the cache anyway
+- `202 {"status":"compacting"}` — the session's model is writing the summary; progress is
+  the `compaction` topic (`writing`, then `null` once the summary lands, or `failed` with the
+  error, which stays until the next turn or compaction). A failure changes nothing: compact
+  again, or send and read the cache uncached. A summary written while a turn read the cache anyway
   is discarded as superseded; a keepalive ping does not count as one. While it writes,
-  the narrator's fragments arrive on the `output` class as `narrator_delta` and
-  `narrator_thinking_delta`; the mark's `log` frame is the account's only durable form.
-- `?wait` — hold until the fold lands or fails, then return `/state`.
-- `409 not_foldable` — the cache is not believed expired and the body did not say
+  the model's fragments arrive on the `output` class as `compaction_delta` and
+  `compaction_thinking_delta`; the summary's `log` frame is its only durable form.
+- `?wait` — hold until the compaction lands or fails, then return `/state`.
+- `409 not_compactable` — the cache is not believed expired and the body did not say
   `warm`, a gate or question is pending, a request is in flight, or everything since
-  the last fold fits in the tail.
+  the last compaction fits in the tail.
 
 #### `POST /loop/interrupt`
 Stop what the loop is doing now: a running tool is signalled (the SIGINT
@@ -863,19 +863,19 @@ not a topic — it is the log's cursor rather than control state, and sits outsi
                                    //   {"reason":"expired","since":…,"context_tokens":…}:
                                    //   waiting for a person to act (a turn, a continue,
                                    //   a decision, an answer) before the uncached read,
-                                   //   or for a fold.
-                                   //   {"reason":"folded"}: a fold summarized the history
+                                   //   or for a compaction.
+                                   //   {"reason":"compacted"}: a compaction summarized the history
                                    //   while parked, so `cold` is null again and the next
                                    //   turn or continue resumes the loop.
                                    //   `running` stays true while parked, so this is how a
                                    //   session view tells a park from a slow request. Its
-                                   //   own topic because `cold` is null in the folded case
+                                   //   own topic because `cold` is null in the compacted case
                                    //   and is also set for an idle session that is not
                                    //   parked
-  "fold": null,                    // {"state":"writing"} while POST /loop/fold runs, or
+  "compaction": null,              // {"state":"writing"} while POST /loop/compact runs, or
                                    //   {"state":"failed","error":"…"} after one failed
-                                   //   (until the next turn or fold); independent of
-                                   //   `cold`, since a fold can be asked of a warm session
+                                   //   (until the next turn or compaction); independent of
+                                   //   `cold`, since a compaction can be asked of a warm session
   "config_repair": {               // null whenever the config file parses (permissions.md)
     "path": "/repo/.efference/work/config.toml",  // the file a human has to fix
     "at": 1754300000000,           // absolute Unix millis at which the loop parked
@@ -924,7 +924,7 @@ opened: a `Resumed` entry closes everything open before it, since those requests
 belonged to the previous host process. Several requests can be open at once (a triage
 and the spotter, a background title ask); parallel calls of one completion are all
 in `tools`. Parked waits keep their own topics (`gate`, `ask`, `park`, `stall`,
-`fold`) and are not repeated here; the topic is `null` rather than empty when
+`compaction`) and are not repeated here; the topic is `null` rather than empty when
 nothing is open. The decisions-rung spotter, which does not pass through `Client`, reports no
 stages.
 
@@ -1007,7 +1007,7 @@ tell a deliberate `since=-300` from a client's off-by-one `-1`.
 A window may be cut anywhere because references that dangle across the cut are
 **fetched, not co-delivered** — that is what the next two routes are for. A
 `tool_result` whose `ToolCall` sits in the entry before the cut, a
-`MarkKind::Boundary` naming a span that precedes it, a `Triage` pinning an
+`Summary` whose range precedes it, a `Triage` pinning an
 `Ambient` from far back: all resolve by address.
 
 #### `GET /transcript`
@@ -1030,7 +1030,7 @@ call is not a `call` line: it is an `asked` line carrying the question, with
 `user` line with the reply's text (opening with the `source: ` address when the reply
 was sourced) when the result entry carries a `submission_id`, or `result  not
 answered` when it does not (an interrupt, a malformed call). `notify`, `spot`,
-`config`, `process`, `mark`, `preamble` and `title` are one line each; a `triage`
+`config`, `process`, `summary`, `preamble` and `title` are one line each; a `triage`
 line appears only when the verdict pinned or dismissed a notification or the triage
 retried; telemetry renders to nothing. Every line's `seq` resolves through the
 routes below, which is where the bodies are. The `transcript` control verb reads
@@ -1317,11 +1317,11 @@ the oldest. The committed entry on the `log` class is the authoritative copy.
 - `tool_call_input` — `{ "index": <n>, "fragment": "<partial json>" }` — arguments arriving,
   verbatim. A client may display these but must not **parse** them as a complete document:
   mid-stream they are a partial slice.
-- `narrator_delta` — `{ "text": "<fragment>" }` — the account a fold's narrator is writing
-  (`POST /loop/fold`). Not the main loop's response: it carries no `index`, belongs to no
+- `compaction_delta` — `{ "text": "<fragment>" }` — the summary a compaction is writing
+  (`POST /loop/compact`). Not the main loop's response: it carries no `index`, belongs to no
   block, and the `Assistant` entry preemption below does not drop it.
-- `narrator_thinking_delta` — `{ "text": "<fragment>" }` — the narrator's extended thinking,
-  with the same scope. Both end with the fold: the mark's `log` frame, or the `fold` topic
+- `compaction_thinking_delta` — `{ "text": "<fragment>" }` — the compaction's extended thinking,
+  with the same scope. Both end with the compaction: the summary's `log` frame, or the `compaction` topic
   going `failed`, supersedes them.
 - `tool_output` — `{ "call_id": "…", "chunk": "…" }`
 - `process_output` — `{ "id": <n>, "chunk": "…" }` — a background process's output,
@@ -1354,7 +1354,7 @@ publishes nothing at all — indistinguishable from a hung harness.
 ## Data shapes referenced above
 
 - **`LogEntry`** `{ seq, turn, at, submission_id?, source?, payload }` where
-  `payload` is one of `User` / `Assistant` / `ToolResult` / `Mark` / `Triage` /
+  `payload` is one of `User` / `Assistant` / `ToolResult` / `Summary` / `Triage` /
   `Ambient` / `Spot` / `ConfigEdit` (see
   [log-and-projection.md](log-and-projection.md)). `submission_id` names the
   `POST /turns` that produced the entry; `source` names its submitter when not

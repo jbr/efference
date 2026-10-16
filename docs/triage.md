@@ -412,7 +412,7 @@ raw. It retries until it has a verdict or the operator stops the turn:
   `StallReason::TriageUnavailable` (upstream) or `StallReason::TriageDefect` (every
   fork unusable, which is a harness defect and is logged at error level as one) while
   the loop keeps running. The operator's continue runs the triage again from the top,
-  over the log as it stands then: a fold written during the hold (`POST /loop/fold`
+  over the log as it stands then: a compaction written during the hold (`POST /loop/compact`
   accepts one there, docs/control-api.md) is what the retried triage forks, so a hold
   that outlived the cache can be retried without reading the whole history uncached;
   the operator's interrupt ends the turn with each result withheld as the interrupt's

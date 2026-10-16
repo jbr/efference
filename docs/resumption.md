@@ -87,7 +87,7 @@ everything a restart may have changed.
 **Skipped entries.** `Resumed.resumes_after` is present only when entries were skipped;
 projection (`project_semantic`, which both wire dialects, the triage and title asks and
 `dev wire` encode from) drops every entry after it and before the `Resumed` entry, and a
-`Boundary` mark inside the range folds nothing. A log may hold several `Resumed`
+`Summary` entry inside the range replaces nothing. A log may hold several `Resumed`
 entries, each with its own range; a completion inside an earlier range is not the
 "last completion" at the next resume, so resuming twice does not roll back twice. The
 rest of what the log carries is read whole, so numbering stays monotonic: the turn

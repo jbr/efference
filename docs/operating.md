@@ -735,8 +735,9 @@ Beyond turns, calls, and results, the log carries the decisions:
 - **`ConfigEdit`** — every proposed, committed, or cancelled policy change, with its note.
 - **`Triage`** — what each result's triage decided to keep, and whether the verdict came from
   the model or a fallback.
-- **`Mark`** — today only a consolidation boundary, written by the `consolidate` tool. There
-  is no operator verb that writes a mark; salience annotations are the agent's own.
+- **`Summary`** — the text that replaced a range of the transcript: a consolidation written by
+  the `consolidate` tool, or a compaction written by the harness (`POST /loop/compact`). There
+  is no operator verb that writes one by hand.
 - **`Preamble`** — the exact system prompt this session booted with, snapshotted, because it
   folds in file contents that drift on disk and is otherwise unreconstructable, plus the
   fixed main connection/provider/native-model identity as unprojected metadata for offline

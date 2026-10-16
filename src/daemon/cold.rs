@@ -156,7 +156,7 @@ impl Session {
         }
     }
 
-    /// Let a parked cold check look again: after a compaction the session is no longer cold,
+    /// Let a parked cold check look again: after a compaction the session is not cold,
     /// and the operator's next turn or continue resumes it.
     pub(crate) fn wake_cold_check(&self) {
         if self.cold_parked() {
