@@ -277,7 +277,7 @@ describe("the output tail", () => {
   // used to open fresh blocks holding the tail of what just committed — a
   // nameless call block from a trailing `}`, and a duplicate of the message's
   // last sentence. Both survived until the next assistant entry, a whole
-  // tool-execution phase later.
+  // tool execution later.
   it("drops deltas that arrive after the entry they describe committed", () => {
     const committed = fold(emptySession, [
       {

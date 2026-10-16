@@ -57,7 +57,7 @@ impl<'a> InteractiveState<'a> {
                 self.mark_reproject();
             }
             TuiEvent::ThinkingDelta(text) => {
-                // Accumulated, not a phase: it stays in the transcript when the model
+                // Accumulated, not a single-slot preview: it stays in the transcript when the model
                 // moves on to acting (docs/tui.md).
                 self.live.thinking.push_str(&text);
                 self.loading.pending_request = true;

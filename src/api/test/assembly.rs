@@ -1,4 +1,4 @@
-//! Tests for stream event assembly: the phase sink, prose, text, split
+//! Tests for stream event assembly: the output-kind sink, prose, text, split
 //! tool-use, the output-cap cut, cache-count merging, and the provider's own
 //! cache-diagnostics attribution.
 
@@ -71,7 +71,7 @@ fn the_quiet_cache_diagnostics_states_read_as_no_attribution() {
     }
 }
 
-/// **Every generation phase reaches the live sink**, not just prose
+/// **Every output kind reaches the live sink**, not just prose
 /// (docs/transport.md). A sink carrying only text fragments publishes nothing on
 /// a turn that thinks and then emits a tool call, which is indistinguishable
 /// from a hung harness. The tool call is named at `content_block_start`, before

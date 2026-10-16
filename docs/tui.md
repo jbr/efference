@@ -168,7 +168,7 @@ struct LiveTail {
 }
 ```
 
-**Thinking accumulates, it does not flash past.** Streamed thinking is live-tail *content*, beside the assistant prose buffer — not a phase. It was a phase once, and a phase is a single slot, so `tool_call_start` overwrote it: a turn that thought briefly and then called a tool showed its reasoning for a few frames and lost it until the turn committed, which is most turns. It now stays put while the model moves on to prose or a call, and the committed block supersedes it.
+**Thinking accumulates, it does not flash past.** Streamed thinking is live-tail *content*, beside the assistant prose buffer — not a single-slot preview. It was one once, and a single slot is overwritten, so `tool_call_start` overwrote it: a turn that thought briefly and then called a tool showed its reasoning for a few frames and lost it until the turn committed, which is most turns. It now stays put while the model moves on to prose or a call, and the committed block supersedes it.
 
 Live and committed thinking are built by **one renderer** (`nodes::thinking_block`), rendered as a `Thinking` entry ahead of the turn's prose in the dimmed register — thinking is never the answer and must not read as it. A test asserts the two produce byte-identical transcript rows for the same text: two renderers would drift, and the drift surfaces as the transcript visibly rewriting itself at the moment of commit, which reads as a bug even when both renders are correct on their own.
 

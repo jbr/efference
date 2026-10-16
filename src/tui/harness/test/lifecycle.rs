@@ -1,4 +1,4 @@
-//! Turn lifecycle as the user sees it: pending echo, generation phase, commit.
+//! Turn lifecycle as the user sees it: pending echo, streamed output kinds, commit.
 
 use super::*;
 
@@ -41,11 +41,11 @@ fn submitted_turn_echoes_pending_then_resolves_on_commit() {
 /// **A turn with no prose is still visibly working** (docs/tui.md). Without thinking
 /// and tool-call input reaching the TUI as their own frames, the window between
 /// submitting a turn and the first prose token is blank, and blank is
-/// indistinguishable from hung. Each phase shows what it honestly can: thinking its
+/// indistinguishable from hung. Each output kind shows what it honestly can: thinking its
 /// *tail* (what the model is working through now), a tool call its name, then the
 /// bytes of input received.
 #[test]
-fn a_prose_less_generation_phase_is_visible() {
+fn a_prose_less_generation_is_visible() {
     let mut play = Screenplay::new(80, 12);
     play.user("Count the modules.");
 
@@ -53,7 +53,7 @@ fn a_prose_less_generation_phase_is_visible() {
     play.event(TuiEvent::ThinkingDelta("src directory first".into()));
     assert!(
         play.find("thinking").is_some(),
-        "a thinking phase is not silent"
+        "streamed thinking is not silent"
     );
     assert!(
         play.find("I should look at the ").is_some() && play.find("src directory first").is_some(),
@@ -70,7 +70,7 @@ fn a_prose_less_generation_phase_is_visible() {
     assert!(
         play.find("src directory first").is_some(),
         "thinking stays in the transcript when the model moves on to acting — it was a \
-             phase, and a phase is one slot, so a tool call replaced it faster than it \
+             single-slot preview once, so a tool call replaced it faster than it \
              could be read"
     );
 
@@ -103,7 +103,7 @@ fn a_prose_less_generation_phase_is_visible() {
     assert!(play.find("Looking now.").is_some());
 }
 
-/// The phase line is *live*, not transcript: once the assistant entry commits, the committed
+/// The streamed-output line is *live*, not transcript: once the assistant entry commits, the committed
 /// record is the thing to read and the live tail has nothing left to report. (Rendering committed
 /// thinking in the transcript is a separate unit — docs/transport.md.)
 #[test]
@@ -122,7 +122,7 @@ fn a_committed_turn_clears_the_live_tail() {
 }
 
 /// The live tail's line spacing. Every live renderer — a running tool's output
-/// triage, a thinking phase, an arriving tool input — models one source line as one
+/// triage, streamed thinking, an arriving tool input — models one source line as one
 /// `Paragraph` child of its entry, and an entry separates its children by a blank
 /// row (markdown block spacing). So a multi-line live block renders double-spaced,
 /// which reads as the stream having inserted newlines it did not send.
@@ -277,7 +277,7 @@ fn thinking_renders_a_fenced_code_block_as_code() {
 
 /// **Streamed thinking persists, and the commit does not reshape it.**
 ///
-/// Streamed thinking is accumulated live-tail content, not a single-slot phase that
+/// Streamed thinking is accumulated live-tail content, not a single-slot preview that
 /// `tool_call_start` would replace — a turn that thinks briefly and then acts keeps
 /// its reasoning on screen. The same builder renders the live and the committed
 /// block, so the handoff is invisible (docs/tui.md).

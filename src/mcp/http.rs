@@ -17,7 +17,7 @@
 //! Session and version state ride as headers once learned: `Mcp-Session-Id`
 //! (issued by the server, echoed on every later request) and
 //! `MCP-Protocol-Version` (the negotiated revision, per `2025-06-18`+). A `401`
-//! becomes `crate::mcp::auth::AuthorizationRequired`, which the boot phase acts
+//! becomes `crate::mcp::auth::AuthorizationRequired`, which the boot step acts
 //! on (docs/mcp-auth.md).
 //!
 //! `2026-07-28` adds two *required* headers derived from the body —
@@ -167,7 +167,7 @@ impl HttpTransport {
 }
 
 /// Read the `WWW-Authenticate` challenge off a `401` into the typed error the
-/// boot phase acts on (docs/mcp-auth.md).
+/// boot step acts on (docs/mcp-auth.md).
 ///
 /// A header that appears more than once is one list (RFC 9110 §5.3), so every
 /// value is parsed together rather than only the first. A server that sends no

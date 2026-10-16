@@ -26,7 +26,7 @@ Resumption reads only the log ([log-and-projection.md](log-and-projection.md)):
 ## The loader
 
 `boot::resume` (`src/boot/resume.rs`) rebuilds a session from its directory, sharing
-the boot phases a creation uses (`src/boot/{scaffold,env,model,parts}.rs`) and replacing
+the boot steps a creation uses (`src/boot/{scaffold,env,model,parts}.rs`) and replacing
 the ones that mint:
 
 - **Inference** comes from the header metadata, mapped field for field onto

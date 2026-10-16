@@ -341,13 +341,13 @@ pub async fn run<F: Frontend, S: Spotter>(
             // One tool call per turn (docs/README.md) — the agent picks its next single
             // action; the fork's `retain` is the only forced call. Every live signal is
             // published to the control stream's `output` class as it arrives — prose, thinking, and the opening
-            // and arrival of a tool call's input — so a client can show *which phase* the
-            // turn is in rather than only its prose (docs/transport.md). The
+            // and arrival of a tool call's input — so a client can show *which output kind* the
+            // turn is streaming rather than only its prose (docs/transport.md). The
             // committed assistant entry on `/events` remains canonical; this is the live view.
             // Supersede the idle line before blocking on the model
             // (docs/transport.md). It is printed once at the top of the idle loop and
             // is correct at that moment, but nothing replaced it when a submitted turn then
-            // entered a phase with no output — so the last thing an operator saw during a long
+            // streamed nothing a client renders as output — so the last thing an operator saw during a long
             // generation was `idle`, which reads as *finished*. The cost of a stale `idle` isn't
             // cosmetic: it invites interrupting or abandoning a live session on false signal.
             log::debug!("generating — turn {turn}");

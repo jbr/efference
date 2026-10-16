@@ -131,7 +131,7 @@ export function NewSessionForm({
     if (draft !== null) preview(draft);
   }, [draft, preview]);
 
-  // Measure the wait while creation is in flight; its phase is not reported
+  // Measure the wait while creation is in flight; its progress is not reported
   // by the host (docs/web-session-creation.md).
   useEffect(() => {
     if (!creating) return;
@@ -449,7 +449,7 @@ export function NewSessionForm({
   );
 }
 
-/** Elapsed time makes a slow creation visible without guessing which phase
+/** Elapsed time makes a slow creation visible without guessing which step
  * of the host launch is taking time. */
 function startingLabel(elapsed: number): string {
   return elapsed >= 5 ? `Starting… ${elapsed}s` : "Starting…";

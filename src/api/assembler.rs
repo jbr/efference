@@ -243,7 +243,7 @@ impl Assembler {
                 };
                 // Name a tool call the moment it opens, before its arguments stream: a large input
                 // can take seconds to arrive, and "calling `bash`…" is the difference between a
-                // visible phase and apparent silence (docs/transport.md).
+                // visible output kind and apparent silence (docs/transport.md).
                 if let BlockAccum::ToolUse { id, name, .. } = &block {
                     streamed = Some(Streamed::ToolStart {
                         index,

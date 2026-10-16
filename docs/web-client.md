@@ -83,7 +83,7 @@ pre-commit buffers. Folding them opened fresh blocks holding the tail of what
 had just committed — a call block with no name (only `tool_call_start` carries
 one) whose input was a trailing `}`, or the message's last sentence a second
 time — which then survived until the *next* entry committed, a whole
-tool-execution phase later, reading as "it resolved itself". So an `Assistant`
+tool execution later, reading as "it resolved itself". So an `Assistant`
 commit puts the fold in a `draining` state and block deltas are dropped until
 the next log entry ends it; an assistant response never directly follows another,
 so the drain cannot swallow a real one. Tool and process output are unaffected —

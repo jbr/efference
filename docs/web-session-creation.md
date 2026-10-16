@@ -102,7 +102,7 @@ preview values never become explicit overrides merely because they were shown.
 `ui/sessionForm.ts` converts the draft into one `SessionRequest` for both
 `QUERY /sessions` and `POST /sessions`. The browser omits `env`; the host prepares
 it through the user-wide environment hook or its own environment
-([env.md](env.md)). The form does not claim which hook phase is running.
+([env.md](env.md)). The form does not claim which hook is running.
 
 Preview requests follow committed changes, not individual temperature
 keystrokes. A request counter associates each reply or failure with the draft

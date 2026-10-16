@@ -68,7 +68,7 @@ pub enum StreamDelta {
     /// must render it as thinking or not at all, never as prose.
     ThinkingText { index: usize, text: String },
     /// The model began emitting a tool call, named before its arguments stream. Together with
-    /// [`ThinkingText`](Self::ThinkingText) this is what makes a generation phase visible at all:
+    /// [`ThinkingText`](Self::ThinkingText) these are the output kinds that make a turn visible at all:
     /// without them only prose reaches the stream, so a turn spent thinking or emitting a large
     /// tool input publishes nothing and reads as a hung harness (docs/transport.md).
     ToolCallStart {

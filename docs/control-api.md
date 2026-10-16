@@ -1341,7 +1341,7 @@ not a workaround for a provider quirk.
 loop issues one request at a time, so it is unambiguous without further qualification. The
 committed entry on the `log` class supersedes the whole live set for that response.
 
-The three middle kinds exist so a client can show *which phase* a turn is in. Without them
+The three middle kinds exist so a client can show *which output kind* a turn is streaming. Without them
 only prose reaches the stream, and a turn spent thinking or emitting a large tool input
 publishes nothing at all — indistinguishable from a hung harness.
 

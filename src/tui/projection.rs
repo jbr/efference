@@ -499,7 +499,7 @@ pub(crate) fn tail_nodes(
     // The live tail renders after everything committed: in-flight assistant prose
     // as its own entry, and each running tool as a peek at its output so far.
     // Thinking leads the turn, as it does on the wire and in the committed entry.
-    // Accumulated rather than a phase (docs/tui.md): it stays put when the model
+    // Accumulated rather than a single-slot preview (docs/tui.md): it stays put when the model
     // moves on to prose or a tool call, and the committed block supersedes it.
     if let Some(entry) = live_thinking_entry(&live.thinking) {
         nodes.push(entry);

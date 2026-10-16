@@ -3,7 +3,7 @@
 //! [`resume`] is the second boot entry beside [`prepare`](super::prepare): the session
 //! directory exists, its own `config.toml` is the live config, the log is reopened rather
 //! than created, and the frozen preamble is read back from the log instead of rendered
-//! again. Everything between those is the shared phases (`model`, `scaffold`, `env`,
+//! again. Everything between those is the shared steps (`model`, `scaffold`, `env`,
 //! `parts`), so a resumed session is built by the same code a created one is.
 //!
 //! A log whose last completion is clean (no calls, or every call answered and decided)

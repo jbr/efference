@@ -10,9 +10,9 @@ use super::*;
 #[derive(Debug, Default)]
 pub(crate) struct LiveTail {
     /// Extended thinking streamed so far this turn. **Accumulated transcript
-    /// content, not a phase preview**: it stays on screen once the model moves on
+    /// content, not a single-slot preview**: it stays on screen once the model moves on
     /// to prose or a tool call, and is superseded by the committed thinking block
-    /// when the turn lands (docs/tui.md). It was a phase, and a phase is one slot —
+    /// when the turn lands (docs/tui.md). It was a single-slot preview once —
     /// so `tool_call_start` replaced it and the thinking vanished the instant the
     /// model started acting, which on a turn that thinks briefly then calls a tool
     /// is too fast to read.

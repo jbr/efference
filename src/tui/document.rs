@@ -108,7 +108,7 @@ pub enum DocumentNode<'a> {
     /// The distinction from a sequence of [`Paragraph`](Self::Paragraph)s is the
     /// spacing: an [`Entry`](Self::Entry) separates its children by a blank row,
     /// which is markdown block spacing and is right for prose. Text that is already
-    /// line-structured — a running tool's output, a thinking phase, an arriving tool
+    /// line-structured — a running tool's output, streamed thinking, an arriving tool
     /// input, a multi-line user turn — is not a sequence of blocks, and rendering it
     /// as one doubles every newline the source actually had.
     Lines { lines: Vec<Vec<Span<'a>>> },

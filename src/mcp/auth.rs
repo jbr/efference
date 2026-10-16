@@ -41,7 +41,7 @@ use crate::www_authenticate::Challenge;
 
 /// A `401` from a connected provider: the signal that starts the dance.
 ///
-/// A typed error rather than a message because the boot phase has to *act* on
+/// A typed error rather than a message because the boot step has to *act* on
 /// it — recognize it among all the other ways a mount fails, and read the
 /// challenge out of it — and matching on error text is how that quietly stops
 /// working.

@@ -128,7 +128,7 @@ place the harness stops and waits for a human mid-startup. Per server:
 1. Mount with whatever credentials are stored, refreshing a stale grant first — one
    round trip beats a `401` plus full rediscovery.
 2. If the mount returns `AuthorizationRequired` (a typed error, not a message —
-   the boot phase has to recognize it among every other way a mount fails, and
+   the boot step has to recognize it among every other way a mount fails, and
    read the challenge out of it), run the dance and mount again with the token.
 3. Anything else is a mount failure like any other: fatal unless `optional = true`.
 

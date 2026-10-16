@@ -449,7 +449,7 @@ pub(crate) async fn spotter_eval(
 
     // Provider-billed cost, keyed by generation id (docs/transport.md). Records
     // can lag a beat behind the response, so one delayed retry per id. Runs
-    // concurrently under the same `--concurrency` the attempts phase used;
+    // concurrently under the same `--concurrency` the attempts pass used;
     // `Endpoint::fetch_generation_cost` shares a pooled client, so the
     // semaphore bounds in-flight lookups, not sockets.
     if !no_cost && matches!(endpoint.provider, efference::api::Provider::OpenRouter) {

@@ -555,8 +555,8 @@ impl Completion {
 /// What a single SSE event contributed to the *live* view, if anything
 /// (docs/transport.md). The assembler folds every event into the [`Completion`]
 /// regardless; this is the parallel, transport-only channel that lets a client show
-/// what the model is doing **while** it does it. One variant per phase a turn can be
-/// in, so a turn spent thinking or emitting a large tool-call input is expressible
+/// what the model is doing **while** it does it. One variant per output kind a turn can
+/// stream, so a turn spent thinking or emitting a large tool-call input is expressible
 /// rather than reading as a hung harness.
 ///
 /// **Every variant carries the `index` of the content block it belongs to**, because a
