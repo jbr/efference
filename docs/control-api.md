@@ -797,8 +797,9 @@ not a topic — it is the log's cursor rather than control state, and sits outsi
                                             //   holds until it resets (a plan's usage limit; `resets_at` absolute millis,
                                             //   null when the refusal names none); pings resume after the next real turn
     "triage_keepalive_skipped": null,       // the triage lineage's stance (transport.md): null while its pings go out on
-                                            //   schedule and when none is armed (a shared triage, or one that plants no
-                                            //   primer); else the same reasons as keepalive_skipped, the same shape
+                                            //   schedule and when none is armed (a shared triage, or a triage model
+                                            //   reporting no prompt cache); else the same reasons as keepalive_skipped,
+                                            //   the same shape
     "triage_cold_streak": null,             // the same count over a separate triage client's reads (result
                                             //   triages and primers; log-and-projection.md); null while the triage
                                             //   borrows the agent's client, 0 when its own lineage reads warm

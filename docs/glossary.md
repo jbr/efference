@@ -7,6 +7,7 @@ than one current meaning are listed with each sense, so a reader can tell which 
 | word | identifiers | governing doc |
 | --- | --- | --- |
 | **triage primer** — a capped request that plants the triage model's cache | `Triager::prime`, `RequestOrigin::TriagePrimer` | transport.md |
+| **stored request** (triage keepalive) — what the triage lineage's keepalive re-sends: the last primer, or the last result triage's request ending at its last breakpoint (its cache point) | `api::SentRequest`, `SentRequest::through_last_breakpoint`, `triage::SentTriage`, `Session::store_triage_request`, `daemon::keepalive::StoredRequest` | transport.md |
 | **text view** — what a separate triage model reads: the history (head summaries, the digest up to the view cut, the triaged tail), then the current step and the ask | `TriageView::Text`, `Triager::view`, `src/triage/text_view.rs`, `efference dev triage --view text` | triage.md |
 | **triaged tail** — the text view's recent steps in full, each result as the agent read it; not a triage request's throwaway tail | `TRIAGED_TAIL_HIGH_WATER`, `TRIAGED_TAIL_LOW_WATER`, `digest::Options::verbatim` | triage.md |
 | **cut** (1), compaction cut — where a compaction's account ends, the record after it staying verbatim | `digest::CUT`, `digest::Options::cut`, `compaction_cut` | summary.md |

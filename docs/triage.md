@@ -338,7 +338,9 @@ growing block would never match, and a view cut moves the end of the history by 
 than the lookback holds. On the Responses dialect the history is its own input message,
 so the triage primer ([transport.md](transport.md)) sends the history alone and the
 triage's request continues exactly where the primer ended — the point the Codex backend
-resumes from. Implicit-cache providers match wherever the prefix agrees.
+resumes from. Implicit-cache providers match wherever the prefix agrees. On every lineage
+the primer does not plant, the end of the history is also what the triage keepalive
+re-sends: the last triage request, ending at that breakpoint ([transport.md](transport.md)).
 
 Where the view changes discontinuously: a new head summary for the triage reader
 replaces the opening block and hides what it covers, and a resumption that set entries

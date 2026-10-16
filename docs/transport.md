@@ -919,8 +919,8 @@ position cuts the model's function call mid-arguments, which marks the completio
 without unmaking its input prefix, and only a response with no accounted input
 counts as nothing planted. The request's stage is accordingly `ended` with the
 provider's finish word (`incomplete:max_output_tokens`); `failed` is kept for a primer
-that got no response or no accounted input. The primer's turns are kept for the triage keepalive,
-which re-sends them (the last section of this file). The
+that got no response or no accounted input. The primer's request is stored for the triage
+keepalive, which re-sends it (the last section of this file). The
 spotter model must be one its connection's metadata source knows: with no
 `[defaults].spotter` and no connection reaching jev, the main connection's cheap band applies
 (on Anthropic, the newest active `haiku`-line model in the held listing,
@@ -1974,9 +1974,9 @@ on it stalls the loop on its own account.
 
 The prefix bytes sent by a keepalive must be byte-identical to what a real turn
 sends, or the ping writes a new cache entry instead of refreshing the live one.
-`Client::keepalive` takes the same `messages`, `tools`, and `tool_choice` the
-loop uses, and reuses the same `system` prompt from the client, so identity is
-structural rather than a fragile string comparison.
+`Client::keepalive` takes a request (`api::SentRequest`) carrying the same turns,
+`tools`, and `tool_choice` the loop uses, and reuses the same `system` prompt from the
+client, so identity is structural rather than a fragile string comparison.
 
 ### The ping ends on a user turn
 
@@ -2058,42 +2058,60 @@ touch clock reset and the keepalive never fires.
 
 ### The triage lineage's keepalive
 
-Where the triage model is the session's own and its client plants a primer
-(`Client::plants_primer`: a Responses lineage with an implicit cache), the triage
-lineage is a second cache the main loop does not keep warm. A second `keepalive_loop`
-(`CacheLineage::Triage`, built by `KeepaliveSpec::triage`) keeps it warm, and its ping
-is the primer re-sent:
+Where the triage model is the session's own, its requests write a second cache the main
+loop does not keep warm. A second `keepalive_loop` (`CacheLineage::Triage`, built by
+`KeepaliveSpec::triage`) keeps it warm under the main loop's rules, on every dialect. Its
+ping is the last request the lineage actually sent, ending at its cache point, stored when
+sent and re-sent byte for byte (`api::SentRequest`, `Session::store_triage_request`):
 
-- **Turns.** The ping replays the turns the last primer sent. `Session::set_triage_primed`
-  stores them when the primer returns with usage, and the ping sends them byte for byte
-  rather than rebuilding them from the log, which has grown by the time it fires.
-  With no primer sent, or with the stored one dropped, there is no ping.
-- **Envelope.** The primer's own, from `Triager::primer_envelope`, which `prime` also
-  uses: the own client, the triage's `tools[]`, and forced `retain`. The ping and the
-  primer therefore send the same body. `api/test/triage_ping.rs` pins that over a mock
-  Responses backend.
-- **Clocks.** The triage touch clock is stamped by a primer, by a result triage on
-  the own client, and by the ping (`RequestOrigin::touches_triage_prefix`,
+- **Where the primer plants** (`Client::plants_primer`: a Responses lineage with an
+  implicit cache, the Codex backend among them), the stored request is the last primer
+  that planted: the text view's history under the triage's `tools[]` and forced `retain`
+  (`TriagePrimerOutcome::request`). The ping refreshes the point the primer planted; a
+  result triage after it writes a resume point at its own end, which the ping does not
+  refresh.
+- **Every other own triage client** stores its last result triage's request, ending at
+  its last breakpoint (`SentRequest::through_last_breakpoint`): the end of the text
+  view's history ([triage.md](triage.md)). The current step, the riders, the ask, and any
+  in-fork retry tail after it are dropped. A triage that got a response stores its
+  request whether or not its verdict was usable — the request wrote the prefix either way
+  — so a held triage stores too (`HoldOutcome::sent`, `HoldFailure::sent`). The title
+  peek is not stored.
+
+The ping is the stored request as sent, never a re-projection. `Client::complete` learns
+when a model refuses a forced `tool_choice` and sends later forced requests as the
+fallback (`auto`, `forced_choice_instruction` appended, thinking off), while
+`Client::keepalive` sends the request it is given; a rebuilt forced ping to such a model
+would draw a 400, which `is_permanent` treats as terminal, and on Anthropic a different
+`tool_choice` or thinking setting misses the message cache. So the triage reads back the
+form its last attempt took (`Client::sent_form`, after the round trip: the lesson is
+learned only by a fallback that succeeded), and a stored fallback request
+(`SentRequest::unforced`) is pinged on the fallback's client, `auto` and thinking off. The
+fallback's instruction rides after the breakpoint and is dropped with the current step.
+
+- **Arming.** Armed off the triage client's prompt-cache policy (`Triager::keepalive_client`,
+  `PromptCachePolicy::is_supported`), the check the main keepalive arms on: a triage
+  model reporting no cache is not pinged. Not armed on a shared triage, whose requests
+  ride the main prefix that the main keepalive keeps, or at interval zero. With nothing
+  stored yet there is no ping.
+- **Clocks.** The triage touch clock is stamped by a primer, by a result triage on the
+  own client, and by the ping (`RequestOrigin::touches_triage_prefix`,
   `Session::record_triage`, `Session::record_triage_keepalive`). Idle triage runs on the
   agent's client and does not stamp it. The real-turn clock is the main lineage's, so a
   triage ping does not reset the give-up cap. The cadence is `[transport]
   keepalive-interval` when set, else four fifths of the triage provider's cache
   lifetime; zero turns both lineages off.
-- **Folds.** A fold stamped after the stored primer was sent drops the stored turns and
-  empties the triage touch clock, as a fold empties the main one. The primer's stamp is
-  taken before its send, so a fold that lands during the send drops it as well.
-- **Guards.** The affordability check uses the triage model's prices (carried from boot
-  as `SessionBoot::triage_prices`). The terminal-rejection stop and the usage-limit pause
-  apply as on the main lineage. Each lineage publishes its own stance:
-  `usage.keepalive_skipped` for the main, `usage.triage_keepalive_skipped` for this one.
+- **Folds.** A fold stamped after the stored request was sent drops it and empties the
+  triage touch clock, as a fold empties the main one. The request's stamp is taken before
+  its send, so a fold that lands during the send drops it as well.
+- **Guards.** The output cap is the triage provider's (`Provider::keepalive_output_cap`).
+  The affordability check uses the triage model's prices (carried from boot as
+  `SessionBoot::triage_prices`) against the stored request's prompt tokens: the
+  request's own until a ping reads it, then the last ping's, which read exactly the
+  stored prefix. The terminal-rejection stop and the usage-limit pause apply as on the
+  main lineage. Each lineage publishes its own stance: `usage.keepalive_skipped` for the
+  main, `usage.triage_keepalive_skipped` for this one.
 - **Record.** A ping is recorded under the `triage_keepalive` origin, with the main
   prefix untouched, so `efference dev cache` prices it apart from `keepalive`, and
   `ColdStreak` does not count it. The triage clock is not seeded from `usage.jsonl` on a
   restart, since nothing stored survives one: the first triage read after a restart is cold.
-
-It is not armed on a shared triage, whose requests ride the main prefix that the main
-keepalive keeps; on an own triage model whose client plants no primer (a Messages-dialect
-model, where no primer is sent); or at interval zero.
-
-The ping refreshes the point the last primer planted. A result triage after the
-primer writes a resume point at its own breakpoint, which the ping does not refresh.
