@@ -4,31 +4,52 @@
 //! The id is the session directory's name, the `--name` a client resolves, and
 //! the address a peer will message; it never changes. A word pair is what makes
 //! it typeable from memory — the timestamp it replaced had to be copied out of
-//! an `ls`. The lists are short on purpose: every word is common, unambiguous
-//! to spell, and safe to say aloud.
+//! an `ls`. The lists hold common words only: every word is unambiguous to spell
+//! and safe to say aloud. About 150 of each give the
+//! host-wide id space (docs/session-title.md) some twenty thousand pairs.
 
 #[rustfmt::skip]
 const ADJECTIVES: &[&str] = &[
-    "amber", "bold", "brisk", "calm", "clear", "cool", "crisp", "deft", "dry", "eager",
-    "fair", "fond", "glad", "green", "hardy", "keen", "kind", "late", "lean", "light",
-    "lucid", "mild", "neat", "new", "odd", "pale", "plain", "proud", "quick", "quiet",
-    "rare", "ripe", "rosy", "round", "sharp", "shy", "sleek", "slow", "small", "snug",
-    "soft", "spare", "steep", "still", "swift", "tall", "tidy", "true", "vivid", "warm",
-    "wide", "wild", "wise", "young",
+    "airy", "amber", "ample", "apt", "avid", "bold", "brave", "breezy", "bright",
+    "brisk", "broad", "busy", "calm", "candid", "cheery", "chill", "civil", "clean", "clear",
+    "cool", "coral", "cozy", "crisp", "daring", "deft", "dense", "direct", "dry", "dusty",
+    "eager", "early", "easy", "even", "exact", "fair", "fancy", "fast", "fine", "firm",
+    "fleet", "fond", "fresh", "frosty", "full", "gentle", "glad", "gold", "golden", "grand",
+    "green", "happy", "hardy", "hasty", "hearty", "high", "honest", "humble",
+    "icy", "ideal", "inner", "ivory", "jolly", "keen", "kind", "late", "lean", "light",
+    "lively", "lofty", "long", "loud", "loyal", "lucid", "lucky", "lush", "major", "mellow",
+    "merry", "mild", "modest", "narrow", "neat", "new", "nimble", "noble", "odd", "olive",
+    "open", "pale", "plain", "plucky", "polite", "prime", "proud", "pure", "quick", "quiet",
+    "rare", "ready", "regal", "rich", "ripe", "rosy", "round", "rustic", "sandy", "serene",
+    "sharp", "shy", "silver", "simple", "sleek", "slow", "small", "smooth", "snug", "soft",
+    "solid", "sound", "spare", "spry", "stable", "steady", "steep", "still", "stout",
+    "sturdy", "sunny", "swift", "tall", "tame", "tawny", "teal", "tender", "thin", "tidy",
+    "tough", "trim", "true", "upper", "vast", "vivid", "warm", "wide", "wild", "wise",
+    "witty", "young", "zesty",
 ];
 
 #[rustfmt::skip]
 const NOUNS: &[&str] = &[
-    "anvil", "arch", "badger", "bay", "beacon", "birch", "brook", "cedar", "cliff", "comet",
-    "crane", "delta", "dune", "ember", "falcon", "fern", "finch", "fjord", "glade", "harbor",
-    "hawk", "heron", "inlet", "isle", "kestrel", "lark", "lantern", "linnet", "lynx", "marsh",
-    "meadow", "mesa", "moss", "otter", "pebble", "pine", "plover", "prism", "quail", "raven",
-    "reef", "ridge", "river", "robin", "sable", "shoal", "sparrow", "spruce", "summit", "tarn",
-    "thrush", "walnut", "willow", "wren",
+    "acorn", "anvil", "arch", "ash", "aspen", "atlas", "aurora", "badger", "basin", "bay",
+    "beacon", "birch", "bison", "bluff", "boulder", "breeze", "bridge", "brook",
+    "canoe", "canyon", "cave", "cedar", "cinder", "cliff", "cloud", "clover",
+    "comet", "cove", "crane", "creek", "crest", "daisy", "dawn", "delta", "dove", "drift",
+    "dune", "eagle", "elm", "ember", "falcon", "fawn", "fern", "field", "fig", "finch",
+    "fjord", "flax", "flint", "forest", "fox", "frost", "garden", "glade", "glen", "gorge",
+    "grove", "gull", "harbor", "hawk", "hazel", "heath", "heron", "hill", "hollow", "inlet",
+    "isle", "ivy", "jade", "jay", "juniper", "kestrel", "kite", "lagoon", "lake", "lantern",
+    "larch", "lark", "lilac", "linnet", "loon", "lynx", "maple", "marsh", "meadow", "mesa",
+    "mist", "mole", "moon", "moss", "moth", "oak", "orchard", "orchid", "osprey", "otter",
+    "owl", "pebble", "pine", "plover", "pond", "poplar", "prairie", "prism", "puffin",
+    "quail", "quartz", "raven", "reef", "ridge", "river", "robin", "rowan", "sable",
+    "sage", "sand", "seal", "shoal", "shore", "slate", "sparrow", "spring", "spruce",
+    "stone", "storm", "stream", "summit", "swan", "tarn", "thistle", "thorn", "thrush",
+    "tide", "trail", "trout", "tulip", "tundra", "valley", "violet", "walnut", "wave",
+    "wheat", "willow", "wolf", "woods", "wren",
 ];
 
 /// Draws before the minter gives up on finding a free pair and suffixes the last
-/// one instead. Two short lists give a few thousand pairs; a project with so many
+/// one instead. Two lists of about 150 words give some twenty thousand pairs; a host with so many
 /// session directories that this many draws all collide is the case the suffix
 /// exists for, not the ordinary one.
 const DRAWS: usize = 16;
