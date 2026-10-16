@@ -215,13 +215,15 @@ fn topic_wire_names_are_pinned() {
         Topic::Notifications,
         Topic::Pace,
         Topic::ReviewLevel,
-        Topic::Running,
+        Topic::LoopPhase,
+        Topic::Verbs,
         Topic::Stall,
         Topic::UpstreamFailure,
         Topic::UpstreamRetry,
         Topic::Cold,
-        Topic::Compaction,
+        Topic::CompactionFailure,
         Topic::SessionIdentity,
+        Topic::CurrentOperations,
     ]
     .iter()
     .map(|t| t.as_str())
@@ -237,13 +239,15 @@ fn topic_wire_names_are_pinned() {
             "notifications",
             "pace",
             "review_level",
-            "running",
+            "loop_phase",
+            "verbs",
             "stall",
             "upstream_failure",
             "upstream_retry",
             "cold",
-            "compaction",
+            "compaction_failure",
             "session_identity",
+            "current_operations",
         ]
     );
 }

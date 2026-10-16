@@ -137,7 +137,7 @@ async fn triage_is_shown_the_masked_result() {
     session.submit_turn(SubmittedTurn::new("go", "s1"));
 
     // The loop is idle until the submission reaches it, so the turn is waited for by
-    // what it did rather than by `running`, which is false in both states.
+    // what it did rather than by the phase, which is idle in both states.
     wait_until("the turn has run", || requests.load(Ordering::SeqCst) >= 3).await;
     wait_until("the turn finishes", || {
         session.loop_phase() == crate::daemon::LoopPhase::Idle

@@ -4,10 +4,10 @@ use super::*;
 
 /// The composite current representation — every state topic under its own
 /// name (docs/control-api.md). `?wait=settled` blocks until the daemon
-/// reaches a decision point — a gate is pending, or the loop is idle — then
-/// answers with the same snapshot: the wait-without-acting read that
-/// replaces polling in a wall-clock loop (docs/permissions.md). Returns at
-/// once if already settled.
+/// reaches a decision point — the loop phase is idle with nothing queued, gated,
+/// asking, cold-parked, or blocked — then answers with the same snapshot, whose
+/// `loop_phase` names which: the wait-without-acting read that replaces polling in
+/// a wall-clock loop. Returns at once if already settled.
 pub(super) async fn read_state(conn: Conn) -> Conn {
     let Some(shared) = shared_of(&conn) else {
         return missing_state(conn);

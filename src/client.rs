@@ -224,9 +224,10 @@ impl Client {
         .await
     }
 
-    /// Block until the daemon next reaches a decision point — a gate is pending, or the loop is
-    /// idle — and return the `/state` snapshot (`GET /state?wait=settled`). Returns immediately
-    /// if already settled (docs/permissions.md).
+    /// Block until the daemon next reaches a decision point — the loop phase is idle with
+    /// nothing queued, gated, asking, cold-parked, or blocked — and return the `/state`
+    /// snapshot (`GET /state?wait=settled`), whose `loop_phase` names which. Returns
+    /// immediately if already settled (docs/control-api.md).
     pub async fn settle(&self) -> Result<String> {
         self.get("/state?wait=settled").await
     }
@@ -552,7 +553,7 @@ pub enum CompactOutcome {
 pub enum ContinueOutcome {
     /// The loop accepted the continue and is taking another turn.
     Accepted,
-    /// The moment had no continue in it — the loop is running or gated, or the
+    /// The moment had no continue in it — the loop is busy or gated, or the
     /// wire ends where re-prompting it means nothing.
     Declined { message: String },
 }

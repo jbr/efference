@@ -30,15 +30,12 @@ impl Session {
             Topic::Supervisor => self.supervisor_json(),
             Topic::LoopPhase => self.loop_phase_json(),
             Topic::Verbs => self.verbs_json(),
-            Topic::Running => self.running_json(),
             Topic::Queued => self.queued_json(),
             Topic::Stall => self.stall_json(),
             Topic::UpstreamFailure => self.upstream_failure_json(),
             Topic::TriageUpstreamFailure => self.triage_upstream_failure_json(),
             Topic::UpstreamRetry => self.upstream_retry_json(),
             Topic::Cold => self.cold_json(),
-            Topic::Park => self.park_json(),
-            Topic::Compaction => self.compaction_json(),
             Topic::CompactionFailure => self.compaction_failure_json(),
             Topic::ConfigRepair => self.config_repair_json(),
             Topic::SessionIdentity => self.session_identity_json(),
@@ -63,14 +60,13 @@ impl Session {
     }
 
     /// The loop resource (`GET /loop`, docs/control-channel.md): the operator dials
-    /// and the read-only `running` flag, each field the same value — and the same
+    /// and the read-only `loop_phase`, each field the same value — and the same
     /// name — as its state topic, so the resource and the topics cannot drift.
     pub(super) fn loop_json(&self) -> String {
         serde_json::json!({
             "pace": self.topic_json(Topic::Pace),
             "review_level": self.topic_json(Topic::ReviewLevel),
             "loop_phase": self.topic_json(Topic::LoopPhase),
-            "running": self.topic_json(Topic::Running),
         })
         .to_string()
     }
@@ -264,14 +260,6 @@ impl Session {
         serde_json::to_value(self.supervisor()).unwrap_or(Value::Null)
     }
 
-    /// Whether the loop is executing a turn (vs. parked idle) — the "is something
-    /// happening" signal the TUI's graduated Esc reads to decide pause-vs-swallow
-    /// (docs/tui.md). Unlike streaming deltas, this stays true through a *silent*
-    /// long-running tool, so Esc can still reach it.
-    fn running_json(&self) -> Value {
-        Value::from(self.loop_phase() != LoopPhase::Idle)
-    }
-
     /// The pending turn queue in submission order: `[{"submission_id":…,"text":…}]`, `[]` when
     /// nothing is queued (docs/control-api.md). A pending turn is ephemeral control state — never
     /// logged, never projected — so this is the only place it is readable, and it is what a
@@ -289,7 +277,7 @@ impl Session {
     /// spent, when it stopped, and a lead line naming what recovers it. `null`
     /// once a trajectory starts again, so the topic reports the condition now
     /// rather than one already recovered from. It is the difference between the
-    /// two idle states `running: false` collapses — finished, and stopped short.
+    /// two idle states the idle phase collapses — finished, and stopped short.
     fn stall_json(&self) -> Value {
         serde_json::to_value(self.stall()).unwrap_or(Value::Null)
     }

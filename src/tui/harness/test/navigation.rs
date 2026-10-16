@@ -270,7 +270,7 @@ fn esc_at_an_idle_composer_is_swallowed() {
     let none = KeyModifiers::NONE;
     let mut play = Screenplay::new(80, 12);
     play.user("x");
-    // Default state: not streaming, `running` never reported true → idle.
+    // Default state: not streaming, the loop phase never left idle.
     play.route_key(KeyCode::Esc, none);
     assert!(
         play.find("HELD").is_none(),
@@ -289,7 +289,7 @@ fn graduated_esc_is_state_driven_return_pause_interrupt() {
     let none = KeyModifiers::NONE;
     let mut play = Screenplay::new(80, 12);
     play.user("do a thing");
-    // The loop is working — the daemon's `running` topic reports true.
+    // The loop is working — the daemon's `loop_phase` topic reports a request.
     play.event(TuiEvent::Phase(crate::daemon::LoopPhase::Requesting));
 
     // From transcript navigation, Esc returns to the composer — it does not pause.

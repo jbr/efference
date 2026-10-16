@@ -74,7 +74,7 @@ fn state_reports_the_retry_in_flight() {
     );
 }
 
-/// `GET /state` distinguishes the two idle conditions `running: false` collapses:
+/// `GET /state` distinguishes the two idle conditions the idle phase collapses:
 /// a trajectory that finished, and one that gave up (docs/transport.md). The
 /// `stall` topic is set when the loop stops short and cleared when a trajectory
 /// starts again, so a supervising client polling an idle daemon can tell them

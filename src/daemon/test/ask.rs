@@ -91,9 +91,9 @@ async fn the_topic_differ_publishes_an_ask_and_its_end() {
     assert_eq!(latest[&Topic::Ask], "null");
 }
 
-/// A question outranks a stall and the running flag, but not a held call — nothing runs
-/// while a call is held. It is a decision point for `settle`, and stops being one once
-/// the reply has been taken and the loop is running again.
+/// A question is its own phase and status until a held call takes the phase — nothing
+/// runs while a call is held. It is a decision point for `settle`, and stops being one
+/// once the reply has been taken and the loop is executing again.
 #[test]
 fn asking_is_a_status_and_a_decision_point() {
     let shared = session();

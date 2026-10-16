@@ -316,8 +316,8 @@ pub(crate) fn wants_wait(query: &str) -> bool {
 
 /// Block until the daemon settles (capped by [`SETTLE_TIMEOUT`]), then answer with the `/state`
 /// snapshot — the shared tail of `GET /state?wait=settled` and the write routes' `?wait`. The
-/// body is exactly `/state`'s, so a settled response is just a fresh state read; the client
-/// inspects `gate` to tell a gate from idle.
+/// body is exactly `/state`'s, so a settled response is just a fresh state read; its
+/// `loop_phase` names where the loop stopped.
 pub(crate) async fn settle_and_state(shared: &Arc<Session>, conn: Conn) -> Conn {
     let _ = tokio::time::timeout(SETTLE_TIMEOUT, shared.await_settled()).await;
     conn.with_status(200).with_body(shared.state_json()).halt()

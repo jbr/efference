@@ -108,8 +108,7 @@ async fn the_cold_check_parks_until_a_person_acts() {
     assert_eq!(Some(since), shared.cold_since());
     let state: serde_json::Value = serde_json::from_str(&shared.state_json()).unwrap();
     assert_eq!(state["loop_phase"]["phase"], "cold_parked");
-    assert_eq!(state["park"]["reason"], "expired");
-    assert_eq!(state["park"]["since"], state["cold"]["since"]);
+    assert_eq!(state["cold"]["since"], serde_json::json!(since));
     assert!(
         shared
             .status_body("s1", &shared.status())
@@ -136,7 +135,7 @@ async fn the_cold_check_parks_until_a_person_acts() {
 }
 
 /// A compaction at a mid-turn park ends the cold belief but not the park: the loop waits for
-/// the next turn or continue, and the `park` topic says so while `cold` is null.
+/// the next turn or continue, and the phase says so while `cold` is null.
 #[tokio::test]
 async fn a_fold_leaves_the_park_folded() {
     let (shared, _rx) = cold_session().await;
@@ -156,8 +155,8 @@ async fn a_fold_leaves_the_park_folded() {
         .unwrap();
     assert_eq!(shared.topic_json(Topic::Cold), Value::Null);
     assert_eq!(
-        shared.topic_json(Topic::Park),
-        serde_json::json!({ "reason": "compacted" })
+        shared.topic_json(Topic::LoopPhase),
+        serde_json::json!({ "phase": "cold_parked" })
     );
     assert_eq!(
         shared.status(),
@@ -170,7 +169,10 @@ async fn a_fold_leaves_the_park_folded() {
         .await
         .expect("released")
         .unwrap();
-    assert_eq!(shared.topic_json(Topic::Park), Value::Null);
+    assert_eq!(
+        shared.topic_json(Topic::LoopPhase),
+        serde_json::json!({ "phase": "requesting" })
+    );
 }
 
 /// A person's action is recorded only while the session is cold: a warm session (no

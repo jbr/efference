@@ -117,20 +117,6 @@ impl Session {
         self.operations.lock().unwrap().compaction().cloned()
     }
 
-    /// The `compaction` topic: `{state: "writing"}` while a compaction is waiting or
-    /// writing, `{state: "failed", error}` after one failed until the next turn's
-    /// request or compaction, else `null`. Independent of the `cold` topic: a
-    /// compaction can run on a warm session.
-    pub(super) fn compaction_json(&self) -> Value {
-        match self.compaction_state() {
-            None => Value::Null,
-            Some(CompactionState::Failed { error, .. }) => {
-                serde_json::json!({"state": "failed", "error": error})
-            }
-            Some(_) => serde_json::json!({"state": "writing"}),
-        }
-    }
-
     /// The `compaction_failure` topic: `{error, at}` after a compaction failed, until a
     /// turn's request goes out or another compaction is asked for (docs/summary.md).
     pub(super) fn compaction_failure_json(&self) -> Value {

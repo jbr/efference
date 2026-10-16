@@ -28,7 +28,7 @@ pub enum StallReason {
 /// A trajectory that ended without finishing (docs/transport.md).
 ///
 /// The loop returns to idle on both failure paths above, which leaves the
-/// daemon's other signals — `running: false`, no gate, an empty inbox once a
+/// daemon's other signals — the idle phase, no gate, an empty inbox once a
 /// triage has dismissed the notification — identical to a run that
 /// finished its work. This topic is the difference a supervising client reads:
 /// set when the loop gives up, cleared when a trajectory next starts, so it

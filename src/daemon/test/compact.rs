@@ -129,7 +129,7 @@ fn a_compaction_needs_a_cold_session() {
 }
 
 /// `warm: true` is the operator's explicit request to compact a session whose cache is
-/// not believed expired; the progress shows on the `compaction` topic, not the `cold` one.
+/// not believed expired; the progress shows in `current_operations`, not the `cold` topic.
 #[tokio::test]
 async fn a_warm_compaction_is_accepted_on_request_and_reports_on_its_topic() {
     let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
@@ -140,12 +140,16 @@ async fn a_warm_compaction_is_accepted_on_request_and_reports_on_its_topic() {
         shared.request_compaction(false),
         Err(NotCompactable::NotCold)
     );
-    assert_eq!(shared.topic_json(Topic::Compaction), Value::Null);
+    assert_eq!(shared.topic_json(Topic::CurrentOperations), Value::Null);
 
     assert_eq!(shared.request_compaction(true), Ok(()));
     assert_eq!(
-        shared.topic_json(Topic::Compaction),
-        serde_json::json!({"state": "writing"})
+        shared.topic_json(Topic::CurrentOperations)["compaction"]["state"],
+        "waiting"
+    );
+    assert_eq!(
+        shared.topic_json(Topic::CurrentOperations)["compaction"]["warm"],
+        true
     );
     assert_eq!(shared.topic_json(Topic::Cold), Value::Null);
 }
@@ -202,9 +206,13 @@ fn a_failed_compaction_clears_when_a_turn_starts() {
             }),
         )
         .unwrap();
+    let failure = shared.topic_json(Topic::CompactionFailure);
+    assert_eq!(failure["error"], "boom");
+    assert!(failure["at"].is_u64());
     assert_eq!(
-        shared.topic_json(Topic::Compaction),
-        serde_json::json!({"state": "failed", "error": "boom"})
+        shared.topic_json(Topic::CurrentOperations),
+        Value::Null,
+        "a failure is not in flight"
     );
     shared
         .append(
@@ -218,7 +226,7 @@ fn a_failed_compaction_clears_when_a_turn_starts() {
             )),
         )
         .unwrap();
-    assert_eq!(shared.topic_json(Topic::Compaction), Value::Null);
+    assert_eq!(shared.topic_json(Topic::CompactionFailure), Value::Null);
 }
 
 /// An accepted compaction is a `CompactionRequested` entry naming the cut and the warm

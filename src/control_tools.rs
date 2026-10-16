@@ -79,8 +79,9 @@ pending gate; `approve` resolves it (approve, `abort` to unwind the whole turn, 
 `redirect` to reject this call and steer with a message).
 
 Waiting: `turn` with `wait`, `approve` with `wait`, and `settle` all block until the \
-session reaches its next decision point — a gate, or the turn completing — and return \
-its `/state` then. Pass `timeout_s`; on expiry they return the current state with \
+session reaches its next decision point — a gate, a question, the turn completing, or a \
+stop that waits on someone (a cold park, a block) — and return its `/state` then, whose \
+`loop_phase` names which. Pass `timeout_s`; on expiry they return the current state with \
 `settled: false` rather than an error.
 
 `turn` interrupts what the session is doing with a new user message; `notify` files an \
@@ -734,8 +735,9 @@ pub struct StateResult {
     /// stopped.
     #[serde(skip_serializing_if = "Option::is_none")]
     settled: Option<bool>,
-    /// The daemon's ephemeral control state: the pending gate if there is one, the
-    /// pending question (`ask`) if the loop is waiting on a reply, the loop's status, the inbox, and the running processes.
+    /// The daemon's ephemeral control state: where the loop is (`loop_phase`), the
+    /// pending gate if there is one, the pending question (`ask`) if the loop is waiting
+    /// on a reply, the inbox, and the running processes.
     state: Value,
 }
 

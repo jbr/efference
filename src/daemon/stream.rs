@@ -19,7 +19,7 @@
 //!   settle correctly.
 //!
 //! Coherence is the whole reason for one connection. Across three, a client could see the
-//! gate before the `spot` entry whose text the gate is quoting, or `running: false` before
+//! gate before the `spot` entry whose text the gate is quoting, or an idle `loop_phase` before
 //! the entries that finished the turn — the second answering "is it done?" wrong, in the
 //! direction a human acts on.
 

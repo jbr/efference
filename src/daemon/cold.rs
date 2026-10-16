@@ -11,8 +11,8 @@ use super::*;
 use crate::log::Telemetry;
 use crate::log::{ColdEvent, ColdReason, ReleasedBy, Timestamp, UnparkCause};
 
-/// Why the loop is stopped at its cold check mid-turn (the `park` topic,
-/// docs/control-api.md).
+/// Why the loop is stopped at its cold check mid-turn (the `cold_parked` loop phase,
+/// docs/control-api.md): what a status subscriber is told.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum ParkReason {
     /// The cache is believed expired: continuing pays `context_tokens` uncached. The
@@ -86,8 +86,8 @@ impl Session {
 
     /// The `cold` topic: `{since, context_tokens}`, or `null`. `context_tokens` is
     /// the last turn's prompt — what reading the context unfolded would cost, in tokens.
-    /// Whether the loop is stopped at its cold check is the separate `park` topic.
-    /// A compaction's progress is the separate `compaction` topic.
+    /// Whether the loop is stopped at its cold check is the `cold_parked` loop phase.
+    /// A compaction in flight is in `current_operations`.
     pub(super) fn cold_json(&self) -> Value {
         let Some(since) = self.cold_since() else {
             return Value::Null;
@@ -110,23 +110,6 @@ impl Session {
             },
             None => ParkReason::Compacted,
         })
-    }
-
-    /// The `park` topic: `{reason: "expired", since, context_tokens}`,
-    /// `{reason: "compacted"}`, or `null` when the loop is not parked at its cold check.
-    pub(super) fn park_json(&self) -> Value {
-        match self.park_reason() {
-            None => Value::Null,
-            Some(ParkReason::Expired {
-                since,
-                context_tokens,
-            }) => serde_json::json!({
-                "reason": "expired",
-                "since": since,
-                "context_tokens": context_tokens,
-            }),
-            Some(ParkReason::Compacted) => serde_json::json!({ "reason": "compacted" }),
-        }
     }
 
     /// The last turn's prompt in tokens: what reading the context unfolded would cost.

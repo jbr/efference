@@ -306,7 +306,11 @@ async fn loop_resource_moves_both_dials_in_one_call() {
 
     let read: Value = serde_json::from_str(app.get("/v1/loop").await.body()).unwrap();
     assert!(read["pace"]["speed_ms"].is_u64());
-    assert_eq!(read["running"], false);
+    assert_eq!(read["loop_phase"], serde_json::json!({ "phase": "idle" }));
+    assert!(
+        read.get("running").is_none(),
+        "the loop phase replaced the flag"
+    );
 
     let conn = app
         .patch("/v1/loop")
@@ -331,7 +335,7 @@ async fn loop_resource_moves_both_dials_in_one_call() {
     let state: Value = serde_json::from_str(&shared.state_json()).unwrap();
     assert_eq!(state["pace"], read["pace"]);
     assert_eq!(state["review_level"], read["review_level"]);
-    assert_eq!(state["running"], read["running"]);
+    assert_eq!(state["loop_phase"], read["loop_phase"]);
 }
 
 /// `GET /state?wait=settled` blocks until a decision point — an idle daemon is

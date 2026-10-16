@@ -6,8 +6,10 @@ use mcplease::{
 };
 use serde::{Deserialize, Serialize};
 
-/// Block until the session reaches a decision point — a gate is pending, the loop is
-/// asking a question, or the loop has gone idle — and answer with its state then. The wait-without-acting call:
+/// Block until the session reaches a decision point and answer with its state then:
+/// the loop is idle, gated on a call, asking a question, parked before an uncached read
+/// (`cold_parked`), or blocked until someone acts (a held triage, a held pace, a config
+/// file to repair). The state's `loop_phase` names which. The wait-without-acting call:
 /// nothing is submitted and no gate is resolved, so it is the way to watch where an
 /// in-flight turn lands. Returns immediately if the session is already settled.
 #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema, clap::Args)]

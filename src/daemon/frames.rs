@@ -119,15 +119,13 @@ pub(crate) enum Topic {
     /// What each loop route would answer now (docs/control-api.md): `turn`,
     /// `continue`, and `compact`, each accepted or refused with the route's message.
     Verbs,
-    /// Whether the loop is executing a turn.
-    Running,
     /// Turns submitted but not yet dequeued, in submission order — `[{submission_id, text}]`
     /// (docs/control-channel.md). The clients' optimistic pending echo keys off it, and it is
     /// what makes the queue addressable for a withdraw.
     Queued,
     /// A trajectory that gave up rather than finished (docs/transport.md).
-    /// `null` when the last one finished. Beside [`Running`](Self::Running)
-    /// because it is what distinguishes the two idle conditions that flag
+    /// `null` when the last one finished. Beside [`LoopPhase`](Self::LoopPhase)
+    /// because it is what distinguishes the two idle conditions the phase
     /// cannot: "idle, done" from "idle, gave up".
     Stall,
     /// The last non-success upstream response (docs/transport.md).
@@ -142,18 +140,9 @@ pub(crate) enum Topic {
     /// cold-session.md): `{since, context_tokens}`, `null` while it is believed warm,
     /// before the first request, and on a model with no cache.
     Cold,
-    /// The loop is stopped at its cold check mid-turn (docs/control-api.md):
-    /// `{reason: "expired", since, context_tokens}`, `{reason: "compacted"}`, or `null`.
-    /// Separate from [`Cold`](Self::Cold), which is `null` after a compaction though the
-    /// loop stays parked until the next turn or continue.
-    Park,
     /// The last compaction's failure (docs/summary.md): `{error, at}`, or `null` —
     /// cleared when a turn's request goes out or another compaction is asked for.
     CompactionFailure,
-    /// A compaction in progress, or the last one's failure (docs/control-api.md):
-    /// `{state: "writing"}`, `{state: "failed", error}`, or `null`. Separate from
-    /// [`Cold`](Self::Cold) because a compaction can be asked of a warm session.
-    Compaction,
     /// The config file on disk does not parse and could not be restored, so the
     /// loop is parked until a human repairs it (docs/permissions.md). `null`
     /// whenever the file parses — which is nearly always, since a bad edit is
@@ -166,8 +155,8 @@ pub(crate) enum Topic {
     SessionIdentity,
     /// What the loop is waiting on right now (docs/control-api.md): the upstream
     /// requests open, each with its origin, stage, and the instant that stage began,
-    /// and the tool calls executing. `null` when nothing is open. Parked waits keep
-    /// their own topics.
+    /// the tool calls executing, and a compaction waiting or writing. `null` when
+    /// nothing is open. Where the loop itself waits is [`LoopPhase`](Self::LoopPhase).
     CurrentOperations,
 }
 
@@ -177,7 +166,7 @@ impl Topic {
     /// walking it, so a topic added here reaches both surfaces or neither — which is
     /// what keeps `GET /state` equal to the fold of every state frame
     /// (docs/control-api.md).
-    pub(crate) const ALL: [Topic; 26] = [
+    pub(crate) const ALL: [Topic; 23] = [
         Self::Gate,
         Self::Ask,
         Self::Processes,
@@ -191,15 +180,12 @@ impl Topic {
         Self::Supervisor,
         Self::LoopPhase,
         Self::Verbs,
-        Self::Running,
         Self::Queued,
         Self::Stall,
         Self::UpstreamFailure,
         Self::TriageUpstreamFailure,
         Self::UpstreamRetry,
         Self::Cold,
-        Self::Park,
-        Self::Compaction,
         Self::CompactionFailure,
         Self::ConfigRepair,
         Self::SessionIdentity,
@@ -229,15 +215,12 @@ impl Topic {
             Self::Supervisor => "supervisor",
             Self::LoopPhase => "loop_phase",
             Self::Verbs => "verbs",
-            Self::Running => "running",
             Self::Queued => "queued",
             Self::Stall => "stall",
             Self::UpstreamFailure => "upstream_failure",
             Self::TriageUpstreamFailure => "triage_upstream_failure",
             Self::UpstreamRetry => "upstream_retry",
             Self::Cold => "cold",
-            Self::Park => "park",
-            Self::Compaction => "compaction",
             Self::CompactionFailure => "compaction_failure",
             Self::ConfigRepair => "config_repair",
             Self::SessionIdentity => "session_identity",
