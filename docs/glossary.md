@@ -6,12 +6,9 @@ than one current meaning are listed with each sense, so a reader can tell which 
 
 | word | identifiers | governing doc |
 | --- | --- | --- |
-| **triage** — the role that judges each tool result before the agent sees it | `src/triage/`, `Triager`, `Triager`, `triage` (`triage.rs`, `dev triage`), `WireState::Triaged`, `RequestOrigin::Triage` / `"triage"` in `usage.jsonl`; the web's "triaged" labels | triage.md |
-| **triage verdict** — what triage returns: which lines to keep, and a note | `Triaged { keep, note }`, the `retain` tool | triage.md |
 | **triage primer** — a capped request that plants the triage model's cache | `Triager::prime`, `RequestOrigin::TriagePrimer` | transport.md |
 | **fold** — replacing earlier history with a written account | `POST /loop/fold`, `fold.rs`, `consolidate` (the agent's tool), `Payload::Mark` with `MarkKind::Boundary { upto }`, "summary head", "narrator" (`narrate::narrate`) | consolidate.md, summary-head.md |
-| **gate** (1) — a tool call held for a permission decision | `Approval`, `/state`'s `gate`, the loop's `Gated` position | permissions.md |
-| **gate** (2) — *older sense, being retired*: the triage pass over one completion's results | `src/agent/gate.rs` (the triage hold), `Patience::GATE`, `TRIAGE_RESTARTS` | triage.md |
+| **gate** — a tool call held for a permission decision | `Approval`, `/state`'s `gate`, the loop's `Gated` position | permissions.md |
 | **upstream** (1) — the model API endpoint | `--upstream`, `api::Upstream`, `upstream_failure`, `upstream_retry` | transport.md |
 | **upstream** (2) — the session that reviews this one's gates | `ReviewLevel::Upstream`, `resolved_review_level: "upstream"` | permissions.md |
 | **seam-drain** — queued user turns delivered between a completion's results and the next request | | control-channel.md |

@@ -254,7 +254,7 @@ struct AskVariant {
     output_final: bool,
     /// The shape sentence says "the call the agent just made" instead of "the call you
     /// just made" — the separate-model triage's alternative framing
-    /// (backlog/inbox/triager-experiment.md). Off: the tail keeps its first-person frame for
+    /// (backlog/inbox/distiller-experiment.md). Off: the tail keeps its first-person frame for
     /// both the shared and the separate-model triage (their `keep`/`note` rows differ by
     /// reader, [`REPORT_FIELDS`]).
     third_person: bool,

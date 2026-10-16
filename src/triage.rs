@@ -253,7 +253,7 @@ struct OwnTriage {
     tools: Vec<Value>,
     /// Force the asked-for tool (`tool_choice: {type: tool}`) rather than `auto`.
     /// The default: the first separate-model run opened five of eight triages with an
-    /// invented work call (backlog/inbox/triager-experiment.md), and forcing removes that
+    /// invented work call (backlog/inbox/distiller-experiment.md), and forcing removes that
     /// path by construction. `auto` is the knob, kept for the ablation and for a
     /// Claude triage model that should think (a forced choice disables thinking).
     force_choice: bool,

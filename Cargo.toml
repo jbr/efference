@@ -25,7 +25,7 @@ async-compat = "0.2"
 schemars = "1.2.2"
 anyhow = "1"
 # Lightweight logging facade + env-driven backend. The daemon emits request sizes,
-# fork-peek fallbacks, capped tool results, and full API error bodies; control verbosity
+# triage fallbacks, capped tool results, and full API error bodies; control verbosity
 # with RUST_LOG (e.g. `RUST_LOG=efference=debug efference serve`).
 log = "0.4"
 env_logger = "0.11"

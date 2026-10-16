@@ -1,6 +1,6 @@
-# The triage — triage on every tool result
+# Triage — judging every tool result
 
-Every tool result enters the canonical lineage through a fork: a throwaway branch
+Triage is the role that selects what of each tool result reaches the agent. Every tool result enters the canonical lineage through a fork: a throwaway branch
 that shares a cached prefix with canonical but whose raw content and extraction
 prompt are never appended to it.
 
@@ -263,7 +263,7 @@ a live session measures that.
 
 What is *not* built: the own client's retry and reservation state is not reported
 on `GET /state`, and nothing acts on the triage model's context window being
-smaller than the agent's (backlog/inbox/triager-experiment.md).
+smaller than the agent's (backlog/inbox/distiller-experiment.md).
 
 ## Two answer shapes, and one scoped ask
 
@@ -562,7 +562,7 @@ reported rather than silently absent.
 
 ## The fork manages perception, not the world
 
-Redaction is one instance of a more general role: the fork is where the agent
+Choosing lines of a result is one instance of a more general role: the fork is where the agent
 decides **what it will perceive next** — which lines of a result survive, which
 notifications to pin or dismiss (see [the inbox doc](inbox.md)), which streams to
 subscribe to or tail. All of it is a reversible projection choice over the agent's
