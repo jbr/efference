@@ -289,6 +289,11 @@ pub struct Session {
     /// carried them (`api/plan.rs`), shared with the HTTP client and published
     /// under `usage.plan`. `None` for every other provider. Transport-only.
     plan: crate::api::PlanState,
+    /// The separate triage client's own failure and plan cells (docs/control-api.md),
+    /// set once at boot when the triage runs on its own model and never set when it
+    /// borrows the agent's client. Their presence is what makes `triage_upstream_failure`,
+    /// `usage.triage_plan`, and `usage.triage_cold_streak` non-null. Transport-only.
+    triage_client: std::sync::OnceLock<(UpstreamFailureState, crate::api::PlanState)>,
     /// Cumulative triage retention (docs/triage.md), folded lazily from the
     /// log behind a cursor rather than accumulated at the append sites. Unlike the
     /// transport telemetry above this is **derived from the canonical record**, so a

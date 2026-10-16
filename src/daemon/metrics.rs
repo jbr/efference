@@ -52,6 +52,9 @@ pub(super) struct Metrics {
     /// legitimate reason to (docs/log-and-projection.md) — the live end of the
     /// empirical prefix oracle, surfaced by `GET /state` as `usage.cold_streak`.
     pub(super) cold_streak: ColdStreak,
+    /// The same oracle over the separate triage lineage's reads, surfaced as
+    /// `usage.triage_cold_streak`; never fed when the triage borrows the agent's client.
+    pub(super) triage_cold_streak: ColdStreak,
     /// The most recent cache miss the provider attributed, surfaced as
     /// `usage.last_cache_miss` (docs/control-api.md) — the *why* beside the streak's
     /// *how often*. Kept across warm reads rather than cleared by them: a divergence the
@@ -194,11 +197,54 @@ impl ColdStreak {
         cache_read: u64,
     ) -> Option<CacheRead> {
         let touches_prefix = main_prefix || origin == RequestOrigin::AbortedAttempt;
+        self.fold(
+            origin == RequestOrigin::Turn,
+            touches_prefix,
+            at_ms,
+            model,
+            cache_read,
+        )
+    }
+
+    /// The same classification over a separate triage lineage's own prefix
+    /// (`usage.triage_cold_streak`, docs/control-api.md): a result triage on the triage
+    /// client and the primer that plants the lineage count; the triage keepalive ping
+    /// stamps the touch clock without counting, as the main keepalive does.
+    /// `triage_prefix` states whether the request read that prefix; a request that did
+    /// not neither counts nor touches.
+    pub fn observe_triage(
+        &mut self,
+        origin: RequestOrigin,
+        triage_prefix: bool,
+        at_ms: u128,
+        model: Option<&str>,
+        cache_read: u64,
+    ) -> Option<CacheRead> {
+        self.fold(
+            triage_prefix && matches!(origin, RequestOrigin::Triage | RequestOrigin::TriagePrimer),
+            triage_prefix,
+            at_ms,
+            model,
+            cache_read,
+        )
+    }
+
+    /// `counted`: the request is evidence about the prefix (it moves the streak);
+    /// `touches_prefix`: it read the prefix, so it stamps the touch clock the idle test
+    /// reads.
+    fn fold(
+        &mut self,
+        counted: bool,
+        touches_prefix: bool,
+        at_ms: u128,
+        model: Option<&str>,
+        cache_read: u64,
+    ) -> Option<CacheRead> {
         let previous_touch = self.last_touch_ms;
         if touches_prefix {
             self.last_touch_ms = Some(at_ms);
         }
-        if origin != RequestOrigin::Turn {
+        if !counted {
             return None;
         }
         let previous_model = self.last_model.clone();
@@ -497,6 +543,13 @@ impl Session {
             request.model.as_deref(),
             request.usage.cache_read_input_tokens,
         );
+        m.triage_cold_streak.observe_triage(
+            origin,
+            triage_prefix,
+            at_ms,
+            request.model.as_deref(),
+            request.usage.cache_read_input_tokens,
+        );
         Self::note_cache_miss(&mut m, at_ms, &request);
         Self::compaction_usage(&mut m, request.usage);
         if main_prefix {
@@ -540,6 +593,13 @@ impl Session {
         self.persist_usage(RequestOrigin::TriageKeepalive, false, at_ms, &request);
         self.price_request(&request);
         let mut m = self.metrics.lock().unwrap();
+        m.triage_cold_streak.observe_triage(
+            RequestOrigin::TriageKeepalive,
+            true,
+            at_ms,
+            request.model.as_deref(),
+            request.usage.cache_read_input_tokens,
+        );
         Self::compaction_usage(&mut m, request.usage);
         Self::stamp_triage_touch(&mut m, at_ms);
     }
@@ -626,6 +686,16 @@ impl Session {
         m.total_cache_read += usage.cache_read_input_tokens;
         m.total_cache_creation += usage.cache_creation_input_tokens;
         m.last_usage = Some(usage);
+    }
+
+    /// Record that the triage runs on its own client, handing over that client's failure
+    /// and plan cells for `GET /state` (docs/control-api.md). Set once at boot; a second
+    /// call is ignored.
+    pub(crate) fn set_triage_client(
+        &self,
+        cells: (crate::api::UpstreamFailureState, crate::api::PlanState),
+    ) {
+        let _ = self.triage_client.set(cells);
     }
 
     /// Consecutive unexplained cold main-loop reads (docs/log-and-projection.md) —

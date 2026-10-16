@@ -1617,6 +1617,12 @@ provider still matches it. The classifier, the threshold and the corpus it came
 from, and the offline `efference dev cache` view are in
 [log-and-projection](log-and-projection.md).
 
+A separate triage client's own readings sit beside the agent's under a `triage` prefix:
+`triage_upstream_failure` (a topic), `usage.triage_plan`, and `usage.triage_cold_streak`,
+each in the agent's shape and null while the triage borrows the agent's client
+(docs/control-api.md). The output reservation is not a `/state` reading for either
+client.
+
 Beside it the topic carries `usage.last_cache_miss` — the most recent miss the
 provider itself attributed, exactly as `CacheMiss` arrived, or null until it names
 one (docs/control-api.md). It is the *why* next to the streak's *how often*: a

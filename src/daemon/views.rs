@@ -32,6 +32,7 @@ impl Session {
             Topic::Queued => self.queued_json(),
             Topic::Stall => self.stall_json(),
             Topic::UpstreamFailure => self.upstream_failure_json(),
+            Topic::TriageUpstreamFailure => self.triage_upstream_failure_json(),
             Topic::UpstreamRetry => self.upstream_retry_json(),
             Topic::Cold => self.cold_json(),
             Topic::Park => self.park_json(),
@@ -176,6 +177,12 @@ impl Session {
             // model change, not idle past the TTL). A number, not a flag, so the
             // threshold stays a client decision; 0 whenever the last turn read warm.
             "cold_streak": metrics.cold_streak.streak(),
+            // The same count over the separate triage lineage's reads (triage results
+            // and primers); null while the triage borrows the agent's client.
+            "triage_cold_streak": self
+                .triage_client
+                .get()
+                .map(|_| metrics.triage_cold_streak.streak()),
             // What the provider said about the most recent miss it attributed
             // (docs/transport.md): the *why* beside the streak's *how often*. Null until
             // one arrives, and the reason is the provider's own spelling — the two that
@@ -192,6 +199,12 @@ impl Session {
             // plan and its two usage windows as of the last response that named
             // them, resets as absolute millis. null on every other provider.
             "plan": *self.plan.lock().unwrap(),
+            // The separate triage client's own windows, in the same shape; null while
+            // the triage borrows the agent's client.
+            "triage_plan": self
+                .triage_client
+                .get()
+                .and_then(|(_, plan)| plan.lock().unwrap().clone()),
             // Triage retention (docs/triage.md): how much of what the triage
             // showed survives on the wire, derived from the log rather than from
             // transport telemetry. `withheld` counts results whose output a failed
@@ -281,6 +294,17 @@ impl Session {
     /// next 2xx, which is the recovery boundary the retry topic below shares.
     fn upstream_failure_json(&self) -> Value {
         serde_json::to_value(&*self.upstream_failure.lock().unwrap()).unwrap_or(Value::Null)
+    }
+
+    /// The separate triage client's last non-success response, in the shape of
+    /// [`upstream_failure_json`](Self::upstream_failure_json). `null` both when the
+    /// triage borrows the agent's client and when its own client is clear.
+    fn triage_upstream_failure_json(&self) -> Value {
+        self.triage_client
+            .get()
+            .map_or(Value::Null, |(failure, _)| {
+                serde_json::to_value(&*failure.lock().unwrap()).unwrap_or(Value::Null)
+            })
     }
 
     /// The retry in flight (docs/transport.md): which surface is retrying, which

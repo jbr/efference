@@ -233,6 +233,7 @@ impl Session {
             upstream_failure,
             upstream_retry,
             plan,
+            triage_client: std::sync::OnceLock::new(),
             retention: Mutex::new((0, Retention::default())),
             capabilities: Mutex::new(None),
             cost: Arc::new(Mutex::new(CostCell::default())),

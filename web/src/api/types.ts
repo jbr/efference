@@ -625,6 +625,10 @@ export interface Usage {
   // them (docs/transport.md); null on every other provider. Resets are absolute
   // Unix millis — subtract from the client clock, the daemon never ticks.
   plan: Plan | null;
+  // The separate triage client's own windows and cold-read streak
+  // (docs/control-api.md); null while the triage borrows the agent's client.
+  triage_plan?: Plan | null;
+  triage_cold_streak?: number | null;
 }
 
 export interface PlanWindow {
@@ -798,6 +802,9 @@ export interface StateTopics {
   running?: boolean | null;
   stall?: Stall | null;
   upstream_failure?: UpstreamFailure | null;
+  // A separate triage client's own last failure; null while the triage borrows
+  // the agent's client (docs/control-api.md).
+  triage_upstream_failure?: UpstreamFailure | null;
   upstream_retry?: UpstreamRetry | null;
   cold?: Cold | null;
   park?: Park | null;

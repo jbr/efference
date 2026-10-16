@@ -859,6 +859,12 @@ happened rather than what moved. It is attribution beside the streak, not a repl
 for it: the reasons explain a cold read whose cause is in the request, and a streak of
 cold reads with no reason attached is still the signal this oracle exists for.
 
+A separate triage model has its own prefix, so its reads are counted apart:
+`usage.triage_cold_streak` runs the same classifier (`ColdStreak::observe_triage`) over
+result triages and primers on the triage client, with the triage keepalive ping as a
+touch and not as evidence. It is null while the triage borrows the agent's client, whose
+reads the main count already holds. A status reading with no threshold attached.
+
 Two surfaces read it. `GET /state` publishes the live count as
 `usage.cold_streak`, which the TUI header states beside the context meter once it
 crosses the threshold and drops when a warm read arrives. `efference dev cache`

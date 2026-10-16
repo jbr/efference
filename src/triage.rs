@@ -37,7 +37,10 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::agent::{STREAM_ABORT_ATTEMPTS, stream_abort_backoff, stream_abort_retry};
-use crate::api::{Client, Completion, RequestUsage, RetrySurface, ToolChoice, UpstreamRetryCell};
+use crate::api::{
+    Client, Completion, PlanState, RequestUsage, RetrySurface, ToolChoice, UpstreamFailureState,
+    UpstreamRetryCell,
+};
 use crate::context::Item;
 use crate::inbox::ShownNotification;
 use crate::log::{
@@ -339,6 +342,16 @@ impl Triager {
             own.force_choice = false;
         }
         self
+    }
+
+    /// The own triage client's failure and plan cells, for `GET /state`
+    /// (`triage_upstream_failure`, `usage.triage_plan`; docs/control-api.md). `None` when
+    /// the triage borrows the agent's client, whose cells the unprefixed topics already
+    /// publish.
+    pub fn client_state(&self) -> Option<(UpstreamFailureState, PlanState)> {
+        self.own
+            .as_ref()
+            .map(|o| (o.client.upstream_failure(), o.client.plan_state()))
     }
 
     /// Whether the triage runs on its own model.

@@ -125,6 +125,9 @@ pub(crate) enum Topic {
     Stall,
     /// The last non-success upstream response (docs/transport.md).
     UpstreamFailure,
+    /// The same reading for a separate triage client (docs/control-api.md): `null`
+    /// when the triage borrows the agent's client, and the all-clear on its own.
+    TriageUpstreamFailure,
     /// A retry in flight — which surface, which attempt, of what budget
     /// (docs/transport.md). `null` when nothing is being retried.
     UpstreamRetry,
@@ -164,7 +167,7 @@ impl Topic {
     /// walking it, so a topic added here reaches both surfaces or neither — which is
     /// what keeps `GET /state` equal to the fold of every state frame
     /// (docs/control-api.md).
-    pub(crate) const ALL: [Topic; 22] = [
+    pub(crate) const ALL: [Topic; 23] = [
         Self::Gate,
         Self::Ask,
         Self::Processes,
@@ -180,6 +183,7 @@ impl Topic {
         Self::Queued,
         Self::Stall,
         Self::UpstreamFailure,
+        Self::TriageUpstreamFailure,
         Self::UpstreamRetry,
         Self::Cold,
         Self::Park,
@@ -214,6 +218,7 @@ impl Topic {
             Self::Queued => "queued",
             Self::Stall => "stall",
             Self::UpstreamFailure => "upstream_failure",
+            Self::TriageUpstreamFailure => "triage_upstream_failure",
             Self::UpstreamRetry => "upstream_retry",
             Self::Cold => "cold",
             Self::Park => "park",

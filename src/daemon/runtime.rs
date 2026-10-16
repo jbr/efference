@@ -152,6 +152,9 @@ impl SessionRuntime {
         // spotter does not — an interrupt during a gate is the tool's kill.
         client.set_abort(session.interrupt_signal());
         triager.set_abort(session.interrupt_signal());
+        if let Some(cells) = triager.client_state() {
+            session.set_triage_client(cells);
+        }
         // Every request any of the session's clients makes reports its stages to
         // the log (docs/log-and-projection.md): the agent client (turns, the shared
         // peek, titles, keepalive, compactions), the own-triage client, and the spotter.

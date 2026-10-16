@@ -800,6 +800,9 @@ not a topic — it is the log's cursor rather than control state, and sits outsi
     "triage_keepalive_skipped": null,       // the triage lineage's stance (transport.md): null while its pings go out on
                                             //   schedule and when none is armed (a shared triage, or one that plants no
                                             //   primer); else the same reasons as keepalive_skipped, the same shape
+    "triage_cold_streak": null,             // the same count over a separate triage client's reads (result
+                                            //   triages and primers; log-and-projection.md); null while the triage
+                                            //   borrows the agent's client, 0 when its own lineage reads warm
     "cost": {                               // null when the provider has no per-request accounting (transport.md)
       "usd": 0.0421,                        // billed session total: inline per-response costs plus the provider's accounting endpoint for responses without one
       "unpriced": 0                         // requests neither source could price (total is an undercount if > 0)
@@ -820,7 +823,10 @@ not a topic — it is the log's cursor rather than control state, and sits outsi
         "codex_spark": { …same limit fields… }
       },
       "observed_at": 1788677700000          // when the last plan-bearing response arrived
-    }
+    },
+    "triage_plan": null                     // the separate triage client's own windows, same shape as `plan`;
+                                            //   null while the triage borrows the agent's client and when its
+                                            //   provider reports no windows
   },
   "queued": [                      // turns submitted but not yet dequeued, in submission order
     { "submission_id": "…",        //   `[]` when nothing is pending. Ephemeral — a pending
@@ -841,6 +847,9 @@ not a topic — it is the log's cursor rather than control state, and sits outsi
     "status": 429,                 // the last non-success status; content-free by design
     "count": 2                     // consecutive responses carrying it
   },
+  "triage_upstream_failure": null, // a separate triage client's own last non-success status, in the shape
+                                   //   of `upstream_failure`; null while the triage borrows the agent's
+                                   //   client and once its own client gets a 2xx (docs/triage.md)
   "upstream_retry": {              // null when nothing is being retried (transport.md)
     "surface": "turn",             // "turn" | "triage" — a triage waits between tool
                                    //   results; `POST /loop/continue` retries now

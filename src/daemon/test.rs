@@ -173,6 +173,7 @@ mod status;
 mod subscriptions;
 mod supervise;
 mod tools;
+mod triage_client;
 mod upstream_hold;
 mod views;
 
