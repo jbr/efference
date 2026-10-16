@@ -499,8 +499,8 @@ Line-per-line numbering inflates the canonical wire — a keep-all verdict on a
 small result would be larger than the raw it replaces. The two renderings are
 therefore split:
 
-- **`number_lines`** (`cat -n` per line) — shown only in the throwaway triage;
-  the coordinate system `retain(lines=…)` addresses. Implemented in `src/triage/prompt.rs`.
+- **`LineView::Numbers`** (`cat -n` per line) — shown only in the throwaway triage;
+  the coordinate system `retain(lines=…)` addresses. Implemented in `src/triage/line_view.rs`, with the dev-only arms `EFFERENCE_TRIAGE_LINES=header|margin|tags` (backlog experiment on keep-by-embedded-number retries).
 
 - **`render_hunks`** (the canonical wire form) — a `@@ lines a-b @@` header per
   contiguous kept span, then those lines verbatim. One header per range (not per

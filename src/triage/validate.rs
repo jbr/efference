@@ -82,7 +82,20 @@ pub(super) fn require_in_bounds(
     verdict: ParsedRetain,
     shown: &[(String, usize)],
 ) -> Result<ParsedRetain, String> {
+    require_in_bounds_for(verdict, shown, LineView::from_env())
+}
+
+/// [`require_in_bounds`] under an explicit line view; the tag arm first checks that every
+/// token of the raw `keep` names a shown tag ([`LineView::check_tags`]).
+pub(super) fn require_in_bounds_for(
+    verdict: ParsedRetain,
+    shown: &[(String, usize)],
+    view: LineView,
+) -> Result<ParsedRetain, String> {
     for v in &verdict.results {
+        if let Some(&(_, n)) = shown.iter().find(|(id, _)| *id == v.label) {
+            view.check_tags(&v.label, &v.raw_keep, n)?;
+        }
         let Keep::Ranges(ranges) = &v.keep else {
             continue;
         };

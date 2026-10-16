@@ -55,7 +55,7 @@ described above; the result's `keep` and `note` are about the result alone.";
 /// silently changes the answer rather than shortening it.
 // NB: each row's first line sits on the opening-quote line. A `"\` continuation would eat
 // the newline *and* the leading indent behind it, silently de-indenting the first row only.
-const KEEP_FIELDS: &str =
+pub(super) const KEEP_FIELDS: &str =
     "  keep        \"all\", \"none\", or comma-separated 1-based inclusive line ranges like
               \"40-52,310-318\". Whatever you drop is gone from the working context, so keep
               anything that might matter for the rest of the task, while staying as lean
@@ -88,7 +88,7 @@ const KEEP_FIELDS: &str =
 /// line that proves the answer; lines that only witness something (a run of passing
 /// tests) give way to the fact, and a line the agent may copy, search for, or edit from
 /// never does (backlog: triage-ground-truth). The grounding rules above hold unchanged.
-const REPORT_FIELDS: &str =
+pub(super) const REPORT_FIELDS: &str =
     "keep        \"all\", \"none\", or comma-separated 1-based inclusive line ranges like
               \"40-52,310-318\". Keep what answers the intent and what the task will need
               next; whatever you drop is gone from the working context. What the intent
@@ -193,7 +193,8 @@ entries, one per label listed here and no others: {labels}.",
     let fields: Vec<&str> = std::iter::once(keep_fields.as_str())
         .chain(riders.iter().copied())
         .collect();
-    v.assemble(&shape, &fields)
+    let lines = LineView::from_env();
+    lines.rewrite(&v.assemble(&lines.rewrite(&shape), &fields))
 }
 
 /// How much of a roster item the triage view spells out — the cost axis
@@ -565,9 +566,16 @@ pub(super) fn result_view(label: &str, call: &ToolCall, raw: &RawResult) -> Stri
             "images: {n} {noun} — not shown here; reaches the agent as it is\n"
         ));
     }
-    view.push_str(&number_lines(lines));
+    let numbering = LineView::from_env();
+    if let Some(sentence) = numbering.header_sentence() {
+        view.push_str(&format!("{sentence}\n"));
+    }
+    view.push_str(&numbering.render(lines));
     if dropped > 0 {
-        view.push_str(&format!("\n       … [{dropped} more lines truncated] …"));
+        view.push_str(&format!(
+            "\n{}… [{dropped} more lines truncated] …",
+            numbering.truncation_indent()
+        ));
     }
     view
 }
@@ -592,20 +600,6 @@ pub(super) fn bypassed_view(call: &ToolCall, shape: &str) -> String {
          one of the results you are deciding about below.",
         call.name
     )
-}
-
-/// Render every line `cat -n`-style (1-based, 6-wide, tab-separated). This is the
-/// coordinate system the triage (docs/triage.md) addresses with
-/// `retain(lines=…)`, so it is shown ONLY in the throwaway fork — never on the
-/// canonical wire, which uses the leaner `@@`-hunks in
-/// [`render_triaged`](crate::project::render_triaged).
-pub(super) fn number_lines(lines: &[&str]) -> String {
-    lines
-        .iter()
-        .enumerate()
-        .map(|(i, line)| format!("{:>6}\t{}", i + 1, line))
-        .collect::<Vec<_>>()
-        .join("\n")
 }
 
 /// Build the triage's request (docs/triage.md): the cached

@@ -25,7 +25,7 @@ pub(crate) use record::{Recorded, recorded_triages, session_model};
 #[allow(clippy::too_many_arguments)] // one flag, one parameter; the CLI is the arity
 pub(crate) async fn triage(
     path: PathBuf,
-    seq: Option<u64>,
+    seq: Vec<u64>,
     repeat: usize,
     limit: Option<usize>,
     dry_run: bool,
@@ -73,9 +73,9 @@ pub(crate) async fn triage(
         .map(|p| p.breakpoint_placement(placement_model))
         .unwrap_or_default();
     let all = recorded_triages(&entries);
-    let mut selected: Vec<&Recorded> = match seq {
-        Some(s) => all.iter().filter(|g| g.seq == s).collect(),
-        None => all.iter().collect(),
+    let mut selected: Vec<&Recorded> = match seq.is_empty() {
+        false => all.iter().filter(|g| seq.contains(&g.seq)).collect(),
+        true => all.iter().collect(),
     };
     // Evenly spaced, not the first N. Failure rate climbs with session depth, so a prefix
     // of the triages samples the easy end and flatters the model.
@@ -86,9 +86,13 @@ pub(crate) async fn triage(
             .collect();
     }
     if selected.is_empty() {
-        return Err(match seq {
-            Some(s) => format!("no triage triaging result seq {s} in {}", path.display()).into(),
-            None => format!("no triages in {}", path.display()).into(),
+        return Err(match seq.as_slice() {
+            [] => format!("no triages in {}", path.display()).into(),
+            seqs => format!(
+                "no triage triaging result seq {seqs:?} in {}",
+                path.display()
+            )
+            .into(),
         });
     }
 
@@ -123,7 +127,7 @@ pub(crate) async fn triage(
     // question a variant raises: what it costs. The tail is the fresh part of every triage's
     // request, so its mean size is what a cheaper roster is trying to move — and reading
     // it here rather than off `usage` keeps it free of cache jitter.
-    if dry_run && seq.is_none() {
+    if dry_run && seq.is_empty() {
         let total: usize = selected
             .iter()
             .map(|g| {

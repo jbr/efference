@@ -6,7 +6,7 @@ fn triage_view_numbers_every_line() {
     // The throwaway fork's view — per-line numbers are the `retain` coordinate
     // system. (Only here; never on the canonical wire.)
     let ls = lines("alpha\nbeta\ngamma");
-    let view = number_lines(&ls);
+    let view = LineView::Numbers.render(&ls);
     assert!(view.contains("     1\talpha"), "{view}");
     assert!(view.contains("     3\tgamma"), "{view}");
 }

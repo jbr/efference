@@ -246,6 +246,11 @@ pub(super) fn parse_dispositions(completion: &Completion, tool: &str) -> Option<
 /// Parse a `keep` string: `all` / `none` / range list. Lenient — malformed tokens are
 /// dropped; a list with no valid ranges reads as `none`.
 pub(super) fn parse_keep(s: &str) -> Keep {
+    LineView::from_env().parse_keep(s)
+}
+
+/// [`parse_keep`] for the numbered arms of [`LineView`].
+pub(super) fn parse_keep_numbers(s: &str) -> Keep {
     match s.trim().to_ascii_lowercase().as_str() {
         "all" => Keep::All,
         "none" | "" => Keep::None,

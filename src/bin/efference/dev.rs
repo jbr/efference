@@ -192,9 +192,10 @@ pub(crate) enum DevCommand {
         /// Path to a session dir or a `log.jsonl` whose triages to replay.
         path: PathBuf,
         /// Replay only the triage covering this result `seq` (as `Triage.for_result`
-        /// names it, and as the listing prints it). Omit to sweep every triage.
+        /// names it, and as the listing prints it); repeat the flag for several. Omit to
+        /// sweep every triage.
         #[arg(long)]
-        seq: Option<u64>,
+        seq: Vec<u64>,
         /// Draws per triage. A triage is sampled, not deterministic, so one draw per triage
         /// resolves only large differences; repeats buy a per-triage rate instead of a
         /// coin flip.

@@ -699,6 +699,7 @@ mod test;
 
 mod digest_view;
 mod handles;
+mod line_view;
 mod own;
 mod parse;
 mod prompt;
@@ -709,6 +710,7 @@ mod title;
 mod validate;
 
 use handles::*;
+use line_view::*;
 use parse::*;
 use prompt::*;
 use request::*;

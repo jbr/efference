@@ -66,6 +66,7 @@ fn entry(seq: u64, payload: Payload) -> LogEntry {
 
 mod ask;
 mod fork;
+mod line_view;
 mod lineage;
 mod parse;
 mod riders;
