@@ -145,6 +145,7 @@ fn silent_entries_render_to_nothing_and_verdicts_on_the_inbox_do_not() {
         surfaced: vec![],
         retries: vec![],
         thinking: vec![],
+        shown_through: None,
     };
     let mut loud = quiet.clone();
     loud.inbox = vec![(9, Disposition::Dismiss)];
@@ -167,11 +168,11 @@ fn silent_entries_render_to_nothing_and_verdicts_on_the_inbox_do_not() {
         entry(3, Payload::Triage(loud)),
         entry(
             4,
-            Payload::Ambient(Notification {
-                source: "agent:fable".into(),
-                body: "review level changed".into(),
-                slot: None,
-            }),
+            Payload::Ambient(Notification::new(
+                "agent:fable",
+                "review level changed",
+                None,
+            )),
         ),
     ];
     assert_eq!(

@@ -218,11 +218,12 @@ pub enum Payload {
     /// audit only, except it emits a block per **pinned** notification (its `inbox`)
     /// at this entry's tail-ward position (docs/inbox.md).
     Triage(Triage),
-    /// An out-of-band notification (docs/inbox.md), logged at **first-show** — the
-    /// moment a triage first shows it to the model. Pure audit on the canonical
+    /// An out-of-band notification (docs/inbox.md), logged at **arrival** — or, for one
+    /// bound to a slot, when a triage first shows it. Pure audit on the canonical
     /// wire (it projects to nothing); a *pinned* one is emitted by its resolving
     /// [`Triage`], at that entry's position. Its `seq` is its durable id (the handle
-    /// the `retain` inbox verdict references).
+    /// the `retain` inbox verdict references); whether a triage has shown it is
+    /// [`Triage::shown_through`].
     Ambient(Notification),
     /// A spotter verdict (docs/permissions.md) — the durable record of the
     /// independent permission rung's decision on one gated tool call. Like
@@ -488,11 +489,32 @@ pub enum Disposition {
 }
 
 /// An out-of-band notification (docs/inbox.md): freeform `body` + `source`, optionally
-/// bound to a logical `slot` (for supersession in the daemon's pending queue).
+/// bound to a logical `slot` (a later notification on it supersedes this one while queued).
 /// Immutable; once logged as a [`Payload::Ambient`] its arrival `seq` is its id.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Notification {
     pub source: String,
     pub body: String,
     pub slot: Option<String>,
+    /// Must-wake (docs/inbox.md): the loop pins this at its first show whatever the
+    /// triage decides. Recorded on the arrival entry so a restart keeps it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub wake: bool,
+}
+
+impl Notification {
+    pub fn new(source: impl Into<String>, body: impl Into<String>, slot: Option<String>) -> Self {
+        Self {
+            source: source.into(),
+            body: body.into(),
+            slot,
+            wake: false,
+        }
+    }
+
+    /// This notification as must-wake.
+    pub fn waking(mut self) -> Self {
+        self.wake = true;
+        self
+    }
 }

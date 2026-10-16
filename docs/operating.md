@@ -14,7 +14,7 @@ driven, and it is refined from use rather than written ahead of it.
 
 - **`efference control <tool>`** — the calls that drive a *running* session:
   `turn`, `approve`, `settle`, `interrupt`, `background`, `pace`, `review-level`,
-  `notify`, `subscribe`, `unsubscribe`, `dismiss`, `proposal`, `image`, `state`,
+  `notify`, `subscribe`, `unsubscribe`, `proposal`, `image`, `state`,
   `transcript`, `entries`, `title`, each one control-API call
   over the session's control channel ([control-channel.md](control-channel.md)) —
   and the four that address the host: `sessions` (list, with titles), `create`
@@ -84,7 +84,7 @@ child as `session[<caller id>]` ([control-api.md](control-api.md)).
 Two rules are enforced by the mount, not by config. A session is never its own target: a
 call naming the caller, or naming no `session`, is an error. And the mutating verbs —
 `turn`, `approve`, `interrupt`, `archive`, `review-level`, `pace`, `title`, `background`,
-`dismiss`, `proposal` — reach only sessions the caller created and sessions it supervises
+`proposal` — reach only sessions the caller created and sessions it supervises
 ([permissions.md](permissions.md)); `notify` and the reads reach any session in the project. Reach is the project: `sessions__sessions` lists, and every
 `sessions__*` target resolves, only among sessions sharing the caller's `.efference/`
 base, so an id from another project reads as not found.

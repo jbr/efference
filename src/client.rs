@@ -390,35 +390,24 @@ impl Client {
             .ok_or_else(|| anyhow!("no review_level in response: {resp}"))
     }
 
-    /// Enqueue an ambient notification into the daemon's inbox (`POST /notifications`,
+    /// File an ambient notification in the daemon's inbox (`POST /notifications`,
     /// docs/inbox.md). `slot` binds it to a logical channel so a later notify on the same
-    /// slot supersedes it; `replaces` supersedes a specific pending id. Returns the
-    /// new notification's queue-local id.
+    /// slot supersedes it. Returns the arrival entry's `seq`, or `None` for a slot
+    /// notification, which has no entry until a triage shows it.
     pub async fn notify(
         &self,
         source: &str,
         body: &str,
         slot: Option<&str>,
-        replaces: Option<u64>,
-    ) -> Result<u64> {
+    ) -> Result<Option<u64>> {
         let mut payload = serde_json::json!({ "source": source, "body": body });
         if let Some(s) = slot {
             payload["slot"] = serde_json::json!(s);
         }
-        if let Some(r) = replaces {
-            payload["replaces"] = serde_json::json!(r);
-        }
         let resp = self.post("/notifications", payload.to_string()).await?;
-        serde_json::from_str::<serde_json::Value>(&resp)
-            .ok()
-            .and_then(|v| v.get("id").and_then(|i| i.as_u64()))
-            .ok_or_else(|| anyhow!("no id in /notifications response: {resp}"))
-    }
-
-    /// Dismiss a pending notification out-of-band by its queue-local id
-    /// (`DELETE /notifications/{id}`, docs/inbox.md).
-    pub async fn dismiss_notification(&self, id: u64) -> Result<()> {
-        self.delete(&format!("/notifications/{id}")).await.map(drop)
+        let value = serde_json::from_str::<serde_json::Value>(&resp)
+            .map_err(|e| anyhow!("bad /notifications response {resp}: {e}"))?;
+        Ok(value.get("seq").and_then(|i| i.as_u64()))
     }
 
     /// Current ephemeral control state (`GET /state`, docs/control-api.md): the last

@@ -103,7 +103,6 @@ pub(crate) fn refresh_and_emit(shared: &Session) -> Option<Refreshed> {
                      Error: {error}"
                 ),
                 Some("config-parse-error".to_string()),
-                None,
             );
             return Some(outcome);
         }
@@ -126,7 +125,6 @@ pub(crate) fn refresh_and_emit(shared: &Session) -> Option<Refreshed> {
                      Parse error: {error}. Restore error: {io}"
                 ),
                 Some("config-parse-error".to_string()),
-                None,
             );
             shared.require_config_repair(crate::daemon::ConfigRepair {
                 path: shared
@@ -173,7 +171,6 @@ pub(crate) fn refresh_and_emit(shared: &Session) -> Option<Refreshed> {
                  the next session either way."
             ),
             Some("config-env-resolve".to_string()),
-            None,
         );
     }
     let changes = crate::config::diff_changes(&shared.effective_config(), &file_config);

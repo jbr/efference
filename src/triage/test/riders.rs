@@ -34,11 +34,7 @@ fn tail_with_riders() -> (Vec<String>, Vec<String>) {
         call: &call,
         raw: &raw,
     }];
-    let inbox = [ShownNotification {
-        seq: 7,
-        source: "ci".into(),
-        body: "42 passed".into(),
-    }];
+    let inbox = [ShownNotification::new(7, "ci", "42 passed")];
     let background = [BgView {
         handle: "p#1".into(),
         command: "cargo watch".into(),

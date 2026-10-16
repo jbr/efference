@@ -292,6 +292,7 @@ fn triage_thinking_round_trips() {
         surfaced: Vec::new(),
         retries: Vec::new(),
         thinking: thinking.clone(),
+        shown_through: None,
     }))
     .unwrap();
 

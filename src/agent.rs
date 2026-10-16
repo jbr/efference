@@ -23,7 +23,7 @@ use crate::daemon::{
     BlockedReason, LoopPhase, RequestOrigin, Session, Stall, StallReason, StreamDelta,
 };
 use crate::frontend::{Approval, Frontend, SubmittedTurn};
-use crate::inbox::{ShownNotification, active_shown};
+use crate::inbox::ShownNotification;
 use crate::log::{
     AssistantOutput, ConfigChange, ConfigEdit, ContentBlock, Disposition, EditState, Notification,
     Origin, Payload, RawResult, Spot, Stance, Summary, ToolCall, Triage, Turn, WireState,
@@ -569,7 +569,6 @@ pub async fn run<F: Frontend, S: Spotter>(
                      Send a turn to continue."
                         .to_string(),
                     Some("max-tokens".to_string()),
-                    None,
                 );
             }
 

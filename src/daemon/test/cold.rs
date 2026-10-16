@@ -389,7 +389,7 @@ async fn an_answer_to_an_ask_is_recorded_as_an_answer() {
 #[tokio::test]
 async fn an_inbox_wake_while_cold_waits_for_a_person() {
     let (shared, _rx) = cold_session().await;
-    shared.notify("ci".into(), "build failed".into(), None, None);
+    shared.notify("ci".into(), "build failed".into(), None);
     let wake = tokio::spawn({
         let shared = Arc::clone(&shared);
         async move { shared.inbox_wake_while_warm().await }

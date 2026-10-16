@@ -940,8 +940,8 @@ this:
   invalidate prefix-cache reuse from the replacement's start onward, while
   retaining the content after the range.
 
-- **Ambient notifications** never splice behind a breakpoint. They queue
-  out-of-band and are logged only at first-show. A pinned notification projects
+- **Ambient notifications** never splice behind a breakpoint. They arrive
+  out-of-band and are logged at arrival (a slot notification, at first show). A pinned notification projects
   at the position of the `Triage` that pinned it — always tail-ward — so the
   wire grows only at the tail, never behind a cached block. Arrival entries
   (`Payload::Ambient`) project to nothing on the canonical wire. See

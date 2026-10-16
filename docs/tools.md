@@ -223,7 +223,7 @@ enforceable, and they are enforced by the executor rather than by config:
   session (which defaults to it), is refused on every verb.
 - **A mutating verb reaches descendants, or sessions the caller supervises.** `turn`,
   `approve`, `interrupt`, `archive`, `review_level`, `pace`, `title`, `background`,
-  `dismiss`, and `proposal` require the target's `created_by` chain to reach the
+  and `proposal` require the target's `created_by` chain to reach the
   caller, or the target's supervisor pointer to name the caller
   ([permissions.md](permissions.md)). Supervision is not transitive: a session given
   another to supervise does not reach that one's descendants through it. `notify`

@@ -3,11 +3,7 @@
 use super::*;
 
 fn notification(source: &str, body: &str) -> Payload {
-    Payload::Ambient(Notification {
-        source: source.into(),
-        body: body.into(),
-        slot: None,
-    })
+    Payload::Ambient(Notification::new(source, body, None))
 }
 
 /// A pinned notification projects as a `⟢ source: body` user block **at its
@@ -47,6 +43,7 @@ fn pinned_notification_projects_at_triage_position() {
                 surfaced: Vec::new(),
                 retries: Vec::new(),
                 thinking: Vec::new(),
+                shown_through: None,
             }),
         ),
     ];
@@ -117,6 +114,7 @@ fn surfaced_context_item_projects_at_triage_position() {
                 surfaced: vec!["ferritin".into(), "unknown".into()],
                 retries: Vec::new(),
                 thinking: Vec::new(),
+                shown_through: None,
             }),
         ),
     ];
@@ -188,6 +186,7 @@ fn recorded_triage_thinking_projects_to_identical_bytes() {
                     surfaced: Vec::new(),
                     retries: Vec::new(),
                     thinking,
+                    shown_through: None,
                 }),
             ),
         ]

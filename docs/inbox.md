@@ -13,11 +13,15 @@ There is no structure beyond that — the body is prose the model reads directly
 
 ## Ingestion — out of band
 
-`POST /notifications { source, body, slot?, replaces? }` enqueues the notification into an
-**ephemeral** inbox queue held in `Session` (the daemon's shared control state). Nothing
-is written to the log at arrival; the notification exists only in memory. This is the
-same pattern as pending-approval state (see `control-channel.md`): in-flight inbox state
-is control state until the log needs it.
+`POST /notifications { source, body, slot? }` files the notification and answers
+`{"seq": N}`, the `seq` of its `Ambient` log entry, appended at arrival under the turn of
+the log's latest entry. A notification bound to a `slot` is the exception: a later one on
+the same slot supersedes it, so it waits in an in-memory queue in `Session` (the daemon's
+shared control state, the same pattern as pending-approval state in `control-channel.md`),
+is logged when a triage first shows it, and the answer is `{}`. A restart loses the queued
+slot notifications and keeps everything else (docs/resumption.md). There is one id space,
+the log `seq`; no verb withdraws a notification before a triage sees it, and `pin`,
+`dismiss` and `leave` are the model's only dispositions (below).
 
 This verb is also the inter-agent channel. One agent `POST /notifications`s another agent's
 control socket; the receiving agent sees the notification at its next triage exactly
@@ -30,9 +34,9 @@ itself instead of piling up ([tools.md](tools.md) "the client protocol"). Its
 progress ticks do not come here — they are live output on the running call,
 and by the time triage runs they describe the past.
 
-`GET /state` surfaces the pending (not-yet-shown) inbox alongside other control state.
-`DELETE /notifications/:id` clears a pending notification out-of-band, before it
-is ever shown — it is archived in the ephemeral queue and never reaches the log.
+`GET /state` surfaces the pending (not-yet-shown) inbox alongside other control state: the
+arrivals no triage has shown, each with its `seq`, then the queued slot notifications,
+which carry no `seq`.
 
 ## Attachments — the store, and two ways into it
 
@@ -104,33 +108,46 @@ a drag onto the terminal, which arrives as a paste of escaped absolute paths
 overwritten — an attachment the model may not have read yet is not something a later arrival
 gets to replace.
 
-## Event-sourced, logged at first-show
+## Event-sourced, logged at arrival
 
-A notification is appended to the log as a `Payload::Ambient` entry the moment a
-triage first shows it to the model — not at arrival. A notification created and then
-superseded or dismissed before any triage sees it never enters the log: from the log's
-perspective it never happened.
+A notification without a slot is appended to the log as a `Payload::Ambient` entry when it
+arrives, carrying its `source`, `body` and, when set, the must-wake `wake` flag. Whether a
+triage has shown it to the model is a second fact, read from the `Triage` entries
+(below). A slot notification is appended when a triage first shows it, and one superseded
+before that never enters the log: from the log's perspective it never happened.
 
-Once shown, a notification is logged forever, dismissed ones included. The log is
-therefore a full audit record: every notification the agent actually perceived, and
-every disposition it chose, is reconstructable from the log alone.
+The log is a record of every notification that reached the session, and of every
+disposition the agent chose, dismissed ones included: both are reconstructable from the log
+alone.
 
-## The inbox as a hybrid
+## The inbox as a fold
 
-The live inbox is the union of two layers:
+The live inbox is a fold over the log (`src/inbox.rs`) plus the slot queue:
 
-- **Shown, unresolved**: a fold over the log, collected by `active_shown` in `src/inbox.rs`.
-  Every `Ambient` entry whose `seq` no `Triage` verdict has yet pinned or dismissed is
-  active. "Left" notifications — not named in any `Triage` inbox field — stay active and
-  resurface at the next triage.
-- **Pending, not yet shown**: the ephemeral queue in `Session`, layered on top.
+- **Unresolved**: every `Ambient` entry whose `seq` no `Triage` verdict has pinned or
+  dismissed and no `InboxExpired` has expired. "Left" notifications, not named in any
+  `Triage` inbox field, stay unresolved and resurface at the next triage. A triage's rider
+  shows all of them.
+- **Shown**: each `Triage` records `shown_through`, the highest arrival `seq` its rider
+  held, and an unresolved entry at or below the highest such mark has been shown
+  (`active_shown`). The rest are unshown (`unshown`): what the idle wake looks for. A
+  `Triage` without the field stands for its own `seq`, which is what a log from before the
+  field recorded, since a notification was then logged just ahead of the triage that
+  showed it. A triage that showed no rider records 0 (`seq` 0 is the boot `Preamble`): a
+  result triage whose every result the shape rule decided without the model
+  (docs/triage.md) shows no rider. A notification that arrives while a triage request is
+  open has a `seq` above that triage's mark, so the next triage shows it as new and the
+  idle wake fires for it.
+- **Queued slot notifications**: the in-memory queue, logged and shown at the next triage.
 
-A restart drops only the un-shown layer, which were "never happened" anyway. The
-shown-and-active layer reconstructs from the log.
+A restart restores the first two from the log and drops only the queue. Nothing is dropped
+as stale on resume: whether an old exit or message still matters is the next triage's
+judgement. The idle wake treats a restored unshown notification as it treats a live one,
+including waiting while the cache is believed cold (docs/resumption.md).
 
 ## Triage: pin · dismiss · leave
 
-Pending and active-shown notifications appear in the triage view after the ask, under the
+Unshown and active-shown notifications appear in the triage view after the ask, under the
 riders header that marks them as not the tool output (docs/triage.md), each item labelled
 with its arrival `seq` handle. The
 `retain` verdict (see `triage.md`) gains an `inbox` field; the model may give
@@ -163,11 +180,13 @@ triage that shows a notification and does not pin or dismiss it, the loop append
 model, made the choice. `unmentioned_past_cap` in `src/inbox.rs` folds the count from the
 log: one show per idle `Triage`, and one per run of result-carrying `Triage` entries with
 no `Assistant` or `User` entry between them (a batch writes one per result, and the
-verdict rides the last). The check runs after each triage's entries are written.
+verdict rides the last). A show counts for the notifications at or below the triage's
+`shown_through` mark, so one that arrived mid-request and one that a rider-less triage did
+not show are not counted. The check runs after each triage's entries are written.
 
 ## Must-wake — the disposition the harness declares
 
-A notification may be enqueued **must-wake** (`wake` on the pending record, surfaced
+A notification may be enqueued **must-wake** (`wake` on the notification, surfaced
 on `GET /state` only when set). At its first show the loop pins it whatever the
 fork's verdict — a dismiss is overridden, a leave is filled in — so an idle agent
 escalates to a real turn on it and a running one carries it into the wire at the
@@ -181,11 +200,12 @@ pinned nothing returns to idle without counting as a turn ended. From the wake u
 the loop parks, `/settle` blocks and the status watcher reports running, the same as
 for a trajectory a turn started.
 
-The flag is ephemeral, like the queue: the logged `Ambient` does not carry it, and the
-`Triage` records the pin as a pin. No client verb sets it — `POST /notifications`
-enqueues ordinary notifications — it is the harness's own channel, used today for a
-delegated child's status ([tools.md](tools.md), subscriptions). Superseding on a slot
-takes the replacement's own terms.
+The flag is recorded on the arrival `Ambient` entry, so a restart does not turn a
+must-wake message into an ordinary one an idle agent never wakes for; "first show" is the
+first triage whose rider holds the entry, and the `Triage` records the pin as a pin. No
+client verb sets it — `POST /notifications` files ordinary notifications — it is the
+harness's own channel, used today for a delegated child's status ([tools.md](tools.md),
+subscriptions). Superseding on a slot takes the replacement's own terms.
 
 **A routed gate rides this channel, and is not a subscription.** A session whose review
 position resolves to `supervisor` ([permissions.md](permissions.md)) sends the call it is
@@ -199,12 +219,11 @@ stop answering for a child without going blind to whether it finished.
 ## Supersession — archive-and-replace, never edit
 
 Records are immutable; a `PUT /notifications/:id` verb does not exist. A new notification
-naming the same `slot` (or naming an explicit `replaces` id) archives the prior record
-rather than mutating it. For example, a slot `bash#7` receiving "running 5 min" and then
+naming the same `slot` archives the prior record rather than mutating it. For example, a slot `bash#7` receiving "running 5 min" and then
 "finished" produces two immutable records, not one edited one. The wire prefix therefore
 re-renders byte-identically across turns (the core caching invariant from `log-and-projection.md`).
 
-Superseded while pending: the prior record is archived in the ephemeral queue and never
+Superseded while queued: the prior record is dropped from the in-memory queue and never
 reaches the log — the never-happened case. Superseded after pinning: the new notification
 tail-appends, so the wire reads as an honest timeline (running… → finished…), never a
 rewrite.

@@ -1,22 +1,24 @@
-//! The pending-notification queue (docs/inbox.md).
+//! The notification queue and the pending view (docs/inbox.md).
 
 use super::*;
+use crate::log::{Notification, Seq};
 
-/// The pending-notification queue + its id counter (docs/inbox.md). Ids are
-/// **queue-local**: an un-shown notification has no log `seq` yet, so it's addressed
-/// by this id until the first-show append gives it a durable `seq`.
+/// Notifications that wait in memory: those bound to a `slot`, which a later one on the
+/// same slot supersedes, so none of them is logged until a triage first shows it
+/// (docs/inbox.md). Every other notification is a log entry from its arrival.
 #[derive(Default)]
 pub(super) struct Inbox {
-    pub(super) next_id: u64,
-    pub(super) pending: Vec<PendingNotification>,
+    pub(super) pending: Vec<Notification>,
 }
 
-/// One pending ambient notification, surfaced by `GET /state` (docs/inbox.md). Immutable
-/// once enqueued — supersession archives-and-replaces rather than editing (docs/log-and-projection.md).
+/// One pending ambient notification, as `GET /state` surfaces it (docs/inbox.md): an
+/// arrived notification not yet shown by a triage, or a slot notification still queued.
 #[derive(Clone, Debug, Serialize)]
 pub(super) struct PendingNotification {
-    /// Queue-local id; the handle `DELETE /notifications/:id` addresses.
-    pub(super) id: u64,
+    /// The arrival entry's `seq`, the handle a triage's verdict addresses. Absent for a
+    /// slot notification, which has no entry until it is shown.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) seq: Option<Seq>,
     pub(super) source: String,
     pub(super) body: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -28,76 +30,71 @@ pub(super) struct PendingNotification {
     pub(super) wake: bool,
 }
 
-/// A notification taken off the pending queue for its first show: the record the
-/// loop logs as an `Ambient`, and whether it must be pinned (docs/inbox.md).
-pub struct Drained {
-    pub notification: crate::log::Notification,
-    pub wake: bool,
-}
-
 impl Session {
-    /// Enqueue an ambient notification (docs/inbox.md — `POST /notifications`). If it names a
-    /// `slot` (or an explicit `replaces` id) matching a pending entry, that entry is
-    /// **superseded**: archived-and-replaced, never edited (records are immutable,
-    /// docs/log-and-projection.md). A superseded-while-pending entry is simply dropped — it never reached a
-    /// triage, so from the log's perspective it never happened. Returns the new id.
-    pub(crate) fn notify(
-        &self,
-        source: String,
-        body: String,
-        slot: Option<String>,
-        replaces: Option<u64>,
-    ) -> u64 {
-        self.enqueue(source, body, slot, replaces, false)
+    /// File an ambient notification (docs/inbox.md — `POST /notifications`). One without
+    /// a slot is appended to the log as its `Ambient` entry now, and the answer is that
+    /// entry's `seq`. One bound to a `slot` waits in memory and **supersedes** any queued
+    /// one on the same slot — archived-and-replaced, never edited (records are immutable,
+    /// docs/log-and-projection.md); it reaches the log only when a triage first shows it,
+    /// and the answer is `None`.
+    pub(crate) fn notify(&self, source: String, body: String, slot: Option<String>) -> Option<Seq> {
+        self.enqueue(Notification::new(source, body, slot))
     }
 
     /// [`notify`](Self::notify) for a notification the agent must get a turn for
     /// (docs/inbox.md): the loop pins it at first show regardless of the triage's
     /// verdict. The harness's own channel — a delegated child's status
     /// (docs/tools.md) — not a client's.
-    pub(crate) fn notify_wake(&self, source: String, body: String, slot: Option<String>) -> u64 {
-        self.enqueue(source, body, slot, None, true)
-    }
-
-    fn enqueue(
+    pub(crate) fn notify_wake(
         &self,
         source: String,
         body: String,
         slot: Option<String>,
-        replaces: Option<u64>,
-        wake: bool,
-    ) -> u64 {
-        let mut inbox = self.inbox.lock().unwrap();
-        // Supersede: an explicit `replaces` id, and/or any pending entry on the slot.
-        if let Some(old) = replaces {
-            inbox.pending.retain(|n| n.id != old);
+    ) -> Option<Seq> {
+        self.enqueue(Notification::new(source, body, slot).waking())
+    }
+
+    fn enqueue(&self, notification: Notification) -> Option<Seq> {
+        let mut seq = None;
+        let queued = if notification.slot.is_some() {
+            Some(notification)
+        } else {
+            match self.append(self.latest_turn(), Payload::Ambient(notification.clone())) {
+                Ok(arrived) => {
+                    seq = Some(arrived);
+                    None
+                }
+                Err(e) => {
+                    // The log refused the write; keep the notification in memory so it
+                    // is logged when a triage shows it, as a slot notification is.
+                    log::error!("log: appending a notification at arrival failed: {e}");
+                    Some(notification)
+                }
+            }
+        };
+        if let Some(n) = queued {
+            let mut inbox = self.inbox.lock().unwrap();
+            if let Some(s) = &n.slot {
+                inbox
+                    .pending
+                    .retain(|q| q.slot.as_deref() != Some(s.as_str()));
+            }
+            inbox.pending.push(n);
         }
-        if let Some(s) = &slot {
-            inbox
-                .pending
-                .retain(|n| n.slot.as_deref() != Some(s.as_str()));
-        }
-        let id = inbox.next_id;
-        inbox.next_id += 1;
-        inbox.pending.push(PendingNotification {
-            id,
-            source,
-            body,
-            slot,
-            wake,
-        });
-        drop(inbox);
         // Wake an idle agent for a standalone triage (docs/inbox.md — wake-on-notification).
         self.notified.notify_waiters();
         self.touch_state();
-        id
+        seq
     }
 
-    /// Whether any **un-shown** notification is queued (the ephemeral pending set).
-    /// The idle wake triggers on this — never on already-shown "left" items, so a
-    /// deferred notification can't spin the idle loop (docs/inbox.md).
+    /// Whether any notification waits for a first show: an arrival no triage has shown, or
+    /// a queued slot notification. The idle wake triggers on this — never on already-shown
+    /// "left" items, so a deferred notification can't spin the idle loop (docs/inbox.md).
     pub fn has_pending_notifications(&self) -> bool {
-        !self.inbox.lock().unwrap().pending.is_empty()
+        !self.inbox.lock().unwrap().pending.is_empty() || {
+            let log = self.log.lock().unwrap();
+            crate::inbox::has_unshown(log.entries())
+        }
     }
 
     /// Resolve when there's an un-shown notification to triage (docs/inbox.md). Lost-wakeup
@@ -114,46 +111,38 @@ impl Session {
         }
     }
 
-    /// Dismiss a pending notification out-of-band (docs/inbox.md —
-    /// `DELETE /notifications/:id`). `false` → no pending notification with that id.
-    pub(crate) fn dismiss_notification(&self, id: u64) -> bool {
-        let removed = {
-            let mut inbox = self.inbox.lock().unwrap();
-            let before = inbox.pending.len();
-            inbox.pending.retain(|n| n.id != id);
-            inbox.pending.len() != before
-        };
-        if removed {
-            self.touch_state();
-        }
-        removed
-    }
-
-    /// The current pending inbox, in arrival order — surfaced by `GET /state`.
+    /// The current pending inbox, in arrival order — surfaced by `GET /state`: the
+    /// arrivals no triage has shown, then the queued slot notifications.
     pub(super) fn pending_notifications(&self) -> Vec<PendingNotification> {
-        self.inbox.lock().unwrap().pending.clone()
+        let unshown = {
+            let log = self.log.lock().unwrap();
+            crate::inbox::unshown(log.entries())
+        };
+        let queued = self.inbox.lock().unwrap().pending.clone();
+        unshown
+            .into_iter()
+            .map(|n| PendingNotification {
+                seq: Some(n.seq),
+                source: n.source,
+                body: n.body,
+                slot: None,
+                wake: n.wake,
+            })
+            .chain(queued.into_iter().map(|n| PendingNotification {
+                seq: None,
+                source: n.source,
+                body: n.body,
+                slot: n.slot,
+                wake: n.wake,
+            }))
+            .collect()
     }
 
-    /// Drain the un-shown notifications for a triage (docs/inbox.md): take and clear
-    /// the ephemeral queue. The loop logs each as a first-show `Ambient` entry (its
-    /// `seq` becoming its durable id) and shows it to the model, so the queue holds
-    /// only what's arrived since the last triage. Returned in arrival order, each a
-    /// [`Notification`](crate::log::Notification) ready to wrap in a payload plus
-    /// its must-wake flag, which the loop applies after the verdict.
-    pub fn drain_inbox(&self) -> Vec<Drained> {
-        let mut inbox = self.inbox.lock().unwrap();
-        inbox
-            .pending
-            .drain(..)
-            .map(|p| Drained {
-                notification: crate::log::Notification {
-                    source: p.source,
-                    body: p.body,
-                    slot: p.slot,
-                },
-                wake: p.wake,
-            })
-            .collect()
+    /// Take the queued slot notifications for a triage (docs/inbox.md): clear the
+    /// in-memory queue, in arrival order. The caller appends each as its `Ambient`
+    /// entry, which is its first show; the arrivals already in the log need no such step.
+    pub fn drain_inbox(&self) -> Vec<Notification> {
+        std::mem::take(&mut self.inbox.lock().unwrap().pending)
     }
 
     /// The directed inbox read (docs/inbox.md — `check_inbox`): the active shown
@@ -177,7 +166,10 @@ impl Session {
             out.push_str(&format!("\n[{}] {} · {}", n.seq, n.source, n.body));
         }
         for n in &pending {
-            out.push_str(&format!("\n(new) {} · {}", n.source, n.body));
+            match n.seq {
+                Some(seq) => out.push_str(&format!("\n[{seq}] (new) {} · {}", n.source, n.body)),
+                None => out.push_str(&format!("\n(new) {} · {}", n.source, n.body)),
+            }
         }
         out.push_str("\n(triage them in this step's review.)");
         out

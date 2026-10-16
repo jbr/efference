@@ -94,7 +94,7 @@ async fn a_blank_turn_does_not_resolve_the_ask() {
 async fn a_notification_does_not_resolve_the_ask() {
     let shared = session();
     let task = start(&shared, ask_call("ask_1", "Ready?"), ONE).await;
-    shared.notify("ci".into(), "build finished".into(), None, None);
+    shared.notify("ci".into(), "build finished".into(), None);
     tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     assert!(!task.is_finished(), "still waiting");
     assert!(shared.asking().is_some());

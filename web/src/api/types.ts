@@ -561,10 +561,13 @@ export interface Role {
 }
 
 export interface PendingNotification {
-  id: number;
+  /** The arrival entry's seq; absent for a slot notification, which is logged when a triage first shows it. */
+  seq?: number;
   source: string;
   body: string;
-  slot: string | null;
+  slot?: string | null;
+  /** Must-wake (docs/inbox.md); present only when set. */
+  wake?: boolean;
 }
 
 export interface Proposal {

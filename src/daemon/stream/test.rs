@@ -158,7 +158,7 @@ async fn the_fold_of_state_frames_equals_get_state() {
     // Move several topics, through the same methods the routes call.
     shared.set_review_level(crate::policy::ReviewLevel::HumanOnly);
     shared.set_pace(Some(Duration::from_millis(1500)), Some(true));
-    shared.notify("watch".into(), "cargo test finished".into(), None, None);
+    shared.notify("watch".into(), "cargo test finished".into(), None);
 
     // Fold every frame into a map, last write per topic winning.
     let mut folded = serde_json::Map::new();

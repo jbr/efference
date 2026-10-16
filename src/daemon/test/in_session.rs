@@ -116,7 +116,6 @@ async fn a_non_descendant_mutation_is_refused_but_a_notify_reaches_it() {
         source: "parent".into(),
         body: vec!["hello peer".into()],
         slot: None,
-        replaces: None,
         session: Some("peer".into()),
     }
     .execute(control.clone(), RequestContext::default())

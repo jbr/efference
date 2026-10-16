@@ -147,16 +147,17 @@ async fn a_creator_is_subscribed_with_wake_and_a_peer_without() {
     fixture.host.swansong().shut_down().await;
 }
 
-/// Where a notification to `session` is now: still pending, or logged at its
-/// first show as an `Ambient` (the parent's live loop drains its inbox after the
-/// idle debounce, so a test cannot count on catching it pending).
+/// Where a notification to `session` is now: still pending (a queued slot
+/// notification answers `u64::MAX`), or logged as an `Ambient` (the parent's live loop
+/// drains its inbox after the idle debounce, so a test cannot count on catching it
+/// pending).
 fn heard(session: &Session, matches: impl Fn(&str, &str, Option<&str>) -> bool) -> Option<Seq> {
     if let Some(n) = session
         .pending_notifications()
         .iter()
         .find(|n| matches(&n.source, &n.body, n.slot.as_deref()))
     {
-        return Some(u64::MAX - n.id);
+        return Some(n.seq.unwrap_or(u64::MAX));
     }
     session.snapshot().iter().find_map(|e| match &e.payload {
         Payload::Ambient(n) if matches(&n.source, &n.body, n.slot.as_deref()) => Some(e.seq),

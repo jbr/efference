@@ -239,7 +239,6 @@ fn tools_list_is_ordered_and_annotated() {
             "review_level",
             "supervisor",
             "notify",
-            "dismiss",
             "proposal",
             "image",
             "state",

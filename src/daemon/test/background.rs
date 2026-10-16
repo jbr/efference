@@ -169,7 +169,7 @@ async fn kill_bg_and_inbox_summary() {
         "{}",
         shared.inbox_listing()
     );
-    shared.notify("ci".into(), "build failed".into(), None, None);
+    shared.notify("ci".into(), "build failed".into(), None);
     let summary = shared.inbox_listing();
     assert!(
         summary.contains("ci") && summary.contains("build failed"),

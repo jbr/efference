@@ -53,6 +53,18 @@ pub struct Triage {
     /// [`project`]: crate::project::project
     #[serde(default)]
     pub thinking: Vec<String>,
+    /// The last arrival this triage's rider showed (docs/inbox.md): every notification
+    /// whose arrival `seq` is at or below it, and not yet dispositioned, was in front of
+    /// the model. Absent means this entry's own `seq`, which is what a log written before
+    /// the field recorded (a notification was logged when a triage first showed it, so it
+    /// sat just ahead of that triage). A triage that showed no rider records `Some(0)` (seq 0 is the boot `Preamble`),
+    /// and one that showed it records the highest `seq` the rider held, so a notification
+    /// that arrived while the request was in flight reads as new at the next triage.
+    /// [`project`] never reads it.
+    ///
+    /// [`project`]: crate::project::project
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shown_through: Option<Seq>,
 }
 
 /// Where a [`Triage`] verdict came from (docs/triage.md).

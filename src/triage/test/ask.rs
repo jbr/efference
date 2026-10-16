@@ -113,6 +113,7 @@ fn roster_excludes_already_surfaced_names() {
                 surfaced: vec!["ferritin".into()],
                 retries: Vec::new(),
                 thinking: Vec::new(),
+                shown_through: None,
             }),
         ),
     ];

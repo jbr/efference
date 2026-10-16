@@ -395,7 +395,6 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
                                 notification.source,
                                 notification.body,
                                 notification.slot,
-                                None,
                             );
                         },
                     )

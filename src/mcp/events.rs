@@ -3,8 +3,8 @@
 //! each frame and hands the interesting ones here, where they become a live
 //! output line or an inbox notification. Nothing here reaches the log —
 //! progress is telemetry about the running call, and a `notifications/message`
-//! line becomes a [`Notification`] only so the inbox logs it at first-show
-//! like every other arrival.
+//! line becomes a [`Notification`] only so the inbox takes it like every
+//! other arrival.
 
 use mcplease::types::{ProgressToken, RequestId};
 use serde_json::Value;
@@ -67,11 +67,11 @@ pub(super) fn route_event(
                 Some(logger) => format!("[{level}] {logger}: {payload}"),
                 None => format!("[{level}] {payload}"),
             };
-            on_notify(Notification {
-                source: server.to_string(),
+            on_notify(Notification::new(
+                server,
                 body,
-                slot: Some(format!("mcp:{server}")),
-            });
+                Some(format!("mcp:{server}")),
+            ));
         }
     }
 }

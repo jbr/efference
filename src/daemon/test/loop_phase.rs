@@ -23,21 +23,21 @@ fn settle(session: &Arc<Session>) -> tokio::task::JoinHandle<Value> {
 /// Holds a scripted answer until the test opens it, so a `settle` that should block is
 /// seen blocking however the threads are scheduled. One static per test: the scripts
 /// are plain `fn`s.
-struct Latch(std::sync::atomic::AtomicBool);
+pub(super) struct Latch(std::sync::atomic::AtomicBool);
 
 impl Latch {
-    const fn new() -> Self {
+    pub(super) const fn new() -> Self {
         Self(std::sync::atomic::AtomicBool::new(false))
     }
 
-    fn wait(&self) {
+    pub(super) fn wait(&self) {
         let start = std::time::Instant::now();
         while !self.0.load(Ordering::SeqCst) && start.elapsed() < Duration::from_secs(20) {
             std::thread::sleep(Duration::from_millis(5));
         }
     }
 
-    fn open(&self) {
+    pub(super) fn open(&self) {
         self.0.store(true, Ordering::SeqCst);
     }
 }
@@ -290,7 +290,7 @@ async fn an_idle_triage_reads_requesting_and_settle_waits_through_it() {
     });
     let (host, runtime) = start(addr);
     let session = Arc::clone(runtime.session());
-    session.notify("ci".into(), "the build finished".into(), None, None);
+    session.notify("ci".into(), "the build finished".into(), None);
 
     wait_until("the idle triage is in flight", || {
         session.loop_phase() == LoopPhase::Requesting

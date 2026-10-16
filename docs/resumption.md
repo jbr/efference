@@ -20,6 +20,10 @@ Resumption reads only the log ([log-and-projection.md](log-and-projection.md)):
 - **Result capture.** A call's result is appended `Pending` as soon as the call returns,
   and its decision lands later as a `ResultVerdict`
   ([triage.md](triage.md), "Capture, then verdict").
+- **Arrived notifications.** A notification without a slot is an `Ambient` entry from its
+  arrival, carrying its must-wake flag, and each `Triage` records `shown_through`, the
+  last arrival its rider showed. Together they say which notifications are still unshown
+  ([inbox.md](inbox.md)).
 - **`CallStarted`**, a non-projecting entry appended after the permission cascade clears
   a call and before the tool runs (never for `ask`). It records which calls may have
   touched the world: a call with it and no result is the one case that rolls back.
@@ -116,14 +120,18 @@ own position as before.
 
 ## Nothing runs before the operator's first action
 
-A resumed session sends no model request on its own, so it cannot pay a cold cache read
+A resumed session starts no trajectory on its own, and no model request on a cold cache
 the operator didn't choose. The idle loop in `agent::run` waits on a user turn, an inbox
-wake or a continue. The inbox starts empty because pending notifications are not on
-disk, subscriptions are host state and are not restored, and keepalive waits on clocks
+wake or a continue. A notification that arrived without a slot is a log entry, so the
+loader restores the unshown ones with the rest of the log (`inbox::unshown`,
+[inbox.md](inbox.md)): nothing is dropped as stale, and the next triage offers them all,
+whatever their age. A restored unshown notification wakes the idle loop as a live one does.
+That wake waits while the cache is believed cold, so a session resumed past the cache's
+lifetime requests nothing until a person acts; one resumed inside it runs a standalone
+triage at once, as a live session left idle would. A slot notification was only ever in
+memory and is lost, as are subscriptions, which are host state; keepalive waits on clocks
 only a real request sets. The kickoff fires only on a log with no `User` entry, which a
 resume reaches only if the host stopped between submitting the kickoff and appending it.
-A notification that arrives later wakes a standalone triage, as it would on a live
-session left idle.
 
 **The first action replays a pending batch.** At each idle wake the loop derives the
 pending batch from the log (`recovery::pending_batch`), with no flag to drift. A

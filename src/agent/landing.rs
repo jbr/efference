@@ -27,6 +27,9 @@ pub(super) async fn land(
     // The must-wake notifications this triage first-shows (docs/inbox.md):
     // pinned below whatever the triage decides.
     let mut forced_pins: Vec<crate::log::Seq> = Vec::new();
+    // The arrival mark the batch's last `Triage` records (docs/inbox.md): the highest
+    // notification its rider showed, or `0` when the rider did not run here.
+    let mut shown_through: crate::log::Seq = 0;
     let mut deferred: Option<(
         Vec<ShownNotification>,
         Vec<crate::process_monitor::BgView>,
@@ -43,24 +46,16 @@ pub(super) async fn land(
             shared.await_warm_or_person().await;
         }
         shared.set_phase(LoopPhase::Requesting);
-        let mut entries = shared.snapshot();
-        // Open the triage (docs/inbox.md): re-show the still-active
-        // notifications (left at earlier triages), then log any newly arrived
-        // (ephemeral) ones as first-show `Ambient` entries — each entry's seq
-        // becomes its durable id, the handle the verdict pins/dismisses by. (They
-        // project to nothing, so the fork prefix `entries` stays byte-identical,
-        // docs/log-and-projection.md.)
-        let mut shown = active_shown(&entries);
-        let mut forced = Vec::new();
-        for drained in shared.drain_inbox() {
-            let source = drained.notification.source.clone();
-            let body = drained.notification.body.clone();
-            let seq = shared.append(turn, Payload::Ambient(drained.notification))?;
-            shown.push(ShownNotification { seq, source, body });
-            if drained.wake {
-                forced.push(seq);
-            }
-        }
+        // Open the triage (docs/inbox.md): the rider holds every unresolved
+        // notification, those left at earlier triages and those that arrived since,
+        // queued slot notifications logged now as their first show. Each entry's seq
+        // is the handle the verdict pins/dismisses by. (They project to nothing, so the
+        // fork prefix `entries` stays byte-identical, docs/log-and-projection.md.)
+        let Rider {
+            mut entries,
+            shown,
+            forced,
+        } = open_rider(shared, turn)?;
         // A triage that is only `ask` replies has no triage to carry the inbox
         // (docs/process-monitor.md): triage runs after the results are logged, below,
         // and takes the must-wake pins with it.
@@ -68,6 +63,10 @@ pub(super) async fn land(
             deferred = Some((shown.clone(), shared.bg_snapshot(), forced));
         } else {
             forced_pins = forced;
+            // A batch the shape rule decided without the model shows no rider.
+            if crate::triage::shows_rider(&pending) {
+                shown_through = rider_mark(&shown);
+            }
         }
         // The live background processes' fresh tails ride the same triage
         // (docs/process-monitor.md) — re-sampled now, never logged unless pinned.
@@ -160,11 +159,7 @@ pub(super) async fn land(
                     if let Some((source, body)) = shared.bg_pin_snapshot(handle) {
                         let seq = shared.append(
                             turn,
-                            Payload::Ambient(Notification {
-                                source,
-                                body,
-                                slot: Some(handle.clone()),
-                            }),
+                            Payload::Ambient(Notification::new(source, body, Some(handle.clone()))),
                         )?;
                         inbox_verdict.push((seq, Disposition::Pin));
                     }
@@ -251,6 +246,7 @@ pub(super) async fn land(
                 shared.append(
                     turn,
                     Payload::Triage(Triage {
+                        shown_through: Some(if last { shown_through } else { 0 }),
                         for_result: Some(result_seq),
                         origin,
                         raw_keep,

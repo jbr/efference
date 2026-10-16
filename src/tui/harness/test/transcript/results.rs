@@ -675,6 +675,7 @@ fn a_recovered_retry_surfaces_as_an_annotation() {
         surfaced: Vec::new(),
         retries: vec!["attempt 1 of 3: triage called bash instead of retain".into()],
         thinking: Vec::new(),
+        shown_through: None,
     }));
     assert!(
         play.find("⚠ triage retry").is_some(),

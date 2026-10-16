@@ -277,8 +277,8 @@ measures; a candidate triaging from turn one would build a different prefix, and
 a live session measures that.
 
 The replayed request carries the inbox rider the live triage was shown: the
-notifications still active in the prefix plus those the triage first showed (`Ambient`
-entries after its results). Background-process tails are sampled live and never logged,
+notifications that had arrived by the triage's `shown_through` mark and were not resolved
+before it, whether their `Ambient` entries sit before its results or after them. Background-process tails are sampled live and never logged,
 so that rider is absent from a replay, and the verb says so when a replayed triage had
 processes running.
 

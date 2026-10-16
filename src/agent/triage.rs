@@ -49,9 +49,9 @@ impl IdleWake {
     }
 }
 
-/// The standalone idle triage (docs/process-monitor.md — wake-on-notification). Drains the newly
-/// arrived notifications (logging them first-show) alongside the still-active ones and
-/// the running background tails, runs the tool-result-free triage peek, applies the
+/// The standalone idle triage (docs/process-monitor.md — wake-on-notification). Opens the rider
+/// (every unresolved notification, queued slot ones logged first-show) alongside the
+/// running background tails, runs the tool-result-free triage peek, applies the
 /// dispositions, and logs the verdict as a `Triage` with `for_result: None`. Returns
 /// **true** iff it pinned something — the escalation contract: a pin grows the wire, so
 /// the caller runs a real turn to act on it; nothing pinned leaves the projection
@@ -66,21 +66,13 @@ pub(super) async fn run_idle_triage(
     // Let a burst settle so several events triage together, not one triage each.
     tokio::time::sleep(std::time::Duration::from_millis(IDLE_TRIAGE_DEBOUNCE_MS)).await;
 
-    let entries = shared.snapshot();
-    let mut shown = active_shown(&entries);
-    let mut forced = Vec::new();
-    for drained in shared.drain_inbox() {
-        let source = drained.notification.source.clone();
-        let body = drained.notification.body.clone();
-        let seq = shared.append(*turn, Payload::Ambient(drained.notification))?;
-        shown.push(ShownNotification { seq, source, body });
-        if drained.wake {
-            forced.push(seq);
-        }
-    }
+    let Rider {
+        entries,
+        shown,
+        forced,
+    } = open_rider(shared, *turn)?;
     let background = shared.bg_snapshot();
-    // Nothing to look at (e.g. the waking notifications were dismissed out-of-band before
-    // we drained) — back to idle without spending a model round-trip.
+    // Nothing to look at — back to idle without spending a model round-trip.
     if shown.is_empty() && background.is_empty() {
         return Ok(false);
     }
@@ -91,6 +83,45 @@ pub(super) async fn run_idle_triage(
         background: &background,
     };
     triage_and_record(client, tools, shared, triager, turn, sight).await
+}
+
+/// What a triage's rider holds when it opens (docs/inbox.md): the prefix it forks from,
+/// every unresolved notification, and the must-wake seqs among those no triage has shown.
+pub(super) struct Rider {
+    pub entries: Vec<crate::log::LogEntry>,
+    pub shown: Vec<ShownNotification>,
+    pub forced: Vec<crate::log::Seq>,
+}
+
+/// Open a triage's rider (docs/inbox.md): log the queued slot notifications as `Ambient`
+/// entries, which is their first show, then fold the log. Notifications without a slot are
+/// in the log from their arrival, so the fold holds them whether or not a triage has seen
+/// them; the ones no triage has shown, carrying `wake`, are pinned whatever the verdict.
+/// The `Ambient` entries project to nothing, so the fork prefix stays byte-identical
+/// (docs/log-and-projection.md).
+pub(super) fn open_rider(shared: &Arc<Session>, turn: Turn) -> Result<Rider, Error> {
+    for queued in shared.drain_inbox() {
+        shared.append(turn, Payload::Ambient(queued))?;
+    }
+    let entries = shared.snapshot();
+    let shown = crate::inbox::rider(&entries);
+    let forced = crate::inbox::unshown(&entries)
+        .into_iter()
+        .filter(|n| n.wake)
+        .map(|n| n.seq)
+        .collect();
+    Ok(Rider {
+        entries,
+        shown,
+        forced,
+    })
+}
+
+/// The `shown_through` a triage records for the rider it showed: the highest arrival in it.
+/// Everything the log held at or below that was in front of the model, and an arrival
+/// logged while the request was in flight is above it (docs/inbox.md).
+pub(super) fn rider_mark(shown: &[ShownNotification]) -> crate::log::Seq {
+    shown.iter().map(|n| n.seq).max().unwrap_or(0)
 }
 
 /// What a standalone triage looks at: the prefix it forks from, the notifications
@@ -148,11 +179,7 @@ pub(super) async fn triage_and_record(
                 if let Some((source, body)) = shared.bg_pin_snapshot(&handle) {
                     let seq = shared.append(
                         *turn,
-                        Payload::Ambient(Notification {
-                            source,
-                            body,
-                            slot: Some(handle),
-                        }),
+                        Payload::Ambient(Notification::new(source, body, Some(handle))),
                     )?;
                     inbox.push((seq, Disposition::Pin));
                     escalate = true;
@@ -173,6 +200,7 @@ pub(super) async fn triage_and_record(
             surfaced: Vec::new(),
             retries: triage.retries,
             thinking: triage.thinking,
+            shown_through: Some(rider_mark(shown)),
         }),
     )?;
     expire_unmentioned(shared, *turn)?;

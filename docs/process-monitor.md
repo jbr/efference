@@ -277,7 +277,7 @@ and none of them discovered `background: true`.
 
 The [inbox](inbox.md) / notification model is built on immutable bodies: an
 `Ambient` body is frozen at first-show, and a "left" item re-emits verbatim.
-Supersession only touches the un-shown queue; refreshing an already-shown body is
+Supersession only touches the queued slot notifications; refreshing an already-shown body is
 unbuilt by design (the projection invariants depend on immutable bodies).
 
 A tail's whole value is that it *updates*. Forcing it through notifications would

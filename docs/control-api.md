@@ -605,19 +605,18 @@ resource because it *is* a verb — it signals, it doesn't delete state.
 - `200 {"status":"interrupted"}`
 
 #### `POST /notifications`
-Enqueue an ambient notification into the inbox.
+File an ambient notification in the inbox (docs/inbox.md).
 
-- Body: `{ "source": "<string>", "body": "<string>", "slot"?: "<string>", "replaces"?: <u64> }`
+- Body: `{ "source": "<string>", "body": "<string>", "slot"?: "<string>" }`
   - `slot` — a logical channel; a later notify on the same slot supersedes the
-    pending one (archive-and-replace).
-  - `replaces` — supersede a specific pending notification by its queue-local id.
-- `202 {"id": <u64>}` — the new notification's **queue-local** id.
+    queued one (archive-and-replace).
+- `202 {"seq": <u64>}` — the `seq` of the notification's `Ambient` log entry, appended at
+  arrival. `202 {}` for a slot notification, which waits in memory and is logged when a
+  triage first shows it.
 - `400 bad_request` — unparseable body
 
-#### `DELETE /notifications/:id`
-Remove a pending notification (by its queue-local id) before it reaches a gate.
-
-- `200 {"status":"dismissed"}` · `404 not_found` (no such pending id) · `400 bad_request` (id not an integer)
+A notification cannot be withdrawn before a triage sees it; the model's `pin`, `dismiss`
+and `leave` verdicts are the only dispositions.
 
 #### `PATCH /proposals/:seq`
 Move a pending config-edit proposal to its terminal state, addressed by the
@@ -1475,7 +1474,6 @@ publishes nothing at all — indistinguishable from a hung harness.
 |---|---|---|---|
 | `seq` | durable, monotonic per session | the log | `/events` `id`, `/log?since`, proposal addressing |
 | `call_id` | a tool call (the `tool_use` id) | the model | `/approvals/:call_id`, `tool_output` deltas |
-| notification id | **queue-local**, not durable | the inbox | `/notifications` response, `DELETE /notifications/:id` |
 | process id | a tool-spawned process; survives property changes | the process monitor, minted at spawn | the `/processes/:id` routes, `process_output` deltas, the `processes` topic; rendered `p#<n>` in prose |
 
 ## Error model

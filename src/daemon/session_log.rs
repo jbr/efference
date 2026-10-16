@@ -104,7 +104,7 @@ impl Session {
                     // committing initiator because this is the single appender. `commands`/`tools`
                     // notify nothing — their effect reaches the model only through the classifier.
                     if let Some((body, slot)) = session_visible_notice(&change) {
-                        self.notify("config".to_string(), body, Some(slot), None);
+                        self.notify("config".to_string(), body, Some(slot));
                     }
                 }
                 // A proposal is inert in the effective config: it joins the pending-proposals queue,

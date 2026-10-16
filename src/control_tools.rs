@@ -47,7 +47,6 @@ mcplease::tools!(
     (ReviewLevel, review_level, "review_level"),
     (Supervisor, supervisor, "supervisor"),
     (Notify, notify, "notify"),
-    (Dismiss, dismiss, "dismiss"),
     (Proposal, proposal, "proposal"),
     (Image, read_image, "image"),
     (State, state, "state"),

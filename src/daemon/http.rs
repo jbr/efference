@@ -132,9 +132,6 @@ pub(crate) struct NotifyBody {
     /// Logical channel — a later notify on the same slot supersedes this one (docs/inbox.md).
     #[serde(default)]
     pub(crate) slot: Option<String>,
-    /// Supersede a specific pending notification by its queue-local id.
-    #[serde(default)]
-    pub(crate) replaces: Option<u64>,
 }
 
 /// The session a conn addresses: the one a host's `/sessions/:id` stage put into
@@ -203,7 +200,6 @@ pub(crate) fn control_routes_with_heartbeat(heartbeat: Duration) -> Router {
         .get("/v1/attachments/:name", attachments::read)
         .delete("/v1/attachments/:name", attachments::remove)
         .post("/v1/notifications", notifications::notify)
-        .delete("/v1/notifications/:id", notifications::dismiss_notification)
         .get("/v1/proposals", proposals::list_proposals)
         .patch("/v1/proposals/:seq", proposals::patch_proposal)
         .put("/v1/title", title::put_title)

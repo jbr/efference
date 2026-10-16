@@ -7,10 +7,11 @@
 //! (`daemon/watch.rs`). A composer's uploads land in `composer/` instead and are announced by the
 //! turn that carries them; the watcher never reads that subdirectory.
 //!
-//! Nothing here touches the log. The notification rides the existing inbox rail
-//! (`Session::notify`), is shown at a triage, and is logged as `Ambient` at first-show like
-//! any other — so the bytes stay on disk until the model pulls them, and the byte-stability pins
-//! never see the attachment at all (docs/log-and-projection.md).
+//! Nothing here touches the log directly. The notification rides the existing inbox rail
+//! (`Session::notify`), is shown at a triage, and is logged as `Ambient` like any other
+//! (at first show, since its slot is the file's path) — so the bytes stay on disk until
+//! the model pulls them, and the byte-stability pins never see the attachment at all
+//! (docs/log-and-projection.md).
 
 use super::*;
 use std::path::Path;
@@ -113,5 +114,5 @@ fn announce(shared: &Session, display_dir: &Path, path: &Path) {
         return;
     };
     let (source, body, slot) = crate::attachments::notification(&arrival);
-    shared.notify(source, body, slot, None);
+    shared.notify(source, body, slot);
 }

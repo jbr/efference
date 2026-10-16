@@ -93,7 +93,7 @@ impl Host {
             if terms.wake {
                 inbox.notify_wake(id.to_string(), body.clone(), Some(status_slot(id)));
             } else {
-                inbox.notify(id.to_string(), body.clone(), Some(status_slot(id)), None);
+                inbox.notify(id.to_string(), body.clone(), Some(status_slot(id)));
             }
         }
         if let Some(reviewer) = reviewer

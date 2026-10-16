@@ -42,11 +42,7 @@ fn the_shared_triage_request_is_pinned() {
         call: &triaged,
         raw: &raw,
     }];
-    let inbox = [ShownNotification {
-        seq: 9,
-        source: "timer".into(),
-        body: "rang".into(),
-    }];
+    let inbox = [ShownNotification::new(9, "timer", "rang")];
     let shared = Triager::shared();
     let turns = triage_request(
         &prefix,

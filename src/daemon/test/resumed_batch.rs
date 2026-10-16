@@ -83,7 +83,7 @@ fn gated(log: &mut Log, id: &str) {
 }
 
 /// A resumed session whose spotter gates every call, pointed at `addr`.
-fn start(addr: SocketAddr, log: Log) -> (Swansong, SessionRuntime) {
+pub(super) fn start(addr: SocketAddr, log: Log) -> (Swansong, SessionRuntime) {
     use std::hash::{BuildHasher, Hasher, RandomState};
     let nonce = RandomState::new().build_hasher().finish();
     let cwd = std::env::temp_dir().join(format!("efference-resumed-{nonce:016x}"));
@@ -114,7 +114,7 @@ fn start(addr: SocketAddr, log: Log) -> (Swansong, SessionRuntime) {
     (host, runtime)
 }
 
-fn requests_script(
+pub(super) fn requests_script(
     script: fn(usize) -> Answer,
 ) -> (Arc<AtomicUsize>, Arc<Mutex<Vec<String>>>, SocketAddr) {
     let requests = Arc::new(AtomicUsize::new(0));
@@ -318,7 +318,7 @@ async fn an_event_wake_leaves_the_batch_alone() {
     let session = Arc::clone(runtime.session());
     wait_until("the loop parks", || session.is_settled()).await;
 
-    session.notify("watcher".into(), "something happened".into(), None, None);
+    session.notify("watcher".into(), "something happened".into(), None);
     tokio::time::sleep(Duration::from_millis(800)).await;
     host.shut_down().await;
 

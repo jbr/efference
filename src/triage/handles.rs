@@ -90,6 +90,12 @@ pub fn reply_only_triage(pending: &[Pending<'_>]) -> bool {
     pending.iter().any(|p| is_reply(p.call)) && pending.iter().all(|p| bypassed(p).is_some())
 }
 
+/// Whether the triage over `pending` reaches the model, and so shows the inbox rider
+/// (docs/inbox.md). False when the shape rule decided every result ([`bypassed_triage`]).
+pub fn shows_rider(pending: &[Pending<'_>]) -> bool {
+    bypassed_triage(pending).is_none()
+}
+
 /// Each pending result's label in the ask (docs/triage.md), in call order:
 /// `r1`, `r2`, … across the results the shape rule did not bypass, `None` for a bypassed
 /// one. This is the verdict's coordinate system — the triage view heads each block with its

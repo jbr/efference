@@ -676,7 +676,7 @@ use request::*;
 use validate::*;
 
 pub use digest_view::TriageView;
-pub use handles::reply_only_triage;
+pub use handles::{reply_only_triage, shows_rider};
 pub use own::TriageModel;
 pub use primer::{TriagePrimerInput, TriagePrimerOutcome};
 pub use replay::{ReplayVerdict, TriageAttempt, triage_request};

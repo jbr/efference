@@ -13,6 +13,7 @@ fn idle_triage() -> Payload {
         surfaced: Vec::new(),
         retries: Vec::new(),
         thinking: Vec::new(),
+        shown_through: None,
     })
 }
 
@@ -25,11 +26,7 @@ fn an_unmentioned_notification_expires_with_a_log_entry_after_the_cap() {
     let seq = shared
         .append(
             0,
-            Payload::Ambient(Notification {
-                source: "ci".into(),
-                body: "42 passed".into(),
-                slot: None,
-            }),
+            Payload::Ambient(Notification::new("ci", "42 passed", None)),
         )
         .unwrap();
     for shown in 1..=MAX_UNMENTIONED_SHOWS {

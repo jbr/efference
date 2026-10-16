@@ -353,11 +353,12 @@ pub struct Session {
     /// polling. Same lost-wakeup discipline as the pace hold: arm before reading.
     config_repaired: Notify,
 
-    /// The ephemeral inbox of pending ambient notifications (docs/inbox.md): out-of-band
-    /// events awaiting their first triage. Control state, *not* a log payload —
-    /// a notification only becomes a durable `Ambient` entry when a triage first
-    /// shows it. Superseded/dismissed-while-pending entries are dropped here
-    /// (the "never-happened" case); only shown ones reach the audit log.
+    /// The in-memory queue of slot notifications (docs/inbox.md): out-of-band events a
+    /// later one on the same slot supersedes, awaiting their first triage. Control
+    /// state, *not* a log payload — a slot notification becomes a durable `Ambient`
+    /// entry when a triage first shows it, and one superseded while queued is dropped
+    /// here (the "never-happened" case). A notification without a slot is a log entry
+    /// from its arrival and is not held here.
     inbox: Mutex<Inbox>,
     /// The pending-proposals queue: async `ConfigEdit`s (the session's `propose_scope`, the
     /// spotter's prefix-promotion) awaiting an orchestrator's commit/cancel

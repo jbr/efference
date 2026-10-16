@@ -255,9 +255,6 @@ export const fetchProcessOutput = (id: number, since?: number) =>
   get<ProcessOutputRead>(
     `/v1/processes/${id}/output${since === undefined ? "" : `?since=${since}`}`,
   );
-// Remove a pending notification before it reaches a triage (docs/inbox.md).
-export const dismissNotification = (id: number) =>
-  del<{ status: string }>(`/v1/notifications/${id}`);
 // Resolve a pending config-edit proposal (docs/control-api.md): the
 // orchestrator-above decides; committed folds the change into the effective
 // config, cancelled is audit-only.

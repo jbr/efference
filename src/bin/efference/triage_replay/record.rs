@@ -1,6 +1,6 @@
 //! Rebuilding recorded triages from a session log (docs/triage.md).
 
-use efference::inbox::{ShownNotification, active_shown};
+use efference::inbox::{ShownNotification, rider_after};
 use efference::log::{Payload, ProcessEventKind, RawResult, ToolCall, WireState};
 use std::collections::BTreeSet;
 
@@ -31,9 +31,8 @@ pub(crate) struct Recorded {
     /// What the recorded run's first attempt did, from `Triage.retries` — the baseline
     /// each replay is compared against. `None` means it complied first try.
     pub(crate) recorded_first_failure: Option<String>,
-    /// The notifications the live triage was shown (docs/inbox.md): those still active
-    /// in the prefix, then those this triage first showed, which the log holds as
-    /// `Ambient` entries after the results.
+    /// The notifications the live triage was shown (docs/inbox.md): those arrived by its
+    /// `shown_through` mark and not resolved before it.
     pub(crate) inbox: Vec<ShownNotification>,
     /// Background processes spawned and not exited when the triage ran. Their output
     /// tails are sampled live and never logged, so a replay cannot rebuild that rider.
@@ -104,22 +103,13 @@ pub(crate) fn recorded_triages(entries: &[efference::log::LogEntry]) -> Vec<Reco
                 Payload::Triage(t) => t.retries.first().cloned(),
                 _ => None,
             });
-        // What the live triage passed as its inbox: `active_shown` over the prefix,
-        // plus the `Ambient` entries it first showed, which sit between its results and
-        // the next completion (a verdict may have resolved them, so they are not
-        // filtered through `active_shown` again).
+        // What the live triage passed as its inbox (docs/inbox.md): the notifications
+        // arrived by its mark and not resolved before it, whether they were logged before
+        // the prefix ended or between its results and the next completion.
         let after = entries[prefix_end..]
             .iter()
             .take_while(|e| !matches!(&e.payload, Payload::Assistant { .. }));
-        let mut inbox = active_shown(&entries[..prefix_end]);
-        inbox.extend(after.clone().filter_map(|e| match &e.payload {
-            Payload::Ambient(n) => Some(ShownNotification {
-                seq: e.seq,
-                source: n.source.clone(),
-                body: n.body.clone(),
-            }),
-            _ => None,
-        }));
+        let inbox = rider_after(entries, prefix_end);
         let mut running = BTreeSet::new();
         for e in entries[..prefix_end].iter().chain(after) {
             if let Payload::ProcessEvent(event) = &e.payload {

@@ -623,7 +623,6 @@ async fn the_sessions_provider_mounts_namespaced_and_hides_operator_verbs() {
         "sessions__pace",
         "sessions__review_level",
         "sessions__notify",
-        "sessions__dismiss",
         "sessions__image",
         "sessions__state",
         "sessions__transcript",

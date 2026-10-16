@@ -519,11 +519,7 @@ fn every_text_bearing_payload_path_is_masked() {
     };
     assert!(text.contains("leaked-secret-value"));
 
-    let mut ambient = Payload::Ambient(crate::log::Notification {
-        source: "tool".into(),
-        body: leak(),
-        slot: None,
-    });
+    let mut ambient = Payload::Ambient(crate::log::Notification::new("tool", leak(), None));
     masker.mask_payload(&mut ambient);
     let Payload::Ambient(note) = &ambient else {
         unreachable!()
