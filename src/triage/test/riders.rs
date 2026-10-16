@@ -206,3 +206,21 @@ fn image_results_are_marked_and_the_ask_says_they_pass_through() {
     );
     assert!(!ask.contains("  images      "), "{ask}");
 }
+
+/// The idle ask and the per-result ask's inbox row define pin, leave, and dismiss with the
+/// same words, say what leave costs, and the idle ask keeps the "nothing else will wake you"
+/// point without the old "nothing changes" framing (docs/inbox.md).
+#[test]
+fn both_asks_define_the_dispositions_in_the_same_words() {
+    let defs = "`pin` — it enters your working context and you resume work on it now. `leave` (list nothing for it) — it stays pending and is shown to triage again at the next triage, no turn runs, and the harness may dismiss it if it keeps going unmentioned. `dismiss` — it is cleared for good, you will not see it again, and no turn runs.";
+    assert!(TRIAGE_INSTRUCTION.contains(defs), "{TRIAGE_INSTRUCTION}");
+    assert!(INBOX_FIELD.contains(defs), "{INBOX_FIELD}");
+    assert!(
+        TRIAGE_INSTRUCTION.contains("Nothing else will wake you: if a notification is something you said you would act on — a process you started, a timer you set, a reply you are waiting for — leaving or dismissing it means you wait until someone else sends a turn."),
+        "{TRIAGE_INSTRUCTION}"
+    );
+    assert!(
+        !TRIAGE_INSTRUCTION.contains("nothing changes"),
+        "{TRIAGE_INSTRUCTION}"
+    );
+}

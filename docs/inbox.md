@@ -141,8 +141,14 @@ each notification one of three dispositions:
 - **Dismiss** — clear it. The disposition is recorded; the notification no longer resurfaces.
 - **Leave** — simply omit the item from the `inbox` field. The notification stays active
   and resurfaces at the next triage unchanged. This is the no-effort default; deferral costs
-  nothing, up to a bound: a notification that no verdict mentions across
+  nothing, up to a bound (both asks tell the model the harness may dismiss it if it keeps
+  going unmentioned, without the number): a notification that no verdict mentions across
   `MAX_UNMENTIONED_SHOWS` (3) triages is dismissed by the harness (below).
+
+Both asks, the idle triage's instruction and the per-result ask's `inbox` row, define the
+three dispositions in the same words: what each does to the notification, that no turn runs
+on leave or dismiss, and (idle triage) that nothing else wakes the agent, so leaving or
+dismissing something it said it would act on means it waits until someone sends a turn.
 
 All dispositions are recorded on the `Triage` log entry (`inbox: Vec<(Seq, Disposition)>`),
 making the fork's verdict durable even though the fork's transcript is throwaway.

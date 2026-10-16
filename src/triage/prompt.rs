@@ -2,12 +2,27 @@
 
 use super::*;
 
-pub(super) const TRIAGE_INSTRUCTION: &str = "You're between tasks and have been woken to triage \
-out-of-band events. Review the pending notifications (and any running background \
-processes) above and call `triage` now: `pin` what genuinely needs to enter your working \
-context and be acted on now, `dismiss` the noise, and leave anything you're deferring \
-unlisted. If you pin nothing you simply go back to idle and nothing changes — so pin only \
-what truly warrants picking the work back up.";
+/// What each disposition of a notification does, in the words both asks use: the idle
+/// [`TRIAGE_INSTRUCTION`] and the per-result [`INBOX_FIELD`] row (docs/inbox.md, "Triage:
+/// pin · dismiss · leave"). A macro because `concat!` takes only literals.
+macro_rules! dispositions {
+    () => {
+        "`pin` — it enters your working context and you resume work on it now. `leave` \
+(list nothing for it) — it stays pending and is shown to triage again at the next triage, \
+no turn runs, and the harness may dismiss it if it keeps going unmentioned. `dismiss` — it \
+is cleared for good, you will not see it again, and no turn runs."
+    };
+}
+
+pub(super) const TRIAGE_INSTRUCTION: &str = concat!(
+    "You're between tasks and have been woken to triage out-of-band events. Review the \
+pending notifications (and any running background processes) above and call `triage` now. \
+For each notification: ",
+    dispositions!(),
+    " Nothing else will wake you: if a notification is something you said you would act \
+on — a process you started, a timer you set, a reply you are waiting for — leaving or \
+dismissing it means you wait until someone else sends a turn."
+);
 
 /// The ask's banner. Every other section of a triage view carries one (`═══ result ═══`,
 /// `═══ context ═══`, `═══ inbox ═══`); the ask carrying none left the only *instruction*
@@ -386,11 +401,11 @@ further is coming, so decide on what is there."
 
 /// The triage-scoped riders, as field rows for [`retain_instruction`]'s block. Each is added
 /// only when its section is actually present in the request.
-pub(super) const INBOX_FIELD: &str =
+pub(super) const INBOX_FIELD: &str = concat!(
     "  inbox       The pending notifications under \"inbox\" in the sections after this ask, an
-              [id] each. `pin` the ids worth carrying into your working context going forward and
-              `dismiss` the noise; any id you don't list stays in the inbox and is shown
-              again at the next decision point.";
+              [id] each. ",
+    dispositions!()
+);
 
 /// Offered when a result in the triage carries images. They reach the agent whatever the
 /// verdict (`render_result` projects `raw.images` for every triaged verdict), and the triage
