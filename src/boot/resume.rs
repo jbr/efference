@@ -28,7 +28,7 @@ use super::{BASE_DIR, CONFIG_NAME, LOG_NAME, env, model, parts, scaffold};
 use crate::api::Error;
 use crate::daemon::SessionBoot;
 use crate::inference::{InferenceRegistry, ResumeSwitch, SessionOptions, TriageChoice};
-use crate::log::{LogEntry, Payload, RecordedRoles, Resumed, Timestamp};
+use crate::log::{LogEntry, LoggedInference, Payload, RecordedRoles, Resumed, Timestamp};
 use crate::persist::{LoadedRecording, Log, SessionMetadata, TriageModel};
 use crate::recovery::{Resumption, resume_point};
 use crate::spotter::MountedSpotter;
@@ -98,12 +98,13 @@ async fn resume_minting(
     let recording = crate::persist::load_recording(&log_path).map_err(std::io::Error::from)?;
     resume_point(&recording.entries)
         .map_err(|why| format!("cannot resume {}: {why}", session_dir.display()))?;
-    let (system, context_block) = frozen_preamble(&recording.entries).ok_or_else(|| {
-        format!(
-            "cannot resume {}: the log holds no boot preamble",
-            session_dir.display()
-        )
-    })?;
+    let (recorded_identity, body, context_block) =
+        frozen_preamble(&recording.entries).ok_or_else(|| {
+            format!(
+                "cannot resume {}: the log holds no boot preamble",
+                session_dir.display()
+            )
+        })?;
     let metadata = recording.header.metadata();
     let directories = session_directories(metadata, &session_dir)?;
     let session_id = session_dir
@@ -130,11 +131,34 @@ async fn resume_minting(
     }
 
     let mut loaded = scaffold::load_session_config(&session_config, &session_dir)?;
-    let options = options_from_log(&recording, &loaded, &switch);
+    let mut options = options_from_log(&recording, &loaded, &switch);
     let selected = options.effort.clone();
     let inference = registry.prepare(registry.resolve_options(&options, None, None))?;
     let (main_selection, mut endpoint) = inference.main();
     let model = main_selection.model.as_str();
+    // A main model other than the recorded one: the identity line is rewritten and the
+    // session resumes cold. Refused before anything is written, like every check here.
+    let main = LoggedInference::new(
+        &*main_selection.connection,
+        main_selection.provider,
+        &*main_selection.model,
+    );
+    let main_switched = switch.switches_main() && recorded_main(&recording).as_ref() != Some(&main);
+    if main_switched {
+        check_main_switch(&recording.entries, &recorded_identity, main_selection)
+            .map_err(|why| format!("cannot switch the main model of {session_id}: {why}"))?;
+    }
+    if main_switched {
+        // Handed on as the native id, as a header-recorded model is.
+        options.connection = Some(main.connection.clone());
+        options.model = Some(main.model.clone());
+    }
+    let identity = if main_switched {
+        crate::env::identity_line(model)
+    } else {
+        recorded_identity.clone()
+    };
+    let system = format!("{identity}{body}");
     endpoint.session_id = Some(crate::api::sticky_session_id(&session_dir));
 
     let upstream = metadata.map(|m| m.upstream.clone()).unwrap_or_default();
@@ -248,11 +272,15 @@ async fn resume_minting(
     // new roles, so the latest preamble stays the record a later resume reads. Only a
     // difference is written: a switch naming what the session already runs adds nothing.
     let roles = super::metadata::roles(&inference);
-    if !switch.is_empty()
-        && recorded_roles(&recording).as_ref() != Some(&roles)
+    let roles_switched = !switch.is_empty() && recorded_roles(&recording).as_ref() != Some(&roles);
+    if (main_switched || roles_switched)
         && let Some(preamble) = latest_preamble(log.entries())
     {
-        log.append(turn, preamble.clone().with_roles(roles))?;
+        let mut preamble = preamble.clone().with_roles(roles);
+        if main_switched {
+            preamble = preamble.with_main(identity.clone(), main);
+        }
+        log.append(turn, preamble)?;
     }
     if record_tools {
         log.append(
@@ -281,6 +309,7 @@ async fn resume_minting(
             env_policy,
             keep_scratch,
             triage_prices,
+            cache_lost_at: main_switched.then(Timestamp::now),
         },
         options,
     ))
@@ -336,22 +365,19 @@ fn options_from_log(
 ) -> SessionOptions {
     let mut options = match recording.header.metadata() {
         Some(metadata) => SessionOptions {
-            connection: Some(metadata.main.connection.clone()),
-            model: Some(metadata.main.model.clone()),
             effort: metadata.effort.clone(),
             temperature: metadata.temperature,
             ..SessionOptions::default()
         },
-        None => {
-            let main = crate::log::recorded_inference(&recording.entries);
-            SessionOptions {
-                connection: main.map(|m| m.connection.clone()),
-                model: main.map(|m| m.model.clone()),
-                effort: loaded.role.transport.effort.clone(),
-                ..SessionOptions::default()
-            }
-        }
+        None => SessionOptions {
+            effort: loaded.role.transport.effort.clone(),
+            ..SessionOptions::default()
+        },
     };
+    if let Some(main) = recorded_main(recording) {
+        options.connection = Some(main.connection);
+        options.model = Some(main.model);
+    }
     if let Some(RecordedRoles { spotter, triage }) = recorded_roles(recording) {
         options.spotter_connection = Some(spotter.connection);
         options.spotter_model = Some(spotter.model);
@@ -384,15 +410,57 @@ fn latest_preamble(entries: &[LogEntry]) -> Option<&Payload> {
         .find(|payload| matches!(payload, Payload::Preamble { .. }))
 }
 
-/// The latest boot preamble's system prompt, and the `[context]` block the triage
+/// The latest boot preamble's identity line and body, and the `[context]` block the triage
 /// prompt is re-rendered from (docs/context.md).
-fn frozen_preamble(entries: &[LogEntry]) -> Option<(String, Option<String>)> {
+fn frozen_preamble(entries: &[LogEntry]) -> Option<(String, String, Option<String>)> {
     entries.iter().rev().find_map(|entry| match &entry.payload {
         Payload::Preamble {
-            system, context, ..
-        } => Some((system.clone(), context.render())),
+            identity,
+            body,
+            context,
+            ..
+        } => Some((identity.clone(), body.clone(), context.render())),
         _ => None,
     })
+}
+
+/// The main inference the session last ran on: the latest preamble's identity, else the
+/// header's.
+fn recorded_main(recording: &LoadedRecording) -> Option<LoggedInference> {
+    crate::log::recorded_inference(&recording.entries)
+        .cloned()
+        .or_else(|| recording.header.metadata().map(|m| m.main.clone()))
+}
+
+/// Why `target` cannot take over this log's main model, or `Ok` when it can: the log's
+/// assistant turns are recorded in one wire dialect and the new model must speak it
+/// (docs/resumption.md), and the preamble must have an identity line to replace.
+fn check_main_switch(
+    entries: &[LogEntry],
+    recorded_identity: &str,
+    target: &crate::inference::ModelSelection,
+) -> Result<(), String> {
+    if recorded_identity.is_empty() {
+        return Err(
+            "its system prompt predates the identity line, so there is none to replace; \
+             hand the work off to a new session instead"
+                .into(),
+        );
+    }
+    let recorded = entries.iter().find_map(|entry| match &entry.payload {
+        Payload::Assistant { output, .. } => {
+            Some(crate::project::WireTurn::Assistant(output.clone()))
+        }
+        _ => None,
+    });
+    let Some(turn) = recorded else {
+        return Ok(());
+    };
+    let dialect = target
+        .provider
+        .inference_dialect()
+        .ok_or_else(|| format!("{} serves no turns", target.connection))?;
+    crate::project::check_dialect(&[turn], dialect).map_err(|conflict| conflict.to_string())
 }
 
 /// The `Resumed` entry for a log ending at `entries`, and the turn it files under: the

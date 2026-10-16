@@ -273,10 +273,10 @@ fn lines(
             }
             vec![line("config", body)]
         }
-        Payload::Preamble { system, .. } => {
+        Payload::Preamble { identity, body, .. } => {
             vec![line(
                 "preamble",
-                format!("{} of system prompt", size(system.len())),
+                format!("{} of system prompt", size(identity.len() + body.len())),
             )]
         }
         Payload::Title(title) => vec![line("title", title.text.clone())],

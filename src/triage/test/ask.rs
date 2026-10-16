@@ -45,6 +45,7 @@ fn preamble_with(items: Vec<Item>) -> LogEntry {
     entry(
         0,
         Payload::preamble(
+            "",
             "sys",
             Resolved {
                 sections: vec![Section {

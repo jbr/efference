@@ -9,6 +9,7 @@ behind a change, see [`journal/`](journal/).
 
 ### Added
 
+- A resume can switch the main model within the log's wire dialect (`connection`/`model` on the PATCH): the identity line is replaced over the same frozen body, the session starts cold, and `Preamble.system` is split into `identity` and `body` (log version 5, `scripts/migrate-log-v5.py`; docs/resumption.md, docs/log-and-projection.md).
 - A resume (`PATCH /sessions/:id {"state": "active"}`) can switch the spotter and triage models, checked as creation checks them and recorded in a repeated `Preamble` (docs/resumption.md).
 - The decision-rung spotter records its request stages (`sent`, `first_byte`, `ended`/`failed`) under the `spot` origin, so a slow or failed judgement shows in the log and `current_operations` (docs/log-and-projection.md).
 - A triage request's thinking and text stream on the `output` class as `triage_thinking_delta` and `triage_delta`, naming the results being triaged (docs/control-api.md).

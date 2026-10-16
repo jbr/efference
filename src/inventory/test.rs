@@ -48,7 +48,7 @@ fn tick() {
 }
 
 fn append_preamble(log: &mut Log) {
-    log.append(0, Payload::preamble("system", Default::default(), None))
+    log.append(0, Payload::preamble("", "system", Default::default(), None))
         .unwrap();
 }
 

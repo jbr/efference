@@ -137,7 +137,7 @@ async fn wire_rejects_a_recorded_provider_dialect_conflict() {
     let mut log = efference::persist::Log::create(&log_path, None).unwrap();
     log.append(
         0,
-        efference::log::Payload::preamble("sys", Default::default(), Some(identity)),
+        efference::log::Payload::preamble("", "sys", Default::default(), Some(identity)),
     )
     .unwrap();
     log.append(
@@ -181,7 +181,7 @@ fn write_openrouter_image_log(path: &std::path::Path) {
     let mut log = efference::persist::Log::create(path, None).unwrap();
     log.append(
         0,
-        Payload::preamble("sys", Default::default(), Some(identity)),
+        Payload::preamble("", "sys", Default::default(), Some(identity)),
     )
     .unwrap();
     log.append(

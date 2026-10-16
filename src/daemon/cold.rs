@@ -39,8 +39,18 @@ impl Session {
         self.touch_state();
     }
 
+    /// Record that the main prefix was abandoned at `at`: a resume on another main model
+    /// reads the whole history uncached whatever the clock says. Set before the usage
+    /// record is attached, whose requests belong to the old model and seed no touch
+    /// clock (`daemon/metrics.rs`), so nothing is pinged and the session is cold until a
+    /// request on the new prefix is made.
+    pub(crate) fn mark_cache_lost(&self, at: Timestamp) {
+        let _ = self.cache_lost.set(at);
+    }
+
     /// From when the cache is believed expired, or `None` while it is believed warm,
-    /// before the first request on the main prefix, and on a model with no cache.
+    /// before the first request on the main prefix (unless a main-model switch abandoned
+    /// one, [`Self::mark_cache_lost`]), and on a model with no cache.
     ///
     /// Only a request on the current prefix counts: after a compaction nothing has sent the
     /// new one, which is the state of a session that has made no request at all.
@@ -57,7 +67,18 @@ impl Session {
             .unwrap()
             .last_request_wall
             .filter(|touch| compacted_at.is_none_or(|compaction| touch.0 > compaction.0));
-        let since = believed_cold_since(last_touch, Timestamp::now(), ttl)?;
+        // A prefix abandoned by a main-model switch is cold from that moment, until a
+        // request on the new one (or a compaction, which replaces the history) follows it.
+        let lost = self
+            .cache_lost
+            .get()
+            .copied()
+            .filter(|lost| last_touch.is_none_or(|touch| touch.0 <= lost.0))
+            .filter(|lost| compacted_at.is_none_or(|compaction| lost.0 > compaction.0));
+        let since = match lost {
+            Some(lost) => lost,
+            None => believed_cold_since(last_touch, Timestamp::now(), ttl)?,
+        };
         let log = self.log.lock().unwrap();
         super::compact::compaction_cut(log.entries(), super::compact::COMPACTION_TAIL_TOKENS)?;
         Some(since)

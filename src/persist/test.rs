@@ -10,7 +10,7 @@ mod read;
 /// Line 1 as a reader accepts it carrying no metadata — the header a fixture
 /// persists. Built by hand rather than by a writer so a test can vary one
 /// field of it and leave the rest alone.
-const HEADER: &str = r#"{"format":"efference-session-log","version":4,"metadata":null}"#;
+const HEADER: &str = r#"{"format":"efference-session-log","version":5,"metadata":null}"#;
 
 /// One entry line at `seq`, holding the payload a `User` turn writes.
 fn user_entry(seq: u64) -> String {
@@ -126,7 +126,8 @@ fn preamble_snapshots_the_structured_context_listing() {
         "google/gemini-3.7-flash",
     );
     let line = serde_json::to_string(&Payload::preamble(
-        "sys",
+        "You are m.",
+        " sys",
         listing.clone(),
         Some(inference.clone()),
     ))
@@ -134,12 +135,13 @@ fn preamble_snapshots_the_structured_context_listing() {
 
     match serde_json::from_str::<Payload>(&line).unwrap() {
         Payload::Preamble {
-            system,
+            identity,
+            body,
             context,
             inference: recorded,
             ..
         } => {
-            assert_eq!(system, "sys");
+            assert_eq!(format!("{identity}{body}"), "You are m. sys");
             assert_eq!(recorded.as_ref(), Some(&inference));
             assert_eq!(
                 context, listing,
@@ -150,26 +152,45 @@ fn preamble_snapshots_the_structured_context_listing() {
     }
 }
 
-/// An entry line predating the structured listing (bare `{"system": …}`) still
+/// An entry line predating the structured listing (bare `{"identity": …, "body": …}`) still
 /// deserializes — the `#[serde(default)]` on `context` reads it back as an
 /// empty `Resolved`, never a parse error. This is about an entry's shape; a
 /// file with no header at all is refused for that reason instead (see `header`).
 #[test]
 fn legacy_preamble_without_context_reads_back_empty() {
-    let legacy = r#"{"Preamble":{"system":"you are an agent"}}"#;
+    let legacy = r#"{"Preamble":{"identity":"You are m.","body":" an agent"}}"#;
     match serde_json::from_str::<Payload>(legacy).unwrap() {
         Payload::Preamble {
-            system,
+            identity,
+            body,
             context,
             inference,
             ..
         } => {
-            assert_eq!(system, "you are an agent");
+            assert_eq!(format!("{identity}{body}"), "You are m. an agent");
             assert_eq!(context, crate::context::Resolved::default());
             assert!(inference.is_none());
         }
         other => panic!("expected a Preamble, got {other:?}"),
     }
+}
+
+/// The preamble's serialized shape, pinned: a resume on another main model rewrites
+/// `identity` over an unchanged `body`, and the migration to this shape
+/// (`scripts/migrate-log-v5.py`) writes these bytes.
+#[test]
+fn preamble_serializes_identity_then_body() {
+    let line = serde_json::to_string(&Payload::preamble(
+        "You are m.",
+        " This session is `s`.",
+        Default::default(),
+        None,
+    ))
+    .unwrap();
+    assert_eq!(
+        line,
+        r#"{"Preamble":{"identity":"You are m.","body":" This session is `s`.","context":{"sections":[]}}}"#
+    );
 }
 
 /// `submission_id` (docs/control-api.md) survives the jsonl round-trip when

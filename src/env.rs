@@ -27,26 +27,6 @@ const PREAMBLE: &str = include_str!("../assets/prompts/session.md");
 /// is substituted with the main model's id.
 const TRIAGE_PERSONA: &str = include_str!("../assets/prompts/triage.md");
 
-/// The full system prompt sent in the request's `system` field (docs/log-and-projection.md): the
-/// curation-model [`PREAMBLE`], the `[context]` preamble builder's block when configured
-/// (`context_block`, rendered by [`crate::context::Resolved::render`] — docs/context.md; this is
-/// where orientation lives, as a config exec entry), and the config's preamble section
-/// when the session has a scope (`role_section`, rendered by
-/// [`crate::config::Config::preamble_section`]). Built once at session start and frozen into the
-/// cached prefix, so every part must be byte-stable. The `wire` dev view shows the recorded boot
-/// snapshot instead of reconstructing (docs/log-and-projection.md).
-///
-/// `lineage` is where the session came from: the session that commissioned it, and the one it
-/// succeeds. Each renders as one further sentence on the identity line, so a child has its
-/// creator's return address and a successor its predecessor's without carrying either through
-/// prose (docs/context.md).
-///
-/// The session's config file is deliberately **not** named here. Surfacing it up front read as
-/// "this is what you're allowed to do" and drew sessions into reading and probing their own
-/// perimeter as a first move (a dogfood session did exactly that) — attention the guardrails are
-/// designed to spare the agent. The permission perimeter stays invisible until a move actually
-/// strays, at which point the gate-rejection message names the config as the request channel
-/// ([`crate::agent`], docs/permissions.md).
 /// Where a session came from, as its identity line states it (docs/context.md). Host
 /// control state at creation; neither id is logged, and both are fixed for the session's
 /// life.
@@ -70,6 +50,28 @@ pub struct Whereabouts<'a> {
     pub created_branch: Option<&'a str>,
 }
 
+/// The system prompt as two strings that concatenate to the wire's `system`: the
+/// identity line and the frozen body after it (docs/log-and-projection.md, the
+/// `Preamble`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SystemPrompt {
+    pub identity: String,
+    pub body: String,
+}
+
+impl SystemPrompt {
+    /// The `system` string the request carries.
+    pub fn assemble(&self) -> String {
+        format!("{}{}", self.identity, self.body)
+    }
+}
+
+/// The line that opens the system prompt, naming the model (docs/context.md).
+pub fn identity_line(model: &str) -> String {
+    format!("You are {model}.")
+}
+
+/// [`system_prompt_parts`], assembled.
 pub fn system_prompt(
     model: &str,
     session_id: &str,
@@ -79,6 +81,50 @@ pub fn system_prompt(
     role_section: Option<&str>,
     unmounted: Option<&str>,
 ) -> String {
+    system_prompt_parts(
+        model,
+        session_id,
+        lineage,
+        whereabouts,
+        context_block,
+        role_section,
+        unmounted,
+    )
+    .assemble()
+}
+
+/// The full system prompt sent in the request's `system` field (docs/log-and-projection.md): the
+/// curation-model [`PREAMBLE`], the `[context]` preamble builder's block when configured
+/// (`context_block`, rendered by [`crate::context::Resolved::render`] — docs/context.md; this is
+/// where orientation lives, as a config exec entry), and the config's preamble section
+/// when the session has a scope (`role_section`, rendered by
+/// [`crate::config::Config::preamble_section`]). Built once at session start and frozen into the
+/// cached prefix, so every part must be byte-stable. The `wire` dev view shows the recorded boot
+/// snapshot instead of reconstructing (docs/log-and-projection.md).
+///
+/// `lineage` is where the session came from: the session that commissioned it, and the one it
+/// succeeds. Each renders as one further sentence on the identity line, so a child has its
+/// creator's return address and a successor its predecessor's without carrying either through
+/// prose (docs/context.md).
+///
+/// The session's config file is deliberately **not** named here. Surfacing it up front read as
+/// "this is what you're allowed to do" and drew sessions into reading and probing their own
+/// perimeter as a first move (a dogfood session did exactly that) — attention the guardrails are
+/// designed to spare the agent. The permission perimeter stays invisible until a move actually
+/// strays, at which point the gate-rejection message names the config as the request channel
+/// ([`crate::agent`], docs/permissions.md).
+///
+/// Returned as the identity line and the body after it, which a resume on another main
+/// model recombines with a new identity line (docs/resumption.md).
+pub fn system_prompt_parts(
+    model: &str,
+    session_id: &str,
+    lineage: &Lineage,
+    whereabouts: Option<Whereabouts<'_>>,
+    context_block: Option<&str>,
+    role_section: Option<&str>,
+    unmounted: Option<&str>,
+) -> SystemPrompt {
     let mut prompt = String::new();
     // Identity, unconditionally (docs/context.md): an untold model answers "which
     // model are you" from its training priors, and a log that mixes models needs
@@ -86,9 +132,7 @@ pub fn system_prompt(
     // model string, verbatim — it is also the line a knowledge-cutoff note would
     // extend when provider metadata carries one.
     // Leads the system prompt so the model knows what it is before reading anything else.
-    prompt.push_str("You are ");
-    prompt.push_str(model);
-    prompt.push('.');
+    let identity = identity_line(model);
     // The session's own id, in different grammar from the model claim
     // (docs/context.md): the session *has* an id, the model is not it. A second
     // "you are" beside the first reads as a persona to inhabit. `id` is the noun
@@ -164,7 +208,10 @@ pub fn system_prompt(
         prompt.push_str("\n\n");
         prompt.push_str(unmounted);
     }
-    prompt
+    SystemPrompt {
+        identity,
+        body: prompt,
+    }
 }
 
 /// The system prompt of the separate-model triage (docs/triage.md): the

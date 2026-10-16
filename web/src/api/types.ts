@@ -91,7 +91,7 @@ export type Payload =
   | { ConfigEdit: ConfigEdit }
   | { Telemetry: Telemetry }
   | { ProcessEvent: ProcessEvent }
-  | { Preamble: { system: string; context: unknown } }
+  | { Preamble: { identity: string; body: string; context: unknown } }
   | { Title: Title }
   | { Resumed: Resumed }
   | { Archived: Record<string, never> }

@@ -448,9 +448,13 @@ impl Masker {
                 }
             }
             Payload::Preamble {
-                system, context, ..
+                identity,
+                body,
+                context,
+                ..
             } => {
-                self.mask_in_place(system);
+                self.mask_in_place(identity);
+                self.mask_in_place(body);
                 self.mask_context(context);
             }
             // Model- or operator-written prose about the session; a secret could

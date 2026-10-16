@@ -94,9 +94,9 @@ pub(crate) async fn ladder(
         .iter()
         .rev()
         .find_map(|e| match &e.payload {
-            Payload::Preamble {
-                system, context, ..
-            } => Some((system.clone(), context.render())),
+            payload @ Payload::Preamble { context, .. } => {
+                Some((payload.preamble_system()?, context.render()))
+            }
             _ => None,
         })
         .ok_or("log predates the boot-preamble snapshot; no recorded system prompt to replay")?;

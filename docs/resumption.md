@@ -13,8 +13,9 @@ Resumption reads only the log ([log-and-projection.md](log-and-projection.md)):
 - **The v1 header** on line 1 carries the session's id, cwd, model selections and
   generation parameters (`SessionMetadata`), never credentials. A log migrated from
   before the header has `metadata: null`.
-- **The boot `Preamble`**, whose `system` text the resumed session reuses byte for byte
-  and whose `context` re-renders the triage prompt, so no context command reruns. A log
+- **The boot `Preamble`**, whose `identity` line and `body` the resumed session reuses
+  byte for byte (the line is replaced only by a main-model switch, below) and whose
+  `context` re-renders the triage prompt, so no context command reruns. A log
   without one can't be resumed.
 - **Result capture.** A call's result is appended `Pending` as soon as the call returns,
   and its decision lands later as a `ResultVerdict`
@@ -161,33 +162,50 @@ lifecycle, `active` or `archived`, separate from the `status` a listing reports 
 a live session is doing. `DELETE /sessions/:id` is the same transition as
 `{"state": "archived"}`. The body carries `cwd`, since the path alone can't locate a
 dormant session's directory, plus the inputs a revival needs (`env`, `reauth`),
-and no option for the main model, effort or temperature: a resume reads them from the
-header. It may carry a **spotter and triage switch**, below. The header also holds
+and no option for effort or temperature: a resume reads them from the header. It may carry
+a **model switch**, below. The header also holds
 `detached`, which decides whether the resumed session ends with its creator when
 the header's `created_by` names a session this host still runs; a creator that is
 gone is dropped.
 
-**Switching the spotter and triage models.** The body may carry `spotter_connection`,
-`spotter_model` and `triage`, in the shapes creation takes. A role left out keeps its
-recorded selection; naming either spotter field replaces the spotter selection as a
-whole. The selections resolve through the registry creation uses
-(`InferenceRegistry::resolve_options`, then `prepare`), so a selection creation would
-refuse refuses the resume with the same reason, and the directory is left as found.
-`QUERY /sessions` runs that resolution on the same fields, so a client previews a
+**Switching models.** The body may carry `connection` and `model` (the main model),
+`spotter_connection` and `spotter_model`, and `triage`, in the shapes creation takes. A
+role left out keeps its recorded selection; naming either field of a model's pair
+replaces that selection as a whole. The selections resolve through the registry creation
+uses (`InferenceRegistry::resolve_options`, then `prepare`), so a selection creation
+would refuse refuses the resume with the same reason, and the directory is left as
+found. `QUERY /sessions` runs that resolution on the same fields, so a client previews a
 switch's issues before sending it; the preview takes the full selection, since it has
-no session to read the unnamed ones from. The main model is not switchable here.
+no session to read the unnamed ones from.
 
 When a switch changes what the session runs, the resume appends a `Preamble` that
 repeats the frozen one with the new `roles` ([log-and-projection.md](log-and-projection.md)),
 after the `Resumed` entry; a switch that names what is already recorded appends nothing.
-Roles resolve from the latest preamble that carries them, else the header, so a later
-resume without a switch keeps the switched values. The `system` text, the main identity
-and the projection are untouched, so the main cache is not affected. Switching triage
-starts a new triage lineage: the triager is built at resume and holds no state from the
-old one (the triage keepalive's last request and the primer are in-memory, set by the
-first triage after the resume), so the first triage reads cold and the primer or the
-keepalive take over from there. Moving between shared and separate triage needs nothing
-more.
+The main model resolves from the latest preamble's `inference`, and the spotter and
+triage from its `roles`, each else from the header, so a later resume without a switch
+keeps the switched values. The projection is untouched.
+
+*Spotter and triage.* The `system` text and the main cache are untouched. Switching
+triage starts a new triage lineage: the triager is built at resume and holds no state
+from the old one (the triage keepalive's last request and the primer are in-memory, set
+by the first triage after the resume), so the first triage reads cold and the primer or
+the keepalive take over from there. Moving between shared and separate triage needs
+nothing more.
+
+*Main model.* A switch keeps the session's id and log; a new identity is the hand-off's.
+The appended `Preamble` carries the new model's identity line (`You are <model>.`) over
+the old `body` byte for byte, so no `[context]` command reruns and no file is re-read,
+and the next request's `system` differs from the last one's in that line alone. The
+model must speak the wire dialect the log's assistant turns are recorded in; one that
+does not is refused naming both dialects (`check_dialect`), and so is a log whose
+prompt has no identity line to replace (written before the line existed). The session
+starts cold: usage-record requests from before the switch cached the old model's
+prefix, so they seed no cache-touch clock (the keepalive has nothing to ping) and the
+`cold` topic reports the session cold from the moment of the resume
+(`Session::mark_cache_lost`) until a request on the new prefix is made, which is a
+person's action ([control-api.md](control-api.md); a compaction before it also ends the
+belief). Effort and temperature are the header's, so a model that refuses the recorded
+effort refuses the resume.
 
 The PATCH is idempotent. On a live session it answers `200` with `resumed: false`; the
 revival itself answers `resumed: true`. The same id live under a different root is `409`

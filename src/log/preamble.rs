@@ -77,16 +77,42 @@ impl Payload {
     /// A boot preamble recording no roles. The one construction site in
     /// production and in tests, so a field added to the entry lands here.
     pub fn preamble(
-        system: impl Into<String>,
+        identity: impl Into<String>,
+        body: impl Into<String>,
         context: crate::context::Resolved,
         inference: Option<LoggedInference>,
     ) -> Self {
         Payload::Preamble {
-            system: system.into(),
+            identity: identity.into(),
+            body: body.into(),
             context,
             inference,
             roles: None,
         }
+    }
+
+    /// The `system` string a preamble's two parts assemble to, or `None` for any
+    /// other payload.
+    pub fn preamble_system(&self) -> Option<String> {
+        match self {
+            Payload::Preamble { identity, body, .. } => Some(format!("{identity}{body}")),
+            _ => None,
+        }
+    }
+
+    /// This preamble with the main model replaced: a new identity line over the same
+    /// body, and the new inference identity. Any other payload is returned as it was.
+    pub fn with_main(mut self, new_identity: String, main: LoggedInference) -> Self {
+        if let Payload::Preamble {
+            identity,
+            inference,
+            ..
+        } = &mut self
+        {
+            *identity = new_identity;
+            *inference = Some(main);
+        }
+        self
     }
 
     /// This preamble with `roles` recorded; any other payload is returned as it was.

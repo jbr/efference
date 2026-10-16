@@ -228,19 +228,19 @@ fn rejects_an_unknown_future_version() {
     std::fs::write(
         &path,
         format!(
-            "{{\"format\":\"{}\",\"version\":5,\"metadata\":null}}\n",
+            "{{\"format\":\"{}\",\"version\":6,\"metadata\":null}}\n",
             LogHeader::FORMAT
         ),
     )
     .unwrap();
 
     match load_error(&path) {
-        LoadError::UnsupportedVersion { version, .. } => assert_eq!(version, 5),
+        LoadError::UnsupportedVersion { version, .. } => assert_eq!(version, 6),
         other => panic!("expected an unsupported version, got {other:?}"),
     }
     let message = load_error(&path).to_string();
-    assert!(message.contains("unsupported log version 5"), "{message}");
-    assert!(message.contains("reads version 4"), "{message}");
+    assert!(message.contains("unsupported log version 6"), "{message}");
+    assert!(message.contains("reads version 5"), "{message}");
 
     std::fs::remove_file(&path).unwrap();
 }
@@ -308,7 +308,7 @@ fn rejects_unreadable_metadata() {
     std::fs::write(
         &path,
         format!(
-            "{{\"format\":\"{}\",\"version\":4,\"metadata\":{{\"id\":7}}}}\n",
+            "{{\"format\":\"{}\",\"version\":5,\"metadata\":{{\"id\":7}}}}\n",
             LogHeader::FORMAT
         ),
     )

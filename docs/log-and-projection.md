@@ -51,7 +51,7 @@ enum Payload {
     Telemetry(Telemetry),  // how the session ran, not what it said — never projected (below)
     ProcessEvent(ProcessEvent),    // a background process's mint or exit (see process-monitor.md)
     ConfigEdit(ConfigEdit),  // one durable policy change — folded by the classifier (see permissions.md)
-    Preamble { system: String, context: Resolved, inference: Option<LoggedInference>, roles: Option<RecordedRoles> },  // boot record — replay/audit only (see context.md)
+    Preamble { identity: String, body: String, context: Resolved, inference: Option<LoggedInference>, roles: Option<RecordedRoles> },  // boot record — replay/audit only (see context.md)
     Title(Title),      // the session's one-line title — presentation only, never projected (see session-title.md)
     Worktree(WorktreeEvent),  // the session's git worktree added, restored, removed, or kept — never projected (see worktrees.md)
     ImagesRefused { refusal: String },  // the endpoint refused images; the client withholds them from here — never projected (see transport.md)
@@ -257,7 +257,9 @@ spellings deserialize. Growing it cannot move the wire: the entry projects to
 nothing either way.
 
 `Preamble` records the full rendered `system` string once at boot, exactly as
-this session's requests carry it. It exists because the `[context]` preamble
+this session's requests carry it, as two fields that concatenate to it: `identity`, the
+line naming the model (`You are gpt-6.1-sol.`; empty in a log whose prompt predates the
+line), and `body`, everything after it. It exists because the `[context]` preamble
 builder ([context.md](context.md)) folds file *contents* into the system
 prompt, and those files drift on disk between boots — so the preamble is no
 longer reconstructable from `config + current files`, and faithful replay
@@ -273,9 +275,11 @@ record without consulting inference configuration. A log predating it uses the
 recorded dialect and default placements, with a note. The `system` field itself
 is still read back rather than re-resolved from files on disk.
 
-A resume that changes the spotter or triage model appends a second `Preamble`: the
-frozen one repeated verbatim, with `roles` (`RecordedRoles`: the spotter's
-`LoggedInference` and the header's `TriageModel` shape) set. The header holds the roles
+A resume that changes the spotter, triage or main model appends another `Preamble`: the
+frozen one repeated, with `roles` (`RecordedRoles`: the spotter's `LoggedInference` and
+the header's `TriageModel` shape) set. A main switch also replaces `identity` with the
+new model's line and `inference` with its identity, and repeats `body` byte for byte, so
+the new `system` differs from the old in that line alone. The header holds the roles
 a session was created with; the latest preamble that carries `roles` overrides it at the
 next resume, and one without leaves the header's standing. The entry projects nothing, so
 the wire is the same with or without it ([resumption.md](resumption.md)).
@@ -484,21 +488,23 @@ so a newer file's incompatible metadata reports as the unsupported version it
 is rather than as a field this build happens not to know. There is no
 importer for an unheadered log and no serializer kept for an old shape.
 
-The reader accepts exactly one version, the current one: 4. Version 2 nested the telemetry
+The reader accepts exactly one version, the current one: 5. Version 2 nested the telemetry
 payloads under `Telemetry`; version 3 renamed `WireState::Distilled` to `Triaged` and the
 `peek` request origin to `triage`; version 4 replaced the `Mark` entry with `Summary`
 (`kind` and `note` became `from`, `upto` and `text`; `writer` became `made_by`) and renamed
-the `narrate` request origin to `compaction`. An incompatible change to the entries, including a change of
+the `narrate` request origin to `compaction`; version 5 split `Preamble.system` into
+`identity` and `body`. An incompatible change to the entries, including a change of
 meaning that leaves their shape intact, increments the version. Before launch there is no
 in-harness migration: the existing logs are converted once, outside the harness, with the
 host stopped — the 1→2 pass is `scripts/migrate-log-v2.py`, the 2→3 pass (which also
 rewrites `usage.jsonl`) is `scripts/migrate-log-v3.py`, and the 3→4 pass (likewise) is
-`scripts/migrate-log-v4.py`; the unheadered→1 pass was the
+`scripts/migrate-log-v4.py`, and the 4→5 pass is `scripts/migrate-log-v5.py`; the
+unheadered→1 pass was the
 2026-10-02 corpus migration (journal/2026-10-02-resumption-foundation-and-corpus-migration.md)
 — and a file a pass missed is refused as the unsupported version it is.
 
 Adding a payload variant is not a version bump: the one-time `scripts/migrate-log-archived.py`
-appended `Archived` to every existing version 4 log, so the first host that resumes at boot
+appended `Archived` to every log then at version 4, so the first host that resumes at boot
 reopens none of them.
 
 There is no hash chain over the entries. A chain stored in the file doesn't stop an

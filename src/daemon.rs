@@ -146,6 +146,9 @@ pub struct Session {
     /// The provider's cache lifetime, set at boot only when the model has a prompt
     /// cache; the `cold` topic reads it (`daemon/cold.rs`).
     cache_ttl: std::sync::OnceLock<Duration>,
+    /// When a resume on another main model abandoned the prefix the usage record's
+    /// requests had cached; set once at boot (`daemon/cold.rs`).
+    cache_lost: std::sync::OnceLock<crate::log::Timestamp>,
     /// A person acted while the session was believed cold (a turn, continue, decision or
     /// answer), consumed by the loop's next cold check (`daemon/cold.rs`).
     person_acted: AtomicBool,

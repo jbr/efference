@@ -12,7 +12,7 @@ fn write_session(root: &Path, id: &str, title: &str) {
     let dir = root.join(".efference").join(id);
     std::fs::create_dir_all(&dir).unwrap();
     let mut log = Log::create(dir.join("log.jsonl"), None).unwrap();
-    log.append(0, Payload::preamble("system", Default::default(), None))
+    log.append(0, Payload::preamble("", "system", Default::default(), None))
         .unwrap();
     log.append(0, Payload::User(vec![ContentBlock::Text("hi".into())]))
         .unwrap();

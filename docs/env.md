@@ -206,13 +206,13 @@ body, and frames); `ToolResult`'s
 `raw.content`; `Mark.note`; `Triage`'s `raw_keep` / `surfaced` / `retries` /
 `thinking`; `Ambient`'s `source` / `body` / `slot`; `Spot`'s `reason` and
 `probed_prefix`; `ConfigEdit`'s `note` and its change payload; `Preamble`'s
-`system` and its resolved `[context]` listing.
+`identity`, `body` and its resolved `[context]` listing.
 
 One string is masked *before* the append as well as at it: the boot preamble.
 It both rides the request's `system` field and is snapshotted into the log, and
 the point of the `Preamble` entry is that those two are byte-identical
 ([context.md](context.md)) — so boot masks the resolved `[context]` listing
-and the rendered `system` string, and the choke point's re-scan is then a no-op.
+and the rendered system prompt, and the choke point's re-scan is then a no-op.
 
 ### It is not a `WireState`
 

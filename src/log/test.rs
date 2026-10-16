@@ -84,7 +84,7 @@ fn recorded_inference_comes_from_the_latest_boot_preamble() {
         at: Timestamp::now(),
         submission_id: None,
         source: None,
-        payload: Payload::preamble("sys", Default::default(), inference),
+        payload: Payload::preamble("", "sys", Default::default(), inference),
     };
     let first = LoggedInference::new("first", crate::api::Provider::Anthropic, "claude");
     let second = LoggedInference::new("second", crate::api::Provider::OpenRouter, "google/gemini");

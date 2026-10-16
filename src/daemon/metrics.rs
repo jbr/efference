@@ -436,7 +436,11 @@ impl Session {
             Instant::now().checked_sub(Duration::from_millis(ago))
         };
         let mut m = self.metrics.lock().unwrap();
-        if let Some(at_ms) = last(UsageLine::touches_main_prefix) {
+        // Requests on a main model the session has since left cached a prefix that is no
+        // longer the one it sends: they are not a touch of it (`mark_cache_lost`).
+        if self.cache_lost.get().is_none()
+            && let Some(at_ms) = last(UsageLine::touches_main_prefix)
+        {
             m.last_request_at = instant(at_ms);
             m.last_request_wall = Some(crate::log::Timestamp(at_ms as u64));
         }

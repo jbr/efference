@@ -253,9 +253,10 @@ sessions from one process. Its own routes are the listener's, not a session's:
 - `PATCH /sessions/:id` — change one session's state, the session resource
   carrying the change: `{"state": "active"}` reopens a dormant session under its
   own id, reading its model, effort and configuration from its own header rather
-  than from this request (except the spotter and triage: `spotter_connection`,
-  `spotter_model` and `triage`, in creation's shapes, switch those roles, are checked as
-  creation checks them, and are recorded in a `Preamble`;
+  than from this request (except the models: `connection` and `model` (main),
+  `spotter_connection`, `spotter_model` and `triage`, in creation's shapes, switch them,
+  are checked as creation checks them, and are recorded in a `Preamble`; a main switch
+  must stay on the log's wire dialect and resumes cold;
   [resumption.md](resumption.md)), and `{"state": "archived"}` is `DELETE` below in the
   spelling of what it does. `active` also needs `cwd`, the root whose
   `.efference/<id>` holds the session — a host serving several roots cannot tell

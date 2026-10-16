@@ -295,7 +295,8 @@ async fn prepare_minting(
         unmounted_section.as_deref(),
     )?;
     let parts::FrozenPreamble {
-        system,
+        identity,
+        body,
         resolved,
         context_block,
     } = preamble;
@@ -305,7 +306,12 @@ async fn prepare_minting(
     // record of the wire. `efference dev wire` reads it back instead of rebuilding.
     log.append(
         0,
-        crate::log::Payload::preamble(system.clone(), resolved, Some(recorded_inference)),
+        crate::log::Payload::preamble(
+            identity.clone(),
+            body.clone(),
+            resolved,
+            Some(recorded_inference),
+        ),
     )?;
 
     // The tools[] this session advertises, kept so a resume can say what changed
@@ -324,7 +330,7 @@ async fn prepare_minting(
     let client = parts::build_client(
         &endpoint,
         model,
-        system,
+        format!("{identity}{body}"),
         parts::ClientSettings {
             temperature,
             upstream,
@@ -366,6 +372,7 @@ async fn prepare_minting(
         env_policy,
         keep_scratch,
         triage_prices,
+        cache_lost_at: None,
     })
 }
 

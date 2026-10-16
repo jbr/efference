@@ -264,22 +264,32 @@ pub enum Payload {
     /// [`effective_config`]: crate::policy::effective_config
     /// [`Ambient`]: Payload::Ambient
     ConfigEdit(ConfigEdit),
-    /// The boot preamble snapshot (docs/context.md): the full rendered `system`
-    /// string, exactly as this session's requests carry it, appended **once at boot**. The
-    /// preamble folds in `[context]` file contents that drift on disk between boots, so it is
-    /// not reconstructable from `config + current files` — this entry makes the log the
-    /// complete record of the wire (docs/log-and-projection.md). Audit/replay only: it projects to
-    /// nothing (the system prompt rides the request's `system` field, never the `messages`
-    /// array); the `wire` dev view reads it back instead of re-resolving files from disk.
+    /// The boot preamble snapshot (docs/context.md): the system prompt exactly as this
+    /// session's requests carry it, appended **once at boot** and again by a resume that
+    /// changes a role or the main model (docs/resumption.md). The preamble folds in
+    /// `[context]` file contents that drift on disk between boots, so it is not
+    /// reconstructable from `config + current files` — this entry makes the log the
+    /// complete record of the wire (docs/log-and-projection.md). Audit/replay only: it
+    /// projects to nothing (the system prompt rides the request's `system` field, never
+    /// the `messages` array); the `wire` dev view reads it back instead of re-resolving
+    /// files from disk.
+    ///
+    /// The prompt is held as two strings that concatenate to the wire's `system`:
+    /// `identity`, the line naming the model ("You are gpt-6.1-sol."; empty on a log
+    /// whose prompt predates the line), and `body`, everything after it, frozen at boot.
+    /// A resume on another main model replaces `identity` and repeats `body` byte for
+    /// byte ([`Payload::preamble_system`] assembles them).
     ///
     /// `context` carries the **structured** `[context]` listing (name / `path` / description
-    /// per item) the flat `system` string was rendered from, snapshotted **additively** so the
+    /// per item) the `body` was rendered from, snapshotted **additively** so the
     /// listing survives as a fold over the log — the source `project` re-renders a surfaced
     /// context item from (docs/triage.md), the same way it looks up pinned
-    /// notification bodies. `system` stays the byte-exact wire truth; `context` never touches
-    /// the wire. `#[serde(default)]`: logs predating the field read back an empty listing.
+    /// notification bodies. `identity` and `body` stay the byte-exact wire truth; `context`
+    /// never touches the wire. `#[serde(default)]`: logs predating the field read back an
+    /// empty listing.
     Preamble {
-        system: String,
+        identity: String,
+        body: String,
         #[serde(default)]
         context: crate::context::Resolved,
         /// The fixed main inference identity chosen when this session booted:

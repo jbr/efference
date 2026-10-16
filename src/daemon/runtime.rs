@@ -34,6 +34,9 @@ pub struct SessionBoot<S: Spotter> {
     /// The triage model's prices, for its keepalive's affordability check
     /// (docs/transport.md). `None` on a shared triage, which has no keepalive of its own.
     pub triage_prices: Option<crate::api::TokenPrices>,
+    /// When the session's main prefix was abandoned: set by a resume on another main
+    /// model, so the session starts cold (docs/resumption.md).
+    pub cache_lost_at: Option<crate::log::Timestamp>,
 }
 
 /// A started session: its state, and the handle that ends it.
@@ -75,6 +78,7 @@ impl SessionRuntime {
             env_policy,
             keep_scratch,
             triage_prices,
+            cache_lost_at,
         } = boot;
         let swansong = parent.child();
         // The keepalive interval, read off the config before it moves into `Session`
@@ -146,6 +150,9 @@ impl SessionRuntime {
         }
         // The per-request usage record (docs/log-and-projection.md) lives beside the
         // canonical log in the explicitly supplied storage directory.
+        if let Some(at) = cache_lost_at {
+            session.mark_cache_lost(at);
+        }
         session.attach_usage_log(&paths.usage_log());
         // The operator's interrupt ends a generation in flight (docs/control-channel.md):
         // the agent client and the own-triage client both read against it. The

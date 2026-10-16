@@ -117,7 +117,7 @@ pub(crate) async fn wire(
     // the view shows exactly what the model saw, not a re-resolve of files that may have
     // drifted on disk since. Only logs that predate the snapshot fall back to a rebuild.
     let recorded_system = entries.iter().rev().find_map(|e| match &e.payload {
-        efference::log::Payload::Preamble { system, .. } => Some(system.clone()),
+        payload @ efference::log::Payload::Preamble { .. } => payload.preamble_system(),
         _ => None,
     });
     let cwd = std::env::current_dir()?;

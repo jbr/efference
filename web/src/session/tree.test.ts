@@ -427,7 +427,9 @@ describe("title and preamble entries", () => {
     const title = (seq: number, text: string) =>
       entry(seq, { Title: { text, author: "triage" } });
     const nodes = buildTree([
-      entry(0, { Preamble: { system: "you are…", context: null } }),
+      entry(0, {
+        Preamble: { identity: "You are m.", body: " …", context: null },
+      }),
       title(1, "Probe the models endpoint"),
       title(2, "Probe the models endpoint"),
       title(3, "Build efference dev models"),

@@ -387,3 +387,45 @@ async fn an_inbox_wake_while_cold_waits_for_a_person() {
     tokio::time::sleep(Duration::from_millis(100)).await;
     assert!(!wake.is_finished(), "held while cold");
 }
+
+/// A resume on another main model starts cold whatever the usage record says: the
+/// record's fresh requests cached the old model's prefix, so they seed no touch clock
+/// (nothing for the keepalive to ping) and the session is cold from the moment of the
+/// switch, until a request on the new prefix is made.
+#[test]
+fn a_main_switch_starts_the_session_cold() {
+    let usage_path = std::env::temp_dir().join("efference-cold-switch-test-usage.jsonl");
+    let minute_ago = crate::log::Timestamp::now().0 - 60_000;
+    std::fs::write(
+        &usage_path,
+        format!("{{\"at_ms\":{minute_ago},\"origin\":\"turn\"}}\n"),
+    )
+    .unwrap();
+
+    let (kept, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    kept.set_cache_ttl(Duration::from_secs(300));
+    append_compactable_history(&kept);
+    kept.attach_usage_log(&usage_path);
+    assert_eq!(kept.cold_since(), None, "a minute-old turn is still warm");
+
+    let (switched, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    switched.set_cache_ttl(Duration::from_secs(300));
+    append_compactable_history(&switched);
+    let lost = crate::log::Timestamp::now();
+    switched.mark_cache_lost(lost);
+    switched.attach_usage_log(&usage_path);
+    assert_eq!(switched.cold_since(), Some(lost));
+    assert_eq!(
+        switched.keepalive_clocks(CacheLineage::Main).0,
+        None,
+        "the old model's request is not a touch of the new prefix"
+    );
+
+    std::thread::sleep(Duration::from_millis(2));
+    switched.record_request(RequestOrigin::Turn, no_usage());
+    assert_eq!(
+        switched.cold_since(),
+        None,
+        "a request on the new prefix ends the belief"
+    );
+}

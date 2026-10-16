@@ -103,7 +103,8 @@ pub(super) async fn mount_toolbox(inputs: ToolboxInputs<'_>) -> Result<MountedTo
 
 /// The boot preamble: the frozen system prompt, and the pieces it was built from.
 pub(super) struct FrozenPreamble {
-    pub system: String,
+    pub identity: String,
+    pub body: String,
     pub resolved: crate::context::Resolved,
     pub context_block: Option<String>,
 }
@@ -148,7 +149,7 @@ pub(super) fn freeze_preamble(
     // `[context]` exec that prints the environment is the concrete case.
     env_policy.mask_context(&mut resolved);
     let context_block = resolved.render();
-    let system = env_policy.mask(&crate::env::system_prompt(
+    let crate::env::SystemPrompt { identity, body } = crate::env::system_prompt_parts(
         model,
         session_id,
         lineage,
@@ -156,9 +157,10 @@ pub(super) fn freeze_preamble(
         context_block.as_deref(),
         role_section.as_deref(),
         unmounted_section,
-    ));
+    );
     Ok(FrozenPreamble {
-        system,
+        identity: env_policy.mask(&identity),
+        body: env_policy.mask(&body),
         resolved,
         context_block,
     })

@@ -7,6 +7,8 @@ use crate::persist::TriageModel;
 
 fn switch_to_terra_and_luna() -> ResumeSwitch {
     ResumeSwitch {
+        connection: None,
+        model: None,
         spotter_connection: Some("oai".into()),
         spotter_model: Some("gpt-5.6-luna".into()),
         triage: Some(TriageChoice::separate(
@@ -51,9 +53,11 @@ async fn a_resume_switches_spotter_and_triage_and_the_next_keeps_them() {
     let entries = boot.log.entries().to_vec();
     let both = preambles(&entries);
     assert_eq!(both.len(), 2, "the boot preamble and the switch's");
-    let (Payload::Preamble { system: first, .. }, Payload::Preamble { system, roles, .. }) =
-        (&both[0].payload, &both[1].payload)
-    else {
+    let (Payload::Preamble { roles, .. }, Some(first), Some(system)) = (
+        &both[1].payload,
+        both[0].payload.preamble_system(),
+        both[1].payload.preamble_system(),
+    ) else {
         unreachable!()
     };
     assert_eq!(first, system, "the frozen system text is repeated verbatim");
@@ -124,4 +128,173 @@ async fn a_switch_creation_would_refuse_refuses_the_resume() {
     let error = failure(resume(request).await, "an unknown connection is refused");
     assert!(error.to_string().contains("spotter_model"), "{error}");
     assert_eq!(dir_contents(&root.session_dir("bad")), before);
+}
+
+/// The registry behind [`codex_registry`] plus a Messages-dialect connection, so a switch
+/// can name a model on the other side of the dialect line. Nothing contacts `msg`: the
+/// dialect check refuses before capabilities are read.
+fn two_dialect_registry(root: &std::path::Path, id: &str) -> crate::inference::InferenceRegistry {
+    let codex_home = root.join(format!("codex-home-{id}"));
+    let _ = codex_registry(root, id);
+    let config = crate::inference::InferenceConfig::from_toml(
+        r#"
+[connections.oai]
+provider = "openai-codex"
+auth = { kind = "codex-cache" }
+
+[connections.msg]
+dialect = "messages"
+base-url = "http://127.0.0.1:9/v1"
+auth = { kind = "env", key = "EFFERENCE_SWITCH_TEST_KEY" }
+"#,
+    )
+    .unwrap();
+    let host_env = crate::env_table::EnvSnapshot::new(
+        [
+            (
+                "CODEX_HOME".to_string(),
+                codex_home.to_string_lossy().into_owned(),
+            ),
+            (
+                "EFFERENCE_SWITCH_TEST_KEY".to_string(),
+                "not-a-real-credential".to_string(),
+            ),
+        ]
+        .into_iter()
+        .collect(),
+    )
+    .unwrap();
+    crate::inference::InferenceRegistry::from_config(
+        config,
+        std::path::Path::new("/host"),
+        host_env,
+        &std::sync::Arc::new(crate::secrets::Secrets::in_memory()),
+    )
+    .unwrap()
+}
+
+fn assistant_turn() -> Payload {
+    Payload::Assistant {
+        output: crate::log::AssistantOutput::Responses(Vec::new()),
+        upstream_failure: None,
+    }
+}
+
+/// A main switch within the dialect replaces the identity line over the same body and
+/// records the new inference; the session starts with its prefix marked lost, and a
+/// later resume keeps the new model.
+#[tokio::test]
+async fn a_resume_switches_the_main_model_within_a_dialect() {
+    let _serial = PREPARING.lock().await;
+    let root = Root::new("resume-switch-main");
+    left_behind(&root, "mn", |log| {
+        log.append(1, Payload::User(vec![ContentBlock::Text("hi".into())]))
+            .unwrap();
+        log.append(1, assistant_turn()).unwrap();
+    })
+    .await;
+    let registry = codex_registry(root.path(), "mn");
+
+    let mut request = resume_request(&root, "mn", &registry);
+    request.switch.model = Some("oai/gpt-5.6-terra".into());
+    let (boot, options) = resume(request).await.expect("a main switch");
+    assert_eq!(options.model.as_deref(), Some("gpt-5.6-terra"));
+    assert!(boot.cache_lost_at.is_some(), "the new prefix starts cold");
+    assert_eq!(boot.model, "gpt-5.6-terra");
+
+    let entries = boot.log.entries().to_vec();
+    let both = preambles(&entries);
+    assert_eq!(both.len(), 2);
+    let (
+        Payload::Preamble {
+            identity: old_identity,
+            body: old_body,
+            ..
+        },
+        Payload::Preamble {
+            identity,
+            body,
+            inference,
+            roles,
+            ..
+        },
+    ) = (&both[0].payload, &both[1].payload)
+    else {
+        unreachable!()
+    };
+    assert_eq!(old_identity, "You are gpt-5.6.");
+    assert_eq!(identity, "You are gpt-5.6-terra.");
+    assert_eq!(body, old_body, "the frozen body is repeated verbatim");
+    assert_eq!(inference.as_ref().unwrap().model, "gpt-5.6-terra");
+    assert!(roles.is_some(), "the latest preamble carries every role");
+    assert_eq!(
+        crate::log::recorded_inference(&entries).unwrap().model,
+        "gpt-5.6-terra"
+    );
+    drop_boot(boot);
+
+    // The next resume reads the switched model from the latest preamble, not the header,
+    // and a switch naming the model it already runs records nothing.
+    let (boot, options) = resume(resume_request(&root, "mn", &registry))
+        .await
+        .expect("a second resume");
+    assert_eq!(options.model.as_deref(), Some("gpt-5.6-terra"));
+    assert!(boot.cache_lost_at.is_none());
+    assert_eq!(preambles(boot.log.entries()).len(), 2);
+    drop_boot(boot);
+    let mut request = resume_request(&root, "mn", &registry);
+    request.switch.model = Some("oai/gpt-5.6-terra".into());
+    let (boot, _) = resume(request).await.expect("an unchanged main");
+    assert!(boot.cache_lost_at.is_none());
+    assert_eq!(preambles(boot.log.entries()).len(), 2);
+    drop_boot(boot);
+}
+
+/// A model on another wire dialect than the recorded turns is refused, naming both, and
+/// so is a log whose prompt has no identity line to replace.
+#[tokio::test]
+async fn a_main_switch_across_dialects_is_refused() {
+    let _serial = PREPARING.lock().await;
+    let root = Root::new("resume-switch-dialect");
+    left_behind(&root, "xd", |log| {
+        log.append(1, assistant_turn()).unwrap();
+    })
+    .await;
+    left_behind(&root, "bare", |log| {
+        let (body, context, inference) = match &log.entries()[0].payload {
+            Payload::Preamble {
+                identity,
+                body,
+                context,
+                inference,
+                ..
+            } => (
+                format!("{identity}{body}"),
+                context.clone(),
+                inference.clone(),
+            ),
+            other => panic!("the preamble is first: {other:?}"),
+        };
+        log.append(0, Payload::preamble("", body, context, inference))
+            .unwrap();
+    })
+    .await;
+    let registry = two_dialect_registry(root.path(), "xd");
+    let before = dir_contents(&root.session_dir("xd"));
+
+    let mut request = resume_request(&root, "xd", &registry);
+    request.switch.connection = Some("msg".into());
+    request.switch.model = Some("some-model".into());
+    let error = failure(resume(request).await, "a cross-dialect switch is refused");
+    let message = error.to_string();
+    assert!(
+        message.contains("Responses") && message.contains("Messages"),
+        "{message}"
+    );
+    assert_eq!(dir_contents(&root.session_dir("xd")), before);
+
+    let mut request = resume_request(&root, "bare", &registry);
+    request.switch.model = Some("oai/gpt-5.6-terra".into());
+    let error = failure(resume(request).await, "no identity line to replace");
+    assert!(error.to_string().contains("identity line"), "{error}");
 }

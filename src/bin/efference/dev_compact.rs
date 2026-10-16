@@ -25,7 +25,7 @@ pub(crate) async fn compact(target: &str, upto: Option<u64>, cut: Option<u64>) -
         .iter()
         .rev()
         .find_map(|e| match &e.payload {
-            Payload::Preamble { system, .. } => Some(system.clone()),
+            payload @ Payload::Preamble { .. } => payload.preamble_system(),
             _ => None,
         })
         .ok_or("log predates the boot-preamble snapshot; no recorded system prompt")?;

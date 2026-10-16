@@ -242,7 +242,7 @@ fn boot_inference_identity_does_not_project() {
         entry(
             0,
             0,
-            Payload::preamble("sys", Default::default(), Some(identity)),
+            Payload::preamble("", "sys", Default::default(), Some(identity)),
         ),
     );
     assert_eq!(
@@ -823,6 +823,7 @@ fn preamble_snapshot_projects_to_nothing() {
         3,
         1,
         Payload::preamble(
+            "",
             "You are an agent.\n\n<CLAUDE>\nthe whole repo map\n</CLAUDE>",
             Default::default(),
             None,

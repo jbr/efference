@@ -1,4 +1,4 @@
-{"format":"efference-session-log","version":4,"metadata":null}
+{"format":"efference-session-log","version":5,"metadata":null}
 {"seq":0,"turn":1,"at":1782757765536,"payload":{"User":[{"Text":"Please run ls to list the files in the current directory, then tell me how many entries there are."}]}}
 {"seq":1,"turn":2,"at":1782757766832,"payload":{"Assistant":{"output":{"Messages":[{"ToolUse":{"id":"toolu_016PxVL1K42K8drSweUqXMEW","name":"bash","input":{"command":"ls"}}}]}}}}
 {"seq":2,"turn":2,"at":1782757767869,"payload":{"ToolResult":{"call_id":"toolu_016PxVL1K42K8drSweUqXMEW","raw":{"content":"assets\nbacklog\nbuild.rs\nCargo.lock\nCargo.toml\nCHANGELOG.md\nCLAUDE.md\ndocs\nefference.toml\nfeedback\njournal\nsrc\ntarget\n","is_error":false},"wire":{"Triaged":{"keep":"All","note":"13 entries in root directory: assets, backlog, build.rs, Cargo.lock, Cargo.toml, CHANGELOG.md, CLAUDE.md, docs, efference.toml, feedback, journal, src, target"}}}}}
