@@ -241,7 +241,7 @@ impl Session {
     /// The session that answers this one's gates under the `supervisor` review position
     /// (docs/permissions.md): the creating session while it is still hosted, `null`
     /// otherwise. Independent of the dial — it names who would answer, not whether the
-    /// dial currently routes to them.
+    /// dial routes to them.
     fn supervisor_json(&self) -> Value {
         serde_json::to_value(self.supervisor()).unwrap_or(Value::Null)
     }
