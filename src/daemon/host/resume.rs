@@ -15,6 +15,7 @@
 //! one (`supervise.rs`, docs/permissions.md). It is a separate patch from `state`.
 
 use super::*;
+use crate::inference::ResumeSwitch;
 use serde::{Deserialize, Serialize};
 
 /// Whether a session is running on this host.
@@ -62,6 +63,11 @@ pub struct PatchSession {
     /// creation's is.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub env: Option<BTreeMap<String, String>>,
+    /// Spotter and triage selections to resume on, in the shapes creation takes
+    /// (docs/resumption.md). Only read by an `active` patch; a field left out keeps
+    /// the one the session recorded.
+    #[serde(flatten)]
+    pub switch: ResumeSwitch,
     /// Set this running session's supervisor to the session named, or clear it with
     /// `null` (docs/permissions.md). Absent leaves it alone. Not combined with
     /// `state` in one patch.
@@ -90,6 +96,7 @@ impl PatchSession {
             cwd: Some(cwd),
             reauth: Vec::new(),
             env: None,
+            switch: ResumeSwitch::default(),
             supervisor: None,
         }
     }
@@ -101,6 +108,7 @@ impl PatchSession {
             cwd: None,
             reauth: Vec::new(),
             env: None,
+            switch: ResumeSwitch::default(),
             supervisor: Some(supervisor),
         }
     }
@@ -114,11 +122,13 @@ impl Host {
     /// taken-but-dormant, and this is the last one — a session whose directory is
     /// still on disk with nothing hosting it. Its log is reopened rather than
     /// created and its own `config.toml` is the live config, so no option in
-    /// `body` is read: the selections, effort and temperature come from the header
-    /// the session was created with (docs/log-and-projection.md).
+    /// `body` is read except `reauth`, `env` and the spotter and triage `switch`: the main
+    /// model, effort and temperature come from the header the session was created with
+    /// (docs/log-and-projection.md), and a role a switch leaves out keeps the
+    /// recorded selection.
     ///
-    /// That is why the patch that reaches here carries no options field to
-    /// override them with — an omitted one that resolved from history would quietly
+    /// That is why the patch that reaches here carries no field for the main model, effort
+    /// or temperature — an omitted one that resolved from history would quietly
     /// move the session onto a different model than its log records. `cwd` does
     /// come from the caller, and not as a preference: the host serves several
     /// roots and cannot tell which one a dormant id belongs to.
@@ -207,6 +217,7 @@ impl Host {
             base_env,
             inference: &self.inference,
             reauth: body.reauth,
+            switch: body.switch,
             host: Some(Arc::clone(self)),
         })
         .await

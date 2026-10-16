@@ -242,11 +242,7 @@ fn boot_inference_identity_does_not_project() {
         entry(
             0,
             0,
-            Payload::Preamble {
-                system: "sys".into(),
-                context: Default::default(),
-                inference: Some(identity),
-            },
+            Payload::preamble("sys", Default::default(), Some(identity)),
         ),
     );
     assert_eq!(
@@ -826,11 +822,11 @@ fn preamble_snapshot_projects_to_nothing() {
     with.push(entry(
         3,
         1,
-        Payload::Preamble {
-            system: "You are an agent.\n\n<CLAUDE>\nthe whole repo map\n</CLAUDE>".into(),
-            context: Default::default(),
-            inference: None,
-        },
+        Payload::preamble(
+            "You are an agent.\n\n<CLAUDE>\nthe whole repo map\n</CLAUDE>",
+            Default::default(),
+            None,
+        ),
     ));
     let with = serde_json::to_string(&project(&with)).unwrap();
     assert_eq!(

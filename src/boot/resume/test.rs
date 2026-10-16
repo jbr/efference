@@ -8,6 +8,8 @@ use crate::log::{
 };
 use crate::recovery::{CallState, last_live_completion, pending_batch};
 
+mod switch;
+
 /// The error a resume that must fail returned, cleaning up after it if it
 /// unexpectedly succeeded. Not the shared `failure`, which is typed against the
 /// bare [`SessionBoot`] `prepare` still returns.
@@ -30,6 +32,7 @@ fn resume_request<'a>(root: &Root, id: &str, registry: &'a InferenceRegistry) ->
         base_env: super::super::test::base_env(),
         inference: registry,
         reauth: Vec::new(),
+        switch: Default::default(),
         host: None,
     }
 }

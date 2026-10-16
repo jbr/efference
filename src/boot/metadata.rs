@@ -1,24 +1,34 @@
 //! Initial session facts recorded in the header (docs/log-and-projection.md).
 
 use super::SessionRequest;
-use crate::log::LoggedInference;
+use crate::log::{LoggedInference, RecordedRoles};
 use crate::persist::{SessionMetadata, TriageModel};
 
-pub(super) fn metadata(request: &SessionRequest) -> SessionMetadata {
+/// The spotter and triage selections `inference` resolved, in the shape the log records.
+pub(super) fn roles(inference: &crate::inference::SessionInference) -> RecordedRoles {
     let selection = |value: &crate::inference::ModelSelection| {
         LoggedInference::new(&*value.connection, value.provider, &*value.model)
     };
-    let main = selection(request.inference.main().0);
-    let spotter = selection(request.inference.spotter().0);
-    let triage = match request.inference.triage() {
-        None => TriageModel::Shared,
-        Some((model, _, settings)) => TriageModel::Separate {
-            selection: selection(model),
-            thinking: settings.thinking,
-            auto_choice: settings.auto_choice,
-            effort: settings.effort.clone(),
+    RecordedRoles {
+        spotter: selection(inference.spotter().0),
+        triage: match inference.triage() {
+            None => TriageModel::Shared,
+            Some((model, _, settings)) => TriageModel::Separate {
+                selection: selection(model),
+                thinking: settings.thinking,
+                auto_choice: settings.auto_choice,
+                effort: settings.effort.clone(),
+            },
         },
+    }
+}
+
+pub(super) fn metadata(request: &SessionRequest) -> SessionMetadata {
+    let main = {
+        let (main, _) = request.inference.main();
+        LoggedInference::new(&*main.connection, main.provider, &*main.model)
     };
+    let RecordedRoles { spotter, triage } = roles(&request.inference);
     let mut metadata = SessionMetadata::new(
         request
             .session_dir

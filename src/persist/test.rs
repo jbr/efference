@@ -125,11 +125,11 @@ fn preamble_snapshots_the_structured_context_listing() {
         crate::api::Provider::OpenRouter,
         "google/gemini-3.7-flash",
     );
-    let line = serde_json::to_string(&Payload::Preamble {
-        system: "sys".into(),
-        context: listing.clone(),
-        inference: Some(inference.clone()),
-    })
+    let line = serde_json::to_string(&Payload::preamble(
+        "sys",
+        listing.clone(),
+        Some(inference.clone()),
+    ))
     .unwrap();
 
     match serde_json::from_str::<Payload>(&line).unwrap() {
@@ -137,6 +137,7 @@ fn preamble_snapshots_the_structured_context_listing() {
             system,
             context,
             inference: recorded,
+            ..
         } => {
             assert_eq!(system, "sys");
             assert_eq!(recorded.as_ref(), Some(&inference));
@@ -161,6 +162,7 @@ fn legacy_preamble_without_context_reads_back_empty() {
             system,
             context,
             inference,
+            ..
         } => {
             assert_eq!(system, "you are an agent");
             assert_eq!(context, crate::context::Resolved::default());

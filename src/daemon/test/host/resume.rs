@@ -60,6 +60,12 @@ async fn a_patch_validates_its_body_on_every_listener() {
             serde_json::json!({"state": "ended"}),
             "invalid body",
         ),
+        // The switch fields take the shapes creation takes.
+        (
+            "one".into(),
+            serde_json::json!({"state": "active", "triage": {"mode": "sideways"}}),
+            "invalid body",
+        ),
         // Patching nothing is refused rather than read as agreement.
         (
             "one".into(),

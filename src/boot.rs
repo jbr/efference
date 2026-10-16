@@ -305,11 +305,7 @@ async fn prepare_minting(
     // record of the wire. `efference dev wire` reads it back instead of rebuilding.
     log.append(
         0,
-        crate::log::Payload::Preamble {
-            system: system.clone(),
-            context: resolved,
-            inference: Some(recorded_inference),
-        },
+        crate::log::Payload::preamble(system.clone(), resolved, Some(recorded_inference)),
     )?;
 
     // The tools[] this session advertises, kept so a resume can say what changed

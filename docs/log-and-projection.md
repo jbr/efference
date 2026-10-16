@@ -51,7 +51,7 @@ enum Payload {
     Telemetry(Telemetry),  // how the session ran, not what it said — never projected (below)
     ProcessEvent(ProcessEvent),    // a background process's mint or exit (see process-monitor.md)
     ConfigEdit(ConfigEdit),  // one durable policy change — folded by the classifier (see permissions.md)
-    Preamble { system: String, context: Resolved, inference: Option<LoggedInference> },  // boot record — replay/audit only (see context.md)
+    Preamble { system: String, context: Resolved, inference: Option<LoggedInference>, roles: Option<RecordedRoles> },  // boot record — replay/audit only (see context.md)
     Title(Title),      // the session's one-line title — presentation only, never projected (see session-title.md)
     Worktree(WorktreeEvent),  // the session's git worktree added, restored, removed, or kept — never projected (see worktrees.md)
     ImagesRefused { refusal: String },  // the endpoint refused images; the client withholds them from here — never projected (see transport.md)
@@ -272,6 +272,13 @@ from that identity at read time. `dev wire`, including `--messages`, uses this
 record without consulting inference configuration. A log predating it uses the
 recorded dialect and default placements, with a note. The `system` field itself
 is still read back rather than re-resolved from files on disk.
+
+A resume that changes the spotter or triage model appends a second `Preamble`: the
+frozen one repeated verbatim, with `roles` (`RecordedRoles`: the spotter's
+`LoggedInference` and the header's `TriageModel` shape) set. The header holds the roles
+a session was created with; the latest preamble that carries `roles` overrides it at the
+next resume, and one without leaves the header's standing. The entry projects nothing, so
+the wire is the same with or without it ([resumption.md](resumption.md)).
 
 ### `WireState` / `Keep`
 

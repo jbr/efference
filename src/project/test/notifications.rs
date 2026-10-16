@@ -87,15 +87,7 @@ fn surfaced_context_item_projects_at_triage_position() {
         }],
     };
     let log = vec![
-        entry(
-            0,
-            0,
-            Payload::Preamble {
-                system: "sys".into(),
-                context: listing,
-                inference: None,
-            },
-        ),
+        entry(0, 0, Payload::preamble("sys", listing, None)),
         entry(
             1,
             0,

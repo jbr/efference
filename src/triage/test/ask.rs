@@ -44,17 +44,17 @@ fn preamble_with(items: Vec<Item>) -> LogEntry {
     use crate::context::{Resolved, Section};
     entry(
         0,
-        Payload::Preamble {
-            system: "sys".into(),
-            context: Resolved {
+        Payload::preamble(
+            "sys",
+            Resolved {
                 sections: vec![Section {
                     heading: Some("Skills".into()),
                     description: None,
                     items,
                 }],
             },
-            inference: None,
-        },
+            None,
+        ),
     )
 }
 

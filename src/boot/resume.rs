@@ -27,8 +27,8 @@ use super::mint::Minted;
 use super::{BASE_DIR, CONFIG_NAME, LOG_NAME, env, model, parts, scaffold};
 use crate::api::Error;
 use crate::daemon::SessionBoot;
-use crate::inference::{InferenceRegistry, SessionOptions, TriageChoice};
-use crate::log::{LogEntry, Payload, Resumed, Timestamp};
+use crate::inference::{InferenceRegistry, ResumeSwitch, SessionOptions, TriageChoice};
+use crate::log::{LogEntry, Payload, RecordedRoles, Resumed, Timestamp};
 use crate::persist::{LoadedRecording, Log, SessionMetadata, TriageModel};
 use crate::recovery::{Resumption, resume_point};
 use crate::spotter::MountedSpotter;
@@ -44,6 +44,9 @@ pub struct ResumeRequest<'a> {
     /// The connections the recorded role selections are re-resolved against.
     pub inference: &'a InferenceRegistry,
     pub reauth: Vec<String>,
+    /// Spotter and triage selections to resume on instead of the recorded ones; empty
+    /// keeps the recorded roles (docs/resumption.md).
+    pub switch: ResumeSwitch,
     /// The hosting host, for the in-session `sessions` mount (docs/tools.md).
     pub host: Option<std::sync::Arc<crate::daemon::Host>>,
 }
@@ -77,6 +80,7 @@ async fn resume_minting(
         base_env,
         inference: registry,
         reauth,
+        switch,
         host,
     } = request;
     assert!(session_dir.is_absolute(), "session dir must be absolute");
@@ -126,7 +130,7 @@ async fn resume_minting(
     }
 
     let mut loaded = scaffold::load_session_config(&session_config, &session_dir)?;
-    let options = options_from_log(&recording, &loaded);
+    let options = options_from_log(&recording, &loaded, &switch);
     let selected = options.effort.clone();
     let inference = registry.prepare(registry.resolve_options(&options, None, None))?;
     let (main_selection, mut endpoint) = inference.main();
@@ -240,6 +244,16 @@ async fn resume_minting(
     }
     let record_tools = recorded.is_none_or(|recorded| recorded != advertised.as_slice());
     log.append(turn, Payload::Resumed(resumed))?;
+    // A switched role is recorded as a preamble that repeats the frozen one with the
+    // new roles, so the latest preamble stays the record a later resume reads. Only a
+    // difference is written: a switch naming what the session already runs adds nothing.
+    let roles = super::metadata::roles(&inference);
+    if !switch.is_empty()
+        && recorded_roles(&recording).as_ref() != Some(&roles)
+        && let Some(preamble) = latest_preamble(log.entries())
+    {
+        log.append(turn, preamble.clone().with_roles(roles))?;
+    }
     if record_tools {
         log.append(
             turn,
@@ -297,46 +311,39 @@ fn session_directories(
     }
 }
 
-/// The role selections the header recorded, as the options the registry resolves.
-/// A log with no header metadata names only its main inference (from the boot
-/// `Preamble`); the other roles and the effort level resolve as a create would.
+/// The spotter and triage the session last ran on: the latest preamble's roles when it
+/// records any (a resume switched them), else the header's. `None` for a log with
+/// neither.
+fn recorded_roles(recording: &LoadedRecording) -> Option<RecordedRoles> {
+    if let Some(roles) = crate::log::recorded_roles(&recording.entries) {
+        return Some(roles.clone());
+    }
+    let metadata = recording.header.metadata()?;
+    Some(RecordedRoles {
+        spotter: metadata.spotter.clone(),
+        triage: metadata.triage.clone(),
+    })
+}
+
+/// The role selections the log recorded, as the options the registry resolves, with
+/// `switch` laid over them. A log with no header metadata names only its main inference
+/// (from the boot `Preamble`); the other roles and the effort level resolve as a create
+/// would.
 fn options_from_log(
     recording: &LoadedRecording,
     loaded: &crate::config::LoadedConfig,
+    switch: &ResumeSwitch,
 ) -> SessionOptions {
-    match recording.header.metadata() {
+    let mut options = match recording.header.metadata() {
         Some(metadata) => SessionOptions {
             connection: Some(metadata.main.connection.clone()),
             model: Some(metadata.main.model.clone()),
-            spotter_connection: Some(metadata.spotter.connection.clone()),
-            spotter_model: Some(metadata.spotter.model.clone()),
-            triage: Some(match &metadata.triage {
-                TriageModel::Shared => TriageChoice::Shared,
-                TriageModel::Separate {
-                    selection,
-                    thinking,
-                    auto_choice,
-                    effort,
-                } => TriageChoice::Separate {
-                    connection: Some(selection.connection.clone()),
-                    model: selection.model.clone(),
-                    thinking: *thinking,
-                    auto_choice: *auto_choice,
-                    effort: effort.clone(),
-                },
-            }),
             effort: metadata.effort.clone(),
             temperature: metadata.temperature,
+            ..SessionOptions::default()
         },
         None => {
-            let main = recording
-                .entries
-                .iter()
-                .rev()
-                .find_map(|e| match &e.payload {
-                    Payload::Preamble { inference, .. } => inference.as_ref(),
-                    _ => None,
-                });
+            let main = crate::log::recorded_inference(&recording.entries);
             SessionOptions {
                 connection: main.map(|m| m.connection.clone()),
                 model: main.map(|m| m.model.clone()),
@@ -344,7 +351,37 @@ fn options_from_log(
                 ..SessionOptions::default()
             }
         }
+    };
+    if let Some(RecordedRoles { spotter, triage }) = recorded_roles(recording) {
+        options.spotter_connection = Some(spotter.connection);
+        options.spotter_model = Some(spotter.model);
+        options.triage = Some(match triage {
+            TriageModel::Shared => TriageChoice::Shared,
+            TriageModel::Separate {
+                selection,
+                thinking,
+                auto_choice,
+                effort,
+            } => TriageChoice::Separate {
+                connection: Some(selection.connection),
+                model: selection.model,
+                thinking,
+                auto_choice,
+                effort,
+            },
+        });
     }
+    switch.apply(&mut options);
+    options
+}
+
+/// The latest boot preamble, which a switch repeats with its new roles.
+fn latest_preamble(entries: &[LogEntry]) -> Option<&Payload> {
+    entries
+        .iter()
+        .rev()
+        .map(|entry| &entry.payload)
+        .find(|payload| matches!(payload, Payload::Preamble { .. }))
 }
 
 /// The latest boot preamble's system prompt, and the `[context]` block the triage

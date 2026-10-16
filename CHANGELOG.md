@@ -9,6 +9,7 @@ behind a change, see [`journal/`](journal/).
 
 ### Added
 
+- A resume (`PATCH /sessions/:id {"state": "active"}`) can switch the spotter and triage models, checked as creation checks them and recorded in a repeated `Preamble` (docs/resumption.md).
 - The decision-rung spotter records its request stages (`sent`, `first_byte`, `ended`/`failed`) under the `spot` origin, so a slow or failed judgement shows in the log and `current_operations` (docs/log-and-projection.md).
 - A triage request's thinking and text stream on the `output` class as `triage_thinking_delta` and `triage_delta`, naming the results being triaged (docs/control-api.md).
 - A successor archiving its own predecessor (the hand-off's completion) clears on the fast path, with no spotter request (docs/permissions.md, docs/tools.md).

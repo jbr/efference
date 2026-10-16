@@ -516,6 +516,8 @@ pub use options::{
 };
 
 mod credential;
+mod switch;
+pub use switch::ResumeSwitch;
 mod registry;
 #[cfg(test)]
 mod test;

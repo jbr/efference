@@ -48,15 +48,8 @@ fn tick() {
 }
 
 fn append_preamble(log: &mut Log) {
-    log.append(
-        0,
-        Payload::Preamble {
-            system: "system".into(),
-            context: Default::default(),
-            inference: None,
-        },
-    )
-    .unwrap();
+    log.append(0, Payload::preamble("system", Default::default(), None))
+        .unwrap();
 }
 
 fn append_user(log: &mut Log) {
