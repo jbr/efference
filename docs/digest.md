@@ -5,10 +5,9 @@ operator wrote and the agent's prose. It is the substrate for
 summarizing a session without reading its whole context — the cold session's compaction
 and the compaction-fidelity evaluation (`eval/compaction/`) both start from it.
 `src/digest.rs` implements it; `efference dev digest <session> [--upto <seq>] [--seqs]`
-prints it. `efference dev triage --view digest` replays a session's triages with the
-history rendered as this digest instead of the transcript (an experiment arm,
-`src/triage/digest_view.rs`); the digest at a triage extends the digest at every earlier
-triage byte for byte, which is what would let such a request resume a cached prefix.
+prints it. A separate triage model reads it as the older part of its text view
+([triage.md](triage.md)); the digest at a triage extends the digest at every earlier
+triage byte for byte, which is what lets that request resume a cached prefix.
 
 ## What a line carries
 
@@ -45,13 +44,28 @@ Arguments other than paths, result content and thinking are left out. That is wh
 bounds the digest's size by the number of calls rather than the volume of work they
 did: a call that read a megabyte contributes one note.
 
+**The verbatim form** (the `verbatim` option, no flag) renders each call as its name
+and arguments, then its result as the agent read it — the kept lines and note
+(`project::result_content`), indented under the call — with operator turns, prose and
+asks as above. The text view's triaged tail is this form ([triage.md](triage.md)).
+
 `--upto` folds only entries at or below a seq, so a digest can be cut at any point in a
 recorded session. `--seqs` labels each block with its entry's seq, for a reader that
 expands entries behind the lines it reads. The `cut` option (no flag; compaction sets it)
 places a marker line before the first block past a seq, for a summary that ends there
 while the record after it stays verbatim ([summary.md](summary.md)).
 
+## Rendering in spans
+
+`digest::Fold` reads a log once — the entries a resumption set aside, and each held
+result's verdict — and renders any span of it. A call renders in the span that holds its
+assistant entry, so spans that each begin at an assistant entry concatenate to the whole
+digest; `Fold::hide` leaves further entries out of every span (the text view hides what
+a head summary covers). `render` is one span over the log.
+
 ## Determinism
 
 The digest reads the log alone and asks no model anything, so the same log and options
-yield the same text. It is not on the wire; nothing here constrains the cached prefix.
+yield the same text. It is not on the agent's wire. The separate triage's text view sends
+it ([triage.md](triage.md)), where what matters is that a later triage's digest extends an
+earlier one's; `src/triage/text_view/test.rs` pins that.

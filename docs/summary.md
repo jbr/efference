@@ -50,6 +50,10 @@ pair of overlapping summaries (the later `upto` subsumes the earlier range).
 
 `project` takes the reader as an argument beside the image placement; the digest takes it
 as an option, so a digest read for the main model does not render a triage-only summary.
+The separate triage's text view ([triage.md](triage.md)) leads with the text of every head
+summary that applies to the triage reader and leaves out the entries they cover; the
+title peek on the own model reads the same view, and the idle triage, sent on the agent's
+client, reads the main projection.
 Nothing constructs a `Triage` summary yet; when something does, the operator-facing
 transcript will need to show one as such, so a triage-only replacement does not read as the
 main model having lost context.

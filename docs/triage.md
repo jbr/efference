@@ -201,13 +201,14 @@ the tail.
 `--triage-model` names a model other than the agent's and the triage runs on its own
 `Client` (`Triager::own`) instead of borrowing the agent turn's (`Triager::shared`,
 the default, and what an omitted or equal `--triage-model` boots). The shared
-envelope above exists to keep one cache lineage; a second model is a second
-lineage over the same transcript whatever the envelope does, so the own client
-drops the parts of it that only served that:
+envelope above exists to keep one cache lineage; a second model shares no cache with
+the agent whatever the envelope does, so the own client reads a text rendering of the
+session instead of the agent's transcript ([the text view](#the-text-view), below) and
+drops the parts of the envelope that only served the shared lineage:
 
 - **Its own system prompt** (`env::triage_system_prompt`): the triage model's real
-  identity line, a persona that says once that the assistant turns were produced by
-  the agent, named by model, and are to be read as the model's own working context,
+  identity line, a persona (`assets/prompts/triage.md`) that names the agent as a
+  different model doing the task and describes each request as a record of its work,
   then the session's `[context]` block verbatim. No curation preamble, role section,
   or unmounted list — those describe the agent's perimeter.
 - **A `tools[]` of only `retain` and `triage`**, and the asked-for tool **forced**
@@ -243,11 +244,11 @@ triage model with thinking off answered the idle ask in 23–32 output tokens an
 opposite verdicts on the same self-scheduled timer exit two cycles apart
 (journal/2026-09-14-idle-triage-on-the-agent-lineage.md).
 
-The prefix is the same canonical projection either way, so the own lineage is warm
-across triages: each triage writes the newest assistant turn and reads the rest, at the
-triage model's rate. The tail ask keeps its frame — first person, "the call you just
-made"; the `+third-person` ask variant is the framing alternative, an ablation, not a
-default — but its **`keep`/`note` rows differ by who answers**. The agent's own model
+The ask follows the view's framing (`Framing` in `src/triage/prompt.rs`): first person
+on the shared triage's transcript ("the call you just made", "the task continues on your
+NEXT turn"), third person in the text view ("the call the agent just made", the inbox,
+background and surfacing rows said of the agent), with the same structure and fields.
+Its **`keep`/`note` rows differ by who answers**. The agent's own model
 (the shared triage) writes a note to self, read on its next turn in place of the dropped
 lines. A separate triage model writes a **report**: what it dropped and whether that is
 safe, the answers to the intent's questions, what the output lacks — what the output
@@ -262,7 +263,8 @@ hand-labelled triages (backlog: triage-ground-truth).
 **Evaluating a candidate offline.** `efference dev triage <session> --triage-model X`
 replays every recorded triage under the separate-model shape — the same constructor
 boot uses (`Triager::for_triage_model`), the session's own preamble context and
-model name in the triage system prompt — and compares each draw's verdict against the
+model name in the triage system prompt, and the text view unless `--view` names
+another — and compares each draw's verdict against the
 **recorded** one, line for line after the cap. The reference is what the session's own
 triage chose to see, not an operator's idea of the right keep: the agent doing the work
 is the only reader who knows what it needed. The summary reports the kept fraction for
@@ -280,9 +282,70 @@ entries after its results). Background-process tails are sampled live and never 
 so that rider is absent from a replay, and the verb says so when a replayed triage had
 processes running.
 
+With the text view, `--dry-run` prints the view's layout at every replayed triage —
+the digest and triaged-tail sizes, and the triages where a view cut fell — and a live
+replay prints the same line before each triage's draws.
+
 What is *not* built: the own client's retry and reservation state is not reported
-on `GET /state`, and nothing acts on the triage model's context window being
-smaller than the agent's (backlog/inbox/distiller-experiment.md).
+on `GET /state`, and nothing compacts the text view when the triage model's window runs
+short: a session long enough for its digest to approach the window still sends it
+whole.
+
+### The text view
+
+What a separate triage model reads (`src/triage/text_view.rs`). It holds no assistant
+turn and no tool block, only user-role text, so a triage model of any wire format reads
+it: creation accepts a triage model whose dialect differs from main's. It is two user
+turns:
+
+1. **The history**, ending on a cache breakpoint:
+   - a fixed opening block saying what follows is the harness's record of the agent's
+     work, then the text of every head summary that applies to the triage reader
+     (docs/summary.md), headed as addressed to the agent;
+   - the **digest** ([digest.md](digest.md)) of the entries those summaries do not
+     cover, up to the **view cut** (named apart from a compaction's cut,
+     [summary.md](summary.md)): per call its tool, paths, `intent` and triage note;
+     operator turns verbatim; the agent's prose;
+   - the **triaged tail**: every step after the view cut in full — the call's name and
+     arguments, and its result as the agent read it (`project::result_content`: the
+     kept lines and note), indented under the call.
+2. **The current step**: the agent's latest prose, then each call with its arguments
+   and its line-numbered raw output (the same `result_view` blocks the transcript view
+   sends), then the ask and its riders.
+
+A **step** begins at an assistant entry that made calls. The history ends at the
+assistant entry whose calls the triage covers, so a live triage's captured results and
+the inbox entries it opens stay out of it.
+
+**The view cut** sits at a step's start and moves only forward. It is a fold over the
+steps' rendered sizes in log order: at each step start, if the triaged tail since the
+view cut is over `TRIAGED_TAIL_HIGH_WATER` (64 KiB), the view cut advances to the earliest step
+start that leaves at most `TRIAGED_TAIL_LOW_WATER` (32 KiB) after it — a step larger
+than that alone goes into the digest with the rest. Measured in bytes because what a
+view cut saves is wire weight. Each advance re-reads the kept tail uncached, so the gap
+between the marks is what keeps cuts rare. The fold reads only the log, so a replay
+reproduces every view cut and nothing is recorded; both marks are harness constants.
+
+**Caching.** Each stretch a view cut moved is one digest block, and each step of the
+triaged tail is one block, so between view cuts a triage's history is the previous triage's
+history plus one block per step since. Two breakpoints mark it: one at the end of the
+digest, which a later view cut leaves in place, and one at the end of the history, which the
+next triage's request reaches by appending. A provider that matches cached prefixes only
+at block boundaries within a short lookback (Anthropic, 20 blocks) needs both: one
+growing block would never match, and a view cut moves the end of the history by more blocks
+than the lookback holds. On the Responses dialect the history is its own input message,
+so the triage primer ([transport.md](transport.md)) sends the history alone and the
+triage's request continues exactly where the primer ended — the point the Codex backend
+resumes from. Implicit-cache providers match wherever the prefix agrees.
+
+Where the view changes discontinuously: a new head summary for the triage reader
+replaces the opening block and hides what it covers, and a resumption that set entries
+aside removes them from every block. Both rewrite the view from that point; neither
+needs the prefix to survive.
+
+The title peek on the own model reads the same history followed by its ask
+([session-title.md](session-title.md)); the idle triage stays on the agent's client and
+reads the main projection.
 
 ## Two answer shapes, and one scoped ask
 

@@ -1,12 +1,13 @@
 //! The text view (docs/triage.md, "The text view"): what a separate triage model reads
 //! in place of the agent's transcript. Text only, so a triage model of any wire format
-//! reads it, and laid out so that between cuts each triage's view extends the last one.
+//! reads it, and laid out so that between view cuts each triage's view extends the last.
 //!
 //! The view is two user turns. The first is the **history**: the summaries written for
-//! the triage reader, the trajectory digest (docs/digest.md) up to the cut, then the
-//! **triaged tail** — every step after the cut in full, each result as the agent read
-//! it. The second is the current step: the agent's latest prose and calls with their
-//! raw output, and the ask.
+//! the triage reader, the trajectory digest (docs/digest.md) up to the **view cut**
+//! (named apart from a compaction's cut, docs/summary.md), then the **triaged tail** —
+//! every step after the view cut in full, each result as the agent read it. The second
+//! is the current step: the agent's latest prose and calls with their raw output, and
+//! the ask. "The cut" below is always the view cut.
 //!
 //! Everything here is a pure function of the log. The history is divided into
 //! **steps**, each starting at an assistant entry that made calls; the cut only ever

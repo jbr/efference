@@ -58,7 +58,9 @@ call. A tool would have to ride the shared `tools[]`, which the agent turn also
 sends, so the agent would see a schema that is never for it and the envelope pin
 would move for a job unrelated to results; a text answer leaves the request shape
 untouched, and `tool_choice` stays `auto` on both lineages so the shared peek
-still reads the agent's cache. On the own-model lineage the ask is the same; that
+still reads the agent's cache. On the own-model lineage the ask is the same, after the
+history of the text view the result triages read rather than the agent's transcript
+([triage.md](triage.md)), so a triage model of another wire format can answer it; that
 lineage forces its tool choice on result peeks, so a title ask is a differently
 keyed messages read there, which the rarity of the ask makes affordable.
 

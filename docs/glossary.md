@@ -7,6 +7,10 @@ than one current meaning are listed with each sense, so a reader can tell which 
 | word | identifiers | governing doc |
 | --- | --- | --- |
 | **triage primer** — a capped request that plants the triage model's cache | `Triager::prime`, `RequestOrigin::TriagePrimer` | transport.md |
+| **text view** — what a separate triage model reads: the history (head summaries, the digest up to the view cut, the triaged tail), then the current step and the ask | `TriageView::Text`, `Triager::view`, `src/triage/text_view.rs`, `efference dev triage --view text` | triage.md |
+| **triaged tail** — the text view's recent steps in full, each result as the agent read it; not a triage request's throwaway tail | `TRIAGED_TAIL_HIGH_WATER`, `TRIAGED_TAIL_LOW_WATER`, `digest::Options::verbatim` | triage.md |
+| **cut** (1), compaction cut — where a compaction's account ends, the record after it staying verbatim | `digest::CUT`, `digest::Options::cut`, `compaction_cut` | summary.md |
+| **cut** (2), view cut — where the text view's digest ends and its triaged tail begins | `TextViewLayout::cuts`, `text_view::history` | triage.md |
 | **summary** — the text that replaces a range of the transcript, and the log entry that carries it | `Payload::Summary(Summary { from, upto, text, made_by, audience })` | summary.md |
 | **consolidation** — the agent replaces a region of its own transcript with a summary, having seen that region in full | the `consolidate` tool, `MadeBy::Consolidation`, `RequestOrigin::Consolidation` | consolidate.md |
 | **compaction** — the harness writes a summary from the digest, without the full transcript | `MadeBy::Compaction`, `src/compact.rs` (`compact::summarize`), `src/daemon/compact.rs`, `POST /loop/compact`, the `compaction` state topic, `efference dev compact`, `RequestOrigin::Compaction` | summary.md |

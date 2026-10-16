@@ -367,9 +367,10 @@ pub(crate) struct SessionFlags {
     /// agent's prompt cache (on a host, unless `[defaults].triage` is set). Given, the
     /// per-result triage runs on its own client even when it names the agent's model:
     /// its own system prompt, its own session key, and only the two triage tools
-    /// offered. Its cache is a separate lineage over the same transcript, paid at
-    /// that model's rate. Must share the agent's wire dialect. The idle triage (the
-    /// wake decision) stays on the agent's client regardless.
+    /// offered. It reads a text view of the session rather than the agent's
+    /// transcript, so it may speak any wire format, and its cache is its own, paid at
+    /// that model's rate. The idle triage (the wake decision) stays on the agent's
+    /// client regardless.
     #[arg(long)]
     pub(crate) triage_model: Option<String>,
     /// Let the triage model think. Off by default: the triage's reasoning is discarded

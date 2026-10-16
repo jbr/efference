@@ -901,11 +901,13 @@ read plus 16 output tokens. A capped request that the upstream refuses is not re
 another cap. OpenAI exposes no per-generation cost endpoint, so cost tracking stays off.
 
 **The triage primer is the same write on the triage lineage.** Where the triage runs on
-its own model (`Triager::own`), the batch fires the turn's own input on the triage
-client at the first execution start — post-approval, so nothing speculative is ever
-sent — capped at the same backend minimum (`Client::prime`, Responses with an
-implicit policy only). The triage then extends a triage-lineage request that
-ended where the main one did, and reads everything before the current calls from
+its own model (`Triager::own`), the batch fires the history of the triage's text view
+([triage.md](triage.md)) — the log through the completion whose calls it runs, as one
+input message (`Triager::primer_turns`) — on the triage client at the first execution
+start — post-approval, so nothing speculative is ever sent — capped at the same backend
+minimum (`Client::prime`, Responses with an implicit policy only). The triage's request
+is that message followed by the current step's, so it extends a triage-lineage request
+that ended where its history does, and reads everything before the current calls from
 cache. A primer the upstream refuses, or a lineage with no implicit cache, resolves
 unprimed and the triage goes out as before. Primer spend records under its own
 `triage_primer` usage origin, with one log line per triage carrying the send time, the
@@ -2064,8 +2066,7 @@ is the primer re-sent:
 
 - **Turns.** The ping replays the turns the last primer sent. `Session::set_triage_primed`
   stores them when the primer returns with usage, and the ping sends them byte for byte
-  rather than re-projecting the log: the primer goes out at the start of a tool batch,
-  from the turn's input, and a projection taken later does not reproduce those bytes.
+  rather than rebuilding them from the log, which has grown by the time it fires.
   With no primer sent, or with the stored one dropped, there is no ping.
 - **Envelope.** The primer's own, from `Triager::primer_envelope`, which `prime` also
   uses: the own client, the triage's `tools[]`, and forced `retain`. The ping and the

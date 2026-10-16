@@ -153,7 +153,7 @@ Read top-down; open the subsystem doc you need.
 | Subsystem | Doc | Governing modules |
 | --- | --- | --- |
 | The log, the projection, the caching constraint | [log-and-projection.md](log-and-projection.md) | `src/log.rs`, `src/project.rs`, `src/persist.rs` |
-| Per-result triage — how every tool result is triaged | [triage.md](triage.md) | `src/triage.rs`, `src/project.rs` |
+| Per-result triage — how every tool result is triaged, and the text view a separate triage model reads | [triage.md](triage.md) | `src/triage.rs`, `src/triage/text_view.rs`, `src/project.rs` |
 | Tools (in-process `Tool` trait; in-process MCP; per-call telemetry) | [tools.md](tools.md) | `src/tools.rs`, `src/bash.rs`, `src/agent/telemetry.rs` |
 | Trajectory consolidation (completed working spans and juncture checks) | [consolidate.md](consolidate.md) | `src/consolidate.rs`, `src/agent.rs` |
 | Trajectory digest (one line per call, the summarization substrate) | [digest.md](digest.md) | `src/digest.rs` |
