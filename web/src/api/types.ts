@@ -369,7 +369,13 @@ export type WireState =
    * `ResultVerdict` names it (docs/triage.md). */
   | "Pending"
   | "Raw"
-  | { Triaged: { keep: Keep; note: string | null } }
+  | {
+      Triaged: {
+        keep: Keep;
+        note: string | null;
+        intent_feedback?: string | null;
+      };
+    }
   | "Elided"
   | { TriageFailed: { why: string } };
 

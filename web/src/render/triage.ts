@@ -50,11 +50,16 @@ const hunkHeader = (start: number, end: number) =>
 /** Mirrors `NOTHING_KEPT`. */
 export const NOTHING_KEPT = "(output dropped by triage)";
 
+/** Mirrors `INTENT_FEEDBACK_LEAD`. */
+export const INTENT_FEEDBACK_LEAD = "⟢ re your intent: ";
+
 /** Mirrors `render_hunks`. */
 export function renderHunks(
   lines: string[],
   ranges: Range[],
   note: string | null,
+  intentFeedback?: string | null,
+  total: number = lines.length,
 ): string {
   const norm = normalize(ranges, lines.length);
   const contentEnd = lines.findLastIndex((l) => l.trim() !== "") + 1;
@@ -69,10 +74,12 @@ export function renderHunks(
   }
   const last = norm.at(-1);
   if (!spansEverything && last && last[1] < contentEnd) {
-    parts.push(`@@ ${lines.length} lines total @@`);
+    parts.push(`@@ ${total} lines total @@`);
   }
   const trimmed = note?.trim();
   if (trimmed) parts.push(`⟢ ${trimmed}`);
+  const feedback = intentFeedback?.trim();
+  if (feedback) parts.push(`${INTENT_FEEDBACK_LEAD}${feedback}`);
   if (parts.length === 0) parts.push("(nothing kept)");
   return parts.join("\n");
 }
@@ -82,13 +89,20 @@ export function renderTriaged(
   content: string,
   keep: Keep,
   note: string | null,
+  intentFeedback?: string | null,
 ): string {
   const all = rustLines(content);
   const shown = all.slice(0, TRIAGE_LINE_CAP);
   const dropped = all.length - shown.length;
   const ranges: Range[] =
     keep === "All" ? [[1, shown.length]] : keep === "None" ? [] : keep.Ranges;
-  let out = renderHunks(shown, ranges, note);
+  let out = renderHunks(
+    shown,
+    ranges,
+    note,
+    intentFeedback,
+    shown.length + dropped,
+  );
   if (dropped > 0) {
     out += `\n… [${dropped} more lines truncated before triage]`;
   }
@@ -121,9 +135,11 @@ export function selectionKept(
 /** Mirrors `render_triage_failure`. */
 export function renderTriageFailure(why: string): string {
   return (
-    `result withheld — triage failed (${why}). The call ran to completion and its ` +
-    `side effects stand, but its output was not recorded. Re-issue the call if the ` +
-    `output is still needed.`
+    `result withheld — triage failed (${why}). This is a harness failure, not a ` +
+    `failure of your call: the call ran to completion and its side effects stand, ` +
+    `and its raw output is in the session log — only the step that curates it for ` +
+    `you did not complete. Re-issue the call if its output is still needed and ` +
+    `running it again is safe.`
   );
 }
 
@@ -142,7 +158,12 @@ export function wireView(raw: RawResult, wire: WireState): WireViewText | null {
   if (wire === "Elided") return { text: "[elided]", isError: false };
   if ("Triaged" in wire) {
     return {
-      text: renderTriaged(raw.content, wire.Triaged.keep, wire.Triaged.note),
+      text: renderTriaged(
+        raw.content,
+        wire.Triaged.keep,
+        wire.Triaged.note,
+        wire.Triaged.intent_feedback,
+      ),
       isError: raw.is_error,
     };
   }

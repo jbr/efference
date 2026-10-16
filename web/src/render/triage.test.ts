@@ -46,6 +46,13 @@ test("render_triaged truncates past the cap", () => {
     null,
   );
   expect(past).not.toContain(`line${TRIAGE_LINE_CAP + 3}`);
+
+  const cut = renderTriaged(body, { Ranges: [[1, 10]] }, null);
+  expect(
+    cut.endsWith(
+      `@@ ${TRIAGE_LINE_CAP + 5} lines total @@\n… [5 more lines truncated before triage]`,
+    ),
+  ).toBe(true);
 });
 
 test("a range spanning everything gets no header", () => {
@@ -111,6 +118,17 @@ test("trailing blank lines count as covered", () => {
   ).toBe(true);
 });
 
+test("intent_feedback follows the note under its own lead", () => {
+  const ls = lines("a\nb");
+  expect(renderHunks(ls, [[1, 2]], "two lines", "no question to keep")).toBe(
+    "a\nb\n⟢ two lines\n⟢ re your intent: no question to keep",
+  );
+  expect(renderHunks(ls, [], null, "no question to keep")).toBe(
+    "(output dropped by triage)\n⟢ re your intent: no question to keep",
+  );
+  expect(renderHunks(ls, [], null, "  ")).toBe("(output dropped by triage)");
+});
+
 test("normalize clamps, sorts, and merges", () => {
   expect(
     normalize(
@@ -166,7 +184,16 @@ test("wireView dispatches per wire state like tool_result_block", () => {
   expect(failed?.text).toContain(
     "result withheld — triage failed (triage called no tool (attempt 3 of 3))",
   );
-  expect(failed?.text).toContain("ran to completion");
+  expect(failed?.text).toContain("This is a harness failure");
+  expect(failed?.text).toContain("raw output is in the session log");
   expect(failed?.text).not.toContain("ten thousand lines");
-  expect(renderTriageFailure("x")).toContain("Re-issue the call");
+  expect(renderTriageFailure("x")).toContain("running it again is safe");
+  expect(renderTriageFailure("x")).not.toContain("not recorded");
+
+  const withFeedback = wireView(raw, {
+    Triaged: { keep: "None", note: null, intent_feedback: "wrong question" },
+  });
+  expect(withFeedback?.text).toBe(
+    "(output dropped by triage)\n⟢ re your intent: wrong question",
+  );
 });
