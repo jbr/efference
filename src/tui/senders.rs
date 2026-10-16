@@ -30,8 +30,8 @@ pub(crate) struct Senders {
     pub attachments: UnboundedSender<super::staged::AttachCmd>,
     /// The zero-token continue (docs/control-api.md).
     pub continue_loop: UnboundedSender<()>,
-    /// Fold a cold session (`POST /loop/fold`, docs/control-api.md).
-    pub fold: UnboundedSender<()>,
+    /// Compact a cold session (`POST /loop/compact`, docs/control-api.md).
+    pub compaction: UnboundedSender<()>,
     /// A gate decision: the call and the decision.
     pub approve: UnboundedSender<(String, Approval)>,
     pub pace: UnboundedSender<PaceCmd>,
@@ -52,7 +52,7 @@ pub(crate) struct Receivers {
     pub recall: UnboundedReceiver<String>,
     pub attachments: UnboundedReceiver<super::staged::AttachCmd>,
     pub continue_loop: UnboundedReceiver<()>,
-    pub fold: UnboundedReceiver<()>,
+    pub compaction: UnboundedReceiver<()>,
     pub approve: UnboundedReceiver<(String, Approval)>,
     pub pace: UnboundedReceiver<PaceCmd>,
     pub interrupt: UnboundedReceiver<Interrupt>,
@@ -69,7 +69,7 @@ impl Senders {
         let (recall, recall_rx) = unbounded_channel();
         let (attachments, attachments_rx) = unbounded_channel();
         let (continue_loop, continue_rx) = unbounded_channel();
-        let (fold, fold_rx) = unbounded_channel();
+        let (compaction, compaction_rx) = unbounded_channel();
         let (approve, approve_rx) = unbounded_channel();
         let (pace, pace_rx) = unbounded_channel();
         let (interrupt, interrupt_rx) = unbounded_channel();
@@ -83,7 +83,7 @@ impl Senders {
                 recall,
                 attachments,
                 continue_loop,
-                fold,
+                compaction,
                 approve,
                 pace,
                 interrupt,
@@ -97,7 +97,7 @@ impl Senders {
                 recall: recall_rx,
                 attachments: attachments_rx,
                 continue_loop: continue_rx,
-                fold: fold_rx,
+                compaction: compaction_rx,
                 approve: approve_rx,
                 pace: pace_rx,
                 interrupt: interrupt_rx,

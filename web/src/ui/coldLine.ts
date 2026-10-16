@@ -4,7 +4,7 @@
 // way (docs/control-api.md).
 
 import type { Cold } from "../api/types.ts";
-import { kilotokens } from "./fold.ts";
+import { kilotokens } from "./compact.ts";
 
 /** What the action is, in the line's own words. A redirect is listed with
  * approving because its message is the next user message: the request that follows

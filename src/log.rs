@@ -15,13 +15,13 @@ mod assistant;
 mod cold;
 mod completions;
 mod config_edit;
-mod mark;
 mod process;
 mod push;
 mod request;
 mod result;
 mod spot;
 pub mod stops;
+mod summary;
 mod telemetry;
 mod tool_telemetry;
 mod triage;
@@ -38,7 +38,6 @@ pub use assistant::{
 pub use cold::{ColdEvent, ColdReason, ReleasedBy, UnparkCause};
 pub use completions::CompletionsMessage;
 pub use config_edit::{ConfigChange, ConfigEdit, EditState};
-pub use mark::{Audience, Mark, MarkKind, Writer};
 pub use process::{ExitOutcome, ProcessEvent, ProcessEventKind, ProcessExit, ProcessSpawn};
 pub use push::{
     AttentiveClient, DeliveryOutcome, DeviceDelivery, MomentKind, PushCancel, PushEvent, PushRecord,
@@ -47,6 +46,7 @@ pub use request::{RequestOrigin, RequestStage, RequestStageKind};
 pub use result::{ContentElision, RawResult, ResultImage};
 pub use spot::{Spot, Stance};
 pub use stops::Stop;
+pub use summary::{Audience, MadeBy, Summary};
 pub use telemetry::Telemetry;
 pub use tool_telemetry::{BashTelemetry, EditTelemetry, ToolOutcome, ToolTelemetry};
 pub use triage::{Origin, Triage};
@@ -195,13 +195,11 @@ pub enum Payload {
     /// long the session sat, which background processes it no longer monitors, and
     /// which calls were dropped because they started and never returned.
     Resumed(Resumed),
-    /// A salience annotation written when it is known (docs/log-and-projection.md):
-    /// a decision, a dead end, a relevance note, or a consolidation boundary. The
-    /// foundation for intent-aware compaction — a mark is *kept* through a fold
-    /// while the deliberation around it is elided. Projection acts on head
-    /// (`Boundary`) and inclusive working-span (`Span`) replacement ranges,
-    /// injecting their account as a user message (docs/consolidate.md).
-    Mark(Mark),
+    /// Text that replaces a range of the transcript, made by the agent's
+    /// `consolidate` call or by the harness's compaction (docs/summary.md).
+    /// Projects the text where the range ends and elides the range
+    /// (docs/log-and-projection.md).
+    Summary(Summary),
     /// A triage verdict (docs/triage.md) — the durable record of a throwaway
     /// triage's decision. The fork's *transcript* stays throwaway; its *decision* is
     /// logged here for audit / introspection / triager-quality work. Projects as

@@ -1,6 +1,6 @@
 import { useId, type ReactNode } from "react";
 import type { Usage } from "../api/types.ts";
-import { FoldControl, type FoldControlProps } from "./FoldControl.tsx";
+import { CompactControl, type CompactControlProps } from "./CompactControl.tsx";
 import { HoverPopup } from "./HoverPopup.tsx";
 import "./ContextPopup.css";
 
@@ -10,7 +10,7 @@ export function ContextPopup({
   children,
 }: {
   context: Usage["context"];
-  summary: FoldControlProps;
+  summary: CompactControlProps;
   children?: ReactNode;
 }) {
   const id = useId();
@@ -43,7 +43,7 @@ export function ContextPopup({
             ? `${context.used.toLocaleString()} tokens in the last request; window size unknown.`
             : `${context.used.toLocaleString()} of ${context.limit.toLocaleString()} tokens in the last request.`}
       </p>
-      <FoldControl {...summary} />
+      <CompactControl {...summary} />
     </HoverPopup>
   );
 }

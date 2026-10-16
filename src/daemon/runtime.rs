@@ -154,7 +154,7 @@ impl SessionRuntime {
         triager.set_abort(session.interrupt_signal());
         // Every request any of the session's clients makes reports its stages to
         // the log (docs/log-and-projection.md): the agent client (turns, the shared
-        // peek, titles, keepalive, folds), the own-triage client, and the spotter.
+        // peek, titles, keepalive, compactions), the own-triage client, and the spotter.
         client.set_stage_sink(session.stage_sink());
         triager.set_stage_sink(session.stage_sink());
         spotter.set_stage_sink(session.stage_sink());
@@ -195,8 +195,8 @@ impl SessionRuntime {
         if cacheable {
             session.set_cache_ttl(client.endpoint().provider.cache_ttl());
             tokio::spawn(swansong.interrupt(super::cold::cold_watch(Arc::clone(&session))));
-            // The fold writes on the session's own client (docs/summary-head.md).
-            tokio::spawn(swansong.interrupt(super::fold::fold_loop(
+            // The compaction writes on the session's own client (docs/summary.md).
+            tokio::spawn(swansong.interrupt(super::compact::compact_loop(
                 Arc::clone(&client),
                 Arc::clone(&session),
                 tools.clone(),

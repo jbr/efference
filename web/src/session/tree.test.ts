@@ -339,7 +339,7 @@ describe("the transcript tree", () => {
     const nodes = buildTree([
       entry(1, { User: [{ Text: "hi" }] }),
       entry(2, {
-        Mark: { kind: { Boundary: { upto: 1 } }, note: "a breadcrumb" },
+        Summary: { from: 0, upto: 1, text: "a breadcrumb" },
       }),
     ]);
     expect(nodes.map((n) => n.kind)).toEqual(["leaf", "leaf"]);
@@ -365,14 +365,14 @@ describe("the transcript tree", () => {
   });
 });
 
-describe("the consolidation mark", () => {
-  it("counts the committed entries at or below its boundary", () => {
+describe("a summary", () => {
+  it("counts the committed entries at or below its range end", () => {
     const nodes = buildTree([
       entry(1, { User: [{ Text: "hi" }] }),
       assistant(2, { text: true }),
       entry(3, { User: [{ Text: "more" }] }),
       entry(4, {
-        Mark: { kind: { Boundary: { upto: 3 } }, note: "summary" },
+        Summary: { from: 0, upto: 3, text: "summary" },
       }),
     ]);
     const mark = nodes.at(-1);
@@ -380,16 +380,16 @@ describe("the consolidation mark", () => {
     expect(mark?.kind === "leaf" && mark.replaces).toBe(3);
   });
 
-  it("excludes entries past the boundary", () => {
+  it("excludes entries past the range end", () => {
     const nodes = buildTree([
       entry(1, { User: [{ Text: "hi" }] }),
       entry(2, { User: [{ Text: "later" }] }),
       entry(3, {
-        Mark: { kind: { Boundary: { upto: 1 } }, note: "summary" },
+        Summary: { from: 0, upto: 1, text: "summary" },
       }),
     ]);
     const mark = nodes.find(
-      (n) => n.kind === "leaf" && "Mark" in n.entry.payload,
+      (n) => n.kind === "leaf" && "Summary" in n.entry.payload,
     );
     expect(mark?.kind === "leaf" && mark.replaces).toBe(1);
   });
@@ -406,7 +406,7 @@ describe("the consolidation mark", () => {
       entry(6, { User: [{ Text: "now group them" }] }),
       assistant(7, { calls: [{ id: "l", name: "list" }] }),
       entry(8, {
-        Mark: { kind: { Span: { from: 1, upto: 3 } }, note: "account" },
+        Summary: { from: 1, upto: 3, text: "account" },
       }),
     ]);
     expect(nodes.map((n) => n.key)).toEqual([

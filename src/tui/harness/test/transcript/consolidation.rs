@@ -2,7 +2,7 @@
 //! bare name, then a rule naming the extent, the summary as markdown, a closing rule.
 
 use super::*;
-use crate::log::{Mark, Payload};
+use crate::log::{Payload, Summary};
 
 #[test]
 fn a_consolidation_reads_as_its_extent_and_summary() {
@@ -18,7 +18,11 @@ fn a_consolidation_reads_as_its_extent_and_summary() {
             json!({"summary": summary, "intent": "fold the reading"}),
         )],
     );
-    play.commit(Payload::Mark(Mark::boundary(2, summary.to_string())));
+    play.commit(Payload::Summary(Summary::consolidation(
+        0,
+        2,
+        summary.to_string(),
+    )));
     play.tool_result("toolu_c", "consolidated", false, WireState::Raw);
 
     let frame = play.render();
@@ -39,7 +43,7 @@ fn a_consolidation_reads_as_its_extent_and_summary() {
 
 /// A consolidation adopted while the trajectory kept going is appended after the
 /// later work, but is drawn where the agent's projection puts its account: after
-/// the entry its range ends in (docs/consolidate.md). Rendered once before the mark
+/// the entry its range ends in (docs/consolidate.md). Rendered once before the summary
 /// arrives, so the incremental view has to move it into an entry already drawn.
 #[test]
 fn a_late_consolidation_is_drawn_at_its_range_end() {
@@ -65,7 +69,11 @@ fn a_late_consolidation_is_drawn_at_its_range_end() {
         )],
     );
     play.render();
-    play.commit(Payload::Mark(Mark::span(1, 3, "Account of the survey.")));
+    play.commit(Payload::Summary(Summary::consolidation(
+        1,
+        3,
+        "Account of the survey.",
+    )));
 
     let frame = play.render();
     let at = |needle: &str| {

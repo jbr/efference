@@ -24,7 +24,7 @@ test("context details open on delayed mouse hover, bridge to actions, and suppor
           context={{ used: 50_000, limit: 200_000 }}
           summary={{
             cold: null,
-            fold: null,
+            compaction: null,
             running: false,
             gatePending: false,
             asking: false,
@@ -35,7 +35,7 @@ test("context details open on delayed mouse hover, bridge to actions, and suppor
     const trigger = host.querySelector("button")!;
     const position = host.querySelector<HTMLElement>(".hover-popup-position")!;
     const summary = host.querySelector<HTMLButtonElement>(
-      ".fold-control button",
+      ".compact-control button",
     )!;
     expect(position.hidden).toBe(true);
     pointer(trigger, "pointerover");

@@ -197,10 +197,10 @@ pub(super) async fn watch_status(host: std::sync::Weak<Host>, id: String, sessio
                 host.post_status(&id, &session, &status);
             }
             // The listing carries a status and a process count per row
-            // (`summary.rs`), and both move with the control state this loop
+            // (`listing.rs`), and both move with the control state this loop
             // already wakes on — so every wake pings it. Subscribers diff for
             // themselves, so a wake that moved nothing costs a comparison.
-            host.touch_summary();
+            host.touch_listing();
         }
         last = Some((status, routing));
 

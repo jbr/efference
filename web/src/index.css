@@ -68,7 +68,7 @@ label,
 .gate-cue,
 .gate-float-head,
 .pending-mark,
-.consolidation-rule,
+.summary-rule,
 .more-lines,
 .peek-head,
 .inspector-title,
@@ -842,13 +842,13 @@ input[type="checkbox"]:disabled {
   overflow-wrap: break-word;
 }
 
-/* The consolidation mark: a rule naming the extent the wire folded behind,
-   with the replacing summary as content between the rules. */
-.consolidation {
+/* A summary: a rule naming the extent the wire replaced, with the replacing
+   text as content between the rules. */
+.summary {
   margin: 1.5rem 0;
 }
 
-.consolidation-rule {
+.summary-rule {
   border-top: 1px dashed var(--fg-ghost);
   padding-top: 0.9rem;
   display: flex;
@@ -858,24 +858,24 @@ input[type="checkbox"]:disabled {
   font-size: 0.6875rem;
 }
 
-.consolidation-rule.closing {
+.summary-rule.closing {
   padding-top: 0;
   margin: 1rem 0 0;
 }
 
-.consolidation-rule .glyph {
+.summary-rule .glyph {
   font-size: 0.85rem;
   color: var(--neon-ink);
   text-shadow: var(--neon-text);
 }
 
-.consolidation-rule .c-label {
+.summary-rule .c-label {
   letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--fg-dim);
 }
 
-.consolidation-rule .c-count {
+.summary-rule .c-count {
   color: var(--fg-faint);
 }
 
@@ -2245,15 +2245,15 @@ select {
   }
 }
 
-/* The fold's notice in the composer and its control in the context details
+/* The compaction's notice in the composer and its control in the context details
    popup (docs/web-client.md). */
-.fold-notice {
+.compact-notice {
   font-family: var(--font-ui);
   font-size: 0.85rem;
   color: var(--fg-dim);
 }
 
-.fold-notice .error {
+.compact-notice .error {
   margin-bottom: 0.25rem;
 }
 
@@ -2265,7 +2265,7 @@ select {
   color: var(--warn);
 }
 
-.fold-btn {
+.compact-btn {
   font-family: var(--font-ui);
   font-size: 0.8rem;
   padding: 0.15rem 0.6rem;
@@ -2276,7 +2276,7 @@ select {
   cursor: pointer;
 }
 
-.fold-control {
+.compact-control {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
@@ -2284,21 +2284,21 @@ select {
   font-size: 0.85rem;
 }
 
-.fold-control p {
+.compact-control p {
   margin: 0;
 }
 
-.fold-note,
-.fold-control .dim {
+.compact-note,
+.compact-control .dim {
   color: var(--fg-dim);
 }
 
-.fold-confirm {
+.compact-confirm {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
 }
 
-.fold-confirm .fold-warning {
+.compact-confirm .compact-warning {
   flex-basis: 100%;
 }

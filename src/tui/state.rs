@@ -545,7 +545,7 @@ pub(super) struct InteractiveState<'a> {
     pub continue_tx: UnboundedSender<()>,
     /// Asks for a fold (`POST /loop/fold`, docs/control-api.md): the operator's
     /// alternative to reading a cold cache uncached.
-    pub fold_tx: UnboundedSender<()>,
+    pub compaction_tx: UnboundedSender<()>,
     /// Asks the tokio side to upload or remove a staged attachment (docs/inbox.md).
     pub attachments_tx: UnboundedSender<crate::tui::staged::AttachCmd>,
     /// The composer's staged attachments: uploaded as they are staged, sent with the next
@@ -652,9 +652,9 @@ pub(super) struct InteractiveState<'a> {
     pub cold: Option<ColdView>,
     /// The loop is parked mid-turn at the cold check (the `park` topic).
     pub park: Option<ParkReason>,
-    /// The `fold` topic as the header shows it: a fold is being written, whether the
+    /// The `compaction` topic as the header shows it: a compaction is being written, whether the
     /// session is cold or the operator asked for it warm.
-    pub folding: bool,
+    pub compacting: bool,
     /// What this session is — the model and the working directory, from the
     /// `session_identity` topic (docs/control-api.md). `None` until the connect
     /// snapshot lands, and in views that never connect. Sidebar chrome.

@@ -1,13 +1,13 @@
 //! The `consolidate` tool (docs/consolidate.md) — the agent's own memory-
-//! consolidation primitive. The agent calls it to fold the prior task's
-//! trajectory into a concise summary, so the working context stays lean as a
+//! consolidation primitive. The agent calls it to replace the prior task's
+//! trajectory with a concise summary, so the working context stays lean as a
 //! session runs long. The raw transcript survives in the log for reversibility.
 //!
 //! It acts on the **log**, not the world: it produces a
-//! `Mark`, not a [`RawResult`] to triage, so the loop handles it structurally
+//! `Summary`, not a [`RawResult`] to triage, so the loop handles it structurally
 //! (`agent.rs`) rather than through the world-facing [`Toolbox`].
 //!
-//! [`Mark`]: crate::log::Mark
+//! [`Summary`]: crate::log::Summary
 //! [`RawResult`]: crate::log::RawResult
 //! [`Toolbox`]: crate::tools::Toolbox
 
@@ -28,7 +28,7 @@ pub const NAME: &str = "consolidate";
 /// mount snapshots, so the spotter's brief (docs/permissions.md) reads this tool
 /// like any other — the loop dispatches it structurally, outside the `Toolbox`,
 /// which once left it brief-less at the rung. Session-local (closed-world) and
-/// not a read; `destructive`/`idempotent` are left unstated — the fold is
+/// not a read; `destructive`/`idempotent` are left unstated — the consolidation is
 /// reversible in the log but not on the wire, and neither honest answer fits a
 /// one-bit hint.
 ///
@@ -106,11 +106,11 @@ pub fn summary(input: &Value) -> Option<String> {
     Input::deserialize(input).ok().map(|i| i.summary)
 }
 
-/// Calls split by a head-fold cut, used by the digest/narrator path
-/// (docs/summary-head.md). Working-span checks additionally reject unanswered
+/// Calls split by a head summary's cut, used by the digest and compaction path
+/// (docs/summary.md). Working-span checks additionally reject unanswered
 /// calls and validate both range edges (docs/consolidate.md).
 pub fn split_calls(log: &[LogEntry], upto: Seq) -> Vec<CallId> {
-    // Which side of the boundary each call was made on, by id.
+    // Which side of the cut each call was made on, by id.
     let call_folded: HashMap<CallId, bool> = log
         .iter()
         .filter_map(|e| match &e.payload {

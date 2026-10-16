@@ -19,7 +19,7 @@ fn archived(id: &str, title: Option<&str>, ago_ms: u64) -> InventoryRow {
     .unwrap()
 }
 
-fn live(id: &str, title: Option<&str>, status: &str) -> SessionSummary {
+fn live(id: &str, title: Option<&str>, status: &str) -> ListedSession {
     serde_json::from_value(serde_json::json!({
         "id": id,
         "title": title,

@@ -50,18 +50,18 @@ describe("the turn-state readout", () => {
     ).toContain("the whole context");
   });
 
-  it("reads a park after a fold as resuming", () => {
-    const state = turnState(true, null, false, false, { reason: "folded" });
+  it("reads a park after a compaction as resuming", () => {
+    const state = turnState(true, null, false, false, { reason: "compacted" });
     expect(state.kind).toBe("parked");
     expect(state.text).toBe("paused: summarized · send to continue");
   });
 
-  it("does not read an unparked session, or a fold over a park, as parked", () => {
+  it("does not read an unparked session, or a compaction over a park, as parked", () => {
     expect(turnState(false, null, false, false, null).kind).toBe("idle");
     expect(turnState(true, null, false, false, null).kind).toBe("running");
-    expect(turnState(true, null, false, true, { reason: "folded" }).text).toBe(
-      "summarizing the history…",
-    );
+    expect(
+      turnState(true, null, false, true, { reason: "compacted" }).text,
+    ).toBe("summarizing the history…");
   });
 
   it("says a retry wait can be cut short by an empty send", () => {
@@ -221,7 +221,7 @@ describe("the turn-state readout", () => {
       expect(text(ops([side]))).toBe("writing a title · 1s");
     });
 
-    it("keeps stall, park, fold and the retry wait ahead of the operation", () => {
+    it("keeps stall, park, compaction and the retry wait ahead of the operation", () => {
       const open = view(
         ops([
           { request: 1, origin: "turn", stage: "sent", since: now - 1_000 },
@@ -231,7 +231,7 @@ describe("the turn-state readout", () => {
         "stalled",
       );
       expect(
-        turnState(true, null, false, false, { reason: "folded" }, open).kind,
+        turnState(true, null, false, false, { reason: "compacted" }, open).kind,
       ).toBe("parked");
       expect(turnState(true, null, false, true, null, open).text).toBe(
         "summarizing the history…",
@@ -276,7 +276,7 @@ describe("the turn-state readout", () => {
     expect(turnState(true, stall, false, false, null, view, "gate").kind).toBe(
       "stalled",
     );
-    const park: Park = { reason: "folded" };
+    const park: Park = { reason: "compacted" };
     expect(turnState(true, null, false, false, park, view, "gate").kind).toBe(
       "parked",
     );

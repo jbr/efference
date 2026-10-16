@@ -547,20 +547,19 @@ pub(in crate::tui) fn inline_code_styled(
     }
 }
 
-/// A consolidation mark (docs/consolidate.md), drawn as the web client draws it
+/// A summary (docs/summary.md), drawn as the web client draws it
 /// (docs/web-client.md): a rule naming its extent — `⊙ consolidated through #n ·
 /// N entries` — then the summary that replaced the span, rendered as the markdown
 /// it is, then a closing rule. Every entry it replaced is still on screen above,
-/// so there is nothing to expand: the mark says where the model's context stops
+/// so there is nothing to expand: the rule says where the model's context stops
 /// carrying the raw log. `replaces` counts log entries, not tokens, which are
 /// provider accounting the client does not hold.
-pub(in crate::tui) fn push_mark(
+pub(in crate::tui) fn push_summary(
     nodes: &mut Vec<DocumentNode<'static>>,
-    kind: &MarkKind,
-    note: &str,
+    summary: &Summary,
     replaces: usize,
 ) {
-    let label = kind.label();
+    let label = summary.label();
     nodes.push(DocumentNode::horizontal_rule());
     nodes.push(DocumentNode::Paragraph {
         spans: vec![
@@ -580,9 +579,9 @@ pub(in crate::tui) fn push_mark(
             },
         ],
     });
-    let summary = markdown(note);
-    if !summary.is_empty() {
-        nodes.push(DocumentNode::entry(EntryKind::AssistantMessage, summary));
+    let body = markdown(&summary.text);
+    if !body.is_empty() {
+        nodes.push(DocumentNode::entry(EntryKind::AssistantMessage, body));
     }
     nodes.push(DocumentNode::horizontal_rule());
 }

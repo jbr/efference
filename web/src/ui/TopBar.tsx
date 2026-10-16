@@ -1,5 +1,5 @@
 import { ContextPopup } from "./ContextPopup.tsx";
-import type { FoldControlProps } from "./FoldControl.tsx";
+import type { CompactControlProps } from "./CompactControl.tsx";
 import { AppSettingsLink } from "./AppSettings.tsx";
 // The top bar (docs/web-client.md): sticky interface chrome — the wordmark
 // (the way back to the session list), the session's title, the context meter,
@@ -119,7 +119,7 @@ export function TopBar({
   usage: Usage | null;
   upstreamFailure: UpstreamFailure | null;
   upstreamRetry: UpstreamRetry | null;
-  summary?: FoldControlProps;
+  summary?: CompactControlProps;
 }) {
   const chip = upstreamChip(upstreamFailure, upstreamRetry);
   const routeId = sessionId();

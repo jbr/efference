@@ -41,7 +41,7 @@ pub enum ReleasedBy {
 pub enum UnparkCause {
     /// A person acted and the request went out.
     Person,
-    /// The belief ended without one (a fold, or another request warmed the cache).
+    /// The belief ended without one (a compaction, or another request warmed the cache).
     Warm,
 }
 

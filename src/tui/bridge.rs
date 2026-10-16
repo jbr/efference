@@ -158,11 +158,11 @@ fn decode_frame(
             // Level-triggered: the loop stopped at its cold check, and why.
             "park" => Some(send(TuiEvent::Park(match data["reason"].as_str() {
                 Some("expired") => Some(ParkReason::Expired),
-                Some("folded") => Some(ParkReason::Folded),
+                Some("compacted") => Some(ParkReason::Compacted),
                 _ => None,
             }))),
-            // Level-triggered: a fold being written, from the `fold` topic.
-            "fold" => Some(send(TuiEvent::Folding(data["state"] == "writing"))),
+            // Level-triggered: a compaction being written, from the `compaction` topic.
+            "compaction" => Some(send(TuiEvent::Compacting(data["state"] == "writing"))),
             // Static per session today, so this arrives once on the connect
             // snapshot; forwarded through the same path as anything else that
             // could move (docs/control-api.md).

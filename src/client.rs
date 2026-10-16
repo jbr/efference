@@ -245,15 +245,17 @@ impl Client {
         self.post("/loop/interrupt", String::new()).await.map(drop)
     }
 
-    /// Fold a cold session's history into an account (`POST /loop/fold`,
+    /// Compact a cold session's history into a summary (`POST /loop/compact`,
     /// docs/control-api.md). Accepted means the session's model is writing it; the
-    /// mark lands on the log when it is done. A decline (`409 not_foldable`) is a
+    /// summary lands on the log when it is done. A decline (`409 not_compactable`) is a
     /// normal answer whose message says why.
-    pub async fn fold(&self) -> Result<FoldOutcome> {
-        Ok(match self.post_declinable("/loop/fold", "fold").await? {
-            None => FoldOutcome::Accepted,
-            Some(message) => FoldOutcome::Declined { message },
-        })
+    pub async fn compact(&self) -> Result<CompactOutcome> {
+        Ok(
+            match self.post_declinable("/loop/compact", "compaction").await? {
+                None => CompactOutcome::Accepted,
+                Some(message) => CompactOutcome::Declined { message },
+            },
+        )
     }
 
     /// Hand control back with no input (`POST /loop/continue`, docs/control-api.md):
@@ -511,7 +513,7 @@ impl Client {
 /// One entry of `GET /sessions` (docs/control-api.md). The host defines the row
 /// and both readings of the resource serve it, so there is one type on the wire
 /// rather than a client copy that can drift.
-pub use crate::daemon::SessionSummary;
+pub use crate::daemon::ListedSession;
 
 /// One turn a `DELETE /turns/:submission_id` actually popped (docs/control-api.md) — the text a
 /// client splices back into its composer, with the id it was submitted under, and the uploads it
@@ -529,11 +531,11 @@ struct WithdrawResponse {
     withdrawn: Vec<WithdrawnTurn>,
 }
 
-/// What a `POST /loop/fold` came back with (docs/control-api.md). A decline is a
-/// normal answer: the moment had no fold in it, and the message says which case.
+/// What a `POST /loop/compact` came back with (docs/control-api.md). A decline is a
+/// normal answer: the moment had no compaction in it, and the message says which case.
 #[derive(Debug, PartialEq, Eq)]
-pub enum FoldOutcome {
-    /// The session's model is writing the account.
+pub enum CompactOutcome {
+    /// The session's model is writing the summary.
     Accepted,
     Declined {
         message: String,

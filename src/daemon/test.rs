@@ -137,10 +137,10 @@ async fn next_event(
     )
 }
 
-/// History enough that a fold has something to cover beyond its verbatim tail: two
+/// History enough that a compaction has something to cover beyond its verbatim tail: two
 /// operator messages, each about the tail's whole budget (backlog: cold-session.md).
-fn append_foldable_history(shared: &Session) {
-    let long = "x".repeat(crate::daemon::fold::FOLD_TAIL_TOKENS * 4);
+fn append_compactable_history(shared: &Session) {
+    let long = "x".repeat(crate::daemon::compact::COMPACTION_TAIL_TOKENS * 4);
     for _ in 0..2 {
         shared
             .append(1, Payload::User(vec![ContentBlock::Text(long.clone())]))
@@ -153,10 +153,10 @@ mod ask;
 mod background;
 mod capture;
 mod cold;
+mod compact;
 mod config_edits;
 mod continuation;
 mod events;
-mod fold;
 mod http;
 mod in_session;
 mod interrupt;

@@ -2,8 +2,8 @@ use super::*;
 use crate::context::Item;
 use crate::log::Telemetry;
 use crate::log::{
-    AssistantOutput, CallId, ContentBlock, Disposition, Keep, LogEntry, Mark, Notification, Origin,
-    Payload, RawResult, Timestamp, ToolCall, Triage, Triaged, WireState,
+    AssistantOutput, CallId, ContentBlock, Disposition, Keep, LogEntry, Notification, Origin,
+    Payload, RawResult, Summary, Timestamp, ToolCall, Triage, Triaged, WireState,
 };
 use serde_json::json;
 
@@ -1008,7 +1008,11 @@ fn a_rolled_back_range_is_not_projected() {
         2,
         Payload::User(vec![ContentBlock::Text("again".into())]),
     ));
-    log.push(entry(8, 3, Payload::Mark(Mark::boundary(3, "folded"))));
+    log.push(entry(
+        8,
+        3,
+        Payload::Summary(Summary::consolidation(0, 3, "replaced")),
+    ));
     log.push(entry(
         9,
         3,
@@ -1025,7 +1029,7 @@ fn a_rolled_back_range_is_not_projected() {
         "{bytes}"
     );
     assert!(
-        !bytes.contains("folded") && !bytes.contains("toolu_2"),
+        !bytes.contains("replaced") && !bytes.contains("toolu_2"),
         "{bytes}"
     );
     assert!(

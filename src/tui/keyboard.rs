@@ -56,8 +56,8 @@ impl<'a> InteractiveState<'a> {
             self.recall_pending_turn();
             ComposerAction::Consumed
         } else if char_with('o') && ctrl && !alt && !super_key {
-            // Fold a cold session instead of reading it (backlog: cold-session.md).
-            self.fold_session();
+            // Compact a cold session instead of reading it (backlog: cold-session.md).
+            self.compact_session();
             ComposerAction::Consumed
         } else if (char_with('y') || char_with('v')) && ctrl && !alt {
             // `C-v` reads the clipboard directly: a terminal's own paste (⌘V) carries text

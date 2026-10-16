@@ -2,7 +2,7 @@ use super::*;
 
 /// One listing as the wire carries it, decoded the way the client decodes
 /// `GET /sessions`.
-fn listing(json: &str) -> SessionSummary {
+fn listing(json: &str) -> ListedSession {
     serde_json::from_str(json).unwrap()
 }
 
@@ -14,7 +14,7 @@ fn here() -> PathBuf {
     PathBuf::from("/tmp/efference-picker/project")
 }
 
-fn listings(entries: &[&str]) -> Vec<(PathBuf, Vec<SessionSummary>)> {
+fn listings(entries: &[&str]) -> Vec<(PathBuf, Vec<ListedSession>)> {
     vec![(host(), entries.iter().map(|json| listing(json)).collect())]
 }
 

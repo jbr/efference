@@ -82,7 +82,7 @@ impl KeepaliveSpec {
 pub(super) struct PrimedPrefix {
     /// The primer's input, as sent.
     pub(super) turns: Vec<WireTurn>,
-    /// When the primer was sent, taken before the send: a fold stamped after it moved the
+    /// When the primer was sent, taken before the send: a compaction stamped after it moved the
     /// prefix the primer read, so the stored turns stop describing the live entry.
     pub(super) sent: crate::log::Timestamp,
     /// The prompt tokens the primer read: what a ping of these turns reads back.

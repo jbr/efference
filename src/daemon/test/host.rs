@@ -685,7 +685,7 @@ disabled = true
 /// The listing is one resource with two readings: `GET /sessions` answers the
 /// array, and the same path with `Accept: text/event-stream` subscribes to it —
 /// the current value on connect, then the whole value again on every change,
-/// with no cursor and nothing to reconcile (`host/summary.rs`).
+/// with no cursor and nothing to reconcile (`host/listing.rs`).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_session_listing_streams_its_current_value() {
     let roots = Roots::new();

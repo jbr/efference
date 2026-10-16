@@ -40,9 +40,9 @@ use catalog::{catalog_all, catalog_one};
 mod projects;
 use projects::{forget_project, list_projects};
 
-mod summary;
-pub use summary::SessionSummary;
-use summary::summary_stream;
+mod listing;
+pub use listing::ListedSession;
+use listing::listing_stream;
 
 mod supervise;
 pub use supervise::SupervisorRefused;
@@ -73,11 +73,11 @@ pub struct Host {
     /// [`crate::env_table::EnvPolicy::build_session`] call as any other base
     /// (docs/env.md).
     host_env: crate::env_table::EnvSnapshot,
-    /// Signalled when the session listing may have moved (`summary.rs`): a
+    /// Signalled when the session listing may have moved (`listing.rs`): a
     /// session arriving or leaving, and every wake of a session's status
     /// watcher. Every listing subscriber recomputes and diffs for itself, so
     /// this carries no value and an extra ping costs a comparison.
-    summary_changed: Notify,
+    listing_changed: Notify,
     /// What every client has last said about whether anyone is attending
     /// (`attention.rs`, docs/web-push.md). Shared with each adopted session, so
     /// a push for any of them reads one table.
@@ -139,7 +139,7 @@ impl Host {
             sessions: Mutex::new(BTreeMap::new()),
             inventory: crate::inventory::Inventory::new(),
             host_env,
-            summary_changed: Notify::new(),
+            listing_changed: Notify::new(),
             attention: Arc::default(),
         })
     }
@@ -201,7 +201,7 @@ impl Host {
             }
             sessions.insert(id.clone(), hosted);
         }
-        self.touch_summary();
+        self.touch_listing();
         // The link to the supervisor pointer is made for every adopted session, root or
         // not, since the pointer can be set after creation (docs/permissions.md).
         session.link_supervisor(self, id.clone());
@@ -252,7 +252,7 @@ impl Host {
                 }
             }
             host.sessions.lock().unwrap().remove(&id);
-            host.touch_summary();
+            host.touch_listing();
             // A session this one supervised now has nothing to resolve its `supervisor`
             // position to, so it reviews as `spotter_human` from here
             // (docs/permissions.md). The resolution is read fresh at every routing, so
@@ -345,7 +345,7 @@ impl Host {
         if let Some(predecessor) = self.session(from) {
             predecessor.set_successor(successor);
         }
-        self.touch_summary();
+        self.touch_listing();
     }
 
     /// The hosted session ids, sorted (docs/control-api.md).
@@ -510,7 +510,7 @@ async fn report_attention(mut conn: Conn) -> Conn {
     }
 }
 
-/// `GET /sessions`: the listing (`summary.rs`) — one row per hosted session,
+/// `GET /sessions`: the listing (`listing.rs`) — one row per hosted session,
 /// sorted by id.
 ///
 /// The route is a tuple so the same URL serves both readings of the one
@@ -523,7 +523,7 @@ fn list_sessions() -> impl trillium::Handler {
     (
         archived_listing,
         sse(|conn: &mut Conn| match host_of(conn) {
-            Some(host) => summary_stream(Arc::downgrade(&host)),
+            Some(host) => listing_stream(Arc::downgrade(&host)),
             // Unreachable through the mounted router, which always carries the
             // host as shared state; an empty stream closes rather than hangs.
             None => Box::pin(futures_lite::stream::empty()),
@@ -536,10 +536,7 @@ fn list_sessions() -> impl trillium::Handler {
 /// The JSON half of [`list_sessions`].
 async fn read_sessions(conn: Conn) -> Conn {
     match host_of(&conn) {
-        Some(host) => conn
-            .with_status(200)
-            .with_body(host.summaries_json())
-            .halt(),
+        Some(host) => conn.with_status(200).with_body(host.listing_json()).halt(),
         None => missing_host(conn),
     }
 }

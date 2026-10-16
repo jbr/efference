@@ -176,8 +176,8 @@ impl<'a> InteractiveState<'a> {
                 self.cold = cold;
                 self.dirty = true;
             }
-            TuiEvent::Folding(folding) => {
-                self.folding = folding;
+            TuiEvent::Compacting(compacting) => {
+                self.compacting = compacting;
                 self.dirty = true;
             }
 

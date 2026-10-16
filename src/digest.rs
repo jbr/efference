@@ -22,16 +22,16 @@ pub struct Options {
     /// Prefix each block with the seq of the entry it came from, so a reader can
     /// fetch the entry behind a line.
     pub seqs: bool,
-    /// The projection the digest is read for (docs/summary-head.md): a boundary mark
+    /// The projection the digest is read for (docs/summary.md): a summary
     /// addressed to the other reader is left out, as it is from that reader's wire.
     pub reader: Reader,
-    /// Mark the point a summary's account ends (docs/summary-head.md): [`CUT`] goes
+    /// Mark the point a summary's account ends (docs/summary.md): [`CUT`] goes
     /// before the first block from an entry after this seq, and only if one renders.
     pub cut: Option<Seq>,
 }
 
 /// The line [`Options::cut`] places: everything after it stays on the wire verbatim
-/// after the summary, so the narrator reads it but does not narrate it.
+/// after the summary, so the model reads it but does not summarize it.
 pub const CUT: &str = "### cut: your account ends here; what follows stays verbatim\n\n";
 
 /// Fold `entries` to the digest text.
@@ -130,10 +130,10 @@ pub fn render(entries: &[LogEntry], options: Options) -> String {
                     let _ = writeln!(out, "    → {}", outcome(raw.is_error, wire));
                 }
             }
-            Payload::Mark(mark) if !options.reader.applies(mark.audience) => {}
-            Payload::Mark(mark) => {
-                heading(&mut out, &mark.kind.label().replace('#', ""), seq, options);
-                let _ = writeln!(out, "{}\n", mark.note.trim());
+            Payload::Summary(summary) if !options.reader.applies(summary.audience) => {}
+            Payload::Summary(summary) => {
+                heading(&mut out, &summary.label().replace('#', ""), seq, options);
+                let _ = writeln!(out, "{}\n", summary.text.trim());
             }
             _ => {}
         }

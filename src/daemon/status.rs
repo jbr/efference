@@ -36,7 +36,7 @@ pub(crate) enum SessionStatus {
     /// The last trajectory gave up (docs/transport.md).
     Stalled { message: String },
     /// The loop stopped at its cold check mid-turn and waits for a person to act
-    /// before it reads the expired cache, or for a fold (backlog: cold-session.md); after a fold it
+    /// before it reads the expired cache, or for a compaction (backlog: cold-session.md); after a compaction it
     /// waits for the next turn or continue. The `park` topic.
     Parked { reason: super::cold::ParkReason },
     /// The runtime returned cleanly.
@@ -147,7 +147,7 @@ impl Session {
             }
             SessionStatus::Stalled { message } => format!("{id} stalled {at}: {message}"),
             SessionStatus::Parked {
-                reason: super::cold::ParkReason::Folded,
+                reason: super::cold::ParkReason::Compacted,
             } => format!(
                 "{id} is parked mid-turn ({at}): its history was summarized while it waited \
                  on a cold cache. A sessions__turn or a continue resumes it."
@@ -162,7 +162,7 @@ impl Session {
                 format!(
                     "{id} is parked mid-turn ({at}): its prompt cache is believed expired, so \
                      continuing reads {cost}. Nothing runs until a sessions__turn, a continue or a decision \
-                     releases it; a fold summarizes the history instead."
+                     releases it; a compaction summarizes the history instead."
                 )
             }
             SessionStatus::Ended => format!("{id} ended ({at}); its log stays on disk."),

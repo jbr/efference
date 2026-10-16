@@ -82,18 +82,18 @@ pub(crate) enum DevCommand {
         #[arg(long)]
         seqs: bool,
     },
-    /// Write a summary head for a session (docs/summary-head.md): the session's own
-    /// model reads its digest and writes the account a fold would splice in. Prints
-    /// the head; appends nothing. One live request on the session's connection.
-    Narrate {
+    /// Write a compaction summary for a session (docs/summary.md): the session's own
+    /// model reads its digest and writes the summary a compaction would splice in.
+    /// Prints it; appends nothing. One live request on the session's connection.
+    Compact {
         /// Which session to read: a session name (`.efference/<name>/log.jsonl`), a
         /// session directory, or a path to a `log.jsonl`. Omit to use `--name`.
         session: Option<String>,
         /// Treat the log as ending at this seq, as if the session had gone cold there.
         #[arg(long)]
         upto: Option<u64>,
-        /// End the account at this seq: the narrator reads past it but narrates only up
-        /// to it, as for a fold that keeps a verbatim tail. Omit to narrate everything.
+        /// End the summary at this seq: the model reads past it but summarizes only up
+        /// to it, as for a compaction that keeps a verbatim tail. Omit to cover everything.
         #[arg(long)]
         cut: Option<u64>,
     },
@@ -152,7 +152,7 @@ pub(crate) enum DevCommand {
     },
     /// Element gallery: launch the TUI on a fixed "one of each" transcript (rich
     /// markdown, a shell call, a colored diff, a collapsed long result, an error, a
-    /// triaged result, a consolidation mark) — no daemon. A live design page for
+    /// triaged result, a summary) — no daemon. A live design page for
     /// iterating on transcript rendering. q quits, ? for help, t for the theme picker.
     Gallery {
         /// Syntax/UI theme — a built-in name or a `.tmTheme` path. Defaults to
@@ -508,11 +508,11 @@ pub(crate) async fn run<F: Future<Output = Result<ClientTarget, CliError>>>(
             print!("{}", efference::digest::render(&entries, options));
             Ok(())
         }
-        DevCommand::Narrate { session, upto, cut } => {
+        DevCommand::Compact { session, upto, cut } => {
             let target = session
                 .or(name)
-                .ok_or_else(|| CliError::from("name a session to narrate"))?;
-            dev_narrate::narrate(&target, upto, cut).await
+                .ok_or_else(|| CliError::from("name a session to compact"))?;
+            dev_compact::compact(&target, upto, cut).await
         }
         DevCommand::Models {
             connection,

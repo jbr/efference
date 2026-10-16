@@ -10,7 +10,7 @@
 //! single sentence:
 //!
 //! > **A committed entry is re-projected only when a call it owns changes,** or a
-//! > consolidation mark whose range ends in it arrives.
+//! > summary whose range ends in it arrives.
 //!
 //! A payload that annotates a call in some new way joins the list of things that mark
 //! an owner dirty. When in doubt [`invalidate_all`](Transcript::invalidate_all) is
@@ -132,9 +132,9 @@ impl Transcript {
             {
                 self.dirty.insert(owner);
             }
-            // A mark is drawn after the entry its range ends in, so its arrival
+            // A summary is drawn after the entry its range ends in, so its arrival
             // changes that earlier entry's nodes.
-            if let Some(host) = self.index.mark_host(idx) {
+            if let Some(host) = self.index.summary_host(idx) {
                 self.dirty.insert(host);
             }
             if let crate::log::Payload::Assistant { output, .. } = &log[idx].payload {

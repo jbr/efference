@@ -43,8 +43,8 @@ export interface LeafNode {
   kind: "leaf";
   key: string;
   entry: LogEntry;
-  /** Marks only: how many turns, completions and results sit in the mark's
-   * range — the span the consolidation replaced on the wire. Client-computed
+  /** Summaries only: how many turns, completions and results sit in the
+   * summary's range — the range it replaced on the wire. Client-computed
    * from the window; the wire's token delta is provider accounting the client
    * does not hold, so the count is entries, not tokens. */
   replaces?: number;
@@ -180,29 +180,17 @@ export function buildTree(entries: LogEntry[]): TranscriptNode[] {
     // as a turn, so the agent's greeting leads the transcript (docs/context.md).
     if ("User" in p && entry.source === KICKOFF_SOURCE) continue;
 
-    if ("Mark" in p) {
-      // Tolerant of a mark kind this client does not know: it renders as a
-      // plain note rather than a boundary with an extent.
-      const range =
-        typeof p.Mark.kind === "object"
-          ? "Span" in p.Mark.kind
-            ? p.Mark.kind.Span
-            : "Boundary" in p.Mark.kind
-              ? { from: 0, upto: p.Mark.kind.Boundary.upto }
-              : null
-          : null;
+    if ("Summary" in p) {
+      const range = { from: p.Summary.from, upto: p.Summary.upto };
       const node: LeafNode = {
         kind: "leaf",
         key: `${entry.seq}`,
         entry,
         // Turns, completions and results — not the telemetry logged among them.
-        replaces:
-          range === null
-            ? undefined
-            : turns.filter((s) => s >= range.from && s <= range.upto).length,
+        replaces: turns.filter((s) => s >= range.from && s <= range.upto)
+          .length,
       };
-      const last =
-        range === null ? undefined : seqs.findLast((s) => s <= range.upto);
+      const last = seqs.findLast((s) => s <= range.upto);
       const host = last === undefined ? undefined : drawnBy.get(last);
       const at = host === undefined ? undefined : endOf.get(host);
       if (at === undefined) nodes.push(node);

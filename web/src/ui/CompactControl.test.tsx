@@ -2,16 +2,16 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, test, vi } from "vitest";
-import { FoldControl } from "./FoldControl.tsx";
-import { foldLoop } from "../api/http.ts";
+import { CompactControl } from "./CompactControl.tsx";
+import { compactLoop } from "../api/http.ts";
 vi.mock("../api/http.ts", () => ({
-  foldLoop: vi.fn(),
+  compactLoop: vi.fn(),
   ApiError: class extends Error {},
 }));
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 const defaults = {
   cold: null,
-  fold: null,
+  compaction: null,
   running: false,
   gatePending: false,
   asking: false,
@@ -21,7 +21,7 @@ test("one click directly summarizes and supplies warm consent without confirmati
   const host = document.createElement("div");
   const root = createRoot(host);
   let finish!: () => void;
-  vi.mocked(foldLoop)
+  vi.mocked(compactLoop)
     .mockClear()
     .mockImplementation(
       () =>
@@ -30,9 +30,9 @@ test("one click directly summarizes and supplies warm consent without confirmati
         }),
     );
   try {
-    act(() => root.render(<FoldControl {...defaults} />));
+    act(() => root.render(<CompactControl {...defaults} />));
     act(() => host.querySelector<HTMLButtonElement>("button")!.click());
-    expect(foldLoop).toHaveBeenCalledExactlyOnceWith(true);
+    expect(compactLoop).toHaveBeenCalledExactlyOnceWith(true);
     expect(host.textContent).toBe("Summarizing the history…");
     expect(host.querySelector("button")).toBeNull();
     await act(async () => finish());
@@ -44,23 +44,23 @@ test("one click directly summarizes and supplies warm consent without confirmati
 test("pending approvals and questions block summary, while a cold parked loop can summarize", async () => {
   const host = document.createElement("div");
   const root = createRoot(host);
-  vi.mocked(foldLoop).mockClear().mockResolvedValue({ status: "started" });
+  vi.mocked(compactLoop).mockClear().mockResolvedValue({ status: "started" });
   try {
     for (const blocked of [
       { gatePending: true },
       { asking: true },
       { running: true },
     ]) {
-      act(() => root.render(<FoldControl {...defaults} {...blocked} />));
+      act(() => root.render(<CompactControl {...defaults} {...blocked} />));
       expect(host.querySelector<HTMLButtonElement>("button")!.disabled).toBe(
         true,
       );
       act(() => host.querySelector<HTMLButtonElement>("button")!.click());
     }
-    expect(foldLoop).not.toHaveBeenCalled();
+    expect(compactLoop).not.toHaveBeenCalled();
     act(() =>
       root.render(
-        <FoldControl
+        <CompactControl
           {...defaults}
           running
           cold={{ since: 1, context_tokens: 100 }}
@@ -70,7 +70,7 @@ test("pending approvals and questions block summary, while a cold parked loop ca
     await act(async () =>
       host.querySelector<HTMLButtonElement>("button")!.click(),
     );
-    expect(foldLoop).toHaveBeenCalledExactlyOnceWith(false);
+    expect(compactLoop).toHaveBeenCalledExactlyOnceWith(false);
   } finally {
     act(() => root.unmount());
   }
@@ -79,9 +79,9 @@ test("pending approvals and questions block summary, while a cold parked loop ca
 test("summary request errors remain visible and permit retry", async () => {
   const host = document.createElement("div");
   const root = createRoot(host);
-  vi.mocked(foldLoop).mockClear().mockRejectedValue(new Error("offline"));
+  vi.mocked(compactLoop).mockClear().mockRejectedValue(new Error("offline"));
   try {
-    act(() => root.render(<FoldControl {...defaults} />));
+    act(() => root.render(<CompactControl {...defaults} />));
     await act(async () =>
       host.querySelector<HTMLButtonElement>("button")!.click(),
     );

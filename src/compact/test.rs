@@ -1,8 +1,8 @@
 use super::*;
 use crate::api::{Completion, FailureClass, Usage};
 use crate::log::{
-    AssistantOutput, ContentBlock, Keep, Payload, RawResult, Timestamp, ToolCall, Triaged,
-    WireState,
+    AssistantOutput, ContentBlock, Keep, LoggedInference, Payload, RawResult, Summary, Timestamp,
+    ToolCall, Triaged, WireState,
 };
 use crate::project::UserPart;
 use serde_json::json;
@@ -117,23 +117,31 @@ fn the_account_is_the_reply_text_and_anything_else_is_an_error() {
 }
 
 #[test]
-fn the_head_is_the_header_then_the_account() {
-    let head = head("\nThe account.\n");
-    assert!(head.starts_with("This is a handoff summary"));
-    assert!(head.ends_with("---\n\nThe account."));
+fn the_text_is_the_header_then_the_account() {
+    let text = with_header("\nThe account.\n");
+    assert!(text.starts_with("This is a handoff summary"));
+    assert!(text.ends_with("---\n\nThe account."));
 }
 
-/// A second fold reads the first one's account as context and narrates only what came
-/// after it: the account leads under its heading, without the harness's header, and
-/// the digest starts past the earlier fold's `upto`.
+/// A second compaction reads the first one's account as context and covers only what
+/// came after it: the account leads under its heading, without the harness's header,
+/// and the digest starts past the earlier compaction's `upto`.
 #[test]
-fn a_second_fold_reads_the_first_account_and_narrates_only_after_it() {
+fn a_second_compaction_reads_the_first_account_and_summarizes_only_after_it() {
     let mut entries = log();
     entries.insert(
         4,
         entry(
             7,
-            Payload::Mark(Mark::boundary(3, head("The first account."))),
+            Payload::Summary(Summary::compaction(
+                3,
+                with_header("The first account."),
+                LoggedInference {
+                    connection: "anthropic".into(),
+                    provider: crate::api::Provider::Anthropic,
+                    model: "claude-opus-5-5".into(),
+                },
+            )),
         ),
     );
     let turns = request(&entries, None).unwrap();
@@ -148,6 +156,6 @@ fn a_second_fold_reads_the_first_account_and_narrates_only_after_it() {
     assert_eq!(
         text.matches("find the enum").count(),
         0,
-        "the operator turn before the earlier fold is not re-narrated"
+        "the operator turn before the earlier compaction is not summarized again"
     );
 }

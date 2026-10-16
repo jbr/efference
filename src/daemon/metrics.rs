@@ -498,7 +498,7 @@ impl Session {
             request.usage.cache_read_input_tokens,
         );
         Self::note_cache_miss(&mut m, at_ms, &request);
-        Self::fold_usage(&mut m, request.usage);
+        Self::compaction_usage(&mut m, request.usage);
         if main_prefix {
             Self::stamp_touch(&mut m, at_ms);
         }
@@ -527,7 +527,7 @@ impl Session {
             request.usage.cache_read_input_tokens,
         );
         Self::note_cache_miss(&mut m, at_ms, &request);
-        Self::fold_usage(&mut m, request.usage);
+        Self::compaction_usage(&mut m, request.usage);
         Self::stamp_touch(&mut m, at_ms);
     }
 
@@ -540,7 +540,7 @@ impl Session {
         self.persist_usage(RequestOrigin::TriageKeepalive, false, at_ms, &request);
         self.price_request(&request);
         let mut m = self.metrics.lock().unwrap();
-        Self::fold_usage(&mut m, request.usage);
+        Self::compaction_usage(&mut m, request.usage);
         Self::stamp_triage_touch(&mut m, at_ms);
     }
 
@@ -620,7 +620,7 @@ impl Session {
         });
     }
 
-    pub(super) fn fold_usage(m: &mut Metrics, usage: Usage) {
+    pub(super) fn compaction_usage(m: &mut Metrics, usage: Usage) {
         m.total_input += usage.input_tokens;
         m.total_output += usage.output_tokens;
         m.total_cache_read += usage.cache_read_input_tokens;

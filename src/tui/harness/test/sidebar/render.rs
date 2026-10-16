@@ -442,7 +442,7 @@ fn background_process_panel() {
 }
 
 /// The `cold` topic in the header (backlog: cold-session.md): stated while the cache is
-/// believed expired, with the fold key, `folding…` while a fold is written, and gone
+/// believed expired, with the compaction key, `compacting…` while a compaction is written, and gone
 /// when the topic clears.
 #[test]
 fn header_states_an_expired_cache() {
@@ -454,28 +454,31 @@ fn header_states_an_expired_cache() {
     play.event(TuiEvent::CacheExpired(
         Some(crate::tui::ColdView::default()),
     ));
-    assert!(play.render().contains("cache expired · C-o folds"));
+    assert!(play.render().contains("cache expired · C-o compacts"));
 
     play.event(TuiEvent::Park(Some(crate::tui::ParkReason::Expired)));
     assert!(
         play.render()
-            .contains("paused: cache expired · ⏎ to continue · C-o folds")
+            .contains("paused: cache expired · ⏎ to continue · C-o compacts")
     );
     play.event(TuiEvent::Park(None));
 
-    play.event(TuiEvent::Folding(true));
-    assert!(play.render().contains("cache expired · folding…"));
+    play.event(TuiEvent::Compacting(true));
+    assert!(play.render().contains("cache expired · compacting…"));
 
     play.event(TuiEvent::CacheExpired(None));
     assert!(!play.render().contains("cache expired"));
-    assert!(play.render().contains("folding…"), "a warm fold shows too");
+    assert!(
+        play.render().contains("compacting…"),
+        "a warm compaction shows too"
+    );
 
-    // A fold at a park ends the belief, not the park: a send resumes it unasked.
-    play.event(TuiEvent::Folding(false));
-    play.event(TuiEvent::Park(Some(crate::tui::ParkReason::Folded)));
+    // A compaction at a park ends the belief, not the park: a send resumes it unasked.
+    play.event(TuiEvent::Compacting(false));
+    play.event(TuiEvent::Park(Some(crate::tui::ParkReason::Compacted)));
     assert!(play.render().contains("paused: summarized · ⏎ to continue"));
     play.event(TuiEvent::Park(None));
 
-    play.event(TuiEvent::Folding(false));
-    assert!(!play.render().contains("folding…"));
+    play.event(TuiEvent::Compacting(false));
+    assert!(!play.render().contains("compacting…"));
 }

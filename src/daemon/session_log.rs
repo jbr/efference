@@ -157,7 +157,7 @@ impl Session {
             if entries.len() < frozen.len()
                 || entries.get(frozen.len().wrapping_sub(1)).map(|e| e.seq) != frozen_end
                 || entries[frozen.len()..].iter().any(|e| match &e.payload {
-                    Payload::Mark(_) | Payload::Resumed(_) => true,
+                    Payload::Summary(_) | Payload::Resumed(_) => true,
                     Payload::ResultVerdict { for_result, .. } => {
                         frozen_end.is_some_and(|end| *for_result <= end)
                     }
@@ -172,7 +172,9 @@ impl Session {
             let turn = entries.last().map_or(0, |e| e.turn);
             log.append(
                 turn,
-                Payload::Mark(crate::log::Mark::span(span.from, span.upto, note)),
+                Payload::Summary(crate::log::Summary::consolidation(
+                    span.from, span.upto, note,
+                )),
             )?;
             self.observe_operations(&log);
         }

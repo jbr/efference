@@ -2,8 +2,8 @@ use super::*;
 use crate::tui::harness::Screenplay;
 use crossterm::event::{KeyCode, KeyModifiers};
 
-fn row(id: &str, status: &str, processes: usize) -> SessionSummary {
-    SessionSummary {
+fn row(id: &str, status: &str, processes: usize) -> ListedSession {
+    ListedSession {
         id: id.into(),
         title: Some(format!("{id}'s work")),
         cwd: Some("/work".into()),

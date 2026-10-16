@@ -18,7 +18,7 @@ import { acquireDraft } from "./drafts.ts";
 import {
   ApiError,
   continueLoop,
-  foldLoop,
+  compactLoop,
   interruptLoop,
   patchLoop,
 } from "../api/http.ts";
@@ -27,7 +27,7 @@ import type {
   Attachment,
   Cold,
   CurrentOperations,
-  Fold,
+  Compaction,
   Pace,
   Park,
   Stall,
@@ -37,8 +37,8 @@ import {
   HoldButton,
   ComposerActionIcon,
 } from "./ComposerToolbar.tsx";
-import { FoldNotice } from "./FoldNotice.tsx";
-import { foldOffer } from "./fold.ts";
+import { CompactNotice } from "./CompactNotice.tsx";
+import { compactOffer } from "./compact.ts";
 import { coldLine } from "./coldLine.ts";
 import { replyHint } from "./askMark.ts";
 import { turnState, turnClass } from "./turnState.ts";
@@ -73,7 +73,7 @@ export function Composer({
   ask,
   cold,
   park,
-  fold,
+  compaction,
   operations,
   model,
 }: {
@@ -94,13 +94,13 @@ export function Composer({
   gatePending: boolean;
   /** The pending `ask`: the placeholder says which question a send answers. */
   ask: Pick<Ask, "n" | "of"> | null;
-  /** The `cold` and `fold` topics (docs/web-client.md): a cold session states
-   * what a send reads and offers a fold beside it, and a fold's progress and
+  /** The `cold` and `compaction` topics (docs/web-client.md): a cold session states
+   * what a send reads and offers a compaction beside it, and a compaction's progress and
    * failure show. */
   cold: Cold | null;
   /** The `park` topic: the loop stopped at its cold check. */
   park: Park | null;
-  fold: Fold | null;
+  compaction: Compaction | null;
   /** The `current_operations` topic and the session's model: what the status
    * bar says the loop is waiting on, in place of a bare "running". */
   operations: CurrentOperations | null;
@@ -267,15 +267,21 @@ export function Composer({
     }
   }
 
-  // The fold is the alternative to the uncached read (docs/web-client.md); its
-  // progress arrives on the `fold` topic, so success changes nothing here.
-  const offer = foldOffer(cold, fold, running, gatePending, ask !== null);
+  // The compaction is the alternative to the uncached read (docs/web-client.md); its
+  // progress arrives on the `compaction` topic, so success changes nothing here.
+  const offer = compactOffer(
+    cold,
+    compaction,
+    running,
+    gatePending,
+    ask !== null,
+  );
   // The ask and the gate carry their own cold lines; the composer's notice is for
-  // a send that opens a turn, or a fold's progress.
+  // a send that opens a turn, or a compaction's progress.
   const noticeShown =
-    fold !== null || (cold !== null && ask === null && !gatePending);
-  function startFold() {
-    foldLoop(offer.warm)
+    compaction !== null || (cold !== null && ask === null && !gatePending);
+  function startCompaction() {
+    compactLoop(offer.warm)
       .then(() => setError(null))
       .catch((e) => setError(e instanceof ApiError ? e.message : `${e}`));
   }
@@ -322,11 +328,11 @@ export function Composer({
             </div>
           )}
           {noticeShown && (
-            <FoldNotice
+            <CompactNotice
               cold={cold}
-              fold={fold}
+              compaction={compaction}
               offer={offer}
-              onFold={startFold}
+              onCompact={startCompaction}
             />
           )}
           {askColdLine !== null && (

@@ -58,19 +58,19 @@ impl<'a> InteractiveState<'a> {
         // and the expired cache.
         let mut segments: Vec<(String, Style)> = Vec::new();
         // The cache believed expired (the `cold` topic): the next send pays the
-        // uncached read unless the operator folds (backlog: cold-session.md).
+        // uncached read unless the operator compacts (backlog: cold-session.md).
         // A parked loop is stopped mid-turn and waits on the operator, so it says so.
-        let note = match (self.cold.is_some(), self.folding) {
-            (true, true) => Some("cache expired · folding… "),
+        let note = match (self.cold.is_some(), self.compacting) {
+            (true, true) => Some("cache expired · compacting… "),
             (true, false) if self.park == Some(ParkReason::Expired) => {
-                Some("paused: cache expired · ⏎ to continue · C-o folds ")
+                Some("paused: cache expired · ⏎ to continue · C-o compacts ")
             }
-            // A fold ended the belief but not the park; a send resumes it unasked.
-            (false, false) if self.park == Some(ParkReason::Folded) => {
+            // A compaction ended the belief but not the park; a send resumes it unasked.
+            (false, false) if self.park == Some(ParkReason::Compacted) => {
                 Some("paused: summarized · ⏎ to continue ")
             }
-            (true, false) => Some("cache expired · C-o folds "),
-            (false, true) => Some("folding… "),
+            (true, false) => Some("cache expired · C-o compacts "),
+            (false, true) => Some("compacting… "),
             (false, false) => None,
         };
         if let Some(note) = note {

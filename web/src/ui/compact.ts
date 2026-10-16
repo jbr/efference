@@ -1,28 +1,28 @@
-// What the web client offers for a fold (docs/web-client.md): the one rule both
+// What the web client offers for a compaction (docs/web-client.md): the one rule both
 // the composer's cold notice and the drawer's standing button read. The daemon
-// owns the real conditions (`409 not_foldable`); this only decides whether to
+// owns the real conditions (`409 not_compactable`); this only decides whether to
 // offer the action and what to tell the operator before it runs, from the three
 // topics the answer depends on.
 
-import type { Cold, Fold } from "../api/types.ts";
+import type { Cold, Compaction } from "../api/types.ts";
 
-export interface FoldOffer {
-  /** `writing`: a fold is in flight. `blocked`: not now, and `reason` says why. */
+export interface CompactOffer {
+  /** `writing`: a compaction is in flight. `blocked`: not now, and `reason` says why. */
   kind: "ready" | "writing" | "blocked";
   reason?: string;
-  /** Whether the fold gives up a live cache, so the operator confirms first. */
+  /** Whether the compaction gives up a live cache, so the operator confirms first. */
   warm: boolean;
 }
 
-export function foldOffer(
+export function compactOffer(
   cold: Cold | null,
-  fold: Fold | null,
+  compaction: Compaction | null,
   running: boolean,
   gatePending: boolean,
   asking: boolean,
-): FoldOffer {
+): CompactOffer {
   const warm = cold === null;
-  if (fold?.state === "writing") return { kind: "writing", warm };
+  if (compaction?.state === "writing") return { kind: "writing", warm };
   if (gatePending) {
     return {
       kind: "blocked",
@@ -37,7 +37,7 @@ export function foldOffer(
       warm,
     };
   }
-  // A loop parked at its cold check reads as running, and may fold; a warm one
+  // A loop parked at its cold check reads as running, and may compact; a warm one
   // that is running is mid-request.
   if (running && warm) {
     return {
@@ -49,8 +49,8 @@ export function foldOffer(
   return { kind: "ready", warm };
 }
 
-/** The sentence a confirm shows before a fold runs. */
-export function foldWarning(cold: Cold | null): string {
+/** The sentence a confirm shows before a compaction runs. */
+export function compactionWarning(cold: Cold | null): string {
   const read =
     cold === null
       ? "The prompt cache is live, and the next request after the summary reads the new, shorter context uncached."

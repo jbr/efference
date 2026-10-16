@@ -23,8 +23,8 @@ use crate::daemon::{RequestOrigin, Session, Stall, StallReason, StreamDelta};
 use crate::frontend::{Approval, Frontend, SubmittedTurn};
 use crate::inbox::{ShownNotification, active_shown};
 use crate::log::{
-    AssistantOutput, ConfigChange, ConfigEdit, ContentBlock, Disposition, EditState, Mark,
-    Notification, Origin, Payload, RawResult, Spot, Stance, ToolCall, Triage, Turn, WireState,
+    AssistantOutput, ConfigChange, ConfigEdit, ContentBlock, Disposition, EditState, Notification,
+    Origin, Payload, RawResult, Spot, Stance, Summary, ToolCall, Triage, Turn, WireState,
 };
 use crate::policy::{self, ReviewLevel, Verdict};
 use crate::process_monitor;

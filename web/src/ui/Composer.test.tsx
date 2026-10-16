@@ -26,7 +26,7 @@ const defaults = {
   ask: null,
   cold: null,
   park: null,
-  fold: null,
+  compaction: null,
   operations: null,
   model: "test",
 };

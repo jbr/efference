@@ -14,13 +14,13 @@ use serde_json::Value;
 use std::collections::HashSet;
 
 use crate::log::{
-    Audience, Keep, LogEntry, Mark, MarkKind, MessagesOutputBlock, Payload, Seq, Triaged,
+    Audience, Keep, LogEntry, MadeBy, MessagesOutputBlock, Payload, Seq, Summary, Triaged,
 };
 
-/// Which client a projection feeds (docs/summary-head.md). `Main` is the agent's own
+/// Which client a projection feeds (docs/summary.md). `Main` is the agent's own
 /// wire, and the one a triage that shares the agent's client sends; `Triage` is a
-/// triage model running on its own client. The two differ only in which boundary marks
-/// apply: a mark whose [`Audience`] is `Triage` folds the span for `Triage` and is
+/// triage model running on its own client. The two differ only in which summaries
+/// apply: a summary whose [`Audience`] is `Triage` replaces its range for `Triage` and is
 /// absent from `Main`, so the main wire's bytes do not depend on it.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Reader {
@@ -38,26 +38,28 @@ impl Reader {
     }
 }
 
-/// A boundary mark and the summary it contributes, extracted in the pre-pass.
+/// A summary and where it lands, extracted in the pre-pass.
 struct Boundary {
-    /// The last seq of the mark's inclusive replacement range.
-    /// The summary is injected just before the first non-elided entry with
+    /// The last seq of the summary's inclusive replacement range.
+    /// The text is injected just before the first non-elided entry with
     /// `seq > upto` (i.e., the start of the live conversation that follows).
     upto: Seq,
-    /// The one-line summary the model wrote at consolidation time.
+    /// The text as projected, with its header when the agent wrote it.
     summary: String,
 }
 
-/// The text a mark contributes. A working-span account is introduced as a harness
-/// note so it is not read as the operator's turn; a head fold's note is projected
-/// as written, since the narrator's account carries its own heading
-/// (docs/consolidate.md, docs/summary-head.md).
-fn account(kind: &MarkKind, note: &str) -> String {
-    match kind {
-        MarkKind::Boundary { .. } => note.to_string(),
-        MarkKind::Span { from, upto } => format!(
+/// The text a summary contributes. A consolidation is introduced as a harness note
+/// so it is not read as the operator's turn; a compaction is projected as written,
+/// since its header carries the explanation (docs/consolidate.md, docs/summary.md).
+fn account(summary: &Summary) -> String {
+    let Summary {
+        from, upto, text, ..
+    } = summary;
+    match summary.made_by {
+        MadeBy::Compaction(_) => text.clone(),
+        MadeBy::Consolidation => format!(
             "⟢ consolidation: entries #{from}–#{upto} were replaced by this account of \
-             them, written by this session with those entries in view.\n\n{note}"
+             them, written by this session with those entries in view.\n\n{text}"
         ),
     }
 }
@@ -76,20 +78,14 @@ fn extract_boundaries(
         if skipped.contains(&entry.seq) {
             continue;
         }
-        if let Payload::Mark(Mark {
-            kind,
-            note,
-            audience,
-            ..
-        }) = &entry.payload
-        {
-            // A mark for the other reader projects to nothing here.
-            if !reader.applies(*audience) {
+        if let Payload::Summary(summary) = &entry.payload {
+            // A summary for the other reader projects to nothing here.
+            if !reader.applies(summary.audience) {
                 continue;
             }
-            let range = kind.range();
-            let upto = *range.end();
-            // Elide the named range and the mark itself.
+            let range = summary.range();
+            let upto = summary.upto;
+            // Elide the named range and the summary entry itself.
             for e in log {
                 if range.contains(&e.seq) || e.seq == entry.seq {
                     elided.insert(e.seq);
@@ -97,7 +93,7 @@ fn extract_boundaries(
             }
             boundaries.push(Boundary {
                 upto,
-                summary: account(kind, note),
+                summary: account(summary),
             });
         }
     }
@@ -159,9 +155,9 @@ pub fn project(log: &[LogEntry]) -> Vec<ApiMessage> {
 /// with no clock, map iteration, or other ambient input leaking into the
 /// output.
 ///
-/// When the log contains a [`MarkKind::Boundary`], the span it names (`seq <=
+/// When the log contains a [`Summary`], the range it names (`seq <=
 /// upto`) is elided and replaced by a single user-role summary message injected
-/// at the mark's position. The live conversation after `upto` — and the
+/// at the summary's position. The live conversation after `upto` — and the
 /// consolidate `tool_use` / result that recorded the boundary — project normally
 /// (docs/README.md).
 pub fn project_with(log: &[LogEntry], placement: ImagePlacement) -> Vec<ApiMessage> {

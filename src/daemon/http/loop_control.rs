@@ -35,37 +35,37 @@ pub(super) async fn continue_loop(conn: Conn) -> Conn {
     }
 }
 
-/// Fold the cold session's history into a summary (backlog: cold-session.md): 202 while
-/// the session's model writes it, its progress on the `cold` topic's `fold`; `?wait`
-/// answers once it has landed or failed. Declined with `409 not_foldable` when the
-/// moment has no fold in it.
-pub(super) async fn fold(mut conn: Conn) -> Conn {
+/// Compact the cold session's history into a summary (backlog: cold-session.md): 202 while
+/// the session's model writes it, its progress on the `cold` topic's `compaction`; `?wait`
+/// answers once it has landed or failed. Declined with `409 not_compactable` when the
+/// moment has no compaction in it.
+pub(super) async fn compaction(mut conn: Conn) -> Conn {
     let Some(shared) = shared_of(&conn) else {
         return missing_state(conn);
     };
     let body = conn.request_body_string().await.unwrap_or_default();
     let body = if body.trim().is_empty() {
-        FoldBody::default()
+        CompactBody::default()
     } else {
-        match serde_json::from_str::<FoldBody>(&body) {
+        match serde_json::from_str::<CompactBody>(&body) {
             Ok(body) => body,
             Err(e) => {
                 return fail(
                     conn,
                     ErrorCode::BadRequest,
-                    format!("bad /loop/fold body: {e}"),
+                    format!("bad /loop/compact body: {e}"),
                 );
             }
         }
     };
     let wait = wants_wait(conn.querystring());
-    match shared.request_fold(body.warm) {
+    match shared.request_compaction(body.warm) {
         Ok(()) if wait => settle_and_state(&shared, conn).await,
         Ok(()) => conn
             .with_status(202)
-            .with_body(r#"{"status":"folding"}"#)
+            .with_body(r#"{"status":"compacting"}"#)
             .halt(),
-        Err(why) => fail(conn, ErrorCode::NotFoldable, why.message()),
+        Err(why) => fail(conn, ErrorCode::NotCompactable, why.message()),
     }
 }
 

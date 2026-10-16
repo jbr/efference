@@ -13,7 +13,7 @@ import type {
   Ask,
   Attachment,
   ConfigEdit,
-  Mark,
+  Summary,
   Spot,
   UserBlock,
   WorktreeEvent,
@@ -163,38 +163,28 @@ function configLine(edit: ConfigEdit): string {
   return edit.note !== "" ? `${line} — ${edit.note}` : line;
 }
 
-/** The consolidation mark (docs/consolidate.md): a boundary the wire folded
- * behind, rendered as a rule naming its extent, with the summary — the prose
- * that replaced the span — as the content. The count is entries, not the
+/** A summary (docs/summary.md): a range the wire replaced, rendered as a rule
+ * naming its extent, with the summary text — the prose that replaced the
+ * range — as the content. The count is entries, not the
  * mock's token delta: tokens are provider accounting the client does not
  * hold. Every entry it replaced is still on screen above (render-whole), so
- * there is nothing to expand — the marker tells the reader where the model's
+ * there is nothing to expand — the rule tells the reader where the model's
  * context stops carrying the raw log. */
-function Consolidation({
-  mark,
+function SummaryRule({
+  summary,
   replaces,
 }: {
-  mark: Mark;
+  summary: Summary;
   replaces: number | undefined;
 }) {
-  if (!(
-    typeof mark.kind === "object" &&
-    ("Boundary" in mark.kind || "Span" in mark.kind)
-  )) {
-    // A mark kind this client does not know: the note still reads.
-    return (
-      <Entry label="mark">
-        <Markdown>{mark.note}</Markdown>
-      </Entry>
-    );
-  }
+  const verb = summary.made_by === undefined ? "consolidated" : "compacted";
   const label =
-    "Span" in mark.kind
-      ? `consolidated #${mark.kind.Span.from}–#${mark.kind.Span.upto}`
-      : `consolidated through #${mark.kind.Boundary.upto}`;
+    summary.from === 0
+      ? `${verb} through #${summary.upto}`
+      : `${verb} #${summary.from}–#${summary.upto}`;
   return (
-    <div className="consolidation">
-      <div className="consolidation-rule">
+    <div className="summary">
+      <div className="summary-rule">
         <span className="glyph">⊙</span>
         <span className="c-label">{label}</span>
         {replaces !== undefined && (
@@ -204,9 +194,9 @@ function Consolidation({
         )}
       </div>
       <Entry label={null}>
-        <Markdown>{mark.note}</Markdown>
+        <Markdown>{summary.text}</Markdown>
       </Entry>
-      <div className="consolidation-rule closing" />
+      <div className="summary-rule closing" />
     </div>
   );
 }
@@ -297,8 +287,8 @@ function Leaf({
       </Entry>
     );
   }
-  if ("Mark" in p) {
-    return <Consolidation mark={p.Mark} replaces={node.replaces} />;
+  if ("Summary" in p) {
+    return <SummaryRule summary={p.Summary} replaces={node.replaces} />;
   }
   if ("Ambient" in p) {
     return (

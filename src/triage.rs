@@ -346,7 +346,7 @@ impl Triager {
         self.own.is_some()
     }
 
-    /// The projection this triage reads (docs/summary-head.md): the triage view on its own
+    /// The projection this triage reads (docs/summary.md): the triage view on its own
     /// client, the main view on the agent's. A shared triage reads the agent's cached
     /// prefix, so it can have no fold the agent's wire does not.
     pub fn reader(&self) -> Reader {

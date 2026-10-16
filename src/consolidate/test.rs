@@ -78,7 +78,7 @@ fn result(seq: Seq, call_id: &str) -> LogEntry {
     )
 }
 
-/// Head-fold pairing checks remain available to the digest/narrator path.
+/// Head-summary pairing checks remain available to the digest and compaction path.
 #[test]
 fn a_hand_placed_boundary_names_split_calls() {
     let log = vec![
@@ -93,7 +93,7 @@ fn a_hand_placed_boundary_names_split_calls() {
     let upto = 4;
     assert_eq!(split_calls(&log, upto), Vec::<crate::log::CallId>::new());
 
-    // Between call_b and its result: the call folds, the output would replay alone.
+    // Between call_b and its result: the call is replaced, the output would replay alone.
     assert_eq!(
         split_calls(&log, 3),
         vec![crate::log::CallId("call_b".into())]

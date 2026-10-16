@@ -43,7 +43,7 @@ pub(super) async fn process_monitor_tool_result(
     let handle = || call.input.get("handle").and_then(Value::as_str);
     match call.name.as_str() {
         process_monitor::LIST => Some(RawResult::text(shared.bg_list_text())),
-        process_monitor::CHECK_INBOX => Some(RawResult::text(shared.inbox_summary())),
+        process_monitor::CHECK_INBOX => Some(RawResult::text(shared.inbox_listing())),
         process_monitor::WAIT => Some(
             if !shared.has_pending_notifications()
                 && !shared.has_running_background()
@@ -64,7 +64,7 @@ pub(super) async fn process_monitor_tool_result(
                     RawResult::error("wait interrupted by user")
                 } else {
                     tokio::select! {
-                        _ = shared.inbox_wake() => RawResult::text(shared.inbox_summary()),
+                        _ = shared.inbox_wake() => RawResult::text(shared.inbox_listing()),
                         _ = &mut interrupted => RawResult::error("wait interrupted by user"),
                     }
                 }

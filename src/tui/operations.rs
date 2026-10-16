@@ -93,7 +93,7 @@ fn rank(origin: &str) -> usize {
         "turn",
         "triage",
         "spot",
-        "narrate",
+        "compaction",
         "title",
         "triage_primer",
         "keepalive",
@@ -123,7 +123,7 @@ fn request_text(request: &OpenRequestView, model: &str, now: u64) -> String {
         ),
         "spot" => format!("spotter judging · {since}"),
         "title" => format!("writing a title · {since}"),
-        "narrate" => format!("writing the summary · {since}"),
+        "compaction" => format!("writing the summary · {since}"),
         "triage_primer" | "keepalive" | "triage_keepalive" => {
             format!("warming the cache · {since}")
         }

@@ -83,8 +83,8 @@ pub(super) async fn land(
                 Ok(outcome) => break carried.onto(outcome),
                 Err(failure) => {
                     match hold(shared, client, !triager.is_own(), failure, &mut carried).await {
-                        // Re-read the log: a fold written during the hold
-                        // (docs/summary-head.md) is what the retried triage forks, not
+                        // Re-read the log: a compaction written during the hold
+                        // (docs/summary.md) is what the retried triage forks, not
                         // the history it replaced. The `Ambient` entries appended
                         // above project to nothing, so the prefix is otherwise the same.
                         Held::Retry => {

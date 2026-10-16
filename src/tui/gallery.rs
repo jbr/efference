@@ -5,15 +5,15 @@
 //! markdown prose (headings, lists, quote, table, code, rule, inline styles), a
 //! `bash` call rendered as a shell block, an edit tool's colored diff, a long
 //! result collapsed under the disclosure triangle, an error result, a triaged
-//! result, and a consolidation mark — then runs the real [`ui_loop`](super::ui_loop)
+//! result, and a summary — then runs the real [`ui_loop`](super::ui_loop)
 //! against it with no daemon behind it. The snapshot harness (`harness.rs`) covers
 //! the same shapes headlessly; this is for seeing them live, in color, scrollable.
 
 pub mod stream;
 
 use crate::log::{
-    AssistantOutput, ContentBlock, Keep, LogEntry, Mark, MessagesOutputBlock, Payload, RawResult,
-    Timestamp, ToolCall, Triaged, WireState,
+    AssistantOutput, ContentBlock, Keep, LogEntry, MessagesOutputBlock, Payload, RawResult,
+    Summary, Timestamp, ToolCall, Triaged, WireState,
 };
 
 /// A committed user turn carrying markdown prose.
@@ -328,10 +328,11 @@ pub(super) fn log() -> Vec<LogEntry> {
             false,
             WireState::Raw,
         ),
-        // A consolidation mark (horizontal rule + summary).
+        // A summary (horizontal rule + text).
         entry(
             16,
-            Payload::Mark(Mark::boundary(
+            Payload::Summary(Summary::consolidation(
+                0,
                 15,
                 "explored the renderer and confirmed the diff path",
             )),

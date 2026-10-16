@@ -35,7 +35,7 @@ impl Session {
             Topic::UpstreamRetry => self.upstream_retry_json(),
             Topic::Cold => self.cold_json(),
             Topic::Park => self.park_json(),
-            Topic::Fold => self.fold_json(),
+            Topic::Compaction => self.compaction_json(),
             Topic::ConfigRepair => self.config_repair_json(),
             Topic::SessionIdentity => self.session_identity_json(),
             Topic::CurrentOperations => self.current_operations_json(),

@@ -217,7 +217,7 @@ export const patchProcess = (
   body: { background?: boolean; muted?: boolean; note?: string },
 ) => patch<Process | null>(`/v1/processes/${id}`, body);
 // What one handle was, running or exited (docs/control-api.md): the live
-// registry answers when it holds the process, a fold over the log's lifecycle
+// registry answers when it holds the process, a compaction over the log's lifecycle
 // records when it does not. `404 not_found` for an id never minted into the
 // background this session — the normal answer for a foreground-only ordinal
 // and for a log written before the records existed.
@@ -355,11 +355,11 @@ export const resumeSession = (id: string, cwd: string) =>
     cwd,
   });
 
-// Replace the session's earlier history with an account its own model writes
+// Replace the session's earlier history with a summary its own model writes
 // (docs/control-api.md). Accepted means the model is writing it: progress is the
-// `fold` topic, and the Boundary mark landing in the log is the result. A cold
-// session folds by default; `warm` is the explicit choice to fold one whose
-// cache is believed live, giving up the cached prefix. A moment with no fold in
-// it answers `409 not_foldable` with a message naming the case.
-export const foldLoop = (warm = false) =>
-  post<{ status: string }>("/v1/loop/fold", warm ? { warm: true } : {});
+// `compaction` topic, and the Summary entry landing in the log is the result. A cold
+// session compacts by default; `warm` is the explicit choice to compact one whose
+// cache is believed live, giving up the cached prefix. A moment with no compaction in
+// it answers `409 not_compactable` with a message naming the case.
+export const compactLoop = (warm = false) =>
+  post<{ status: string }>("/v1/loop/compact", warm ? { warm: true } : {});

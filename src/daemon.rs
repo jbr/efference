@@ -91,15 +91,15 @@ pub enum StreamDelta {
     /// [`ToolOutput`](Self::ToolOutput) is by `call_id`. Lossy: a cold-opened client
     /// seeds its tail from the process resource and layers these on top.
     ProcessOutput { id: u64, chunk: String },
-    /// A fragment of the account a fold's narrator is writing (docs/summary-head.md).
+    /// A fragment of the summary a compaction is writing (docs/summary.md).
     /// Not the main loop's response: it belongs to no content block of one, and the
     /// committed `Assistant` entry that retires the block variants does not retire it.
-    /// The finished account lands as the fold's `Mark`; these are lossy and never
+    /// The finished text lands as the compaction's `Summary`; these are lossy and never
     /// logged.
-    NarratorText { text: String },
-    /// A fragment of the narrator's extended thinking, the counterpart of
-    /// [`NarratorText`](Self::NarratorText).
-    NarratorThinking { text: String },
+    CompactionText { text: String },
+    /// A fragment of the compaction's extended thinking, the counterpart of
+    /// [`CompactionText`](Self::CompactionText).
+    CompactionThinking { text: String },
 }
 
 /// The prefix session-scoped log lines carry, the shape the lifecycle
@@ -144,10 +144,10 @@ pub struct Session {
     cold_parked: AtomicBool,
     /// Wakes the cold check and the held inbox wake when a person acts.
     cold_signal: Notify,
-    /// The fold in progress or its last failure (`daemon/fold.rs`).
-    fold_state: Mutex<Option<fold::FoldState>>,
-    /// Wakes the fold task when a fold is asked for.
-    fold_signal: Notify,
+    /// The compaction in progress or its last failure (`daemon/compact.rs`).
+    compaction_state: Mutex<Option<compact::CompactionState>>,
+    /// Wakes the compaction task when a compaction is asked for.
+    compaction_signal: Notify,
     /// The loop appends under this lock; handlers snapshot it for `GET /log`.
     /// The lock is only ever held across the
     /// synchronous `project`/append — never an `await`.
@@ -588,11 +588,11 @@ mod ask;
 mod attachments;
 mod background;
 mod cold;
+mod compact;
 mod config_edits;
 mod construct;
 mod continuation;
 mod entry_view;
-mod fold;
 mod identity;
 mod session_log;
 mod stall;
@@ -673,8 +673,8 @@ mod review;
 mod runtime;
 pub mod slug;
 pub use host::{
-    ArchivedSession, CreateSession, Host, PatchSession, SessionOptionsRequest, SessionState,
-    SessionSummary, serve_host,
+    ArchivedSession, CreateSession, Host, ListedSession, PatchSession, SessionOptionsRequest,
+    SessionState, serve_host,
 };
 pub use paths::SessionPaths;
 pub use runtime::{SessionBoot, SessionRuntime};

@@ -2,7 +2,7 @@
 
 use super::*;
 use crate::daemon::cold::ParkReason;
-use crate::log::Mark;
+use crate::log::Summary;
 use crate::log::Telemetry;
 
 /// A session whose cache is already believed cold: a zero lifetime and one turn on
@@ -10,7 +10,7 @@ use crate::log::Telemetry;
 async fn cold_session() -> (Arc<Session>, mpsc::UnboundedReceiver<SubmittedTurn>) {
     let (shared, rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
     shared.set_cache_ttl(Duration::ZERO);
-    append_foldable_history(&shared);
+    append_compactable_history(&shared);
     shared.record_request(
         RequestOrigin::Turn,
         crate::api::RequestUsage::new(crate::api::Usage::default()),
@@ -37,7 +37,7 @@ fn a_shared_triage_refreshes_the_cold_belief_and_an_own_triage_does_not() {
     .unwrap();
     let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
     shared.set_cache_ttl(Duration::from_secs(300));
-    append_foldable_history(&shared);
+    append_compactable_history(&shared);
     shared.attach_usage_log(&usage_path);
     assert!(
         shared.cold_since().is_some(),
@@ -127,7 +127,7 @@ async fn the_cold_check_parks_until_a_person_acts() {
     assert!(!shared.person_acted.load(Ordering::SeqCst), "consumed");
 }
 
-/// A fold at a mid-turn park ends the cold belief but not the park: the loop waits for
+/// A compaction at a mid-turn park ends the cold belief but not the park: the loop waits for
 /// the next turn or continue, and the `park` topic says so while `cold` is null.
 #[tokio::test]
 async fn a_fold_leaves_the_park_folded() {
@@ -144,17 +144,17 @@ async fn a_fold_leaves_the_park_folded() {
     .await
     .expect("parks");
     shared
-        .append(1, Payload::Mark(Mark::boundary(0, "account")))
+        .append(1, Payload::Summary(Summary::consolidation(0, 0, "account")))
         .unwrap();
     assert_eq!(shared.topic_json(Topic::Cold), Value::Null);
     assert_eq!(
         shared.topic_json(Topic::Park),
-        serde_json::json!({ "reason": "folded" })
+        serde_json::json!({ "reason": "compacted" })
     );
     assert_eq!(
         shared.status(),
         crate::daemon::status::SessionStatus::Parked {
-            reason: ParkReason::Folded
+            reason: ParkReason::Compacted
         }
     );
     shared.wake_cold_check();
@@ -187,7 +187,7 @@ async fn the_client_sends_to_a_cold_session_without_a_flag() {
     assert!(shared.person_acted.load(Ordering::SeqCst));
 }
 
-/// A session with nothing to fold is not cold: with one answer there is no question to
+/// A session with nothing to compact is not cold: with one answer there is no question to
 /// put, so its next send is not a cold read.
 #[tokio::test]
 async fn nothing_to_fold_is_not_cold() {

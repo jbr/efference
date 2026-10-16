@@ -227,7 +227,7 @@ impl Masker {
     /// paths, exhaustively: `User` text blocks; `Assistant` text blocks, tool-call
     /// `input` strings, and `upstream_failure` (its `why` and, when present, its
     /// captured stream diagnostics); `ToolResult`'s `raw.content`;
-    /// `Mark.note`; `Triage`'s `raw_keep`, `surfaced`, `retries`, and `thinking`;
+    /// `Summary.text`; `Triage`'s `raw_keep`, `surfaced`, `retries`, and `thinking`;
     /// `Ambient`'s `source`/`body`/`slot`; `Spot`'s `reason` and `probed_prefix`;
     /// `ConfigEdit`'s `note` and its change payload; `Preamble`'s `system` and
     /// its resolved `[context]` listing.
@@ -346,7 +346,7 @@ impl Masker {
                 crate::log::WireState::TriageFailed { why } => self.mask_in_place(why),
                 _ => {}
             },
-            Payload::Mark(mark) => self.mask_in_place(&mut mark.note),
+            Payload::Summary(summary) => self.mask_in_place(&mut summary.text),
             Payload::Triage(triage) => {
                 self.mask_in_place(&mut triage.raw_keep);
                 for name in &mut triage.surfaced {

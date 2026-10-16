@@ -1,7 +1,7 @@
-//! `efference dev narrate` — run the summary head's narrator step over a recorded
-//! session and print the head (docs/summary-head.md).
+//! `efference dev compact` — run compaction over a recorded session and print the
+//! summary (docs/summary.md).
 //!
-//! The narrator is the session's own model: the connection and model the log
+//! The writer is the session's own model: the connection and model the log
 //! recorded at boot, resolved through the current config, under the session's
 //! recorded system prompt. Nothing is appended to the log — a session's log has one
 //! writer, the host — so this reads a session, live or not, without touching it.
@@ -11,14 +11,14 @@ use super::*;
 use efference::api::{Client, UNKNOWN_OUTPUT_CAP};
 use efference::log::Payload;
 
-pub(crate) async fn narrate(target: &str, upto: Option<u64>, cut: Option<u64>) -> CliResult {
+pub(crate) async fn compact(target: &str, upto: Option<u64>, cut: Option<u64>) -> CliResult {
     let (path, label) = resolve_session_log(target)?;
     let mut entries = efference::persist::load(&path)?;
     if let Some(upto) = upto {
         entries.retain(|e| e.seq <= upto);
     }
     let identity = efference::log::recorded_inference(&entries)
-        .ok_or("log has no recorded boot identity; no session model to narrate with")?;
+        .ok_or("log has no recorded boot identity; no session model to compact with")?;
     let model = identity.model.clone();
     let selection = format!("{}/{}", identity.connection, identity.model);
     let system = entries
@@ -37,7 +37,7 @@ pub(crate) async fn narrate(target: &str, upto: Option<u64>, cut: Option<u64>) -
     }
     // The output cap follows the model's report, as the agent client's does: a
     // reasoning model's thinking bills against it, and the client's small default
-    // would end the account early.
+    // would end the summary early.
     let caps = endpoint.fetch_capabilities(&model, &[]).await?;
     let client = Client::new(endpoint, &model, system, None)
         .with_thinking(caps.thinking)
@@ -48,13 +48,13 @@ pub(crate) async fn narrate(target: &str, upto: Option<u64>, cut: Option<u64>) -
     let tools = efference::agent::tool_definitions(&toolbox);
 
     eprintln!(
-        "narrating {label} on {selection}{}",
-        cut.map(|c| format!(", account through seq {c}"))
+        "compacting {label} on {selection}{}",
+        cut.map(|c| format!(", summary through seq {c}"))
             .unwrap_or_default()
     );
     let started = std::time::Instant::now();
-    let narration = efference::narrate::narrate(&client, &tools, &entries, cut, |_| {}).await?;
-    let usage = &narration.usage.usage;
+    let compaction = efference::compact::summarize(&client, &tools, &entries, cut, |_| {}).await?;
+    let usage = &compaction.usage.usage;
     eprintln!(
         "{:.0}s · input {} (cache read {}, write {}) · output {}",
         started.elapsed().as_secs_f64(),
@@ -63,6 +63,6 @@ pub(crate) async fn narrate(target: &str, upto: Option<u64>, cut: Option<u64>) -
         usage.cache_creation_input_tokens,
         usage.output_tokens
     );
-    println!("{}", narration.head);
+    println!("{}", compaction.text);
     Ok(())
 }

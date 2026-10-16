@@ -206,7 +206,7 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
 
     match approval {
         // `consolidate` acts on the log, not the world (docs/consolidate.md): record the
-        // boundary mark + pair the `tool_use`. No world-run, no triage — there is no tool
+        // summary + pair the `tool_use`. No world-run, no triage — there is no tool
         // output to curate, so it never reaches the triage.
         Approval::Approve if call.name == consolidate::NAME => {
             let note = consolidate::summary(&call.input).unwrap_or_default();
@@ -242,11 +242,11 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
             let refusal = match span {
                 None => Some(
                     "consolidate refused: there is no completed work since the previous \
-                     consolidation to replace; nothing was folded",
+                     consolidation to replace; nothing was consolidated",
                 ),
                 Some(_) if note.split_whitespace().count() < 100 => Some(
                     "consolidate refused: the summary is shorter than 100 words; nothing \
-                     was folded",
+                     was consolidated",
                 ),
                 Some(_) => None,
             };
@@ -258,7 +258,7 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
                 )]));
             };
             Ok(Decision::Direct(vec![
-                Payload::Mark(Mark::span(span.from, span.upto, note)),
+                Payload::Summary(Summary::consolidation(span.from, span.upto, note)),
                 Payload::tool_result(
                     call.id.clone(),
                     RawResult::text("consolidated"),

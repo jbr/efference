@@ -5,12 +5,12 @@
 // stalled session and a finished one are the same `false`, and a triage
 // held on the upstream is stalled while still `true` — so the `stall` topic
 // decides it. A pending gate or ask reads as `waiting`, after those two. A loop parked at the cold check (the `park` topic) is `running` too, and
-// reads as its own condition: it waits on the operator. A fold in flight (the `fold` topic) reads as running: the loop is
+// reads as its own condition: it waits on the operator. A compaction in flight (the `compaction` topic) reads as running: the loop is
 // idle, but the session is busy writing its summary. Both the retry wait and the stall name the recovery: an empty
 // send, which the daemon takes as "retry now".
 
 import type { CurrentOperations, Park, Stall } from "../api/types.ts";
-import { kilotokens } from "./fold.ts";
+import { kilotokens } from "./compact.ts";
 import { operationText, operationTitle } from "./operations.ts";
 
 /** The `current_operations` topic with what naming it needs: the session's
@@ -40,7 +40,7 @@ export function turnState(
   running: boolean,
   stall: Stall | null,
   retrying = false,
-  folding = false,
+  compacting = false,
   park: Park | null = null,
   view: OperationsView | null = null,
   pending: "gate" | "ask" | null = null,
@@ -54,8 +54,8 @@ export function turnState(
   }
   // The loop is stopped at its cold check, not slow: `running` stays true while
   // it waits. The composer's cold notice carries the choice (send or summarize).
-  if (running && !folding && park !== null) {
-    if (park.reason === "folded") {
+  if (running && !compacting && park !== null) {
+    if (park.reason === "compacted") {
       return {
         text: "paused: summarized · send to continue",
         title:
@@ -76,7 +76,7 @@ export function turnState(
   }
   // An open gate or `ask` is what the operator must act on, ahead of any
   // request or tool the loop has open beside it.
-  if (running && !folding && pending !== null) {
+  if (running && !compacting && pending !== null) {
     return {
       text:
         pending === "gate"
@@ -85,7 +85,7 @@ export function turnState(
       kind: "waiting",
     };
   }
-  if (folding) {
+  if (compacting) {
     return {
       text: "summarizing the history…",
       title: "the session's model is writing the summary",

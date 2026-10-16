@@ -445,9 +445,9 @@ async fn block_deltas_flow_again_after_the_next_entry() {
     );
 }
 
-/// A fold's account is not a block of the response that committed: a fold running
+/// A compaction's account is not a block of the response that committed: a compaction running
 /// beside a parked loop keeps streaming after an `Assistant` frame, so the drain that
-/// retires block deltas leaves the narrator's alone.
+/// retires block deltas leaves the writer's alone.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn narrator_deltas_survive_a_committed_assistant_entry() {
     let (shared, _turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
@@ -461,10 +461,10 @@ async fn narrator_deltas_survive_a_committed_assistant_entry() {
         index: 0,
         text: "fragment".into(),
     });
-    shared.publish_delta(StreamDelta::NarratorThinking {
+    shared.publish_delta(StreamDelta::CompactionThinking {
         text: "weighing".into(),
     });
-    shared.publish_delta(StreamDelta::NarratorText {
+    shared.publish_delta(StreamDelta::CompactionText {
         text: "the account".into(),
     });
     shared.append(1, assistant("the whole answer")).unwrap();
@@ -479,9 +479,9 @@ async fn narrator_deltas_survive_a_committed_assistant_entry() {
             .find(|f| f.kind == kind)
             .map(|f| f.data["text"].clone())
     };
-    assert_eq!(text("narrator_delta"), Some(Value::from("the account")));
+    assert_eq!(text("compaction_delta"), Some(Value::from("the account")));
     assert_eq!(
-        text("narrator_thinking_delta"),
+        text("compaction_thinking_delta"),
         Some(Value::from("weighing"))
     );
 }

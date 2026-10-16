@@ -110,12 +110,12 @@ impl<'a> InteractiveState<'a> {
         self.dirty = true;
     }
 
-    /// Ask for a fold (backlog: cold-session.md — `C-o`): the session's own model
+    /// Ask for a compaction (backlog: cold-session.md — `C-o`): the session's own model
     /// replaces its history with an account instead of the cold read.
     /// The daemon's answer comes back as a [`TuiEvent::Notice`].
-    pub(in crate::tui) fn fold_session(&mut self) {
-        self.ui.debug_message = if self.fold_tx.send(()).is_ok() {
-            "asking for a fold".into()
+    pub(in crate::tui) fn compact_session(&mut self) {
+        self.ui.debug_message = if self.compaction_tx.send(()).is_ok() {
+            "asking for a compaction".into()
         } else {
             "could not send (daemon gone?)".into()
         };

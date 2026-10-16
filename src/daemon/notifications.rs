@@ -160,7 +160,7 @@ impl Session {
     /// notifications (left at earlier triages) plus the newly-arrived ephemeral ones,
     /// so the model can survey what's waiting on demand. The triage for this
     /// tool's own result is where they're actually triaged.
-    pub fn inbox_summary(&self) -> String {
+    pub fn inbox_listing(&self) -> String {
         let pending = self.pending_notifications();
         let active = {
             let log = self.log.lock().unwrap();

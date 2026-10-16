@@ -25,11 +25,11 @@ pub(crate) struct TurnBody {
     pub(crate) attachments: Vec<String>,
 }
 
-/// The optional `POST /loop/fold` body: `warm` is the operator's choice to fold a
+/// The optional `POST /loop/compact` body: `warm` is the operator's choice to compact a
 /// session whose cache is not believed expired (docs/control-api.md).
 #[derive(Deserialize, Default)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct FoldBody {
+pub(crate) struct CompactBody {
     #[serde(default)]
     pub(crate) warm: bool,
 }
@@ -191,7 +191,7 @@ pub(crate) fn control_routes_with_heartbeat(heartbeat: Duration) -> Router {
         .put("/v1/approvals/:call_id", turns::resolve_approval)
         .post("/v1/loop/interrupt", loop_control::interrupt)
         .post("/v1/loop/continue", loop_control::continue_loop)
-        .post("/v1/loop/fold", loop_control::fold)
+        .post("/v1/loop/compact", loop_control::compaction)
         .get("/v1/loop", loop_control::read_loop)
         .patch("/v1/loop", loop_control::patch_loop)
         .get("/v1/processes", processes::list_processes)

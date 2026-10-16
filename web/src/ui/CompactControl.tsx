@@ -1,33 +1,33 @@
 // Standing summary action in the context popup (docs/web-client.md).
 import { useState } from "react";
-import { ApiError, foldLoop } from "../api/http.ts";
-import type { Cold, Fold } from "../api/types.ts";
-import { foldOffer } from "./fold.ts";
+import { ApiError, compactLoop } from "../api/http.ts";
+import type { Cold, Compaction } from "../api/types.ts";
+import { compactOffer } from "./compact.ts";
 
-export interface FoldControlProps {
+export interface CompactControlProps {
   cold: Cold | null;
-  fold: Fold | null;
+  compaction: Compaction | null;
   running: boolean;
   gatePending: boolean;
   asking: boolean;
 }
 
-export function FoldControl({
+export function CompactControl({
   cold,
-  fold,
+  compaction,
   running,
   gatePending,
   asking,
-}: FoldControlProps) {
+}: CompactControlProps) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const offer = foldOffer(cold, fold, running, gatePending, asking);
+  const offer = compactOffer(cold, compaction, running, gatePending, asking);
   async function start() {
     if (pending || offer.kind !== "ready") return;
     setPending(true);
     setError(null);
     try {
-      await foldLoop(offer.warm);
+      await compactLoop(offer.warm);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : `${e}`);
     } finally {
@@ -35,9 +35,9 @@ export function FoldControl({
     }
   }
   return (
-    <div className="fold-control">
+    <div className="compact-control">
       {offer.kind === "writing" || pending ? (
-        <p className="fold-progress" role="status">
+        <p className="compact-progress" role="status">
           Summarizing the history…
         </p>
       ) : (
@@ -51,8 +51,8 @@ export function FoldControl({
         </button>
       )}
       {offer.kind === "blocked" && <p className="dim">{offer.reason}</p>}
-      {fold?.state === "failed" && (
-        <div className="error">summary failed: {fold.error}</div>
+      {compaction?.state === "failed" && (
+        <div className="error">summary failed: {compaction.error}</div>
       )}
       {error && (
         <div className="error" role="alert">

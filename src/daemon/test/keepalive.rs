@@ -7,7 +7,7 @@ use crate::daemon::keepalive::{
     CacheLineage, KeepaliveSkipReason, KeepaliveSpec, PingCost, discard_is_affordable,
     keepalive_interval, lop_trailing_model_turns, prefix_tokens, skip_reason,
 };
-use crate::log::{AssistantOutput, Mark, MessagesOutputBlock, Timestamp};
+use crate::log::{AssistantOutput, MessagesOutputBlock, Summary, Timestamp};
 use crate::project::{Role, WireTurn};
 
 fn message(role: Role, text: &str) -> WireTurn {
@@ -611,8 +611,8 @@ fn the_triage_keepalive_arms_only_where_a_primer_plants() {
     assert!(off.ping_at.is_zero());
 }
 
-/// A fold moves the prefix the primer read. The stored turns stop being replayed, and the
-/// triage clock's fold filter empties the ping's prefix, as it does the main loop's.
+/// A compaction moves the prefix the primer read. The stored turns stop being replayed, and the
+/// triage clock's compaction filter empties the ping's prefix, as it does the main loop's.
 #[tokio::test]
 async fn a_fold_drops_the_primed_turns() {
     let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
@@ -625,7 +625,7 @@ async fn a_fold_drops_the_primed_turns() {
     assert!(shared.ping_turns(CacheLineage::Triage).is_some());
     tokio::time::sleep(Duration::from_millis(5)).await;
     shared
-        .append(1, Payload::Mark(Mark::boundary(0, "account")))
+        .append(1, Payload::Summary(Summary::consolidation(0, 0, "account")))
         .unwrap();
     assert_eq!(shared.ping_turns(CacheLineage::Triage), None);
     assert_eq!(shared.ping_prefix_tokens(CacheLineage::Triage), None);

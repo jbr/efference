@@ -147,7 +147,7 @@ impl Client {
 
     /// The sessions a host holds (`GET /sessions`, docs/control-api.md), sorted
     /// by id, each with its title once one has been written.
-    pub async fn sessions(&self) -> Result<Vec<SessionSummary>> {
+    pub async fn sessions(&self) -> Result<Vec<ListedSession>> {
         self.get_root("/sessions").await
     }
 

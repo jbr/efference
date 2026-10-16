@@ -10,7 +10,7 @@ mod read;
 /// Line 1 as a reader accepts it carrying no metadata — the header a fixture
 /// persists. Built by hand rather than by a writer so a test can vary one
 /// field of it and leave the rest alone.
-const HEADER: &str = r#"{"format":"efference-session-log","version":3,"metadata":null}"#;
+const HEADER: &str = r#"{"format":"efference-session-log","version":4,"metadata":null}"#;
 
 /// One entry line at `seq`, holding the payload a `User` turn writes.
 fn user_entry(seq: u64) -> String {

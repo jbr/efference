@@ -39,7 +39,7 @@ fn rejects_skip_short_tools_failures_and_caps() {
 }
 
 use crate::api::{Endpoint, Provider};
-use crate::log::{Mark, RawResult, WireState};
+use crate::log::{RawResult, Summary, WireState};
 use std::io::{Read, Write};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -182,7 +182,7 @@ async fn unchanged_skip_not_rechecked_but_new_forward_context_is() {
         !shared
             .snapshot()
             .iter()
-            .any(|e| matches!(e.payload, Payload::Mark(_)))
+            .any(|e| matches!(e.payload, Payload::Summary(_)))
     );
     shared
         .append(
@@ -213,7 +213,7 @@ async fn a_failed_request_changes_nothing() {
         !shared
             .snapshot()
             .iter()
-            .any(|e| matches!(e.payload, Payload::Mark(_)))
+            .any(|e| matches!(e.payload, Payload::Summary(_)))
     );
 }
 
@@ -233,7 +233,7 @@ async fn adopts_account_then_waits_for_new_tool_work() {
         shared
             .snapshot()
             .iter()
-            .any(|e| matches!(e.payload, Payload::Mark(_)))
+            .any(|e| matches!(e.payload, Payload::Summary(_)))
     );
     shared
         .append(
@@ -271,7 +271,10 @@ fn frozen_adoption_preserves_new_messages_and_rejects_new_folds() {
     let frozen = shared.snapshot();
     let span = consolidate::candidate(&frozen).unwrap();
     shared
-        .append(1, Payload::Mark(Mark::boundary(span.upto, "head fold")))
+        .append(
+            1,
+            Payload::Summary(Summary::consolidation(0, span.upto, "head summary")),
+        )
         .unwrap();
     assert!(
         !shared

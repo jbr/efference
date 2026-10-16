@@ -17,7 +17,7 @@
 //! theme the new-session form draws (`app.rs`, docs/tui.md).
 
 use super::*;
-use efference::client::SessionSummary;
+use efference::client::ListedSession;
 use efference::inventory::InventoryRow;
 use efference::tui::inline;
 use efference::tui::resume_list::{ResumeRow, now_ms};
@@ -62,7 +62,7 @@ pub(crate) enum Pick {
 
 /// Split the live hosts' listings into this directory's sessions and a count of
 /// the rest.
-pub(crate) fn menu(listings: &[(PathBuf, Vec<SessionSummary>)], here: &Path) -> Menu {
+pub(crate) fn menu(listings: &[(PathBuf, Vec<ListedSession>)], here: &Path) -> Menu {
     let mut menu = Menu::default();
     for (host, sessions) in listings {
         for session in sessions {
@@ -119,7 +119,7 @@ pub(crate) fn under_home(path: &Path, home: Option<&Path>) -> String {
 }
 
 /// Every live host's session listing, in candidate order.
-pub(crate) async fn live_listings() -> Result<Vec<(PathBuf, Vec<SessionSummary>)>, CliError> {
+pub(crate) async fn live_listings() -> Result<Vec<(PathBuf, Vec<ListedSession>)>, CliError> {
     let mut listings = Vec::new();
     for host in host_candidates() {
         if !is_live(&host) {

@@ -11,7 +11,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::frontend::SubmittedTurn;
 use crate::log::{
-    AssistantOutput, ContentBlock, LogEntry, MarkKind, MessagesOutputBlock, Payload, RawResult,
+    AssistantOutput, ContentBlock, LogEntry, MessagesOutputBlock, Payload, RawResult, Summary,
     ToolCall, Triaged, WireState,
 };
 use crate::tui::document::{
@@ -77,9 +77,9 @@ pub(crate) struct Gate<'g> {
 /// Holding indices rather than borrows is what lets the incremental projection
 /// ([`Transcript`]) keep the index across rebuilds without borrowing the log.
 ///
-/// It also places consolidation marks. A mark is drawn where projection injects its
+/// It also places summaries. A summary is drawn where projection injects its
 /// account — after the entry its range ends in — not where it was appended
-/// (docs/consolidate.md). A range ending in a tool result ends in the entry that
+/// (docs/summary.md). A range ending in a tool result ends in the entry that
 /// made the call, since the result is drawn there.
 #[derive(Debug, Default)]
 pub(crate) struct CallIndex {
@@ -91,10 +91,10 @@ pub(crate) struct CallIndex {
     call_owner: HashMap<String, usize>,
     /// `seq` → the index of the entry whose nodes draw it.
     drawn_by: BTreeMap<u64, usize>,
-    /// Entry index → the marks drawn after its nodes, in log order.
-    marks_after: HashMap<usize, Vec<usize>>,
-    /// Mark index → the entry index it is drawn after.
-    mark_host: HashMap<usize, usize>,
+    /// Entry index → the summaries drawn after its nodes, in log order.
+    summaries_after: HashMap<usize, Vec<usize>>,
+    /// Summary index → the entry index it is drawn after.
+    summary_host: HashMap<usize, usize>,
 }
 
 impl CallIndex {
@@ -117,11 +117,11 @@ impl CallIndex {
                 }
                 None
             }
-            Payload::Mark(mark) => {
-                let upto = *mark.kind.range().end();
+            Payload::Summary(summary) => {
+                let upto = summary.upto;
                 if let Some((_, &host)) = self.drawn_by.range(..=upto).next_back() {
-                    self.marks_after.entry(host).or_default().push(idx);
-                    self.mark_host.insert(idx, host);
+                    self.summaries_after.entry(host).or_default().push(idx);
+                    self.summary_host.insert(idx, host);
                 }
                 None
             }
@@ -145,10 +145,10 @@ impl CallIndex {
         }
     }
 
-    /// The entry a mark at `idx` is drawn after, when its range ends in a
-    /// committed entry: the one to re-project when the mark arrives.
-    pub(crate) fn mark_host(&self, idx: usize) -> Option<usize> {
-        self.mark_host.get(&idx).copied()
+    /// The entry a summary at `idx` is drawn after, when its range ends in a
+    /// committed entry: the one to re-project when the summary arrives.
+    pub(crate) fn summary_host(&self, idx: usize) -> Option<usize> {
+        self.summary_host.get(&idx).copied()
     }
 
     /// A call's committed result, with the `seq` of the entry carrying it — the
@@ -330,7 +330,7 @@ pub(crate) fn entry_nodes(
                     let result = index.result(log, call.id.0.as_str());
                     let is_pending = result.is_none() && gate.call == Some(call.id.0.as_str());
                     // A resolved consolidate collapses to its name: its input is the
-                    // summary the mark below renders in full, and its result is a
+                    // summary rendered below in full, and its result is a
                     // constant acknowledgement (docs/consolidate.md). A pending,
                     // gated, or failed one renders whole — an error is information.
                     if call.name == crate::consolidate::NAME
@@ -394,10 +394,10 @@ pub(crate) fn entry_nodes(
             Payload::ToolResult { .. } => {}
             // Drawn after the entry its range ends in (see `CallIndex`); in place
             // only when that entry is not in this log.
-            Payload::Mark(mark) if index.mark_host(idx).is_none() => {
-                push_mark(&mut nodes, &mark.kind, &mark.note, replaced(log, mark));
+            Payload::Summary(summary) if index.summary_host(idx).is_none() => {
+                push_summary(&mut nodes, summary, replaced(log, summary));
             }
-            Payload::Mark(_) => {}
+            Payload::Summary(_) => {}
             // An ambient notification (docs/inbox.md), rendered as a marked line so the
             // human sees the out-of-band event in the stream. The transcript shows the
             // whole record — every *shown* notification renders here, where the wire
@@ -463,20 +463,20 @@ pub(crate) fn entry_nodes(
             Payload::ResultVerdict { .. } => {}
         }
     }
-    for &at in index.marks_after.get(&idx).into_iter().flatten() {
-        if let Some(Payload::Mark(mark)) = log.get(at).map(|e| &e.payload) {
-            push_mark(&mut nodes, &mark.kind, &mark.note, replaced(log, mark));
+    for &at in index.summaries_after.get(&idx).into_iter().flatten() {
+        if let Some(Payload::Summary(summary)) = log.get(at).map(|e| &e.payload) {
+            push_summary(&mut nodes, summary, replaced(log, summary));
         }
     }
     nodes
 }
 
-/// How many conversational entries a mark's range replaces: turns, completions and
+/// How many conversational entries a summary's range replaces: turns, completions and
 /// results, not the telemetry and bookkeeping logged among them.
-fn replaced(log: &[LogEntry], mark: &crate::log::Mark) -> usize {
+fn replaced(log: &[LogEntry], summary: &Summary) -> usize {
     log.iter()
         .filter(|e| {
-            mark.kind.range().contains(&e.seq)
+            summary.range().contains(&e.seq)
                 && matches!(
                     e.payload,
                     Payload::User(_) | Payload::Assistant { .. } | Payload::ToolResult { .. }

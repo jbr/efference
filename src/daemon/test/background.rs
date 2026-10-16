@@ -152,7 +152,7 @@ fn detach_note_is_stashed_and_consumed_once() {
 }
 
 /// The directed Slice-2 reads/acts (docs/process-monitor.md, docs/inbox.md): `kill_bg` finds a running child
-/// (and rejects unknown handles), and `inbox_summary` lists pending notifications.
+/// (and rejects unknown handles), and `inbox_listing` lists pending notifications.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn kill_bg_and_inbox_summary() {
     let (shared, _turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
@@ -165,12 +165,12 @@ async fn kill_bg_and_inbox_summary() {
 
     // Inbox read: empty, then surfaces a posted notification.
     assert!(
-        shared.inbox_summary().contains("empty"),
+        shared.inbox_listing().contains("empty"),
         "{}",
-        shared.inbox_summary()
+        shared.inbox_listing()
     );
     shared.notify("ci".into(), "build failed".into(), None, None);
-    let summary = shared.inbox_summary();
+    let summary = shared.inbox_listing();
     assert!(
         summary.contains("ci") && summary.contains("build failed"),
         "{summary}"

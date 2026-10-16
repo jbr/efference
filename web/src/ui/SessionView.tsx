@@ -272,7 +272,7 @@ export function SessionView() {
           upstreamRetry={session.topics.upstream_retry ?? null}
           summary={{
             cold: session.topics.cold ?? null,
-            fold: session.topics.fold ?? null,
+            compaction: session.topics.compaction ?? null,
             running: session.topics.running ?? false,
             gatePending: gate != null,
             asking: (session.topics.ask ?? null) !== null,
@@ -339,7 +339,7 @@ export function SessionView() {
             ask={session.topics.ask ?? null}
             cold={session.topics.cold ?? null}
             park={session.topics.park ?? null}
-            fold={session.topics.fold ?? null}
+            compaction={session.topics.compaction ?? null}
             operations={session.topics.current_operations ?? null}
             model={session.topics.session_identity?.model ?? "the model"}
           />

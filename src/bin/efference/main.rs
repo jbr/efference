@@ -169,9 +169,9 @@ mod cli;
 mod control;
 #[cfg(feature = "dev")]
 mod dev;
+mod dev_compact;
 #[cfg(feature = "dev")]
 mod dev_models;
-mod dev_narrate;
 #[cfg(feature = "dev")]
 mod inference;
 mod island;

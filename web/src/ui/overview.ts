@@ -33,7 +33,7 @@ export interface CardModel {
    * the running call's intent, or the last reply. `null` when none is known. */
   activity: Activity | null;
   /** Why a `parked` session is parked (the `park` topic); `null` when not known. */
-  park: "expired" | "folded" | null;
+  park: "expired" | "compacted" | null;
   context: { used: number | null; limit: number | null } | null;
   /** The provider's billed running total; `unpriced > 0` makes it a floor. */
   cost: { usd: number; unpriced: number } | null;
@@ -115,7 +115,7 @@ export function statusPhrase(card: CardModel): string | null {
   if (card.status === "asking") return "has a question";
   if (card.status === "stalled") return "has stalled";
   if (card.status === "parked") {
-    return card.park === "folded"
+    return card.park === "compacted"
       ? "is paused: summarized, waiting for you to continue"
       : "is paused: its cache expired";
   }
@@ -173,7 +173,7 @@ export function cardModel(
             ? {
                 kind: "park",
                 detail:
-                  park?.reason === "folded"
+                  park?.reason === "compacted"
                     ? "send or continue to resume"
                     : parkDetail(
                         park?.reason === "expired" ? park.context_tokens : null,

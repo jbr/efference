@@ -316,11 +316,11 @@ async fn a_gate_without_a_verdict_holds_until_continue() {
     host.shut_down().await;
 }
 
-/// **A fold written during a hold is what the retried triage forks.** The triage holds,
-/// a fold's mark lands (as `fold_once` appends it), and the operator retries: the
+/// **A compaction written during a hold is what the retried triage forks.** The triage holds,
+/// a compaction's mark lands (as `compact_once` appends it), and the operator retries: the
 /// retried triage carries the account, not the history it replaced. The triage's first
 /// snapshot predates the mark, so a retry that reused it would still read the whole
-/// unfolded prefix, which is the cold read the fold exists to avoid.
+/// unfolded prefix, which is the cold read the compaction exists to avoid.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_fold_during_a_hold_is_what_the_retry_triages() {
     let requests = Arc::new(AtomicUsize::new(0));
@@ -337,7 +337,7 @@ async fn a_fold_during_a_hold_is_what_the_retry_triages() {
     );
     let (host, runtime) = start(addr);
     let session = Arc::clone(runtime.session());
-    session.submit_turn(SubmittedTurn::new("zebra history to fold away", "s1"));
+    session.submit_turn(SubmittedTurn::new("zebra history to compact away", "s1"));
 
     wait_until("the triage is held", || session.stall().is_some()).await;
     let upto = session
@@ -348,7 +348,11 @@ async fn a_fold_during_a_hold_is_what_the_retry_triages() {
     session
         .append(
             1,
-            Payload::Mark(crate::log::Mark::boundary(upto, "the folded account")),
+            Payload::Summary(crate::log::Summary::consolidation(
+                0,
+                upto,
+                "the compacted account",
+            )),
         )
         .unwrap();
     assert_eq!(session.request_continue(), Ok(()));
@@ -365,8 +369,8 @@ async fn a_fold_during_a_hold_is_what_the_retry_triages() {
         "the held triage read the history"
     );
     assert!(
-        retried.contains("the folded account") && !retried.contains("zebra history"),
-        "the retried triage reads the fold: {retried}"
+        retried.contains("the compacted account") && !retried.contains("zebra history"),
+        "the retried triage reads the compaction: {retried}"
     );
     host.shut_down().await;
 }

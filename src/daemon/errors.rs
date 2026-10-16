@@ -39,10 +39,10 @@ pub(crate) enum ErrorCode {
     /// state, like [`GateMoved`](Self::GateMoved), and a client acts by showing
     /// the message rather than by retrying.
     NotContinuable,
-    /// `POST /loop/fold` at a moment with no fold in it: the cache is not believed
+    /// `POST /loop/compact` at a moment with no compaction in it: the cache is not believed
     /// expired, a gate or question is pending, a request is in flight, or everything
-    /// since the last fold fits in the verbatim tail (backlog: cold-session.md). 409.
-    NotFoldable,
+    /// since the last compaction fits in the verbatim tail (backlog: cold-session.md). 409.
+    NotCompactable,
     /// The addressed thing exists, but not in the state this request describes:
     /// `PATCH /sessions/:id {"state": "active"}` naming a session this host is
     /// already running under a different working root (docs/control-api.md). 409.
@@ -83,7 +83,9 @@ impl ErrorCode {
             Self::Unauthorized => 401,
             Self::Forbidden => 403,
             Self::NotFound => 404,
-            Self::GateMoved | Self::NotContinuable | Self::NotFoldable | Self::StateMismatch => 409,
+            Self::GateMoved | Self::NotContinuable | Self::NotCompactable | Self::StateMismatch => {
+                409
+            }
             Self::TooLarge => 413,
             Self::UnsupportedContent => 415,
             Self::RateLimited => 429,

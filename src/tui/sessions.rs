@@ -15,7 +15,7 @@
 //! background processes is confirmed; an idle one with nothing running is not.
 
 use super::*;
-use crate::client::SessionSummary;
+use crate::client::ListedSession;
 
 /// The switcher's state while it is open.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -28,7 +28,7 @@ pub(crate) struct SessionMenu {
     pub(super) resume: Option<Box<super::resume_list::ResumePage>>,
     /// The listing as the host last answered it, sorted by id. Empty while the
     /// first read is out.
-    pub rows: Vec<SessionSummary>,
+    pub rows: Vec<ListedSession>,
     /// The row the keys act on. Clamped at use, because the listing is replaced
     /// wholesale and a row can leave under the cursor.
     pub selected: usize,
@@ -42,7 +42,7 @@ pub(crate) struct SessionMenu {
 
 impl SessionMenu {
     /// The selected row, with the index clamped to the listing as it stands now.
-    pub(crate) fn current(&self) -> Option<&SessionSummary> {
+    pub(crate) fn current(&self) -> Option<&ListedSession> {
         self.rows
             .get(self.selected.min(self.rows.len().saturating_sub(1)))
     }
@@ -51,11 +51,11 @@ impl SessionMenu {
 /// Why ending this session should be confirmed, or `None` when there is nothing
 /// to lose by ending it now.
 ///
-/// The two conditions the listing can answer (`host/summary.rs`): the session is
+/// The two conditions the listing can answer (`host/listing.rs`): the session is
 /// doing something — running a turn, holding a call at a gate, or parked on a
 /// stall it has not been told about — or it holds background processes, which
 /// ending reaps.
-pub(crate) fn needs_confirm(row: &SessionSummary) -> Option<String> {
+pub(crate) fn needs_confirm(row: &ListedSession) -> Option<String> {
     let doing = match row.status.as_str() {
         "running" => Some("is mid-turn"),
         "gated" => Some("is holding a call at a gate"),
@@ -99,7 +99,7 @@ impl InteractiveState<'_> {
     /// Fold a listing (or the reason there isn't one) into an open switcher.
     /// Ignored when the switcher is closed: the listing is overlay state, and
     /// nothing else in the UI reads it.
-    pub(super) fn apply_sessions(&mut self, listing: Result<Vec<SessionSummary>, String>) {
+    pub(super) fn apply_sessions(&mut self, listing: Result<Vec<ListedSession>, String>) {
         let UiMode::Sessions(menu) = &mut self.ui_mode else {
             return;
         };
@@ -176,7 +176,7 @@ impl InteractiveState<'_> {
         }
     }
 
-    /// One connection's catalog entry answered. Folded into the open form's
+    /// One connection's catalog entry answered. Compacted into the open form's
     /// picker; dropped when no form is open, since the entry describes a list
     /// nobody can see.
     pub(super) fn apply_catalog(

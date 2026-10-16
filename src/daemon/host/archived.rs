@@ -4,7 +4,7 @@
 //! The same collection as the live listing, filtered by the lifecycle word
 //! [`SessionState`] already names. The rows come from [`crate::inventory`]'s
 //! filesystem scan, held on the [`Host`] so an unchanged log is not read again.
-//! The row is its own type: [`SessionSummary`] is also the `sessions` tool's
+//! The row is its own type: [`ListedSession`] is also the `sessions` tool's
 //! schema, and an archived row has no status or processes to report.
 
 use super::*;
@@ -27,7 +27,7 @@ impl Host {
     /// Blocking: stats and reads logs. Callers off the executor.
     fn archived(&self, roots: &[PathBuf]) -> Vec<ArchivedSession> {
         let live: HashSet<(String, String)> = self
-            .summaries()
+            .listing()
             .into_iter()
             .filter_map(|summary| Some((summary.id, summary.cwd?)))
             .collect();

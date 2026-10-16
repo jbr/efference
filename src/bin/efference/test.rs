@@ -46,10 +46,10 @@ async fn a_name_resolves_against_the_given_host() {
 /// not candidates, and a listing with no cwd (an older host) is kept.
 #[test]
 fn a_hosts_listing_is_scoped_to_this_directory() {
-    use efference::client::SessionSummary;
+    use efference::client::ListedSession;
     let dir = std::env::temp_dir().join("efference-hosted-here");
     std::fs::create_dir_all(dir.join("sub")).unwrap();
-    let listing = |id: &str, cwd: Option<&str>| SessionSummary {
+    let listing = |id: &str, cwd: Option<&str>| ListedSession {
         id: id.into(),
         title: None,
         cwd: cwd.map(str::to_string),

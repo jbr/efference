@@ -1,7 +1,7 @@
 use super::*;
 use crate::log::MessagesOutputBlock;
 use crate::log::{
-    AssistantOutput, ContentBlock, Mark, RawResult, Timestamp, ToolCall, Triaged, WireState,
+    AssistantOutput, ContentBlock, RawResult, Summary, Timestamp, ToolCall, Triaged, WireState,
 };
 use serde_json::json;
 
@@ -63,7 +63,7 @@ fn preserves_final_report_and_operator_reply() {
     assert_eq!(span, Span { from: 0, upto: 2 });
     log.push(entry(
         5,
-        Payload::Mark(Mark::span(span.from, span.upto, "account")),
+        Payload::Summary(Summary::consolidation(span.from, span.upto, "account")),
     ));
     let wire = project_semantic(&log);
     assert_eq!(
@@ -85,7 +85,10 @@ fn preserves_final_report_and_operator_reply() {
 #[test]
 fn later_span_does_not_rewrite_prefix_or_earlier_account() {
     let mut log = work();
-    log.push(entry(5, Payload::Mark(Mark::span(0, 2, "account A"))));
+    log.push(entry(
+        5,
+        Payload::Summary(Summary::consolidation(0, 2, "account A")),
+    ));
     log.extend([
         call(6, "edit", "edit"),
         result(7, "edit", "edited"),
@@ -96,7 +99,7 @@ fn later_span_does_not_rewrite_prefix_or_earlier_account() {
     assert_eq!(span, Span { from: 3, upto: 7 });
     log.push(entry(
         9,
-        Payload::Mark(Mark::span(span.from, span.upto, "account B")),
+        Payload::Summary(Summary::consolidation(span.from, span.upto, "account B")),
     ));
     let wire = project_semantic(&log);
     assert_eq!(wire[0], prefix[0]);

@@ -1,7 +1,7 @@
 //! The dialect-neutral fold of the log: which entries reach the wire, in what
 //! order, rendered as far as every dialect agrees (docs/log-and-projection.md).
 //!
-//! `project_semantic` decides *selection* — boundary folds, result verdicts, pinned
+//! `project_semantic` decides *selection* — summaries, result verdicts, pinned
 //! notifications, surfaced context, audit-only exclusions — and produces turns a
 //! dialect encoder copies onto its wire. It renders tool-result text (verdict, `[seq]`
 //! handle) because every dialect sends the same text; it does not decide image
@@ -22,7 +22,7 @@ use crate::log::{
 #[derive(Clone, Debug, PartialEq)]
 pub enum WireTurn {
     /// A user-role turn: prose, tool results answering the previous assistant turn,
-    /// fold summaries, pinned notifications. Parts keep log order; a dialect encoder
+    /// summaries, pinned notifications. Parts keep log order; a dialect encoder
     /// may regroup them (Messages coalesces into one message; Responses emits one
     /// input item per result and one message for the prose).
     User(Vec<UserPart>),
@@ -184,8 +184,8 @@ pub fn project_semantic(log: &[LogEntry]) -> Vec<WireTurn> {
     project_semantic_for(log, Reader::Main)
 }
 
-/// [`project_semantic`] for one reader (docs/summary-head.md): the same fold, with the
-/// boundary marks addressed to the other reader left out.
+/// [`project_semantic`] for one reader (docs/summary.md): the same fold, with the
+/// summaries addressed to the other reader left out.
 pub fn project_semantic_for(log: &[LogEntry], reader: Reader) -> Vec<WireTurn> {
     let skipped = super::skipped_seqs(log);
     let (boundaries, elided) = extract_boundaries(log, &skipped, reader);
@@ -277,8 +277,8 @@ pub fn project_semantic_for(log: &[LogEntry], reader: Reader) -> Vec<WireTurn> {
 
     for entry in log {
         // Inject the summary just before the first non-elided entry that follows
-        // the fold span (i.e., the first entry with seq > upto). This places the
-        // summary at the head of the live conversation rather than at the mark's
+        // the summarized range (i.e., the first entry with seq > upto). This places the
+        // summary at the head of the live conversation rather than at the entry's
         // own log position (docs/README.md).
         while boundary_cursor < boundaries.len()
             && !elided.contains(&entry.seq)
@@ -290,7 +290,7 @@ pub fn project_semantic_for(log: &[LogEntry], reader: Reader) -> Vec<WireTurn> {
             boundary_cursor += 1;
         }
 
-        // Skip elided entries (the folded old-task span + the mark itself) and the
+        // Skip elided entries (the summarized old-task range + the summary entry itself) and the
         // entries a `Resumed` entry rolled back (docs/resumption.md).
         if elided.contains(&entry.seq) || skipped.contains(&entry.seq) {
             continue;
@@ -363,10 +363,9 @@ pub fn project_semantic_for(log: &[LogEntry], reader: Reader) -> Vec<WireTurn> {
                 emitted.insert(call_id.clone());
                 release(&mut held_notices, &emitted, &mut pending);
             }
-            // Marks are in the elided set (extract_boundaries inserts every
-            // Boundary mark's own seq); this arm is only reachable for future
-            // non-Boundary mark kinds, which can be added here when they land.
-            Payload::Mark(_) => {}
+            // A summary entry is in the elided set (extract_boundaries inserts every
+            // summary's own seq), so this arm projects nothing.
+            Payload::Summary(_) => {}
             // An `Ambient` arrival is audit-only on the wire (docs/inbox.md) — it never
             // itself projects; a *pinned* one is emitted by its `Triage` (below).
             Payload::Ambient(_) => {}

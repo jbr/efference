@@ -11,19 +11,20 @@ impl Session {
     /// stops). Both `None` until the first real turn; the first is also `None` on the
     /// triage lineage until a request on it has been recorded.
     ///
-    /// A fold since the lineage's last touch empties the first: the prefix that request
+    /// A compaction since the lineage's last touch empties the first: the prefix that request
     /// read is gone, and nothing has sent the new one, so there is no entry to keep.
     pub(in crate::daemon) fn keepalive_clocks(
         &self,
         lineage: CacheLineage,
     ) -> (Option<Duration>, Option<Duration>) {
-        let folded = self.last_fold_at();
+        let compacted_at = self.last_compaction_at();
         let m = self.metrics.lock().unwrap();
         let (wall, at) = match lineage {
             CacheLineage::Main => (m.last_request_wall, m.last_request_at),
             CacheLineage::Triage => (m.last_triage_wall, m.last_triage_at),
         };
-        let touched = wall.filter(|touch| folded.is_none_or(|fold| touch.0 > fold.0));
+        let touched =
+            wall.filter(|touch| compacted_at.is_none_or(|compaction| touch.0 > compaction.0));
         (
             touched.and(at).map(|t| t.elapsed()),
             m.last_real_turn_at.map(|t| t.elapsed()),
@@ -78,14 +79,14 @@ impl Session {
         });
     }
 
-    /// Read the stored primer, provided no fold has moved the prefix since it was sent. A
-    /// stored primer that a fold has passed is dropped here, so no ping replays bytes the
+    /// Read the stored primer, provided no compaction has moved the prefix since it was sent. A
+    /// stored primer that a compaction has passed is dropped here, so no ping replays bytes the
     /// log does not produce.
     fn with_triage_primed<T>(&self, read: impl FnOnce(&PrimedPrefix) -> T) -> Option<T> {
-        let folded = self.last_fold_at();
+        let compacted_at = self.last_compaction_at();
         let mut m = self.metrics.lock().unwrap();
-        let stale = match (&m.triage_primed, folded) {
-            (Some(primed), Some(fold)) => primed.sent.0 <= fold.0,
+        let stale = match (&m.triage_primed, compacted_at) {
+            (Some(primed), Some(compaction)) => primed.sent.0 <= compaction.0,
             _ => false,
         };
         if stale {

@@ -102,7 +102,7 @@ impl Session {
                 Some(pos) => {
                     if mark_running {
                         self.running.store(true, Ordering::SeqCst);
-                        self.clear_failed_fold();
+                        self.clear_failed_compaction();
                     }
                     q.remove(pos);
                     true
@@ -216,8 +216,8 @@ impl Session {
     /// running, no gate, no stall — is *not* settled. The predicate behind `/settle` and the
     /// `?wait` flag (docs/permissions.md).
     pub(super) fn is_settled(&self) -> bool {
-        // A fold being written is work in progress, whatever else holds.
-        if self.folding() {
+        // A compaction being written is work in progress, whatever else holds.
+        if self.compacting() {
             return false;
         }
         self.pending.lock().unwrap().is_some()

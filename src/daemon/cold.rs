@@ -17,14 +17,14 @@ use crate::log::{ColdEvent, ColdReason, ReleasedBy, Timestamp, UnparkCause};
 pub(crate) enum ParkReason {
     /// The cache is believed expired: continuing pays `context_tokens` uncached. The
     /// loop waits for a person to act (a turn, a continue, a decision, an answer), or a
-    /// fold.
+    /// compaction.
     Expired {
         since: Timestamp,
         context_tokens: Option<u64>,
     },
-    /// A fold summarized the history while the loop was parked, so the belief is gone and
+    /// A compaction summarized the history while the loop was parked, so the belief is gone and
     /// the next turn or continue resumes the loop.
-    Folded,
+    Compacted,
 }
 
 /// How often [`cold_watch`] re-reads the belief: the topic turns at most this late.
@@ -42,31 +42,31 @@ impl Session {
     /// From when the cache is believed expired, or `None` while it is believed warm,
     /// before the first request on the main prefix, and on a model with no cache.
     ///
-    /// Only a request on the current prefix counts: after a fold nothing has sent the
+    /// Only a request on the current prefix counts: after a compaction nothing has sent the
     /// new one, which is the state of a session that has made no request at all.
     ///
-    /// A session with nothing to fold is not cold either. Cold is a question put to the
-    /// operator — pay the read, or fold — and where everything since the last fold
+    /// A session with nothing to compact is not cold either. Cold is a question put to the
+    /// operator — pay the read, or compact — and where everything since the last compaction
     /// fits in the verbatim tail there is only one answer, so nothing is asked.
     pub(crate) fn cold_since(&self) -> Option<Timestamp> {
         let ttl = *self.cache_ttl.get()?;
-        let folded = self.last_fold_at();
+        let compacted_at = self.last_compaction_at();
         let last_touch = self
             .metrics
             .lock()
             .unwrap()
             .last_request_wall
-            .filter(|touch| folded.is_none_or(|fold| touch.0 > fold.0));
+            .filter(|touch| compacted_at.is_none_or(|compaction| touch.0 > compaction.0));
         let since = believed_cold_since(last_touch, Timestamp::now(), ttl)?;
         let log = self.log.lock().unwrap();
-        super::fold::fold_cut(log.entries(), super::fold::FOLD_TAIL_TOKENS)?;
+        super::compact::compaction_cut(log.entries(), super::compact::COMPACTION_TAIL_TOKENS)?;
         Some(since)
     }
 
     /// The `cold` topic: `{since, context_tokens}`, or `null`. `context_tokens` is
     /// the last turn's prompt — what reading the context unfolded would cost, in tokens.
     /// Whether the loop is stopped at its cold check is the separate `park` topic.
-    /// A fold's progress is the separate `fold` topic.
+    /// A compaction's progress is the separate `compaction` topic.
     pub(super) fn cold_json(&self) -> Value {
         let Some(since) = self.cold_since() else {
             return Value::Null;
@@ -87,12 +87,12 @@ impl Session {
                 since,
                 context_tokens: self.cold_context_tokens(),
             },
-            None => ParkReason::Folded,
+            None => ParkReason::Compacted,
         })
     }
 
     /// The `park` topic: `{reason: "expired", since, context_tokens}`,
-    /// `{reason: "folded"}`, or `null` when the loop is not parked at its cold check.
+    /// `{reason: "compacted"}`, or `null` when the loop is not parked at its cold check.
     pub(super) fn park_json(&self) -> Value {
         match self.park_reason() {
             None => Value::Null,
@@ -104,7 +104,7 @@ impl Session {
                 "since": since,
                 "context_tokens": context_tokens,
             }),
-            Some(ParkReason::Folded) => serde_json::json!({ "reason": "folded" }),
+            Some(ParkReason::Compacted) => serde_json::json!({ "reason": "compacted" }),
         }
     }
 
@@ -126,7 +126,7 @@ impl Session {
     /// lets a held inbox wake through; `by` is the action, kept in the log beside the
     /// park it releases. Nothing is left behind when the session is warm, so an action
     /// taken before a cold moment does not release a later one. A loop parked since
-    /// before a fold, with the belief gone, is woken the same way.
+    /// before a compaction, with the belief gone, is woken the same way.
     pub(crate) fn release_cold(&self, by: ReleasedBy) {
         if self.cold_since().is_some() {
             self.record_cold(ColdEvent::Released { by });
@@ -156,7 +156,7 @@ impl Session {
         }
     }
 
-    /// Let a parked cold check look again: after a fold the session is no longer cold,
+    /// Let a parked cold check look again: after a compaction the session is no longer cold,
     /// and the operator's next turn or continue resumes it.
     pub(crate) fn wake_cold_check(&self) {
         if self.cold_parked() {
@@ -204,7 +204,7 @@ impl Session {
             }
             if !self.cold_parked.swap(true, Ordering::SeqCst) {
                 log::debug!(
-                    "cold — waiting for a person before reading the expired cache, or a fold"
+                    "cold — waiting for a person before reading the expired cache, or a compaction"
                 );
                 self.record_cold(ColdEvent::Parked {
                     reason: ColdReason::Expired,
@@ -228,7 +228,7 @@ impl Session {
 
     /// [`Self::inbox_wake`], held while the cache is believed cold: an idle triage is a
     /// request on the main prefix, so a notification waits in the inbox until a person
-    /// acts (or a fold makes the session warm again).
+    /// acts (or a compaction makes the session warm again).
     pub(crate) async fn inbox_wake_while_warm(&self) {
         loop {
             self.inbox_wake().await;

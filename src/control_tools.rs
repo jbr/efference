@@ -478,12 +478,12 @@ impl HostExecutor {
     }
 
     /// The caller's project: every session sharing its storage base.
-    fn sessions(&self) -> Result<Vec<crate::client::SessionSummary>> {
+    fn sessions(&self) -> Result<Vec<crate::client::ListedSession>> {
         let host = self.host()?;
         let caller = self.caller_session()?;
         let base = caller.storage_base();
         Ok(host
-            .summaries()
+            .listing()
             .into_iter()
             .filter(|row| {
                 host.session(&row.id)

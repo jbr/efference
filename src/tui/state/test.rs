@@ -198,7 +198,7 @@ fn a_long_paste_is_staged_and_sent_with_the_next_turn() {
     assert!(s.staged.is_empty(), "sent chips leave the row");
 }
 
-/// `C-o` asks for a fold (backlog: cold-session.md).
+/// `C-o` asks for a compaction (backlog: cold-session.md).
 #[test]
 fn ctrl_o_asks_for_a_fold() {
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -206,10 +206,10 @@ fn ctrl_o_asks_for_a_fold() {
     let theme = InteractiveTheme::from_render_context(&rc);
     let (_etx, erx) = crossbeam_channel::unbounded();
     let (senders, receivers) = crate::tui::senders::Senders::channels();
-    let mut frx = receivers.fold;
+    let mut frx = receivers.compaction;
     let mut s = InteractiveState::new(erx, senders, rc, theme);
     s.handle_composer_key(KeyEvent::new(KeyCode::Char('o'), KeyModifiers::CONTROL));
-    assert!(frx.try_recv().is_ok(), "a fold was asked for");
+    assert!(frx.try_recv().is_ok(), "a compaction was asked for");
 }
 
 /// The operation text shows only while the loop is running, follows the topic, and

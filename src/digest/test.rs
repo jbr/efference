@@ -1,5 +1,5 @@
 use super::*;
-use crate::log::{AssistantOutput, Keep, Mark, RawResult, Resumed, Timestamp, Triaged};
+use crate::log::{AssistantOutput, Keep, RawResult, Resumed, Summary, Timestamp, Triaged};
 use serde_json::json;
 
 fn entry(seq: u64, payload: Payload) -> LogEntry {
@@ -124,7 +124,7 @@ fn a_verdict_resolves_a_pending_result_and_resumption_skips_are_omitted() {
                 pending_calls: vec![],
             }),
         ),
-        entry(6, Payload::Mark(Mark::boundary(3, "summary"))),
+        entry(6, Payload::Summary(Summary::consolidation(0, 3, "summary"))),
     ];
     assert_eq!(
         render(&log, Options::default()),
@@ -133,8 +133,8 @@ fn a_verdict_resolves_a_pending_result_and_resumption_skips_are_omitted() {
     );
 }
 
-/// A consolidation mark addressed to the triage reader renders in a digest read for
-/// triage and is left out of one read for the main model (docs/summary-head.md).
+/// A summary addressed to the triage reader renders in a digest read for
+/// triage and is left out of one read for the main model (docs/summary.md).
 #[test]
 fn a_triage_mark_renders_only_in_a_triage_digest() {
     use crate::log::Audience;
@@ -143,7 +143,9 @@ fn a_triage_mark_renders_only_in_a_triage_digest() {
         entry(0, Payload::User(vec![ContentBlock::Text("first".into())])),
         entry(
             1,
-            Payload::Mark(Mark::boundary(0, "for triage").for_audience(Audience::Triage)),
+            Payload::Summary(
+                Summary::consolidation(0, 0, "for triage").for_audience(Audience::Triage),
+            ),
         ),
     ];
     let main = render(&log, Options::default());

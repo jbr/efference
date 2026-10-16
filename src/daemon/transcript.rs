@@ -186,10 +186,10 @@ fn lines(
             }
             vec![line("result", body)]
         }
-        Payload::Mark(mark) => {
+        Payload::Summary(summary) => {
             vec![line(
-                "mark",
-                format!("{}: {}", mark.kind.label(), mark.note),
+                "summary",
+                format!("{}: {}", summary.label(), summary.text),
             )]
         }
         Payload::Triage(triage) => {

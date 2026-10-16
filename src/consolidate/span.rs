@@ -23,8 +23,8 @@ pub fn start(log: &[LogEntry]) -> Option<Seq> {
         .iter()
         .filter(|e| !skipped.contains(&e.seq))
         .filter_map(|e| match &e.payload {
-            Payload::Mark(mark) if Reader::Main.applies(mark.audience) => {
-                Some(*mark.kind.range().end())
+            Payload::Summary(summary) if Reader::Main.applies(summary.audience) => {
+                Some(summary.upto)
             }
             _ => None,
         })
@@ -125,7 +125,7 @@ pub fn safe(log: &[LogEntry], span: Span) -> bool {
         .iter()
         .filter(|e| !skipped.contains(&e.seq))
         .filter_map(|e| match &e.payload {
-            Payload::Mark(m) if m.audience == Audience::All => Some(m.kind.range()),
+            Payload::Summary(s) if s.audience == Audience::All => Some(s.range()),
             _ => None,
         })
         .flat_map(|range| {

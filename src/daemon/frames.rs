@@ -133,14 +133,14 @@ pub(crate) enum Topic {
     /// before the first request, and on a model with no cache.
     Cold,
     /// The loop is stopped at its cold check mid-turn (docs/control-api.md):
-    /// `{reason: "expired", since, context_tokens}`, `{reason: "folded"}`, or `null`.
-    /// Separate from [`Cold`](Self::Cold), which is `null` after a fold though the
+    /// `{reason: "expired", since, context_tokens}`, `{reason: "compacted"}`, or `null`.
+    /// Separate from [`Cold`](Self::Cold), which is `null` after a compaction though the
     /// loop stays parked until the next turn or continue.
     Park,
-    /// A fold in progress, or the last one's failure (docs/control-api.md): `{state:
-    /// "writing"}`, `{state: "failed", error}`, or `null`. Separate from
-    /// [`Cold`](Self::Cold) because a fold can be asked of a warm session.
-    Fold,
+    /// A compaction in progress, or the last one's failure (docs/control-api.md):
+    /// `{state: "writing"}`, `{state: "failed", error}`, or `null`. Separate from
+    /// [`Cold`](Self::Cold) because a compaction can be asked of a warm session.
+    Compaction,
     /// The config file on disk does not parse and could not be restored, so the
     /// loop is parked until a human repairs it (docs/permissions.md). `null`
     /// whenever the file parses — which is nearly always, since a bad edit is
@@ -183,7 +183,7 @@ impl Topic {
         Self::UpstreamRetry,
         Self::Cold,
         Self::Park,
-        Self::Fold,
+        Self::Compaction,
         Self::ConfigRepair,
         Self::SessionIdentity,
         Self::CurrentOperations,
@@ -217,7 +217,7 @@ impl Topic {
             Self::UpstreamRetry => "upstream_retry",
             Self::Cold => "cold",
             Self::Park => "park",
-            Self::Fold => "fold",
+            Self::Compaction => "compaction",
             Self::ConfigRepair => "config_repair",
             Self::SessionIdentity => "session_identity",
             Self::CurrentOperations => "current_operations",
@@ -304,11 +304,11 @@ impl Frame {
                 "process_output",
                 serde_json::json!({ "id": id, "chunk": chunk }),
             ),
-            StreamDelta::NarratorText { text } => {
-                ("narrator_delta", serde_json::json!({ "text": text }))
+            StreamDelta::CompactionText { text } => {
+                ("compaction_delta", serde_json::json!({ "text": text }))
             }
-            StreamDelta::NarratorThinking { text } => (
-                "narrator_thinking_delta",
+            StreamDelta::CompactionThinking { text } => (
+                "compaction_thinking_delta",
                 serde_json::json!({ "text": text }),
             ),
         };
@@ -362,7 +362,7 @@ pub(crate) fn payload_kind(payload: &Payload) -> &'static str {
         Payload::Assistant { .. } => "assistant",
         Payload::ToolResult { .. } => "tool_result",
         Payload::ResultVerdict { .. } => "result_verdict",
-        Payload::Mark(_) => "mark",
+        Payload::Summary(_) => "summary",
         Payload::Triage(_) => "triage",
         Payload::Ambient(_) => "ambient",
         Payload::Spot(_) => "spot",

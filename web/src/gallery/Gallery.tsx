@@ -130,11 +130,11 @@ export function Gallery() {
       </Section>
 
       <Section title="Neon">
-        <Specimen name="glyphs — .prompt / .note-glyph / .consolidation-rule .glyph">
+        <Specimen name="glyphs — .prompt / .note-glyph / .summary-rule .glyph">
           <div className="g-row g-mono">
             <span className="prompt">›</span>
             <span className="note-glyph">✦</span>
-            <span className="consolidation-rule">
+            <span className="summary-rule">
               <span className="glyph">◆</span>
             </span>
           </div>

@@ -15,7 +15,7 @@
 //! reads: ending a session that holds processes reaps them, so a client asks
 //! first (docs/tui.md, docs/web-client.md).
 //!
-//! [`status`]: SessionSummary::status
+//! [`status`]: ListedSession::status
 
 use super::super::status::SessionStatus;
 use super::*;
@@ -23,7 +23,7 @@ use super::*;
 /// One row of `GET /sessions` (docs/control-api.md). Also the shape the
 /// `sessions` tool answers with, hence the schema derive (docs/tools.md).
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, schemars::JsonSchema)]
-pub struct SessionSummary {
+pub struct ListedSession {
     pub id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
@@ -68,14 +68,14 @@ fn status_word(status: &SessionStatus) -> &'static str {
 impl Host {
     /// The listing now, sorted by id — the body of `GET /sessions` and the
     /// payload of each frame on its stream.
-    pub fn summaries(&self) -> Vec<SessionSummary> {
+    pub fn listing(&self) -> Vec<ListedSession> {
         self.ids()
             .into_iter()
             .filter_map(|id| {
                 let session = self.session(&id)?;
                 let identity = session.identity();
                 let directories = session.directories();
-                Some(SessionSummary {
+                Some(ListedSession {
                     title: identity.as_ref().and_then(|i| i.title.clone()),
                     cwd: Some(directories.project().to_string_lossy().into_owned()),
                     working: (directories.working() != directories.project())
@@ -94,15 +94,15 @@ impl Host {
     }
 
     /// The listing as the bytes both readings send.
-    pub(crate) fn summaries_json(&self) -> String {
-        serde_json::to_string(&self.summaries()).unwrap_or_else(|_| "[]".to_string())
+    pub(crate) fn listing_json(&self) -> String {
+        serde_json::to_string(&self.listing()).unwrap_or_else(|_| "[]".to_string())
     }
 
     /// Signal that the listing may have moved. Cheap and idempotent, like the
     /// per-session `touch_state`: every subscriber recomputes and re-diffs, so
     /// an over-eager ping costs one comparison and a spurious one costs nothing.
-    pub(crate) fn touch_summary(&self) {
-        self.summary_changed.notify_waiters();
+    pub(crate) fn touch_listing(&self) {
+        self.listing_changed.notify_waiters();
     }
 }
 
@@ -110,9 +110,9 @@ impl Host {
 ///
 /// No `id:` — there is no cursor to resume from, because there is no history to
 /// resume into.
-pub(crate) struct SummaryEvent(String);
+pub(crate) struct ListingEvent(String);
 
-impl Eventable for SummaryEvent {
+impl Eventable for ListingEvent {
     fn data(&self) -> Option<&str> {
         Some(&self.0)
     }
@@ -129,9 +129,9 @@ impl Eventable for SummaryEvent {
 ///
 /// A `Weak` rather than an `Arc`: a stream a client left open must not be what
 /// keeps the host alive, and the host going away is what ends it.
-pub(crate) fn summary_stream(
+pub(crate) fn listing_stream(
     host: std::sync::Weak<Host>,
-) -> Pin<Box<dyn Stream<Item = SummaryEvent> + Send + Sync + 'static>> {
+) -> Pin<Box<dyn Stream<Item = ListingEvent> + Send + Sync + 'static>> {
     Box::pin(futures_lite::stream::unfold(
         (host, None::<String>),
         |(host, mut last)| async move {
@@ -139,13 +139,13 @@ pub(crate) fn summary_stream(
                 let live = host.upgrade()?;
                 // Armed before the listing is read, so a change landing between
                 // the read and the await cannot be lost.
-                let changed = live.summary_changed.notified();
+                let changed = live.listing_changed.notified();
                 tokio::pin!(changed);
                 changed.as_mut().enable();
-                let json = live.summaries_json();
+                let json = live.listing_json();
                 if last.as_deref() != Some(json.as_str()) {
                     last = Some(json.clone());
-                    return Some((SummaryEvent(json), (host, last)));
+                    return Some((ListingEvent(json), (host, last)));
                 }
                 changed.await;
             }

@@ -84,7 +84,7 @@ export type Payload =
         selection?: SelectionLines;
       };
     }
-  | { Mark: Mark }
+  | { Summary: Summary }
   | { Triage: Triage }
   | { Ambient: Notification }
   | { Spot: Spot }
@@ -151,7 +151,7 @@ export type RequestOrigin =
   | "spot"
   | "keepalive"
   | "triage_primer"
-  | "narrate"
+  | "compaction"
   | "consolidation"
   | "aborted_attempt"
   | "unknown";
@@ -371,9 +371,14 @@ export type WireState =
 
 export type Keep = "All" | "None" | { Ranges: [number, number][] };
 
-export interface Mark {
-  kind: { Boundary: { upto: Seq } } | { Span: { from: Seq; upto: Seq } };
-  note: string;
+/** The text that replaces the entries `from..=upto` (docs/summary.md).
+ * `made_by` is absent for a consolidation; `audience` is absent for `All`. */
+export interface Summary {
+  from: Seq;
+  upto: Seq;
+  text: string;
+  made_by?: { compaction: unknown };
+  audience?: "triage";
 }
 
 export type TriageOrigin = "Model" | "Fallback";
@@ -658,17 +663,18 @@ export interface Cold {
 
 // The loop is stopped at its cold check mid-turn (docs/control-api.md); `null`
 // otherwise, including an idle cold session.
-// `expired`: waiting for a person to act before the uncached read, or for a fold.
-// `folded`: a fold summarized the history while parked, so `cold` is null and a
+// `expired`: waiting for a person to act before the uncached read, or for a compaction.
+// `compacted`: a compaction summarized the history while parked, so `cold` is null and a
 // turn or continue resumes the loop.
 export type Park =
   | { reason: "expired"; since: number; context_tokens: number | null }
-  | { reason: "folded" };
+  | { reason: "compacted" };
 
-// A fold — the session's history replaced by an account its own model writes —
-// in progress, or the last one's failure (`POST /loop/fold`, docs/control-api.md).
-// `null` otherwise. Independent of `cold`: a fold can be asked of a warm session.
-export type Fold = { state: "writing" } | { state: "failed"; error: string };
+// A compaction — the session's history replaced by a summary its own model writes —
+// in progress, or the last one's failure (`POST /loop/compact`, docs/control-api.md).
+// `null` otherwise. Independent of `cold`: a compaction can be asked of a warm session.
+export type Compaction =
+  { state: "writing" } | { state: "failed"; error: string };
 
 // A retry in flight (docs/transport.md). Level-triggered: `null` is the
 // all-clear — the attempt that finalized, or exhaustion.
@@ -785,7 +791,7 @@ export interface StateTopics {
   upstream_retry?: UpstreamRetry | null;
   cold?: Cold | null;
   park?: Park | null;
-  fold?: Fold | null;
+  compaction?: Compaction | null;
   session_identity?: SessionIdentity | null;
   current_operations?: CurrentOperations | null;
 }
@@ -846,7 +852,7 @@ export interface ErrorEnvelope {
     | "not_found"
     | "gate_moved"
     | "not_continuable"
-    | "not_foldable"
+    | "not_compactable"
     | "cold"
     | "unauthorized"
     | "forbidden"

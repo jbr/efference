@@ -73,7 +73,7 @@ test("a parked session is blocked, says why, and names the cold read", () => {
     detail: "continuing reads the whole context uncached",
   });
   const folded = cardModel(one[0], one, {
-    park: { reason: "folded" },
+    park: { reason: "compacted" },
   } as StateSnapshot);
   expect(folded.attention).toBe("blocked");
   expect(statusPhrase(folded)).toBe(

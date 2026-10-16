@@ -45,9 +45,9 @@ pub enum RequestOrigin {
     /// primed turns (docs/transport.md). It refreshes the triage lineage's resume point
     /// and never main-prefix evidence.
     TriageKeepalive,
-    /// The narrator writing a fold's account (docs/summary-head.md): its own prompt,
-    /// so it does not touch the main prefix.
-    Narrate,
+    /// The model writing a compaction's summary (docs/summary.md): its own prompt, so
+    /// it does not touch the main prefix.
+    Compaction,
     /// A continuation of the main envelope considering a completed working span.
     Consolidation,
     /// A retried attempt the loop recorded and re-sent — an unfinalized stream

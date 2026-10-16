@@ -263,7 +263,7 @@ test("shows the exact working span and counts only entries in that range", () =>
     entry(2, { User: [{ Text: "work" }] }),
     entry(3, { User: [{ Text: "more work" }] }),
     entry(4, {
-      Mark: { kind: { Span: { from: 2, upto: 3 } }, note: "account" },
+      Summary: { from: 2, upto: 3, text: "account" },
     }),
   ]);
   expect(html).toContain("consolidated #2–#3");

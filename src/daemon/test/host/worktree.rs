@@ -123,7 +123,7 @@ async fn a_worktree_session_lists_under_its_project() {
     let path = hosting_worktree(&roots, &host, "wt-lister");
 
     let row = host
-        .summaries()
+        .listing()
         .into_iter()
         .find(|row| row.id == "wt-lister")
         .expect("listed");

@@ -82,10 +82,10 @@ use state::{InteractiveState, UiMode};
 /// Why the loop is parked at its cold check (the `park` topic's `reason`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ParkReason {
-    /// Waiting for a person to act before an uncached read, or for a fold.
+    /// Waiting for a person to act before an uncached read, or for a compaction.
     Expired,
-    /// A fold summarized the history while parked; a send resumes it.
-    Folded,
+    /// A compaction summarized the history while parked; a send resumes it.
+    Compacted,
 }
 
 /// The `cold` topic as the UI reads it: the cache is believed expired, and what reading
@@ -157,8 +157,8 @@ pub(crate) enum TuiEvent {
     /// The loop is stopped at its cold check mid-turn (the `park` topic,
     /// docs/control-api.md), and why. Level-triggered: `None` is not parked.
     Park(Option<ParkReason>),
-    /// A fold is being written (the `fold` topic), on a cold or a warm session.
-    Folding(bool),
+    /// A compaction is being written (the `compaction` topic), on a cold or a warm session.
+    Compacting(bool),
     /// A retry in flight changed (the `upstream_retry` topic, docs/transport.md).
     /// Level-triggered: `None` is the all-clear. Ephemeral transport diagnostic,
     /// rendered in the status bar.
@@ -225,7 +225,7 @@ pub(crate) enum TuiEvent {
     /// The host's session listing came back, or said why it could not
     /// (docs/tui.md). One whole listing per event: the switcher holds the latest
     /// and nothing is reconciled.
-    Sessions(Result<Vec<crate::client::SessionSummary>, String>),
+    Sessions(Result<Vec<crate::client::ListedSession>, String>),
     /// The event source closed (daemon gone) → the UI should exit.
     Disconnected,
     /// Open the offline form experiment against an empty context (docs/tui.md).
