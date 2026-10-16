@@ -173,9 +173,8 @@ sessions from one process. Its own routes are the listener's, not a session's:
   0–100) is an issue; one it merely cannot check (a model name it has no catalog
   for) resolves unquestioned, so an empty `issues` means only that nothing is known
   to be wrong. `code` is closed — `required`, `invalid_type`, `out_of_range`,
-  `invalid_selection`, `unavailable_connection`, `incompatible_dialect`,
-  `invalid_config` — and a config that will not load reports that it did not,
-  never its contents.
+  `invalid_selection`, `unavailable_connection`, `invalid_config` — and a config
+  that will not load reports that it did not, never its contents.
 
   Only malformed JSON or a non-object body is `400`; every field-level problem is
   an issue inside a `200`. This is a preview, not a reservation: the host retains

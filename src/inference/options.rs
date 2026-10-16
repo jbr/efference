@@ -179,8 +179,6 @@ pub enum IssueCode {
     InvalidSelection,
     /// The connection is configured, but its credential is disabled or did not load.
     UnavailableConnection,
-    /// A separate triage client cannot replay main's wire dialect.
-    IncompatibleDialect,
     /// The selected project config could not be read or parsed.
     InvalidConfig,
 }
@@ -249,7 +247,7 @@ impl InferenceRegistry {
         let mut issues = Vec::new();
         let main = self.resolve_main(options, history, &mut issues);
         let spotter = self.resolve_spotter(options, &main, &mut issues);
-        let triage = self.resolve_triage(options, &main, &mut issues);
+        let triage = self.resolve_triage(options, &mut issues);
         let effort = match (&options.effort, project_effort) {
             (Some(effort), _) => Effective::resolved(effort.clone(), SelectionSource::Request),
             (None, Some(effort)) => {
@@ -458,7 +456,6 @@ impl InferenceRegistry {
     fn resolve_triage(
         &self,
         options: &SessionOptions,
-        main: &Effective<ModelSelection>,
         issues: &mut Vec<Issue>,
     ) -> Effective<EffectiveTriage> {
         let (selection, options_from, source) = match &options.triage {
@@ -498,26 +495,9 @@ impl InferenceRegistry {
         let Some(selection) = selected.value else {
             return Effective::failed();
         };
-        // A separate triage replays main's transcript, so it must speak main's
-        // dialect. Unknowable when main did not resolve, and silence there is
-        // correct: creation checks it again with both roles in hand.
+        // A separate triage reads the text view (docs/triage.md), so any wire
+        // dialect that serves turns can triage for any other.
         if !requires_inference(&selection, "triage", issues) {
-            return Effective::failed();
-        }
-        if let Some(main) = main.value.as_ref()
-            && selection.provider.inference_dialect() != main.provider.inference_dialect()
-        {
-            issues.push(Issue::new(
-                "triage",
-                IssueCode::IncompatibleDialect,
-                format!(
-                    "triage {} ({}) cannot replay main {} ({}) because their wire dialects differ",
-                    selection.model,
-                    selection.provider.name(),
-                    main.model,
-                    main.provider.name(),
-                ),
-            ));
             return Effective::failed();
         }
         let (thinking, auto_choice, effort) = options_from;

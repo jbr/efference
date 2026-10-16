@@ -328,19 +328,6 @@ auth = { kind = "env", key = "MESSAGES_KEY" }
         })
     );
 
-    // A triage on the Messages dialect cannot replay a Responses transcript: refused
-    // at resolution, naming both roles, before a session dir exists.
-    let refused = server
-        .post("/sessions")
-        .with_json_body(&serde_json::json!({
-            "name": "c", "cwd": roots.0.join("two"), "env": caller_env,
-            "triage": {"mode": "separate", "model": "messages/claude-haiku-4-5"},
-        }))
-        .await;
-    refused
-        .assert_status(400)
-        .assert_body_contains("dialects differ");
-    assert!(!roots.0.join("two/.efference/c").exists());
     // A connection that exists but is unconfigured is named as such, not resolved
     // without one.
 

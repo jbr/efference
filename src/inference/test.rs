@@ -146,8 +146,10 @@ auth = { kind = "env", key = "MISSING_KEY" }
     assert!(unusable.contains("MISSING_KEY"), "{unusable}");
 }
 
+/// A separate triage reads the text view (docs/triage.md), so a triage model of
+/// another wire format than main's resolves for boot.
 #[test]
-fn own_triage_rejects_a_foreign_dialect_before_boot() {
+fn own_triage_of_another_dialect_resolves() {
     let registry = registry(
         r#"
 [connections.messages]
@@ -164,20 +166,20 @@ auth = { kind = "env", key = "OPENAI_KEY" }
         ]),
     );
 
-    let error = match registry.resolve(
-        Some("messages/claude"),
-        None,
-        Some(TriageChoice::separate(
-            "responses/gpt-5.6".to_string(),
-            false,
-            false,
+    let inference = registry
+        .resolve(
+            Some("messages/claude"),
             None,
-        )),
-    ) {
-        Ok(_) => panic!("cross-dialect triage unexpectedly resolved"),
-        Err(error) => error.to_string(),
-    };
-    assert!(error.contains("dialects differ"), "{error}");
+            Some(TriageChoice::separate(
+                "responses/gpt-5.6".to_string(),
+                false,
+                false,
+                None,
+            )),
+        )
+        .expect("a cross-dialect triage resolves");
+    let (selection, _, _) = inference.triage().expect("a separate triage");
+    assert_eq!(selection.connection, "responses");
 }
 
 #[test]

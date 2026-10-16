@@ -520,10 +520,10 @@ disabled = true
     );
 }
 
-/// A separate triage replays main's transcript, so it must speak main's dialect.
-/// Preview reports it rather than letting creation be the first to find out.
+/// A separate triage reads the text view (docs/triage.md), so a triage model of
+/// another wire format than main's is a valid draft, and creation accepts it.
 #[test]
-fn a_cross_dialect_triage_is_an_issue() {
+fn a_cross_dialect_triage_is_valid() {
     let registry = registry(
         r#"
 [connections.messages]
@@ -544,13 +544,11 @@ auth = { kind = "env", key = "OPENAI_KEY" }
         None,
         None,
     );
-    assert_eq!(
-        codes(&resolved),
-        [("triage", IssueCode::IncompatibleDialect)]
-    );
-    assert_eq!(resolved.effective.triage.value, None);
-    // And creation refuses the same draft rather than booting it.
-    assert!(registry.prepare(resolved).is_err());
+    assert!(resolved.issues.is_empty(), "{:?}", resolved.issues);
+    assert!(matches!(
+        resolved.effective.triage.value,
+        Some(EffectiveTriage::Separate { .. })
+    ));
 }
 
 /// An omitted spotter takes `[defaults].spotter` before the main provider's own
@@ -739,8 +737,7 @@ fn a_decision_connection_is_refused_for_the_main_model() {
     assert_eq!(resolved.effective.main.value, None);
 }
 
-/// The same refusal for triage, which replays main's transcript and so runs a
-/// turn of its own.
+/// The same refusal for triage, which sends requests of its own.
 #[test]
 fn a_decision_connection_is_refused_for_triage() {
     let resolved = with_a_decision_connection().resolve_options(
