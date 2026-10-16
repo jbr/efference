@@ -9,6 +9,7 @@ behind a change, see [`journal/`](journal/).
 
 ### Added
 
+- `efference dev triage` replays a triage with the inbox rider the live one was shown, and notes when a replayed triage had background processes whose tails were not logged (docs/triage.md).
 - A triage primer cut at its output cap is recorded as an ended request with its finish word, not `failed`; `failed` is kept for a primer that got no response (docs/transport.md).
 - Compactions are logged (`telemetry.compaction_requested`, `telemetry.compaction_failed`) and their state is folded from the log, so a compaction failure survives a host restart (docs/summary.md).
 - One name per thing for replacing a region of the transcript with written text (docs/summary.md): `Payload::Mark` is `Payload::Summary { from, upto, text, made_by, audience }` (log version 4, `scripts/migrate-log-v4.py`); the agent's `consolidate` writes a consolidation and the harness writes a compaction (`POST /loop/compact`, the `compaction` state topic, `efference dev compact`, `src/compact.rs`); "fold", "summary head" and "narrator" are retired, and session-list rows are `ListedSession`.

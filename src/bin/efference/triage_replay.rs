@@ -10,7 +10,8 @@
 //! session depth, and replaying one is a single warm prefix read.
 
 use super::*;
-use efference::log::{Keep, Payload, RawResult, ToolCall, WireState};
+use efference::inbox::{ShownNotification, active_shown};
+use efference::log::{Keep, Payload, ProcessEventKind, RawResult, ToolCall, WireState};
 use efference::project::{Reader, selection};
 use efference::triage::{Pending, ReplayVerdict, TriageModel, TriageView, Triager, triage_request};
 use std::collections::BTreeSet;
@@ -43,6 +44,13 @@ pub(crate) struct Recorded {
     /// What the recorded run's first attempt did, from `Triage.retries` — the baseline
     /// each replay is compared against. `None` means it complied first try.
     pub(crate) recorded_first_failure: Option<String>,
+    /// The notifications the live triage was shown (docs/inbox.md): those still active
+    /// in the prefix, then those this triage first showed, which the log holds as
+    /// `Ambient` entries after the results.
+    pub(crate) inbox: Vec<ShownNotification>,
+    /// Background processes spawned and not exited when the triage ran. Their output
+    /// tails are sampled live and never logged, so a replay cannot rebuild that rider.
+    pub(crate) running_processes: usize,
 }
 
 /// Rebuild every triage in a log, in order.
@@ -109,6 +117,31 @@ pub(crate) fn recorded_triages(entries: &[efference::log::LogEntry]) -> Vec<Reco
                 Payload::Triage(t) => t.retries.first().cloned(),
                 _ => None,
             });
+        // What the live triage passed as its inbox: `active_shown` over the prefix,
+        // plus the `Ambient` entries it first showed, which sit between its results and
+        // the next completion (a verdict may have resolved them, so they are not
+        // filtered through `active_shown` again).
+        let after = entries[prefix_end..]
+            .iter()
+            .take_while(|e| !matches!(&e.payload, Payload::Assistant { .. }));
+        let mut inbox = active_shown(&entries[..prefix_end]);
+        inbox.extend(after.clone().filter_map(|e| match &e.payload {
+            Payload::Ambient(n) => Some(ShownNotification {
+                seq: e.seq,
+                source: n.source.clone(),
+                body: n.body.clone(),
+            }),
+            _ => None,
+        }));
+        let mut running = BTreeSet::new();
+        for e in entries[..prefix_end].iter().chain(after) {
+            if let Payload::ProcessEvent(event) = &e.payload {
+                match event.kind {
+                    ProcessEventKind::Spawned(_) => running.insert(event.id),
+                    ProcessEventKind::Exited(_) => running.remove(&event.id),
+                };
+            }
+        }
         triages.push(Recorded {
             prefix_end,
             calls_at: i,
@@ -117,6 +150,8 @@ pub(crate) fn recorded_triages(entries: &[efference::log::LogEntry]) -> Vec<Reco
             raws,
             recorded,
             recorded_first_failure,
+            inbox,
+            running_processes: running.len(),
         });
     }
     triages
@@ -384,6 +419,17 @@ pub(crate) async fn triage(
         });
     }
 
+    // Background-process tails are sampled live and never logged, so the replayed
+    // request lacks that rider; say so, or a clean replay reads as a faithful one.
+    let with_processes = selected.iter().filter(|g| g.running_processes > 0).count();
+    if with_processes > 0 {
+        eprintln!(
+            "note: {with_processes} of {} triage(s) had background processes running; their \
+             tails were not logged, so the replayed request omits the background rider",
+            selected.len()
+        );
+    }
+
     // The envelope a real turn sends. `system` is the recorded boot preamble, so the
     // replay reads the same cached prefix the session did; `tools[]` is rebuilt from the
     // current code and cwd, exactly as `wire` does and with the same caveat.
@@ -419,7 +465,7 @@ pub(crate) async fn triage(
                     Reader::Main,
                     view,
                     &pending,
-                    &[],
+                    &g.inbox,
                     &[],
                 ))
             })
@@ -445,7 +491,7 @@ pub(crate) async fn triage(
             Reader::Main,
             view,
             &pending,
-            &[],
+            &g.inbox,
             &[],
         );
         eprintln!(
@@ -548,7 +594,7 @@ pub(crate) async fn triage(
             triage.reader(),
             view,
             &pending,
-            &[],
+            &g.inbox,
             &[],
         )) as u64;
         let mut passes = 0usize;
@@ -566,7 +612,7 @@ pub(crate) async fn triage(
                     view,
                     &entries[..g.prefix_end],
                     &pending,
-                    &[],
+                    &g.inbox,
                     &[],
                 )
                 .await

@@ -261,6 +261,12 @@ writes every row as JSON. Per-triage judgment against the same prefix is what th
 measures; a candidate triaging from turn one would build a different prefix, and only
 a live session measures that.
 
+The replayed request carries the inbox rider the live triage was shown: the
+notifications still active in the prefix plus those the triage first showed (`Ambient`
+entries after its results). Background-process tails are sampled live and never logged,
+so that rider is absent from a replay, and the verb says so when a replayed triage had
+processes running.
+
 What is *not* built: the own client's retry and reservation state is not reported
 on `GET /state`, and nothing acts on the triage model's context window being
 smaller than the agent's (backlog/inbox/distiller-experiment.md).

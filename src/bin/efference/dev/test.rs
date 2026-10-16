@@ -587,6 +587,61 @@ fn a_triage_carries_its_recorded_first_attempt() {
     );
 }
 
+/// The inbox a replay passes is what the live triage was shown: notifications still
+/// active in the prefix, plus those this triage first showed after its results (kept
+/// even when its own verdict resolved them), and not ones an earlier triage resolved.
+#[test]
+fn a_triage_carries_the_inbox_it_was_shown() {
+    use efference::log::{Disposition, Notification};
+    let note = |seq, body: &str| {
+        entry(
+            seq,
+            Payload::Ambient(Notification {
+                source: "src".into(),
+                body: body.into(),
+                slot: None,
+            }),
+        )
+    };
+    let mut resolved = triage(3, 2, vec![]);
+    if let Payload::Triage(t) = &mut resolved.payload {
+        t.inbox = vec![(1, Disposition::Dismiss)];
+    }
+    let mut own = triage(8, 6, vec![]);
+    if let Payload::Triage(t) = &mut own.payload {
+        t.inbox = vec![(7, Disposition::Dismiss)];
+    }
+    let assistant = |seq, id| {
+        entry(
+            seq,
+            Payload::Assistant {
+                output: efference::log::AssistantOutput::from_legacy_messages(
+                    vec![],
+                    vec![],
+                    vec![call(id)],
+                ),
+                upstream_failure: None,
+            },
+        )
+    };
+    let log = vec![
+        note(1, "resolved earlier"),
+        assistant(0, "a"),
+        result(2, "a"),
+        note(4, "left active"),
+        resolved,
+        assistant(5, "b"),
+        result(6, "b"),
+        note(7, "first shown here"),
+        own,
+    ];
+    let recorded = recorded_triages(&log);
+    let bodies =
+        |i: usize| -> Vec<&str> { recorded[i].inbox.iter().map(|n| n.body.as_str()).collect() };
+    assert_eq!(bodies(0), ["resolved earlier", "left active"]);
+    assert_eq!(bodies(1), ["left active", "first shown here"]);
+}
+
 /// A completion whose calls never ran — aborted, interrupted, withheld — opens no triage,
 /// so it must not appear as one with an empty result set.
 #[test]
