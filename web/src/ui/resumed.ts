@@ -21,7 +21,7 @@ export function resumedLine(resumed: Resumed, at: Seq): string {
   const lost = resumed.lost_processes ?? [];
   if (lost.length > 0) {
     out +=
-      " Background processes no longer supervised, output no longer captured, " +
+      " Background processes no longer monitored, output no longer captured, " +
       `still running or not unknown: ${lost.join(", ")}.`;
   }
   const pending = resumed.pending_calls?.length ?? 0;

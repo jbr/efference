@@ -192,7 +192,7 @@ pub enum Payload {
     Telemetry(Telemetry),
     /// The session was reopened from its log by a later host process
     /// (docs/log-and-projection.md). Projects the restart notice at its position: how
-    /// long the session sat, which background processes it no longer supervises, and
+    /// long the session sat, which background processes it no longer monitors, and
     /// which calls were dropped because they started and never returned.
     Resumed(Resumed),
     /// A salience annotation written when it is known (docs/log-and-projection.md):

@@ -76,7 +76,7 @@ change. Ownership is checked twice: `Host::adopt_with` refuses a second hosting 
 and `Log::open`'s file lock refuses a second writer, in-process included.
 
 The loader appends one **`Resumed`** entry, which projects a restart notice:
-how long the session sat, which background processes are no longer supervised (handles
+how long the session sat, which background processes are no longer monitored (handles
 with a `Spawned` event and no `Exited`, over the whole log, skipped entries included),
 when it resumed at a pending batch, that it stopped with N tool calls pending and the
 operator's next action brings them back, and, when entries were skipped, that the session
