@@ -143,7 +143,7 @@ impl LogHeader {
     pub const FORMAT: &'static str = "efference-session-log";
     /// The log format this build reads. Bumped only when entries themselves
     /// change shape; metadata fields are additive and do not bump it.
-    pub const VERSION: u32 = 2;
+    pub const VERSION: u32 = 3;
 
     /// A header carrying `metadata`, or none — a session persisted without it
     /// (a fixture, or a run that had no boot metadata to record).

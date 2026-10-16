@@ -428,7 +428,7 @@ one.
 ### The header
 
 ```rust
-{"format":"efference-session-log","version":2,"metadata":{…}}
+{"format":"efference-session-log","version":3,"metadata":{…}}
 ```
 
 The header is one JSON object and nothing else. It is **not** a `LogEntry`: it
@@ -447,11 +447,13 @@ so a newer file's incompatible metadata reports as the unsupported version it
 is rather than as a field this build happens not to know. There is no
 importer for an unheadered log and no serializer kept for an old shape.
 
-The reader accepts exactly one version, the current one: 2, which nested the telemetry
-payloads under `Telemetry`. An incompatible change to the entries, including a change of
+The reader accepts exactly one version, the current one: 3. Version 2 nested the telemetry
+payloads under `Telemetry`; version 3 renamed `WireState::Distilled` to `Triaged` and the
+`peek` request origin to `triage`. An incompatible change to the entries, including a change of
 meaning that leaves their shape intact, increments the version. Before launch there is no
 in-harness migration: the existing logs are converted once, outside the harness, with the
-host stopped — the 1→2 pass is `scripts/migrate-log-v2.py`; the unheadered→1 pass was the
+host stopped — the 1→2 pass is `scripts/migrate-log-v2.py` and the 2→3 pass (which also
+rewrites `usage.jsonl`) is `scripts/migrate-log-v3.py`; the unheadered→1 pass was the
 2026-10-02 corpus migration (journal/2026-10-02-resumption-foundation-and-corpus-migration.md)
 — and a file a pass missed is refused as the unsupported version it is.
 
