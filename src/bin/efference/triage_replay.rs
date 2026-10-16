@@ -293,6 +293,27 @@ pub(crate) async fn triage(
                 g.seq,
                 layout::describe(&entries, g, reader)
             );
+            // The primer the live batch sends first, where the own client plants one
+            // (docs/transport.md): without it a Codex triage model never resumes.
+            if let Some(turns) = triage.primer_turns(&entries[..g.prefix_end], &g.calls)
+                && let Some(primed) = triage.prime(&turns).await
+            {
+                match (&primed.usage, &primed.error) {
+                    (Some(u), _) => println!(
+                        "seq {:>4} · primer · {} prompt · {} cached",
+                        g.seq,
+                        u.usage.input_tokens
+                            + u.usage.cache_read_input_tokens
+                            + u.usage.cache_creation_input_tokens,
+                        u.usage.cache_read_input_tokens
+                    ),
+                    (None, error) => println!(
+                        "seq {:>4} · primer failed: {}",
+                        g.seq,
+                        error.as_deref().unwrap_or("no usage")
+                    ),
+                }
+            }
         }
         let mut passes = 0usize;
         for draw in 1..=repeat {
@@ -359,11 +380,16 @@ pub(crate) async fn triage(
                     )
                 })
                 .collect::<String>();
+            let usage = &attempt.usage.usage;
             println!(
-                "seq {:>4} · draw {draw}/{repeat} · {:<24} {}{against} · {seconds:.1}s",
+                "seq {:>4} · draw {draw}/{repeat} · {:<24} {}{against} · {} prompt · {} cached · {seconds:.1}s",
                 g.seq,
                 called,
-                outcome(&attempt)
+                outcome(&attempt),
+                usage.input_tokens
+                    + usage.cache_read_input_tokens
+                    + usage.cache_creation_input_tokens,
+                usage.cache_read_input_tokens,
             );
             if let Some(sink) = &mut sink {
                 for c in &rows {

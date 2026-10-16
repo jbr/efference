@@ -284,7 +284,9 @@ processes running.
 
 With the text view, `--dry-run` prints the view's layout at every replayed triage —
 the digest and triaged-tail sizes, and the triages where a view cut fell — and a live
-replay prints the same line before each triage's draws.
+replay prints the same line before each triage's draws, then sends the primer where the
+own client plants one, as the live batch does. Each draw's line carries its prompt and
+cached tokens.
 
 What is *not* built: the own client's retry and reservation state is not reported
 on `GET /state`, and nothing compacts the text view when the triage model's window runs
