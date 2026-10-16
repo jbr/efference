@@ -315,7 +315,10 @@ async fn attribution_rides_openrouter_turns_and_nothing_else() {
                 .expect("the canned stream assembles");
         } else {
             client
-                .keepalive(RequestOrigin::Keepalive, &[], &[], ToolChoice::auto())
+                .keepalive(
+                    RequestOrigin::Keepalive,
+                    &SentRequest::new(Vec::new(), Vec::new(), ToolChoice::auto()),
+                )
                 .await
                 .expect("the canned body parses");
         }

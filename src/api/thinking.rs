@@ -166,7 +166,7 @@ pub fn check_effort_thinking(
 /// envelope every other call type sends. A forced choice also sets
 /// `disable_parallel_tool_use`, because its answer is one verdict; `auto` omits
 /// the field.
-#[derive(Serialize, Clone, Copy)]
+#[derive(Serialize, Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ToolChoice {
     #[serde(rename = "type")]
     kind: &'static str,

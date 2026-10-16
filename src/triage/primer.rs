@@ -3,8 +3,9 @@
 //! extends one that ended where its history does.
 
 use super::*;
+use crate::api::SentRequest;
 
-/// The tool choice the primer sends (`Triager::prime`) and its keepalive re-sends:
+/// The tool choice the primer sends (`Triager::prime`), which its keepalive re-sends:
 /// forced `retain`, the triage's own head (docs/transport.md).
 fn primer_choice() -> ToolChoice {
     ToolChoice::force(RETAIN)
@@ -40,6 +41,8 @@ pub struct TriagePrimerOutcome {
     /// (as opposed to a lineage that needed no planting, which resolves to no
     /// outcome at all). Text, so offline callers without a logger still see it.
     pub error: Option<String>,
+    /// The primer request as sent, which the triage keepalive re-sends once it planted.
+    pub request: SentRequest,
 }
 
 impl Triager {
@@ -79,17 +82,6 @@ impl Triager {
         self.prime_with(turns, &own.tools, primer_choice()).await
     }
 
-    /// The envelope the primer goes out on, which the triage keepalive re-sends
-    /// (docs/transport.md): the own client, the triage's `tools[]`, and the primer's forced
-    /// choice. `None` on the shared triage and where the own client plants no primer
-    /// ([`Client::plants_primer`]), so a `Some` is exactly the case the keepalive arms in.
-    pub fn primer_envelope(&self) -> Option<(Client, Vec<Value>, ToolChoice)> {
-        let own = self.own.as_ref()?;
-        own.client
-            .plants_primer()
-            .then(|| (own.client.clone(), own.tools.clone(), primer_choice()))
-    }
-
     /// `prime` with an explicit choice: the ladder verb's `auto` arm replays v1
     /// as it shipped, against the forced choice live triages send now
     /// (docs/transport.md). Live code always uses `prime`.
@@ -118,6 +110,7 @@ impl Triager {
             done_at: std::time::Instant::now(),
             residue_ms: 0,
             error,
+            request: SentRequest::new(turns.to_vec(), tools.to_vec(), choice),
         })
     }
 }

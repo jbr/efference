@@ -31,6 +31,7 @@ mod keepalive;
 mod send;
 mod upstream_status;
 
+pub use forced_choice::SentRequest;
 pub use keepalive::KeepaliveError;
 #[cfg(test)]
 pub(crate) use keepalive::KeepaliveResponse;
@@ -536,6 +537,12 @@ impl Client {
     pub fn with_prompt_cache(mut self, policy: PromptCachePolicy) -> Self {
         self.prompt_cache = policy;
         self
+    }
+
+    /// Who places cache-write boundaries for this client's model (docs/transport.md).
+    /// The triage keepalive is armed off it, as the main one is off the capability.
+    pub(crate) fn prompt_cache(&self) -> PromptCachePolicy {
+        self.prompt_cache
     }
 
     /// The model this client sends every request to.

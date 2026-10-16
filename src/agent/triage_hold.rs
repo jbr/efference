@@ -61,9 +61,15 @@ pub(super) async fn hold(
         usage,
         retries,
         thinking,
+        sent,
     } = failure;
     for u in usage {
         shared.record_triage(on_agent_client, u);
+    }
+    // A request that got a response wrote the triage lineage's prefix whatever its verdict
+    // (docs/transport.md).
+    if let Some(sent) = sent {
+        shared.store_triage_request(sent.request, sent.at, &sent.usage);
     }
     carried.retries.extend(retries);
     carried.thinking.extend(thinking);

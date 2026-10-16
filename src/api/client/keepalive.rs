@@ -85,15 +85,34 @@ impl Client {
     /// Non-streaming because `max_tokens: 0` is rejected with `stream: true`. The
     /// prefix bytes must match a real request's **exactly** or the ping writes a
     /// *new* cache entry instead of refreshing the live one — which is why it
-    /// takes the caller's `messages` / `tools` / `tool_choice` (the loop's
-    /// `auto()`) and reuses the client's own `system`, rather than reconstructing
-    /// any of them.
+    /// takes the caller's request — turns, `tools`, and `tool_choice` — and reuses the
+    /// client's own `system`, rather than reconstructing any of them. A request the
+    /// forced-choice fallback sent ([`SentRequest::unforced`]) goes out as the fallback
+    /// did, thinking off.
     ///
     /// On the Responses and Completions dialects the ping is an ordinary streamed
     /// request with the output capped at [`Provider::keepalive_output_cap`]
     /// ([`Self::streamed_keepalive`]). `origin` tags the ping's stages: `Keepalive` for
     /// the main loop, `TriageKeepalive` for the triage lineage (docs/transport.md).
     pub async fn keepalive(
+        &self,
+        origin: RequestOrigin,
+        request: &SentRequest,
+    ) -> Result<RequestUsage, KeepaliveError> {
+        let unforced;
+        let client = if request.unforced {
+            unforced = self.unforced();
+            &unforced
+        } else {
+            self
+        };
+        client
+            .ping(origin, &request.turns, &request.tools, request.choice)
+            .await
+    }
+
+    /// [`Self::keepalive`] on the client the request goes out on.
+    async fn ping(
         &self,
         origin: RequestOrigin,
         turns: &[WireTurn],
@@ -194,8 +213,9 @@ impl Client {
     }
 
     /// Whether this client can plant a triage-lineage primer (docs/transport.md): a
-    /// Responses lineage with an implicit cache. [`Self::prime`] and the triage keepalive
-    /// both key on it, so the keepalive is armed exactly where the primer can plant.
+    /// Responses lineage with an implicit cache. [`Self::prime`] keys on it, and so does
+    /// what the triage keepalive re-sends: the primer where it plants, the last result
+    /// triage's request elsewhere.
     pub(crate) fn plants_primer(&self) -> bool {
         self.dialect() == WireDialect::Responses && self.prompt_cache == PromptCachePolicy::Implicit
     }

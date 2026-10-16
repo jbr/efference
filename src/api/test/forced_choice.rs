@@ -182,3 +182,98 @@ async fn an_unforced_400_is_not_retried() {
     assert_eq!(bodies.len(), 2);
     assert!(!last_user_text(&bodies[1]).contains("calling the"));
 }
+
+/// What a forced call went out as, read after it returned (docs/transport.md): as given
+/// until the model refuses forced choice, then the fallback's form — `auto`, the
+/// instruction appended, thinking off — which is what a keepalive of it must re-send.
+#[tokio::test]
+async fn the_sent_form_follows_the_learned_fallback() {
+    let (client, server) = scripted(vec![(200, STREAM), (400, REFUSAL), (200, STREAM)]);
+    let turns = vec![WireTurn::text("is this safe?")];
+    let forced = ToolChoice::force("spot");
+    client.complete(&turns, &[], forced, |_| {}).await.unwrap();
+    assert_eq!(
+        client.sent_form(turns.clone(), &[], forced),
+        SentRequest::new(turns.clone(), Vec::new(), forced)
+    );
+    client.complete(&turns, &[], forced, |_| {}).await.unwrap();
+    let sent = client.sent_form(turns.clone(), &[], forced);
+    assert!(sent.unforced);
+    assert_eq!(sent.choice, ToolChoice::auto());
+    assert_eq!(sent.turns.len(), 2, "the instruction rides after the turns");
+    server.join().unwrap();
+}
+
+/// A ping of a request the fallback sent goes out as the fallback did: `auto`, thinking
+/// as the fallback spelled it, and over the turns it is given.
+#[tokio::test]
+async fn a_keepalive_of_an_unforced_request_sends_the_fallbacks_envelope() {
+    let ping = r#"{"id":"p","model":"m","usage":{"input_tokens":1,"output_tokens":0}}"#;
+    let (client, server) = scripted(vec![(400, REFUSAL), (200, STREAM), (200, ping)]);
+    let turns = vec![WireTurn::text("is this safe?")];
+    let forced = ToolChoice::force("spot");
+    client.complete(&turns, &[], forced, |_| {}).await.unwrap();
+    let mut sent = client.sent_form(turns.clone(), &[], forced);
+    sent.turns.truncate(1);
+    client
+        .keepalive(crate::log::RequestOrigin::TriageKeepalive, &sent)
+        .await
+        .unwrap();
+    let bodies = server.join().unwrap();
+    let (fallback, ping) = (&bodies[1], &bodies[2]);
+    assert_eq!(ping["tool_choice"], fallback["tool_choice"]);
+    assert_eq!(ping["thinking"], fallback["thinking"]);
+    assert_eq!(ping["messages"][0], fallback["messages"][0]);
+    assert_eq!(ping["messages"].as_array().unwrap().len(), 1);
+    assert_eq!(ping["max_tokens"], 0);
+}
+
+/// A request ends at its last breakpoint: later turns go, and so do a user turn's parts
+/// after a breakpoint inside it. With no breakpoint there is nothing to end at.
+#[test]
+fn a_request_ends_at_its_last_breakpoint() {
+    use crate::project::UserPart;
+    let history = WireTurn::User(vec![
+        UserPart::Text("digest".into()),
+        UserPart::Breakpoint,
+        UserPart::Text("tail".into()),
+        UserPart::Breakpoint,
+    ]);
+    let current = WireTurn::User(vec![UserPart::Text("current step".into())]);
+    let request = SentRequest::new(
+        vec![history.clone(), current.clone()],
+        Vec::new(),
+        ToolChoice::force("retain"),
+    );
+    assert_eq!(
+        request.through_last_breakpoint().unwrap().turns,
+        vec![history.clone()]
+    );
+
+    let mid = WireTurn::User(vec![
+        UserPart::Text("head".into()),
+        UserPart::Breakpoint,
+        UserPart::Text("after".into()),
+    ]);
+    let request = SentRequest::new(vec![mid, current.clone()], Vec::new(), ToolChoice::auto());
+    assert_eq!(
+        request.through_last_breakpoint().unwrap().turns,
+        vec![WireTurn::User(vec![
+            UserPart::Text("head".into()),
+            UserPart::Breakpoint
+        ])]
+    );
+
+    let request = SentRequest::new(
+        vec![current.clone(), WireTurn::Breakpoint, current.clone()],
+        Vec::new(),
+        ToolChoice::auto(),
+    );
+    assert_eq!(
+        request.through_last_breakpoint().unwrap().turns,
+        vec![current.clone(), WireTurn::Breakpoint]
+    );
+
+    let request = SentRequest::new(vec![current], Vec::new(), ToolChoice::auto());
+    assert_eq!(request.through_last_breakpoint(), None);
+}

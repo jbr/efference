@@ -76,6 +76,9 @@ pub(super) struct TriageRecord {
     pub(super) retries: Vec<String>,
     /// The thinking text of each attempt that thought, in attempt order.
     pub(super) thinking: Vec<String>,
+    /// The request the triage keepalive re-sends, where it re-sends this triage's
+    /// (docs/transport.md).
+    pub(super) sent: Option<SentTriage>,
 }
 
 /// The renewal sentence for a triage that asks for `tool` (docs/triage.md).

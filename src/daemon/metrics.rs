@@ -71,8 +71,9 @@ pub(super) struct Metrics {
     pub(super) last_triage_at: Option<Instant>,
     /// The same event as [`Metrics::last_triage_at`], on the wall clock, for the fold filter.
     pub(super) last_triage_wall: Option<crate::log::Timestamp>,
-    /// The turns the last primer sent (docs/transport.md), replayed by the triage keepalive.
-    pub(super) triage_primed: Option<super::keepalive::PrimedPrefix>,
+    /// The request the triage keepalive re-sends (docs/transport.md): the last primer, or
+    /// the last result triage's request ending at its last breakpoint.
+    pub(super) triage_request: Option<super::keepalive::StoredRequest>,
     /// Set while the triage keepalive is skipping pings or ended on a rejection
     /// (`usage.triage_keepalive_skipped`).
     pub(super) triage_keepalive_skipped: Option<super::keepalive::KeepaliveSkip>,
@@ -587,7 +588,8 @@ impl Session {
     /// A triage keepalive ping's usage (docs/transport.md): persisted and folded into the
     /// telemetry like a main ping, and it stamps the triage lineage's touch clock. It does
     /// not stamp the real-turn clock, for the same reason [`Self::record_keepalive`] does
-    /// not.
+    /// not. Its prompt tokens are what the next ping of the stored request reads, so they
+    /// replace the stored estimate.
     pub fn record_triage_keepalive(&self, request: RequestUsage) {
         let at_ms = wall_millis();
         self.persist_usage(RequestOrigin::TriageKeepalive, false, at_ms, &request);
@@ -600,6 +602,9 @@ impl Session {
             request.model.as_deref(),
             request.usage.cache_read_input_tokens,
         );
+        if let Some(stored) = &mut m.triage_request {
+            stored.prefix_tokens = super::keepalive::prefix_tokens(&request.usage);
+        }
         Self::compaction_usage(&mut m, request.usage);
         Self::stamp_triage_touch(&mut m, at_ms);
     }

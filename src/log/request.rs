@@ -41,9 +41,10 @@ pub enum RequestOrigin {
     /// the main request ended. Never main-prefix evidence: it plants a resume point on
     /// the triage lineage, not the loop's.
     TriagePrimer,
-    /// A keepalive ping on the triage lineage: the primer's own envelope re-sent over the
-    /// primed turns (docs/transport.md). It refreshes the triage lineage's resume point
-    /// and never main-prefix evidence.
+    /// A keepalive ping on the triage lineage: the stored request re-sent — the last
+    /// primer, or the last result triage's request ending at its last breakpoint
+    /// (docs/transport.md). It refreshes the triage lineage's cached prefix and is never
+    /// main-prefix evidence.
     TriageKeepalive,
     /// The model writing a compaction's summary (docs/summary.md): its own prompt, so
     /// it does not touch the main prefix.

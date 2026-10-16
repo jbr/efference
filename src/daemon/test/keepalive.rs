@@ -5,9 +5,9 @@ use crate::api::KeepaliveError;
 use crate::api::{RequestUsage, TokenPrices};
 use crate::daemon::keepalive::{
     CacheLineage, KeepaliveSkipReason, KeepaliveSpec, PingCost, discard_is_affordable,
-    keepalive_interval, lop_trailing_model_turns, prefix_tokens, skip_reason,
+    lop_trailing_model_turns, prefix_tokens, skip_reason,
 };
-use crate::log::{AssistantOutput, MessagesOutputBlock, Summary, Timestamp};
+use crate::log::{AssistantOutput, MessagesOutputBlock};
 use crate::project::{Role, WireTurn};
 
 fn message(role: Role, text: &str) -> WireTurn {
@@ -256,7 +256,7 @@ fn serve(
 }
 
 /// [`serve`], also keeping each request's body in arrival order.
-fn serve_recording(
+pub(super) fn serve_recording(
     reply: impl Fn(usize) -> (u16, String) + Send + 'static,
 ) -> (
     std::net::SocketAddr,
@@ -325,7 +325,6 @@ fn main_loop(
             lineage: CacheLineage::Main,
             client,
             tools,
-            choice: ToolChoice::auto(),
             ping_at,
             prices,
         },
@@ -335,7 +334,7 @@ fn main_loop(
 
 /// A session with one user message and one recorded turn of `prefix` prompt tokens,
 /// and a client pointed at `addr`.
-fn pinged_session(
+pub(super) fn pinged_session(
     addr: std::net::SocketAddr,
     prefix: u64,
 ) -> (Arc<Session>, Arc<crate::api::Client>) {
@@ -361,7 +360,7 @@ fn pinged_session(
     )
 }
 
-fn record_turn(shared: &Session, prefix: u64) {
+pub(super) fn record_turn(shared: &Session, prefix: u64) {
     shared.record_request(
         RequestOrigin::Turn,
         RequestUsage::new(Usage {
@@ -479,174 +478,4 @@ async fn an_exhausted_limit_pauses_until_the_next_turn() {
     wait_for(&|| !sent(1)).await;
     wait_for(&|| skipped(&shared).is_null()).await;
     task.abort();
-}
-
-/// A `usage` with `prefix` prompt tokens, for recording a request by hand.
-fn prompt_usage(prefix: u64) -> RequestUsage {
-    RequestUsage::new(Usage {
-        input_tokens: prefix,
-        ..Usage::default()
-    })
-}
-
-/// The Messages endpoint a canned upstream at `addr` answers on.
-fn messages_endpoint(addr: std::net::SocketAddr) -> crate::api::Endpoint {
-    crate::api::Endpoint {
-        provider: crate::api::Provider::Anthropic,
-        url: Some(format!("http://{addr}/v1/messages")),
-        auth_header: "x-api-key".into(),
-        auth_value: "k".into(),
-        session_id: None,
-        extra_headers: Vec::new(),
-        request: Default::default(),
-        base: None,
-    }
-}
-
-/// Poll `what` until it holds, failing after ten seconds.
-async fn wait_until(what: impl Fn() -> bool) {
-    for _ in 0..100 {
-        if what() {
-            return;
-        }
-        tokio::time::sleep(Duration::from_millis(100)).await;
-    }
-    panic!("timed out");
-}
-
-/// The triage lineage's ping replays the primed turns under the envelope its loop was
-/// given (docs/transport.md): the primer's forced `retain` and the triage's tools, over the
-/// turns the primer sent and nothing else.
-#[tokio::test]
-async fn a_triage_ping_replays_the_primed_turns_under_the_primers_envelope() {
-    let ok = r#"{"id":"m","model":"m","usage":{"input_tokens":5000,"output_tokens":1}}"#;
-    let (addr, count, bodies) = serve_recording(move |_| (200, ok.to_string()));
-    let (shared, _main) = pinged_session(addr, 5_000);
-    let turns = vec![WireTurn::text("the turn's own input")];
-    shared.set_triage_primed(&turns, Timestamp::now(), &prompt_usage(5_000));
-    shared.record_request(RequestOrigin::TriagePrimer, prompt_usage(5_000));
-    let spec = KeepaliveSpec {
-        lineage: CacheLineage::Triage,
-        client: Arc::new(crate::api::Client::new(
-            messages_endpoint(addr),
-            "claude-haiku-5",
-            "sys",
-            None,
-        )),
-        tools: vec![
-            serde_json::json!({"name": "retain"}),
-            serde_json::json!({"name": "triage"}),
-        ],
-        choice: ToolChoice::force("retain"),
-        ping_at: Duration::from_millis(1),
-        prices: None,
-    };
-    let task = tokio::spawn(super::keepalive::keepalive_loop(spec, Arc::clone(&shared)));
-    wait_until(|| count.load(std::sync::atomic::Ordering::SeqCst) == 1).await;
-    task.abort();
-
-    let body: Value = serde_json::from_str(&bodies.lock().unwrap()[0]).unwrap();
-    assert_eq!(
-        body["tool_choice"],
-        serde_json::json!({"type": "tool", "name": "retain", "disable_parallel_tool_use": true}),
-        "the forced choice the triage sends, parallel calls off"
-    );
-    let tools: Vec<&str> = body["tools"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|t| t["name"].as_str().unwrap())
-        .collect();
-    assert_eq!(tools, ["retain", "triage"]);
-    let messages = body["messages"].as_array().unwrap();
-    assert_eq!(messages.len(), 1, "the primed turns, and nothing appended");
-    assert!(messages[0].to_string().contains("the turn's own input"));
-}
-
-/// The triage keepalive is armed only where its primer can plant: an own triage model on
-/// an implicit Responses lineage. A shared triage has no lineage of its own, and a
-/// Messages-dialect triage model is not primed. The configured interval applies to both
-/// lineages, and zero turns the triage one off.
-#[test]
-fn the_triage_keepalive_arms_only_where_a_primer_plants() {
-    use crate::api::{Client, Endpoint, PromptCachePolicy, Provider};
-    use crate::triage::Triager;
-    assert!(KeepaliveSpec::triage(&Triager::shared(), None, None).is_none());
-    let messages = Triager::own(Client::new(
-        messages_endpoint("127.0.0.1:9".parse().unwrap()),
-        "claude-haiku-5",
-        "sys",
-        None,
-    ));
-    assert!(KeepaliveSpec::triage(&messages, None, None).is_none());
-
-    let codex = Endpoint {
-        provider: Provider::OpenAICodex,
-        url: Some("http://127.0.0.1:9/backend-api/codex/responses".into()),
-        auth_header: "authorization".into(),
-        auth_value: "Bearer k".into(),
-        session_id: None,
-        extra_headers: Vec::new(),
-        request: Default::default(),
-        base: None,
-    };
-    let triage = Triager::own(
-        Client::new(codex, "gpt-6.1-sol", "sys", None)
-            .with_prompt_cache(PromptCachePolicy::Implicit),
-    );
-    let armed = KeepaliveSpec::triage(&triage, None, None)
-        .expect("an implicit Responses lineage plants a primer");
-    assert_eq!(armed.lineage, CacheLineage::Triage);
-    assert_eq!(
-        armed.ping_at,
-        keepalive_interval(Duration::from_secs(10 * 60))
-    );
-    let names: Vec<Value> = armed.tools.iter().map(|t| t["name"].clone()).collect();
-    assert_eq!(
-        names,
-        [serde_json::json!("retain"), serde_json::json!("triage")]
-    );
-    assert_eq!(armed.choice.forced(), Some("retain"));
-    let off = KeepaliveSpec::triage(&triage, Some(Duration::ZERO), None).unwrap();
-    assert!(off.ping_at.is_zero());
-}
-
-/// A compaction moves the prefix the primer read. The stored turns stop being replayed, and the
-/// triage clock's compaction filter empties the ping's prefix, as it does the main loop's.
-#[tokio::test]
-async fn a_fold_drops_the_primed_turns() {
-    let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
-    shared.set_triage_primed(
-        &[WireTurn::text("input")],
-        Timestamp::now(),
-        &prompt_usage(5_000),
-    );
-    shared.record_request(RequestOrigin::TriagePrimer, prompt_usage(5_000));
-    assert!(shared.ping_turns(CacheLineage::Triage).is_some());
-    tokio::time::sleep(Duration::from_millis(5)).await;
-    shared
-        .append(1, Payload::Summary(Summary::consolidation(0, 0, "account")))
-        .unwrap();
-    assert_eq!(shared.ping_turns(CacheLineage::Triage), None);
-    assert_eq!(shared.ping_prefix_tokens(CacheLineage::Triage), None);
-    assert_eq!(shared.keepalive_clocks(CacheLineage::Triage).0, None);
-}
-
-/// Idle triage runs on the agent's client, so it leaves the triage clock alone. A triage
-/// ping stamps that clock and not the real-turn clock, so it cannot reset the give-up cap.
-#[tokio::test]
-async fn idle_triage_is_no_touch_and_a_triage_ping_keeps_the_cap() {
-    let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
-    shared.record_request(RequestOrigin::Triage, prompt_usage(1_000));
-    assert_eq!(shared.keepalive_clocks(CacheLineage::Triage).0, None);
-
-    record_turn(&shared, 1_000);
-    tokio::time::sleep(Duration::from_millis(20)).await;
-    shared.record_triage_keepalive(prompt_usage(1_000));
-    let (touch, turn) = shared.keepalive_clocks(CacheLineage::Triage);
-    assert!(touch.is_some(), "the ping stamps the triage clock");
-    assert!(
-        turn.is_some_and(|t| t >= Duration::from_millis(20)),
-        "the real-turn clock still reads the turn, not the ping"
-    );
 }

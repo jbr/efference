@@ -102,9 +102,14 @@ pub(super) async fn land(
 
     // The triage's usage: each fork request reads the shared canonical prefix
     // (sliding its TTL), so it belongs in the docs/log-and-projection.md telemetry.
-    if let Some(g) = &triage {
+    if let Some(g) = &mut triage {
         for u in &g.usage {
             shared.record_triage(!triager.is_own(), u.clone());
+        }
+        // The request the triage lineage's keepalive re-sends, where it re-sends a result
+        // triage's (docs/transport.md).
+        if let Some(sent) = g.sent.take() {
+            shared.store_triage_request(sent.request, sent.at, &sent.usage);
         }
     }
     // The primer's usage and timing (docs/transport.md): its own

@@ -47,7 +47,7 @@ pub(super) async fn run_batch<'a, F: Frontend, S: Spotter>(
         let outcome = input.triager.prime(input.turns).await?;
         // A primer that planted (it has usage) is what the triage keepalive re-sends.
         if let Some(usage) = &outcome.usage {
-            shared.set_triage_primed(input.turns, sent, usage);
+            shared.store_triage_request(outcome.request.clone(), sent, usage);
         }
         Some(outcome)
     };

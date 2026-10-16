@@ -1,7 +1,7 @@
-//! The triage keepalive's ping is the primer's own request (docs/transport.md): over the
-//! same turns, envelope, and choice, the two sends carry the same body bytes. The ping
-//! differs only in its request origin, which rides the stage record and the usage line,
-//! not the body.
+//! On a lineage the primer plants, the triage keepalive's ping is the primer's own request
+//! (docs/transport.md): over the same turns, envelope, and choice, the two sends carry the
+//! same body bytes. The ping differs only in its request origin, which rides the stage
+//! record and the usage line, not the body.
 
 use super::*;
 use crate::log::RequestOrigin;
@@ -84,7 +84,10 @@ async fn the_triage_ping_body_is_the_primers_body() {
         .expect("an implicit Responses lineage takes a primer")
         .expect("the backend answers the primer");
     let ping = client
-        .keepalive(RequestOrigin::TriageKeepalive, &turns, &tools, choice)
+        .keepalive(
+            RequestOrigin::TriageKeepalive,
+            &SentRequest::new(turns.clone(), tools.clone(), choice),
+        )
         .await
         .expect("the backend answers the ping");
     assert_eq!(primer.usage.cache_read_input_tokens, 900);

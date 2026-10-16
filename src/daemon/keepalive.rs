@@ -3,7 +3,7 @@
 mod session;
 
 use super::*;
-use crate::api::TokenPrices;
+use crate::api::{SentRequest, TokenPrices};
 use crate::triage::Triager;
 
 /// How long the cached prefix may go untouched before the keepalive pings it,
@@ -15,7 +15,7 @@ pub fn keepalive_interval(cache_ttl: Duration) -> Duration {
 }
 
 /// The cache lineage a keepalive loop keeps warm (docs/transport.md): the main prefix the
-/// agent's turns write, or the triage lineage a separate triage model's primer plants.
+/// agent's turns write, or the triage lineage a separate triage model's requests write.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum CacheLineage {
     Main,
@@ -40,21 +40,22 @@ impl CacheLineage {
     }
 }
 
-/// One keepalive loop's ping: the lineage it keeps warm, the envelope it sends, and its
+/// One keepalive loop's ping: the lineage it keeps warm, the client it sends on, and its
 /// cadence (docs/transport.md). The session runtime builds one per armed lineage.
 pub(crate) struct KeepaliveSpec {
     pub(crate) lineage: CacheLineage,
     pub(crate) client: Arc<Client>,
+    /// The main lineage's `tools[]`, which its ping is built with each tick. Empty on the
+    /// triage lineage, whose stored request carries the `tools[]` it was sent with.
     pub(crate) tools: Vec<Value>,
-    pub(crate) choice: ToolChoice,
     pub(crate) ping_at: Duration,
     pub(crate) prices: Option<TokenPrices>,
 }
 
 impl KeepaliveSpec {
-    /// The triage lineage's keepalive (docs/transport.md): the primer's own envelope
-    /// re-sent, armed only where the primer can plant (a shared triage has none, and
-    /// neither does a Messages-dialect triage model). `configured` is
+    /// The triage lineage's keepalive (docs/transport.md), armed on an own triage model
+    /// whose client reports a prompt cache; a shared triage rides the main prefix and has
+    /// none. Its ping is the stored request ([`StoredRequest`]). `configured` is
     /// `[transport] keepalive-interval`, which applies to both lineages; absent, the
     /// cadence is the triage provider's cache lifetime, as the main loop's is.
     pub(crate) fn triage(
@@ -62,30 +63,31 @@ impl KeepaliveSpec {
         configured: Option<Duration>,
         prices: Option<TokenPrices>,
     ) -> Option<Self> {
-        let (client, tools, choice) = triage.primer_envelope()?;
+        let client = triage.keepalive_client()?;
         let ping_at = configured
             .unwrap_or_else(|| keepalive_interval(client.endpoint().provider.cache_ttl()));
         Some(Self {
             lineage: CacheLineage::Triage,
             client: Arc::new(client),
-            tools,
-            choice,
+            tools: Vec::new(),
             ping_at,
             prices,
         })
     }
 }
 
-/// The turns the last primer sent (docs/transport.md), which the triage keepalive re-sends
-/// byte for byte.
+/// The request the triage keepalive re-sends byte for byte (docs/transport.md): the last
+/// primer where the primer plants, else the last result triage's request ending at its last
+/// breakpoint.
 #[derive(Clone)]
-pub(super) struct PrimedPrefix {
-    /// The primer's input, as sent.
-    pub(super) turns: Vec<WireTurn>,
-    /// When the primer was sent, taken before the send: a compaction stamped after it moved the
-    /// prefix the primer read, so the stored turns stop describing the live entry.
+pub(super) struct StoredRequest {
+    /// The request, as sent.
+    pub(super) request: SentRequest,
+    /// When it was sent, taken before the send: a compaction stamped after it moved the
+    /// prefix the request read, so the stored request stops describing the live entry.
     pub(super) sent: crate::log::Timestamp,
-    /// The prompt tokens the primer read: what a ping of these turns reads back.
+    /// The prompt tokens a ping of it reads: the request's own until a ping measures them,
+    /// then the last ping's.
     pub(super) prefix_tokens: u64,
 }
 
@@ -211,7 +213,6 @@ pub(crate) async fn keepalive_loop(spec: KeepaliveSpec, shared: Arc<Session>) {
         lineage,
         client,
         tools,
-        choice,
         ping_at,
         prices,
     } = spec;
@@ -258,17 +259,14 @@ pub(crate) async fn keepalive_loop(spec: KeepaliveSpec, shared: Arc<Session>) {
             continue;
         }
         shared.set_keepalive_skipped(lineage, None);
-        // Same prefix a real turn would send (byte-identical, or it writes a new
-        // entry instead of refreshing the live one); the output cap keeps it a read.
-        // Nothing to ping (the log holds only model turns, or no primer has been sent
-        // on the triage lineage) leaves no prefix to keep.
-        let Some(turns) = shared.ping_turns(lineage) else {
+        // Same prefix a real request sent (byte-identical, or it writes a new entry
+        // instead of refreshing the live one); the output cap keeps it a read. Nothing to
+        // ping (the log holds only model turns, or nothing is stored on the triage
+        // lineage) leaves no prefix to keep.
+        let Some(request) = shared.ping_request(lineage, &tools) else {
             continue;
         };
-        match client
-            .keepalive(lineage.origin(), &turns, &tools, choice)
-            .await
-        {
+        match client.keepalive(lineage.origin(), &request).await {
             Ok(request) => {
                 let cache_read = request.usage.cache_read_input_tokens;
                 estimate = Some(PingCost::of(&request, prices.as_ref()));

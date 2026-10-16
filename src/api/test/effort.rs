@@ -436,7 +436,10 @@ async fn the_keepalive_sends_the_turns_thinking_and_effort() {
                 .expect("the canned stream assembles");
         } else {
             client
-                .keepalive(RequestOrigin::Keepalive, &[], &[], ToolChoice::auto())
+                .keepalive(
+                    RequestOrigin::Keepalive,
+                    &SentRequest::new(Vec::new(), Vec::new(), ToolChoice::auto()),
+                )
                 .await
                 .expect("the canned body parses");
         }

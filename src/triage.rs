@@ -144,6 +144,9 @@ pub struct HoldOutcome {
     /// triage's `Triage` (`thinking`), which is the only record of why a verdict came out
     /// the way it did; the fork's transcript is still discarded.
     pub thinking: Vec<String>,
+    /// The triage's request, for the triage lineage's keepalive to re-send, where it
+    /// re-sends result triages (docs/transport.md).
+    pub sent: Option<SentTriage>,
 }
 
 /// A triage that produced no verdict (docs/triage.md): why, plus the audit
@@ -155,6 +158,9 @@ pub struct HoldFailure {
     pub usage: Vec<RequestUsage>,
     pub retries: Vec<String>,
     pub thinking: Vec<String>,
+    /// The last request that got a response, as on [`HoldOutcome::sent`]. Boxed: the
+    /// failure is the `Err` of every triage's result.
+    pub sent: Option<Box<SentTriage>>,
 }
 
 impl HoldFailure {
@@ -164,6 +170,7 @@ impl HoldFailure {
             usage: record.usage,
             retries: record.retries,
             thinking: record.thinking,
+            sent: record.sent.map(Box::new),
         }
     }
 }
@@ -190,6 +197,7 @@ impl HoldOutcome {
             usage: Vec::new(),
             retries,
             thinking,
+            sent: None,
         }
     }
 }
@@ -442,14 +450,22 @@ impl Triager {
         );
         let roster = surfaceable_roster(prefix);
 
+        let client = self.client(agent, RequestOrigin::Triage);
+        let tools = self.tools(agent_tools);
+        let choice = self.choice(RETAIN);
+        // Kept for the triage keepalive, which re-sends the request as sent
+        // (docs/transport.md); the stamp precedes the send, as the primer's does.
+        let resend = self
+            .resends_results()
+            .then(|| (messages.clone(), crate::log::Timestamp::now()));
         let mut record = TriageRecord::default();
         let parsed = triage_with_retries(
-            &self.client(agent, RequestOrigin::Triage),
+            &client,
             &agent.upstream_retry(),
             Patience::TRIAGE,
             messages,
-            self.tools(agent_tools),
-            self.choice(RETAIN),
+            tools,
+            choice,
             &call_now(RETAIN),
             |c| {
                 let verdict = parse_retain(c, &offered).ok_or_else(|| unusable(c, RETAIN))?;
@@ -459,6 +475,8 @@ impl Triager {
             &mut record,
         )
         .await;
+        record.sent = resend
+            .and_then(|(turns, at)| self.sent_triage(&client, turns, tools, choice, at, &record));
 
         let verdict = match parsed {
             Ok(v) => v,
@@ -542,6 +560,7 @@ impl Triager {
             usage: record.usage,
             retries: record.retries,
             thinking: record.thinking,
+            sent: record.sent,
         })
     }
 
@@ -637,6 +656,7 @@ mod primer;
 mod prompt;
 mod replay;
 mod request;
+mod resend;
 mod schema;
 mod text_view;
 mod title;
@@ -656,6 +676,7 @@ pub use own::TriageModel;
 pub use primer::{TriagePrimerInput, TriagePrimerOutcome};
 pub use replay::{ReplayVerdict, TriageAttempt, triage_request};
 pub use request::{TRIAGE_RESTARTS, TriageFailure};
+pub use resend::SentTriage;
 pub use schema::{retain_tool, triage_tool};
 pub use text_view::{
     TRIAGED_TAIL_HIGH_WATER, TRIAGED_TAIL_LOW_WATER, TextViewLayout, text_view_layout,

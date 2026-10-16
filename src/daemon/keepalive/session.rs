@@ -1,8 +1,9 @@
 //! The keepalive's session-side state (docs/transport.md): each lineage's touch and
-//! real-turn clocks, the primer's stored turns, and each loop's stance. The loop that
+//! real-turn clocks, the triage lineage's stored request, and each loop's stance. The loop that
 //! reads them is in `keepalive.rs`.
 
 use super::*;
+use crate::api::SentRequest;
 
 impl Session {
     /// `(since the lineage's last cache-touch, since the last real turn)` — the keepalive
@@ -32,7 +33,7 @@ impl Session {
     }
 
     /// The prompt tokens the next ping on `lineage` would read: the main loop's last turn,
-    /// or the primed turns' prompt on the triage lineage. `None` when there is nothing to
+    /// or the stored request's on the triage lineage. `None` when there is nothing to
     /// ping, which also skips the affordability check.
     pub(in crate::daemon) fn ping_prefix_tokens(&self, lineage: CacheLineage) -> Option<u64> {
         match lineage {
@@ -40,15 +41,18 @@ impl Session {
                 let metrics = self.metrics.lock().unwrap();
                 metrics.last_turn_usage.as_ref().map(prefix_tokens)
             }
-            CacheLineage::Triage => self.with_triage_primed(|primed| primed.prefix_tokens),
+            CacheLineage::Triage => self.with_triage_request(|stored| stored.prefix_tokens),
         }
     }
 
-    /// The turns one ping on `lineage` sends. The main loop's is the projection a real
-    /// turn would send, lopped and closed with a breakpoint. The triage lineage's is the
-    /// primed turns, byte for byte, so the ping is the primer's own write. `None` when no
-    /// valid ping exists.
-    pub(in crate::daemon) fn ping_turns(&self, lineage: CacheLineage) -> Option<Vec<WireTurn>> {
+    /// The request one ping on `lineage` sends. The main loop's is the projection a real
+    /// turn would send, lopped and closed with a breakpoint, under `tools` and `auto`. The
+    /// triage lineage's is the stored request, as sent. `None` when no valid ping exists.
+    pub(in crate::daemon) fn ping_request(
+        &self,
+        lineage: CacheLineage,
+        tools: &[Value],
+    ) -> Option<SentRequest> {
         match lineage {
             CacheLineage::Main => {
                 let mut turns = self.project_turns();
@@ -57,42 +61,43 @@ impl Session {
                     return None;
                 }
                 turns.push(WireTurn::Breakpoint);
-                Some(turns)
+                Some(SentRequest::new(turns, tools.to_vec(), ToolChoice::auto()))
             }
-            CacheLineage::Triage => self.with_triage_primed(|primed| primed.turns.clone()),
+            CacheLineage::Triage => self.with_triage_request(|stored| stored.request.clone()),
         }
     }
 
-    /// Store the turns a primer just sent, for the triage keepalive to re-send
-    /// (docs/transport.md). `sent` is taken before the send, and `usage` is the primer's
-    /// own usage, whose prompt tokens are the prefix a ping reads back.
-    pub(crate) fn set_triage_primed(
+    /// Store the request the triage keepalive re-sends (docs/transport.md): a primer that
+    /// planted, or a result triage's request ending at its last breakpoint. `sent` is taken
+    /// before the send, and `usage` is the request's own, whose prompt tokens stand for
+    /// what a ping reads until one measures it.
+    pub(crate) fn store_triage_request(
         &self,
-        turns: &[WireTurn],
+        request: SentRequest,
         sent: crate::log::Timestamp,
         usage: &RequestUsage,
     ) {
-        self.metrics.lock().unwrap().triage_primed = Some(PrimedPrefix {
-            turns: turns.to_vec(),
+        self.metrics.lock().unwrap().triage_request = Some(StoredRequest {
+            request,
             sent,
             prefix_tokens: prefix_tokens(&usage.usage),
         });
     }
 
-    /// Read the stored primer, provided no compaction has moved the prefix since it was sent. A
-    /// stored primer that a compaction has passed is dropped here, so no ping replays bytes the
-    /// log does not produce.
-    fn with_triage_primed<T>(&self, read: impl FnOnce(&PrimedPrefix) -> T) -> Option<T> {
+    /// Read the stored request, provided no compaction has moved the prefix since it was
+    /// sent. A stored request that a compaction has passed is dropped here, so no ping
+    /// replays bytes the log does not produce.
+    fn with_triage_request<T>(&self, read: impl FnOnce(&StoredRequest) -> T) -> Option<T> {
         let compacted_at = self.last_compaction_at();
         let mut m = self.metrics.lock().unwrap();
-        let stale = match (&m.triage_primed, compacted_at) {
-            (Some(primed), Some(compaction)) => primed.sent.0 <= compaction.0,
+        let stale = match (&m.triage_request, compacted_at) {
+            (Some(stored), Some(compaction)) => stored.sent.0 <= compaction.0,
             _ => false,
         };
         if stale {
-            m.triage_primed = None;
+            m.triage_request = None;
         }
-        m.triage_primed.as_ref().map(read)
+        m.triage_request.as_ref().map(read)
     }
 
     /// Publish a keepalive loop's stance (`usage.keepalive_skipped` for the main loop,

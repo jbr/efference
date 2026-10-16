@@ -211,7 +211,6 @@ impl SessionRuntime {
                     lineage: CacheLineage::Main,
                     client: Arc::clone(&client),
                     tools,
-                    choice: ToolChoice::auto(),
                     ping_at,
                     prices,
                 },
@@ -224,8 +223,8 @@ impl SessionRuntime {
             );
         }
         // The triage lineage's keepalive (docs/transport.md): armed only where the triage
-        // model is the session's own and its primer can plant. Interval zero turns it off,
-        // as it does the main loop.
+        // model is the session's own and reports a prompt cache. Interval zero turns it
+        // off, as it does the main loop.
         if let Some(triage) = KeepaliveSpec::triage(&triager, configured_interval, triage_prices)
             && !triage.ping_at.is_zero()
         {

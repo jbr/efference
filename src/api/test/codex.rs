@@ -406,7 +406,10 @@ async fn codex_keepalive_caps_output_where_a_turn_sends_no_cap() {
         .await
         .unwrap();
     let ping = client
-        .keepalive(RequestOrigin::Keepalive, &[], &[], ToolChoice::auto())
+        .keepalive(
+            RequestOrigin::Keepalive,
+            &SentRequest::new(Vec::new(), Vec::new(), ToolChoice::auto()),
+        )
         .await
         .unwrap();
     assert_eq!(ping.usage.cache_read_input_tokens, 900);
