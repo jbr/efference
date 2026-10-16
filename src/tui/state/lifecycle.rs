@@ -142,7 +142,8 @@ impl<'a> InteractiveState<'a> {
             sidebar_verb_focus: 0,
             sidebar_hits: Vec::new(),
             sidebar_verb_hits: Vec::new(),
-            loop_running: false,
+            loop_phase: crate::daemon::LoopPhase::Idle,
+            verbs: None,
             pace: None,
             processes: Vec::new(),
             usage: None,
@@ -152,8 +153,6 @@ impl<'a> InteractiveState<'a> {
             operation_text: None,
             stall: None,
             cold: None,
-            park: None,
-            compacting: false,
             session_identity: None,
             policy: None,
 
@@ -189,11 +188,35 @@ impl<'a> InteractiveState<'a> {
 
     /// Whether the loop is doing something an Esc could pause or interrupt
     /// (docs/tui.md): a request is streaming (`pending_request`, event-driven and immediate) **or**
-    /// the daemon reports it is executing a turn (`loop_running`, polled — the signal that survives
-    /// a *silent* long-running tool, where streaming reads false). The union catches both the fast
-    /// edge and the silent middle.
+    /// the daemon's loop phase is anything but idle (the signal that survives a *silent*
+    /// long-running tool, where streaming reads false). The union catches both the fast edge
+    /// and the silent middle.
     pub(in crate::tui) fn is_loop_active(&self) -> bool {
-        self.loading.pending_request || self.loop_running
+        self.loading.pending_request || self.loop_running()
+    }
+
+    /// Whether the daemon's loop is anywhere but idle.
+    pub(in crate::tui) fn loop_running(&self) -> bool {
+        self.loop_phase != crate::daemon::LoopPhase::Idle
+    }
+
+    /// Why the loop is parked at its cold check, or `None` when it is not: the `cold`
+    /// topic still set is an expired cache, cleared is a compaction that ended it.
+    pub(in crate::tui) fn park(&self) -> Option<ParkReason> {
+        (self.loop_phase == crate::daemon::LoopPhase::ColdParked).then(|| {
+            if self.cold.is_some() {
+                ParkReason::Expired
+            } else {
+                ParkReason::Compacted
+            }
+        })
+    }
+
+    /// Whether a compaction is waiting or writing, from `current_operations`.
+    pub(in crate::tui) fn compacting(&self) -> bool {
+        self.operations
+            .as_ref()
+            .is_some_and(|operations| operations.compaction.is_some())
     }
 
     /// The tool call currently executing, derived from the committed log alone —

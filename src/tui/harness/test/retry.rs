@@ -19,7 +19,7 @@ fn retry(surface: &str, message: &str) -> TuiEvent {
 fn retry_and_failure_are_level_triggered_in_the_status_bar() {
     let mut play = Screenplay::new(80, 12);
     play.user("do a thing");
-    play.event(TuiEvent::Running(true));
+    play.event(TuiEvent::Phase(crate::daemon::LoopPhase::Requesting));
 
     // Idle: neither diagnostic adds chrome.
     assert!(play.find("retrying").is_none(), "nothing retrying at idle");
@@ -58,7 +58,7 @@ fn retry_and_failure_are_level_triggered_in_the_status_bar() {
 fn turn_retry_status_line() {
     let mut play = Screenplay::new(80, 12);
     play.user("do a thing");
-    play.event(TuiEvent::Running(true));
+    play.event(TuiEvent::Phase(crate::daemon::LoopPhase::Requesting));
     play.event(TuiEvent::UpstreamFailure(Some(UpstreamFailureView {
         status: 529,
         count: 2,
@@ -74,7 +74,7 @@ fn turn_retry_status_line() {
 fn triage_retry_status_line() {
     let mut play = Screenplay::new(80, 12);
     play.user("do a thing");
-    play.event(TuiEvent::Running(true));
+    play.event(TuiEvent::Phase(crate::daemon::LoopPhase::Requesting));
     play.event(retry("triage", "attempt 3 of 12 failed upstream, retrying"));
     play.snapshot("upstream_triage_retry");
 }
@@ -87,7 +87,7 @@ fn triage_retry_status_line() {
 fn a_stalled_trajectory_stays_visible_at_idle() {
     let mut play = Screenplay::new(80, 12);
     play.user("do a thing");
-    play.event(TuiEvent::Running(true));
+    play.event(TuiEvent::Phase(crate::daemon::LoopPhase::Requesting));
     play.event(retry("turn", "attempt 11 of 12 failed upstream, retrying"));
 
     // The budget is spent: the retry clears, the stall is set, the loop parks.
@@ -95,7 +95,7 @@ fn a_stalled_trajectory_stays_visible_at_idle() {
     play.event(TuiEvent::Stall(Some(StallView {
         message: "the trajectory stopped: 12 attempts in a row failed upstream".into(),
     })));
-    play.event(TuiEvent::Running(false));
+    play.event(TuiEvent::Phase(crate::daemon::LoopPhase::Idle));
     assert!(play.find("retrying").is_none(), "nothing is being retried");
     assert!(
         play.find("the trajectory stopped").is_some(),
@@ -104,7 +104,7 @@ fn a_stalled_trajectory_stays_visible_at_idle() {
 
     // A trajectory starting is the all-clear.
     play.event(TuiEvent::Stall(None));
-    play.event(TuiEvent::Running(true));
+    play.event(TuiEvent::Phase(crate::daemon::LoopPhase::Requesting));
     assert!(
         play.find("the trajectory stopped").is_none(),
         "a running trajectory clears the stall"

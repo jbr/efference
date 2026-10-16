@@ -60,16 +60,24 @@ impl<'a> InteractiveState<'a> {
         // The cache believed expired (the `cold` topic): the next send pays the
         // uncached read unless the operator compacts (backlog: cold-session.md).
         // A parked loop is stopped mid-turn and waits on the operator, so it says so.
-        let note = match (self.cold.is_some(), self.compacting) {
+        // `C-o` is offered only where the compact route would take it (the `verbs` topic).
+        let compactable = self
+            .verbs
+            .as_ref()
+            .is_none_or(|verbs| verbs.compact_refused.is_none());
+        let note = match (self.cold.is_some(), self.compacting()) {
             (true, true) => Some("cache expired · compacting… "),
-            (true, false) if self.park == Some(ParkReason::Expired) => {
-                Some("paused: cache expired · ⏎ to continue · C-o compacts ")
-            }
+            (true, false) if self.park() == Some(ParkReason::Expired) => Some(if compactable {
+                "paused: cache expired · ⏎ to continue · C-o compacts "
+            } else {
+                "paused: cache expired · ⏎ to continue "
+            }),
             // A compaction ended the belief but not the park; a send resumes it unasked.
-            (false, false) if self.park == Some(ParkReason::Compacted) => {
+            (false, false) if self.park() == Some(ParkReason::Compacted) => {
                 Some("paused: summarized · ⏎ to continue ")
             }
-            (true, false) => Some("cache expired · C-o compacts "),
+            (true, false) if compactable => Some("cache expired · C-o compacts "),
+            (true, false) => Some("cache expired "),
             (false, true) => Some("compacting… "),
             (false, false) => None,
         };

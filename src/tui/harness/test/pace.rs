@@ -51,7 +51,7 @@ fn pace_widget_steps_and_commits() {
     let none = KeyModifiers::NONE;
     let mut play = Screenplay::new(80, 12);
     play.user("do a thing");
-    play.event(TuiEvent::Running(true));
+    play.event(TuiEvent::Phase(crate::daemon::LoopPhase::Requesting));
 
     // At-rest composer + loop active: one Esc holds. Spill up onto the held strip.
     play.route_key(KeyCode::Esc, none);
@@ -115,7 +115,7 @@ fn pace_widget_esc_reverts_without_sending() {
     let none = KeyModifiers::NONE;
     let mut play = Screenplay::new(80, 12);
     play.user("x");
-    play.event(TuiEvent::Running(true));
+    play.event(TuiEvent::Phase(crate::daemon::LoopPhase::Requesting));
     play.route_key(KeyCode::Esc, none); // hold
     let _ = play.took_pace(); // drain the hold's own pace command
     play.route_key(KeyCode::Up, none); // → held strip
@@ -147,7 +147,7 @@ fn pace_widget_active_row() {
     let none = KeyModifiers::NONE;
     let mut play = Screenplay::new(80, 12);
     play.user("go");
-    play.event(TuiEvent::Running(true));
+    play.event(TuiEvent::Phase(crate::daemon::LoopPhase::Requesting));
     play.route_key(KeyCode::Esc, none); // hold
     play.route_key(KeyCode::Up, none); // → held strip
     play.route_key(KeyCode::Right, none); // interrupt → resume

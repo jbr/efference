@@ -79,13 +79,44 @@ pub(crate) mod write_text;
 use senders::{Receivers, Senders};
 use state::{InteractiveState, UiMode};
 
-/// Why the loop is parked at its cold check (the `park` topic's `reason`).
+/// Why the loop is parked at its cold check: read from the `cold_parked` loop phase and
+/// whether the `cold` topic still holds the belief (docs/control-api.md).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ParkReason {
     /// Waiting for a person to act before an uncached read, or for a compaction.
     Expired,
     /// A compaction summarized the history while parked; a send resumes it.
     Compacted,
+}
+
+/// The `verbs` topic as the UI reads it (docs/control-api.md): the refusal each route
+/// would give now, `None` where it accepts.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct VerbsView {
+    /// `POST /loop/continue`'s refusal.
+    pub continue_refused: Option<String>,
+    /// `POST /loop/compact`'s refusal for a request without `warm` — what `C-o` sends.
+    pub compact_refused: Option<String>,
+}
+
+impl VerbsView {
+    /// Parse the topic. A compaction the route accepts only with `warm: true` is a
+    /// refusal for `C-o`, which never sends it; the route's own words for that arrive
+    /// when it is asked.
+    pub(crate) fn parse(value: &serde_json::Value) -> Self {
+        let refusal = |verb: &serde_json::Value| {
+            (verb["accepted"] != true).then(|| verb["message"].as_str().unwrap_or("").to_string())
+        };
+        let compact = &value["compact"];
+        Self {
+            continue_refused: refusal(&value["continue"]),
+            compact_refused: if compact["accepted"] == true && compact["warm"] == true {
+                Some("the cache is not believed expired".to_string())
+            } else {
+                refusal(compact)
+            },
+        }
+    }
 }
 
 /// The `cold` topic as the UI reads it: the cache is believed expired, and what reading
@@ -154,11 +185,12 @@ pub(crate) enum TuiEvent {
     /// The session's cache is believed expired, or no longer (the `cold` topic,
     /// backlog: cold-session.md). Level-triggered: `None` is warm or never-sent.
     CacheExpired(Option<ColdView>),
-    /// The loop is stopped at its cold check mid-turn (the `park` topic,
-    /// docs/control-api.md), and why. Level-triggered: `None` is not parked.
-    Park(Option<ParkReason>),
-    /// A compaction is being written (the `compaction` topic), on a cold or a warm session.
-    Compacting(bool),
+    /// Where the loop is (the `loop_phase` topic, docs/control-api.md). The "is
+    /// something happening" signal graduated Esc reads to choose pause-vs-swallow
+    /// (docs/tui.md) — reliable through a silent tool, unlike streaming deltas.
+    Phase(crate::daemon::LoopPhase),
+    /// What the loop routes would answer now (the `verbs` topic, docs/control-api.md).
+    Verbs(VerbsView),
     /// A retry in flight changed (the `upstream_retry` topic, docs/transport.md).
     /// Level-triggered: `None` is the all-clear. Ephemeral transport diagnostic,
     /// rendered in the status bar.
@@ -180,10 +212,6 @@ pub(crate) enum TuiEvent {
     /// docs/tui.md). Loud to the operator (surfaced in the status bar),
     /// silent to the agent — it is never logged or projected.
     Pace(PaceView),
-    /// Whether the loop is executing a turn (the `running` topic). The
-    /// "is something happening" signal graduated Esc reads to choose pause-vs-swallow
-    /// (docs/tui.md) — reliable through a silent tool, unlike streaming deltas.
-    Running(bool),
     /// A result image's bytes came back from the control channel, decoded — or
     /// didn't, with the reason (docs/tui.md). Folded into the
     /// [`ImageStore`](image::ImageStore); the transcript's reservation for it was

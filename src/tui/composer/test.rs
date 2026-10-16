@@ -474,10 +474,36 @@ fn empty_enter_is_inert_while_the_loop_runs() {
     use crate::tui::TuiEvent;
     use crate::tui::harness::Screenplay;
     let mut play = Screenplay::new(80, 12);
-    play.event(TuiEvent::Running(true));
+    play.event(TuiEvent::Phase(crate::daemon::LoopPhase::Requesting));
     play.route_key(KeyCode::Enter, KeyModifiers::NONE);
     assert!(!play.took_continue(), "nothing fired mid-turn");
     assert_eq!(play.took_turn(), None);
+}
+
+/// The `verbs` topic decides the empty `⏎` (docs/control-api.md): a refusal at idle is
+/// stated on the status line without a round trip, and a continue the route accepts
+/// mid-trajectory — a wait on the upstream it retries now — fires.
+#[test]
+fn empty_enter_follows_the_published_continue() {
+    use crate::daemon::LoopPhase;
+    use crate::tui::harness::Screenplay;
+    use crate::tui::{TuiEvent, VerbsView};
+    let mut play = Screenplay::new(80, 12);
+    play.event(TuiEvent::Verbs(VerbsView {
+        continue_refused: Some("nothing to continue: the last turn completed".into()),
+        ..VerbsView::default()
+    }));
+    play.route_key(KeyCode::Enter, KeyModifiers::NONE);
+    assert!(!play.took_continue(), "a refused continue is not sent");
+    assert!(play.render().contains("nothing to continue"));
+
+    play.event(TuiEvent::Phase(LoopPhase::Delayed { until: 0 }));
+    play.event(TuiEvent::Verbs(VerbsView::default()));
+    play.route_key(KeyCode::Enter, KeyModifiers::NONE);
+    assert!(
+        play.took_continue(),
+        "the retry-now continue fired mid-trajectory"
+    );
 }
 
 /// A composer with text is unaffected: `⏎` still submits that text.

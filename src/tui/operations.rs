@@ -32,10 +32,13 @@ pub(crate) struct RunningToolView {
 }
 
 /// The `current_operations` topic's value.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct OperationsView {
     pub requests: Vec<OpenRequestView>,
     pub tools: Vec<RunningToolView>,
+    /// A compaction waiting or writing (docs/summary.md), with the instant its state
+    /// began; `None` when none is open.
+    pub compaction: Option<u64>,
 }
 
 /// Parse the topic; `null` (nothing open) is no view.
@@ -70,7 +73,15 @@ pub(super) fn parse_current_operations(value: &Value) -> Option<OperationsView> 
             })
         })
         .collect();
-    Some(OperationsView { requests, tools })
+    let compaction = value
+        .get("compaction")
+        .and_then(|c| c.get("since"))
+        .and_then(Value::as_u64);
+    Some(OperationsView {
+        requests,
+        tools,
+        compaction,
+    })
 }
 
 /// "45s", "2m 10s", "1h 05m".

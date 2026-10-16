@@ -290,7 +290,7 @@ fn graduated_esc_is_state_driven_return_pause_interrupt() {
     let mut play = Screenplay::new(80, 12);
     play.user("do a thing");
     // The loop is working — the daemon's `running` topic reports true.
-    play.event(TuiEvent::Running(true));
+    play.event(TuiEvent::Phase(crate::daemon::LoopPhase::Requesting));
 
     // From transcript navigation, Esc returns to the composer — it does not pause.
     play.route_key(KeyCode::Up, none); // spill → strip

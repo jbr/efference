@@ -155,14 +155,6 @@ fn decode_frame(
             "stall" => Some(send(TuiEvent::Stall(parse::parse_stall(data)))),
             // Level-triggered: `null` clears the header's expired-cache segment.
             "cold" => Some(send(TuiEvent::CacheExpired(parse::parse_cold(data)))),
-            // Level-triggered: the loop stopped at its cold check, and why.
-            "park" => Some(send(TuiEvent::Park(match data["reason"].as_str() {
-                Some("expired") => Some(ParkReason::Expired),
-                Some("compacted") => Some(ParkReason::Compacted),
-                _ => None,
-            }))),
-            // Level-triggered: a compaction being written, from the `compaction` topic.
-            "compaction" => Some(send(TuiEvent::Compacting(data["state"] == "writing"))),
             // Static per session today, so this arrives once on the connect
             // snapshot; forwarded through the same path as anything else that
             // could move (docs/control-api.md).
@@ -174,7 +166,10 @@ fn decode_frame(
                 super::operations::parse_current_operations(data),
             ))),
             "pace" => parse::parse_pace(data).map(|pace| send(TuiEvent::Pace(pace))),
-            "running" => data.as_bool().map(|r| send(TuiEvent::Running(r))),
+            "loop_phase" => serde_json::from_value(data.clone())
+                .ok()
+                .map(|phase| send(TuiEvent::Phase(phase))),
+            "verbs" => Some(send(TuiEvent::Verbs(super::VerbsView::parse(data)))),
             // The three policy-shaped topics update the held copy, then re-emit the
             // merged view. The connect snapshot delivers them in topic order (role
             // first), so the first emission already has a role to merge around.

@@ -62,6 +62,7 @@ pub(crate) fn needs_confirm(row: &ListedSession) -> Option<String> {
         "stalled" => Some("stalled and has not been answered"),
         "asking" => Some("is waiting on your answer to a question"),
         "parked" => Some("is paused on an expired cache, waiting for you"),
+        "blocked" => Some("is stopped mid-turn until someone acts"),
         _ => None,
     };
     match (doing, row.processes) {

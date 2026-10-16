@@ -14,10 +14,11 @@ use super::*;
 
 /// Where the loop is now. Exclusive: what is in flight beside it — open requests,
 /// running tools, a compaction — is the `current_operations` topic.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "phase", rename_all = "snake_case")]
 pub enum LoopPhase {
     /// Waiting for a turn, a continue, or an inbox wake.
+    #[default]
     Idle,
     /// A model request is in flight: a turn's, or a triage's (the idle triage included).
     Requesting,
@@ -39,7 +40,7 @@ pub enum LoopPhase {
 }
 
 /// Why the loop is [`LoopPhase::Blocked`].
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BlockedReason {
     /// A triage could not reach its model; the results are held (docs/triage.md).

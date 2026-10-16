@@ -619,11 +619,14 @@ pub(super) struct InteractiveState<'a> {
     /// resolves into row focus (`sidebar_verb_hits` likewise for verbs).
     pub sidebar_hits: Vec<(Rect, SidebarRow)>,
     pub sidebar_verb_hits: Vec<(Rect, SidebarRow, usize)>,
-    /// Whether the loop is executing a turn, from the `running` state topic (docs/tui.md).
-    /// Graduated Esc reads it (via [`is_loop_active`](Self::is_loop_active)) to choose
-    /// pause-vs-swallow — reliable through a *silent* long tool, where streaming
-    /// (`pending_request`) reads false.
-    pub loop_running: bool,
+    /// Where the loop is, from the `loop_phase` state topic (docs/tui.md). Graduated Esc
+    /// reads it (via [`is_loop_active`](Self::is_loop_active)) to choose pause-vs-swallow —
+    /// reliable through a *silent* long tool, where streaming (`pending_request`) reads
+    /// false.
+    pub loop_phase: crate::daemon::LoopPhase,
+    /// What the loop routes would answer now, from the `verbs` topic; `None` until the
+    /// connect snapshot lands.
+    pub verbs: Option<super::VerbsView>,
     /// The operator's pace dial / hold overlay, from the `pace` state topic
     /// (docs/tui.md). `None` until the connect snapshot lands. Ephemeral chrome —
     /// surfaced in the status bar (loud to the operator), never in the transcript, and never
@@ -650,11 +653,6 @@ pub(super) struct InteractiveState<'a> {
     /// The `cold` topic as the header shows it (backlog: cold-session.md): whether
     /// the cache is believed expired.
     pub cold: Option<ColdView>,
-    /// The loop is parked mid-turn at the cold check (the `park` topic).
-    pub park: Option<ParkReason>,
-    /// The `compaction` topic as the header shows it: a compaction is being written, whether the
-    /// session is cold or the operator asked for it warm.
-    pub compacting: bool,
     /// What this session is — the model and the working directory, from the
     /// `session_identity` topic (docs/control-api.md). `None` until the connect
     /// snapshot lands, and in views that never connect. Sidebar chrome.

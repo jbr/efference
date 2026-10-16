@@ -210,10 +210,11 @@ impl<'a> InteractiveState<'a> {
             }
             // Empty composer, operator's turn: `⏎` hands control back with no input
             // (docs/tui.md) — the zero-token continue, which the composer would
-            // otherwise swallow as a no-op. Gated on the loop being idle or waiting
-            // on the upstream (a retry pause, a held triage — where the continue
-            // retries now), so a stray `⏎` during a generation stays the silent no-op
-            // it has always been; the daemon re-checks the same preconditions and
+            // otherwise swallow as a no-op. Sent where the `verbs` topic says the
+            // route accepts it (an idle loop with a continue in it, a cold park, a
+            // wait on the upstream that it retries now); refused at idle, the route's
+            // reason goes to the status line, and a stray `⏎` during a generation
+            // stays the silent no-op it has always been. The daemon re-checks and
             // declines a race.
             if key.code == KeyCode::Enter
                 && !key.modifiers.contains(KeyModifiers::ALT)
@@ -226,9 +227,27 @@ impl<'a> InteractiveState<'a> {
                     self.submit_composer(String::new());
                     return false;
                 }
-                if !self.is_loop_active() || self.upstream_retry.is_some() || self.stall.is_some() {
-                    self.continue_trajectory();
-                    return false;
+                match self
+                    .verbs
+                    .as_ref()
+                    .map(|verbs| verbs.continue_refused.clone())
+                {
+                    Some(None) => {
+                        self.continue_trajectory();
+                        return false;
+                    }
+                    Some(Some(refusal)) if !self.is_loop_active() => {
+                        self.ui.debug_message = refusal.into();
+                        self.dirty = true;
+                        return false;
+                    }
+                    // Before the topic lands, an idle loop takes the continue and the
+                    // daemon answers for itself.
+                    None if !self.is_loop_active() => {
+                        self.continue_trajectory();
+                        return false;
+                    }
+                    _ => {}
                 }
             }
             // `⌫` on an empty composer takes back the most recently staged attachment.

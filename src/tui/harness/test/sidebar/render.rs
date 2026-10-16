@@ -442,11 +442,20 @@ fn background_process_panel() {
 }
 
 /// The `cold` topic in the header (backlog: cold-session.md): stated while the cache is
-/// believed expired, with the compaction key, `compacting…` while a compaction is written, and gone
-/// when the topic clears.
+/// believed expired, with the compaction key while the `verbs` topic says the compact
+/// route takes it, `compacting…` while a compaction is open in `current_operations`,
+/// and gone when the topic clears. The park is the `cold_parked` loop phase.
 #[test]
 fn header_states_an_expired_cache() {
+    use crate::daemon::LoopPhase;
     use crate::tui::TuiEvent;
+    use crate::tui::operations::OperationsView;
+    let compacting = |open: bool| {
+        TuiEvent::Operations(open.then(|| OperationsView {
+            compaction: Some(0),
+            ..OperationsView::default()
+        }))
+    };
     let mut play = Screenplay::new(110, 16);
     play.user("go");
     assert!(!play.render().contains("cache expired"));
@@ -455,15 +464,24 @@ fn header_states_an_expired_cache() {
         Some(crate::tui::ColdView::default()),
     ));
     assert!(play.render().contains("cache expired · C-o compacts"));
+    play.event(TuiEvent::Verbs(crate::tui::VerbsView {
+        compact_refused: Some("an approval gate is pending — resolve it first".into()),
+        ..crate::tui::VerbsView::default()
+    }));
+    assert!(
+        !play.render().contains("C-o compacts"),
+        "no key is offered for a compaction the route would refuse"
+    );
+    play.event(TuiEvent::Verbs(crate::tui::VerbsView::default()));
 
-    play.event(TuiEvent::Park(Some(crate::tui::ParkReason::Expired)));
+    play.event(TuiEvent::Phase(LoopPhase::ColdParked));
     assert!(
         play.render()
             .contains("paused: cache expired · ⏎ to continue · C-o compacts")
     );
-    play.event(TuiEvent::Park(None));
+    play.event(TuiEvent::Phase(LoopPhase::Idle));
 
-    play.event(TuiEvent::Compacting(true));
+    play.event(compacting(true));
     assert!(play.render().contains("cache expired · compacting…"));
 
     play.event(TuiEvent::CacheExpired(None));
@@ -474,11 +492,9 @@ fn header_states_an_expired_cache() {
     );
 
     // A compaction at a park ends the belief, not the park: a send resumes it unasked.
-    play.event(TuiEvent::Compacting(false));
-    play.event(TuiEvent::Park(Some(crate::tui::ParkReason::Compacted)));
+    play.event(compacting(false));
+    play.event(TuiEvent::Phase(LoopPhase::ColdParked));
     assert!(play.render().contains("paused: summarized · ⏎ to continue"));
-    play.event(TuiEvent::Park(None));
-
-    play.event(TuiEvent::Compacting(false));
+    play.event(TuiEvent::Phase(LoopPhase::Idle));
     assert!(!play.render().contains("compacting…"));
 }

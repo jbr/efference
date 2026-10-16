@@ -144,7 +144,7 @@ impl Screenplay<'_> {
     /// control strip's foreground-bash-vs-other-tool distinction depends on it.
     pub(crate) fn running_tool(&mut self, call_id: &str, name: &str, input: Value) -> &mut Self {
         self.assistant("", vec![ToolCall::new(name, call_id, input)]);
-        self.event(TuiEvent::Running(true))
+        self.event(TuiEvent::Phase(crate::daemon::LoopPhase::Requesting))
     }
 
     /// The Responses-dialect twin of [`running_tool`](Self::running_tool): commit an
@@ -170,7 +170,7 @@ impl Screenplay<'_> {
             ]),
             upstream_failure: None,
         });
-        self.event(TuiEvent::Running(true))
+        self.event(TuiEvent::Phase(crate::daemon::LoopPhase::Requesting))
     }
 
     /// The common case of [`running_tool`](Self::running_tool): a foreground `bash`

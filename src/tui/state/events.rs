@@ -168,16 +168,8 @@ impl<'a> InteractiveState<'a> {
                 self.dirty = true;
             }
 
-            TuiEvent::Park(park) => {
-                self.park = park;
-                self.dirty = true;
-            }
             TuiEvent::CacheExpired(cold) => {
                 self.cold = cold;
-                self.dirty = true;
-            }
-            TuiEvent::Compacting(compacting) => {
-                self.compacting = compacting;
                 self.dirty = true;
             }
 
@@ -224,12 +216,17 @@ impl<'a> InteractiveState<'a> {
                 self.pace = Some(pace);
                 self.dirty = true;
             }
-            TuiEvent::Running(running) => {
+            TuiEvent::Phase(phase) => {
                 // The "is the loop working" signal graduated Esc reads (docs/tui.md);
-                // the operation text is shown only while it is true.
-                self.loop_running = running;
+                // the operation text is shown only while the loop is not idle.
+                self.loop_phase = phase;
                 self.refresh_operation_text();
+                self.dirty = true;
                 return false;
+            }
+            TuiEvent::Verbs(verbs) => {
+                self.verbs = Some(verbs);
+                self.dirty = true;
             }
             TuiEvent::Operations(operations) => {
                 self.operations = operations;
@@ -363,8 +360,8 @@ impl<'a> InteractiveState<'a> {
     /// reads as the operator being waited on, ahead of whatever request or tool is open (docs/tui.md).
     pub(crate) fn status_operation_text(&self) -> Option<String> {
         let pending = crate::tui::operations::pending_text(
-            self.loop_running && self.pending_gate.is_some(),
-            self.loop_running && self.ask.is_some(),
+            self.loop_phase == crate::daemon::LoopPhase::Gated,
+            self.loop_phase == crate::daemon::LoopPhase::Asking,
         );
         pending
             .map(str::to_string)
@@ -376,7 +373,7 @@ impl<'a> InteractiveState<'a> {
     /// keepalive ping is not something the operator is waiting on. Returns whether
     /// the text changed.
     fn refresh_operation_text(&mut self) -> bool {
-        let text = match (&self.operations, self.loop_running) {
+        let text = match (&self.operations, self.loop_running()) {
             (Some(view), true) => {
                 let model = self
                     .session_identity
