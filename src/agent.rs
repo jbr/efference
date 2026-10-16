@@ -579,9 +579,10 @@ pub async fn run<F: Frontend, S: Spotter>(
             }
 
             // A completion may carry several calls (docs/README.md). Run them all
-            // here, holding the results, and triage them together at one triage below. Triaging between calls would build
-            // a fork request whose trailing assistant message still carries unanswered
-            // `tool_use` blocks, which the API rejects (docs/triage.md).
+            // here, holding the results, and triage them together in one request below.
+            // Triaging between calls would build a triage request whose trailing
+            // assistant message still carries unanswered `tool_use` blocks, which the
+            // API rejects (docs/triage.md).
             // The triage-lineage primer replays this completion's input on the own
             // triage's client (docs/transport.md). Borrowed, so the
             // primer is byte-identical to the request above; armed only on the own

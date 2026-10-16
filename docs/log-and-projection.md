@@ -258,9 +258,9 @@ struct Triaged { keep: Keep, note: Option<String>, intent_feedback: Option<Strin
 enum Keep { All, None, Ranges(Vec<(usize, usize)>) }
 ```
 
-`WireState` is the one triage primitive. It lives next to an immutable
-`raw: RawResult` on every `ToolResult` entry. **Triage only ever flips
-`wire`; `raw` is never overwritten.** That is what makes every triage
+`WireState` is the one curation primitive. It lives next to an immutable
+`raw: RawResult` on every `ToolResult` entry. **Curation only ever flips
+`wire`; `raw` is never overwritten.** That is what makes every verdict
 reversible: the full result survives in the log regardless of what the wire
 shows.
 

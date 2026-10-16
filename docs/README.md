@@ -44,10 +44,10 @@ Each session is an append-only log; the wire transcript sent to the API is
 from it is how most harnesses work; what efference commits to on top of that is:
 
 - **Rendering decisions are stored as per-entry verdicts, not content edits.**
-  Triage flips a `WireState` (`Raw → Triaged → Elided`) carrying the
+  Curation (triage, elision) flips a `WireState` (`Raw → Triaged → Elided`) carrying the
   *verdict* (`keep` ranges + an optional note); `project` re-renders from the
   immutable `raw` each turn. Because the raw result survives in the log, every
-  triage is reversible and auditable.
+  verdict is reversible and auditable.
 - **`project` is byte-deterministic, and tests pin it** (see the invariants
   below).
 - **Decisions get first-class log entries** — salience marks, triage verdicts,
@@ -105,12 +105,12 @@ Violating any one silently breaks caching or correctness:
    tail past the last cache breakpoint.** Triage is fixed *at append*, so no cached
    prefix entry is ever mutated. The one operation that rewrites prefix — a consolidation
    fold — is exactly one deliberate cache write.
-3. **raw is never overwritten; only `wire` flips.** This is what makes every triage
+3. **raw is never overwritten; only `wire` flips.** This is what makes every verdict
    reversible and the log a complete audit record.
 4. **A completion may make several tool calls.** A turn under `auto` tool choice is
    free to call tools in parallel: the request does not set `disable_parallel_tool_use`
    (Messages) and sends `parallel_tool_calls: true` (Responses). The loop runs every call
-   a completion made, holding the results, then triages them together at one triage
+   a completion made, holding the results, then triages them together in one triage request
    ([triage.md](triage.md)) — a triage fired between calls would carry
    unanswered `tool_use` blocks, which the API rejects. What *is* invariant is the
    pairing — every `tool_use` gets exactly one `tool_result`, or projection orphans it

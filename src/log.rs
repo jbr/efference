@@ -140,7 +140,7 @@ pub struct LogEntry {
     pub payload: Payload,
 }
 
-/// The content of a log entry. Immutable once appended; triage never mutates
+/// The content of a log entry. Immutable once appended; curation never mutates
 /// a payload's `raw`, only flips a [`WireState`] (docs/README.md).
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum Payload {
@@ -176,7 +176,7 @@ pub enum Payload {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         upstream_failure: Option<UpstreamFailureRecord>,
     },
-    /// The result of running one tool call. `raw` is immutable; triage only
+    /// The result of running one tool call. `raw` is immutable; curation only
     /// flips `wire`.
     ToolResult {
         call_id: CallId,
