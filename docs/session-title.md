@@ -32,10 +32,12 @@ racing for one name cannot both take it. A creation that fails after reserving
 removes its row. Resume claims the id for its root: a root that already holds it
 resumes, a root the register has not seen is recorded, and a root whose directory
 shares an id registered under another root is refused as a clash
-([resumption.md](resumption.md)). An archived session keeps its row; only discarding an
-empty session releases one.
+([resumption.md](resumption.md)). An archived session keeps its row; only discarding a
+session that never had a turn releases one, at its archive or in the sweep at host
+start ([resumption.md](resumption.md)).
 
-At host start a background pass registers the session directories (those holding a
+At host start a background pass first discards the empty session logs a previous host
+left, then registers the session directories (those holding a
 log) under every remembered root that the register lacks. An id found under two roots
 keeps its first row and is logged as a warning; boot goes on. Without a state database
 (a config naming no home directory) nothing is reserved and the live-map and on-disk

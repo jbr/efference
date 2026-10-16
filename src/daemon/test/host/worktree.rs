@@ -43,6 +43,8 @@ async fn deleting_a_session_removes_its_clean_worktree() {
     let server = host_server(&host).await;
     let path = hosting_worktree(&roots, &host, "wt-fox");
     let session = host.session("wt-fox").unwrap();
+    // A session with a turn is archived; an empty one is discarded instead.
+    session.append(1, Payload::User(vec![])).unwrap();
 
     let body = server
         .delete("/sessions/wt-fox")

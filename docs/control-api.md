@@ -288,6 +288,10 @@ sessions from one process. Its own routes are the listener's, not a session's:
   its teardown has run (background children reaped, scratch removed); the id leaves
   the list once the loop has returned. The directory and log stay, so the session
   is resumable by patching it `active` again. `404` for an id that is not hosted.
+  A session whose log holds no `User` and no `Assistant` entry is discarded instead:
+  its directory is removed, its id is free again, and the answer is `200 {"id",
+  "state": "discarded"}` ([resumption.md](resumption.md)); a worktree it kept makes it an
+  ordinary archive.
   A session that made its own git worktree also gets a `worktree` field: its
   directory is removed when `git status --porcelain` there is empty, answering
   `{"removed": true, "branch_deleted": <bool>}` (the branch is deleted only when

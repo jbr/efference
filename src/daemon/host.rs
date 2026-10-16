@@ -117,6 +117,26 @@ pub(super) struct Hosted {
     pub(super) options: crate::inference::SessionOptions,
 }
 
+/// What [`Host::end`] did: the outcome for the session's own worktree, and whether
+/// the session was discarded instead of archived (docs/resumption.md).
+#[derive(Debug)]
+pub struct Ended {
+    pub retired: Option<crate::worktree::Retired>,
+    pub discarded: bool,
+}
+
+impl Ended {
+    /// The `state` an archive answers with: `archived`, or `discarded` when the
+    /// session was removed (docs/control-api.md).
+    fn state(&self) -> &'static str {
+        if self.discarded {
+            "discarded"
+        } else {
+            "archived"
+        }
+    }
+}
+
 impl Host {
     /// `host_env` is the host's own environment at start, captured by the caller
     /// that loaded the inference registry from it (docs/env.md).
@@ -139,7 +159,7 @@ impl Host {
             .map_or_else(crate::remembered::Projects::disabled, |path| {
                 crate::remembered::Projects::at(path.to_owned())
             });
-        Self::backfill_session_ids(&session_ids, &remembered);
+        Self::backfill_session_ids(&session_ids, &remembered, std::time::SystemTime::now());
         Arc::new(Self {
             swansong: Swansong::new(),
             catalog,
@@ -156,16 +176,21 @@ impl Host {
         })
     }
 
-    /// Register the session directories under the remembered roots in a
-    /// background thread, so a slow volume does not hold up boot. A collision —
+    /// Discard the empty session logs under the remembered roots, then register
+    /// the session directories, in a background thread, so a slow volume does not
+    /// hold up boot. A collision —
     /// one id under two roots — is reported and nothing else happens
     /// (docs/session-title.md).
     fn backfill_session_ids(
         session_ids: &crate::session_ids::SessionIds,
         remembered: &crate::remembered::Projects,
+        booted: std::time::SystemTime,
     ) {
         let (session_ids, remembered) = (session_ids.clone(), remembered.clone());
         std::thread::spawn(move || {
+            // Empty logs a previous host left are removed first, so the backfill
+            // registers only what stays (docs/resumption.md).
+            crate::discard::sweep(&remembered.roots(), booted, &session_ids);
             for collision in session_ids.backfill(&remembered.roots()) {
                 log::warn!(
                     "session id {:?} is under both {} and {}; the id stays with the first",
@@ -408,13 +433,11 @@ impl Host {
     /// leaves every worktree in place, including through the cascade that ends a
     /// stopped session's children: those reach here with the host already shutting
     /// down, and retire nothing.
-    pub fn end(
-        &self,
-        id: &str,
-    ) -> Option<impl std::future::Future<Output = Option<crate::worktree::Retired>>> {
+    pub fn end(&self, id: &str) -> Option<impl std::future::Future<Output = Ended>> {
         let hosted = self.hosted(id)?;
         let id = id.to_string();
         let archiving = self.swansong.state().is_running();
+        let ids = self.session_ids.clone();
         Some(async move {
             hosted.swansong.shut_down().await;
             let retired = if archiving {
@@ -422,6 +445,27 @@ impl Host {
             } else {
                 None
             };
+            // A session that never had a turn is discarded rather than archived
+            // (docs/resumption.md), unless its worktree was kept: that session has
+            // work outside the log.
+            let worktree_gone = !matches!(
+                retired,
+                Some(crate::worktree::Retired::Kept { .. } | crate::worktree::Retired::Failed(_))
+            );
+            if archiving && worktree_gone && hosted.session.log_is_empty() {
+                let directories = hosted.session.directories();
+                match crate::discard::remove(directories.project(), &id, &ids) {
+                    Ok(()) => {
+                        hosted.session.close_log();
+                        log::info!("session {id}: discarded, it never had a turn");
+                        return Ended {
+                            retired,
+                            discarded: true,
+                        };
+                    }
+                    Err(e) => log::warn!("session {id}: could not discard: {e}"),
+                }
+            }
             // A deliberate archive is recorded last, so a restarted host leaves the
             // session dormant (docs/resumption.md); a host shutdown records nothing.
             if archiving && let Err(e) = hosted.session.append_archived() {
@@ -437,7 +481,10 @@ impl Host {
             if archiving {
                 log::info!("session {id}: archived");
             }
-            retired
+            Ended {
+                retired,
+                discarded: false,
+            }
         })
     }
 }
@@ -633,8 +680,8 @@ async fn end_session(conn: Conn) -> Conn {
     let id = conn.param("session").unwrap_or_default().to_string();
     match host.end(&id) {
         Some(completion) => {
-            let retired = completion.await;
-            archived(conn, &id, retired)
+            let ended = completion.await;
+            archived(conn, &id, ended)
         }
         None => no_such_session(conn, &id),
     }
@@ -642,9 +689,9 @@ async fn end_session(conn: Conn) -> Conn {
 
 /// The `200` an archive answers with, carrying `worktree` when the session had its own
 /// (docs/control-api.md).
-fn archived(conn: Conn, id: &str, retired: Option<crate::worktree::Retired>) -> Conn {
-    let mut body = serde_json::json!({ "id": id, "state": SessionState::Archived });
-    if let Some(worktree) = retired.and_then(|retired| retired.response()) {
+fn archived(conn: Conn, id: &str, ended: Ended) -> Conn {
+    let mut body = serde_json::json!({ "id": id, "state": ended.state() });
+    if let Some(worktree) = ended.retired.and_then(|retired| retired.response()) {
         body["worktree"] = worktree;
     }
     conn.with_status(200).with_body(body.to_string()).halt()

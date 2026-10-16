@@ -9,6 +9,7 @@ use trillium::KnownHeaderName;
 mod archived;
 mod attention;
 mod creation;
+mod discard;
 mod preview;
 mod projects;
 mod resume;

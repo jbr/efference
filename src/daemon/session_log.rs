@@ -47,6 +47,11 @@ impl Session {
         self.appended.notify_waiters();
     }
 
+    /// Whether the log holds no operator or agent turn (`crate::discard`).
+    pub(crate) fn log_is_empty(&self) -> bool {
+        crate::discard::is_empty(self.log.lock().unwrap().entries())
+    }
+
     pub(crate) fn log_closed(&self) -> bool {
         self.log.lock().unwrap().is_closed()
     }

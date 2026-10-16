@@ -103,7 +103,9 @@ worktrees in place):
 - a worktree with changes is kept untouched.
 
 The archive response's `worktree` field and a `Worktree` log entry say which happened
-([control-api.md](control-api.md)). Resume re-adds a missing worktree the session made at
+([control-api.md](control-api.md)). When the session never had a turn, a worktree that is
+removed goes with a discarded session, and one that is kept makes it an ordinary archive
+([resumption.md](resumption.md)). Resume re-adds a missing worktree the session made at
 the same path — from its kept branch, or a fresh `efference/<id>` at the project's
 `HEAD` — so the identity line is byte-identical and `post-checkout` warms it again
 (`worktree::restore`). A session whose working directory was inside another session's

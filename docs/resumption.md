@@ -162,6 +162,32 @@ The later of the two is the session's lifecycle. A log whose last lifecycle entr
 `Archived` (including one with neither) was open when its host stopped, and the dormant
 listing marks its row `interrupted` (`src/inventory.rs`).
 
+## Sessions that never had a turn
+
+A log is *empty* when it holds no `User` and no `Assistant` entry: the preamble,
+telemetry, the `Ambient` and `Triage` entries of an idle triage, `Worktree` and
+`Archived` are the harness's own record, so a session with only those has lost nothing
+the operator wrote or the agent did (`src/discard.rs`). Such a session is discarded, not
+archived:
+
+- **At archive.** Each archive path (`DELETE`, `PATCH {"state": "archived"}`, a child
+  ending with its creator) removes the session directory and releases the id's row in
+  the `session_ids` register ([session-title.md](session-title.md)), so the id can be
+  minted again, and appends no `Archived`. The response says `"state": "discarded"`.
+  Removal refuses anything that is not a real directory directly under the project's
+  `.efference`; if it fails, the session is archived as usual. A host shutdown discards
+  nothing.
+- **Worktree.** A worktree the session made is retired first
+  ([worktrees.md](worktrees.md)). A clean one is removed and the discard goes on, the
+  response carrying `worktree: {"removed": true, ...}`. One that is kept or whose removal
+  failed makes the session an ordinary archive.
+- **At host start.** The background pass that registers ids
+  ([session-title.md](session-title.md)) first sweeps the remembered roots for empty
+  logs and removes them, whether or not they carry an `Archived` entry: the leftovers of
+  a host that stopped between a creation and its first turn. A log last written at or
+  after the host started is skipped, since a session this host is already running may
+  own it. A log that does not parse is logged and left.
+
 ## The session as a resource
 
 `PATCH /sessions/:id` with `{"state": "active"}` revives a session
