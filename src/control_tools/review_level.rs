@@ -12,9 +12,10 @@ use serde::{Deserialize, Serialize};
 pub struct ReviewLevel {
     /// `autonomous` — the spotter hands an unclear call back to the model with a
     /// pointer at its config file, so nothing blocks on an absent human.
-    /// `supervisor` — the spotter judges first and escalates to the session that
-    /// created this one, which answers the gate with `approve`; with no live
-    /// creator this reviews as `spotter_human`. The default for a session another
+    /// `supervisor` — the spotter judges first and escalates to this session's
+    /// supervisor (by default the session that created it), which answers the gate
+    /// with `approve`; with no live supervisor this reviews as `spotter_human`. The
+    /// default for a session another
     /// session created, and `spotter_human` is how you hand one back to the operator.
     /// `spotter_human` — the spotter judges first and escalates to a human gate.
     /// `human_only` — skip the spotter; every uncleared call gates.
