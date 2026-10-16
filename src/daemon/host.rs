@@ -44,6 +44,9 @@ mod summary;
 pub use summary::SessionSummary;
 use summary::summary_stream;
 
+mod supervise;
+pub use supervise::SupervisorRefused;
+
 /// One process's sessions and the `Swansong` they all hang under.
 pub struct Host {
     swansong: Swansong,
@@ -91,6 +94,11 @@ pub(super) struct Hosted {
     /// The session that commissioned this one, when a session did (docs/tools.md).
     /// Control state only: never logged, never projected.
     pub(super) created_by: Option<String>,
+    /// The session that supervises this one (docs/permissions.md): it answers this
+    /// one's gates under the `supervisor` review position and may drive it. Starts as
+    /// `created_by`, and moves only by `Host::set_supervisor` (`supervise.rs`).
+    /// Control state only: not persisted, so a resume starts again from the creator.
+    pub(super) supervisor: Option<String>,
     /// Whether this session outlives its creator (docs/tools.md). Children end
     /// with the session that made them unless created `detached`.
     pub(super) detached: bool,
@@ -172,6 +180,7 @@ impl Host {
             session: Arc::clone(&session),
             swansong: runtime.swansong().clone(),
             created_by: created_by.clone(),
+            supervisor: created_by.clone(),
             detached,
             succeeds: None,
             subscribers: BTreeMap::new(),
@@ -193,16 +202,16 @@ impl Host {
             sessions.insert(id.clone(), hosted);
         }
         self.touch_summary();
+        // The link to the supervisor pointer is made for every adopted session, root or
+        // not, since the pointer can be set after creation (docs/permissions.md).
+        session.link_supervisor(self, id.clone());
         if let Some(creator) = created_by {
-            // The creating session is this one's supervisor (docs/permissions.md):
-            // the link is recorded first, so the dial below has something to resolve
+            // The creating session is this one's supervisor by default: the pointer
+            // above already names it, so the dial below has something to resolve
             // against. A session-created session defaults to `supervisor`; an explicit
             // `--autonomous` at creation has already moved the dial off the supervised
             // default and keeps it.
-            session.set_supervisor(self, creator.clone());
-            if session.review_level() == crate::policy::ReviewLevel::SpotterHuman {
-                session.set_review_level(crate::policy::ReviewLevel::Supervisor);
-            }
+            session.default_to_supervisor();
             self.subscribe(&id, &creator, true);
         }
         // The status watcher (`subscriptions.rs`), stopped by the runtime's
@@ -244,13 +253,14 @@ impl Host {
             }
             host.sessions.lock().unwrap().remove(&id);
             host.touch_summary();
-            // A surviving child's `supervisor` position now has nothing to resolve to, so
-            // it reviews as `spotter_human` from here (docs/permissions.md). The
-            // resolution is read fresh at every routing, so nothing has to be rewritten
-            // — but a child already holding a gate has to be re-routed to the operator,
-            // and a state readout has to re-emit, so wake both.
-            for child in host.children_of(&id) {
-                if let Some(session) = host.session(&child) {
+            // A session this one supervised now has nothing to resolve its `supervisor`
+            // position to, so it reviews as `spotter_human` from here
+            // (docs/permissions.md). The resolution is read fresh at every routing, so
+            // nothing has to be rewritten — but a session already holding a gate has to
+            // be re-routed to the operator, and a state readout has to re-emit, so wake
+            // both.
+            for supervised in host.supervised_by(&id) {
+                if let Some(session) = host.session(&supervised) {
                     session.touch_state();
                 }
             }

@@ -255,6 +255,20 @@ sessions from one process. Its own routes are the listener's, not a session's:
   An `archived` patch answers as `DELETE` does, including the `worktree` field
   below; resuming a session that made its own worktree re-creates the worktree at
   its original path, from the kept branch when there is one.
+
+  `{"supervisor": "<id>"}` sets a running session's supervisor, and
+  `{"supervisor": null}` clears it ([permissions.md](permissions.md)): the session
+  named answers its gates under the `supervisor` review position (a dial at
+  `spotter_human` moves there), may use the mutating verbs on it
+  ([tools.md](tools.md)), and is subscribed to its status with wake; clearing or
+  moving the pointer drops the previous supervisor's subscription and re-routes a
+  held gate. Answers `200 {"id", "state": "active", "supervisor"}` with the pointer
+  as it now reads; `404` for a session that is not hosted; `400` naming the reason
+  for a supervisor that is not hosted, one in another project, or one that would
+  make the chain cycle (the reason names the cycle). `supervisor` and `state` are
+  separate patches: a body carrying both is a `400`. Each change appends a
+  `telemetry.supervisor_set` entry to the session's log, which projects to nothing;
+  the pointer is not persisted, so a resumed session starts again from its creator.
 - `DELETE /sessions/:id` — archive the session, which is the same transition as
   `PATCH {"state": "archived"}`. Answers `200 {"id", "state": "archived"}` once
   its teardown has run (background children reaped, scratch removed); the id leaves
@@ -446,8 +460,10 @@ and are byte-identical to — their state topics: `pace` (`{speed_ms, held}`),
 `review_level` is the dial's own value — what a client set and reads back. Who
 answers a gate *right now* is the separate `resolved_review_level` topic on
 `GET /state`, because `supervisor` with no live supervisor reviews as `spotter_human`
-(see [permissions](permissions.md)). The `supervisor` topic names that session: its id while
-it is hosted, `null` for a root or once it has ended, so it moves without the dial turning.
+(see [permissions](permissions.md)). The `supervisor` topic names that session: the host's
+supervisor pointer (by default the creator, settable with `PATCH /sessions/:id {"supervisor"}`)
+while the session it names is hosted, `null` for a root, a cleared pointer, or once it has
+ended, so it moves without the dial turning.
 
 #### `PUT /title`
 Set the session's title by hand ([session-title.md](session-title.md)): one

@@ -167,7 +167,7 @@ takes the replacement's own terms.
 
 **A routed gate rides this channel, and is not a subscription.** A session whose review
 position resolves to `supervisor` ([permissions.md](permissions.md)) sends the call it is
-holding to the session that created it, on the same `session:<id>` slot and with the same
+holding to its supervisor (by default the session that created it), on the same `session:<id>` slot and with the same
 must-wake, whether or not that session is subscribed — and with a body that names the
 recipient as the one to resolve it. Everything else a subscriber hears is observation: the
 same statuses, on the subscription's own terms, which `unsubscribe` drops. Keeping the two

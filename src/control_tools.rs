@@ -1,8 +1,9 @@
 //! The session-control tools: one definition, two entry points (docs/operating.md).
 //!
 //! Each verb that drives a *running* session is one control-API call
-//! over its control channel (docs/control-channel.md), and the three that
-//! address the host — `sessions`, `create`, `archive` — are one host-route call each.
+//! over its control channel (docs/control-channel.md), and the four that
+//! address the host — `sessions`, `create`, `archive`, `supervisor` — are one
+//! host-route call each.
 //! Every one is written once here as an [mcplease](mcplease) tool. The `tools!` macro below turns them into a single
 //! `Tools` enum that is simultaneously
 //!
@@ -44,6 +45,7 @@ mcplease::tools!(
     (Background, background, "background"),
     (Pace, pace, "pace"),
     (ReviewLevel, review_level, "review_level"),
+    (Supervisor, supervisor, "supervisor"),
     (Notify, notify, "notify"),
     (Dismiss, dismiss, "dismiss"),
     (Proposal, proposal, "proposal"),
@@ -229,8 +231,9 @@ impl Executor {
 /// only executor that knows who is calling:
 ///
 /// 1. the target is never the caller, and
-/// 2. a mutating verb reaches only sessions in the caller's descendant chain
-///    (via `created_by`), so a session cannot resolve its own gate or steer a peer.
+/// 2. a mutating verb reaches only the caller's descendants (via `created_by`) and
+///    the sessions it supervises (via the host's supervisor pointer), so a session
+///    cannot resolve its own gate or steer a peer it was not given.
 #[derive(Clone)]
 pub struct HostExecutor {
     /// The host, held weakly (see [`Executor::host`]).
@@ -296,15 +299,16 @@ impl HostExecutor {
     }
 
     /// The target for a mutating verb: rule 1, project scope, and rule 2 — the
-    /// caller must be an ancestor of the target.
+    /// caller must be an ancestor of the target or its supervisor.
     fn resolve_mutating(&self, requested: Option<&str>) -> Result<Arc<crate::daemon::Session>> {
         let target = self.target(requested)?;
         let session = self.in_project(&target)?;
         let host = self.host()?;
-        if !self.is_ancestor(&host, &target) {
+        if !Self::may_drive(&host, &self.caller, &target) {
             return Err(anyhow!(
-                "refused: {:?} is not an ancestor of {target:?} — a mutating call reaches only \
-                 sessions the caller created (docs/tools.md)",
+                "refused: {:?} neither created nor supervises {target:?} — a mutating call \
+                 reaches only the caller's descendants and the sessions it supervises \
+                 (docs/tools.md)",
                 self.caller
             ));
         }
@@ -337,9 +341,13 @@ impl HostExecutor {
         false
     }
 
-    /// Whether `target`'s `created_by` chain reaches the caller.
-    fn is_ancestor(&self, host: &crate::daemon::Host, target: &str) -> bool {
-        Self::chain_reaches(host, &self.caller, target)
+    /// Rule 2: whether `driver` may use a mutating verb on `target` — `target` is
+    /// `driver`'s descendant, or `driver` is `target`'s supervisor (docs/tools.md).
+    /// Supervision is not transitive: it reaches the supervised session, not the
+    /// sessions that session created or supervises.
+    fn may_drive(host: &crate::daemon::Host, driver: &str, target: &str) -> bool {
+        Self::chain_reaches(host, driver, target)
+            || host.supervisor_of(target).as_deref() == Some(driver)
     }
 
     /// Bind a `sessions__approve` call to the leaf action its target holds
@@ -347,7 +355,7 @@ impl HostExecutor {
     /// arm enforces when it runs — never self, descendants only, same project.
     /// While the held call is itself an approval, follow its `session`+`call_id`
     /// through the host to the leaf, each hop required to be a descendant of the
-    /// previous; refuse on a moved gate or a cycle.
+    /// previous or supervised by it; refuse on a moved gate or a cycle.
     fn resolve_bound_action(&self, call: &ToolCall) -> Result<BoundAction> {
         let requested = call.input.get("session").and_then(Value::as_str);
         // The parent's own call: rule 1, project scope, rule 2.
@@ -403,10 +411,11 @@ impl HostExecutor {
                 .and_then(Value::as_str)
                 .ok_or_else(|| anyhow!("the held `sessions__approve` names no session to follow"))?
                 .to_string();
-            if !Self::chain_reaches(&host, &previous, &next) {
+            if !Self::may_drive(&host, &previous, &next) {
                 return Err(anyhow!(
-                    "refused: {previous:?} is not an ancestor of {next:?} — a mutating call \
-                     reaches only sessions the caller created (docs/tools.md)"
+                    "refused: {previous:?} neither created nor supervises {next:?} — a \
+                     mutating call reaches only the caller's descendants and the sessions it \
+                     supervises (docs/tools.md)"
                 ));
             }
             if !seen.insert(next.clone()) {

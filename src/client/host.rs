@@ -60,6 +60,26 @@ impl Client {
         serde_json::from_value(state).context("reading the patched state")
     }
 
+    /// Set the running session `id`'s supervisor, or clear it with `None`
+    /// (`PATCH /sessions/:session {"supervisor"}`, docs/permissions.md), and return
+    /// the pointer as it now reads. A listener route, like
+    /// [`patch_session`](Self::patch_session).
+    pub async fn set_supervisor(
+        &self,
+        id: &str,
+        supervisor: Option<&str>,
+    ) -> Result<Option<String>> {
+        let request = PatchSession::supervise(supervisor.map(str::to_string));
+        let body = serde_json::to_string(&request).context("encoding the session patch")?;
+        let path = format!("/sessions/{id}");
+        let response = self.send_at(Method::Patch, &path, Some(body)).await?;
+        let value = serde_json::from_str::<serde_json::Value>(&response)
+            .ok()
+            .and_then(|value| value.get("supervisor").cloned())
+            .ok_or_else(|| anyhow!("no \"supervisor\" in response: {response}"))?;
+        serde_json::from_value(value).context("reading the patched supervisor")
+    }
+
     /// Resolve a proposed hosted session (`QUERY /sessions`, docs/control-api.md)
     /// without creating a directory or starting a runtime: the effective
     /// selections, where each came from, and the issues that would stop creation.

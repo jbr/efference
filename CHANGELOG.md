@@ -9,6 +9,7 @@ behind a change, see [`journal/`](journal/).
 
 ### Added
 
+- A session's supervisor is settable after creation (docs/permissions.md): `PATCH /sessions/:id {"supervisor"}`, `efference control supervisor`, and the `supervisor` tool on `efference mcp` hand a session to another, which then answers its gates, may drive it (the mutating verbs reach descendants or sessions the caller supervises), and is woken by its status; cycles are refused, and clearing hands the gates back to the operator.
 - The session that reviews another's gates is its supervisor (docs/permissions.md): the review level `upstream` is `supervisor` on `PATCH /loop`, `resolved_review_level`, `efference control review-level` and the `review_level` tool, and a `supervisor` state topic names the session that would answer, `null` once the creator has ended; "upstream" keeps only the model-endpoint sense.
 - Background-process supervision is the process monitor: `src/supervisor.rs` is `src/process_monitor.rs`, `Supervisor` is `ProcessMonitor`, and docs/supervisor.md is docs/process-monitor.md, freeing "supervisor" for a session that oversees another.
 - One name for the role that selects what of each tool result reaches the agent: triage. `src/distill/` is `src/triage/`, `ForkPeek` is `Triager`, `WireState::Distilled` is `Triaged`, the `peek` and idle-triage request origins are one `triage` origin, `docs/triage.md` is `docs/triage.md`, and `efference dev peek` is `efference dev triage`; log version 3 with `scripts/migrate-log-v3.py` for existing sessions.

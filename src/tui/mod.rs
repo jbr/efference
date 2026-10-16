@@ -622,7 +622,7 @@ pub(crate) struct PolicyView {
     /// Read-only here; the interactive gear selector is deferred to the ergonomics pass.
     pub review_level: Option<String>,
     /// The position **in force**, when it is not the dial's own value: a `supervisor`
-    /// session whose creator has ended reviews as `spotter_human`, and the operator
+    /// session whose supervisor has ended or was cleared reviews as `spotter_human`, and the operator
     /// reading this sidebar is the one who answers (docs/permissions.md). `None`
     /// whenever the two agree.
     pub resolved_review_level: Option<String>,

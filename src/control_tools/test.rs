@@ -237,6 +237,7 @@ fn tools_list_is_ordered_and_annotated() {
             "background",
             "pace",
             "review_level",
+            "supervisor",
             "notify",
             "dismiss",
             "proposal",

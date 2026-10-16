@@ -110,7 +110,7 @@ async fn a_non_descendant_mutation_is_refused_but_a_notify_reaches_it() {
     .await
     .unwrap_err()
     .to_string();
-    assert!(err.contains("not an ancestor"), "{err}");
+    assert!(err.contains("neither created nor supervises"), "{err}");
 
     Notify {
         source: "parent".into(),
@@ -329,7 +329,7 @@ async fn the_target_rules_apply_to_a_bound_approve() {
         serde_json::json!({ "session": "peer", "call_id": "x" }),
     );
     let err = control.resolve_bound_action(&peer).unwrap_err().to_string();
-    assert!(err.contains("not an ancestor"), "{err}");
+    assert!(err.contains("neither created nor supervises"), "{err}");
 
     fixture.host.swansong().shut_down().await;
 }
@@ -445,7 +445,7 @@ async fn a_successor_gets_the_brief_and_may_archive_its_predecessor() {
     .unwrap_err()
     .to_string();
     assert!(
-        err.contains("no session") || err.contains("not an ancestor"),
+        err.contains("no session") || err.contains("neither created nor supervises"),
         "{err}"
     );
 

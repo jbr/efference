@@ -171,6 +171,7 @@ mod resumed_batch;
 mod review;
 mod status;
 mod subscriptions;
+mod supervise;
 mod tools;
 mod upstream_hold;
 mod views;

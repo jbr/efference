@@ -42,6 +42,10 @@ pub enum Telemetry {
     /// One step of the cold check: the loop parked, a person released it, the park
     /// ended (docs/control-api.md). The entry's `at` is the step's time.
     Cold(ColdEvent),
+    /// The session's supervisor was set or cleared after creation
+    /// (docs/permissions.md): the session now named, or `None` when cleared. The
+    /// creator a session starts with is in the header and is not recorded here.
+    SupervisorSet { supervisor: Option<String> },
     /// A main-model consolidation check and its disposition (docs/consolidate.md).
     Consolidation {
         from: super::Seq,
@@ -63,6 +67,7 @@ impl Telemetry {
             Telemetry::RequestStage(_) => "telemetry.request_stage",
             Telemetry::Push(_) => "telemetry.push",
             Telemetry::Cold(_) => "telemetry.cold",
+            Telemetry::SupervisorSet { .. } => "telemetry.supervisor_set",
             Telemetry::Consolidation { .. } => "telemetry.consolidation",
         }
     }

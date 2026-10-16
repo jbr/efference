@@ -166,11 +166,10 @@ pub struct Session {
     /// The single pending approval, surfaced by `GET /state` (the loop is
     /// sequential — one gate at a time, docs/README.md).
     pending: Mutex<Option<Pending>>,
-    /// Who answers this session's gates when the dial reads `supervisor`
-    /// (docs/permissions.md): the session that commissioned this one, and the host
-    /// that can say whether it is still running. Set by `Host::adopt_with`; `None`
-    /// for a root session and for a session built without a host. Control state:
-    /// never logged, never projected.
+    /// The link to the host that holds this session's supervisor pointer — who
+    /// answers its gates when the dial reads `supervisor` (docs/permissions.md) — and
+    /// can say whether that session is still running. Set by `Host::adopt_with`;
+    /// `None` for a session built without a host.
     supervisor: Mutex<Option<review::SupervisorLink>>,
     /// Fired by `POST /loop/interrupt`; the future `interrupted()` races a running tool,
     /// and the agent client's read loop races it against the stream (docs/control-channel.md).
@@ -392,7 +391,7 @@ pub struct Session {
     /// `AtomicU8` ordinal so it is lock-free and **runtime-mutable** (the `PATCH /loop {review_level}` verb,
     /// not just a boot flag). The loop's cascade reads it ([`Session::review_level`]) to decide who
     /// reviews a gated call: `Autonomous` redirects the model instead of blocking on an absent
-    /// human; `Supervisor` holds the call and routes it to the creating session
+    /// human; `Supervisor` holds the call and routes it to the session's supervisor
     /// ([`Session::resolved_review_level`] is what decides, since a supervisor that has ended
     /// reviews as `SpotterHuman`); `SpotterHuman` runs the spotter then the human gate;
     /// `HumanOnly` skips the spotter entirely and gates straight to the human. Every position

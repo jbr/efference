@@ -61,12 +61,13 @@ pub enum ReviewLevel {
     /// No synchronous human: a spotter `Watch`/`Gate` redirects the model to its config
     /// (`agent::autonomous_gate_message`) instead of blocking on an absent gate.
     Autonomous,
-    /// The creating session reviews: a call the spotter holds is routed to the session that
-    /// commissioned this one, which resolves it through the ordinary `approve` route
-    /// (docs/permissions.md). The default for a session another session created.
+    /// The supervisor reviews: a call the spotter holds is routed to the session's
+    /// supervisor — by default the session that commissioned it, settable after creation
+    /// — which resolves it through the ordinary `approve` route (docs/permissions.md). The
+    /// default for a session that has a supervisor.
     ///
     /// The position **resolves at routing time, never at creation**: a session with no live
-    /// supervisor — a root, or a creator that has since ended — reviews as
+    /// supervisor — a root, a cleared pointer, or a supervisor that has since ended — reviews as
     /// [`SpotterHuman`](Self::SpotterHuman) instead ([`crate::daemon::Session::resolved_review_level`]).
     /// Resolving once at creation would leave a child whose creator died effectively unreviewed.
     Supervisor,

@@ -451,7 +451,8 @@ result is a `BoundAction` — the leaf tool, the child's input, its intent, its 
 the chain of session ids from the directly-targeted child down to the session holding
 the leaf. A `call_id` that is not the target's pending gate is refused before
 classification with a "gate moved" error result, and the target rules the Host executor
-already enforces (self never, descendants only, project reach) apply to the binding.
+already enforces (self never, descendants or supervised sessions only, project reach) apply
+to the binding, each hop to the previous session.
 
 The parent's ladder then decides on the leaf:
 
@@ -900,25 +901,52 @@ without eliminating:
   same way, which since the redirection carve-out it does. The two halves are reported
   independently: the path check requires the name grant as a precondition, which is true of
   the decision and misleading as a diagnosis.
-- **`Supervisor`** — the **supervisor**, today the session that created this one, reviews. The spotter still runs; what it will not
-  clear is routed to the session that commissioned this one as a gate, which resolves it through
-  the ordinary `approve` route (the descendants-only authority rule already governs that call,
-  [tools.md](tools.md)). This is a fourth answer on the same dimension, not a new relation
-  between sessions: `create` from a session defaults the child here, and handing a child back to
-  the operator is the same dial set to `spotter_human` — there is no separate disown verb.
-  Chains terminate at the operator, since each session's own position is asked in turn and
-  `created_by` is a tree.
+- **`Supervisor`** — the session's **supervisor** reviews. The spotter still runs; what it will
+  not clear is routed to the supervisor as a gate, which resolves it through the ordinary
+  `approve` route (the authority rule governs that call: a mutating verb reaches the caller's
+  descendants and the sessions it supervises, [tools.md](tools.md)). This is a fourth answer on
+  the same dimension: `create` from a session defaults the child here, and handing a session back
+  to the operator is the same dial set to `spotter_human` — there is no separate disown verb.
+
+  **The supervisor is a pointer the host holds per session** (`Hosted::supervisor`,
+  `daemon/host/supervise.rs`). Its default is `created_by`, so a session another session created
+  answers to its creator and a session the operator created has none. It can be set to another
+  session or cleared after creation — `PATCH /sessions/:id {"supervisor"}`, `efference control
+  supervisor`, the `supervisor` tool on the stdio MCP mount ([control-api.md](control-api.md)) —
+  and setting it is one action carrying everything supervision means:
+
+  - *Gates.* A dial at the supervised default, `spotter_human`, moves to `supervisor`, as
+    adoption does for a created session; an explicit `autonomous` or `human_only` is kept. Gates
+    under `supervisor` then route to the new supervisor.
+  - *Authority.* The new supervisor may use every mutating verb on the session — `approve`,
+    `turn`, `interrupt`, and the rest of the list in [tools.md](tools.md). Supervision is not
+    transitive: it reaches the supervised session, not the sessions that one created or
+    supervises.
+  - *Status.* The new supervisor is subscribed to the session's status with `wake`, as `create`
+    subscribes a creator, and is told in its inbox (a must-wake notification) that it now
+    supervises the session. Clearing or moving the pointer drops the previous supervisor's
+    subscription.
+
+  The setting is refused when the new supervisor is not hosted, sits in another project (its
+  in-session tools could not reach the session to answer it), or would make the chain cycle — the
+  pointer chain is walked at set time and the refusal names the cycle (`c → a → b → c`). Chains
+  therefore terminate at the operator, since each session's own position is asked in turn. Every
+  surface today is an operator surface: there is no in-session verb for setting it, so a
+  supervising session cannot yet hand a session on, and a session cannot set its own. Each change
+  is a `telemetry.supervisor_set` entry in the supervised session's log, projecting to nothing.
+  The pointer itself is host control state and is not persisted: a resumed session starts again
+  from its creator, if that session is hosted.
 
   **The position resolves when a call is routed, never at creation** (`daemon/review.rs`). A
-  session with no live supervisor — a root, or a creator that has since ended — reviews as
-  `SpotterHuman` from that moment, in the same fail-safe direction as `ReviewLevel::from_u8`: an
-  unresolvable position moves toward the operator, never toward autonomous. Resolving once at
-  creation is the failure this avoids — a child whose creator died would otherwise hold a call
-  nobody was routed. `GET /state` therefore carries three fields: `review_level`, the dial's own
-  value; `resolved_review_level`, the position in force; and `supervisor`, the id of the session
-  that would answer (`null` for a root or once the creator has ended), so "who answers this gate"
-  is answerable while one is pending. All three are state topics and republish when the creator
-  ends.
+  session with no live supervisor — a root, a cleared pointer, or a supervisor that has since
+  ended — reviews as `SpotterHuman` from that moment, in the same fail-safe direction as
+  `ReviewLevel::from_u8`: an unresolvable position moves toward the operator, never toward
+  autonomous. Resolving once at creation is the failure this avoids — a child whose creator died
+  would otherwise hold a call nobody was routed. `GET /state` therefore carries three fields:
+  `review_level`, the dial's own value; `resolved_review_level`, the position in force; and
+  `supervisor`, the id of the session that would answer (`null` for a root, a cleared pointer, or
+  once the supervisor has ended), so "who answers this gate" is answerable while one is pending.
+  All three are state topics and republish when the pointer moves or the supervisor ends.
 
   **Routing is the dial's, observation is the subscription's.** A session's status reaches its
   subscribers as an inbox notification either way ([inbox.md](inbox.md), `daemon/subscriptions.rs`);
@@ -929,8 +957,9 @@ without eliminating:
   waking it when a child goes idle so it can continue is a separate use.
 
   **A level change re-routes a gate already held; it never drops one.** The status watcher is
-  level-triggered on the status *and* the resolved position, so turning the dial — or the supervisor
-  ending — re-posts the held call to whoever now answers it. Handing off future approvals is not
+  level-triggered on the status, the resolved position, *and* the live supervisor, so turning the
+  dial, moving or clearing the pointer, or the supervisor ending re-posts the held call to whoever
+  now answers it. Handing off future approvals is not
   abandoning a call that is holding a child right now.
 
   There is deliberately no `supervisor_only` position mirroring `HumanOnly`: if a nonhuman reviewer

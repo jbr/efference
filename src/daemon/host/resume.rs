@@ -10,6 +10,9 @@
 //! is the second boot entry behind it. `archived` is what `DELETE` already did, so
 //! the two share one state word and one transition rather than describing one
 //! thing two ways.
+//!
+//! `supervisor` is the other field a patch changes: which session supervises this
+//! one (`supervise.rs`, docs/permissions.md). It is a separate patch from `state`.
 
 use super::*;
 use serde::{Deserialize, Serialize};
@@ -63,6 +66,23 @@ pub struct PatchSession {
     /// creation's is.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub env: Option<BTreeMap<String, String>>,
+    /// Set this running session's supervisor to the session named, or clear it with
+    /// `null` (docs/permissions.md). Absent leaves it alone. Not combined with
+    /// `state` in one patch.
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub supervisor: Option<Option<String>>,
+}
+
+/// Read a field whose `null` means something: absent is `None` (by `default`), and a
+/// present value — `null` included — is `Some`.
+fn present<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> std::result::Result<Option<Option<String>>, D::Error> {
+    Option::<String>::deserialize(deserializer).map(Some)
 }
 
 impl PatchSession {
@@ -75,6 +95,19 @@ impl PatchSession {
             reauth: Vec::new(),
             detached: false,
             env: None,
+            supervisor: None,
+        }
+    }
+
+    /// The patch that sets a running session's supervisor, or clears it with `None`.
+    pub fn supervise(supervisor: Option<String>) -> Self {
+        Self {
+            state: None,
+            cwd: None,
+            reauth: Vec::new(),
+            detached: false,
+            env: None,
+            supervisor: Some(supervisor),
         }
     }
 }
@@ -264,12 +297,23 @@ pub(super) async fn patch_session(mut conn: Conn) -> Conn {
             );
         }
     };
-    let Some(state) = body.state else {
-        return fail(
-            conn,
-            ErrorCode::BadRequest,
-            "nothing to patch: `state` is the field this route changes",
-        );
+    let state = match (body.state, body.supervisor.clone()) {
+        (Some(_), Some(_)) => {
+            return fail(
+                conn,
+                ErrorCode::BadRequest,
+                "`state` and `supervisor` are separate patches",
+            );
+        }
+        (None, Some(supervisor)) => return supervise(conn, &host, id, supervisor),
+        (None, None) => {
+            return fail(
+                conn,
+                ErrorCode::BadRequest,
+                "nothing to patch: `state` and `supervisor` are the fields this route changes",
+            );
+        }
+        (Some(state), None) => state,
     };
     match state {
         SessionState::Active => match host.resume(id.clone(), body).await {
@@ -296,6 +340,25 @@ pub(super) async fn patch_session(mut conn: Conn) -> Conn {
             }
             None => no_such_session(conn, &id),
         },
+    }
+}
+
+/// A `supervisor` patch (docs/permissions.md): `200 {"id", "state": "active",
+/// "supervisor"}` with the pointer as it now reads, `404` for a session that is not
+/// hosted, `400` naming why the change was refused.
+fn supervise(conn: Conn, host: &Host, id: String, supervisor: Option<String>) -> Conn {
+    match host.set_supervisor(&id, supervisor) {
+        Ok(supervisor) => conn
+            .with_status(200)
+            .with_body(
+                serde_json::json!({
+                    "id": id, "state": SessionState::Active, "supervisor": supervisor,
+                })
+                .to_string(),
+            )
+            .halt(),
+        Err(SupervisorRefused::NotHosted(_)) => no_such_session(conn, &id),
+        Err(SupervisorRefused::Refused(reason)) => fail(conn, ErrorCode::BadRequest, reason),
     }
 }
 

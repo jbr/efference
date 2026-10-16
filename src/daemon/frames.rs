@@ -106,10 +106,11 @@ pub(crate) enum Topic {
     /// and because this one moves without anyone turning the dial.
     ResolvedReviewLevel,
     /// The session whose `supervisor` review position answers this one's gates, or
-    /// `null` when there is none (docs/permissions.md). Today it is the creating
-    /// session while that session is hosted, so it moves to `null` when the creator
-    /// ends without anyone turning the dial; carried as its own topic for the same
-    /// reason as [`ResolvedReviewLevel`](Self::ResolvedReviewLevel).
+    /// `null` when there is none (docs/permissions.md): the session the host's
+    /// supervisor pointer names (by default the creator) while that session is
+    /// hosted, so it moves when the pointer is set or cleared and to `null` when the
+    /// supervisor ends, without anyone turning the dial; carried as its own topic for
+    /// the same reason as [`ResolvedReviewLevel`](Self::ResolvedReviewLevel).
     Supervisor,
     /// Whether the loop is executing a turn.
     Running,

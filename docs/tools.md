@@ -211,6 +211,8 @@ The session's model reaches its project's other sessions by tool call, under
 namespaced wire names (`sessions__turn`, `sessions__state`, `sessions__create`).
 `settle` is not mounted, and the `wait` flags on `turn` and `approve` are refused:
 an in-session caller has its own inbox rather than a client that must block.
+`supervisor` is not mounted either: setting a session's supervisor is an operator verb,
+reached over `efference control` and `efference mcp` ([permissions.md](permissions.md)).
 
 The provider's executor is `Executor::Host`, which holds the host and the calling
 session's id and calls the same `Session` methods the HTTP handlers call — never a
@@ -219,11 +221,14 @@ enforceable, and they are enforced by the executor rather than by config:
 
 - **The caller is never its own target.** A call naming the caller, or naming no
   session (which defaults to it), is refused on every verb.
-- **A mutating verb reaches descendants only.** `turn`, `approve`, `interrupt`,
-  `archive`, `review_level`, `pace`, `title`, `background`, `dismiss`, and `proposal`
-  require the target's `created_by` chain to reach the caller. `notify` and the
-  reads (`sessions`, `state`, `transcript`, `entries`, `image`) reach any session
-  in the caller's project.
+- **A mutating verb reaches descendants, or sessions the caller supervises.** `turn`,
+  `approve`, `interrupt`, `archive`, `review_level`, `pace`, `title`, `background`,
+  `dismiss`, and `proposal` require the target's `created_by` chain to reach the
+  caller, or the target's supervisor pointer to name the caller
+  ([permissions.md](permissions.md)). Supervision is not transitive: a session given
+  another to supervise does not reach that one's descendants through it. `notify`
+  and the reads (`sessions`, `state`, `transcript`, `entries`, `image`) reach any
+  session in the caller's project.
 
 While `state` shows the `cold` topic, a `turn` or an `approve` (other than `abort`) is
 followed by a request that reads the whole context uncached (`context_tokens`). Both go
@@ -238,7 +243,8 @@ the task text ([context.md](context.md)). `create` from a session runs in the ca
 working directory — the caller's worktree, when it has one — unless `worktree: true`
 gives the child its own checkout and branch ([worktrees.md](worktrees.md)); it takes the
 caller's child environment as the new session's base, records the caller as the
-child's `created_by`, subscribes the caller to the child's status (below), and defaults the child's review level to `supervisor` — so a call the child's spotter holds comes back to the caller as a gate to answer with `approve` ([permissions.md](permissions.md)). Reach is the project: `sessions` lists, and every target
+child's `created_by` — and so as its supervisor, until the operator sets another
+([permissions.md](permissions.md)) — subscribes the caller to the child's status (below), and defaults the child's review level to `supervisor` — so a call the child's spotter holds comes back to the caller as a gate to answer with `approve`. Reach is the project: `sessions` lists, and every target
 resolves, only among sessions whose `.efference/` storage base is the caller's, so
 another project's id is not found rather than forbidden. `create` is bounded the same
 way at the other end: a `cwd` whose `.efference/` base is not the caller's is refused
@@ -268,7 +274,8 @@ grow the parent's cached prefix.
 Two kinds of subscription, differing only in whether the notification must wake the
 subscriber (docs/inbox.md — must-wake):
 
-- **A creator's, made by `create`, with wake.** Delegation must wake: the parent gets
+- **A creator's, made by `create`, with wake** — and a supervisor's, made when the
+  operator sets one ([permissions.md](permissions.md)), on the same terms. Delegation must wake: the parent gets
   a turn to act at each of the child's decision points even if it then decides
   nothing needs doing. In particular a child's turn ending — a report, a question,
   a refusal — hands control back to the parent without the child sending anything.
@@ -319,7 +326,8 @@ child is inverted:
 - **Clients follow.** The predecessor's `session_identity` gains `successor`, and a client
   attached to it moves to the successor.
 - **Archiving the predecessor** is the successor's, and the one exception to "a mutating verb
-  reaches descendants only": `archive` also reaches the caller's own predecessor. The
+  reaches descendants, or sessions the caller supervises": `archive` also reaches the caller's
+  own predecessor. The
   successor's identity line says so ([context.md](context.md)); it asks the predecessor what
   the brief leaves open with `notify` first, if anything.
 - **Always the operator's call.** `sessions__hand_off` bypasses the fast path and the spotter

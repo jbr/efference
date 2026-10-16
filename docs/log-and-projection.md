@@ -67,6 +67,7 @@ enum Telemetry {
     RequestStage(RequestStage),        // one stage of one upstream request
     Push(PushRecord),                  // one step of a moment's push (see web-push.md)
     Cold(ColdEvent),                   // one step of the cold check (see control-api.md)
+    SupervisorSet { supervisor: Option<String> }, // the supervisor pointer set or cleared (see permissions.md)
     Consolidation { from: Seq, upto: Seq, context: Seq, tool_bytes: usize, outcome: String, account_bytes: usize },
 }
 ```

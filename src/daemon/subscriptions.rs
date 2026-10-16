@@ -3,7 +3,8 @@
 //!
 //! The subscriber set is host control state on the target — never logged, never
 //! projected. `create` from a session subscribes the creator with `wake`, so the
-//! parent gets a turn at each of the child's decision points; an explicit
+//! parent gets a turn at each of the child's decision points, and a supervisor set
+//! after creation is subscribed on the same terms (`host/supervise.rs`); an explicit
 //! `subscribe` is ambient, and the subscriber's triage may dismiss it. The host
 //! runs one watcher per session that reads the status at every control-state
 //! change and posts it to the subscribers when it moves.
@@ -75,7 +76,7 @@ impl Host {
     /// A gate is the one status that is more than observation. **Who answers it is the
     /// review-level dial's to say, not the subscription's** (docs/permissions.md): a
     /// session whose position resolves to `supervisor` sends the call it is holding to
-    /// its creator, subscribed or not, with the wake a held call warrants and a body
+    /// its supervisor, subscribed or not, with the wake a held call warrants and a body
     /// that says the recipient is the one to resolve it. That reviewer is skipped in
     /// the subscriber loop so the two posts do not race on one slot. Every other
     /// status, and every other position, posts to subscribers alone.
@@ -109,7 +110,7 @@ impl Host {
     /// The session this status is *routed to*, as against merely reported: the live
     /// supervisor of a session holding a gate whose position resolves to `supervisor`
     /// (docs/permissions.md). `None` for every other status and position — including a
-    /// session whose creator has ended, whose gate the operator answers.
+    /// session whose supervisor has ended or was cleared, whose gate the operator answers.
     fn gate_reviewer(&self, session: &Session, status: &SessionStatus) -> Option<String> {
         if !matches!(status, SessionStatus::Gated { .. })
             || session.resolved_review_level() != crate::policy::ReviewLevel::Supervisor
@@ -149,16 +150,6 @@ impl Host {
             .map(|(child, _)| child.clone())
             .collect()
     }
-
-    /// Every session `id` commissioned, detached or not — the sessions whose
-    /// `supervisor` review position resolves through `id` (docs/permissions.md).
-    pub(super) fn children_of(&self, id: &str) -> Vec<String> {
-        self.sessions_mut()
-            .iter()
-            .filter(|(_, hosted)| hosted.created_by.as_deref() == Some(id))
-            .map(|(child, _)| child.clone())
-            .collect()
-    }
 }
 
 /// Watch one session's status and post each move to its subscribers. Runs under
@@ -169,13 +160,14 @@ impl Host {
 /// wakes is not reported, since there is nothing left to act on. The boot idle
 /// is not reported either — only an idle a turn led to.
 ///
-/// The resolved review position is part of the level, not just the status, because it
-/// decides where a gate is *routed* (docs/permissions.md). A held call whose position
-/// moves — the dial turned to hand the child back, or the supervisor ending — is
-/// re-routed rather than dropped: the status has not changed, so only the position
-/// carries the news.
+/// The resolved review position and the live supervisor are part of the level, not just
+/// the status, because together they decide where a gate is *routed*
+/// (docs/permissions.md). A held call whose routing moves — the dial turned to hand the
+/// child back, the supervisor set to another session or cleared, or the supervisor
+/// ending — is re-routed rather than dropped: the status has not changed, so only the
+/// routing carries the news.
 pub(super) async fn watch_status(host: std::sync::Weak<Host>, id: String, session: Arc<Session>) {
-    let mut last: Option<(SessionStatus, crate::policy::ReviewLevel)> = None;
+    let mut last: Option<(SessionStatus, Routing)> = None;
     loop {
         // Arm before reading, so a change landing between the read and the await
         // cannot be lost — the same discipline the topic differ uses.
@@ -190,13 +182,13 @@ pub(super) async fn watch_status(host: std::sync::Weak<Host>, id: String, sessio
         appended.as_mut().enable();
 
         let status = session.status();
-        let level = session.resolved_review_level();
+        let routing = (session.resolved_review_level(), session.supervisor());
         let notable = match (&last, &status) {
             (_, SessionStatus::Running) => false,
             (None, SessionStatus::Idle) => false,
             (Some((previous, routed)), current) => {
                 previous != current
-                    || (matches!(current, SessionStatus::Gated { .. }) && *routed != level)
+                    || (matches!(current, SessionStatus::Gated { .. }) && *routed != routing)
             }
             (None, _) => true,
         };
@@ -210,7 +202,7 @@ pub(super) async fn watch_status(host: std::sync::Weak<Host>, id: String, sessio
             // themselves, so a wake that moved nothing costs a comparison.
             host.touch_summary();
         }
-        last = Some((status, level));
+        last = Some((status, routing));
 
         tokio::select! {
             _ = &mut settled => {}
@@ -219,6 +211,9 @@ pub(super) async fn watch_status(host: std::sync::Weak<Host>, id: String, sessio
         }
     }
 }
+
+/// Where a gate is routed: the resolved review position and the live supervisor.
+type Routing = (crate::policy::ReviewLevel, Option<String>);
 
 impl Session {
     /// Whether this session is subscribed to any other (docs/tools.md) — a source

@@ -598,9 +598,9 @@ fn the_embedded_toolbox_is_legal_on_both_dialects() {
 }
 /// The in-session `sessions` provider (docs/tools.md): the namespaced
 /// `sessions__*` definitions a hosted session's `tools[]` carries, with `settle`
-/// hidden, unique names, injected `intent`, and byte-stable definitions.
+/// and `supervisor` hidden, unique names, injected `intent`, and byte-stable definitions.
 #[tokio::test]
-async fn the_sessions_provider_mounts_namespaced_and_hides_settle() {
+async fn the_sessions_provider_mounts_namespaced_and_hides_operator_verbs() {
     let dir = std::env::temp_dir().join(format!("eff-sessions-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
@@ -638,10 +638,12 @@ async fn the_sessions_provider_mounts_namespaced_and_hides_settle() {
             "{expected} not mounted: {names:?}"
         );
     }
-    assert!(
-        !names.iter().any(|name| name == "sessions__settle"),
-        "settle is hidden in-session: {names:?}"
-    );
+    for hidden in ["sessions__settle", "sessions__supervisor"] {
+        assert!(
+            !names.iter().any(|name| name == hidden),
+            "{hidden} is hidden in-session: {names:?}"
+        );
+    }
     names.sort_unstable();
     let mut unique = names.clone();
     unique.dedup();

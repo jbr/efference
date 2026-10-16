@@ -17,9 +17,10 @@ driven, and it is refined from use rather than written ahead of it.
   `notify`, `subscribe`, `unsubscribe`, `dismiss`, `proposal`, `image`, `state`,
   `transcript`, `entries`, `title`, each one control-API call
   over the session's control channel ([control-channel.md](control-channel.md)) —
-  and the three that address the host: `sessions` (list, with titles), `create`
-  (a session in a working directory, this process's environment as its base), and
-  `archive` (stop one, keeping its log for a later resume).
+  and the four that address the host: `sessions` (list, with titles), `create`
+  (a session in a working directory, this process's environment as its base),
+  `archive` (stop one, keeping its log for a later resume), and `supervisor` (set
+  or clear which session supervises another).
 - **`efference mcp`** — the same calls, served as an MCP server over stdin/stdout
   (below). One definition, three entry points: they are written once as mcplease tools
   (`src/control_tools.rs` and `src/control_tools/`, one file per tool) and mounted by
@@ -83,8 +84,8 @@ child as `session[<caller id>]` ([control-api.md](control-api.md)).
 Two rules are enforced by the mount, not by config. A session is never its own target: a
 call naming the caller, or naming no `session`, is an error. And the mutating verbs —
 `turn`, `approve`, `interrupt`, `archive`, `review-level`, `pace`, `title`, `background`,
-`dismiss`, `proposal` — reach only sessions the caller created; `notify` and the reads
-reach any session in the project. Reach is the project: `sessions__sessions` lists, and every
+`dismiss`, `proposal` — reach only sessions the caller created and sessions it supervises
+([permissions.md](permissions.md)); `notify` and the reads reach any session in the project. Reach is the project: `sessions__sessions` lists, and every
 `sessions__*` target resolves, only among sessions sharing the caller's `.efference/`
 base, so an id from another project reads as not found.
 
@@ -608,10 +609,16 @@ its own.
 
 - **`efference control review-level <level>`** — who reviews a call the fast path did not clear.
   `spotter_human` is the supervised default (fast path → spotter → you). `supervisor` sends
-  what the spotter will not clear to the session that created this one, which answers it with
-  `approve`; it is the default for a session another session created, and setting a child back
-  to `spotter_human` is how a creating agent hands it to you. A session with no live creator
-  reviews as `spotter_human` whatever the dial says. `autonomous`
+  what the spotter will not clear to the session's supervisor — by default the session that
+  created it — which answers it with `approve`; it is the default for a session that has a
+  supervisor, and setting a child back to `spotter_human` is how a creating agent hands it to
+  you. A session with no live supervisor reviews as `spotter_human` whatever the dial says.
+- **`efference control supervisor <id> --session <session>`** (`--clear` instead of an id to
+  clear it) — hand a session to another: `<id>` answers its gates, may drive it (`turn`,
+  `approve`, `interrupt`, and the other mutating verbs), and is woken by its status, and you
+  are out of its gate path. A session at `spotter_human` moves to `supervisor`. Refused for a
+  supervisor in another project or one that would cycle the chain
+  ([permissions.md](permissions.md)). `autonomous`
   removes the synchronous human: the spotter still runs and can clear, and what it will not
   clear is handed back to the model with the reason and a pointer at its own config file —
   so routine gates self-resolve and your attention is spent on genuine policy requests.

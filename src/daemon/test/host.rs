@@ -13,6 +13,7 @@ mod preview;
 mod projects;
 mod resume;
 mod shell;
+mod supervise;
 mod worktree;
 
 struct Roots(PathBuf);

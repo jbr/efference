@@ -390,6 +390,8 @@ impl Masker {
             // A cold-check record: a reason, instants, a token count, and a gesture
             // name. Nothing from the environment.
             Payload::Telemetry(Telemetry::Cold(_)) => {}
+            // A supervisor change carries a session id. Nothing from the environment.
+            Payload::Telemetry(Telemetry::SupervisorSet { .. }) => {}
             Payload::Telemetry(Telemetry::Consolidation { outcome, .. }) => {
                 self.mask_in_place(outcome)
             }

@@ -124,14 +124,15 @@ impl Toolbox {
     /// Mount the session-control provider (docs/tools.md): the session reaches
     /// its project's other sessions through `host`, in-process, under the
     /// `sessions__<verb>` wire names. `caller` is the session's own id.
-    /// `settle` is hidden from the mounted set, like fs's `delete`.
+    /// `settle` is hidden from the mounted set, like fs's `delete`, and so is
+    /// `supervisor`, an operator verb with no in-session use yet.
     pub fn mount_sessions(&mut self, host: std::sync::Arc<crate::daemon::Host>, caller: String) {
         let state = crate::control_tools::Control::new(
             crate::control_tools::Executor::host(host, caller),
             false,
         );
         self.providers.push(Provider::Sessions(Box::new(
-            McpServer::from_state_namespaced(state, &["settle"], "sessions"),
+            McpServer::from_state_namespaced(state, &["settle", "supervisor"], "sessions"),
         )));
     }
 

@@ -230,17 +230,18 @@ impl Session {
     }
 
     /// The review position **in force right now** (docs/permissions.md). Equal to the
-    /// dial except for `supervisor` with no live supervisor — a root session, or a creator
-    /// that has ended — which reviews as `spotter_human`. Reported beside the dial so
-    /// "who answers this gate" is answerable while one is pending, without the client
-    /// reconstructing the creation tree.
+    /// dial except for `supervisor` with no live supervisor — a root session, a session
+    /// whose supervisor was cleared, or one whose supervisor has ended — which reviews
+    /// as `spotter_human`. Reported beside the dial so "who answers this gate" is
+    /// answerable while one is pending, without the client reading the host's
+    /// supervisor pointers.
     fn resolved_review_level_json(&self) -> Value {
         Value::from(self.resolved_review_level().as_str())
     }
 
     /// The session that answers this one's gates under the `supervisor` review position
-    /// (docs/permissions.md): the creating session while it is still hosted, `null`
-    /// otherwise. Independent of the dial — it names who would answer, not whether the
+    /// (docs/permissions.md): the session the host's supervisor pointer names — by
+    /// default the creator — while it is still hosted, `null` otherwise. Independent of the dial — it names who would answer, not whether the
     /// dial routes to them.
     fn supervisor_json(&self) -> Value {
         serde_json::to_value(self.supervisor()).unwrap_or(Value::Null)
