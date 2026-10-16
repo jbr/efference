@@ -197,7 +197,8 @@ control <tool>` for the calls that drive a running session — the same tools
 serves lives in a `src/daemon/` submodule named for its governing doc — `handler.rs`
 (the one handler stack every listener mounts), `http.rs` with one file per route
 family under `http/`, and `stream.rs` (the control channel), `config_edits.rs` (permissions), `notifications.rs` (the
-inbox), `background.rs` (the process monitor), plus `pace.rs`, `approvals.rs`, `metrics.rs`,
+inbox), `background.rs` (the process monitor), `phase.rs` (where the loop is) and `verbs.rs`
+(what each loop route would answer now), plus `pace.rs`, `approvals.rs`, `metrics.rs`,
 `keepalive.rs`, `watch.rs`, and `views.rs` (the `/state` and `/log` readouts).
 
 ## Repository layout

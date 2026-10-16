@@ -257,13 +257,15 @@ material. "Docked" is an `IntersectionObserver` (`useStuckHeadings`) because Saf
 no `scroll-state` container query.
 
 **A card says where the operator's attention stands, in words.** `attention` is one of
-`blocked` (gated, stalled or parked at the cold check: nothing moves until someone acts), `your_turn` (idle after
+`blocked` (gated, stalled, parked at the cold check, or blocked: nothing moves until someone acts), `your_turn` (idle after
 a turn — waiting on a reply or an end, not "less important"), `working`, and `new`
 (never made a request and has no title). The top line is one sentence with the id as
 its subject — `amber-lattice needs approval`, `hollow-birch is waiting for you`,
 `tidal-cipher has stalled`, `amber-lattice is paused: its cache expired` (status
 `parked`; the activity line says `continuing reads 120k tokens uncached`, and after a
-compaction `is paused: summarized, waiting for you to continue`) — and working and new say nothing, working being the
+compaction `is paused: summarized, waiting for you to continue`), `quiet-fern is held` or
+`is stopped: its config file needs repair` (status `blocked`, the reason from the
+`loop_phase` topic) — and working and new say nothing, working being the
 default. There are no status dots. Colors keep the meanings the session view gives
 them: a gate is `--accent` (and tints the card), a stall or a park `--warn`; the
 switcher dot follows.
@@ -285,8 +287,9 @@ than working with the session that created it.
 
 **Each card follows its session on one connection** (`openSessionCard`): a cold
 `GET /log?tail=12`, then `/v1/events` from just past it carrying the log and the card's
-state topics (`gate`, `stall`, `running`, `usage`, `session_identity`,
-`upstream_retry`). Glancing at the overview reports nothing: attention is what the
+state topics (`gate`, `ask`, `stall`, `loop_phase`, `cold`, `usage`,
+`session_identity`, `upstream_retry`); `cold` is what says whether a parked session's
+cache is still believed expired, and `loop_phase` why a blocked one is blocked. Glancing at the overview reports nothing: attention is what the
 page's own report says ([web-push.md](web-push.md)), not what it has open.
 `foldRecent` reads the latest intent and reply off the log; a user entry retires the
 reply it answers, and a record-only assistant entry says nothing. That is N
@@ -1310,7 +1313,7 @@ selected session remains. It uses the same listing subscription the overview hol
 id; the dot is read from the listing alone through `cardModel`: a gated session is an
 accent dot with a halo, a session whose turn ended or that is asking is the accent dot
 without one — a finished turn waits on the operator until the session is archived — a
-stalled one is the warn colour, a running one pulses faintly, and a session never started
+stalled one is the warn colour, a parked or blocked one the parked colour, a running one pulses faintly, and a session never started
 is a hollow ring. Hovering or keyboard-focusing a tab opens a card
 (`ui/SessionHoverCard.tsx`) with the overview card's status line, title, activity line,
 context meter and cost; that opens the session's own state stream and log tail (`openSessionCard`)
@@ -1391,10 +1394,10 @@ rounded corners. At the left the turn state; at the right only the controls
 that apply now: **interrupt** (`POST /v1/loop/interrupt`) while a turn runs,
 and **resume** while the loop is held, because a hidden hold reads as a hang.
 The other dials — pace and review level — are set over the control channel, not
-from this client; hold is the composer band's own. The turn state is
-"your turn" in the serif when the loop is idle, a dim `running…` while it
-moves (`retrying the upstream · send to retry now` while an `upstream_retry`
-pause runs; while a request or tool is open, the `current_operations` topic's
+from this client; hold is the composer band's own. The turn state reads the `loop_phase` topic: "your turn" in the serif when the
+loop is idle, a dim `running…` while it moves (`retrying the upstream · send to
+retry now` while an `upstream_retry` pause runs; `pacing · next step in 5s` during a
+pace delay, counted down on the client's clock; while a request or tool is open, the `current_operations` topic's
 leading operation with its elapsed time on the client's clock — `waiting on
 <model> · 2m 10s` before the first byte, `<model> streaming` after it, `triage
 · waiting 40s`, `spotter judging · 3s`, `bash: <command> · 45s`, `retrying upstream ·
@@ -1402,15 +1405,17 @@ attempt 2 (429) · 8s`; the turn's own request leads, then a running tool, then 
 side requests, in `ui/operations.ts`; a `bash` call is labelled by its `command`, cut
 at 48 characters with an ellipsis, and its `intent` is the hover title, while other
 tools are labelled by the intent), `waiting for your approval` or `waiting for
-your answer` in muted, upright UI text while a gate or an `ask` is pending (it outranks
+your answer` in muted, upright UI text in the `gated` and `asking` phases (it outranks
 the operation text, since the operator is what the loop waits on; a stall and a
-park still come first), and the daemon's own sentence plus `· send to retry` in the warn
+park still come first), `held · resume or send to continue` for a held pace and
+`stopped: the config file needs repair` for a config-repair park (the `blocked`
+phase), and the daemon's own sentence plus `· send to retry` in the warn
 color when the `stall` topic is set — a trajectory that stopped short, or a
-triage held with the loop still running ([transport.md](transport.md)),
-which `running` alone cannot say; the upstream's words ride along as the hover
+triage held with the loop `blocked` ([transport.md](transport.md)),
+which the phase alone cannot say; the upstream's words ride along as the hover
 title. An empty send is the continue, which retries either wait. The choice is
-`ui/turnState.ts`, a pure function of `running`, `stall`, whether a retry
-is waiting, a pending gate or ask, and the operations view (the topic, the model, and the clock), so the component holds no branching of its own. The span between state and controls is
+`ui/turnState.ts`, a pure function of the phase, `stall`, `cold`, whether a retry
+is waiting, and the operations view (the topic, the model, and the clock), so the component holds no branching of its own. The span between state and controls is
 reserved for the key-hint strip (binds are deferred to interactive
 suggestions; see "The design source" above). The input
 carries no hint about mid-trajectory injection
@@ -1452,9 +1457,11 @@ attachments under its prose, an image as a thumbnail served by
 **Sending an empty composer is the continue gesture.** With no draft, send
 (and Enter, where Enter sends) issues `POST /v1/loop/continue`
 ([control-api.md](control-api.md)) — control handed back with no input, no
-turn submitted, nothing appended — instead of the earlier silent no-op. A
-`409 not_continuable` is a normal answer, so the daemon's `message` renders
-in the composer's error slot on its own rather than as a thrown-error string.
+turn submitted, nothing appended — instead of the earlier silent no-op. Where the
+`verbs` topic says the route refuses, its `message` renders in the composer's error
+slot without a request; a `409 not_continuable` from a route that moved on since is
+the same normal answer, so the daemon's `message` renders there on its own rather
+than as a thrown-error string.
 
 **A cold session says what the next action reads** (`ui/coldLine.ts`). While the
 `cold` topic is set, a notice above the composer says `cache expired — a send
@@ -1472,23 +1479,26 @@ unknown). A decision or answer is sent as it is whether or not the line showed; 
 host records it as the person action that releases a parked loop
 ([control-api.md](control-api.md)).
 
-A loop parked mid-turn at its cold check (the `park` topic) is `running` to the turn
-state, so `turnState` reads it first and says `paused: cache expired · send to continue
-(reads 120k tokens uncached)` in the warn colour; the composer shows the cold notice
-with the same *summarize instead* button. After a compaction the park stays and `cold` is
-null; the readout says `paused: summarized · send to continue`, with no notice.
+A loop parked mid-turn at its cold check (the `cold_parked` phase) reads ahead of the
+operations, so `turnState` says `paused: cache expired · send to continue (reads 120k
+tokens uncached)` in the warn colour; the composer shows the cold notice with the same
+*summarize instead* button. After a compaction the park stays and `cold` is null; the
+readout says `paused: summarized · send to continue`, with no notice.
 
 **Summarizing is compaction** (`POST /loop/compact`, [control-api.md](control-api.md);
 `ui/compact.ts`, `ui/CompactNotice.tsx`, `ui/CompactControl.tsx`). Two entry points share
 `compactOffer`: the cold notice's button and the standing action in the context-meter
 popup (`ui/ContextPopup.tsx`). Opening the popup then choosing **Summarize history**
 starts the operation without a further confirmation; the request supplies consent
-to spend a live cache when the session is warm. Both entry points are blocked,
-with the reason shown, while a gate or question is pending or a warm loop is
-running; a loop parked at its cold check may compact. The popup prevents duplicate
-clicks while its request is pending. Progress is the `compaction` topic: the turn-state
-readout and popup say `summarizing the history…`, errors remain visible for retry,
-and the summary lands in the transcript. The hover
+to spend a live cache when the `verbs` topic's `compact` entry says the route needs
+it (`warm: true`). Both entry points are the route's published answer: blocked, with
+the route's own reason shown, where the entry refuses — a gate or question pending, a
+loop doing something, nothing to compact — and ready otherwise, a loop parked at its
+cold check or held at a triage included. The popup prevents duplicate clicks while its
+request is pending. Progress is the compaction in `current_operations`: the turn-state
+readout and popup say `summarizing the history…`; a failure is the
+`compaction_failure` topic and stays visible for retry; and the summary lands in the
+transcript. The hover
 panel closes on outside interaction or Escape and stays inside the viewport.
 
 The input is inset into the dock rather than floating on it: the composer

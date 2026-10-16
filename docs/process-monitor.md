@@ -436,7 +436,8 @@ permission to ask would gate a question behind a question.
   rest of the batch is aborted, and a reply that raced the interrupt is resubmitted as
   an ordinary turn.
 
-A pending ask is a decision point: `is_settled` holds, the `ask` topic carries the
+A pending ask is a decision point: the loop phase is `asking` (docs/control-api.md),
+so `is_settled` holds, the `ask` topic carries the
 question, the session's status is `asking` (waking a subscribed parent as a gate does,
 [tools.md](tools.md)), and a push goes out as for a turn end.
 

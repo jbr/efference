@@ -174,10 +174,12 @@ escalates to a real turn on it and a running one carries it into the wire at the
 next triage. Whether the agent wakes is thereby declared by the sender, not judged by
 the triage; the triage keeps everything downstream of that: the rest of the inbox, the
 background tails, its note. A triage that fails outright changes nothing here, since
-the pin is applied by the loop after the verdict returns. An escalated trajectory
-marks the loop `running` itself, since no submitted turn was claimed to do it: from
-the escalation until the loop parks, `/settle` blocks and the status watcher reports
-running, the same as for a trajectory a turn started.
+the pin is applied by the loop after the verdict returns. The idle triage is itself a
+request, so the loop phase reads `requesting` from the wake (docs/control-api.md): an
+escalated trajectory carries on from there with no submitted turn claimed, and one that
+pinned nothing returns to idle without counting as a turn ended. From the wake until
+the loop parks, `/settle` blocks and the status watcher reports running, the same as
+for a trajectory a turn started.
 
 The flag is ephemeral, like the queue: the logged `Ambient` does not carry it, and the
 `Triage` records the pin as a pin. No client verb sets it — `POST /notifications`

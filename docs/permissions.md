@@ -872,7 +872,9 @@ control-api.md): the path, the parse error, the restore error, and a lead line s
 fix the file. The loop awaits it (`Session::await_config_repair`) at every step, not only at a
 trajectory's start, because an approved config write can land the condition mid-trajectory; it
 resolves immediately in every other case. The park is an infinite wait on a `Notify` armed before
-the state is read, the same lost-wakeup discipline the pace hold uses.
+the state is read, the same lost-wakeup discipline the pace hold uses, and the loop phase reads
+`blocked` with reason `config_repair` while it lasts — a decision point for `settle`
+(docs/control-api.md).
 
 It clears by the route that was always going to fix it: the human edits the file, fs-watch calls
 `refresh` again, and any outcome that leaves valid content on disk — adopted, or a revert that

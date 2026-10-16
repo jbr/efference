@@ -496,8 +496,9 @@ raw. It retries until it has a verdict or the operator stops the turn:
   every fork came back unusable — and the loop **holds** (`agent/triage.rs`). The batch's
   results are on the log as `Pending` and their verdicts are not; the session stalls with
   `StallReason::TriageUnavailable` (upstream) or `StallReason::TriageDefect` (every
-  fork unusable, which is a harness defect and is logged at error level as one) while
-  the loop keeps running. The operator's continue runs the triage again from the top,
+  fork unusable, which is a harness defect and is logged at error level as one), and the
+  loop phase reads `blocked` with that reason until the operator acts — a decision point
+  for `settle` (docs/control-api.md). The operator's continue runs the triage again from the top,
   over the log as it stands then: a compaction written during the hold (`POST /loop/compact`
   accepts one there, docs/control-api.md) is what the retried triage forks, so a hold
   that outlived the cache can be retried without reading the whole history uncached;

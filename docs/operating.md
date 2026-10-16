@@ -123,10 +123,11 @@ skipped, so discovery finds the running session rather than the most recent one.
 
 Each read is at its own grain.
 
-- **`efference control state`** — the whole ephemeral picture in one JSON object: the pending gate,
+- **`efference control state`** — the whole ephemeral picture in one JSON object: where the
+  loop is (`loop_phase`) and what is in flight (`current_operations`), the pending gate,
   the inbox, running processes, token usage and cost, the pace and review-level dials, the
-  **effective** policy in force, and the three condition topics (`stall`, `upstream_retry`,
-  `config_repair`). Effective, not boot: a grant made twenty minutes ago shows up here.
+  **effective** policy in force, what each loop verb would answer now (`verbs`), and the
+  three condition topics (`stall`, `upstream_retry`, `config_repair`). Effective, not boot: a grant made twenty minutes ago shows up here.
 - **`efference control transcript [--since N | --tail N]`** — what the session has said and
   done, one line per entry with its `seq`: prose in full, each call by name, arguments and
   intent, each result by size, error flag and triage verdict, never a body. Entries are
@@ -670,28 +671,43 @@ agent operator drives a session as *act, read, act* instead of polling.
 ## Silence, and what it means
 
 A session that has said nothing for two minutes is in one of a few conditions, and
-`efference control state` distinguishes them. Guessing is no longer necessary.
+`efference control state` distinguishes them. Start from `loop_phase`, which names where
+the loop is as one value; the other topics say more about each phase.
 
-- **`upstream_retry` is non-null** — a request or a stream failed and the transport is
-  retrying on a capped schedule. The topic carries the attempt, the budget, when the next
-  attempt is due, and the upstream's own words. Nothing to do; it is working.
-- **`stall` is non-null** — the retries were exhausted, the request failed past them, or
-  the upstream refused it outright (an exhausted plan, a rejected request).
-  The loop appended its record and returned to idle. Every other signal reads like a
-  finished run (`running: false`, no gate, an empty inbox), which is why this topic exists.
-  The recovery is a `POST /turns` — send a turn and the session picks up.
-- **`config_repair` is non-null** — the config file on disk does not parse *and* could not
-  be reverted. The loop is parked, deliberately: effective policy in memory is still the
-  last good config, but the file no longer shows it, and the file is what says what the
-  session is running under. Nothing you send clears this. Edit the file until it parses;
-  fs-watch adopts it and the loop wakes.
-- **A gate is pending** — `state.gate` is non-null and everyone is waiting on you.
-- **Everything null and `running: true`** — it is thinking, or a tool is running. The event
-  stream's `thinking_delta` and `tool_call_input` frames are what tell a live turn from a
-  hung one; the TUI renders them.
+- **`requesting` or `executing`** — it is thinking, a triage is reading results, or a
+  tool is running. `current_operations` names which request or call is open and since
+  when; the event stream's `thinking_delta` and `tool_call_input` frames are what tell a
+  live turn from a hung one, and the TUI renders them.
+- **`delayed`** — a timer: the pace dial's delay between steps, or a pause before the
+  next attempt at a failed request, until `until`. In the second case `upstream_retry`
+  carries the attempt, the budget, and the upstream's own words. Nothing to do; it is
+  working, and a continue retries now.
+- **`gated` or `asking`** — waiting on you: `gate` holds the call, `ask` the question.
+- **`cold_parked`** — stopped before a request that would read an expired prompt cache;
+  `cold` says what the read costs. A turn, a continue, or a decision goes ahead and pays
+  it; a compaction summarizes the history instead.
+- **`blocked`** — stopped until someone acts. `triage_unavailable` or `triage_defect`:
+  a triage could not produce a verdict, `stall` says why, and a continue retries it.
+  `pace_held`: the pace dial is held; resume it or send a turn. `config_repair`: the
+  config file on disk does not parse *and* could not be reverted. Effective policy in
+  memory is still the last good config, but the file no longer shows it, and the file is
+  what says what the session is running under. Nothing you send clears this; edit the
+  file until it parses, and fs-watch adopts it and the loop wakes.
+- **`idle` with `stall` non-null** — the retries were exhausted, the request failed past
+  them, or the upstream refused it outright (an exhausted plan, a rejected request). The
+  loop appended its record and returned to idle. Every other signal reads like a finished
+  run (the idle phase, no gate, an empty inbox), which is why this topic exists. The
+  recovery is a continue, or a `POST /turns` — send a turn and the session picks up.
+- **`idle`, nothing else** — the turn finished.
 
-Long-poll `GET /state?wait=settled` (or `efference control settle`) blocks until a gate opens or the
-loop goes idle, capped server-side, and is the shape a supervising process should loop on.
+`verbs` says what a continue and a compaction would be answered with now, and whether a
+turn would land at once or wait in the queue.
+
+Long-poll `GET /state?wait=settled` (or `efference control settle`) blocks until the
+phase is one that waits on someone — `gated`, `asking`, `cold_parked`, `blocked` — or
+`idle` with nothing queued, capped server-side, and is the shape a supervising process
+should loop on. It does not return mid-turn: not between a result and its triage, not
+during a timed delay.
 
 The inverse condition is a session that looks entirely healthy and is quietly paying full
 price for every turn: `usage.cold_streak` counts consecutive main-loop requests that read

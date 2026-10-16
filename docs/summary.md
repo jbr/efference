@@ -164,7 +164,12 @@ follow under the `compaction` origin. It ends with the compaction's `Summary`, o
 requests (`daemon/operations.rs`) rather than held in memory, so a failure is still
 reported after a host restart; a compaction open when the host stopped is not, since the
 process writing it is gone. A failure stands until a turn's request goes out or another
-compaction is asked for. Progress is published on `/state` (docs/control-api.md).
+compaction is asked for. On `/state` (docs/control-api.md), an open compaction —
+waiting or writing, with its `warm` flag, cut, and the instant its state began — is one of
+`current_operations`, since it runs beside the loop and overlaps the idle phase, a cold
+park, and a held pace; a failure is not in flight and is its own topic,
+`compaction_failure`. Whether `POST /loop/compact` would accept now is the `verbs`
+topic's `compact` entry, read from the route's own check (`Session::compaction_verdict`).
 
 ## What is not here
 

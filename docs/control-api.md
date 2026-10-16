@@ -66,11 +66,13 @@ sessions from one process. Its own routes are the listener's, not a session's:
   the calling session's id as `created_by`. `created_by` is host control state —
   the creation tree — never logged or projected; a human-created root omits it
   ([tools.md](tools.md)). `status` is one word — `running`, `idle`, `gated`,
-  `asking`, `stalled`, `parked` — and `processes` counts the background processes the session holds
-  ([process-monitor.md](process-monitor.md)). `parked` is a loop stopped at its cold check
-  mid-turn (the `park` topic, below): it ranks after `gated`, `asking` and
-  `stalled` and before `running`, which stays true while the loop waits, so a list
-  surface does not read it as working. A status subscriber is told once, with the
+  `asking`, `stalled`, `parked`, `blocked` — read off the loop phase (`loop_phase`,
+  below), and `processes` counts the background processes the session holds
+  ([process-monitor.md](process-monitor.md)). `running` is a request, a batch of calls,
+  or a timed delay; `stalled` is an idle loop whose last trajectory gave up, or a triage
+  held without a verdict; `parked` is a loop stopped at its cold check mid-turn
+  (`cold_parked`); `blocked` is a loop stopped on a held pace or a config file to
+  repair. A status subscriber is told once, with the
   cold-read size and that a person's action (a turn, a continue, a decision) or a compaction ends it; after a compaction the
   body says the history was summarized and a turn or continue resumes it unasked. Those two are what a list surface can show
   without one `GET /sessions/<id>/v1/state` per row, and what a client's
@@ -382,8 +384,9 @@ non-blank turn is instead that ask's reply: it becomes the call's result, never 
   arrive on `/events` **before** the response body resolves (the daemon
   commits and broadcasts independently of writing the response), so clients
   must not sequence state on a response.
-- `?wait` — hold the connection until the daemon **settles** (the turn reaches a
-  gate or completes), then return the `/state` snapshot (`200`) instead of `202`.
+- `?wait` — hold the connection until the daemon **settles** (the loop reaches a
+  phase that waits on someone, or idle — `GET /state?wait=settled`, below), then return
+  the `/state` snapshot (`200`) instead of `202`.
 - `400 bad_request` — unparseable body, or a `submission_id` outside 1–128 bytes
 
 #### `DELETE /turns/:submission_id`
@@ -458,9 +461,9 @@ only if that call is still the pending gate.
 #### `GET /loop` · `PATCH /loop`
 The turn engine's operator dials as one resource. Its fields are named for —
 and are byte-identical to — their state topics: `pace` (`{speed_ms, held}`),
-`review_level`, and the read-only `running`.
+`review_level`, and the read-only `loop_phase`.
 
-- `GET` → `200 { "pace": { "speed_ms": 15000, "held": false }, "review_level": "spotter_human", "running": true }`
+- `GET` → `200 { "pace": { "speed_ms": 15000, "held": false }, "review_level": "spotter_human", "loop_phase": { "phase": "requesting" } }`
 - `PATCH` body: `{ "pace"?: { "speed_ms"?: <u64>, "held"?: <bool> }, "review_level"?: "<level>" }` —
   each field optional, so one call can move either dial or both (the two
   verb-routes this replaced could not). Validated whole before anything is
@@ -507,18 +510,20 @@ idling** — a blank submit never lands a `User` entry and never starts a turn.
   resulting turn settles).
 
   It is also **"retry now"** ([transport.md](transport.md)). While the loop is
-  running but waiting on the upstream — an `upstream_retry` pause, or a triage
-  held under a `stall` — the continue is accepted and ends that wait, so the
-  next attempt fires at once; after a stall that returned the loop to idle, it
-  re-sends the failed request. It can be repeated as often as the operator
-  likes.
+  waiting on the upstream — an `upstream_retry` pause (`delayed`, or the request the
+  retry re-sends), or a triage held under a `stall` (`blocked`) — the continue is
+  accepted and ends that wait, so the next attempt fires at once; after a stall that
+  returned the loop to idle, it re-sends the failed request. It can be repeated as
+  often as the operator likes. At a cold park it is the person's action that resumes
+  the loop.
 
   On a resumed session stopped at a pending batch, whose wire ends in a `tool_use`,
   the continue is accepted and the loop replays the batch instead of sending a request
   ([resumption.md](resumption.md)).
 - `409 not_continuable` — the moment has no continue in it. `message` names
-  which case:
-  - the loop is already running (and not waiting on the upstream), or a turn is queued
+  which case (the same answer the `verbs` topic publishes, below):
+  - the loop is in any other phase than idle, a cold park, or a wait on the
+    upstream, or a turn is queued
   - an approval gate is pending — resolve it instead
   - a question is pending — answer it with a turn
   - the session has no turns yet (nothing projects)
@@ -545,7 +550,7 @@ after it (about 15k tokens, the cut moved earlier so no call is separated from i
 result) stay verbatim. The compaction appends one `Summary` entry and starts no request: an
 idle session stays idle, and a loop parked at its cold check stays parked until the
 next turn or continue. A loop held at a triage without a verdict (the
-`triage_unavailable` or `triage_defect` stall, docs/triage.md) is running but
+`triage_unavailable` or `triage_defect` stall, docs/triage.md) is `blocked` and
 sends nothing, so it accepts a compaction the same way: it stays held, and the continue
 that retries it triages the compacted projection rather than the history the summary
 replaced. After a compaction the
@@ -559,18 +564,21 @@ Without it a warm session declines, so a client that only means the cold alterna
 cannot throw a live cache away by accident.
 
 - `202 {"status":"compacting"}` — the session's model is writing the summary; progress is
-  the `compaction` topic (`writing`, then `null` once the summary lands, or `failed` with the
-  error, which stays until a turn's request goes out or another compaction is asked for, and
-  across a host restart: the topic is folded from the compaction's log entries,
-  [summary.md](summary.md)). A failure changes nothing: compact
+  the compaction in `current_operations` (`waiting`, then `writing`, then gone once the
+  summary lands). A failure is the `compaction_failure` topic (`{error, at}`), which stays
+  until a turn's request goes out or another compaction is asked for, and across a host
+  restart: both are folded from the compaction's log entries
+  ([summary.md](summary.md)). A failure changes nothing: compact
   again, or send and read the cache uncached. A summary written while a turn read the cache anyway
   is discarded as superseded; a keepalive ping does not count as one. While it writes,
   the model's fragments arrive on the `output` class as `compaction_delta` and
   `compaction_thinking_delta`; the summary's `log` frame is its only durable form.
-- `?wait` — hold until the compaction lands or fails, then return `/state`.
+- `?wait` — hold until the compaction lands or fails, then return `/state`; unlike
+  `?wait=settled`, this waits on the compaction rather than the loop phase.
 - `409 not_compactable` — the cache is not believed expired and the body did not say
-  `warm`, a gate or question is pending, a request is in flight, or everything since
-  the last compaction fits in the tail.
+  `warm`, a gate or question is pending, the loop is in any phase but idle, a cold
+  park, or a held triage, or everything since the last compaction fits in the tail.
+  The `verbs` topic publishes this answer (below).
 
 #### `POST /loop/interrupt`
 Stop what the loop is doing now: a running tool is signalled (the SIGINT
@@ -736,9 +744,13 @@ stream pushes per-topic replacements of. A one-shot read for scripts and
 bootstraps; a client holding the stream needs never request it.
 
 **`?wait=settled`** turns the read into a long-poll: block until the daemon
-reaches a **decision point** (a gate is pending, the loop is stalled — which
-includes a triage held on the upstream, waiting on a continue — or the loop
-is idle with nothing queued), then return the snapshot. Returns immediately if already
+reaches a **decision point** — the `loop_phase` is `idle` with nothing queued and no
+continue pending, or one that waits on someone outside the loop: `gated`, `asking`,
+`cold_parked`, or `blocked` (a triage held on the upstream, a held pace, a config file
+to repair) — then return the snapshot, whose `loop_phase` names which. A request, a
+batch of calls, and a timed delay (`requesting`, `executing`, `delayed`) are not
+decision points, an idle triage included. A compaction runs beside the loop
+(`current_operations`) and does not hold the wait. Returns immediately if already
 settled; capped server-side at **300 s** (on timeout it returns current state
 and the client re-polls). The same predicate backs the `?wait` flags on
 `/turns` and `/approvals`. A `wait` with a missing or unknown predicate is a
@@ -855,6 +867,16 @@ not a topic — it is the log's cursor rather than control state, and sits outsi
                                             //   null while the triage borrows the agent's client and when its
                                             //   provider reports no windows
   },
+  "loop_phase": {                  // where the loop is: exactly one phase, tagged by `phase`
+    "phase": "requesting"          //   "idle" | "requesting" | "executing"
+  },                               //   | "delayed" (+ "until": absolute millis) | "gated" | "asking"
+                                   //   | "cold_parked" | "blocked" (+ "reason": "triage_unavailable"
+                                   //   | "triage_defect" | "config_repair" | "pace_held")
+  "verbs": {                       // what each loop route would answer now (below)
+    "turn": { "accepted": true, "delivery": "queued" },   // "now" | "queued"
+    "continue": { "accepted": false, "message": "the loop is already running — there is nothing to hand back" },
+    "compact": { "accepted": true, "warm": true }         // warm: only with a `warm: true` body
+  },
   "queued": [                      // turns submitted but not yet dequeued, in submission order
     { "submission_id": "…",        //   `[]` when nothing is pending. Ephemeral — a pending
       "text": "…",                 //   turn is never logged, so this is the only place it is
@@ -897,24 +919,10 @@ not a topic — it is the log's cursor rather than control state, and sits outsi
     "context_tokens": 48210        // the last turn's prompt: what a cold read would pay,
                                    //   or null before a turn's usage is known
   },
-  "park": null,                    // the loop stopped at its cold check mid-turn, or null.
-                                   //   {"reason":"expired","since":…,"context_tokens":…}:
-                                   //   waiting for a person to act (a turn, a continue,
-                                   //   a decision, an answer) before the uncached read,
-                                   //   or for a compaction.
-                                   //   {"reason":"compacted"}: a compaction summarized the history
-                                   //   while parked, so `cold` is null again and the next
-                                   //   turn or continue resumes the loop.
-                                   //   `running` stays true while parked, so this is how a
-                                   //   session view tells a park from a slow request. Its
-                                   //   own topic because `cold` is null in the compacted case
-                                   //   and is also set for an idle session that is not
-                                   //   parked
-  "compaction": null,              // {"state":"writing"} while POST /loop/compact runs, or
-                                   //   {"state":"failed","error":"…"} after one failed
-                                   //   (until a turn's request or the next compaction; folded
-                                   //   from the log, so it survives a restart); independent of
-                                   //   `cold`, since a compaction can be asked of a warm session
+  "compaction_failure": null,      // {"error":"…","at":…} after a compaction failed, until a
+                                   //   turn's request goes out or another compaction is asked
+                                   //   for; folded from the log, so it survives a restart. A
+                                   //   compaction in flight is in `current_operations`
   "config_repair": {               // null whenever the config file parses (permissions.md)
     "path": "/repo/.efference/work/config.toml",  // the file a human has to fix
     "at": 1754300000000,           // absolute Unix millis at which the loop parked
@@ -934,7 +942,7 @@ not a topic — it is the log's cursor rather than control state, and sits outsi
     },
     "successor": "calm-finch"            // once this session has handed off (docs/tools.md); absent before
   },
-  "current_operations": {          // null when no upstream request is open and no tool is executing
+  "current_operations": {          // null when no request, tool, or compaction is open
     "requests": [{                 // open requests, in the order they were sent
       "request": 57,               // the id its log entries share (log-and-projection.md)
       "origin": "turn",            // "turn" | "triage" | "title" | "spot" | "keepalive" | …
@@ -946,14 +954,59 @@ not a topic — it is the log's cursor rather than control state, and sits outsi
       "call_id": "toolu_1", "tool": "bash", "intent": "run the suite",  // intent may be null
       "command": "cargo test",     // bash calls only: the command, read from the call's input
       "since": 1754300040000
-    }]
+    }],
+    "compaction": {                // null unless one is open (POST /loop/compact, summary.md)
+      "state": "writing",          // "waiting": accepted, request not yet sent | "writing"
+      "warm": false,               // asked of a session whose cache was believed live
+      "cut": 412,                  // the last seq the summary covers
+      "since": 1754300050000       // absolute Unix millis at which this state began
+    }
   }
 }
 ```
 
-**`current_operations` names what the loop is waiting on.** `running: true` alone
-cannot tell a slow first byte from a long tool, a slow triage from a hung
-stream. The topic lists the upstream requests open now and the tools executing,
+**`loop_phase` is where the loop is, as one value.** The loop sets it from its own
+control flow, so exactly one phase holds at a time and a client reads it rather than
+reassembling the other topics (`src/daemon/phase.rs`):
+
+| phase | the loop is |
+| --- | --- |
+| `idle` | waiting for a turn, a continue, or an inbox wake |
+| `requesting` | waiting on a model request: a turn's, or a triage's — the idle triage included |
+| `executing` | running a completion's tool calls, the spotter's judgement inside the batch included |
+| `delayed` | waiting on a timer that ends at `until`: a finite pace delay, or the pause between upstream attempts |
+| `gated` | waiting on a decision from outside the loop at an approval gate (`gate`) |
+| `asking` | waiting on the operator's answer to an `ask` (`ask`) |
+| `cold_parked` | stopped at its cold check before an uncached read (`cold`, below) |
+| `blocked` | stopped until someone outside acts, for `reason`: `triage_unavailable` or `triage_defect` (a triage held without a verdict, `stall`), `config_repair` (`config_repair`), or `pace_held` (`pace`) |
+
+An autonomous decline is decided inside the loop and never enters `gated`. A decision
+that ends a wait from outside — an approval, an answer, a release of the hold, a person
+acting at the cold park, a repaired config, a continue at a held triage — moves the phase
+at the moment it is taken, before the loop wakes, so a `settle` racing that wake does not
+read the wait that just ended. `cold_parked` with `cold` null is a park a compaction
+ended the belief behind: the next turn or continue resumes it. The pause between upstream
+attempts is marked by the retry cell itself (`src/api/diagnostics.rs`), because a
+triage's attempts run where no session is held; its `until` is the retry's
+`next_attempt_at`.
+
+**`verbs` is what each loop route would answer now.** Each route that can refuse runs
+its precondition through one function — `Session::continue_verdict` for
+`POST /loop/continue`, `Session::compaction_verdict` for `POST /loop/compact` — and the
+topic publishes that function's answer: `{"accepted": true, …}`, or
+`{"accepted": false, "message"}` with the message the route's `409` would carry. The
+table and the routes therefore cannot disagree; an answer can be stale by the time a
+request arrives, and the route checks again. `compact` says `"warm": true` where it
+accepts only a body saying `warm: true` (the cache is believed live). A turn is always
+accepted, so `turn` says whether it would be delivered now — to an idle loop with nothing
+queued, as the answer to an `ask`, at a cold park, a held pace, or a pace delay it ends —
+or queued until the loop's next juncture. A client renders a refused verb disabled with
+its message (the TUI's `⏎` and `C-o`, the web composer's empty send and summary action,
+[tui.md](tui.md), [web-client.md](web-client.md)).
+
+**`current_operations` names what is in flight.** The `requesting` phase alone
+cannot tell a slow first byte from a slow triage, nor `executing` one long tool from
+another. The topic lists the upstream requests open now and the tools executing,
 each with the instant its stage began, so a client subtracts on its own clock and
 the topic is not re-emitted per tick; it changes only at a transition. It is folded
 from the log's `RequestStage`, `CallStarted`, and `ToolResult` entries
@@ -962,13 +1015,16 @@ rather than re-folded per recompute, and rebuilt from the log when a session is
 opened: a `Resumed` entry closes everything open before it, since those requests
 belonged to the previous host process. Several requests can be open at once (a triage
 and the spotter, a background title ask); parallel calls of one completion are all
-in `tools`. Parked waits keep their own topics (`gate`, `ask`, `park`, `stall`,
-`compaction`) and are not repeated here; the topic is `null` rather than empty when
-nothing is open. The decisions-rung spotter does not pass through `Client`; its decisions
+in `tools`. An open compaction is the third kind of operation: it runs beside the
+loop and overlaps the idle phase, a cold park, and a held pace, so it is in flight
+rather than a phase, and its failure — an outcome, not in flight — is the
+`compaction_failure` topic. Where the loop itself waits (a gate, an `ask`, a park, a
+block) is `loop_phase` and is not repeated here; the topic is `null` rather than empty
+when nothing is open. The decisions-rung spotter does not pass through `Client`; its decisions
 request records `sent`, `first_byte` (the response arriving), and `ended` or `failed`
 under the `spot` origin itself, without `attempt_failed` for the transport's retries.
 
-**`stall` distinguishes the idle conditions `running: false` collapses.**
+**`stall` distinguishes the idle conditions the `idle` phase collapses.**
 When a turn's stream-abort budget is exhausted, the request itself fails past
 the transport's retries, or the upstream names a failure no retry can change
 (`upstream_refused`, [transport.md](transport.md)), the loop appends its
@@ -976,7 +1032,7 @@ record-only entries, posts the
 turn-not-completed notification, and returns to idle
 ([transport.md](transport.md)). The daemon does not exit: the socket stays up
 and one `POST /turns` recovers the session. But every other signal then reads
-as a finished run — `running: false`, `gate: null`, and `notifications: []`
+as a finished run — `loop_phase` idle, `gate: null`, and `notifications: []`
 once a triage has dismissed the notice — so a supervising client cannot
 tell "done" from "gave up". This topic is that difference. It carries the
 reason, the attempts spent, the instant it stopped, a `message` in the same
@@ -988,21 +1044,21 @@ succeeds, so it always names the current condition rather than a past one.
 a stalled daemon is a live daemon, by design. Two shapes, both already here:
 
 - **Long-poll** — `GET /state?wait=settled` blocks until the daemon reaches a
-  decision point (a gate is pending, the loop is stalled, or it is idle with
-  nothing queued) and returns the snapshot. A supervisor loops on it and
-  branches on `stall`: `null` with no gate means the run finished; non-`null`
-  means it stopped short, and `POST /loop/continue` retries it (or `POST /turns`
-  says something first). The 300 s server cap makes an
+  decision point and returns the snapshot. A supervisor loops on it and branches
+  on `loop_phase` and `stall`: idle with `stall` `null` means the run finished;
+  non-`null` means it stopped short, and `POST /loop/continue` retries it (or
+  `POST /turns` says something first). The 300 s server cap makes an
   unchanged answer a re-poll rather than a hang.
-- **Subscribe** — `GET /events?include=state:stall,state:running` delivers the
+- **Subscribe** — `GET /events?include=state:stall,state:loop_phase` delivers the
   topic on connect and on every change, for a supervisor already holding a
   stream.
 
 **`config_repair` is the one terminal condition the daemon holds.** It is set
 only when a config edit both fails to parse *and* cannot be reverted, which
 leaves the file on disk invalid while effective policy in memory is still the
-last good config ([permissions.md](permissions.md)). The loop parks rather than
-running on under a perimeter the file no longer shows, so unlike `stall` — which
+last good config ([permissions.md](permissions.md)). The loop parks — `loop_phase`
+`blocked` with reason `config_repair` — rather than running on under a perimeter the
+file no longer shows, so unlike `stall` — which
 a `POST /turns` recovers — nothing a client sends clears this one: a human edits
 the file, fs-watch adopts it, and the topic goes `null` as the loop wakes. A
 supervisor distinguishes it from `stall` on exactly that: `stall` names a
@@ -1297,7 +1353,7 @@ supplement it.
 **Ordering — the guarantee three connections cannot offer.** Frames arrive in one
 total order per connection, and a `state` frame follows every `log` frame it
 reflects. So a client never sees the gate before the `spot` entry whose text the
-gate quotes, and never sees `running: false` before the entries that finished the
+gate quotes, and never sees an idle `loop_phase` before the entries that finished the
 turn — that second one answers "is it done?" wrong, in the direction a human acts
 on. Mechanically: each state value is stamped with the log position it reflects,
 and is held until the connection has delivered through it. A client subscribed to
@@ -1361,8 +1417,8 @@ the oldest. The committed entry on the `log` class is the authoritative copy.
   (`POST /loop/compact`). Not the main loop's response: it carries no `index`, belongs to no
   block, and the `Assistant` entry preemption below does not drop it.
 - `compaction_thinking_delta` — `{ "text": "<fragment>" }` — the compaction's extended thinking,
-  with the same scope. Both end with the compaction: the summary's `log` frame, or the `compaction` topic
-  going `failed`, supersedes them.
+  with the same scope. Both end with the compaction: the summary's `log` frame, or the
+  `compaction_failure` topic being set, supersedes them.
 - `triage_delta` — `{ "call_ids": ["<tool_use id>", …], "text": "<fragment>" }` — the text a
   triage request is writing, from the shared triage and the separate-model triage alike.
   `call_ids` are the results being triaged; the idle triage, which has none, sends `[]`.
@@ -1443,7 +1499,7 @@ returning the same code cannot disagree about the status:
 | `invalid_decision` | 400 | a well-formed decision verb the daemon doesn't implement — the client is version-skewed, not buggy |
 | `not_found` | 404 | no such notification id, proposal `seq`, process id, or mounted tool name |
 | `gate_moved` | 409 | `PUT /approvals/:call_id` whose id is not the pending gate; `detail` carries the current gate |
-| `not_continuable` | 409 | `POST /loop/continue` at a moment with no continue in it — running, gated, or a wire tail that means nothing to re-prompt |
+| `not_continuable` | 409 | `POST /loop/continue` at a moment with no continue in it — busy, gated, asking, or a wire tail that means nothing to re-prompt |
 | `too_large` | 413 | `/files` was asked for a file past the view limit ([web-bind.md](web-bind.md)) |
 | `unsupported_content` | 415 | `/files` was asked for something it does not serve as text — today, a file that is not valid UTF-8 |
 | `internal` | 500 | a log append or config write failed; absent shared state |

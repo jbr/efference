@@ -62,8 +62,9 @@ loop never waits on a push service.
   at a glance than the purpose) and then to a plain waiting line, since no reader may
   assume `intent` is present.
 - **Ask** — `begin_ask` (`src/daemon/ask.rs`). Body: the question, truncated.
-- **Settle** — `going_idle()` (`src/daemon/pace.rs`), where `running.swap(false)`
-  distinguishes a turn that just ended from boot idle; only the former fires. Body: the
+- **Settle** — `going_idle()` (`src/daemon/pace.rs`), where the loop phase it leaves
+  distinguishes a turn that just ended from boot idle, or from an idle triage that pinned
+  nothing (which returns to idle itself); only the former fires. Body: the
   tail `Assistant` entry's prose, truncated to 200 characters. Only the tail entry is
   consulted — an errored tail yields an empty body rather than captioning this turn
   with an earlier one's text.

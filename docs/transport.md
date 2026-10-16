@@ -407,9 +407,12 @@ upstream, as often as the operator repeats it. After a stall it re-enters the
 trajectory with nothing appended, which re-sends the failed request. While a
 backoff pause is running (or a triage is held, below) it ends the wait, so the
 next attempt fires at once; the daemon accepts it then even though the loop is
-running. The signal lives on the retry cell (`UpstreamRetryCell::hurry`), beside
+not idle. The signal lives on the retry cell (`UpstreamRetryCell::hurry`), beside
 the retry state both loops already publish, because the triage's wait runs
-where only the client is in reach. Both clients add the gesture to what they show —
+where only the client is in reach. The same cell marks the pause itself
+(`UpstreamRetryCell::delay`), which the loop phase reads as `delayed` until the
+retry's `next_attempt_at` (docs/control-api.md); a detached title ask's retries
+use the unmarked wait, since they do not hold the loop. Both clients add the gesture to what they show —
 `↻ … · ⏎ retries now` during a pause, `⚠ … · ⏎ to retry` on a stall — so the
 daemon's own `message` names what happened and not which key recovers it.
 
@@ -425,7 +428,7 @@ budget is spent). Nothing on these paths posts to the inbox.
 That idle is **legible as a stall**, not only as an idle. The daemon stays up on
 this path deliberately — the socket is alive and one turn recovers the session —
 but the return to idle otherwise looks exactly like a finished run to a client:
-`running: false` and no gate. So the loop sets the **`stall` state topic**
+the idle loop phase and no gate. So the loop sets the **`stall` state topic**
 (control-api.md): the reason, the attempts spent, the instant it gave up, a lead
 line naming what happened, and the upstream's words as `detail`. It is
 cleared when the work resumes — the top of the next trajectory, or a held triage
