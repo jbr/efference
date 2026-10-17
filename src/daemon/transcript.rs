@@ -1,13 +1,17 @@
-//! The transcript: a log window at the grain a driver reads (docs/control-api.md).
+//! The transcript: a log window as plain text, at the grain a reader asks for
+//! (docs/control-api.md).
 //!
-//! `GET /transcript` renders each entry as one text block: prose in full, a tool call
-//! as its name, arguments and `intent`, a result as its size, its error flag and its
-//! triage verdict — never its body. The bodies stay behind `GET /log/:seq`, which is
-//! where a reader goes after this view names the seq. Entries a driver never acts on
-//! render to nothing: telemetry, and a triage that pinned or dismissed nothing.
+//! `GET /transcript` has two grains and a zoom:
 //!
-//! One render for the control channel and the command line; the TUI keeps its own
-//! tree (docs/tui.md), which shows the bodies this view leaves out.
+//! - **conversation** (`conversation.rs`, the default): what was said and done. Prose
+//!   in full, each call on one line with its outcome — who decided its gate, its
+//!   result's size, and what the session saw of it — and none of the mechanism.
+//! - **audit** (`audit.rs`): one block per log entry, the mechanism included.
+//! - **zoom** (`zoom.rs`, `seq=8.2`): one entry in full — a call's exact input, its
+//!   decision trail, and its raw result, capped.
+//!
+//! A result's body is never part of a window; the zoom and `GET /log/:seq` are where
+//! it is read. The TUI keeps its own tree (docs/tui.md), which shows the bodies.
 
 use crate::log::{
     AssistantOutput, CallId, ConfigChange, EditState, LogEntry, MessagesOutputBlock, Payload,
@@ -19,11 +23,180 @@ use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write as _;
 
-/// Widest tag, which sets the column the bodies start in.
-const TAG_WIDTH: usize = 9;
-/// The label column: room for a five-digit seq with a `.n` call suffix. A wider
-/// label shifts its own line, nothing else.
-const LABEL_WIDTH: usize = 7;
+pub(crate) mod audit;
+pub(crate) mod conversation;
+#[cfg(test)]
+mod fixtures;
+mod index;
+pub(crate) mod zoom;
+
+pub(crate) use zoom::Handle;
+
+/// Which render a window read answers with (docs/control-api.md).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum Grain {
+    /// What was said and done, each call with its outcome (`conversation.rs`).
+    #[default]
+    Conversation,
+    /// One block per log entry, the mechanism included (`audit.rs`).
+    Audit,
+}
+
+/// Who reads a conversation or a zoom, and the one piece of live state it shows.
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct Reading<'a> {
+    /// The session read, by id: the header names it, and its own prose is labelled
+    /// with it. `None` where no id is known (tests, offline reads).
+    pub(crate) session: Option<&'a str>,
+    /// The reader, as a `source` (`session[<id>]`, `mcp[<name>]`) or a session id:
+    /// a sender or decider by that name reads "you" ([`sender`]).
+    pub(crate) me: Option<&'a str>,
+    /// The call held at the gate now, which reads as waiting for a decision.
+    pub(crate) held: Option<&'a str>,
+}
+
+impl Reading<'_> {
+    /// `transcript of <id>`, or `transcript` with no id.
+    fn title(&self) -> String {
+        match self.session {
+            Some(id) => format!("transcript of {id}"),
+            None => "transcript".to_string(),
+        }
+    }
+
+    /// The label on the session's own prose: its id, or `assistant` with none.
+    fn speaker(&self) -> &str {
+        self.session.unwrap_or("assistant")
+    }
+}
+
+/// A sender or a decider as a plain name for the reader `me` (docs/control-api.md):
+/// `operator` for no source, `operator (web)` for the web client, the id or client
+/// name inside a `session[…]`, `agent[…]` or `mcp[…]` label, `<id> (hand-off)` for a
+/// hand-off brief, any other label as written, and `you` where `me` names the label
+/// or the name inside it.
+pub(crate) fn sender(source: Option<&str>, me: Option<&str>) -> String {
+    let Some(source) = source else {
+        return "operator".to_string();
+    };
+    if source == "web" {
+        return "operator (web)".to_string();
+    }
+    let named = |name: &str| match me.is_some_and(|me| me == source || me == name) {
+        true => "you".to_string(),
+        false => name.to_string(),
+    };
+    if let Some(predecessor) = crate::frontend::handoff_predecessor(source) {
+        return format!("{} (hand-off)", named(predecessor));
+    }
+    let name = ["session[", "agent[", "mcp["]
+        .iter()
+        .find_map(|open| source.strip_prefix(open)?.strip_suffix(']'))
+        .unwrap_or(source);
+    named(name)
+}
+
+/// `ok, 12 lines` — a result's outcome and size: `ok` or `error`, its text in lines,
+/// and its images; `no output` when it carried nothing.
+fn outcome(raw: &RawResult) -> String {
+    let mut parts = vec![if raw.is_error { "error" } else { "ok" }.to_string()];
+    match raw.content.lines().count() {
+        0 if raw.images.is_empty() => parts.push("no output".to_string()),
+        0 => {}
+        n => parts.push(count(n, "line")),
+    }
+    if !raw.images.is_empty() {
+        parts.push(count(raw.images.len(), "image"));
+    }
+    parts.join(", ")
+}
+
+/// `it saw 1: note` — what the session's view kept of a result, given its final
+/// wire (`None` while no verdict has decided it). `of_total` states the result's
+/// length beside a partial count, for a line that does not already say it.
+fn saw(raw: &RawResult, wire: Option<&WireState>, of_total: bool) -> String {
+    match wire {
+        None | Some(WireState::Pending) => "it has not seen it yet".to_string(),
+        Some(WireState::Raw) => "it saw all of it".to_string(),
+        Some(WireState::Elided) => "it saw none of it".to_string(),
+        Some(WireState::TriageFailed { why }) => format!("it saw none of it ({})", flat(why)),
+        Some(WireState::Triaged(verdict)) => {
+            let (kept, total) = kept_of(raw, verdict);
+            let mut text = if kept >= total {
+                "it saw all of it".to_string()
+            } else if kept == 0 {
+                "it saw none of it".to_string()
+            } else if of_total {
+                format!("it saw {kept} of {}", count(total, "line"))
+            } else {
+                format!("it saw {kept}")
+            };
+            if let Some(note) = &verdict.note {
+                let _ = write!(text, ": {}", flat(note));
+            }
+            text
+        }
+    }
+}
+
+/// How many lines a verdict kept, of how many the result has (the arithmetic the
+/// entry view's `selection` carries, `entry_view.rs`).
+fn kept_of(raw: &RawResult, verdict: &crate::log::Triaged) -> (usize, usize) {
+    let d = selection(&raw.content, &verdict.keep);
+    let kept = d.ranges.iter().map(|&(a, b)| b - a + 1).sum();
+    (kept, d.shown.len() + d.dropped)
+}
+
+/// `allowed by parent` — a gate's recorded decision, its decider named for `me`.
+fn decided(decision: &crate::log::GateDecision, me: Option<&str>) -> String {
+    use crate::frontend::Approval;
+    let by = sender(decision.source.as_deref(), me);
+    match &decision.decision {
+        Approval::Approve => format!("allowed by {by}"),
+        Approval::Abort => format!("denied by {by}"),
+        Approval::Redirect(message) if message.trim().is_empty() => format!("denied by {by}"),
+        Approval::Redirect(message) => format!("denied by {by}: {}", flat(message)),
+        Approval::ConfigEdit { change, .. } => {
+            format!("granted by {by}: {}", change_words(change))
+        }
+    }
+}
+
+/// Whether a recorded decision refused the call: an abort or a redirect.
+fn refused(decision: &crate::log::GateDecision) -> bool {
+    use crate::frontend::Approval;
+    matches!(decision.decision, Approval::Abort | Approval::Redirect(_))
+}
+
+/// A config change in plain words, such as command `grep -n` or write access to `src`.
+fn change_words(change: &ConfigChange) -> String {
+    match change {
+        ConfigChange::Command { command } => format!("command `{command}`"),
+        ConfigChange::Path {
+            path, write: true, ..
+        } => format!("write access to `{path}`"),
+        ConfigChange::Path {
+            path, read: true, ..
+        } => format!("read access to `{path}`"),
+        ConfigChange::Path { path, .. } => format!("no access to `{path}`"),
+        ConfigChange::Tool { name } => format!("the tool `{}`", crate::mcp::display_name(name)),
+        ConfigChange::Scope { .. } => "a new scope".to_string(),
+    }
+}
+
+/// `1 line`, `12 lines`.
+fn count(n: usize, noun: &str) -> String {
+    match n {
+        1 => format!("1 {noun}"),
+        n => format!("{n} {noun}s"),
+    }
+}
+
+/// Text kept to one line, its newlines marked as [`clip`] marks them.
+fn flat(text: &str) -> String {
+    text.trim().replace('\n', "⏎")
+}
+
 /// A rendered tool-call argument value is cut here, with a marker: a `write`'s
 /// `contents` is a body, and bodies are what this view exists to leave out.
 const ARG_CAP: usize = 120;
@@ -43,249 +216,6 @@ const BODY_KEYS: &[&str] = &[
     "new_string",
     "old_string",
 ];
-
-/// Render `entries` in order, one block per entry that has something to say.
-pub(crate) fn render(entries: &[LogEntry]) -> String {
-    let mut out = String::new();
-    // The title peek appends an entry even when it keeps the text (docs/session-title.md);
-    // a reader wants to see the title when it moves, not after every turn.
-    let mut title: Option<&str> = None;
-    // Calls that shared an entry with others, by id, labelled `seq.n`. A result's
-    // line names its call's label so the pairing survives the interleaving; a call
-    // that was alone in its entry needs no label — the entry above it is the call.
-    let mut siblings: HashMap<CallId, String> = HashMap::new();
-    // Calls that were `ask`s: their results are the operator's reply, not a tool's.
-    let mut asks: HashSet<CallId> = HashSet::new();
-    for entry in entries {
-        if let Payload::Title(t) = &entry.payload {
-            if title == Some(t.text.as_str()) {
-                continue;
-            }
-            title = Some(&t.text);
-        }
-        for Line { label, tag, body } in lines(entry, &mut siblings, &mut asks) {
-            let label = label.unwrap_or_else(|| entry.seq.to_string());
-            block(&mut out, &label, tag, &body);
-        }
-    }
-    out
-}
-
-/// One rendered line: the entry's seq is the default label; a call among several in
-/// one entry carries `seq.n` instead.
-struct Line {
-    label: Option<String>,
-    tag: &'static str,
-    body: String,
-}
-
-fn line(tag: &'static str, body: impl Into<String>) -> Line {
-    Line {
-        label: None,
-        tag,
-        body: body.into(),
-    }
-}
-
-/// `label tag body`, with every line of the body after the first indented to the
-/// body column so a multi-line message reads as one block.
-fn block(out: &mut String, label: &str, tag: &str, body: &str) {
-    let mut lines = body.lines();
-    let first = lines.next().unwrap_or("");
-    let _ = writeln!(out, "{label:>LABEL_WIDTH$} {tag:<TAG_WIDTH$} {first}");
-    for line in lines {
-        let _ = writeln!(out, "{:>LABEL_WIDTH$} {:<TAG_WIDTH$} {line}", "", "");
-    }
-}
-
-/// The lines one entry renders as. Most entries are one; an assistant turn is one
-/// per text block and per call; some are none.
-fn lines(
-    entry: &LogEntry,
-    siblings: &mut HashMap<CallId, String>,
-    asks: &mut HashSet<CallId>,
-) -> Vec<Line> {
-    match &entry.payload {
-        Payload::User(blocks) => {
-            // A sourced turn opens its line with the same `source:` address it
-            // carries on the wire (docs/control-api.md), so a reader attributes
-            // the prose the way the model does; an operator turn has none.
-            let mut source = entry.source.as_deref();
-            blocks
-                .iter()
-                .filter_map(|b| match b {
-                    crate::log::ContentBlock::Text(t) => {
-                        let body = match source.take() {
-                            Some(source) => format!("{source}: {t}"),
-                            None => t.clone(),
-                        };
-                        Some(line("user", body))
-                    }
-                    crate::log::ContentBlock::Attachment(arrival) => {
-                        Some(line("user", format!("attached {}", arrival.path)))
-                    }
-                    _ => None,
-                })
-                .collect()
-        }
-        Payload::Assistant {
-            output,
-            upstream_failure,
-        } => {
-            let mut v = Vec::new();
-            if let Some(failure) = upstream_failure {
-                v.push(line(
-                    "assistant",
-                    format!("(record-only, never projected: {})", failure.why()),
-                ));
-            }
-            let (prose, calls) = assistant(output);
-            v.extend(prose.into_iter().map(|text| line("assistant", text)));
-            let several = calls.len() > 1;
-            for (i, call) in calls.iter().enumerate() {
-                // A question put to the operator reads as a turn ending: its text, not
-                // the call (docs/control-api.md).
-                let mut l = match crate::process_monitor::ask_of_call(&calls, i) {
-                    Some((question, n, of)) => {
-                        asks.insert(call.id.clone());
-                        let place = if of > 1 {
-                            format!(" (question {n} of {of})")
-                        } else {
-                            String::new()
-                        };
-                        line("asked", format!("{question}{place}"))
-                    }
-                    None => line("call", call_line(call)),
-                };
-                if several {
-                    let label = call_label(entry.seq, i, calls.len());
-                    siblings.insert(call.id.clone(), label.clone());
-                    l.label = Some(label);
-                }
-                v.push(l);
-            }
-            v
-        }
-        // An ask's result is the operator's reply when a submission produced it, and
-        // reads like the `User` line a sourced turn gets; the error results (an
-        // interrupt, a malformed call) carry no submission and say so.
-        Payload::ToolResult { call_id, raw, .. } if asks.contains(call_id) => {
-            if entry.submission_id.is_none() {
-                return vec![line("result", "not answered")];
-            }
-            let body = match entry.source.as_deref() {
-                Some(source) => format!("{source}: {}", raw.content),
-                None => raw.content.clone(),
-            };
-            vec![line("user", body)]
-        }
-        Payload::ToolResult { call_id, raw, wire } => {
-            let mut body = result(raw, wire);
-            if let Some(label) = siblings.get(call_id) {
-                body = format!("for {label}: {body}");
-            }
-            vec![line("result", body)]
-        }
-        Payload::Summary(summary) => {
-            vec![line(
-                "summary",
-                format!("{}: {}", summary.label(), summary.text),
-            )]
-        }
-        Payload::Triage(triage) => {
-            let mut parts = Vec::new();
-            for (seq, disposition) in &triage.inbox {
-                let verb = match disposition {
-                    crate::log::Disposition::Pin => "pinned",
-                    crate::log::Disposition::Dismiss => "dismissed",
-                };
-                parts.push(format!("{verb} notification #{seq}"));
-            }
-            for retry in &triage.retries {
-                parts.push(format!("retry: {retry}"));
-            }
-            if parts.is_empty() {
-                vec![]
-            } else {
-                vec![line("triage", parts.join("; "))]
-            }
-        }
-        Payload::Ambient(n) => vec![line("notify", format!("[{}] {}", n.source, n.body))],
-        Payload::Spot(spot) => {
-            let stance = match spot.stance {
-                Stance::Clear => "clear",
-                Stance::ClearAlways => "clear_always",
-                Stance::Watch => "watch",
-                Stance::Gate => "gate",
-            };
-            let mut body = format!("{stance}: {}", spot.reason);
-            if let Some(prefix) = &spot.probed_prefix {
-                let _ = write!(body, " (probed `{prefix}`)");
-            }
-            vec![line("spot", body)]
-        }
-        // Telemetry (docs/log-and-projection.md) is how the session ran, not
-        // something it said or did.
-        Payload::Telemetry(_) | Payload::Worktree(_) => {
-            vec![]
-        }
-        Payload::ImagesRefused { refusal } => vec![line(
-            "images",
-            format!("withheld from here on: the endpoint refused them ({refusal})"),
-        )],
-        Payload::Archived {} => vec![line("archived", "archived on purpose".to_string())],
-        Payload::Resumed(resumed) => vec![line(
-            "resumed",
-            crate::project::render_resumed(resumed, entry.seq),
-        )],
-        Payload::ProcessEvent(event) => {
-            let body = match &event.kind {
-                ProcessEventKind::Spawned(spawn) => {
-                    format!("p#{} spawned: {}", event.id, spawn.command)
-                }
-                ProcessEventKind::Exited(exit) => format!(
-                    "p#{} exited {:?} after {} ms",
-                    event.id, exit.outcome, exit.duration_ms
-                ),
-            };
-            vec![line("process", body)]
-        }
-        Payload::ConfigEdit(edit) => {
-            let state = match edit.state {
-                EditState::Proposed => "proposed",
-                EditState::Committed => "committed",
-                EditState::Cancelled => "cancelled",
-            };
-            let change = match &edit.change {
-                ConfigChange::Command { command } => format!("command {command:?}"),
-                ConfigChange::Path { path, read, write } => {
-                    format!("path {path:?} read={read} write={write}")
-                }
-                ConfigChange::Tool { name } => format!("tool {name:?}"),
-                ConfigChange::Scope { text } => format!("scope {text:?}"),
-            };
-            let mut body = format!("{state} {change}");
-            if let Some(seq) = edit.resolves {
-                let _ = write!(body, " (resolves #{seq})");
-            }
-            if !edit.note.is_empty() {
-                let _ = write!(body, ": {}", edit.note);
-            }
-            vec![line("config", body)]
-        }
-        Payload::Preamble { identity, body, .. } => {
-            vec![line(
-                "preamble",
-                format!("{} of system prompt", size(identity.len() + body.len())),
-            )]
-        }
-        Payload::Title(title) => vec![line("title", title.text.clone())],
-        Payload::ResultVerdict { for_result, .. } => vec![line(
-            "result_verdict",
-            format!("triage resolved result #{for_result}"),
-        )],
-    }
-}
 
 /// A call's handle in the transcript: the bare `seq` of the assistant entry that
 /// issued it when it was alone there, `seq.n` (1-based) when it shared the entry.
@@ -372,18 +302,6 @@ fn assistant(output: &AssistantOutput) -> (Vec<String>, Vec<ToolCall>) {
     (prose, calls)
 }
 
-/// `name key=value key=value  intent: …` — every argument but the intent, a body
-/// key's value cut at [`ARG_CAP`] and any other at [`ARG_WIDE`]; the intent last,
-/// in full, since it is the one line the model wrote for a reader.
-fn call_line(call: &ToolCall) -> String {
-    let mut line = call.name.clone();
-    line.push_str(&arguments(call));
-    if let Some(intent) = call.intent() {
-        let _ = write!(line, "  intent: {intent}");
-    }
-    line
-}
-
 /// What a held call does, in one line for its status (`status/view.rs`): a `bash`
 /// call's command, any other call's arguments as [`call_line`] writes them. `None`
 /// for a call with nothing but its intent.
@@ -427,44 +345,6 @@ fn arguments(call: &ToolCall) -> String {
     line
 }
 
-/// `ok 2.1 KB, kept 32/82 lines: note` — the result's outcome, size and what the
-/// model's view kept of it, plus where its images are.
-fn result(raw: &RawResult, wire: &WireState) -> String {
-    let mut body = String::from(if raw.is_error { "ERROR" } else { "ok" });
-    let total = raw
-        .content_elided
-        .as_ref()
-        .map_or(raw.content.len(), |e| e.total_bytes);
-    let _ = write!(body, " {}", size(total));
-    match wire {
-        WireState::Raw => body.push_str(", raw"),
-        WireState::Pending => body.push_str(", awaiting triage"),
-        WireState::Elided => body.push_str(", elided"),
-        WireState::TriageFailed { why } => {
-            let _ = write!(body, ", triage failed: {why}");
-        }
-        WireState::Triaged(verdict) => {
-            let d = selection(&raw.content, &verdict.keep);
-            let kept: usize = d.ranges.iter().map(|&(a, b)| b - a + 1).sum();
-            let _ = write!(body, ", kept {kept}/{} lines", d.shown.len() + d.dropped);
-            if let Some(note) = &verdict.note {
-                let _ = write!(body, ": {note}");
-            }
-            if let Some(feedback) = &verdict.intent_feedback {
-                let _ = write!(body, " (intent feedback: {feedback})");
-            }
-        }
-    }
-    if !raw.images.is_empty() {
-        let _ = write!(
-            body,
-            "; {} image(s), fetch with `image` at this seq",
-            raw.images.len()
-        );
-    }
-    body
-}
-
 fn clip(s: &str, cap: usize) -> String {
     let flat = s.replace('\n', "⏎");
     match flat.char_indices().nth(cap) {
@@ -484,6 +364,3 @@ pub(crate) fn size(bytes: usize) -> String {
         format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
     }
 }
-
-#[cfg(test)]
-mod test;

@@ -36,7 +36,7 @@ fn the_status_follows_the_loop_phase() {
             reason: None,
         }
     );
-    assert!(shared.resolve_approval(&CallId("toolu_1".into()), Approval::Abort));
+    assert!(shared.resolve_approval(&CallId("toolu_1".into()), Approval::Abort, None));
     assert_eq!(
         shared.status(),
         SessionStatus::Running,

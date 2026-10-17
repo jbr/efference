@@ -148,7 +148,10 @@ pub enum Interrupt {
 /// the next user turn, steering it without ending the turn. Every un-run
 /// `tool_use` still gets a paired `is_error` `tool_result` so the wire never
 /// orphans a call (the API rejects that); the loop owns that pairing.
-#[derive(Clone, Debug, PartialEq, Eq)]
+///
+/// Serialized into the log as a gate decision's record (`Telemetry::GateDecision`,
+/// docs/log-and-projection.md), so a rename here changes what new entries say.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Approval {
     /// Run the call.
     Approve,

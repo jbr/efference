@@ -179,12 +179,13 @@ export async function removeAttachment(
 export const attachmentUrl = (name: string, base = apiBase()) =>
   join(`/v1/attachments/${encodeURIComponent(name)}`, base);
 // The id is a precondition: a 409 gate_moved answer means that call is no
-// longer the pending gate, and `detail` carries the current one.
+// longer the pending gate, and `detail` carries the current one. The body names
+// this client as the decider, which the host records (docs/control-api.md).
 export const resolveApproval = (callId: CallId, decision: Decision) =>
-  put<{ status: string }>(
-    `/v1/approvals/${encodeURIComponent(callId)}`,
-    decision,
-  );
+  put<{ status: string }>(`/v1/approvals/${encodeURIComponent(callId)}`, {
+    ...decision,
+    source: "web",
+  });
 
 // The operator dials (docs/control-api.md): one PATCH can move pace and
 // review level together; `pace` is itself partial.

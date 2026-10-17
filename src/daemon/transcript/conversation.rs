@@ -1,0 +1,292 @@
+//! The conversation grain (`GET /transcript`, docs/control-api.md): what a session
+//! said and did, each call and its outcome on one line, the mechanism left out.
+//!
+//! What became of a call is looked up across the whole log (`index.rs`), not the
+//! window, so a cut anywhere neither hides an outcome that landed after it nor leaves
+//! a result without its call's handle. No line's meaning rides on indentation, since a
+//! stream consumer trims leading whitespace.
+
+use super::index::Index;
+use super::*;
+use crate::log::{ContentBlock, Seq, Telemetry};
+use std::ops::RangeInclusive;
+
+/// `window`, a contiguous slice of `log`, as `reading` reads it.
+pub(crate) fn render(log: &[LogEntry], window: &[LogEntry], reading: &Reading) -> String {
+    let title = reading.title();
+    let (Some(first), Some(last)) = (window.first(), window.last()) else {
+        return format!("{title} (no entries)\n");
+    };
+    let range = if first.seq == last.seq {
+        format!("seq {}", first.seq)
+    } else {
+        format!("seq {}–{}", first.seq, last.seq)
+    };
+    let mut out = Out {
+        lines: vec![format!("{title}, {range}")],
+        index: Index::new(log),
+        window: first.seq..=last.seq,
+        reading,
+    };
+    for entry in window {
+        out.entry(entry);
+    }
+    if out.lines.len() == 1 {
+        out.lines
+            .push("(nothing said or done in this range)".to_string());
+    }
+    let mut text = out.lines.join("\n");
+    text.push('\n');
+    text
+}
+
+struct Out<'a, 'r> {
+    lines: Vec<String>,
+    index: Index<'a>,
+    /// The seqs the window covers.
+    window: RangeInclusive<Seq>,
+    reading: &'r Reading<'r>,
+}
+
+impl<'a> Out<'a, '_> {
+    fn push(&mut self, label: impl std::fmt::Display, body: impl std::fmt::Display) {
+        self.lines.push(format!("{label}  {body}"));
+    }
+
+    /// Whether the call `id` is issued inside the window, where its line carries
+    /// everything that became of it.
+    fn shown(&self, id: &str) -> bool {
+        self.index
+            .call(id)
+            .is_some_and(|call| self.window.contains(&call.seq))
+    }
+
+    fn name(&self, source: Option<&str>) -> String {
+        sender(source, self.reading.me)
+    }
+
+    fn entry(&mut self, entry: &'a LogEntry) {
+        match &entry.payload {
+            Payload::User(blocks) => self.user(entry, blocks),
+            Payload::Assistant {
+                output,
+                upstream_failure,
+            } => match upstream_failure {
+                // Record-only: the session never read it, and its calls never ran.
+                Some(failure) => self.push(
+                    entry.seq,
+                    format!("a reply did not complete: {}", failure.why()),
+                ),
+                None => self.assistant(entry.seq, output),
+            },
+            Payload::ToolResult { call_id, .. } if !self.shown(&call_id.0) => {
+                self.orphan_result(entry, &call_id.0)
+            }
+            Payload::ResultVerdict { for_result, wire } => self.orphan_verdict(*for_result, wire),
+            Payload::Telemetry(Telemetry::GateDecision(decision))
+                if !self.shown(&decision.call_id.0) =>
+            {
+                let label = self.label(&decision.call_id.0, entry.seq);
+                let body = decided(decision, self.reading.me);
+                self.push(label, body);
+            }
+            Payload::Ambient(note) => {
+                let from = self.name(Some(&note.source));
+                self.push(
+                    entry.seq,
+                    format!("note from {from}: {}", note.body.trim_end()),
+                );
+            }
+            Payload::Summary(summary) => self.push(
+                entry.seq,
+                format!("summarized seq {}–{}", summary.from, summary.upto),
+            ),
+            Payload::Archived {} => self.push(entry.seq, "archived"),
+            Payload::Resumed(_) => self.push(entry.seq, "resumed after its host restarted"),
+            // On their call's line.
+            Payload::ToolResult { .. } | Payload::Telemetry(Telemetry::GateDecision(_)) => {}
+            // The mechanism.
+            Payload::Telemetry(_)
+            | Payload::Preamble { .. }
+            | Payload::Title(_)
+            | Payload::Spot(_)
+            | Payload::Triage(_)
+            | Payload::ConfigEdit(_)
+            | Payload::ProcessEvent(_)
+            | Payload::Worktree(_)
+            | Payload::ImagesRefused { .. } => {}
+        }
+    }
+
+    /// A call's handle, or `seq` when no assistant entry issued the call.
+    fn label(&self, call_id: &str, seq: Seq) -> String {
+        self.index
+            .call(call_id)
+            .map_or_else(|| seq.to_string(), |call| call.handle.clone())
+    }
+
+    fn user(&mut self, entry: &LogEntry, blocks: &[ContentBlock]) {
+        // The kickoff belongs to the session's opening, as the preamble does
+        // (docs/context.md).
+        if entry.source.as_deref() == Some(crate::frontend::KICKOFF_SOURCE) {
+            return;
+        }
+        // A redirect's message is on its call's line, or on the decision's.
+        if let Some(call_id) = self.index.steer(entry.seq).map(str::to_string) {
+            let decision = self.index.decision(&call_id);
+            let decision_shown = decision.is_some_and(|(seq, _)| self.window.contains(&seq));
+            if self.shown(&call_id) || decision_shown {
+                return;
+            }
+            let by = decision.and_then(|(_, d)| d.source.as_deref());
+            let by = self.name(by);
+            let text = text_of(blocks);
+            self.push(entry.seq, format!("{by}: {text}"));
+            return;
+        }
+        let from = self.name(entry.source.as_deref());
+        let text = text_of(blocks);
+        if !text.is_empty() {
+            self.push(entry.seq, format!("{from}: {text}"));
+        }
+        for block in blocks {
+            if let ContentBlock::Attachment(arrival) = block {
+                self.push(entry.seq, format!("{from} attached {}", arrival.path));
+            }
+        }
+    }
+
+    fn assistant(&mut self, seq: Seq, output: &AssistantOutput) {
+        let (prose, calls) = super::assistant(output);
+        let speaker = self.reading.speaker().to_string();
+        for text in prose {
+            self.push(seq, format!("{speaker}: {text}"));
+        }
+        for (i, call) in calls.iter().enumerate() {
+            let handle = call_label(seq, i, calls.len());
+            match crate::process_monitor::ask_of_call(&calls, i) {
+                Some((question, n, of)) => self.ask(&handle, &call.id.0, &question, n, of),
+                None => {
+                    let line = self.call_line(call);
+                    self.push(handle, line);
+                }
+            }
+        }
+    }
+
+    /// `bash \`cmd\` — intent → allowed by you → ok, 12 lines, it saw 1`.
+    fn call_line(&self, call: &ToolCall) -> String {
+        let id = call.id.0.as_str();
+        let mut head = crate::mcp::display_name(&call.name);
+        if let Some(summary) = call_summary(call) {
+            let _ = write!(head, " `{summary}`");
+        }
+        if let Some(intent) = call.intent() {
+            let _ = write!(head, " — {}", flat(intent));
+        }
+        let mut parts = vec![head];
+        if self.reading.held == Some(id) {
+            parts.push("waiting for a decision".to_string());
+            return parts.join(" → ");
+        }
+        if let Some((_, decision)) = self.index.decision(id) {
+            parts.push(decided(decision, self.reading.me));
+        }
+        // A refused call's result is the harness's stand-in, not a run.
+        if !self.index.refused(id) {
+            parts.push(match self.index.result(id) {
+                Some(result) => self.index.result_words(result),
+                None => "running".to_string(),
+            });
+        }
+        parts.join(" → ")
+    }
+
+    /// The question, then its reply wherever in the log the reply landed.
+    fn ask(&mut self, handle: &str, call_id: &str, question: &str, n: usize, of: usize) {
+        let place = match of {
+            1 => String::new(),
+            of => format!(" ({n} of {of})"),
+        };
+        let asked = format!("asked{place}: {question}");
+        match self.index.result(call_id) {
+            // An answer arrives as a submission; an interrupt or a malformed call
+            // carries none (`audit.rs`).
+            Some(reply) if reply.submission_id.is_some() => {
+                self.push(handle, asked);
+                let from = self.name(reply.source.as_deref());
+                let text = result_text(reply);
+                self.push(reply.seq, format!("{from}: {text}"));
+            }
+            Some(_) => self.push(handle, format!("{asked} → not answered")),
+            None => self.push(handle, asked),
+        }
+    }
+
+    /// A result whose call is before the window: its own line, under the call's handle.
+    fn orphan_result(&mut self, entry: &'a LogEntry, call_id: &str) {
+        let label = self.label(call_id, entry.seq);
+        if self
+            .index
+            .call(call_id)
+            .is_some_and(|call| call.ask.is_some())
+        {
+            let body = match entry.submission_id {
+                Some(_) => format!(
+                    "answered by {}: {}",
+                    self.name(entry.source.as_deref()),
+                    result_text(entry)
+                ),
+                None => "not answered".to_string(),
+            };
+            self.push(label, body);
+            return;
+        }
+        if self.index.refused(call_id) {
+            return;
+        }
+        let words = self.index.result_words(entry);
+        self.push(label, format!("result: {words}"));
+    }
+
+    /// A verdict that landed in a later window than its result: a short line naming
+    /// the call. Covered by the call's line or the result's when either is in view.
+    fn orphan_verdict(&mut self, for_result: Seq, wire: &WireState) {
+        let Some(result) = self.index.entry(for_result) else {
+            return;
+        };
+        let Payload::ToolResult { call_id, raw, .. } = &result.payload else {
+            return;
+        };
+        if self.window.contains(&for_result) || self.shown(&call_id.0) {
+            return;
+        }
+        let label = self.label(&call_id.0, for_result);
+        let body = saw(raw, Some(wire), true);
+        self.push(label, format!("verdict: {body}"));
+    }
+}
+
+/// A user entry's text blocks, joined; its attachments are lines of their own.
+fn text_of(blocks: &[ContentBlock]) -> String {
+    blocks
+        .iter()
+        .filter_map(|block| match block {
+            ContentBlock::Text(text) => Some(text.trim_end()),
+            _ => None,
+        })
+        .filter(|text| !text.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n\n")
+}
+
+/// A result entry's text: what an `ask`'s reply carries.
+fn result_text(entry: &LogEntry) -> &str {
+    match &entry.payload {
+        Payload::ToolResult { raw, .. } => raw.content.trim_end(),
+        _ => "",
+    }
+}
+
+#[cfg(test)]
+mod test;

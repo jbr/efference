@@ -222,7 +222,7 @@ async fn a_childs_gate_wakes_the_parent_and_is_pinned_whatever_the_triage_says()
     })
     .await;
 
-    assert!(child.resolve_approval(&CallId("toolu_leaf".into()), Approval::Abort));
+    assert!(child.resolve_approval(&CallId("toolu_leaf".into()), Approval::Abort, None));
     // The abort unwinds the turn, and the trajectory ends.
     child.going_idle();
     wait_until("the idle reached the parent", || {
@@ -313,7 +313,7 @@ async fn a_supervisor_reads_the_gate_as_its_reviewer_and_the_whole_closing_messa
     })
     .await;
 
-    assert!(child.resolve_approval(&curl.id, Approval::Approve));
+    assert!(child.resolve_approval(&curl.id, Approval::Approve, None));
     let report = format!(
         "The headers came back.\n\n{}",
         "Each header is listed here in full, with what it says about the server. ".repeat(8)

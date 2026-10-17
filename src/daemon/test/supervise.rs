@@ -190,6 +190,25 @@ async fn a_set_supervisor_receives_the_gate_approves_it_and_hears_the_idle() {
         .await
         .expect("the supervisor may resolve the gate");
     assert!(matches!(gate.await, Ok(Approval::Approve)));
+    // The decision is recorded with its decider, and `b`'s reading of `a` names it "you".
+    let decisions: Vec<_> = a
+        .snapshot()
+        .into_iter()
+        .filter_map(|e| match e.payload {
+            Payload::Telemetry(Telemetry::GateDecision(decision)) => Some(decision),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        decisions,
+        [crate::log::GateDecision::new(
+            "toolu_leaf",
+            Approval::Approve,
+            Some("session[b]".into())
+        )]
+    );
+    let transcript = a.transcript_window(None, None, "b").unwrap();
+    assert!(transcript.contains("  allowed by you\n"), "{transcript}");
     // The loop runs the approved call and its trajectory ends.
     a.going_idle();
 

@@ -207,21 +207,36 @@ impl Client {
     /// Resolve the pending approval gate (`PUT /approvals/{call_id}`), carrying the
     /// same four-valued [`Approval`] the loop consumes (docs/control-channel.md).
     /// The id is a precondition: addressing anything but the pending gate answers
-    /// 409 `gate_moved`, with the current gate in the error's `detail`.
-    pub async fn approve(&self, call_id: &str, decision: &Approval) -> Result<()> {
-        self.put(&format!("/approvals/{call_id}"), approval_body(decision))
-            .await
-            .map(drop)
+    /// 409 `gate_moved`, with the current gate in the error's `detail`. `source` names
+    /// the decider as a turn's `source` would; `None` is the operator. The host records
+    /// both (docs/control-api.md).
+    pub async fn approve(
+        &self,
+        call_id: &str,
+        decision: &Approval,
+        source: Option<&str>,
+    ) -> Result<()> {
+        self.put(
+            &format!("/approvals/{call_id}"),
+            approval_body(decision, source),
+        )
+        .await
+        .map(drop)
     }
 
     /// Resolve a gate and **block until the daemon settles** (`PUT /approvals/{id}?wait`) — the
     /// turn reaches its next gate or completes — returning the resulting `/state` JSON. The
     /// "approve → read state" half of synchronous driving (docs/permissions.md).
-    pub async fn approve_wait(&self, call_id: &str, decision: &Approval) -> Result<Waited> {
+    pub async fn approve_wait(
+        &self,
+        call_id: &str,
+        decision: &Approval,
+        source: Option<&str>,
+    ) -> Result<Waited> {
         self.wait_at(
             Method::Put,
             &format!("/approvals/{call_id}?wait"),
-            Some(approval_body(decision)),
+            Some(approval_body(decision, source)),
         )
         .await
     }
@@ -234,8 +249,6 @@ impl Client {
         self.wait_at(Method::Get, "/state?wait=settled", None).await
     }
 
-    /// Interrupt a running tool (`POST /loop/interrupt`) — the SIGINT equivalent that
-    /// kills the tool's process group (docs/process-monitor.md).
     /// Set the session's title (`PUT /title`, docs/session-title.md). Answers
     /// with the `session_identity` topic as it now reads.
     pub async fn set_title(&self, title: &str) -> Result<serde_json::Value> {
@@ -244,8 +257,9 @@ impl Client {
         serde_json::from_str(&resp).map_err(|_| anyhow!("bad /title response: {resp}"))
     }
 
-    /// Interrupt the loop (`POST /loop/interrupt`, docs/control-api.md), saying
-    /// who is asking and through which affordance; the host records both.
+    /// Interrupt the loop (`POST /loop/interrupt`, docs/control-api.md) — the SIGINT
+    /// equivalent that kills a running tool's process group (docs/process-monitor.md) —
+    /// saying who is asking and through which affordance; the host records both.
     pub async fn interrupt(&self, origin: &crate::log::InterruptOrigin) -> Result<()> {
         let body = serde_json::to_string(origin)?;
         self.post("/loop/interrupt", body).await.map(drop)
@@ -444,21 +458,15 @@ impl Client {
             .map(drop)
     }
 
-    /// The transcript (`GET /transcript`, docs/control-api.md): a log window at
-    /// reading grain, one text block per entry. `since` resumes forward, `tail`
-    /// takes the last N; both together is the daemon's `400`.
-    pub async fn transcript(&self, since: Option<u64>, tail: Option<u64>) -> Result<String> {
-        let mut query = Vec::new();
-        if let Some(since) = since {
-            query.push(format!("since={since}"));
-        }
-        if let Some(tail) = tail {
-            query.push(format!("tail={tail}"));
-        }
+    /// The transcript (`GET /transcript`, docs/control-api.md): a log window as plain
+    /// text, at the grain and for the reader `read` names. `since` resumes forward,
+    /// `tail` takes the last N; both together is the daemon's `400`.
+    pub async fn transcript(&self, read: TranscriptRead<'_>) -> Result<String> {
+        let query = read.query();
         let path = if query.is_empty() {
             "/transcript".to_string()
         } else {
-            format!("/transcript?{}", query.join("&"))
+            format!("/transcript?{query}")
         };
         self.get(&path).await
     }
@@ -558,10 +566,44 @@ pub struct TurnOptions<'a> {
     pub source: Option<&'a str>,
 }
 
+/// Which `GET /transcript` read to make (docs/control-api.md).
+#[derive(Clone, Copy, Debug, Default)]
+pub struct TranscriptRead<'a> {
+    /// Only entries with `seq >= since`.
+    pub since: Option<u64>,
+    /// Only the last `tail` entries.
+    pub tail: Option<u64>,
+    /// The entry-by-entry audit render (`grain=audit`) instead of the conversation.
+    pub audit: bool,
+    /// The reader, as a `source` (`mcp[<name>]`, `session[<id>]`) or a session id: a
+    /// sender or decider by that name reads "you".
+    pub me: Option<&'a str>,
+}
+
+impl TranscriptRead<'_> {
+    /// The read as a `GET /transcript` query string, percent-encoded.
+    fn query(&self) -> String {
+        let mut query = trillium_client::url::form_urlencoded::Serializer::new(String::new());
+        if let Some(since) = self.since {
+            query.append_pair("since", &since.to_string());
+        }
+        if let Some(tail) = self.tail {
+            query.append_pair("tail", &tail.to_string());
+        }
+        if self.audit {
+            query.append_pair("grain", "audit");
+        }
+        if let Some(me) = self.me {
+            query.append_pair("me", me);
+        }
+        query.finish()
+    }
+}
+
 /// The JSON body for an approval decision — the four-valued [`Approval`] the loop consumes
 /// (docs/control-channel.md). Shared by the blocking and non-blocking `approve` verbs.
-fn approval_body(decision: &Approval) -> String {
-    let body = match decision {
+fn approval_body(decision: &Approval, source: Option<&str>) -> String {
+    let mut body = match decision {
         Approval::Approve => serde_json::json!({ "decision": "approve" }),
         Approval::Abort => serde_json::json!({ "decision": "abort" }),
         Approval::Redirect(message) => {
@@ -573,6 +615,9 @@ fn approval_body(decision: &Approval) -> String {
             "note": note,
         }),
     };
+    if let Some(source) = source {
+        body["source"] = serde_json::json!(source);
+    }
     body.to_string()
 }
 

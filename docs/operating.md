@@ -133,8 +133,17 @@ Each read is at its own grain.
   three condition topics (`stall`, `upstream_retry`, `config_repair`). Effective, not boot: a grant made twenty minutes ago shows up here.
 - **`efference control transcript [--since N | --tail N]`** — what the session has said and
   done, one line per entry with its `seq`: prose in full, each call by name, arguments and
-  intent, each result by size, error flag and triage verdict, never a body. Entries are
-  immutable, so `--since <last_seq>` after a wait reads only what is new.
+  intent, each result by size, error flag and triage verdict, never a body. This is the
+  audit grain, the mechanism included (spotter verdicts, triage, config edits). Entries
+  are immutable, so `--since <last_seq>` after a wait reads only what is new.
+- **The conversation grain** — what the `transcript` tool answers over MCP and
+  in-session, and `GET /transcript` by default: prose whole with each sender named for
+  the reader (`you`, `operator`, an id), and each call on one line with what became of
+  it — who allowed or denied it, whether it is still running, its result's size, and how
+  much of it the session saw (`it saw 1: the status line`). Spotter, triage, config and
+  telemetry lines are left out. `GET /transcript?seq=8.2` zooms into one call: its exact
+  input, the spotter's reason and who decided the gate, and the raw result, capped at
+  16 KiB ([control-api.md](control-api.md)).
 - **`efference control entries <seq>…`** — the whole entries behind transcript lines: a
   result's complete content, a call's exact arguments. The raw window (`GET /log`) is not
   a verb: at a terminal the jsonl is the same bytes, and over MCP a window of raw bodies

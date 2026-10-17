@@ -84,11 +84,37 @@ async fn tools_call_state_reaches_the_daemon() {
     );
 }
 
-/// `transcript` and `entries` over the same router: a turn submitted through the
-/// client shows up as one `user` line carrying its seq, and that seq fetches the
-/// whole entry.
+/// `transcript` and `entries` over the same router. Over MCP the transcript is the
+/// conversation, the mounting client's own turn named "you"; at the command line it is
+/// the audit grain, and either line's seq fetches the whole entry.
 #[tokio::test]
 async fn transcript_lines_carry_the_seq_that_entries_resolves() {
+    let mut log = Log::in_memory();
+    log.append_submission(
+        1,
+        crate::log::Payload::User(vec![crate::log::ContentBlock::Text(
+            "hello transcript".into(),
+        )]),
+        Some("sub-1".into()),
+        Some("mcp[claude-code]".into()),
+    )
+    .unwrap();
+    let mcp = RequestContext::from_params(Some(&serde_json::json!({
+        "_meta": {
+            mcplease::types::meta_keys::CLIENT_INFO:
+                mcplease::types::Implementation::new("claude-code", "1.0"),
+        }
+    })));
+    let read = || Transcript {
+        since: None,
+        tail: None,
+        session: None,
+    };
+
+    let over_mcp = test_state_over(false, log).await;
+    let text = read().execute(over_mcp, mcp).await.unwrap();
+    assert_eq!(text, "transcript, seq 0\n0  you: hello transcript\n");
+
     let mut log = Log::in_memory();
     log.append(
         1,
@@ -97,16 +123,11 @@ async fn transcript_lines_carry_the_seq_that_entries_resolves() {
         )]),
     )
     .unwrap();
-    let state = test_state_over(false, log).await;
-
-    let text = Transcript {
-        since: None,
-        tail: None,
-        session: None,
-    }
-    .execute(state.clone(), RequestContext::default())
-    .await
-    .unwrap();
+    let state = test_state_over(true, log).await;
+    let text = read()
+        .execute(state.clone(), RequestContext::default())
+        .await
+        .unwrap();
     let line = text
         .lines()
         .find(|l| l.contains("hello transcript"))

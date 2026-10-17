@@ -20,21 +20,31 @@ pub(super) async fn read_log_window(conn: Conn) -> Conn {
     }
 }
 
-/// The same window as [`read_log_window`], rendered at reading grain as
-/// `text/plain` (`daemon/transcript.rs`, docs/control-api.md): every line carries
-/// its `seq`, and the bodies the render leaves out resolve through the routes below.
+/// The same window as [`read_log_window`], rendered as `text/plain`
+/// (`daemon/transcript.rs`, docs/control-api.md): at the conversation grain by
+/// default, entry by entry with `grain=audit`, or one entry in full with `seq`. Every
+/// line carries its handle, and the bodies a window leaves out resolve through the
+/// zoom and the routes below.
 pub(super) async fn read_transcript(conn: Conn) -> Conn {
     let Some(shared) = shared_of(&conn) else {
         return missing_state(conn);
     };
-    match LogSelect::parse(conn.querystring()) {
-        Ok(select) => conn
-            .with_response_header("content-type", "text/plain; charset=utf-8")
-            .with_status(200)
-            .with_body(shared.transcript(&select))
-            .halt(),
-        Err(message) => fail(conn, ErrorCode::BadRequest, message),
-    }
+    let query = match TranscriptQuery::parse(conn.querystring()) {
+        Ok(query) => query,
+        Err(message) => return fail(conn, ErrorCode::BadRequest, message),
+    };
+    let me = query.me.as_deref();
+    let body = match query.seq {
+        Some(handle) => match shared.transcript_zoom(handle, me) {
+            Ok(text) => text,
+            Err(message) => return fail(conn, ErrorCode::NotFound, message),
+        },
+        None => shared.transcript(&query.select, query.grain, me),
+    };
+    conn.with_response_header("content-type", "text/plain; charset=utf-8")
+        .with_status(200)
+        .with_body(body)
+        .halt()
 }
 
 /// One entry by `seq` — the general form of reference resolution for a client

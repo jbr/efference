@@ -66,6 +66,13 @@ pub enum Telemetry {
     /// it precedes the `failed: interrupted` stage it causes. Appended whether or not
     /// anything was running.
     Interrupt(InterruptOrigin),
+    /// A decision on a held call was accepted (`PUT /approvals/:call_id`, the
+    /// in-session approve; docs/control-api.md): which call, what was decided, and
+    /// who decided it. Appended once the call is known to be the pending gate and
+    /// before the decision reaches the loop, so it precedes the result or the
+    /// redirect it causes. Decisions the loop makes without a gate (a spotter clear,
+    /// an autonomous redirect) leave none.
+    GateDecision(GateDecision),
     /// A main-model consolidation check and its disposition (docs/consolidate.md).
     Consolidation {
         from: super::Seq,
@@ -98,6 +105,36 @@ pub struct InterruptOrigin {
     pub control: Option<String>,
 }
 
+/// One accepted gate decision ([`Telemetry::GateDecision`]).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GateDecision {
+    /// The held call's `tool_use` id.
+    pub call_id: CallId,
+    /// The decision as the loop received it: approve, abort, redirect with its
+    /// message, or a config edit with its change.
+    pub decision: crate::frontend::Approval,
+    /// Who decided, spelled as a turn's `source` is: `web`, `mcp[<name>]`,
+    /// `session[<id>]`. Client-asserted, like an interrupt's; absent for the
+    /// operator's own command line or TUI.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
+}
+
+impl GateDecision {
+    /// The record of `decision` on the call `call_id`, decided by `source`.
+    pub fn new(
+        call_id: impl Into<CallId>,
+        decision: crate::frontend::Approval,
+        source: Option<String>,
+    ) -> Self {
+        Self {
+            call_id: call_id.into(),
+            decision,
+            source,
+        }
+    }
+}
+
 impl Telemetry {
     /// The wire name of the variant — the `kind` of its log frame, under the
     /// `telemetry.` prefix so no kind collides with a state topic's name.
@@ -113,6 +150,7 @@ impl Telemetry {
             Telemetry::InboxExpired { .. } => "telemetry.inbox_expired",
             Telemetry::SupervisorSet { .. } => "telemetry.supervisor_set",
             Telemetry::Interrupt(_) => "telemetry.interrupt",
+            Telemetry::GateDecision(_) => "telemetry.gate_decision",
             Telemetry::Consolidation { .. } => "telemetry.consolidation",
             Telemetry::Tools { .. } => "telemetry.tools",
         }

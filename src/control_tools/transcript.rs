@@ -50,28 +50,33 @@ impl ToolMeta for Transcript {
 impl Tool<Control> for Transcript {
     type Output = String;
 
-    async fn execute(self, control: Control, _context: RequestContext) -> Result<String> {
+    async fn execute(self, control: Control, context: RequestContext) -> Result<String> {
         match &control.executor {
             Executor::Client(state) => {
                 let client = state.client(self.session.as_deref()).await?;
-                let text = client.transcript(self.since, self.tail).await?;
+                // The command line reads entry by entry; an MCP client reads the
+                // conversation, its own turns and decisions named "you" — the reader
+                // spelled as its turns' `source` is (docs/control-api.md).
+                let audit = control.is_cli();
+                let me = super::turn::turn_source(None, &context).filter(|_| !audit);
+                let read = crate::client::TranscriptRead {
+                    since: self.since,
+                    tail: self.tail,
+                    audit,
+                    me: me.as_deref(),
+                };
+                let text = client.transcript(read).await?;
                 Ok(if text.is_empty() {
                     "(no entries)".to_string()
                 } else {
                     text
                 })
             }
-            Executor::Host(state) => {
-                let session = state.resolve(self.session.as_deref())?;
-                let text = session
-                    .transcript_window(self.since, self.tail)
-                    .map_err(|reason| anyhow!("{reason}"))?;
-                Ok(if text.is_empty() {
-                    "(no entries)".to_string()
-                } else {
-                    text
-                })
-            }
+            // In-session the conversation is read by the calling session.
+            Executor::Host(state) => state
+                .resolve(self.session.as_deref())?
+                .transcript_window(self.since, self.tail, &state.caller)
+                .map_err(|reason| anyhow!("{reason}")),
         }
     }
 }

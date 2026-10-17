@@ -104,9 +104,27 @@ impl Session {
     /// The decision is a person's action (docs/control-api.md), noted once the gate is
     /// known to be this one and before the decision reaches the loop, so the cold check
     /// that follows finds it.
-    pub(crate) fn resolve_approval(&self, id: &CallId, decision: Approval) -> bool {
+    ///
+    /// `source` is the decider, spelled as a turn's `source` is (`None` for the
+    /// operator). The decision is recorded as a `Telemetry::GateDecision` at the same
+    /// moment, so it precedes what the loop does with it (docs/log-and-projection.md).
+    pub(crate) fn resolve_approval(
+        &self,
+        id: &CallId,
+        decision: Approval,
+        source: Option<String>,
+    ) -> bool {
         let sender = self.approvals.lock().unwrap().remove(id);
         let Some(tx) = sender else { return false };
+        // A loop that already moved on dropped its receiver: nothing was decided.
+        if !tx.is_closed() {
+            let record = crate::log::GateDecision::new(id.clone(), decision.clone(), source);
+            let entry = Payload::Telemetry(crate::log::Telemetry::GateDecision(record));
+            // The record must not stop what it describes.
+            if let Err(e) = self.append(self.latest_turn(), entry) {
+                log::warn!("gate decision record: append failed: {e}");
+            }
+        }
         self.person_acted(super::PersonAction::Decision {
             aborted: matches!(decision, Approval::Abort),
         });

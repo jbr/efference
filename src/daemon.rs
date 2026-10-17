@@ -521,21 +521,24 @@ impl Session {
     }
     /// The transcript window the in-session `transcript` tool serves
     /// (docs/tools.md): the same selection as `GET /transcript`, with the
-    /// daemon's own argument check (docs/control-api.md). The `LogSelect` type
-    /// stays private to the daemon, so this is the one public shape.
+    /// daemon's own argument check, at the conversation grain for the reading
+    /// session `me` (docs/control-api.md). The `LogSelect` type stays private to the
+    /// daemon, so this is the one public shape.
     pub(crate) fn transcript_window(
         &self,
         since: Option<u64>,
         tail: Option<u64>,
+        me: &str,
     ) -> std::result::Result<String, String> {
         if since.is_some() && tail.is_some() {
             return Err("since and tail are mutually exclusive".into());
         }
-        Ok(self.transcript(&LogSelect {
+        let select = LogSelect {
             since,
             before: None,
             tail,
-        }))
+        };
+        Ok(self.transcript(&select, transcript::Grain::Conversation, Some(me)))
     }
 
     /// Snapshot the full session tool catalog for `GET /v1/tools/:name`

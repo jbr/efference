@@ -167,6 +167,17 @@ impl Masker {
         }
     }
 
+    /// A config change's one text field: a command prefix, a path, a tool name, or
+    /// the scope prose.
+    fn mask_change(&self, change: &mut ConfigChange) {
+        match change {
+            ConfigChange::Command { command } => self.mask_in_place(command),
+            ConfigChange::Path { path, .. } => self.mask_in_place(path),
+            ConfigChange::Tool { name } => self.mask_in_place(name),
+            ConfigChange::Scope { text } => self.mask_in_place(text),
+        }
+    }
+
     /// The record-only mark and, when the empty-stream path attached them, its
     /// captured diagnostics: the header values, the `message_start` body, and the
     /// frames. All three are upstream text that a request's own bytes can echo
@@ -407,6 +418,19 @@ impl Masker {
                     self.mask_in_place(control);
                 }
             }
+            // A gate decision's decider is a client-asserted label, and a redirect's
+            // message or a config edit's change and note are text a person wrote.
+            Payload::Telemetry(Telemetry::GateDecision(decision)) => {
+                self.mask_opt(&mut decision.source);
+                match &mut decision.decision {
+                    crate::frontend::Approval::Approve | crate::frontend::Approval::Abort => {}
+                    crate::frontend::Approval::Redirect(message) => self.mask_in_place(message),
+                    crate::frontend::Approval::ConfigEdit { change, note } => {
+                        self.mask_in_place(note);
+                        self.mask_change(change);
+                    }
+                }
+            }
             // Tool definitions are what the tools advertise, the same bytes the
             // provider receives unmasked; nothing in them is read from the environment.
             Payload::Telemetry(Telemetry::Tools { .. }) => {}
@@ -440,12 +464,7 @@ impl Masker {
             }
             Payload::ConfigEdit(edit) => {
                 self.mask_in_place(&mut edit.note);
-                match &mut edit.change {
-                    ConfigChange::Command { command } => self.mask_in_place(command),
-                    ConfigChange::Path { path, .. } => self.mask_in_place(path),
-                    ConfigChange::Tool { name } => self.mask_in_place(name),
-                    ConfigChange::Scope { text } => self.mask_in_place(text),
-                }
+                self.mask_change(&mut edit.change);
             }
             Payload::Preamble {
                 identity,

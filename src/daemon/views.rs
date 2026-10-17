@@ -10,6 +10,7 @@
 //! topic's entire current value and `Value::Null` means *cleared*, so nothing here may
 //! signal "unchanged" by omission.
 
+use super::transcript::{Grain, Handle, Reading};
 use super::*;
 
 impl Session {
@@ -384,12 +385,58 @@ impl Session {
         serde_json::to_string(&views).unwrap_or_else(|_| "[]".into())
     }
 
-    /// The selected window of the log at reading grain (`GET /transcript`,
-    /// docs/control-api.md): one text block per entry, bodies left behind
-    /// [`Self::entry_json`]. Same window selection as [`Self::log_json`].
-    pub(super) fn transcript(&self, select: &LogSelect) -> String {
+    /// The selected window of the log as text (`GET /transcript`, docs/control-api.md),
+    /// at `grain`, for the reader `me`; bodies are left behind [`Self::entry_json`]
+    /// and the zoom. Same window selection as [`Self::log_json`].
+    pub(super) fn transcript(&self, select: &LogSelect, grain: Grain, me: Option<&str>) -> String {
+        let (session, held) = self.reading_state();
+        let reading = Reading {
+            session: session.as_deref(),
+            me,
+            held: held.as_deref(),
+        };
         let log = self.log.lock().unwrap();
-        super::transcript::render(window(log.entries(), select))
+        let entries = log.entries();
+        let window = window(entries, select);
+        match grain {
+            Grain::Audit => super::transcript::audit::render(window),
+            Grain::Conversation => {
+                super::transcript::conversation::render(entries, window, &reading)
+            }
+        }
+    }
+
+    /// One entry in full (`GET /transcript?seq=8.2`, docs/control-api.md), or why there
+    /// is no such entry.
+    pub(super) fn transcript_zoom(
+        &self,
+        handle: Handle,
+        me: Option<&str>,
+    ) -> Result<String, String> {
+        let (session, held) = self.reading_state();
+        let reading = Reading {
+            session: session.as_deref(),
+            me,
+            held: held.as_deref(),
+        };
+        let log = self.log.lock().unwrap();
+        super::transcript::zoom::zoom(log.entries(), handle, &reading)
+    }
+
+    /// The session's id and the call held at its gate now: what a reading names and
+    /// shows as waiting. Read before the log is locked.
+    fn reading_state(&self) -> (Option<String>, Option<String>) {
+        let session = self
+            .id
+            .clone()
+            .or_else(|| self.identity().map(|identity| identity.id));
+        let held = self
+            .pending
+            .lock()
+            .unwrap()
+            .as_ref()
+            .map(|pending| pending.call_id.clone());
+        (session, held)
     }
 
     /// One entry by `seq`, or `None` if the log has no such position.

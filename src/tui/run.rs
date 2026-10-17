@@ -238,7 +238,8 @@ async fn attach(
     let approve_client = client.clone();
     let approver = tokio::spawn(async move {
         while let Some((call_id, decision)) = approve_rx.recv().await {
-            let _ = approve_client.approve(&call_id, &decision).await;
+            // The TUI is the operator's own client, so it names no decider.
+            let _ = approve_client.approve(&call_id, &decision, None).await;
         }
     });
 

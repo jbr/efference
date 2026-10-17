@@ -88,6 +88,11 @@ pub(crate) struct DecisionBody {
     pub(crate) change: Option<crate::log::ConfigChange>,
     #[serde(default)]
     pub(crate) note: Option<String>,
+    /// Who is deciding, spelled as a turn's `source` is (`web`, `mcp[<name>]`,
+    /// `session[<id>]`). Client-asserted and unverified, like an interrupt's origin;
+    /// absent means the operator (docs/control-api.md).
+    #[serde(default)]
+    pub(crate) source: Option<String>,
 }
 
 /// Body of `PATCH /loop` (docs/control-channel.md): the operator dials, each
@@ -277,6 +282,52 @@ impl LogSelect {
             return Err("since and tail are mutually exclusive".into());
         }
         Ok(select)
+    }
+}
+
+/// What a `GET /transcript` read wants (docs/control-api.md): a window at a grain, or
+/// one entry zoomed, for a named reader.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct TranscriptQuery {
+    pub(crate) select: LogSelect,
+    pub(crate) grain: super::transcript::Grain,
+    /// The reader, as a `source` or a session id (`transcript.rs`).
+    pub(crate) me: Option<String>,
+    /// The entry to zoom into, in place of a window.
+    pub(crate) seq: Option<super::transcript::Handle>,
+}
+
+impl TranscriptQuery {
+    /// Parse the `GET /transcript` query, or say what was wrong with it. A zoom names
+    /// one entry, so a window bound or the audit grain beside `seq` has no reading and
+    /// is refused rather than ignored.
+    pub(crate) fn parse(query: &str) -> Result<Self, String> {
+        use super::transcript::{Grain, Handle};
+        let select = LogSelect::parse(query)?;
+        let grain = match query_value(query, "grain").as_deref() {
+            None | Some("conversation") => Grain::Conversation,
+            Some("audit") => Grain::Audit,
+            Some(other) => {
+                return Err(format!(
+                    "grain must be conversation or audit, got {other:?}"
+                ));
+            }
+        };
+        let seq = query_value(query, "seq")
+            .map(|seq| Handle::parse(&seq))
+            .transpose()?;
+        if seq.is_some() && (select != LogSelect::default() || grain == Grain::Audit) {
+            return Err(
+                "seq zooms into one entry, so it takes no since, before, tail or grain=audit"
+                    .into(),
+            );
+        }
+        Ok(Self {
+            select,
+            grain,
+            me: query_value(query, "me").filter(|me| !me.is_empty()),
+            seq,
+        })
     }
 }
 

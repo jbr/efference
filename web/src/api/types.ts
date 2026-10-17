@@ -126,6 +126,17 @@ export type Telemetry =
   | { SupervisorSet: { supervisor: string | null } }
   | { Interrupt: { source?: string; control?: string } }
   | {
+      GateDecision: {
+        call_id: string;
+        decision:
+          | "Approve"
+          | "Abort"
+          | { Redirect: string }
+          | { ConfigEdit: { change: ConfigChange; note: string } };
+        source?: string;
+      };
+    }
+  | {
       Consolidation: {
         from: Seq;
         upto: Seq;

@@ -438,3 +438,70 @@ async fn an_oversized_result_is_elided_in_the_window_and_whole_by_seq() {
         );
     });
 }
+
+/// `GET /transcript` reads the conversation by default and the entry-by-entry audit
+/// grain on `grain=audit`; `seq` zooms into one entry, a seq past the log is a `404`,
+/// and a query with no single reading is a `400` (docs/control-api.md).
+#[tokio::test]
+async fn the_transcript_reads_at_either_grain_or_zooms() {
+    let shared = log_of(0);
+    shared.append(1, user("look around")).unwrap();
+    shared
+        .append(1, assistant_calling("toolu_1", "ls"))
+        .unwrap();
+    shared
+        .append(
+            1,
+            Payload::tool_result(
+                "toolu_1",
+                RawResult::text("a.rs\nb.rs"),
+                crate::log::WireState::Raw,
+            ),
+        )
+        .unwrap();
+    let app = test_server(&shared).await;
+
+    let conversation = app.get("/v1/transcript").await;
+    conversation.assert_ok();
+    assert_eq!(
+        conversation.body(),
+        "transcript, seq 0–2\n\
+         0  operator: look around\n\
+         1  bash `ls` → ok, 2 lines, it saw all of it\n"
+    );
+    let audit = app.get("/v1/transcript?grain=audit&since=1").await;
+    audit.assert_ok();
+    assert_eq!(
+        audit.body(),
+        "      1 call      bash command=\"ls\"\n\
+         \x20     2 result    ok 9 B, raw\n"
+    );
+    let zoom = app.get("/v1/transcript?seq=1").await;
+    zoom.assert_ok();
+    assert!(
+        zoom.body()
+            .starts_with("transcript, seq 1\ncall 1: bash\ninput: {\n  \"command\": \"ls\"\n}\n"),
+        "{}",
+        zoom.body()
+    );
+    assert!(
+        zoom.body().ends_with("raw:\na.rs\nb.rs\n"),
+        "{}",
+        zoom.body()
+    );
+
+    let missing = app.get("/v1/transcript?seq=7").await;
+    missing.assert_status(404);
+    missing.assert_json_body_with(|body: &Value| {
+        assert_eq!(body["code"], "not_found");
+        assert_eq!(
+            body["message"],
+            "no entry at seq 7: the log runs from seq 0 to 2"
+        );
+    });
+    for query in ["seq=1&since=0", "seq=1&grain=audit", "grain=prose", "seq=x"] {
+        let conn = app.get(&format!("/v1/transcript?{query}")).await;
+        conn.assert_status(400);
+        conn.assert_json_body_with(|body: &Value| assert_eq!(body["code"], "bad_request"));
+    }
+}

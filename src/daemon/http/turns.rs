@@ -187,7 +187,7 @@ pub(super) async fn resolve_approval(mut conn: Conn) -> Conn {
             );
         }
     };
-    if shared.resolve_approval(&id, approval) {
+    if shared.resolve_approval(&id, approval, decision.source) {
         // `?wait`: hold until the turn reaches its *next* gate or completes — so a
         // multi-gate turn is driven as a clean "approve → read state" loop.
         if wait {

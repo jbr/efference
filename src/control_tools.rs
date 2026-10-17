@@ -154,14 +154,16 @@ impl BoundAction {
 pub struct Control {
     executor: Executor,
     /// Whether this dispatch came from the command line rather than from an MCP
-    /// client. Only `image` reads it: at a terminal it writes a file and says so,
-    /// over MCP it hands back the bytes as an image content block.
+    /// client. `image` reads it — at a terminal it writes a file and says so, over MCP
+    /// it hands back the bytes as an image content block — and `transcript`, which
+    /// reads the audit grain at a terminal and the conversation over MCP
+    /// (docs/control-api.md).
     cli: bool,
 }
 
 impl Control {
-    /// Bind tools to an executor. `cli` selects terminal image output rather than
-    /// MCP image blocks.
+    /// Bind tools to an executor. `cli` selects the command line's presentation: terminal
+    /// image output rather than MCP image blocks, and the transcript's audit grain.
     pub fn new(executor: Executor, cli: bool) -> Self {
         Self { executor, cli }
     }

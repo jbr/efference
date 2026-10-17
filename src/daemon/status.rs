@@ -16,7 +16,7 @@ mod render;
 mod view;
 
 pub(crate) use render::{Reader, Relation, render};
-pub(crate) use view::{Activity, Condition, Footer, Reviewer, StatusView};
+pub(crate) use view::{Activity, Condition, Footer, Reviewer, StatusView, held_because};
 
 /// One session's condition at a decision point, as read off its control state.
 /// `Ended` and `Failed` are the host's to report once the runtime has returned;

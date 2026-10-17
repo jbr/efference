@@ -101,7 +101,11 @@ async fn verbs_round_trip_over_the_unix_connector() {
 
     client.turn("hello world").await.unwrap();
     client
-        .approve("toolu_7", &Approval::Redirect("try the other file".into()))
+        .approve(
+            "toolu_7",
+            &Approval::Redirect("try the other file".into()),
+            Some("mcp[claude-code]"),
+        )
         .await
         .unwrap();
     client.interrupt(&Default::default()).await.unwrap();
@@ -109,10 +113,17 @@ async fn verbs_round_trip_over_the_unix_connector() {
     let state = client.state().await.unwrap();
     assert!(state.contains(r#""last_seq":3"#));
 
-    let transcript = client.transcript(Some(12), None).await.unwrap();
-    assert!(
-        transcript.contains("since=12"),
-        "since should reach the daemon: {transcript}"
+    let transcript = client
+        .transcript(TranscriptRead {
+            since: Some(12),
+            me: Some("session[parent]"),
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+    assert_eq!(
+        transcript, "q=since=12&me=session%5Bparent%5D",
+        "since and the reader should reach the daemon"
     );
 
     // The stub saw exactly what the client claims to have sent.
@@ -124,6 +135,7 @@ async fn verbs_round_trip_over_the_unix_connector() {
     assert_eq!(approvals[0].0, "toolu_7");
     assert!(approvals[0].1.contains("redirect"));
     assert!(approvals[0].1.contains("try the other file"));
+    assert!(approvals[0].1.contains(r#""source":"mcp[claude-code]""#));
     assert_eq!(*rec.interrupts.lock().unwrap(), 1);
 
     let _ = std::fs::remove_file(&socket);
@@ -164,7 +176,7 @@ async fn non_2xx_surfaces_the_daemon_error_body() {
 
     // The stub answers /approvals/missing with a 404 + JSON error body.
     let err = client
-        .approve("missing", &Approval::Approve)
+        .approve("missing", &Approval::Approve, None)
         .await
         .unwrap_err();
     let msg = format!("{err}");

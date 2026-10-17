@@ -70,10 +70,13 @@ impl ToolMeta for Approve {
 impl Tool<Control> for Approve {
     type Output = String;
 
-    async fn execute(self, control: Control, _context: RequestContext) -> Result<String> {
+    async fn execute(self, control: Control, context: RequestContext) -> Result<String> {
         match &control.executor {
             Executor::Client(state) => {
                 let client = state.client(self.session.as_deref()).await?;
+                // The decider, as a turn's sender is: the mounting harness from its
+                // clientInfo over MCP, nobody (the operator) from the command line.
+                let source = super::turn::turn_source(None, &context);
                 let call_id = match self.call_id {
                     Some(id) => id,
                     None => super::pending_call_id(&client).await?,
@@ -84,14 +87,16 @@ impl Tool<Control> for Approve {
                     (false, None) => Approval::Approve,
                 };
                 if !self.wait {
-                    client.approve(&call_id, &decision).await?;
+                    client
+                        .approve(&call_id, &decision, source.as_deref())
+                        .await?;
                     return Ok(format!("resolved {call_id}"));
                 }
                 let settled = state
                     .settle_within(
                         &client,
                         self.timeout_s,
-                        client.approve_wait(&call_id, &decision),
+                        client.approve_wait(&call_id, &decision, source.as_deref()),
                     )
                     .await?;
                 Ok(settled.to_text())
@@ -117,7 +122,13 @@ impl Tool<Control> for Approve {
                     (false, Some(message)) => Approval::Redirect(message),
                     (false, None) => Approval::Approve,
                 };
-                if !session.resolve_approval(&crate::log::CallId(call_id.clone()), decision) {
+                // Decided by the calling session, as its turns are sent (docs/tools.md).
+                let source = Some(format!("session[{}]", state.caller));
+                if !session.resolve_approval(
+                    &crate::log::CallId(call_id.clone()),
+                    decision,
+                    source,
+                ) {
                     return Err(anyhow!(
                         "no pending gate {call_id:?} in that session — it may have moved"
                     ));

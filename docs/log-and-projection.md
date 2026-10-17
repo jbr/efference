@@ -70,6 +70,7 @@ enum Telemetry {
     InboxExpired { seq: Seq, shows: usize },      // a shown notification no verdict mentioned, dismissed by the harness (see inbox.md)
     SupervisorSet { supervisor: Option<String> }, // the supervisor pointer set or cleared (see permissions.md)
     Interrupt(InterruptOrigin),                   // an interrupt reached the loop: who sent it, through which control (see control-api.md)
+    GateDecision(GateDecision),                   // a decision on a held call was accepted: the call, the decision, who decided (see control-api.md)
     Consolidation { from: Seq, upto: Seq, context: Seq, tool_bytes: usize, outcome: String, account_bytes: usize },
     Tools { tools: Vec<Value> },                  // the tools[] the session advertises, as sent (below)
 }
@@ -166,6 +167,18 @@ client-asserted labels as `POST /loop/interrupt` received them (`source` spelled
 turn's is, `control` naming the button or key). It is appended before the signal fires, so it
 precedes the `failed: interrupted` stage of the request the signal ends, and it is
 appended when nothing was running too. The `[env]` masker passes both labels.
+
+`GateDecision` records a decision on a held call as `PUT /approvals/:call_id` or the
+in-session approve accepted it: `{call_id, decision, source?}`, where `decision` is the
+`Approval` the loop receives (`"Approve"`, `"Abort"`, `{"Redirect": "<message>"}`,
+`{"ConfigEdit": {change, note}}`) and `source` is the client-asserted decider, spelled as
+a turn's is and absent for the operator. It is appended once the call is known to be the
+pending gate and before the decision reaches the loop, so it precedes the result or the
+redirect's user turn it causes; a call the loop decides without a gate has none. The
+conversation transcript reads who allowed or denied a call from it
+([control-api.md](control-api.md)). It projects to nothing
+(`gate_decisions_project_to_identical_bytes`), and the `[env]` masker passes the
+decider, a redirect's message, and a config edit's change and note.
 
 `Push` records one step of a moment's push (decided, held, escalated, cancelled, or the
 push services' per-device answers). It projects to nothing, like `RequestStage`

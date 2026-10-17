@@ -526,7 +526,7 @@ Resolve the pending approval gate, addressed by the tool call's `tool_use` id
 (`call_id`). The id is a **precondition**, not a lookup: the decision applies
 only if that call is still the pending gate.
 
-- Body: `{ "decision": "approve" | "abort" | "redirect" | "config_edit", … }`
+- Body: `{ "decision": "approve" | "abort" | "redirect" | "config_edit", "source"?: "<string>", … }`
   - `approve` — run the call.
   - `abort` — reject; the turn unwinds.
   - `redirect` — reject; `"message"` is sent to the model as steering text.
@@ -541,6 +541,18 @@ only if that call is still the pending gate.
     check that follows does not park. `abort` makes no further request and is not
     one. A `redirect` counts because its message becomes the next user message and
     the next request reads the cache just as an approval's does.
+  - `source` — who decides, spelled as a turn's `source` is (`web`,
+    `mcp[<clientInfo.name>]`, `session[<id>]`). Client-asserted and unverified, like an
+    interrupt's; absent means the operator's own command line or TUI. The web client
+    sends `web`; the approve tool sends the mounting harness over MCP and the calling
+    session in-session; the TUI and `efference control approve` send none.
+- The host appends each decision it accepts as a `Telemetry::GateDecision` entry —
+  the call id, the decision as the loop receives it, and `source` — once the id is known
+  to be the pending gate and before the decision reaches the loop, so the entry precedes
+  the result or the redirect it causes ([log-and-projection.md](log-and-projection.md)).
+  A `409` records nothing. A call the loop decides without a gate — a fast-path or
+  spotter clear, an autonomous redirect — has no such entry. The conversation transcript
+  reads the decider from it (`GET /transcript`).
 - `200 {"status":"resolved"}`
 - `?wait` — hold until the turn's *next* gate or completion, then return `/state`.
 - `409 gate_moved` — that id is not the pending gate (already resolved, or the
@@ -1251,29 +1263,96 @@ A window may be cut anywhere because references that dangle across the cut are
 
 #### `GET /transcript`
 The same window as `GET /log` — same `since`/`before`/`tail` query, same `400`s —
-rendered as `text/plain` at reading grain (`daemon/transcript.rs`): one block per
+rendered as `text/plain` (`daemon/transcript.rs`) at one of two grains, or one entry
+zoomed. A window never carries a result's body; the zoom and the routes below do.
+
+- `grain` — `conversation` (the default) or `audit`. Any other value is a `400`.
+- `me` — the reader, as a `source` (`session[<id>]`, `mcp[<name>]`) or a session id. A
+  sender or decider that matches it, by its label or by the name inside the label,
+  reads `you`.
+- `seq` — `8`, or `8.2` for the second call of entry 8: the zoom (below). Beside
+  `since`, `before`, `tail` or `grain=audit` it is a `400`, since a zoom names one
+  entry; a malformed handle is a `400`; a seq the log does not hold, or a call index the
+  entry does not have, is `404 not_found` with a message saying which seqs or handles
+  exist.
+
+**The conversation grain** (`daemon/transcript/conversation.rs`) opens with a header
+naming the session and the seqs the window covers — `transcript of child, seq 2–40`, or
+`transcript of child (no entries)` — and a window holding only mechanism says `(nothing
+said or done in this range)`. Every later line opens with the handle it is addressed by, an
+entry's `seq` or a call's `seq.n` when it shared its entry, then two spaces.
+
+- Prose is whole. A user turn is labelled with its sender as a plain name for the
+  reader: `operator` for no source, `operator (web)` for `web`, the id or client name
+  inside `session[…]`, `agent[…]` or `mcp[…]`, `<id> (hand-off)` for `handoff[<id>]`, any
+  other label as written, or `you`. The session's own prose is labelled with its id.
+- A call and its outcome are one line, the parts joined by ` → `: the tool, its command
+  or arguments in backticks, ` — ` and its intent; then `waiting for a decision` while it
+  is the pending gate; the recorded decision (`allowed by <decider>`, `denied by
+  <decider>`, `denied by <decider>: <message>`, `granted by <decider>: <change>`), which
+  a call cleared without a gate does not have; `running` while it has no result; and the
+  result's outcome — `ok` or `error`, its size in lines and images (`no output` when it
+  carried nothing), and what the session saw of it: `it saw all of it`, `it saw none of
+  it` (a dropped result, or a verdict that kept nothing), `it saw k` for the lines a
+  verdict kept, each followed by the verdict's note after a colon, or `it has not seen it
+  yet` while no verdict has decided it. A denied call's line ends at its decision.
+- An `ask` is `asked: <question>`, or `asked (n of m): …` when its turn put more than
+  one, with its reply on the next line under the reply's seq and its replier's name. An
+  ask an interrupt or a malformed call ended reads `→ not answered`.
+- A notification is `note from <source>: <body>`; a summary is `summarized seq a–b`;
+  an archive and a restart's resume are one line each; a record-only turn is `a reply
+  did not complete: <why>`.
+- The mechanism renders to nothing: the preamble, titles, the kickoff turn, spotter
+  verdicts, triage records, config edits, process events, every telemetry entry, and the
+  loop's user turn carrying a redirect's message, which the call's line already shows.
+
+What became of a call is looked up by call id across the whole log, so a call in the
+window shows an outcome that landed after the window ends. A decision, a result or a
+verdict whose call is before the window is a line of its own under the call's handle:
+`8.2  allowed by you`, `8.2  result: ok, 12 lines, it saw 1`, `8.2  verdict: it saw 1 of
+12 lines: <note>`; an `ask`'s reply there reads `8.2  answered by <replier>: <text>`. A
+redirect's message read without its call or its decision is labelled with its decider.
+
+**The audit grain** (`grain=audit`, `daemon/transcript/audit.rs`) is one block per
 entry, `seq tag body`, with a multi-line body indented to the body column. Prose
-(`user`, `assistant`) is whole, except that a `user` entry carrying a `source`
-opens its text with the same `source: ` address the wire uses
-(docs/control-api.md); a `call` is its tool name, every argument but the
-intent, then the intent in full — an argument named like a body (`contents`,
-`content`, `text`, `body`, `old_string`, `new_string`) is cut short, any other at
-a width that keeps a long `command` readable; a `result` is its outcome, size, and
-wire verdict (`raw`, `elided`, `kept k/n lines: note`, or the triage failure), plus
-how many images it carries — never its content. Calls that shared one assistant
-entry are labelled `seq.1`, `seq.2`, … in place of the bare seq, and each of their
-results opens with `for seq.n:`, so the pairing survives the spot and config
-entries that interleave them; a call alone in its entry keeps the bare seq. An `ask`
-call is not a `call` line: it is an `asked` line carrying the question, with
-` (question n of m)` when its completion put more than one, and its result is a
-`user` line with the reply's text (opening with the `source: ` address when the reply
-was sourced) when the result entry carries a `submission_id`, or `result  not
-answered` when it does not (an interrupt, a malformed call). `notify`, `spot`,
-`config`, `process`, `summary`, `preamble` and `title` are one line each; a `triage`
-line appears only when the verdict pinned or dismissed a notification or the triage
-retried; telemetry renders to nothing. Every line's `seq` resolves through the
-routes below, which is where the bodies are. The `transcript` control verb reads
-this; the raw window is for clients that render entries themselves.
+(`user`, `assistant`) is whole, except that a `user` entry carrying a `source` opens its
+text with the same `source: ` address the wire uses; a `call` is its tool name, every
+argument but the intent, then the intent in full — an argument named like a body
+(`contents`, `content`, `text`, `body`, `old_string`, `new_string`) is cut short, any
+other at a width that keeps a long `command` readable; a `result` is its outcome, size,
+and wire verdict (`raw`, `elided`, `kept k/n lines: note`, or the triage failure), plus
+how many images it carries — never its content. Calls that shared one assistant entry
+are labelled `seq.1`, `seq.2`, … in place of the bare seq, and each of their results
+opens with `for seq.n:`, so the pairing survives the spot and config entries that
+interleave them; a call alone in its entry keeps the bare seq. An `ask` call is not a
+`call` line: it is an `asked` line carrying the question, with ` (question n of m)` when
+its completion put more than one, and its result is a `user` line with the reply's text
+(opening with the `source: ` address when the reply was sourced) when the result entry
+carries a `submission_id`, or `result  not answered` when it does not (an interrupt, a
+malformed call). `notify`, `spot`, `config`, `process`, `summary`, `preamble` and `title`
+are one line each; a `triage` line appears only when the verdict pinned or dismissed a
+notification or the triage retried; telemetry renders to nothing.
+
+**The zoom** (`seq=…`, `daemon/transcript/zoom.rs`) is one entry in full, under the
+header `transcript of child, seq 8.2`. A call shows its tool, its intent, its exact input
+as pretty JSON without the intent, and its decision trail: the spotter's verdict
+(`reviewer: cleared it`, `reviewer: held it for a decision` with `held because:` in the
+plain words the status uses, or `reviewer: not asked`), then the gate (`decision:
+pending`, the recorded decision with how it was decided and the seq that records it, or
+`decision: none; the gate did not hold it`). Then its result: the result's seq, outcome,
+line count and bytes; what the session saw (`it saw: lines 1–3, 7 of 120: <note>`, `all
+of it`, `none of it`, or nothing yet), with triage's remark on the intent when it made
+one; the raw body, cut at the same 16 KiB as a window's `content_elided` with a `cut:`
+line saying how much was cut and that `GET /log/:seq` serves the whole result; and each
+image by its `GET /log/:seq/images/:idx` address. An `ask` shows its question and its
+answer. A result's seq zooms into its call; an assistant turn's bare seq shows its prose
+and its one call in full, or lists several by handle; a user turn, a notification or a
+summary is its whole text; any other entry is a one-line description.
+
+The `transcript` control verb reads the audit grain from the command line, and the
+conversation grain over MCP (`me` the mounting client's `mcp[<clientInfo.name>]`) and
+in-session (`me` the calling session). The raw window is for clients that render entries
+themselves.
 
 #### `GET /log/:seq`
 One `LogEntry`, or `404 not_found` past the head of the log. The general form of
