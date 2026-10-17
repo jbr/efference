@@ -666,9 +666,11 @@ it had before the failure and is continuable — which is the case the verb exis
 for. A user-role tail means the model has not answered the last thing on the
 wire; an assistant-role tail means it has.
 
-Re-prompting a *completed* turn is left to the client to not ask for: whether an
-identical wire produces anything but "I'm done" is an open question, and the
-daemon declines rather than spending a round-trip on it.
+A *completed* turn is declined because re-prompting one is a request ending on the
+model's turn, which providers answer with an error, an empty response, or a repeat
+of the answer (measured 2026-10-17, [transport.md](transport.md#every-request-ends-on-a-user-turn)).
+The tail is read from the dialect-neutral projection (`Session::project_turns`), so
+the rule holds for every dialect.
 
 #### `POST /loop/compact`
 Replace a session's earlier history with a summary its own model writes

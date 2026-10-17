@@ -13,7 +13,6 @@
 //! been handed back.
 
 use super::*;
-use crate::project::{ApiBlock, Role};
 
 /// Why a `POST /loop/continue` was declined (docs/control-api.md). The daemon
 /// answers `409 not_continuable` carrying the message; a client renders it and
@@ -154,9 +153,15 @@ impl Session {
     /// The question is about the **wire**, so it is asked of the projection
     /// rather than of the log: record-only entries (an aborted attempt, a failed
     /// request, a `ConfigEdit`) project to nothing and so cannot make a finished
-    /// turn look unfinished, and a `tool_result` tail is a user-role message
-    /// exactly as a submitted turn is. A user-role tail means the model has not
-    /// answered the last thing on the wire; an assistant-role tail means it has.
+    /// turn look unfinished, and a `tool_result` tail is a user-role turn exactly
+    /// as a submitted turn is. A user-role tail means the model has not answered
+    /// the last thing on the wire; an assistant-role tail means it has, and
+    /// re-prompting it is a request ending on the model's turn, which providers
+    /// answer with an error, nothing, or a repeat (docs/transport.md).
+    ///
+    /// It reads the dialect-neutral fold, not one dialect's encoding: the Messages
+    /// encoding drops Responses and Completions assistant turns, so on those
+    /// sessions every tail would read as unanswered.
     fn continuable_tail(&self) -> Option<NotContinuable> {
         // A resumed session's pending batch ends the wire in unanswered `tool_use`
         // blocks, and the continue is what brings it back (docs/resumption.md): the
@@ -164,24 +169,21 @@ impl Session {
         if self.pending_batch().is_some() {
             return None;
         }
-        let messages = self.project_messages();
-        let Some(last) = messages.last() else {
+        let turns = self.project_turns();
+        let Some(last) = turns
+            .iter()
+            .rev()
+            .find(|turn| !matches!(turn, WireTurn::Breakpoint))
+        else {
             return Some(NotContinuable::Empty);
         };
-        match last.role {
-            Role::User => None,
-            Role::Assistant => Some(
-                if last
-                    .content
-                    .iter()
-                    .any(|block| matches!(block, ApiBlock::ToolUse { .. }))
-                {
-                    NotContinuable::Orphaned
-                } else {
-                    NotContinuable::Completed
-                },
-            ),
-        }
+        let WireTurn::Assistant(output) = last else {
+            return None;
+        };
+        Some(match output.tool_calls() {
+            Ok(calls) if calls.is_empty() => NotContinuable::Completed,
+            _ => NotContinuable::Orphaned,
+        })
     }
 
     /// The last live completion when the log ends at a pending batch — calls that never

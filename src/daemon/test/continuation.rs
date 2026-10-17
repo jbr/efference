@@ -88,6 +88,49 @@ fn continuable_tail_is_a_question_about_the_wire() {
     assert!(shared.request_continue().is_ok());
 }
 
+/// A finished turn declines in every dialect. The Messages encoding drops Responses and
+/// Completions assistant turns, so a precondition read from it saw every such tail as
+/// an unanswered user turn and accepted the continue (observed 2026-10-17 on a Codex
+/// session).
+#[test]
+fn a_finished_turn_declines_in_every_dialect() {
+    use crate::log::{
+        AssistantOutput, CompletionsMessage, ResponsesMessageContent, ResponsesOutputItem,
+    };
+    let responses_text = AssistantOutput::Responses(vec![ResponsesOutputItem::Message {
+        id: "msg_1".into(),
+        status: "completed".into(),
+        phase: None,
+        content: vec![ResponsesMessageContent::OutputText {
+            text: "done".into(),
+            annotations: vec![],
+        }],
+    }]);
+    let serde_json::Value::Object(message) =
+        serde_json::json!({ "role": "assistant", "content": "done" })
+    else {
+        unreachable!()
+    };
+    let completions_text = AssistantOutput::Completions(CompletionsMessage::from_map(message));
+    for output in [responses_text, completions_text] {
+        let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+        shared.append(1, user("hello")).unwrap();
+        shared
+            .append(
+                1,
+                Payload::Assistant {
+                    output,
+                    upstream_failure: None,
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            shared.request_continue().unwrap_err().message(),
+            "nothing to continue: the last turn completed"
+        );
+    }
+}
+
 /// Record-only entries project to nothing, so a trajectory that gave up mid-stream
 /// still shows the tail it had before the failure — which is what makes the
 /// stalled session continuable rather than "completed".
