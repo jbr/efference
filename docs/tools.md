@@ -259,20 +259,48 @@ Waiting on another session is a subscription, not a blocking call. A session's
 **status** — what it is doing at a decision point — reaches each subscriber's inbox
 as a notification (docs/inbox.md) with the session's id as `source` and the slot
 `session:<id>`, so a subscriber's pending inbox holds the latest condition rather
-than a pile. The statuses posted are the decision points: **gated** (the held tool,
-its intent, the spotter's reason, the `call_id`, and that `sessions__approve`
-resolves it), **idle** after a turn completed (with the turn's closing prose,
-truncated), **stalled** (docs/transport.md), **parked** (the loop stopped at its cold
-check mid-turn: the cache is believed expired, so continuing pays the context uncached,
-and a compaction summarizes instead; docs/control-api.md), **blocked** (a held pace, or a
-config file a human must repair), and **ended** or **failed** once the runtime has
-returned. The status is read off the loop phase. `running` is observed to detect the
-transitions and never posted; the boot idle is not posted either, nor the return to idle
-of an idle triage that pinned nothing — an idle is posted when a trajectory ended into
-it. Every body says where the target's log
-stands, so the subscriber pulls the transcript from where it last read. The status
-is the current condition, not the child's prose: prose on every child turn would
-grow the parent's cached prefix.
+than a pile. The statuses posted are the decision points: **gated**, **asking**,
+**idle** after a turn completed, **stalled** (docs/transport.md), **parked** (the loop
+stopped at its cold check mid-turn: the cache is believed expired, so continuing pays
+the context uncached; docs/control-api.md), **blocked** (a held pace, or a config file a
+human must repair), and **ended** or **failed** once the runtime has returned. The
+status is read off the loop phase. `running` is observed to detect the transitions and
+never posted; the boot idle is not posted either, nor the return to idle of an idle
+triage that pinned nothing — an idle is posted when a trajectory ended into it. The
+status is the current condition; of the child's prose it carries only the closing
+message of a completed turn, since prose on every child turn would grow the parent's
+cached prefix.
+
+**The body is the status view, rendered for its reader.** The host builds one view per
+status — the `status` state topic (docs/control-api.md, `src/daemon/status/view.rs`) —
+and one renderer prints it (`src/daemon/status/render.rs`). The first line names the
+session, its condition, and what it needs; every later line opens with a label
+(`intent:`, `held because:`, `question:`, `said:`, `cut:`, `next:`), and none relies on
+indentation, since a stream consumer trims leading whitespace. Instants print as
+durations ("3m"), and senders as plain names: `you`, `operator`, or an id. The renderer
+takes the reader's relation and a table of the mount's moves, so the calls it names
+are the mount's; in-session they are `sessions__approve`, `sessions__turn`,
+`sessions__transcript`, `sessions__review_level`, and `sessions__state`, each written with
+its arguments filled in. What each relation reads:
+
+- **Reviewer** — the session a gate is routed to (below, and docs/permissions.md): the
+  held call by tool, command or arguments, and transcript handle (`seq`, or `seq.n` when
+  it shared its entry), its intent, why it was held in plain words, and the moves that
+  decide it — `sessions__approve` with its `abort` and `redirect` outcomes, and
+  `sessions__review_level` with `spotter_human`, which hands the gate to the operator
+  rather than dropping it.
+- **Driver** — a `wake` subscriber, which is the creator or the supervisor: every status
+  with the moves that answer it. A gate it is not routed reads as waiting for a decision
+  from the operator or the named supervisor. A question names its place (`question 2 of
+  3`) and says the next message is its answer. An idle carries the whole closing message
+  up to about 4 KB; past that, a `cut:` line says how much was left out and which
+  `sessions__transcript` call reads it.
+- **Observer** — a subscriber without wake: the same conditions without moves, and an
+  idle's closing message cut to its first line, with a `cut:` line saying how many lines
+  remain.
+
+A notification leaves out the footer a read of the status carries (the model, context
+fill, cost, background processes, and queued turns by sender).
 
 Two kinds of subscription, differing only in whether the notification must wake the
 subscriber (docs/inbox.md — must-wake):

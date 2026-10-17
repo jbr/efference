@@ -595,7 +595,26 @@ level 2 (outside the grants, 62%): needs 1 approved call like it, found none; go
 level 3 (sketch, 99%): needs 2 approved calls like it, found none.
 ```
 
-It states what the model reported rather than a conclusion it never wrote.
+It states what the model reported rather than a conclusion it never wrote. That line is
+addressed to the acting session and the operator's gate, in the rung's own terms. Whoever
+*decides* a held call through a status — a supervising session reading its child's gate,
+docs/tools.md — reads a second phrasing, `jev::plain_reason`, composed beside `decide` from
+the same recorded answers (the axes and the precedent reading on `Spot::axes`), never by
+rewriting the string: the clause for what put the move at its level (the tripped axis, or
+the sketch level by its description), then what the precedent reading said, with no level
+numbers or figures:
+
+```
+its reviewer is unsure this fits the session's scope; no earlier call like it was allowed
+its reviewer rates it serious: hard to undo, or reaching other people; only 1 earlier call like it was allowed, and a call like this needs 2
+it reaches outside the paths this session is granted; no earlier call like it was allowed; it goes further than 2 calls allowed earlier
+it may expose secret material
+```
+
+The status shows a prose-rung reason as written, and a fail-closed verdict as "its reviewer
+could not judge it" (`held_because`, `src/daemon/status/view.rs`). A `Spot` whose relation
+request failed has no precedent reading, and its phrasing names the cause alone. `Spot::reason`
+is unchanged by any of this.
 
 **Every reading is recorded.** `Spot::axes` carries the cold answers (the sketch
 distribution among them) and the precedent reading — candidates asked, how many read
@@ -964,8 +983,10 @@ without eliminating:
 
   **Routing is the dial's, observation is the subscription's.** A session's status reaches its
   subscribers as an inbox notification either way ([inbox.md](inbox.md), `daemon/subscriptions.rs`);
-  what `Supervisor` adds is that a *gate* also reaches the live supervisor with a must-wake and a
-  body naming it as the reviewer, subscribed or not. That is the distinction the position exists
+  what `Supervisor` adds is that a *gate* also reaches the live supervisor with a must-wake and
+  the reviewer's rendering of the status — the held call, why it was held, and the calls that
+  decide it ([tools.md](tools.md)) — subscribed or not. The status view names the same
+  reviewer (`reviewer`: the operator, or the supervisor's id), read from the same resolution. That is the distinction the position exists
   to draw: unsubscribing to stop answering a peer's gates also discarded its completion and stall
   notices, which were wanted. A creator is still subscribed with `wake` on `create`, because
   waking it when a child goes idle so it can continue is a separate use.

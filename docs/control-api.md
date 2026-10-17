@@ -349,11 +349,12 @@ Starting is a lifecycle state beside active and dormant, not a loop phase: no lo
 exists yet. While starting, the session is listed with `status: "starting"` and
 `GET /sessions/:id` answers its row, and its routes are:
 
-- `GET /state` — a smaller snapshot: `last_seq` (`null`) and the three topics a
-  starting session publishes, `verbs`, `queued`, and `starting`. `?wait=settled`
+- `GET /state` — a smaller snapshot: `last_seq` (`null`) and the topics a starting
+  session publishes, `verbs`, `queued`, `starting`, and `status` (its condition
+  `starting`, or `failed_to_start` with the reason, below). `?wait=settled`
   waits through the start and then for the session to settle, under the one cap; a
   failure ends the wait with the starting snapshot carrying it.
-- `GET /events` — those three topics as `state` frames as they move. Once the
+- `GET /events` — those topics as `state` frames as they move. Once the
   session starts, the same connection continues into the session's own stream from
   the request's `since`, whose connect snapshot carries every topic, `starting:
   null` among them. A failure ends the stream after the frame that carries it.
@@ -1056,8 +1057,30 @@ not a topic — it is the log's cursor rather than control state, and sits outsi
       "since": 1754300050000       // absolute Unix millis at which this state began
     }
   },
-  "starting": null                 // always null on a running session; a session still being
+  "starting": null,                // always null on a running session; a session still being
                                    //   prepared publishes it (*A starting session*, above)
+  "status": {                      // where the session stands, as one view (below)
+    "id": "amber-heron",
+    "condition": {                 // tagged by "kind"
+      "kind": "gated",             //   "working" | "gated" | "asking" | "idle" | "stalled"
+                                   //   | "parked" | "blocked" | "starting" | "failed_to_start"
+                                   //   | "ended" | "failed"
+      "call_id": "toolu_…",
+      "tool": "bash",              // the display name (`fs.list`)
+      "summary": "curl -sI https://example.com",  // a bash command, or the arguments
+      "intent": "fetch only the response headers",
+      "handle": "8.2",             // the transcript label: `seq`, or `seq.n` in a shared entry
+      "held_because": "its reviewer is unsure this fits the session's scope; no earlier call like it was allowed",
+      "reviewer": { "kind": "supervisor", "id": "calm-finch" }  // or { "kind": "operator" }
+    },
+    "footer": {                    // each field absent when unknown or empty
+      "model": "anthropic/claude-opus-4",
+      "context_used": 48210, "context_limit": 200000,
+      "cost": { "usd": 0.0421, "unpriced": 0 },
+      "background": [ { "id": 1, "command": "cargo watch -x test", "since": 1754300000000 } ],
+      "queued": [ "session[calm-finch]", null ]  // each queued turn's source; null: the operator
+    }
+  }
 }
 ```
 
@@ -1159,6 +1182,30 @@ a `POST /turns` recovers — nothing a client sends clears this one: a human edi
 the file, fs-watch adopts it, and the topic goes `null` as the loop wakes. A
 supervisor distinguishes it from `stall` on exactly that: `stall` names a
 recovery it can perform, `config_repair` names one it cannot.
+
+**`status` is where the session stands, as one view.** The host builds it from the
+loop phase and the state each condition needs (`src/daemon/status/view.rs`), and the same
+view is what subscription notifications render ([tools.md](tools.md)), so the topic and
+the inbox say the same thing. Per condition it carries:
+
+| `kind` | fields |
+| --- | --- |
+| `working` | `activity`: each open operation, tagged by `kind` — `tool` (`tool`, a bash `command`, `since`), `thinking` (a turn's request, `since`), `triaging` (a triage's request, `since`), `compacting` (`since`), `retrying` (`attempt`, `budget`, `next_at`), `paced` (`until`); empty when nothing is open |
+| `gated` | the held call, as above; `held_because` is the spotter's reason in plain words ([permissions.md](permissions.md)), `reviewer` who decides it |
+| `asking` | `question`, `n`, `of`, and the asking call's `handle` |
+| `idle` | `closing`: the last turn's closing prose (`seq`, `text` up to 4096 bytes, cut on a char boundary, and the whole message's `bytes` and `lines`), absent when the turn ended without prose |
+| `stalled` | `message`, and `held_triage` when a triage holds the results (`POST /loop/continue` retries it) |
+| `parked` | `park`: `{kind: "expired", context_tokens}` or `{kind: "compacted"}` |
+| `blocked` | `block`: `{kind: "pace_held"}` or `{kind: "config_repair", path}` |
+| `starting` | `stage`, `authorizing`, `since`, as the `starting` topic |
+| `failed_to_start` | `reason` |
+| `ended`, `failed` | `failed` carries `error`; both are posted to subscribers once the runtime returns, and a running session never publishes them |
+
+Instants are absolute Unix millis, so the topic changes at a transition rather than on
+a clock; a renderer subtracts them from its own. The footer is the main model, the last
+turn's prompt against the context window, the cost where the provider prices requests,
+the background processes, and each queued turn's `source`. A starting session's view has
+only `queued` in its footer, and is `null` once the session has started.
 
 **`session_identity` names what the session is** — its id and title
 ([session-title.md](session-title.md)), the model it was configured with (the

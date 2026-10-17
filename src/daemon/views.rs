@@ -42,6 +42,7 @@ impl Session {
             Topic::CurrentOperations => self.current_operations_json(),
             // A session exists only once it has started (`starting.rs`).
             Topic::Starting => Value::Null,
+            Topic::Status => self.status_json(),
         }
     }
 

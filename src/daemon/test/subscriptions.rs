@@ -196,8 +196,9 @@ async fn a_childs_gate_wakes_the_parent_and_is_pinned_whatever_the_triage_says()
     let is_gate = |source: &str, body: &str, slot: Option<&str>| {
         source == "child"
             && slot == Some("session:child")
-            && body.starts_with("child is gated on fs.list — locating siblings")
-            && body.contains("call_id toolu_leaf")
+            && body.starts_with("child: waiting for your decision on fs.list")
+            && body.contains("intent: locating siblings")
+            && body.contains("call_id: \"toolu_leaf\"")
     };
     wait_until("the gate reached the parent", || {
         heard(&parent, is_gate).is_some()
@@ -228,9 +229,116 @@ async fn a_childs_gate_wakes_the_parent_and_is_pinned_whatever_the_triage_says()
         heard(&parent, |source, body, slot| {
             source == "child"
                 && slot == Some("session:child")
-                && body.starts_with("child finished its turn and is idle")
+                && body.starts_with("child: idle, its turn is done")
         })
         .is_some()
+    })
+    .await;
+
+    fixture.host.swansong().shut_down().await;
+}
+
+/// A child's gate reaches its supervising creator in the reviewer's form: the held call
+/// by its transcript handle, why it was held in plain words, and the calls that decide
+/// it. The idle after it carries the child's whole closing message, past the length a
+/// push caption keeps.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_supervisor_reads_the_gate_as_its_reviewer_and_the_whole_closing_message() {
+    let fixture = Fixture::new();
+    let parent = fixture.session("parent");
+    let child = fixture.session("child");
+
+    let curl = ToolCall::new(
+        crate::bash::NAME,
+        "toolu_curl",
+        serde_json::json!({
+            "command": "curl -sI https://example.com",
+            "intent": "fetch only the response headers",
+        }),
+    );
+    let issued = child
+        .append(
+            1,
+            Payload::Assistant {
+                output: crate::log::AssistantOutput::from_legacy_messages(
+                    vec![],
+                    vec![],
+                    vec![curl.clone()],
+                ),
+                upstream_failure: None,
+            },
+        )
+        .unwrap();
+    child
+        .append(
+            1,
+            Payload::Spot(crate::log::Spot {
+                call_id: curl.id.clone(),
+                stance: crate::log::Stance::Gate,
+                reason: "level 2 (scope fit, 21%): needs 1 approved call like it, found none."
+                    .into(),
+                origin: crate::log::Origin::Model,
+                model: None,
+                probed_prefix: None,
+                axes: Some(crate::spotter::jev::Axes {
+                    in_scope: 0.21,
+                    precedent: Some(crate::spotter::jev::Precedent {
+                        candidates: 0,
+                        same: 0,
+                        wider: 0,
+                        required: Some(1),
+                        compared: Vec::new(),
+                    }),
+                    ..Default::default()
+                }),
+            }),
+        )
+        .unwrap();
+    let _rx = child.register_pending(&curl, None);
+    let gate = format!(
+        "child: waiting for your decision on bash `curl -sI https://example.com` (seq \
+         {issued})\nintent: fetch only the response headers\nheld because: its reviewer is \
+         unsure this fits the session's scope; no earlier call like it was allowed\ndecide: \
+         sessions__approve(session: \"child\", call_id: \"toolu_curl\") runs it; with abort: \
+         true it is refused and the turn ends; with redirect: \"<message>\" it is refused and \
+         the session goes on under your message\nhand back: sessions__review_level(session: \
+         \"child\", level: \"spotter_human\") hands this session's gates to the operator; \
+         this call stays held and goes to them"
+    );
+    wait_until("the gate reached the parent as its reviewer", || {
+        heard(&parent, |source, body, slot| {
+            source == "child" && slot == Some("session:child") && body == gate
+        })
+        .is_some()
+    })
+    .await;
+
+    assert!(child.resolve_approval(&curl.id, Approval::Approve));
+    let report = format!(
+        "The headers came back.\n\n{}",
+        "Each header is listed here in full, with what it says about the server. ".repeat(8)
+    );
+    let said = child
+        .append(
+            1,
+            Payload::Assistant {
+                output: crate::log::AssistantOutput::from_legacy_messages(
+                    vec![],
+                    vec![ContentBlock::Text(report.clone())],
+                    vec![],
+                ),
+                upstream_failure: None,
+            },
+        )
+        .unwrap();
+    child.going_idle();
+    let idle = format!(
+        "child: idle, its turn is done (seq {said})\nsaid: {}\nnext: sessions__turn(session: \
+         \"child\", text: [\"<message>\"]) sends its next message",
+        report.trim()
+    );
+    wait_until("the idle reached the parent with the whole message", || {
+        heard(&parent, |source, body, _| source == "child" && body == idle).is_some()
     })
     .await;
 
@@ -252,7 +360,7 @@ async fn a_childs_question_wakes_the_parent() {
         heard(&parent, |source, body, slot| {
             source == "child"
                 && slot == Some("session:child")
-                && body.starts_with("child is asking a question")
+                && body.starts_with("child: asking a question")
                 && body.contains("Which branch?")
                 && body.contains("sessions__turn")
         })
@@ -272,7 +380,7 @@ async fn a_childs_question_wakes_the_parent() {
         heard(&parent, |source, body, slot| {
             source == "child"
                 && slot == Some("session:child")
-                && body.starts_with("child finished its turn and is idle")
+                && body.starts_with("child: idle, its turn is done")
         })
         .is_some()
     })
@@ -304,7 +412,7 @@ async fn an_end_is_posted_and_cascades_to_non_detached_children() {
         parent
             .pending_notifications()
             .iter()
-            .any(|n| n.body.starts_with("child ended"))
+            .any(|n| n.body.starts_with("child: ended"))
     })
     .await;
     let pending = parent.pending_notifications();

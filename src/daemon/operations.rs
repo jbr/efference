@@ -31,6 +31,7 @@ use std::sync::{Arc, Weak};
 use serde_json::{Value, json};
 
 use super::Session;
+use super::status::Activity;
 use crate::api::{StageRecorder, StageSink};
 use crate::log::{
     CallId, LogEntry, MadeBy, Payload, RequestOrigin, RequestStage, RequestStageKind, Seq, Summary,
@@ -312,6 +313,43 @@ impl Operations {
             })
             .collect();
         json!({ "requests": requests, "tools": tools, "compaction": compaction })
+    }
+}
+
+impl Operations {
+    /// What is open, as the status names a working loop's activity (`status/view.rs`):
+    /// the running tools, then the turn's and the triage's requests, then a compaction.
+    /// A request of any other origin (the spotter, a title, a keepalive) is the
+    /// harness's, not the session's work, and is left out. `retrying` keeps a turn
+    /// request the transport is retrying; the caller drops it when the retry cell
+    /// already reports the retry with its budget.
+    pub(crate) fn activity(&self, retrying: bool) -> Vec<Activity> {
+        let tools = self.tools.iter().map(|tool| Activity::Tool {
+            tool: crate::mcp::display_name(&tool.tool),
+            command: tool.command.clone(),
+            since: tool.since,
+        });
+        let requests =
+            self.requests
+                .iter()
+                .filter_map(|open| match (open.origin, &open.stage) {
+                    (RequestOrigin::Turn, OpenStage::Retrying { attempt, .. }) => retrying
+                        .then_some(Activity::Retrying {
+                            attempt: *attempt,
+                            budget: None,
+                            next_at: None,
+                        }),
+                    (RequestOrigin::Turn, _) => Some(Activity::Thinking { since: open.since }),
+                    (RequestOrigin::Triage, _) => Some(Activity::Triaging { since: open.since }),
+                    _ => None,
+                });
+        let compaction = match &self.compaction {
+            Some(
+                CompactionState::Waiting { since, .. } | CompactionState::Writing { since, .. },
+            ) => Some(Activity::Compacting { since: *since }),
+            _ => None,
+        };
+        tools.chain(requests).chain(compaction).collect()
     }
 }
 

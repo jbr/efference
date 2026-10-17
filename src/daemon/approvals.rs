@@ -35,6 +35,12 @@ impl Session {
     /// to the human gate, so by the time the gate registers, the reason is already durably in the
     /// log — no side channel needed. The log is the source of truth, here too.
     pub(super) fn latest_spot_reason(&self, call_id: &CallId) -> Option<String> {
+        self.latest_spot(call_id).map(|spot| spot.reason)
+    }
+
+    /// The most recent `Spot` entry on `call_id`: the verdict whose reason the gate
+    /// shows, and whose recorded answers the status phrases (`status/view.rs`).
+    pub(super) fn latest_spot(&self, call_id: &CallId) -> Option<crate::log::Spot> {
         self.log
             .lock()
             .unwrap()
@@ -42,7 +48,7 @@ impl Session {
             .iter()
             .rev()
             .find_map(|e| match &e.payload {
-                Payload::Spot(s) if &s.call_id == call_id => Some(s.reason.clone()),
+                Payload::Spot(s) if &s.call_id == call_id => Some(s.clone()),
                 _ => None,
             })
     }

@@ -203,3 +203,30 @@ async fn a_retry_publishes_without_an_append() {
         "the all-clear publishes the cleared topic"
     );
 }
+
+/// The `status` topic is published like the others: in the startup snapshot, then
+/// whenever the view moves — here a gate opening — with the same bytes `GET /state`
+/// carries under `status`.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_status_republishes_when_it_moves() {
+    let (shared, _turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let mut rx = shared.subscribe_state();
+    tokio::spawn(watch_topics(Arc::clone(&shared)));
+    let first = drain(&mut rx).await;
+    let idle: Value = serde_json::from_str(&first[&Topic::Status].json).unwrap();
+    assert_eq!(idle["condition"]["kind"], "idle");
+
+    shared.set_phase(crate::daemon::LoopPhase::Executing);
+    let call = crate::log::ToolCall::new(
+        "bash",
+        "toolu_1",
+        serde_json::json!({ "command": "ls ~", "intent": "look around" }),
+    );
+    let _rx = shared.register_pending(&call, None);
+    let changed = drain(&mut rx).await;
+    let gated: Value = serde_json::from_str(&changed[&Topic::Status].json).unwrap();
+    assert_eq!(gated["condition"]["kind"], "gated");
+    assert_eq!(gated["condition"]["summary"], "ls ~");
+    let state: Value = serde_json::from_str(&shared.state_json()).unwrap();
+    assert_eq!(state["status"], gated);
+}

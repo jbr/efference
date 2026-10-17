@@ -122,28 +122,6 @@ fn asking_is_a_status_and_a_decision_point() {
     assert!(!shared.is_settled(), "answered, so the loop is mid-turn");
 }
 
-/// The body a subscriber reads gives the question, its place when there are several, and
-/// says a turn answers it.
-#[test]
-fn the_status_body_names_the_question_and_how_to_answer() {
-    let shared = session();
-    let status = |question: &str, n, of| SessionStatus::Asking {
-        question: question.into(),
-        n,
-        of,
-    };
-    let one = shared.status_body("child", &status("Which branch?", 1, 1));
-    assert!(one.starts_with("child is asking a question (with an empty log): Which branch?"));
-    assert!(one.contains("sessions__turn"), "{one}");
-    assert!(
-        !one.contains("of 1"),
-        "a lone question is not numbered: {one}"
-    );
-
-    let many = shared.status_body("child", &status("Which branch?", 2, 3));
-    assert!(many.contains("question 2 of 3"), "{many}");
-}
-
 /// `continue` is declined while a question is pending, with the reason named.
 #[test]
 fn continue_is_declined_while_asking() {

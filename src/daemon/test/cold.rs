@@ -109,11 +109,7 @@ async fn the_cold_check_parks_until_a_person_acts() {
     let state: serde_json::Value = serde_json::from_str(&shared.state_json()).unwrap();
     assert_eq!(state["loop_phase"]["phase"], "cold_parked");
     assert_eq!(state["cold"]["since"], serde_json::json!(since));
-    assert!(
-        shared
-            .status_body("s1", &shared.status())
-            .contains("parked mid-turn")
-    );
+    assert_eq!(state["status"]["condition"]["kind"], "parked");
 
     shared.release_cold(crate::log::ReleasedBy::Turn);
     assert_eq!(

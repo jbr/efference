@@ -142,7 +142,7 @@ async fn supervisor_resolves_when_a_call_is_routed_not_when_the_session_is_creat
 
     let _gate = outliver.register_pending(&leaf(), None);
     wait_until("the gate reached its supervisor", || {
-        heard(&root, |body| body.contains("You are its supervisor"))
+        heard(&root, |body| body.contains("waiting for your decision"))
     })
     .await;
     assert_eq!(outliver.resolved_review_level(), ReviewLevel::Supervisor);
@@ -195,7 +195,9 @@ async fn a_level_change_reroutes_a_pending_gate() {
     child.set_review_level(ReviewLevel::SpotterHuman);
     let _gate = child.register_pending(&leaf(), None);
     wait_until("the creator observed the gate", || {
-        heard(&root, |body| body.contains("child is gated on fs.list"))
+        heard(&root, |body| {
+            body.starts_with("child: waiting for a decision from the operator on fs.list")
+        })
     })
     .await;
 
@@ -211,7 +213,7 @@ async fn a_level_change_reroutes_a_pending_gate() {
 
     wait_until("the held call was re-routed to the creator", || {
         heard(&root, |body| {
-            body.contains("You are its supervisor") && body.contains("toolu_leaf")
+            body.contains("waiting for your decision") && body.contains("toolu_leaf")
         })
     })
     .await;
@@ -244,7 +246,7 @@ async fn the_reviewer_resolves_the_routed_gate_through_approve() {
 
     let gate = child.register_pending(&leaf(), None);
     wait_until("the gate reached its reviewer", || {
-        heard(&root, |body| body.contains("You are its supervisor"))
+        heard(&root, |body| body.contains("waiting for your decision"))
     })
     .await;
 
@@ -281,7 +283,7 @@ async fn an_unsubscribed_creator_still_receives_the_gate_it_reviews() {
 
     let _gate = child.register_pending(&leaf(), None);
     wait_until("the gate reached its reviewer regardless", || {
-        heard(&root, |body| body.contains("You are its supervisor"))
+        heard(&root, |body| body.contains("waiting for your decision"))
     })
     .await;
 

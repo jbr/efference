@@ -10,7 +10,8 @@
 use super::*;
 use crate::log::Telemetry;
 use crate::log::{
-    DeviceDelivery, LogEntry, MomentKind, Payload, PushCancel, PushEvent, PushRecord,
+    AssistantOutput, DeviceDelivery, LogEntry, MomentKind, Payload, PushCancel, PushEvent,
+    PushRecord,
 };
 use std::future::Future;
 use std::sync::Weak;
@@ -214,21 +215,28 @@ pub(super) fn gate_body(
 /// empty turn) — the title already says a turn settled, and repeating it says
 /// nothing twice.
 pub(super) fn settle_body(entries: &[LogEntry]) -> String {
-    let tail = entries.iter().rev().find_map(|e| match &e.payload {
-        Payload::Assistant {
-            output,
-            upstream_failure,
-            ..
-        } => Some((output, upstream_failure)),
-        _ => None,
-    });
-    // A failed tail is an empty body, not a reach further back: an earlier
-    // entry's prose would caption this turn with another one's text.
-    let Some((output, None)) = tail.map(|(output, failure)| (output, failure.as_ref())) else {
+    let Some((_, output)) = closing_output(entries) else {
         return String::new();
     };
     let prose = output.text().join(" ");
     truncate(prose.trim())
+}
+
+/// The entry a settled turn's closing prose is read from, with its `seq`: the last
+/// `Assistant` entry, and only that one. `None` when that entry recorded a failure —
+/// a failed tail is no prose, not a reach further back, since an earlier entry's
+/// prose would caption this turn with another one's text. The push caption above
+/// and the idle status (`status/view.rs`) both read it.
+pub(super) fn closing_output(entries: &[LogEntry]) -> Option<(Seq, &AssistantOutput)> {
+    let (seq, output, failure) = entries.iter().rev().find_map(|e| match &e.payload {
+        Payload::Assistant {
+            output,
+            upstream_failure,
+            ..
+        } => Some((e.seq, output, upstream_failure)),
+        _ => None,
+    })?;
+    failure.is_none().then_some((seq, output))
 }
 
 /// The body of the push an `ask` sends: the question, cut to fit.

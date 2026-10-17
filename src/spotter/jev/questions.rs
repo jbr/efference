@@ -149,8 +149,53 @@ pub(super) struct Decision {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) enum Cause {
     Sketch(Option<f64>),
-    Raised(&'static str, f64),
+    Raised(Axis, f64),
 }
+
+/// A shipping axis that raises a move's level past the sketch's reading.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Axis {
+    DeniedPath,
+    Secrets,
+    WatchFor,
+    OutsideGrants,
+    ScopeFit,
+}
+
+impl Axis {
+    /// The term the rung's own reason names it by ([`Decision::reason`]).
+    fn term(self) -> &'static str {
+        match self {
+            Self::DeniedPath => "a denied path",
+            Self::Secrets => "possible secrets",
+            Self::WatchFor => "a watch-for match",
+            Self::OutsideGrants => "outside the grants",
+            Self::ScopeFit => "scope fit",
+        }
+    }
+
+    /// What the tripped axis says about the move, for whoever decides the gate
+    /// ([`plain_reason`]).
+    fn plain(self) -> &'static str {
+        match self {
+            Self::DeniedPath => "it names a path this session is denied",
+            Self::Secrets => "it could expose secret material",
+            Self::WatchFor => "it may match something the operator asked to watch for",
+            Self::OutsideGrants => "it reaches outside the paths this session is granted",
+            Self::ScopeFit => "its reviewer is unsure this fits the session's scope",
+        }
+    }
+}
+
+/// What the sketch's own level says about a move, for whoever decides the gate,
+/// lowest first — the levels `ask.rs` describes to the model, without their numbers.
+const SKETCH_PLAIN: [&str; LEVELS] = [
+    "its reviewer rates it routine",
+    "its reviewer rates it mild",
+    "its reviewer rates it notable, a move to understand before it runs",
+    "its reviewer rates it serious: hard to undo, or reaching other people",
+    "its reviewer rates it severe: it could expose a credential or destroy data",
+];
 
 /// The move's sketchiness level and what set it.
 pub(super) fn level_of(axes: &Axes) -> (usize, Cause) {
@@ -170,35 +215,35 @@ pub(super) fn level_of(axes: &Axes) -> (usize, Cause) {
         _ => (0, Cause::Sketch(None)),
     };
     // A tripped shipping axis raises the level to at least the one it names.
-    let bumps: [(&'static str, usize, Option<f64>); 5] = [
+    let bumps: [(Axis, usize, Option<f64>); 5] = [
         (
-            "a denied path",
+            Axis::DeniedPath,
             3,
             Some(axes.path_denied).filter(|p| *p > 0.25),
         ),
         (
-            "possible secrets",
+            Axis::Secrets,
             3,
             Some(axes.exposes_secrets).filter(|p| *p > 0.15),
         ),
+        (Axis::WatchFor, 3, axes.watch_for_hit.filter(|p| *p > 0.25)),
         (
-            "a watch-for match",
-            3,
-            axes.watch_for_hit.filter(|p| *p > 0.25),
-        ),
-        (
-            "outside the grants",
+            Axis::OutsideGrants,
             2,
             Some(axes.path_outside).filter(|p| *p > 0.35),
         ),
-        ("scope fit", 2, Some(axes.in_scope).filter(|p| *p <= 0.30)),
+        (
+            Axis::ScopeFit,
+            2,
+            Some(axes.in_scope).filter(|p| *p <= 0.30),
+        ),
     ];
-    for (label, to, figure) in bumps {
+    for (axis, to, figure) in bumps {
         if let Some(figure) = figure
             && to > level
         {
             level = to;
-            cause = Cause::Raised(label, figure);
+            cause = Cause::Raised(axis, figure);
         }
     }
     (level.min(LEVELS - 1), cause)
@@ -269,6 +314,55 @@ pub(super) fn decide(axes: &Axes, precedent: Option<Reading>, probe: bool) -> De
     }
 }
 
+/// Why the decision rung held a move, in plain words for whoever decides the gate
+/// (docs/permissions.md): what put it at its level, then what the session's allowed
+/// calls said. Phrased from the recorded answers — the axes and the precedent
+/// reading `Spot::axes` carries — never from [`Decision::reason`], whose levels and
+/// figures are the rung's own terms. `None` when the answers fold to a clear.
+///
+/// An entry without a precedent reading (the relation request failed) folded as no
+/// precedents, under the requirement its level sets; the history clause is left out,
+/// since there is no reading to report.
+pub fn plain_reason(axes: &Axes) -> Option<String> {
+    if axes.exposes_secrets >= SECRETS_GATE {
+        return Some("it may expose secret material".to_string());
+    }
+    let (level, cause) = level_of(axes);
+    let precedent = axes.precedent.as_ref();
+    // The requirement the fold applied is the recorded one; a different table
+    // since would otherwise re-judge the call it held.
+    let required = precedent.map_or(REQUIRED[level], |p| p.required);
+    let same = precedent.map_or(0, |p| p.same);
+    if required.is_some_and(|need| same >= need) {
+        return None;
+    }
+    let mut clauses = vec![match cause {
+        Cause::Raised(axis, _) => axis.plain().to_string(),
+        Cause::Sketch(_) => SKETCH_PLAIN[level].to_string(),
+    }];
+    match (required, precedent) {
+        (None, _) => clauses.push("no earlier approval clears a call this risky".to_string()),
+        (Some(_), None) => {}
+        (Some(_), Some(p)) if p.same == 0 => {
+            clauses.push("no earlier call like it was allowed".to_string());
+        }
+        (Some(need), Some(p)) => clauses.push(format!(
+            "only {} earlier {} like it {} allowed, and a call like this needs {need}",
+            p.same,
+            plural(p.same, "call"),
+            if p.same == 1 { "was" } else { "were" },
+        )),
+    }
+    if let Some(p) = precedent.filter(|p| p.wider > 0) {
+        clauses.push(format!(
+            "it goes further than {} {} allowed earlier",
+            p.wider,
+            plural(p.wider, "call")
+        ));
+    }
+    Some(clauses.join("; "))
+}
+
 fn pct(p: f64) -> String {
     format!("{:.0}%", p * 100.0)
 }
@@ -300,6 +394,6 @@ fn lead(level: usize, cause: Cause) -> String {
     match cause {
         Cause::Sketch(Some(p)) => format!("level {level} (sketch, {})", pct(p)),
         Cause::Sketch(None) => format!("level {level}"),
-        Cause::Raised(label, p) => format!("level {level} ({label}, {})", pct(p)),
+        Cause::Raised(axis, p) => format!("level {level} ({}, {})", axis.term(), pct(p)),
     }
 }

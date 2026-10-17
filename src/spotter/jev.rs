@@ -46,7 +46,7 @@ mod questions;
 mod relation;
 mod state;
 
-pub use questions::{Axes, Precedent};
+pub use questions::{Axes, Precedent, plain_reason};
 
 /// The decision-model spotter. Holds the [`Endpoint`] rather than a
 /// [`Client`](crate::api::Client): the decisions route is one JSON POST with no

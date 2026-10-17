@@ -20,7 +20,7 @@ use std::collections::VecDeque;
 use std::sync::atomic::AtomicBool;
 
 /// Which part of preparation is running (docs/control-api.md).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum Stage {
     /// Establishing the session's environment: the user-wide `env_hook` (docs/env.md).
@@ -350,18 +350,47 @@ impl Starting {
         )
     }
 
+    /// The `status` topic while starting (docs/control-api.md): the preparation, its
+    /// failure, or a cancellation, which reads as an end; `null` once started, when the
+    /// session's own topic takes over.
+    pub(crate) fn status_view(&self) -> Option<super::status::StatusView> {
+        use super::status::{Condition, Footer, StatusView};
+        let inner = self.inner.lock().unwrap();
+        let condition = match &inner.outcome {
+            None => Condition::Starting {
+                stage: inner.stage,
+                authorizing: inner.authorizing.clone(),
+                since: self.since,
+            },
+            Some(Outcome::Failed(failure)) => Condition::FailedToStart {
+                reason: failure.reason.clone(),
+            },
+            Some(Outcome::Cancelled(_)) => Condition::Ended,
+            Some(Outcome::Started(_)) => return None,
+        };
+        Some(StatusView {
+            id: self.id.clone(),
+            condition,
+            footer: Footer {
+                queued: inner.queue.iter().map(|turn| turn.source.clone()).collect(),
+                ..Footer::default()
+            },
+        })
+    }
+
     /// The topics a starting entry publishes, in [`Topic::ALL`] order.
-    const TOPICS: [Topic; 3] = [Topic::Verbs, Topic::Queued, Topic::Starting];
+    const TOPICS: [Topic; 4] = [Topic::Verbs, Topic::Queued, Topic::Starting, Topic::Status];
 
     fn topic_json(&self, topic: Topic) -> Value {
         match topic {
             Topic::Verbs => self.verbs_json(),
             Topic::Queued => self.queued_json(),
+            Topic::Status => serde_json::to_value(self.status_view()).unwrap_or(Value::Null),
             _ => self.starting_json(),
         }
     }
 
-    /// `GET /state` while starting: `last_seq` (null: no log is open) and the three
+    /// `GET /state` while starting: `last_seq` (null: no log is open) and the four
     /// topics a starting entry publishes. The other topics describe a loop, and are
     /// absent until the session's own stream delivers them.
     pub(crate) fn state_json(&self) -> String {
@@ -386,7 +415,7 @@ enum Leg {
         include: Include,
         since: u64,
         /// What this connection last sent per topic, in [`Starting::TOPICS`] order.
-        sent: [Option<String>; 3],
+        sent: [Option<String>; 4],
         ready: VecDeque<FrameEvent>,
     },
     Session(Pin<Box<dyn Stream<Item = FrameEvent> + Send + Sync + 'static>>),
@@ -394,7 +423,7 @@ enum Leg {
 }
 
 /// The `/events` stream of a starting session (docs/control-api.md). Level-triggered
-/// frames for `verbs`, `queued`, and `starting` (those of them the connection
+/// frames for `verbs`, `queued`, `starting`, and `status` (those of them the connection
 /// subscribed to) as they move; then, once the session has started, the session's own
 /// stream from the connection's `since`, whose connect snapshot carries `starting:
 /// null`. A failure or an archive ends the stream after the frames describing it.

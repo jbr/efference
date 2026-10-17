@@ -3,6 +3,7 @@ use crate::log::Stance;
 use questions::{Reading, decide, level_of};
 use serde_json::json;
 
+mod plain;
 mod stages;
 
 /// Parse a config from TOML for a test that needs one as an *input* — the

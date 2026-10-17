@@ -175,6 +175,13 @@ async fn a_failed_preparation_hands_back_the_turns_sent_while_starting() {
     let withdrawn = &state["starting"]["failure"]["withdrawn"];
     assert_eq!(withdrawn[0]["text"], "do the thing", "{state}");
     assert_eq!(state["queued"], serde_json::json!([]));
+    assert_eq!(state["status"]["condition"]["kind"], "failed_to_start");
+    assert!(
+        state["status"]["condition"]["reason"]
+            .as_str()
+            .is_some_and(|reason| reason.contains("exited 7")),
+        "{state}"
+    );
 
     let frames = frames_to_end(&mut events).await;
     let last = frames.last().expect("frames before the end");

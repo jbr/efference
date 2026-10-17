@@ -163,6 +163,12 @@ pub(crate) enum Topic {
     /// failure with the turns it hands back. `null` once the session has started, which
     /// is every value a running session publishes.
     Starting,
+    /// Where the session stands, as one view (`status/view.rs`, docs/control-api.md):
+    /// its condition with what that condition needs — the held call and why it was
+    /// held, the question, the closing message, what a working loop is doing — and a
+    /// footer of model, context, cost, background processes, and queued turns. What
+    /// subscription notifications render (docs/tools.md).
+    Status,
 }
 
 impl Topic {
@@ -171,7 +177,7 @@ impl Topic {
     /// walking it, so a topic added here reaches both surfaces or neither — which is
     /// what keeps `GET /state` equal to the fold of every state frame
     /// (docs/control-api.md).
-    pub(crate) const ALL: [Topic; 24] = [
+    pub(crate) const ALL: [Topic; 25] = [
         Self::Gate,
         Self::Ask,
         Self::Processes,
@@ -196,6 +202,7 @@ impl Topic {
         Self::SessionIdentity,
         Self::CurrentOperations,
         Self::Starting,
+        Self::Status,
     ];
 
     /// The topic named by a `?include=state:<topic>` token, or `None` if there is no such
@@ -232,6 +239,7 @@ impl Topic {
             Self::SessionIdentity => "session_identity",
             Self::CurrentOperations => "current_operations",
             Self::Starting => "starting",
+            Self::Status => "status",
         }
     }
 }

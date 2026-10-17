@@ -1,12 +1,22 @@
-//! What a session is doing, as another session hears it (docs/tools.md).
+//! Where a session stands (docs/control-api.md, docs/tools.md).
 //!
-//! A subscriber to a session receives its *status* — a current condition, never
-//! an event stream — as an inbox notification on the slot `session:<id>`. The
-//! statuses a subscriber hears are the decision points: a gate, a question, a turn
-//! completing into idle, a stall, a park or a block, and the end. `Running` is
-//! observed to detect the transitions but never posted.
+//! A session's *status* is a current condition, never an event stream. The host reads
+//! it off the loop phase ([`Session::status`]), builds it into one view with what each
+//! condition needs (`view.rs`), and prints that view with one renderer (`render.rs`).
+//! The view is the `status` state topic; the rendering is what a subscriber's inbox
+//! receives on the slot `session:<id>`. The statuses a subscriber hears are the
+//! decision points: a gate, a question, a turn completing into idle, a stall, a park or
+//! a block, and the end. `Running` is observed to detect the transitions but never
+//! posted.
 
 use super::*;
+
+mod moves;
+mod render;
+mod view;
+
+pub(crate) use render::{Reader, Relation, render};
+pub(crate) use view::{Activity, Condition, Footer, Reviewer, StatusView};
 
 /// One session's condition at a decision point, as read off its control state.
 /// `Ended` and `Failed` are the host's to report once the runtime has returned;
@@ -113,116 +123,6 @@ impl Session {
     /// idle followed a turn (`subscriptions.rs`).
     pub(crate) fn turns_ended(&self) -> u64 {
         self.turns_ended.load(Ordering::SeqCst)
-    }
-
-    /// The notification body a subscriber reads for `status` (docs/tools.md):
-    /// what the session is doing, the call to reach for, and the position in its
-    /// log so the subscriber can pull the transcript from where it last read.
-    pub(crate) fn status_body(&self, id: &str, status: &SessionStatus) -> String {
-        let at = match self.last_committed_seq() {
-            Some(seq) => format!("at seq {seq}"),
-            None => "with an empty log".to_string(),
-        };
-        match status {
-            SessionStatus::Running => format!("{id} is running ({at})."),
-            SessionStatus::Idle => {
-                let said = super::push::settle_body(self.log.lock().unwrap().entries());
-                let mut body = format!(
-                    "{id} finished its turn and is idle {at}; sessions__transcript shows what \
-                     it did."
-                );
-                if !said.is_empty() {
-                    body.push_str(&format!(" It said: {said}"));
-                }
-                body
-            }
-            SessionStatus::Gated {
-                call_id,
-                name,
-                intent,
-                reason,
-            } => {
-                let display = crate::mcp::display_name(name);
-                let mut body = format!("{id} is gated on {display}");
-                if let Some(intent) = intent {
-                    body.push_str(&format!(" — {intent}"));
-                }
-                body.push_str(&format!(" ({at})."));
-                if let Some(reason) = reason {
-                    body.push_str(&format!(" Held because: {}", reason.trim_end()));
-                    if !reason.trim_end().ends_with('.') {
-                        body.push('.');
-                    }
-                }
-                body.push_str(&format!(
-                    " Nothing runs until call_id {call_id} is resolved with sessions__approve \
-                     (approve, abort, or redirect); sessions__state shows the held call."
-                ));
-                body
-            }
-            SessionStatus::Asking { question, n, of } => {
-                let count = if *of > 1 {
-                    format!(" (question {n} of {of})")
-                } else {
-                    String::new()
-                };
-                format!(
-                    "{id} is asking a question{count} ({at}): {}\nNothing runs until it is \
-                     answered; a turn submitted with sessions__turn is the reply.",
-                    question.trim_end()
-                )
-            }
-            SessionStatus::Stalled { message } => format!("{id} stalled {at}: {message}"),
-            SessionStatus::Parked {
-                reason: super::cold::ParkReason::Compacted,
-            } => format!(
-                "{id} is parked mid-turn ({at}): its history was summarized while it waited \
-                 on a cold cache. A sessions__turn or a continue resumes it."
-            ),
-            SessionStatus::Parked {
-                reason: super::cold::ParkReason::Expired { context_tokens, .. },
-            } => {
-                let cost = match context_tokens {
-                    Some(tokens) => format!("~{tokens} tokens uncached"),
-                    None => "the whole context uncached".to_string(),
-                };
-                format!(
-                    "{id} is parked mid-turn ({at}): its prompt cache is believed expired, so \
-                     continuing reads {cost}. Nothing runs until a sessions__turn, a continue or a decision \
-                     releases it; a compaction summarizes the history instead."
-                )
-            }
-            SessionStatus::Blocked {
-                reason: BlockedReason::PaceHeld,
-            } => format!(
-                "{id} is held by its operator's pace ({at}). Nothing runs until the hold is \
-                 released or a turn is sent."
-            ),
-            SessionStatus::Blocked { .. } => format!(
-                "{id} is blocked ({at}): its config file does not parse and could not be \
-                 restored. Nothing runs until a human repairs the file; sessions__state names it."
-            ),
-            SessionStatus::Ended => format!("{id} ended ({at}); its log stays on disk."),
-            SessionStatus::Failed { error } => {
-                format!("{id} ended with an error ({at}): {error}")
-            }
-        }
-    }
-
-    /// The same status body, addressed to the session the gate is *routed* to under
-    /// the `supervisor` review position (docs/permissions.md). The added sentence names
-    /// the recipient as the reviewer and names the dial that hands the child back to
-    /// the operator, so declining is a move the reader can make rather than a silence.
-    pub(crate) fn supervisor_gate_body(&self, id: &str, status: &SessionStatus) -> String {
-        let mut body = self.status_body(id, status);
-        if matches!(status, SessionStatus::Gated { .. }) {
-            body.push_str(&format!(
-                " You are its supervisor: answer with sessions__approve, or hand \
-                 {id} back to the operator with sessions__review_level (spotter_human), \
-                 which re-routes this gate rather than dropping it."
-            ));
-        }
-        body
     }
 }
 

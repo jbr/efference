@@ -181,7 +181,7 @@ async fn a_set_supervisor_receives_the_gate_approves_it_and_hears_the_idle() {
     let gate = a.register_pending(&leaf(), None);
     wait_until("the gate reached b", || {
         heard(&b, "a", |body| {
-            body.contains("You are its supervisor") && body.contains("toolu_leaf")
+            body.contains("waiting for your decision") && body.contains("toolu_leaf")
         })
     })
     .await;
@@ -195,7 +195,7 @@ async fn a_set_supervisor_receives_the_gate_approves_it_and_hears_the_idle() {
 
     wait_until("a's idle reached b", || {
         heard(&b, "a", |body| {
-            body.starts_with("a finished its turn and is idle")
+            body.starts_with("a: idle, its turn is done")
         })
     })
     .await;
@@ -308,7 +308,7 @@ async fn clearing_or_moving_the_pointer_reroutes_a_held_call() {
     let _gate = a.register_pending(&leaf(), None);
     wait_until("the gate reached b", || {
         heard(&fixture.session("b"), "a", |body| {
-            body.contains("You are its supervisor")
+            body.contains("waiting for your decision")
         })
     })
     .await;
@@ -317,7 +317,7 @@ async fn clearing_or_moving_the_pointer_reroutes_a_held_call() {
     fixture.host.set_supervisor("a", Some("c".into())).unwrap();
     wait_until("the held call was re-routed to c", || {
         heard(&c, "a", |body| {
-            body.contains("You are its supervisor") && body.contains("toolu_leaf")
+            body.contains("waiting for your decision") && body.contains("toolu_leaf")
         })
     })
     .await;
@@ -381,7 +381,7 @@ async fn a_child_with_no_setting_answers_to_its_creator() {
     let gate = kid.register_pending(&leaf(), None);
     wait_until("the gate reached the creator", || {
         heard(&fixture.session("a"), "kid", |body| {
-            body.contains("You are its supervisor")
+            body.contains("waiting for your decision")
         })
     })
     .await;

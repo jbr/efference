@@ -158,7 +158,7 @@ fn lines(
                     None => line("call", call_line(call)),
                 };
                 if several {
-                    let label = format!("{}.{}", entry.seq, i + 1);
+                    let label = call_label(entry.seq, i, calls.len());
                     siblings.insert(call.id.clone(), label.clone());
                     l.label = Some(label);
                 }
@@ -287,6 +287,30 @@ fn lines(
     }
 }
 
+/// A call's handle in the transcript: the bare `seq` of the assistant entry that
+/// issued it when it was alone there, `seq.n` (1-based) when it shared the entry.
+/// The status names a held call by the same handle (`status/view.rs`).
+pub(crate) fn call_label(seq: crate::log::Seq, index: usize, calls: usize) -> String {
+    if calls > 1 {
+        format!("{seq}.{}", index + 1)
+    } else {
+        seq.to_string()
+    }
+}
+
+/// The handle of call `call_id`, read off the latest assistant entry that issued it;
+/// `None` when no entry in `entries` did.
+pub(crate) fn call_handle(entries: &[LogEntry], call_id: &str) -> Option<String> {
+    entries.iter().rev().find_map(|entry| {
+        let Payload::Assistant { output, .. } = &entry.payload else {
+            return None;
+        };
+        let (_, calls) = assistant(output);
+        let index = calls.iter().position(|call| call.id.0 == call_id)?;
+        Some(call_label(entry.seq, index, calls.len()))
+    })
+}
+
 /// An assistant turn's text blocks and its calls, in provider order within each.
 fn assistant(output: &AssistantOutput) -> (Vec<String>, Vec<ToolCall>) {
     let mut prose = Vec::new();
@@ -353,6 +377,31 @@ fn assistant(output: &AssistantOutput) -> (Vec<String>, Vec<ToolCall>) {
 /// in full, since it is the one line the model wrote for a reader.
 fn call_line(call: &ToolCall) -> String {
     let mut line = call.name.clone();
+    line.push_str(&arguments(call));
+    if let Some(intent) = call.intent() {
+        let _ = write!(line, "  intent: {intent}");
+    }
+    line
+}
+
+/// What a held call does, in one line for its status (`status/view.rs`): a `bash`
+/// call's command, any other call's arguments as [`call_line`] writes them. `None`
+/// for a call with nothing but its intent.
+pub(crate) fn call_summary(call: &ToolCall) -> Option<String> {
+    if call.name == crate::bash::NAME
+        && let Some(command) = call.input.get("command").and_then(Value::as_str)
+    {
+        return Some(clip(command, ARG_WIDE));
+    }
+    let arguments = arguments(call);
+    let arguments = arguments.trim_start();
+    (!arguments.is_empty()).then(|| arguments.to_string())
+}
+
+/// ` key=value key=value` — every argument but the intent, each with a leading
+/// space, cut as [`call_line`] describes.
+fn arguments(call: &ToolCall) -> String {
+    let mut line = String::new();
     match &call.input {
         Value::Object(map) => {
             for (key, value) in map {
@@ -374,9 +423,6 @@ fn call_line(call: &ToolCall) -> String {
         other => {
             let _ = write!(line, " {}", clip(&other.to_string(), ARG_WIDE));
         }
-    }
-    if let Some(intent) = call.intent() {
-        let _ = write!(line, "  intent: {intent}");
     }
     line
 }
@@ -427,7 +473,9 @@ fn clip(s: &str, cap: usize) -> String {
     }
 }
 
-fn size(bytes: usize) -> String {
+/// `512 B`, `2.1 KB`, `1.3 MB`: a body's size as the transcript and the status
+/// state it.
+pub(crate) fn size(bytes: usize) -> String {
     if bytes < 1024 {
         format!("{bytes} B")
     } else if bytes < 1024 * 1024 {

@@ -10,7 +10,7 @@
 //! change and posts it to the subscribers when it moves.
 
 use super::host::Host;
-use super::status::{SessionStatus, status_slot};
+use super::status::{Condition, Reader, Relation, Reviewer, SessionStatus, render, status_slot};
 use super::*;
 
 /// One subscriber's terms: whether the status must wake it (docs/inbox.md).
@@ -71,18 +71,30 @@ impl Host {
 
     /// Post `status` of `id` to each subscriber's inbox, on the session's slot so
     /// a pending status is superseded rather than stacked (docs/inbox.md). A
-    /// subscriber that has ended is skipped.
+    /// subscriber that has ended is skipped. Each body is the one status view rendered
+    /// for its reader (`status/render.rs`): a `wake` subscriber reads it as a driver,
+    /// any other as an observer.
     ///
     /// A gate is the one status that is more than observation. **Who answers it is the
     /// review-level dial's to say, not the subscription's** (docs/permissions.md): a
     /// session whose position resolves to `supervisor` sends the call it is holding to
-    /// its supervisor, subscribed or not, with the wake a held call warrants and a body
-    /// that says the recipient is the one to resolve it. That reviewer is skipped in
-    /// the subscriber loop so the two posts do not race on one slot. Every other
-    /// status, and every other position, posts to subscribers alone.
+    /// its supervisor, subscribed or not, with the wake a held call warrants and the
+    /// body a reviewer reads, which names the moves that decide it. That reviewer is
+    /// skipped in the subscriber loop so the two posts do not race on one slot. Every
+    /// other status, and every other position, posts to subscribers alone.
     pub(super) fn post_status(&self, id: &str, session: &Session, status: &SessionStatus) {
-        let body = session.status_body(id, status);
-        let reviewer = self.gate_reviewer(session, status);
+        let view = session.status_view(id, status);
+        // The view read the routing once; the post follows that same reading.
+        let reviewer = match &view.condition {
+            Condition::Gated(held) => match &held.reviewer {
+                Reviewer::Supervisor { id } => Some(id.clone()),
+                Reviewer::Operator => None,
+            },
+            _ => None,
+        };
+        let now = crate::log::Timestamp::now().0;
+        let body =
+            |relation, reader: &str| render(&view, &Reader::notification(relation, reader), now);
         for (subscriber, terms) in self.subscribers(id) {
             if Some(&subscriber) == reviewer.as_ref() {
                 continue;
@@ -91,9 +103,11 @@ impl Host {
                 continue;
             };
             if terms.wake {
-                inbox.notify_wake(id.to_string(), body.clone(), Some(status_slot(id)));
+                let body = body(Relation::Driver, &subscriber);
+                inbox.notify_wake(id.to_string(), body, Some(status_slot(id)));
             } else {
-                inbox.notify(id.to_string(), body.clone(), Some(status_slot(id)));
+                let body = body(Relation::Observer, &subscriber);
+                inbox.notify(id.to_string(), body, Some(status_slot(id)));
             }
         }
         if let Some(reviewer) = reviewer
@@ -101,23 +115,10 @@ impl Host {
         {
             inbox.notify_wake(
                 id.to_string(),
-                session.supervisor_gate_body(id, status),
+                body(Relation::Reviewer, &reviewer),
                 Some(status_slot(id)),
             );
         }
-    }
-
-    /// The session this status is *routed to*, as against merely reported: the live
-    /// supervisor of a session holding a gate whose position resolves to `supervisor`
-    /// (docs/permissions.md). `None` for every other status and position — including a
-    /// session whose supervisor has ended or was cleared, whose gate the operator answers.
-    fn gate_reviewer(&self, session: &Session, status: &SessionStatus) -> Option<String> {
-        if !matches!(status, SessionStatus::Gated { .. })
-            || session.resolved_review_level() != crate::policy::ReviewLevel::Supervisor
-        {
-            return None;
-        }
-        session.supervisor()
     }
 
     /// Forget every subscription `id` holds on other sessions, and release its
