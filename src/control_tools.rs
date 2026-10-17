@@ -10,8 +10,8 @@
 //! - [`cli`], the clap `Subcommand` behind `efference control <verb>`: the agent verbs
 //!   plus the operator's route verbs.
 //!
-//! mcplease's `tools!` declares a module for each tool it lists, so each set's
-//! directory holds a one-line module per tool that re-exports the shared struct. A
+//! Each set names the shared structs in scope (`tools!(…, modules = false, …)`), since
+//! mcplease's default form declares a module per tool and a module has one parent. A
 //! set is an allow-list: the stdio mount serves its whole enum, and mcplease has no
 //! way to hide a tool from it.
 //!

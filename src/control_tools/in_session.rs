@@ -1,17 +1,18 @@
 //! The in-session set: the verbs a hosted session's toolbox mounts under
-//! `agents__<verb>` (docs/tools.md). Each module re-exports the shared tool struct.
+//! `agents__<verb>` (docs/tools.md), over the shared tool structs.
 
-use super::Control;
+use super::{Archive, Control, Create, Decide, HandOff, Interrupt, Message, Status, Transcript};
 
 mcplease::tools!(
     cli = false,
+    modules = false,
     Control,
-    (Create, create, "create"),
-    (Message, message, "message"),
-    (Decide, decide, "decide"),
-    (Interrupt, interrupt, "interrupt"),
-    (Archive, archive, "archive"),
-    (Status, status, "status"),
-    (Transcript, transcript, "transcript"),
-    (HandOff, hand_off, "hand_off")
+    (Create, "create"),
+    (Message, "message"),
+    (Decide, "decide"),
+    (Interrupt, "interrupt"),
+    (Archive, "archive"),
+    (Status, "status"),
+    (Transcript, "transcript"),
+    (HandOff, "hand_off")
 );

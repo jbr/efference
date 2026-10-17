@@ -1,20 +1,23 @@
 //! The `efference mcp` set (docs/operating.md): the agent verbs, served over
-//! stdin/stdout, and the server instructions a mounting harness is given. Each module
-//! re-exports the shared tool struct, but for `status`, whose MCP struct adds `follow`.
+//! stdin/stdout, and the server instructions a mounting harness is given. The tools are
+//! the shared structs, but for `status`, whose MCP struct adds `follow`.
 
-use super::Control;
+use super::{
+    Archive, Control, Create, Decide, Interrupt, McpStatus as Status, Message, Transcript, Wait,
+};
 
 mcplease::tools!(
     cli = false,
+    modules = false,
     Control,
-    (Create, create, "create"),
-    (Message, message, "message"),
-    (Decide, decide, "decide"),
-    (Interrupt, interrupt, "interrupt"),
-    (Archive, archive, "archive"),
-    (Status, status, "status"),
-    (Transcript, transcript, "transcript"),
-    (Wait, wait, "wait")
+    (Create, "create"),
+    (Message, "message"),
+    (Decide, "decide"),
+    (Interrupt, "interrupt"),
+    (Archive, "archive"),
+    (Status, "status"),
+    (Transcript, "transcript"),
+    (Wait, "wait")
 );
 
 /// What a mounting harness is told about this server (docs/operating.md): what the
