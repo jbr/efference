@@ -70,7 +70,10 @@ without the caller saying so (docs/control-api.md).
 The three waiting tools — `settle`, and `turn`/`approve` with `wait` — take a `timeout_s`,
 because MCP clients time tool calls out. On expiry they answer with the current state
 marked `settled: false` rather than with an error, so a caller never has to tell "still
-working" from "the socket broke".
+working" from "the socket broke". The host caps each wait at 300 s and marks a capped
+answer `efference-settled: false`; the client re-polls it until the session settles or
+`timeout_s` runs out, measured from the start of the call. An omitted `timeout_s` has no
+bound.
 
 ### The control tools inside a session
 
@@ -706,9 +709,10 @@ turn would land at once or wait in the queue.
 
 Long-poll `GET /state?wait=settled` (or `efference control settle`) blocks until the
 phase is one that waits on someone — `gated`, `asking`, `cold_parked`, `blocked` — or
-`idle` with nothing queued, capped server-side, and is the shape a supervising process
-should loop on. It does not return mid-turn: not between a result and its triage, not
-during a timed delay.
+`idle` with nothing queued, capped server-side (a capped answer carries
+`efference-settled: false`, and the control tools re-poll it until their own `timeout_s`),
+and is the shape a supervising process should loop on. It does not return mid-turn: not
+between a result and its triage, not during a timed delay.
 
 The inverse condition is a session that looks entirely healthy and is quietly paying full
 price for every turn: `usage.cold_streak` counts consecutive main-loop requests that read

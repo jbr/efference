@@ -841,8 +841,12 @@ to repair) — then return the snapshot, whose `loop_phase` names which. A reque
 batch of calls, and a timed delay (`requesting`, `executing`, `delayed`) are not
 decision points, an idle triage included. A compaction runs beside the loop
 (`current_operations`) and does not hold the wait. Returns immediately if already
-settled; capped server-side at **300 s** (on timeout it returns current state
-and the client re-polls). The same predicate backs the `?wait` flags on
+settled; capped server-side at **300 s**. The answer carries an
+`efference-settled` header: `true` when the session settled, `false` when the cap
+expired and the body is only the state at that moment, which the client re-polls. A
+session still starting answers `true` when its start failed, since the failure is where
+it stops. The body is `/state`'s either way, and a response without the header is read
+as settled. The same predicate, and the same header, back the `?wait` flags on
 `/turns` and `/approvals`. A `wait` with a missing or unknown predicate is a
 `400`, never answered immediately — a client that asked to wait must not be
 told the present is what it waited for.

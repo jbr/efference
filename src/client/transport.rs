@@ -5,6 +5,14 @@ use super::*;
 
 use trillium_client::Method;
 
+/// What a wait route answered (docs/control-api.md).
+pub struct Waited {
+    /// The `/state` body.
+    pub body: String,
+    /// `false` when the host's cap expired and `body` is only where the session was then.
+    pub settled: bool,
+}
+
 impl Client {
     /// Send `method` to `path` exactly as given — no prefix, no version — with a
     /// JSON body when there is one, and hand back the finished conn.
@@ -36,6 +44,25 @@ impl Client {
     ) -> Result<String> {
         let conn = self.exchange(method, path, body).await?;
         read_2xx(conn, method, path).await
+    }
+
+    /// A wait route's answer: the `/state` body and whether the host says the session
+    /// settled or its cap expired (`efference-settled`, docs/control-api.md). A response
+    /// without the header counts as settled, as a host that predates it always meant.
+    pub(super) async fn wait_at(
+        &self,
+        method: Method,
+        path: &str,
+        body: Option<String>,
+    ) -> Result<Waited> {
+        let path = self.versioned(path);
+        let conn = self.exchange(method, &path, body).await?;
+        let settled = conn
+            .response_headers()
+            .get_str(crate::daemon::SETTLED_HEADER)
+            .is_none_or(|value| value != "false");
+        let body = read_2xx(conn, method, &path).await?;
+        Ok(Waited { body, settled })
     }
 
     /// GET a session route under this client's prefix and `/v1`.

@@ -27,7 +27,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use crate::client::Client;
+use crate::client::{Client, Waited};
 use crate::log::ToolCall;
 use anyhow::{Result, anyhow};
 
@@ -714,21 +714,32 @@ impl ClientExecutor {
         Ok(Client::new(&self.host))
     }
 
-    /// Await a wait that answers with a `/state` body, bounded by `timeout_s`.
+    /// Run a waiting call and answer with its `/state`, bounded by `timeout_s` measured from
+    /// the start of the call. `first` is the acting request (a turn, an approval, or a bare
+    /// settle). The host caps each wait and says so (docs/control-api.md), so a capped
+    /// answer is followed by fresh settle polls until one is settled or the deadline passes;
+    /// an omitted `timeout_s` has no deadline (docs/operating.md).
     async fn settle_within<F>(
         &self,
         client: &Client,
         timeout_s: Option<u64>,
-        wait: F,
+        first: F,
     ) -> Result<StateResult>
     where
-        F: Future<Output = Result<String>>,
+        F: Future<Output = Result<Waited>>,
     {
+        let wait = async {
+            let mut answer = first.await?;
+            while !answer.settled {
+                answer = client.settle().await?;
+            }
+            StateResult::settled(&answer.body)
+        };
         let Some(seconds) = timeout_s else {
-            return StateResult::settled(&wait.await?);
+            return wait.await;
         };
         match tokio::time::timeout(Duration::from_secs(seconds), wait).await {
-            Ok(body) => StateResult::settled(&body?),
+            Ok(result) => result,
             Err(_) => StateResult::unsettled(&client.state().await?),
         }
     }

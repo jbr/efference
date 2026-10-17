@@ -389,3 +389,97 @@ fn create_advertises_worktree_defaulting_off() {
         serde_json::from_value(serde_json::json!({"worktree": true})).unwrap();
     assert!(create.worktree);
 }
+
+/// A state body with a phase marker, so a test can tell which answer it holds.
+const STATE_BODY: &str = r#"{"loop_phase":{"phase":"requesting"}}"#;
+
+/// A client executor over an in-memory host whose waits answer `efference-settled`
+/// from `header(n)`, `n` counting the wait requests so far (`None` sends no header),
+/// plus the counter. Reads without `wait` answer the same body, unmarked.
+fn waiting_executor(
+    header: fn(usize) -> Option<&'static str>,
+) -> (ClientExecutor, Client, Arc<std::sync::atomic::AtomicUsize>) {
+    let waits = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let counted = Arc::clone(&waits);
+    let handler = move |conn: trillium::Conn| {
+        let counted = Arc::clone(&counted);
+        async move {
+            let mut conn = conn.with_status(200).with_body(STATE_BODY);
+            if conn.querystring().contains("wait") {
+                let n = counted.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                if let Some(value) = header(n) {
+                    if value == "false" {
+                        // A capped wait is a long one on a real host; the pause also
+                        // lets the caller's deadline fire between polls.
+                        tokio::time::sleep(Duration::from_millis(50)).await;
+                    }
+                    conn = conn.with_response_header("efference-settled", value);
+                }
+            }
+            conn.halt()
+        }
+    };
+    let client = Client::with_connector(trillium_testing::ServerConnector::new(handler));
+    let executor = ClientExecutor {
+        host: std::path::PathBuf::from(".efference/host.sock"),
+        fallback: Arc::new(std::sync::Mutex::new(Fallback::Client(client.clone()))),
+    };
+    (executor, client, waits)
+}
+
+fn settled_of(result: &StateResult) -> Option<bool> {
+    serde_json::to_value(result).unwrap()["settled"].as_bool()
+}
+
+/// A capped answer is polled again; the call ends on the first settled one.
+#[tokio::test]
+async fn capped_answers_are_repolled_until_settled() {
+    let (executor, client, waits) =
+        waiting_executor(|n| Some(if n < 2 { "false" } else { "true" }));
+    let result = executor
+        .settle_within(&client, None, client.settle())
+        .await
+        .unwrap();
+    assert_eq!(settled_of(&result), Some(true));
+    assert_eq!(waits.load(std::sync::atomic::Ordering::SeqCst), 3);
+}
+
+/// Every answer capped, and `timeout_s` runs out: the current state, `settled: false`.
+#[tokio::test(start_paused = true)]
+async fn timeout_s_ends_a_run_of_capped_answers_unsettled() {
+    let (executor, client, _) = waiting_executor(|_| Some("false"));
+    let result = executor
+        .settle_within(&client, Some(1), client.settle())
+        .await
+        .unwrap();
+    assert_eq!(settled_of(&result), Some(false));
+}
+
+/// The acting request's answer carries the same mark: a capped turn wait is re-polled.
+#[tokio::test]
+async fn a_capped_turn_wait_is_repolled() {
+    let (executor, client, waits) =
+        waiting_executor(|n| Some(if n < 1 { "false" } else { "true" }));
+    let result = executor
+        .settle_within(
+            &client,
+            Some(30),
+            client.turn_wait_with("go", crate::client::TurnOptions::default()),
+        )
+        .await
+        .unwrap();
+    assert_eq!(settled_of(&result), Some(true));
+    assert_eq!(waits.load(std::sync::atomic::Ordering::SeqCst), 2);
+}
+
+/// A host that sends no header is an older host: its answer is a settled one.
+#[tokio::test]
+async fn an_answer_without_the_header_counts_as_settled() {
+    let (executor, client, waits) = waiting_executor(|_| None);
+    let result = executor
+        .settle_within(&client, None, client.settle())
+        .await
+        .unwrap();
+    assert_eq!(settled_of(&result), Some(true));
+    assert_eq!(waits.load(std::sync::atomic::Ordering::SeqCst), 1);
+}

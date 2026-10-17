@@ -28,6 +28,7 @@ use crate::inference::{ConnectionInventory, ResolvedOptions};
 mod host;
 mod transport;
 
+pub use transport::Waited;
 use transport::{json_field, read_2xx};
 use trillium_client::Method;
 
@@ -193,14 +194,14 @@ impl Client {
     /// reaches a gate or completes — returning the resulting `/state` JSON. Collapses
     /// "act → poll `/state` in a loop → read" into one round-trip
     /// (docs/permissions.md).
-    pub async fn turn_wait(&self, text: &str) -> Result<String> {
+    pub async fn turn_wait(&self, text: &str) -> Result<Waited> {
         self.turn_wait_with(text, TurnOptions::default()).await
     }
 
     /// [`turn_wait`](Self::turn_wait) with the body's optional fields ([`TurnOptions`]).
-    pub async fn turn_wait_with(&self, text: &str, options: TurnOptions<'_>) -> Result<String> {
+    pub async fn turn_wait_with(&self, text: &str, options: TurnOptions<'_>) -> Result<Waited> {
         let body = Self::turn_body(text, None, options);
-        self.post("/turns?wait", body).await
+        self.wait_at(Method::Post, "/turns?wait", Some(body)).await
     }
 
     /// Resolve the pending approval gate (`PUT /approvals/{call_id}`), carrying the
@@ -216,10 +217,11 @@ impl Client {
     /// Resolve a gate and **block until the daemon settles** (`PUT /approvals/{id}?wait`) — the
     /// turn reaches its next gate or completes — returning the resulting `/state` JSON. The
     /// "approve → read state" half of synchronous driving (docs/permissions.md).
-    pub async fn approve_wait(&self, call_id: &str, decision: &Approval) -> Result<String> {
-        self.put(
+    pub async fn approve_wait(&self, call_id: &str, decision: &Approval) -> Result<Waited> {
+        self.wait_at(
+            Method::Put,
             &format!("/approvals/{call_id}?wait"),
-            approval_body(decision),
+            Some(approval_body(decision)),
         )
         .await
     }
@@ -228,8 +230,8 @@ impl Client {
     /// nothing queued, gated, asking, cold-parked, or blocked — and return the `/state`
     /// snapshot (`GET /state?wait=settled`), whose `loop_phase` names which. Returns
     /// immediately if already settled (docs/control-api.md).
-    pub async fn settle(&self) -> Result<String> {
-        self.get("/state?wait=settled").await
+    pub async fn settle(&self) -> Result<Waited> {
+        self.wait_at(Method::Get, "/state?wait=settled", None).await
     }
 
     /// Interrupt a running tool (`POST /loop/interrupt`) — the SIGINT equivalent that

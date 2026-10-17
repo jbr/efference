@@ -326,41 +326,63 @@ pub(crate) fn wants_wait(query: &str) -> bool {
         .any(|kv| matches!(kv, "wait" | "wait=1" | "wait=true"))
 }
 
+/// The response header that says how a settle wait ended: `true` when the session settled,
+/// `false` when the cap expired and the body is only where it was then (docs/control-api.md).
+pub(crate) const SETTLED_HEADER: &str = "efference-settled";
+
 /// Block until the daemon settles (capped by [`SETTLE_TIMEOUT`]), then answer with the `/state`
 /// snapshot — the shared tail of `GET /state?wait=settled` and the write routes' `?wait`. The
 /// body is exactly `/state`'s, so a settled response is just a fresh state read; its
-/// `loop_phase` names where the loop stopped.
+/// `loop_phase` names where the loop stopped. The [`SETTLED_HEADER`] header says whether
+/// it stopped or the cap expired (docs/control-api.md).
 pub(crate) async fn settle_and_state(shared: &Arc<Session>, conn: Conn) -> Conn {
-    let _ = tokio::time::timeout(SETTLE_TIMEOUT, shared.await_settled()).await;
-    conn.with_status(200).with_body(shared.state_json()).halt()
+    settle_and_state_within(shared, conn, SETTLE_TIMEOUT).await
+}
+
+/// [`settle_and_state`] under a cap the caller names, so a test can expire it.
+async fn settle_and_state_within(shared: &Arc<Session>, conn: Conn, cap: Duration) -> Conn {
+    let settled = tokio::time::timeout(cap, shared.await_settled())
+        .await
+        .is_ok();
+    conn.with_status(200)
+        .with_response_header(SETTLED_HEADER, settled.to_string())
+        .with_body(shared.state_json())
+        .halt()
 }
 
 /// [`settle_and_state`] for a session still starting: wait for it to start and then to
 /// settle, under the one cap. A failure is where it stops, and the starting state that
-/// carries it is the answer (docs/control-api.md).
+/// carries it is the answer, marked settled (docs/control-api.md).
 pub(crate) async fn settle_starting(starting: &super::starting::Starting, conn: Conn) -> Conn {
-    let settled = tokio::time::timeout(SETTLE_TIMEOUT, async {
-        let session = starting.finished().await.ok()?;
-        session.await_settled().await;
-        Some(session)
+    settle_starting_within(starting, conn, SETTLE_TIMEOUT).await
+}
+
+/// [`settle_starting`] under a cap the caller names.
+async fn settle_starting_within(
+    starting: &super::starting::Starting,
+    conn: Conn,
+    cap: Duration,
+) -> Conn {
+    let waited = tokio::time::timeout(cap, async {
+        match starting.finished().await {
+            Ok(session) => {
+                session.await_settled().await;
+                Some(session)
+            }
+            Err(_) => None,
+        }
     })
     .await;
-    let body = match settled {
-        Ok(Some(session)) => session.state_json(),
-        _ => starting.state_json(),
+    let (settled, body) = match waited {
+        Ok(Some(session)) => (true, session.state_json()),
+        Ok(None) => (true, starting.state_json()),
+        Err(_) => (false, starting.state_json()),
     };
-    conn.with_status(200).with_body(body).halt()
+    conn.with_status(200)
+        .with_response_header(SETTLED_HEADER, settled.to_string())
+        .with_body(body)
+        .halt()
 }
 
 #[cfg(test)]
-mod test {
-    use super::query_value;
-
-    #[test]
-    fn query_value_decodes_the_named_value() {
-        let query = "connection=open%20router&cwd=%2FUsers%2Fjbr%2Fcode";
-        assert_eq!(query_value(query, "connection").unwrap(), "open router");
-        assert_eq!(query_value(query, "cwd").unwrap(), "/Users/jbr/code");
-        assert_eq!(query_value(query, "config"), None);
-    }
-}
+mod test;
