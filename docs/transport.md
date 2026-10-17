@@ -281,6 +281,41 @@ the nearest supported level; token consumption per level is provider-internal.
 
 ---
 
+## Every request ends on a user turn
+
+Providers disagree about a request whose last message is the model's own turn, and the
+harness never sends one. The turn loop requests only after a user-role tail (a submitted
+turn, a tool result, a pinned notification); the keepalive lops trailing model turns
+([The ping ends on a user turn](#the-ping-ends-on-a-user-turn)); and `POST /loop/continue`
+declines at a finished turn ([control-api.md](control-api.md)).
+
+What each dialect does with such a request, measured 2026-10-17 (non-streaming, one
+arithmetic prompt, two samples per case; journal/2026-10-17-session-control-live-test.md):
+
+- **A tail ending in prose** (a finished turn, re-prompted):
+  - Anthropic (`claude-sonnet-5-5`, `claude-haiku-5-5`): 400, "This model does not support
+    assistant message prefill."
+  - OpenRouter's Messages skin, `anthropic/claude-haiku-4.5`: accepted as a prefill of the
+    finished message; the response is empty.
+  - Gemini behind OpenRouter's Completions route: 400, "Requests ending with a model turn
+    are not supported."
+  - OpenAI Responses (`gpt-5.6-terra`): an empty `final_answer` in three of four samples,
+    the answer repeated in the fourth.
+  - Meta Responses, DeepSeek and Z.ai: the answer repeated.
+- **A tail of reasoning alone** (the turn's text removed):
+  - Anthropic, direct and through OpenRouter: 400, "The final block in an assistant message
+    cannot be `thinking`." The rule binds only the last message: a thinking-only assistant
+    turn followed by a user turn is accepted.
+  - Responses (OpenAI, Meta): the answer, with no new reasoning item.
+  - Completions (DeepSeek, Z.ai, Gemini via OpenRouter): the answer, after reasoning again.
+- **An assistant turn with no content:** accepted by every endpoint tested, and answered
+  as if it were absent.
+
+Re-prompting a finished turn produced an error, nothing, or a repeat on every endpoint.
+The one portable shape for asking again is a request without the model-turn tail.
+
+---
+
 ## HTTP/2 over trillium-rustls
 
 `Client` uses `trillium-client` with `trillium-rustls` for TLS. ALPN
@@ -1989,18 +2024,17 @@ the tail is a user-role message (tool results project as user role), on every
 dialect. A session idles in exactly the state that produces a model-turn tail: a
 settled session's log ends with the closing prose, and a session parked at an
 approval gate ends with the `Assistant` entry carrying the awaiting `tool_use`,
-its result not yet in the log. Anthropic accepts a request ending with a model
-turn; Google-backed endpoints reject it ("Requests ending with a model turn are
-not supported"), so an unlopped ping fails on those endpoints during precisely
-the idle it exists to cover.
+its result not yet in the log. Current Anthropic models and Google-backed
+endpoints reject a request ending with a model turn
+([Every request ends on a user turn](#every-request-ends-on-a-user-turn)), so an
+unlopped ping fails on those endpoints during precisely the idle it exists to
+cover.
 
 Lopping loses no cache: the trailing model turn was the last response's *output*
 and has never been sent as input, so the live cache entry already ends at the
-previous trailing breakpoint, and the lopped ping is a full read of it. The only
-forgone benefit is on Anthropic, where an unlopped ping also *wrote* an extension
-covering the model turn — lopping moves that write to the next real turn, which
-was going to pay it anyway. A log that lops empty (nothing but model turns, or
-nothing at all) skips the ping rather than sending an empty `messages` array.
+previous trailing breakpoint, and the lopped ping is a full read of it. A log
+that lops empty (nothing but model turns, or nothing at all) skips the ping
+rather than sending an empty `messages` array.
 
 This is a transport-side transform on the ping only. The projection is untouched
 and its byte-stability pins do not move.
