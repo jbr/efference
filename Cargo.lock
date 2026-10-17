@@ -381,6 +381,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "async-tungstenite"
+version = "0.35.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d6ab5b7664abf9ccae07576888c72bc93750c7090c1ff4ffee9317cc05d11618"
+dependencies = [
+ "atomic-waker",
+ "futures-core",
+ "futures-io",
+ "futures-task",
+ "futures-util",
+ "log",
+ "pin-project-lite",
+ "tungstenite",
+]
+
+[[package]]
 name = "async_cell"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1513,6 +1529,7 @@ dependencies = [
  "trillium-sse",
  "trillium-testing",
  "trillium-tokio",
+ "trillium-websockets",
  "unicode-segmentation",
  "unicode-width",
  "webbrowser",
@@ -1967,6 +1984,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "futures-sink"
+version = "0.3.34"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1944426bf7d03f1d14f708785e4b33efd750b36d48a157b836b3efc15ede8e1d"
+
+[[package]]
 name = "futures-task"
 version = "0.3.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1980,6 +2003,7 @@ checksum = "0d50a92467f8ba5dd6e3ee5d4bd04d73ab2e4e1c44474a0674821dfce14b79bc"
 dependencies = [
  "futures-core",
  "futures-macro",
+ "futures-sink",
  "futures-task",
  "pin-project-lite",
  "slab",
@@ -5828,6 +5852,7 @@ dependencies = [
  "trillium-http",
  "trillium-macros",
  "trillium-server-common",
+ "trillium-websockets",
 ]
 
 [[package]]
@@ -6117,6 +6142,39 @@ dependencies = [
  "trillium-http",
  "trillium-macros",
  "trillium-server-common",
+]
+
+[[package]]
+name = "trillium-websockets"
+version = "0.9.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "05f88331188a5cc3000f734d29227ff10c2874c4ca4cba2bc204c7512e1b3b72"
+dependencies = [
+ "async-tungstenite",
+ "base64 0.23.1",
+ "fastrand",
+ "futures-lite",
+ "futures-sink",
+ "log",
+ "pin-project-lite",
+ "sha1",
+ "swansong",
+ "thiserror 2.0.20",
+ "trillium",
+ "trillium-http",
+ "url",
+]
+
+[[package]]
+name = "tungstenite"
+version = "0.30.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e48ac77174b19c110a50ab2128b24215ac9cb40e0e12e093fb602d175c569d22"
+dependencies = [
+ "bytes",
+ "log",
+ "rand 0.10.2",
+ "thiserror 2.0.20",
 ]
 
 [[package]]

@@ -162,6 +162,7 @@ fn what_a_creation_made() {
             branch: Some("efference/child".into()),
             gates: gates("you", false),
             watched: false,
+            follow: None,
             then,
         }),
         "created child on anthropic/claude-haiku-5.5\n\
@@ -171,8 +172,8 @@ fn what_a_creation_made() {
     );
 }
 
-/// A creation over `efference mcp` says the mount watches the new agent, and which call
-/// reports it (docs/operating.md).
+/// A creation over `efference mcp` says the mount watches the new agent, which call
+/// reports it, and the stream that sends each of its decision points (docs/operating.md).
 #[test]
 fn a_watched_creation_names_wait() {
     assert_eq!(
@@ -184,12 +185,15 @@ fn a_watched_creation_names_wait() {
             branch: None,
             gates: gates("the operator", false),
             watched: true,
+            follow: Some(follow("ws://127.0.0.1:50123/token")),
             then: "delivered: child is working on it".into(),
         }),
         "created child\n\
          cwd: /repo\n\
          gates: its gates come to the operator\n\
          watched: wait() returns its statuses you have not seen\n\
+         follow: ws://127.0.0.1:50123/token — in Claude Code, open a Monitor on it (ws) to be \
+         woken by each decision point\n\
          delivered: child is working on it"
     );
 }

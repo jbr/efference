@@ -7,8 +7,13 @@
 //! when it drops while the host still lists the session; a session the host no longer
 //! lists has ended. The set is the mount's control state: shared by every clone of its
 //! executor, never logged, and gone when the mount is.
+//!
+//! The follower ([`follow`]) and the key that tells one decision point from the next
+//! ([`mark`]) are shared with the mount's status streams (`stream.rs`), which keep their
+//! own record of what they sent.
 
 use std::collections::BTreeMap;
+use std::ops::ControlFlow;
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
 use std::time::Duration;
 
@@ -27,7 +32,7 @@ const RETRY_CEILING: Duration = Duration::from_secs(10);
 /// What identifies one decision point of a session: its condition's kind and what tells
 /// two of that kind apart. A status whose mark differs from the last one shown is new.
 #[derive(Clone, Debug, PartialEq, Eq)]
-enum Mark {
+pub(super) enum Mark {
     /// A held call, by its id (which its handle names), and who decides it: the same
     /// call routed to another reviewer reads differently to this mount.
     Gated {
@@ -55,7 +60,7 @@ enum Mark {
 /// `view`'s mark, or `None` for a condition that is never news: a working loop, or a
 /// session still starting. That matches the in-session subscription rule, where
 /// `running` is observed and never posted (docs/tools.md).
-fn mark(view: &StatusView) -> Option<Mark> {
+pub(super) fn mark(view: &StatusView) -> Option<Mark> {
     Some(match &view.condition {
         Condition::Starting { .. } | Condition::Working { .. } => return None,
         Condition::Gated(held) => Mark::Gated {
@@ -128,7 +133,11 @@ impl Watch {
         if agents.contains_key(id) {
             return;
         }
-        let follower = tokio::spawn(follow(Arc::downgrade(self), host.clone(), id.to_string()));
+        let follower = tokio::spawn(follow_for(
+            Arc::downgrade(self),
+            host.clone(),
+            id.to_string(),
+        ));
         agents.insert(
             id.to_string(),
             Watched {
@@ -184,11 +193,7 @@ impl Watch {
         if let Some(watched) = self.agents().get_mut(id)
             && watched.latest.as_ref().and_then(mark) != Some(Mark::Ended)
         {
-            watched.latest = Some(StatusView {
-                id: id.to_string(),
-                condition: Condition::Ended,
-                footer: Footer::default(),
-            });
+            watched.latest = Some(ended(id));
         }
         self.moved.notify_waiters();
     }
@@ -227,9 +232,36 @@ fn take_new(agents: &mut BTreeMap<String, Watched>) -> Vec<StatusView> {
     new
 }
 
-/// Follow `id`'s `status` topic until the host no longer lists it, reporting each status
-/// to `watch` while the mount holds it.
-async fn follow(watch: Weak<Watch>, host: Client, id: String) {
+/// The status of a session that left the host without a status saying it ended.
+pub(super) fn ended(id: &str) -> StatusView {
+    StatusView {
+        id: id.to_string(),
+        condition: Condition::Ended,
+        footer: Footer::default(),
+    }
+}
+
+/// What a follower reads of one session.
+pub(super) enum Followed {
+    /// A status its `status` topic carried; the first is the status at connect. Boxed
+    /// because a reading may wait in a stream connection's queue.
+    Status(Box<StatusView>),
+    /// The host no longer lists it: it ended. Nothing follows this.
+    Left,
+    /// Its stream dropped or would not open, and the host could not be listed.
+    Unreachable,
+}
+
+/// Follow `id`'s `status` topic through `host` (a client at the host's socket root),
+/// handing `on` each reading, until the session leaves the host or `on` breaks. A stream
+/// that drops while the host still lists the session is reopened, after a pause that
+/// doubles with each failed reopen; a host that cannot be listed is read as
+/// [`Followed::Unreachable`] and, unless `on` breaks, asked again after the same pause.
+pub(super) async fn follow(
+    host: Client,
+    id: &str,
+    mut on: impl FnMut(Followed) -> ControlFlow<()>,
+) {
     let session = host.clone().with_prefix(&format!("/sessions/{id}"));
     let mut pause = RETRY_FLOOR;
     loop {
@@ -238,26 +270,46 @@ async fn follow(watch: Weak<Watch>, host: Client, id: String) {
                 let Some(view) = status_frame(event.data()) else {
                     continue;
                 };
-                let Some(watch) = watch.upgrade() else {
+                if on(Followed::Status(Box::new(view))).is_break() {
                     return;
-                };
-                watch.saw(&id, view);
+                }
                 pause = RETRY_FLOOR;
             }
         }
         // The stream ended or would not open: the session left the host, or the
-        // connection dropped. A host that cannot be listed is asked again later.
-        if let Ok(ids) = host.list_sessions().await
-            && !ids.contains(&id)
-        {
-            if let Some(watch) = watch.upgrade() {
-                watch.ended(&id);
+        // connection dropped.
+        match host.list_sessions().await {
+            Ok(ids) if !ids.iter().any(|held| held == id) => {
+                let _ = on(Followed::Left);
+                return;
             }
-            return;
+            Ok(_) => {}
+            Err(_) => {
+                if on(Followed::Unreachable).is_break() {
+                    return;
+                }
+            }
         }
         tokio::time::sleep(pause).await;
         pause = (pause * 2).min(RETRY_CEILING);
     }
+}
+
+/// Follow `id` for `watch` while the mount holds it. A host that cannot be listed is
+/// asked again later: `wait` reports nothing new meanwhile.
+async fn follow_for(watch: Weak<Watch>, host: Client, id: String) {
+    follow(host, &id, |followed| {
+        let Some(watch) = watch.upgrade() else {
+            return ControlFlow::Break(());
+        };
+        match followed {
+            Followed::Status(view) => watch.saw(&id, *view),
+            Followed::Left => watch.ended(&id),
+            Followed::Unreachable => {}
+        }
+        ControlFlow::Continue(())
+    })
+    .await
 }
 
 /// The status view a `state` frame for the `status` topic carries.

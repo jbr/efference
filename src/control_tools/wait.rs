@@ -1,9 +1,9 @@
 use super::args::reader_name;
 use super::executor::{state_of, status_in};
-use super::status::operator_relation;
+use super::status::operator_reader;
 use super::watch::Next;
 use super::{Control, Executor};
-use crate::daemon::status::{Moves, Reader, StatusView, answers, render};
+use crate::daemon::status::{answers, render};
 use anyhow::{Result, anyhow};
 use mcplease::{
     traits::{Tool, ToolMeta},
@@ -48,11 +48,6 @@ impl ToolMeta for Wait {
     }
 }
 
-/// How an operator client reads `view`, named `me`.
-fn reader<'a>(view: &StatusView, me: Option<&'a str>) -> Reader<'a> {
-    Reader::read(operator_relation(view), &Moves::MCP, me)
-}
-
 impl Tool<Control> for Wait {
     type Output = String;
 
@@ -79,7 +74,7 @@ impl Tool<Control> for Wait {
                 let now = super::now();
                 Ok(views
                     .iter()
-                    .map(|view| render(view, &reader(view, me), now))
+                    .map(|view| render(view, &operator_reader(view, me), now))
                     .collect::<Vec<_>>()
                     .join("\n\n"))
             }
@@ -93,7 +88,7 @@ impl Tool<Control> for Wait {
                         None => async { status_in(&state_of(&state.hosted(&id)?).await?) }.await,
                     };
                     lines.push(match view {
-                        Ok(view) => answers::first_line(&view, &reader(&view, me), now),
+                        Ok(view) => answers::first_line(&view, &operator_reader(&view, me), now),
                         Err(e) => format!("{id}: its status could not be read: {e:#}"),
                     });
                 }

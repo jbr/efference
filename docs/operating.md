@@ -22,7 +22,7 @@ driven, and it is refined from use rather than written ahead of it.
   which session supervises another), `notify` (with a label and a slot, for scripts),
   `entries`, and `image`.
 - **`efference mcp`** — the agent verbs, with `wait` in place of `settle`, served as an
-  MCP server over stdin/stdout (below). The verbs are written once as mcplease tools (`src/control_tools.rs` and
+  MCP server over stdin/stdout, and a status stream per agent on loopback (below). The verbs are written once as mcplease tools (`src/control_tools.rs` and
   `src/control_tools/`, one file per tool) and listed by three tool sets — the command
   line's, the stdio server's, and a hosted session's own toolbox (below) — so the paths
   cannot drift apart ([tools.md](tools.md)).
@@ -92,6 +92,39 @@ agent; an `agent` the host does not hold is an error naming what it holds. `crea
 answer over the mount says the new agent is watched. Claude Code moves a long MCP call to
 a background task and wakes on its result, so a long `timeout_s` (600) is safe there;
 other clients keep it under their own tool-call timeout.
+
+The mount also serves each agent's **status stream**: a WebSocket for a client that
+turns each frame into a notification (`src/control_tools/stream.rs`). Claude Code's
+`Monitor` tool is one such client: it opens a `ws://` URL and surfaces each text frame as
+a notification in the driver's conversation, a multi-line frame as one notification with
+each line's leading whitespace trimmed, and the close as a line of its own. `create`'s
+answer over the mount and `status(agent, follow: true)` give the URL,
+`ws://127.0.0.1:<port>/<token>`, on a `follow:` line that says to open a `Monitor` on it.
+The server binds `127.0.0.1:0` when the first URL is asked for and serves until the mount
+exits. Each agent has one token, 256 random bits in URL-safe base64, minted at the first
+request for that agent and given again on every later one; it is valid for the mount's
+life. A path that is no stream's token is a 404, and a request to a stream's path that is
+not a WebSocket upgrade is a 426. The stream takes no input: the client's frames are read
+only to answer its pings and hear its close.
+
+Each connection follows the agent's `status` topic with its own follower, the one `wait`'s
+watched set runs. Its first frame is the agent's status at connect, whatever it is, so a
+client that reopens the URL — a `Monitor` expires after at most 30 minutes — starts from
+where the agent stands. After that it sends one frame per new decision point, by `wait`'s
+rule, and nothing for a working status; each frame is the status as `status` renders it
+for the mount. A connection keeps its own record of what it sent: it marks nothing shown
+for `wait`, `wait` takes nothing from it, and two connections to one URL each get the
+whole sequence. When the agent ends, the stream sends its ended status and closes with
+1000. When the follower's stream drops and the host cannot be listed, it closes with 1011
+and a reason saying the host is unreachable, so a closed stream never reads as an agent
+still working.
+
+Same-user processes can already reach the host socket, so the stream opens nothing new to
+them; another local user needs the token, which appears only in the mounting client's own
+transcript. The server instructions teach the pattern (a `Monitor` on the `follow:` URL in
+Claude Code, `wait` for other clients) and name no URL: a client folds them into its
+system prompt as fixed text, and a per-launch port and token would change that text on
+every launch.
 
 The command line holds no mount between calls, so it keeps `settle`, which blocks until
 one agent reaches its next decision point and prints its `/state`. The host caps each

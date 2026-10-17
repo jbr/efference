@@ -169,6 +169,16 @@ impl Tool<Control> for Create {
                     state.watch(&id, Some(&view))?;
                 }
                 let me = reader_name(&context);
+                // Its status stream, for a client that holds one open (docs/operating.md).
+                // The agent exists either way, so a server that cannot bind is a line in
+                // the answer rather than an error.
+                let follow = match watched {
+                    true => Some(match state.stream_url(&id, me.as_deref()).await {
+                        Ok(url) => answers::follow(&url),
+                        Err(e) => answers::no_stream(&e),
+                    }),
+                    false => None,
+                };
                 let reader = Reader::read(operator_relation(&view), &Moves::MCP, me.as_deref());
                 let then = match self.first_message() {
                     Some(text) => {
@@ -199,6 +209,7 @@ impl Tool<Control> for Create {
                     branch: self.worktree.then(|| crate::worktree::branch(&id)),
                     gates: answers::gates("the operator", self.autonomous),
                     watched,
+                    follow,
                     then,
                 }))
             }
@@ -274,6 +285,7 @@ impl Tool<Control> for Create {
                     branch: self.worktree.then(|| crate::worktree::branch(&id)),
                     gates: answers::gates("you", self.autonomous),
                     watched: false,
+                    follow: None,
                     then,
                 }))
             }

@@ -3,15 +3,29 @@
 
 use super::*;
 use crate::control_tools::{Archive, ClientExecutor, Control, Create, Executor, Status};
+use crate::frontend::Approval;
+use crate::log::ToolCall;
 use mcplease::traits::Tool as _;
 use mcplease::types::RequestContext;
 
+mod stream;
 mod wait;
 
 /// The host's socket stack at its root, as the MCP mount's host client.
 async fn host_root(host: &Arc<Host>) -> ControlClient {
+    host_root_behind(host, ()).await.0
+}
+
+/// [`host_root`] with `front` run first, and the swansong of the server it stands in
+/// for, whose shutdown ends the streams it serves: what a test uses to make the host stop
+/// answering.
+async fn host_root_behind(
+    host: &Arc<Host>,
+    front: impl trillium::Handler,
+) -> (ControlClient, trillium_tokio::Swansong) {
     let host = Arc::clone(host);
     let mut handler = (
+        front,
         trillium::Init::new(move |info: trillium::Info| {
             let host = Arc::clone(&host);
             async move { info.with_shared_state(host) }
@@ -19,9 +33,11 @@ async fn host_root(host: &Arc<Host>) -> ControlClient {
         handler(Transport::Socket { auth: None }, App::Host),
     );
     let context = trillium_testing::init(&mut handler).await;
-    ControlClient::with_connector(
+    let server = context.swansong().clone();
+    let client = ControlClient::with_connector(
         trillium_testing::ServerConnector::new(handler).with_context(context),
-    )
+    );
+    (client, server)
 }
 
 /// The MCP mount's tools over `host`: every call names its agent.
@@ -47,6 +63,64 @@ fn hosting_a_family(roots: &Roots) -> Arc<Host> {
         .expect("the id is free in this test");
     }
     host
+}
+
+/// A host running `ids`, none created by another.
+fn hosting(roots: &Roots, ids: &[&str]) -> Arc<Host> {
+    let host = Host::new(one_connection_registry(), baseline_env());
+    for id in ids {
+        let session_dir = roots.0.join(".efference").join(id);
+        std::fs::create_dir_all(&session_dir).expect("the session dir exists");
+        host.adopt(
+            id.to_string(),
+            SessionRuntime::start(runtime::boot_in(&roots.0, &session_dir), host.swansong()),
+        )
+        .expect("the id is free in this test");
+    }
+    host
+}
+
+/// The MCP mount's tools over `host`, and the executor they share, which a test watches
+/// through as `create` does.
+async fn mount(host: &Arc<Host>) -> (Control, ClientExecutor) {
+    mount_over(host_root(host).await)
+}
+
+/// The MCP mount's tools over the host client `host`, and the executor they share.
+fn mount_over(host: ControlClient) -> (Control, ClientExecutor) {
+    let executor = ClientExecutor::over(host);
+    let control = Control::new(Executor::Client(executor.clone()), false);
+    (control, executor)
+}
+
+/// A bash call running `command`.
+fn bash(call_id: &str, command: &str) -> ToolCall {
+    ToolCall::new(
+        crate::bash::NAME,
+        call_id,
+        serde_json::json!({ "command": command }),
+    )
+}
+
+/// Hold `call` on `id` for a decision, logged first so it has a handle; returns the
+/// handle's seq and the receiver the decision arrives on.
+fn hold(host: &Host, id: &str, call: &ToolCall) -> (u64, tokio::sync::oneshot::Receiver<Approval>) {
+    let session = host.session(id).expect(id);
+    let seq = session
+        .append(
+            1,
+            Payload::Assistant {
+                output: crate::log::AssistantOutput::from_legacy_messages(
+                    vec![],
+                    vec![],
+                    vec![call.clone()],
+                ),
+                upstream_failure: None,
+            },
+        )
+        .unwrap();
+    session.set_phase(LoopPhase::Executing);
+    (seq, session.register_pending(call, None))
 }
 
 /// With no agent, the MCP mount reads one line per session the host holds.

@@ -99,6 +99,40 @@ fn the_agent_surfaces_advertise_plaintext_and_no_retired_verbs() {
     );
 }
 
+/// Only the MCP set's `status` takes `follow`, and nothing a session's toolbox or the
+/// command line advertises names the status stream: the stream is served by an
+/// `efference mcp` mount, and neither of the others holds one (docs/operating.md).
+#[test]
+fn only_the_mcp_set_offers_the_status_stream() {
+    let status = |tools: Vec<mcplease::types::Tool>| {
+        let status = tools
+            .into_iter()
+            .find(|tool| tool.name == "status")
+            .unwrap();
+        status.input_schema["properties"].clone()
+    };
+    assert_eq!(
+        status(mcp::Tools::tools_list())["follow"]["type"],
+        "boolean"
+    );
+    for (set, tools) in [
+        ("in-session", in_session::Tools::tools_list()),
+        ("command-line", cli::Tools::tools_list()),
+    ] {
+        assert!(
+            status(tools).get("follow").is_none(),
+            "the {set} status takes `follow`"
+        );
+    }
+    let advertised = serde_json::to_string(&in_session::Tools::tools_list()).unwrap();
+    for text in ["follow", "ws://", "Monitor", "WebSocket"] {
+        assert!(
+            !advertised.contains(text),
+            "the in-session set names {text:?}: {advertised}"
+        );
+    }
+}
+
 /// The behaviour hints are what an approval UX shows, and the spec's defaults are
 /// pessimistic, so an unset one reads as a destructive open-world mutation.
 #[test]

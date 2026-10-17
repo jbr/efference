@@ -39,6 +39,7 @@ tokio = { version = "1.53.1", features = [
   "io-std",
   "io-util",
   "fs",
+  "net",
 ] }
 libc = "0.2.189"
 clap = { version = "4", features = ["derive", "env"] }
@@ -70,6 +71,9 @@ trillium-head = "0.3"
 # with a 304. What the single-entry reads use instead of `immutable` (docs/control-api.md).
 trillium-caching-headers = "0.4.3"
 trillium-sse = "0.4.0"
+# The MCP mount's status streams (docs/operating.md): one loopback WebSocket per agent,
+# each frame a status, for a client that turns frames into notifications.
+trillium-websockets = "0.9.2"
 # The web client (docs/web-client.md): builds `web/` at compile time and embeds
 # the dist assets in the binary; the `dev-proxy` feature below proxies to a
 # spawned Vite dev server instead (HMR). Build mode needs pnpm on PATH.
@@ -246,6 +250,9 @@ insta = "1.48.0"
 # threads, and any handler touching tokio primitives (`tokio::time::timeout` in
 # the settle wait) panics off-runtime.
 trillium-testing = { version = "0.10.2", features = ["tokio"] }
+# The status stream tests' WebSocket client (docs/operating.md): the mount only serves
+# one, so the client half is a test-only feature.
+trillium-client = { version = "0.9.19", features = ["sse", "websockets"] }
 
 [build-dependencies]
 # The theme set is baked at build time from assets/themes/*/*.tmTheme into OUT_DIR

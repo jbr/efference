@@ -1,6 +1,6 @@
 //! The `efference mcp` set (docs/operating.md): the agent verbs, served over
 //! stdin/stdout, and the server instructions a mounting harness is given. Each module
-//! re-exports the shared tool struct.
+//! re-exports the shared tool struct, but for `status`, whose MCP struct adds `follow`.
 
 use super::Control;
 
@@ -44,7 +44,8 @@ question's seq; a message without it is refused while a question is pending.
 zooms into one entry. `interrupt` stops what it is doing; `archive` ends it and the \
 agents it created.
 
-Waiting: `wait` returns the next status you have not seen of the agents you created or \
-named with `agent`: a gate, a question, a turn ending, a stop, an end. Claude Code moves \
-a long MCP call to a background task and wakes on its result, so a long `timeout_s` \
-(600) is safe there; other clients keep it under their own tool timeout.";
+Waiting: in Claude Code, open a Monitor on the `follow:` URL that `create` or \
+`status(follow: true)` gives you; each decision point (a gate, a question, a turn ending, \
+a stop, an end) arrives as a notification. `wait` is the path for other clients: the next \
+status you have not seen of the agents you created or named with `agent`; keep its \
+`timeout_s` under your tool timeout.";

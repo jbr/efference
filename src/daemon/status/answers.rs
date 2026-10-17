@@ -215,6 +215,8 @@ pub(crate) struct Created<'a> {
     pub(crate) gates: String,
     /// Whether the creating mount watches it for `wait` (docs/operating.md).
     pub(crate) watched: bool,
+    /// Its status stream's line over `efference mcp`: [`follow`], or [`no_stream`].
+    pub(crate) follow: Option<String>,
     /// Its status's first line, or what its first message did.
     pub(crate) then: String,
 }
@@ -235,8 +237,22 @@ pub(crate) fn created(created: &Created) -> String {
     if created.watched {
         out.push("watched: wait() returns its statuses you have not seen".to_string());
     }
+    out.extend(created.follow.clone());
     out.push(created.then.clone());
     out.join("\n")
+}
+
+/// The line giving an agent's status stream over `efference mcp` (docs/operating.md).
+pub(crate) fn follow(url: &str) -> String {
+    format!(
+        "follow: {url} — in Claude Code, open a Monitor on it (ws) to be woken by each \
+         decision point"
+    )
+}
+
+/// The line in place of [`follow`] when the stream server could not be bound.
+pub(crate) fn no_stream(error: &anyhow::Error) -> String {
+    format!("follow: no stream ({error:#}); wait() reports its statuses")
 }
 
 /// Where a created session's gates go: to `decider`, unless it runs autonomous.

@@ -1,6 +1,6 @@
 //! The HTTP-over-control-channel executor the command line and `efference mcp` use
 //! (docs/tools.md): which session a call reaches, the reads every verb shares, and the
-//! agents an MCP mount watches for `wait` (docs/operating.md).
+//! agents an MCP mount watches for `wait` and streams (docs/operating.md).
 
 use std::collections::HashMap;
 use std::future::Future;
@@ -11,6 +11,7 @@ use std::time::Duration;
 use anyhow::{Result, anyhow};
 use serde_json::Value;
 
+use super::stream::Streams;
 use super::watch::Watch;
 use crate::client::{Client, Waited};
 use crate::daemon::status::StatusView;
@@ -32,6 +33,9 @@ pub struct ClientExecutor {
     /// The agents this mount watches and what it has shown of each, for `wait`
     /// (docs/operating.md). Shared by every clone, so concurrent calls see one set.
     watch: Arc<Watch>,
+    /// This mount's status streams (docs/operating.md). Shared by every clone, so one
+    /// server and one token per agent serve every call.
+    streams: Arc<Streams>,
 }
 
 /// Which session a client executor drives when a call names no `agent`.
@@ -71,6 +75,7 @@ impl ClientExecutor {
             fallback: Arc::new(Mutex::new(fallback)),
             cursors: Arc::default(),
             watch: Arc::default(),
+            streams: Arc::default(),
         }
     }
 
@@ -300,6 +305,12 @@ impl ClientExecutor {
     /// The watched set (docs/operating.md).
     pub(super) fn watched(&self) -> &Watch {
         &self.watch
+    }
+
+    /// The URL of `agent`'s status stream on this mount (docs/operating.md); the first
+    /// binds the stream server. `reader` is the client a frame names "you".
+    pub(super) async fn stream_url(&self, agent: &str, reader: Option<&str>) -> Result<String> {
+        self.streams.url(&self.host_client()?, agent, reader).await
     }
 
     /// A client for the hosted session `id`, through the host's socket.

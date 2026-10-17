@@ -5,67 +5,14 @@
 use super::*;
 use crate::control_tools::Wait;
 use crate::frontend::Approval;
-use crate::log::{CallId, ToolCall};
+use crate::log::CallId;
 use std::future::Future;
-
-/// A host running `ids`, none created by another.
-fn hosting(roots: &Roots, ids: &[&str]) -> Arc<Host> {
-    let host = Host::new(one_connection_registry(), baseline_env());
-    for id in ids {
-        let session_dir = roots.0.join(".efference").join(id);
-        std::fs::create_dir_all(&session_dir).expect("the session dir exists");
-        host.adopt(
-            id.to_string(),
-            SessionRuntime::start(runtime::boot_in(&roots.0, &session_dir), host.swansong()),
-        )
-        .expect("the id is free in this test");
-    }
-    host
-}
-
-/// The MCP mount's tools over `host`, and the executor they share, which a test watches
-/// through as `create` does.
-async fn mount(host: &Arc<Host>) -> (Control, ClientExecutor) {
-    let executor = ClientExecutor::over(host_root(host).await);
-    let control = Control::new(Executor::Client(executor.clone()), false);
-    (control, executor)
-}
 
 /// Watch `id` as a creation over MCP does: from the status its answer showed.
 fn created(executor: &ClientExecutor, host: &Host, id: &str) {
     executor
         .watch(id, host.status_view_of(id).as_ref())
         .expect("the host is reachable");
-}
-
-/// A bash call running `command`.
-fn bash(call_id: &str, command: &str) -> ToolCall {
-    ToolCall::new(
-        crate::bash::NAME,
-        call_id,
-        serde_json::json!({ "command": command }),
-    )
-}
-
-/// Hold `call` on `id` for a decision, logged first so it has a handle; returns the
-/// handle's seq and the receiver the decision arrives on.
-fn hold(host: &Host, id: &str, call: &ToolCall) -> (u64, tokio::sync::oneshot::Receiver<Approval>) {
-    let session = host.session(id).expect(id);
-    let seq = session
-        .append(
-            1,
-            Payload::Assistant {
-                output: crate::log::AssistantOutput::from_legacy_messages(
-                    vec![],
-                    vec![],
-                    vec![call.clone()],
-                ),
-                upstream_failure: None,
-            },
-        )
-        .unwrap();
-    session.set_phase(LoopPhase::Executing);
-    (seq, session.register_pending(call, None))
 }
 
 /// One `wait` call, owned so it can be spawned.
@@ -165,6 +112,8 @@ async fn two_watched_agents_statuses_both_arrive() {
         let answer = wait(&control, None, 10).await.unwrap();
         said.extend(answer.split("\n\n").map(str::to_string));
     }
+    // Two answers come in whichever order the followers read the gates.
+    said.sort();
     assert_eq!(said.len(), 2, "{said:?}");
     assert!(
         said[0].starts_with("a: waiting for your decision on bash `ls a`"),

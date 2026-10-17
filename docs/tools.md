@@ -205,8 +205,9 @@ mounted inside a hosted session's own toolbox; `control_tools::mcp`, served by t
 stdio server `efference mcp`; and `control_tools::cli`, the `efference control <verb>`
 subcommands ([operating.md](operating.md)). mcplease's macro declares a module for each
 tool it lists, so each set's directory holds a one-line module per tool re-exporting
-the shared struct. A set is an allow-list: the stdio mount serves its whole enum, and
-mcplease has no way to hide a tool from it.
+the shared struct; the MCP set's `status` module re-exports its own struct
+(`McpStatus`), so `follow` is in that set's schema alone. A set is an allow-list: the
+stdio mount serves its whole enum, and mcplease has no way to hide a tool from it.
 
 | set | verbs |
 |---|---|
@@ -325,7 +326,14 @@ operator. A gate a status shows is the reader's to decide when it is routed to t
 operator. Over MCP, `create` also adds the new session to the mount's watched set, and
 `wait` returns each status of a watched session the mount has not shown, by the same
 decision points a subscription posts ([operating.md](operating.md),
-`src/control_tools/watch.rs`).
+`src/control_tools/watch.rs`). The MCP set's `status(agent?, follow?)` takes `follow`:
+with `follow: true` the answer is the agent's status and a last line,
+`follow: ws://127.0.0.1:<port>/<token> — …`, the URL of the agent's status stream on the
+mount, the same URL on every request for that agent. `follow` names one agent: on a mount
+with no default session, a call without `agent` is refused. `create`'s answer over MCP
+carries the same line for the new agent. The in-session and command-line `status` take
+no `follow`, and nothing the in-session set advertises or answers names the stream
+([operating.md](operating.md), `src/control_tools/stream.rs`).
 
 ##### Subscriptions: a session's status in another's inbox
 

@@ -2,7 +2,7 @@ use super::args::reader_name;
 use super::executor::{state_of, status_in};
 use super::{Control, Executor, HostExecutor};
 use crate::daemon::status::{Condition, Moves, Reader, Relation, Reviewer, StatusView, answers};
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use mcplease::{
     traits::{Tool, ToolMeta},
     types::{RequestContext, ToolAnnotations},
@@ -45,6 +45,12 @@ pub(super) fn operator_relation(view: &StatusView) -> Relation {
     }
 }
 
+/// How an operator client reads `view`, named `me`: by its relation, with the bare verbs
+/// as its moves.
+pub(super) fn operator_reader<'a>(view: &StatusView, me: Option<&'a str>) -> Reader<'a> {
+    Reader::read(operator_relation(view), &Moves::MCP, me)
+}
+
 /// How the calling session stands to a session (docs/tools.md): it reviews a gate
 /// routed to it, drives what it drives, and observes the rest.
 pub(super) fn session_relation(state: &HostExecutor, view: &StatusView, drives: bool) -> Relation {
@@ -78,15 +84,14 @@ impl Tool<Control> for Status {
                         let Ok(view) = status_in(&state_of(&client).await?) else {
                             continue;
                         };
-                        let reader =
-                            Reader::read(operator_relation(&view), &Moves::MCP, me.as_deref());
+                        let reader = operator_reader(&view, me.as_deref());
                         lines.push(answers::overview_line(&view, &reader, false, now));
                     }
                     return Ok(answers::overview(lines, "the host holds no agents"));
                 }
                 let client = state.client(self.agent.as_deref()).await?;
                 let view = status_in(&state_of(&client).await?)?;
-                let reader = Reader::read(operator_relation(&view), &Moves::MCP, me.as_deref());
+                let reader = operator_reader(&view, me.as_deref());
                 Ok(crate::daemon::status::render(&view, &reader, now))
             }
             Executor::Host(state) => {
@@ -115,5 +120,71 @@ impl Tool<Control> for Status {
                 Ok(crate::daemon::status::render(&view, &reader, now))
             }
         }
+    }
+}
+
+// `status` as `efference mcp` serves it: the same read, and on request the URL of the
+// agent's status stream (docs/operating.md). Only the MCP set lists it, so the in-session
+// and command-line `status` take no `follow`. The doc comment below is the tool's
+// description, the same as `Status`'s.
+
+/// Where an agent stands and the call that answers it. With no agent, one line for
+/// each agent in view.
+#[derive(Debug, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename = "status")]
+pub struct McpStatus {
+    /// The agent's id; omitted, every agent in view.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent: Option<String>,
+    /// Also answer with a WebSocket URL streaming this agent's statuses: where it stands
+    /// on connect, then each new decision point, until it ends.
+    #[serde(default)]
+    pub follow: bool,
+}
+
+impl ToolMeta for McpStatus {
+    fn title() -> Option<&'static str> {
+        Status::title()
+    }
+
+    fn annotations() -> Option<ToolAnnotations> {
+        Status::annotations()
+    }
+}
+
+impl Tool<Control> for McpStatus {
+    type Output = String;
+
+    async fn execute(self, control: Control, context: RequestContext) -> Result<String> {
+        let read = Status {
+            agent: self.agent.clone(),
+        };
+        if !self.follow {
+            return read.execute(control, context).await;
+        }
+        let Executor::Client(state) = &control.executor else {
+            return Err(anyhow!(
+                "`follow` is served by `efference mcp`; a session hears its agents through \
+                 its inbox (docs/tools.md)"
+            ));
+        };
+        let agent = match &self.agent {
+            Some(agent) => agent.clone(),
+            None if state.host_wide() => {
+                return Err(anyhow!("`follow` streams one agent: name it with `agent`"));
+            }
+            None => state
+                .client(None)
+                .await?
+                .session_id()
+                .map(str::to_string)
+                .ok_or_else(|| {
+                    anyhow!("`follow` streams an agent on the host: name it with `agent`")
+                })?,
+        };
+        let me = reader_name(&context);
+        let status = read.execute(control.clone(), context).await?;
+        let url = state.stream_url(&agent, me.as_deref()).await?;
+        Ok(format!("{status}\n{}", answers::follow(&url)))
     }
 }
