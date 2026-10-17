@@ -2,7 +2,7 @@
 //! (docs/permissions.md).
 
 use super::*;
-use crate::control_tools::{Control, Executor, ReviewLevel as ReviewLevelTool};
+use crate::control_tools::{Control, Decide, Decision, Executor};
 use crate::daemon::{Host, SessionRuntime};
 use crate::policy::ReviewLevel;
 use mcplease::traits::Tool as _;
@@ -201,19 +201,12 @@ async fn a_level_change_reroutes_a_pending_gate() {
     })
     .await;
 
-    // The dial moves toward the creator with the call still held.
-    let operator = fixture.control("root");
-    ReviewLevelTool {
-        level: "supervisor".into(),
-        session: Some("child".into()),
-    }
-    .execute(operator.clone(), RequestContext::default())
-    .await
-    .unwrap();
+    // The operator's dial moves toward the creator with the call still held.
+    child.set_review_level(ReviewLevel::Supervisor);
 
     wait_until("the held call was re-routed to the creator", || {
         heard(&root, |body| {
-            body.contains("waiting for your decision") && body.contains("toolu_leaf")
+            body.contains("waiting for your decision") && body.contains("fs.list")
         })
     })
     .await;
@@ -223,27 +216,34 @@ async fn a_level_change_reroutes_a_pending_gate() {
     );
 
     // …and back: handing the child to the operator leaves the call held too.
-    ReviewLevelTool {
-        level: "spotter_human".into(),
-        session: Some("child".into()),
-    }
-    .execute(operator.clone(), RequestContext::default())
-    .await
-    .unwrap();
+    child.set_review_level(ReviewLevel::SpotterHuman);
     assert!(child.pending_gate().is_some());
     assert_eq!(child.resolved_review_level(), ReviewLevel::SpotterHuman);
 
     fixture.host.swansong().shut_down().await;
 }
 
-/// The routed gate resolves through the ordinary `approve` route — the position
-/// adds a recipient, not a verb (docs/permissions.md).
+/// The routed gate resolves through the ordinary `decide` — the position adds a
+/// recipient, not a verb (docs/permissions.md).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn the_reviewer_resolves_the_routed_gate_through_approve() {
+async fn the_reviewer_resolves_the_routed_gate_through_decide() {
     let fixture = Fixture::new();
     let root = fixture.session("root");
     let child = fixture.session("child");
 
+    let issued = child
+        .append(
+            1,
+            Payload::Assistant {
+                output: crate::log::AssistantOutput::from_legacy_messages(
+                    vec![],
+                    vec![],
+                    vec![leaf()],
+                ),
+                upstream_failure: None,
+            },
+        )
+        .unwrap();
     let gate = child.register_pending(&leaf(), None);
     wait_until("the gate reached its reviewer", || {
         heard(&root, |body| body.contains("waiting for your decision"))
@@ -251,17 +251,15 @@ async fn the_reviewer_resolves_the_routed_gate_through_approve() {
     .await;
 
     let reviewer = fixture.control("root");
-    crate::control_tools::Approve {
-        call_id: Some("toolu_leaf".into()),
-        abort: false,
-        redirect: None,
-        wait: false,
-        timeout_s: None,
-        session: Some("child".into()),
+    Decide {
+        agent: Some("child".into()),
+        seq: issued.to_string(),
+        decision: Decision::Allow,
+        message: None,
     }
     .execute(reviewer.clone(), RequestContext::default())
     .await
-    .expect("the creator is an ancestor, so the mutating verb reaches the child");
+    .expect("the creator drives the child, so its decision reaches it");
 
     assert!(matches!(gate.await, Ok(Approval::Approve)));
     assert!(child.pending_gate().is_none());

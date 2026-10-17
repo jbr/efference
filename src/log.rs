@@ -133,7 +133,7 @@ pub struct LogEntry {
     pub submission_id: Option<String>,
     /// Who submitted this entry, when that is not the operator
     /// (docs/control-api.md): the client's self-chosen label — `web`,
-    /// `mcp[<name>]`, or `agent[<id>]`. `None` on operator turns and on every
+    /// `mcp[<name>]`, or `session[<id>]`. `None` on operator turns and on every
     /// entry the loop originates itself. Unlike `submission_id`, this **is**
     /// projected: a `User` entry with a source opens its wire block with a
     /// `source:` line (docs/log-and-projection.md). Skipped when `None`, so

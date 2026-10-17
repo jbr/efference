@@ -97,11 +97,9 @@ fn supervisor(id: &str) -> Reviewer {
     Reviewer::Supervisor { id: id.into() }
 }
 
-const DECIDE: &str = "decide: sessions__approve(session: \"child\", call_id: \"toolu_1\") runs it; \
-    with abort: true it is refused and the turn ends; with redirect: \"<message>\" it is refused \
-    and the session goes on under your message\n\
-    hand back: sessions__review_level(session: \"child\", level: \"spotter_human\") hands this \
-    session's gates to the operator; this call stays held and goes to them";
+const DECIDE: &str = "decide: agents__decide(agent: \"child\", seq: \"8.2\", decision: \"allow\" | \
+    \"deny\", message?) — allow runs it, and a message rides with its result; deny with a message \
+    refuses it and the session goes on under your message; a bare deny ends its turn";
 
 /// A decision-rung cause with no precedent: the reviewer is told the call, why it was
 /// held in plain words, and the moves that decide it; a driver is told who decides.
@@ -215,8 +213,8 @@ fn asking_n_of_m() {
     assert_eq!(
         rendered(&asking, &driver()),
         format!(
-            "{first}\nanswer: sessions__turn(session: \"child\", text: [\"<answer>\"]); the \
-             message you send next is its answer"
+            "{first}\nanswer: agents__message(agent: \"child\", text: \"<answer>\", reply_to: \
+             \"14\") answers it"
         )
     );
     assert_eq!(rendered(&asking, &observer()), first);
@@ -241,8 +239,8 @@ fn idle(text: &str, bytes: usize, lines: usize) -> StatusView {
     })
 }
 
-const NEXT: &str =
-    "next: sessions__turn(session: \"child\", text: [\"<message>\"]) sends its next message";
+const NEXT: &str = "next: agents__message(agent: \"child\", text: \"<message>\") sends its next \
+    message; agents__archive(agent: \"child\") ends it";
 
 /// A driver reads the whole closing message; an observer reads its first line and how
 /// much was left.
@@ -267,7 +265,7 @@ fn idle_with_a_short_message() {
     assert_eq!(
         rendered(&several, &observer()),
         "child: idle, its turn is done (seq 12)\nsaid: Done.\ncut: 3 more lines; \
-         sessions__transcript(session: \"child\", since: 12) shows the whole message"
+         agents__transcript(agent: \"child\", seq: \"12\") shows the whole message"
     );
 
     let silent = view(Condition::Idle { closing: None });
@@ -286,7 +284,7 @@ fn idle_with_a_message_past_the_cap() {
         rendered(&long, &driver()),
         format!(
             "child: idle, its turn is done (seq 12)\nsaid: {text}\ncut: 1.0 KB more; \
-             sessions__transcript(session: \"child\", since: 12) shows the whole message\n{NEXT}"
+             agents__transcript(agent: \"child\", seq: \"12\") shows the whole message\n{NEXT}"
         )
     );
 }
@@ -300,7 +298,8 @@ fn stalled() {
     assert_eq!(
         rendered(&trajectory, &driver()),
         "child: stopped: the trajectory stopped: 12 attempts in a row failed upstream\n\
-         next: sessions__turn(session: \"child\", text: [\"<message>\"]) starts it again"
+         next: agents__message(agent: \"child\", text: \"\") retries it; agents__message(agent: \
+         \"child\", text: \"<message>\") sends a message instead"
     );
     assert_eq!(
         rendered(&trajectory, &observer()),
@@ -313,7 +312,8 @@ fn stalled() {
     assert_eq!(
         rendered(&triage, &driver()),
         "child: stopped: triage could not reach its model — the results are held until it \
-         does\nnext: no message retries it; the operator's continue does"
+         does\nnext: agents__message(agent: \"child\", text: \"\") retries it; a message waits \
+         until it clears"
     );
 }
 
@@ -327,8 +327,8 @@ fn parked_with_a_token_cost() {
     assert_eq!(
         rendered(&expired, &driver()),
         "child: paused before re-reading its context uncached (48k tokens)\n\
-         next: sessions__turn(session: \"child\", text: [\"<message>\"]) goes ahead and pays \
-         that read"
+         next: agents__message(agent: \"child\", text: \"\") goes ahead and pays that read, as \
+         any message does"
     );
     let compacted = view(Condition::Parked {
         park: Park::Compacted,
@@ -339,7 +339,8 @@ fn parked_with_a_token_cost() {
     );
 }
 
-/// Neither block is one an agent can lift, so no move is named.
+/// Neither block is one an agent can lift, so no move is named; a notification of a
+/// config repair names the read that shows the parse error, and the read shows it.
 #[test]
 fn held_by_pace_and_config_repair() {
     let paced = view(Condition::Blocked {
@@ -352,13 +353,33 @@ fn held_by_pace_and_config_repair() {
     let repair = view(Condition::Blocked {
         block: Block::ConfigRepair {
             path: Some("/repo/.efference/child/config.toml".into()),
+            parse_error: Some("expected `=` at line 3".into()),
         },
     });
     assert_eq!(
         rendered(&repair, &driver()),
         "child: blocked: its config file needs the operator\n\
          file: /repo/.efference/child/config.toml does not parse\n\
-         details: sessions__state(session: \"child\") carries the parse error"
+         details: agents__status(agent: \"child\") shows the parse error"
+    );
+    assert_eq!(
+        rendered(&repair, &read(Relation::Driver)),
+        "child: blocked: its config file needs the operator\n\
+         file: /repo/.efference/child/config.toml does not parse\n\
+         error: expected `=` at line 3"
+    );
+}
+
+/// The MCP mount's table names the same moves by their bare verbs.
+#[test]
+fn the_mcp_table_names_the_bare_verbs() {
+    let reader = Reader::read(Relation::Driver, &super::super::Moves::MCP, None);
+    let idle = view(Condition::Idle { closing: None });
+    assert_eq!(
+        rendered(&idle, &reader),
+        "child: idle, its turn is done\n\
+         next: message(agent: \"child\", text: \"<message>\") sends its next message; \
+         archive(agent: \"child\") ends it"
     );
 }
 

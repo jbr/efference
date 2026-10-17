@@ -229,7 +229,7 @@ in stage 1, before any prefix is consulted. This ordering is what makes a blanke
   program. Re-lexing a handful of keys is free next to parsing the command itself. The
   stance of the **longest** matching key is the answer (below).
 
-**The hand-off's completion.** A `sessions__archive` call that names the caller's own
+**The hand-off's completion.** An `agents__archive` call that names the caller's own
 predecessor clears on the fast path, ahead of the rungs below it, with no spotter round-trip
 and no `Spot` entry (`judge` in `src/agent/step.rs`, `Toolbox::completes_hand_off`). A hand-off
 is a conversation, and only the successor knows when no clarification remains, so its
@@ -452,23 +452,30 @@ itself over its own documents would be the self-authorization the config design 
 is also excluded from `[paths]` resolution outright, because joined onto the cwd it would
 look like an ordinary relative path and a broad grant would then appear to cover it.
 
-## `sessions__approve` is classified as the action it authorizes (`src/agent/step.rs`, `src/control_tools.rs`)
+## An allowing `agents__decide` is classified as the action it authorizes (`src/agent/step.rs`, `src/control_tools.rs`)
 
-A session's `sessions__approve` carries only a `call_id`, so classifying it as written
-would ask every rung to judge an id. Before the cascade runs, the loop asks the mounted
-sessions provider to bind the call to the target's held move (docs/tools.md): the host
-reads the target's pending gate, and while the held call is itself a `sessions__approve`
-it follows that call's `session`+`call_id` to the next session, refusing on a cycle. The
-result is a `BoundAction` — the leaf tool, the child's input, its intent, its cwd, and
-the chain of session ids from the directly-targeted child down to the session holding
-the leaf. A `call_id` that is not the target's pending gate is refused before
-classification with a "gate moved" error result, and the target rules the Host executor
-already enforces (self never, descendants or supervised sessions only, project reach) apply
-to the binding, each hop to the previous session.
+A session's `agents__decide` carries only a target, the held call's transcript handle
+(`seq`), and the decision, so classifying an allow as written would ask every rung to
+judge a handle. Before the cascade runs, the loop asks the mounted sessions provider to
+bind an allowing call to the target's held move (docs/tools.md): the host reads the
+target's pending gate, and while the held call is itself an allowing `agents__decide` it
+follows that call's `agent`+`seq` to the next session, refusing on a cycle. The result is
+a `BoundAction` — the leaf tool, the child's input, its intent, its cwd, and the chain of
+session ids from the directly-targeted child down to the session holding the leaf. A seq
+that is not the target's pending gate is refused before classification with a "gate
+moved" error result, and the target rules the Host executor already enforces (self never,
+driven sessions only, project reach) apply to the binding, each hop to the previous
+session.
 
-The parent's ladder then decides on the leaf:
+**A deny authorizes nothing.** A denying `agents__decide` — a redirect or an abort of the
+child's held call — is not bound, and clears on the fast path with no spotter request and
+no `Spot` entry, the way the hand-off's completion does (`Toolbox::denies_a_gate` beside
+`Toolbox::completes_hand_off` in `judge`). The verb still enforces its target rules when
+it runs.
 
-- If `sessions__approve` is in the parent's `tools` set, the call clears blind. That
+The parent's ladder then decides an allow on the leaf:
+
+- If `agents__decide` is in the parent's `tools` set, the call clears blind. That
   grant is the config's statement of trust in the coordinator, and the child's move is
   not re-litigated.
 - Otherwise `policy::classify` runs on the leaf call, under the parent's effective
@@ -556,7 +563,7 @@ fixed questions with probabilities, so the stance is a fold in code
 **Consent** is read off the log (`src/spotter/precedent.rs`): a call that ran and either
 reached no spotter — the fast path, a granted tool, the human under `human_only` — or was
 held by the spotter and then approved. A call the spotter cleared is not consent, so a
-clear never becomes the evidence for the next one. A bound leaf (`sessions__approve`) has
+clear never becomes the evidence for the next one. A bound leaf (`agents__decide`) has
 none: the child's history is not in this log.
 
 The fold:
@@ -857,7 +864,7 @@ diffs the file and emits `Committed` edits); and the **session editing its own c
 config-as-reviewed-file mechanism that *replaced* the planned `propose_scope` tool — a session
 `write`/`edit` to its `config.toml` is forced to the operator gate (`is_config_write`,
 bypassing fast-path and spotter), and on approval the loop refreshes the file and folds it —
-`sessions__hand_off` takes the same route, since giving the session's place to a successor is
+`agents__hand_off` takes the same route, since giving the session's place to a successor is
 the operator's decision the way its policy is ([tools.md](tools.md)); the **autonomous flip**
 (`--autonomous`), below; and **prefix-promotion** (the spotter files a `Proposed(Command)`),
 below — the last `Proposed`-lifecycle user.
@@ -905,8 +912,8 @@ always has an owner.
 ## The review-level dial (`src/agent.rs`, `src/daemon/config_edits.rs`)
 
 **Who reviews a call the fast-path didn't clear** is a runtime dial — a [`ReviewLevel`] ordinal on
-`Session` (`policy.rs`), set over the control channel (`PATCH /loop {review_level}`, `efference control review-level`,
-the `sessions__review_level` tool) and reported on `GET /state`, orthogonal to pace
+`Session` (`policy.rs`), set over the control channel (`PATCH /loop {review_level}`,
+`efference control review-level`) and reported on `GET /state`, orthogonal to pace
 ([operator participation](control-channel.md#operator-participation--the-intervention-points)). Four
 positions, ordered by how much the position costs a human — which a supervising agent reduces
 without eliminating:
@@ -935,9 +942,9 @@ without eliminating:
   independently: the path check requires the name grant as a precondition, which is true of
   the decision and misleading as a diagnosis.
 - **`Supervisor`** — the session's **supervisor** reviews. The spotter still runs; what it will
-  not clear is routed to the supervisor as a gate, which resolves it through the ordinary
-  `approve` route (the authority rule governs that call: a mutating verb reaches the caller's
-  descendants and the sessions it supervises, [tools.md](tools.md)). This is a fourth answer on
+  not clear is routed to the supervisor as a gate, which resolves it with `decide` through the
+  ordinary approval route (the authority rule governs that call: a driving verb reaches the
+  sessions the caller created, supervises, or succeeds, [tools.md](tools.md)). This is a fourth answer on
   the same dimension: `create` from a session defaults the child here, and handing a session back
   to the operator is the same dial set to `spotter_human` — there is no separate disown verb.
 
@@ -945,14 +952,14 @@ without eliminating:
   `daemon/host/supervise.rs`). Its default is `created_by`, so a session another session created
   answers to its creator and a session the operator created has none. It can be set to another
   session or cleared after creation — `PATCH /sessions/:id {"supervisor"}`, `efference control
-  supervisor`, the `supervisor` tool on the stdio MCP mount ([control-api.md](control-api.md)) —
+  supervisor` ([control-api.md](control-api.md)) —
   and setting it is one action carrying everything supervision means:
 
   - *Gates.* A dial at the supervised default, `spotter_human`, moves to `supervisor`, as
     adoption does for a created session; an explicit `autonomous` or `human_only` is kept. Gates
     under `supervisor` then route to the new supervisor.
-  - *Authority.* The new supervisor may use every mutating verb on the session — `approve`,
-    `turn`, `interrupt`, and the rest of the list in [tools.md](tools.md). Supervision is not
+  - *Authority.* The new supervisor drives the session — `decide`, `message`, `interrupt`, and
+    `archive` ([tools.md](tools.md)). Supervision is not
     transitive: it reaches the supervised session, not the sessions that one created or
     supervises.
   - *Status.* The new supervisor is subscribed to the session's status with `wake`, as `create`

@@ -152,7 +152,9 @@ pub fn render_result(
         seq: Some(seq),
         content: match reply.filter(|_| !matches!(wire, WireState::Elided)) {
             Some(AskReply { question, source }) => {
-                let from = source.map(|s| format!("{s}: ")).unwrap_or_default();
+                let from = source
+                    .map(|s| format!("{}: ", crate::frontend::wire_label(s)))
+                    .unwrap_or_default();
                 format!("[{seq}] asked: {question}\n{from}{content}")
             }
             None => format!("[{seq}] {content}"),
@@ -313,8 +315,9 @@ pub fn project_semantic_for(log: &[LogEntry], reader: Reader) -> Vec<WireTurn> {
                 //
                 // A source names who is speaking, when it is not the operator
                 // (docs/control-api.md); it opens the turn's first prose part so the
-                // model reads it as an address. No source renders no prefix, which is
-                // what keeps every unsourced turn's bytes unchanged.
+                // model reads it as an address, another session's as `<id> (agent)`.
+                // No source renders no prefix, which is what keeps every unsourced
+                // turn's bytes unchanged.
                 // An attachments-only turn has no prose to open, so its source gets a
                 // line of its own: the `⟢` of the harness's note stays at a line start.
                 let mut source = entry.source.as_deref();
@@ -329,7 +332,9 @@ pub fn project_semantic_for(log: &[LogEntry], reader: Reader) -> Vec<WireTurn> {
                         }
                     };
                     Some(UserPart::Text(match source.take() {
-                        Some(source) => format!("{source}:{separator}{text}"),
+                        Some(source) => {
+                            format!("{}:{separator}{text}", crate::frontend::wire_label(source))
+                        }
                         None => text,
                     }))
                 }));

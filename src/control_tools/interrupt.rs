@@ -1,4 +1,7 @@
+use super::args::turn_source;
+use super::executor::{state_of, status_in};
 use super::{Control, Executor};
+use crate::daemon::status::answers;
 use anyhow::Result;
 use mcplease::{
     traits::{Tool, ToolMeta},
@@ -6,23 +9,21 @@ use mcplease::{
 };
 use serde::{Deserialize, Serialize};
 
-/// Stop what the session is doing now. A running tool is killed with its process
-/// group and the turn continues from the killed call's result; a generation in
-/// flight is ended and the loop returns to idle, where a queued turn lands at once.
-/// No-op only when the loop is idle. To keep a long-running command instead of
-/// killing it, use `background`.
+/// Stop what an agent is doing now. A running tool is killed with its process group
+/// and the agent continues from that result; a generation in flight ends and the
+/// agent goes idle.
 #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema, clap::Args)]
 #[serde(rename = "interrupt")]
 pub struct Interrupt {
-    /// Interrupt this session by id (see `sessions`). Required unless the server was started with `--name`/`--socket`; then it overrides that session for this call.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// The agent's id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[arg(long)]
-    pub session: Option<String>,
+    pub agent: Option<String>,
 }
 
 impl ToolMeta for Interrupt {
     fn title() -> Option<&'static str> {
-        Some("Interrupt the running tool")
+        Some("Interrupt an agent")
     }
 
     fn annotations() -> Option<ToolAnnotations> {
@@ -41,28 +42,37 @@ impl Tool<Control> for Interrupt {
     type Output = String;
 
     async fn execute(self, control: Control, context: RequestContext) -> Result<String> {
+        let now = super::now();
         match &control.executor {
             Executor::Client(state) => {
-                let client = state.client(self.session.as_deref()).await?;
-                // As a turn does: a call over MCP names the mounting harness from its
-                // clientInfo; the command line's empty context is the operator's own
-                // `efference control interrupt`.
-                let source = super::turn::turn_source(None, &context);
-                let control = source.is_none().then(|| "control-cli".to_string());
-                client
-                    .interrupt(&crate::log::InterruptOrigin { source, control })
-                    .await?;
-                Ok("interrupted".into())
+                let client = state.client(self.agent.as_deref()).await?;
+                // What it stops, read just before signalling.
+                let view = status_in(&state_of(&client).await?)?;
+                let (answer, signal) = answers::interrupted(&view, now);
+                if signal {
+                    // A call over MCP names the mounting harness from its clientInfo;
+                    // the command line's empty context is the operator's own
+                    // `efference control interrupt`.
+                    let source = turn_source(&context);
+                    let control = source.is_none().then(|| "control-cli".to_string());
+                    client
+                        .interrupt(&crate::log::InterruptOrigin { source, control })
+                        .await?;
+                }
+                Ok(answer)
             }
             Executor::Host(state) => {
-                // Attributed to the calling session, as its turns are (docs/tools.md).
-                state
-                    .resolve_mutating(self.session.as_deref())?
-                    .interrupt(crate::log::InterruptOrigin {
-                        source: Some(format!("session[{}]", state.caller)),
+                let (target, id) = state.resolve_driven(self.agent.as_deref())?;
+                let view = target.status_view(&id, &target.status());
+                let (answer, signal) = answers::interrupted(&view, now);
+                if signal {
+                    // Attributed to the calling session, as its messages are (docs/tools.md).
+                    target.interrupt(crate::log::InterruptOrigin {
+                        source: Some(crate::frontend::session_source(state.caller())),
                         control: None,
                     });
-                Ok("interrupted".into())
+                }
+                Ok(answer)
             }
         }
     }

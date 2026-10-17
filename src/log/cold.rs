@@ -25,7 +25,7 @@ pub enum ColdReason {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ReleasedBy {
-    /// `POST /turns` (or the `turn` tool) with no `ask` pending.
+    /// `POST /turns` (or a driver's `message`) with no `ask` pending.
     Turn,
     /// `PUT /approvals/:call_id`: the decision at an approval gate.
     Approval,

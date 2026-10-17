@@ -63,7 +63,8 @@ pub enum ReviewLevel {
     Autonomous,
     /// The supervisor reviews: a call the spotter holds is routed to the session's
     /// supervisor — by default the session that commissioned it, settable after creation
-    /// — which resolves it through the ordinary `approve` route (docs/permissions.md). The
+    /// — which resolves it with `decide`, through the ordinary approval route
+    /// (docs/permissions.md). The
     /// default for a session that has a supervisor.
     ///
     /// The position **resolves at routing time, never at creation**: a session with no live

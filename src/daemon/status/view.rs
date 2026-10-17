@@ -72,7 +72,8 @@ pub(crate) enum Condition {
 /// A held call, as its decider reads it.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub(crate) struct HeldCall {
-    /// The provider's id for the call, which `sessions__approve` takes.
+    /// The provider's id for the call, which the approval route takes; `decide` maps
+    /// the handle to it.
     pub(crate) call_id: String,
     /// The tool's display name (`fs.list`).
     pub(crate) tool: String,
@@ -135,6 +136,9 @@ pub(crate) enum Block {
     ConfigRepair {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         path: Option<String>,
+        /// Why it did not parse; a read of the status prints it.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        parse_error: Option<String>,
     },
 }
 
@@ -226,7 +230,7 @@ impl Session {
                 ..
             } => Condition::Gated(self.held_call(call_id, name, intent.clone())),
             SessionStatus::Asking { question, n, of } => {
-                let handle = self.asking().and_then(|ask| self.handle(&ask.call_id));
+                let handle = self.asking().and_then(|ask| self.handle_of(&ask.call_id));
                 Condition::Asking {
                     question: question.clone(),
                     n: *n,
@@ -258,11 +262,15 @@ impl Session {
             },
             SessionStatus::Blocked {
                 reason: BlockedReason::ConfigRepair,
-            } => Condition::Blocked {
-                block: Block::ConfigRepair {
-                    path: self.config_repair().map(|repair| repair.path),
-                },
-            },
+            } => {
+                let repair = self.config_repair();
+                Condition::Blocked {
+                    block: Block::ConfigRepair {
+                        path: repair.as_ref().map(|repair| repair.path.clone()),
+                        parse_error: repair.map(|repair| repair.parse_error),
+                    },
+                }
+            }
             // `Session::status` reads a held triage as the stall it publishes; this arm
             // is a status built by hand.
             SessionStatus::Blocked { .. } => Condition::Stalled {
@@ -298,10 +306,6 @@ impl Session {
             return None;
         }
         self.supervisor()
-    }
-
-    fn handle(&self, call_id: &str) -> Option<String> {
-        super::super::transcript::call_handle(self.log.lock().unwrap().entries(), call_id)
     }
 
     fn held_call(&self, call_id: &str, name: &str, intent: Option<String>) -> HeldCall {
@@ -342,7 +346,7 @@ impl Session {
             tool: crate::mcp::display_name(name),
             summary,
             intent,
-            handle: self.handle(call_id),
+            handle: self.handle_of(call_id),
             held_because,
             reviewer,
         }

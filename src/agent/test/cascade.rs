@@ -44,7 +44,7 @@ impl Spotter for NeverAsked {
 }
 
 /// A frontend that records what the gate was asked to decide, for the bound
-/// `sessions__approve` ladder tests. It answers with a fixed decision.
+/// `agents__decide` ladder tests. It answers with a fixed decision.
 struct RecordingFrontend {
     decisions: Vec<(String, Option<crate::control_tools::BoundAction>)>,
     decision: Approval,
@@ -68,7 +68,7 @@ impl Frontend for RecordingFrontend {
 }
 
 /// A spotter that records the move it was asked about, so a test can pin that the
-/// parent's rung judged the child's leaf rather than the `sessions__approve` call.
+/// parent's rung judged the child's leaf rather than the `agents__decide` call.
 struct RecordingSpotter {
     seen: std::sync::Mutex<Vec<(String, Vec<String>)>>,
     stance: Stance,
@@ -114,14 +114,19 @@ fn parent_with(role: crate::config::Config) -> Arc<Session> {
     shared
 }
 
-/// The `sessions__approve` call the parent's model wrote, naming the child and the
-/// held call.
-fn approve_call() -> ToolCall {
+/// The `agents__decide` call the parent's model wrote, naming the child, the held
+/// call's handle, and `decision`.
+fn decide_call(decision: &str) -> ToolCall {
     ToolCall::new(
-        crate::control_tools::APPROVE_WIRE_NAME,
+        crate::control_tools::DECIDE_WIRE_NAME,
         "toolu_parent",
-        serde_json::json!({ "session": "child", "call_id": "toolu_leaf" }),
+        serde_json::json!({ "agent": "child", "seq": "4", "decision": decision }),
     )
+}
+
+/// The allowing `agents__decide` the bound-ladder tests judge.
+fn approve_call() -> ToolCall {
+    decide_call("allow")
 }
 
 /// A leaf the child holds, bound to the parent's approval.
@@ -137,14 +142,14 @@ fn bound_leaf(command: &str) -> crate::control_tools::BoundAction {
     }
 }
 
-/// A granted `sessions__approve` clears blind (docs/permissions.md): that grant is
+/// A granted `agents__decide` clears blind (docs/permissions.md): that grant is
 /// the config's statement of trust in the coordinator, so the child's leaf is not
 /// re-litigated and neither rung is consulted.
 #[tokio::test]
-async fn a_granted_sessions_approve_clears_blind() {
+async fn a_granted_decide_clears_blind() {
     let mut role = crate::config::Config::default();
     role.tools
-        .insert(crate::control_tools::APPROVE_WIRE_NAME.into());
+        .insert(crate::control_tools::DECIDE_WIRE_NAME.into());
     let shared = parent_with(role);
     let mut frontend = RecordingFrontend {
         decisions: Vec::new(),
@@ -209,7 +214,7 @@ async fn an_ungranted_approve_clears_on_the_leafs_fast_path() {
         !shared
             .effective_config()
             .tools
-            .contains(crate::control_tools::APPROVE_WIRE_NAME),
+            .contains(crate::control_tools::DECIDE_WIRE_NAME),
         "the approval tool itself was never granted"
     );
 }
@@ -244,7 +249,7 @@ async fn a_leaf_outside_the_grants_gates_with_the_bound_action() {
     let (name, seen) = &frontend.decisions[0];
     assert_eq!(
         name,
-        crate::control_tools::APPROVE_WIRE_NAME,
+        crate::control_tools::DECIDE_WIRE_NAME,
         "the gate registers the parent's call"
     );
     assert_eq!(
@@ -263,7 +268,7 @@ async fn a_leaf_outside_the_grants_gates_with_the_bound_action() {
 }
 
 /// The parent's spotter judges the child's leaf and its chain, never the
-/// `sessions__approve` call (docs/permissions.md).
+/// `agents__decide` call (docs/permissions.md).
 #[tokio::test]
 async fn the_spotter_judges_the_leaf_with_the_chain() {
     let shared = parent_with(crate::config::Config::default());
@@ -361,7 +366,7 @@ async fn an_archive_without_a_succession_goes_to_the_spotter() {
     let call = ToolCall::new(
         crate::control_tools::ARCHIVE_WIRE_NAME,
         "toolu_archive",
-        serde_json::json!({ "session": "brisk-raven" }),
+        serde_json::json!({ "agent": "brisk-raven" }),
     );
     let approval = super::step::judge(
         &mut frontend,
@@ -379,5 +384,96 @@ async fn an_archive_without_a_succession_goes_to_the_spotter() {
         frontend.decisions.len(),
         1,
         "the spotter's gate reached the human"
+    );
+}
+
+/// A toolbox with the session-control verbs mounted for `caller`, over a host that holds
+/// no sessions.
+fn with_agent_verbs(caller: &str) -> Toolbox {
+    let host = crate::daemon::Host::new(
+        crate::inference::InferenceRegistry::empty(),
+        crate::env_table::EnvSnapshot::new(Default::default()).unwrap(),
+    );
+    let mut toolbox = Toolbox::bash_only();
+    toolbox.mount_sessions(host, caller.into());
+    toolbox
+}
+
+/// A denial authorizes nothing, so it clears on the fast path: neither rung is asked,
+/// and nothing is classified as an action it would authorize (docs/permissions.md).
+#[tokio::test]
+async fn a_deny_clears_on_the_fast_path() {
+    let shared = parent_with(crate::config::Config::default());
+    for call in [decide_call("deny"), {
+        let mut with_message = decide_call("deny");
+        with_message.input["message"] = "use the cached copy".into();
+        with_message
+    }] {
+        let approval = super::step::judge(
+            &mut NeverGates,
+            &shared,
+            &NeverAsked,
+            &with_agent_verbs("parent"),
+            1,
+            &call,
+            None,
+        )
+        .await
+        .unwrap();
+        assert_eq!(approval, Approval::Approve, "{:?}", call.input);
+    }
+    assert!(
+        !shared
+            .snapshot()
+            .iter()
+            .any(|e| matches!(&e.payload, Payload::Spot(_))),
+        "no spotter verdict was asked for or logged"
+    );
+    // Without the session-control verbs mounted the name is no denial at all.
+    assert!(!Toolbox::bash_only().denies_a_gate(&decide_call("deny")));
+}
+
+/// Only an allow is bound to the move it authorizes: an allow whose target holds no
+/// gate is answered before any rung, while a deny is not bound, clears, and runs —
+/// where the verb itself refuses the target (docs/permissions.md).
+#[tokio::test]
+async fn only_an_allow_is_bound() {
+    let (shared, _rx) = Session::new(
+        std::env::current_dir().unwrap(),
+        crate::persist::Log::in_memory(),
+    );
+    let toolbox = with_agent_verbs("parent");
+    let run = async |call: &ToolCall| {
+        run_call(
+            &mut NeverGates,
+            &shared,
+            &NeverAsked,
+            &toolbox,
+            1,
+            call,
+            AskPosition { n: 1, of: 1 },
+            None,
+        )
+        .await
+        .expect("answered")
+    };
+    let Decision::Direct(payloads) = run(&decide_call("allow")).await else {
+        panic!("an allow with nothing to bind is answered directly");
+    };
+    let [Payload::ToolResult { raw, .. }] = &payloads[..] else {
+        panic!("one paired result");
+    };
+    assert!(
+        raw.is_error && raw.content.starts_with("not run — "),
+        "{}",
+        raw.content
+    );
+
+    let Decision::Ran { result, .. } = run(&decide_call("deny")).await else {
+        panic!("a deny is not bound, so it clears and runs");
+    };
+    assert!(
+        result.is_error,
+        "the verb refuses a target the host does not hold"
     );
 }

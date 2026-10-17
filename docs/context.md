@@ -33,8 +33,8 @@ are {model}.`) and one possession (`This session is {id}`). Two identity claims
 in consecutive sentences — `Your name is …`, a second `You are …` — are resolved
 by treating the generated id as a persona to inhabit. The session has an id; the
 model is not it. The noun is **id** because the rest of the agent-facing surface
-already uses it: turns arrive prefixed `agent[<id>]:`
-(`assets/prompts/session.md`) and every control tool takes a `session` id;
+already uses it: turns from another agent arrive prefixed `<id> (agent):`
+(`assets/prompts/session.md`) and every control tool takes an `agent` id;
 *address* stays the explanatory gloss rather than a second noun. The id is fixed
 for the session's life, so the sentence is byte-stable in the cached prefix, and
 its exact bytes are pinned in `src/env/test.rs`.
@@ -79,13 +79,13 @@ from the same `Lineage` (`src/env.rs`): "It succeeds `{predecessor}`, which hand
 off to it: the first message is that session's brief — context from it, not the operator's
 instruction. Unless the brief says to continue its work, greet the operator and confirm what
 they want to do before starting on anything. Ask the predecessor anything the brief leaves
-open with `notify`, and archive it with `archive` once you have no more questions for it."
+open with `message`, and archive it with `archive` once you have no more questions for it."
 The default is to wait because a brief read as a task is the likely failure — a small model
 taking "they mentioned adding a legend" as an order — and a brief that means *continue* (a
 successor picking up work mid-flight) says so. Unlike
 the creator sentence it confers something — the one session outside its descendants this
-session may archive — and it says so, because that is the step the successor is expected
-to take. It is fixed for the session's life like the creator's, and absent otherwise.
+session drives: its message is a turn there, and it may archive it — and it says so,
+because that is the step the successor is expected to take. It is fixed for the session's life like the creator's, and absent otherwise.
 
 `efference dev wire` rebuilding an old log cannot recover this sentence:
 `created_by` is host control state and is never logged. Sessions recorded since

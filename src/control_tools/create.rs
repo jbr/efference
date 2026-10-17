@@ -1,28 +1,34 @@
-use super::{Control, Executor, pretty};
-use anyhow::{Context, Result};
+use super::args::{reader_name, turn_source};
+use super::executor::status_in;
+use super::status::operator_relation;
+use super::{Control, Executor};
+use crate::daemon::status::{Condition, Moves, Reader, Relation, answers};
+use anyhow::{Context, Result, anyhow};
 use mcplease::{
-    traits::{Tool, ToolMeta, ToolOutput},
+    traits::{Tool, ToolMeta},
     types::{RequestContext, ToolAnnotations},
 };
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-/// Create a session on the host and return its id. The session starts idle in
-/// `cwd` with this process's environment as its base; send it a `turn` to begin.
-/// Every knob is optional; an omitted model takes past picks, else creation
-/// refuses naming the choice. The model is spelled `<connection>/<model>` as
-/// `tui --new --model` takes it.
+/// Start an agent: a new session on this host, optionally with its first message.
+/// Answers with its id, model, working directory, where its gates go, and its
+/// status. The model is `<connection>/<model>`; omitted, it takes past picks.
 #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema, clap::Args)]
 #[serde(rename = "create")]
 pub struct Create {
-    /// The session's working directory. Relative to this process's; defaults to it.
+    /// The working directory, relative to yours; defaults to yours.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[arg(long)]
     pub cwd: Option<PathBuf>,
-    /// The session id, a single path segment. Minted (`adjective-noun`) when omitted.
+    /// The id, a single path segment. Minted (`adjective-noun`) when omitted.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[arg(long)]
     pub name: Option<String>,
+    /// Its first message.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[arg(long)]
+    pub message: Option<String>,
     /// The main model, `<connection>/<model>`.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[arg(long)]
@@ -45,7 +51,7 @@ pub struct Create {
     #[arg(long)]
     #[schemars(range(min = 0, max = 100))]
     pub temperature: Option<u8>,
-    /// Run without a human at the gate: calls the permission rungs do not clear are declined rather than held.
+    /// Run without anyone at the gate: calls the permission rungs do not clear are declined rather than held.
     #[serde(default)]
     #[arg(long)]
     pub autonomous: bool,
@@ -53,11 +59,11 @@ pub struct Create {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[arg(long)]
     pub upstream: Vec<String>,
-    /// Let the session outlive its creator. By default a session ends when the session that created it ends.
+    /// Let it outlive you. By default an agent ends when the session that created it ends.
     #[serde(default)]
     #[arg(long)]
     pub detached: bool,
-    /// Give the new session its own checkout and branch to commit on, so its edits do not land in your tree. Without it the session works where you work (in your worktree, if you have one).
+    /// Give it its own checkout and branch to commit on, so its edits do not land in your tree. Without it, it works where you work (in your worktree, if you have one).
     #[serde(default)]
     #[arg(long)]
     pub worktree: bool,
@@ -65,7 +71,7 @@ pub struct Create {
 
 impl ToolMeta for Create {
     fn title() -> Option<&'static str> {
-        Some("Create a session")
+        Some("Create an agent")
     }
 
     fn annotations() -> Option<ToolAnnotations> {
@@ -80,88 +86,137 @@ impl ToolMeta for Create {
     }
 }
 
-/// A created session as a tool result: its id, the `session` every other tool
-/// takes.
-#[derive(Serialize, schemars::JsonSchema)]
-pub struct CreatedResult {
-    id: String,
-}
-
-impl ToolOutput for CreatedResult {
-    fn output_schema() -> Option<serde_json::Value> {
-        Some(mcplease::traits::schema_for::<Self>().into())
+impl Create {
+    /// The creation request, rooted at `here`, with `env` as the new session's base.
+    fn request(
+        &self,
+        here: PathBuf,
+        env: std::collections::BTreeMap<String, String>,
+    ) -> crate::daemon::CreateSession {
+        let cwd = crate::policy::lexical_normalize(&match &self.cwd {
+            Some(cwd) => here.join(cwd),
+            None => here,
+        });
+        crate::daemon::CreateSession {
+            name: self.name.clone(),
+            cwd,
+            config: self.config.clone(),
+            // The agent-facing surface takes one opaque model slug; `connection`
+            // stays absent so it resolves as one (docs/control-api.md).
+            options: crate::inference::SessionOptions {
+                model: self.model.clone(),
+                spotter_model: self.spotter_model.clone(),
+                temperature: self.temperature,
+                effort: self.effort.clone(),
+                ..Default::default()
+            },
+            upstream: self.upstream.clone(),
+            autonomous: self.autonomous,
+            reauth: Vec::new(),
+            refuse_authorization: false,
+            keep_scratch: false,
+            worktree: self.worktree,
+            detached: self.detached,
+            env: Some(env),
+        }
     }
 
-    fn to_text(&self) -> String {
-        pretty(self)
+    /// The first message, when it says anything.
+    fn first_message(&self) -> Option<&str> {
+        self.message
+            .as_deref()
+            .filter(|text| !text.trim().is_empty())
+    }
+}
+
+/// The created session's model, `<connection>/<model>`, from its identity.
+fn model_of(identity: &serde_json::Value) -> Option<String> {
+    let main = &identity["inference"]["main"];
+    match (main["connection"].as_str(), main["model"].as_str()) {
+        (Some(connection), Some(model)) => Some(format!("{connection}/{model}")),
+        _ => identity["model"].as_str().map(str::to_string),
     }
 }
 
 impl Tool<Control> for Create {
-    type Output = CreatedResult;
+    type Output = String;
 
-    async fn execute(self, control: Control, _context: RequestContext) -> Result<CreatedResult> {
+    async fn execute(self, control: Control, context: RequestContext) -> Result<String> {
+        let now = super::now();
         match &control.executor {
             Executor::Client(state) => {
                 let here = std::env::current_dir().context("reading the working directory")?;
-                let cwd = match self.cwd {
-                    Some(cwd) => here.join(cwd),
-                    None => here,
-                };
                 let env = crate::env_table::EnvSnapshot::capture()
                     .map_err(anyhow::Error::msg)?
                     .into_entries();
-                let request = crate::daemon::CreateSession {
-                    name: self.name,
-                    cwd,
-                    config: self.config,
-                    // The agent-facing surface takes one opaque model slug;
-                    // `connection` stays absent so it resolves as one
-                    // (docs/control-api.md).
-                    options: crate::inference::SessionOptions {
-                        model: self.model,
-                        spotter_model: self.spotter_model,
-                        temperature: self.temperature,
-                        effort: self.effort,
-                        ..Default::default()
-                    },
-                    upstream: self.upstream,
-                    autonomous: self.autonomous,
-                    reauth: Vec::new(),
-                    refuse_authorization: false,
-                    keep_scratch: false,
-                    worktree: self.worktree,
-                    detached: self.detached,
-                    env: Some(env),
-                };
+                let request = self.request(here, env);
                 let host = state.host_client()?;
                 let id = host.create_session(&request).await?;
-                Ok(CreatedResult { id })
+                // Wait out the preparation: a starting session's wait settles when it
+                // has started and settled, or failed (docs/control-api.md).
+                let client = host.clone().with_prefix(&format!("/sessions/{id}"));
+                let started = state.settle_within(&client, None, client.settle()).await?;
+                let state_now: serde_json::Value = serde_json::from_str(&started.body)?;
+                let view = status_in(&state_now)?;
+                if let Condition::FailedToStart { reason } = &view.condition {
+                    return Err(anyhow!("{id} did not start: {reason}"));
+                }
+                let me = reader_name(&context);
+                let reader = Reader::read(operator_relation(&view), &Moves::MCP, me.as_deref());
+                let then = match self.first_message() {
+                    Some(text) => {
+                        let source = turn_source(&context);
+                        match client.submit_named(text, source.as_deref(), None).await? {
+                            Ok(landing) => answers::sent(&id, landing, Some(&view), now),
+                            Err(refusal) => format!("first message not delivered: {refusal}"),
+                        }
+                    }
+                    None => answers::fresh(&view, &reader, now),
+                };
+                let row = host.sessions().await?.into_iter().find(|row| row.id == id);
+                let identity = &state_now["session_identity"];
+                let working = row
+                    .as_ref()
+                    .and_then(|row| row.working.clone().or(row.cwd.clone()))
+                    .or_else(|| identity["cwd"].as_str().map(str::to_string))
+                    .unwrap_or_default();
+                let project = row
+                    .as_ref()
+                    .filter(|row| row.working.is_some())
+                    .and_then(|row| row.cwd.clone());
+                Ok(answers::created(&answers::Created {
+                    id: &id,
+                    model: model_of(identity),
+                    working: &working,
+                    project: project.as_deref(),
+                    branch: self.worktree.then(|| crate::worktree::branch(&id)),
+                    gates: answers::gates("the operator", self.autonomous),
+                    then,
+                }))
             }
             Executor::Host(state) => {
                 // A session-driven creation runs in the caller's cwd and with the
                 // caller's child environment as the new session's base — the same
                 // environment its own bash children get (docs/tools.md).
                 let caller = state.caller_session()?;
-                let here = caller.cwd().to_path_buf();
-                let cwd = crate::policy::lexical_normalize(&match self.cwd {
-                    Some(cwd) => here.join(cwd),
-                    None => here,
-                });
+                let request =
+                    self.request(caller.cwd().to_path_buf(), caller.child_env().resolved());
                 // Reach is the project (docs/tools.md): every later verb finds a
                 // target only under the caller's `.efference/` base, so a child
                 // minted anywhere else could never be supervised or ended by the
                 // session that commissioned it. Refused here, before anything is
-                // minted, rather than discovered at the first `state` call. The
+                // minted, rather than discovered at the first `status` call. The
                 // child's project is resolved as the host will resolve it: a `cwd`
                 // inside a worktree belongs to that worktree's project
                 // (docs/worktrees.md).
-                let child_project = crate::worktree::project_of(&cwd).unwrap_or_else(|| cwd.clone());
+                let cwd = request.cwd.clone();
+                let child_project =
+                    crate::worktree::project_of(&cwd).unwrap_or_else(|| cwd.clone());
                 let base = child_project.join(crate::daemon::SESSION_BASE);
                 let project = caller
                     .storage_base()
                     .map(crate::policy::lexical_normalize)
-                    .ok_or_else(|| anyhow::anyhow!("the calling session has no project base"))?;
+                    .ok_or_else(|| anyhow!("the calling session has no project base"))?;
                 if base != project {
                     anyhow::bail!(
                         "refused: {} is outside this project — a session creates only under \
@@ -171,32 +226,47 @@ impl Tool<Control> for Create {
                         project.display()
                     );
                 }
-                let env = caller.child_env().resolved();
-                let request = crate::daemon::CreateSession {
-                    name: self.name,
-                    cwd,
-                    config: self.config,
-                    options: crate::inference::SessionOptions {
-                        model: self.model,
-                        spotter_model: self.spotter_model,
-                        temperature: self.temperature,
-                        effort: self.effort,
-                        ..Default::default()
-                    },
-                    upstream: self.upstream,
-                    autonomous: self.autonomous,
-                    reauth: Vec::new(),
-                    refuse_authorization: false,
-                    keep_scratch: false,
-                    worktree: self.worktree,
-                    detached: self.detached,
-                    env: Some(env),
+                // The child records the caller as its creator, which is what makes
+                // it a descendant for later driving verbs — and subscribes the caller
+                // to the child's status (docs/tools.md).
+                let (child, id) = state.create(request).await?;
+                let view = child.status_view(&id, &child.status());
+                let reader =
+                    Reader::read(Relation::Driver, &Moves::IN_SESSION, Some(state.caller()));
+                let then = match self.first_message() {
+                    Some(text) => {
+                        let turn = crate::frontend::SubmittedTurn::new(
+                            text,
+                            crate::daemon::mint_submission_id(),
+                        )
+                        .sourced(Some(crate::frontend::session_source(state.caller())));
+                        match child.submit_named_turn(turn, None) {
+                            Ok(landing) => answers::sent(&id, landing, Some(&view), now),
+                            Err(refusal) => format!(
+                                "first message not delivered: {}",
+                                refusal.message(&id, Some(state.caller()))
+                            ),
+                        }
+                    }
+                    None => answers::fresh(&view, &reader, now),
                 };
-                // The child records the caller as its creator, which is what
-                // makes it a descendant for later mutating calls — and
-                // subscribes the caller to the child's status (docs/tools.md).
-                let id = state.create(request).await?;
-                Ok(CreatedResult { id })
+                let directories = child.directories();
+                let working = directories.working().display().to_string();
+                let project = (directories.working() != directories.project())
+                    .then(|| directories.project().display().to_string());
+                let identity = child
+                    .identity()
+                    .and_then(|identity| serde_json::to_value(identity).ok())
+                    .unwrap_or_default();
+                Ok(answers::created(&answers::Created {
+                    id: &id,
+                    model: model_of(&identity),
+                    working: &working,
+                    project: project.as_deref(),
+                    branch: self.worktree.then(|| crate::worktree::branch(&id)),
+                    gates: answers::gates("you", self.autonomous),
+                    then,
+                }))
             }
         }
     }

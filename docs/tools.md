@@ -199,20 +199,35 @@ fully reversible) that exposes its modules, `Tools` enum, and state struct, whos
 `new(root)` constructor takes the session's cwd.
 
 This section is about efference *consuming* MCP servers. It also serves one: the
-session-control verbs are written as mcplease tools and mounted three times, as
-`efference control <tool>`, as the stdio server `efference mcp`, and inside a hosted
-session's own toolbox ([operating.md](operating.md)).
+session-control verbs are written once as mcplease tools (`src/control_tools.rs`) and
+listed by three tool sets, each its own `tools!` enum: `control_tools::in_session`,
+mounted inside a hosted session's own toolbox; `control_tools::mcp`, served by the
+stdio server `efference mcp`; and `control_tools::cli`, the `efference control <verb>`
+subcommands ([operating.md](operating.md)). mcplease's macro declares a module for each
+tool it lists, so each set's directory holds a one-line module per tool re-exporting
+the shared struct. A set is an allow-list: the stdio mount serves its whole enum, and
+mcplease has no way to hide a tool from it.
+
+| set | verbs |
+|---|---|
+| in-session (`agents__<verb>`) | `create`, `message`, `decide`, `interrupt`, `archive`, `status`, `transcript`, `hand_off` |
+| `efference mcp` | `create`, `message`, `decide`, `interrupt`, `archive`, `status`, `transcript`, `settle` |
+| `efference control` | the MCP set, then the operator's route verbs: `state`, `pace`, `title`, `background`, `proposal`, `review-level`, `supervisor`, `notify`, `entries`, `image` |
+
+Other sessions are named to a model as agents: the in-session namespace is `agents__`,
+and every verb's target parameter is `agent`. "Session" stays the word for the record —
+the log, resume, archive — and each agent is a session on its host, its id naming both.
+The agent verbs answer in plain text with no output schema; `state`, `settle` at the
+command line, and `entries` print JSON for scripts.
 
 #### The `sessions` provider
 
-A session created on a host mounts the control verbs as `Provider::Sessions`,
-wrapping the control `Tools` enum in the in-process `McpServer<Control, Tools>`.
-The session's model reaches its project's other sessions by tool call, under
-namespaced wire names (`sessions__turn`, `sessions__state`, `sessions__create`).
-`settle` is not mounted, and the `wait` flags on `turn` and `approve` are refused:
-an in-session caller has its own inbox rather than a client that must block.
-`supervisor` is not mounted either: setting a session's supervisor is an operator verb,
-reached over `efference control` and `efference mcp` ([permissions.md](permissions.md)).
+A session created on a host mounts the in-session set as `Provider::Sessions`, wrapping
+`control_tools::in_session::Tools` in the in-process `McpServer`. The session's model
+reaches its project's other sessions by tool call, under namespaced wire names
+(`agents__message`, `agents__status`, `agents__create`). None is granted by default, so
+the spotter judges each call. Acting verbs never block: an in-session caller hears its
+children through its inbox (below) rather than through a waiting call.
 
 The provider's executor is `Executor::Host`, which holds the host and the calling
 session's id and calls the same `Session` methods the HTTP handlers call — never a
@@ -220,17 +235,62 @@ round trip over the socket. The calling identity is what makes two rules
 enforceable, and they are enforced by the executor rather than by config:
 
 - **The caller is never its own target.** A call naming the caller, or naming no
-  session (which defaults to it), is refused on every verb.
-- **A mutating verb reaches descendants, or sessions the caller supervises.** `turn`,
-  `approve`, `interrupt`, `archive`, `review_level`, `pace`, `title`, `background`,
-  and `proposal` require the target's `created_by` chain to reach the
-  caller, or the target's supervisor pointer to name the caller
-  ([permissions.md](permissions.md)). Supervision is not transitive: a session given
-  another to supervise does not reach that one's descendants through it. `notify`
-  and the reads (`sessions`, `state`, `transcript`, `entries`, `image`) reach any
-  session in the caller's project.
+  agent (which defaults to it), is refused on every verb.
+- **A driving verb reaches the sessions the caller drives.** A session *drives* another
+  when the other is its descendant (its `created_by` chain reaches the caller), when the
+  host's supervisor pointer names the caller ([permissions.md](permissions.md)), or when
+  the other is the caller's own predecessor, which handed its work to the caller.
+  `decide`, `interrupt` and `archive` require it; supervision is not transitive, so a
+  session given another to supervise does not reach that one's descendants through it.
+  `status`, `transcript`, and `message` from a session that does not drive its target
+  reach any session in the caller's project.
 
-While `state` shows the `cold` topic, a `turn` or an `approve` (other than `abort`) is
+`message` does what the relation says. From a driver it is the target's next user
+message, carrying `source: session[<caller id>]`, which the projection opens as
+`<caller id> (agent):` ([log-and-projection.md](log-and-projection.md)); an empty one is
+a continue, with the continue route's own precondition (`Session::continue_verdict`)
+and its refusal as the answer where it refuses. From any other session it is a note in
+the target's inbox under the caller's id, which the target's triage may set aside. The
+answer always says which happened: `delivered: <id> is working on it`, ``queued: <id>
+reads this after its current step (running bash `cargo test` for 40s)``, `queued: <id>
+is waiting for a decision on 8.2 (…); it reads this after the decision`, or `left in
+<id>'s inbox; it may set it aside (you don't drive it)`. A message never resolves a gate:
+sent to a session holding a call, it waits in the queue.
+
+While the target is asking a question (docs/process-monitor.md), a driver's message
+must name it with `reply_to` — the asking call's transcript handle — and one that does
+answers it. A message naming no question is refused with the question and its handle; a
+`reply_to` naming a question that is no longer pending is refused, saying who answered
+it and how, and is never delivered as a new message, since a stale "yes, delete them"
+read as a new turn reads as consent. Only a driver answers, and a blank reply is
+refused. The check and the answer are one step under the session's ask lock
+(`Session::submit_named_turn`, `src/daemon/named_turns.rs`), so no question can start
+between them.
+
+`decide(agent, seq, decision, message?)` resolves the call the target holds: `seq` is
+the held call's handle, mapped to its call id, and a handle that is not the pending gate
+is refused with what the session holds now (`gate moved: …`). `allow` approves, and a
+message is then sent as the decider's own turn, which the target reads with the call's
+result; `deny` with a message rejects the call and steers the turn
+(`Approval::Redirect`); a bare `deny` aborts it. The decider is recorded on the
+`GateDecision` as `session[<caller id>]`.
+
+`status(agent?)` is the status renderer's answer (below) for one session, read in the
+caller's relation to it; with no agent it is one line per session in the caller's
+project — each status's first line — the sessions the caller drives marked `(yours)`.
+`transcript(agent, seq?, since?, tail?)` is the conversation grain
+(docs/control-api.md): `seq` zooms into one entry; with neither `since` nor `tail` it
+is what is new since this reader's last read. The host holds that read cursor per reader
+and target as control state on the target's hosted entry, never logged
+(`src/daemon/host/agents.rs`); a reader with no cursor — a first read, or any read
+after a host restart — gets the last 40 entries, and the header says so. `since`/`tail`
+reads move the cursor to the end of what they returned; a zoom does not
+(`src/daemon/transcript/cursor.rs`). `interrupt` answers with what it stopped, read from
+the status just before it signals, and signals nothing at an idle session. `archive`
+answers with the sessions that ended with it, its non-detached descendants
+(`Host::ending_with`).
+
+While the target's state shows the `cold` topic, a message or an allow is
 followed by a request that reads the whole context uncached (`context_tokens`). Both go
 through; a driver that would rather not pay can compact first (`POST /loop/compact`). A turn
 or decision is also the person action that releases a loop parked at its cold check
@@ -244,14 +304,23 @@ working directory — the caller's worktree, when it has one — unless `worktre
 gives the child its own checkout and branch ([worktrees.md](worktrees.md)); it takes the
 caller's child environment as the new session's base, records the caller as the
 child's `created_by` — and so as its supervisor, until the operator sets another
-([permissions.md](permissions.md)) — subscribes the caller to the child's status (below), and defaults the child's review level to `supervisor` — so a call the child's spotter holds comes back to the caller as a gate to answer with `approve`. Reach is the project: `sessions` lists, and every target
+([permissions.md](permissions.md)) — subscribes the caller to the child's status (below), and defaults the child's review level to `supervisor` — so a call the child's spotter holds comes back to the caller as a gate to answer with `decide`. It waits out the child's preparation, and an optional `message` is the child's first turn. The answer names the id, the resolved `<connection>/<model>`, the working directory and its own worktree and branch when it has one, where its gates go, and its status. A model the host cannot run is refused with what the host offers: its connections and the first ids of each one's held listing ([model-catalog.md](model-catalog.md)). Reach is the project: the overview lists, and every target
 resolves, only among sessions whose `.efference/` storage base is the caller's, so
 another project's id is not found rather than forbidden. `create` is bounded the same
 way at the other end: a `cwd` whose `.efference/` base is not the caller's is refused
-before anything is minted, since the caller could never reach the child it made. A `turn` submitted this way
-carries `source: session[<caller id>]` ([log-and-projection.md](log-and-projection.md)).
+before anything is minted, since the caller could never reach the child it made.
 The mount is unconditional for a hosted session today; which verbs a config mounts is
 later work.
+
+Over `efference mcp` and the command line the executor is `Executor::Client`, an
+operator client: it drives every session the host holds. A message from it is a turn
+sourced `mcp[<clientInfo.name>]` over MCP and unsourced from the command line; `decide`
+maps the seq through the target's `status` topic, which carries both the handle and the
+call id; the read cursor is the mount's own, per target, shared by its clones;
+`status` with no agent is every session on the host; `create` waits for the starting
+session to start or fail (`GET /state?wait=settled`), and its gates come to the
+operator. A gate a status shows is the reader's to decide when it is routed to the
+operator.
 
 ##### Subscriptions: a session's status in another's inbox
 
@@ -278,29 +347,32 @@ session, its condition, and what it needs; every later line opens with a label
 (`intent:`, `held because:`, `question:`, `said:`, `cut:`, `next:`), and none relies on
 indentation, since a stream consumer trims leading whitespace. Instants print as
 durations ("3m"), and senders as plain names: `you`, `operator`, or an id. The renderer
-takes the reader's relation and a table of the mount's moves, so the calls it names
-are the mount's; in-session they are `sessions__approve`, `sessions__turn`,
-`sessions__transcript`, `sessions__review_level`, and `sessions__state`, each written with
-its arguments filled in. What each relation reads:
+takes the reader's relation and a table of the mount's moves (`Moves`,
+`src/daemon/status/moves.rs`), so the calls it names are the mount's: `agents__<verb>`
+in-session, the bare verb over `efference mcp` and the command line, each written with
+its arguments filled in. The verbs' own answers are rendered beside it
+(`src/daemon/status/answers.rs`). What each relation reads:
 
-- **Reviewer** — the session a gate is routed to (below, and docs/permissions.md): the
-  held call by tool, command or arguments, and transcript handle (`seq`, or `seq.n` when
-  it shared its entry), its intent, why it was held in plain words, and the moves that
-  decide it — `sessions__approve` with its `abort` and `redirect` outcomes, and
-  `sessions__review_level` with `spotter_human`, which hands the gate to the operator
-  rather than dropping it.
-- **Driver** — a `wake` subscriber, which is the creator or the supervisor: every status
-  with the moves that answer it. A gate it is not routed reads as waiting for a decision
-  from the operator or the named supervisor. A question names its place (`question 2 of
-  3`) and says the next message is its answer. An idle carries the whole closing message
-  up to about 4 KB; past that, a `cut:` line says how much was left out and which
-  `sessions__transcript` call reads it.
-- **Observer** — a subscriber without wake: the same conditions without moves, and an
-  idle's closing message cut to its first line, with a `cut:` line saying how many lines
-  remain.
+- **Reviewer** — the session a gate is routed to (below, and docs/permissions.md), or
+  an operator client for a gate routed to the operator: the held call by tool, command
+  or arguments, and transcript handle (`seq`, or `seq.n` when it shared its entry), its
+  intent, why it was held in plain words, and the `decide` call that answers it with its
+  seq filled in.
+- **Driver** — a `wake` subscriber, which is the creator or the supervisor, and any
+  session or client reading a status it drives: every status with the moves that answer
+  it. A gate it is not routed reads as waiting for a decision from the operator or the
+  named supervisor. A question names its place (`question 2 of 3`) and the `message`
+  call with `reply_to` that answers it. An idle carries the whole closing message up to
+  about 4 KB, and names `message` for the next message and `archive`; past the cap, a
+  `cut:` line says how much was left out and which `transcript` zoom reads it. A stop or
+  a pause names the empty message, which continues it.
+- **Observer** — a subscriber without wake, or a session reading one it does not drive:
+  the same conditions without moves, and an idle's closing message cut to its first
+  line, with a `cut:` line saying how many lines remain.
 
 A notification leaves out the footer a read of the status carries (the model, context
-fill, cost, background processes, and queued turns by sender).
+fill, cost, background processes, and queued turns by sender), and a config repair's
+parse error, which the notification names the `status` read for.
 
 Two kinds of subscription, differing only in whether the notification must wake the
 subscriber (docs/inbox.md — must-wake):
@@ -310,12 +382,9 @@ subscriber (docs/inbox.md — must-wake):
   a turn to act at each of the child's decision points even if it then decides
   nothing needs doing. In particular a child's turn ending — a report, a question,
   a refusal — hands control back to the parent without the child sending anything.
-- **An explicit `subscribe`, without wake.** Observation may not: the subscriber's
-  triage may dismiss or leave a peer's status. `subscribe` and `unsubscribe` reach
-  any session in the caller's project, like `notify`; the creator's subscription
-  is dropped by `unsubscribe` like any other. Neither is meaningful from an
-  external client, which has no inbox: the HTTP executor refuses them and names
-  `settle` and the `wait` flags instead.
+- **Any other, without wake.** Observation may not: the subscriber's triage may dismiss
+  or leave a peer's status. The host's `subscribe` and `unsubscribe` keep both kinds;
+  no agent verb makes or drops one.
 
 The subscriber set is host control state on the target — never logged, never
 projected — and the host runs one watcher per session that reads its status on
@@ -331,7 +400,7 @@ A session ends when the session that created it ends, unless `create` passed
 its own subscriptions are dropped and its non-detached children are ended, each
 running the same teardown. Cascade is the default because the keepalive re-warms an
 orphan's prefix every interval forever; `detached` exists for a session meant to
-outlive its creator. The human sees every session in `sessions` either way.
+outlive its creator. The human sees every session in the session list either way.
 
 ##### Hand-off: a successor in the caller's place
 
@@ -356,27 +425,27 @@ child is inverted:
   operator's turn, and `POST /turns` refuses the prefix from a client.
 - **Clients follow.** The predecessor's `session_identity` gains `successor`, and a client
   attached to it moves to the successor.
-- **Archiving the predecessor** is the successor's, and the one exception to "a mutating verb
-  reaches descendants, or sessions the caller supervises": `archive` also reaches the caller's
-  own predecessor. The
-  successor's identity line says so ([context.md](context.md)); it asks the predecessor what
-  the brief leaves open with `notify` first, if anything. That archive is the hand-off's
-  completion and clears on the fast path, with no spotter request, because the host's
-  succession record names the predecessor ([permissions.md](permissions.md)); the record is
-  not restored after a host restart.
-- **Always the operator's call.** `sessions__hand_off` bypasses the fast path and the spotter
+- **The successor drives its predecessor.** Its `message` to the predecessor is a turn, so
+  a question the brief leaves open is answered rather than set aside by an idle
+  predecessor's triage, and its `archive` of the predecessor is the one way the
+  predecessor is ended by a session that did not create it. The successor's identity
+  line says so ([context.md](context.md)). That archive is the hand-off's completion and
+  clears on the fast path, with no spotter request, because the host's succession record
+  names the predecessor ([permissions.md](permissions.md)); the record is not restored
+  after a host restart.
+- **Always the operator's call.** `agents__hand_off` bypasses the fast path and the spotter
   to the human gate, as a write to the session's own config does (docs/permissions.md).
 
-A client has no session to hand off, so the verb refuses from `efference control` and
-`efference mcp` and names `create`.
+`hand_off` is in the in-session set alone: a client has no session to hand off.
 
-`sessions__approve` is bound before it is classified (docs/permissions.md): the loop
-asks the provider for the target's pending gate and gets the child's held action — tool,
-input, intent, cwd, and the chain of sessions down to the leaf. The parent's fast-path,
-spotter brief, and human gate read that action rather than the `call_id`, and the gate
-view carries it as `acting_on` (docs/control-api.md). A held call that is itself a
-`sessions__approve` is followed through the host to the leaf; a stale `call_id` refuses
-with "gate moved" before any rung is consulted.
+An allowing `agents__decide` is bound before it is classified (docs/permissions.md): the
+loop asks the provider for the target's pending gate and gets the child's held action —
+tool, input, intent, cwd, and the chain of sessions down to the leaf. The parent's
+fast-path, spotter brief, and human gate read that action rather than the handle, and the
+gate view carries it as `acting_on` (docs/control-api.md). A held call that is itself an
+allowing `agents__decide` is followed through the host to the leaf; a stale seq refuses
+with "gate moved" before any rung is consulted. A denying `agents__decide` authorizes
+nothing, so it is not bound and clears on the fast path.
 
 `McpServer<State, ToolEnum>` in `src/tools.rs` is generic over the
 instantiations (fs-mcp, semantic-edit-mcp, and the session-control server). It holds

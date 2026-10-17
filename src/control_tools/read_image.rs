@@ -1,5 +1,5 @@
 use super::{Control, Executor, ImageResult};
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 use mcplease::{
     traits::{Tool, ToolMeta},
     types::{RequestContext, ToolAnnotations},
@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 /// Fetch an image the session actually saw: the bytes stored on a logged tool
 /// result, not a re-read of the file they came from, which may since have changed.
-/// `seq` is the log entry whose result carried the image — `log` reports it. Over
+/// `seq` is the log entry whose result carried the image. Over
 /// MCP the image comes back as an image content block; at a terminal it is written
 /// to a file.
 #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema, clap::Args)]
@@ -27,10 +27,10 @@ pub struct Image {
     #[schemars(skip)]
     #[arg(long, short)]
     pub out: Option<std::path::PathBuf>,
-    /// Read from this session by id (see `sessions`). Required unless the server was started with `--name`/`--socket`; then it overrides that session for this call.
+    /// The agent's id. Defaults to the session `--name` names, or the one live here.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[arg(long)]
-    pub session: Option<String>,
+    pub agent: Option<String>,
 }
 
 impl ToolMeta for Image {
@@ -58,16 +58,10 @@ impl Tool<Control> for Image {
         let cli = control.is_cli();
         let bytes = match &control.executor {
             Executor::Client(state) => {
-                let client = state.client(self.session.as_deref()).await?;
+                let client = state.client(self.agent.as_deref()).await?;
                 client.log_image(self.seq, self.idx).await?
             }
-            Executor::Host(state) => {
-                let session = state.resolve(self.session.as_deref())?;
-                session
-                    .image_bytes(self.seq, self.idx)
-                    .map(|(_media_type, bytes)| bytes)
-                    .ok_or_else(|| anyhow!("no image at seq {} index {}", self.seq, self.idx))?
-            }
+            Executor::Host(_) => return Err(super::operator_verb("image")),
         };
         // The encoding comes from the bytes rather than from a media type the caller
         // would have to re-request: the image was realized into one of a handful of

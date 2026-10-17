@@ -5,8 +5,8 @@ use super::*;
 
 /// The `ask` awaiting a reply. The sender is consumed by the turn that resolves it.
 pub(super) struct AskState {
-    call_id: String,
-    question: String,
+    pub(super) call_id: String,
+    pub(super) question: String,
     /// This question's place among the asks of one completion, 1-based, and how many
     /// there are: they are put one at a time.
     n: usize,

@@ -25,10 +25,10 @@ pub struct Pace {
     #[serde(default)]
     #[arg(long)]
     pub resume: bool,
-    /// Act on this session by id (see `sessions`). Required unless the server was started with `--name`/`--socket`; then it overrides that session for this call.
+    /// The agent's id. Defaults to the session `--name` names, or the one live here.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[arg(long)]
-    pub session: Option<String>,
+    pub agent: Option<String>,
 }
 
 impl ToolMeta for Pace {
@@ -60,23 +60,14 @@ impl Tool<Control> for Pace {
         };
         match &control.executor {
             Executor::Client(state) => {
-                let client = state.client(self.session.as_deref()).await?;
+                let client = state.client(self.agent.as_deref()).await?;
                 let (speed, held) = client.pace(self.speed_ms, held).await?;
                 Ok(format!(
                     "pace: speed {speed}ms, {}",
                     if held { "HELD" } else { "running" }
                 ))
             }
-            Executor::Host(state) => {
-                let session = state.resolve_mutating(self.session.as_deref())?;
-                let (speed, held) =
-                    session.set_pace(self.speed_ms.map(std::time::Duration::from_millis), held);
-                Ok(format!(
-                    "pace: speed {}ms, {}",
-                    speed.as_millis(),
-                    if held { "HELD" } else { "running" }
-                ))
-            }
+            Executor::Host(_) => Err(super::operator_verb("pace")),
         }
     }
 }

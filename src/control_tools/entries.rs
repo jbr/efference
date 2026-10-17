@@ -1,5 +1,5 @@
 use super::{Control, EntriesResult, Executor};
-use anyhow::{Context as _, Result, anyhow};
+use anyhow::{Context as _, Result};
 use mcplease::{
     traits::{Tool, ToolMeta},
     types::{RequestContext, ToolAnnotations},
@@ -16,10 +16,10 @@ pub struct Entries {
     /// The `seq`s to fetch, as `transcript` lines show them.
     #[arg(required = true, num_args = 1..)]
     pub seqs: Vec<u64>,
-    /// Read this session by id (see `sessions`). Required unless the server was started with `--name`/`--socket`; then it overrides that session for this call.
+    /// The agent's id. Defaults to the session `--name` names, or the one live here.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[arg(long)]
-    pub session: Option<String>,
+    pub agent: Option<String>,
 }
 
 impl ToolMeta for Entries {
@@ -44,7 +44,7 @@ impl Tool<Control> for Entries {
     async fn execute(self, control: Control, _context: RequestContext) -> Result<EntriesResult> {
         match &control.executor {
             Executor::Client(state) => {
-                let client = state.client(self.session.as_deref()).await?;
+                let client = state.client(self.agent.as_deref()).await?;
                 let mut entries = Vec::with_capacity(self.seqs.len());
                 for seq in self.seqs {
                     let body = client
@@ -55,17 +55,7 @@ impl Tool<Control> for Entries {
                 }
                 Ok(EntriesResult { entries })
             }
-            Executor::Host(state) => {
-                let session = state.resolve(self.session.as_deref())?;
-                let mut entries = Vec::with_capacity(self.seqs.len());
-                for seq in &self.seqs {
-                    let body = session
-                        .entry_json(*seq)
-                        .ok_or_else(|| anyhow!("entry {seq}"))?;
-                    entries.push(serde_json::from_str(&body)?);
-                }
-                Ok(EntriesResult { entries })
-            }
+            Executor::Host(_) => Err(super::operator_verb("entries")),
         }
     }
 }

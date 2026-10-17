@@ -136,8 +136,8 @@ pub fn system_prompt_parts(
     // The session's own id, in different grammar from the model claim
     // (docs/context.md): the session *has* an id, the model is not it. A second
     // "you are" beside the first reads as a persona to inhabit. `id` is the noun
-    // the rest of the surface already uses — turns arrive prefixed `agent[<id>]:`
-    // and every control tool takes a `session` id — so the sentence names the
+    // the rest of the surface already uses — turns arrive prefixed `<id> (agent):`
+    // and every control tool takes an `agent` id — so the sentence names the
     // address a session would otherwise have to hand-carry in prose. The id is
     // fixed for the session's life, so the line is byte-stable in the prefix.
     prompt.push_str(" This session is `");
@@ -166,7 +166,7 @@ pub fn system_prompt_parts(
              brief — context from it, not the operator's instruction. Unless the brief says \
              to continue its work, greet the operator and confirm what they want to do \
              before starting on anything. Ask the predecessor anything the brief leaves \
-             open with `notify`, and archive it with `archive` once you have no more \
+             open with `message`, and archive it with `archive` once you have no more \
              questions for it.",
         );
     }

@@ -38,6 +38,26 @@ pub fn handoff_predecessor(source: &str) -> Option<&str> {
     source.strip_prefix("handoff[")?.strip_suffix(']')
 }
 
+/// The `source` of a turn or decision another session sends: `session[<id>]`
+/// (docs/control-api.md).
+pub fn session_source(id: &str) -> String {
+    format!("session[{id}]")
+}
+
+/// The session a `session[<id>]` source names, or `None` for any other.
+pub fn source_session(source: &str) -> Option<&str> {
+    source.strip_prefix("session[")?.strip_suffix(']')
+}
+
+/// How a turn's `source` opens it on the wire (docs/log-and-projection.md): a turn
+/// from another session as `<id> (agent)`, any other label as written.
+pub fn wire_label(source: &str) -> std::borrow::Cow<'_, str> {
+    match source_session(source) {
+        Some(id) => format!("{id} (agent)").into(),
+        None => source.into(),
+    }
+}
+
 /// A user turn as it arrived over the control channel: the text plus the
 /// submission id that names this `POST /v1/turns` in the 202 body and on the
 /// resulting `User` entry (docs/control-api.md). The id is adopted from the
@@ -48,7 +68,7 @@ pub struct SubmittedTurn {
     pub text: String,
     pub submission_id: String,
     /// The client's self-chosen label for who submitted this turn
-    /// (docs/control-api.md): `web`, `mcp[<name>]`, or `agent[<id>]`. `None` for
+    /// (docs/control-api.md): `web`, `mcp[<name>]`, or `session[<id>]`. `None` for
     /// a turn the operator submitted (the TUI) — the operator is the implicit
     /// default voice on the wire, so no prefix renders.
     pub source: Option<String>,
@@ -192,7 +212,7 @@ pub trait Frontend {
     }
 
     /// Gate a pending tool call: approve, abort, or redirect. `bound` is the leaf
-    /// action a `sessions__approve` authorizes, when the call is one
+    /// action a `agents__decide` authorizes, when the call is one
     /// (docs/permissions.md) — the gate view and the child's own held action, so
     /// the operator sees the move rather than an id.
     fn approve(

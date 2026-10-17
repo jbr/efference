@@ -6,10 +6,11 @@ use mcplease::{
 };
 use serde::{Deserialize, Serialize};
 
-/// File an ambient message in the session's inbox. Unlike `turn`, it does not
-/// interrupt: it waits for the session's next triage point and is delivered there.
-/// This is the right call for anything the session should know but need not stop
-/// for — a build result, a review comment, a change upstream.
+/// File an ambient message in a session's inbox under a label of your choosing. It
+/// does not interrupt: it waits for the session's next triage point and is delivered
+/// there — a build result, a review comment, a change upstream. The operator's verb
+/// for scripts; an agent's note is `message` from a session that does not drive its
+/// target.
 #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema, clap::Args)]
 #[serde(rename = "notify")]
 pub struct Notify {
@@ -25,10 +26,10 @@ pub struct Notify {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[arg(long)]
     pub slot: Option<String>,
-    /// Notify this session by id (see `sessions`). Required unless the server was started with `--name`/`--socket`; then it overrides that session for this call.
+    /// The agent's id. Defaults to the session `--name` names, or the one live here.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[arg(long)]
-    pub session: Option<String>,
+    pub agent: Option<String>,
 }
 
 impl ToolMeta for Notify {
@@ -62,21 +63,14 @@ impl Tool<Control> for Notify {
     async fn execute(self, control: Control, _context: RequestContext) -> Result<String> {
         match &control.executor {
             Executor::Client(state) => {
-                let client = state.client(self.session.as_deref()).await?;
+                let client = state.client(self.agent.as_deref()).await?;
                 let body = self.body.join(" ");
                 let seq = client
                     .notify(&self.source, &body, self.slot.as_deref())
                     .await?;
                 Ok(answer(seq))
             }
-            Executor::Host(state) => {
-                // `notify` is an ambient message, not a mutation of the target:
-                // it reaches anything in the caller's project (docs/tools.md).
-                let session = state.resolve(self.session.as_deref())?;
-                let body = self.body.join(" ");
-                let seq = session.notify(self.source.clone(), body, self.slot.clone());
-                Ok(answer(seq))
-            }
+            Executor::Host(_) => Err(super::operator_verb("notify")),
         }
     }
 }

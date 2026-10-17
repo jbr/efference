@@ -118,10 +118,12 @@ pub enum Provider {
     // variant (clippy::large_enum_variant). Method calls auto-deref through the box.
     Fs(Box<McpServer<FsTools, fs_mcp::Tools>>),
     SemanticEdit(Box<McpServer<SemanticEditTools, semantic_edit_mcp::Tools>>),
-    /// The session-control verbs (docs/tools.md): `sessions__*`, driving the
+    /// The session-control verbs (docs/tools.md): `agents__*`, driving the
     /// host in-process with the calling session's identity. Mounted only for a
     /// session created on a host.
-    Sessions(Box<McpServer<crate::control_tools::Control, crate::control_tools::Tools>>),
+    Sessions(
+        Box<McpServer<crate::control_tools::Control, crate::control_tools::in_session::Tools>>,
+    ),
     /// A connected provider (docs/tools.md): a user-declared server reached
     /// over stdio or HTTP, its tool table discovered at mount.
     Connected(Box<crate::mcp::ConnectedProvider>),
@@ -323,8 +325,8 @@ pub fn unknown_tool_message(name: &str, available: &[String]) -> String {
     message
 }
 
-impl McpServer<crate::control_tools::Control, crate::control_tools::Tools> {
-    /// Resolve a `sessions__approve` call to the leaf action its target holds
+impl McpServer<crate::control_tools::Control, crate::control_tools::in_session::Tools> {
+    /// Resolve an allowing `agents__decide` call to the leaf action its target holds
     /// (docs/permissions.md), through the sessions provider's in-process host.
     fn resolve_bound_action(
         &self,

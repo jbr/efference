@@ -114,7 +114,7 @@ impl Session {
     /// Ask the loop to re-enter its trajectory with nothing appended, or say why it
     /// cannot (docs/control-api.md). The verdict is read before the person's action is
     /// noted, since noting it releases a cold park the verdict reads.
-    pub(super) fn request_continue(&self) -> Result<(), NotContinuable> {
+    pub(crate) fn request_continue(&self) -> Result<(), NotContinuable> {
         let verdict = self.continue_verdict();
         self.person_acted(super::PersonAction::Continue);
         match verdict? {

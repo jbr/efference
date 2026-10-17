@@ -117,7 +117,7 @@ test("the edit family omits its content and emits no body — the diff is below"
 
 // The brief is a message to the session that takes over (docs/tools.md).
 test("a hand-off puts the brief under whom it is for, as prose", () => {
-  const view = callView("sessions__hand_off", {
+  const view = callView("agents__hand_off", {
     brief: "Greet the operator.",
     intent: "hand off",
   });

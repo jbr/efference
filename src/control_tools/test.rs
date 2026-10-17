@@ -1,27 +1,34 @@
 //! The control tools, exercised over the real control router (docs/operating.md).
 
 use super::*;
+use crate::client::Client;
 use crate::persist::Log;
-use mcplease::traits::AsToolsList;
 use mcplease::traits::Tool as _;
 use mcplease::types::{JsonRpcRequest, JsonRpcResponse, RequestContext};
 use std::sync::Arc;
+use std::time::Duration;
 
-/// A [`Control`] whose default session is a live [`router`](crate::daemon::router)
-/// on `trillium_testing`'s in-memory transport — the whole request/response cycle,
-/// with no socket bound (`daemon/test.rs` explains why the tests never bind one).
-async fn test_state(cli: bool) -> Control {
-    test_state_over(cli, Log::in_memory()).await
-}
-
-/// [`test_state`] over a log the test has already written to: the router has no
-/// loop behind it, so an entry a test wants to read back is appended before mounting.
-async fn test_state_over(cli: bool, log: Log) -> Control {
+/// A live [`router`](crate::daemon::router) for one session on `trillium_testing`'s
+/// in-memory transport — the whole request/response cycle, with no socket bound
+/// (`daemon/test.rs` explains why the tests never bind one). The session is named
+/// `child`.
+async fn session_over(log: Log) -> (Arc<crate::daemon::Session>, Client) {
     let (shared, _turns) = crate::daemon::Session::new(std::env::current_dir().unwrap(), log);
+    shared.set_identity(crate::daemon::SessionIdentity {
+        id: "child".into(),
+        title: None,
+        model: "m".into(),
+        cwd: std::env::current_dir().unwrap().display().to_string(),
+        inference: None,
+        successor: None,
+    });
     let mut handler = (
-        trillium::Init::new(move |info: trillium::Info| {
+        trillium::Init::new({
             let shared = Arc::clone(&shared);
-            async move { info.with_shared_state(shared) }
+            move |info: trillium::Info| {
+                let shared = Arc::clone(&shared);
+                async move { info.with_shared_state(shared) }
+            }
         }),
         crate::daemon::handler(
             crate::daemon::Transport::Socket { auth: None },
@@ -29,33 +36,51 @@ async fn test_state_over(cli: bool, log: Log) -> Control {
         ),
     );
     let context = trillium_testing::init(&mut handler).await;
-    Control::with_client(
-        Client::with_connector(
-            trillium_testing::ServerConnector::new(handler).with_context(context),
-        ),
-        cli,
-    )
+    let client = Client::with_connector(
+        trillium_testing::ServerConnector::new(handler).with_context(context),
+    );
+    (shared, client)
+}
+
+/// Tools bound to `client` as their default session: `cli` picks the command line's
+/// presentation.
+fn mounted(client: Client, cli: bool) -> Control {
+    Control::new(Executor::Client(ClientExecutor::defaulting_to(client)), cli)
+}
+
+/// The context a call over MCP carries from a client named `name`.
+fn from_client(name: &'static str) -> RequestContext {
+    RequestContext::from_params(Some(&serde_json::json!({
+        "_meta": {
+            mcplease::types::meta_keys::CLIENT_INFO:
+                mcplease::types::Implementation::new(name, "1.0"),
+        }
+    })))
 }
 
 /// One `tools/call` end to end: the JSON-RPC a mounted harness sends, through
 /// mcplease's dispatch, through `execute`, through a real `GET /state`, and back
-/// out as both content halves.
+/// out as plain text with no structured half.
 #[tokio::test]
-async fn tools_call_state_reaches_the_daemon() {
-    let state = test_state(false).await;
+async fn tools_call_status_reaches_the_daemon() {
+    let (_shared, client) = session_over(Log::in_memory()).await;
     let request: JsonRpcRequest = serde_json::from_value(serde_json::json!({
         "jsonrpc": "2.0",
         "id": 1,
         "method": "tools/call",
-        "params": { "name": "state", "arguments": {} }
+        "params": { "name": "status", "arguments": {} }
     }))
     .unwrap();
     let config = mcplease::ServerConfig::new(mcplease::server_info!());
-
     let context = RequestContext::from_request(&request);
-    let response = mcplease::handle_request::<Tools, Control>(request, state, context, &config)
-        .await
-        .expect("nothing here cancels");
+    let response = mcplease::handle_request::<mcp::Tools, Control>(
+        request,
+        mounted(client, false),
+        context,
+        &config,
+    )
+    .await
+    .expect("nothing here cancels");
 
     let JsonRpcResponse { result, error, .. } = response;
     assert!(error.is_none(), "{error:?}");
@@ -65,30 +90,20 @@ async fn tools_call_state_reaches_the_daemon() {
         Some(&serde_json::Value::Bool(true)),
         "the tool call failed: {result}"
     );
-    // The program-facing half is the typed `StateResult`: no `settled` (nothing
-    // waited), and a `state` object that is the daemon's own `GET /state` body.
-    let structured = result
-        .get("structuredContent")
-        .expect("state is a structured_output! tool");
-    assert!(structured.get("settled").is_none());
-    let daemon_state = structured.get("state").expect("the /state body");
-    assert!(
-        daemon_state.get("review_level").is_some() && daemon_state.get("pace").is_some(),
-        "not a /state body: {daemon_state}"
-    );
-    // The model-facing half is the same value as text.
+    assert!(result.get("structuredContent").is_none(), "{result}");
     let text = result["content"][0]["text"].as_str().expect("a text block");
     assert_eq!(
-        serde_json::from_str::<serde_json::Value>(text).unwrap(),
-        *structured
+        text,
+        "child: idle, its turn is done\nnext: message(agent: \"child\", text: \"<message>\") \
+         sends its next message; archive(agent: \"child\") ends it\nm"
     );
 }
 
-/// `transcript` and `entries` over the same router. Over MCP the transcript is the
-/// conversation, the mounting client's own turn named "you"; at the command line it is
-/// the audit grain, and either line's seq fetches the whole entry.
+/// The MCP mount holds its own cursor per agent: a first read is the tail and says so,
+/// a second has nothing new, a zoom leaves the cursor where it was, and a later read is
+/// what landed since. Another mount reads from its own first read.
 #[tokio::test]
-async fn transcript_lines_carry_the_seq_that_entries_resolves() {
+async fn the_mcp_mount_reads_what_is_new_with_its_own_cursor() {
     let mut log = Log::in_memory();
     log.append_submission(
         1,
@@ -99,22 +114,57 @@ async fn transcript_lines_carry_the_seq_that_entries_resolves() {
         Some("mcp[claude-code]".into()),
     )
     .unwrap();
-    let mcp = RequestContext::from_params(Some(&serde_json::json!({
-        "_meta": {
-            mcplease::types::meta_keys::CLIENT_INFO:
-                mcplease::types::Implementation::new("claude-code", "1.0"),
-        }
-    })));
-    let read = || Transcript {
+    let (shared, client) = session_over(log).await;
+    let control = mounted(client.clone(), false);
+    let read = |seq: Option<&str>| Transcript {
+        agent: None,
+        seq: seq.map(str::to_string),
         since: None,
         tail: None,
-        session: None,
+        audit: false,
     };
+    let me = || from_client("claude-code");
 
-    let over_mcp = test_state_over(false, log).await;
-    let text = read().execute(over_mcp, mcp).await.unwrap();
-    assert_eq!(text, "transcript, seq 0\n0  you: hello transcript\n");
+    let first = read(None).execute(control.clone(), me()).await.unwrap();
+    assert_eq!(
+        first,
+        "transcript of child, seq 0 (your first read)\n0  you: hello transcript\n"
+    );
+    let again = read(None).execute(control.clone(), me()).await.unwrap();
+    assert_eq!(
+        again,
+        "transcript of child: nothing new since your last read (seq 0)\n"
+    );
+    let zoom = read(Some("0"))
+        .execute(control.clone(), me())
+        .await
+        .unwrap();
+    assert!(zoom.contains("hello transcript"), "{zoom}");
 
+    shared
+        .append(
+            1,
+            crate::log::Payload::User(vec![crate::log::ContentBlock::Text("later".into())]),
+        )
+        .unwrap();
+    let later = read(None).execute(control.clone(), me()).await.unwrap();
+    assert_eq!(
+        later,
+        "transcript of child, new since your last read: seq 1\n1  operator: later\n"
+    );
+
+    let other = mounted(client, false);
+    let fresh = read(None).execute(other, me()).await.unwrap();
+    assert!(
+        fresh.starts_with("transcript of child, seq 0–1 (your first read)"),
+        "{fresh}"
+    );
+}
+
+/// The command line reads the conversation too; `--audit` is the entry-by-entry
+/// grain, and either line's seq fetches the whole entry.
+#[tokio::test]
+async fn the_command_line_reads_the_audit_grain_on_request() {
     let mut log = Log::in_memory();
     log.append(
         1,
@@ -123,11 +173,18 @@ async fn transcript_lines_carry_the_seq_that_entries_resolves() {
         )]),
     )
     .unwrap();
-    let state = test_state_over(true, log).await;
-    let text = read()
-        .execute(state.clone(), RequestContext::default())
-        .await
-        .unwrap();
+    let (_shared, client) = session_over(log).await;
+    let control = mounted(client, true);
+    let text = Transcript {
+        agent: None,
+        seq: None,
+        since: None,
+        tail: None,
+        audit: true,
+    }
+    .execute(control.clone(), RequestContext::default())
+    .await
+    .unwrap();
     let line = text
         .lines()
         .find(|l| l.contains("hello transcript"))
@@ -137,9 +194,9 @@ async fn transcript_lines_carry_the_seq_that_entries_resolves() {
 
     let fetched = Entries {
         seqs: vec![seq],
-        session: None,
+        agent: None,
     }
-    .execute(state, RequestContext::default())
+    .execute(control, RequestContext::default())
     .await
     .unwrap();
     let entry = &fetched.entries[0];
@@ -164,251 +221,77 @@ fn proposed_edit(command: &str) -> crate::log::Payload {
 /// effective config and drains it from `state.proposals`; cancelling drains it
 /// without applying anything; an unknown `seq` is an error naming it.
 ///
-/// Unlike [`test_state_over`], the proposals here are filed with `Session::append`
-/// *after* construction — the pending-proposals queue is populated by the live
-/// append path, not folded from a log a `Session` is merely opened over.
+/// The proposals are filed with `Session::append` after construction — the
+/// pending-proposals queue is populated by the live append path, not folded from a
+/// log a `Session` is merely opened over.
 #[tokio::test]
 async fn proposal_commits_and_cancels_through_the_client_executor() {
-    let (shared, _turns) =
-        crate::daemon::Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let (shared, client) = session_over(Log::in_memory()).await;
     let commit_seq = shared.append(0, proposed_edit("npm")).unwrap();
     let cancel_seq = shared.append(0, proposed_edit("cargo")).unwrap();
+    let control = mounted(client, true);
+    let proposal = |seq, cancel, note: &str| Proposal {
+        seq,
+        cancel,
+        note: note.into(),
+        agent: None,
+    };
 
-    let mut handler = (
-        trillium::Init::new({
-            let shared = Arc::clone(&shared);
-            move |info: trillium::Info| {
-                let shared = Arc::clone(&shared);
-                async move { info.with_shared_state(shared) }
-            }
-        }),
-        crate::daemon::handler(
-            crate::daemon::Transport::Socket { auth: None },
-            crate::daemon::App::session(std::env::current_dir().unwrap()),
-        ),
-    );
-    let context = trillium_testing::init(&mut handler).await;
-    let state = Control::with_client(
-        Client::with_connector(
-            trillium_testing::ServerConnector::new(handler).with_context(context),
-        ),
-        false,
-    );
-
-    let result = Proposal {
-        seq: commit_seq,
-        cancel: false,
-        note: "looks safe".into(),
-        session: None,
-    }
-    .execute(state.clone(), RequestContext::default())
-    .await;
+    let result = proposal(commit_seq, false, "looks safe")
+        .execute(control.clone(), RequestContext::default())
+        .await;
     assert_eq!(result.unwrap(), format!("committed {commit_seq}"));
-
-    let result = Proposal {
-        seq: cancel_seq,
-        cancel: true,
-        note: "not now".into(),
-        session: None,
-    }
-    .execute(state.clone(), RequestContext::default())
-    .await;
+    let result = proposal(cancel_seq, true, "not now")
+        .execute(control.clone(), RequestContext::default())
+        .await;
     assert_eq!(result.unwrap(), format!("cancelled {cancel_seq}"));
 
-    let remaining = State { session: None }
-        .execute(state.clone(), RequestContext::default())
+    let remaining = State { agent: None }
+        .execute(control.clone(), RequestContext::default())
         .await
         .unwrap();
-    let proposals = remaining.state.get("proposals").cloned();
     assert_eq!(
-        proposals,
+        remaining.state.get("proposals").cloned(),
         Some(serde_json::json!([])),
         "both proposals drained: {:?}",
         remaining.state
     );
 
-    let err = Proposal {
-        seq: 999,
-        cancel: false,
-        note: "?".into(),
-        session: None,
-    }
-    .execute(state, RequestContext::default())
-    .await
-    .unwrap_err();
+    let err = proposal(999, false, "?")
+        .execute(control, RequestContext::default())
+        .await
+        .unwrap_err();
     assert!(err.to_string().contains("999"), "{err}");
 }
 
-/// The advertised list is what a mounting harness caches, so both its **order** and
-/// its behaviour hints are pinned here. Order is macro-expansion order; a reorder
-/// moves every client's cached list. The hints are what an approval UX shows, and
-/// the spec's defaults are pessimistic, so an unset one reads as a destructive
-/// open-world mutation.
-#[test]
-fn tools_list_is_ordered_and_annotated() {
-    let tools = Tools::tools_list();
-    let names: Vec<&str> = tools.iter().map(|t| t.name.as_str()).collect();
-    assert_eq!(
-        names,
-        [
-            "turn",
-            "approve",
-            "settle",
-            "interrupt",
-            "background",
-            "pace",
-            "review_level",
-            "supervisor",
-            "notify",
-            "proposal",
-            "image",
-            "state",
-            "transcript",
-            "entries",
-            "title",
-            "sessions",
-            "create",
-            "hand_off",
-            "archive",
-            "subscribe",
-            "unsubscribe",
-        ]
-    );
-
-    let hints = |name: &str| {
-        let tool = tools.iter().find(|t| t.name == name).unwrap();
-        let annotations = tool
-            .annotations
-            .as_ref()
-            .unwrap_or_else(|| panic!("{name} declares no annotations"));
-        (
-            annotations.read_only_hint,
-            annotations.destructive_hint,
-            annotations.idempotent_hint,
-        )
-    };
-
-    for name in [
-        "state",
-        "transcript",
-        "entries",
-        "settle",
-        "image",
-        "sessions",
-    ] {
-        assert_eq!(hints(name).0, Some(true), "{name} is a read");
-    }
-    // Interrupt kills a process group; approving runs a call the rungs did not
-    // clear; ending a session tears it down; committing a proposal folds a
-    // change into the effective config.
-    for name in ["interrupt", "approve", "archive", "proposal"] {
-        assert_eq!(
-            hints(name),
-            (Some(false), Some(true), Some(false)),
-            "{name}"
-        );
-    }
-    for name in ["turn", "background", "pace", "notify", "create"] {
-        assert_eq!(
-            hints(name),
-            (Some(false), Some(false), Some(false)),
-            "{name} is a non-idempotent write"
-        );
-    }
-    // Every tool declares a closed world: they reach one local daemon, nothing else.
-    for tool in &tools {
-        assert_eq!(
-            tool.annotations.as_ref().unwrap().open_world_hint,
-            Some(false),
-            "{}",
-            tool.name
-        );
-    }
-}
-
-/// Mounted against the host with no `--name`/`--socket`, a call that names no
-/// session is an error naming the argument, not a discovery of whatever is live:
-/// the mount's session selection is explicit per call (docs/operating.md). The
-/// host path here has no listener, so the error also says the host is not up.
+/// Mounted against the host with no `--name`/`--socket`, a call that names no agent
+/// is an error naming the argument, not a discovery of whatever is live: the mount's
+/// session selection is explicit per call (docs/operating.md). The host path here has
+/// no listener, so the error also says the host is not up.
 #[tokio::test]
-async fn an_unbound_mount_requires_session() {
-    let executor = Executor::client(
+async fn an_unbound_mount_requires_agent() {
+    let executor = ClientExecutor::new(
         std::path::PathBuf::from("/nonexistent/efference/host.sock"),
         Fallback::None,
     );
-    let state = Control::new(executor, false);
-    let err = match &state.executor {
-        Executor::Client(executor) => match executor.client(None).await {
-            Ok(_) => panic!("an unbound mount resolved a session"),
-            Err(e) => e.to_string(),
-        },
-        Executor::Host(_) => panic!("this test bound the HTTP executor"),
+    let err = match executor.client(None).await {
+        Ok(_) => panic!("an unbound mount resolved a session"),
+        Err(e) => e.to_string(),
     };
-    assert!(err.contains("pass `session`"), "{err}");
+    assert!(err.contains("pass `agent`"), "{err}");
     assert!(err.contains("no host at"), "{err}");
 }
 
-/// Every session tool but the host's own takes `session`, and those take none or
-/// a required one — `hand_off` none, since a session hands off only its own work — the mount's whole addressing surface, pinned
-/// against a tool that forgets the field.
+/// A call over MCP is named from the caller's `clientInfo`, without the caller saying
+/// anything (docs/control-api.md); no caller name (the command line) means the
+/// operator.
 #[test]
-fn every_session_tool_takes_session() {
-    for tool in Tools::tools_list() {
-        let properties = tool.input_schema["properties"]
-            .as_object()
-            .cloned()
-            .unwrap_or_default();
-        match tool.name.as_str() {
-            "sessions" | "create" | "hand_off" => {
-                assert!(!properties.contains_key("session"), "{}", tool.name)
-            }
-            "archive" => assert_eq!(
-                tool.input_schema["required"],
-                serde_json::json!(["session"])
-            ),
-            _ => assert!(
-                properties.contains_key("session"),
-                "{} takes no `session`",
-                tool.name
-            ),
-        }
-    }
-}
-
-/// The documented temperature range (0–100 percent) must be what the model
-/// sees, not just what the runtime accepts: 255 would otherwise serialize as
-/// a 5.1 native temperature. Pinned through the advertised tool list, which is
-/// exactly what a mounting harness caches.
-#[test]
-fn create_temperature_schema_matches_documented_range() {
-    let temperature = Tools::tools_list()
-        .into_iter()
-        .find(|tool| tool.name == "create")
-        .expect("create is mounted")
-        .input_schema["properties"]["temperature"]
-        .clone();
-    assert_eq!(temperature["type"], "integer");
-    assert_eq!(temperature["minimum"], serde_json::json!(0));
-    assert_eq!(temperature["maximum"], serde_json::json!(100));
-}
-
-/// `worktree` is advertised on `create` and defaults to off, so an existing
-/// caller's request body still parses.
-#[test]
-fn create_advertises_worktree_defaulting_off() {
-    let tool = Tools::tools_list()
-        .into_iter()
-        .find(|tool| tool.name == "create")
-        .expect("create is mounted");
+fn source_comes_from_client_info() {
     assert_eq!(
-        tool.input_schema["properties"]["worktree"]["type"],
-        "boolean"
+        args::turn_source(&from_client("claude-code")).as_deref(),
+        Some("mcp[claude-code]")
     );
-    let create: super::create::Create = serde_json::from_value(serde_json::json!({})).unwrap();
-    assert!(!create.worktree);
-    let create: super::create::Create =
-        serde_json::from_value(serde_json::json!({"worktree": true})).unwrap();
-    assert!(create.worktree);
+    assert_eq!(args::turn_source(&RequestContext::default()), None);
 }
 
 /// A state body with a phase marker, so a test can tell which answer it holds.
@@ -441,15 +324,7 @@ fn waiting_executor(
         }
     };
     let client = Client::with_connector(trillium_testing::ServerConnector::new(handler));
-    let executor = ClientExecutor {
-        host: std::path::PathBuf::from(".efference/host.sock"),
-        fallback: Arc::new(std::sync::Mutex::new(Fallback::Client(client.clone()))),
-    };
-    (executor, client, waits)
-}
-
-fn settled_of(result: &StateResult) -> Option<bool> {
-    serde_json::to_value(result).unwrap()["settled"].as_bool()
+    (ClientExecutor::defaulting_to(client.clone()), client, waits)
 }
 
 /// A capped answer is polled again; the call ends on the first settled one.
@@ -461,11 +336,11 @@ async fn capped_answers_are_repolled_until_settled() {
         .settle_within(&client, None, client.settle())
         .await
         .unwrap();
-    assert_eq!(settled_of(&result), Some(true));
+    assert!(result.settled);
     assert_eq!(waits.load(std::sync::atomic::Ordering::SeqCst), 3);
 }
 
-/// Every answer capped, and `timeout_s` runs out: the current state, `settled: false`.
+/// Every answer capped, and `timeout_s` runs out: the current state, unsettled.
 #[tokio::test(start_paused = true)]
 async fn timeout_s_ends_a_run_of_capped_answers_unsettled() {
     let (executor, client, _) = waiting_executor(|_| Some("false"));
@@ -473,24 +348,8 @@ async fn timeout_s_ends_a_run_of_capped_answers_unsettled() {
         .settle_within(&client, Some(1), client.settle())
         .await
         .unwrap();
-    assert_eq!(settled_of(&result), Some(false));
-}
-
-/// The acting request's answer carries the same mark: a capped turn wait is re-polled.
-#[tokio::test]
-async fn a_capped_turn_wait_is_repolled() {
-    let (executor, client, waits) =
-        waiting_executor(|n| Some(if n < 1 { "false" } else { "true" }));
-    let result = executor
-        .settle_within(
-            &client,
-            Some(30),
-            client.turn_wait_with("go", crate::client::TurnOptions::default()),
-        )
-        .await
-        .unwrap();
-    assert_eq!(settled_of(&result), Some(true));
-    assert_eq!(waits.load(std::sync::atomic::Ordering::SeqCst), 2);
+    assert!(!result.settled);
+    assert_eq!(result.body, STATE_BODY);
 }
 
 /// A host that sends no header is an older host: its answer is a settled one.
@@ -501,6 +360,8 @@ async fn an_answer_without_the_header_counts_as_settled() {
         .settle_within(&client, None, client.settle())
         .await
         .unwrap();
-    assert_eq!(settled_of(&result), Some(true));
+    assert!(result.settled);
     assert_eq!(waits.load(std::sync::atomic::Ordering::SeqCst), 1);
 }
+
+mod surfaces;

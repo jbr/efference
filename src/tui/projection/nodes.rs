@@ -264,7 +264,7 @@ pub(in crate::tui) fn gate_affordance() -> DocumentNode<'static> {
     )
 }
 
-/// The child's held move, shown beside a bound `sessions__approve` so the human
+/// The child's held move, shown beside a bound `agents__decide` so the human
 /// approves the move rather than an id (docs/permissions.md). The logged call line
 /// stays exactly as the model wrote it; this annotation names which child and what
 /// it is holding. The chain joins with `→` when the approval passed through more

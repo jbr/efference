@@ -39,6 +39,12 @@ pub(crate) enum ErrorCode {
     /// state, like [`GateMoved`](Self::GateMoved), and a client acts by showing
     /// the message rather than by retrying.
     NotContinuable,
+    /// A turn that names the question it answers, or comes from an agent, was not
+    /// delivered (docs/control-api.md): a question is pending and the turn names none,
+    /// or the question it names is not the pending one. **409**, with the pending `ask`
+    /// in `detail` (`null` when none is), so the sender can reply to the question that is
+    /// actually open. A stale reply is refused rather than delivered as a new turn.
+    NotDelivered,
     /// `POST /loop/compact` at a moment with no compaction in it: the cache is not believed
     /// expired, a gate or question is pending, a request is in flight, or everything
     /// since the last compaction fits in the verbatim tail (backlog: cold-session.md). 409.
@@ -88,6 +94,7 @@ impl ErrorCode {
             Self::Forbidden => 403,
             Self::NotFound => 404,
             Self::GateMoved
+            | Self::NotDelivered
             | Self::NotContinuable
             | Self::NotCompactable
             | Self::StateMismatch

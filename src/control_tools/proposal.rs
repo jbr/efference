@@ -1,5 +1,5 @@
 use super::{Control, Executor};
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 use mcplease::{
     traits::{Tool, ToolMeta},
     types::{RequestContext, ToolAnnotations},
@@ -28,10 +28,10 @@ pub struct Proposal {
     /// The rationale for the decision, addressed to the session and kept as the
     /// audit record of why the perimeter did or did not move.
     pub note: String,
-    /// Act on this session by id (see `sessions`). Required unless the server was started with `--name`/`--socket`; then it overrides that session for this call.
+    /// The agent's id. Defaults to the session `--name` names, or the one live here.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[arg(long)]
-    pub session: Option<String>,
+    pub agent: Option<String>,
 }
 
 impl ToolMeta for Proposal {
@@ -63,7 +63,7 @@ impl Tool<Control> for Proposal {
         };
         match &control.executor {
             Executor::Client(state) => {
-                let client = state.client(self.session.as_deref()).await?;
+                let client = state.client(self.agent.as_deref()).await?;
                 if self.cancel {
                     client.cancel_proposal(self.seq, &self.note).await?;
                 } else {
@@ -71,13 +71,7 @@ impl Tool<Control> for Proposal {
                 }
                 Ok(format!("{verb} {}", self.seq))
             }
-            Executor::Host(state) => {
-                let session = state.resolve_mutating(self.session.as_deref())?;
-                if !session.resolve_proposal_decision(self.seq, !self.cancel, self.note)? {
-                    return Err(anyhow!("no pending proposal with seq {}", self.seq));
-                }
-                Ok(format!("{verb} {}", self.seq))
-            }
+            Executor::Host(_) => Err(super::operator_verb("proposal")),
         }
     }
 }

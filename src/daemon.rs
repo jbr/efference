@@ -527,6 +527,7 @@ impl Session {
     pub(crate) fn transcript_window(
         &self,
         since: Option<u64>,
+        before: Option<u64>,
         tail: Option<u64>,
         me: &str,
     ) -> std::result::Result<String, String> {
@@ -535,7 +536,7 @@ impl Session {
         }
         let select = LogSelect {
             since,
-            before: None,
+            before,
             tail,
         };
         Ok(self.transcript(&select, transcript::Grain::Conversation, Some(me)))
@@ -640,12 +641,13 @@ mod handler;
 mod http;
 mod keepalive;
 mod metrics;
+mod named_turns;
 mod notifications;
 mod operations;
 mod pace;
 mod person;
 mod phase;
-mod status;
+pub(crate) mod status;
 mod subscriptions;
 // Whether any client is attending the host (docs/web-push.md), and how a moment's
 // push waits on it.
@@ -655,7 +657,7 @@ mod push;
 mod stream;
 pub(crate) mod tcp;
 mod topics;
-mod transcript;
+pub(crate) mod transcript;
 mod verbs;
 mod views;
 mod watch;
@@ -666,6 +668,7 @@ mod watch;
 /// exercise a real request/response cycle without binding anything.
 pub use handler::{App, Transport, handler};
 
+pub(crate) use named_turns::Landing;
 pub(crate) use person::PersonAction;
 pub(crate) use watch::refresh_and_emit;
 

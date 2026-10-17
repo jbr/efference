@@ -380,10 +380,10 @@ spotter gated · deletes outside the git tree — not reversible
 
 Reading order is call → what the spotter made of it → what to do, so the affordance lands adjacent to the strip carrying the verbs.
 
-When the held call is a session's `sessions__approve`, the gate shows the child's move in place of the id ([permissions](permissions.md)): the logged call line stays as the model wrote it, and an annotation below names which child and what it is holding. The chain joins with `→` when the approval passed through more than one session.
+When the held call is a session's allowing `agents__decide`, the gate shows the child's move in place of the handle ([permissions](permissions.md)): the logged call line stays as the model wrote it, and an annotation below names which child and what it is holding. The chain joins with `→` when the approval passed through more than one session.
 
 ```
-› sessions.approve(call_id: "toolu_c", session: "child")
+› agents.decide(agent: "child", decision: "allow", seq: "4")
 ⤷ acting on child's bash · rm -rf ./build — clean the build tree
 ⏸ awaiting your approval  ·  ⏎ approve · type to redirect
 ```

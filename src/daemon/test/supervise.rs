@@ -2,7 +2,7 @@
 //! authority, and a wake subscription (docs/permissions.md, docs/tools.md).
 
 use super::*;
-use crate::control_tools::{Approve, Control, Executor, Interrupt, Turn};
+use crate::control_tools::{Control, Decide, Decision, Executor, Interrupt, Message};
 use crate::daemon::host::SupervisorRefused;
 use crate::daemon::{Host, SessionRuntime};
 use crate::frontend::Approval;
@@ -123,24 +123,40 @@ fn leaf() -> ToolCall {
     )
 }
 
-fn approve(session: &str) -> Approve {
-    Approve {
-        call_id: Some("toolu_leaf".into()),
-        abort: false,
-        redirect: None,
-        wait: false,
-        timeout_s: None,
-        session: Some(session.into()),
+/// Log the leaf as `session`'s assistant turn, so the held call has a handle; returns
+/// it.
+fn issue(session: &Session) -> String {
+    session
+        .append(
+            1,
+            Payload::Assistant {
+                output: crate::log::AssistantOutput::from_legacy_messages(
+                    vec![],
+                    vec![],
+                    vec![leaf()],
+                ),
+                upstream_failure: None,
+            },
+        )
+        .unwrap()
+        .to_string()
+}
+
+fn allow(agent: &str, seq: &str) -> Decide {
+    Decide {
+        agent: Some(agent.into()),
+        seq: seq.into(),
+        decision: Decision::Allow,
+        message: None,
     }
 }
 
-fn turn(session: &str) -> Turn {
-    Turn {
-        text: vec!["steer".into()],
-        wait: false,
-        timeout_s: None,
-        source: None,
-        session: Some(session.into()),
+fn steer(agent: &str) -> Message {
+    Message {
+        agent: Some(agent.into()),
+        text: "steer".into(),
+        words: Vec::new(),
+        reply_to: None,
     }
 }
 
@@ -178,14 +194,15 @@ async fn a_set_supervisor_receives_the_gate_approves_it_and_hears_the_idle() {
     })
     .await;
 
+    let seq = issue(&a);
     let gate = a.register_pending(&leaf(), None);
     wait_until("the gate reached b", || {
         heard(&b, "a", |body| {
-            body.contains("waiting for your decision") && body.contains("toolu_leaf")
+            body.contains("waiting for your decision") && body.contains(&format!("seq: \"{seq}\""))
         })
     })
     .await;
-    approve("a")
+    allow("a", &seq)
         .execute(fixture.control("b"), RequestContext::default())
         .await
         .expect("the supervisor may resolve the gate");
@@ -207,8 +224,8 @@ async fn a_set_supervisor_receives_the_gate_approves_it_and_hears_the_idle() {
             Some("session[b]".into())
         )]
     );
-    let transcript = a.transcript_window(None, None, "b").unwrap();
-    assert!(transcript.contains("  allowed by you\n"), "{transcript}");
+    let transcript = a.transcript_window(None, None, None, "b").unwrap();
+    assert!(transcript.contains("→ allowed by you"), "{transcript}");
     // The loop runs the approved call and its trajectory ends.
     a.going_idle();
 
@@ -222,7 +239,7 @@ async fn a_set_supervisor_receives_the_gate_approves_it_and_hears_the_idle() {
     fixture.host.swansong().shut_down().await;
 }
 
-/// The supervisor drives the session it supervises — `turn` and `interrupt` — and a
+/// The supervisor drives the session it supervises — `message` and `interrupt` — and a
 /// peer that neither created nor supervises it is still refused. Supervision is not
 /// transitive: `b` supervising `a` does not reach `kid`, which `a` created.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -231,7 +248,7 @@ async fn a_supervisor_may_turn_and_interrupt_and_reaches_no_further() {
     fixture.host.set_supervisor("a", Some("b".into())).unwrap();
     let b = fixture.control("b");
 
-    turn("a")
+    steer("a")
         .execute(b.clone(), RequestContext::default())
         .await
         .expect("the supervisor may send a turn");
@@ -243,7 +260,7 @@ async fn a_supervisor_may_turn_and_interrupt_and_reaches_no_further() {
     })
     .await;
     Interrupt {
-        session: Some("a".into()),
+        agent: Some("a".into()),
     }
     .execute(b.clone(), RequestContext::default())
     .await
@@ -257,18 +274,28 @@ async fn a_supervisor_may_turn_and_interrupt_and_reaches_no_further() {
         "the interrupt tool records the calling session"
     );
 
-    let err = turn("a")
+    // A session that does not drive `a` leaves a note in its inbox instead.
+    let said = steer("a")
         .execute(fixture.control("c"), RequestContext::default())
         .await
-        .unwrap_err()
-        .to_string();
-    assert!(err.contains("neither created nor supervises"), "{err}");
-    let err = turn("kid")
+        .unwrap();
+    assert_eq!(
+        said,
+        "left in a's inbox; it may set it aside (you don't drive it)"
+    );
+    let said = steer("kid")
         .execute(b.clone(), RequestContext::default())
         .await
-        .unwrap_err()
-        .to_string();
-    assert!(err.contains("neither created nor supervises"), "{err}");
+        .unwrap();
+    assert!(said.starts_with("left in kid's inbox"), "{said}");
+    let err = Interrupt {
+        agent: Some("kid".into()),
+    }
+    .execute(b.clone(), RequestContext::default())
+    .await
+    .unwrap_err()
+    .to_string();
+    assert!(err.contains("you don't drive \"kid\""), "{err}");
 
     fixture.host.swansong().shut_down().await;
 }
@@ -336,7 +363,7 @@ async fn clearing_or_moving_the_pointer_reroutes_a_held_call() {
     fixture.host.set_supervisor("a", Some("c".into())).unwrap();
     wait_until("the held call was re-routed to c", || {
         heard(&c, "a", |body| {
-            body.contains("waiting for your decision") && body.contains("toolu_leaf")
+            body.contains("waiting for your decision") && body.contains("fs.list")
         })
     })
     .await;
@@ -397,6 +424,7 @@ async fn a_child_with_no_setting_answers_to_its_creator() {
     assert_eq!(kid.resolved_review_level(), ReviewLevel::Supervisor);
     assert!(supervisor_records(&kid).is_empty());
 
+    let seq = issue(&kid);
     let gate = kid.register_pending(&leaf(), None);
     wait_until("the gate reached the creator", || {
         heard(&fixture.session("a"), "kid", |body| {
@@ -404,7 +432,7 @@ async fn a_child_with_no_setting_answers_to_its_creator() {
         })
     })
     .await;
-    approve("kid")
+    allow("kid", &seq)
         .execute(fixture.control("a"), RequestContext::default())
         .await
         .expect("the creator may resolve the gate");

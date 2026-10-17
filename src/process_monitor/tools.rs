@@ -137,19 +137,19 @@ static SCHEMAS: LazyLock<Vec<ToolDefinition>> = LazyLock::new(|| {
             "properties": {
                 "question": {
                     "type": "string",
-                    "description": "The question, in full. The operator reads it as your message, so do not repeat it in prose."
+                    "description": "The question, in full. Whoever answers reads it as your message, so do not repeat it in prose."
                 }
             },
             "required": ["question"]
         }),
     );
     ask.description = Some(
-        "Put a question to the operator and wait for the reply, which comes back as this call's \
-         result. Use it when you need an answer, a decision, or a go-ahead before continuing; \
-         ending your turn means the work is done. Notifications that arrive while you wait do not \
-         answer it; they are shown to you beside the reply. Asks made in parallel are presented \
-         to the operator one at a time, in an unspecified order, so make them independent of each \
-         other."
+        "Put a question to the agent that supervises you when there is one, otherwise to the \
+         operator, and wait for the reply, which comes back as this call's result. Use it when \
+         you need an answer, a decision, or a go-ahead before continuing; ending your turn means \
+         the work is done. Notifications that arrive while you wait do not answer it; they are \
+         shown to you beside the reply. Asks made in parallel are presented one at a time, in an \
+         unspecified order, so make them independent of each other."
             .into(),
     );
     ask.annotations = Some(ToolAnnotations {

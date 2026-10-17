@@ -149,12 +149,12 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
             WireState::Raw,
         )]));
     }
-    // A `sessions__approve` call authorizes the target's held move, so the parent's
-    // permission cascade judges that move rather than the id (docs/permissions.md).
+    // An allowing `agents__decide` authorizes the target's held move, so the parent's
+    // permission cascade judges that move rather than the handle (docs/permissions.md).
     // Resolve it first: a moved gate or a refused target is the whole answer, and
     // nothing should be classified. The logged `ToolCall` is untouched — the wire
-    // carries what the model wrote.
-    let bound = if call.name == crate::control_tools::APPROVE_WIRE_NAME {
+    // carries what the model wrote. A denial authorizes nothing and is not bound.
+    let bound = if crate::control_tools::allows(call) {
         match toolbox.resolve_bound_action(call) {
             Ok(bound) => Some(bound),
             Err(e) => {
@@ -509,9 +509,9 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
     }
 }
 /// The permission cascade for one call (docs/permissions.md). `bound` is the leaf
-/// action a `sessions__approve` authorizes, when the call is one: a granted
-/// `sessions__approve` clears blind — the config's statement of trust in the
-/// coordinator — and otherwise the leaf, not the id, is what the fast-path, the
+/// action an allowing `agents__decide` authorizes, when the call is one: a granted
+/// `agents__decide` clears blind — the config's statement of trust in the
+/// coordinator — and otherwise the leaf, not the handle, is what the fast-path, the
 /// spotter, and the human gate judge. Returns the decision; the caller commits
 /// any `ConfigEdit` it carries.
 pub(super) async fn judge<F: Frontend, S: Spotter>(
@@ -527,7 +527,7 @@ pub(super) async fn judge<F: Frontend, S: Spotter>(
     // grant so far: a prior amendment can promote this very call into the
     // fast-path, and the spotter sees the same scope.
     let role = shared.effective_config();
-    // A granted `sessions__approve` clears blind (docs/permissions.md): the doc
+    // A granted `agents__decide` clears blind (docs/permissions.md): the doc
     // states that as trust in the coordinator, so the child's leaf is not
     // re-litigated on this path.
     if bound.is_some() && policy::tool_granted(&role, &call.name) {
@@ -535,8 +535,9 @@ pub(super) async fn judge<F: Frontend, S: Spotter>(
     }
     // A successor archiving its own predecessor is the hand-off's completion
     // (docs/permissions.md): the host wrote the link at `hand_off`, so the call clears on
-    // the fast path, before the spotter or the human is asked.
-    if bound.is_none() && toolbox.completes_hand_off(call) {
+    // the fast path, before the spotter or the human is asked. A denial at a child's gate
+    // authorizes nothing, and clears the same way.
+    if bound.is_none() && (toolbox.completes_hand_off(call) || toolbox.denies_a_gate(call)) {
         return Ok(Approval::Approve);
     }
     // The judged call: the child's leaf when bound, else the parent's own call.

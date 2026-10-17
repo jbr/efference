@@ -174,21 +174,26 @@ async fn end_session(conn: Conn) -> Conn {
         return missing_host(conn);
     };
     let id = conn.param("session").unwrap_or_default().to_string();
+    // Read before the end starts, while the children it cascades to are still listed.
+    let ending_with = host.ending_with(&id);
     match host.end(&id) {
         Some(completion) => {
             let ended = completion.await;
-            archived(conn, &id, ended)
+            archived(conn, &id, ended, &ending_with)
         }
         None => no_such_session(conn, &id),
     }
 }
 
 /// The `200` an archive answers with, carrying `worktree` when the session had its own
-/// (docs/control-api.md).
-fn archived(conn: Conn, id: &str, ended: Ended) -> Conn {
+/// and `ended_with` when sessions it created end with it (docs/control-api.md).
+fn archived(conn: Conn, id: &str, ended: Ended, ending_with: &[String]) -> Conn {
     let mut body = serde_json::json!({ "id": id, "state": ended.state() });
     if let Some(worktree) = ended.retired.and_then(|retired| retired.response()) {
         body["worktree"] = worktree;
+    }
+    if !ending_with.is_empty() {
+        body["ended_with"] = serde_json::json!(ending_with);
     }
     conn.with_status(200).with_body(body.to_string()).halt()
 }

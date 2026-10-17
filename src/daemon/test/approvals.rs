@@ -32,16 +32,16 @@ fn the_gate_carries_the_spotter_reason() {
     );
 }
 
-/// A bound `sessions__approve` gate surfaces the child's held action on `/state`
+/// A bound `agents__decide` gate surfaces the child's held action on `/state`
 /// (docs/permissions.md): `acting_on` carries the leaf tool, its input, its intent,
 /// and the session chain, so a client renders the move rather than the approval's id.
 #[test]
 fn the_gate_carries_the_bound_leaf_action() {
     let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
     let approve = ToolCall::new(
-        crate::control_tools::APPROVE_WIRE_NAME,
+        crate::control_tools::DECIDE_WIRE_NAME,
         "toolu_parent",
-        serde_json::json!({ "session": "child", "call_id": "toolu_leaf" }),
+        serde_json::json!({ "agent": "child", "seq": "4", "decision": "allow" }),
     );
     let bound = crate::control_tools::BoundAction {
         name: "bash".into(),

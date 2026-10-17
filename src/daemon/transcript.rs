@@ -25,9 +25,11 @@ use std::fmt::Write as _;
 
 pub(crate) mod audit;
 pub(crate) mod conversation;
+pub(crate) mod cursor;
 #[cfg(test)]
 mod fixtures;
 mod index;
+pub(crate) mod reference;
 pub(crate) mod zoom;
 
 pub(crate) use zoom::Handle;

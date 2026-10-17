@@ -1,4 +1,8 @@
+use super::args::{optional_handle, turn_source};
+use super::executor::state_of;
 use super::{Control, Executor};
+use crate::daemon::transcript::Handle;
+use crate::daemon::transcript::cursor::ReadPlan;
 use anyhow::{Result, anyhow};
 use mcplease::{
     traits::{Tool, ToolMeta},
@@ -6,44 +10,72 @@ use mcplease::{
 };
 use serde::{Deserialize, Serialize};
 
-/// Read what the session has said and done, one line per entry: the prose in
-/// full, each tool call as its name, arguments and intent, each result as its
-/// size, error flag and triage verdict — never a result's body. Every line starts
-/// with the entry's `seq` (a call that shared its entry with others is `seq.n`, and
-/// its result says `for seq.n`); `entries` fetches the whole entry behind any of
-/// them by the seq before the dot, and `image` an image a result carried. Pass
-/// `state`'s `last_seq` as `since` to read only what is new, or `tail` to read the
-/// latest N entries; omit both for the whole session.
+/// Read what an agent said and did: its messages in full, and each call on one line
+/// with what became of it. By default, what is new since your last read; `seq`
+/// zooms into one entry in full.
 #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema, clap::Args)]
 #[serde(rename = "transcript")]
 pub struct Transcript {
-    /// Return only entries with `seq >= since`. Exclusive with `tail`.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// The agent's id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[arg(long)]
+    pub agent: Option<String>,
+    /// One entry in full, by its seq (`8`, or `8.2` for one of several calls).
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "optional_handle"
+    )]
+    #[arg(long, conflicts_with_all = ["since", "tail"])]
+    pub seq: Option<String>,
+    /// Read from this seq on.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[arg(long, conflicts_with = "tail")]
     pub since: Option<u64>,
-    /// Return only the last `tail` entries. Exclusive with `since`.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// Read only the last this many entries.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[arg(long)]
     pub tail: Option<u64>,
-    /// Read this session by id (see `sessions`). Required unless the server was started with `--name`/`--socket`; then it overrides that session for this call.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[arg(long)]
-    pub session: Option<String>,
+    /// Read entry by entry, the mechanism included, instead of the conversation; a
+    /// window with neither `--since` nor `--tail` is the whole log. Command-line only.
+    #[serde(skip)]
+    #[schemars(skip)]
+    #[arg(long, conflicts_with = "seq")]
+    pub audit: bool,
 }
 
 impl ToolMeta for Transcript {
     fn title() -> Option<&'static str> {
-        Some("Read the session transcript")
+        Some("Read an agent's transcript")
     }
 
     fn annotations() -> Option<ToolAnnotations> {
         Some(ToolAnnotations {
             read_only_hint: Some(true),
             destructive_hint: Some(false),
-            idempotent_hint: Some(true),
+            // A default read moves the reader's cursor, so the next one differs.
+            idempotent_hint: Some(false),
             open_world_hint: Some(false),
             ..Default::default()
         })
+    }
+}
+
+impl Transcript {
+    /// The zoom's handle, refused beside a window bound.
+    fn zoom(&self) -> Result<Option<Handle>> {
+        let Some(seq) = &self.seq else {
+            return Ok(None);
+        };
+        if self.since.is_some() || self.tail.is_some() {
+            return Err(anyhow!(
+                "seq zooms into one entry, so it takes no since or tail; read a window with \
+                 since or tail alone"
+            ));
+        }
+        Handle::parse(seq)
+            .map(Some)
+            .map_err(|reason| anyhow!("{reason}"))
     }
 }
 
@@ -51,32 +83,91 @@ impl Tool<Control> for Transcript {
     type Output = String;
 
     async fn execute(self, control: Control, context: RequestContext) -> Result<String> {
+        if self.since.is_some() && self.tail.is_some() {
+            return Err(anyhow!(
+                "since and tail are mutually exclusive; pass one, or neither for what is new"
+            ));
+        }
+        let zoom = self.zoom()?;
         match &control.executor {
             Executor::Client(state) => {
-                let client = state.client(self.session.as_deref()).await?;
-                // The command line reads entry by entry; an MCP client reads the
-                // conversation, its own turns and decisions named "you" — the reader
-                // spelled as its turns' `source` is (docs/control-api.md).
-                let audit = control.is_cli();
-                let me = super::turn::turn_source(None, &context).filter(|_| !audit);
+                let client = state.client(self.agent.as_deref()).await?;
+                // The reader, spelled as its turns' `source` is, so its own turns and
+                // decisions read "you" (docs/control-api.md).
+                let me = turn_source(&context);
+                // A zoom sends the handle as given; `zoom` has checked it parses.
+                if zoom.is_some() {
+                    let read = crate::client::TranscriptRead {
+                        seq: self.seq.as_deref(),
+                        me: me.as_deref(),
+                        ..Default::default()
+                    };
+                    return client.transcript(read).await;
+                }
+                if self.audit {
+                    let read = crate::client::TranscriptRead {
+                        since: self.since,
+                        tail: self.tail,
+                        audit: true,
+                        ..Default::default()
+                    };
+                    let text = client.transcript(read).await?;
+                    return Ok(match text.is_empty() {
+                        true => "(no entries)".to_string(),
+                        false => text,
+                    });
+                }
+                let state_now = state_of(&client).await?;
+                let id = state_now["session_identity"]["id"]
+                    .as_str()
+                    .map(str::to_string)
+                    .or(self.agent.clone())
+                    .unwrap_or_default();
+                let last = state_now["last_seq"].as_u64();
+                let cursor = state.cursor(&id);
+                let plan = ReadPlan::new(cursor, self.since, self.tail, last);
                 let read = crate::client::TranscriptRead {
-                    since: self.since,
-                    tail: self.tail,
-                    audit,
+                    since: plan.since,
+                    before: plan.before,
+                    tail: plan.tail,
                     me: me.as_deref(),
+                    ..Default::default()
                 };
                 let text = client.transcript(read).await?;
-                Ok(if text.is_empty() {
-                    "(no entries)".to_string()
-                } else {
-                    text
-                })
+                if let Some(seq) = plan.cursor_after(cursor) {
+                    state.set_cursor(&id, seq);
+                }
+                Ok(plan.framed(&title(&id), text))
             }
-            // In-session the conversation is read by the calling session.
-            Executor::Host(state) => state
-                .resolve(self.session.as_deref())?
-                .transcript_window(self.since, self.tail, &state.caller)
-                .map_err(|reason| anyhow!("{reason}")),
+            Executor::Host(state) => {
+                let (target, id) = state.resolve(self.agent.as_deref())?;
+                let caller = state.caller();
+                if let Some(handle) = zoom {
+                    return target
+                        .transcript_zoom(handle, Some(caller))
+                        .map_err(|reason| anyhow!("{reason}"));
+                }
+                // The host holds the cursor per reader and target (docs/tools.md).
+                let host = state.host()?;
+                let cursor = host.read_cursor(&id, caller);
+                let plan =
+                    ReadPlan::new(cursor, self.since, self.tail, target.last_committed_seq());
+                let text = target
+                    .transcript_window(plan.since, plan.before, plan.tail, caller)
+                    .map_err(|reason| anyhow!("{reason}"))?;
+                if let Some(seq) = plan.cursor_after(cursor) {
+                    host.set_read_cursor(&id, caller, seq);
+                }
+                Ok(plan.framed(&title(&id), text))
+            }
         }
+    }
+}
+
+/// The header a transcript of `id` opens with.
+fn title(id: &str) -> String {
+    match id.is_empty() {
+        true => "transcript".to_string(),
+        false => format!("transcript of {id}"),
     }
 }

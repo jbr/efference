@@ -86,7 +86,7 @@ impl Session {
     /// The highest committed `seq` — the watermark a level-triggered `state` frame is
     /// stamped with, and the `last_seq` of the composite snapshot. `None` on an empty
     /// log.
-    pub(super) fn last_committed_seq(&self) -> Option<u64> {
+    pub(crate) fn last_committed_seq(&self) -> Option<u64> {
         self.log
             .lock()
             .unwrap()
@@ -408,7 +408,7 @@ impl Session {
 
     /// One entry in full (`GET /transcript?seq=8.2`, docs/control-api.md), or why there
     /// is no such entry.
-    pub(super) fn transcript_zoom(
+    pub(crate) fn transcript_zoom(
         &self,
         handle: Handle,
         me: Option<&str>,

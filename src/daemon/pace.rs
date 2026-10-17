@@ -30,6 +30,16 @@ impl Session {
             self.deliver_reply(state, turn);
             return;
         }
+        self.queue_turn(ask, turn);
+    }
+
+    /// Queue `turn` for the loop's next juncture, releasing the ask lock the caller holds
+    /// once the turn is in the queue, so no ask can start between the check and the push.
+    pub(super) fn queue_turn(
+        &self,
+        ask: std::sync::MutexGuard<'_, Option<super::ask::AskState>>,
+        turn: SubmittedTurn,
+    ) {
         // Record the turn as queued *before* sending, so `is_settled` reads "busy" the instant
         // the turn is accepted — even before the loop dequeues it (the `/settle` submit race,
         // docs/permissions.md).
@@ -47,7 +57,7 @@ impl Session {
     /// *immediately*, not after the remaining paced delay. The retained `speed` is
     /// untouched (it recolors later junctures); only the `held` overlay drops. Shared by a
     /// queued submit and one that answers an `ask`.
-    fn resume_from_hold(&self) {
+    pub(super) fn resume_from_hold(&self) {
         {
             let mut p = self.pace.lock().unwrap();
             p.held = false;

@@ -46,6 +46,27 @@ impl Client {
         read_2xx(conn, method, path).await
     }
 
+    /// [`exchange`](Self::exchange) for a route whose `409` is an answer rather than a
+    /// failure: `Ok(Ok(body))` on a 2xx, `Ok(Err(message))` with the host's message on a
+    /// 409, and an error otherwise.
+    pub(super) async fn send_declinable(
+        &self,
+        method: Method,
+        path: &str,
+        body: Option<String>,
+    ) -> Result<std::result::Result<String, String>> {
+        let mut conn = self.exchange(method, path, body).await?;
+        if conn.status() != Some(trillium_client::Status::Conflict) {
+            return read_2xx(conn, method, path).await.map(Ok);
+        }
+        let body = conn
+            .response_body()
+            .read_string()
+            .await
+            .with_context(|| format!("reading the response to {method} {path}"))?;
+        Ok(Err(json_field(&body, "message").unwrap_or(body)))
+    }
+
     /// A wait route's answer: the `/state` body and whether the host says the session
     /// settled or its cap expired (`efference-settled`, docs/control-api.md). A response
     /// without the header counts as settled, as a host that predates it always meant.

@@ -179,7 +179,7 @@ fn tildify(path: &str) -> String {
 /// assume it is present): it describes the risk rather than the purpose, which
 /// is the less useful half at a glance but still beats the name alone.
 ///
-/// A bound `sessions__approve` names the child and the child's held move instead
+/// A bound `agents__decide` names the child and the child's held move instead
 /// (docs/permissions.md): `approve <child>'s <leaf> — <intent>`, so the
 /// notification answers "whose gate, and for what" rather than showing an id.
 pub(super) fn gate_body(

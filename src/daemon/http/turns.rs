@@ -2,10 +2,15 @@
 //! approval gate (docs/control-api.md, docs/permissions.md).
 
 use super::*;
+use crate::daemon::Landing;
 
 /// Enqueue a user turn (also seeds turn 1). 202 — watch the stream for the
 /// response; submission is decoupled from inference. A session still starting queues
 /// it, and it is the first turn the session runs (`starting.rs`).
+///
+/// A turn that names its question, or comes from an agent, answers a pending `ask`
+/// only by naming it and is refused otherwise (`named_turns.rs`): 409 `not_delivered`,
+/// the pending ask in `detail`. The 202 says where the turn went (`delivery`).
 pub(super) async fn submit_turn(mut conn: Conn) -> Conn {
     let shared = shared_of(&conn);
     let starting = starting_of(&conn);
@@ -14,30 +19,60 @@ pub(super) async fn submit_turn(mut conn: Conn) -> Conn {
     }
     let wait = wants_wait(conn.querystring());
     let body = conn.request_body_string().await.unwrap_or_default();
+    let parsed = match parse_turn(&body) {
+        Ok(turn) => turn,
+        Err(message) => return fail(conn, ErrorCode::BadRequest, message),
+    };
+    let named = parsed.names_its_question();
     let TurnBody {
         text,
         submission_id,
         source,
         attachments,
-    } = match parse_turn(&body) {
-        Ok(turn) => turn,
-        Err(message) => return fail(conn, ErrorCode::BadRequest, message),
-    };
+        answers,
+    } = parsed;
     let submission_id = submission_id.unwrap_or_else(mint_submission_id);
-    let turn = SubmittedTurn::new(text, submission_id.clone()).sourced(source);
-    match (shared, starting) {
+    let turn = SubmittedTurn::new(text, submission_id.clone()).sourced(source.clone());
+    let landing = match (shared, starting) {
         (Some(shared), _) => {
             let attachments = match resolve_attachments(&shared, &attachments) {
                 Ok(attachments) => attachments,
                 Err(message) => return fail(conn, ErrorCode::BadRequest, message),
             };
-            shared.submit_client_turn(turn.with_attachments(attachments));
+            let turn = turn.with_attachments(attachments);
+            let landing = if named {
+                match shared.submit_named_turn(turn, answers.as_deref()) {
+                    Ok(landing) => landing,
+                    Err(refusal) => {
+                        let id = shared.identity().map(|identity| identity.id);
+                        let message = refusal
+                            .message(id.as_deref().unwrap_or("the session"), source.as_deref());
+                        return respond(
+                            conn,
+                            ErrorBody::new(ErrorCode::NotDelivered, message)
+                                .with_detail(shared.topic_json(Topic::Ask)),
+                        );
+                    }
+                }
+            } else {
+                let landing = match (
+                    shared.asking().is_some() && !turn.is_blank(),
+                    shared.turn_delivery(),
+                ) {
+                    (true, _) => Landing::Answered,
+                    (false, "now") => Landing::Now,
+                    (false, _) => Landing::Queued,
+                };
+                shared.submit_client_turn(turn);
+                landing
+            };
             // `?wait`: hold the connection until the turn reaches a gate or completes,
             // then answer with the resulting state — "act → read state" in one
             // round-trip (docs/permissions.md).
             if wait {
                 return settle_and_state(&shared, conn).await;
             }
+            landing
         }
         (None, Some(starting)) => {
             // The attachment store is the session's, and exists once it has started.
@@ -45,21 +80,35 @@ pub(super) async fn submit_turn(mut conn: Conn) -> Conn {
                 let refusal = starting.refusal();
                 return fail(conn, ErrorCode::Starting, refusal);
             }
+            // A starting session has asked nothing, so a named question is not pending.
+            if let Some(reference) = answers {
+                let message = format!(
+                    "not delivered: {} is still starting and has asked nothing; {reference} \
+                     names no question it is waiting on",
+                    starting.id()
+                );
+                return respond(
+                    conn,
+                    ErrorBody::new(ErrorCode::NotDelivered, message).with_detail(Value::Null),
+                );
+            }
             if let Err(refusal) = starting.submit(turn) {
                 return fail(conn, ErrorCode::Starting, refusal);
             }
             if wait {
                 return settle_starting(&starting, conn).await;
             }
+            Landing::Queued
         }
         (None, None) => return missing_state(conn),
-    }
+    };
     // The id is informational here: the turn's effects — including the `User` entry
     // carrying this id — can arrive on the stream before this body resolves, so
     // clients must not sequence state on it (docs/control-api.md).
     let body = serde_json::json!({
         "status": "accepted",
         "submission_id": submission_id,
+        "delivery": landing.as_str(),
     });
     conn.with_status(202).with_body(body.to_string()).halt()
 }

@@ -15,7 +15,7 @@ use std::collections::BTreeMap;
 
 impl Host {
     /// Create a session on this host: the path behind `POST /sessions`
-    /// (docs/control-api.md) and the in-session `sessions__create` tool
+    /// (docs/control-api.md) and the in-session `agents__create` tool
     /// (docs/tools.md). `lineage` names the calling session as creator when a
     /// session commissioned this one, and the predecessor for a `hand_off`;
     /// default for a human root.
@@ -129,10 +129,12 @@ impl Host {
             resolved.effective.triage.source,
             Some(crate::inference::SelectionSource::Request)
         );
+        // A refusal here is a model or connection the host cannot run, so it names
+        // what the host can (docs/model-catalog.md).
         let inference = self
             .inference
             .prepare(resolved)
-            .map_err(|error| error.to_string())?;
+            .map_err(|error| format!("{error}; {}", self.offered_models()))?;
         // Remember the pick this creation made, for the omitted-branch default
         // and the recent menus. Built before the request moves the inference
         // away; recorded after the session starts, so only sessions that
@@ -160,7 +162,7 @@ impl Host {
             inference.triage().map(|(selection, _, _)| selection),
         );
         // Where this session starts, for the index the launch picker reads. Every
-        // creation records one — a web launch, a session's own `sessions__create`,
+        // creation records one — a web launch, a session's own `agents__create`,
         // a `hand_off` in its predecessor's directory — because they are one
         // path here and a launch is what puts a directory on the list. `config` is
         // the template configuration's spelling, never the session's own copy, so

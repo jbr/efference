@@ -511,21 +511,23 @@ pub(crate) enum Command {
         #[arg(long, hide = true)]
         island: bool,
     },
-    /// Drive a running session from a script: send turns, resolve approvals, read state.
+    /// Drive a running session from a script: message it, decide its gates, read it.
     ///
-    /// One subcommand per control-API call. These are the same tools `efference mcp`
-    /// serves over MCP, so a shell script and a mounting harness reach a session
-    /// through one definition. `efference control --help` lists them.
+    /// The agent verbs `efference mcp` serves (`create`, `message`, `decide`,
+    /// `interrupt`, `archive`, `status`, `transcript`, `settle`), then the operator's
+    /// route verbs (`state`, `pace`, `title`, `background`, `proposal`,
+    /// `review-level`, `supervisor`, `notify`, `entries`, `image`). `efference control
+    /// --help` lists them.
     #[command(subcommand)]
-    Control(efference::control_tools::Tools),
-    /// Serve the `control` tools as an MCP server on stdin/stdout.
+    Control(efference::control_tools::cli::Tools),
+    /// Serve the agent verbs as an MCP server on stdin/stdout.
     ///
-    /// The mount another agent harness supervises sessions through: each `control`
-    /// subcommand is one tool. Speaks newline-delimited JSON-RPC and blocks until
-    /// stdin closes. Connects to the host: nothing needs to be running when it
-    /// starts, and each call names its session (`sessions` lists them, `create`
-    /// makes one). With `--name` or `--socket`, a call that names no session
-    /// drives that one.
+    /// The mount another agent harness supervises sessions through: `create`,
+    /// `message`, `decide`, `interrupt`, `archive`, `status`, `transcript`, and
+    /// `settle`. Speaks newline-delimited JSON-RPC and blocks until stdin closes.
+    /// Connects to the host: nothing needs to be running when it starts, and each
+    /// call names its agent (`status` lists them, `create` makes one). With
+    /// `--name` or `--socket`, a call that names no agent drives that one.
     Mcp {
         /// The host's control socket. Defaults to the first live of
         /// `.efference/host.sock` here and `~/.efference/host.sock`, else the latter.

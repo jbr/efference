@@ -123,16 +123,15 @@ impl Toolbox {
 
     /// Mount the session-control provider (docs/tools.md): the session reaches
     /// its project's other sessions through `host`, in-process, under the
-    /// `sessions__<verb>` wire names. `caller` is the session's own id.
-    /// `settle` is hidden from the mounted set, like fs's `delete`, and so is
-    /// `supervisor`, an operator verb with no in-session use yet.
+    /// `agents__<verb>` wire names. `caller` is the session's own id. The in-session
+    /// set is its own enum (`control_tools::in_session`), so nothing is hidden here.
     pub fn mount_sessions(&mut self, host: std::sync::Arc<crate::daemon::Host>, caller: String) {
         let state = crate::control_tools::Control::new(
             crate::control_tools::Executor::host(host, caller),
             false,
         );
         self.providers.push(Provider::Sessions(Box::new(
-            McpServer::from_state_namespaced(state, &["settle", "supervisor"], "sessions"),
+            McpServer::from_state_namespaced(state, &[], crate::control_tools::NAMESPACE),
         )));
     }
 
@@ -156,7 +155,18 @@ impl Toolbox {
         })
     }
 
-    /// Bind a `sessions__approve` call to the leaf action its target holds
+    /// Whether `call` is an `agents__decide` that denies, which authorizes nothing
+    /// and so clears on the fast path (docs/permissions.md). False when no sessions
+    /// provider is mounted.
+    pub fn denies_a_gate(&self, call: &ToolCall) -> bool {
+        crate::control_tools::denies(call)
+            && self
+                .providers
+                .iter()
+                .any(|p| matches!(p, Provider::Sessions(_)))
+    }
+
+    /// Bind an allowing `agents__decide` call to the leaf action its target holds
     /// (docs/permissions.md). The loop asks the mounted sessions provider, which
     /// holds the in-process host and the caller's identity; a target that is not
     /// the pending gate, a refused target, or a cyclic chain is an error and the

@@ -106,7 +106,7 @@ pub trait Spotter {
     /// [`Stance::ClearAlways`] is the safe-vote. `None` on most calls (no probe rides along).
     ///
     /// `chain` is non-empty when `call` is a leaf bound to a parent's
-    /// `sessions__approve` (docs/permissions.md): the session ids from the
+    /// `agents__decide` (docs/permissions.md): the session ids from the
     /// directly-targeted child down to the session holding the leaf. The move
     /// presented is the child's action, and the chain names the approvers it
     /// passed through. Empty for an ordinary move.
@@ -571,7 +571,7 @@ fn render_move(
     )
 }
 
-/// The approval context for a move bound to a parent's `sessions__approve`
+/// The approval context for a move bound to a parent's `agents__decide`
 /// (docs/permissions.md), or empty for an ordinary move. The chain is the session
 /// ids from the directly-targeted child down to the session holding the leaf; the
 /// spotter judges the leaf, and this says whose it is.

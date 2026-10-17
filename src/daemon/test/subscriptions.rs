@@ -1,11 +1,8 @@
 //! A session's status reaching its subscribers' inboxes (docs/tools.md).
 
 use super::*;
-use crate::control_tools::{Control, Executor, Subscribe, Unsubscribe};
 use crate::daemon::{Host, SessionRuntime};
 use crate::frontend::Approval;
-use mcplease::traits::Tool as _;
-use mcplease::types::RequestContext;
 use std::path::Path;
 
 struct Fixture {
@@ -51,13 +48,6 @@ impl Fixture {
         Self { root, host }
     }
 
-    fn control(&self, caller: &str) -> Control {
-        Control::new(
-            Executor::host(Arc::clone(&self.host), caller.to_string()),
-            false,
-        )
-    }
-
     fn session(&self, id: &str) -> Arc<Session> {
         self.host.session(id).expect(id)
     }
@@ -73,9 +63,8 @@ async fn wait_until(what: &str, mut ready: impl FnMut() -> bool) {
     .unwrap_or_else(|_| panic!("timed out waiting: {what}"));
 }
 
-/// `create` subscribes the creator with `wake`; an explicit `subscribe` is
-/// ambient; `unsubscribe` drops either. The subscriber's own `wait` source
-/// count follows.
+/// `create` subscribes the creator with `wake`; any other subscription is ambient;
+/// `unsubscribe` drops either. The subscriber's own `wait` source count follows.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_creator_is_subscribed_with_wake_and_a_peer_without() {
     let fixture = Fixture::new();
@@ -93,56 +82,26 @@ async fn a_creator_is_subscribed_with_wake_and_a_peer_without() {
     assert!(fixture.session("parent").has_subscriptions());
     assert!(!fixture.session("peer").has_subscriptions());
 
-    let peer = fixture.control("peer");
-    Subscribe {
-        session: "child".into(),
-    }
-    .execute(peer.clone(), RequestContext::default())
-    .await
-    .expect("a peer may observe");
+    assert!(fixture.host.subscribe("child", "peer", false));
     assert_eq!(
         subscribers("child"),
         vec![("parent".to_string(), true), ("peer".to_string(), false)]
     );
     assert!(fixture.session("peer").has_subscriptions());
 
-    // An explicit `subscribe` never lowers a creator's `wake`.
-    let parent = fixture.control("parent");
-    Subscribe {
-        session: "child".into(),
-    }
-    .execute(parent.clone(), RequestContext::default())
-    .await
-    .unwrap();
+    // An ambient subscription never lowers a creator's `wake`.
+    assert!(fixture.host.subscribe("child", "parent", false));
     assert_eq!(
         subscribers("child"),
         vec![("parent".to_string(), true), ("peer".to_string(), false)]
     );
 
-    let err = Subscribe {
-        session: "peer".into(),
-    }
-    .execute(peer.clone(), RequestContext::default())
-    .await
-    .unwrap_err()
-    .to_string();
-    assert!(err.contains("cannot target itself"), "{err}");
-
-    let said = Unsubscribe {
-        session: "child".into(),
-    }
-    .execute(peer.clone(), RequestContext::default())
-    .await
-    .unwrap();
-    assert_eq!(said, "unsubscribed from child");
+    assert!(fixture.host.unsubscribe("child", "peer"));
     assert!(!fixture.session("peer").has_subscriptions());
-    let said = Unsubscribe {
-        session: "child".into(),
-    }
-    .execute(peer.clone(), RequestContext::default())
-    .await
-    .unwrap();
-    assert_eq!(said, "you were not subscribed to child");
+    assert!(
+        !fixture.host.unsubscribe("child", "peer"),
+        "nothing to drop"
+    );
 
     fixture.host.swansong().shut_down().await;
 }
@@ -198,7 +157,7 @@ async fn a_childs_gate_wakes_the_parent_and_is_pinned_whatever_the_triage_says()
             && slot == Some("session:child")
             && body.starts_with("child: waiting for your decision on fs.list")
             && body.contains("intent: locating siblings")
-            && body.contains("call_id: \"toolu_leaf\"")
+            && body.contains("decide: agents__decide(agent: \"child\"")
     };
     wait_until("the gate reached the parent", || {
         heard(&parent, is_gate).is_some()
@@ -299,11 +258,9 @@ async fn a_supervisor_reads_the_gate_as_its_reviewer_and_the_whole_closing_messa
         "child: waiting for your decision on bash `curl -sI https://example.com` (seq \
          {issued})\nintent: fetch only the response headers\nheld because: its reviewer is \
          unsure this fits the session's scope; no earlier call like it was allowed\ndecide: \
-         sessions__approve(session: \"child\", call_id: \"toolu_curl\") runs it; with abort: \
-         true it is refused and the turn ends; with redirect: \"<message>\" it is refused and \
-         the session goes on under your message\nhand back: sessions__review_level(session: \
-         \"child\", level: \"spotter_human\") hands this session's gates to the operator; \
-         this call stays held and goes to them"
+         agents__decide(agent: \"child\", seq: \"{issued}\", decision: \"allow\" | \"deny\", \
+         message?) — allow runs it, and a message rides with its result; deny with a message \
+         refuses it and the session goes on under your message; a bare deny ends its turn"
     );
     wait_until("the gate reached the parent as its reviewer", || {
         heard(&parent, |source, body, slot| {
@@ -333,8 +290,9 @@ async fn a_supervisor_reads_the_gate_as_its_reviewer_and_the_whole_closing_messa
         .unwrap();
     child.going_idle();
     let idle = format!(
-        "child: idle, its turn is done (seq {said})\nsaid: {}\nnext: sessions__turn(session: \
-         \"child\", text: [\"<message>\"]) sends its next message",
+        "child: idle, its turn is done (seq {said})\nsaid: {}\nnext: agents__message(agent: \
+         \"child\", text: \"<message>\") sends its next message; agents__archive(agent: \
+         \"child\") ends it",
         report.trim()
     );
     wait_until("the idle reached the parent with the whole message", || {
@@ -362,7 +320,7 @@ async fn a_childs_question_wakes_the_parent() {
                 && slot == Some("session:child")
                 && body.starts_with("child: asking a question")
                 && body.contains("Which branch?")
-                && body.contains("sessions__turn")
+                && body.contains("agents__message(agent: \"child\", text: \"<answer>\"")
         })
         .is_some()
     })

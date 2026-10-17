@@ -164,6 +164,7 @@ mod interrupt;
 mod keepalive;
 mod log_reads;
 mod loop_phase;
+mod mcp_verbs;
 mod metrics;
 mod notifications;
 mod pace;

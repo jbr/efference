@@ -1,35 +1,36 @@
-use super::{Control, Executor, StateResult};
-use anyhow::{Result, anyhow};
+use super::args::reader_name;
+use super::executor::status_in;
+use super::results::{StateResult, pretty};
+use super::status::operator_relation;
+use super::{Control, Executor};
+use crate::daemon::status::{Moves, Reader, render};
+use anyhow::Result;
 use mcplease::{
     traits::{Tool, ToolMeta},
     types::{RequestContext, ToolAnnotations},
 };
 use serde::{Deserialize, Serialize};
 
-/// Block until the session reaches a decision point and answer with its state then:
-/// the loop is idle, gated on a call, asking a question, parked before an uncached read
-/// (`cold_parked`), or blocked until someone acts (a held triage, a held pace, a config
-/// file to repair). The state's `loop_phase` names which. The wait-without-acting call:
-/// nothing is submitted and no gate is resolved, so it is the way to watch where an
-/// in-flight turn lands. Returns immediately if the session is already settled.
+/// Wait until an agent reaches its next decision point — a held call, a question,
+/// its turn ending, or a stop that waits on someone — and answer with its status.
+/// Returns at once if it is already there.
 #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema, clap::Args)]
 #[serde(rename = "settle")]
 pub struct Settle {
-    /// Seconds to wait before giving up. On expiry the current state comes back
-    /// marked `settled: false`, which is not an error. Omitted, the wait has no
-    /// bound.
+    /// Seconds to wait before answering with where it is then. Omitted, the wait
+    /// has no bound.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[arg(long)]
     pub timeout_s: Option<u64>,
-    /// Watch this session by id (see `sessions`). Required unless the server was started with `--name`/`--socket`; then it overrides that session for this call.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// The agent's id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[arg(long)]
-    pub session: Option<String>,
+    pub agent: Option<String>,
 }
 
 impl ToolMeta for Settle {
     fn title() -> Option<&'static str> {
-        Some("Wait for the session to settle")
+        Some("Wait for an agent to settle")
     }
 
     fn annotations() -> Option<ToolAnnotations> {
@@ -44,22 +45,34 @@ impl ToolMeta for Settle {
 }
 
 impl Tool<Control> for Settle {
-    type Output = StateResult;
+    type Output = String;
 
-    async fn execute(self, control: Control, _context: RequestContext) -> Result<StateResult> {
+    async fn execute(self, control: Control, context: RequestContext) -> Result<String> {
         match &control.executor {
             Executor::Client(state) => {
-                let client = state.client(self.session.as_deref()).await?;
-                state
+                let client = state.client(self.agent.as_deref()).await?;
+                let waited = state
                     .settle_within(&client, self.timeout_s, client.settle())
-                    .await
+                    .await?;
+                // The command line prints the `/state` body; an agent reads the status.
+                if control.is_cli() {
+                    return Ok(pretty(&StateResult::waited(&waited.body, waited.settled)?));
+                }
+                let view = status_in(&serde_json::from_str(&waited.body)?)?;
+                let me = reader_name(&context);
+                let reader = Reader::read(operator_relation(&view), &Moves::MCP, me.as_deref());
+                let status = render(&view, &reader, super::now());
+                Ok(match (waited.settled, self.timeout_s) {
+                    (true, _) => status,
+                    (false, Some(seconds)) => {
+                        format!("still going after {seconds}s; where it is now:\n{status}")
+                    }
+                    (false, None) => format!("still going; where it is now:\n{status}"),
+                })
             }
-            // Hidden from the in-session mount: a session has an inbox to be
-            // woken through, not a blocking wait (docs/tools.md).
-            Executor::Host(_) => Err(anyhow!(
-                "`settle` is not available in-session: a session's continuation is its own inbox, \
-                 not a blocking call (docs/tools.md)"
-            )),
+            // Not mounted in a session: a session has an inbox to be woken through,
+            // not a blocking wait (docs/tools.md).
+            Executor::Host(_) => Err(super::operator_verb("settle")),
         }
     }
 }

@@ -596,11 +596,12 @@ fn the_embedded_toolbox_is_legal_on_both_dialects() {
         );
     }
 }
-/// The in-session `sessions` provider (docs/tools.md): the namespaced
-/// `sessions__*` definitions a hosted session's `tools[]` carries, with `settle`
-/// and `supervisor` hidden, unique names, injected `intent`, and byte-stable definitions.
+/// The in-session `sessions` provider (docs/tools.md): the namespaced `agents__*`
+/// definitions a hosted session's `tools[]` carries — the in-session set, in its
+/// order, and nothing else — with unique names, injected `intent`, and byte-stable
+/// definitions.
 #[tokio::test]
-async fn the_sessions_provider_mounts_namespaced_and_hides_operator_verbs() {
+async fn the_sessions_provider_mounts_the_agent_verbs_namespaced() {
     let dir = std::env::temp_dir().join(format!("eff-sessions-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
@@ -614,47 +615,46 @@ async fn the_sessions_provider_mounts_namespaced_and_hides_operator_verbs() {
     let mut toolbox = Toolbox::bash_and_mcps(dir.clone(), None).unwrap();
     toolbox.mount_sessions(host, "caller".into());
 
-    let mut names = toolbox.names();
-    for expected in [
-        "sessions__turn",
-        "sessions__approve",
-        "sessions__interrupt",
-        "sessions__background",
-        "sessions__pace",
-        "sessions__review_level",
-        "sessions__notify",
-        "sessions__image",
-        "sessions__state",
-        "sessions__transcript",
-        "sessions__entries",
-        "sessions__title",
-        "sessions__sessions",
-        "sessions__create",
-        "sessions__archive",
-    ] {
-        assert!(
-            names.iter().any(|name| name == expected),
-            "{expected} not mounted: {names:?}"
-        );
-    }
-    for hidden in ["sessions__settle", "sessions__supervisor"] {
-        assert!(
-            !names.iter().any(|name| name == hidden),
-            "{hidden} is hidden in-session: {names:?}"
-        );
-    }
-    names.sort_unstable();
-    let mut unique = names.clone();
+    let names = toolbox.names();
+    let agents: Vec<&str> = names
+        .iter()
+        .map(String::as_str)
+        .filter(|name| name.starts_with("agents__"))
+        .collect();
+    assert_eq!(
+        agents,
+        [
+            "agents__create",
+            "agents__message",
+            "agents__decide",
+            "agents__interrupt",
+            "agents__archive",
+            "agents__status",
+            "agents__transcript",
+            "agents__hand_off",
+        ]
+    );
+    assert!(
+        !names.iter().any(|name| name.starts_with("sessions__")),
+        "{names:?}"
+    );
+    let mut sorted = names.clone();
+    sorted.sort_unstable();
+    let mut unique = sorted.clone();
     unique.dedup();
-    assert_eq!(names, unique, "duplicate tool name on the wire");
+    assert_eq!(sorted, unique, "duplicate tool name on the wire");
 
     // Injected `intent` and byte-stable definitions, like every provider.
     let once = serde_json::to_string(&toolbox.definitions()).unwrap();
     let twice = serde_json::to_string(&toolbox.definitions()).unwrap();
     assert_eq!(once, twice);
-    let entry = toolbox.tool_entry("sessions__state").expect("mounted");
-    assert_eq!(entry.name, "sessions__state");
+    let entry = toolbox.tool_entry("agents__status").expect("mounted");
+    assert_eq!(entry.name, "agents__status");
     assert!(entry.input_schema["properties"]["intent"].is_object());
+    // The target is `agent`, and `message` takes its text as a string.
+    let message = toolbox.tool_entry("agents__message").expect("mounted");
+    assert_eq!(message.input_schema["properties"]["text"]["type"], "string");
+    assert!(message.input_schema["properties"]["agent"].is_object());
 
     std::fs::remove_dir_all(&dir).unwrap();
 }

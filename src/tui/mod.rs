@@ -436,12 +436,12 @@ pub(crate) struct PendingGate {
     /// (docs/permissions.md) — surfaced inline at the gate so the human sees *why*.
     pub reason: Option<String>,
     /// The leaf action this approval authorizes, when the held call is a bound
-    /// `sessions__approve` (docs/permissions.md). The gate renders the child and
+    /// `agents__decide` (docs/permissions.md). The gate renders the child and
     /// its held move instead of the approval's id.
     pub acting_on: Option<ActingOn>,
 }
 
-/// The leaf action behind a bound `sessions__approve` (docs/permissions.md), as
+/// The leaf action behind a bound `agents__decide` (docs/permissions.md), as
 /// `GET /state`'s `gate.acting_on` carries it: the child's tool and input, the
 /// intent it wrote, and the session chain the approval passed through.
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -64,7 +64,7 @@ pub(crate) struct Gate<'g> {
     pub ask: Option<&'g str>,
     /// The reason to show beside it, when no committed `Spot` carries one.
     pub reason: Option<&'g str>,
-    /// The leaf action a bound `sessions__approve` authorizes (docs/permissions.md),
+    /// The leaf action a bound `agents__decide` authorizes (docs/permissions.md),
     /// shown beside the approval so the human sees the child's held move.
     pub acting_on: Option<&'g crate::tui::ActingOn>,
 }
@@ -364,7 +364,7 @@ pub(crate) fn entry_nodes(
                         nodes.push(spotter_line(None, reason));
                     }
                     if is_pending {
-                        // A bound `sessions__approve` shows the child's held move
+                        // A bound `agents__decide` shows the child's held move
                         // beside the approval (docs/permissions.md): the logged call
                         // line is the model's, and this names what it acts on.
                         if let Some(bound) = gate.acting_on {

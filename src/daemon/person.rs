@@ -10,9 +10,11 @@ use crate::log::{PushCancel, ReleasedBy};
 /// What a person did to a session's turn.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum PersonAction {
-    /// A turn submitted over `POST /turns` or the `turn` tool — an answer when an
-    /// `ask` is pending.
+    /// A turn submitted over `POST /turns` — an answer when an `ask` is pending.
     Turn,
+    /// A turn that names the question it answers, or names none (`named_turns.rs`).
+    /// Its caller holds the ask lock, so whether it answers is known rather than read.
+    NamedTurn { answers: bool },
     /// A decision at an approval gate. `abort` makes no further request, so it
     /// releases no park.
     Decision { aborted: bool },
@@ -21,7 +23,7 @@ pub(crate) enum PersonAction {
 }
 
 impl Session {
-    /// A turn a client submitted (`POST /turns`, the `turn` tool): the person's action,
+    /// A turn a client submitted (`POST /turns`): the person's action,
     /// then the submission. The harness's own submissions — the kickoff, a hand-off
     /// brief — go to [`Session::submit_turn`] directly.
     pub(crate) fn submit_client_turn(&self, turn: crate::frontend::SubmittedTurn) {
@@ -35,6 +37,13 @@ impl Session {
         let (released_by, cancel) = match action {
             PersonAction::Turn => (
                 Some(self.turn_released_by()),
+                Some(PushCancel::TurnSubmitted),
+            ),
+            PersonAction::NamedTurn { answers } => (
+                Some(match answers {
+                    true => ReleasedBy::Ask,
+                    false => ReleasedBy::Turn,
+                }),
                 Some(PushCancel::TurnSubmitted),
             ),
             PersonAction::Decision { aborted } => (

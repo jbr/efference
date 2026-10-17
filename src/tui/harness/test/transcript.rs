@@ -165,8 +165,8 @@ fn transcript_pending_approval_gate() {
     play.snapshot("transcript_pending_approval_gate");
 }
 
-/// A bound `sessions__approve` gate shows the child's held move beside the approval
-/// (docs/permissions.md): the logged call line is the model's `sessions__approve`, and
+/// A bound `agents__decide` gate shows the child's held move beside the approval
+/// (docs/permissions.md): the logged call line is the model's `agents__decide`, and
 /// the annotation names which child and the command it is holding, so the human
 /// approves the move rather than the id.
 #[test]
@@ -176,9 +176,9 @@ fn transcript_pending_bound_approval_gate() {
     play.assistant(
         "Asking the child to remove it.",
         vec![ToolCall::new(
-            crate::control_tools::APPROVE_WIRE_NAME,
+            crate::control_tools::DECIDE_WIRE_NAME,
             "toolu_parent",
-            json!({ "session": "child", "call_id": "toolu_child_gate" }),
+            json!({ "agent": "child", "seq": "4", "decision": "allow" }),
         )],
     );
     play.pending_gate_bound(

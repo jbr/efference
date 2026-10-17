@@ -188,11 +188,21 @@ impl Client {
     }
 
     /// End a hosted session (`DELETE /sessions/:id`, docs/control-api.md):
-    /// answers once its teardown has run. `404` for an id the host does not hold.
-    pub async fn archive_session(&self, id: &str) -> Result<()> {
-        self.send_at(Method::Delete, &format!("/sessions/{id}"), None)
+    /// answers once its teardown has run, with the sessions that ended with it.
+    /// `404` for an id the host does not hold.
+    pub async fn archive_session(&self, id: &str) -> Result<Vec<String>> {
+        let body = self
+            .send_at(Method::Delete, &format!("/sessions/{id}"), None)
             .await?;
-        Ok(())
+        let answer: serde_json::Value = serde_json::from_str(&body).unwrap_or_default();
+        Ok(answer["ended_with"]
+            .as_array()
+            .map(|ids| {
+                ids.iter()
+                    .filter_map(|id| id.as_str().map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default())
     }
 
     /// Report whether a person is attending (`POST /attention`,

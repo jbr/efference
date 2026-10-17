@@ -151,7 +151,7 @@ export function callView(name: string, input: unknown): CallView {
   // A hand-off's brief is a message to the session that takes over
   // (docs/tools.md): labelled with whom it is for and read as prose, so it is
   // not mistaken for the agent addressing the operator.
-  const brief = name === "sessions__hand_off" ? str("brief") : null;
+  const brief = name === "agents__hand_off" ? str("brief") : null;
   if (brief !== null) {
     return {
       ...base,

@@ -1,25 +1,24 @@
 use super::{Control, Executor};
-use anyhow::Result;
+use crate::daemon::status::answers;
+use anyhow::{Result, anyhow};
 use mcplease::{
     traits::{Tool, ToolMeta},
     types::{RequestContext, ToolAnnotations},
 };
 use serde::{Deserialize, Serialize};
 
-/// Archive a hosted session: its loop stops, its background processes are reaped,
-/// and its scratch is removed. Returns once that teardown has run. The session's
-/// log stays on disk, which is what a later resume reads; until resumption exists
-/// an archived session leaves the host's list and does not run again.
+/// End an agent, and the agents it created that end with it. Their logs stay on
+/// disk.
 #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema, clap::Args)]
 #[serde(rename = "archive")]
 pub struct Archive {
-    /// The session to archive, by id (see `sessions`).
-    pub session: String,
+    /// The agent's id.
+    pub agent: String,
 }
 
 impl ToolMeta for Archive {
     fn title() -> Option<&'static str> {
-        Some("Archive a session")
+        Some("Archive an agent")
     }
 
     fn annotations() -> Option<ToolAnnotations> {
@@ -41,15 +40,22 @@ impl Tool<Control> for Archive {
         match &control.executor {
             Executor::Client(state) => {
                 let host = state.host_client()?;
-                host.archive_session(&self.session).await?;
-                Ok(format!("archived {}", self.session))
+                let ended_with = host.archive_session(&self.agent).await?;
+                Ok(answers::archived(&self.agent, &ended_with))
             }
             Executor::Host(state) => {
-                // Archiving is mutating: the target must be a descendant, or
+                // Archiving drives the target: a descendant, a supervised session, or
                 // the caller's own predecessor.
-                state.resolve_archive(Some(&self.session))?;
-                state.archive(&self.session).await?;
-                Ok(format!("archived {}", self.session))
+                let (_, id) = state.resolve_driven(Some(&self.agent))?;
+                let host = state.host()?;
+                // Read before the end starts, while the children it cascades to are
+                // still listed.
+                let ended_with = host.ending_with(&id);
+                let done = host
+                    .end(&id)
+                    .ok_or_else(|| anyhow!("no agent {id:?} to archive"))?;
+                done.await;
+                Ok(answers::archived(&id, &ended_with))
             }
         }
     }

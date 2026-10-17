@@ -292,7 +292,7 @@ impl Screenplay<'_> {
         })))
     }
 
-    /// A pending gate whose hold is a bound `sessions__approve` (docs/permissions.md):
+    /// A pending gate whose hold is a bound `agents__decide` (docs/permissions.md):
     /// the gate carries the child's held move, rendered beside the approval so the
     /// human sees the leaf action rather than an id.
     pub(crate) fn pending_gate_bound(
@@ -312,10 +312,11 @@ impl Screenplay<'_> {
         };
         self.event(TuiEvent::Gate(Some(crate::tui::PendingGate {
             call_id: call_id.into(),
-            name: crate::control_tools::APPROVE_WIRE_NAME.into(),
+            name: crate::control_tools::DECIDE_WIRE_NAME.into(),
             input: serde_json::json!({
-                "session": leaf_session,
-                "call_id": "toolu_child_gate",
+                "agent": leaf_session,
+                "seq": "4",
+                "decision": "allow",
             }),
             reason: None,
             acting_on: Some(acting_on),

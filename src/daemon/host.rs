@@ -56,6 +56,8 @@ mod preparation;
 
 mod boot_resume;
 
+mod agents;
+
 mod routes;
 pub(crate) use routes::host_routes;
 use routes::{host_of, missing_host, no_such_session};
@@ -136,6 +138,10 @@ pub(super) struct Hosted {
     pub(super) succeeds: Option<String>,
     /// Who hears this session's status, and on what terms (`subscriptions.rs`).
     pub(super) subscribers: BTreeMap<String, super::subscriptions::Subscription>,
+    /// The last seq each reading session was shown of this one's transcript
+    /// (`agents.rs`, docs/tools.md). Control state only: never logged, gone with a
+    /// restart, when a reader's next default read starts over at the tail.
+    pub(super) read_cursors: BTreeMap<String, crate::log::Seq>,
     /// The inference options this session was created with — model, spotter,
     /// triage, effort, temperature — which a `hand_off` successor is created
     /// with in turn (docs/tools.md). Empty for a session adopted without a
@@ -289,6 +295,7 @@ impl Host {
             detached,
             succeeds: None,
             subscribers: BTreeMap::new(),
+            read_cursors: BTreeMap::new(),
             options: crate::inference::SessionOptions::default(),
         };
         // First one in wins: an id held by anything but the starting entry this
@@ -503,7 +510,6 @@ impl Host {
     }
 
     /// The session under `id` while it is starting.
-    #[cfg(test)]
     pub(crate) fn starting(&self, id: &str) -> Option<Arc<crate::daemon::starting::Starting>> {
         match self.entry(id)? {
             Entry::Starting(starting) => Some(starting),

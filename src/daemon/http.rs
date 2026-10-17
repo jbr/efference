@@ -12,7 +12,7 @@ pub(crate) struct TurnBody {
     #[serde(default)]
     pub(crate) submission_id: Option<String>,
     /// The client's self-chosen label for who is submitting (docs/control-api.md):
-    /// `web`, `mcp[<name>]`, or `agent[<id>]`. Client-asserted, like a
+    /// `web`, `mcp[<name>]`, or `session[<id>]`. Client-asserted, like a
     /// notification's source. Absent = the operator, whose turns carry no prefix.
     /// Recorded on the resulting `User` entry as `source` and projected onto its
     /// wire block when present.
@@ -23,6 +23,23 @@ pub(crate) struct TurnBody {
     /// otherwise, so a message never lands claiming a file that is not there.
     #[serde(default)]
     pub(crate) attachments: Vec<String>,
+    /// The question this turn answers: the `ask`'s transcript handle (`3.1`) or its
+    /// call id (docs/control-api.md). A turn naming one answers only that question,
+    /// and is refused when it is not the one pending.
+    #[serde(default)]
+    pub(crate) answers: Option<String>,
+}
+
+impl TurnBody {
+    /// Whether the turn answers a pending question only by naming it: it names one, or
+    /// its `source` is an agent's (`session[…]`, `mcp[…]`). A turn from a human client
+    /// (no source, or `web`) takes the pending question as today (docs/control-api.md).
+    pub(crate) fn names_its_question(&self) -> bool {
+        self.answers.is_some()
+            || self.source.as_deref().is_some_and(|source| {
+                crate::frontend::source_session(source).is_some() || source.starts_with("mcp[")
+            })
+    }
 }
 
 /// The optional `POST /loop/compact` body: `warm` is the operator's choice to compact a

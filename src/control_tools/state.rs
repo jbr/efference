@@ -6,19 +6,17 @@ use mcplease::{
 };
 use serde::{Deserialize, Serialize};
 
-/// Read where the session is right now, without waiting: where the loop is
+/// Print a session's whole `/state` body, without waiting: where the loop is
 /// (`loop_phase`), what is in flight (`current_operations`), what each loop verb would
-/// answer now (`verbs`), the pending gate if there is one (with the held call's id),
-/// the pending question if the loop is asking one (answer it with `turn`), the inbox,
-/// the running background processes, and the session's usage. This is the call to
-/// make first when you do not know what a session is up to.
+/// answer now (`verbs`), the pending gate and question, the inbox, the running
+/// background processes, its usage, and its `status`.
 #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema, clap::Args)]
 #[serde(rename = "state")]
 pub struct State {
-    /// Read this session by id (see `sessions`). Required unless the server was started with `--name`/`--socket`; then it overrides that session for this call.
+    /// The agent's id. Defaults to the session `--name` names, or the one live here.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[arg(long)]
-    pub session: Option<String>,
+    pub agent: Option<String>,
 }
 
 impl ToolMeta for State {
@@ -43,13 +41,10 @@ impl Tool<Control> for State {
     async fn execute(self, control: Control, _context: RequestContext) -> Result<StateResult> {
         match &control.executor {
             Executor::Client(state) => {
-                let client = state.client(self.session.as_deref()).await?;
+                let client = state.client(self.agent.as_deref()).await?;
                 StateResult::plain(&client.state().await?)
             }
-            Executor::Host(state) => {
-                let session = state.resolve(self.session.as_deref())?;
-                StateResult::plain(&session.state_json())
-            }
+            Executor::Host(_) => Err(super::operator_verb("state")),
         }
     }
 }

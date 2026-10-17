@@ -190,18 +190,34 @@ impl Client {
         Ok(parsed.withdrawn)
     }
 
-    /// Submit a turn and **block until the daemon settles** (`POST /turns?wait`) — the turn
-    /// reaches a gate or completes — returning the resulting `/state` JSON. Collapses
-    /// "act → poll `/state` in a loop → read" into one round-trip
-    /// (docs/permissions.md).
-    pub async fn turn_wait(&self, text: &str) -> Result<Waited> {
-        self.turn_wait_with(text, TurnOptions::default()).await
-    }
-
-    /// [`turn_wait`](Self::turn_wait) with the body's optional fields ([`TurnOptions`]).
-    pub async fn turn_wait_with(&self, text: &str, options: TurnOptions<'_>) -> Result<Waited> {
-        let body = Self::turn_body(text, None, options);
-        self.wait_at(Method::Post, "/turns?wait", Some(body)).await
+    /// Submit a turn that names the question it answers by `answers` (a handle or the
+    /// ask's call id), or names none (`POST /turns`, docs/control-api.md). `Ok(Err)` is
+    /// the host's refusal, in its words: a question is pending and the turn names none,
+    /// or the one it names is not pending. A turn from an agent's `source` is held to the
+    /// same rule whether or not it names one.
+    pub(crate) async fn submit_named(
+        &self,
+        text: &str,
+        source: Option<&str>,
+        answers: Option<&str>,
+    ) -> Result<std::result::Result<crate::daemon::Landing, String>> {
+        let mut body: serde_json::Value =
+            serde_json::from_str(&Self::turn_body(text, None, TurnOptions { source }))?;
+        if let Some(answers) = answers {
+            body["answers"] = answers.into();
+        }
+        let path = self.versioned("/turns");
+        match self
+            .send_declinable(Method::Post, &path, Some(body.to_string()))
+            .await?
+        {
+            Ok(answer) => {
+                let delivery = json_field(&answer, "delivery").unwrap_or_default();
+                Ok(Ok(crate::daemon::Landing::parse(&delivery)
+                    .unwrap_or(crate::daemon::Landing::Queued)))
+            }
+            Err(declined) => Ok(Err(declined)),
+        }
     }
 
     /// Resolve the pending approval gate (`PUT /approvals/{call_id}`), carrying the
@@ -224,21 +240,19 @@ impl Client {
         .map(drop)
     }
 
-    /// Resolve a gate and **block until the daemon settles** (`PUT /approvals/{id}?wait`) — the
-    /// turn reaches its next gate or completes — returning the resulting `/state` JSON. The
-    /// "approve → read state" half of synchronous driving (docs/permissions.md).
-    pub async fn approve_wait(
+    /// [`approve`](Self::approve), with a moved gate as an answer rather than an error:
+    /// `Ok(false)` when `call_id` is no longer the pending gate (`409 gate_moved`).
+    pub(crate) async fn decide(
         &self,
         call_id: &str,
         decision: &Approval,
         source: Option<&str>,
-    ) -> Result<Waited> {
-        self.wait_at(
-            Method::Put,
-            &format!("/approvals/{call_id}?wait"),
-            Some(approval_body(decision, source)),
-        )
-        .await
+    ) -> Result<bool> {
+        let path = self.versioned(&format!("/approvals/{call_id}"));
+        let answer = self
+            .send_declinable(Method::Put, &path, Some(approval_body(decision, source)))
+            .await?;
+        Ok(answer.is_ok())
     }
 
     /// Block until the daemon next reaches a decision point — the loop phase is idle with
@@ -561,7 +575,7 @@ pub enum ContinueOutcome {
 #[derive(Clone, Copy, Debug, Default)]
 pub struct TurnOptions<'a> {
     /// Who is submitting, when it is not the operator: the client's self-chosen
-    /// label (`web`, `mcp[<name>]`, `agent[<id>]`). `None` submits as the
+    /// label (`web`, `mcp[<name>]`, `session[<id>]`). `None` submits as the
     /// operator, who renders no prefix.
     pub source: Option<&'a str>,
 }
@@ -571,8 +585,12 @@ pub struct TurnOptions<'a> {
 pub struct TranscriptRead<'a> {
     /// Only entries with `seq >= since`.
     pub since: Option<u64>,
+    /// Only entries with `seq < before`.
+    pub before: Option<u64>,
     /// Only the last `tail` entries.
     pub tail: Option<u64>,
+    /// One entry in full by its handle (`8`, `8.2`), in place of a window.
+    pub seq: Option<&'a str>,
     /// The entry-by-entry audit render (`grain=audit`) instead of the conversation.
     pub audit: bool,
     /// The reader, as a `source` (`mcp[<name>]`, `session[<id>]`) or a session id: a
@@ -586,6 +604,12 @@ impl TranscriptRead<'_> {
         let mut query = trillium_client::url::form_urlencoded::Serializer::new(String::new());
         if let Some(since) = self.since {
             query.append_pair("since", &since.to_string());
+        }
+        if let Some(before) = self.before {
+            query.append_pair("before", &before.to_string());
+        }
+        if let Some(seq) = self.seq {
+            query.append_pair("seq", seq);
         }
         if let Some(tail) = self.tail {
             query.append_pair("tail", &tail.to_string());
@@ -601,7 +625,7 @@ impl TranscriptRead<'_> {
 }
 
 /// The JSON body for an approval decision — the four-valued [`Approval`] the loop consumes
-/// (docs/control-channel.md). Shared by the blocking and non-blocking `approve` verbs.
+/// (docs/control-channel.md). Shared by `approve` and `decide`.
 fn approval_body(decision: &Approval, source: Option<&str>) -> String {
     let mut body = match decision {
         Approval::Approve => serde_json::json!({ "decision": "approve" }),

@@ -140,10 +140,9 @@ fn cycle_through(sessions: &super::Sessions, id: &str, next: &str) -> Option<Vec
 /// What a new supervisor hears when it is given a session to supervise.
 fn supervising_body(id: &str) -> String {
     format!(
-        "You now supervise {id}: its gates come to you to resolve with sessions__approve, \
-         you may drive it with sessions__turn and sessions__interrupt, and its status \
-         reaches your inbox at each decision point. sessions__state shows where it is now. \
-         sessions__review_level (spotter_human) hands its gates back to the operator."
+        "You now supervise {id}: its gates come to you to resolve with agents__decide, \
+         you drive it with agents__message and agents__interrupt, and its status \
+         reaches your inbox at each decision point. agents__status shows where it is now."
     )
 }
 

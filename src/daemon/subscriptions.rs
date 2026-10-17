@@ -4,8 +4,8 @@
 //! The subscriber set is host control state on the target — never logged, never
 //! projected. `create` from a session subscribes the creator with `wake`, so the
 //! parent gets a turn at each of the child's decision points, and a supervisor set
-//! after creation is subscribed on the same terms (`host/supervise.rs`); an explicit
-//! `subscribe` is ambient, and the subscriber's triage may dismiss it. The host
+//! after creation is subscribed on the same terms (`host/supervise.rs`); any other
+//! subscription is ambient, and the subscriber's triage may dismiss it. The host
 //! runs one watcher per session that reads the status at every control-state
 //! change and posts it to the subscribers when it moves.
 
@@ -22,7 +22,7 @@ pub(crate) struct Subscription {
 impl Host {
     /// Subscribe `subscriber` to `target`'s status. `false` when either is not
     /// hosted. Re-subscribing never lowers the terms: a creator's `wake`
-    /// survives an explicit `subscribe`, and only `unsubscribe` drops it.
+    /// survives an ambient subscription, and only `unsubscribe` drops it.
     pub fn subscribe(&self, target: &str, subscriber: &str, wake: bool) -> bool {
         let Some(session) = self.session(subscriber) else {
             return false;

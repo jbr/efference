@@ -189,9 +189,9 @@ concern; each module's tests live in its own `test.rs`.
 The turn engine that ties it together is `src/agent.rs`; the CLI binary is
 `src/bin/efference/`, whose `host` verb boots the daemon. Its command tree is grouped by
 who each command is for ([operating.md](operating.md)): the human verbs at the top level, `efference
-control <tool>` for the calls that drive a running session — the same tools
-`efference mcp` serves over MCP, written once in `src/control_tools.rs` and
-`src/control_tools/` — and
+control <verb>` for the calls that drive a running session — its agent verbs the
+ones `efference mcp` serves over MCP and a hosted session mounts as `agents__<verb>`, each
+written once in `src/control_tools.rs` and `src/control_tools/` — and
 `efference dev <verb>` for the instruments that develop the harness itself, behind the
 `dev` cargo feature.
 

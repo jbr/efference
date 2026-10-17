@@ -213,9 +213,9 @@ position resolves to `supervisor` ([permissions.md](permissions.md)) sends the c
 holding to its supervisor (by default the session that created it), on the same `session:<id>` slot and with the same
 must-wake, whether or not that session is subscribed — and with a body that names the
 recipient as the one to resolve it. Everything else a subscriber hears is observation: the
-same statuses, on the subscription's own terms, which `unsubscribe` drops. Keeping the two
-apart is what lets an agent stop watching a peer without also stopping answering for it, and
-stop answering for a child without going blind to whether it finished.
+same statuses, on the subscription's own terms, which the host's `unsubscribe` drops. Keeping
+the two apart is what lets a subscription end without the routing ending with it, and the
+routing move to the operator without the creator going blind to whether its child finished.
 
 ## Supersession — archive-and-replace, never edit
 

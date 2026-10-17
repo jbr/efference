@@ -36,7 +36,7 @@ pub enum Stop {
 }
 
 /// Every turn ending in one session's log, in order, each paired with the label of
-/// whoever answered it — `None` for the operator, `agent[<id>]` / `mcp[<name>]` /
+/// whoever answered it — `None` for the operator, `session[<id>]` / `mcp[<name>]` /
 /// `web` otherwise (`LogEntry::source`). A barren stop answered by a supervising
 /// agent is the same waste as one answered by a person, and worth telling apart.
 pub fn classify(entries: &[LogEntry]) -> Vec<(Stop, Option<String>)> {

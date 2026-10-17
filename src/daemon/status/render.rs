@@ -45,6 +45,17 @@ impl<'a> Reader<'a> {
         }
     }
 
+    /// A read of the status — the footer printed — by the reader `me` (a session id or a
+    /// client name), making its moves with `moves`.
+    pub(crate) fn read(relation: Relation, moves: &'a Moves, me: Option<&'a str>) -> Self {
+        Self {
+            relation,
+            moves,
+            me,
+            footer: true,
+        }
+    }
+
     /// Whether the reader drives the session, and so is told the moves that answer it.
     fn drives(&self) -> bool {
         self.relation != Relation::Observer
@@ -57,9 +68,8 @@ pub(crate) fn render(view: &StatusView, reader: &Reader, now: u64) -> String {
     let moves = reader.moves;
     let mut target = Target {
         session: id,
-        call_id: None,
         handle: None,
-        since: None,
+        seq: None,
     };
     let mut out: Vec<String> = Vec::new();
     match &view.condition {
@@ -88,7 +98,6 @@ pub(crate) fn render(view: &StatusView, reader: &Reader, now: u64) -> String {
             out.extend(doing.map(|more| format!("also: {more}")));
         }
         Condition::Gated(held) => {
-            target.call_id = Some(&held.call_id);
             target.handle = held.handle.as_deref();
             let mut call = held.tool.clone();
             if let Some(summary) = &held.summary {
@@ -145,16 +154,13 @@ pub(crate) fn render(view: &StatusView, reader: &Reader, now: u64) -> String {
             out.push(format!("{id}: asking a question{place}"));
             out.push(format!("question: {}", question.trim_end()));
             if reader.drives() {
-                out.push(format!(
-                    "answer: {}; the message you send next is its answer",
-                    (moves.answer)(&target)
-                ));
+                out.push(format!("answer: {} answers it", (moves.answer)(&target)));
             }
         }
         Condition::Idle { closing } => {
             match closing {
                 Some(closing) => {
-                    target.since = Some(closing.seq);
+                    target.seq = Some(closing.seq);
                     out.push(format!(
                         "{id}: idle, its turn is done (seq {})",
                         closing.seq
@@ -165,8 +171,9 @@ pub(crate) fn render(view: &StatusView, reader: &Reader, now: u64) -> String {
             }
             if reader.drives() {
                 out.push(format!(
-                    "next: {} sends its next message",
-                    (moves.message)(&target)
+                    "next: {} sends its next message; {} ends it",
+                    (moves.message)(&target),
+                    (moves.archive)(&target)
                 ));
             }
         }
@@ -177,8 +184,15 @@ pub(crate) fn render(view: &StatusView, reader: &Reader, now: u64) -> String {
             out.push(format!("{id}: stopped: {message}"));
             if reader.drives() {
                 out.push(match held_triage {
-                    true => "next: no message retries it; the operator's continue does".to_string(),
-                    false => format!("next: {} starts it again", (moves.message)(&target)),
+                    true => format!(
+                        "next: {} retries it; a message waits until it clears",
+                        (moves.resume)(&target)
+                    ),
+                    false => format!(
+                        "next: {} retries it; {} sends a message instead",
+                        (moves.resume)(&target),
+                        (moves.message)(&target)
+                    ),
                 });
             }
         }
@@ -193,8 +207,8 @@ pub(crate) fn render(view: &StatusView, reader: &Reader, now: u64) -> String {
                 ));
                 if reader.drives() {
                     out.push(format!(
-                        "next: {} goes ahead and pays that read",
-                        (moves.message)(&target)
+                        "next: {} goes ahead and pays that read, as any message does",
+                        (moves.resume)(&target)
                     ));
                 }
             }
@@ -203,7 +217,10 @@ pub(crate) fn render(view: &StatusView, reader: &Reader, now: u64) -> String {
                     "{id}: paused; its history was summarized while it waited"
                 ));
                 if reader.drives() {
-                    out.push(format!("next: {} resumes it", (moves.message)(&target)));
+                    out.push(format!(
+                        "next: {} resumes it, as any message does",
+                        (moves.resume)(&target)
+                    ));
                 }
             }
         },
@@ -211,16 +228,19 @@ pub(crate) fn render(view: &StatusView, reader: &Reader, now: u64) -> String {
             Block::PaceHeld => out.push(format!(
                 "{id}: held by its operator; nothing runs until the operator releases the hold"
             )),
-            Block::ConfigRepair { path } => {
+            Block::ConfigRepair { path, parse_error } => {
                 out.push(format!("{id}: blocked: its config file needs the operator"));
                 if let Some(path) = path {
                     out.push(format!("file: {path} does not parse"));
                 }
-                if reader.drives() {
-                    out.push(format!(
-                        "details: {} carries the parse error",
-                        (moves.state)(&target)
-                    ));
+                // A read carries the parse error; a notification names the read.
+                match parse_error {
+                    Some(error) if reader.footer => out.push(format!("error: {error}")),
+                    Some(_) if reader.drives() => out.push(format!(
+                        "details: {} shows the parse error",
+                        (moves.status)(&target)
+                    )),
+                    _ => {}
                 }
             }
         },
@@ -317,7 +337,7 @@ fn footer(out: &mut Vec<String>, footer: &Footer, me: Option<&str>, now: u64) {
     }
 }
 
-fn activity_text(activity: &Activity, now: u64) -> String {
+pub(super) fn activity_text(activity: &Activity, now: u64) -> String {
     let since = |at: &u64| duration(now.saturating_sub(*at));
     match activity {
         Activity::Tool {
@@ -371,7 +391,7 @@ fn sender(source: Option<&str>, me: Option<&str>) -> String {
 }
 
 /// A session id, or "you" when it is the reader's.
-fn name(id: &str, me: Option<&str>) -> String {
+pub(super) fn name(id: &str, me: Option<&str>) -> String {
     match me == Some(id) {
         true => "you".to_string(),
         false => id.to_string(),

@@ -18,10 +18,10 @@ pub struct Background {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[arg(long)]
     pub note: Option<String>,
-    /// Act on this session by id (see `sessions`). Required unless the server was started with `--name`/`--socket`; then it overrides that session for this call.
+    /// The agent's id. Defaults to the session `--name` names, or the one live here.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[arg(long)]
-    pub session: Option<String>,
+    pub agent: Option<String>,
 }
 
 impl ToolMeta for Background {
@@ -46,7 +46,7 @@ impl Tool<Control> for Background {
     async fn execute(self, control: Control, _context: RequestContext) -> Result<String> {
         match &control.executor {
             Executor::Client(state) => {
-                let client = state.client(self.session.as_deref()).await?;
+                let client = state.client(self.agent.as_deref()).await?;
                 Ok(match client.background(self.note.as_deref()).await? {
                     Some(id) => format!(
                         "requested backgrounding p#{id} (lands only while it is still running)"
@@ -54,23 +54,7 @@ impl Tool<Control> for Background {
                     None => "no foreground tool running; nothing to background".into(),
                 })
             }
-            Executor::Host(state) => {
-                let session = state.resolve_mutating(self.session.as_deref())?;
-                let foreground = session
-                    .process_states()
-                    .into_iter()
-                    .find(|process| !process.background)
-                    .map(|process| process.id);
-                Ok(match foreground {
-                    Some(id) => {
-                        session.request_detach(self.note.clone());
-                        format!(
-                            "requested backgrounding p#{id} (lands only while it is still running)"
-                        )
-                    }
-                    None => "no foreground tool running; nothing to background".into(),
-                })
-            }
+            Executor::Host(_) => Err(super::operator_verb("background")),
         }
     }
 }

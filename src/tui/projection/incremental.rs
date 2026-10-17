@@ -39,7 +39,7 @@ pub(crate) struct Transcript {
     dirty: BTreeSet<usize>,
     /// The gate this document was last built with — a change dirties both the call
     /// it left and the call it moved to. The bound action is part of the value: a
-    /// bound `sessions__approve` moving onto the same call still changes the render.
+    /// bound `agents__decide` moving onto the same call still changes the render.
     gate: Option<(String, Option<String>, Option<crate::tui::ActingOn>)>,
     /// The `ask` call the document was last built as current. The mark changes with
     /// no log entry, so a move dirties the ask it left and the one it reached.

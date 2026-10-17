@@ -19,7 +19,7 @@ export interface LogEntry {
    * entries the loop originates itself (docs/control-api.md). */
   submission_id?: string;
   /** Who submitted a `User` entry, when not the operator (docs/control-api.md):
-   * `web`, `mcp[<name>]`, `agent[<id>]`, or {@link KICKOFF_SOURCE}. */
+   * `web`, `mcp[<name>]`, `session[<id>]`, or {@link KICKOFF_SOURCE}. */
   source?: string | null;
   payload: Payload;
 }

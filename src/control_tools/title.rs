@@ -1,5 +1,5 @@
 use super::{Control, Executor};
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 use mcplease::{
     traits::{Tool, ToolMeta},
     types::{RequestContext, ToolAnnotations},
@@ -15,10 +15,10 @@ use serde::{Deserialize, Serialize};
 pub struct Title {
     /// The title, one line.
     pub title: String,
-    /// Act on this session by id (see `sessions`). Required unless the server was started with `--name`/`--socket`; then it overrides that session for this call.
+    /// The agent's id. Defaults to the session `--name` names, or the one live here.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[arg(long)]
-    pub session: Option<String>,
+    pub agent: Option<String>,
 }
 
 impl ToolMeta for Title {
@@ -43,7 +43,7 @@ impl Tool<Control> for Title {
     async fn execute(self, control: Control, _context: RequestContext) -> Result<String> {
         match &control.executor {
             Executor::Client(state) => {
-                let client = state.client(self.session.as_deref()).await?;
+                let client = state.client(self.agent.as_deref()).await?;
                 let identity = client.set_title(&self.title).await?;
                 Ok(format!(
                     "{}: {}",
@@ -51,44 +51,7 @@ impl Tool<Control> for Title {
                     identity["title"].as_str().unwrap_or_default()
                 ))
             }
-            Executor::Host(state) => {
-                let session = state.resolve_mutating(self.session.as_deref())?;
-                // The same shape the `PUT /title` route enforces: whitespace-trimmed,
-                // non-empty, within the triage's length cap.
-                let text = self.title.trim();
-                if text.is_empty() {
-                    return Err(anyhow!("title must not be empty"));
-                }
-                if text.chars().count() > crate::triage::TITLE_MAX_CHARS {
-                    return Err(anyhow!(
-                        "title must be at most {} characters",
-                        crate::triage::TITLE_MAX_CHARS
-                    ));
-                }
-                let title = crate::log::Title {
-                    text: text.to_string(),
-                    author: crate::log::TitleAuthor::Operator,
-                };
-                match session.set_title(title) {
-                    Ok(Some(_)) => {}
-                    Ok(None) => {
-                        return Err(anyhow!(
-                            "this session has no identity to title (no daemon booted it)"
-                        ));
-                    }
-                    Err(e) => return Err(anyhow!("could not record the title: {e}")),
-                }
-                let identity = session.identity();
-                let id = identity
-                    .as_ref()
-                    .map(|i| i.id.as_str())
-                    .unwrap_or("session");
-                let title = identity
-                    .as_ref()
-                    .and_then(|i| i.title.as_deref())
-                    .unwrap_or_default();
-                Ok(format!("{id}: {title}"))
-            }
+            Executor::Host(_) => Err(super::operator_verb("title")),
         }
     }
 }

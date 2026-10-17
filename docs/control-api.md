@@ -219,11 +219,15 @@ sessions from one process. Its own routes are the listener's, not a session's:
   the hook is bounded. Archiving the starting session or the host shutting down
   cancels it, leaving nothing minted.
   A creation that starts also records its directory in `GET /projects` — whatever
-  asked for it, a web launch, a session's own `sessions__create`, or a `hand_off`
+  asked for it, a web launch, a session's own `agents__create`, or a `hand_off`
   in its predecessor's directory, since they are one path here — and one that
-  fails records nothing. The in-session `sessions__create` and `hand_off` wait for
+  fails records nothing. The in-session `agents__create` and `hand_off` wait for
   the preparation to end, so the calling agent reads a failure as the call's
-  error. The write is best-effort like the model pick beside it:
+  error; `efference mcp`'s `create` waits the same way, on the starting session's
+  `GET /state?wait=settled`. A model or connection the host cannot run is refused
+  before anything is reserved, and the refusal names what the host offers: each
+  connection, whether it is usable, and the first ids of its held listing
+  ([model-catalog.md](model-catalog.md)). The write is best-effort like the model pick beside it:
   a store that cannot be opened never fails a creation that did start.
   One preparation step is not yet answerable by a network caller: an MCP server
   that answers `401` sends the harness into an authorization dance that prints to
@@ -307,7 +311,9 @@ sessions from one process. Its own routes are the listener's, not a session's:
   the pointer is not persisted, so a resumed session starts again from its creator.
 - `DELETE /sessions/:id` — archive the session, which is the same transition as
   `PATCH {"state": "archived"}`. Answers `200 {"id", "state": "archived"}` once
-  its teardown has run (background children reaped, scratch removed); the id leaves
+  its teardown has run (background children reaped, scratch removed), with
+  `ended_with` naming the sessions that end with it — its non-detached descendants,
+  read before the end starts — when there are any; the id leaves
   the list once the loop has returned. The directory and log stay, so the session
   is resumable by patching it `active` again. `404` for an id that is not hosted.
   A session whose log holds no `User` and no `Assistant` entry is discarded instead:
@@ -439,10 +445,12 @@ carries the gate, processes, usage, and effective policy in the same stream.
 #### `POST /turns`
 Enqueue a user turn. Also seeds turn 1 on an idle daemon. Submission is
 decoupled from inference. While an `ask` is pending (the `ask` topic below), a
-non-blank turn is instead that ask's reply: it becomes the call's result, never a
-`User` entry, and never appears in `queued` ([process-monitor.md](process-monitor.md)).
+non-blank turn from a human client is instead that ask's reply: it becomes the call's
+result, never a `User` entry, and never appears in `queued`
+([process-monitor.md](process-monitor.md)). A turn from an agent answers an ask only by
+naming it (below).
 
-- Body: `{ "text": "<string>", "submission_id": "<string, optional>", "source": "<string, optional>", "attachments": ["<name>", …] }` —
+- Body: `{ "text": "<string>", "submission_id": "<string, optional>", "source": "<string, optional>", "attachments": ["<name>", …], "answers": "<string, optional>" }` —
   `submission_id` identifies this submission: adopted when the client minted
   one (1–128 bytes), daemon-minted otherwise, and recorded on the resulting
   `User` entry as its `submission_id` (log metadata, never projected). A
@@ -450,8 +458,9 @@ non-blank turn is instead that ask's reply: it becomes the call's result, never 
   and the log records which submission produced each turn.
 - `source` names who is submitting, when it is not the operator — client-asserted,
   like `notify`'s source, and not verified. The convention is `web`,
-  `mcp[<clientInfo.name>]`, or `agent[<id>]`. Recorded on the resulting `User`
-  entry and rendered as a `source:` prefix line on its wire block
+  `mcp[<clientInfo.name>]`, or `session[<id>]` for another session on the host.
+  Recorded on the resulting `User` entry and rendered as a prefix on its wire block —
+  `<id> (agent):` for `session[<id>]`, the label as written otherwise
   (docs/log-and-projection.md); absent means the operator, whose turns render no
   prefix. `efference` is reserved for the harness's `first-turn` kickoff, which the
   clients do not draw ([context.md](context.md)); a request claiming it is a 400.
@@ -470,15 +479,30 @@ non-blank turn is instead that ask's reply: it becomes the call's result, never 
 - **An answer to an `ask`** is this same route: while an `ask` is pending the
   turn resolves it instead of opening a user turn ([process-monitor.md](process-monitor.md)).
   The release is logged with `by: ask` rather than `turn`.
-- `202 {"status":"accepted","submission_id":"<string>"}` — enqueued; watch
+- `answers` names the question the turn answers: the asking call's transcript handle
+  (`3.1`) or its call id. A turn that carries it, or whose `source` names an agent
+  (`session[…]` or `mcp[…]`), answers a pending ask only when it names that ask, and is
+  otherwise refused: a question is pending and the turn names none, or the question it
+  names is no longer pending — answered, or never asked. A turn from a human client (no
+  source, or `web`) that names none behaves as above. The check and the answer are one
+  step, so no ask can start between them (`src/daemon/named_turns.rs`).
+- `202 {"status":"accepted","submission_id":"<string>","delivery":"<string>"}` — enqueued; watch
   `/events` (or `/state`) for the result. The echoed id is informational: any
   effect of a request — including the `User` entry carrying this id — may
   arrive on `/events` **before** the response body resolves (the daemon
   commits and broadcasts independently of writing the response), so clients
   must not sequence state on a response.
+  `delivery` is where the turn went: `now` (the loop takes it at once, as the `verbs`
+  topic's turn says), `queued` (it waits for the loop's next juncture), or `answered`
+  (it was the pending ask's reply).
 - `?wait` — hold the connection until the daemon **settles** (the loop reaches a
   phase that waits on someone, or idle — `GET /state?wait=settled`, below), then return
   the `/state` snapshot (`200`) instead of `202`.
+- `409 not_delivered` — a turn held to naming its question was not delivered. `message`
+  says why in the sender's register, with the question and its handle (`not delivered:
+  child is asking (3.1) "Delete the old migrations?" — reply with reply_to: "3.1"`), or
+  who answered a stale one and how; `detail` carries the pending `ask` (`null` when none
+  is). Nothing is queued.
 - `400 bad_request` — unparseable body, or a `submission_id` outside 1–128 bytes
 
 #### `DELETE /turns/:submission_id`
@@ -544,8 +568,8 @@ only if that call is still the pending gate.
   - `source` — who decides, spelled as a turn's `source` is (`web`,
     `mcp[<clientInfo.name>]`, `session[<id>]`). Client-asserted and unverified, like an
     interrupt's; absent means the operator's own command line or TUI. The web client
-    sends `web`; the approve tool sends the mounting harness over MCP and the calling
-    session in-session; the TUI and `efference control approve` send none.
+    sends `web`; `decide` sends the mounting harness over MCP and the calling session
+    in-session; the TUI and `efference control decide` send none.
 - The host appends each decision it accepts as a `Telemetry::GateDecision` entry —
   the call id, the decision as the loop receives it, and `source` — once the id is known
   to be the pending gate and before the decision reaches the loop, so the entry precedes
@@ -878,7 +902,7 @@ not a topic — it is the log's cursor rather than control state, and sits outsi
     "name": "bash",
     "input": { … },                // the tool_use input, verbatim
     "reason": "…",                 // optional: the spotter's one-line reason
-    "acting_on": {                 // optional: the leaf a `sessions__approve` authorizes
+    "acting_on": {                 // optional: the leaf an allowing `agents__decide` authorizes
       "name": "bash",              //   (docs/permissions.md) — the held call is the
       "input": { … },              //   parent's approval, this is the child's move
       "intent": "…",               //   optional
@@ -1208,7 +1232,7 @@ the inbox say the same thing. Per condition it carries:
 | `idle` | `closing`: the last turn's closing prose (`seq`, `text` up to 4096 bytes, cut on a char boundary, and the whole message's `bytes` and `lines`), absent when the turn ended without prose |
 | `stalled` | `message`, and `held_triage` when a triage holds the results (`POST /loop/continue` retries it) |
 | `parked` | `park`: `{kind: "expired", context_tokens}` or `{kind: "compacted"}` |
-| `blocked` | `block`: `{kind: "pace_held"}` or `{kind: "config_repair", path}` |
+| `blocked` | `block`: `{kind: "pace_held"}` or `{kind: "config_repair", path, parse_error}`; a read of the status prints the parse error, and a notification names the read |
 | `starting` | `stage`, `authorizing`, `since`, as the `starting` topic |
 | `failed_to_start` | `reason` |
 | `ended`, `failed` | `failed` carries `error`; both are posted to subscribers once the runtime returns, and a running session never publishes them |
@@ -1284,7 +1308,7 @@ entry's `seq` or a call's `seq.n` when it shared its entry, then two spaces.
 
 - Prose is whole. A user turn is labelled with its sender as a plain name for the
   reader: `operator` for no source, `operator (web)` for `web`, the id or client name
-  inside `session[…]`, `agent[…]` or `mcp[…]`, `<id> (hand-off)` for `handoff[<id>]`, any
+  inside `session[…]` or `mcp[…]` (and an older `agent[…]`), `<id> (hand-off)` for `handoff[<id>]`, any
   other label as written, or `you`. The session's own prose is labelled with its id.
 - A call and its outcome are one line, the parts joined by ` → `: the tool, its command
   or arguments in backticks, ` — ` and its intent; then `waiting for a decision` while it
@@ -1720,6 +1744,7 @@ returning the same code cannot disagree about the status:
 | `invalid_decision` | 400 | a well-formed decision verb the daemon doesn't implement — the client is version-skewed, not buggy |
 | `not_found` | 404 | no such notification id, proposal `seq`, process id, or mounted tool name |
 | `gate_moved` | 409 | `PUT /approvals/:call_id` whose id is not the pending gate; `detail` carries the current gate |
+| `not_delivered` | 409 | `POST /turns` held to naming its question — it carries `answers` or an agent's `source` — while a question it does not name is pending, or naming one that is not pending; `detail` carries the pending `ask` |
 | `not_continuable` | 409 | `POST /loop/continue` at a moment with no continue in it — busy, gated, asking, or a wire tail that means nothing to re-prompt |
 | `starting` | 409 | a route a starting session does not serve: everything but `/state`, `/events`, and `/turns` until it has started (*A starting session*) |
 | `too_large` | 413 | `/files` was asked for a file past the view limit ([web-bind.md](web-bind.md)) |

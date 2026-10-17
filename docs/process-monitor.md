@@ -403,18 +403,24 @@ why this matters for prefix caching).
 
 ## `ask` — a question that blocks
 
-`ask(question)` puts a question to the operator and blocks until the reply, which
-returns as the call's result. It exists so that ending a turn has one meaning — the work
+`ask(question)` puts a question to the agent that supervises the session when there is
+one, otherwise to the operator, and blocks until the reply, which returns as the call's
+result. The question reaches the supervisor as the session's `asking` status, with the
+`message` call that answers it ([tools.md](tools.md)); the operator's clients show it
+either way. It exists so that ending a turn has one meaning — the work
 is done — and a question has its own spelling (`agent/ask.rs`, `daemon/ask.rs`). It is
 always advertised and skips the permission cascade: it acts on nothing, and asking
 permission to ask would gate a question behind a question.
 
-- **The next submission is the answer.** While an `ask` is pending, a non-blank
-  `POST /turns` from any client resolves it (`Session::submit_turn`): the turn becomes
-  the call's `ToolResult` and is never queued or logged as a `User` entry. The result
-  entry carries the submission's `submission_id` and `source`, and a sourced reply
-  projects as `[seq] source: text`, as a sourced user turn does. `notify` does not
-  resolve it. A reply releases a hold, as every submission does.
+- **A reply resolves it.** While an `ask` is pending, a non-blank `POST /turns` from a
+  human client resolves it (`Session::submit_turn`); a turn from an agent — a parent
+  session's `message`, an MCP client's — resolves it only when it names the question by
+  `reply_to` (`answers` on the route), and is refused otherwise
+  (`Session::submit_named_turn`, docs/control-api.md). The turn becomes the call's
+  `ToolResult` and is never queued or logged as a `User` entry. The result entry carries
+  the submission's `submission_id` and `source`, and a sourced reply projects as `[seq]
+  source: text`, as a sourced user turn does. A notification does not resolve it. A reply
+  releases a hold, as every submission does.
 - **Turns queued before it are recalled.** They were written before the question
   existed, so `begin_ask` withdraws them from the queue as `DELETE /turns/:id` would and
   publishes them on the `ask` state topic as `recalled`; the submitting client puts them
@@ -428,9 +434,9 @@ permission to ask would gate a question behind a question.
 - **Several asks in one completion are put one at a time**, in call order, each carrying
   its position (`n` of `of`). The tool description tells the model the order is
   unspecified, so they should be independent. A driving agent (a parent session, an MCP
-  client, `efference control`) answers them the same way the operator does: one `turn`
-  per question, reading the next from `/state` or `settle` in between. There is no
-  batched or call-addressed answer. On the wire each reply opens `asked: <question>`,
+  client) answers them one `message` per question, each naming its question's handle,
+  reading the next from the status in between; `efference control` answers them the way
+  the operator does. There is no batched answer. On the wire each reply opens `asked: <question>`,
   so the model matches answers to questions without relying on order.
 - **Interrupts** treat it as any in-flight call: the ask ends with an error result, the
   rest of the batch is aborted, and a reply that raced the interrupt is resubmitted as

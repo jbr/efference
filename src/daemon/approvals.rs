@@ -16,16 +16,18 @@ pub(super) struct Pending {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) reason: Option<String>,
     /// The leaf action this approval authorizes, when the held call is a bound
-    /// `sessions__approve` (docs/permissions.md). `None` for an ordinary gate.
+    /// `agents__decide` (docs/permissions.md). `None` for an ordinary gate.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) acting_on: Option<crate::control_tools::BoundAction>,
 }
 
-/// A session's held call, as its parent's `sessions__approve` resolver reads it
-/// (docs/permissions.md): the call the model wrote, plus the directories its
-/// action is classified against.
+/// A session's held call, as its parent's `agents__decide` reads it
+/// (docs/permissions.md): the call the model wrote, its transcript handle, and the
+/// directories its action is classified against.
 pub(crate) struct PendingGate {
     pub(crate) call: ToolCall,
+    /// The handle a decision names it by (`seq` or `seq.n`).
+    pub(crate) handle: Option<String>,
     pub(crate) directories: crate::policy::Directories,
 }
 
@@ -53,24 +55,28 @@ impl Session {
             })
     }
 
-    /// The held call, as a parent's `sessions__approve` resolver reads it
-    /// (docs/permissions.md): the call the model wrote plus the directories its action
-    /// is classified against. `None` when no gate is open.
+    /// The held call, as a parent's `agents__decide` reads it (docs/permissions.md):
+    /// the call the model wrote, its handle, and the directories its action is
+    /// classified against. `None` when no gate is open.
     pub(crate) fn pending_gate(&self) -> Option<PendingGate> {
-        let pending = self.pending.lock().unwrap();
-        let pending = pending.as_ref()?;
-        Some(PendingGate {
-            call: ToolCall::new(
+        let call = {
+            let pending = self.pending.lock().unwrap();
+            let pending = pending.as_ref()?;
+            ToolCall::new(
                 pending.name.clone(),
                 pending.call_id.clone(),
                 pending.input.clone(),
-            ),
+            )
+        };
+        Some(PendingGate {
+            handle: self.handle_of(&call.id.0),
+            call,
             directories: self.directories(),
         })
     }
 
     /// Register an approval gate and surface it to `GET /state`. Returns the
-    /// receiver the loop awaits. `bound` is the leaf action a `sessions__approve`
+    /// receiver the loop awaits. `bound` is the leaf action an `agents__decide`
     /// authorizes, when the held call is one (docs/permissions.md).
     pub(super) fn register_pending(
         &self,

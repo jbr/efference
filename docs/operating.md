@@ -12,20 +12,20 @@ driven, and it is refined from use rather than written ahead of it.
 
 `efference --help` lists only what a person types: `host`, `tui`, `check`. The rest is grouped by who it is for.
 
-- **`efference control <tool>`** — the calls that drive a *running* session:
-  `turn`, `approve`, `settle`, `interrupt`, `background`, `pace`, `review-level`,
-  `notify`, `subscribe`, `unsubscribe`, `proposal`, `image`, `state`,
-  `transcript`, `entries`, `title`, each one control-API call
-  over the session's control channel ([control-channel.md](control-channel.md)) —
-  and the four that address the host: `sessions` (list, with titles), `create`
-  (a session in a working directory, this process's environment as its base),
-  `archive` (stop one, keeping its log for a later resume), and `supervisor` (set
-  or clear which session supervises another).
-- **`efference mcp`** — the same calls, served as an MCP server over stdin/stdout
-  (below). One definition, three entry points: they are written once as mcplease tools
-  (`src/control_tools.rs` and `src/control_tools/`, one file per tool) and mounted by
-  the binary for the command line and the stdio server, and by a hosted session's own
-  toolbox for its model (below), so the paths cannot drift apart.
+- **`efference control <verb>`** — the calls that drive a *running* session. The agent
+  verbs: `create` (a session in a working directory, this process's environment as its
+  base, optionally with its first message), `message`, `decide`, `interrupt`, `archive`
+  (stop one and the sessions it created, keeping the logs for a later resume), `status`,
+  `transcript`, and `settle`. Then the operator's route verbs, each one control-API call
+  over the session's control channel ([control-channel.md](control-channel.md)): `state`,
+  `pace`, `title`, `background`, `proposal`, `review-level`, `supervisor` (set or clear
+  which session supervises another), `notify` (with a label and a slot, for scripts),
+  `entries`, and `image`.
+- **`efference mcp`** — the agent verbs, served as an MCP server over stdin/stdout
+  (below). The verbs are written once as mcplease tools (`src/control_tools.rs` and
+  `src/control_tools/`, one file per tool) and listed by three tool sets — the command
+  line's, the stdio server's, and a hosted session's own toolbox (below) — so the paths
+  cannot drift apart ([tools.md](tools.md)).
 - **`efference dev <verb>`** — instruments for developing efference itself: `wire`,
   `gallery`, `triage`, `spotter`, `spotter-log`, `spotter-eval`, `cache`, `view` (a recorded log in the TUI, inert), and `open`, the
   web-bind bootstrap-link mint ([web-bind.md](web-bind.md)). Compiled under the `dev`
@@ -55,52 +55,59 @@ The mount addresses the host, not a session: nothing is resolved at startup, so 
 host need not be running yet and the mount outlives any one session. The host is the
 first live of `.efference/host.sock` in the mount's working directory and
 `~/.efference/host.sock`, else the latter, or `--host-socket <path>`.
-Every session tool takes a `session` id — what `sessions` lists and `create` returns —
-and a call without one is an error that names what the host currently holds. The
-command line resolves the way the other client verbs do (`--name`/`--socket`, else
-the single live session), and `efference --name my-session mcp` gives the mount
-that same default, which a call's `session` then overrides. The server's
-`instructions` and each tool's description are written for the model reading
-`tools/list`; the behaviour hints say which tools read and which mutate, since the
-spec's defaults are pessimistic and a mounting harness's approval UX reads them. A
-`turn` submitted over the mount is attributed as `mcp[<clientInfo.name>]` from the
-name the client sent at initialize, so the session reads which harness is speaking
-without the caller saying so (docs/control-api.md).
+Every verb but `create` takes an `agent` id — what `status` lists and `create` returns —
+and a call without one is an error that names what the host currently holds; `status`
+with no agent is the overview of every session on the host. The command line resolves
+the way the other client verbs do (`--name`/`--socket`, else the single live session),
+and `efference --name my-session mcp` gives the mount that same default, which a call's
+`agent` then overrides. The server's `instructions` and each tool's description are
+written for the model reading `tools/list`; the behaviour hints say which tools read and
+which mutate, since the spec's defaults are pessimistic and a mounting harness's approval
+UX reads them. The mount is an operator client: it drives every session, so its
+`message` is the target's next user message, attributed as `mcp[<clientInfo.name>]` from
+the name the client sent at initialize, and its `decide` is recorded under the same name
+(docs/control-api.md). Every answer is plain text: a status, or one sentence saying what
+the call did.
 
-The three waiting tools — `settle`, and `turn`/`approve` with `wait` — take a `timeout_s`,
-because MCP clients time tool calls out. On expiry they answer with the current state
-marked `settled: false` rather than with an error, so a caller never has to tell "still
-working" from "the socket broke". The host caps each wait at 300 s and marks a capped
-answer `efference-settled: false`; the client re-polls it until the session settles or
-`timeout_s` runs out, measured from the start of the call. An omitted `timeout_s` has no
-bound.
+`settle` waits: it blocks until the agent reaches its next decision point and answers
+with its status. It takes a `timeout_s`, because MCP clients time tool calls out; on
+expiry it answers with where the agent is then rather than with an error, so a caller
+never has to tell "still working" from "the socket broke". The host caps each wait at
+300 s and marks a capped answer `efference-settled: false`; the client re-polls it until
+the session settles or `timeout_s` runs out, measured from the start of the call. An
+omitted `timeout_s` has no bound. Claude Code moves a long tool call to the background and
+wakes on its result, so a long `timeout_s` is safe there.
 
 ### The control tools inside a session
 
-A session created on a host also mounts these verbs in its own toolbox, under the wire
-names `sessions__<verb>` (`sessions__turn`, `sessions__state`, `sessions__create`). The
-session's model can commission a child, send it a `turn`, resolve its gate, read its
-`state` or `transcript`, and end it, without an operator relaying between them. The calls
-reach the host in-process and carry the calling session's id, so a `turn` lands on the
-child as `session[<caller id>]` ([control-api.md](control-api.md)).
+A session created on a host also mounts the agent verbs in its own toolbox, under the
+wire names `agents__<verb>`: `agents__create`, `agents__message`, `agents__decide`,
+`agents__interrupt`, `agents__archive`, `agents__status`, `agents__transcript`, and
+`agents__hand_off`. The session's model can commission a child, message it, decide its
+gates, read its status or transcript, and end it, without an operator relaying between
+them. The calls reach the host in-process and carry the calling session's id, so a
+message lands on the child as `session[<caller id>]`, which the child reads as
+`<caller id> (agent):` ([control-api.md](control-api.md)).
 
 Two rules are enforced by the mount, not by config. A session is never its own target: a
-call naming the caller, or naming no `session`, is an error. And the mutating verbs —
-`turn`, `approve`, `interrupt`, `archive`, `review-level`, `pace`, `title`, `background`,
-`proposal` — reach only sessions the caller created and sessions it supervises
-([permissions.md](permissions.md)); `notify` and the reads reach any session in the project. Reach is the project: `sessions__sessions` lists, and every
-`sessions__*` target resolves, only among sessions sharing the caller's `.efference/`
-base, so an id from another project reads as not found.
+call naming the caller, or naming no `agent`, is an error. And a session *drives* only
+the sessions it created, those it supervises ([permissions.md](permissions.md)), and its
+own predecessor: `decide`, `interrupt` and `archive` reach those alone, and `message` to
+one is its next user message, while `message` to any other session in the project is a
+note in its inbox, which it may set aside. The answer says which. Reach is the project:
+`agents__status` lists, and every `agents__*` target resolves, only among sessions
+sharing the caller's `.efference/` base, so an id from another project reads as not
+found.
 
 `create` from a session runs in the caller's cwd with the caller's child environment as
 the new session's base, and records the caller as the child's creator — the field
-`GET /sessions` reports as `created_by` ([control-api.md](control-api.md)). It also
-subscribes the caller to the child: each time the child stops at a gate, finishes a
-turn, stalls, or ends, a notification naming the condition and the call that answers
-it lands in the caller's inbox and wakes it ([tools.md](tools.md)). `subscribe` hears
-any session in the project the same way, without the wake; `unsubscribe` drops
-either. `settle` is not mounted, and the `wait` flags are refused in-session: a
-session has its own inbox to be woken through rather than a client that must block.
+`GET /sessions` reports as `created_by` ([control-api.md](control-api.md)). It waits out
+the child's preparation and answers with its model, directory, where its gates go, and
+its status. It also subscribes the caller to the child: each time the child stops at a
+gate, asks, finishes a turn, stalls, or ends, a notification naming the condition and
+the call that answers it lands in the caller's inbox and wakes it ([tools.md](tools.md)).
+No verb blocks in-session: a session has its own inbox to be woken through rather than a
+client that must wait.
 A child ends with its creator unless created `detached`. A session created in a
 directory with no project config (`efference.toml`) is the setup profile, whoever
 creates it: it opens with the new-user experience, which is not optional. To create a
@@ -131,19 +138,23 @@ Each read is at its own grain.
   the inbox, running processes, token usage and cost, the pace and review-level dials, the
   **effective** policy in force, what each loop verb would answer now (`verbs`), and the
   three condition topics (`stall`, `upstream_retry`, `config_repair`). Effective, not boot: a grant made twenty minutes ago shows up here.
-- **`efference control transcript [--since N | --tail N]`** — what the session has said and
-  done, one line per entry with its `seq`: prose in full, each call by name, arguments and
-  intent, each result by size, error flag and triage verdict, never a body. This is the
-  audit grain, the mechanism included (spotter verdicts, triage, config edits). Entries
-  are immutable, so `--since <last_seq>` after a wait reads only what is new.
-- **The conversation grain** — what the `transcript` tool answers over MCP and
-  in-session, and `GET /transcript` by default: prose whole with each sender named for
+- **`efference control transcript --audit [--since N | --tail N]`** — what the session has
+  said and done, one line per entry with its `seq`: prose in full, each call by name,
+  arguments and intent, each result by size, error flag and triage verdict, never a body.
+  This is the audit grain, the mechanism included (spotter verdicts, triage, config
+  edits); with neither bound it is the whole log. Entries are immutable, so
+  `--since <last_seq>` after a wait reads only what is new.
+- **The conversation grain** — what `transcript` answers without `--audit`, over MCP,
+  and in-session, and `GET /transcript` by default: prose whole with each sender named for
   the reader (`you`, `operator`, an id), and each call on one line with what became of
   it — who allowed or denied it, whether it is still running, its result's size, and how
   much of it the session saw (`it saw 1: the status line`). Spotter, triage, config and
   telemetry lines are left out. `GET /transcript?seq=8.2` zooms into one call: its exact
   input, the spotter's reason and who decided the gate, and the raw result, capped at
-  16 KiB ([control-api.md](control-api.md)).
+  16 KiB ([control-api.md](control-api.md)); the tool's `seq` is the same zoom. With
+  neither `since` nor `tail`, the tool reads what is new since this reader's last read,
+  by a read cursor its mount holds per agent; a reader with no cursor — every command-line
+  run is one — gets the last 40 entries, and the header says so.
 - **`efference control entries <seq>…`** — the whole entries behind transcript lines: a
   result's complete content, a call's exact arguments. The raw window (`GET /log`) is not
   a verb: at a terminal the jsonl is the same bytes, and over MCP a window of raw bodies
@@ -463,7 +474,7 @@ auth = { kind = "oauth" }         # the store's oauth:chatgpt grant
 
 `env_hook` is the same file's other top-level key, and it decides the environment
 a session launched **without one of its own** starts with — a `POST /sessions`
-that omits `env`. The terminal form, `sessions__create` and `hand_off` all send
+that omits `env`. The terminal form, `agents__create` and `hand_off` all send
 their own and are unaffected; the web form and any script that leaves it out get
 the hook. It
 is an argv, invoked directly with the session's directory set on the subprocess,
@@ -552,8 +563,10 @@ decisions resolve it:
 | **redirect** | reject it, and send text to the model as the next user turn. |
 | **config_edit** | change the rule, then re-check *this* call against the new one. |
 
-`efference control approve` sends the first; `--abort` and `--redirect <msg>` the next two. In the
-TUI, an empty composer approves, `.abort` aborts, and any other text redirects.
+`efference control decide <seq> allow` sends the first; `deny` sends abort, and
+`deny --message <msg>` sends redirect. `<seq>` is the held call's transcript handle, which
+the status names. In the TUI, an empty composer approves, `.abort` aborts, and any other
+text redirects.
 
 **What approving scopes: this call, and nothing else.** There is no "allow this kind of
 thing" in an approval. A call that comes back needing a correction — a `write` refused
@@ -624,12 +637,12 @@ its own.
 - **`efference control review-level <level>`** — who reviews a call the fast path did not clear.
   `spotter_human` is the supervised default (fast path → spotter → you). `supervisor` sends
   what the spotter will not clear to the session's supervisor — by default the session that
-  created it — which answers it with `approve`; it is the default for a session that has a
-  supervisor, and setting a child back to `spotter_human` is how a creating agent hands it to
-  you. A session with no live supervisor reviews as `spotter_human` whatever the dial says.
-- **`efference control supervisor <id> --session <session>`** (`--clear` instead of an id to
-  clear it) — hand a session to another: `<id>` answers its gates, may drive it (`turn`,
-  `approve`, `interrupt`, and the other mutating verbs), and is woken by its status, and you
+  created it — which answers it with `decide`; it is the default for a session that has a
+  supervisor, and setting a child back to `spotter_human` takes its gates back to you. A
+  session with no live supervisor reviews as `spotter_human` whatever the dial says.
+- **`efference control supervisor <id> --agent <session>`** (`--clear` instead of an id to
+  clear it) — hand a session to another: `<id>` answers its gates, drives it (`message`,
+  `decide`, `interrupt`, `archive`), and is woken by its status, and you
   are out of its gate path. A session at `spotter_human` moves to `supervisor`. Refused for a
   supervisor in another project or one that would cycle the chain
   ([permissions.md](permissions.md)). `autonomous`
@@ -653,13 +666,15 @@ its own.
 
 ## Speaking to a running session
 
-- **`efference control turn <text>`** — a user turn. It never waits for the trajectory to end: it is
-  picked up at the next juncture, after the current tool's results land, and merges into the
-  same message as those results. So mid-trajectory steering arrives *with* the evidence the
-  model is about to reason from, not after it. `--source <label>` names who is submitting
-  when it is not the operator (`web`, `mcp[<name>]`, `agent[<id>]`); the label rides on the
-  turn and prefixes it for the model (docs/control-api.md). Over the MCP mount it defaults
-  to the mounting harness's name (below).
+- **`efference control message --agent <id> <words>…`** — a user turn. It never waits for
+  the trajectory to end: it is picked up at the next juncture, after the current tool's
+  results land, and merges into the same message as those results. So mid-trajectory
+  steering arrives *with* the evidence the model is about to reason from, not after it.
+  The answer says whether it landed at once or is queued, and behind what. With no words
+  it is a continue. While the session is asking, `--reply-to <seq>` names the question it
+  answers; from the command line, as from the TUI, a message naming none still answers the
+  pending question. Over the MCP mount the turn carries the mounting harness's name
+  (above), and a message naming no question is refused while one is pending.
 - **`efference control notify <source> <body>`** — an ambient notification into the inbox. Unlike a
   turn, this is **triageable**: the model may pin it, dismiss it, or leave it. Use it for
   things that can wait and might not matter. `--slot <name>` supersedes an earlier
@@ -677,9 +692,9 @@ a notification can. Say it as a turn when it must land.
 **`efference control image <seq> [idx]`** writes a logged result image back out as a file — the same
 bytes the model was sent, not a re-render of a source file that may since have changed.
 
-`--wait` on `turn` and `approve`, and the standalone `efference control settle`, block until the
-daemon reaches a decision point and print the resulting state — which is how a script or an
-agent operator drives a session as *act, read, act* instead of polling.
+`efference control settle` blocks until the daemon reaches a decision point and prints the
+resulting state — which is how a script or an agent operator drives a session as *act,
+read, act* instead of polling.
 
 ## Silence, and what it means
 

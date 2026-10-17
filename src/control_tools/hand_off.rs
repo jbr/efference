@@ -1,17 +1,15 @@
-use super::{Control, Executor, pretty};
+use super::{Control, Executor};
 use anyhow::Result;
 use mcplease::{
-    traits::{Tool, ToolMeta, ToolOutput},
+    traits::{Tool, ToolMeta},
     types::{RequestContext, ToolAnnotations},
 };
 use serde::{Deserialize, Serialize};
 
-/// Hand this session's work to a new session in the same directory, which
-/// starts fresh from the project's current config — its grants, its preamble,
-/// its MCP servers — and takes this session's place: the operator's clients
-/// move to it, and it may archive this one once it has no more questions. The
-/// brief is its first message, shown as this session's hand-off. Always put to
-/// the operator before it runs; say so before calling it.
+/// Hand your work to a new session in this directory, which starts from the
+/// project's current config and takes your place: the operator's clients move to
+/// it, and it archives you once it has no more questions. The brief is its first
+/// message. Always put to the operator; say so before calling it.
 #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema, clap::Args)]
 #[serde(rename = "hand_off")]
 pub struct HandOff {
@@ -38,26 +36,10 @@ impl ToolMeta for HandOff {
     }
 }
 
-/// A hand-off as a tool result: the successor's id.
-#[derive(Serialize, schemars::JsonSchema)]
-pub struct HandedOff {
-    successor: String,
-}
-
-impl ToolOutput for HandedOff {
-    fn output_schema() -> Option<serde_json::Value> {
-        Some(mcplease::traits::schema_for::<Self>().into())
-    }
-
-    fn to_text(&self) -> String {
-        pretty(self)
-    }
-}
-
 impl Tool<Control> for HandOff {
-    type Output = HandedOff;
+    type Output = String;
 
-    async fn execute(self, control: Control, _context: RequestContext) -> Result<HandedOff> {
+    async fn execute(self, control: Control, _context: RequestContext) -> Result<String> {
         match &control.executor {
             Executor::Client(_) => anyhow::bail!(
                 "`hand_off` is a session handing off its own work; from outside a session, \
@@ -85,7 +67,10 @@ impl Tool<Control> for HandOff {
                     env: Some(caller.child_env().resolved()),
                 };
                 let successor = state.hand_off(request, self.brief).await?;
-                Ok(HandedOff { successor })
+                Ok(format!(
+                    "handed off to {successor}: the operator's clients follow it there, and it \
+                     archives you once it has no more questions"
+                ))
             }
         }
     }

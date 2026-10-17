@@ -26,10 +26,14 @@ record of which submission produced the entry. It is skipped when `None`, so
 pre-existing logs read back unchanged.
 
 `source` differs from the metadata above: it records who submitted a
-turn when that is not the operator — `web`, `mcp[<name>]`, or `agent[<id>]`,
-client-asserted like `notify`'s source. It **is** projected: a `User` entry
-carrying one opens its wire block with a `source:` line, so the model can tell
-the voices apart when several clients submit into a session (docs/control-api.md).
+turn when that is not the operator — `web`, `mcp[<name>]`, or `session[<id>]` for
+another session on the host — client-asserted like `notify`'s source. It **is**
+projected: a `User` entry carrying one opens its wire block with a prefix naming the
+speaker, so the model can tell the voices apart when several clients submit into a
+session (docs/control-api.md). The stored `session[<id>]` opens the block as
+`<id> (agent):` (`frontend::wire_label`), the spelling the preamble teaches
+(`assets/prompts/session.md`); every other label opens it as written (`web:`,
+`mcp[<name>]:`). An `ask`'s reply from a source is prefixed the same way.
 `None` on operator turns and on entries the loop originates itself, and skipped
 when `None`, so an unsourced turn projects and serializes exactly as it did
 before the field existed.

@@ -1,5 +1,5 @@
 use super::{Control, Executor};
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 use mcplease::{
     traits::{Tool, ToolMeta},
     types::{RequestContext, ToolAnnotations},
@@ -14,16 +14,16 @@ pub struct ReviewLevel {
     /// pointer at its config file, so nothing blocks on an absent human.
     /// `supervisor` — the spotter judges first and escalates to this session's
     /// supervisor (by default the session that created it), which answers the gate
-    /// with `approve`; with no live supervisor this reviews as `spotter_human`. The
-    /// default for a session another
-    /// session created, and `spotter_human` is how you hand one back to the operator.
+    /// with `decide`; with no live supervisor this reviews as `spotter_human`. The
+    /// default for a session another session created, and `spotter_human` is how you
+    /// hand one back to the operator.
     /// `spotter_human` — the spotter judges first and escalates to a human gate.
     /// `human_only` — skip the spotter; every uncleared call gates.
     pub level: String,
-    /// Act on this session by id (see `sessions`). Required unless the server was started with `--name`/`--socket`; then it overrides that session for this call.
+    /// The agent's id. Defaults to the session `--name` names, or the one live here.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[arg(long)]
-    pub session: Option<String>,
+    pub agent: Option<String>,
 }
 
 impl ToolMeta for ReviewLevel {
@@ -48,20 +48,11 @@ impl Tool<Control> for ReviewLevel {
     async fn execute(self, control: Control, _context: RequestContext) -> Result<String> {
         match &control.executor {
             Executor::Client(state) => {
-                let client = state.client(self.session.as_deref()).await?;
+                let client = state.client(self.agent.as_deref()).await?;
                 let set = client.review_level(&self.level).await?;
                 Ok(format!("review level: {set}"))
             }
-            Executor::Host(state) => {
-                let session = state.resolve_mutating(self.session.as_deref())?;
-                let level = crate::policy::ReviewLevel::parse(&self.level).ok_or_else(|| {
-                    anyhow!(
-                        "review_level must be autonomous | supervisor | spotter_human | human_only"
-                    )
-                })?;
-                session.set_review_level(level);
-                Ok(format!("review level: {}", level.as_str()))
-            }
+            Executor::Host(_) => Err(super::operator_verb("review_level")),
         }
     }
 }
