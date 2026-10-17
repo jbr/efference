@@ -213,6 +213,8 @@ pub(crate) struct Created<'a> {
     pub(crate) branch: Option<String>,
     /// Where its gates go, as a clause: `its gates come to you`.
     pub(crate) gates: String,
+    /// Whether the creating mount watches it for `wait` (docs/operating.md).
+    pub(crate) watched: bool,
     /// Its status's first line, or what its first message did.
     pub(crate) then: String,
 }
@@ -230,6 +232,9 @@ pub(crate) fn created(created: &Created) -> String {
     };
     out.push(format!("cwd: {}{place}", created.working));
     out.push(format!("gates: {}", created.gates));
+    if created.watched {
+        out.push("watched: wait() returns its statuses you have not seen".to_string());
+    }
     out.push(created.then.clone());
     out.join("\n")
 }
@@ -266,6 +271,16 @@ pub(crate) fn overview_line(view: &StatusView, reader: &Reader, yours: bool, now
         },
         false => line,
     }
+}
+
+/// A `wait` that ran `seconds` with nothing new: each watched agent's status line now
+/// (docs/operating.md).
+pub(crate) fn unchanged(seconds: u64, lines: Vec<String>) -> String {
+    let mut out = vec![format!(
+        "nothing new after {seconds}s; where each agent is now (not new):"
+    )];
+    out.extend(lines);
+    out.join("\n")
 }
 
 /// The overview's lines, or what it says when there are none.

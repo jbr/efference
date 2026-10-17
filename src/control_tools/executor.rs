@@ -1,5 +1,6 @@
 //! The HTTP-over-control-channel executor the command line and `efference mcp` use
-//! (docs/tools.md): which session a call reaches, and the reads every verb shares.
+//! (docs/tools.md): which session a call reaches, the reads every verb shares, and the
+//! agents an MCP mount watches for `wait` (docs/operating.md).
 
 use std::collections::HashMap;
 use std::future::Future;
@@ -10,6 +11,7 @@ use std::time::Duration;
 use anyhow::{Result, anyhow};
 use serde_json::Value;
 
+use super::watch::Watch;
 use crate::client::{Client, Waited};
 use crate::daemon::status::StatusView;
 
@@ -27,6 +29,9 @@ pub struct ClientExecutor {
     /// The last seq this mount was shown of each session's transcript, by id
     /// (docs/tools.md). Shared by every clone, like the fallback; never logged.
     cursors: Arc<Mutex<HashMap<String, u64>>>,
+    /// The agents this mount watches and what it has shown of each, for `wait`
+    /// (docs/operating.md). Shared by every clone, so concurrent calls see one set.
+    watch: Arc<Watch>,
 }
 
 /// Which session a client executor drives when a call names no `agent`.
@@ -65,6 +70,7 @@ impl ClientExecutor {
             host_client: None,
             fallback: Arc::new(Mutex::new(fallback)),
             cursors: Arc::default(),
+            watch: Arc::default(),
         }
     }
 
@@ -264,6 +270,41 @@ impl ClientExecutor {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .insert(id.to_string(), seq);
+    }
+
+    /// Watch `id` for `wait` from now on (docs/operating.md). `shown` is the status this
+    /// mount just showed of it — a creation's — or `None` when it has shown none.
+    pub(crate) fn watch(&self, id: &str, shown: Option<&StatusView>) -> Result<()> {
+        self.watch.add(&self.host_client()?, id, shown);
+        Ok(())
+    }
+
+    /// Watch `id`, which a `wait` named: an error naming what the host holds when the
+    /// host does not hold it.
+    pub(super) async fn watch_named(&self, id: &str) -> Result<()> {
+        if self.watch.contains(id) {
+            return Ok(());
+        }
+        let host = self.host_client()?;
+        let ids = host.list_sessions().await?;
+        if !ids.iter().any(|held| held == id) {
+            return Err(match ids.is_empty() {
+                true => anyhow!("no agent {id:?} on this host, which holds none; `create` one"),
+                false => anyhow!("no agent {id:?} on this host; it holds {}", ids.join(", ")),
+            });
+        }
+        self.watch.add(&host, id, None);
+        Ok(())
+    }
+
+    /// The watched set (docs/operating.md).
+    pub(super) fn watched(&self) -> &Watch {
+        &self.watch
+    }
+
+    /// A client for the hosted session `id`, through the host's socket.
+    pub(super) fn hosted(&self, id: &str) -> Result<Client> {
+        Ok(self.host_client()?.with_prefix(&format!("/sessions/{id}")))
     }
 
     /// Run a waiting call and answer with its `/state` and whether it settled, bounded

@@ -32,8 +32,9 @@ pub(crate) async fn run_cli(
 /// (docs/operating.md). Nothing is resolved at startup: the host need not be
 /// running yet, and each call names its agent — unless `--name`/`--socket`
 /// was given, which a call that names none then drives. Every call is spawned,
-/// so a `settle` waiting on its agent leaves the others free. Returns once
-/// stdin closes and every call has been answered.
+/// so a `wait` leaves the others free; the agents the mount watches for `wait`
+/// are this process's, kept until it exits. Returns once stdin closes and every
+/// call has been answered.
 pub(crate) async fn run_stdio(
     host: PathBuf,
     name: Option<String>,

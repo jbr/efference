@@ -14,7 +14,7 @@ mcplease::tools!(
     (Archive, archive, "archive"),
     (Status, status, "status"),
     (Transcript, transcript, "transcript"),
-    (Settle, settle, "settle")
+    (Wait, wait, "wait")
 );
 
 /// What a mounting harness is told about this server (docs/operating.md): what the
@@ -44,7 +44,7 @@ question's seq; a message without it is refused while a question is pending.
 zooms into one entry. `interrupt` stops what it is doing; `archive` ends it and the \
 agents it created.
 
-Waiting: `settle` blocks until an agent's next decision point — a gate, a question, its \
-turn ending, or a stop — and answers with its status. Pass `timeout_s`; on expiry it \
-says where the agent is then. Claude Code backgrounds a long call and wakes on it, so a \
-long `timeout_s` (600) is safe there.";
+Waiting: `wait` returns the next status you have not seen of the agents you created or \
+named with `agent`: a gate, a question, a turn ending, a stop, an end. Claude Code moves \
+a long MCP call to a background task and wakes on its result, so a long `timeout_s` \
+(600) is safe there; other clients keep it under their own tool timeout.";

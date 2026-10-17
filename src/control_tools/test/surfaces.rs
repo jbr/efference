@@ -6,7 +6,9 @@ use mcplease::traits::AsToolsList;
 
 /// Each set's advertised names, in order: a mounting harness caches the list, and
 /// order is macro-expansion order, so a reorder moves every client's cached list
-/// and the in-session `tools[]` (docs/tools.md).
+/// and the in-session `tools[]` (docs/tools.md). The MCP set waits with `wait`, which
+/// needs the mount's watched set; the command line, which holds no mount, keeps
+/// `settle` (docs/operating.md).
 #[test]
 fn each_set_advertises_its_verbs_in_order() {
     let names = |tools: Vec<mcplease::types::Tool>| -> Vec<String> {
@@ -29,7 +31,7 @@ fn each_set_advertises_its_verbs_in_order() {
             .collect()
     };
     assert_eq!(names(in_session::Tools::tools_list()), with(&["hand_off"]));
-    assert_eq!(names(mcp::Tools::tools_list()), with(&["settle"]));
+    assert_eq!(names(mcp::Tools::tools_list()), with(&["wait"]));
     assert_eq!(
         names(cli::Tools::tools_list()),
         with(&[
@@ -141,6 +143,13 @@ fn the_verbs_are_annotated() {
             "{name} is a non-idempotent write"
         );
     }
+    let wait = mcp::Tools::tools_list()
+        .into_iter()
+        .find(|tool| tool.name == "wait")
+        .unwrap();
+    let annotations = wait.annotations.as_ref().unwrap();
+    assert_eq!(annotations.read_only_hint, Some(true), "wait is a read");
+    assert_eq!(annotations.open_world_hint, Some(false));
     // Every tool declares a closed world: they reach one local host, nothing else.
     for tool in &tools {
         assert_eq!(

@@ -161,12 +161,50 @@ fn what_a_creation_made() {
             project: Some("/repo"),
             branch: Some("efference/child".into()),
             gates: gates("you", false),
+            watched: false,
             then,
         }),
         "created child on anthropic/claude-haiku-5.5\n\
          cwd: /repo/.efference/worktrees/child (its own worktree, on branch efference/child)\n\
          gates: its gates come to you\n\
          child: idle, waiting for its first message"
+    );
+}
+
+/// A creation over `efference mcp` says the mount watches the new agent, and which call
+/// reports it (docs/operating.md).
+#[test]
+fn a_watched_creation_names_wait() {
+    assert_eq!(
+        created(&Created {
+            id: "child",
+            model: None,
+            working: "/repo",
+            project: None,
+            branch: None,
+            gates: gates("the operator", false),
+            watched: true,
+            then: "delivered: child is working on it".into(),
+        }),
+        "created child\n\
+         cwd: /repo\n\
+         gates: its gates come to the operator\n\
+         watched: wait() returns its statuses you have not seen\n\
+         delivered: child is working on it"
+    );
+}
+
+/// A `wait` that ran out says so and gives each agent's line, not new.
+#[test]
+fn an_unchanged_wait_lists_each_agent() {
+    assert_eq!(
+        unchanged(
+            100,
+            vec!["a: idle, its turn is done".into(), "b: working".into()]
+        ),
+        "nothing new after 100s; where each agent is now (not new):\n\
+         a: idle, its turn is done\n\
+         b: working"
     );
 }
 

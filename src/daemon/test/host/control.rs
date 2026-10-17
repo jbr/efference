@@ -6,6 +6,8 @@ use crate::control_tools::{Archive, ClientExecutor, Control, Create, Executor, S
 use mcplease::traits::Tool as _;
 use mcplease::types::RequestContext;
 
+mod wait;
+
 /// The host's socket stack at its root, as the MCP mount's host client.
 async fn host_root(host: &Arc<Host>) -> ControlClient {
     let host = Arc::clone(host);

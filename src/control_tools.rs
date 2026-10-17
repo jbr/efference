@@ -53,6 +53,8 @@ mod status;
 mod supervisor;
 mod title;
 mod transcript;
+mod wait;
+mod watch;
 
 pub mod cli;
 pub mod in_session;
@@ -81,6 +83,7 @@ pub use status::Status;
 pub use supervisor::Supervisor;
 pub use title::Title;
 pub use transcript::Transcript;
+pub use wait::Wait;
 
 /// The namespace the in-session set is mounted under: `agents__<verb>` (docs/tools.md).
 pub const NAMESPACE: &str = "agents";
@@ -159,8 +162,8 @@ pub struct Control {
     executor: Executor,
     /// Whether this dispatch came from the command line rather than from an MCP
     /// client. `image` reads it — at a terminal it writes a file and says so, over MCP
-    /// it hands back the bytes as an image content block — and `settle`, which prints
-    /// the `/state` body at a terminal and the status over MCP.
+    /// it hands back the bytes as an image content block — and `create`, whose
+    /// creation an MCP mount watches for `wait` (docs/operating.md).
     cli: bool,
 }
 

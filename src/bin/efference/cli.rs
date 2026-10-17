@@ -513,18 +513,17 @@ pub(crate) enum Command {
     },
     /// Drive a running session from a script: message it, decide its gates, read it.
     ///
-    /// The agent verbs `efference mcp` serves (`create`, `message`, `decide`,
-    /// `interrupt`, `archive`, `status`, `transcript`, `settle`), then the operator's
-    /// route verbs (`state`, `pace`, `title`, `background`, `proposal`,
-    /// `review-level`, `supervisor`, `notify`, `entries`, `image`). `efference control
-    /// --help` lists them.
+    /// The agent verbs (`create`, `message`, `decide`, `interrupt`, `archive`,
+    /// `status`, `transcript`) and `settle`, then the operator's route verbs (`state`,
+    /// `pace`, `title`, `background`, `proposal`, `review-level`, `supervisor`,
+    /// `notify`, `entries`, `image`). `efference control --help` lists them.
     #[command(subcommand)]
     Control(efference::control_tools::cli::Tools),
     /// Serve the agent verbs as an MCP server on stdin/stdout.
     ///
     /// The mount another agent harness supervises sessions through: `create`,
     /// `message`, `decide`, `interrupt`, `archive`, `status`, `transcript`, and
-    /// `settle`. Speaks newline-delimited JSON-RPC and blocks until stdin closes.
+    /// `wait`. Speaks newline-delimited JSON-RPC and blocks until stdin closes.
     /// Connects to the host: nothing needs to be running when it starts, and each
     /// call names its agent (`status` lists them, `create` makes one). With
     /// `--name` or `--socket`, a call that names no agent drives that one.

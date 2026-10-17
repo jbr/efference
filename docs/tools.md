@@ -211,14 +211,16 @@ mcplease has no way to hide a tool from it.
 | set | verbs |
 |---|---|
 | in-session (`agents__<verb>`) | `create`, `message`, `decide`, `interrupt`, `archive`, `status`, `transcript`, `hand_off` |
-| `efference mcp` | `create`, `message`, `decide`, `interrupt`, `archive`, `status`, `transcript`, `settle` |
-| `efference control` | the MCP set, then the operator's route verbs: `state`, `pace`, `title`, `background`, `proposal`, `review-level`, `supervisor`, `notify`, `entries`, `image` |
+| `efference mcp` | `create`, `message`, `decide`, `interrupt`, `archive`, `status`, `transcript`, `wait` |
+| `efference control` | the agent verbs but `wait`, and `settle`, then the operator's route verbs: `state`, `pace`, `title`, `background`, `proposal`, `review-level`, `supervisor`, `notify`, `entries`, `image` |
 
 Other sessions are named to a model as agents: the in-session namespace is `agents__`,
 and every verb's target parameter is `agent`. "Session" stays the word for the record —
 the log, resume, archive — and each agent is a session on its host, its id naming both.
-The agent verbs answer in plain text with no output schema; `state`, `settle` at the
-command line, and `entries` print JSON for scripts.
+The agent verbs answer in plain text with no output schema; `state`, `settle`, and
+`entries` print JSON for scripts. `wait` is the MCP set's alone: it answers from the
+mount's watched set, which only a mount that outlives its calls can hold, while the
+command line keeps `settle`, which waits on one agent per call ([operating.md](operating.md)).
 
 #### The `sessions` provider
 
@@ -320,7 +322,10 @@ call id; the read cursor is the mount's own, per target, shared by its clones;
 `status` with no agent is every session on the host; `create` waits for the starting
 session to start or fail (`GET /state?wait=settled`), and its gates come to the
 operator. A gate a status shows is the reader's to decide when it is routed to the
-operator.
+operator. Over MCP, `create` also adds the new session to the mount's watched set, and
+`wait` returns each status of a watched session the mount has not shown, by the same
+decision points a subscription posts ([operating.md](operating.md),
+`src/control_tools/watch.rs`).
 
 ##### Subscriptions: a session's status in another's inbox
 

@@ -161,6 +161,13 @@ impl Tool<Control> for Create {
                 if let Condition::FailedToStart { reason } = &view.condition {
                     return Err(anyhow!("{id} did not start: {reason}"));
                 }
+                // An MCP mount watches what it creates, from the status this answer
+                // shows, so `wait` reports what comes after (docs/operating.md). The
+                // command line holds no mount to watch from.
+                let watched = !control.is_cli();
+                if watched {
+                    state.watch(&id, Some(&view))?;
+                }
                 let me = reader_name(&context);
                 let reader = Reader::read(operator_relation(&view), &Moves::MCP, me.as_deref());
                 let then = match self.first_message() {
@@ -191,6 +198,7 @@ impl Tool<Control> for Create {
                     project: project.as_deref(),
                     branch: self.worktree.then(|| crate::worktree::branch(&id)),
                     gates: answers::gates("the operator", self.autonomous),
+                    watched,
                     then,
                 }))
             }
@@ -265,6 +273,7 @@ impl Tool<Control> for Create {
                     project: project.as_deref(),
                     branch: self.worktree.then(|| crate::worktree::branch(&id)),
                     gates: answers::gates("you", self.autonomous),
+                    watched: false,
                     then,
                 }))
             }

@@ -21,8 +21,8 @@ driven, and it is refined from use rather than written ahead of it.
   `pace`, `title`, `background`, `proposal`, `review-level`, `supervisor` (set or clear
   which session supervises another), `notify` (with a label and a slot, for scripts),
   `entries`, and `image`.
-- **`efference mcp`** — the agent verbs, served as an MCP server over stdin/stdout
-  (below). The verbs are written once as mcplease tools (`src/control_tools.rs` and
+- **`efference mcp`** — the agent verbs, with `wait` in place of `settle`, served as an
+  MCP server over stdin/stdout (below). The verbs are written once as mcplease tools (`src/control_tools.rs` and
   `src/control_tools/`, one file per tool) and listed by three tool sets — the command
   line's, the stdio server's, and a hosted session's own toolbox (below) — so the paths
   cannot drift apart ([tools.md](tools.md)).
@@ -69,14 +69,35 @@ the name the client sent at initialize, and its `decide` is recorded under the s
 (docs/control-api.md). Every answer is plain text: a status, or one sentence saying what
 the call did.
 
-`settle` waits: it blocks until the agent reaches its next decision point and answers
-with its status. It takes a `timeout_s`, because MCP clients time tool calls out; on
-expiry it answers with where the agent is then rather than with an error, so a caller
-never has to tell "still working" from "the socket broke". The host caps each wait at
-300 s and marks a capped answer `efference-settled: false`; the client re-polls it until
-the session settles or `timeout_s` runs out, measured from the start of the call. An
-omitted `timeout_s` has no bound. Claude Code moves a long tool call to the background and
-wakes on its result, so a long `timeout_s` is safe there.
+`wait(agent?, timeout_s?)` waits on the mount's **watched set**: the agents it created,
+and any a `wait` named with `agent`, each watched for the life of the mount process
+(`src/control_tools/watch.rs`). The mount follows each watched session's `status` topic
+with one task holding `GET /events?include=state:status` on it, and reopens the stream
+when it drops while the host still lists the session ([control-api.md](control-api.md)).
+For each session it keeps the last status it showed. A status is new when it is a
+decision point the mount has not shown for that session: compared by the condition's
+kind and what tells two of that kind apart — the held call (and who decides it), the
+question's handle, the idle's closing message — so a second gate, or an idle after
+another turn, is new. A working or starting status is never new, as `running` is never
+posted to an in-session subscriber ([tools.md](tools.md)). A session the host no longer
+lists has ended: `wait` reports `ended` once, then drops it from the set.
+
+`wait` answers with every new status at once, each rendered for the mount as `status`
+renders it, and marks each shown; with none, it waits until one arrives or `timeout_s`
+passes (100 s when omitted; any larger value is accepted). On expiry it says nothing is
+new after that many seconds and gives each watched agent's status line now, marked as not
+new, rather than an error, so a caller never has to tell "still working" from "the socket
+broke". With nothing watched, the call is refused and names the two ways to watch an
+agent; an `agent` the host does not hold is an error naming what it holds. `create`'s
+answer over the mount says the new agent is watched. Claude Code moves a long MCP call to
+a background task and wakes on its result, so a long `timeout_s` (600) is safe there;
+other clients keep it under their own tool-call timeout.
+
+The command line holds no mount between calls, so it keeps `settle`, which blocks until
+one agent reaches its next decision point and prints its `/state`. The host caps each
+wait at 300 s and marks a capped answer `efference-settled: false`; the client re-polls
+it until the session settles or `timeout_s` runs out, measured from the start of the
+call. An omitted `timeout_s` has no bound.
 
 ### The control tools inside a session
 
