@@ -237,8 +237,12 @@ preamble (omitting the entry omits the block — explicit over magic).
 ## The guide overlay — a fourth entry shape whose files are in the binary
 
 `Label = { builtin = "guide" }` lists a set of documents compiled into the binary
-(`src/guide.rs`, sources in `assets/guide/` plus [operating.md](operating.md)). The one
-mount name is `guide`; any other fails the file rather than rendering an empty section.
+(`src/guide.rs`, sources in `assets/guide/`). The one mount name is `guide`; any other
+fails the file rather than rendering an empty section. The documents are written for a
+session's model: setting up a project and its config, the host, the file tools, and
+`supervising`, for a session supervising the agents it creates with the `agents__*` verbs
+([tools.md](tools.md)). The human operator's document, [operating.md](operating.md), is
+not among them.
 
 They are **born resolved**: each document is a compiled-in `(slug, description, body)`
 triple that enters as a `Resolved::Item::Listed` directly, so the entry reuses the *render*
@@ -288,9 +292,10 @@ the line stops the listing; the documents stay readable at their paths either wa
 **Compiled-in means testable.** Filesystem skills drift independently of the tool; these are
 versioned with the binary, so `src/guide/test.rs` asserts the references still hold: every
 fenced `toml` block in a document parses and validates as a real config (the schema rejects
-unknown fields, so a renamed key fails there), every tool name a document declares is one
-`agent::tool_definitions` advertises and is actually mentioned in its prose, and every
-`efference://` link resolves to a document that exists.
+unknown fields, so a renamed key fails there; operating.md's blocks are held to the same
+check), every tool name a document declares is one `agent::tool_definitions` advertises for
+a hosted session, `agents__*` verbs included, and is actually mentioned in its prose, and
+every `efference://` link resolves to a document that exists.
 
 ## The kickoff: `first-turn`
 

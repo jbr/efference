@@ -6,7 +6,10 @@ a human with a terminal or an agent with a socket; there is no privileged client
 same surface serves both.
 
 The rest of `docs/` describes how the harness is built. This one describes how it is
-driven, and it is refined from use rather than written ahead of it.
+driven, and it is refined from use rather than written ahead of it. It is the human
+operator's document and is not compiled into the binary; a session supervising the agents
+it creates in-session reads `efference://guide/supervising` (`assets/guide/supervising.md`,
+[context.md](context.md)).
 
 ## The command groups
 
@@ -161,7 +164,8 @@ its status. It also subscribes the caller to the child: each time the child stop
 gate, asks, finishes a turn, stalls, or ends, a notification naming the condition and
 the call that answers it lands in the caller's inbox and wakes it ([tools.md](tools.md)).
 No verb blocks in-session: a session has its own inbox to be woken through rather than a
-client that must wait.
+client that must wait. The guide a supervising session reads is
+`efference://guide/supervising`.
 A child ends with its creator unless created `detached`. A session created in a
 directory with no project config (`efference.toml`) is the setup profile, whoever
 creates it: it opens with the new-user experience, which is not optional. To create a

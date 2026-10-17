@@ -118,14 +118,24 @@ pub const DOCUMENTS: &[Document] = &[
         ],
     },
     Document {
-        slug: "operating",
-        description: "Supervising a running session from the outside: reading it, the gate \
-                      vocabulary, when to grant instead of approve, and what silence means.",
-        // One text, two surfaces: this is the repository's own operator document
-        // (docs/operating.md), compiled in so an operator's harness can fetch it the
-        // same way. Keeping one copy is what keeps the two from drifting.
-        body: include_str!("../docs/operating.md"),
-        tools: &["read"],
+        slug: "supervising",
+        description: "Read before supervising agents you create with the agents__* tools: \
+                      the verbs, what each status asks of you, gates and decide, questions, \
+                      reading a transcript, and what an agent sees of your decisions.",
+        body: include_str!("../assets/guide/supervising.md"),
+        tools: &[
+            "agents__create",
+            "agents__status",
+            "agents__transcript",
+            "agents__message",
+            "agents__decide",
+            "agents__interrupt",
+            "agents__archive",
+            "agents__hand_off",
+            "wait",
+            "ask",
+            "read",
+        ],
     },
 ];
 

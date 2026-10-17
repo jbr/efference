@@ -12,8 +12,8 @@ the invariants, and a map to the per-subsystem docs — each of which names the
 module that implements it so you can go straight to the code instead of grepping.
 The docs are present-tense and describe how the system works now. One of them is not
 architecture: [operating.md](operating.md) is the *usage* document — how to drive a
-running session from the outside — and it is also compiled into the binary and served to
-sessions through the guide overlay ([context.md](context.md)). The design
+running session from the outside. The usage documents served to sessions through the
+guide overlay are in `assets/guide/` ([context.md](context.md)). The design
 positions behind it are in [positions.md](positions.md); where a word in use differs from
 the identifiers behind it, [glossary.md](glossary.md) pairs them; planned work lives in
 [`../backlog/`](../backlog/); the terse record of shipped features is
@@ -167,8 +167,8 @@ Read top-down; open the subsystem doc you need.
 | Background processes — the process monitor | [process-monitor.md](process-monitor.md) | `src/process_monitor.rs`, `src/bash.rs`, `src/daemon/background.rs` |
 | Control channel & the `Frontend` trait (HTTP over a Unix socket) | [control-channel.md](control-channel.md) | `src/daemon.rs` (+ `src/daemon/`), `src/client.rs`, `src/frontend.rs`, `src/agent.rs` |
 | Permissions — role config & the approval fast-path | [permissions.md](permissions.md) | `src/config.rs`, `src/policy.rs`, `src/agent.rs`, `src/daemon/config_edits.rs` |
-| The `[context]` preamble builder — what the session boots knowing | [context.md](context.md) | `src/context.rs`, `src/config.rs`, `src/env.rs`, `src/policy.rs` |
-| Operating a session — what an operator can see, change, and say (usage, not architecture) | [operating.md](operating.md) | `src/client.rs`, `src/control_tools.rs`, `src/bin/efference/control.rs`, `src/bin/efference/verbs.rs`, `src/guide.rs` |
+| The `[context]` preamble builder — what the session boots knowing | [context.md](context.md) | `src/context.rs`, `src/config.rs`, `src/env.rs`, `src/policy.rs`, `src/guide.rs` |
+| Operating a session — what an operator can see, change, and say (usage, not architecture) | [operating.md](operating.md) | `src/client.rs`, `src/control_tools.rs`, `src/bin/efference/control.rs`, `src/bin/efference/verbs.rs` |
 | The `[env]` table — stripping and injecting env vars at spawn, masking them at append, resolving vault references | [env.md](env.md) | `src/env_table.rs`, `src/env_table/resolve.rs`, `src/persist.rs`, `src/bash.rs` |
 | Transport & streaming (upstream SSE, deltas, keepalive, the shared HTTP client) | [transport.md](transport.md) | `src/api.rs`, `src/http.rs` |
 | Host-owned inference — named connections, credential loading, per-role model selection | [transport.md](transport.md) | `src/inference.rs`, `src/boot.rs`, `src/daemon/host.rs` |

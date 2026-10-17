@@ -230,7 +230,9 @@ A session created on a host mounts the in-session set as `Provider::Sessions`, w
 reaches its project's other sessions by tool call, under namespaced wire names
 (`agents__message`, `agents__status`, `agents__create`). None is granted by default, so
 the spotter judges each call. Acting verbs never block: an in-session caller hears its
-children through its inbox (below) rather than through a waiting call.
+children through its inbox (below) rather than through a waiting call. What a supervising
+session is told about this surface is the guide document `efference://guide/supervising`
+(`assets/guide/supervising.md`, [context.md](context.md)).
 
 The provider's executor is `Executor::Host`, which holds the host and the calling
 session's id and calls the same `Session` methods the HTTP handlers call — never a
@@ -412,8 +414,9 @@ A session ends when the session that created it ends, unless `create` passed
 `detached: true`; the end is posted to the ending session's subscribers first, then
 its own subscriptions are dropped and its non-detached children are ended, each
 running the same teardown. Cascade is the default because the keepalive re-warms an
-orphan's prefix every interval forever; `detached` exists for a session meant to
-outlive its creator. The human sees every session in the session list either way.
+orphan's prefix every interval until its idle cap ([transport.md](transport.md));
+`detached` exists for a session meant to outlive its creator. The human sees every
+session in the session list either way.
 
 ##### Hand-off: a successor in the caller's place
 

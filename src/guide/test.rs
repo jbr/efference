@@ -18,11 +18,22 @@ fn call(name: &str, input: serde_json::Value) -> ToolCall {
 /// the schema rejects unknown fields, so a renamed key fails here the moment the document
 /// still shows the old spelling. A fence titled ```toml ~/.efference/config.toml is the
 /// host's inference config and validates against that schema instead.
+///
+/// The operator's document is not served, but its config examples are held to the same
+/// check.
 #[test]
 fn every_toml_block_in_a_guide_is_a_valid_config() {
+    let operating = (
+        "docs/operating.md".to_string(),
+        include_str!("../../docs/operating.md"),
+    );
+    let documents = DOCUMENTS
+        .iter()
+        .map(|d| (path(d.slug), d.body))
+        .chain(std::iter::once(operating));
     let mut checked = 0;
-    for document in DOCUMENTS {
-        for (title, block) in toml_blocks(document.body) {
+    for (name, body) in documents {
+        for (title, block) in toml_blocks(body) {
             checked += 1;
             let parsed = match title {
                 "" => crate::config::try_parse_text(&block)
@@ -31,16 +42,10 @@ fn every_toml_block_in_a_guide_is_a_valid_config() {
                 "~/.efference/config.toml" => crate::inference::InferenceConfig::from_toml(&block)
                     .map(drop)
                     .map_err(|e| e.to_string()),
-                other => panic!(
-                    "unknown toml fence title {other:?} in `{}`",
-                    path(document.slug)
-                ),
+                other => panic!("unknown toml fence title {other:?} in `{name}`"),
             };
             if let Err(e) = parsed {
-                panic!(
-                    "a ```toml block in `{}` is not a valid config: {e}\n---\n{block}",
-                    path(document.slug)
-                );
+                panic!("a ```toml block in `{name}` is not a valid config: {e}\n---\n{block}");
             }
         }
     }
@@ -52,11 +57,18 @@ fn every_toml_block_in_a_guide_is_a_valid_config() {
 
 /// Every tool name a document tells the reader to call is a tool a turn advertises. The
 /// declared list is what a document *claims*; this is the claim measured against
-/// `agent::tool_definitions`, which is the same array the request carries.
+/// `agent::tool_definitions`, which is the same array the request carries — a hosted
+/// session's, so the `agents__*` verbs are in it (docs/tools.md).
 #[test]
 fn every_tool_a_guide_names_is_mounted() {
-    let toolbox = crate::tools::Toolbox::bash_and_mcps(std::env::current_dir().unwrap(), None)
+    let mut toolbox = crate::tools::Toolbox::bash_and_mcps(std::env::current_dir().unwrap(), None)
         .expect("toolbox mounts");
+    let host = crate::daemon::Host::new(
+        crate::inference::InferenceRegistry::empty(),
+        crate::env_table::EnvSnapshot::new(Default::default())
+            .expect("an empty environment is valid"),
+    );
+    toolbox.mount_sessions(host, "reader".into());
     let mounted = crate::agent::callable_names(&toolbox);
     for document in DOCUMENTS {
         for tool in document.tools {
