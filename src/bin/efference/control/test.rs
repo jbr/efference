@@ -2,13 +2,13 @@
 
 use crate::cli::{Cli, Command};
 use clap::Parser;
-use efference::control_tools::{Decision, cli::Tools};
+use efference::control_tools::{Decision, Output, cli::Tools};
 
 fn parse(argv: &[&str]) -> Result<Tools, clap::Error> {
     let mut full = vec!["efference", "control"];
     full.extend_from_slice(argv);
     match Cli::try_parse_from(full)?.command {
-        Some(Command::Control(tools)) => Ok(tools),
+        Some(Command::Control { tools, .. }) => Ok(tools),
         _ => panic!("not a control verb: {argv:?}"),
     }
 }
@@ -61,7 +61,8 @@ fn status_and_transcript_parse() {
     let Tools::Status(status) = parse(&["status"]).unwrap() else {
         panic!("status")
     };
-    assert!(status.agent.is_none());
+    assert!(status.agent.is_empty() && !status.follow);
+    assert_eq!(status.output, Output::Text);
     let Tools::Transcript(audit) = parse(&["transcript", "--audit", "--agent", "child"]).unwrap()
     else {
         panic!("transcript")
@@ -104,4 +105,42 @@ fn the_operator_verbs_parse_and_the_retired_ones_do_not() {
     for retired in ["turn", "approve", "sessions", "subscribe", "unsubscribe"] {
         assert!(parse(&[retired]).is_err(), "{retired} is retired");
     }
+}
+
+/// `--host-socket` is the host every verb addresses, before or after the verb;
+/// `status` takes `--follow` with a repeated `--agent`, and `--output json`.
+#[test]
+fn host_socket_follow_and_output_parse() {
+    let host_socket = |argv: &[&str]| {
+        let mut full = vec!["efference", "control"];
+        full.extend_from_slice(argv);
+        match Cli::try_parse_from(full).unwrap().command {
+            Some(Command::Control { host_socket, .. }) => host_socket,
+            _ => panic!("not a control verb"),
+        }
+    };
+    let want = Some(std::path::PathBuf::from("./tmp/x.sock"));
+    assert_eq!(
+        host_socket(&["--host-socket", "./tmp/x.sock", "state"]),
+        want
+    );
+    assert_eq!(
+        host_socket(&["status", "--agent", "foo", "--host-socket", "./tmp/x.sock"]),
+        want
+    );
+    assert_eq!(host_socket(&["state"]), None);
+
+    let Tools::Status(follow) =
+        parse(&["status", "--follow", "--agent", "a", "--agent", "b"]).unwrap()
+    else {
+        panic!("status")
+    };
+    assert!(follow.follow);
+    assert_eq!(follow.agent, ["a", "b"]);
+    let Tools::Status(json) = parse(&["status", "--output", "json"]).unwrap() else {
+        panic!("status")
+    };
+    assert_eq!(json.output, Output::Json);
+    assert!(parse(&["status", "--output", "yaml"]).is_err());
+    assert!(parse(&["state", "--output", "json"]).is_err());
 }

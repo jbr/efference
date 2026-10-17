@@ -8,6 +8,7 @@ use crate::log::ToolCall;
 use mcplease::traits::Tool as _;
 use mcplease::types::RequestContext;
 
+mod follow;
 mod stream;
 mod wait;
 

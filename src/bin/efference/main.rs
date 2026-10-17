@@ -65,10 +65,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             )
             .await
         }
-        Command::Control(tools) => {
+        Command::Control { host_socket, tools } => {
             control::run_cli(
                 tools,
-                cli::mount_host(),
+                host_socket.unwrap_or_else(cli::mount_host),
                 name.clone(),
                 socket_override.clone(),
             )

@@ -23,7 +23,19 @@ it creates in-session reads `efference://guide/supervising` (`assets/guide/super
   over the session's control channel ([control-channel.md](control-channel.md)): `state`,
   `pace`, `title`, `background`, `proposal`, `review-level`, `supervisor` (set or clear
   which session supervises another), `notify` (with a label and a slot, for scripts),
-  `entries`, and `image`.
+  `entries`, and `image`. `--host-socket <path>` names the host every verb addresses
+  (as on `mcp`); without it the host is the first live of `.efference/host.sock` here and
+  `~/.efference/host.sock`. A named session (`--agent`, `--name`) resolves through that
+  host first, from any directory, and only a name the host does not hold is looked for as
+  a session's own socket under this directory's `.efference/`. `status --output json`
+  prints the `StatusView` instead of the rendered text: one object for an agent, an array
+  for the overview. `status --follow [--agent <id>]…` prints each followed agent's status
+  block as it stands, then one block per new decision point by `wait`'s rule (a working
+  status prints nothing), blocks separated by a blank line and stdout flushed after each.
+  It exits 0 once every followed agent has ended, after printing its end, and non-zero
+  with a one-line error on stderr when the host stops answering; it runs the same
+  follower as `wait` and the status streams, so a script or a shell-capable agent reads
+  the sequence a `Monitor` would.
 - **`efference mcp`** — the agent verbs, with `wait` in place of `settle`, served as an
   MCP server over stdin/stdout, and a status stream per agent on loopback (below). The verbs are written once as mcplease tools (`src/control_tools.rs` and
   `src/control_tools/`, one file per tool) and listed by three tool sets — the command

@@ -23,7 +23,10 @@ pub(crate) async fn run_cli(
         mcplease::types::RequestContext::default(),
     )
     .await?;
-    println!("{text}");
+    // `status --follow` has printed as it went.
+    if !text.is_empty() {
+        println!("{text}");
+    }
     Ok(())
 }
 

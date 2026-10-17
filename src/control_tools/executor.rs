@@ -160,6 +160,9 @@ impl ClientExecutor {
         if let Some(socket) = socket {
             return Ok(Client::new(socket));
         }
+        if let Some(name) = name {
+            return named(self.host_client().ok(), &self.host, name).await;
+        }
         // The host's listing, scoped to this directory: one host serves many
         // projects, and a verb run here means a session here
         // (docs/control-channel.md). A listing without a cwd is kept.
@@ -180,26 +183,6 @@ impl ClientExecutor {
         } else {
             Vec::new()
         };
-        if let Some(name) = name {
-            let own = PathBuf::from(crate::daemon::SESSION_BASE)
-                .join(name)
-                .join(crate::daemon::SOCKET_NAME);
-            if Self::is_live(&own) {
-                return Ok(Client::new(own));
-            }
-            if hosted.iter().any(|id| id == name) {
-                return Ok(Client::at(&self.host, &format!("/sessions/{name}")));
-            }
-            return Err(anyhow!(
-                "no live session {name:?}: nothing listens at {} and the host{} does not list it",
-                own.display(),
-                if Self::is_live(&self.host) {
-                    String::new()
-                } else {
-                    format!(" at {} is not running", self.host.display())
-                }
-            ));
-        }
         let mut live: Vec<(String, Client)> = Self::discover_live_sockets()?
             .into_iter()
             .map(|socket| (socket.display().to_string(), Client::new(socket)))
@@ -351,6 +334,42 @@ impl ClientExecutor {
             }),
         }
     }
+}
+
+/// The session `name`, resolved through `host` first — a client at the host's socket
+/// root, `None` when none is running — wherever this process runs; only a name the host
+/// does not hold is looked for as a session's own socket under this directory's
+/// `.efference/` (docs/control-channel.md). `host_socket` is the host's path, for the
+/// error.
+pub(crate) async fn named(host: Option<Client>, host_socket: &Path, name: &str) -> Result<Client> {
+    let mut listed = None;
+    if let Some(host) = &host {
+        match host.list_sessions().await {
+            Ok(ids) if ids.iter().any(|id| id == name) => {
+                return Ok(host.clone().with_prefix(&format!("/sessions/{name}")));
+            }
+            Ok(_) => {}
+            Err(e) => listed = Some(format!("{e:#}")),
+        }
+    }
+    let own = PathBuf::from(crate::daemon::SESSION_BASE)
+        .join(name)
+        .join(crate::daemon::SOCKET_NAME);
+    if ClientExecutor::is_live(&own) {
+        return Ok(Client::new(own));
+    }
+    let host_says = match (host, listed) {
+        (None, _) => format!("no host is running at {}", host_socket.display()),
+        (Some(_), Some(why)) => format!(
+            "the host at {} could not be listed: {why}",
+            host_socket.display()
+        ),
+        (Some(_), None) => format!("the host at {} does not list it", host_socket.display()),
+    };
+    Err(anyhow!(
+        "no live session {name:?}: {host_says}, and nothing listens at {}",
+        own.display()
+    ))
 }
 
 /// A `/state` body's status view (docs/control-api.md).

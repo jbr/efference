@@ -517,8 +517,15 @@ pub(crate) enum Command {
     /// `status`, `transcript`) and `settle`, then the operator's route verbs (`state`,
     /// `pace`, `title`, `background`, `proposal`, `review-level`, `supervisor`,
     /// `notify`, `entries`, `image`). `efference control --help` lists them.
-    #[command(subcommand)]
-    Control(efference::control_tools::cli::Tools),
+    Control {
+        /// The host's control socket every verb addresses; a named session resolves
+        /// through it first. Defaults to the first live of `.efference/host.sock`
+        /// here and `~/.efference/host.sock`, else the latter.
+        #[arg(long, value_name = "PATH", global = true)]
+        host_socket: Option<PathBuf>,
+        #[command(subcommand)]
+        tools: efference::control_tools::cli::Tools,
+    },
     /// Serve the agent verbs as an MCP server on stdin/stdout.
     ///
     /// The mount another agent harness supervises sessions through: `create`,

@@ -33,10 +33,12 @@ use serde_json::Value;
 mod archive;
 mod args;
 mod background;
+mod cli_status;
 mod create;
 mod decide;
 mod entries;
 mod executor;
+mod follow;
 mod hand_off;
 mod host_executor;
 mod interrupt;
@@ -64,10 +66,15 @@ pub mod mcp;
 pub use archive::Archive;
 pub use args::Decision;
 pub use background::Background;
+pub use cli_status::{CliStatus, Output};
 pub use create::Create;
 pub use decide::Decide;
 pub use entries::Entries;
+#[cfg(test)]
+pub(crate) use executor::named;
 pub use executor::{ClientExecutor, Fallback};
+#[cfg(test)]
+pub(crate) use follow::follow_status;
 pub use hand_off::HandOff;
 pub use host_executor::HostExecutor;
 pub use interrupt::Interrupt;
