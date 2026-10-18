@@ -178,7 +178,14 @@ in-session approve accepted it: `{call_id, decision, source?}`, where `decision`
 `{"ConfigEdit": {change, note}}`) and `source` is the client-asserted decider, spelled as
 a turn's is and absent for the operator. It is appended once the call is known to be the
 pending gate and before the decision reaches the loop, so it precedes the result or the
-redirect's user turn it causes; a call the loop decides without a gate has none. The
+redirect's user turn it causes. A redirect the loop's own permission review writes (the
+autonomous redirect, a `[commands]` deny under `autonomous`, a config edit's outcome) is
+recorded too, under `review[<level>]` (`Session::review_redirect`); a call the loop clears
+without a gate has none. The loop reads a redirect's decider from this record
+(`Session::gate_decider`): the redirect's stub result names it (`<id> (agent) replied
+instead of approving`, `the permission review declined it`, or the operator's "the user"),
+and the user turn carrying the message carries the decider as its `source`, except the
+operator's and the review's, so it opens on the wire as that decider's turns do. The
 conversation transcript reads who allowed or denied a call from it
 ([control-api.md](control-api.md)). It projects to nothing
 (`gate_decisions_project_to_identical_bytes`), and the `[env]` masker passes the

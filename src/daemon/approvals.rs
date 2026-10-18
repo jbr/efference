@@ -105,6 +105,42 @@ impl Session {
         rx
     }
 
+    /// Who decided the held call `id`, as its latest `Telemetry::GateDecision` names them:
+    /// `None` for the operator's own command line or TUI, and for a call nobody decided.
+    pub(crate) fn gate_decider(&self, id: &CallId) -> Option<String> {
+        self.log
+            .lock()
+            .unwrap()
+            .entries()
+            .iter()
+            .rev()
+            .find_map(|entry| match &entry.payload {
+                Payload::Telemetry(crate::log::Telemetry::GateDecision(decision))
+                    if decision.call_id == *id =>
+                {
+                    Some(decision.source.clone())
+                }
+                _ => None,
+            })
+            .flatten()
+    }
+
+    /// Record a redirect the loop's own permission review wrote — no person or agent at a
+    /// gate — as the call's gate decision, under [`review_source`] at the level in force,
+    /// and return it as the approval it is (docs/permissions.md).
+    ///
+    /// [`review_source`]: crate::frontend::review_source
+    pub(crate) fn review_redirect(&self, id: &CallId, message: String) -> Approval {
+        let decision = Approval::Redirect(message);
+        let source = crate::frontend::review_source(self.resolved_review_level());
+        let record = crate::log::GateDecision::new(id.clone(), decision.clone(), Some(source));
+        let entry = Payload::Telemetry(crate::log::Telemetry::GateDecision(record));
+        // The record must not stop what it describes.
+        if let Err(e) = self.append(self.latest_turn(), entry) {
+            log::warn!("gate decision record: append failed: {e}");
+        }
+        decision
+    }
     /// Deliver a client's decision to the waiting loop. Clears the gate so
     /// `GET /state` reflects the resolution immediately. `false` → no such gate.
     /// The decision is a person's action (docs/control-api.md), noted once the gate is

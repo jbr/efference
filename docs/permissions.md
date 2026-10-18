@@ -254,7 +254,9 @@ keeps meaning what it meant.
   until the watch-window lands (see below), and the config words inherit that collapse. When
   `watch` gets its own intervention latency, these diverge without a config migration.
 - **`deny`** — refuse *without consulting the spotter*: the move goes to whoever gates (the
-  human, or the autonomous redirect) with no model call. Nothing the spotter could answer
+  human, or the autonomous redirect) with no model call. A redirect the loop writes itself
+  is recorded as the permission review's decision (`review[autonomous]`), so neither the
+  model nor a supervisor reads it as the operator's (docs/log-and-projection.md). Nothing the spotter could answer
   would resolve below the human gate, so the round-trip would be spent for nothing.
 
 **Resolution is longest-prefix-wins**, the way `[paths]` already resolves a filesystem grant:

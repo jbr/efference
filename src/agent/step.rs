@@ -37,8 +37,14 @@ pub(super) enum Decision {
     Withheld(Payload),
     /// The human aborted at the gate; the turn ends.
     Abort(Payload),
-    /// The human replied instead of approving; their message becomes the next user turn.
-    Redirect { payload: Payload, message: String },
+    /// The decider replied instead of approving; their message becomes the next user
+    /// turn, under `source`: the decider's, unless that is the operator or the loop's own
+    /// permission review, whose turns open with no label (docs/permissions.md).
+    Redirect {
+        payload: Payload,
+        message: String,
+        source: Option<String>,
+    },
 }
 
 /// One step of the trajectory, in call order: a call's outcome once it is on the log.
@@ -498,12 +504,17 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
             })
         }
         Approval::Abort => Ok(Decision::Abort(aborted(call))),
-        // Reject this call but keep the turn alive: the human's message becomes the next
+        // Reject this call but keep the turn alive: the decider's message becomes the next
         // user turn so the model can course-correct instead of bailing (docs/README.md).
-        Approval::Redirect(message) => Ok(Decision::Redirect {
-            payload: rejected(call),
-            message,
-        }),
+        // Who decided is on the log already, as the call's gate decision.
+        Approval::Redirect(message) => {
+            let decider = shared.gate_decider(&call.id);
+            Ok(Decision::Redirect {
+                payload: rejected(call, decider.as_deref()),
+                message,
+                source: decider.filter(|source| !crate::frontend::is_review_source(source)),
+            })
+        }
         // Resolved into Approve/Redirect by `commit_config_edit` above before this match.
         Approval::ConfigEdit { .. } => unreachable!("grant is legislated above"),
     }
@@ -559,9 +570,7 @@ pub(super) async fn judge<F: Frontend, S: Spotter>(
         // spotter `Gate` takes there, carrying the reason the config gave it.
         Verdict::Deny => {
             if shared.autonomous() {
-                Ok(Approval::Redirect(denied_gate_message(
-                    shared.config_path(),
-                )))
+                Ok(shared.review_redirect(&call.id, denied_gate_message(shared.config_path())))
             } else {
                 Ok(frontend.approve(call, bound).await)
             }
@@ -673,7 +682,8 @@ pub(super) async fn judge<F: Frontend, S: Spotter>(
                         // gets the diagnosis, not just the verdict (docs/permissions.md):
                         // the failure it answers is a model reading a gated `edit` as a
                         // broken tool and rewriting the file through bash instead.
-                        Ok(Approval::Redirect(
+                        Ok(shared.review_redirect(
+                            &call.id,
                             match policy::missing_grants(&dirs, &role, judged) {
                                 Some(missing) => {
                                     missing_grant_message(shared.config_path(), &reason, &missing)

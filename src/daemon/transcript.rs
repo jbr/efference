@@ -75,14 +75,17 @@ impl Reading<'_> {
 /// A sender or a decider as a plain name for the reader `me` (docs/control-api.md):
 /// `operator` for no source, `operator (web)` for the web client, the id or client
 /// name inside a `session[…]`, `agent[…]` or `mcp[…]` label, `<id> (hand-off)` for a
-/// hand-off brief, any other label as written, and `you` where `me` names the label
-/// or the name inside it.
+/// hand-off brief, `the permission review` for the loop's own (`review[<level>]`), any
+/// other label as written, and `you` where `me` names the label or the name inside it.
 pub(crate) fn sender(source: Option<&str>, me: Option<&str>) -> String {
     let Some(source) = source else {
         return "operator".to_string();
     };
     if source == "web" {
         return "operator (web)".to_string();
+    }
+    if crate::frontend::is_review_source(source) {
+        return "the permission review".to_string();
     }
     let named = |name: &str| match me.is_some_and(|me| me == source || me == name) {
         true => "you".to_string(),

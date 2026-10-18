@@ -14,6 +14,17 @@ impl Session {
         crate::expand::expand_call(&self.expander, call)
     }
 
+    /// Append a user turn the loop writes on someone's behalf, a redirect's message,
+    /// under its `source`, with no submission behind it (docs/permissions.md).
+    pub fn append_sourced(
+        &self,
+        turn: Turn,
+        payload: Payload,
+        source: Option<String>,
+    ) -> io::Result<Seq> {
+        self.append_user(turn, payload, None, source)
+    }
+
     /// [`append`](Self::append) carrying the submission id of the
     /// `POST /v1/turns` the entry realizes (docs/control-api.md) — the loop's
     /// user-turn appends route here so the entry names its originating
@@ -25,11 +36,21 @@ impl Session {
         submission_id: String,
         source: Option<String>,
     ) -> io::Result<Seq> {
+        self.append_user(turn, payload, Some(submission_id), source)
+    }
+
+    fn append_user(
+        &self,
+        turn: Turn,
+        payload: Payload,
+        submission_id: Option<String>,
+        source: Option<String>,
+    ) -> io::Result<Seq> {
         // User turns only — a submitted turn is never a `ConfigEdit`, so none of
         // `append`'s proposal-lifecycle handling applies here.
         let seq = {
             let mut log = self.log.lock().unwrap();
-            let seq = log.append_submission(turn, payload, Some(submission_id), source)?;
+            let seq = log.append_submission(turn, payload, submission_id, source)?;
             self.observe_operations(&log);
             seq
         };

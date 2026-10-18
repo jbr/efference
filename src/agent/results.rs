@@ -188,19 +188,28 @@ pub(super) fn expansion_error(call: &ToolCall, message: &str) -> Payload {
     )
 }
 
-/// A `tool_result` for a call the user rejected in favor of a redirect message.
-/// Like [`aborted`] it pairs the orphaned `tool_use`; the human's actual words
-/// follow as a separate `Payload::User` entry, which `project` merges into this
-/// result's user message as `[tool_result…, text]` (the same merge a queued turn delivered mid-task gets the
-/// mid-trajectory injection relies on, docs/control-channel.md) — so the
-/// model reads this as context for the steer that follows rather than as tool output
-/// (docs/README.md).
-pub(super) fn rejected(call: &ToolCall) -> Payload {
-    Payload::tool_result(
-        call.id.clone(),
-        RawResult::error(
-            "Not run — the user replied instead of approving; see their next message.",
+/// A `tool_result` for a call its decider rejected in favor of a redirect message.
+/// Like [`aborted`] it pairs the orphaned `tool_use`; the decider's words follow as a
+/// separate `Payload::User` entry, which `project` merges into this result's user
+/// message as `[tool_result…, text]` (the same merge a queued turn delivered mid-task
+/// relies on, docs/control-channel.md) — so the model reads this as context for the
+/// steer that follows rather than as tool output (docs/README.md).
+///
+/// It names who decided (docs/permissions.md): the operator as "the user", as it always
+/// has; another agent or client by the label its own messages open with
+/// (`frontend::wire_label`); the loop's own permission review as itself.
+pub(super) fn rejected(call: &ToolCall, decider: Option<&str>) -> Payload {
+    let text = match decider {
+        None | Some("web") => {
+            "Not run — the user replied instead of approving; see their next message.".to_string()
+        }
+        Some(review) if crate::frontend::is_review_source(review) => {
+            "Not run — the permission review declined it; see the next message.".to_string()
+        }
+        Some(source) => format!(
+            "Not run — {} replied instead of approving; see the next message.",
+            crate::frontend::wire_label(source)
         ),
-        WireState::Raw,
-    )
+    };
+    Payload::tool_result(call.id.clone(), RawResult::error(text), WireState::Raw)
 }

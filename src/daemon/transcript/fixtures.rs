@@ -33,6 +33,19 @@ impl Fixture {
             .unwrap()
     }
 
+    /// A redirect's message as the loop appends it: no submission, under its decider's
+    /// `source` (`agent/landing.rs`).
+    pub(super) fn steer(&mut self, text: &str, source: Option<&str>) -> Seq {
+        self.0
+            .append_submission(
+                1,
+                Payload::User(vec![ContentBlock::Text(text.into())]),
+                None,
+                source.map(str::to_string),
+            )
+            .unwrap()
+    }
+
     pub(super) fn entries(&self) -> &[crate::log::LogEntry] {
         self.0.entries()
     }

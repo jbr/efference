@@ -44,6 +44,19 @@ pub fn session_source(id: &str) -> String {
     format!("session[{id}]")
 }
 
+/// The `source` the loop's own permission review decides under, at the review level in
+/// force: `review[<level>]` (docs/permissions.md). It writes the redirects no person
+/// or agent wrote (the autonomous redirect, a `[commands]` deny, a config edit's
+/// outcome), so a reader is not told the operator wrote them.
+pub fn review_source(level: crate::policy::ReviewLevel) -> String {
+    format!("review[{}]", level.as_str())
+}
+
+/// Whether `source` is the loop's own permission review ([`review_source`]).
+pub fn is_review_source(source: &str) -> bool {
+    source.starts_with("review[") && source.ends_with(']')
+}
+
 /// The session a `session[<id>]` source names, or `None` for any other.
 pub fn source_session(source: &str) -> Option<&str> {
     source.strip_prefix("session[")?.strip_suffix(']')

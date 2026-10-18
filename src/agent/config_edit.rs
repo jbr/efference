@@ -162,11 +162,14 @@ pub(super) fn commit_config_edit(
         shared.warn(format_args!(
             "config edit: could not write to the config file: {e}"
         ));
-        return Ok(Approval::Redirect(format!(
-            "That grant could not be written to the session's config file, so it was not applied \
-             and this call is still gated. The config file needs attention before policy can \
-             change. Error: {e}"
-        )));
+        return Ok(shared.review_redirect(
+            &call.id,
+            format!(
+                "That grant could not be written to the session's config file, so it was not \
+                 applied and this call is still gated. The config file needs attention before \
+                 policy can change. Error: {e}"
+            ),
+        ));
     }
     // The human upgrading a gate is a *direct* commit — the gesture is the commit, no prior
     // proposal to resolve (docs/permissions.md).
@@ -184,9 +187,10 @@ pub(super) fn commit_config_edit(
         if policy::classify(&shared.directories(), &role, call) == Verdict::Clear {
             Approval::Approve
         } else {
-            Approval::Redirect(
+            shared.review_redirect(
+                &call.id,
                 "Scope updated — but that grant doesn't cover this exact call, so it stays gated. \
-             Adjust the call to fit the new scope and retry."
+                 Adjust the call to fit the new scope and retry."
                     .into(),
             )
         },

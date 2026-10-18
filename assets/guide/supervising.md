@@ -141,10 +141,10 @@ branch kept unless merged. Agents you create end when you do, unless created `de
   had held it; neither the gate nor its reviewer's reason reaches its context. So feedback
   names the choice it can see — "use the `read` tool for this" — never an approval or a
   gate it has no record of.
-- **It sees a denial.** After a deny with a message, the call's result reads `Not run —
-  the user replied instead of approving; see their next message.`, and your message follows
-  without your id, reading as the operator's; write it to stand on its own. After a bare
-  deny, the result reads `aborted by user` and its turn ends.
+- **It sees a denial, and who denied.** After a deny with a message, the call's result
+  reads `Not run — <your id> (agent) replied instead of approving; see the next message.`,
+  and your message follows opening `<your id> (agent):`, as your other messages do. After a
+  bare deny, the result reads `aborted by user` and its turn ends.
 - **It sees autonomous review feedback.** An `autonomous` agent gets each declined call
   back with the reason and a pointer to its config file.
 - **You see what it did not.** Its transcript shows each raw result beside how much of it

@@ -105,15 +105,40 @@ fn gated_by_parent() -> Fixture {
     log.add(Payload::tool_result(
         "toolu_2",
         RawResult::error(
-            "Not run — the user replied instead of approving; see their next message.",
+            "Not run — parent (agent) replied instead of approving; see the next message.",
         ),
         WireState::Raw,
     ));
-    log.add(Payload::User(vec![crate::log::ContentBlock::Text(
-        "use trash instead".into(),
-    )]));
+    log.steer("use trash instead", Some("session[parent]"));
     log.add(turn("Moving them to the trash.", vec![]));
     log
+}
+
+/// The loop's own permission review writes a redirect no person wrote: its decision and
+/// its message read as the review's, never as the operator's.
+#[test]
+fn the_reviews_own_redirect_is_not_the_operators() {
+    let mut log = Fixture::new();
+    log.user("tidy up", None);
+    log.add(turn("", vec![bash("toolu_1", "rm -rf tmp", "clear it")]));
+    log.add(spot("toolu_1", Stance::Gate, "level 3: destructive"));
+    log.add(decision(
+        "toolu_1",
+        Approval::Redirect("Gated, and no synchronous reviewer is available.".into()),
+        Some("review[autonomous]"),
+    ));
+    log.add(Payload::tool_result(
+        "toolu_1",
+        RawResult::error("Not run — the permission review declined it; see the next message."),
+        WireState::Raw,
+    ));
+    log.steer("Gated, and no synchronous reviewer is available.", None);
+    let read = whole(&log, &child(None));
+    assert!(
+        read.contains("→ denied by the permission review: Gated, and no synchronous"),
+        "{read}"
+    );
+    assert!(!read.contains("operator: Gated"), "{read}");
 }
 
 #[test]

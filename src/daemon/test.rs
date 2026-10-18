@@ -171,6 +171,7 @@ mod notifications;
 mod pace;
 mod processes;
 mod push;
+mod redirect;
 mod resumed_batch;
 mod review;
 mod status;

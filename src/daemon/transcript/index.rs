@@ -31,7 +31,8 @@ pub(super) struct Index<'a> {
     spots: HashMap<String, &'a Spot>,
     /// The loop-appended `User` entry that carries a redirect's message, by its seq,
     /// to the redirected call's id. The decision names who wrote the message; the
-    /// entry itself carries no source.
+    /// entry carries no submission, and carries its decider's source when that is an
+    /// agent's or a client's.
     steers: HashMap<Seq, String>,
 }
 
@@ -80,10 +81,8 @@ impl<'a> Index<'a> {
                         .insert(decision.call_id.0.clone(), (entry.seq, decision));
                 }
                 // The loop appends a redirect's message as a user turn of its own, with
-                // no submission and no source (`agent/landing.rs`).
-                Payload::User(blocks)
-                    if entry.submission_id.is_none() && entry.source.is_none() =>
-                {
+                // no submission (`agent/landing.rs`).
+                Payload::User(blocks) if entry.submission_id.is_none() => {
                     if let [ContentBlock::Text(text)] = blocks.as_slice()
                         && let Some(at) = redirects.iter().position(|(message, _)| message == text)
                     {

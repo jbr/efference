@@ -321,18 +321,23 @@ pub(super) fn after_landing(
     shared: &Session,
     turn: &mut Turn,
     abort_turn: bool,
-    redirect: Option<String>,
+    redirect: Option<super::batch::Redirect>,
 ) -> std::io::Result<bool> {
     if abort_turn {
         log::debug!("turn aborted");
         return Ok(true);
     }
-    if let Some(message) = redirect {
+    if let Some(super::batch::Redirect { message, source }) = redirect {
         // The rejection `tool_result`(s) answer the orphaned call(s); this
-        // user turn carries the steer. The trajectory goes on: re-project and let
-        // the model respond.
+        // user turn carries the steer, under its decider's source, so it opens as that
+        // decider's messages do (docs/permissions.md). The trajectory goes on:
+        // re-project and let the model respond.
         *turn += 1;
-        shared.append(*turn, Payload::User(vec![ContentBlock::Text(message)]))?;
+        shared.append_sourced(
+            *turn,
+            Payload::User(vec![ContentBlock::Text(message)]),
+            source,
+        )?;
     }
     // The juncture after the triage (docs/control-channel.md): an interrupt
     // pressed during the triage or a held triage ended it with the latch still

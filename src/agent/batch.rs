@@ -4,12 +4,19 @@
 use super::*;
 use crate::log::Telemetry;
 
+/// A redirect's message, to land as the next user turn under its decider's `source`
+/// (docs/permissions.md).
+pub(super) struct Redirect {
+    pub message: String,
+    pub source: Option<String>,
+}
+
 /// What running a completion's calls left behind: the outcomes in call order, and whether
 /// the turn was aborted or redirected along the way.
 pub(super) struct Batch {
     pub steps: Vec<Step>,
     pub abort_turn: bool,
-    pub redirect: Option<String>,
+    pub redirect: Option<Redirect>,
     /// What the triage-lineage primer did while the tools ran
     /// (docs/transport.md), when one was armed.
     pub primer: Option<TriagePrimerOutcome>,
@@ -92,7 +99,7 @@ async fn run_calls<F: Frontend, S: Spotter>(
     primer_go: Option<&tokio::sync::watch::Sender<bool>>,
 ) -> Result<Batch, Error> {
     let mut abort_turn = false;
-    let mut redirect: Option<String> = None;
+    let mut redirect: Option<Redirect> = None;
     let mut steps: Vec<Step> = Vec::new();
     // Every result captured so far, so a call that fails leaves none of them waiting
     // for a verdict that will never come (`undecided` below).
@@ -219,9 +226,13 @@ async fn run_calls<F: Frontend, S: Spotter>(
                 steps.push(Step::direct(shared, turn, payload)?);
                 abort_turn = true;
             }
-            Decision::Redirect { payload, message } => {
+            Decision::Redirect {
+                payload,
+                message,
+                source,
+            } => {
                 steps.push(Step::direct(shared, turn, payload)?);
-                redirect = Some(message);
+                redirect = Some(Redirect { message, source });
             }
         }
     }
