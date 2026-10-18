@@ -30,18 +30,6 @@ pub(crate) struct TurnBody {
     pub(crate) answers: Option<String>,
 }
 
-impl TurnBody {
-    /// Whether the turn answers a pending question only by naming it: it names one, or
-    /// its `source` is an agent's (`session[…]`, `mcp[…]`). A turn from a human client
-    /// (no source, or `web`) takes the pending question as today (docs/control-api.md).
-    pub(crate) fn names_its_question(&self) -> bool {
-        self.answers.is_some()
-            || self.source.as_deref().is_some_and(|source| {
-                crate::frontend::source_session(source).is_some() || source.starts_with("mcp[")
-            })
-    }
-}
-
 /// The optional `POST /loop/compact` body: `warm` is the operator's choice to compact a
 /// session whose cache is not believed expired (docs/control-api.md).
 #[derive(Deserialize, Default)]

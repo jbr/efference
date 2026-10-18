@@ -4,7 +4,7 @@
 
 import { afterEach, expect, test, vi } from "vitest";
 import { ApiError } from "../api/http.ts";
-import { recallTurn, resolveGate } from "./actions.ts";
+import { recallTurn, resolveGate, submitTurn } from "./actions.ts";
 import { pushPendingTurn, Store } from "./store.ts";
 
 const json = (status: number, body: unknown) =>
@@ -98,4 +98,48 @@ test("a recall that popped nothing leaves the queue alone", async () => {
   );
   expect(await recallTurn(store, "a")).toEqual([]);
   expect(store.snapshot().pendingTurns.map((p) => p.id)).toEqual(["a"]);
+});
+
+const askTopic = {
+  call_id: "toolu_q",
+  question: "Which branch?",
+  n: 1,
+  of: 1,
+  recalled: [],
+};
+
+test("a send while a question shows names it", async () => {
+  const store = new Store();
+  store.update((s) => ({ ...s, topics: { ask: askTopic } }));
+  const fetch = vi.fn().mockResolvedValue(
+    json(202, {
+      status: "accepted",
+      submission_id: "x",
+      delivery: "answered",
+    }),
+  );
+  vi.stubGlobal("fetch", fetch);
+  await submitTurn(store, "main");
+  const body = JSON.parse(fetch.mock.calls[0][1].body as string);
+  expect(body.answers).toBe("toolu_q");
+});
+
+test("a send refused for a pending question shows it and keeps the draft", async () => {
+  const store = new Store();
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue(
+      json(409, {
+        code: "not_delivered",
+        message: "not delivered: child is asking",
+        detail: askTopic,
+      }),
+    ),
+  );
+  await expect(submitTurn(store, "keep going")).rejects.toThrow(
+    "a question came first",
+  );
+  expect(store.snapshot().topics.ask).toEqual(askTopic);
+  expect(store.snapshot().pendingTurns).toEqual([]);
+  expect(store.snapshot().minted).toEqual([]);
 });

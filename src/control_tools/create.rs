@@ -183,7 +183,12 @@ impl Tool<Control> for Create {
                 let then = match self.first_message() {
                     Some(text) => {
                         let source = turn_source(&context);
-                        match client.submit_named(text, source.as_deref(), None).await? {
+                        let turn = crate::frontend::SubmittedTurn::new(
+                            text,
+                            crate::daemon::mint_submission_id(),
+                        )
+                        .sourced(source);
+                        match client.submit(&turn, None).await? {
                             Ok(landing) => answers::sent(&id, landing, Some(&view), now),
                             Err(refusal) => format!("first message not delivered: {refusal}"),
                         }

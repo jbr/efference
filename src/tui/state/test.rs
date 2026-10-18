@@ -145,7 +145,7 @@ fn submit_without_gate_is_a_normal_turn() {
     let mut s = InteractiveState::new(erx, senders, rc, theme);
     s.submit_composer("hello".into());
     assert_eq!(
-        srx.try_recv().unwrap().text,
+        srx.try_recv().unwrap().turn.text,
         "hello",
         "went to the turn channel"
     );
@@ -194,7 +194,7 @@ fn a_long_paste_is_staged_and_sent_with_the_next_turn() {
     s.upload_landed(key, Ok(arrival.clone()));
     s.submit_composer("look".into());
     let sent = srx.try_recv().unwrap();
-    assert_eq!(sent.attachments, vec![arrival]);
+    assert_eq!(sent.turn.attachments, vec![arrival]);
     assert!(s.staged.is_empty(), "sent chips leave the row");
 }
 

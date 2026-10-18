@@ -237,6 +237,12 @@ pub(crate) enum TuiEvent {
     /// dequeued the turn first — because the server's answer is authoritative; the composer
     /// splices exactly this and nothing else.
     Recalled(Vec<crate::client::WithdrawnTurn>),
+    /// A send was refused: it named no question while one was pending, or named one no
+    /// longer pending (`answered`). The turn comes back for the composer (docs/tui.md).
+    NotDelivered {
+        turn: crate::client::WithdrawnTurn,
+        answered: bool,
+    },
     /// The `ask` topic (docs/control-api.md): `None` while no question is pending. Its
     /// `recalled` turns are the queue the daemon withdrew when the question began, for the
     /// composer to take back (docs/tui.md).

@@ -8,9 +8,10 @@ use crate::daemon::Landing;
 /// response; submission is decoupled from inference. A session still starting queues
 /// it, and it is the first turn the session runs (`starting.rs`).
 ///
-/// A turn that names its question, or comes from an agent, answers a pending `ask`
-/// only by naming it and is refused otherwise (`named_turns.rs`): 409 `not_delivered`,
-/// the pending ask in `detail`. The 202 says where the turn went (`delivery`).
+/// A turn answers a pending `ask` only by naming it, from every client, and is refused
+/// otherwise (`named_turns.rs`): 409 `not_delivered`, the pending ask in `detail`. So a
+/// message written before the question appeared is never read as its answer. The 202
+/// says where the turn went (`delivery`).
 pub(super) async fn submit_turn(mut conn: Conn) -> Conn {
     let shared = shared_of(&conn);
     let starting = starting_of(&conn);
@@ -23,7 +24,6 @@ pub(super) async fn submit_turn(mut conn: Conn) -> Conn {
         Ok(turn) => turn,
         Err(message) => return fail(conn, ErrorCode::BadRequest, message),
     };
-    let named = parsed.names_its_question();
     let TurnBody {
         text,
         submission_id,
@@ -40,31 +40,18 @@ pub(super) async fn submit_turn(mut conn: Conn) -> Conn {
                 Err(message) => return fail(conn, ErrorCode::BadRequest, message),
             };
             let turn = turn.with_attachments(attachments);
-            let landing = if named {
-                match shared.submit_named_turn(turn, answers.as_deref()) {
-                    Ok(landing) => landing,
-                    Err(refusal) => {
-                        let id = shared.identity().map(|identity| identity.id);
-                        let message = refusal
-                            .message(id.as_deref().unwrap_or("the session"), source.as_deref());
-                        return respond(
-                            conn,
-                            ErrorBody::new(ErrorCode::NotDelivered, message)
-                                .with_detail(shared.topic_json(Topic::Ask)),
-                        );
-                    }
+            let landing = match shared.submit_named_turn(turn, answers.as_deref()) {
+                Ok(landing) => landing,
+                Err(refusal) => {
+                    let id = shared.identity().map(|identity| identity.id);
+                    let message =
+                        refusal.message(id.as_deref().unwrap_or("the session"), source.as_deref());
+                    return respond(
+                        conn,
+                        ErrorBody::new(ErrorCode::NotDelivered, message)
+                            .with_detail(shared.topic_json(Topic::Ask)),
+                    );
                 }
-            } else {
-                let landing = match (
-                    shared.asking().is_some() && !turn.is_blank(),
-                    shared.turn_delivery(),
-                ) {
-                    (true, _) => Landing::Answered,
-                    (false, "now") => Landing::Now,
-                    (false, _) => Landing::Queued,
-                };
-                shared.submit_client_turn(turn);
-                landing
             };
             // `?wait`: hold the connection until the turn reaches a gate or completes,
             // then answer with the resulting state — "act → read state" in one

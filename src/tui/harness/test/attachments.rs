@@ -73,8 +73,8 @@ fn an_empty_composer_with_chips_sends_them() {
     play.route_key(KeyCode::Enter, KeyModifiers::NONE);
     assert!(!play.took_continue(), "not the zero-token continue");
     let sent = play.took_submission().expect("a turn was sent");
-    assert_eq!(sent.attachments, vec![shot()]);
-    assert!(sent.text.is_empty());
+    assert_eq!(sent.turn.attachments, vec![shot()]);
+    assert!(sent.turn.text.is_empty());
     play.snapshot("attachment_turn_pending");
 }
 

@@ -367,7 +367,7 @@ async fn an_answer_to_an_ask_is_recorded_as_an_answer() {
 
     server
         .post("/v1/turns")
-        .with_body(r#"{"text":"yes"}"#)
+        .with_body(r#"{"text":"yes","answers":"ask_1"}"#)
         .await
         .assert_status(202);
     assert_eq!(wait.reply().await.unwrap().text, "yes");

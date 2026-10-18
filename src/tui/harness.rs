@@ -211,7 +211,11 @@ impl Screenplay<'_> {
     /// The user turn a submit sent since the last check, if any — drains the channel
     /// the UI would `POST /turns` over. `None` means nothing was sent.
     pub(crate) fn took_turn(&mut self) -> Option<String> {
-        self.receivers.submit.try_recv().ok().map(|turn| turn.text)
+        self.receivers
+            .submit
+            .try_recv()
+            .ok()
+            .map(|sent| sent.turn.text)
     }
 
     /// The attachment command a staging gesture dispatched since the last check, if
@@ -220,8 +224,9 @@ impl Screenplay<'_> {
         self.receivers.attachments.try_recv().ok()
     }
 
-    /// The whole turn a submit sent since the last check — text and attachments.
-    pub(crate) fn took_submission(&mut self) -> Option<crate::frontend::SubmittedTurn> {
+    /// The whole send a submit made since the last check — the turn with its text and
+    /// attachments, and the question it answers.
+    pub(crate) fn took_submission(&mut self) -> Option<crate::tui::senders::Submission> {
         self.receivers.submit.try_recv().ok()
     }
 

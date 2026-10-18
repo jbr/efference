@@ -77,7 +77,12 @@ impl<'a> InteractiveState<'a> {
         let submitted =
             crate::frontend::SubmittedTurn::new(text, crate::daemon::mint_submission_id())
                 .with_attachments(self.staged.ready());
-        if self.submit_tx.send(submitted.clone()).is_ok() {
+        // A send while a question shows answers that question, by name (docs/tui.md).
+        let submission = crate::tui::senders::Submission {
+            turn: submitted.clone(),
+            answers: self.ask.as_ref().map(|ask| ask.call_id.clone()),
+        };
+        if self.submit_tx.send(submission).is_ok() {
             self.clear_staged();
             // Echo the message immediately as a pending transcript unit
             // (docs/tui.md): it's handed to the daemon but not yet a
@@ -183,6 +188,23 @@ impl<'a> InteractiveState<'a> {
             format!("recalled {}", withdrawn.len()).into()
         };
         self.mark_reproject();
+    }
+
+    /// A send the daemon refused because it did not name the pending question, or named
+    /// one no longer pending (docs/tui.md). Its text comes back to the composer as a recall
+    /// would bring it; the question itself arrives on the `ask` topic.
+    pub(in crate::tui) fn apply_not_delivered(
+        &mut self,
+        turn: crate::client::WithdrawnTurn,
+        answered: bool,
+    ) {
+        self.apply_recall(vec![turn]);
+        self.ui.debug_message = if answered {
+            "not sent: that question is no longer waiting; your message is back in the composer"
+        } else {
+            "not sent: a question came first; your message is back in the composer"
+        }
+        .into();
     }
 
     /// Take back the turns an `ask` withdrew from the queue, once per ask (docs/tui.md). Only

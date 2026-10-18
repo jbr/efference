@@ -532,7 +532,7 @@ pub(super) struct InteractiveState<'a> {
     /// Sends a submitted turn to the tokio side, which `POST`s it to the daemon. The
     /// **submission id is minted here**, so the echo below and a later recall both address the
     /// exact submission rather than its text (docs/tui.md).
-    pub submit_tx: UnboundedSender<SubmittedTurn>,
+    pub submit_tx: UnboundedSender<crate::tui::senders::Submission>,
     /// Asks the tokio side to withdraw the pending-queue suffix beginning at this submission id
     /// (`DELETE /turns/:id`, docs/control-api.md). What actually came back arrives as a
     /// [`TuiEvent::Recalled`] — the server's answer is authoritative, so a turn the loop already

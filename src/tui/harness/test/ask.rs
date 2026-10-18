@@ -256,3 +256,43 @@ fn the_current_mark_is_bolder_than_the_upcoming_one() {
         "current {current:?} vs upcoming {upcoming:?}"
     );
 }
+
+/// A send typed before the question arrived names none and is refused: its text comes back
+/// to the composer, its echo goes, and the status line says why.
+#[test]
+fn a_send_refused_for_a_pending_question_returns_to_the_composer() {
+    let mut play = Screenplay::new(80, 12);
+    play.type_str("keep going");
+    play.route_key(KeyCode::Enter, KeyModifiers::NONE);
+    let sent = play.took_submission().expect("sent");
+    assert_eq!(sent.answers, None, "no question was showing");
+    assert_eq!(play.state.pending_turns.len(), 1);
+
+    play.event(TuiEvent::NotDelivered {
+        turn: WithdrawnTurn {
+            submission_id: sent.turn.submission_id,
+            text: sent.turn.text,
+            attachments: Vec::new(),
+        },
+        answered: false,
+    });
+    assert_eq!(play.state.composer.text(), "keep going");
+    assert!(play.state.pending_turns.is_empty(), "the echo is gone");
+    assert!(play.render().contains("a question came first"));
+}
+
+/// A send while a question shows names it.
+#[test]
+fn a_send_while_a_question_shows_names_it() {
+    let mut play = Screenplay::new(70, 12);
+    play.event(TuiEvent::Ask(Some(PendingAsk {
+        call_id: "toolu_ask".into(),
+        n: 1,
+        of: 1,
+        recalled: Vec::new(),
+    })));
+    play.type_str("yes");
+    play.route_key(KeyCode::Enter, KeyModifiers::NONE);
+    let sent = play.took_submission().expect("sent");
+    assert_eq!(sent.answers.as_deref(), Some("toolu_ask"));
+}

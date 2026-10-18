@@ -412,11 +412,12 @@ is done — and a question has its own spelling (`agent/ask.rs`, `daemon/ask.rs`
 always advertised and skips the permission cascade: it acts on nothing, and asking
 permission to ask would gate a question behind a question.
 
-- **A reply resolves it.** While an `ask` is pending, a non-blank `POST /turns` from a
-  human client resolves it (`Session::submit_turn`); a turn from an agent — a parent
-  session's `message`, an MCP client's — resolves it only when it names the question by
-  `reply_to` (`answers` on the route), and is refused otherwise
-  (`Session::submit_named_turn`, docs/control-api.md). The turn becomes the call's
+- **A reply resolves it.** While an `ask` is pending, a non-blank `POST /turns` that
+  names the question resolves it: `answers` on the route, `reply_to` on `message`
+  (`Session::submit_named_turn`, docs/control-api.md). A turn naming none is refused
+  with the question, from every client; the TUI and the web client name the question
+  they show, and a send refused because a question arrived first returns to the
+  composer. The turn becomes the call's
   `ToolResult` and is never queued or logged as a `User` entry. The result entry carries
   the submission's `submission_id` and `source`, and a sourced reply projects as `[seq]
   source: text`, as a sourced user turn does. A notification does not resolve it. A reply
@@ -435,8 +436,8 @@ permission to ask would gate a question behind a question.
   its position (`n` of `of`). The tool description tells the model the order is
   unspecified, so they should be independent. A driving agent (a parent session, an MCP
   client) answers them one `message` per question, each naming its question's handle,
-  reading the next from the status in between; `efference control` answers them the way
-  the operator does. There is no batched answer. On the wire each reply opens `asked: <question>`,
+  reading the next from the status in between; `efference control message
+  --reply-to` does the same from a shell. There is no batched answer. On the wire each reply opens `asked: <question>`,
   so the model matches answers to questions without relying on order.
 - **Interrupts** treat it as any in-flight call: the ask ends with an error result, the
   rest of the batch is aborted, and a reply that raced the interrupt is resubmitted as

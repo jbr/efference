@@ -125,11 +125,10 @@ async fn decide_maps_the_seq_and_records_the_client() {
     assert_eq!(decided[0].source.as_deref(), Some("mcp[claude-code]"));
 }
 
-/// Over MCP a message while the session asks is refused with the question; naming
-/// the question answers it. From the command line — a human client — a message with
-/// no `reply_to` takes the pending question as a turn always has.
+/// A message while the session asks is refused with the question, over MCP and from
+/// the command line alike; naming the question answers it.
 #[tokio::test]
-async fn an_agent_names_the_question_and_the_operator_need_not() {
+async fn every_sender_names_the_question() {
     let shared = child();
     let ask = ToolCall::new(
         crate::process_monitor::ASK,
@@ -165,7 +164,13 @@ async fn an_agent_names_the_question_and_the_operator_need_not() {
     drop(wait);
 
     let mut wait = shared.begin_ask("toolu_q", "Which branch?".into(), 1, 1);
-    let said = message("main", None)
+    let err = message("main", None)
+        .execute(control.clone(), RequestContext::default())
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(err.starts_with("not delivered: child is asking"), "{err}");
+    let said = message("main", Some(&seq))
         .execute(control, RequestContext::default())
         .await
         .unwrap();
@@ -176,11 +181,11 @@ async fn an_agent_names_the_question_and_the_operator_need_not() {
     assert_eq!(wait.reply().await.expect("answered").source, None);
 }
 
-/// `POST /turns` from an agent's source answers a pending question only by naming it:
+/// `POST /turns` answers a pending question only by naming it, whoever sends it:
 /// otherwise `409 not_delivered`, the pending ask in `detail`. A turn naming a question
-/// that is not pending is refused the same way. A human client's turn answers as before.
+/// that is not pending is refused the same way.
 #[tokio::test]
-async fn post_turns_holds_an_agent_to_naming_its_question() {
+async fn post_turns_holds_every_client_to_naming_its_question() {
     let shared = child();
     shared
         .append(1, Payload::User(vec![ContentBlock::Text("go".into())]))
@@ -209,6 +214,17 @@ async fn post_turns_holds_an_agent_to_naming_its_question() {
             .contains(&format!("reply with reply_to: \"{seq}\"")),
         "{body}"
     );
+
+    // The human clients too: the TUI (no source) and the web client.
+    for body in [
+        serde_json::json!({ "text": "yes" }),
+        serde_json::json!({ "text": "yes", "source": "web" }),
+    ] {
+        let refused = app.post("/v1/turns").with_json_body(&body).await;
+        refused.assert_status(409);
+        let body: Value = serde_json::from_str(refused.body()).unwrap();
+        assert_eq!(body["detail"]["call_id"], "toolu_q");
+    }
 
     let wrong = app
         .post("/v1/turns")

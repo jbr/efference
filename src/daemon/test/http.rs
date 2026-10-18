@@ -45,7 +45,7 @@ async fn review_level_over_the_router() {
 }
 
 /// `POST /turns` submission ids (docs/control-api.md): a client-minted id is
-/// adopted — echoed in the 202 body and carried on the queued turn — a body
+/// adopted and carried on the queued turn, a body
 /// without one gets a daemon-minted id, and an oversized one is rejected
 /// without enqueueing anything.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -53,15 +53,12 @@ async fn turn_submission_ids_adopt_or_mint() {
     let (shared, mut turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
     let client = test_client(&shared).await;
 
-    // Client-minted: adopted verbatim, echoed back, and on the queued turn.
-    let body = client
-        .submit(&SubmittedTurn::new("hello", "sub-mine"))
+    // Client-minted: adopted verbatim, and on the queued turn.
+    client
+        .submit(&SubmittedTurn::new("hello", "sub-mine"), None)
         .await
+        .unwrap()
         .unwrap();
-    assert!(
-        body.contains(r#""submission_id":"sub-mine""#),
-        "echo: {body}"
-    );
     let queued = turns_rx.recv().await.unwrap();
     assert_eq!(queued.text, "hello");
     assert_eq!(queued.submission_id, "sub-mine");
@@ -74,7 +71,7 @@ async fn turn_submission_ids_adopt_or_mint() {
 
     // Oversized: rejected in the typed envelope, nothing enqueued.
     let err = client
-        .submit(&SubmittedTurn::new("nope", "x".repeat(129)))
+        .submit(&SubmittedTurn::new("nope", "x".repeat(129)), None)
         .await
         .expect_err("oversized id → 400")
         .to_string();
@@ -204,16 +201,19 @@ async fn withdraw_turns_pops_a_suffix_and_reports_what_it_popped() {
     let client = test_client(&shared).await;
 
     client
-        .submit(&SubmittedTurn::new("one", "s1"))
+        .submit(&SubmittedTurn::new("one", "s1"), None)
         .await
+        .unwrap()
         .unwrap();
     client
-        .submit(&SubmittedTurn::new("two", "s2"))
+        .submit(&SubmittedTurn::new("two", "s2"), None)
         .await
+        .unwrap()
         .unwrap();
     client
-        .submit(&SubmittedTurn::new("three", "s3"))
+        .submit(&SubmittedTurn::new("three", "s3"), None)
         .await
+        .unwrap()
         .unwrap();
 
     let state = client.state().await.unwrap();
@@ -388,7 +388,7 @@ async fn a_turn_carries_the_attachments_it_names() {
     );
 
     let turn = SubmittedTurn::new("look", "s1").with_attachments(vec![arrival.clone()]);
-    client.submit(&turn).await.unwrap();
+    client.submit(&turn, None).await.unwrap().unwrap();
     let queued = turns_rx.recv().await.unwrap();
     assert_eq!(queued.attachments, vec![arrival.clone()]);
     assert_eq!(
@@ -407,6 +407,7 @@ async fn a_turn_carries_the_attachments_it_names() {
                 name: "../escape".into(),
                 ..arrival.clone()
             }]),
+            None,
         )
         .await
         .unwrap_err()

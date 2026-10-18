@@ -92,9 +92,10 @@ impl Tool<Control> for Message {
                     };
                 }
                 let source = turn_source(&context);
-                let sent = client
-                    .submit_named(&text, source.as_deref(), self.reply_to.as_deref())
-                    .await?;
+                let turn =
+                    crate::frontend::SubmittedTurn::new(text, crate::daemon::mint_submission_id())
+                        .sourced(source);
+                let sent = client.submit(&turn, self.reply_to.as_deref()).await?;
                 match sent {
                     Ok(landing) => Ok(answers::sent(&id, landing, view.as_ref(), now)),
                     Err(refusal) => Err(anyhow!(refusal)),

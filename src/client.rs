@@ -110,12 +110,18 @@ impl Client {
         self.post("/turns", body).await.map(drop)
     }
 
-    /// Enqueue a turn the client built — its own submission id, and any
-    /// attachments it uploaded (docs/control-api.md, docs/inbox.md). The id is
-    /// recorded on the resulting `User` entry and echoed in the returned 202
-    /// body, so the caller can reconcile delivery by exact key rather than
-    /// content.
-    pub async fn submit(&self, turn: &SubmittedTurn) -> Result<String> {
+    /// Enqueue a turn the client built — its own submission id, its source, and any
+    /// attachments it uploaded — naming the question it answers by `answers` (a handle
+    /// or the ask's call id), or none (`POST /turns`, docs/control-api.md, docs/inbox.md).
+    /// The id is recorded on the resulting `User` entry, so the caller can reconcile
+    /// delivery by exact key rather than content. `Ok(Err)` is the host's refusal in its
+    /// words: a question is pending and the turn names none, or the one it names is not
+    /// pending.
+    pub(crate) async fn submit(
+        &self,
+        turn: &SubmittedTurn,
+        answers: Option<&str>,
+    ) -> Result<std::result::Result<crate::daemon::Landing, String>> {
         let options = TurnOptions {
             source: turn.source.as_deref(),
         };
@@ -131,7 +137,21 @@ impl Client {
                 .map(|arrival| serde_json::Value::from(arrival.name.as_str()))
                 .collect();
         }
-        self.post("/turns", body.to_string()).await
+        if let Some(answers) = answers {
+            body["answers"] = answers.into();
+        }
+        let path = self.versioned("/turns");
+        match self
+            .send_declinable(Method::Post, &path, Some(body.to_string()))
+            .await?
+        {
+            Ok(answer) => {
+                let delivery = json_field(&answer, "delivery").unwrap_or_default();
+                Ok(Ok(crate::daemon::Landing::parse(&delivery)
+                    .unwrap_or(crate::daemon::Landing::Queued)))
+            }
+            Err(declined) => Ok(Err(declined)),
+        }
     }
 
     /// The `POST /turns` body: `text`, plus `submission_id` and `source`
@@ -188,36 +208,6 @@ impl Client {
         let parsed: WithdrawResponse = serde_json::from_str(&body)
             .with_context(|| format!("parsing the withdraw response: {body}"))?;
         Ok(parsed.withdrawn)
-    }
-
-    /// Submit a turn that names the question it answers by `answers` (a handle or the
-    /// ask's call id), or names none (`POST /turns`, docs/control-api.md). `Ok(Err)` is
-    /// the host's refusal, in its words: a question is pending and the turn names none,
-    /// or the one it names is not pending. A turn from an agent's `source` is held to the
-    /// same rule whether or not it names one.
-    pub(crate) async fn submit_named(
-        &self,
-        text: &str,
-        source: Option<&str>,
-        answers: Option<&str>,
-    ) -> Result<std::result::Result<crate::daemon::Landing, String>> {
-        let mut body: serde_json::Value =
-            serde_json::from_str(&Self::turn_body(text, None, TurnOptions { source }))?;
-        if let Some(answers) = answers {
-            body["answers"] = answers.into();
-        }
-        let path = self.versioned("/turns");
-        match self
-            .send_declinable(Method::Post, &path, Some(body.to_string()))
-            .await?
-        {
-            Ok(answer) => {
-                let delivery = json_field(&answer, "delivery").unwrap_or_default();
-                Ok(Ok(crate::daemon::Landing::parse(&delivery)
-                    .unwrap_or(crate::daemon::Landing::Queued)))
-            }
-            Err(declined) => Ok(Err(declined)),
-        }
     }
 
     /// Resolve the pending approval gate (`PUT /approvals/{call_id}`), carrying the

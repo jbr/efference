@@ -8,7 +8,7 @@ import {
   withdrawTurns,
   type WithdrawnTurn,
 } from "../api/http.ts";
-import type { Attachment, CallId, Decision, Gate } from "../api/types.ts";
+import type { Ask, Attachment, CallId, Decision, Gate } from "../api/types.ts";
 import {
   applyFrame,
   mintTurn,
@@ -22,11 +22,17 @@ import {
  * Submit a turn and queue its delivery echo. The queue push happens after the
  * 202 — "accepted by the daemon, not yet on the wire" is exactly what the
  * pending state means — so a failed POST leaves nothing to reconcile and the
- * error propagates to the composer as before. The submission id is minted
- * here, before the POST: the daemon echoes it onto the resulting `User`
+ * error propagates to the composer, which keeps the draft. The submission id is
+ * minted here, before the POST: the daemon echoes it onto the resulting `User`
  * entry, so delivery is an exact key lookup — including when the entry's
  * frame folds before the 202 body resolves (`pushPendingTurn` then skips the
  * queue entirely).
+ *
+ * A send while a question shows answers that question, by name. A refusal
+ * (`not_delivered`: a question is pending that this send did not name, or the
+ * one it named is gone) carries the current `ask` topic, folded here as
+ * `gate_moved`'s gate is, so the question shows at once; the error the
+ * composer renders says why in the operator's terms.
  */
 export async function submitTurn(
   store: Store,
@@ -34,13 +40,26 @@ export async function submitTurn(
   attachments: Attachment[] = [],
 ): Promise<void> {
   const id = crypto.randomUUID();
+  const answers = store.snapshot().topics.ask?.call_id ?? null;
   // Recorded before the POST: an `ask` can hand this turn back while the 202
   // is still in flight (session/store.ts).
   store.update((s) => mintTurn(s, id));
   try {
-    await postTurn(text, id, attachments);
+    await postTurn(text, id, attachments, answers);
   } catch (error) {
     store.update((s) => unmintTurn(s, id));
+    if (error instanceof ApiError && error.code === "not_delivered") {
+      const ask = (error.detail ?? null) as Ask | null;
+      store.update((s) =>
+        applyFrame(s, { class: "state", kind: "ask", data: ask }),
+      );
+      throw new Error(
+        answers === null
+          ? "not sent: a question came first. Your message is still here."
+          : "not sent: that question is no longer waiting. Your message is still here.",
+        { cause: error },
+      );
+    }
     throw error;
   }
   store.update((s) => pushPendingTurn(s, id, text, attachments));

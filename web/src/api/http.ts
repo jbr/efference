@@ -114,10 +114,14 @@ export const fetchCallSeq = (id: CallId, base: string = apiBase()) =>
 // elide (a truncated result's `content`, docs/control-api.md). ETag-validated, so
 // a second look is a 304.
 export const fetchLogEntry = (seq: Seq) => get<LogEntry>(`/v1/log/${seq}`);
+// `answers` names the question the turn answers, when one was showing: a turn
+// naming none is refused while one is pending, so text written before the
+// question appeared is never taken as its answer (docs/control-api.md).
 export const submitTurn = (
   text: string,
   submissionId: string,
   attachments: Attachment[] = [],
+  answers: CallId | null = null,
 ) =>
   post<{ status: string; submission_id: string }>("/v1/turns", {
     text,
@@ -128,6 +132,7 @@ export const submitTurn = (
     ...(attachments.length > 0
       ? { attachments: attachments.map((a) => a.name) }
       : {}),
+    ...(answers !== null ? { answers } : {}),
   });
 // Withdraw the pending-queue suffix beginning at this submission (docs/control-api.md —
 // recall). The answer is authoritative: the loop may have dequeued the turn already, so

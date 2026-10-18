@@ -88,7 +88,8 @@ fn aborting_a_cold_gate() {
     );
 }
 
-/// An `ask` on a cold session shows the line, and the answer is an ordinary turn.
+/// An `ask` on a cold session shows the line, and the answer is a turn naming the
+/// question it answers.
 #[test]
 fn an_answer_to_an_ask_on_a_cold_session_shows_the_cost() {
     let mut play = Screenplay::new(100, 14);
@@ -106,7 +107,8 @@ fn an_answer_to_an_ask_on_a_cold_session_shows_the_cost() {
     play.type_str("yes");
     play.route_key(KeyCode::Enter, KeyModifiers::NONE);
     let sent = play.took_submission().expect("the answer was sent");
-    assert_eq!(sent.text, "yes");
+    assert_eq!(sent.turn.text, "yes");
+    assert_eq!(sent.answers.as_deref(), Some("toolu_ask"));
 }
 
 /// With nothing pending the composer states what a send reads, and a send goes
@@ -123,5 +125,7 @@ fn the_composer_on_a_cold_session_shows_the_cost_and_sends() {
     );
     play.type_str("hello");
     play.route_key(KeyCode::Enter, KeyModifiers::NONE);
-    assert_eq!(play.took_submission().unwrap().text, "hello");
+    let sent = play.took_submission().unwrap();
+    assert_eq!(sent.turn.text, "hello");
+    assert_eq!(sent.answers, None, "no question was showing");
 }

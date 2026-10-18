@@ -444,11 +444,11 @@ carries the gate, processes, usage, and effective policy in the same stream.
 
 #### `POST /turns`
 Enqueue a user turn. Also seeds turn 1 on an idle daemon. Submission is
-decoupled from inference. While an `ask` is pending (the `ask` topic below), a
-non-blank turn from a human client is instead that ask's reply: it becomes the call's
-result, never a `User` entry, and never appears in `queued`
-([process-monitor.md](process-monitor.md)). A turn from an agent answers an ask only by
-naming it (below).
+decoupled from inference. While an `ask` is pending (the `ask` topic below), a turn
+that names it by `answers` is instead that ask's reply: it becomes the call's result,
+never a `User` entry, and never appears in `queued`
+([process-monitor.md](process-monitor.md)). A turn naming none is refused while a
+question is pending, from every client (below).
 
 - Body: `{ "text": "<string>", "submission_id": "<string, optional>", "source": "<string, optional>", "attachments": ["<name>", …], "answers": "<string, optional>" }` —
   `submission_id` identifies this submission: adopted when the client minted
@@ -476,16 +476,19 @@ naming it (below).
   while the session is believed cold it is recorded as a `released` step of the
   cold check (`by: turn`) and releases a loop parked at its cold check, or the next
   check the loop reaches. It is dropped if the session is warm when it arrives.
-- **An answer to an `ask`** is this same route: while an `ask` is pending the
-  turn resolves it instead of opening a user turn ([process-monitor.md](process-monitor.md)).
-  The release is logged with `by: ask` rather than `turn`.
+- **An answer to an `ask`** is this same route: while an `ask` is pending, the turn
+  naming it resolves it instead of opening a user turn
+  ([process-monitor.md](process-monitor.md)). The release is logged with `by: ask`
+  rather than `turn`.
 - `answers` names the question the turn answers: the asking call's transcript handle
-  (`3.1`) or its call id. A turn that carries it, or whose `source` names an agent
-  (`session[…]` or `mcp[…]`), answers a pending ask only when it names that ask, and is
-  otherwise refused: a question is pending and the turn names none, or the question it
-  names is no longer pending — answered, or never asked. A turn from a human client (no
-  source, or `web`) that names none behaves as above. The check and the answer are one
-  step, so no ask can start between them (`src/daemon/named_turns.rs`).
+  (`3.1`) or its call id. A turn answers a pending ask only when it names that ask, and
+  is otherwise refused with `409 not_delivered`, the current `ask` topic in `detail`: a
+  question is pending and the turn names none, or the question it names is no longer
+  pending — answered, or never asked. The rule is the same for every client: the TUI and
+  the web client name the question they show, so text written before a question
+  appeared is never taken as its answer, and comes back to the composer instead. The
+  check and the answer are one step, so no ask can start between them
+  (`src/daemon/named_turns.rs`).
 - `202 {"status":"accepted","submission_id":"<string>","delivery":"<string>"}` — enqueued; watch
   `/events` (or `/state`) for the result. The echoed id is informational: any
   effect of a request — including the `User` entry carrying this id — may

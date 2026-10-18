@@ -1,6 +1,7 @@
 //! Entry points — attach to a daemon, or run the element gallery — and theme resolution.
 
 use super::attention::Attender;
+use super::senders::Submission;
 use super::*;
 
 /// Attach to a session and stay there until the operator leaves it.
@@ -97,20 +98,27 @@ async fn attach(
     // every topic up front.
     let bridge = tokio::spawn(bridge(client.clone(), events, tx.clone()));
 
-    // Turn sender: each composer submission is POSTed as a user turn. A refusal
-    // (an attachment no longer in the store) comes home as a notice, since the
-    // pending echo alone would read as "still queued" forever.
+    // Turn sender: each composer submission is POSTed as a user turn. A failure comes
+    // home, since the pending echo alone would read as "still queued" forever: a
+    // refusal over the pending question returns the turn to the composer, anything
+    // else (an attachment no longer in the store) is a notice.
     let turn_client = client.clone();
     let turn_events = tx.clone();
     let sender = tokio::spawn(async move {
-        while let Some(turn) = submit_rx.recv().await {
-            let Err(e) = turn_client.submit(&turn).await else {
-                continue;
+        while let Some(Submission { turn, answers }) = submit_rx.recv().await {
+            let event = match turn_client.submit(&turn, answers.as_deref()).await {
+                Ok(Ok(_)) => continue,
+                Ok(Err(_refusal)) => TuiEvent::NotDelivered {
+                    answered: answers.is_some(),
+                    turn: crate::client::WithdrawnTurn {
+                        submission_id: turn.submission_id,
+                        text: turn.text,
+                        attachments: turn.attachments,
+                    },
+                },
+                Err(e) => TuiEvent::Notice(format!("send failed: {e}")),
             };
-            if turn_events
-                .send(TuiEvent::Notice(format!("send failed: {e}")))
-                .is_err()
-            {
+            if turn_events.send(event).is_err() {
                 break; // UI thread gone.
             }
         }

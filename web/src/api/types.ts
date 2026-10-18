@@ -956,6 +956,7 @@ export interface ErrorEnvelope {
     | "invalid_decision"
     | "not_found"
     | "gate_moved"
+    | "not_delivered"
     | "not_continuable"
     | "not_compactable"
     | "starting"

@@ -17,10 +17,22 @@ use super::{HostCmd, PaceCmd, SidebarCmd};
 use crate::daemon::attention::AttentionReport;
 use crate::frontend::{Approval, Interrupt, SubmittedTurn};
 
+/// A composer send: the turn, and the question it answers when one was showing
+/// (`answers` on `POST /turns`, docs/control-api.md). A send naming no question is
+/// refused while one is pending, so text typed before a question appeared is never
+/// taken as its answer.
+#[derive(Debug)]
+pub(crate) struct Submission {
+    pub turn: SubmittedTurn,
+    pub answers: Option<String>,
+}
+
 /// What the UI sends the operator's intent over.
 #[derive(Debug)]
 pub(crate) struct Senders {
-    pub submit: UnboundedSender<SubmittedTurn>,
+    /// A refusal rides home as a
+    /// [`TuiEvent::NotDelivered`](super::TuiEvent::NotDelivered).
+    pub submit: UnboundedSender<Submission>,
     /// Withdraw the pending-queue suffix from a submission id
     /// (docs/control-api.md); the answer rides home as a
     /// [`TuiEvent::Recalled`](super::TuiEvent::Recalled).
@@ -48,7 +60,7 @@ pub(crate) struct Senders {
 /// The far ends, one per field of [`Senders`].
 #[derive(Debug)]
 pub(crate) struct Receivers {
-    pub submit: UnboundedReceiver<SubmittedTurn>,
+    pub submit: UnboundedReceiver<Submission>,
     pub recall: UnboundedReceiver<String>,
     pub attachments: UnboundedReceiver<super::staged::AttachCmd>,
     pub continue_loop: UnboundedReceiver<()>,

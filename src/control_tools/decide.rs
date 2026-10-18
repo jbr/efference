@@ -113,7 +113,16 @@ impl Tool<Control> for Decide {
                 }
                 if self.allow()
                     && let Some(note) = self.note()
-                    && let Err(refusal) = client.submit_named(note, source.as_deref(), None).await?
+                    && let Err(refusal) = client
+                        .submit(
+                            &crate::frontend::SubmittedTurn::new(
+                                note,
+                                crate::daemon::mint_submission_id(),
+                            )
+                            .sourced(source.clone()),
+                            None,
+                        )
+                        .await?
                 {
                     return Err(anyhow!(
                         "{}; your note was not delivered: {refusal}",

@@ -275,7 +275,7 @@ export function Composer({
       setError(null);
       setExpanded(false);
     } catch (e) {
-      setError(`${e}`);
+      setError(e instanceof Error ? e.message : `${e}`);
     }
   }
 
