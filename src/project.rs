@@ -210,8 +210,8 @@ pub use semantic::{
 };
 
 pub use render::{
-    INTENT_FEEDBACK_LEAD, Selection, render_resumed, render_triage_failure, render_triaged,
-    selection,
+    INTENT_FEEDBACK_LEAD, Selection, render_interruption, render_resumed, render_triage_failure,
+    render_triaged, selection,
 };
 pub use retention::Retention;
 pub use wire::{

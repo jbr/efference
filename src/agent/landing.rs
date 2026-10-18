@@ -103,7 +103,9 @@ pub(super) async fn land(
                             entries = shared.snapshot();
                             continue;
                         }
-                        Held::Interrupted => break carried.interrupted(pending.len()),
+                        Held::Interrupted => {
+                            break carried.interrupted(pending.len(), shared.interrupter());
+                        }
                     }
                 }
             }

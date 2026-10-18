@@ -5,17 +5,16 @@ use super::*;
 /// things have to hold at once, and they are the whole design:
 ///
 /// 1. The `tool_use` is **paired** — an orphan is a request the API rejects.
-/// 2. The pair carries **none of the output** and no harness gloss: the point
-///    of interrupting is that the tool's output never enters the context, and
-///    a stand-in explaining the situation would be the harness guessing at a
-///    meaning that differs per tool.
-/// 3. The operator's next message merges into the **same** user message, so
-///    the model reads `[tool_result, "…"]` in one breath — the person who
-///    interrupted says why, in their own words, right where the output would
-///    have been. That merge is `project`'s existing behavior for a queued turn delivered mid-task; this
+/// 2. The pair carries **none of the output**, only the fact of the interrupt: who
+///    stopped the call, after how long, and what became of it. The output never
+///    enters the context, and the model can still tell its call was stopped when
+///    no message follows, as when a supervising agent stops a runaway command.
+/// 3. A next message merges into the **same** user message, so the model reads
+///    `[tool_result, "…"]` in one breath — the person who interrupted says why,
+///    in their own words, right where the output would have been. That merge is `project`'s existing behavior for a queued turn delivered mid-task; this
 ///    pins that it survives the turn boundary an interrupt introduces.
 #[test]
-pub(super) fn an_interrupted_call_is_paired_but_says_nothing_and_the_operator_speaks_next() {
+pub(super) fn an_interrupted_call_is_paired_says_who_stopped_it_and_the_operator_speaks_next() {
     use crate::project::ApiBlock;
     let (shared, _rx) = Session::new(
         std::env::current_dir().unwrap(),
@@ -37,6 +36,11 @@ pub(super) fn an_interrupted_call_is_paired_but_says_nothing_and_the_operator_sp
             withheld(
                 &call,
                 RawResult::text("SECRET_TOKEN=hunter2\n…120k of log…"),
+                crate::log::Interruption {
+                    by: Some("session[parent]".into()),
+                    after_ms: Some(65_000),
+                    killed: false,
+                },
             ),
         )
         .unwrap();
@@ -63,8 +67,11 @@ pub(super) fn an_interrupted_call_is_paired_but_says_nothing_and_the_operator_sp
         ] => {
             assert_eq!(tool_use_id, &call.id.0, "the tool_use is paired");
             assert!(
-                content.contains("[elided]"),
-                "the pair is a placeholder: {content}"
+                content.contains(
+                    "[interrupted by parent (agent) after 1m 5s: the call finished, and its \
+                     output was withheld]"
+                ),
+                "the pair says who stopped the call: {content}"
             );
             assert!(
                 !content.contains("hunter2") && !content.contains("120k"),
@@ -87,7 +94,7 @@ pub(super) fn an_interrupted_call_is_paired_but_says_nothing_and_the_operator_sp
         })
         .expect("the result is in the log");
     assert!(logged.0.content.contains("hunter2"), "raw survives the log");
-    assert!(matches!(logged.1, WireState::Elided));
+    assert!(matches!(logged.1, WireState::Interrupted(_)));
 }
 
 /// A completion that carried several calls produces a **fully-paired** log, and

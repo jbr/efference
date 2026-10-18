@@ -4,6 +4,7 @@
 
 import { expect, test } from "vitest";
 import {
+  renderInterruption,
   TRIAGE_LINE_CAP,
   normalize,
   renderTriaged,
@@ -195,5 +196,25 @@ test("wireView dispatches per wire state like tool_result_block", () => {
   });
   expect(withFeedback?.text).toBe(
     "(output dropped by triage)\n⟢ re your intent: wrong question",
+  );
+});
+
+// Parity with `render_interruption` (src/project/render.rs): the operator reads the
+// line the model read.
+test("an interruption renders as the wire's line", () => {
+  expect(
+    renderInterruption({
+      by: "session[parent]",
+      after_ms: 65_000,
+      killed: false,
+    }),
+  ).toBe(
+    "[interrupted by parent (agent) after 1m 5s: the call finished, and its output was withheld]",
+  );
+  expect(renderInterruption({ after_ms: 5_000, killed: true })).toBe(
+    "[interrupted by the operator after 5s: the command was killed, and its output was withheld]",
+  );
+  expect(renderInterruption({ by: "mcp[claude-code]" })).toBe(
+    "[interrupted by mcp[claude-code] before its result was read]",
   );
 });

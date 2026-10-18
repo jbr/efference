@@ -376,3 +376,36 @@ async fn a_withdrawn_turn_is_dropped_rather_than_delivered() {
     assert_eq!(delivered.len(), 1);
     assert_eq!(delivered[0].text, "fresh");
 }
+
+/// A turn ending with another already queued is not a settle: the queued turn runs at once,
+/// so no push says the session is waiting (as when an interrupt ends a turn and a message
+/// is queued behind it). With nothing queued, the push goes out.
+#[test]
+fn a_turn_ending_with_a_turn_queued_sends_no_settle_push() {
+    let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let settle_pushes = |shared: &Session| {
+        shared
+            .snapshot()
+            .iter()
+            .filter(|e| {
+                matches!(
+                    &e.payload,
+                    Payload::Telemetry(crate::log::Telemetry::Push(record))
+                        if record.kind == crate::log::MomentKind::Settle
+                )
+            })
+            .count()
+    };
+    shared.set_phase(LoopPhase::Requesting);
+    shared.submit_turn(SubmittedTurn::new("next", "s1"));
+    shared.going_idle();
+    assert_eq!(settle_pushes(&shared), 0, "a queued turn is about to run");
+
+    assert!(shared.claim_turn("s1", true));
+    shared.going_idle();
+    assert_eq!(
+        settle_pushes(&shared),
+        1,
+        "nothing queued: the session settled"
+    );
+}

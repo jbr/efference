@@ -363,6 +363,12 @@ impl<'a> Zoom<'a, '_> {
             Some(WireState::Triaged(verdict)) => verdict,
             Some(WireState::Raw) => return "it saw: all of it".to_string(),
             Some(WireState::Elided) => return "it saw: none of it".to_string(),
+            Some(WireState::Interrupted(interruption)) => {
+                return format!(
+                    "it saw: none of it, but {}",
+                    crate::project::render_interruption(interruption)
+                );
+            }
             Some(WireState::TriageFailed { why }) => {
                 return format!("it saw: none of it ({})", flat(why));
             }

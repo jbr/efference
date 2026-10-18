@@ -68,6 +68,15 @@ pub struct DetachedBash {
 /// The tool name the model calls; `tool_use` / `tool_result` ids pair on it.
 pub const NAME: &str = "bash";
 
+/// The line a killed command's result ends with: its process group was killed by an
+/// interrupt (docs/control-channel.md). Kept in `raw`, which only the operator reads.
+pub const KILLED: &str = "[aborted by user — process group killed]";
+
+/// Whether `result` is a command an interrupt killed ([`KILLED`]).
+pub fn was_killed(result: &crate::log::RawResult) -> bool {
+    result.content.ends_with(KILLED)
+}
+
 const DESCRIPTION: &str = "Run a bash command and return its combined \
 stdout/stderr. Runs in its own process group; the user approves each call and \
 can abort a running command with Ctrl-C.";
@@ -281,7 +290,7 @@ impl Bash {
                 }
                 let mut content = String::from_utf8_lossy(&combined).into_owned();
                 push_line_break(&mut content);
-                content.push_str("[aborted by user — process group killed]");
+                content.push_str(KILLED);
                 RawResult::error(content).into()
             }
             // Surrender the live child, don't reap it (docs/process-monitor.md): no

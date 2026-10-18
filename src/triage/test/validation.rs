@@ -228,15 +228,26 @@ fn bounds_skip_keywords_and_unoffered_ids() {
     assert!(require_in_bounds(p, &shown).is_ok());
 }
 
-/// A triage the operator interrupted before a verdict (docs/control-channel.md) withholds
-/// every result as the interrupt's *after* juncture does — `Elided`, never an error that
-/// blames triage, never the untriaged raw — and keeps the held attempts' breadcrumbs.
+/// A triage interrupted before a verdict (docs/control-channel.md) withholds every result
+/// and says so — interrupted before it was read, never an error that blames triage, never
+/// the untriaged raw — and keeps the held attempts' breadcrumbs.
 #[test]
 fn an_interrupted_gate_withholds_every_result_without_blaming_triage() {
-    let outcome = HoldOutcome::interrupted(2, vec!["held: overloaded".into()], Vec::new());
+    let outcome = HoldOutcome::interrupted(
+        2,
+        Some("session[parent]".into()),
+        vec!["held: overloaded".into()],
+        Vec::new(),
+    );
     assert_eq!(outcome.results.len(), 2);
     for d in &outcome.results {
-        assert!(matches!(d.wire, WireState::Elided), "withheld, not kept");
+        let WireState::Interrupted(interruption) = &d.wire else {
+            panic!("withheld, not kept: {:?}", d.wire);
+        };
+        assert_eq!(
+            crate::project::render_interruption(interruption),
+            "[interrupted by parent (agent) before its result was read]"
+        );
         assert_eq!(d.origin, Origin::Fallback);
     }
     assert_eq!(outcome.retries, ["held: overloaded"]);

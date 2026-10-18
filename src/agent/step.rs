@@ -133,7 +133,8 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
             None,
         ));
         if shared.take_interrupt() {
-            return Ok(Decision::Withheld(withheld(call, result)));
+            let interruption = shared.interruption_after(started.elapsed(), &result);
+            return Ok(Decision::Withheld(withheld(call, result, interruption)));
         }
         return Ok(Decision::Ran {
             result,
@@ -494,7 +495,8 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
             ));
             // The interrupt's *after* juncture (docs/control-channel.md).
             if shared.take_interrupt() {
-                return Ok(Decision::Withheld(withheld(call, result)));
+                let interruption = shared.interruption_after(elapsed, &result);
+                return Ok(Decision::Withheld(withheld(call, result, interruption)));
             }
             Ok(Decision::Ran {
                 result,

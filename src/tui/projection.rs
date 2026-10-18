@@ -710,6 +710,11 @@ fn result_entry(
                         parts.push("elided".to_string());
                         "[elided]".to_string()
                     }
+                    // The line the agent reads; the operator can flip to raw.
+                    WireState::Interrupted(interruption) => {
+                        parts.push("interrupted".to_string());
+                        crate::project::render_interruption(interruption)
+                    }
                     // The same message the agent sees on the wire; the operator can
                     // flip to raw — the withheld output is still in the log.
                     WireState::TriageFailed { why } => {

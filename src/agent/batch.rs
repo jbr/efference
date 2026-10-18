@@ -251,9 +251,8 @@ async fn run_calls<F: Frontend, S: Spotter>(
 /// Withheld rather than dropped, because a result with no verdict projects to nothing
 /// and so orphans its `tool_use` on the next request (docs/README.md) — and the log
 /// keeps the bytes either way, which is the whole of what capture changed about them.
-/// `Elided` says what every other undecided path says (the interrupt's *after*
-/// juncture, an interrupted triage): the output is not on the wire, and nothing about
-/// triage or the tool failed.
+/// `Elided` says the output is not on the wire, and nothing about triage or the tool
+/// failed.
 fn undecided(shared: &Session, turn: Turn, captured: &[crate::log::Seq]) -> std::io::Result<()> {
     for seq in captured {
         shared.append(

@@ -414,7 +414,18 @@ export type WireState =
       };
     }
   | "Elided"
+  | { Interrupted: Interruption }
   | { TriageFailed: { why: string } };
+
+/** What an interrupt stopped (src/log/wire_state.rs): who sent it (a turn's
+ * `source`, absent for the operator), how long the call had run (absent when
+ * the interrupt came during the triage), and whether its process group was
+ * killed. */
+export interface Interruption {
+  by?: string;
+  after_ms?: number;
+  killed?: boolean;
+}
 
 export type Keep = "All" | "None" | { Ranges: [number, number][] };
 

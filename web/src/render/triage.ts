@@ -8,7 +8,7 @@
 // same order, same strings — so divergence is findable by diffing against
 // render.rs; the tests mirror `src/project/test/triaged.rs` case for case.
 
-import type { Keep, RawResult, WireState } from "../api/types.ts";
+import type { Interruption, Keep, RawResult, WireState } from "../api/types.ts";
 
 /** Mirrors `TRIAGE_LINE_CAP` (src/project.rs). */
 export const TRIAGE_LINE_CAP = 2000;
@@ -148,6 +148,31 @@ export interface WireViewText {
   isError: boolean;
 }
 
+/** The line an interrupted call projects in place of its output — a mirror of
+ * `render_interruption` (src/project/render.rs), so the operator reads what the
+ * model read. */
+export function renderInterruption(interruption: Interruption): string {
+  const by = interruption.by;
+  const session = by === undefined ? null : /^session\[(.+)\]$/.exec(by);
+  const who =
+    by === undefined || by === "web"
+      ? "the operator"
+      : session !== null
+        ? `${session[1]} (agent)`
+        : by;
+  if (interruption.after_ms === undefined) {
+    return `[interrupted by ${who} before its result was read]`;
+  }
+  const secs = Math.floor(interruption.after_ms / 1000);
+  const after =
+    secs < 60 ? `${secs}s` : `${Math.floor(secs / 60)}m ${secs % 60}s`;
+  const what =
+    interruption.killed === true
+      ? "the command was killed"
+      : "the call finished";
+  return `[interrupted by ${who} after ${after}: ${what}, and its output was withheld]`;
+}
+
 /** The wire-projected view of a tool result — what the model saw (minus the
  * `[seq]` addressing prefix), mirroring `tool_result_block`'s per-state
  * dispatch. `null` when the wire state is `Raw`: raw *is* the view, and the
@@ -156,6 +181,12 @@ export interface WireViewText {
 export function wireView(raw: RawResult, wire: WireState): WireViewText | null {
   if (wire === "Raw" || wire === "Pending") return null;
   if (wire === "Elided") return { text: "[elided]", isError: false };
+  if ("Interrupted" in wire) {
+    return {
+      text: renderInterruption(wire.Interrupted),
+      isError: wire.Interrupted.killed === true,
+    };
+  }
   if ("Triaged" in wire) {
     return {
       text: renderTriaged(

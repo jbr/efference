@@ -113,7 +113,8 @@ fn what_an_interrupt_stopped() {
     assert_eq!(
         interrupted(&working(bash_for(180)), NOW),
         (
-            "interrupted child: killed bash `cargo test` after 3m; it continues from that result"
+            "interrupted child: stopped bash `cargo test` after 3m; its turn ends, and its next \
+             turn reads that you interrupted it"
                 .to_string(),
             true
         )

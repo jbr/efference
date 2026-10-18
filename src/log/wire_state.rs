@@ -9,7 +9,8 @@ use super::*;
 /// Each variant is wired into [`project`] before it has a construction site, so a
 /// new site lands as a behavior change rather than a type change that would move
 /// the byte-stability pin. `Triaged` is built by the triage
-/// (docs/triage.md); `Elided` by the interrupt (docs/control-channel.md).
+/// (docs/triage.md); `Interrupted` by the interrupt (docs/control-channel.md). `Elided`
+/// is no longer written; logs that carry it project as they did.
 ///
 /// [`project`]: crate::project::project
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -26,14 +27,35 @@ pub enum WireState {
     ///
     /// [`project`]: crate::project::project
     Triaged(Triaged),
-    /// Project nothing of substance; still recoverable from the log.
+    /// Project nothing of substance; still recoverable from the log. Written by the
+    /// interrupt before it said who interrupted ([`WireState::Interrupted`]).
     Elided,
+    /// Project a fixed line saying the call was interrupted, by whom, and what became of
+    /// it; `raw` stays in the log (docs/control-channel.md). Recorded when the interrupt
+    /// lands, so the line is rendered from the log alone.
+    Interrupted(Interruption),
     /// A result an earlier harness withheld as a hard error because its triage had no
     /// verdict. **No longer written**: a triage without a verdict now holds its
     /// results until it has one (docs/triage.md). Kept so logs that carry it
     /// still load and project as they did — a hard error in place of the output
     /// (`is_error` forced true), `raw` still in the log.
     TriageFailed { why: String },
+}
+
+/// What an interrupt stopped (docs/control-channel.md): carried by
+/// [`WireState::Interrupted`], whose line is rendered from it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Interruption {
+    /// Who interrupted, spelled as a turn's `source` is; `None` for the operator.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub by: Option<String>,
+    /// How long the call had run, in milliseconds. `None` when the interrupt came during
+    /// the triage, after the call had finished.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub after_ms: Option<u64>,
+    /// The call's process group was killed, so the command did not finish.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub killed: bool,
 }
 
 /// A triage verdict on one result (docs/triage.md): which lines survive,

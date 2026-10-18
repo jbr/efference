@@ -100,7 +100,8 @@ impl Retention {
             // lands), bypassed (the known-shape rule, docs/triage.md — never
             // shown to triage) and elided results are not verdicts about line-level
             // relevance, so none of them counts.
-            WireState::Pending | WireState::Raw | WireState::Elided => {}
+            WireState::Pending | WireState::Raw | WireState::Elided | WireState::Interrupted(_) => {
+            }
         }
     }
 }

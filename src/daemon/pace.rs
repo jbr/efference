@@ -292,7 +292,10 @@ impl Session {
         }
         self.set_phase(LoopPhase::Idle);
         self.settle_changed.notify_waiters();
-        if a_turn_just_ended {
+        // A queued turn is about to run, so the session is not waiting on anyone: no push
+        // for an idle it passes straight through, as when an interrupt ends a turn with
+        // a message already queued.
+        if a_turn_just_ended && self.no_turn_queued_to_run() {
             let body = super::push::settle_body(self.log.lock().unwrap().entries());
             self.push(crate::log::MomentKind::Settle, body);
         }
@@ -305,20 +308,24 @@ impl Session {
     pub(super) fn is_settled(&self) -> bool {
         match self.loop_phase() {
             LoopPhase::Idle => {
-                let pace = self.pace.lock().unwrap();
-                // A turn held back behind the operator's hold waits on the operator, as the
-                // idle loop does; any other queued turn is about to run.
-                let waiting = self.queue.lock().unwrap().iter().all(|queued| {
-                    pace.held_back
-                        .iter()
-                        .any(|held| held.submission_id == queued.submission_id)
-                });
                 // An accepted `POST /loop/continue` (docs/control-api.md) is a turn
                 // about to run, exactly as a queued submission is.
-                waiting && !self.continue_pending()
+                self.no_turn_queued_to_run() && !self.continue_pending()
             }
             phase => phase.settles(),
         }
+    }
+
+    /// Whether no queued turn is about to run: the queue is empty, or holds only agent turns
+    /// held back behind the operator's hold, which wait on the operator as the idle loop
+    /// does (docs/control-channel.md).
+    fn no_turn_queued_to_run(&self) -> bool {
+        let pace = self.pace.lock().unwrap();
+        self.queue.lock().unwrap().iter().all(|queued| {
+            pace.held_back
+                .iter()
+                .any(|held| held.submission_id == queued.submission_id)
+        })
     }
 
     /// Block until [`is_settled`]. Uses `Notified::enable` to register the waiter **before** the
@@ -359,6 +366,40 @@ impl Session {
         // resolve and reach the loop's juncture check before the flag is visible.
         self.interrupt_latch.store(true, Ordering::SeqCst);
         self.interrupt.notify_waiters();
+    }
+
+    /// Who sent the latest interrupt, as its recorded `Telemetry::Interrupt` names them:
+    /// `None` for the operator's own command line or TUI (docs/control-channel.md). The
+    /// record is appended before the latch is set, so the loop reading the latch reads
+    /// the record that set it.
+    pub(crate) fn interrupter(&self) -> Option<String> {
+        self.log
+            .lock()
+            .unwrap()
+            .entries()
+            .iter()
+            .rev()
+            .find_map(|entry| match &entry.payload {
+                crate::log::Payload::Telemetry(crate::log::Telemetry::Interrupt(origin)) => {
+                    Some(origin.source.clone())
+                }
+                _ => None,
+            })
+            .flatten()
+    }
+
+    /// What an interrupt stopped: a call that had run `elapsed`, with the `result` it
+    /// left (docs/control-channel.md).
+    pub(crate) fn interruption_after(
+        &self,
+        elapsed: std::time::Duration,
+        result: &crate::log::RawResult,
+    ) -> crate::log::Interruption {
+        crate::log::Interruption {
+            by: self.interrupter(),
+            after_ms: Some(elapsed.as_millis() as u64),
+            killed: crate::bash::was_killed(result),
+        }
     }
 
     /// Whether an interrupt is latched for the current call. The loop-owned `wait`

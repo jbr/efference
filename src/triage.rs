@@ -176,17 +176,25 @@ impl HoldFailure {
 }
 
 impl HoldOutcome {
-    /// The outcome of a triage the operator interrupted before any verdict
-    /// (docs/control-channel.md): every result is withheld from the wire exactly as
-    /// the interrupt's *after* juncture withholds one — [`WireState::Elided`], the raw
-    /// kept in the log — and the operator's own message is the next thing the agent
-    /// reads. Nothing here says triage failed, because from the agent's side nothing
-    /// did: the operator stopped the turn.
-    pub fn interrupted(count: usize, retries: Vec<String>, thinking: Vec<String>) -> Self {
+    /// The outcome of a triage interrupted before any verdict (docs/control-channel.md),
+    /// `by` who sent the interrupt: every result is withheld from the wire, the raw kept
+    /// in the log, and the wire says it was interrupted before it was read
+    /// ([`WireState::Interrupted`]). Nothing here says triage failed, because from the
+    /// agent's side nothing did: whoever interrupted stopped the turn.
+    pub fn interrupted(
+        count: usize,
+        by: Option<String>,
+        retries: Vec<String>,
+        thinking: Vec<String>,
+    ) -> Self {
         Self {
             results: (0..count)
                 .map(|_| TriageOutcome {
-                    wire: WireState::Elided,
+                    wire: WireState::Interrupted(crate::log::Interruption {
+                        by: by.clone(),
+                        after_ms: None,
+                        killed: false,
+                    }),
                     origin: Origin::Fallback,
                     raw_keep: "interrupted by the operator before a verdict".to_string(),
                 })

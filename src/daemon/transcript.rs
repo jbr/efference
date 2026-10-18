@@ -124,6 +124,10 @@ fn saw(raw: &RawResult, wire: Option<&WireState>, of_total: bool) -> String {
         None | Some(WireState::Pending) => "it has not seen it yet".to_string(),
         Some(WireState::Raw) => "it saw all of it".to_string(),
         Some(WireState::Elided) => "it saw none of it".to_string(),
+        Some(WireState::Interrupted(interruption)) => format!(
+            "it saw none of it, but {}",
+            crate::project::render_interruption(interruption)
+        ),
         Some(WireState::TriageFailed { why }) => format!("it saw none of it ({})", flat(why)),
         Some(WireState::Triaged(verdict)) => {
             let (kept, total) = kept_of(raw, verdict);

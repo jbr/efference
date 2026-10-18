@@ -2,6 +2,31 @@
 
 use super::*;
 
+/// The line an interrupted call projects in place of its output (docs/control-channel.md):
+/// who interrupted and what became of the call. Rendered from the recorded
+/// [`Interruption`](crate::log::Interruption) alone, so it is byte-stable.
+pub fn render_interruption(interruption: &crate::log::Interruption) -> String {
+    let who = match interruption.by.as_deref() {
+        None | Some("web") => "the operator".into(),
+        Some(source) => crate::frontend::wire_label(source),
+    };
+    match interruption.after_ms {
+        Some(ms) => {
+            let what = match interruption.killed {
+                true => "the command was killed",
+                false => "the call finished",
+            };
+            let secs = ms / 1000;
+            let after = match secs {
+                0..60 => format!("{secs}s"),
+                _ => format!("{}m {}s", secs / 60, secs % 60),
+            };
+            format!("[interrupted by {who} after {after}: {what}, and its output was withheld]")
+        }
+        None => format!("[interrupted by {who} before its result was read]"),
+    }
+}
+
 /// Render a [`WireState::TriageFailed`] result (docs/triage.md): a hard error
 /// in place of the output, phrased for the agent exactly as a failed call would be —
 /// naming that the call *did* run, so a mutation isn't blindly re-issued. The stable

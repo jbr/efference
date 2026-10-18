@@ -145,7 +145,10 @@ pub fn render_result(
     let (content, is_error) = result_content(raw, wire);
     let images = match wire {
         WireState::Raw | WireState::Triaged(_) => raw.images.clone(),
-        WireState::Pending | WireState::Elided | WireState::TriageFailed { .. } => Vec::new(),
+        WireState::Pending
+        | WireState::Elided
+        | WireState::Interrupted(_)
+        | WireState::TriageFailed { .. } => Vec::new(),
     };
     UserPart::ToolResult {
         call_id: call_id.clone(),
@@ -173,6 +176,10 @@ pub fn result_content(raw: &RawResult, wire: &WireState) -> (String, bool) {
         WireState::Pending => ("[awaiting triage]".to_string(), false),
         WireState::Triaged(verdict) => (render_triaged(&raw.content, verdict), raw.is_error),
         WireState::Elided => ("[elided]".to_string(), false),
+        WireState::Interrupted(interruption) => (
+            super::render::render_interruption(interruption),
+            interruption.killed,
+        ),
         WireState::TriageFailed { why } => (render_triage_failure(why), true),
     }
 }

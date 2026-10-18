@@ -9,9 +9,9 @@ use mcplease::{
 };
 use serde::{Deserialize, Serialize};
 
-/// Stop what an agent is doing now. A running tool is killed with its process group
-/// and the agent continues from that result; a generation in flight ends and the
-/// agent goes idle.
+/// Stop what an agent is doing now. A running tool is stopped (a command with its
+/// process group) and the agent's turn ends; its next turn reads that you interrupted
+/// it. A generation in flight ends and the agent goes idle.
 #[derive(Debug, Serialize, Deserialize, schemars::JsonSchema, clap::Args)]
 #[serde(rename = "interrupt")]
 pub struct Interrupt {

@@ -8,6 +8,7 @@
 import type { SelectionLines, RawResult, WireState } from "../api/types.ts";
 import {
   selectionKept,
+  renderInterruption,
   renderTriageFailure,
   rustLines,
   type NumberedLine,
@@ -25,6 +26,7 @@ export const wireLabel = (wire: WireState) => {
   if (wire === "Pending") return "awaiting triage";
   if (wire === "Raw") return "raw";
   if (wire === "Elided") return "elided";
+  if ("Interrupted" in wire) return "interrupted";
   if ("Triaged" in wire) return "triaged";
   return `triage failed: ${wire.TriageFailed.why}`;
 };
@@ -261,6 +263,16 @@ export function resultRender(
       note: null,
       elisionLabel: null,
       isError: false,
+    };
+  }
+  if ("Interrupted" in wire) {
+    return {
+      body: { kind: "text", text: renderInterruption(wire.Interrupted) },
+      stateWord: "interrupted",
+      sizeLabel: null,
+      note: null,
+      elisionLabel: null,
+      isError: wire.Interrupted.killed === true,
     };
   }
   if ("Triaged" in wire) {

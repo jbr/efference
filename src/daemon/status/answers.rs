@@ -150,8 +150,8 @@ pub(crate) fn interrupted(view: &StatusView, now: u64) -> (String, bool) {
                 let after = duration(now.saturating_sub(*since));
                 (
                     format!(
-                        "interrupted {id}: killed {call} after {after}; it continues from that \
-                         result"
+                        "interrupted {id}: stopped {call} after {after}; its turn ends, and its \
+                         next turn reads that you interrupted it"
                     ),
                     true,
                 )

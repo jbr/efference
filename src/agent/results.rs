@@ -1,6 +1,7 @@
 //! Tool-result construction: the ok/err shapes, the size cap, and the payloads a withheld or aborted call logs (docs/tools.md).
 
 use super::*;
+use crate::log::Interruption;
 
 /// Enforce [`MAX_TOOL_RESULT_BYTES`]: replace an over-cap result with a hard error
 /// (rather than a silent truncation) that names the byte counts and shows a short,
@@ -158,21 +159,20 @@ pub(super) fn aborted(call: &ToolCall) -> Payload {
     )
 }
 
-/// A `tool_result` for a call the operator interrupted while it ran
-/// (docs/control-channel.md). Nothing here can suspend a synchronous tool, so the
-/// call completed and its effects stand — what the interrupt buys is that its
-/// *output* never reaches the model: `raw` is kept in the log (the TUI can still
-/// show it, and the verdict is reversible like any other), while the wire carries
-/// only the `Elided` placeholder. The pair has to exist at all because an
-/// assistant `tool_use` with no `tool_result` is a request the API rejects
+/// A `tool_result` for a call interrupted while it ran (docs/control-channel.md). A
+/// bash command's process group is killed; a synchronous tool cannot be suspended, so
+/// it completed and its effects stand. Either way its *output* never reaches the
+/// model: `raw` is kept in the log (the TUI can still show it), and the wire carries a
+/// line saying who interrupted, after how long, and what became of the call
+/// ([`WireState::Interrupted`]). The pair has to exist at all because an assistant
+/// `tool_use` with no `tool_result` is a request the API rejects
 /// (docs/log-and-projection.md).
 ///
-/// It deliberately explains nothing. The operator interrupted in order to say
-/// something, and their message is the next thing on the wire; a harness-authored
-/// gloss here would guess at a meaning that differs per tool and land *before*
-/// the person whose intent it was guessing at.
-pub(super) fn withheld(call: &ToolCall, raw: RawResult) -> Payload {
-    Payload::tool_result(call.id.clone(), raw, WireState::Elided)
+/// The line states facts rather than guessing at why. Whoever interrupted may say why
+/// next, and often does not: a supervising agent or a driver stops a runaway command
+/// and moves on, and the model must still be able to tell its call was stopped.
+pub(super) fn withheld(call: &ToolCall, raw: RawResult, interruption: Interruption) -> Payload {
+    Payload::tool_result(call.id.clone(), raw, WireState::Interrupted(interruption))
 }
 
 /// A `tool_result` for a call whose path expansion failed (docs/tools.md): the

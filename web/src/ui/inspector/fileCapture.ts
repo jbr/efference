@@ -25,7 +25,7 @@ export function capturedReads(
               : wire.Triaged.keep.Ranges,
           Math.min(rows.length, TRIAGE_LINE_CAP),
         )
-      : wire === "Elided"
+      : wire === "Elided" || (typeof wire === "object" && "Interrupted" in wire)
         ? []
         : [[1, rows.length]];
   const kept = (n: number) => ranges.some(([a, b]) => n >= a && n <= b);

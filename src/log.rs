@@ -60,7 +60,7 @@ pub use upstream::{
     CAPTURED_HEADERS, FRAME_CAPTURE_CAP, StreamDiagnostics, UpstreamFailureRecord,
     is_captured_header,
 };
-pub use wire_state::{Keep, Triaged, WireState};
+pub use wire_state::{Interruption, Keep, Triaged, WireState};
 pub use worktree::{Checkout, WorktreeEvent, WorktreeEventKind};
 
 /// Monotonic per-entry sequence number; the address space [`project`] reads over.

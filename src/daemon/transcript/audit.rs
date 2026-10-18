@@ -279,6 +279,13 @@ fn result(raw: &RawResult, wire: &WireState) -> String {
         WireState::Raw => body.push_str(", raw"),
         WireState::Pending => body.push_str(", awaiting triage"),
         WireState::Elided => body.push_str(", elided"),
+        WireState::Interrupted(interruption) => {
+            let _ = write!(
+                body,
+                ", {}",
+                crate::project::render_interruption(interruption)
+            );
+        }
         WireState::TriageFailed { why } => {
             let _ = write!(body, ", triage failed: {why}");
         }
