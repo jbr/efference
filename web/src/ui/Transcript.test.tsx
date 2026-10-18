@@ -125,6 +125,23 @@ test("a reply is the operator's message and an unanswered ask says so", () => {
   expect(html).toContain("not answered");
 });
 
+test("a turn another agent sent is labelled with its sender", () => {
+  const sourced = (seq: number, source?: string): LogEntry => ({
+    ...entry(seq, { User: [{ Text: `turn ${seq}` }] }),
+    ...(source === undefined ? {} : { source }),
+  });
+  const html = render([
+    sourced(1),
+    sourced(2, "web"),
+    sourced(3, "mcp[claude-code]"),
+    sourced(4, "session[parent]"),
+  ]);
+  expect(html.match(/>you</g)?.length).toBe(2);
+  expect(html).toContain('class="entry user agent"');
+  expect(html).toContain('title="mcp[claude-code]">claude-code<');
+  expect(html).toContain('title="session[parent]">parent<');
+});
+
 test("the echo of a reply says answering and offers no recall", () => {
   const queued = render([asking], { pending: ["yes"] });
   expect(queued).toContain("Queued");

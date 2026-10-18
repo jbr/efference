@@ -39,6 +39,16 @@ export function handoffPredecessor(
   return match === null ? null : match[1];
 }
 
+/** Who sent a turn, as the transcript names them (src/daemon/transcript.rs,
+ * `sender`): `you` for the operator's own clients (no source, or `web`), and
+ * otherwise the id or client name inside its `source` label — `parent` for
+ * `session[parent]`, `claude-code` for `mcp[claude-code]`. */
+export function senderName(source: string | null | undefined): string {
+  if (source === null || source === undefined || source === "web") return "you";
+  const match = /^(?:session|agent|mcp)\[(.+)\]$/.exec(source);
+  return match === null ? source : match[1];
+}
+
 export type Payload =
   | { User: UserBlock[] }
   | {

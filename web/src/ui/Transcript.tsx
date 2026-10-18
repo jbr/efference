@@ -7,7 +7,7 @@ import { Disclosure } from "./Disclosure.tsx";
 // every folded item opens whole on a tap, and the density toggles hide, they
 // never drop (docs/web-client.md).
 
-import { handoffPredecessor } from "../api/types.ts";
+import { handoffPredecessor, senderName } from "../api/types.ts";
 import { memo, useMemo, type ComponentProps } from "react";
 import type {
   Ask,
@@ -66,18 +66,45 @@ const attachmentsOf = (blocks: UserBlock[]): Attachment[] =>
 function Entry({
   label,
   as,
+  title,
   children,
 }: {
   label: string | null;
   as?: string;
+  /** The label's tooltip: a sourced turn's whole `source`. */
+  title?: string;
   children: React.ReactNode;
 }) {
   const classes = ["entry", as].filter((c) => c !== undefined).join(" ");
   return (
     <div className={classes}>
-      <div className="label">{label}</div>
+      <div className="label" title={title}>
+        {label}
+      </div>
       <div className="content">{children}</div>
     </div>
+  );
+}
+
+/** A user turn, or an `ask` reply, under its sender: `you` for the operator, the
+ * agent's id or the client's name for a turn another agent sent, with the
+ * whole `source` as the label's tooltip (docs/web-client.md). */
+function UserEntry({
+  source,
+  children,
+}: {
+  source: string | null | undefined;
+  children: React.ReactNode;
+}) {
+  const name = senderName(source);
+  return (
+    <Entry
+      label={name}
+      as={name === "you" ? "user" : "user agent"}
+      title={name === "you" ? undefined : (source ?? undefined)}
+    >
+      {children}
+    </Entry>
   );
 }
 
@@ -235,9 +262,9 @@ function Leaf({
       );
     }
     return (
-      <Entry label="you" as="user">
+      <UserEntry source={entry.source}>
         <Markdown>{p.ToolResult.raw.content}</Markdown>
-      </Entry>
+      </UserEntry>
     );
   }
   if ("User" in p) {
@@ -254,10 +281,10 @@ function Leaf({
       );
     }
     return (
-      <Entry label="you" as="user">
+      <UserEntry source={entry.source}>
         <Markdown>{text(p.User)}</Markdown>
         <SentAttachments attachments={attachmentsOf(p.User)} />
-      </Entry>
+      </UserEntry>
     );
   }
   if ("Assistant" in p) {
