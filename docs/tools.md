@@ -258,7 +258,9 @@ and its refusal as the answer where it refuses. From any other session it is a n
 the target's inbox under the caller's id, which the target's triage may set aside. The
 answer always says which happened: `delivered: <id> is working on it`, ``queued: <id>
 reads this after its current step (running bash `cargo test` for 40s)``, `queued: <id>
-is waiting for a decision on 8.2 (…); it reads this after the decision`, or `left in
+is waiting for a decision on 8.2 (…); it reads this after the decision`, `held: <id> is
+held by its operator; it reads this when the operator releases the hold` (an agent's
+message waits behind the operator's pace hold, docs/control-channel.md), or `left in
 <id>'s inbox; it may set it aside (you don't drive it)`. A message never resolves a gate:
 sent to a session holding a call, it waits in the queue.
 

@@ -49,6 +49,13 @@ pub fn source_session(source: &str) -> Option<&str> {
     source.strip_prefix("session[")?.strip_suffix(']')
 }
 
+/// Whether a turn's `source` is another agent's — a session's (`session[<id>]`) or an MCP
+/// client's (`mcp[<name>]`) — rather than one of the operator's own clients (none, or
+/// `web`). An agent's turn waits behind the operator's pace hold (docs/control-channel.md).
+pub fn agent_source(source: Option<&str>) -> bool {
+    source.is_some_and(|source| source_session(source).is_some() || source.starts_with("mcp["))
+}
+
 /// How a turn's `source` opens it on the wire (docs/log-and-projection.md): a turn
 /// from another session as `<id> (agent)`, any other label as written.
 pub fn wire_label(source: &str) -> std::borrow::Cow<'_, str> {

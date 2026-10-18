@@ -194,6 +194,10 @@ pub(crate) struct Footer {
     /// Each queued turn's `source`, in submission order: `None` for the operator.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) queued: Vec<Option<String>>,
+    /// The operator holds the session: nothing queued runs until the hold is released
+    /// (docs/control-channel.md).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub(crate) held: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -440,6 +444,7 @@ impl Session {
                 .into_iter()
                 .map(|turn| turn.source)
                 .collect(),
+            held: self.pace_snapshot().1,
         }
     }
 }

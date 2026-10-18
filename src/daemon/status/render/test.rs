@@ -406,6 +406,7 @@ fn working_with_a_running_bash_command_and_the_footer() {
                 None,
                 Some("session[parent]".into()),
             ],
+            held: false,
         },
         ..view(Condition::Working {
             activity: vec![Activity::Tool {
@@ -447,6 +448,25 @@ fn working_with_a_running_bash_command_and_the_footer() {
     assert_eq!(
         rendered(&view(Condition::Working { activity: vec![] }), &driver()),
         "child: working"
+    );
+}
+
+/// Messages queued behind the operator's hold say so.
+#[test]
+fn queued_messages_behind_a_hold() {
+    let held = StatusView {
+        footer: Footer {
+            queued: vec![Some("session[parent]".into())],
+            held: true,
+            ..Footer::default()
+        },
+        ..view(Condition::Ended)
+    };
+    assert!(
+        rendered(&held, &read(Relation::Driver))
+            .contains("queued: 1 message, from you, held by its operator"),
+        "{}",
+        rendered(&held, &read(Relation::Driver))
     );
 }
 

@@ -45,6 +45,9 @@ pub(crate) fn sent(id: &str, landing: Landing, view: Option<&StatusView>, now: u
             _ => format!("answered: {id} has your answer and goes on"),
         },
         Landing::Now => format!("delivered: {id} is working on it"),
+        Landing::Held => format!(
+            "held: {id} is held by its operator; it reads this when the operator releases the hold"
+        ),
         Landing::Queued => match condition {
             Some(Condition::Working { activity }) if !activity.is_empty() => format!(
                 "queued: {id} reads this after its current step ({})",

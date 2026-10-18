@@ -496,8 +496,15 @@ question is pending, from every client (below).
   commits and broadcasts independently of writing the response), so clients
   must not sequence state on a response.
   `delivery` is where the turn went: `now` (the loop takes it at once, as the `verbs`
-  topic's turn says), `queued` (it waits for the loop's next juncture), or `answered`
-  (it was the pending ask's reply).
+  topic's turn says), `queued` (it waits for the loop's next juncture), `held` (an
+  agent's turn, queued behind the operator's pace hold until it is released), or
+  `answered` (it was the pending ask's reply).
+- **The operator's pace hold outranks an agent.** A turn from one of the operator's
+  clients (no `source`, or `web`) releases a hold; a turn whose `source` is an agent's
+  (`session[…]`, `mcp[…]`) waits behind it, queued and shown in `queued` but not sent to
+  the loop, and an agent's answer to an `ask` is delivered but leaves the hold in place.
+  `PATCH /loop {pace: {held: false}}` releases it too, and the held turns go to the loop
+  in submission order ([control-channel.md](control-channel.md)).
 - `?wait` — hold the connection until the daemon **settles** (the loop reaches a
   phase that waits on someone, or idle — `GET /state?wait=settled`, below), then return
   the `/state` snapshot (`200`) instead of `202`.
@@ -876,8 +883,9 @@ stream pushes per-topic replacements of. A one-shot read for scripts and
 bootstraps; a client holding the stream needs never request it.
 
 **`?wait=settled`** turns the read into a long-poll: block until the daemon
-reaches a **decision point** — the `loop_phase` is `idle` with nothing queued and no
-continue pending, or one that waits on someone outside the loop: `gated`, `asking`,
+reaches a **decision point** — the `loop_phase` is `idle` with nothing queued but
+turns held behind the operator's pace hold, and no continue pending, or one that waits
+on someone outside the loop: `gated`, `asking`,
 `cold_parked`, or `blocked` (a triage held on the upstream, a held pace, a config file
 to repair) — then return the snapshot, whose `loop_phase` names which. A request, a
 batch of calls, and a timed delay (`requesting`, `executing`, `delayed`) are not

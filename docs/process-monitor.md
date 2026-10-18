@@ -420,8 +420,9 @@ permission to ask would gate a question behind a question.
   composer. The turn becomes the call's
   `ToolResult` and is never queued or logged as a `User` entry. The result entry carries
   the submission's `submission_id` and `source`, and a sourced reply projects as `[seq]
-  source: text`, as a sourced user turn does. A notification does not resolve it. A reply
-  releases a hold, as every submission does.
+  source: text`, as a sourced user turn does. A notification does not resolve it. The
+  operator's reply releases a hold; an agent's leaves it in place, and the loop waits at
+  its next juncture (docs/control-channel.md).
 - **Turns queued before it are recalled.** They were written before the question
   existed, so `begin_ask` withdraws them from the queue as `DELETE /turns/:id` would and
   publishes them on the `ask` state topic as `recalled`; the submitting client puts them

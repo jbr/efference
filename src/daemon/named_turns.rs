@@ -17,6 +17,9 @@ pub(crate) enum Landing {
     Now,
     /// It waits in the queue for the loop's next juncture.
     Queued,
+    /// An agent's turn, queued behind the operator's pace hold until it is released
+    /// (docs/control-channel.md).
+    Held,
 }
 
 impl Landing {
@@ -26,6 +29,7 @@ impl Landing {
             Self::Answered => "answered",
             Self::Now => "now",
             Self::Queued => "queued",
+            Self::Held => "held",
         }
     }
 
@@ -35,6 +39,7 @@ impl Landing {
             "answered" => Some(Self::Answered),
             "now" => Some(Self::Now),
             "queued" => Some(Self::Queued),
+            "held" => Some(Self::Held),
             _ => None,
         }
     }
@@ -147,7 +152,11 @@ impl Session {
                 let state = ask.take().expect("matched above");
                 drop(ask);
                 self.person_acted(PersonAction::NamedTurn { answers: true });
-                self.resume_from_hold();
+                // An agent's answer is delivered, and the loop then waits at its next
+                // juncture if the operator holds it (docs/control-channel.md).
+                if !crate::frontend::agent_source(turn.source.as_deref()) {
+                    self.resume_from_hold();
+                }
                 self.deliver_reply(state, turn);
                 Ok(Landing::Answered)
             }
@@ -169,8 +178,10 @@ impl Session {
                     _ => Landing::Queued,
                 };
                 self.person_acted(PersonAction::NamedTurn { answers: false });
-                self.queue_turn(ask, turn);
-                Ok(landing)
+                Ok(match self.queue_turn(ask, turn) {
+                    true => Landing::Held,
+                    false => landing,
+                })
             }
         }
     }

@@ -161,8 +161,7 @@ async fn hold_blocks_the_juncture_until_released() {
         .expect("waiter task joined");
 }
 
-/// Submit ⇒ resume, always: a submitted turn drops the hold, and a queued turn skips the juncture
-/// wait outright (never pace over pending input).
+/// The operator's submit resumes: it drops the hold, and its queued turn ends the juncture wait.
 #[tokio::test]
 async fn a_submit_resumes_and_skips_the_juncture() {
     let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
@@ -176,6 +175,101 @@ async fn a_submit_resumes_and_skips_the_juncture() {
     tokio::time::timeout(Duration::from_millis(200), shared.pace_at_juncture())
         .await
         .expect("a queued turn ends the pace wait immediately");
+}
+
+/// An agent's turn waits behind the operator's hold (docs/control-channel.md): it is queued and
+/// reported held but not sent to the loop, the juncture stays held, and an idle loop holding it
+/// reads as settled, since it waits on the operator. The operator's own turn releases the hold,
+/// and both reach the loop in submission order.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_agents_turn_waits_behind_the_operators_hold() {
+    let (shared, mut turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    shared.set_pace(None, Some(true));
+    let from_parent =
+        SubmittedTurn::new("from the parent", "a1").sourced(Some("session[parent]".into()));
+    assert_eq!(
+        shared.submit_named_turn(from_parent, None),
+        Ok(Landing::Held)
+    );
+    assert!(
+        shared.pace_snapshot().1,
+        "an agent does not release the hold"
+    );
+    assert_eq!(
+        shared.queued_turns().len(),
+        1,
+        "queued, and shown as queued"
+    );
+    assert!(turns_rx.try_recv().is_err(), "not sent to the loop");
+    assert!(
+        shared.is_settled(),
+        "an idle loop holding it waits on its operator"
+    );
+    assert!(
+        tokio::time::timeout(Duration::from_millis(100), shared.pace_at_juncture())
+            .await
+            .is_err(),
+        "the juncture stays held"
+    );
+
+    let landing = shared.submit_named_turn(SubmittedTurn::new("from me", "o1"), None);
+    assert_ne!(landing, Ok(Landing::Held));
+    assert!(
+        !shared.pace_snapshot().1,
+        "the operator's turn releases the hold"
+    );
+    assert_eq!(turns_rx.recv().await.unwrap().submission_id, "a1");
+    assert_eq!(turns_rx.recv().await.unwrap().submission_id, "o1");
+}
+
+/// `pace` releasing the hold sends the agent turns it held back.
+#[tokio::test]
+async fn releasing_the_hold_sends_what_it_held_back() {
+    let (shared, mut turns_rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    shared.set_pace(None, Some(true));
+    let from_mount =
+        SubmittedTurn::new("from claude code", "m1").sourced(Some("mcp[claude-code]".into()));
+    assert_eq!(
+        shared.submit_named_turn(from_mount, None),
+        Ok(Landing::Held)
+    );
+    shared.set_pace(None, Some(false));
+    assert_eq!(turns_rx.try_recv().unwrap().submission_id, "m1");
+}
+
+/// A turn queued before the hold landed waits for the release too: the hold outranks queued
+/// input at the juncture.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_hold_outranks_a_turn_queued_before_it() {
+    let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let from_parent = SubmittedTurn::new("next", "a1").sourced(Some("session[parent]".into()));
+    assert_ne!(
+        shared.submit_named_turn(from_parent, None),
+        Ok(Landing::Held)
+    );
+    shared.set_pace(None, Some(true));
+    assert!(
+        tokio::time::timeout(Duration::from_millis(100), shared.pace_at_juncture())
+            .await
+            .is_err(),
+        "a queued turn does not end a hold"
+    );
+}
+
+/// An agent's answer to a question is delivered, and leaves the operator's hold in place: the
+/// loop then waits at its next juncture.
+#[tokio::test]
+async fn an_agents_answer_leaves_the_hold() {
+    let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let mut wait = shared.begin_ask("toolu_q", "Proceed?".into(), 1, 1);
+    shared.set_pace(None, Some(true));
+    let answer = SubmittedTurn::new("yes", "a1").sourced(Some("mcp[claude-code]".into()));
+    assert_eq!(
+        shared.submit_named_turn(answer, Some("toolu_q")),
+        Ok(Landing::Answered)
+    );
+    assert_eq!(wait.reply().await.unwrap().text, "yes");
+    assert!(shared.pace_snapshot().1, "the hold stands");
 }
 
 /// A finite paced sleep is interruptible: a submitted message ends the delay early rather than

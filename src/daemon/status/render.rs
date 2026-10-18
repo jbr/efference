@@ -329,8 +329,12 @@ fn footer(out: &mut Vec<String>, footer: &Footer, me: Option<&str>, now: u64) {
             }
         }
         let count = footer.queued.len();
+        let held = match footer.held {
+            true => ", held by its operator",
+            false => "",
+        };
         out.push(format!(
-            "queued: {count} {}, from {}",
+            "queued: {count} {}, from {}{held}",
             plural(count, "message"),
             list(&senders)
         ));

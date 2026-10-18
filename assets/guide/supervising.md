@@ -60,8 +60,9 @@ You drive the agents you created and the ones they created, any the operator gav
 supervise, and a predecessor that handed its work to you. `agents__message` follows that:
 
 - To an agent you drive, it is its next user message: idle, it starts a turn; working, it
-  is read after the current step; holding a call, after the decision. A message never
-  resolves a gate. An empty `text` continues an agent that stopped or paused.
+  is read after the current step; holding a call, after the decision; held by its
+  operator, when the operator releases the hold. A message never resolves a gate. An
+  empty `text` continues an agent that stopped or paused.
 - To any other agent in your project, it is a note in its inbox, which it may set aside.
 
 The answer says which: `delivered:`, `queued:` and what it waits behind, or

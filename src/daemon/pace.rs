@@ -7,13 +7,27 @@ use super::*;
 /// speed value, so the dial retains `speed` while held and releasing returns to the retained speed,
 /// never to zero. Freely adjustable while held and outliving it, so a change made during a pause
 /// "recolors" what resume does.
-#[derive(Clone, Copy, Default)]
+#[derive(Default)]
 pub(super) struct Pace {
     /// The between-turns delay when not held (`0` = as fast as possible, the default).
     pub(super) speed: Duration,
     /// The pause overlay: while set, the effective sleep is infinite (wait at the juncture until
-    /// released or a turn is submitted). Retains `speed` underneath.
+    /// released). Retains `speed` underneath.
     pub(super) held: bool,
+    /// Agent turns submitted while held, in submission order: in the queue, so they are shown
+    /// and can be recalled, but not yet sent to the loop. Releasing the hold sends them.
+    pub(super) held_back: Vec<SubmittedTurn>,
+}
+
+impl Pace {
+    /// Drop the hold and hand the turns it held back to the loop, in submission order. Called
+    /// with the pace lock held, so no turn is held back after the release it should have seen.
+    fn release(&mut self, turns: &tokio::sync::mpsc::UnboundedSender<SubmittedTurn>) {
+        self.held = false;
+        for turn in self.held_back.drain(..) {
+            let _ = turns.send(turn);
+        }
+    }
 }
 
 impl Session {
@@ -35,33 +49,48 @@ impl Session {
 
     /// Queue `turn` for the loop's next juncture, releasing the ask lock the caller holds
     /// once the turn is in the queue, so no ask can start between the check and the push.
+    /// Returns whether the turn waits behind the operator's hold: an agent's turn
+    /// ([`agent_source`](crate::frontend::agent_source)) submitted while held is queued but
+    /// not sent until the hold is released (docs/control-channel.md). Any other turn
+    /// releases the hold.
     pub(super) fn queue_turn(
         &self,
         ask: std::sync::MutexGuard<'_, Option<super::ask::AskState>>,
         turn: SubmittedTurn,
-    ) {
+    ) -> bool {
         // Record the turn as queued *before* sending, so `is_settled` reads "busy" the instant
         // the turn is accepted — even before the loop dequeues it (the `/settle` submit race,
         // docs/permissions.md).
         self.queue.lock().unwrap().push_back(turn.clone());
         drop(ask);
-        self.resume_from_hold();
-        // The receiver lives in the loop's `RemoteFrontend`; a send fails only if
-        // the loop has exited, in which case the daemon is shutting down anyway.
-        let _ = self.turns_tx.send(turn);
+        {
+            let mut pace = self.pace.lock().unwrap();
+            if !crate::frontend::agent_source(turn.source.as_deref()) {
+                pace.release(&self.turns_tx);
+            } else if pace.held {
+                pace.held_back.push(turn);
+                drop(pace);
+                self.touch_state();
+                return true;
+            }
+            // The receiver lives in the loop's `RemoteFrontend`; a send fails only if
+            // the loop has exited, in which case the daemon is shutting down anyway. Sent
+            // under the pace lock, so it cannot overtake turns a concurrent release sends.
+            let _ = self.turns_tx.send(turn);
+        }
+        self.end_pace_wait();
+        self.pace_interrupt.notify_waiters();
         self.touch_state();
+        false
     }
 
-    /// Submit ⇒ resume, always (docs/control-channel.md): drop any hold and wake an
-    /// in-flight juncture sleep so the message is delivered at the next juncture
-    /// *immediately*, not after the remaining paced delay. The retained `speed` is
-    /// untouched (it recolors later junctures); only the `held` overlay drops. Shared by a
-    /// queued submit and one that answers an `ask`.
+    /// An operator's submit resumes (docs/control-channel.md): drop any hold, send the agent
+    /// turns it held back, and wake an in-flight juncture sleep so the message is delivered
+    /// at the next juncture *immediately*, not after the remaining paced delay. The retained
+    /// `speed` is untouched (it recolors later junctures); only the `held` overlay drops. Used
+    /// by a turn that answers an `ask`; a queued turn does the same in [`Self::queue_turn`].
     pub(super) fn resume_from_hold(&self) {
-        {
-            let mut p = self.pace.lock().unwrap();
-            p.held = false;
-        }
+        self.pace.lock().unwrap().release(&self.turns_tx);
         self.end_pace_wait();
         self.pace_interrupt.notify_waiters();
     }
@@ -164,6 +193,7 @@ impl Session {
             if let Some(h) = held {
                 if p.held && !h {
                     wake = true; // releasing a hold ends the juncture sleep now
+                    p.release(&self.turns_tx);
                 }
                 p.held = h;
             }
@@ -180,33 +210,43 @@ impl Session {
     /// The interruptible between-turns sleep (docs/control-channel.md). Applied at the
     /// juncture — after a step's results land, before the next model call — and **transparent to the
     /// agent**: it touches no log entry, so a held/slowed loop projects byte-identically to a fast
-    /// one. Waits `effective_sleep = held ? ∞ : speed`, but returns *immediately* if a turn is
-    /// already queued (never pace over pending input) and ends early when the `pace_interrupt` fires
-    /// (a release or a submitted turn). A finite sleep that expires with no input just proceeds.
+    /// one. Waits `effective_sleep = held ? ∞ : speed`.
+    ///
+    /// The hold outranks queued input: only a release ends it — the operator's own submit, which
+    /// releases it, or `pace` — so an agent's message cannot resume a session its operator
+    /// paused. A paced delay is paced input only: it returns *immediately* if a turn is already
+    /// queued and ends early when the `pace_interrupt` fires (a release or a submitted turn). A
+    /// finite sleep that expires with no input just proceeds.
     ///
     /// Lost-wakeup safe: the interrupt future is armed (`enable`) *before* the state is read, so a
     /// release/submit racing the read still wakes the wait (mirrors [`await_settled`]).
     ///
     /// [`await_settled`]: Session::await_settled
     pub async fn pace_at_juncture(&self) {
-        let interrupt = self.pace_interrupt.notified();
-        tokio::pin!(interrupt);
+        let mut interrupt = std::pin::pin!(self.pace_interrupt.notified());
         interrupt.as_mut().enable(); // register before reading state, so a racing wake isn't lost
-        // A submitted turn always wins — deliver it now rather than pacing over it.
-        if !self.queue.lock().unwrap().is_empty() {
-            return;
-        }
-        let (speed, held) = self.pace_snapshot();
-        if held {
-            // Infinite hold: wait until released or a turn is submitted, then proceed.
+        if self.pace_snapshot().1 {
             let _held = self.wait_phase(
                 LoopPhase::Blocked {
                     reason: BlockedReason::PaceHeld,
                 },
                 LoopPhase::Requesting,
             );
-            interrupt.await;
-        } else if !speed.is_zero() {
+            loop {
+                interrupt.as_mut().await;
+                interrupt.set(self.pace_interrupt.notified());
+                interrupt.as_mut().enable();
+                if !self.pace_snapshot().1 {
+                    return;
+                }
+            }
+        }
+        // A submitted turn wins over a paced delay — deliver it now rather than pacing over it.
+        if !self.queue.lock().unwrap().is_empty() {
+            return;
+        }
+        let speed = self.pace_snapshot().0;
+        if !speed.is_zero() {
             // Paced: proceed when the delay elapses or an interrupt (submit/release) ends it early.
             let until = crate::log::Timestamp::now().0 + speed.as_millis() as u64;
             let _delayed = self.wait_phase(LoopPhase::Delayed { until }, LoopPhase::Requesting);
@@ -265,10 +305,17 @@ impl Session {
     pub(super) fn is_settled(&self) -> bool {
         match self.loop_phase() {
             LoopPhase::Idle => {
-                self.queue.lock().unwrap().is_empty()
-                    // An accepted `POST /loop/continue` (docs/control-api.md) is a turn
-                    // about to run, exactly as a queued submission is.
-                    && !self.continue_pending()
+                let pace = self.pace.lock().unwrap();
+                // A turn held back behind the operator's hold waits on the operator, as the
+                // idle loop does; any other queued turn is about to run.
+                let waiting = self.queue.lock().unwrap().iter().all(|queued| {
+                    pace.held_back
+                        .iter()
+                        .any(|held| held.submission_id == queued.submission_id)
+                });
+                // An accepted `POST /loop/continue` (docs/control-api.md) is a turn
+                // about to run, exactly as a queued submission is.
+                waiting && !self.continue_pending()
             }
             phase => phase.settles(),
         }
