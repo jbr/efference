@@ -19,7 +19,7 @@ fn spot_completion(name: &str, input: Value) -> Completion {
                 vec![],
                 vec![ToolCall::new(name, "s", input)],
             ),
-            upstream_failure: None,
+            excluded: None,
         },
         id: None,
         model: "test".into(),

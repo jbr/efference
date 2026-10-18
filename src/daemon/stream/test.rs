@@ -359,7 +359,7 @@ fn assistant(text: &str) -> Payload {
             vec![crate::log::ContentBlock::Text(text.into())],
             vec![],
         ),
-        upstream_failure: None,
+        excluded: None,
     }
 }
 

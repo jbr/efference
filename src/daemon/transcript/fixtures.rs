@@ -45,7 +45,7 @@ pub(super) fn turn(text: &str, calls: Vec<ToolCall>) -> Payload {
     };
     Payload::Assistant {
         output: AssistantOutput::from_legacy_messages(vec![], text, calls),
-        upstream_failure: None,
+        excluded: None,
     }
 }
 

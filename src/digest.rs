@@ -126,7 +126,7 @@ impl<'a> Fold<'a> {
                 }
                 Payload::Assistant {
                     output,
-                    upstream_failure: None,
+                    excluded: None,
                 } => {
                     let turn_calls = output.tool_calls().unwrap_or_default();
                     // Every turn's prose, mid-turn narration included: it is where the

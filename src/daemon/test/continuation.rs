@@ -11,7 +11,7 @@ fn assistant_text(text: &str) -> Payload {
             vec![ContentBlock::Text(text.into())],
             vec![],
         ),
-        upstream_failure: None,
+        excluded: None,
     }
 }
 
@@ -27,7 +27,7 @@ fn assistant_calling(call_id: &str) -> Payload {
                 serde_json::json!({ "command": "ls" }),
             )],
         ),
-        upstream_failure: None,
+        excluded: None,
     }
 }
 
@@ -46,7 +46,7 @@ fn tool_result(call_id: &str) -> Payload {
 fn aborted_attempt() -> Payload {
     Payload::Assistant {
         output: crate::log::AssistantOutput::Messages(vec![]),
-        upstream_failure: Some("stream aborted".into()),
+        excluded: Some(crate::log::Exclusion::Upstream("stream aborted".into())),
     }
 }
 
@@ -120,7 +120,7 @@ fn a_finished_turn_declines_in_every_dialect() {
                 1,
                 Payload::Assistant {
                     output,
-                    upstream_failure: None,
+                    excluded: None,
                 },
             )
             .unwrap();

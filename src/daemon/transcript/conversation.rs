@@ -8,7 +8,7 @@
 
 use super::index::Index;
 use super::*;
-use crate::log::{ContentBlock, Seq, Telemetry};
+use crate::log::{ContentBlock, Exclusion, Seq, Telemetry};
 use std::ops::RangeInclusive;
 
 /// `window`, a contiguous slice of `log`, as `reading` reads it.
@@ -68,14 +68,16 @@ impl<'a> Out<'a, '_> {
     fn entry(&mut self, entry: &'a LogEntry) {
         match &entry.payload {
             Payload::User(blocks) => self.user(entry, blocks),
-            Payload::Assistant {
-                output,
-                upstream_failure,
-            } => match upstream_failure {
+            Payload::Assistant { output, excluded } => match excluded {
                 // Record-only: the session never read it, and its calls never ran.
-                Some(failure) => self.push(
+                Some(Exclusion::Upstream(failure)) => self.push(
                     entry.seq,
                     format!("a reply did not complete: {}", failure.why()),
+                ),
+                Some(Exclusion::Empty) => self.push(
+                    entry.seq,
+                    "a reply came back with neither prose nor a call, and was asked again"
+                        .to_string(),
                 ),
                 None => self.assistant(entry.seq, output),
             },

@@ -13,7 +13,7 @@ use crate::api::assembler::ResponseMeta;
 use crate::api::failure::{FailureClass, classify};
 use crate::api::{Completion, Error, Finish, FinishReason, Streamed, Usage};
 use crate::log::{
-    AssistantOutput, FRAME_CAPTURE_CAP, Payload, ResponsesOutputItem, StreamDiagnostics,
+    AssistantOutput, Exclusion, FRAME_CAPTURE_CAP, Payload, ResponsesOutputItem, StreamDiagnostics,
     UpstreamFailureRecord,
 };
 
@@ -400,7 +400,7 @@ impl ResponsesAssembler {
         Ok(Completion {
             assistant: Payload::Assistant {
                 output: AssistantOutput::Responses(items),
-                upstream_failure,
+                excluded: upstream_failure.map(Exclusion::Upstream),
             },
             id: self.id,
             model: self.model,

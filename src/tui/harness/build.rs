@@ -102,7 +102,7 @@ impl Screenplay<'_> {
                 vec![ContentBlock::Text(text.into())],
                 calls,
             ),
-            upstream_failure: None,
+            excluded: None,
         })
     }
 
@@ -117,7 +117,7 @@ impl Screenplay<'_> {
                 vec![ContentBlock::Text(text.into())],
                 vec![],
             ),
-            upstream_failure: None,
+            excluded: None,
         })
     }
 
@@ -168,7 +168,7 @@ impl Screenplay<'_> {
                     status: Some("completed".into()),
                 },
             ]),
-            upstream_failure: None,
+            excluded: None,
         });
         self.event(TuiEvent::Phase(crate::daemon::LoopPhase::Requesting))
     }

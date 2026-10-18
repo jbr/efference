@@ -5,7 +5,7 @@ use super::*;
 use std::collections::BTreeMap;
 
 use crate::api::failure::{FailureClass, classify_body};
-use crate::log::{FRAME_CAPTURE_CAP, StreamDiagnostics, UpstreamFailureRecord};
+use crate::log::{Exclusion, FRAME_CAPTURE_CAP, StreamDiagnostics, UpstreamFailureRecord};
 
 /// One content block being reassembled from the stream, keyed by its `index`.
 pub(super) enum BlockAccum {
@@ -493,7 +493,7 @@ impl Assembler {
         Ok(Completion {
             assistant: Payload::Assistant {
                 output: AssistantOutput::Messages(output),
-                upstream_failure,
+                excluded: upstream_failure.map(Exclusion::Upstream),
             },
             id: self.id,
             model: self.model,

@@ -203,7 +203,7 @@ pub(crate) fn write_fixture_log(path: &Path) {
                 vec![efference::log::ContentBlock::Text("hi there".into())],
                 vec![],
             ),
-            upstream_failure: None,
+            excluded: None,
         },
     )
     .unwrap();

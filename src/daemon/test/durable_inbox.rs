@@ -22,7 +22,7 @@ fn quiet_log() -> Log {
                 vec![ContentBlock::Text("done".into())],
                 vec![],
             ),
-            upstream_failure: None,
+            excluded: None,
         },
     )
     .unwrap();

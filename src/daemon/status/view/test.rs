@@ -18,7 +18,7 @@ fn assistant(text: &[&str], calls: Vec<ToolCall>) -> Payload {
                 .collect(),
             calls,
         ),
-        upstream_failure: None,
+        excluded: None,
     }
 }
 

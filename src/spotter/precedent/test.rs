@@ -17,7 +17,7 @@ fn entry(payload: Payload) -> LogEntry {
 fn assistant(calls: Vec<ToolCall>) -> LogEntry {
     entry(Payload::Assistant {
         output: AssistantOutput::from_legacy_messages(vec![], vec![], calls),
-        upstream_failure: None,
+        excluded: None,
     })
 }
 

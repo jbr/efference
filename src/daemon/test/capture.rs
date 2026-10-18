@@ -265,7 +265,7 @@ async fn a_completed_batch_projects_the_wire_a_directly_logged_one_would() {
                         ),
                     ],
                 ),
-                upstream_failure: None,
+                excluded: None,
             },
         )
         .expect("an append succeeds");
@@ -301,7 +301,7 @@ async fn a_completed_batch_projects_the_wire_a_directly_logged_one_would() {
                     vec![],
                     vec![],
                 ),
-                upstream_failure: None,
+                excluded: None,
             },
         )
         .expect("an append succeeds");

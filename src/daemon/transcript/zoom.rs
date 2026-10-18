@@ -89,13 +89,9 @@ pub(crate) fn zoom(log: &[LogEntry], handle: Handle, reading: &Reading) -> Resul
                 handle.seq
             ));
         }
-        (
-            Payload::Assistant {
-                output,
-                upstream_failure,
-            },
-            None,
-        ) => out.turn(entry.seq, output, upstream_failure.is_some()),
+        (Payload::Assistant { output, excluded }, None) => {
+            out.turn(entry.seq, output, excluded.is_some())
+        }
         (Payload::ToolResult { call_id, .. }, None) => match out.index.call(&call_id.0) {
             Some(call) => {
                 let (call, label) = (call.call.clone(), call.handle.clone());

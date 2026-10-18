@@ -25,7 +25,7 @@ fn stage(request: u64, origin: RequestOrigin, stage: RequestStageKind) -> Payloa
 fn assistant_calling(call: ToolCall) -> Payload {
     Payload::Assistant {
         output: AssistantOutput::from_legacy_messages(vec![], vec![], vec![call]),
-        upstream_failure: None,
+        excluded: None,
     }
 }
 

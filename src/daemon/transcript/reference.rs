@@ -41,7 +41,7 @@ pub(crate) fn call_id_at(log: &[LogEntry], handle: Handle) -> Option<String> {
     let entry = index.entry(handle.seq)?;
     let Payload::Assistant {
         output,
-        upstream_failure: None,
+        excluded: None,
     } = &entry.payload
     else {
         return None;

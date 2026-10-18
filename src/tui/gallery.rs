@@ -31,7 +31,7 @@ fn assistant(seq: u64, text: &str, calls: Vec<ToolCall>) -> LogEntry {
                     .chain(calls.into_iter().map(MessagesOutputBlock::ToolUse))
                     .collect(),
             ),
-            upstream_failure: None,
+            excluded: None,
         },
     )
 }
@@ -51,7 +51,7 @@ fn assistant_thinking(seq: u64, thinking: &str, text: &str) -> LogEntry {
                 },
                 MessagesOutputBlock::Text(text.into()),
             ]),
-            upstream_failure: None,
+            excluded: None,
         },
     )
 }

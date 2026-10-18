@@ -11,8 +11,8 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::frontend::SubmittedTurn;
 use crate::log::{
-    AssistantOutput, ContentBlock, LogEntry, MessagesOutputBlock, Payload, RawResult, Summary,
-    ToolCall, Triaged, WireState,
+    AssistantOutput, ContentBlock, Exclusion, LogEntry, MessagesOutputBlock, Payload, RawResult,
+    Summary, ToolCall, Triaged, WireState,
 };
 use crate::tui::document::{
     DiffLine, DiffLineKind, Document, DocumentNode, EntryKind, Span, SpanStyle,
@@ -250,19 +250,22 @@ pub(crate) fn entry_nodes(
                 body.extend(attachment_lines(&attachments));
                 nodes.push(DocumentNode::entry(EntryKind::UserMessage, body));
             }
-            Payload::Assistant {
-                output,
-                upstream_failure,
-            } => {
-                // A record-only partial (docs/transport.md): the stream died before
-                // finalizing, so nothing below is in the model's context. The content
-                // still renders — it may be the only copy of what the model produced —
-                // but the marker keeps it from reading as a committed turn.
-                if let Some(why) = upstream_failure {
-                    nodes.push(annotation_line(
+            Payload::Assistant { output, excluded } => {
+                // A record-only entry (docs/transport.md): the stream died before
+                // finalizing, or the model finalized with nothing in it, so nothing below
+                // is in the model's context. The content still renders — it may be the
+                // only copy of what the model produced — but the marker keeps it from
+                // reading as a committed turn.
+                match excluded {
+                    Some(Exclusion::Upstream(why)) => nodes.push(annotation_line(
                         "⚠ stream aborted — recorded, not in context · ",
                         why.why(),
-                    ));
+                    )),
+                    Some(Exclusion::Empty) => nodes.push(annotation_line(
+                        "⚠ empty completion — recorded, not in context, asked again",
+                        "",
+                    )),
+                    None => {}
                 }
                 let thinking: Vec<ContentBlock> = match output {
                     AssistantOutput::Messages(blocks) => blocks

@@ -74,7 +74,7 @@ fn starts_step(entry: &LogEntry) -> bool {
     match &entry.payload {
         Payload::Assistant {
             output,
-            upstream_failure: None,
+            excluded: None,
         } => output.tool_calls().is_ok_and(|calls| !calls.is_empty()),
         _ => false,
     }

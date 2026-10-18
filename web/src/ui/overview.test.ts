@@ -204,7 +204,7 @@ test("a user turn retires the reply it answers; a failed stream says nothing", (
   const failed = logged(3, {
     Assistant: {
       ...messagesAssistant([], [{ Text: "partial" }], []),
-      upstream_failure: "reset",
+      excluded: { Upstream: "reset" },
     },
   });
   expect(foldRecent({ lastReply: "kept" }, failed)).toEqual({

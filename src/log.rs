@@ -15,6 +15,7 @@ mod assistant;
 mod cold;
 mod completions;
 mod config_edit;
+mod exclusion;
 mod preamble;
 mod process;
 mod push;
@@ -40,6 +41,7 @@ pub use assistant::{
 pub use cold::{ColdEvent, ColdReason, ReleasedBy, UnparkCause};
 pub use completions::CompletionsMessage;
 pub use config_edit::{ConfigChange, ConfigEdit, EditState};
+pub use exclusion::Exclusion;
 pub use preamble::{LoggedInference, RecordedRoles, recorded_inference, recorded_roles};
 pub use process::{ExitOutcome, ProcessEvent, ProcessEventKind, ProcessExit, ProcessSpawn};
 pub use push::{
@@ -158,27 +160,22 @@ pub enum Payload {
     /// (docs/log-and-projection.md).
     Assistant {
         output: AssistantOutput,
-        /// `Some` = the upstream stream died before finalizing (no `message_stop` /
-        /// `[DONE]`, an in-stream `error` event, or a mid-stream transport failure) —
-        /// or, for an entry with no content at all, the request itself failed and this
-        /// records the error body durably (docs/transport.md). Its `why` says which:
-        /// the provider's error verbatim when one arrived, a harness-written note for
-        /// a silent close. One path attaches more — a stream that finalizes empty
-        /// carries [`StreamDiagnostics`], because nothing else about it survives
-        /// anywhere. Such an entry is **record-only**: the partial (often the
-        /// only copy anywhere) stays in the log for audit, but [`project`] skips the
-        /// entry entirely — the provider has no record of the generation and doesn't
-        /// stand behind it, so it must not enter the trajectory. The assistant-side
-        /// analogue of a [`WireState`] verdict: the mark lives in the entry because
-        /// projection is deterministic over the log alone (docs/log-and-projection.md).
-        /// `None` (the default; skipped when serializing, so finalized entries and old
-        /// logs are byte-identical) = a finalized turn, projected as always. A record
-        /// with no diagnostics serializes as a bare string, the shape older logs
-        /// wrote, and either shape deserializes.
+        /// `Some` = the entry is **record-only**, and why ([`Exclusion`]): the upstream
+        /// produced no usable turn (its `why` the provider's error verbatim when one
+        /// arrived, a harness-written note for a silent close; a stream that finalizes
+        /// empty also carries [`StreamDiagnostics`], because nothing else about it
+        /// survives anywhere), or the model finalized with neither prose nor a call.
+        /// The content (often the only copy anywhere) stays in the log for audit, but
+        /// [`project`] skips the entry entirely, so the loop's next request re-sends the
+        /// same bytes. The assistant-side analogue of a [`WireState`] verdict: the mark
+        /// lives in the entry because projection is deterministic over the log alone
+        /// (docs/log-and-projection.md). `None` (the default; skipped when serializing,
+        /// so finalized entries are byte-identical) = a finalized turn, projected as
+        /// always.
         ///
         /// [`project`]: crate::project::project
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        upstream_failure: Option<UpstreamFailureRecord>,
+        excluded: Option<Exclusion>,
     },
     /// The result of running one tool call. `raw` is immutable; curation only
     /// flips `wire`.

@@ -16,7 +16,7 @@ fn triage_thinking_joins_thinking_text_only() {
             vec![ContentBlock::Text("prose the triage never reads".into())],
             Vec::new(),
         ),
-        upstream_failure: None,
+        excluded: None,
     };
 
     assert_eq!(triage_thinking(&assistant(Vec::new())), None);
@@ -81,7 +81,7 @@ fn a_responses_triage_marks_the_shared_frontier_and_the_canonical_wire_carries_o
                         status: Some("completed".into()),
                     },
                 ]),
-                upstream_failure: None,
+                excluded: None,
             },
         ),
     ];

@@ -24,6 +24,7 @@
 import {
   KICKOFF_SOURCE,
   type CallId,
+  type Exclusion,
   type LogEntry,
   type Seq,
   type Spot,
@@ -35,6 +36,15 @@ import { assistantView } from "./assistant.ts";
 
 /** The prose half of a record-only mark, whichever shape the log wrote
  * (src/log.rs): the bare string older logs carry, or the object's `why`. */
+/** The upstream's failure an exclusion carries, or `undefined` for none (an
+ * empty completion, or a finalized turn). */
+export const upstreamOf = (
+  excluded: Exclusion | undefined,
+): UpstreamFailureRecord | undefined =>
+  excluded === undefined || excluded === "Empty"
+    ? undefined
+    : excluded.Upstream;
+
 export const upstreamFailureWhy = (record: UpstreamFailureRecord): string =>
   typeof record === "string" ? record : record.why;
 
@@ -199,18 +209,20 @@ export function buildTree(entries: LogEntry[]): TranscriptNode[] {
     }
 
     if ("Assistant" in p) {
-      const { upstream_failure } = p.Assistant;
+      const { excluded } = p.Assistant;
       const { thinking, text, calls } = assistantView(p.Assistant);
-      // Keep partial content marked apart from finalized turns. Empty failed
+      // Keep record-only content marked apart from finalized turns. Empty failed
       // attempts belong to transport chrome, not the conversation.
+      const upstream = upstreamOf(excluded);
       if (
-        upstream_failure !== undefined &&
-        (upstreamFailureWhy(upstream_failure) === "generation interrupted" ||
+        excluded !== undefined &&
+        ((upstream !== undefined &&
+          upstreamFailureWhy(upstream) === "generation interrupted") ||
           thinking.length > 0 ||
           text.length > 0 ||
           calls.length > 0)
       ) {
-        nodes.push({ kind: "leaf", key: `${entry.seq}:aborted`, entry });
+        nodes.push({ kind: "leaf", key: `${entry.seq}:excluded`, entry });
       }
       if (thinking.length > 0) {
         nodes.push({ kind: "leaf", key: `${entry.seq}:thinking`, entry });

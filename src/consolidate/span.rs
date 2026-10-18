@@ -54,7 +54,7 @@ pub fn candidate(log: &[LogEntry]) -> Option<Span> {
         .rfind(|e| match &e.payload {
             Payload::Assistant {
                 output,
-                upstream_failure: None,
+                excluded: None,
             } => output.tool_calls().is_ok_and(|calls| {
                 // A completion with neither prose nor a call (thinking only) ends the
                 // trajectory without reporting anything, so it is not a juncture.
@@ -143,7 +143,7 @@ pub fn safe(log: &[LogEntry], span: Span) -> bool {
         .filter_map(|e| match &e.payload {
             Payload::Assistant {
                 output,
-                upstream_failure: None,
+                excluded: None,
             } => Some(output.tool_calls().unwrap_or_default()),
             _ => None,
         })
@@ -154,7 +154,7 @@ pub fn safe(log: &[LogEntry], span: Span) -> bool {
         && visible.iter().all(|e| match &e.payload {
             Payload::Assistant {
                 output,
-                upstream_failure: None,
+                excluded: None,
             } => output.tool_calls().is_ok_and(|calls| {
                 calls.iter().all(|c| {
                     results
@@ -175,7 +175,7 @@ pub fn tool_bytes(log: &[LogEntry], span: Span) -> usize {
         .filter_map(|e| match &e.payload {
             Payload::Assistant {
                 output,
-                upstream_failure: None,
+                excluded: None,
             } => Some((e.seq, output.tool_calls().unwrap_or_default())),
             _ => None,
         })

@@ -22,9 +22,7 @@ fn message(completion: &Completion) -> &CompletionsMessage {
 
 fn failure(completion: &Completion) -> Option<&UpstreamFailureRecord> {
     match &completion.assistant {
-        Payload::Assistant {
-            upstream_failure, ..
-        } => upstream_failure.as_ref(),
+        Payload::Assistant { excluded, .. } => excluded.as_ref().and_then(|e| e.upstream()),
         _ => None,
     }
 }

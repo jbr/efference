@@ -52,7 +52,7 @@ fn issue(shared: &Session, call: &ToolCall) -> String {
                     vec![],
                     vec![call.clone()],
                 ),
-                upstream_failure: None,
+                excluded: None,
             },
         )
         .unwrap()

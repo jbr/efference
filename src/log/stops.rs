@@ -47,8 +47,7 @@ pub fn classify(entries: &[LogEntry]) -> Vec<(Stop, Option<String>)> {
             // A record-only entry is a failed request, not something the model said:
             // it ended nothing, and a reply to it answered the failure, not a stop.
             Payload::Assistant {
-                upstream_failure: Some(_),
-                ..
+                excluded: Some(_), ..
             } => {}
             Payload::Assistant { output, .. } => {
                 // A call still to run means the loop continues — including a call
@@ -94,8 +93,7 @@ pub fn classify_asks(entries: &[LogEntry]) -> Vec<(Option<Stop>, Option<String>)
     for entry in entries {
         match &entry.payload {
             Payload::Assistant {
-                upstream_failure: Some(_),
-                ..
+                excluded: Some(_), ..
             } => {}
             Payload::Assistant { output, .. } => {
                 open.extend(

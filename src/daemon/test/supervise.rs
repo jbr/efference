@@ -135,7 +135,7 @@ fn issue(session: &Session) -> String {
                     vec![],
                     vec![leaf()],
                 ),
-                upstream_failure: None,
+                excluded: None,
             },
         )
         .unwrap()

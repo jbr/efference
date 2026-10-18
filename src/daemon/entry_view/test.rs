@@ -56,7 +56,7 @@ fn view_of_an_image_free_entry_is_the_derived_bytes() {
                         serde_json::json!({ "command": "ls" }),
                     )],
                 ),
-                upstream_failure: None,
+                excluded: None,
             },
         ),
         entry(2, None, result_with_images(Vec::new())),

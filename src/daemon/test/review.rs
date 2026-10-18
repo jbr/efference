@@ -240,7 +240,7 @@ async fn the_reviewer_resolves_the_routed_gate_through_decide() {
                     vec![],
                     vec![leaf()],
                 ),
-                upstream_failure: None,
+                excluded: None,
             },
         )
         .unwrap();

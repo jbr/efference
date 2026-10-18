@@ -27,7 +27,7 @@ fn assistant(seq: u64, text: &str, calls: Vec<ToolCall>) -> LogEntry {
         seq,
         Payload::Assistant {
             output: AssistantOutput::from_legacy_messages(vec![], text, calls),
-            upstream_failure: None,
+            excluded: None,
         },
     )
 }

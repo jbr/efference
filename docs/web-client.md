@@ -855,8 +855,9 @@ annotate with costs the reader nothing: the signature reads exactly as it did.
 
 ## A record-only entry is marked
 
-An assistant entry carrying `upstream_failure` is record-only: `project` skips
-it ([transport.md](transport.md)). Empty failed attempts produce no transcript
+An assistant entry carrying `excluded` is record-only: `project` skips it
+([transport.md](transport.md)). An empty completion (`"Empty"`) that carries
+thinking leads with *Empty response — recorded, not in context, asked again*. Empty failed attempts produce no transcript
 nodes; their current explanation belongs to transport chrome instead. Partial
 thinking, prose and tool calls still render, led by an *Incomplete response —
 recorded, not in context* marker without the raw failure body. Deliberate operator

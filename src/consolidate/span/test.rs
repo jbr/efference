@@ -27,7 +27,7 @@ fn call(seq: Seq, id: &str, name: &str) -> LogEntry {
                 id,
                 json!({"path":"source.rs"}),
             ))]),
-            upstream_failure: None,
+            excluded: None,
         },
     )
 }
@@ -42,7 +42,7 @@ fn report(seq: Seq, text: &str) -> LogEntry {
         seq,
         Payload::Assistant {
             output: AssistantOutput::Messages(vec![MessagesOutputBlock::Text(text.into())]),
-            upstream_failure: None,
+            excluded: None,
         },
     )
 }
@@ -133,7 +133,7 @@ fn ask_waits_for_all_sibling_results_and_keeps_question_reply() {
                 )),
                 MessagesOutputBlock::ToolUse(ToolCall::new("read", "sibling", json!({}))),
             ]),
-            upstream_failure: None,
+            excluded: None,
         },
     ));
     assert!(candidate(&log).is_none());
@@ -220,7 +220,7 @@ fn a_thinking_only_completion_is_not_a_report() {
                     text: "let me read more".into(),
                     signature: String::new(),
                 }]),
-                upstream_failure: None,
+                excluded: None,
             },
         ),
     ];

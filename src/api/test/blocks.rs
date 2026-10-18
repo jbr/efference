@@ -102,7 +102,7 @@ fn assembles_and_projects_interleaved_blocks_in_provider_order() {
         .unwrap();
     let Payload::Assistant {
         output: AssistantOutput::Messages(blocks),
-        upstream_failure: None,
+        excluded: None,
     } = &completion.assistant
     else {
         panic!(

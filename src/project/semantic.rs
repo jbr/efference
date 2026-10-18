@@ -346,12 +346,11 @@ pub fn project_semantic_for(log: &[LogEntry], reader: Reader) -> Vec<WireTurn> {
             // that follows re-projects to the same bytes, which is what lets it ride
             // the cached prefix.
             Payload::Assistant {
-                upstream_failure: Some(_),
-                ..
+                excluded: Some(_), ..
             } => {}
             Payload::Assistant {
                 output,
-                upstream_failure: None,
+                excluded: None,
             } => {
                 flush(&mut pending, &mut turns);
                 turns.push(WireTurn::Assistant(output.clone()));

@@ -481,14 +481,10 @@ fn every_text_bearing_payload_path_is_masked() {
                 serde_json::json!({ "command": leak() }),
             )],
         ),
-        upstream_failure: Some(leak().into()),
+        excluded: Some(crate::log::Exclusion::Upstream(leak().into())),
     };
     masker.mask_payload(&mut assistant);
-    let Payload::Assistant {
-        output,
-        upstream_failure,
-    } = &assistant
-    else {
+    let Payload::Assistant { output, excluded } = &assistant else {
         unreachable!()
     };
     let blocks = output.messages().unwrap();
@@ -506,7 +502,7 @@ fn every_text_bearing_payload_path_is_masked() {
             .contains("leaked-secret-value")
     );
     assert!(
-        !upstream_failure
+        !excluded
             .as_ref()
             .unwrap()
             .why()
@@ -547,20 +543,22 @@ fn captured_stream_diagnostics_are_masked() {
 
     let mut payload = Payload::Assistant {
         output: crate::log::AssistantOutput::Messages(Vec::new()),
-        upstream_failure: Some(crate::log::UpstreamFailureRecord {
-            why: "stream finalized with no content and no usage".into(),
-            stream: Some(crate::log::StreamDiagnostics {
-                status: 200,
-                headers: BTreeMap::from([("x-generation-id".to_string(), leak())]),
-                message_start: Some(leak()),
-                frames: leak(),
-                frames_truncated: false,
-            }),
-        }),
+        excluded: Some(crate::log::Exclusion::Upstream(
+            crate::log::UpstreamFailureRecord {
+                why: "stream finalized with no content and no usage".into(),
+                stream: Some(crate::log::StreamDiagnostics {
+                    status: 200,
+                    headers: BTreeMap::from([("x-generation-id".to_string(), leak())]),
+                    message_start: Some(leak()),
+                    frames: leak(),
+                    frames_truncated: false,
+                }),
+            },
+        )),
     };
     masker.mask_payload(&mut payload);
     let Payload::Assistant {
-        upstream_failure: Some(failure),
+        excluded: Some(crate::log::Exclusion::Upstream(failure)),
         ..
     } = &payload
     else {
@@ -634,7 +632,7 @@ fn a_responses_function_call_is_masked_on_append_and_replayed_as_logged() {
             arguments: arguments.into(),
             status: None,
         }]),
-        upstream_failure: None,
+        excluded: None,
     };
     let result =
         |call_id: &str| Payload::tool_result(call_id, RawResult::text("ok"), WireState::Raw);

@@ -48,7 +48,7 @@ impl<'a> Index<'a> {
                 // A record-only turn was never dispatched; its calls have no outcome.
                 Payload::Assistant {
                     output,
-                    upstream_failure: None,
+                    excluded: None,
                 } => {
                     let (_, calls) = assistant(output);
                     for (i, call) in calls.iter().enumerate() {

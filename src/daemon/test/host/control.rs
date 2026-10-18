@@ -116,7 +116,7 @@ fn hold(host: &Host, id: &str, call: &ToolCall) -> (u64, tokio::sync::oneshot::R
                     vec![],
                     vec![call.clone()],
                 ),
-                upstream_failure: None,
+                excluded: None,
             },
         )
         .unwrap();

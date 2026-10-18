@@ -52,11 +52,27 @@ describe("record-only entries", () => {
       entry(1, {
         Assistant: {
           ...messagesAssistant([], [{ Text: "half a sentence" }], []),
-          upstream_failure: "stream aborted after 2 blocks",
+          excluded: { Upstream: "stream aborted after 2 blocks" },
         },
       }),
     ]);
-    expect(nodes.map((n) => n.key)).toEqual(["1:aborted", "1:text"]);
+    expect(nodes.map((n) => n.key)).toEqual(["1:excluded", "1:text"]);
+  });
+
+  it("marks an empty completion's thinking", () => {
+    const nodes = buildTree([
+      entry(1, {
+        Assistant: {
+          ...messagesAssistant(
+            [{ Thinking: { text: "hmm", signature: "" } }],
+            [],
+            [],
+          ),
+          excluded: "Empty",
+        },
+      }),
+    ]);
+    expect(nodes[0].key).toBe("1:excluded");
   });
 
   it("keeps empty failed attempts out of the transcript", () => {
@@ -64,7 +80,7 @@ describe("record-only entries", () => {
       entry(1, {
         Assistant: {
           ...messagesAssistant([], [], []),
-          upstream_failure: { why: "empty finalized stream", stream: {} },
+          excluded: { Upstream: { why: "empty finalized stream", stream: {} } },
         },
       }),
     ]);
@@ -76,7 +92,9 @@ describe("record-only entries", () => {
       entry(seq, {
         Assistant: {
           ...messagesAssistant([], [], []),
-          upstream_failure: `upstream attempt failed (HTTP 503): {"error":{"message":"overloaded"}}`,
+          excluded: {
+            Upstream: `upstream attempt failed (HTTP 503): {"error":{"message":"overloaded"}}`,
+          },
         },
       }),
     );
@@ -93,11 +111,11 @@ describe("record-only entries", () => {
         entry(1, {
           Assistant: {
             ...messagesAssistant([], [], []),
-            upstream_failure: "generation interrupted",
+            excluded: { Upstream: "generation interrupted" },
           },
         }),
       ]).map((node) => node.key),
-    ).toEqual(["1:aborted"]);
+    ).toEqual(["1:excluded"]);
   });
 
   it("reads the why out of either serialization", () => {

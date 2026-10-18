@@ -157,6 +157,7 @@ mod compact;
 mod config_edits;
 mod continuation;
 mod durable_inbox;
+mod empty_completion;
 mod events;
 mod http;
 mod in_session;

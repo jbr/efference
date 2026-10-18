@@ -108,7 +108,7 @@ mod settle_body {
                     .collect(),
                 vec![],
             ),
-            upstream_failure: None,
+            excluded: None,
         }
     }
 
@@ -135,10 +135,10 @@ mod settle_body {
                         vec![ContentBlock::Text("a partial".into())],
                         vec![],
                     ),
-                    upstream_failure: Some(UpstreamFailureRecord {
+                    excluded: Some(crate::log::Exclusion::Upstream(UpstreamFailureRecord {
                         why: "stream died".into(),
                         stream: None,
-                    }),
+                    })),
                 },
             ),
         ];
@@ -156,7 +156,7 @@ mod settle_body {
                     vec![],
                     vec![ToolCall::new("bash", "toolu_1", serde_json::json!({}))],
                 ),
-                upstream_failure: None,
+                excluded: None,
             },
         );
         assert_eq!(settle_body(&[calls_only]), "");

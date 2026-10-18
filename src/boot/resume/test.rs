@@ -57,7 +57,7 @@ fn call_assistant(call: &str) -> Payload {
                 serde_json::json!({"command": "ls"}),
             )],
         ),
-        upstream_failure: None,
+        excluded: None,
     }
 }
 
@@ -344,7 +344,7 @@ fn calls_assistant(ids: &[&str]) -> Payload {
                 .map(|id| ToolCall::new("bash", *id, serde_json::json!({"command": "ls"})))
                 .collect(),
         ),
-        upstream_failure: None,
+        excluded: None,
     }
 }
 

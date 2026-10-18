@@ -116,7 +116,7 @@ async fn an_empty_message_continues_or_says_why_not() {
                     vec![ContentBlock::Text("done".into())],
                     vec![],
                 ),
-                upstream_failure: None,
+                excluded: None,
             },
         )
         .unwrap();

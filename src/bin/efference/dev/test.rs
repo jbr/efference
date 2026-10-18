@@ -144,7 +144,7 @@ async fn wire_rejects_a_recorded_provider_dialect_conflict() {
         1,
         efference::log::Payload::Assistant {
             output: efference::log::AssistantOutput::Responses(vec![]),
-            upstream_failure: None,
+            excluded: None,
         },
     )
     .unwrap();
@@ -201,7 +201,7 @@ fn write_openrouter_image_log(path: &std::path::Path) {
                     serde_json::json!({ "path": "image.png" }),
                 )],
             ),
-            upstream_failure: None,
+            excluded: None,
         },
     )
     .unwrap();
@@ -384,7 +384,7 @@ fn spot_fixture() -> Vec<efference::log::LogEntry> {
                         serde_json::json!({ "command": "rm  -rf\n ./build" }),
                     )],
                 ),
-                upstream_failure: None,
+                excluded: None,
             },
         ),
         entry(
@@ -513,7 +513,7 @@ fn a_triage_carries_a_completions_results_and_a_prefix_that_stops_short_of_them(
                     vec![],
                     vec![call("a"), call("b")],
                 ),
-                upstream_failure: None,
+                excluded: None,
             },
         ),
         result(2, "a"),
@@ -543,7 +543,7 @@ fn a_triage_carries_its_recorded_first_attempt() {
                     vec![],
                     vec![call("a")],
                 ),
-                upstream_failure: None,
+                excluded: None,
             },
         ),
         result(2, "a"),
@@ -560,7 +560,7 @@ fn a_triage_carries_its_recorded_first_attempt() {
                     vec![],
                     vec![call("b")],
                 ),
-                upstream_failure: None,
+                excluded: None,
             },
         ),
         result(5, "b"),
@@ -604,7 +604,7 @@ fn a_triage_carries_the_inbox_it_was_shown() {
                     vec![],
                     vec![call(id)],
                 ),
-                upstream_failure: None,
+                excluded: None,
             },
         )
     };
@@ -638,7 +638,7 @@ fn a_completion_with_no_results_opens_no_triage() {
                 vec![],
                 vec![call("a")],
             ),
-            upstream_failure: None,
+            excluded: None,
         },
     )];
     assert!(recorded_triages(&log).is_empty());

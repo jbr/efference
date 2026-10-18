@@ -18,7 +18,7 @@ fn tool_result_omits_false_is_error_but_keeps_true() {
                     vec![],
                     vec![ToolCall::new("bash", "x", json!({}))],
                 ),
-                upstream_failure: None,
+                excluded: None,
             },
         ),
         entry(
@@ -50,7 +50,7 @@ fn consecutive_tool_results_coalesce_into_one_user_message() {
                         ToolCall::new("bash", "b", json!({})),
                     ],
                 ),
-                upstream_failure: None,
+                excluded: None,
             },
         ),
         entry(
@@ -96,7 +96,7 @@ fn user_turn_after_tool_result_merges_into_one_message() {
                     vec![],
                     vec![ToolCall::new("bash", "a", json!({}))],
                 ),
-                upstream_failure: None,
+                excluded: None,
             },
         ),
         entry(

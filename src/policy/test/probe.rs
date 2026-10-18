@@ -85,7 +85,7 @@ fn probe_ledger_folds_seen_and_votes_from_the_log() {
                         serde_json::json!({ "command": command }),
                     )],
                 ),
-                upstream_failure: None,
+                excluded: None,
             },
         }
     }

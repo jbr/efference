@@ -230,10 +230,8 @@ pub(super) fn settle_body(entries: &[LogEntry]) -> String {
 pub(super) fn closing_output(entries: &[LogEntry]) -> Option<(Seq, &AssistantOutput)> {
     let (seq, output, failure) = entries.iter().rev().find_map(|e| match &e.payload {
         Payload::Assistant {
-            output,
-            upstream_failure,
-            ..
-        } => Some((e.seq, output, upstream_failure)),
+            output, excluded, ..
+        } => Some((e.seq, output, excluded)),
         _ => None,
     })?;
     failure.is_none().then_some((seq, output))

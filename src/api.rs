@@ -15,7 +15,7 @@ use trillium_client::Client as HttpClient;
 use trillium_client::Conn;
 use trillium_client::sse::{EventStream, SseError, SseErrorKind};
 
-use crate::log::{AssistantOutput, MessagesOutputBlock, Payload, ToolCall};
+use crate::log::{AssistantOutput, Exclusion, MessagesOutputBlock, Payload, ToolCall};
 use crate::project::ApiMessage;
 
 /// The `anthropic-version` header value. This is part of the Anthropic Messages
@@ -507,21 +507,37 @@ impl Completion {
     pub fn upstream_failure(&self) -> Option<&str> {
         match &self.assistant {
             Payload::Assistant {
-                upstream_failure: Some(why),
+                excluded: Some(Exclusion::Upstream(why)),
                 ..
             } => Some(why.why()),
             _ => None,
         }
     }
 
+    /// A finalized turn with neither prose nor a call — reasoning alone, or text that is
+    /// empty or whitespace — that the output cap did not cut (docs/transport.md). It ends
+    /// nothing a reader can act on, so the loop keeps it record-only and asks again. A
+    /// turn the cap cut is not one: asked again, it would meet the same cap.
+    pub fn says_nothing(&self) -> bool {
+        let output = self.assistant_output();
+        !self.hit_output_cap()
+            && output.text().iter().all(|text| text.trim().is_empty())
+            && output.tool_calls().is_ok_and(|calls| calls.is_empty())
+    }
+
+    /// Mark a completion that [says nothing](Self::says_nothing) record-only, as the
+    /// empty completion it is.
+    pub(crate) fn exclude_as_empty(&mut self) {
+        if let Payload::Assistant { excluded, .. } = &mut self.assistant {
+            *excluded = Some(Exclusion::Empty);
+        }
+    }
+
     /// Mark a completion that streamed cleanly as one no retry can repair: its turn
     /// becomes record-only, and the loop stalls with `why`.
     pub(crate) fn fail_terminal(&mut self, why: String) {
-        if let Payload::Assistant {
-            upstream_failure, ..
-        } = &mut self.assistant
-        {
-            *upstream_failure = Some(why.into());
+        if let Payload::Assistant { excluded, .. } = &mut self.assistant {
+            *excluded = Some(Exclusion::Upstream(why.into()));
         }
         self.failure_class = FailureClass::Terminal;
     }

@@ -137,7 +137,7 @@ async fn the_transcript_names_who_decided() {
                     vec![],
                     vec![call.clone()],
                 ),
-                upstream_failure: None,
+                excluded: None,
             },
         )
         .unwrap();

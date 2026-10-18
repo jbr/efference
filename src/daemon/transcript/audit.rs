@@ -98,15 +98,12 @@ pub(super) fn lines(
                 })
                 .collect()
         }
-        Payload::Assistant {
-            output,
-            upstream_failure,
-        } => {
+        Payload::Assistant { output, excluded } => {
             let mut v = Vec::new();
-            if let Some(failure) = upstream_failure {
+            if let Some(excluded) = excluded {
                 v.push(line(
                     "assistant",
-                    format!("(record-only, never projected: {})", failure.why()),
+                    format!("(record-only, never projected: {})", excluded.why()),
                 ));
             }
             let (prose, calls) = assistant(output);

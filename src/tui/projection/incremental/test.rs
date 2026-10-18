@@ -38,7 +38,7 @@ fn assistant_call(seq: u64, text: &str, call_id: &str, command: &str) -> LogEntr
                     serde_json::json!({ "command": command }),
                 )],
             ),
-            upstream_failure: None,
+            excluded: None,
         },
     )
 }
@@ -280,7 +280,7 @@ fn the_ask_topic_moving_rebuilds_the_marks() {
                     ToolCall::new("ask", "q2", serde_json::json!({ "question": "Second?" })),
                 ],
             ),
-            upstream_failure: None,
+            excluded: None,
         },
     );
     let log = vec![asks];

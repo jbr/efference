@@ -254,7 +254,7 @@ fn text_completion(text: &str) -> Completion {
                 vec![crate::log::ContentBlock::Text(text.into())],
                 vec![],
             ),
-            upstream_failure: None,
+            excluded: None,
         },
         id: None,
         model: "test".into(),

@@ -68,7 +68,7 @@ fn assistant(seq: Seq) -> LogEntry {
         seq,
         Payload::Assistant {
             output: crate::log::AssistantOutput::empty(crate::api::WireDialect::Messages),
-            upstream_failure: None,
+            excluded: None,
         },
     )
 }

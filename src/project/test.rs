@@ -43,7 +43,7 @@ fn sample_log() -> Vec<LogEntry> {
                         json!({ "command": "ls", "timeout": 5 }),
                     )],
                 ),
-                upstream_failure: None,
+                excluded: None,
             },
         ),
         entry(
@@ -466,7 +466,9 @@ fn record_only_partial_projects_to_nothing() {
                 vec![],
                 vec![],
             ),
-            upstream_failure: Some("stream ended before finalizing (no message_stop)".into()),
+            excluded: Some(crate::log::Exclusion::Upstream(
+                "stream ended before finalizing (no message_stop)".into(),
+            )),
         },
     ));
     // An empty one too — the durable record of a pre-stream request failure.
@@ -475,7 +477,9 @@ fn record_only_partial_projects_to_nothing() {
         3,
         Payload::Assistant {
             output: AssistantOutput::Messages(vec![]),
-            upstream_failure: Some("upstream API returned 429: rate limited".into()),
+            excluded: Some(crate::log::Exclusion::Upstream(
+                "upstream API returned 429: rate limited".into(),
+            )),
         },
     ));
     let with_partials = serde_json::to_string(&project(&log)).unwrap();
@@ -501,7 +505,9 @@ fn an_absorbed_attempt_record_round_trips_and_projects_to_nothing() {
         2,
         Payload::Assistant {
             output: AssistantOutput::Messages(vec![]),
-            upstream_failure: Some(failure.record_text().into()),
+            excluded: Some(crate::log::Exclusion::Upstream(
+                failure.record_text().into(),
+            )),
         },
     );
 
@@ -509,7 +515,7 @@ fn an_absorbed_attempt_record_round_trips_and_projects_to_nothing() {
     let read_back: crate::log::LogEntry = serde_json::from_str(&line).unwrap();
     match &read_back.payload {
         Payload::Assistant {
-            upstream_failure: Some(why),
+            excluded: Some(crate::log::Exclusion::Upstream(why)),
             ..
         } => {
             assert!(why.why().contains("HTTP 429"), "{why}");
@@ -549,7 +555,7 @@ fn thinking_turn_matches_expected_wire_bytes() {
                     vec![ContentBlock::Text("running it".into())],
                     vec![ToolCall::new("bash", "toolu_1", json!({ "command": "ls" }))],
                 ),
-                upstream_failure: None,
+                excluded: None,
             },
         ),
     ];
@@ -667,7 +673,7 @@ fn a_pending_batch_notice_follows_its_results() {
                     vec![],
                     vec![call("a"), call("b")],
                 ),
-                upstream_failure: None,
+                excluded: None,
             },
         ),
         entry(
@@ -740,7 +746,7 @@ fn a_rolled_back_range_is_not_projected() {
                     json!({ "command": "rm x" }),
                 )],
             ),
-            upstream_failure: None,
+            excluded: None,
         },
     ));
     log.push(entry(

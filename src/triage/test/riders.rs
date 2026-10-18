@@ -26,7 +26,7 @@ fn tail_with_riders() -> (Vec<String>, Vec<String>) {
             2,
             Payload::Assistant {
                 output: AssistantOutput::from_legacy_messages(vec![], vec![], vec![call.clone()]),
-                upstream_failure: None,
+                excluded: None,
             },
         ),
     ];

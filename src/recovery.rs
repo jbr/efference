@@ -79,14 +79,7 @@ fn has_markers(entries: &[LogEntry]) -> bool {
 /// The index in `live` of the last completion that is live and not record-only.
 fn last_completion(live: &[LogEntry], is_live: &impl Fn(&LogEntry) -> bool) -> Option<usize> {
     live.iter().rposition(|e| {
-        is_live(e)
-            && matches!(
-                &e.payload,
-                Payload::Assistant {
-                    upstream_failure: None,
-                    ..
-                }
-            )
+        is_live(e) && matches!(&e.payload, Payload::Assistant { excluded: None, .. })
     })
 }
 

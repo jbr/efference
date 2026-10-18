@@ -17,7 +17,7 @@ use base64::engine::general_purpose::STANDARD_NO_PAD;
 use serde_json::Value;
 
 use crate::log::{
-    AssistantOutput, ConfigChange, ContentBlock, MessagesOutputBlock, Payload,
+    AssistantOutput, ConfigChange, ContentBlock, Exclusion, MessagesOutputBlock, Payload,
     ResponsesMessageContent, ResponsesOutputItem, UpstreamFailureRecord,
 };
 
@@ -236,7 +236,7 @@ impl Masker {
 
     /// Filter every text-bearing field of a payload about to be appended. The
     /// paths, exhaustively: `User` text blocks; `Assistant` text blocks, tool-call
-    /// `input` strings, and `upstream_failure` (its `why` and, when present, its
+    /// `input` strings, and an upstream `excluded` mark (its `why` and, when present, its
     /// captured stream diagnostics); `ToolResult`'s `raw.content`;
     /// `Summary.text`; `Triage`'s `raw_keep`, `surfaced`, `retries`, and `thinking`;
     /// `Ambient`'s `source`/`body`/`slot`; `Spot`'s `reason` and `probed_prefix`;
@@ -252,10 +252,7 @@ impl Masker {
         }
         match payload {
             Payload::User(blocks) => self.mask_blocks(blocks),
-            Payload::Assistant {
-                output,
-                upstream_failure,
-            } => {
+            Payload::Assistant { output, excluded } => {
                 match output {
                     AssistantOutput::Messages(blocks) => {
                         for block in blocks {
@@ -344,7 +341,7 @@ impl Masker {
                         }
                     }
                 }
-                if let Some(failure) = upstream_failure {
+                if let Some(Exclusion::Upstream(failure)) = excluded {
                     self.mask_failure(failure);
                 }
             }

@@ -36,7 +36,7 @@ fn calls_completion(calls: Vec<ToolCall>) -> Completion {
         receipt: Default::default(),
         assistant: Payload::Assistant {
             output: AssistantOutput::from_legacy_messages(vec![], vec![], calls),
-            upstream_failure: None,
+            excluded: None,
         },
         id: None,
         model: "test".into(),

@@ -20,7 +20,7 @@ fn assistant(text: &str) -> Payload {
             vec![ContentBlock::Text(text.into())],
             vec![],
         ),
-        upstream_failure: None,
+        excluded: None,
     }
 }
 

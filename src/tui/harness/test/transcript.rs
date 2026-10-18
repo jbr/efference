@@ -258,7 +258,7 @@ fn committed_thinking_stays_readable_in_the_transcript() {
             vec![ContentBlock::Text("The preamble was re-rendered.".into())],
             vec![],
         ),
-        upstream_failure: None,
+        excluded: None,
     });
 
     assert!(play.find("✻ thinking").is_some(), "the record is present");
@@ -290,7 +290,7 @@ fn redacted_thinking_says_so_rather_than_rendering_nothing() {
             vec![ContentBlock::Text("Done.".into())],
             vec![],
         ),
-        upstream_failure: None,
+        excluded: None,
     });
     assert!(play.find("✻ thinking").is_some());
     assert!(

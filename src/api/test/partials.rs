@@ -89,7 +89,7 @@ fn an_empty_stream_records_status_headers_and_frames() {
     let completion = a.finish().unwrap();
 
     let Payload::Assistant {
-        upstream_failure: Some(failure),
+        excluded: Some(crate::log::Exclusion::Upstream(failure)),
         ..
     } = &completion.assistant
     else {
@@ -140,7 +140,7 @@ fn frame_capture_stops_at_the_cap() {
     let completion = a.finish().unwrap();
 
     let Payload::Assistant {
-        upstream_failure: Some(failure),
+        excluded: Some(crate::log::Exclusion::Upstream(failure)),
         ..
     } = &completion.assistant
     else {
@@ -166,7 +166,7 @@ fn a_death_before_finalizing_carries_no_diagnostics() {
     )])
     .unwrap();
     let Payload::Assistant {
-        upstream_failure: Some(failure),
+        excluded: Some(crate::log::Exclusion::Upstream(failure)),
         ..
     } = &completion.assistant
     else {
@@ -181,7 +181,8 @@ fn a_death_before_finalizing_carries_no_diagnostics() {
 
 /// …but **only** with zero usage to corroborate. A turn billed for output that
 /// nonetheless carries no blocks is the model's own answer, not a gateway
-/// swallowing one; marking it would retry a real response into exhaustion.
+/// swallowing one, so it is not an upstream failure. It does say nothing, which the
+/// turn loop asks again for as an empty completion (docs/transport.md).
 #[test]
 fn an_empty_turn_that_was_billed_is_left_alone() {
     let completion = feed(&[
@@ -196,4 +197,67 @@ fn an_empty_turn_that_was_billed_is_left_alone() {
         completion.upstream_failure().is_none(),
         "a billed turn is not an empty stream"
     );
+    assert!(completion.says_nothing());
+}
+
+/// A finalized turn says nothing when it has neither prose nor a call: thinking alone,
+/// or whitespace text. A call, an `ask` included, is something; so is a turn the output
+/// cap cut, which asked again would meet the same cap (docs/transport.md).
+#[test]
+fn a_turn_says_nothing_without_prose_or_a_call() {
+    let start = (
+        "message_start",
+        r#"{"message":{"model":"m","usage":{"input_tokens":12,"output_tokens":7}}}"#,
+    );
+    let ended = |stop: &'static str| {
+        [
+            ("content_block_stop", r#"{"index":0}"#),
+            ("message_delta", stop),
+            ("message_stop", "{}"),
+        ]
+    };
+    let end_turn = r#"{"delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":7}}"#;
+    let max_tokens = r#"{"delta":{"stop_reason":"max_tokens"},"usage":{"output_tokens":7}}"#;
+    let tool_use = r#"{"delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":7}}"#;
+    let thinking = [
+        start,
+        (
+            "content_block_start",
+            r#"{"index":0,"content_block":{"type":"thinking","thinking":""}}"#,
+        ),
+        (
+            "content_block_delta",
+            r#"{"index":0,"delta":{"type":"thinking_delta","thinking":"hmm"}}"#,
+        ),
+    ];
+    let whitespace = [
+        start,
+        (
+            "content_block_start",
+            r#"{"index":0,"content_block":{"type":"text","text":""}}"#,
+        ),
+        (
+            "content_block_delta",
+            r#"{"index":0,"delta":{"type":"text_delta","text":"  \n"}}"#,
+        ),
+    ];
+    let asking = [
+        start,
+        (
+            "content_block_start",
+            r#"{"index":0,"content_block":{"type":"tool_use","id":"toolu_1","name":"ask","input":{}}}"#,
+        ),
+        (
+            "content_block_delta",
+            r#"{"index":0,"delta":{"type":"input_json_delta","partial_json":"{\"question\":\"ok?\"}"}}"#,
+        ),
+    ];
+    let says_nothing = |head: &[(&'static str, &'static str)], stop| {
+        let events: Vec<_> = head.iter().copied().chain(ended(stop)).collect();
+        feed(&events).unwrap().says_nothing()
+    };
+    assert!(says_nothing(&thinking, end_turn));
+    assert!(says_nothing(&whitespace, end_turn));
+    assert!(!says_nothing(&asking, tool_use));
+    assert!(!says_nothing(&thinking, max_tokens));
 }

@@ -153,7 +153,7 @@ async fn an_interrupt_ends_the_read_and_marks_the_partial_aborted() {
         matches!(
             &completion.assistant,
             Payload::Assistant {
-                upstream_failure: Some(_),
+                excluded: Some(_),
                 ..
             }
         ),
@@ -211,7 +211,7 @@ async fn an_empty_stream_over_the_wire_captures_the_response_headers() {
     server.join().unwrap();
 
     let Payload::Assistant {
-        upstream_failure: Some(failure),
+        excluded: Some(crate::log::Exclusion::Upstream(failure)),
         ..
     } = &completion.assistant
     else {

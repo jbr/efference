@@ -421,7 +421,7 @@ async fn a_failed_request_is_retried_and_continue_skips_the_wait() {
         session.snapshot().iter().any(|e| matches!(
             &e.payload,
             Payload::Assistant {
-                upstream_failure: Some(_),
+                excluded: Some(_),
                 ..
             }
         )),

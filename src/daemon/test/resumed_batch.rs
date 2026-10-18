@@ -34,7 +34,7 @@ fn stopped_log(calls: Vec<ToolCall>, pending: &[&str], extra: impl FnOnce(&mut L
         1,
         Payload::Assistant {
             output: AssistantOutput::from_legacy_messages(vec![], vec![], calls),
-            upstream_failure: None,
+            excluded: None,
         },
     )
     .unwrap();

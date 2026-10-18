@@ -62,7 +62,7 @@ fn session() -> Arc<Session> {
                 output: AssistantOutput::Messages(vec![crate::log::MessagesOutputBlock::ToolUse(
                     ToolCall::new("read", "r", serde_json::json!({"path":"source.rs"})),
                 )]),
-                upstream_failure: None,
+                excluded: None,
             },
         )
         .unwrap();
@@ -81,7 +81,7 @@ fn session() -> Arc<Session> {
             0,
             Payload::Assistant {
                 output: response("the investigation is complete"),
-                upstream_failure: None,
+                excluded: None,
             },
         )
         .unwrap();
@@ -300,7 +300,7 @@ fn adoption_tolerates_concurrent_work_but_not_rewrites_of_the_range() {
                 output: AssistantOutput::Messages(vec![crate::log::MessagesOutputBlock::ToolUse(
                     ToolCall::new("read", "later", serde_json::json!({"path":"other.rs"})),
                 )]),
-                upstream_failure: None,
+                excluded: None,
             },
         )
         .unwrap();
@@ -360,7 +360,7 @@ fn adoption_tolerates_concurrent_work_but_not_rewrites_of_the_range() {
                         serde_json::json!({"summary":"s"}),
                     ),
                 )]),
-                upstream_failure: None,
+                excluded: None,
             },
         )
         .unwrap();

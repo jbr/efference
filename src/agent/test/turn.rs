@@ -27,7 +27,7 @@ pub(super) fn an_interrupted_call_is_paired_but_says_nothing_and_the_operator_sp
             1,
             Payload::Assistant {
                 output: AssistantOutput::from_legacy_messages(vec![], vec![], vec![call.clone()]),
-                upstream_failure: None,
+                excluded: None,
             },
         )
         .unwrap();
@@ -118,7 +118,7 @@ pub(super) fn a_multi_call_completion_projects_a_fully_paired_wire() {
                     vec![],
                     vec![first.clone(), second.clone()],
                 ),
-                upstream_failure: None,
+                excluded: None,
             },
         )
         .unwrap();
@@ -183,7 +183,7 @@ fn title_is_solicited_after_a_user_turn_and_on_the_fallback() {
             vec![ContentBlock::Text("done".into())],
             vec![],
         ),
-        upstream_failure: None,
+        excluded: None,
     };
     let title = || {
         Payload::Title(Title {

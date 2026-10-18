@@ -22,7 +22,7 @@ fn said(text: &str) -> Payload {
             vec![ContentBlock::Text(text.to_string())],
             Vec::new(),
         ),
-        upstream_failure: None,
+        excluded: None,
     }
 }
 
@@ -38,7 +38,7 @@ fn called(text: &str) -> Payload {
                 serde_json::json!({"command": "ls"}),
             )],
         ),
-        upstream_failure: None,
+        excluded: None,
     }
 }
 
@@ -194,7 +194,9 @@ fn the_recorded_stall_reads_as_a_run_of_barren_stops() {
 fn an_upstream_failure_is_not_a_stop() {
     let failed = Payload::Assistant {
         output: AssistantOutput::from_legacy_messages(Vec::new(), Vec::new(), Vec::new()),
-        upstream_failure: Some("upstream API returned 429 Too Many Requests".into()),
+        excluded: Some(crate::log::Exclusion::Upstream(
+            "upstream API returned 429 Too Many Requests".into(),
+        )),
     };
     assert_eq!(
         classify_pairs(&[called("Writing DONE.md."), failed, replied("sounds good!")]),
@@ -214,7 +216,7 @@ fn asked(question: &str, id: &str) -> Payload {
                 serde_json::json!({ "question": question }),
             )],
         ),
-        upstream_failure: None,
+        excluded: None,
     }
 }
 
@@ -302,7 +304,7 @@ fn only_completed_ask_calls_are_counted() {
                         serde_json::json!({ "question": "?" }),
                     )],
                 ),
-                upstream_failure: Some("boom".into()),
+                excluded: Some(crate::log::Exclusion::Upstream("boom".into())),
             },
         ),
     ];

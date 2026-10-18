@@ -78,7 +78,7 @@ fn issue(session: &Session, calls: Vec<ToolCall>) -> Seq {
             1,
             Payload::Assistant {
                 output: crate::log::AssistantOutput::from_legacy_messages(vec![], vec![], calls),
-                upstream_failure: None,
+                excluded: None,
             },
         )
         .unwrap()

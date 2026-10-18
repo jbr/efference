@@ -25,7 +25,7 @@ fn a_gate_over_a_multi_call_step_answers_every_tool_use() {
             2,
             Payload::Assistant {
                 output: AssistantOutput::from_legacy_messages(vec![], vec![], calls.clone()),
-                upstream_failure: None,
+                excluded: None,
             },
         ),
     ];
@@ -170,7 +170,7 @@ fn a_handle_bearing_result_is_answered_but_never_offered() {
             2,
             Payload::Assistant {
                 output: AssistantOutput::from_legacy_messages(vec![], vec![], calls.to_vec()),
-                upstream_failure: None,
+                excluded: None,
             },
         ),
     ];
@@ -255,7 +255,7 @@ fn a_bypassed_result_reaches_the_wire_verbatim() {
                     vec![],
                     vec![ToolCall::new("write", "write_1", json!({}))],
                 ),
-                upstream_failure: None,
+                excluded: None,
             },
         ),
         entry(
@@ -299,7 +299,7 @@ fn an_ask_reply_is_bypassed_and_still_answered_in_the_triage() {
         1,
         Payload::Assistant {
             output: AssistantOutput::from_legacy_messages(vec![], vec![], calls.clone()),
-            upstream_failure: None,
+            excluded: None,
         },
     )];
     let raws = [RawResult::text("do it"), RawResult::text("alpha\nbeta")];

@@ -20,7 +20,7 @@ fn assistant_calling(call_id: &str, command: &str) -> Payload {
                 serde_json::json!({ "command": command }),
             )],
         ),
-        upstream_failure: None,
+        excluded: None,
     }
 }
 

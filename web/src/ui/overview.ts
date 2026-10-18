@@ -68,7 +68,7 @@ export interface Recent {
 export function foldRecent(recent: Recent, entry: LogEntry): Recent {
   const payload = entry.payload;
   if ("User" in payload) return { intent: recent.intent };
-  if (!("Assistant" in payload) || payload.Assistant.upstream_failure) {
+  if (!("Assistant" in payload) || payload.Assistant.excluded !== undefined) {
     return recent;
   }
   const view = viewOf(payload.Assistant.output);

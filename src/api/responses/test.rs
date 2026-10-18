@@ -330,7 +330,7 @@ fn assembles_a_completed_turn_from_the_terminal_output() {
     );
     let Payload::Assistant {
         output: AssistantOutput::Responses(items),
-        upstream_failure: None,
+        excluded: None,
     } = &completion.assistant
     else {
         panic!(

@@ -176,7 +176,7 @@ auth = { kind = "env", key = "EFFERENCE_SWITCH_TEST_KEY" }
 fn assistant_turn() -> Payload {
     Payload::Assistant {
         output: crate::log::AssistantOutput::Responses(Vec::new()),
-        upstream_failure: None,
+        excluded: None,
     }
 }
 

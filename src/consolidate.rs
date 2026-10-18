@@ -116,7 +116,7 @@ pub fn split_calls(log: &[LogEntry], upto: Seq) -> Vec<CallId> {
         .filter_map(|e| match &e.payload {
             Payload::Assistant {
                 output,
-                upstream_failure: None,
+                excluded: None,
             } => Some((e.seq <= upto, output.tool_calls().unwrap_or_default())),
             _ => None,
         })

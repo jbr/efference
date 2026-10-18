@@ -25,8 +25,9 @@ use crate::daemon::{
 use crate::frontend::{Approval, Frontend, SubmittedTurn};
 use crate::inbox::ShownNotification;
 use crate::log::{
-    AssistantOutput, ConfigChange, ConfigEdit, ContentBlock, Disposition, EditState, Notification,
-    Origin, Payload, RawResult, Spot, Stance, Summary, ToolCall, Triage, Turn, WireState,
+    AssistantOutput, ConfigChange, ConfigEdit, ContentBlock, Disposition, EditState, Exclusion,
+    Notification, Origin, Payload, RawResult, Spot, Stance, Summary, ToolCall, Triage, Turn,
+    WireState,
 };
 use crate::policy::{self, ReviewLevel, Verdict};
 use crate::process_monitor;
@@ -132,8 +133,8 @@ pub(crate) fn stalled(
 /// The retry handler sits below the loop and cannot append, so the bodies arrive
 /// through the client's queue and land here — including the ones a later attempt
 /// recovered from, which otherwise leave behind only a status and a count.
-/// Each entry carries `upstream_failure`, so it projects to nothing and the next
-/// request re-sends byte-identical messages (docs/log-and-projection.md).
+/// Each entry is `excluded` for its upstream's failure, so it projects to nothing and the
+/// next request re-sends byte-identical messages (docs/log-and-projection.md).
 fn record_absorbed_attempts(
     shared: &Session,
     client: &Client,
@@ -145,7 +146,7 @@ fn record_absorbed_attempts(
             *turn,
             Payload::Assistant {
                 output: AssistantOutput::empty(client.dialect()),
-                upstream_failure: Some(failure.record_text().into()),
+                excluded: Some(Exclusion::Upstream(failure.record_text().into())),
             },
         )?;
     }
@@ -356,13 +357,13 @@ pub async fn run<F: Frontend, S: Spotter>(
             // cosmetic: it invites interrupting or abandoning a live session on false signal.
             log::debug!("generating — turn {turn}");
             shared.set_phase(LoopPhase::Requesting);
-            // Bounded retry for a stream that dies before finalizing
-            // (docs/transport.md). Each aborted attempt commits its partial as a
-            // record-only entry — the only copy of that content anywhere — which
-            // projects to nothing, so the next attempt re-sends the same bytes.
-            // Without the record-only entry an aborted stream commits as a clean
-            // turn — empty or thinking-only, `upstream_failure` null —
-            // indistinguishable from the agent choosing silence.
+            // Bounded retry for a stream that dies before finalizing, and for a
+            // completion that finalizes with nothing in it (docs/transport.md). Each
+            // such attempt commits its content as a record-only entry — the only copy of
+            // it anywhere — which projects to nothing, so the next attempt re-sends the
+            // same bytes. Without the record-only entry an aborted stream commits as a
+            // clean turn, indistinguishable from the agent choosing silence; and a
+            // reasoning-only completion would end the turn with nothing said.
             let mut aborted_attempts: u32 = 0;
             let completion = loop {
                 let outcome = client
@@ -395,6 +396,18 @@ pub async fn run<F: Frontend, S: Spotter>(
                 // three things: its words, whether the provider named it as one no
                 // retry can change, and the stall reason if that ends the trajectory.
                 let (why, terminal) = match outcome {
+                    // A finalized completion with neither prose nor a call is asked again
+                    // over the same bytes, sharing the aborted streams' budget: a plain
+                    // resend is the one shape every dialect answers (docs/transport.md).
+                    Ok(mut completion)
+                        if completion.upstream_failure().is_none() && completion.says_nothing() =>
+                    {
+                        completion.exclude_as_empty();
+                        turn += 1;
+                        shared.record_request(RequestOrigin::Turn, completion.request_usage());
+                        shared.append(turn, completion.assistant)?;
+                        (Exclusion::Empty.why().to_string(), None)
+                    }
                     Ok(completion) => {
                         let Some(why) = completion.upstream_failure().map(str::to_string) else {
                             break Some(completion);
@@ -445,7 +458,7 @@ pub async fn run<F: Frontend, S: Spotter>(
                             turn,
                             Payload::Assistant {
                                 output: AssistantOutput::empty(client.dialect()),
-                                upstream_failure: Some(error.to_string().into()),
+                                excluded: Some(Exclusion::Upstream(error.to_string().into())),
                             },
                         )?;
                         let terminal = (crate::api::error_class(&error)
@@ -471,7 +484,7 @@ pub async fn run<F: Frontend, S: Spotter>(
                 }
                 let Some(pause) = stream_abort_backoff(aborted_attempts) else {
                     shared.warn(format_args!(
-                        "upstream unusable, {aborted_attempts} attempts exhausted: {why}"
+                        "no usable turn after {aborted_attempts} attempts: {why}"
                     ));
                     // An upstream failure is told to the operator and the log,
                     // never to the model (docs/transport.md): if we are in a
@@ -486,7 +499,7 @@ pub async fn run<F: Frontend, S: Spotter>(
                         Some(aborted_attempts),
                         format!(
                             "the trajectory stopped: {aborted_attempts} attempts in a row \
-                             failed upstream"
+                             produced no usable turn"
                         ),
                         why,
                     ));

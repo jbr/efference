@@ -58,15 +58,13 @@ export type Payload =
          * reads this directly: `session/assistant.ts` derives the grouped
          * thinking / prose / calls view the transcript renders. */
         output: AssistantOutput;
-        /** Set on a **record-only** entry: the stream never stood behind it —
-         * an aborted partial, an absorbed HTTP failure, an empty finalized
-         * stream — so `project` skips it and nothing here is in the model's
-         * context (src/log.rs, docs/transport.md). Absent on a finalized turn,
-         * which is what every older log carries too. The bare string is the
-         * older shape; the object's `why` is the same prose and its `stream`
-         * is the empty-stream evidence, which the transcript has no reason to
-         * show. */
-        upstream_failure?: UpstreamFailureRecord;
+        /** Set on a **record-only** entry, with why: the upstream never stood
+         * behind it (an aborted partial, an absorbed HTTP failure, an empty
+         * finalized stream), or the model finalized with neither prose nor a
+         * call and was asked again. `project` skips it, so nothing here is in
+         * the model's context (src/log.rs, docs/transport.md). Absent on a
+         * finalized turn. */
+        excluded?: Exclusion;
       };
     }
   | {
@@ -271,9 +269,12 @@ export interface Title {
   author: "triage" | "operator";
 }
 
-/** Why an assistant entry is record-only. Two serializations of the same fact
- * (src/log.rs): a bare string, and the object an entry with stream diagnostics
- * carries. */
+/** Why an assistant entry is record-only (src/log/exclusion.rs): the upstream's
+ * failure, or a completion the model finalized with nothing in it. */
+export type Exclusion = { Upstream: UpstreamFailureRecord } | "Empty";
+
+/** The upstream's failure, in two serializations of the same fact (src/log.rs):
+ * a bare string, and the object a record with stream diagnostics carries. */
 export type UpstreamFailureRecord = string | { why: string; stream?: unknown };
 
 /** One assistant turn's ordered output, externally tagged by wire dialect. */

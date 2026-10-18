@@ -65,7 +65,7 @@ fn responses_call(seq: Seq, call_id: &str) -> LogEntry {
                 arguments: "{}".into(),
                 status: None,
             }]),
-            upstream_failure: None,
+            excluded: None,
         },
     )
 }

@@ -22,7 +22,7 @@ fn pinned_notification_projects_at_triage_position() {
                     vec![],
                     vec![ToolCall::new("bash", "t", json!({}))],
                 ),
-                upstream_failure: None,
+                excluded: None,
             },
         ),
         entry(1, 0, notification("test-watch", "3 failures")), // pinned
@@ -94,7 +94,7 @@ fn surfaced_context_item_projects_at_triage_position() {
                     vec![],
                     vec![ToolCall::new("grep", "t", json!({}))],
                 ),
-                upstream_failure: None,
+                excluded: None,
             },
         ),
         entry(
@@ -166,7 +166,7 @@ fn recorded_triage_thinking_projects_to_identical_bytes() {
                         vec![],
                         vec![ToolCall::new("bash", "t", json!({}))],
                     ),
-                    upstream_failure: None,
+                    excluded: None,
                 },
             ),
             entry(1, 0, notification("test-watch", "3 failures")),

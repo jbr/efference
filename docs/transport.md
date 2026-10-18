@@ -56,7 +56,7 @@ than only to a transient terminal line.
 (`message_stop` observed, or `[DONE]`). A stream that dies without finalizing —
 a silent close, an in-stream `error` event, a mid-stream transport error, an
 event the assembler refused — still assembles, but the completion's payload
-carries `upstream_failure: Some(why)`: a **record-only partial**
+carries `excluded: Some(Upstream(why))`: a **record-only partial**
 ([log-and-projection.md](log-and-projection.md)). The partial content is
 preserved (it is often the only copy anywhere; a cut tool input is kept as its
 raw string rather than erroring the whole partial away), but the provider has
@@ -83,6 +83,19 @@ finalization (draining the already-closed stream) does not unmake the
 completion. The marking is what tells an aborted stream from the agent choosing
 silence: without it the aborted stream commits as a clean turn — empty or
 thinking-only, zero usage — and the two are indistinguishable.
+
+*A completion with nothing in it is asked again.* A finalized completion with neither
+prose nor a call (reasoning alone, or text that is empty or whitespace) that the
+output cap did not cut is not taken as the turn's end (`Completion::says_nothing`).
+The turn loop marks it `excluded: Some(Empty)` and appends it, so it projects to
+nothing, and asks again over the same bytes, sharing the aborted streams' budget;
+exhaustion stalls with `retries_exhausted`. The corpus showed such endings were never
+stopping points: a supervisor woken by a child's gate answered `""`, and sessions sat
+idle until someone continued them by hand (journal/2026-10-17-session-control-live-test.md).
+A plain resend is the shape every dialect answers ([Every request ends on a user
+turn](#every-request-ends-on-a-user-turn)), where generating after the kept reasoning
+is refused by Anthropic. A cap-cut empty turn keeps its own path: committed, with the
+output-cap notification, since asked again it would meet the same cap.
 
 *Usage merge.* Both usage-bearing events are read and folded into one `Usage` by
 per-field maximum (`Usage::merge_max`); which event carries a given count is
@@ -617,7 +630,7 @@ appended by the retry loop as the record-only entry it already was.
 A record with no diagnostics serializes as a bare string, which is what every log
 before this wrote, and either spelling deserializes — so old entries still parse
 and the ordinary failure paths write unchanged bytes. None of this reaches the
-wire: an entry with an `upstream_failure` projects to nothing
+wire: an entry `excluded` for its upstream's failure projects to nothing
 ([log-and-projection.md](log-and-projection.md)), so the shape cannot move the
 cached prefix.
 

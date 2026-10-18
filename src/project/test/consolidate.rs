@@ -46,7 +46,7 @@ fn summary_replaces_its_range() {
                     vec![],
                     vec![ToolCall::new("bash", "t1", json!({}))],
                 ),
-                upstream_failure: None,
+                excluded: None,
             },
         ),
         entry(
@@ -72,7 +72,7 @@ fn summary_replaces_its_range() {
                         json!({"summary": "summary of old task"}),
                     )],
                 ),
-                upstream_failure: None,
+                excluded: None,
             },
         ),
         entry(5, 3, Payload::Summary(compacted(2, "summary of old task"))),
@@ -134,7 +134,7 @@ fn multiple_summaries_each_replace_their_own_range() {
                     vec![ContentBlock::Text("done A".into())],
                     vec![],
                 ),
-                upstream_failure: None,
+                excluded: None,
             },
         ),
         // First consolidation: upto=1
@@ -154,7 +154,7 @@ fn multiple_summaries_each_replace_their_own_range() {
                     vec![ContentBlock::Text("working on B".into())],
                     vec![],
                 ),
-                upstream_failure: None,
+                excluded: None,
             },
         ),
         // Second consolidation: upto=4
@@ -174,7 +174,7 @@ fn multiple_summaries_each_replace_their_own_range() {
                     vec![ContentBlock::Text("working on C".into())],
                     vec![],
                 ),
-                upstream_failure: None,
+                excluded: None,
             },
         ),
     ];
@@ -236,7 +236,7 @@ fn summary_replaces_named_range_and_injects_text() {
                     vec![],
                     vec![ToolCall::new("bash", "a", json!({}))],
                 ),
-                upstream_failure: None,
+                excluded: None,
             },
         ),
         entry(
@@ -289,7 +289,7 @@ fn a_responses_summary_replaces_whole_replay_units() {
                     status: None,
                 },
             ]),
-            upstream_failure: None,
+            excluded: None,
         }
     }
     fn result(call_id: &str, out: &str) -> Payload {
@@ -377,7 +377,7 @@ fn a_summary_inside_a_responses_step_orphans_its_output() {
                     arguments: "{}".into(),
                     status: None,
                 }]),
-                upstream_failure: None,
+                excluded: None,
             },
         ),
         entry(
@@ -424,7 +424,7 @@ fn two_turn_log() -> Vec<LogEntry> {
                     vec![],
                     vec![ToolCall::new("bash", "t1", json!({}))],
                 ),
-                upstream_failure: None,
+                excluded: None,
             },
         ),
         entry(

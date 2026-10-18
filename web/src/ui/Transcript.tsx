@@ -20,7 +20,7 @@ import type {
 } from "../api/types.ts";
 import type { LiveBlock, PendingTurn, Streaming } from "../session/store.ts";
 import type { CallNode, LeafNode, TranscriptNode } from "../session/tree.ts";
-import { upstreamFailureWhy } from "../session/tree.ts";
+import { upstreamFailureWhy, upstreamOf } from "../session/tree.ts";
 import { assistantView } from "../session/assistant.ts";
 import type { CallId } from "../api/types.ts";
 import { askMarkText, askStanding } from "./askMark.ts";
@@ -291,15 +291,18 @@ function Leaf({
     // Which half of the step this leaf stands for is in its key: the
     // projection emits the record-only marker, thinking, and prose as
     // separate nodes.
-    if (node.key.endsWith(":aborted")) {
-      const record = p.Assistant.upstream_failure;
+    if (node.key.endsWith(":excluded")) {
+      const excluded = p.Assistant.excluded;
+      const record = upstreamOf(excluded);
       return (
         <Entry label={null}>
           <div className="record-only">
-            {record !== undefined &&
-            upstreamFailureWhy(record) === "generation interrupted"
-              ? "Generation interrupted — recorded, not in context"
-              : "Incomplete response — recorded, not in context"}
+            {excluded === "Empty"
+              ? "Empty response — recorded, not in context, asked again"
+              : record !== undefined &&
+                  upstreamFailureWhy(record) === "generation interrupted"
+                ? "Generation interrupted — recorded, not in context"
+                : "Incomplete response — recorded, not in context"}
           </div>
         </Entry>
       );

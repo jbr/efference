@@ -51,16 +51,17 @@ fn diagnostics_round_trip() {
 }
 
 /// The whole payload round-trips through the log's own serialization, from
-/// either spelling — the entry, not just the field, is what a session reloads.
+/// either spelling of the record — the entry, not just the field, is what a session
+/// reloads.
 #[test]
 fn an_assistant_entry_round_trips_from_either_spelling() {
     for json in [
-        r#"{"seq":7,"turn":2,"at":1,"payload":{"Assistant":{"output":{"Messages":[]},"upstream_failure":"stream aborted"}}}"#,
-        r#"{"seq":7,"turn":2,"at":1,"payload":{"Assistant":{"output":{"Messages":[]},"upstream_failure":{"why":"stream aborted","stream":{"status":200}}}}}"#,
+        r#"{"seq":7,"turn":2,"at":1,"payload":{"Assistant":{"output":{"Messages":[]},"excluded":{"Upstream":"stream aborted"}}}}"#,
+        r#"{"seq":7,"turn":2,"at":1,"payload":{"Assistant":{"output":{"Messages":[]},"excluded":{"Upstream":{"why":"stream aborted","stream":{"status":200}}}}}}"#,
     ] {
         let entry: crate::log::LogEntry = serde_json::from_str(json).unwrap();
         let Payload::Assistant {
-            upstream_failure: Some(failure),
+            excluded: Some(crate::log::Exclusion::Upstream(failure)),
             ..
         } = &entry.payload
         else {
@@ -69,7 +70,23 @@ fn an_assistant_entry_round_trips_from_either_spelling() {
         assert_eq!(failure.why(), "stream aborted");
         assert_eq!(entry.seq, 7 as Seq);
         assert_eq!(entry.at, Timestamp(1));
+        assert_eq!(serde_json::to_string(&entry).unwrap(), json);
     }
+}
+
+/// An empty completion's mark is the bare variant name (docs/log-and-projection.md).
+#[test]
+fn an_empty_completion_serializes_as_its_kind() {
+    let json = r#"{"seq":7,"turn":2,"at":1,"payload":{"Assistant":{"output":{"Messages":[]},"excluded":"Empty"}}}"#;
+    let entry: crate::log::LogEntry = serde_json::from_str(json).unwrap();
+    assert!(matches!(
+        entry.payload,
+        Payload::Assistant {
+            excluded: Some(crate::log::Exclusion::Empty),
+            ..
+        }
+    ));
+    assert_eq!(serde_json::to_string(&entry).unwrap(), json);
 }
 
 /// The allowlist decides what may reach the log; a header outside it is never

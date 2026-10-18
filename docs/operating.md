@@ -582,9 +582,9 @@ something, `final` when nothing followed, and **`barren`** when neither — the 
 asked nothing and was told nothing, so the round trip bought a request and a cache
 write and no information. It takes the same session argument and `--all` sweep, and
 reports the longest run of barren endings, since a run is the shape a stalled session
-makes where a scattered few are ordinary. An assistant entry that records a failed
-request (`upstream_failure`) is not an ending — the model said nothing — so a reply to it
-is not counted. `ask` calls get a second table: each reply graded by the same test —
+makes where a scattered few are ordinary. A record-only assistant entry
+(`excluded`: a failed request, or an empty completion the loop asked again) is not an
+ending — the model said nothing — so a reply to it is not counted. `ask` calls get a second table: each reply graded by the same test —
 answered or barren — with interrupted and unanswered asks counted but not graded, so a
 stall moved into a tool call ("Proceeding with X, OK?" → "sounds good") stays visible.
 The classification is `log/stops.rs`.

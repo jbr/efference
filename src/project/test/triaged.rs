@@ -267,7 +267,7 @@ fn triaged_projects_the_verdict_not_raw() {
                     vec![],
                     vec![ToolCall::new("bash", "x", json!({}))],
                 ),
-                upstream_failure: None,
+                excluded: None,
             },
         ),
         entry(
@@ -308,7 +308,7 @@ fn triage_failed_projects_an_error_never_the_raw() {
                     vec![],
                     vec![ToolCall::new("bash", "x", json!({}))],
                 ),
-                upstream_failure: None,
+                excluded: None,
             },
         ),
         entry(

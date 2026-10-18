@@ -224,7 +224,7 @@ async fn a_supervisor_reads_the_gate_as_its_reviewer_and_the_whole_closing_messa
                     vec![],
                     vec![curl.clone()],
                 ),
-                upstream_failure: None,
+                excluded: None,
             },
         )
         .unwrap();
@@ -284,7 +284,7 @@ async fn a_supervisor_reads_the_gate_as_its_reviewer_and_the_whole_closing_messa
                     vec![ContentBlock::Text(report.clone())],
                     vec![],
                 ),
-                upstream_failure: None,
+                excluded: None,
             },
         )
         .unwrap();

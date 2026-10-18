@@ -22,7 +22,7 @@ fn said(text: &str) -> Payload {
             vec![ContentBlock::Text(text.to_string())],
             Vec::new(),
         ),
-        upstream_failure: None,
+        excluded: None,
     }
 }
 
@@ -120,7 +120,7 @@ fn asks_are_counted_beside_endings_and_leave_them_alone() {
                 serde_json::json!({ "question": "OK?" }),
             )],
         ),
-        upstream_failure: None,
+        excluded: None,
     };
     let result =
         |id: &str, text: &str| Payload::tool_result(id, RawResult::text(text), WireState::Raw);

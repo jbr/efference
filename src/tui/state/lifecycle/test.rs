@@ -101,7 +101,7 @@ fn a_multi_call_step_reports_its_first_call_in_either_dialect() {
                 status: None,
             },
         ]),
-        upstream_failure: None,
+        excluded: None,
     });
     assert_eq!(in_flight(&play), Some(("call_1".into(), "read".into())));
     play.tool_result("call_1", "…", false, WireState::Raw);

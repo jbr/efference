@@ -309,7 +309,7 @@ fn the_reply_projects_as_a_result_with_the_submitters_label() {
             1,
             Payload::Assistant {
                 output: AssistantOutput::from_legacy_messages(vec![], vec![], vec![call.clone()]),
-                upstream_failure: None,
+                excluded: None,
             },
         )
         .unwrap();
@@ -337,7 +337,7 @@ fn the_reply_projects_as_a_result_with_the_submitters_label() {
             1,
             Payload::Assistant {
                 output: AssistantOutput::from_legacy_messages(vec![], vec![], vec![call.clone()]),
-                upstream_failure: None,
+                excluded: None,
             },
         )
         .unwrap();
@@ -361,7 +361,7 @@ fn the_reply_projects_as_a_result_with_the_submitters_label() {
             1,
             Payload::Assistant {
                 output: AssistantOutput::from_legacy_messages(vec![], vec![], vec![call.clone()]),
-                upstream_failure: None,
+                excluded: None,
             },
         )
         .unwrap();

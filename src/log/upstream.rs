@@ -7,9 +7,9 @@
 //! no usage, whose generation id 404s afterward, so the log is the only place a
 //! later investigation can read from.
 //!
-//! None of this reaches the wire: an entry with an `upstream_failure` projects
-//! to nothing (docs/log-and-projection.md), so the shape here cannot move the
-//! cached prefix.
+//! None of this reaches the wire: an entry `excluded` for its upstream's failure
+//! projects to nothing (docs/log-and-projection.md), so the shape here cannot move
+//! the cached prefix.
 
 use std::collections::BTreeMap;
 

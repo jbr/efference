@@ -29,7 +29,7 @@ fn asks(shared: &Session, call_id: &str, question: &str) -> Seq {
                     vec![ContentBlock::Text("one question".into())],
                     vec![call],
                 ),
-                upstream_failure: None,
+                excluded: None,
             },
         )
         .unwrap()
@@ -126,7 +126,7 @@ async fn a_reply_to_a_non_question_or_a_blank_reply_is_refused() {
                         serde_json::json!({ "command": "ls" }),
                     )],
                 ),
-                upstream_failure: None,
+                excluded: None,
             },
         )
         .unwrap();

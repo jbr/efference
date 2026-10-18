@@ -37,7 +37,7 @@ fn call(seq: u64, id: &str) -> LogEntry {
                     serde_json::json!({"command": "ls"}),
                 )],
             ),
-            upstream_failure: None,
+            excluded: None,
         },
     )
 }

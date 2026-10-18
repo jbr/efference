@@ -62,7 +62,7 @@ fn a_prose_only_response_retries_with_just_the_renewed_ask() {
                 vec![crate::log::ContentBlock::Text("hmm, let me think".into())],
                 vec![],
             ),
-            upstream_failure: None,
+            excluded: None,
         },
         id: None,
         model: "test".into(),
@@ -96,7 +96,7 @@ fn a_prose_only_response_retries_with_just_the_renewed_ask() {
 fn an_empty_response_is_terminal_not_an_invalid_retry() {
     let empty = Payload::Assistant {
         output: AssistantOutput::Messages(vec![]),
-        upstream_failure: None,
+        excluded: None,
     };
     let mut messages = Vec::new();
     assert!(!extend_with_retry(
