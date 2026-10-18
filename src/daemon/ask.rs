@@ -110,6 +110,25 @@ impl Session {
         }
     }
 
+    /// The queued turns the pending ask returned undelivered, each with its sender
+    /// (docs/process-monitor.md).
+    pub(crate) fn returned_by_ask(&self) -> Vec<super::status::Returned> {
+        self.ask
+            .lock()
+            .unwrap()
+            .as_ref()
+            .map(|ask| {
+                ask.recalled
+                    .iter()
+                    .map(|turn| super::status::Returned {
+                        source: turn.source.clone(),
+                        text: turn.text.clone(),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
     /// The pending ask, if any.
     pub(crate) fn asking(&self) -> Option<AskView> {
         self.ask.lock().unwrap().as_ref().map(|a| AskView {

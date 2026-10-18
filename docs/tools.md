@@ -264,6 +264,11 @@ message waits behind the operator's pace hold, docs/control-channel.md), or `lef
 <id>'s inbox; it may set it aside (you don't drive it)`. A message never resolves a gate:
 sent to a session holding a call, it waits in the queue.
 
+A message queued while the target was working, and returned undelivered when the
+target asked a question, is said to its sender in the asking status: `returned: your
+message "…" was returned undelivered; answer first, then resend it if it still applies`
+(docs/process-monitor.md).
+
 While the target is asking a question (docs/process-monitor.md), a driver's message
 must name it with `reply_to` — the asking call's transcript handle — and one that does
 answers it. A message naming no question is refused with the question and its handle; a

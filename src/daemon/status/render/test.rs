@@ -207,6 +207,7 @@ fn asking_n_of_m() {
         n: 2,
         of: 3,
         handle: Some("14".into()),
+        returned: vec![],
     });
     let first = "child: asking a question (question 2 of 3, seq 14)\n\
         question: Which branch should I use?";
@@ -224,8 +225,47 @@ fn asking_n_of_m() {
         n: 1,
         of: 1,
         handle: None,
+        returned: vec![],
     });
     assert!(rendered(&lone, &observer()).starts_with("child: asking a question\n"));
+}
+
+/// A message the question returned undelivered is said to its sender, in-session and over
+/// MCP, and to no one else.
+#[test]
+fn a_returned_message_is_said_to_its_sender() {
+    let asking = view(Condition::Asking {
+        question: "Sure?".into(),
+        n: 1,
+        of: 1,
+        handle: Some("9".into()),
+        returned: vec![
+            Returned {
+                source: Some("session[parent]".into()),
+                text: "use main".into(),
+            },
+            Returned {
+                source: Some("mcp[claude-code]".into()),
+                text: "stop".into(),
+            },
+        ],
+    });
+    let line = |text: &str| {
+        format!(
+            "returned: your message {text:?} was returned undelivered; answer first, then \
+             resend it if it still applies"
+        )
+    };
+    let parent = rendered(&asking, &driver());
+    assert!(parent.ends_with(&line("use main")), "{parent}");
+    assert!(!parent.contains("\"stop\""), "{parent}");
+    let mount = rendered(
+        &asking,
+        &Reader::read(Relation::Driver, &Moves::MCP, Some("claude-code")),
+    );
+    assert!(mount.contains(&line("stop")), "{mount}");
+    assert!(!mount.contains("use main"), "{mount}");
+    assert!(!rendered(&asking, &observer()).contains("returned:"));
 }
 
 fn idle(text: &str, bytes: usize, lines: usize) -> StatusView {

@@ -347,6 +347,47 @@ async fn a_childs_question_wakes_the_parent() {
     fixture.host.swansong().shut_down().await;
 }
 
+/// A question that returns a driver's queued message tells that driver, subscribed or not:
+/// `parent` drives `grandchild` through the creator chain without a subscription, and is
+/// woken with the status saying its message came back. `child`, subscribed, hears the
+/// question without that line.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_question_tells_a_driver_its_message_came_back() {
+    let fixture = Fixture::new();
+    let parent = fixture.session("parent");
+    let child = fixture.session("child");
+    let grandchild = fixture.session("grandchild");
+    // Held, so the idle loop leaves the message queued for the question to return.
+    grandchild.set_pace(None, Some(true));
+    let message =
+        SubmittedTurn::new("try the other branch", "p1").sourced(Some("session[parent]".into()));
+    assert_eq!(
+        grandchild.submit_named_turn(message, None),
+        Ok(Landing::Held)
+    );
+    let _wait = grandchild.begin_ask("ask_1", "Which branch?".into(), 1, 1);
+    wait_until("the parent heard its message came back", || {
+        heard(&parent, |source, body, _| {
+            source == "grandchild"
+                && body.contains(
+                    "returned: your message \"try the other branch\" was returned undelivered",
+                )
+        })
+        .is_some()
+    })
+    .await;
+    wait_until("the subscribed child heard the question", || {
+        heard(&child, |source, body, _| {
+            source == "grandchild"
+                && body.starts_with("grandchild: asking a question")
+                && !body.contains("returned:")
+        })
+        .is_some()
+    })
+    .await;
+    fixture.host.swansong().shut_down().await;
+}
+
 /// Ending a session posts its end to its subscribers, and ends the sessions it
 /// commissioned — except a detached one, which outlives it.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

@@ -50,6 +50,10 @@ pub(crate) enum Condition {
         /// The asking call's transcript handle.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         handle: Option<String>,
+        /// The queued messages the question returned undelivered (docs/process-monitor.md),
+        /// so each sender can be told its own.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        returned: Vec<Returned>,
     },
     /// Its turn is done; what it said last.
     Idle {
@@ -70,6 +74,15 @@ pub(crate) enum Condition {
 }
 
 /// A held call, as its decider reads it.
+/// A queued message a question returned undelivered: who sent it and what it said.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub(crate) struct Returned {
+    /// The turn's `source`: `None` for the operator.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) source: Option<String>,
+    pub(crate) text: String,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub(crate) struct HeldCall {
     /// The provider's id for the call, which the approval route takes; `decide` maps
@@ -240,6 +253,7 @@ impl Session {
                     n: *n,
                     of: *of,
                     handle,
+                    returned: self.returned_by_ask(),
                 }
             }
             SessionStatus::Stalled { message } => Condition::Stalled {

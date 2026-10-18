@@ -82,6 +82,11 @@ impl Host {
     /// body a reviewer reads, which names the moves that decide it. That reviewer is
     /// skipped in the subscriber loop so the two posts do not race on one slot. Every
     /// other status, and every other position, posts to subscribers alone.
+    ///
+    /// A question that returned a session's queued message is that session's news as
+    /// well (docs/process-monitor.md): a sender that is not subscribed is woken with the
+    /// status, which tells it its message came back. Only a driver's message is queued,
+    /// so it reads as a driver.
     pub(super) fn post_status(&self, id: &str, session: &Session, status: &SessionStatus) {
         let view = session.status_view(id, status);
         // The view read the routing once; the post follows that same reading.
@@ -95,7 +100,30 @@ impl Host {
         let now = crate::log::Timestamp::now().0;
         let body =
             |relation, reader: &str| render(&view, &Reader::notification(relation, reader), now);
-        for (subscriber, terms) in self.subscribers(id) {
+        let subscribers = self.subscribers(id);
+        let returned_to: Vec<String> = match &view.condition {
+            Condition::Asking { returned, .. } => returned
+                .iter()
+                .filter_map(|message| crate::frontend::source_session(message.source.as_deref()?))
+                .filter(|sender| {
+                    !subscribers
+                        .iter()
+                        .any(|(subscriber, _)| subscriber == sender)
+                        && reviewer.as_deref() != Some(*sender)
+                })
+                .map(str::to_string)
+                .collect::<std::collections::BTreeSet<_>>()
+                .into_iter()
+                .collect(),
+            _ => Vec::new(),
+        };
+        for sender in returned_to {
+            if let Some(inbox) = self.session(&sender) {
+                let body = body(Relation::Driver, &sender);
+                inbox.notify_wake(id.to_string(), body, Some(status_slot(id)));
+            }
+        }
+        for (subscriber, terms) in subscribers {
             if Some(&subscriber) == reviewer.as_ref() {
                 continue;
             }

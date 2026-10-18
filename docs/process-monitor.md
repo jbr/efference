@@ -426,7 +426,14 @@ permission to ask would gate a question behind a question.
 - **Turns queued before it are recalled.** They were written before the question
   existed, so `begin_ask` withdraws them from the queue as `DELETE /turns/:id` would and
   publishes them on the `ask` state topic as `recalled`; the submitting client puts them
-  back in its composer.
+  back in its composer. An agent that sent one is told instead: the asking status carries
+  the returned messages (`Condition::Asking::returned`), and its rendering for the
+  reader who sent one adds `returned: your message "…" was returned undelivered; answer
+  first, then resend it if it still applies`. A subscribed session reads it in the status
+  posted to it, an MCP mount in `status`, `wait` and the status stream (matched by the
+  `mcp[<client>]` source, so two mounts with one client name both read it), and a
+  session that drives the asker without a subscription is woken with the same status
+  (`Host::post_status`, `daemon/subscriptions.rs`).
 - **Notifications do not interrupt it.** The reply bypasses the triage (`triage::bypassed`
   names its shape `operator reply`); the inbox is still triaged. In a batch with other
   results the triage runs as usual with a stand-in for the reply. When every result in the

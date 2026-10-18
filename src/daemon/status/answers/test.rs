@@ -67,6 +67,7 @@ fn what_a_message_did() {
         n: 1,
         of: 1,
         handle: Some("3.1".into()),
+        returned: vec![],
     });
     assert_eq!(
         sent("child", Landing::Answered, Some(&asking), NOW),

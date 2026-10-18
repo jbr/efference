@@ -138,6 +138,7 @@ pub(crate) fn render(view: &StatusView, reader: &Reader, now: u64) -> String {
             n,
             of,
             handle,
+            returned,
         } => {
             target.handle = handle.as_deref();
             let mut place = Vec::new();
@@ -155,6 +156,16 @@ pub(crate) fn render(view: &StatusView, reader: &Reader, now: u64) -> String {
             out.push(format!("question: {}", question.trim_end()));
             if reader.drives() {
                 out.push(format!("answer: {} answers it", (moves.answer)(&target)));
+            }
+            for message in returned
+                .iter()
+                .filter(|message| sender(message.source.as_deref(), reader.me) == "you")
+            {
+                out.push(format!(
+                    "returned: your message {:?} was returned undelivered; answer first, then \
+                     resend it if it still applies",
+                    quoted(message.text.trim(), RETURNED_CAP)
+                ));
             }
         }
         Condition::Idle { closing } => {
@@ -377,6 +388,17 @@ pub(super) fn activity_text(activity: &Activity, now: u64) -> String {
             "waiting out its operator's pace delay, {} left",
             duration(until.saturating_sub(now))
         ),
+    }
+}
+
+/// The most of a returned message a status quotes, in characters.
+const RETURNED_CAP: usize = 120;
+
+/// `text` up to `cap` characters, an ellipsis marking a cut.
+fn quoted(text: &str, cap: usize) -> String {
+    match text.char_indices().nth(cap) {
+        Some((at, _)) => format!("{}…", text[..at].trim_end()),
+        None => text.to_string(),
     }
 }
 
