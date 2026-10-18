@@ -209,7 +209,7 @@ async fn attach(
     let continue_events = tx.clone();
     let continuer = tokio::spawn(async move {
         while continue_rx.recv().await.is_some() {
-            let event = match continue_client.continue_loop().await {
+            let event = match continue_client.continue_loop(None).await {
                 Ok(crate::client::ContinueOutcome::Accepted) => continue,
                 Ok(crate::client::ContinueOutcome::Declined { message }) => {
                     TuiEvent::Notice(message)

@@ -416,3 +416,17 @@ fn senders_are_plain_names_for_the_reader() {
         assert_eq!(sender(source, me), name, "{source:?} read by {me:?}");
     }
 }
+
+/// A continue reads as who sent it, since nothing on the wire says so.
+#[test]
+fn a_continue_reads_as_its_sender() {
+    let mut log = Fixture::new();
+    log.user("go on when ready", None);
+    log.add(turn("Done.", vec![]));
+    log.add(Payload::Telemetry(crate::log::Telemetry::Continue(
+        crate::log::ContinueOrigin {
+            source: Some("mcp[claude-code]".into()),
+        },
+    )));
+    assert!(whole(&log, &child(None)).contains("2  claude-code continued it\n"));
+}

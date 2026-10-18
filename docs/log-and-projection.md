@@ -74,6 +74,7 @@ enum Telemetry {
     InboxExpired { seq: Seq, shows: usize },      // a shown notification no verdict mentioned, dismissed by the harness (see inbox.md)
     SupervisorSet { supervisor: Option<String> }, // the supervisor pointer set or cleared (see permissions.md)
     Interrupt(InterruptOrigin),                   // an interrupt reached the loop: who sent it, through which control (see control-api.md)
+    Continue(ContinueOrigin),                     // a continue was accepted: who sent it (see control-api.md)
     GateDecision(GateDecision),                   // a decision on a held call was accepted: the call, the decision, who decided (see control-api.md)
     Consolidation { from: Seq, upto: Seq, context: Seq, tool_bytes: usize, outcome: String, account_bytes: usize },
     Tools { tools: Vec<Value> },                  // the tools[] the session advertises, as sent (below)

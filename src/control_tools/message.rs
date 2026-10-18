@@ -84,7 +84,10 @@ impl Tool<Control> for Message {
                     .or(self.agent.clone())
                     .unwrap_or_else(|| "the session".to_string());
                 if blank && self.reply_to.is_none() {
-                    return match client.continue_loop().await? {
+                    return match client
+                        .continue_loop(turn_source(&context).as_deref())
+                        .await?
+                    {
                         crate::client::ContinueOutcome::Accepted => Ok(answers::continuing(&id)),
                         crate::client::ContinueOutcome::Declined { message } => {
                             Err(anyhow!("not continued: {message}"))
@@ -116,7 +119,9 @@ impl Tool<Control> for Message {
                     return Ok(answers::left_in_inbox(&id));
                 }
                 if blank && self.reply_to.is_none() {
-                    return match target.request_continue() {
+                    return match target.request_continue(crate::log::ContinueOrigin {
+                        source: Some(crate::frontend::session_source(state.caller())),
+                    }) {
                         Ok(()) => Ok(answers::continuing(&id)),
                         Err(why) => Err(anyhow!("not continued: {}", why.message())),
                     };

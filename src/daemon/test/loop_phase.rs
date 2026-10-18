@@ -237,7 +237,11 @@ async fn settle_waits_through_a_retry_pause() {
         !waiter.is_finished(),
         "a retry pause is not a decision point"
     );
-    assert_eq!(session.request_continue(), Ok(()), "continue retries now");
+    assert_eq!(
+        session.request_continue(Default::default()),
+        Ok(()),
+        "continue retries now"
+    );
     let state = waiter.await.unwrap();
     assert_eq!(state["loop_phase"], serde_json::json!({"phase": "idle"}));
     host.shut_down().await;

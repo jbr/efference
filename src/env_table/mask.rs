@@ -415,6 +415,12 @@ impl Masker {
                     self.mask_in_place(control);
                 }
             }
+            // A continue's origin is one client-asserted label.
+            Payload::Telemetry(Telemetry::Continue(origin)) => {
+                if let Some(source) = origin.source.as_mut() {
+                    self.mask_in_place(source);
+                }
+            }
             // A gate decision's decider is a client-asserted label, and a redirect's
             // message or a config edit's change and note are text a person wrote.
             Payload::Telemetry(Telemetry::GateDecision(decision)) => {

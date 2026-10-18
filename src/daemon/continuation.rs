@@ -2,17 +2,17 @@
 //! (docs/control-api.md, docs/control-channel.md).
 //!
 //! `POST /loop/continue` asks the idle loop to take another turn on the wire it
-//! already has: no `User` entry, no log append, no projection change. The signal
-//! is a flag plus a wake, read by the agent loop's idle `select!` beside the user
-//! turn and the notification wake — the same escalation shape the pinned-event
-//! path uses (docs/process-monitor.md), which also enters a trajectory with no new
-//! user turn.
+//! already has: no `User` entry and no projection change. The signal is a flag plus
+//! a wake, read by the agent loop's idle `select!` beside the user turn and the
+//! notification wake — the same escalation shape the pinned-event path uses
+//! (docs/process-monitor.md), which also enters a trajectory with no new user turn.
 //!
-//! Nothing here writes to the log, so the byte-stability pins cannot move: the
-//! next request re-sends the same prefix it would have sent had control never
-//! been handed back.
+//! The one thing written is a `Telemetry::Continue` naming who sent it, which
+//! projects to nothing, so the byte-stability pins cannot move: the next request
+//! re-sends the same prefix it would have sent had control never been handed back.
 
 use super::*;
+use crate::log::ContinueOrigin;
 
 /// Why a `POST /loop/continue` was declined (docs/control-api.md). The daemon
 /// answers `409 not_continuable` carrying the message; a client renders it and
@@ -110,13 +110,21 @@ impl Session {
         }
     }
 
-    /// Ask the loop to re-enter its trajectory with nothing appended, or say why it
-    /// cannot (docs/control-api.md). The verdict is read before the person's action is
-    /// noted, since noting it releases a cold park the verdict reads.
-    pub(crate) fn request_continue(&self) -> Result<(), NotContinuable> {
+    /// Ask the loop to re-enter its trajectory with nothing appended to its wire, or say
+    /// why it cannot (docs/control-api.md). The verdict is read before the person's
+    /// action is noted, since noting it releases a cold park the verdict reads. An
+    /// accepted continue is recorded, with who sent it, before the loop is signalled, so
+    /// it precedes the request it causes; a declined one writes nothing.
+    pub(crate) fn request_continue(&self, origin: ContinueOrigin) -> Result<(), NotContinuable> {
         let verdict = self.continue_verdict();
         self.person_acted(super::PersonAction::Continue);
-        match verdict? {
+        let verdict = verdict?;
+        let entry = Payload::Telemetry(crate::log::Telemetry::Continue(origin));
+        // The record must not stop what it describes.
+        if let Err(e) = self.append(self.latest_turn(), entry) {
+            log::warn!("continue record: append failed: {e}");
+        }
+        match verdict {
             Continues::Already | Continues::Release => {}
             Continues::RetryNow => {
                 self.upstream_retry.hurry();

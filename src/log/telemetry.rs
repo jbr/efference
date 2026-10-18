@@ -66,12 +66,16 @@ pub enum Telemetry {
     /// it precedes the `failed: interrupted` stage it causes. Appended whether or not
     /// anything was running.
     Interrupt(InterruptOrigin),
+    /// A continue was accepted (`POST /loop/continue`, an empty `message`;
+    /// docs/control-api.md): who sent it. The loop takes another turn on the wire it
+    /// already has, so this record is the only sign of who asked.
+    Continue(ContinueOrigin),
     /// A decision on a held call was accepted (`PUT /approvals/:call_id`, the
     /// in-session approve; docs/control-api.md): which call, what was decided, and
     /// who decided it. Appended once the call is known to be the pending gate and
     /// before the decision reaches the loop, so it precedes the result or the
-    /// redirect it causes. Decisions the loop makes without a gate (a spotter clear,
-    /// an autonomous redirect) leave none.
+    /// redirect it causes. A redirect the loop's own permission review writes is
+    /// recorded under `review[<level>]`; a spotter clear leaves none.
     GateDecision(GateDecision),
     /// A main-model consolidation check and its disposition (docs/consolidate.md).
     Consolidation {
@@ -103,6 +107,15 @@ pub struct InterruptOrigin {
     /// `control-cli`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub control: Option<String>,
+}
+
+/// Who sent an accepted continue ([`Telemetry::Continue`]), spelled as a turn's `source`
+/// is: `web`, `mcp[<name>]`, `session[<id>]`; absent for the operator's own command line
+/// or TUI (docs/control-api.md).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ContinueOrigin {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
 }
 
 /// One accepted gate decision ([`Telemetry::GateDecision`]).
@@ -150,6 +163,7 @@ impl Telemetry {
             Telemetry::InboxExpired { .. } => "telemetry.inbox_expired",
             Telemetry::SupervisorSet { .. } => "telemetry.supervisor_set",
             Telemetry::Interrupt(_) => "telemetry.interrupt",
+            Telemetry::Continue(_) => "telemetry.continue",
             Telemetry::GateDecision(_) => "telemetry.gate_decision",
             Telemetry::Consolidation { .. } => "telemetry.consolidation",
             Telemetry::Tools { .. } => "telemetry.tools",

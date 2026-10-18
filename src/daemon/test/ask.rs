@@ -128,7 +128,7 @@ fn continue_is_declined_while_asking() {
     let shared = session();
     let _wait = shared.begin_ask("ask_1", "Sure?".into(), 1, 1);
     assert_eq!(
-        shared.request_continue(),
+        shared.request_continue(Default::default()),
         Err(crate::daemon::continuation::NotContinuable::Asking)
     );
 }

@@ -267,7 +267,7 @@ async fn a_gate_without_a_verdict_holds_until_continue() {
     );
 
     assert_eq!(
-        session.request_continue(),
+        session.request_continue(Default::default()),
         Ok(()),
         "continue retries the hold"
     );
@@ -366,7 +366,7 @@ async fn a_fold_during_a_hold_is_what_the_retry_triages() {
             )),
         )
         .unwrap();
-    assert_eq!(session.request_continue(), Ok(()));
+    assert_eq!(session.request_continue(Default::default()), Ok(()));
     wait_until("the turn finishes", || {
         session.loop_phase() == crate::daemon::LoopPhase::Idle
     })
@@ -410,7 +410,11 @@ async fn a_failed_request_is_retried_and_continue_skips_the_wait() {
         session.stall().is_none(),
         "a transient failure does not stall"
     );
-    assert_eq!(session.request_continue(), Ok(()), "continue retries now");
+    assert_eq!(
+        session.request_continue(Default::default()),
+        Ok(()),
+        "continue retries now"
+    );
     wait_until("the turn finishes", || {
         session.loop_phase() == crate::daemon::LoopPhase::Idle
     })

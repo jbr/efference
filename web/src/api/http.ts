@@ -220,8 +220,9 @@ export const interruptLoop = (control: InterruptControl) =>
 // appended, so this is not a turn with empty text. A moment with no continue in
 // it answers `409 not_continuable`, which arrives here as an `ApiError` whose
 // `message` names the case.
+// `source` names the web client, as its turns do, so the log records who continued.
 export const continueLoop = () =>
-  post<{ status: string }>("/v1/loop/continue", {});
+  post<{ status: string }>("/v1/loop/continue", { source: "web" });
 // `background: true` on the foreground process is the handoff — expect 202,
 // the flip lands at the detach race (docs/control-api.md); `note` rides it as
 // the next user message. `muted` is the dismiss toggle.

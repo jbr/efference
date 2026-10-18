@@ -631,11 +631,15 @@ over the title ask's own length cap, so both authors are held to one shape.
 
 #### `POST /loop/continue`
 Hand control back with **no input**: the idle loop takes another turn on the
-wire it already has. Nothing is submitted, nothing is appended, and the
-projection does not move — the next request re-sends a byte-identical prefix, so
-this costs no input tokens beyond the turn it triggers. A verb-route on the loop
-resource for the same reason as `/loop/interrupt`: it signals the loop rather
-than creating or editing a resource. It takes no body. On a cold session it is a
+wire it already has. Nothing is submitted and the projection does not move — the
+next request re-sends a byte-identical prefix, so this costs no input tokens beyond
+the turn it triggers. A verb-route on the loop resource for the same reason as
+`/loop/interrupt`: it signals the loop rather than creating or editing a resource.
+The body is optional, `{"source": "<string>"}`: who is continuing, spelled as a turn's
+`source` is and absent for the operator. An accepted continue is recorded as
+`telemetry.continue` with that source, before the loop is signalled, so the log says
+who asked for the turn; it projects to nothing, and the conversation transcript reads
+it as `<sender> continued it`. A declined one writes nothing. On a cold session it is a
 person's action like a turn (`released`, `by: continue`); a loop parked at its cold
 check is resumed by it.
 

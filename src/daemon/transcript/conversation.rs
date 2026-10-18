@@ -103,6 +103,10 @@ impl<'a> Out<'a, '_> {
                 entry.seq,
                 format!("summarized seq {}–{}", summary.from, summary.upto),
             ),
+            Payload::Telemetry(Telemetry::Continue(origin)) => {
+                let from = self.name(origin.source.as_deref());
+                self.push(entry.seq, format!("{from} continued it"));
+            }
             Payload::Archived {} => self.push(entry.seq, "archived"),
             Payload::Resumed(_) => self.push(entry.seq, "resumed after its host restarted"),
             // On their call's line.

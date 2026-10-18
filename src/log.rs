@@ -52,7 +52,7 @@ pub use result::{ContentElision, RawResult, ResultImage};
 pub use spot::{Spot, Stance};
 pub use stops::Stop;
 pub use summary::{Audience, MadeBy, Summary};
-pub use telemetry::{GateDecision, InterruptOrigin, Telemetry};
+pub use telemetry::{ContinueOrigin, GateDecision, InterruptOrigin, Telemetry};
 pub use tool_telemetry::{BashTelemetry, EditTelemetry, ToolOutcome, ToolTelemetry};
 pub use tools::{ToolsChange, recorded_tools};
 pub use triage::{Origin, Triage};

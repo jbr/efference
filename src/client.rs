@@ -275,7 +275,10 @@ impl Client {
     /// normal answer whose message says why.
     pub async fn compact(&self) -> Result<CompactOutcome> {
         Ok(
-            match self.post_declinable("/loop/compact", "compaction").await? {
+            match self
+                .post_declinable("/loop/compact", "compaction", None)
+                .await?
+            {
                 None => CompactOutcome::Accepted,
                 Some(message) => CompactOutcome::Declined { message },
             },
@@ -290,9 +293,16 @@ impl Client {
     /// A decline (`409 not_continuable`) is a normal answer, not a transport
     /// failure: the moment simply had no continue in it, and the daemon's message
     /// says which case. Errors are reserved for a request that didn't get an answer.
-    pub async fn continue_loop(&self) -> Result<ContinueOutcome> {
+    pub async fn continue_loop(&self, source: Option<&str>) -> Result<ContinueOutcome> {
+        let origin = crate::log::ContinueOrigin {
+            source: source.map(str::to_string),
+        };
+        let body = serde_json::to_string(&origin)?;
         Ok(
-            match self.post_declinable("/loop/continue", "continue").await? {
+            match self
+                .post_declinable("/loop/continue", "continue", Some(body))
+                .await?
+            {
                 None => ContinueOutcome::Accepted,
                 Some(message) => ContinueOutcome::Declined { message },
             },
@@ -301,9 +311,14 @@ impl Client {
 
     /// POST to a loop verb whose `409` is an answer rather than a failure: `None`
     /// when accepted, the daemon's message when declined.
-    async fn post_declinable(&self, path: &str, verb: &str) -> Result<Option<String>> {
+    async fn post_declinable(
+        &self,
+        path: &str,
+        verb: &str,
+        body: Option<String>,
+    ) -> Result<Option<String>> {
         let path = self.versioned(path);
-        let mut conn = self.exchange(Method::Post, &path, None).await?;
+        let mut conn = self.exchange(Method::Post, &path, body).await?;
         if conn.status() != Some(trillium_client::Status::Conflict) {
             return read_2xx(conn, Method::Post, &path).await.map(|_| None);
         }

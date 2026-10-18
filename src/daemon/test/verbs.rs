@@ -176,7 +176,7 @@ fn the_continue_route_refuses_exactly_when_the_table_says() {
     for (name, make) in states() {
         let shared = make();
         let table = verbs(&shared)["continue"].clone();
-        let expected = match shared.request_continue() {
+        let expected = match shared.request_continue(Default::default()) {
             Ok(()) => json!({ "accepted": true }),
             Err(why) => json!({ "accepted": false, "message": why.message() }),
         };

@@ -133,7 +133,7 @@ fn two_verdicts_then_done(n: usize) -> Answer {
 /// Ask for the continue until the parked loop takes it.
 async fn continue_when_parked(session: &Session) {
     wait_until("the loop parks and accepts a continue", || {
-        session.request_continue().is_ok()
+        session.request_continue(Default::default()).is_ok()
     })
     .await;
 }

@@ -38,11 +38,28 @@ pub(super) async fn interrupt(mut conn: Conn) -> Conn {
 /// `/loop/interrupt`, for the same reason: it signals the loop rather than
 /// creating or editing a resource. Declined with `409 not_continuable` when
 /// the moment has no continue in it.
-pub(super) async fn continue_loop(conn: Conn) -> Conn {
+pub(super) async fn continue_loop(mut conn: Conn) -> Conn {
     let Some(shared) = shared_of(&conn) else {
         return missing_state(conn);
     };
-    match shared.request_continue() {
+    // The body is optional: a client that says nothing about itself continues as the
+    // operator (docs/control-api.md).
+    let body = conn.request_body_string().await.unwrap_or_default();
+    let origin = if body.trim().is_empty() {
+        crate::log::ContinueOrigin::default()
+    } else {
+        match serde_json::from_str::<crate::log::ContinueOrigin>(&body) {
+            Ok(origin) => origin,
+            Err(e) => {
+                return fail(
+                    conn,
+                    ErrorCode::BadRequest,
+                    format!("bad /loop/continue body: {e}"),
+                );
+            }
+        }
+    };
+    match shared.request_continue(origin) {
         Ok(()) => conn
             .with_status(202)
             .with_body(r#"{"status":"continuing"}"#)
