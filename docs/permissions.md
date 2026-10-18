@@ -466,8 +466,8 @@ a `BoundAction` — the leaf tool, the child's input, its intent, its cwd, and t
 session ids from the directly-targeted child down to the session holding the leaf. A seq
 that is not the target's pending gate is refused before classification with a "gate
 moved" error result, and the target rules the Host executor already enforces (self never,
-driven sessions only, project reach) apply to the binding, each hop to the previous
-session.
+supervised sessions only, project reach) apply to the binding, each hop to the previous
+session: a held decision is followed only into a session its holder supervises.
 
 **A deny authorizes nothing.** A denying `agents__decide` — a redirect or an abort of the
 child's held call — is not bound, and clears on the fast path with no spotter request and
@@ -945,8 +945,8 @@ without eliminating:
   the decision and misleading as a diagnosis.
 - **`Supervisor`** — the session's **supervisor** reviews. The spotter still runs; what it will
   not clear is routed to the supervisor as a gate, which resolves it with `decide` through the
-  ordinary approval route (the authority rule governs that call: a driving verb reaches the
-  sessions the caller created, supervises, or succeeds, [tools.md](tools.md)). This is a fourth answer on
+  ordinary approval route (the decide authority governs that call: a session's gates are
+  decided by its supervisor and the operator, [tools.md](tools.md)). This is a fourth answer on
   the same dimension: `create` from a session defaults the child here, and handing a session back
   to the operator is the same dial set to `spotter_human` — there is no separate disown verb.
 
@@ -960,10 +960,11 @@ without eliminating:
   - *Gates.* A dial at the supervised default, `spotter_human`, moves to `supervisor`, as
     adoption does for a created session; an explicit `autonomous` or `human_only` is kept. Gates
     under `supervisor` then route to the new supervisor.
-  - *Authority.* The new supervisor drives the session — `decide`, `message`, `interrupt`, and
-    `archive` ([tools.md](tools.md)). Supervision is not
-    transitive: it reaches the supervised session, not the sessions that one created or
-    supervises.
+  - *Authority.* The new supervisor decides the session's gates, wherever the dial routes
+    them, and drives it — `message`, `interrupt`, and `archive` ([tools.md](tools.md)). The
+    previous supervisor's `decide` is refused from then on, naming the new one; a creator
+    keeps driving the session it created. Supervision is not transitive: it reaches the
+    supervised session, not the sessions that one created or supervises.
   - *Status.* The new supervisor is subscribed to the session's status with `wake`, as `create`
     subscribes a creator, and is told in its inbox (a must-wake notification) that it now
     supervises the session. Clearing or moving the pointer drops the previous supervisor's
@@ -999,6 +1000,17 @@ without eliminating:
   to draw: unsubscribing to stop answering a peer's gates also discarded its completion and stall
   notices, which were wanted. A creator is still subscribed with `wake` on `create`, because
   waking it when a child goes idle so it can continue is a separate use.
+
+  **Authority is the pointer's.** Who may decide a gate is a separate rule from whom it is
+  routed to. The operator's surfaces — the TUI, the web client, `efference control`, and for
+  now the MCP mount — and the session's supervisor decide it, wherever the dial sends it.
+  Creating a session or succeeding its creator does not by itself confer `decide`;
+  `message`, `interrupt` and `archive` keep the drive relation ([tools.md](tools.md)). When
+  the operator turns a child's dial to `spotter_human` while its creator is still its
+  supervisor, the gate is routed to the operator and the creator may still decide it: the
+  gate reaches the creator's subscription without wake (the operator is the one asked), and
+  the creator's rendering reads `waiting for a decision from the operator or you`, with the
+  `decide` call (`Relation::MayDecide`, `daemon/status/render.rs`).
 
   **A level change re-routes a gate already held; it never drops one.** The status watcher is
   level-triggered on the status, the resolved position, *and* the live supervisor, so turning the

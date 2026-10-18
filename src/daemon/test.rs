@@ -156,6 +156,7 @@ mod cold;
 mod compact;
 mod config_edits;
 mod continuation;
+mod decide_authority;
 mod durable_inbox;
 mod empty_completion;
 mod events;

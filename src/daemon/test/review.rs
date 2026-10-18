@@ -190,13 +190,13 @@ async fn a_level_change_reroutes_a_pending_gate() {
     let root = fixture.session("root");
     let child = fixture.session("child");
 
-    // Start with the operator holding the review, so the creator is only an
-    // observer of the gate rather than its reviewer.
+    // Start with the operator holding the review, so the creator — still the
+    // supervisor, which may decide the gate — is not its reviewer.
     child.set_review_level(ReviewLevel::SpotterHuman);
     let _gate = child.register_pending(&leaf(), None);
     wait_until("the creator observed the gate", || {
         heard(&root, |body| {
-            body.starts_with("child: waiting for a decision from the operator on fs.list")
+            body.starts_with("child: waiting for a decision from the operator or you on fs.list")
         })
     })
     .await;

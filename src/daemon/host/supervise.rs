@@ -3,11 +3,12 @@
 //! The pointer is `Hosted::supervisor`, which starts as `created_by`. Setting it to
 //! another session is one action carrying everything supervision means: the session's
 //! gates under the `supervisor` review position route to the new supervisor, the new
-//! supervisor may drive it (the authority rule in docs/tools.md reads this pointer),
-//! and it is subscribed to the session's status with wake, as `create` subscribes a
-//! creator. Clearing or moving the pointer drops the previous supervisor's
-//! subscription; a held gate is re-routed by the status watcher (`subscriptions.rs`),
-//! which is level-triggered on who the supervisor is.
+//! supervisor may decide its gates wherever they are routed and drive it (the authority
+//! rules in docs/tools.md read this pointer), and it is subscribed to the session's
+//! status with wake, as `create` subscribes a creator. Clearing or moving the pointer
+//! drops the previous supervisor's subscription and its `decide`; a held gate is
+//! re-routed by the status watcher (`subscriptions.rs`), which is level-triggered on
+//! who the supervisor is.
 //!
 //! The pointer is host control state and is not persisted: a resumed session starts
 //! again from its creator. Each change is recorded in the supervised session's log as
@@ -28,7 +29,7 @@ pub enum SupervisorRefused {
 impl Host {
     /// The supervisor pointer for `id` (docs/permissions.md), whether or not the
     /// session it names is still hosted. `None` when `id` is not hosted or has no
-    /// supervisor. What the authority rule reads; [`Session::supervisor`] is the
+    /// supervisor. What the authority rules read; [`Session::supervisor`] is the
     /// live-resolved value gate routing reads.
     pub fn supervisor_of(&self, id: &str) -> Option<String> {
         self.sessions_mut()

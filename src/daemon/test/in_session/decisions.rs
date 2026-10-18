@@ -155,7 +155,8 @@ async fn a_moved_gate_is_refused_with_what_it_holds_now() {
     fixture.host.swansong().shut_down().await;
 }
 
-/// Only a driver decides: a peer is refused, and the gate stays held.
+/// Only the supervisor decides: a peer is refused with who decides and what reaches the
+/// child from it, and the gate stays held.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_peer_cannot_decide() {
     let fixture = Fixture::new();
@@ -166,8 +167,72 @@ async fn a_peer_cannot_decide() {
         .await
         .unwrap_err()
         .to_string();
-    assert!(err.contains("you don't drive \"child\""), "{err}");
+    assert_eq!(
+        err,
+        "refused: you don't supervise \"child\", so its gates are not yours to decide — its \
+         supervisor, \"parent\", and the operator decide them; agents__message leaves it a note"
+    );
     assert!(child.pending_gate().is_some());
+
+    fixture.host.swansong().shut_down().await;
+}
+
+/// Driving is not deciding (docs/permissions.md): `parent` drives `grandchild` through
+/// the creation chain, and a successor drives its predecessor, but neither supervises
+/// it, so both are refused `decide` — an allow and a deny alike — naming who does. The
+/// drive relation is otherwise unchanged: the same caller still interrupts it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_driver_that_does_not_supervise_cannot_decide() {
+    let fixture = Fixture::new();
+    let grandchild = fixture.session("grandchild");
+    let seq = issue(&grandchild, vec![curl()]).to_string();
+    let _gate = grandchild.register_pending(&curl(), None);
+    let refused = |caller: &str, agent: &str, decision: Decision| {
+        let control = fixture.control(caller);
+        let seq = seq.clone();
+        let agent = agent.to_string();
+        async move {
+            Decide {
+                agent: Some(agent),
+                ..decide(&seq, decision, None)
+            }
+            .execute(control, RequestContext::default())
+            .await
+            .unwrap_err()
+            .to_string()
+        }
+    };
+    let expected = "refused: you don't supervise \"grandchild\", so its gates are not yours to \
+        decide — its supervisor, \"child\", and the operator decide them; agents__message and \
+        agents__interrupt still reach it";
+    assert_eq!(
+        refused("parent", "grandchild", Decision::Allow).await,
+        expected
+    );
+    assert_eq!(
+        refused("parent", "grandchild", Decision::Deny).await,
+        expected
+    );
+    assert!(grandchild.pending_gate().is_some());
+    assert!(decisions(&grandchild).is_empty(), "nothing was decided");
+    Interrupt {
+        agent: Some("grandchild".into()),
+    }
+    .execute(fixture.control("parent"), RequestContext::default())
+    .await
+    .expect("parent still drives its grandchild");
+
+    // `peer` succeeds `parent`, a root, and drives it; a decision is still refused.
+    fixture
+        .host
+        .record_succession("parent", "peer", "carry on".into());
+    let err = refused("peer", "parent", Decision::Deny).await;
+    assert_eq!(
+        err,
+        "refused: you don't supervise \"parent\", so its gates are not yours to decide — it \
+         has no supervisor, so the operator decides them; agents__message and agents__interrupt \
+         still reach it"
+    );
 
     fixture.host.swansong().shut_down().await;
 }

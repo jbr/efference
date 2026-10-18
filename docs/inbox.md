@@ -213,7 +213,9 @@ position resolves to `supervisor` ([permissions.md](permissions.md)) sends the c
 holding to its supervisor (by default the session that created it), on the same `session:<id>` slot and with the same
 must-wake, whether or not that session is subscribed — and with a body that names the
 recipient as the one to resolve it. Everything else a subscriber hears is observation: the
-same statuses, on the subscription's own terms, which the host's `unsubscribe` drops. Keeping
+same statuses, on the subscription's own terms, which the host's `unsubscribe` drops — except a
+gate routed to the operator, which reaches a `wake` subscriber without wake, since the
+operator is the one asked ([tools.md](tools.md)). Keeping
 the two apart is what lets a subscription end without the routing ending with it, and the
 routing move to the operator without the creator going blind to whether its child finished.
 

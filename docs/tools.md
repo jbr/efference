@@ -236,7 +236,7 @@ session is told about this surface is the guide document `efference://guide/supe
 
 The provider's executor is `Executor::Host`, which holds the host and the calling
 session's id and calls the same `Session` methods the HTTP handlers call — never a
-round trip over the socket. The calling identity is what makes two rules
+round trip over the socket. The calling identity is what makes three rules
 enforceable, and they are enforced by the executor rather than by config:
 
 - **The caller is never its own target.** A call naming the caller, or naming no
@@ -245,10 +245,21 @@ enforceable, and they are enforced by the executor rather than by config:
   when the other is its descendant (its `created_by` chain reaches the caller), when the
   host's supervisor pointer names the caller ([permissions.md](permissions.md)), or when
   the other is the caller's own predecessor, which handed its work to the caller.
-  `decide`, `interrupt` and `archive` require it; supervision is not transitive, so a
-  session given another to supervise does not reach that one's descendants through it.
-  `status`, `transcript`, and `message` from a session that does not drive its target
-  reach any session in the caller's project.
+  `interrupt` and `archive` require it; supervision is not transitive, so a session given
+  another to supervise does not reach that one's descendants through it. `status`,
+  `transcript`, and `message` from a session that does not drive its target reach any
+  session in the caller's project.
+- **`decide` reaches the sessions the caller supervises.** In-session, only the session the
+  host's supervisor pointer names ([permissions.md](permissions.md)) — its creator, until
+  the operator sets another — decides a session's gates, wherever the review dial routes
+  them; the operator's surfaces decide any. Creating a session or succeeding its creator
+  does not by itself confer it: a session driving a grandchild through the creation chain,
+  a creator whose child the operator gave to another supervisor, and a successor driving
+  its predecessor are refused. The refusal names who decides and what still reaches the
+  target: `refused: you don't supervise "c", so its gates are not yours to decide — its
+  supervisor, "q", and the operator decide them; agents__message and agents__interrupt
+  still reach it` (`it has no supervisor, so the operator decides them` for a session with
+  none; `agents__message leaves it a note` to a caller that does not drive it).
 
 `message` does what the relation says. From a driver it is the target's next user
 message, carrying `source: session[<caller id>]`, which the projection opens as
@@ -380,6 +391,10 @@ its arguments filled in. The verbs' own answers are rendered beside it
   or arguments, and transcript handle (`seq`, or `seq.n` when it shared its entry), its
   intent, why it was held in plain words, and the `decide` call that answers it with its
   seq filled in.
+- **May decide** — the session's supervisor, reading a gate routed to someone else (the
+  operator, under a dial that sends the gates there): the gate as a driver reads it, its
+  first line `waiting for a decision from the operator or you`, and a `decide:` line saying
+  the operator is asked, with the call the supervisor may make as well.
 - **Driver** — a `wake` subscriber, which is the creator or the supervisor, and any
   session or client reading a status it drives: every status with the moves that answer
   it. A gate it is not routed reads as waiting for a decision from the operator or the
@@ -404,6 +419,9 @@ subscriber (docs/inbox.md — must-wake):
   a turn to act at each of the child's decision points even if it then decides
   nothing needs doing. In particular a child's turn ending — a report, a question,
   a refusal — hands control back to the parent without the child sending anything.
+  The one exception is a gate the review dial routes to the operator: the operator is
+  the one asked, so it reaches a `wake` subscriber without wake, and the supervisor
+  reads it in the may-decide form above.
 - **Any other, without wake.** Observation may not: the subscriber's triage may dismiss
   or leave a peer's status. The host's `subscribe` and `unsubscribe` keep both kinds;
   no agent verb makes or drops one.

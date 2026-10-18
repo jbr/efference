@@ -17,10 +17,34 @@ use std::fmt::Write as _;
 pub(crate) enum Relation {
     /// The held call is routed to this reader to decide (docs/permissions.md).
     Reviewer,
-    /// A must-wake subscriber: the session's creator or supervisor.
+    /// The session's supervisor, reading a held call routed to someone else — the
+    /// operator, under a dial that sends its gates there. It may decide the call as
+    /// well, and it drives the session (docs/permissions.md).
+    MayDecide,
+    /// A must-wake subscriber — the session's creator or supervisor — or a reader that
+    /// drives the session.
     Driver,
     /// A subscriber that is not woken, and does not drive.
     Observer,
+}
+
+impl Relation {
+    /// How the session `me` stands to the session `view` shows (docs/tools.md): it
+    /// reviews a gate routed to it, may decide one routed elsewhere when it is the
+    /// session's supervisor (`supervises`), drives what it drives (`drives`), and
+    /// observes the rest. The routing is the view's own reading (`HeldCall::reviewer`).
+    pub(crate) fn of_session(view: &StatusView, me: &str, supervises: bool, drives: bool) -> Self {
+        match &view.condition {
+            Condition::Gated(held) => match &held.reviewer {
+                Reviewer::Supervisor { id } if id == me => Relation::Reviewer,
+                _ if supervises => Relation::MayDecide,
+                _ if drives => Relation::Driver,
+                _ => Relation::Observer,
+            },
+            _ if drives || supervises => Relation::Driver,
+            _ => Relation::Observer,
+        }
+    }
 }
 
 /// Who reads a status, and which calls its mount makes the moves with.
@@ -106,31 +130,36 @@ pub(crate) fn render(view: &StatusView, reader: &Reader, now: u64) -> String {
             if let Some(handle) = &held.handle {
                 let _ = write!(call, " (seq {handle})");
             }
-            match reader.relation {
-                Relation::Reviewer => {
-                    out.push(format!("{id}: waiting for your decision on {call}"))
+            // Whom the gate is routed to, for a reader it is not routed to.
+            let asked = match &held.reviewer {
+                Reviewer::Operator => "the operator".to_string(),
+                Reviewer::Supervisor { id: supervisor } => name(supervisor, reader.me),
+            };
+            out.push(match reader.relation {
+                Relation::Reviewer => format!("{id}: waiting for your decision on {call}"),
+                Relation::MayDecide => {
+                    format!("{id}: waiting for a decision from {asked} or you on {call}")
                 }
-                _ => {
-                    let decider = match &held.reviewer {
-                        Reviewer::Operator => "the operator".to_string(),
-                        Reviewer::Supervisor { id: supervisor } => name(supervisor, reader.me),
-                    };
-                    out.push(format!(
-                        "{id}: waiting for a decision from {decider} on {call}"
-                    ));
-                }
-            }
+                _ => format!("{id}: waiting for a decision from {asked} on {call}"),
+            });
             if let Some(intent) = &held.intent {
                 out.push(format!("intent: {intent}"));
             }
             if let Some(reason) = &held.held_because {
                 out.push(format!("held because: {reason}"));
             }
-            if reader.relation == Relation::Reviewer {
-                out.push(format!("decide: {}", (moves.decide)(&target)));
-                if let Some(hand_back) = moves.hand_back {
-                    out.push(format!("hand back: {}", hand_back(&target)));
+            match reader.relation {
+                Relation::Reviewer => {
+                    out.push(format!("decide: {}", (moves.decide)(&target)));
+                    if let Some(hand_back) = moves.hand_back {
+                        out.push(format!("hand back: {}", hand_back(&target)));
+                    }
                 }
+                Relation::MayDecide => out.push(format!(
+                    "decide: {asked} is asked; as {id}'s supervisor you may decide it too: {}",
+                    (moves.decide)(&target)
+                )),
+                _ => {}
             }
         }
         Condition::Asking {

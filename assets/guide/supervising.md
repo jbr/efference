@@ -26,7 +26,8 @@ work instead.
 
 When an agent you created or supervise reaches a decision point, its status arrives in your inbox as a
 notification from its id and wakes you: idle, you start a turn on it; mid-turn, you read it
-at your next step. A newer status replaces one you have not read. Working is never sent.
+at your next step. A gate that went to the operator arrives without waking you. A newer
+status replaces one you have not read. Working is never sent.
 
 To wait for an agent, end your turn. Within a turn, `wait` blocks until the next
 notification and returns your inbox.
@@ -40,8 +41,11 @@ names have the id and seq filled in.
 - `waiting for your decision on <call> (seq 8)` — a gate routed to you. `intent:` is what
   the agent said the call is for, `held because:` why its reviewer held it, `decide:` the
   call that answers it.
+- `waiting for a decision from the operator or you on <call>` — a gate of an agent you
+  supervise that went to the operator. `decide:` says the operator is asked and names the
+  call, which you may make as well.
 - `waiting for a decision from the operator on <call>` (or from another id) — routed to
-  someone else; it names no call for you.
+  someone else, and not yours to decide; it names no call for you.
 - `asking a question (seq 12)` — `question:` is the question, `answer:` the reply that
   answers it.
 - `idle, its turn is done (seq 30)` — `said:` is its closing message up to about 4 KB, a
@@ -72,8 +76,10 @@ The answer says which: `delivered:`, `queued:` and what it waits behind, or
 
 A gate is an agent holding a call that its permission rules did not clear and its reviewer
 would not clear either; nothing runs until someone decides. An agent you create sends its
-gates to you. `agents__decide` names the held call by the seq its status gives (`8`, or
-`8.2` when one turn made several calls):
+gates to you. Its gates are decided by its supervisor — you, for an agent you create,
+until the operator gives it another — and by the operator; for any other agent `decide` is
+refused, naming who decides. `agents__decide` names the held call by the seq its status
+gives (`8`, or `8.2` when one turn made several calls):
 
 - `allow` runs it. A `message` with it reaches the agent as your message, after the result.
 - `deny` with a `message` refuses it, and the agent goes on under your message.
@@ -128,8 +134,10 @@ raw result (up to 16 KiB), and which lines the agent saw.
 - `autonomous: true` — no gates: a call its rules and reviewer do not clear is declined
   with the reason, and it goes on.
 
-Its gates come to you and its statuses wake you. The operator can take its gates back or
-give it another supervisor; its gate statuses then name who decides.
+Its gates come to you and its statuses wake you. The operator can take its gates back —
+they then go to the operator without waking you, and you may still decide them — or give
+it another supervisor, which then decides them instead of you. Its gate statuses name who
+decides.
 
 `agents__archive(agent)` ends an agent you drive and every agent it created that was not
 `detached`; logs stay on disk. A worktree with no uncommitted changes is removed and its
@@ -150,14 +158,15 @@ branch kept unless merged. Agents you create end when you do, unless created `de
 - **You see what it did not.** Its transcript shows each raw result beside how much of it
   the agent saw, and the decision trail: the reviewer's verdict and reason, and who decided.
 - **Hearing is not deciding.** You hear every status of an agent you created, a gate
-  routed elsewhere included. A gate is yours when its status says
-  `waiting for your decision` and names a `decide:` call.
+  routed elsewhere included. A gate is yours to decide when its status names a `decide:`
+  call: `waiting for your decision` when it was routed to you, `waiting for a decision
+  from the operator or you` when the operator was asked and you supervise the agent.
 - **It knows who you are.** Its identity line names you as its creator. Its first message,
   your messages and an allow's note open `<your id> (agent):`. A note to an agent you do
   not drive reaches it, if its triage keeps it, as `⟢ <your id>: …`.
 - **Reach is the project.** Status, transcript and message reach any agent in your
-  project; decide, interrupt and archive only the agents you drive. You cannot address
-  yourself, and an agent in another project is not found.
+  project; interrupt and archive only the agents you drive, and decide only the agents you
+  supervise. You cannot address yourself, and an agent in another project is not found.
 
 ## Cost
 

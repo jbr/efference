@@ -132,7 +132,8 @@ impl Tool<Control> for Decide {
                 Ok(answers::decided(&view.id, &held, self.allow(), self.note()))
             }
             Executor::Host(state) => {
-                let (target, id) = state.resolve_driven(self.agent.as_deref())?;
+                // Only the target's supervisor decides in-session (docs/permissions.md).
+                let (target, id) = state.resolve_decided(self.agent.as_deref())?;
                 let caller = state.caller();
                 let moved = |view: &StatusView| {
                     let relation = session_relation(state, view, true);

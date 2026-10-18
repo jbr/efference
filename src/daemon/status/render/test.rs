@@ -4,6 +4,8 @@ use super::*;
 use crate::log::{CallId, Origin, Spot, Stance};
 use crate::spotter::jev::{Axes, Precedent};
 
+mod gate;
+
 const NOW: u64 = 1_754_300_000_000;
 const SECOND: u64 = 1000;
 const MINUTE: u64 = 60 * SECOND;
@@ -100,104 +102,6 @@ fn supervisor(id: &str) -> Reviewer {
 const DECIDE: &str = "decide: agents__decide(agent: \"child\", seq: \"8.2\", decision: \"allow\" | \
     \"deny\", message?) — allow runs it, and a message rides with its result; deny with a message \
     refuses it and the session goes on under your message; a bare deny ends its turn";
-
-/// A decision-rung cause with no precedent: the reviewer is told the call, why it was
-/// held in plain words, and the moves that decide it; a driver is told who decides.
-#[test]
-fn a_gate_held_for_scope_with_no_precedent() {
-    let scope = Axes {
-        in_scope: 0.21,
-        ..axes(0, precedent(0, 0, Some(1)))
-    };
-    let spot = spot(
-        Origin::Model,
-        "level 2 (scope fit, 21%): needs 1 approved call like it, found none.",
-        Some(scope),
-    );
-    let lines = "intent: fetch only the response headers\n\
-        held because: its reviewer is unsure this fits the session's scope; no earlier call \
-        like it was allowed";
-    assert_eq!(
-        rendered(&gated(&spot, supervisor("parent")), &reviewer()),
-        format!(
-            "child: waiting for your decision on bash `curl -sI https://example.com` (seq \
-             8.2)\n{lines}\n{DECIDE}"
-        )
-    );
-    assert_eq!(
-        rendered(&gated(&spot, Reviewer::Operator), &driver()),
-        format!(
-            "child: waiting for a decision from the operator on bash `curl -sI \
-             https://example.com` (seq 8.2)\n{lines}"
-        )
-    );
-}
-
-/// Precedents short of the requirement say how many there were and how many it needs.
-#[test]
-fn a_gate_held_with_precedents_short_of_the_requirement() {
-    let spot = spot(
-        Origin::Model,
-        "level 3 (sketch, 80%): needs 2 approved calls like it, found 1.",
-        Some(axes(3, precedent(3, 1, Some(2)))),
-    );
-    let reason = "held because: its reviewer rates it serious: hard to undo, or reaching other \
-        people; only 1 earlier call like it was allowed, and a call like this needs 2";
-    let first = "bash `curl -sI https://example.com` (seq 8.2)\n\
-        intent: fetch only the response headers";
-    assert_eq!(
-        rendered(&gated(&spot, supervisor("parent")), &reviewer()),
-        format!("child: waiting for your decision on {first}\n{reason}\n{DECIDE}")
-    );
-    assert_eq!(
-        rendered(&gated(&spot, supervisor("boss")), &driver()),
-        format!("child: waiting for a decision from boss on {first}\n{reason}")
-    );
-}
-
-/// The prose rung's reason is shown as it wrote it; a fail-closed verdict says the
-/// reviewer could not judge the call.
-#[test]
-fn a_prose_reason_and_a_fail_closed_one() {
-    let prose = spot(Origin::Model, "outside the granted paths.", None);
-    let first = "bash `curl -sI https://example.com` (seq 8.2)\n\
-        intent: fetch only the response headers";
-    assert_eq!(
-        rendered(&gated(&prose, supervisor("parent")), &reviewer()),
-        format!(
-            "child: waiting for your decision on {first}\nheld because: outside the granted \
-             paths.\n{DECIDE}"
-        )
-    );
-    assert_eq!(
-        rendered(&gated(&prose, Reviewer::Operator), &driver()),
-        format!(
-            "child: waiting for a decision from the operator on {first}\nheld because: \
-             outside the granted paths."
-        )
-    );
-
-    let failed = spot(
-        Origin::Fallback,
-        "spotter unavailable — defaulting to the human gate.",
-        None,
-    );
-    assert_eq!(
-        rendered(&gated(&failed, supervisor("parent")), &reviewer()),
-        format!(
-            "child: waiting for your decision on {first}\nheld because: its reviewer could not \
-             judge it\n{DECIDE}"
-        )
-    );
-    assert_eq!(
-        rendered(&gated(&failed, supervisor("parent")), &driver()),
-        format!(
-            "child: waiting for a decision from you on {first}\nheld because: its reviewer \
-             could not judge it"
-        ),
-        "a driver that is also the reviewer, read as a driver, is named as the decider"
-    );
-}
 
 /// A question gives its place and handle; a driver is told a message answers it.
 #[test]

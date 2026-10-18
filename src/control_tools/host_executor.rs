@@ -1,6 +1,6 @@
 //! The in-process executor (docs/tools.md): a session's own toolbox reaching the host
-//! it lives in, with the caller's identity, and the two target rules that identity
-//! makes enforceable.
+//! it lives in, with the caller's identity, and the target rules that identity makes
+//! enforceable.
 
 use std::sync::{Arc, Weak};
 
@@ -14,14 +14,17 @@ use crate::log::ToolCall;
 
 /// The in-process executor (docs/tools.md): the calling session's toolbox reaches
 /// the host directly — the same `Session` methods the HTTP handlers call, never a
-/// round trip over the socket. The two target rules live here because this is the
-/// only executor that knows who is calling:
+/// round trip over the socket. The target rules live here because this is the only
+/// executor that knows who is calling:
 ///
-/// 1. the target is never the caller, and
+/// 1. the target is never the caller, so a session cannot resolve its own gate;
 /// 2. a driving verb reaches only the sessions the caller drives: its descendants (via
 ///    `created_by`), the sessions it supervises (via the host's supervisor pointer), and
-///    its own predecessor (via the host's succession record), so a session cannot
-///    resolve its own gate or steer a peer it was not given.
+///    its own predecessor (via the host's succession record), so a session cannot steer
+///    a peer it was not given; and
+/// 3. `decide` reaches only the sessions the caller supervises, by the same pointer:
+///    creating a session or succeeding its creator does not by itself make its gates
+///    the caller's (docs/permissions.md).
 #[derive(Clone)]
 pub struct HostExecutor {
     /// The host, held weakly (see [`super::Executor::host`]).
@@ -126,10 +129,42 @@ impl HostExecutor {
         Ok((session, target))
     }
 
+    /// The target for `decide`: rule 1, project scope, and rule 3. A refusal says who
+    /// decides the target's gates and which verbs still reach it.
+    pub(super) fn resolve_decided(
+        &self,
+        requested: Option<&str>,
+    ) -> Result<(Arc<Session>, String)> {
+        let (session, target) = self.resolve(requested)?;
+        if !self.supervises(&target) {
+            return Err(anyhow!(not_supervised(
+                &target,
+                session.supervisor().as_deref(),
+                self.drives(&target)?
+            )));
+        }
+        Ok((session, target))
+    }
+
     /// Whether the caller drives `target` (rule 2).
     pub(super) fn drives(&self, target: &str) -> Result<bool> {
         let host = self.host()?;
         Ok(Self::may_drive(&host, &self.caller, target))
+    }
+
+    /// Whether the caller supervises `target`, and so may decide its gates (rule 3).
+    /// False once the host has shut down.
+    pub(super) fn supervises(&self, target: &str) -> bool {
+        self.host()
+            .is_ok_and(|host| Self::may_decide(&host, &self.caller, target))
+    }
+
+    /// Rule 3: whether `decider` may decide `target`'s gates — the host's supervisor
+    /// pointer for `target` names it (docs/permissions.md). The gate need not be routed
+    /// to it: under a dial that sends the gates to the operator, the supervisor may still
+    /// decide them. The operator's own surfaces are not sessions and are not asked.
+    fn may_decide(host: &Host, decider: &str, target: &str) -> bool {
+        host.supervisor_of(target).as_deref() == Some(decider)
     }
 
     /// Whether `target`'s `created_by` chain reaches `ancestor`. The tree is
@@ -187,14 +222,14 @@ impl HostExecutor {
 
     /// Bind an allowing `agents__decide` call to the leaf action its target holds
     /// (docs/permissions.md). The first hop obeys the same target rules the verb
-    /// enforces when it runs — never self, driven sessions only, same project. While
-    /// the held call is itself an allowing decision, follow its `agent` and `seq`
-    /// through the host to the leaf, each hop required to be driven by the previous;
-    /// refuse on a moved gate or a cycle.
+    /// enforces when it runs — never self, supervised sessions only, same project.
+    /// While the held call is itself an allowing decision, follow its `agent` and `seq`
+    /// through the host to the leaf, each hop required to be supervised by the
+    /// previous; refuse on a moved gate or a cycle.
     pub(super) fn resolve_bound_action(&self, call: &ToolCall) -> Result<BoundAction> {
         let requested = call.input.get("agent").and_then(Value::as_str);
-        // The parent's own call: rule 1, project scope, rule 2.
-        let (mut session, direct_id) = self.resolve_driven(requested)?;
+        // The parent's own call: rule 1, project scope, rule 3.
+        let (mut session, direct_id) = self.resolve_decided(requested)?;
         let mut expected = Self::seq_of(call)?;
         let mut chain = vec![direct_id];
         let mut previous = chain[0].clone();
@@ -238,10 +273,10 @@ impl HostExecutor {
                 .and_then(Value::as_str)
                 .ok_or_else(|| anyhow!("the held `{DECIDE_WIRE_NAME}` names no agent to follow"))?
                 .to_string();
-            if !Self::may_drive(&host, &previous, &next) {
+            if !Self::may_decide(&host, &previous, &next) {
                 return Err(anyhow!(
-                    "refused: {previous:?} does not drive {next:?} — a driving verb reaches the \
-                     sessions a session created, supervises, or succeeds (docs/tools.md)"
+                    "refused: {previous:?} does not supervise {next:?}, so the decision it \
+                     holds would be refused when it ran — deny it, with a message saying why"
                 ));
             }
             if !seen.insert(next.clone()) {
@@ -298,6 +333,24 @@ impl HostExecutor {
         let handed = host.hand_off(&self.caller, body, brief).await;
         handed.map_err(|reason| anyhow!("{reason}"))
     }
+}
+
+/// Why a `decide` of `target` is refused to a session that does not supervise it: who
+/// decides its gates — its live `supervisor` and the operator, or the operator alone —
+/// and what the caller can still do, which depends on whether it `drives` the target.
+fn not_supervised(target: &str, supervisor: Option<&str>, drives: bool) -> String {
+    let deciders = match supervisor {
+        Some(supervisor) => format!("its supervisor, {supervisor:?}, and the operator decide them"),
+        None => "it has no supervisor, so the operator decides them".to_string(),
+    };
+    let still = match drives {
+        true => "agents__message and agents__interrupt still reach it",
+        false => "agents__message leaves it a note",
+    };
+    format!(
+        "refused: you don't supervise {target:?}, so its gates are not yours to decide — \
+         {deciders}; {still}"
+    )
 }
 
 /// Whether a decision naming `requested` names the held call whose handle is `held`.

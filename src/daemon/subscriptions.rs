@@ -3,11 +3,11 @@
 //!
 //! The subscriber set is host control state on the target — never logged, never
 //! projected. `create` from a session subscribes the creator with `wake`, so the
-//! parent gets a turn at each of the child's decision points, and a supervisor set
-//! after creation is subscribed on the same terms (`host/supervise.rs`); any other
-//! subscription is ambient, and the subscriber's triage may dismiss it. The host
-//! runs one watcher per session that reads the status at every control-state
-//! change and posts it to the subscribers when it moves.
+//! parent gets a turn at each of the child's decision points except a gate routed to
+//! the operator, and a supervisor set after creation is subscribed on the same terms
+//! (`host/supervise.rs`); any other subscription is ambient, and the subscriber's
+//! triage may dismiss it. The host runs one watcher per session that reads the status
+//! at every control-state change and posts it to the subscribers when it moves.
 
 use super::host::Host;
 use super::status::{Condition, Reader, Relation, Reviewer, SessionStatus, render, status_slot};
@@ -83,6 +83,10 @@ impl Host {
     /// skipped in the subscriber loop so the two posts do not race on one slot. Every
     /// other status, and every other position, posts to subscribers alone.
     ///
+    /// A gate the dial routes to the operator asks the operator, so it reaches a `wake`
+    /// subscriber without the wake. The session's supervisor may still decide it, and
+    /// its body names the `decide` call (`Relation::MayDecide`).
+    ///
     /// A question that returned a session's queued message is that session's news as
     /// well (docs/process-monitor.md): a sender that is not subscribed is woken with the
     /// status, which tells it its message came back. Only a driver's message is queued,
@@ -123,6 +127,11 @@ impl Host {
                 inbox.notify_wake(id.to_string(), body, Some(status_slot(id)));
             }
         }
+        let to_operator = matches!(
+            &view.condition,
+            Condition::Gated(held) if held.reviewer == Reviewer::Operator
+        );
+        let supervisor = self.supervisor_of(id);
         for (subscriber, terms) in subscribers {
             if Some(&subscriber) == reviewer.as_ref() {
                 continue;
@@ -130,11 +139,12 @@ impl Host {
             let Some(inbox) = self.session(&subscriber) else {
                 continue;
             };
-            if terms.wake {
-                let body = body(Relation::Driver, &subscriber);
+            let supervises = supervisor.as_deref() == Some(subscriber.as_str());
+            let relation = Relation::of_session(&view, &subscriber, supervises, terms.wake);
+            let body = body(relation, &subscriber);
+            if terms.wake && !to_operator {
                 inbox.notify_wake(id.to_string(), body, Some(status_slot(id)));
             } else {
-                let body = body(Relation::Observer, &subscriber);
                 inbox.notify(id.to_string(), body, Some(status_slot(id)));
             }
         }

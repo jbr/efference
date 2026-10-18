@@ -52,20 +52,10 @@ pub(super) fn operator_reader<'a>(view: &StatusView, me: Option<&'a str>) -> Rea
 }
 
 /// How the calling session stands to a session (docs/tools.md): it reviews a gate
-/// routed to it, drives what it drives, and observes the rest.
+/// routed to it, may decide one routed elsewhere when it supervises the session, drives
+/// what it drives, and observes the rest.
 pub(super) fn session_relation(state: &HostExecutor, view: &StatusView, drives: bool) -> Relation {
-    match &view.condition {
-        Condition::Gated(held)
-            if held.reviewer
-                == (Reviewer::Supervisor {
-                    id: state.caller().to_string(),
-                }) =>
-        {
-            Relation::Reviewer
-        }
-        _ if drives => Relation::Driver,
-        _ => Relation::Observer,
-    }
+    Relation::of_session(view, state.caller(), state.supervises(&view.id), drives)
 }
 
 impl Tool<Control> for Status {
