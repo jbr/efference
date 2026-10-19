@@ -16,6 +16,7 @@ use super::tcp::{
 use std::sync::Arc;
 use trillium_caching_headers::Etag;
 use trillium_cookies::CookiesHandler;
+use trillium_logger::{Logger, Target};
 
 /// Which listener a stack is mounted on, and therefore what it trusts.
 pub enum Transport {
@@ -74,6 +75,7 @@ pub fn handler(transport: Transport, app: App) -> impl trillium::Handler {
     };
     let web = web_auth.is_some();
     (
+        Logger::new().with_target(Target::Logger(log::Level::Info)),
         // Outermost, so its `before_send` runs last and the headers land on every
         // response the stack produces — including the routers' errors. On every
         // transport, not only the browser-facing one: `nosniff` is half of what

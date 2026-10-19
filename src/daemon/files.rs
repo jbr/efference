@@ -456,90 +456,95 @@ impl Files {
     /// 3. **Read** — the body: a file's bytes, or a directory's listing.
     ///
     /// Trillium's `Sse` drives the stream through the handler's upgrade hook,
-    /// so it is mounted as a handler of its own rather than called from inside
-    /// one — delegating `run` alone would leave the stream undriven.
+    /// which the server looks up on the whole stack after `run` returns, so it
+    /// is mounted as a handler of its own rather than called from inside one —
+    /// delegating `run` alone would leave the stream undriven.
     pub(crate) fn handler(self) -> impl trillium::Handler {
-        let validate = self.clone();
-        let reader = self;
+        (
+            move |conn: Conn| {
+                let files = self.clone();
+                async move { conn.with_state(files) }
+            },
+            Self::route(),
+        )
+    }
+
+    /// The route over whichever `Files` an earlier stage put in conn state —
+    /// [`Files::handler`]'s own, or a hosted session's, which the host's
+    /// session stage resolves per request. One route for every session keeps
+    /// the `Sse` stage on the stack where the upgrade hook finds it.
+    pub(crate) fn route() -> impl trillium::Handler {
         Router::new().all(
             "/files/*",
             (
-                move |conn: Conn| {
-                    let files = validate.clone();
-                    async move {
-                        // The path below the mount, as the router captured it:
-                        // no leading slash, and no trailing one either, since
-                        // routefinder trims it before matching. Nothing here
-                        // reads a trailing slash, so the trimming costs nothing.
-                        let rest = conn.path().to_string();
-                        if conn.method() != Method::Get {
-                            return fail(
-                                conn,
-                                ErrorCode::BadRequest,
-                                "/files is read-only; GET a path or a directory",
-                            );
-                        }
-                        if files.root.is_none() {
-                            return fail(
-                                conn,
-                                ErrorCode::Internal,
-                                "no working directory to serve files from",
-                            );
-                        }
-                        // Content negotiation (docs/web-bind.md): a request whose Accept
-                        // *explicitly* names `text/event-stream` gets a stream of change pokes
-                        // instead of the body. Explicit-only — `*/*` (a fetch's default) gets
-                        // the file, so only a client that asked to stream ever streams. The
-                        // `Sse` stage applies the same rule to the same header.
-                        let streams = conn
-                            .request_headers()
-                            .get_str(KnownHeaderName::Accept)
-                            .is_some_and(|accept| accept.contains("text/event-stream"));
-                        if !streams {
-                            return conn;
-                        }
-                        match files.prepare_stream(&rest).await {
-                            Ok(target) => conn.with_state(target),
-                            Err((code, message)) => fail(conn, code, message),
-                        }
+                |conn: Conn| async move {
+                    // The path below the mount, as the router captured it:
+                    // no leading slash, and no trailing one either, since
+                    // routefinder trims it before matching. Nothing here
+                    // reads a trailing slash, so the trimming costs nothing.
+                    let rest = conn.path().to_string();
+                    if conn.method() != Method::Get {
+                        return fail(
+                            conn,
+                            ErrorCode::BadRequest,
+                            "/files is read-only; GET a path or a directory",
+                        );
+                    }
+                    let Some(files) = conn.state::<Files>().filter(|f| f.root.is_some()).cloned()
+                    else {
+                        return fail(
+                            conn,
+                            ErrorCode::Internal,
+                            "no working directory to serve files from",
+                        );
+                    };
+                    // Content negotiation (docs/web-bind.md): a request whose Accept
+                    // *explicitly* names `text/event-stream` gets a stream of change pokes
+                    // instead of the body. Explicit-only — `*/*` (a fetch's default) gets
+                    // the file, so only a client that asked to stream ever streams. The
+                    // `Sse` stage applies the same rule to the same header.
+                    let streams = conn
+                        .request_headers()
+                        .get_str(KnownHeaderName::Accept)
+                        .is_some_and(|accept| accept.contains("text/event-stream"));
+                    if !streams {
+                        return conn;
+                    }
+                    match files.prepare_stream(&rest).await {
+                        Ok(target) => conn.with_state(target),
+                        Err((code, message)) => fail(conn, code, message),
                     }
                 },
                 sse(Connect).with_heartbeat(HEARTBEAT),
-                move |conn: Conn| {
-                    let files = reader.clone();
-                    async move {
-                        let Some(path) = files.resolve(conn.path()) else {
-                            return fail(
-                                conn,
-                                ErrorCode::NotFound,
-                                "no such path under the working directory",
-                            );
+                |conn: Conn| async move {
+                    // The validating stage refused a request without one.
+                    let Some(files) = conn.state::<Files>().cloned() else {
+                        return conn;
+                    };
+                    let Some(path) = files.resolve(conn.path()) else {
+                        return fail(
+                            conn,
+                            ErrorCode::NotFound,
+                            "no such path under the working directory",
+                        );
+                    };
+                    let Ok(meta) = tokio::fs::metadata(&path).await else {
+                        return fail(conn, ErrorCode::NotFound, "no such path");
+                    };
+                    if meta.is_dir() {
+                        let options = Options::from_query(conn.querystring());
+                        let scope = files.scope(&path);
+                        let root = files.root.as_ref().expect("root checked").clone();
+                        let Some(listing) = listing(&path, &root, scope, options).await else {
+                            return fail(conn, ErrorCode::NotFound, "cannot list this directory");
                         };
-                        let Ok(meta) = tokio::fs::metadata(&path).await else {
-                            return fail(conn, ErrorCode::NotFound, "no such path");
-                        };
-                        if meta.is_dir() {
-                            let options = Options::from_query(conn.querystring());
-                            let scope = files.scope(&path);
-                            let root = files.root.as_ref().expect("root checked").clone();
-                            let Some(listing) = listing(&path, &root, scope, options).await else {
-                                return fail(
-                                    conn,
-                                    ErrorCode::NotFound,
-                                    "cannot list this directory",
-                                );
-                            };
-                            return conn
-                                .with_status(200)
-                                .with_response_header(
-                                    KnownHeaderName::ContentType,
-                                    "application/json",
-                                )
-                                .with_body(serde_json::to_string(&listing).unwrap_or_default())
-                                .halt();
-                        }
-                        read(conn, &path, &meta).await
+                        return conn
+                            .with_status(200)
+                            .with_response_header(KnownHeaderName::ContentType, "application/json")
+                            .with_body(serde_json::to_string(&listing).unwrap_or_default())
+                            .halt();
                     }
+                    read(conn, &path, &meta).await
                 },
             ),
         )

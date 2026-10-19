@@ -12,6 +12,7 @@ mod boot_resume;
 mod control;
 mod creation;
 mod discard;
+mod files;
 mod preview;
 mod projects;
 mod resume;
@@ -429,52 +430,6 @@ auth = { kind = "env", key = "MESSAGES_KEY" }
     );
 
     host.swansong().shut_down().await;
-}
-
-/// Each session's `/files` under its own prefix, in both spellings of a
-/// directory: the wildcard capture the router hands this surface is the path
-/// below the mount, so a listing has to come back under the whole prefix
-/// without the route reconstructing it.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_hosted_sessions_files_are_served_under_its_prefix() {
-    let roots = Roots::new();
-    let host = Host::new(crate::inference::InferenceRegistry::empty(), baseline_env());
-    let runtime = SessionRuntime::start(runtime::boot(&roots.0.join("one")), host.swansong());
-    host.adopt("one".into(), runtime)
-        .expect("the id is free in this test");
-    let host_state = Arc::clone(&host);
-    let server = TestServer::new((
-        trillium::Init::new(move |info: trillium::Info| {
-            let host = Arc::clone(&host_state);
-            async move { info.with_shared_state(host) }
-        }),
-        crate::daemon::host::host_routes(true),
-    ))
-    .await;
-
-    let listing = server.get("/sessions/one/files/").await;
-    listing.assert_status(200);
-    let names: Vec<String> = json(listing.body())["entries"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|entry| entry["name"].as_str().unwrap().to_string())
-        .collect();
-    assert!(names.contains(&"scratch".to_string()), "{names:?}");
-
-    for path in [
-        "/sessions/one/files/scratch",
-        "/sessions/one/files/scratch/",
-    ] {
-        let conn = server.get(path).await;
-        conn.assert_status(200);
-        assert_eq!(json(conn.body())["path"], "scratch", "{path}");
-    }
-
-    server
-        .get("/sessions/one/files/nowhere.txt")
-        .await
-        .assert_status(404);
 }
 
 /// `?role=` narrows the catalog to what a role may choose (docs/model-catalog.md):

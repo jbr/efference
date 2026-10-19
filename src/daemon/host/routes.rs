@@ -42,7 +42,7 @@ pub(crate) fn host_routes(files: bool) -> impl trillium::Handler {
             (
                 move |conn: Conn| async move { resolve_session(conn, files).await },
                 control_routes(),
-                files.then_some(session_files),
+                files.then(Files::route),
             ),
         );
     router.post("/sessions", create_session)
@@ -116,11 +116,6 @@ async fn read_sessions(conn: Conn) -> Conn {
     }
 }
 
-/// The per-session `/files` view, handed from [`resolve_session`] through conn
-/// state so one stage serves every session. `Files` is a handle over shared
-/// watcher and ignore state, so cloning it per request is cheap.
-struct HostedFiles(Files);
-
 /// `/sessions/:session/*`: put the session into conn state for the control
 /// routes, or `404` when no hosted session has that id. Exact public web-shell
 /// routes pass through even without a session (docs/web-client.md).
@@ -138,7 +133,8 @@ async fn resolve_session(conn: Conn, web: bool) -> Conn {
     match entry {
         Some(Entry::Hosted(hosted)) => conn
             .with_state(hosted.session)
-            .with_state(HostedFiles(hosted.files)),
+            // The view `Files::route` serves, one route for every session.
+            .with_state(hosted.files),
         Some(Entry::Starting(starting)) => conn.with_state(starting),
         // The router has stripped the session prefix. These exact routes carry
         // only the public shell; the client then observes the API's 404 and goes
@@ -151,13 +147,6 @@ async fn resolve_session(conn: Conn, web: bool) -> Conn {
             conn
         }
         None => no_such_session(conn, &id),
-    }
-}
-
-async fn session_files(mut conn: Conn) -> Conn {
-    match conn.take_state::<HostedFiles>() {
-        Some(HostedFiles(files)) => files.handler().run(conn).await,
-        None => conn,
     }
 }
 

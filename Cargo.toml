@@ -194,6 +194,7 @@ rusqlite = { version = "0.40.2", features = ["bundled"] }
 # stores are linked directly rather than through the `keyring` umbrella, per that
 # crate's own guidance for applications that choose their store.
 keyring-core = "1"
+trillium-logger = "0.5.5"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 # The login keychain, used in-process only when the binary is identity-signed;

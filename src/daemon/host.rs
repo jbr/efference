@@ -17,7 +17,6 @@ use super::*;
 use crate::inference::SessionOptions;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-use trillium::Handler;
 use trillium_tokio::Swansong;
 
 mod create;
