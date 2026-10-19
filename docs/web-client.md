@@ -1037,6 +1037,8 @@ shared halo through `--field-focus-*`. The composer uses the same halo through
 `--composer-focus-*`; its send button remains secondary because Enter sends
 from the textarea. `button.quiet` keeps its borderless text treatment on hover
 and has padding for its focus outline, with a negative margin returning it.
+`button.linkish` uses brighter text and an underline on hover and press, without
+button shadows; keyboard focus retains the shared visible outline and halo.
 `ui/InteractionLight.css` calculates the boundary core and halo from a local
 light level: resting controls are unlit, hover/focus uses 0.6, and pressed uses
 1. The core whitens as intensity rises, while hue remains in the halo. Buttons

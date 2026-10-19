@@ -9,6 +9,8 @@ behind a change, see [`journal/`](journal/).
 
 ### Added
 
+- Web link-styled buttons underline on hover and press instead of inheriting a square button halo; the gallery shows their interaction states beside ordinary links.
+
 - The web composer footer unifies startup, connection, action-error, and turn status with inline recovery actions; the design gallery includes these states and a fixture-backed transcript header.
 
 - The web session header opens a file sidebar on the working directory: a path header (`project / dir / file`, each directory a way back to the tree), a filter above the tree that lists paths containing every typed word, relative markdown links that open in the sidebar, and a markdown file's `---` metadata block rendered as fields; follow mode has no control for now, and reloading `/tree` keeps the sidebar open (docs/web-client.md).

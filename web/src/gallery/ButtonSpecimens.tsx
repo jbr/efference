@@ -5,6 +5,27 @@ import { Specimen, States } from "./Specimens.tsx";
 export function ButtonSpecimens() {
   return (
     <>
+      <Specimen name="text link — a">
+        <States
+          render={(cls) => (
+            <a className={cls} href="#buttons">
+              Browse sessions
+            </a>
+          )}
+        />
+      </Specimen>
+      <Specimen name="text action — button.linkish (no hover halo)">
+        <States
+          render={(cls) => (
+            <button className={`linkish ${cls}`}>Show details</button>
+          )}
+        />
+      </Specimen>
+      <Specimen name="disabled text action — button.linkish">
+        <button className="linkish" disabled>
+          Show details
+        </button>
+      </Specimen>
       <Specimen name="primary — button.primary">
         <States
           render={(cls) => (
