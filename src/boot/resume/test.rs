@@ -1,4 +1,4 @@
-use super::super::test::{PREPARING, Root, codex_registry, drop_boot, request, scratch_dirs};
+use super::super::test::{Root, codex_registry, drop_boot, minting, request};
 use super::*;
 use crate::boot::{BASE_DIR, prepare};
 use crate::log::Telemetry;
@@ -94,7 +94,6 @@ fn dir_contents(dir: &std::path::Path) -> Vec<(String, Vec<u8>)> {
 /// carries is what the session continues from.
 #[tokio::test]
 async fn a_clean_log_resumes_with_its_state() {
-    let _serial = PREPARING.lock().await;
     let root = Root::new("resume-clean");
     left_behind(&root, "clean", |log| {
         log.append(1, Payload::User(vec![ContentBlock::Text("hi".into())]))
@@ -181,7 +180,6 @@ async fn a_clean_log_resumes_with_its_state() {
 /// the appended entry changes.
 #[tokio::test]
 async fn a_mid_batch_log_rolls_back() {
-    let _serial = PREPARING.lock().await;
     let root = Root::new("resume-mid");
     left_behind(&root, "mid", |log| {
         log.append(1, Payload::User(vec![ContentBlock::Text("go".into())]))
@@ -243,7 +241,6 @@ async fn a_mid_batch_log_rolls_back() {
 /// completion, and resuming again does not roll back a second time.
 #[tokio::test]
 async fn a_started_call_rolls_back_once() {
-    let _serial = PREPARING.lock().await;
     let root = Root::new("resume-started");
     left_behind(&root, "started", |log| {
         log.append(1, call_assistant("call_2")).unwrap();
@@ -285,7 +282,6 @@ async fn a_started_call_rolls_back_once() {
 /// the batch's results rather than after the unanswered `tool_use`.
 #[tokio::test]
 async fn a_gate_held_log_resumes_at_the_gate() {
-    let _serial = PREPARING.lock().await;
     let root = Root::new("resume-gate");
     left_behind(&root, "gate", |log| {
         log.append(1, Payload::User(vec![ContentBlock::Text("go".into())]))
@@ -515,20 +511,24 @@ fn the_rollback_walks_back_to_a_clean_end() {
 /// leaves the existing session directory as found.
 #[tokio::test]
 async fn a_failed_resume_leaves_the_session_dir_alone() {
-    let _serial = PREPARING.lock().await;
     let root = Root::new("resume-fail");
     left_behind(&root, "fail", |_| {}).await;
     let dir = root.session_dir("fail");
     let before = dir_contents(&dir);
-    let scratch_before = scratch_dirs();
 
-    let error = failure(
-        resume(resume_request(&root, "fail", &InferenceRegistry::empty())).await,
-        "an unresolvable connection must fail the resume",
-    );
+    let (resumed, scratch) = minting(resume(resume_request(
+        &root,
+        "fail",
+        &InferenceRegistry::empty(),
+    )))
+    .await;
+    let error = failure(resumed, "an unresolvable connection must fail the resume");
     assert!(error.to_string().contains("oai"), "{error}");
     assert_eq!(dir_contents(&dir), before);
-    assert_eq!(scratch_dirs(), scratch_before);
+    assert!(
+        scratch.iter().all(|dir| !dir.exists()),
+        "no scratch it minted survives: {scratch:?}"
+    );
     assert!(dir.starts_with(root.path().join(BASE_DIR)));
 
     // The log is still resumable once the failure is gone.
@@ -544,7 +544,6 @@ async fn a_failed_resume_leaves_the_session_dir_alone() {
 /// logged after `Resumed`.
 #[tokio::test]
 async fn an_archived_worktree_is_restored_on_resume() {
-    let _serial = PREPARING.lock().await;
     let root = Root::new("resume-worktree");
     crate::worktree::testing::repository(root.path());
     let mut req = request(root.path(), "wt-fox", None);
@@ -591,7 +590,6 @@ async fn an_archived_worktree_is_restored_on_resume() {
 /// A second resume of a log a live session holds is refused by the writer lock.
 #[tokio::test]
 async fn a_held_log_is_refused() {
-    let _serial = PREPARING.lock().await;
     let root = Root::new("resume-held");
     left_behind(&root, "held", |_| {}).await;
     let registry = codex_registry(root.path(), "held");
@@ -612,7 +610,6 @@ async fn a_held_log_is_refused() {
 /// adds neither a notice line nor a second record.
 #[tokio::test]
 async fn an_unchanged_tool_set_adds_nothing_on_resume() {
-    let _serial = PREPARING.lock().await;
     let root = Root::new("resume-tools-same");
     left_behind(&root, "same", |_| {}).await;
     let dir = root.session_dir("same");
@@ -637,7 +634,6 @@ async fn an_unchanged_tool_set_adds_nothing_on_resume() {
 /// the array now advertised is recorded for the next resume to compare with.
 #[tokio::test]
 async fn a_changed_tool_set_is_named_in_the_notice() {
-    let _serial = PREPARING.lock().await;
     let root = Root::new("resume-tools-changed");
     left_behind(&root, "changed", |log| {
         let mut tools = crate::log::recorded_tools(log.entries()).unwrap().to_vec();

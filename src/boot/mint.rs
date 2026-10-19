@@ -5,6 +5,14 @@ use std::path::{Path, PathBuf};
 use super::LOG_NAME;
 use crate::api::Error;
 
+#[cfg(test)]
+tokio::task_local! {
+    /// The scratch dirs [`mint_scratch_dir`] made inside a test's scope: what a rollback
+    /// test checks, where a scan of the system temp dir would also see the scratch of
+    /// every test running beside it.
+    pub(super) static MINTED_SCRATCH: std::cell::RefCell<Vec<PathBuf>>;
+}
+
 /// What this creation attempt minted, for rollback (docs/control-channel.md).
 ///
 /// A path is recorded here only after an exclusive `create_dir` returned success,
@@ -127,7 +135,12 @@ pub fn mint_scratch_dir() -> std::io::Result<PathBuf> {
             builder.mode(0o700);
         }
         match builder.create(&candidate) {
-            Ok(()) => return Ok(candidate),
+            Ok(()) => {
+                #[cfg(test)]
+                let _ =
+                    MINTED_SCRATCH.try_with(|minted| minted.borrow_mut().push(candidate.clone()));
+                return Ok(candidate);
+            }
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
             Err(e) => return Err(e),
         }

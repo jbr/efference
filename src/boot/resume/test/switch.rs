@@ -32,7 +32,6 @@ fn preambles(entries: &[crate::log::LogEntry]) -> Vec<&crate::log::LogEntry> {
 /// that entry, and a second resume with no switch keeps the switched roles.
 #[tokio::test]
 async fn a_resume_switches_spotter_and_triage_and_the_next_keeps_them() {
-    let _serial = PREPARING.lock().await;
     let root = Root::new("resume-switch");
     left_behind(&root, "sw", |log| {
         log.append(1, Payload::User(vec![ContentBlock::Text("hi".into())]))
@@ -116,7 +115,6 @@ async fn a_resume_switches_spotter_and_triage_and_the_next_keeps_them() {
 /// A selection the creation checks refuse refuses the resume, and leaves the directory as it was.
 #[tokio::test]
 async fn a_switch_creation_would_refuse_refuses_the_resume() {
-    let _serial = PREPARING.lock().await;
     let root = Root::new("resume-switch-refused");
     left_behind(&root, "bad", |_| {}).await;
     let registry = codex_registry(root.path(), "bad");
@@ -185,7 +183,6 @@ fn assistant_turn() -> Payload {
 /// later resume keeps the new model.
 #[tokio::test]
 async fn a_resume_switches_the_main_model_within_a_dialect() {
-    let _serial = PREPARING.lock().await;
     let root = Root::new("resume-switch-main");
     left_behind(&root, "mn", |log| {
         log.append(1, Payload::User(vec![ContentBlock::Text("hi".into())]))
@@ -254,7 +251,6 @@ async fn a_resume_switches_the_main_model_within_a_dialect() {
 /// so is a log whose prompt has no identity line to replace.
 #[tokio::test]
 async fn a_main_switch_across_dialects_is_refused() {
-    let _serial = PREPARING.lock().await;
     let root = Root::new("resume-switch-dialect");
     left_behind(&root, "xd", |log| {
         log.append(1, assistant_turn()).unwrap();

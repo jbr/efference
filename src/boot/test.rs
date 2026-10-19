@@ -58,26 +58,15 @@ impl Drop for Root {
     }
 }
 
-/// `prepare` mints into the shared system temp dir, so the tests that count
-/// scratch dirs there run one at a time.
-pub(crate) static PREPARING: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
-
-/// The scratch dirs [`mint_scratch_dir`] could have made: `efference-` plus
-/// exactly sixteen hex digits, which no other temp name in this suite matches.
-pub(super) fn scratch_dirs() -> std::collections::BTreeSet<PathBuf> {
-    let Ok(entries) = std::fs::read_dir(std::env::temp_dir()) else {
-        return Default::default();
-    };
-    entries
-        .flatten()
-        .map(|entry| entry.path())
-        .filter(|path| {
-            path.file_name()
-                .and_then(|name| name.to_str())
-                .and_then(|name| name.strip_prefix("efference-"))
-                .is_some_and(|rest| rest.len() == 16 && rest.chars().all(|c| c.is_ascii_hexdigit()))
+/// `attempt`'s output, and the scratch dirs it minted, whether or not they still exist.
+pub(super) async fn minting<T>(attempt: impl std::future::Future<Output = T>) -> (T, Vec<PathBuf>) {
+    use super::mint::MINTED_SCRATCH;
+    MINTED_SCRATCH
+        .scope(Default::default(), async {
+            let output = attempt.await;
+            (output, MINTED_SCRATCH.with(|dirs| dirs.take()))
         })
-        .collect()
+        .await
 }
 
 /// A session request against the Codex arm, whose capabilities come from the
@@ -331,7 +320,6 @@ pub(super) fn failure(result: Result<SessionBoot<MountedSpotter>, Error>, what: 
 /// their own.
 #[tokio::test]
 async fn a_rejected_parameter_reserves_no_name() {
-    let _serial = PREPARING.lock().await;
     let root = Root::new("parameter");
     let dir = root.session_dir("file-nomination");
     let endpoint = listing_endpoint(
@@ -379,7 +367,6 @@ async fn a_rejected_parameter_reserves_no_name() {
 /// closed well after the log is open (docs/context.md).
 #[tokio::test]
 async fn a_late_failure_rolls_back_what_it_minted() {
-    let _serial = PREPARING.lock().await;
     let root = Root::new("late");
     std::fs::write(
         root.path().join("efference.toml"),
@@ -387,12 +374,10 @@ async fn a_late_failure_rolls_back_what_it_minted() {
     )
     .unwrap();
     let dir = root.session_dir("shutdown-frontend");
-    let before = scratch_dirs();
 
-    let error = failure(
-        prepare(request(root.path(), "shutdown-frontend", None)).await,
-        "unreadable [context] must fail preparation",
-    );
+    let (prepared, scratch) =
+        minting(prepare(request(root.path(), "shutdown-frontend", None))).await;
+    let error = failure(prepared, "unreadable [context] must fail preparation");
     assert!(
         error.to_string().contains("[context]"),
         "fails on the injected step: {error}"
@@ -403,9 +388,14 @@ async fn a_late_failure_rolls_back_what_it_minted() {
         dir.display()
     );
     assert_eq!(
-        scratch_dirs(),
-        before,
-        "the minted scratch dir is rolled back"
+        scratch.len(),
+        1,
+        "the attempt minted its scratch: {scratch:?}"
+    );
+    assert!(
+        !scratch[0].exists(),
+        "the minted scratch dir is rolled back: {}",
+        scratch[0].display()
     );
 
     // The rolled-back name is free, and the parent the mint created recursively
@@ -416,7 +406,6 @@ async fn a_late_failure_rolls_back_what_it_minted() {
 /// `worktree: true` outside a git work tree fails creation and leaves nothing.
 #[tokio::test]
 async fn a_worktree_request_outside_git_is_refused_with_nothing_minted() {
-    let _serial = PREPARING.lock().await;
     let root = Root::new("worktree-refused");
     let dir = root.session_dir("plain-fox");
     let mut req = request(root.path(), "plain-fox", None);
@@ -430,7 +419,6 @@ async fn a_worktree_request_outside_git_is_refused_with_nothing_minted() {
 /// A failure after the worktree exists removes the worktree and its branch.
 #[tokio::test]
 async fn a_late_failure_removes_the_worktree_it_made() {
-    let _serial = PREPARING.lock().await;
     let root = Root::new("worktree-late");
     git(root.path(), &["init", "-q"]);
     std::fs::write(
@@ -454,7 +442,6 @@ async fn a_late_failure_removes_the_worktree_it_made() {
 /// rollback only removes a dir this attempt's own exclusive create returned.
 #[tokio::test]
 async fn a_collision_leaves_the_existing_session_untouched() {
-    let _serial = PREPARING.lock().await;
     let root = Root::new("collide");
     let dir = root.session_dir("occupied");
     std::fs::create_dir_all(&dir).unwrap();
@@ -462,12 +449,9 @@ async fn a_collision_leaves_the_existing_session_untouched() {
     let config = dir.join(CONFIG_NAME);
     std::fs::write(&log, b"{\"seq\":0}\n").unwrap();
     std::fs::write(&config, b"scope = \"the prior session\"\n").unwrap();
-    let before = scratch_dirs();
 
-    let error = failure(
-        prepare(request(root.path(), "occupied", None)).await,
-        "an occupied name must be refused",
-    );
+    let (prepared, scratch) = minting(prepare(request(root.path(), "occupied", None))).await;
+    let error = failure(prepared, "an occupied name must be refused");
     assert!(
         error.to_string().contains("already exists"),
         "names the collision: {error}"
@@ -477,7 +461,11 @@ async fn a_collision_leaves_the_existing_session_untouched() {
         std::fs::read(&config).unwrap(),
         b"scope = \"the prior session\"\n"
     );
-    assert_eq!(scratch_dirs(), before, "and mints no scratch of its own");
+    assert_eq!(
+        scratch,
+        Vec::<PathBuf>::new(),
+        "and mints no scratch of its own"
+    );
 }
 
 /// Two creations of one name race the same exclusive `create_dir`: one gets the
@@ -485,7 +473,6 @@ async fn a_collision_leaves_the_existing_session_untouched() {
 /// winner's log and config snapshot are whole when both have returned.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn concurrent_creations_of_one_name_yield_one_session() {
-    let _serial = PREPARING.lock().await;
     let root = Root::new("race");
     let dir = root.session_dir("contested");
 

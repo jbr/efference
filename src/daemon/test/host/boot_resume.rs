@@ -6,7 +6,7 @@
 //! reaches a provider; the state database and every root are under a temp directory.
 
 use super::*;
-use crate::boot::test::{PREPARING, Root, codex_registry, drop_boot, request};
+use crate::boot::test::{Root, codex_registry, drop_boot, request};
 use crate::log::{ContentBlock, Payload};
 
 /// A session left on disk as a host that stopped would leave it: a turn said, and
@@ -59,7 +59,6 @@ fn sorted(mut ids: Vec<String>) -> Vec<String> {
 /// by the time the child is, so the relation holds.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_restarted_host_resumes_what_was_open_and_not_what_was_archived() {
-    let _serial = PREPARING.lock().await;
     let root = Root::new("boot-resume");
     left(&root, "closed", None, true, |_| {}).await;
     left(&root, "plain", None, false, |_| {}).await;
@@ -86,7 +85,6 @@ async fn a_restarted_host_resumes_what_was_open_and_not_what_was_archived() {
 /// makes it open again.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_session_that_fails_to_resume_stays_dormant_and_the_pass_goes_on() {
-    let _serial = PREPARING.lock().await;
     let root = Root::new("boot-resume-fail");
     left(&root, "good", None, false, |_| {}).await;
     left(&root, "broken", None, false, |_| {}).await;
@@ -156,7 +154,6 @@ async fn a_session_that_fails_to_resume_stays_dormant_and_the_pass_goes_on() {
 /// the resume wrote it.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_resume_over_an_unshown_notification_appends_nothing() {
-    let _serial = PREPARING.lock().await;
     let root = Root::new("boot-resume-quiet");
     left(&root, "quiet", None, false, |log| {
         log.append(
