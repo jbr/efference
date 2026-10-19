@@ -186,7 +186,6 @@ async fn archived_and_delete_are_one_transition() {
 
     let body = server
         .delete("/sessions/one")
-        .with_json_body(&serde_json::json!({}))
         .await
         .assert_status(200)
         .body()

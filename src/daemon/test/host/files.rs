@@ -63,8 +63,13 @@ async fn a_hosted_sessions_files_are_served_under_its_prefix() {
 async fn a_hosted_sessions_directory_stream_delivers_its_pokes() {
     let roots = Roots::new();
     let cwd = roots.0.join("one");
+    // The session's storage under `.efference/`, as a hosted session's is: the runtime
+    // creates its attachment store there as it starts, which the watched directory
+    // would otherwise report ahead of the poke.
+    let session_dir = cwd.join(".efference").join("one");
+    std::fs::create_dir_all(&session_dir).expect("the session dir exists");
     let host = Host::new(crate::inference::InferenceRegistry::empty(), baseline_env());
-    let runtime = SessionRuntime::start(runtime::boot(&cwd), host.swansong());
+    let runtime = SessionRuntime::start(runtime::boot_in(&cwd, &session_dir), host.swansong());
     host.adopt("one".into(), runtime)
         .expect("the id is free in this test");
     let mut handler = hosted_files(&host);
