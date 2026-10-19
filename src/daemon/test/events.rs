@@ -17,8 +17,7 @@ use super::*;
 /// daemon runs on the multi-thread runtime).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn events_replays_then_tails_live() {
-    let log_path = std::env::temp_dir().join("efference-sse-test.jsonl");
-    let _ = std::fs::remove_file(&log_path);
+    let log_path = temp_file("sse-test.jsonl");
 
     let (shared, _turns_rx) = Session::new(
         std::env::current_dir().unwrap(),
@@ -121,8 +120,7 @@ async fn an_idle_stream_heartbeats_with_comments() {
 /// `events()` resolves can't race ahead of the subscription.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_output_class_carries_ephemeral_deltas() {
-    let log_path = std::env::temp_dir().join("efference-stream-test.jsonl");
-    let _ = std::fs::remove_file(&log_path);
+    let log_path = temp_file("stream-test.jsonl");
 
     let (shared, _turns_rx) = Session::new(
         std::env::current_dir().unwrap(),

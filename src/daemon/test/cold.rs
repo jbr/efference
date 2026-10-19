@@ -28,7 +28,7 @@ fn no_usage() -> crate::api::RequestUsage {
 /// cold belief like a turn; a triage on a separate triage client does not.
 #[test]
 fn a_shared_triage_refreshes_the_cold_belief_and_an_own_triage_does_not() {
-    let usage_path = std::env::temp_dir().join("efference-cold-triage-test-usage.jsonl");
+    let usage_path = temp_file("cold-triage-test-usage.jsonl");
     let stale = crate::log::Timestamp::now().0 - 35 * 60_000;
     std::fs::write(
         &usage_path,
@@ -400,7 +400,7 @@ async fn an_inbox_wake_while_cold_waits_for_a_person() {
 /// switch, until a request on the new prefix is made.
 #[test]
 fn a_main_switch_starts_the_session_cold() {
-    let usage_path = std::env::temp_dir().join("efference-cold-switch-test-usage.jsonl");
+    let usage_path = temp_file("cold-switch-test-usage.jsonl");
     let minute_ago = crate::log::Timestamp::now().0 - 60_000;
     std::fs::write(
         &usage_path,

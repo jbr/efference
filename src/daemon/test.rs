@@ -7,6 +7,15 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 use trillium_testing::TestServer;
 
+/// A temp file for one test, named for this process and cleared of what an earlier
+/// process with the same id left. A fixed name is shared by every process running the
+/// suite, so a concurrent run (another worktree's) would write over it mid-test.
+fn temp_file(name: &str) -> std::path::PathBuf {
+    let path = std::env::temp_dir().join(format!("efference-{}-{name}", std::process::id()));
+    let _ = std::fs::remove_file(&path);
+    path
+}
+
 fn user(text: &str) -> Payload {
     Payload::User(vec![ContentBlock::Text(text.into())])
 }

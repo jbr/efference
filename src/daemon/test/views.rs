@@ -175,8 +175,7 @@ fn state_reports_the_session_identity() {
 /// log is untouched, so this never perturbs projection or byte-stability.
 #[test]
 fn state_reports_cache_telemetry() {
-    let log_path = std::env::temp_dir().join("efference-usage-test.jsonl");
-    let _ = std::fs::remove_file(&log_path);
+    let log_path = temp_file("usage-test.jsonl");
     let (shared, _turns_rx) = Session::new(
         std::env::current_dir().unwrap(),
         Log::create(&log_path, None).expect("create log"),
@@ -729,7 +728,7 @@ fn state_reports_plan_windows_under_usage() {
 /// from `usage.jsonl`.
 #[test]
 fn cold_topic_reports_an_expired_cache() {
-    let usage_path = std::env::temp_dir().join("efference-cold-topic-test-usage.jsonl");
+    let usage_path = temp_file("cold-topic-test-usage.jsonl");
     let at = crate::log::Timestamp::now().0 - 10 * 60_000;
     std::fs::write(
         &usage_path,

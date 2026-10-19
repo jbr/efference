@@ -130,8 +130,7 @@ async fn inbox_wake_fires_on_unshown_not_on_shown() {
 /// supersession and `GET /state` exposure run over the real router + control client.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn notify_and_supersede_over_the_router() {
-    let log_path = std::env::temp_dir().join("efference-notify-test.jsonl");
-    let _ = std::fs::remove_file(&log_path);
+    let log_path = temp_file("notify-test.jsonl");
 
     let (shared, _turns_rx) = Session::new(
         std::env::current_dir().unwrap(),
@@ -170,8 +169,7 @@ async fn notify_and_supersede_over_the_router() {
 /// slot notification was only ever in memory and does not.
 #[test]
 fn arrived_notifications_survive_a_reload_and_slot_ones_do_not() {
-    let path = std::env::temp_dir().join("efference-durable-inbox-test.jsonl");
-    let _ = std::fs::remove_file(&path);
+    let path = temp_file("durable-inbox-test.jsonl");
     let kept = {
         let (shared, _turns_rx) = Session::new(
             std::env::current_dir().unwrap(),

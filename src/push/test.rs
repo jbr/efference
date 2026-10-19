@@ -11,7 +11,7 @@ fn sub(endpoint: &str) -> Subscription {
 }
 
 fn temp_store(name: &str) -> Store {
-    let path = std::env::temp_dir().join(format!("eff-push-{name}.db"));
+    let path = std::env::temp_dir().join(format!("eff-push-{}-{name}.db", std::process::id()));
     let _ = std::fs::remove_file(&path);
     Store::new(path)
 }

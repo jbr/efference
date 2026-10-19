@@ -7,8 +7,7 @@ use super::*;
 /// is left untouched.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn review_level_over_the_router() {
-    let log_path = std::env::temp_dir().join("eff-review-level.jsonl");
-    let _ = std::fs::remove_file(&log_path);
+    let log_path = temp_file("review-level.jsonl");
 
     let (shared, _turns_rx) = Session::new(
         std::env::current_dir().unwrap(),
