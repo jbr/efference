@@ -49,15 +49,15 @@ async fn mcp_over(host: &Arc<Host>) -> Control {
     )
 }
 
-/// A host running `parent`, and `child`, which `parent` created.
-fn hosting_a_family(roots: &Roots) -> Arc<Host> {
+/// A host running `parent`, and `child`, which `parent` created, each loop idle.
+async fn hosting_a_family(roots: &Roots) -> Arc<Host> {
     let host = Host::new(one_connection_registry(), baseline_env());
     for (id, created_by) in [("parent", None), ("child", Some("parent"))] {
         let session_dir = roots.0.join(".efference").join(id);
         std::fs::create_dir_all(&session_dir).expect("the session dir exists");
         host.adopt_with(
             id.into(),
-            SessionRuntime::start(runtime::boot_in(&roots.0, &session_dir), host.swansong()),
+            runtime::started(runtime::boot_in(&roots.0, &session_dir), host.swansong()).await,
             created_by.map(str::to_string),
             false,
         )
@@ -66,15 +66,15 @@ fn hosting_a_family(roots: &Roots) -> Arc<Host> {
     host
 }
 
-/// A host running `ids`, none created by another.
-fn hosting(roots: &Roots, ids: &[&str]) -> Arc<Host> {
+/// A host running `ids`, none created by another, each loop idle.
+async fn hosting(roots: &Roots, ids: &[&str]) -> Arc<Host> {
     let host = Host::new(one_connection_registry(), baseline_env());
     for id in ids {
         let session_dir = roots.0.join(".efference").join(id);
         std::fs::create_dir_all(&session_dir).expect("the session dir exists");
         host.adopt(
             id.to_string(),
-            SessionRuntime::start(runtime::boot_in(&roots.0, &session_dir), host.swansong()),
+            runtime::started(runtime::boot_in(&roots.0, &session_dir), host.swansong()).await,
         )
         .expect("the id is free in this test");
     }
@@ -128,7 +128,7 @@ fn hold(host: &Host, id: &str, call: &ToolCall) -> (u64, tokio::sync::oneshot::R
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_overview_reads_every_session_on_the_host() {
     let roots = Roots::new();
-    let host = hosting_a_family(&roots);
+    let host = hosting_a_family(&roots).await;
     let overview = Status { agent: None }
         .execute(mcp_over(&host).await, RequestContext::default())
         .await
@@ -144,7 +144,7 @@ async fn the_overview_reads_every_session_on_the_host() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn an_archive_names_its_cascade() {
     let roots = Roots::new();
-    let host = hosting_a_family(&roots);
+    let host = hosting_a_family(&roots).await;
     let said = Archive {
         agent: "parent".into(),
     }

@@ -291,6 +291,8 @@ impl Session {
             self.turns_ended.fetch_add(1, Ordering::SeqCst);
         }
         self.set_phase(LoopPhase::Idle);
+        #[cfg(test)]
+        self.loop_idled.store(true, Ordering::SeqCst);
         self.settle_changed.notify_waiters();
         // A queued turn is about to run, so the session is not waiting on anyone: no push
         // for an idle it passes straight through, as when an interrupt ends a turn with
@@ -299,6 +301,12 @@ impl Session {
             let body = super::push::settle_body(self.log.lock().unwrap().entries());
             self.push(crate::log::MomentKind::Settle, body);
         }
+    }
+
+    /// Whether the loop has gone idle at least once (`loop_idled`).
+    #[cfg(test)]
+    pub(crate) fn loop_idled(&self) -> bool {
+        self.loop_idled.load(Ordering::SeqCst)
     }
 
     /// Whether the daemon is at a **decision point** a client can act on: the loop phase is one

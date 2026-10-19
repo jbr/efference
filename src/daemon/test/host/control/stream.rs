@@ -75,7 +75,7 @@ fn first(text: &str) -> &str {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_stream_sends_the_status_then_each_decision_point_then_the_end() {
     let roots = Roots::new();
-    let host = hosting(&roots, &["child"]);
+    let host = hosting(&roots, &["child"]).await;
     let (control, _) = mount(&host).await;
     let (said, url) = followed(&control, "child").await;
     assert_eq!(first(&said), "child: idle, its turn is done", "{said}");
@@ -135,7 +135,7 @@ async fn a_stream_sends_the_status_then_each_decision_point_then_the_end() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn every_connection_and_wait_get_every_status() {
     let roots = Roots::new();
-    let host = hosting(&roots, &["child"]);
+    let host = hosting(&roots, &["child"]).await;
     let (control, _) = mount(&host).await;
     let (_, url) = followed(&control, "child").await;
     assert_eq!(followed(&control, "child").await.1, url);
@@ -191,7 +191,7 @@ async fn every_connection_and_wait_get_every_status() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_stream_closes_with_an_error_when_the_host_stops_answering() {
     let roots = Roots::new();
-    let host = hosting(&roots, &["child"]);
+    let host = hosting(&roots, &["child"]).await;
     let down = Arc::new(AtomicBool::new(false));
     let front = {
         let down = Arc::clone(&down);
@@ -228,7 +228,7 @@ async fn a_stream_closes_with_an_error_when_the_host_stops_answering() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn follow_names_one_agent() {
     let roots = Roots::new();
-    let host = hosting(&roots, &["child"]);
+    let host = hosting(&roots, &["child"]).await;
     let (control, _) = mount(&host).await;
     let err = McpStatus {
         agent: None,

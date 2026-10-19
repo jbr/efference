@@ -81,6 +81,15 @@ pub(super) fn boot_in(cwd: &Path, session_dir: &Path) -> SessionBoot<StaticSpott
     boot
 }
 
+/// [`SessionRuntime::start`], returned once the loop has gone idle. A test that stands in
+/// for the loop afterwards — setting a phase, holding a gate — would otherwise race the
+/// loop's first idle, which writes the phase over whatever the test set.
+pub(super) async fn started(boot: SessionBoot<StaticSpotter>, parent: &Swansong) -> SessionRuntime {
+    let runtime = SessionRuntime::start(boot, parent);
+    wait_until("the loop went idle", || runtime.session().loop_idled()).await;
+    runtime
+}
+
 fn alive(pgid: u32) -> bool {
     // SAFETY: signal 0 checks existence and permission only; no memory effects.
     unsafe { libc::killpg(pgid as libc::pid_t, 0) == 0 }

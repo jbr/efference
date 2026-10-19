@@ -4,8 +4,8 @@
 
 use super::*;
 use crate::control_tools::{Control, Decide, Decision, Executor, Message, Status};
+use crate::daemon::Host;
 use crate::daemon::status::{Condition, Reviewer};
-use crate::daemon::{Host, SessionRuntime};
 use crate::frontend::Approval;
 use crate::log::Telemetry;
 use crate::policy::ReviewLevel;
@@ -25,7 +25,7 @@ impl Drop for Fixture {
 
 impl Fixture {
     /// One project: `p` and `q` are human roots, and `p` created `c`.
-    fn new() -> Self {
+    async fn new() -> Self {
         use std::hash::{BuildHasher, Hasher, RandomState};
         let nonce = RandomState::new().build_hasher().finish();
         let root = std::env::temp_dir().join(format!("efference-decide-authority-{nonce:016x}"));
@@ -35,19 +35,19 @@ impl Fixture {
             std::fs::create_dir_all(project.join(".efference").join(id)).unwrap();
         }
         let host = Host::new(crate::inference::InferenceRegistry::empty(), baseline_env());
-        let adopt = |id: &str, created_by: Option<&str>| {
+        let adopt = async |id: &str, created_by: Option<&str>| {
             let boot = runtime::boot_in(&project, &project.join(".efference").join(id));
             host.adopt_with(
                 id.to_string(),
-                SessionRuntime::start(boot, host.swansong()),
+                runtime::started(boot, host.swansong()).await,
                 created_by.map(str::to_string),
                 false,
             )
             .expect("the id is free in this test");
         };
-        adopt("p", None);
-        adopt("q", None);
-        adopt("c", Some("p"));
+        adopt("p", None).await;
+        adopt("q", None).await;
+        adopt("c", Some("p")).await;
         Self { root, host }
     }
 
@@ -156,7 +156,7 @@ fn decisions(c: &Session) -> Vec<crate::log::GateDecision> {
 /// `decide` call it may make; and `p`'s decision lands.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_supervisor_may_decide_a_gate_routed_to_the_operator_and_is_not_woken() {
-    let fixture = Fixture::new();
+    let fixture = Fixture::new().await;
     let p = fixture.session("p");
     let c = fixture.session("c");
     c.set_review_level(ReviewLevel::SpotterHuman);
@@ -220,7 +220,7 @@ async fn the_supervisor_may_decide_a_gate_routed_to_the_operator_and_is_not_woke
 /// reaches `c` as a turn.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_moved_pointer_moves_decide_to_the_new_supervisor() {
-    let fixture = Fixture::new();
+    let fixture = Fixture::new().await;
     let c = fixture.session("c");
     fixture.host.set_supervisor("c", Some("q".into())).unwrap();
     let (seq, gate) = hold(&c);

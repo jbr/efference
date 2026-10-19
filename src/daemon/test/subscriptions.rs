@@ -1,7 +1,7 @@
 //! A session's status reaching its subscribers' inboxes (docs/tools.md).
 
 use super::*;
-use crate::daemon::{Host, SessionRuntime};
+use crate::daemon::Host;
 use crate::frontend::Approval;
 use std::path::Path;
 
@@ -19,7 +19,7 @@ impl Drop for Fixture {
 impl Fixture {
     /// One project: `parent` commissioned `child` and, detached, `loner`;
     /// `child` commissioned `grandchild`; `peer` is a human root.
-    fn new() -> Self {
+    async fn new() -> Self {
         use std::hash::{BuildHasher, Hasher, RandomState};
         let nonce = RandomState::new().build_hasher().finish();
         let root = std::env::temp_dir().join(format!("efference-subscriptions-{nonce:016x}"));
@@ -30,21 +30,21 @@ impl Fixture {
             std::fs::create_dir_all(project.join(".efference").join(id)).unwrap();
         }
         let host = Host::new(crate::inference::InferenceRegistry::empty(), baseline_env());
-        let adopt = |id: &str, cwd: &Path, created_by: Option<&str>, detached: bool| {
+        let adopt = async |id: &str, cwd: &Path, created_by: Option<&str>, detached: bool| {
             let boot = runtime::boot_in(cwd, &cwd.join(".efference").join(id));
             host.adopt_with(
                 id.to_string(),
-                SessionRuntime::start(boot, host.swansong()),
+                runtime::started(boot, host.swansong()).await,
                 created_by.map(str::to_string),
                 detached,
             )
             .expect("the id is free in this test");
         };
-        adopt("parent", &project, None, false);
-        adopt("peer", &project, None, false);
-        adopt("child", &project, Some("parent"), false);
-        adopt("grandchild", &project, Some("child"), false);
-        adopt("loner", &project, Some("parent"), true);
+        adopt("parent", &project, None, false).await;
+        adopt("peer", &project, None, false).await;
+        adopt("child", &project, Some("parent"), false).await;
+        adopt("grandchild", &project, Some("child"), false).await;
+        adopt("loner", &project, Some("parent"), true).await;
         Self { root, host }
     }
 
@@ -67,7 +67,7 @@ async fn wait_until(what: &str, mut ready: impl FnMut() -> bool) {
 /// `unsubscribe` drops either. The subscriber's own `wait` source count follows.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_creator_is_subscribed_with_wake_and_a_peer_without() {
-    let fixture = Fixture::new();
+    let fixture = Fixture::new().await;
     let subscribers = |id: &str| {
         fixture
             .host
@@ -138,7 +138,7 @@ fn pinned(session: &Session, seq: Seq) -> bool {
 /// idle follows on the same slot. A sibling that did not subscribe hears nothing.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_childs_gate_wakes_the_parent_and_is_pinned_whatever_the_triage_says() {
-    let fixture = Fixture::new();
+    let fixture = Fixture::new().await;
     let parent = fixture.session("parent");
     let child = fixture.session("child");
     assert!(
@@ -203,7 +203,7 @@ async fn a_childs_gate_wakes_the_parent_and_is_pinned_whatever_the_triage_says()
 /// push caption keeps.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_supervisor_reads_the_gate_as_its_reviewer_and_the_whole_closing_message() {
-    let fixture = Fixture::new();
+    let fixture = Fixture::new().await;
     let parent = fixture.session("parent");
     let child = fixture.session("child");
 
@@ -308,7 +308,7 @@ async fn a_supervisor_reads_the_gate_as_its_reviewer_and_the_whole_closing_messa
 /// hears the next condition on the same slot.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_childs_question_wakes_the_parent() {
-    let fixture = Fixture::new();
+    let fixture = Fixture::new().await;
     let parent = fixture.session("parent");
     let child = fixture.session("child");
     assert!(fixture.session("peer").pending_notifications().is_empty());
@@ -353,7 +353,7 @@ async fn a_childs_question_wakes_the_parent() {
 /// question without that line.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_question_tells_a_driver_its_message_came_back() {
-    let fixture = Fixture::new();
+    let fixture = Fixture::new().await;
     let parent = fixture.session("parent");
     let child = fixture.session("child");
     let grandchild = fixture.session("grandchild");
@@ -392,7 +392,7 @@ async fn a_question_tells_a_driver_its_message_came_back() {
 /// commissioned — except a detached one, which outlives it.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn an_end_is_posted_and_cascades_to_non_detached_children() {
-    let fixture = Fixture::new();
+    let fixture = Fixture::new().await;
     let parent = fixture.session("parent");
     let peer = fixture.session("peer");
     assert!(fixture.host.subscribe("child", "peer", false));

@@ -221,6 +221,8 @@ impl Session {
             escalation: Arc::default(),
             phase: Mutex::new(phase::LoopPhase::Idle),
             turns_ended: std::sync::atomic::AtomicU64::new(0),
+            #[cfg(test)]
+            loop_idled: std::sync::atomic::AtomicBool::new(false),
             queue: Mutex::new(std::collections::VecDeque::new()),
             ask: Mutex::new(None),
             settle_changed: Notify::new(),

@@ -38,7 +38,7 @@ fn wait(
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_created_agents_gate_arrives_through_wait() {
     let roots = Roots::new();
-    let host = hosting(&roots, &["child"]);
+    let host = hosting(&roots, &["child"]).await;
     let (control, executor) = mount(&host).await;
     created(&executor, &host, "child");
 
@@ -62,7 +62,7 @@ async fn a_created_agents_gate_arrives_through_wait() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_wait_with_nothing_new_blocks_until_the_next_decision_point() {
     let roots = Roots::new();
-    let host = hosting(&roots, &["child"]);
+    let host = hosting(&roots, &["child"]).await;
     let (control, executor) = mount(&host).await;
     created(&executor, &host, "child");
     let (_, _first) = hold(&host, "child", &bash("toolu_1", "ls ~"));
@@ -100,7 +100,7 @@ async fn a_wait_with_nothing_new_blocks_until_the_next_decision_point() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn two_watched_agents_statuses_both_arrive() {
     let roots = Roots::new();
-    let host = hosting(&roots, &["a", "b"]);
+    let host = hosting(&roots, &["a", "b"]).await;
     let (control, executor) = mount(&host).await;
     created(&executor, &host, "a");
     created(&executor, &host, "b");
@@ -132,7 +132,7 @@ async fn two_watched_agents_statuses_both_arrive() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn naming_an_agent_watches_it() {
     let roots = Roots::new();
-    let host = hosting(&roots, &["child"]);
+    let host = hosting(&roots, &["child"]).await;
     let (control, _) = mount(&host).await;
 
     let err = wait(&control, Some("ghost"), 10).await.unwrap_err();
@@ -154,7 +154,7 @@ async fn naming_an_agent_watches_it() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn nothing_watched_refuses() {
     let roots = Roots::new();
-    let host = hosting(&roots, &["child"]);
+    let host = hosting(&roots, &["child"]).await;
     let (control, _) = mount(&host).await;
     let err = wait(&control, None, 10).await.unwrap_err();
     assert_eq!(
@@ -169,7 +169,7 @@ async fn nothing_watched_refuses() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_timeout_answers_the_current_statuses_marked_not_new() {
     let roots = Roots::new();
-    let host = hosting(&roots, &["a", "b"]);
+    let host = hosting(&roots, &["a", "b"]).await;
     let (control, executor) = mount(&host).await;
     created(&executor, &host, "a");
     created(&executor, &host, "b");
@@ -189,7 +189,7 @@ async fn a_timeout_answers_the_current_statuses_marked_not_new() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn an_ended_agent_is_reported_once_then_dropped() {
     let roots = Roots::new();
-    let host = hosting(&roots, &["child"]);
+    let host = hosting(&roots, &["child"]).await;
     let (control, executor) = mount(&host).await;
     created(&executor, &host, "child");
     Archive {

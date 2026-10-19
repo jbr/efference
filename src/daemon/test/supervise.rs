@@ -3,8 +3,8 @@
 
 use super::*;
 use crate::control_tools::{Control, Decide, Decision, Executor, Interrupt, Message};
+use crate::daemon::Host;
 use crate::daemon::host::SupervisorRefused;
-use crate::daemon::{Host, SessionRuntime};
 use crate::frontend::Approval;
 use crate::log::{InterruptOrigin, Telemetry};
 use crate::policy::ReviewLevel;
@@ -26,7 +26,7 @@ impl Drop for Fixture {
 impl Fixture {
     /// One project: `a`, `b`, and `c` are human roots, and `kid` was commissioned
     /// by `a`. `stranger` is a root in another project.
-    fn new() -> Self {
+    async fn new() -> Self {
         use std::hash::{BuildHasher, Hasher, RandomState};
         let nonce = RandomState::new().build_hasher().finish();
         let root = std::env::temp_dir().join(format!("efference-supervise-{nonce:016x}"));
@@ -38,21 +38,21 @@ impl Fixture {
             }
         }
         let host = Host::new(crate::inference::InferenceRegistry::empty(), baseline_env());
-        let adopt = |id: &str, cwd: &Path, created_by: Option<&str>| {
+        let adopt = async |id: &str, cwd: &Path, created_by: Option<&str>| {
             let boot = runtime::boot_in(cwd, &cwd.join(".efference").join(id));
             host.adopt_with(
                 id.to_string(),
-                SessionRuntime::start(boot, host.swansong()),
+                runtime::started(boot, host.swansong()).await,
                 created_by.map(str::to_string),
                 false,
             )
             .expect("the id is free in this test");
         };
-        adopt("a", &projects[0], None);
-        adopt("b", &projects[0], None);
-        adopt("c", &projects[0], None);
-        adopt("kid", &projects[0], Some("a"));
-        adopt("stranger", &projects[1], None);
+        adopt("a", &projects[0], None).await;
+        adopt("b", &projects[0], None).await;
+        adopt("c", &projects[0], None).await;
+        adopt("kid", &projects[0], Some("a")).await;
+        adopt("stranger", &projects[1], None).await;
         Self { root, host }
     }
 
@@ -166,7 +166,7 @@ fn steer(agent: &str) -> Message {
 /// The change is recorded in `a`'s log.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_set_supervisor_receives_the_gate_approves_it_and_hears_the_idle() {
-    let fixture = Fixture::new();
+    let fixture = Fixture::new().await;
     let a = fixture.session("a");
     let b = fixture.session("b");
     assert_eq!(a.supervisor(), None);
@@ -244,7 +244,7 @@ async fn a_set_supervisor_receives_the_gate_approves_it_and_hears_the_idle() {
 /// transitive: `b` supervising `a` does not reach `kid`, which `a` created.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_supervisor_may_turn_and_interrupt_and_reaches_no_further() {
-    let fixture = Fixture::new();
+    let fixture = Fixture::new().await;
     fixture.host.set_supervisor("a", Some("b".into())).unwrap();
     let b = fixture.control("b");
 
@@ -305,7 +305,7 @@ async fn a_supervisor_may_turn_and_interrupt_and_reaches_no_further() {
 /// project. A refused setting changes nothing.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_cycle_and_an_unreachable_supervisor_are_refused() {
-    let fixture = Fixture::new();
+    let fixture = Fixture::new().await;
     fixture.host.set_supervisor("a", Some("b".into())).unwrap();
     fixture.host.set_supervisor("b", Some("c".into())).unwrap();
 
@@ -347,7 +347,7 @@ async fn a_cycle_and_an_unreachable_supervisor_are_refused() {
 /// is gone. Moving the pointer re-routes the held call to the new supervisor.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn clearing_or_moving_the_pointer_reroutes_a_held_call() {
-    let fixture = Fixture::new();
+    let fixture = Fixture::new().await;
     let a = fixture.session("a");
     let c = fixture.session("c");
     fixture.host.set_supervisor("a", Some("b".into())).unwrap();
@@ -399,7 +399,7 @@ async fn clearing_or_moving_the_pointer_reroutes_a_held_call() {
 /// supervised reviews as `spotter_human` and keeps holding its call.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_set_supervisor_ending_hands_the_gate_to_the_operator() {
-    let fixture = Fixture::new();
+    let fixture = Fixture::new().await;
     let a = fixture.session("a");
     fixture.host.set_supervisor("a", Some("b".into())).unwrap();
     let _gate = a.register_pending(&leaf(), None);
@@ -417,7 +417,7 @@ async fn a_set_supervisor_ending_hands_the_gate_to_the_operator() {
 /// may drive it, and nothing is recorded.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_child_with_no_setting_answers_to_its_creator() {
-    let fixture = Fixture::new();
+    let fixture = Fixture::new().await;
     let kid = fixture.session("kid");
     assert_eq!(fixture.host.supervisor_of("kid").as_deref(), Some("a"));
     assert_eq!(kid.supervisor().as_deref(), Some("a"));

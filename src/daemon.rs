@@ -227,6 +227,11 @@ pub struct Session {
     /// idle it reads followed a turn, rather than an idle triage that pinned nothing
     /// (`subscriptions.rs`).
     turns_ended: std::sync::atomic::AtomicU64,
+    /// Whether the loop has gone idle at least once. Only tests read it: one that stands
+    /// in for the loop — writing its phase, holding a gate — waits for this first, since
+    /// the loop's first idle writes the phase and would overwrite what the test wrote.
+    #[cfg(test)]
+    loop_idled: AtomicBool,
     /// Turns submitted (`POST /turns`) but not yet dequeued by the loop, in submission order —
     /// the **authority** on what is pending, mirroring what was pushed into `turns_tx`. It closes
     /// the cross-task race in [`Session::is_settled`] (a turn exists even in the instant before the

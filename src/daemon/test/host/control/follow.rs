@@ -55,7 +55,7 @@ fn agents(ids: &[&str]) -> Vec<String> {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn follow_prints_the_status_then_each_decision_point_then_the_end() {
     let roots = Roots::new();
-    let host = hosting(&roots, &["child"]);
+    let host = hosting(&roots, &["child"]).await;
     let root = host_root(&host).await;
     let out = Shared::default();
     let following = tokio::spawn({
@@ -96,7 +96,7 @@ async fn follow_prints_the_status_then_each_decision_point_then_the_end() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn follow_fails_when_the_host_goes_away() {
     let roots = Roots::new();
-    let host = hosting(&roots, &["child"]);
+    let host = hosting(&roots, &["child"]).await;
     let down = Arc::new(AtomicBool::new(false));
     let front = {
         let down = Arc::clone(&down);
@@ -132,7 +132,7 @@ async fn follow_fails_when_the_host_goes_away() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn follow_refuses_an_agent_the_host_lacks() {
     let roots = Roots::new();
-    let host = hosting(&roots, &["child"]);
+    let host = hosting(&roots, &["child"]).await;
     let err = follow_status(
         &host_root(&host).await,
         &agents(&["stranger"]),
@@ -153,7 +153,7 @@ async fn follow_refuses_an_agent_the_host_lacks() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn output_json_is_the_status_view() {
     let roots = Roots::new();
-    let host = hosting(&roots, &["child", "other"]);
+    let host = hosting(&roots, &["child", "other"]).await;
     let (_, executor) = mount(&host).await;
     let control = Control::new(Executor::Client(executor), true);
     let read = |agent: &[&str]| CliStatus {
@@ -192,7 +192,7 @@ async fn output_json_is_the_status_view() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_named_session_resolves_through_the_host() {
     let roots = Roots::new();
-    let host = hosting(&roots, &["child"]);
+    let host = hosting(&roots, &["child"]).await;
     let root = host_root(&host).await;
     let socket = Path::new("/elsewhere/x.sock");
     let client = named(Some(root.clone()), socket, "child").await.unwrap();

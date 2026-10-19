@@ -3,7 +3,7 @@
 
 use super::*;
 use crate::control_tools::{Control, Decide, Decision, Executor};
-use crate::daemon::{Host, SessionRuntime};
+use crate::daemon::Host;
 use crate::policy::ReviewLevel;
 use mcplease::traits::Tool as _;
 use mcplease::types::RequestContext;
@@ -23,7 +23,7 @@ impl Drop for Fixture {
 impl Fixture {
     /// One project: `root` is a human root; `child` and the detached `outliver`
     /// were both commissioned by it.
-    fn new() -> Self {
+    async fn new() -> Self {
         use std::hash::{BuildHasher, Hasher, RandomState};
         let nonce = RandomState::new().build_hasher().finish();
         let dir = std::env::temp_dir().join(format!("efference-review-{nonce:016x}"));
@@ -33,19 +33,19 @@ impl Fixture {
             std::fs::create_dir_all(project.join(".efference").join(id)).unwrap();
         }
         let host = Host::new(crate::inference::InferenceRegistry::empty(), baseline_env());
-        let adopt = |id: &str, cwd: &Path, created_by: Option<&str>, detached: bool| {
+        let adopt = async |id: &str, cwd: &Path, created_by: Option<&str>, detached: bool| {
             let boot = runtime::boot_in(cwd, &cwd.join(".efference").join(id));
             host.adopt_with(
                 id.to_string(),
-                SessionRuntime::start(boot, host.swansong()),
+                runtime::started(boot, host.swansong()).await,
                 created_by.map(str::to_string),
                 detached,
             )
             .expect("the id is free in this test");
         };
-        adopt("root", &project, None, false);
-        adopt("child", &project, Some("root"), false);
-        adopt("outliver", &project, Some("root"), true);
+        adopt("root", &project, None, false).await;
+        adopt("child", &project, Some("root"), false).await;
+        adopt("outliver", &project, Some("root"), true).await;
         Self { root: dir, host }
     }
 
@@ -96,7 +96,7 @@ fn leaf() -> ToolCall {
 /// supervisor to answer to and stays on the supervised default.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_commissioned_session_defaults_to_supervisor_and_a_root_does_not() {
-    let fixture = Fixture::new();
+    let fixture = Fixture::new().await;
 
     assert_eq!(
         fixture.session("root").review_level(),
@@ -133,7 +133,7 @@ async fn a_commissioned_session_defaults_to_supervisor_and_a_root_does_not() {
 /// this proves is not happening: the dial itself never moves.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn supervisor_resolves_when_a_call_is_routed_not_when_the_session_is_created() {
-    let fixture = Fixture::new();
+    let fixture = Fixture::new().await;
     let root = fixture.session("root");
     let outliver = fixture.session("outliver");
 
@@ -186,7 +186,7 @@ async fn supervisor_resolves_when_a_call_is_routed_not_when_the_session_is_creat
 /// holding a child right now, and taking them on is not waiting for the next one.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_level_change_reroutes_a_pending_gate() {
-    let fixture = Fixture::new();
+    let fixture = Fixture::new().await;
     let root = fixture.session("root");
     let child = fixture.session("child");
 
@@ -227,7 +227,7 @@ async fn a_level_change_reroutes_a_pending_gate() {
 /// recipient, not a verb (docs/permissions.md).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_reviewer_resolves_the_routed_gate_through_decide() {
-    let fixture = Fixture::new();
+    let fixture = Fixture::new().await;
     let root = fixture.session("root");
     let child = fixture.session("child");
 
@@ -272,7 +272,7 @@ async fn the_reviewer_resolves_the_routed_gate_through_decide() {
 /// exists to draw (docs/inbox.md).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn an_unsubscribed_creator_still_receives_the_gate_it_reviews() {
-    let fixture = Fixture::new();
+    let fixture = Fixture::new().await;
     let root = fixture.session("root");
     let child = fixture.session("child");
 
