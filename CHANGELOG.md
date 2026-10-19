@@ -9,6 +9,8 @@ behind a change, see [`journal/`](journal/).
 
 ### Added
 
+- The web composer footer unifies startup, connection, action-error, and turn status with inline recovery actions; the design gallery includes these states and a fixture-backed transcript header.
+
 - The web session header opens a file sidebar on the working directory: a path header (`project / dir / file`, each directory a way back to the tree), a filter above the tree that lists paths containing every typed word, relative markdown links that open in the sidebar, and a markdown file's `---` metadata block rendered as fields; follow mode has no control for now, and reloading `/tree` keeps the sidebar open (docs/web-client.md).
 - `efference control --host-socket` names the host every verb addresses, and a named session resolves through the host before any socket under the working directory, so it works from any directory; `status --follow` prints each followed agent's status and then each new decision point until all have ended (non-zero when the host stops answering), and `status --output json` prints the status view (docs/operating.md, docs/control-channel.md).
 - A `supervising` guide (`efference://guide/supervising`, about 9 KB) for agents that supervise the agents they create: the verbs, the statuses and their moves, driving and `message`, gates and `decide`, questions, the transcript, creating and ending agents, who sees what, and cost. It replaces `operating`, so docs/operating.md is no longer compiled in (docs/context.md, docs/operating.md).

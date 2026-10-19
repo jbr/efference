@@ -10,6 +10,7 @@ import { useNarrow } from "../ui/useNarrow.ts";
 import { TranscriptContent } from "../ui/Transcript.tsx";
 import { CallBlock, ResultBlock, ZoomableImage } from "../ui/ToolBlocks.tsx";
 import { turnState, type TurnState } from "../ui/turnState.ts";
+import { GalleryTranscriptHeader } from "./SessionChromeSpecimens.tsx";
 
 const noop = () => {};
 const entry = (seq: number, payload: LogEntry["payload"]): LogEntry => ({
@@ -307,10 +308,7 @@ export function GalleryScenes() {
         </div>
       )}
       <div className="g-scene">
-        <div className="g-scene-head">
-          <span>Worktree controls in the web UI</span>
-          <span className="g-caption">deft-walnut · 147k / 272k</span>
-        </div>
+        <GalleryTranscriptHeader />
         <TranscriptContent
           nodes={buildTree(entries)}
           streaming={streaming}

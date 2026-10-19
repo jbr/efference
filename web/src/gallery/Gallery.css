@@ -203,14 +203,24 @@
   border-radius: 4px;
   overflow: hidden;
 }
-.g-scene-head {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  gap: 0.5rem;
-  padding: 0.9rem 1.25rem;
+.g-session-chrome {
+  border: 1px solid var(--border-control);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.g-transcript-header {
+  background: var(--bg-page);
   border-bottom: 1px solid var(--border-subtle);
-  font-family: var(--font-prose);
+}
+.g-transcript-header .top-bar {
+  position: static;
+  padding-top: 0;
+}
+.g-transcript-header .switcher {
+  overflow-x: auto;
+}
+.g-chrome-body {
+  padding: 1.5rem 1rem;
 }
 .g-scene .transcript {
   padding: 1.5rem 1rem;

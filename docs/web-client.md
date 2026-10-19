@@ -219,7 +219,7 @@ asks: the host answers `GET /sessions` with the listing, a session daemon serves
 such route and answers `404`, and a host with no credential yet answers `401`
 (which is the login view, after which the probe re-runs). Anything else — offline, a
 daemon that went away — reads as a session, which is what a root has always been;
-the session view's own connection banner reports the network state, where a second
+the session view's composer status reports the network state, where a second
 failure screen would only restate it.
 
 **The list is a subscription** (`ui/SessionList.tsx` over `api/sessions.ts`).
@@ -337,8 +337,8 @@ resumes from the cursor — a tail read merged into what the store holds (`resee
 scrolled-through window is not replaced) and the stream from `lastSeq + 1`. A retained store
 has no connection of its own: an open stream would count as someone watching and suppress that
 session's push notifications (`web-push.md`), so a session that is not on screen costs nothing.
-The banner for a non-live connection is delayed by CSS for the first 0.8 s, so a resume that
-lands quickly does not shift the transcript. The first visit to a session in a page's lifetime
+A non-live connection occupies the composer status slot rather than shifting the transcript.
+The first visit to a session in a page's lifetime
 is cold unless its tab was hovered or focused first: that starts one tail read
 (`prefetchStore`, no stream, applied only to a store nobody has touched since, so a late read
 cannot move a cursor back) into a small separate pool, from which a visit promotes it; without
@@ -1233,7 +1233,7 @@ an error is information.
 ## Chrome and the content column
 
 The page is full width; content sits in a centered `.col` (60rem). The chrome
-— the top bar, the connection banner, the composer band, and the status bar —
+— the top bar, the composer band, and the status bar —
 bleeds to the viewport edges, and each bar's affordances anchor to the window
 edges too: the wordmark and the app-settings link, the turn state and the
 interrupt (full width for parity across the bars, 2026-08-20). Only content
@@ -1363,12 +1363,25 @@ HTTP 2xx clears the failure. Retry progress may remain until finalization or
 exhaustion, but never reintroduces the old retry detail after that recovery. A
 later stream failure sets a new notice. The gallery's Transport status section
 covers overload, usage limit, broken stream and recovery at desktop and phone
-widths. Loop state stays in the banner, gate cue and composer's turn-state.
+widths. Loop state stays in the gate cue and composer's status readout.
 The page is `viewport-fit=cover`, which draws it under the status bar and beside
 the notch, so the bar pads itself by the `safe-area-inset-*` values; sticky
 elements below it dock at its measured height rather than a constant.
 
 ## The composer area
+
+**One status slot.** `ui/ComposerStatus.tsx` renders the toolbar readout and the
+collapsed phone footer. `ui/sessionStatus.ts` selects a startup failure (including
+retry-refusal detail and recovery action), inspection error, startup progress, or
+non-live connection, in that order. A local composer action error takes precedence
+over those conditions. Otherwise the slot shows the current turn state. Errors
+replace the turn readout; they do not stop the underlying turn or remove its
+interrupt control. Clearing a condition reveals the current status rather than a
+saved previous label. Startup retry remains available in either composer layout.
+Errors use a muted warm surface, orange left accent, selectable wrapped detail,
+and a separate recovery button where applicable. On phones this readout spans the
+row above the controls, including when the input is collapsed. No session status
+banner is rendered above the transcript.
 
 **Drafts belong to the session, not the mounted composer.** `ui/drafts.ts`
 keeps a `DraftStore` per session API base; `ui/Composer.tsx` subscribes to its
@@ -1521,8 +1534,7 @@ attachment handling above listens on the textarea's paste and the window's
 drag events, neither of which depends on the field being a textarea.
 
 The controls strip is gone; its last resident, the usage line, lives in the
-top bar. A non-`live` connection still shows as a full-width banner under
-the bar, not just a dimmed word.
+top bar. A non-`live` connection replaces the turn readout in the composer footer.
 
 ## App settings
 
@@ -1974,7 +1986,7 @@ of the DOM.
 
 Creation and resume answer once the host has reserved the session, so the view opens
 while it is prepared ([control-api.md](control-api.md), "A starting session"). While the
-`starting` topic is set, `ui/StartingBanner.tsx` takes the connection banner's place and
+`starting` topic is set, the composer status takes the connection readout's place and
 says what preparation is doing (`ui/startingLine.ts`): running the env hook, loading the
 config and mounting MCP servers, or waiting for a named MCP server to be authorized in a
 browser on the host. The composer works: a turn sent now is queued and is the first the
@@ -1983,7 +1995,7 @@ ordinary way — the bounded tail, then the stream from its cursor — rather th
 resumed session's whole log through the stream it opened at zero. The overview lists a
 starting session as working, "is starting".
 
-A failure's banner says why and offers the retry. The turns the failure hands back reach
+A failure takes the composer status slot, says why, and offers the retry. The turns the failure hands back reach
 the composer the way a recall's do, once per failure. For a resume the retry is the same
 `PATCH` again, then a reconnect on the same view, composer intact. For a creation it is
 **Back to the form**: the form reopens on the draft that made the session
@@ -2056,6 +2068,14 @@ settings, the model picker, and resume lists. Specimen labels stack above their
 controls on narrow screens; state comparisons wrap rather than widening the page.
 `SessionArchiveSpecimens.tsx` shows idle archiving, active-session confirmation, pending
 feedback and retryable failures through local callbacks, without sending session requests.
+`SessionChromeSpecimens.tsx` composes the production `TopBar`, fixture session tabs,
+and `SessionStatusFixture.tsx` with selectable environment, MCP mounting,
+authorization, startup failure, retry-refusal, reconnecting, and inspection-error
+states. The fixture uses the production `ComposerToolbar`, `ComposerStatus`, and
+`sessionStatus` selector. Retry locally enters its disabled state; tabs and overflow
+do not navigate. The same header fixture replaces the composed scenes' placeholder
+header. Gallery headers stay within their specimen rather than sticking to the
+window.
 
 `Scenes.tsx` renders a shortened worktree UI exchange in finished, input-arriving,
 working, answer-needed, and approval-needed states. Input-arriving shows an

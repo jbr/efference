@@ -33,7 +33,7 @@ body {
 }
 
 /* The content column. The page itself is full width so chrome (top bar,
-   dock, banner) can bleed to the viewport edges like application chrome;
+   dock) can bleed to the viewport edges like application chrome;
    everything that is content — transcript, panel panes, composer input —
    sits in this centered column. */
 .col {
@@ -60,7 +60,6 @@ button,
 select,
 label,
 .top-bar,
-.banner,
 .status-bar,
 .entry > .label,
 .block .kind,
@@ -1525,27 +1524,6 @@ select {
   line-height: 1.5;
   color: var(--fg-muted);
   margin: 0.3rem 0 0.7rem;
-}
-
-/* The connection is not live: loud on purpose, phone-visible. */
-.banner {
-  background: var(--warn);
-  color: #000;
-  padding: 0.2rem 0.5rem;
-  /* Held back for the first moments it is on screen: a reconnect that lands in
-   * under a second (a hidden tab returning, a session switched back to) would
-   * otherwise push the transcript down and up again for nothing. The backwards
-   * fill keeps it collapsed through the delay. */
-  animation: banner-in 0.01s linear 0.8s backwards;
-}
-
-@keyframes banner-in {
-  from {
-    max-height: 0;
-    padding-block: 0;
-    overflow: hidden;
-    opacity: 0;
-  }
 }
 
 /* Link-styled buttons: affordances that read as text, not chrome. */

@@ -41,6 +41,7 @@ import { ButtonSpecimens } from "./ButtonSpecimens.tsx";
 import { AmbientSpecimens } from "./AmbientSpecimens.tsx";
 import { ContextMeterSpecimens } from "./ContextMeterSpecimens.tsx";
 import { PlanMeterSpecimens } from "./PlanMeterSpecimens.tsx";
+import { SessionChromeSpecimens } from "./SessionChromeSpecimens.tsx";
 
 import { Specimen, States } from "./Specimens.tsx";
 import { PaletteSpecimens } from "./PaletteSpecimens.tsx";
@@ -95,6 +96,7 @@ export function Gallery() {
       <nav className="g-index" aria-label="Gallery sections">
         {[
           "Scenes",
+          "Session chrome",
           "Buttons",
           "Neon",
           "Session tabs",
@@ -121,6 +123,9 @@ export function Gallery() {
       </nav>
       <Section title="Scenes">
         <GalleryScenes />
+      </Section>
+      <Section title="Session chrome">
+        <SessionChromeSpecimens />
       </Section>
       <Section title="Transport status">
         <UpstreamSpecimens />

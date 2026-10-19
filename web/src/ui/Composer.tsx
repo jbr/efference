@@ -42,7 +42,11 @@ import { CompactNotice } from "./CompactNotice.tsx";
 import { compactOffer } from "./compact.ts";
 import { coldLine } from "./coldLine.ts";
 import { replyHint } from "./askMark.ts";
-import { turnState, turnClass } from "./turnState.ts";
+import { turnState } from "./turnState.ts";
+import {
+  ComposerStatus,
+  type ComposerStatusMessage,
+} from "./ComposerStatus.tsx";
 import { useDockOffset } from "./float.ts";
 import { useNarrow } from "./useNarrow.ts";
 import { useNow } from "./useNow.ts";
@@ -77,6 +81,7 @@ export function Composer({
   compactionFailure,
   operations,
   model,
+  status = null,
 }: {
   submit: (text: string, attachments: Attachment[]) => Promise<void>;
   /** A turn a recall pulled back out of the daemon's queue, to prepend to the
@@ -109,6 +114,8 @@ export function Composer({
    * compaction in flight. */
   operations: CurrentOperations | null;
   model: string;
+  /** Session startup, connection, or inspection condition occupying the readout. */
+  status?: ComposerStatusMessage | null;
 }) {
   const store = useMemo(() => acquireDraft(apiBase()), []);
   const snapshot = useSyncExternalStore(store.subscribe, store.snapshot);
@@ -303,6 +310,8 @@ export function Composer({
     retrying,
     view: { operations, model, now },
   });
+  const statusMessage = error ? { text: error, error: true } : status;
+
   return (
     <>
       {collapsed && !gatePending && (
@@ -347,7 +356,6 @@ export function Composer({
               {askColdLine}
             </div>
           )}
-          {error && <div className="error">{error}</div>}
           <StagedAttachments
             staged={attachments.staged}
             onRemove={attachments.remove}
@@ -386,6 +394,7 @@ export function Composer({
             />
             <ComposerToolbar
               turn={turn}
+              status={statusMessage}
               narrow={narrow}
               running={running}
               held={pace?.held ?? false}
@@ -400,9 +409,7 @@ export function Composer({
       </form>
       {collapsed && (
         <div className="status-bar">
-          <span className={turnClass(turn.kind)} title={turn.title}>
-            {turn.text}
-          </span>
+          <ComposerStatus turn={turn} message={statusMessage} />
           <span className="spacer" />
           {running && (
             <button

@@ -80,9 +80,19 @@ async fn a_hosted_sessions_directory_stream_delivers_its_pokes() {
         .await
         .expect("open the directory stream");
     std::fs::write(cwd.join("poked.txt"), "arrived").expect("write");
-    let (_, kind, data) = next_event(&mut events).await;
+    // Runtime startup can create `attachments` after the stream opens. Wait for
+    // this write rather than assuming it is the first filesystem event.
+    let kind = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let (_, kind, data) = next_event(&mut events).await;
+            if data == "poked.txt" {
+                break kind;
+            }
+        }
+    })
+    .await
+    .expect("the written file's change arrives");
     assert_eq!(kind.as_deref(), Some("change"));
-    assert_eq!(data, "poked.txt");
 
     host.swansong().shut_down().await;
 }

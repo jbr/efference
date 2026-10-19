@@ -1,5 +1,5 @@
-// What a starting session's preparation is doing, in the banner's words
-// (ui/StartingBanner.tsx, docs/web-client.md).
+// What a starting session's preparation is doing, in the composer readout
+// (docs/web-client.md).
 
 import type { Starting } from "../api/types.ts";
 

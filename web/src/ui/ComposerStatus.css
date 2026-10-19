@@ -1,0 +1,43 @@
+.composer-toolbar-left {
+  flex: 1;
+}
+.composer-status {
+  min-width: 0;
+  flex: 1;
+  font-family: var(--font-ui);
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--fg-muted);
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.composer-status.is-error {
+  padding: 0.5rem 0.65rem;
+  border-left: 2px solid var(--warn);
+  background: color-mix(in srgb, var(--warn) 7%, transparent);
+  color: var(--fg);
+}
+.composer-status-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.8rem;
+}
+.composer-status-heading button {
+  min-height: 36px;
+  padding: 0.25rem 0.7rem;
+}
+.composer-status p {
+  white-space: pre-line;
+  margin: 0.35rem 0 0;
+}
+@media (max-width: 700px) {
+  .composer-input .composer-status {
+    grid-column: 1 / -1;
+    grid-row: 1;
+  }
+  .status-bar .composer-status {
+    flex-basis: 100%;
+  }
+}

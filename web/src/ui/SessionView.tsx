@@ -13,7 +13,7 @@ import type { CallId } from "../api/types.ts";
 import { resumeSession } from "../api/http.ts";
 import { acquireDraft } from "./drafts.ts";
 import { reopenLaunch } from "./launchRetry.ts";
-import { StartingBanner } from "./StartingBanner.tsx";
+import { sessionStatus } from "./sessionStatus.ts";
 import { spotFor } from "../session/store.ts";
 import {
   anchorForCall,
@@ -339,25 +339,6 @@ export function SessionView() {
             failure: session.topics.compaction_failure ?? null,
           }}
         />
-        {starting !== null ? (
-          <StartingBanner
-            starting={starting}
-            retrying={retrying}
-            retryError={retryError}
-            onRetry={retryStart}
-          />
-        ) : (
-          session.connection !== "live" && (
-            <div className="banner">
-              <div className="col">{session.connection}…</div>
-            </div>
-          )
-        )}
-        {inspectionError && (
-          <div className="banner" role="alert">
-            Could not inspect task: {inspectionError}
-          </div>
-        )}
         <EarlierHistory history={history} entries={session.entries} />
         <Transcript
           nodes={nodes}
@@ -399,6 +380,14 @@ export function SessionView() {
             }}
           />
           <Composer
+            status={sessionStatus({
+              starting,
+              connection: session.connection,
+              retrying,
+              retryError,
+              onRetry: retryStart,
+              inspectionError,
+            })}
             submit={actions.submitTurn}
             recalled={recalled}
             pace={session.topics.pace ?? null}

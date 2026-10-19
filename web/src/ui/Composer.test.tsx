@@ -96,6 +96,10 @@ test("failed sends retain a draft and successful sends clear it", async () => {
         );
     });
     expect(store.snapshot().text).toBe("keep until accepted");
+    expect(view.host.querySelector("[role=alert]")?.textContent).toBe(
+      "offline",
+    );
+    expect(view.host.querySelector(".composer-toolbar .turn-state")).toBeNull();
     await act(async () => {
       view.host
         .querySelector("form")
@@ -213,7 +217,7 @@ test("an empty send the verbs topic refuses states the reason without a request"
       host.querySelector<HTMLFormElement>("form")!.requestSubmit(),
     );
     expect(fetch).not.toHaveBeenCalled();
-    expect(host.querySelector(".error")?.textContent).toBe(
+    expect(host.querySelector("[role=alert]")?.textContent).toBe(
       "nothing to continue: the last turn completed",
     );
   } finally {

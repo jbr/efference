@@ -1,9 +1,14 @@
-import { turnClass, type TurnState } from "./turnState.ts";
+import type { TurnState } from "./turnState.ts";
+import {
+  ComposerStatus,
+  type ComposerStatusMessage,
+} from "./ComposerStatus.tsx";
 import "./ComposerToolbar.css";
 
 /** The input's controls and readout, without session actions (docs/web-client.md). */
 export function ComposerToolbar({
   turn,
+  status,
   narrow,
   running,
   held = false,
@@ -14,6 +19,7 @@ export function ComposerToolbar({
   onHoldChange,
 }: {
   turn: TurnState;
+  status?: ComposerStatusMessage | null;
   narrow: boolean;
   running: boolean;
   held?: boolean;
@@ -42,9 +48,7 @@ export function ComposerToolbar({
             onChange={onHoldChange}
           />
         </div>
-        <span className={turnClass(turn.kind)} title={turn.title}>
-          {turn.text}
-        </span>
+        <ComposerStatus turn={turn} message={status} />
       </div>
       <div className="composer-toolbar-right">
         {running && (

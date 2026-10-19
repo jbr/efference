@@ -11,7 +11,7 @@
 //
 // Anything else (offline, a dropped connection) reads as a session, which is
 // what a root has always been: the session view then reports the network state
-// through its own connection banner rather than a second failure screen.
+// through its composer status rather than a second failure screen.
 
 import { useCallback, useEffect, useState } from "react";
 import { apiBase } from "../api/base.ts";
