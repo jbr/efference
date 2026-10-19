@@ -10,9 +10,24 @@ const paths = [
 ];
 
 describe("matchPath", () => {
-  it("matches a subsequence, not just a substring", () => {
-    expect(matchPath("wsfv", "web/src/ui/FileView.tsx")).not.toBeNull();
-    expect(matchPath("zzz", "web/src/ui/FileView.tsx")).toBeNull();
+  it("matches each word as written, not scattered letters", () => {
+    expect(matchPath("fileview", "web/src/ui/FileView.tsx")).not.toBeNull();
+    expect(matchPath("wsfv", "web/src/ui/FileView.tsx")).toBeNull();
+    expect(matchPath("rough", "assets/svg/gfx_btn-group-right.svg")).toBeNull();
+  });
+
+  it("needs every word, in any order", () => {
+    expect(matchPath("view ui", "web/src/ui/FileView.tsx")?.matched).toEqual([
+      [8, 10],
+      [15, 19],
+    ]);
+    expect(matchPath("view docs", "web/src/ui/FileView.tsx")).toBeNull();
+  });
+
+  it("merges overlapping words into one span", () => {
+    expect(matchPath("file view fileview", "FileView.tsx")?.matched).toEqual([
+      [0, 8],
+    ]);
   });
 
   it("is case-insensitive until the query has a capital in it", () => {

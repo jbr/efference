@@ -16,7 +16,9 @@
 // behind. A pop onto it is the new view's to settle — the view that pushed it is
 // already on its way out, and its handler stands down once the page has moved to
 // another session — and a view that mounts on such an entry consumes it, since
-// nothing says which overlay it stood for.
+// nothing says which overlay it stood for. The exception is a view that mounts
+// with an overlay already open (`/tree`, reloaded): the entry it finds is the one
+// that overlay would push, so it is adopted rather than consumed.
 
 import { useEffect, useRef } from "react";
 import { apiBase } from "../api/base.ts";
@@ -24,6 +26,11 @@ import { apiBase } from "../api/base.ts";
 export function useOverlayHistory(openCount: number, closeTop: () => void) {
   const pushed = useRef(0);
   const owner = useRef(apiBase());
+  // The entry the page held when this view first rendered, read before any of
+  // the effects below can push one: StrictMode re-runs the mount effect after
+  // the push effect's first run, and reading `history.state` there would find
+  // this view's own entry and consume it.
+  const mountedOn = useRef(history.state as { efOverlay?: boolean } | null);
   const consumedStale = useRef(false);
   const count = useRef(openCount);
   const close = useRef(closeTop);
@@ -35,10 +42,10 @@ export function useOverlayHistory(openCount: number, closeTop: () => void) {
   useEffect(() => {
     // Mounting onto an entry some earlier view pushed. `consumedStale` keeps
     // StrictMode's second effect run from stepping back twice.
-    const mounted = history.state as { efOverlay?: boolean } | null;
-    if (mounted?.efOverlay === true && !consumedStale.current) {
+    if (mountedOn.current?.efOverlay === true && !consumedStale.current) {
       consumedStale.current = true;
-      history.back();
+      if (count.current > 0) pushed.current = 1;
+      else history.back();
     }
     const onPop = (event: PopStateEvent) => {
       if (apiBase() !== owner.current) return;

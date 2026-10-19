@@ -49,3 +49,15 @@ export function homeRelative(cwd: string): string {
   const rest = parts.slice(3);
   return rest.length === 0 ? "~" : `~/${rest.join("/")}`;
 }
+
+/** The working directory's own name — `/Users/jbr/code/efference` →
+ * `efference` — which heads the file sidebar's path. Before the identity
+ * arrives there is no name to give, and the root is just the files. */
+export function projectName(cwd: string | null): string {
+  if (cwd === null) return "files";
+  const name = cwd
+    .split("/")
+    .filter((part) => part !== "")
+    .pop();
+  return name ?? "/";
+}

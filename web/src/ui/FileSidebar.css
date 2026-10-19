@@ -17,21 +17,131 @@
   }
 }
 .file-sidebar .file-view-head {
-  flex-wrap: wrap;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.7rem;
   font-family: var(--font-ui);
 }
-.file-sidebar .file-view-path {
-  flex-basis: 100%;
-  white-space: normal;
-  overflow-wrap: anywhere;
-  order: 2;
+/* Where the sidebar is: the root's name, then each directory to the open file.
+   It takes the head's free width, so the controls after it sit at the end. */
+.file-path {
+  flex: 1;
+  min-width: 0;
   font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  overflow-wrap: anywhere;
+  color: var(--fg-muted);
 }
-.file-sidebar .file-view-title {
-  letter-spacing: 0;
-  text-transform: none;
+.file-path strong {
+  color: var(--fg-bright);
+  font-weight: 600;
+}
+.file-path-sep {
+  margin-inline: 0.3em;
+  color: var(--fg-faint);
+}
+.file-path-dir {
+  border: 0;
+  padding: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.file-path-dir:hover,
+.file-path-dir:focus-visible {
+  color: var(--fg-bright);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+/* The filter above the tree. Path ranking, not content search — the
+   placeholder says so. */
+.file-filter {
+  flex: none;
+  position: relative;
+  padding: 0.5rem 0.7rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.file-filter-input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 0.35rem 2rem 0.35rem 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-inset);
+  color: var(--fg-bright);
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+}
+.file-filter-input::placeholder {
+  color: var(--fg-faint);
+}
+.file-filter-input:focus {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+.file-filter-clear {
+  position: absolute;
+  inset-block: 0.5rem;
+  inset-inline-end: 0.7rem;
+  width: 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--fg-dim);
+  cursor: pointer;
+}
+.file-filter-clear svg {
+  width: 0.9rem;
+  height: 0.9rem;
+}
+.file-filter-clear circle {
+  fill: currentColor;
+}
+.file-filter-clear path {
+  stroke: var(--bg-inset);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+}
+.file-filter-clear:hover,
+.file-filter-clear:focus-visible {
+  color: var(--fg-muted);
+}
+
+/* The filter's matched text in each listed path. */
+.file-tree-row mark {
+  background: none;
+  color: var(--fg-bright);
+  font-weight: 600;
+}
+
+/* A markdown file's metadata block, as fields above the prose
+   (ui/frontmatter.ts). */
+.file-fields {
+  margin: 0 0 1.2rem;
+  padding: 0.5rem 0.7rem;
+  border-radius: 6px;
+  background: var(--bg-inset);
+  font-size: 0.8125rem;
+}
+.file-fields > div {
+  display: flex;
+  gap: 0.8rem;
+  padding-block: 0.15rem;
+}
+.file-fields dt {
+  flex: none;
+  min-width: 5rem;
+  font-family: var(--font-mono);
+  color: var(--fg-dim);
+}
+.file-fields dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .file-sidebar .file-view-col {
   padding: 0 0.8rem;
@@ -74,4 +184,24 @@
 
 .file-sidebar.file-view {
   z-index: 2;
+}
+
+.files-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--fg-muted);
+  border-radius: 6px;
+  cursor: pointer;
+}
+.files-toggle:hover,
+.files-toggle:focus-visible,
+.files-toggle[aria-pressed="true"] {
+  color: var(--fg-bright);
+  background: var(--bg-chip);
 }

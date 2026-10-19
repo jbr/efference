@@ -27,7 +27,7 @@ import { sessionDocumentTitle, useDocumentTitle } from "./documentTitle.ts";
 import { EarlierHistory } from "./EarlierHistory.tsx";
 import { FileView } from "./FileView.tsx";
 import { GateSurface } from "./Gate.tsx";
-import { sessionName, successorHref } from "./identity.ts";
+import { projectName, sessionName, successorHref } from "./identity.ts";
 import { Inspector } from "./Inspector.tsx";
 import { JumpToLatest } from "./JumpToLatest.tsx";
 import { LightboxHost } from "./Lightbox.tsx";
@@ -259,6 +259,14 @@ export function SessionView() {
     [],
   );
   const closeFile = useCallback(() => setViewingFile(null), []);
+  // The header's files toggle: the tree with nothing chosen, as `/tree` opens
+  // it, or closing whatever the sidebar holds.
+  const toggleFiles = useCallback(() => {
+    setInspecting(null);
+    setViewingFile((prev) =>
+      prev !== null ? null : { path: null, callId: null, key: 0 },
+    );
+  }, []);
   const openAnchor = useMemo(() => {
     if (shownFile?.anchor !== undefined) return shownFile.anchor;
     const anchor = anchorForCall(session.entries, shownFile?.callId ?? null);
@@ -323,6 +331,7 @@ export function SessionView() {
           usage={session.topics.usage ?? null}
           upstreamFailure={session.topics.upstream_failure ?? null}
           upstreamRetry={session.topics.upstream_retry ?? null}
+          files={{ open: viewingFile !== null, toggle: toggleFiles }}
           summary={{
             cold: session.topics.cold ?? null,
             verbs: session.topics.verbs ?? null,
@@ -409,6 +418,7 @@ export function SessionView() {
       </div>
       {shownFile !== null && (
         <FileView
+          root={projectName(session.topics.session_identity?.cwd ?? null)}
           path={shownFile.path}
           openKey={shownFile.key}
           openAnchor={openAnchor}

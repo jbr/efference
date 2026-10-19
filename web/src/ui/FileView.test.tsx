@@ -32,7 +32,7 @@ afterEach(() => {
   vi.resetAllMocks();
   vi.unstubAllGlobals();
 });
-test("historical file target stays put until explicit follow and keeps selected anchor through refresh", async () => {
+test("historical file target stays put through a later edit and keeps selected anchor through refresh", async () => {
   vi.stubGlobal("localStorage", { getItem: () => null, setItem: () => {} });
   const source = Object.assign(new EventTarget(), {
     close: vi.fn(),
@@ -47,6 +47,7 @@ test("historical file target stays put until explicit follow and keeps selected 
   const host = document.createElement("div");
   const root = createRoot(host);
   const base = {
+    root: "project",
     path: "a.rs",
     openKey: 0,
     openAnchor: { added: ["selected"], before: ["old"], after: ["tail"] },
@@ -57,9 +58,9 @@ test("historical file target stays put until explicit follow and keeps selected 
   };
   try {
     await act(async () => root.render(<FileView {...base} lastEdit={null} />));
-    expect(host.textContent).toContain("current file");
-    expect(host.textContent).toContain("follow");
-    expect(host.textContent).not.toContain("following ⇢");
+    const shownPath = () =>
+      host.querySelector('.file-path [aria-current="page"]')?.textContent;
+    expect(shownPath()).toBe("a.rs");
     expect(host.querySelector(".changed")?.textContent).toBe("selected");
     vi.mocked(fetchFile).mockResolvedValue({
       kind: "ok",
@@ -72,16 +73,7 @@ test("historical file target stays put until explicit follow and keeps selected 
     await act(async () =>
       root.render(<FileView {...base} lastEdit={latest} />),
     );
-    expect(host.querySelector(".file-view-path")?.textContent).toBe("a.rs");
-    act(() =>
-      [...host.querySelectorAll("button")]
-        .find((button) => button.textContent === "follow")!
-        .click(),
-    );
-    await act(async () =>
-      root.render(<FileView {...base} lastEdit={{ ...latest, seq: 11 }} />),
-    );
-    expect(host.querySelector(".file-view-path")?.textContent).toBe("b.rs");
+    expect(shownPath()).toBe("a.rs");
   } finally {
     act(() => root.unmount());
   }
@@ -101,6 +93,7 @@ test("network failure is visible rather than an unhandled rejection", async () =
     await act(async () =>
       root.render(
         <FileView
+          root="project"
           path="a.rs"
           openKey={0}
           openAnchor={null}

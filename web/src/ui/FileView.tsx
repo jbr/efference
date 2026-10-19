@@ -1,12 +1,12 @@
-import { apiBase } from "../api/base.ts";
-import { useDrawerWidth } from "./inspector/useDrawerWidth.ts";
-import "./FileSidebar.css";
 // Current-file context in the shared inspection sidebar (docs/web-client.md).
 // The bytes are from disk now, not a historical reconstruction. A selected
 // operation anchor and observed changes since viewing are separate highlight
-// sources. Follow mode is explicit; file refreshes retain the selected anchor.
+// sources. File refreshes retain the selected anchor.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { apiBase } from "../api/base.ts";
+import { useDrawerWidth } from "./inspector/useDrawerWidth.ts";
+import "./FileSidebar.css";
 import { fetchFile, fileStream } from "../api/files.ts";
 import {
   locateAnchor,
@@ -22,8 +22,11 @@ import type { EditEvent, FileActivity } from "../session/touchedFiles.ts";
 import { useFileTree } from "../session/useFileTree.ts";
 import { langForPath } from "../render/parse.ts";
 import { NumberedCode } from "./Code.tsx";
+import { FilePath } from "./FilePath.tsx";
 import { FileTreePane } from "./FileTree.tsx";
-import { Markdown } from "./Markdown.tsx";
+import { splitFrontmatter } from "./frontmatter.ts";
+import { Markdown, type FollowLink } from "./Markdown.tsx";
+import { resolveLink } from "./fileLinks.ts";
 
 interface Shown {
   text: string;
@@ -101,6 +104,7 @@ interface Target {
 }
 
 export function FileView({
+  root,
   path,
   openKey,
   openAnchor,
@@ -111,6 +115,8 @@ export function FileView({
   onClose,
   onBack,
 }: {
+  /** The working directory's own name, which heads the path. */
+  root: string;
   /** The path the viewer was opened on, or `null` for the tree with no file
    * chosen — the `/tree` entry. Following may move off it. */
   path: string | null;
@@ -137,7 +143,9 @@ export function FileView({
 
   const [shown, setShown] = useState<Shown | null>(null);
   const [refusal, setRefusal] = useState<Refusal | null>(null);
-  const [follow, setFollow] = useState(false);
+  // Following the agent's edits has no control while what it should mean as a
+  // session-level mode is undecided; the machinery stays, held off.
+  const [follow] = useState(false);
   const [showSource, setShowSource] = useState(false);
   const [treeOpen, setTreeOpen] = useState(path === null);
 
@@ -364,7 +372,10 @@ export function FileView({
   }, [shown]);
 
   const note = shown?.anchored == null ? null : anchorNote(shown.anchored);
+  // The tree and the file share the sidebar, one at a time (FileSidebar.css),
+  // so choosing a file is also leaving the tree.
   const onOpenFromTree = useCallback((chosen: string) => {
+    setTreeOpen(false);
     setTarget((prev) => ({
       path: chosen,
       anchor: null,
@@ -372,6 +383,37 @@ export function FileView({
       key: (prev?.key ?? 0) + 1,
     }));
   }, []);
+
+  const { reveal, expanded, toggle } = tree;
+  /** The tree, opened down to `dir` — the path's directory segments and a
+   * relative link to a directory both land here. */
+  const showTree = useCallback(
+    (dir: string) => {
+      if (dir !== "") {
+        reveal(dir);
+        if (!expanded.has(dir)) toggle(dir);
+      }
+      setTreeOpen(true);
+    },
+    [reveal, expanded, toggle],
+  );
+  // A relative link in a rendered file opens its target here: a file in the
+  // viewer, a directory in the tree (ui/fileLinks.ts).
+  const followLink = useCallback<FollowLink>(
+    (href) => {
+      if (current === null) return null;
+      const link = resolveLink(current, href);
+      if (link === null) return null;
+      return () => (link.dir ? showTree(link.path) : onOpenFromTree(link.path));
+    },
+    [current, onOpenFromTree, showTree],
+  );
+  // A metadata block renders as fields above the prose rather than as the rule
+  // and setext heading markdown would make of it.
+  const rendered = useMemo(
+    () => (shown === null ? null : splitFrontmatter(shown.text)),
+    [shown],
+  );
 
   return (
     <div
@@ -397,38 +439,17 @@ export function FileView({
             ← Operation
           </button>
         )}
-        <button
-          className={treeOpen ? "linkish follow on" : "linkish follow"}
-          title="the working directory, and a path finder over it"
-          onClick={() => setTreeOpen((open) => !open)}
-        >
-          files ⌸
-        </button>
-        <span className="file-view-title">current file</span>
-        <span
-          className="file-view-path"
-          title="read from disk, as it is now — not the file at the time of any call"
-        >
-          {current ?? "—"}
-        </span>
-        <span className="spacer" />
-        {isMarkdown && (
+        <FilePath
+          root={root}
+          path={treeOpen ? null : current}
+          onDir={showTree}
+        />
+        {!treeOpen && isMarkdown && (
           <button className="linkish" onClick={() => setShowSource((s) => !s)}>
             {showSource ? "rendered" : "source"}
           </button>
         )}
-        <button
-          className={follow ? "linkish follow on" : "linkish follow"}
-          title="switch to whichever file the agent edits and scroll to the change"
-          onClick={() => setFollow((f) => !f)}
-        >
-          {follow ? "following ⇢" : "follow"}
-        </button>
-        <button
-          className="linkish"
-          aria-label="Close file inspector"
-          onClick={onClose}
-        >
+        <button className="linkish" aria-label="Close files" onClick={onClose}>
           ✕
         </button>
       </div>
@@ -445,16 +466,8 @@ export function FileView({
           <div className="file-view-col">
             {current !== null && shown === null && refusal === null && (
               <p role="status" className="dim">
-                Loading current file…
+                Loading…
               </p>
-            )}
-            {current === null && (
-              <div className="file-refusal">
-                <div className="file-refusal-what">no file open</div>
-                <div className="dim">
-                  choose one from the working directory, or find it by path
-                </div>
-              </div>
             )}
             {refusal !== null && (
               <div className="file-refusal">
@@ -465,18 +478,32 @@ export function FileView({
             {note !== null && <div className="anchor-note dim">{note}</div>}
             {shown !== null &&
               lines !== null &&
+              rendered !== null &&
               (isMarkdown && !showSource ? (
-                <Markdown
-                  changedLines={
-                    shown.anchored !== null
-                      ? shown.anchored.kind === "exact"
-                        ? shown.anchored.changed
-                        : []
-                      : shown.changed.changed
-                  }
-                >
-                  {shown.text}
-                </Markdown>
+                <>
+                  {rendered.fields !== null && (
+                    <dl className="file-fields">
+                      {rendered.fields.map(([key, value], i) => (
+                        <div key={i}>
+                          {key !== "" && <dt>{key}</dt>}
+                          <dd>{value}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                  )}
+                  <Markdown
+                    followLink={followLink}
+                    changedLines={
+                      shown.anchored !== null
+                        ? shown.anchored.kind === "exact"
+                          ? shown.anchored.changed
+                          : []
+                        : shown.changed.changed
+                    }
+                  >
+                    {rendered.body}
+                  </Markdown>
+                </>
               ) : (
                 <NumberedCode lines={lines} lang={lang} lineClass={lineClass} />
               ))}

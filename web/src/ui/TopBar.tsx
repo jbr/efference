@@ -104,6 +104,34 @@ export function UpstreamNotice({
   );
 }
 
+/** Opens the file sidebar on the working directory's tree, or closes it
+ * (docs/web-client.md "The file viewer"). */
+function FilesToggle({ open, toggle }: { open: boolean; toggle: () => void }) {
+  return (
+    <button
+      type="button"
+      className="files-toggle"
+      title={open ? "Close files" : "Files in the working directory"}
+      aria-label="Files"
+      aria-pressed={open}
+      onClick={toggle}
+    >
+      <svg
+        width="18"
+        height="18"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
+        <path d="M3 6.5A1.5 1.5 0 0 1 4.5 5H9l2 2.5h8.5A1.5 1.5 0 0 1 21 9v8.5a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z" />
+      </svg>
+    </button>
+  );
+}
+
 export function TopBar({
   listHref,
   identity,
@@ -111,6 +139,7 @@ export function TopBar({
   upstreamFailure,
   upstreamRetry,
   summary,
+  files,
 }: {
   /** The session list to go back to, when this page is served by a host —
    * `null` at a session daemon's root, where there is no list. */
@@ -120,6 +149,8 @@ export function TopBar({
   upstreamFailure: UpstreamFailure | null;
   upstreamRetry: UpstreamRetry | null;
   summary?: CompactControlProps;
+  /** The working directory's file sidebar: whether it is open, and the toggle. */
+  files?: { open: boolean; toggle: () => void };
 }) {
   const chip = upstreamChip(upstreamFailure, upstreamRetry);
   const routeId = sessionId();
@@ -152,6 +183,7 @@ export function TopBar({
       )}
       {cost !== null && <CostMeter cost={cost} />}
       {usage?.plan && <PlanMeter plan={usage.plan} />}
+      {files && <FilesToggle {...files} />}
       <AppSettingsLink />
     </AppHeader>
   );

@@ -596,7 +596,7 @@ impl trillium::Handler for SecurityHeaders {
 /// - `/` — the session view, and the installed app's `start_url`. At a host's root
 ///   it is the session list instead; the client tells the two bindings apart by
 ///   probing `GET /sessions` (docs/web-client.md).
-/// - `/tree` — the file tree and finder, reachable without a call having named
+/// - `/tree` — the file tree and its path filter, reachable without a call having named
 ///   a file (docs/web-client.md "Navigating the working directory").
 const SPA_ROUTES: [&str; 2] = ["/", "/tree"];
 

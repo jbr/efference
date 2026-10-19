@@ -1,4 +1,4 @@
-// The file tree and the path finder (docs/web-client.md "Navigating the
+// The file tree and its path filter (docs/web-client.md "Navigating the
 // working directory") — the way to a file no call has named, which is the set
 // you do not already know about.
 //
@@ -43,44 +43,141 @@ export function FileTreePane({
   current: string | null;
   onOpen: (path: string) => void;
 }) {
-  const [finding, setFinding] = useState(false);
+  // An empty filter is the tree; any text replaces it with ranked paths over
+  // the recursive listing, fetched the first time a filter is typed.
+  const [query, setQuery] = useState("");
+  const [cursor, setCursor] = useState(0);
+  const filtering = query !== "";
+  const { paths, loading, truncated } = useProjectPaths(filtering);
+  const hits = useMemo(
+    () => (filtering ? matchPaths(query, paths) : []),
+    [filtering, query, paths],
+  );
+  const at = Math.min(cursor, Math.max(hits.length - 1, 0));
+  const choose = (path: string) => {
+    setQuery("");
+    tree.reveal(path);
+    onOpen(path);
+  };
+
   return (
     <aside className="file-tree">
-      <div className="file-tree-head">
-        <span className="file-view-title">working directory</span>
-        <span className="spacer" />
-        <button
-          className="linkish"
-          title="find a file by path"
-          onClick={() => setFinding(true)}
-        >
-          find ⌕
-        </button>
+      <div className="file-filter">
+        <input
+          className="file-filter-input"
+          type="text"
+          autoFocus={fineEnough()}
+          value={query}
+          placeholder="filter by path"
+          aria-label="filter by path"
+          spellCheck={false}
+          autoCapitalize="off"
+          autoCorrect="off"
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setCursor(0);
+          }}
+          onKeyDown={(e) => {
+            if (!filtering) return;
+            if (e.key === "Escape") {
+              // Clears the filter; on an empty field Escape falls through to
+              // closing the sidebar.
+              e.stopPropagation();
+              setQuery("");
+            } else if (e.key === "ArrowDown")
+              setCursor(Math.min(at + 1, hits.length - 1));
+            else if (e.key === "ArrowUp") setCursor(Math.max(at - 1, 0));
+            else if (e.key === "Enter" && hits[at] !== undefined)
+              choose(hits[at].path);
+            else return;
+            e.preventDefault();
+          }}
+        />
+        {filtering && (
+          <button
+            className="file-filter-clear"
+            aria-label="clear filter"
+            onClick={() => setQuery("")}
+          >
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <circle cx="8" cy="8" r="8" />
+              <path d="M5.5 5.5l5 5M10.5 5.5l-5 5" />
+            </svg>
+          </button>
+        )}
       </div>
       <div className="file-tree-body">
-        <DirNodes
-          dir=""
-          depth={0}
-          tree={tree}
-          activity={activity}
-          current={current}
-          onOpen={onOpen}
-        />
+        {!filtering ? (
+          <DirNodes
+            dir=""
+            depth={0}
+            tree={tree}
+            activity={activity}
+            current={current}
+            onOpen={onOpen}
+          />
+        ) : (
+          <>
+            {hits.map((hit, i) => (
+              <button
+                key={hit.path}
+                className={[
+                  "file-tree-row",
+                  i === at ? "at" : "",
+                  activityClass(activity, hit.path) ?? "",
+                ].join(" ")}
+                onMouseEnter={() => setCursor(i)}
+                onClick={() => choose(hit.path)}
+              >
+                <span className="file-tree-name">
+                  <Highlighted text={hit.path} spans={hit.matched} />
+                </span>
+              </button>
+            ))}
+            {loading && (
+              <div className="file-tree-note dim">listing the project…</div>
+            )}
+            {!loading && hits.length === 0 && (
+              <div className="file-tree-note dim">no path matches</div>
+            )}
+            {truncated && (
+              <div className="file-tree-note dim">
+                ⋯ the project listing was capped; deeper paths are missing
+              </div>
+            )}
+          </>
+        )}
       </div>
-      {finding && (
-        <FileFinder
-          activity={activity}
-          onOpen={(path) => {
-            setFinding(false);
-            tree.reveal(path);
-            onOpen(path);
-          }}
-          onClose={() => setFinding(false)}
-        />
-      )}
     </aside>
   );
 }
+
+/** A path with the filter's matched spans marked — the reason the row is in
+ * the list. */
+function Highlighted({
+  text,
+  spans,
+}: {
+  text: string;
+  spans: readonly [number, number][];
+}) {
+  const parts = [];
+  let at = 0;
+  for (const [start, end] of spans) {
+    if (start > at) parts.push(text.slice(at, start));
+    parts.push(<mark key={start}>{text.slice(start, end)}</mark>);
+    at = end;
+  }
+  parts.push(text.slice(at));
+  return <>{parts}</>;
+}
+
+/** Focus the filter on open where a keyboard is the likely next input; on a
+ * touch screen focusing would raise the on-screen keyboard over the tree the
+ * reader came to look at. */
+const fineEnough = () =>
+  typeof window !== "undefined" &&
+  window.matchMedia("(hover: hover) and (pointer: fine)").matches;
 
 function DirNodes({
   dir,
@@ -173,72 +270,5 @@ function TreeRow({
         />
       )}
     </>
-  );
-}
-
-/** The path palette: type a fragment, get ranked paths. Over the recursive
- * listing, which is fetched the first time this opens. */
-function FileFinder({
-  activity,
-  onOpen,
-  onClose,
-}: {
-  activity: ReadonlyMap<string, FileActivity>;
-  onOpen: (path: string) => void;
-  onClose: () => void;
-}) {
-  const [query, setQuery] = useState("");
-  const [cursor, setCursor] = useState(0);
-  const { paths, loading, truncated } = useProjectPaths(true);
-  const hits = useMemo(() => matchPaths(query, paths), [query, paths]);
-  const at = Math.min(cursor, Math.max(hits.length - 1, 0));
-
-  return (
-    <div className="file-finder" role="dialog" aria-label="find a file">
-      <input
-        className="file-finder-input"
-        autoFocus
-        value={query}
-        placeholder={loading ? "listing the project…" : "path fragment"}
-        onChange={(e) => {
-          setQuery(e.target.value);
-          setCursor(0);
-        }}
-        onKeyDown={(e) => {
-          if (e.key === "Escape") onClose();
-          else if (e.key === "ArrowDown")
-            setCursor((n) => Math.min(n + 1, hits.length - 1));
-          else if (e.key === "ArrowUp") setCursor((n) => Math.max(n - 1, 0));
-          else if (e.key === "Enter" && hits[at] !== undefined)
-            onOpen(hits[at].path);
-          else return;
-          e.preventDefault();
-        }}
-      />
-      <div className="file-finder-hits">
-        {hits.map((hit, i) => (
-          <button
-            key={hit.path}
-            className={
-              i === at
-                ? `file-finder-hit at ${activityClass(activity, hit.path) ?? ""}`
-                : `file-finder-hit ${activityClass(activity, hit.path) ?? ""}`
-            }
-            onMouseEnter={() => setCursor(i)}
-            onClick={() => onOpen(hit.path)}
-          >
-            {hit.path}
-          </button>
-        ))}
-        {!loading && hits.length === 0 && (
-          <div className="file-tree-note dim">nothing matches</div>
-        )}
-        {truncated && (
-          <div className="file-tree-note dim">
-            ⋯ the project listing was capped; deeper paths are missing
-          </div>
-        )}
-      </div>
-    </div>
   );
 }

@@ -1,12 +1,12 @@
 //! Directory listings for `/files` (docs/web-bind.md) — the flat one the tree
-//! expands a directory with, and the recursive one the file finder matches path
+//! expands a directory with, and the recursive one the path filter matches
 //! names against.
 //!
 //! `GET /files/<dir>/` lists that directory. `?recursive=1` walks below it,
 //! `&depth=N` bounds the walk, and both are capped here rather than trusted:
 //! the request that would walk a monorepo whole is one URL away, and the answer
 //! has to stay a single JSON body the client parses in one go. Past either cap
-//! the listing reports `truncated` instead of erroring — a finder over most of
+//! the listing reports `truncated` instead of erroring — a filter over most of
 //! the tree is useful, and saying the set is partial is what keeps it honest.
 //!
 //! In a recursive listing an entry's `name` is its path **relative to the

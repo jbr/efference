@@ -1733,20 +1733,21 @@ re-runs with *its* anchor; `anchorForCall` reads that call's result.
 Anchor-driven loads are unconditional — a `304` would carry no bytes to locate
 against.
 
-**Following the agent** is explicit and starts off: an edit
-landing on the open path re-reads it now; one landing elsewhere switches the
-view to that file and lands on the edit. Edits and writes move the view; a
-bare `read` never does — reads are the tree's working-set annotation instead.
-The `following ⇢` toggle suppresses the switch and any jump the reader did not
-ask for, while keeping live reload and the selected anchor; a jump the reader
-*did* ask for (a path chip, a tree click) happens either way.
+**Following the agent** is implemented and held off: with it on, an edit
+landing elsewhere would switch the view to that file and land on the edit
+(edits and writes, never a bare `read`). It has no control, because whether it
+is a viewer setting or a session-level mode is undecided, so the view moves
+only when the reader asks — a path chip, a tree click, a link. An edit landing
+on the open path re-reads it either way; that is live reload, not following.
 
 **Refusals render legibly against the path** — "not a text file",
 "too large to view", "no such file under the working directory" — never a
 blank pane: the endpoint refuses rather than degrades, so every body that
 arrives is whole, and there is no truncation state, windowed fetch, or
 virtualization here. Markdown files default to rendered with a
-`source`/`rendered` toggle; other files are highlighted source with
+`source`/`rendered` toggle; a leading `---` metadata block renders as a field
+list above the prose (`ui/frontmatter.ts`), its lines blanked rather than
+removed so the changed-line stamp still maps by source line. Other files are highlighted source with
 absolute line numbers. `api/files.ts` is the fetch (refusals as values, not
 thrown errors, because the viewer renders them).
 
@@ -1765,11 +1766,15 @@ on screen stays current. As with the viewer, the answer to stream *open* is the
 same re-list as the answer to a poke, which is what covers a change landing
 during stream setup. The root is expanded at mount.
 
-The **finder** (`session/pathMatch.ts`) is a palette over one recursive
-listing, fetched the first time it opens. Subsequence matching with smart case;
-three things earn points — a hit inside the basename, consecutive matched
-characters, and a match at a segment boundary — and shorter paths break ties, so
-the file beats the vendored copy of it. Searching file *contents* is not built:
+The **filter** above the tree (`session/pathMatch.ts`) matches paths from one
+recursive listing, fetched the first time anything is typed; while it holds
+text, the matching paths replace the tree, with arrow keys moving a cursor and
+Enter opening it. Escape clears it, and on an empty filter closes the sidebar.
+Each space-separated word must occur in the path as typed, contiguously, with
+smart case; each listed path marks the text that matched. A word scores its best
+occurrence — inside the basename, at the start of a segment, at the start of the
+basename — and shorter paths break ties, so the file beats the vendored copy of
+it. Searching file *contents* is not built:
 path matching is a listing the client already has, where content search is a
 server-side scan with its own cost, ranking, and result-rendering questions.
 
@@ -1780,9 +1785,17 @@ read are the agent's working set and read bold; files it has changed take the
 accent. This is where a read registers at all, since reads deliberately do not
 move the viewer.
 
-Entry is the viewer's `files ⌸` toggle, or the `/tree` route — the one client
-route besides `/`, which opens the viewer on the working directory with no file
-chosen. Both routes are named in `SPA_ROUTES` (`src/daemon/tcp.rs`), which is
+Entry is the session header's files button (`ui/TopBar.tsx`), which opens the
+sidebar on the tree with no file chosen and closes it again, or the `/tree`
+route — the one client route besides `/`, which opens the viewer the same way.
+The tree and the file share the sidebar one at a time, so choosing a file leaves
+the tree. The sidebar's head is the path (`ui/FilePath.tsx`): the working
+directory's name, then each directory down to the open file, where every segment
+but the file returns to the tree opened at that directory. On the tree the head
+is the name alone. A relative link in
+rendered markdown resolves against the open file's directory and opens in the
+viewer (`ui/fileLinks.ts`), a directory link in the tree; every other link opens
+in a new tab, since following it in place would unload the session view. Both routes are named in `SPA_ROUTES` (`src/daemon/tcp.rs`), which is
 also what the service worker's offline fallback mirrors.
 
 The listing's ignore set is gitignore-derived and lives on the server

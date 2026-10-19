@@ -59,14 +59,22 @@ const stampChanged =
     }
   };
 
+/** A link the caller follows itself, or `null` for one it leaves to the
+ * browser — the file viewer's relative links (ui/fileLinks.ts). */
+export type FollowLink = (href: string) => (() => void) | null;
+
 export function Markdown({
   children,
   changedLines,
+  followLink,
 }: {
   children: string;
   /** 1-based source line ranges to stamp as changed (the file viewer);
    * absent everywhere else. */
   changedLines?: [number, number][];
+  /** Present in the file viewer, where a link the caller does not follow
+   * opens in a new tab rather than replacing the page the viewer is on. */
+  followLink?: FollowLink;
 }) {
   // Memoized because a fresh plugin array makes react-markdown reprocess on
   // every render of the caller.
@@ -77,12 +85,41 @@ export function Markdown({
         : [stampChanged(changedLines)],
     [changedLines],
   );
+  const linked = useMemo<Components>(
+    () =>
+      followLink === undefined
+        ? components
+        : {
+            ...components,
+            a: ({ href, children }) => {
+              const follow = href === undefined ? null : followLink(href);
+              if (follow === null)
+                return (
+                  <a href={href} target="_blank" rel="noopener noreferrer">
+                    {children}
+                  </a>
+                );
+              return (
+                <a
+                  href={href}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    follow();
+                  }}
+                >
+                  {children}
+                </a>
+              );
+            },
+          },
+    [followLink],
+  );
   return (
     <div className="prose">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         rehypePlugins={rehypePlugins}
-        components={components}
+        components={linked}
       >
         {children}
       </ReactMarkdown>

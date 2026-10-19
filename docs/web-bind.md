@@ -248,10 +248,10 @@ the machine. It is the server half of the file viewer
   relative to the document URL, which is the only thing a trailing slash buys a
   static file server.
 - `GET /files/<dir>?recursive=1&depth=N` → the same shape walked below the
-  directory, with entry `name`s spelled as paths relative to it — the file
-  finder's input ([web-client.md](web-client.md)). Both the depth and the entry
+  directory, with entry `name`s spelled as paths relative to it — the path
+  filter's input ([web-client.md](web-client.md)). Both the depth and the entry
   count are capped in `files::list` rather than trusted; past either the walk
-  stops and the listing says `truncated` rather than erroring, since a finder
+  stops and the listing says `truncated` rather than erroring, since a filter
   over most of the tree is useful and a partial set has to say so. Symlinked
   directories are listed but never descended: the walk would not terminate.
 - Anything else, including any non-GET, is refused — this surface never mutates.
