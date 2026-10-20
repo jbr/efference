@@ -41,6 +41,7 @@ mod cache_chain;
 mod capabilities;
 mod codex;
 mod completions;
+mod credential_reread;
 mod custom;
 mod effort;
 mod endpoint;

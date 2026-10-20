@@ -701,15 +701,18 @@ entries, so an outage against a daemon that is not draining cannot grow the
 process without bound — the durable record is the log, not the queue.
 
 
-### A credential that expires under a running host
+### A credential that is rejected under a running host
 
-`FailureClass::CredentialExpired` is the one rejected-credential case worth
-another attempt. It is named by the provider — the Codex backend answers a
-ChatGPT access token past its `exp` with a 401 whose `code` is `token_expired` —
-and it is checked before the terminal table, because expiry names a terminal
-condition too and the only difference is that this one has a remedy. A
-credential that is *wrong* (`invalid_api_key`) stays terminal however often it
-is re-read.
+A rejected credential is worth one re-read of its source, whatever the reason: an
+access token past its `exp`, a key the operator revoked, a grant the issuer
+invalidated. `api::failure::rejects_credential` decides, for a 401 or 403, from the
+body: the provider named an expiry (`FailureClass::CredentialExpired` — the Codex
+backend's `token_expired`), named one of the terminal names about the credential
+itself (`invalid_api_key`, `authentication_error`, `permission_error`), or named
+nothing the table knows (an unrecognized code, a gateway's HTML page). A name for
+something else — a quota, a spend limit, a missing model — is not a refusal of the
+credential and reads nothing. A connection with no `auth` line sends no credential
+and has nothing to re-read.
 
 The value itself is what makes the remedy reachable. An `Endpoint` is built once
 per host connection and cloned per session and role, so a credential copied in
@@ -718,9 +721,12 @@ every session, and even a session created afterwards is born with the dead copy.
 `AuthValue` (`api/auth_value.rs`) holds it in one cell that every clone reads
 through, so replacing it at the connection repairs the sessions already running.
 
-On that classification `Client::complete` re-reads the credential from its source
+On such a rejection `Client::complete` re-reads the credential from its source
 and retries the attempt — the same shape as the window backstop above, and once
-per call, since a source that yields a working token yields it the first time.
+per call, since a source that yields a working token yields it the first time. A
+source that still holds the dead value costs that one read, and the stall carries
+the provider's words. Re-authorizing in `efference setup`, which rewrites the same
+stored item, is therefore picked up by a running host on the next rejected call.
 The caller passes the value *it* sent, so several sessions failing on one token
 cost one read: whoever arrives second finds the value already past what it sent
 and retries on it without re-reading.
@@ -728,7 +734,7 @@ and retries on it without re-reading.
 Not every kind has a source to re-read, and this is where the auth kinds differ
 (`inference.rs`):
 
-| kind | on expiry |
+| kind | on rejection |
 | --- | --- |
 | `codex-cache` | re-reads `auth.json`; the operator runs `codex login` in another terminal and the next attempt carries the new token |
 | `keychain` | re-reads the store item, which an operator can rewrite from outside the process |

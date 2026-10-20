@@ -17,7 +17,7 @@ use trillium_client_retry::RetryHandler;
 use crate::api::assembler::ResponseMeta;
 use crate::api::auth_value::Reloaded;
 use crate::api::completions::assembler::CompletionsAssembler;
-use crate::api::failure::{FailureClass, OpenError, classify_body};
+use crate::api::failure::{FailureClass, OpenError, classify_body, rejects_credential};
 use crate::api::plan::{PlanState, plan_from_headers, plan_state};
 use crate::api::responses::assembler::ResponsesAssembler;
 use crate::api::stages::{ActiveTrace, StageSink, Trace};

@@ -215,8 +215,8 @@ impl Client {
         })
     }
 
-    /// POST the request and open its event stream. A refused reservation or an
-    /// expired credential is repaired and sent again; any other open failure is the
+    /// POST the request and open its event stream. A refused reservation or a
+    /// rejected credential is repaired and sent again; any other open failure is the
     /// `Err` this returns.
     async fn open_stream(
         &self,
@@ -277,22 +277,25 @@ impl Client {
                 max_tokens = retry;
                 continue;
             }
-            // The credential aged out under a running host
+            // The credential was refused under a running host
             // (docs/transport.md). The value is shared by every session
             // on this connection, so re-reading its source here repairs
-            // all of them — the operator runs `codex login` in another
-            // terminal and the next attempt carries the new token. A
-            // credential that is *wrong* rather than expired classifies
-            // Terminal and never reaches this.
+            // all of them: the operator runs `codex login` or
+            // `efference setup` in another terminal and the next attempt
+            // carries the new token. An expired token, a revoked or
+            // replaced key, and a rejection naming nothing known all read
+            // the source once; a source that still holds the dead value
+            // costs that one read.
             if !reloaded_auth
-                && status == Some(Status::Unauthorized)
-                && classify_body(&detail) == FailureClass::CredentialExpired
+                && self.endpoint.sends_credential()
+                && matches!(status, Some(Status::Unauthorized | Status::Forbidden))
+                && rejects_credential(&detail)
             {
                 reloaded_auth = true;
                 match self.endpoint.auth_value.reload(&sent_auth).await {
                     Reloaded::Replaced => {
                         log::warn!(
-                            "{} rejected an expired credential; re-read its source \
+                            "{} rejected its credential; re-read its source \
                              and retrying",
                             self.endpoint.provider
                         );

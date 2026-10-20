@@ -22,17 +22,18 @@ pub enum FailureClass {
     /// retry, no stall — the turn ends and the loop returns to idle. Counts
     /// against nothing.
     Aborted,
-    /// The credential itself expired, rather than being wrong. Re-reading it
-    /// from its source may produce a working one, so this is the single case
-    /// where a rejected credential is worth another attempt
-    /// (docs/transport.md). Terminal if the re-read changes nothing.
+    /// The credential itself expired, rather than being wrong. A provider that
+    /// names the expiry (`token_expired`) is the one case classified apart from
+    /// the other rejected credentials, which [`rejects_credential`] recognizes
+    /// without a class of their own (docs/transport.md). Terminal if the
+    /// re-read changes nothing.
     CredentialExpired,
 }
 
 /// Names for a credential that was valid and aged out, as distinct from one
-/// that is wrong. The distinction is the whole retry: a token the provider says
-/// is *expired* can be replaced by re-reading its source, where `invalid_api_key`
-/// stays terminal however many times it is re-read.
+/// the provider calls wrong. Either is worth one re-read of the credential's
+/// source ([`rejects_credential`]); this one is also the class a retry loop can
+/// read without parsing the body.
 const EXPIRED: &[&str] = &[
     // The Codex backend, on a ChatGPT access token past its `exp`.
     "token_expired",
@@ -65,6 +66,16 @@ const TERMINAL: &[&str] = &[
     "misalignment_policy_violation",
 ];
 
+/// The [`TERMINAL`] names that say the credential itself was refused, as distinct
+/// from the account behind it (quota, spend limits) or the request. A key the
+/// operator revoked or replaced is named by one of these, and re-authorizing
+/// stores a new value for the source to yield.
+const CREDENTIAL: &[&str] = &[
+    "invalid_api_key",
+    "authentication_error",
+    "permission_error",
+];
+
 /// Classify by the provider's `type` and `code`. Anything not named terminal is
 /// transient — the current behavior, and Codex CLI's default for an unnamed
 /// `response.failed` — so an unknown code keeps the bounded retry rather than
@@ -84,12 +95,12 @@ pub fn classify(kind: Option<&str>, code: Option<&str>) -> FailureClass {
     }
 }
 
-/// Classify a JSON error body, in either shape both dialects use: the name at
-/// the top level (`{"type": …, "code": …}`) or nested under `error`. A body
-/// that is not JSON, or names nothing, is transient.
-pub fn classify_body(body: &str) -> FailureClass {
+/// The `type` and `code` a JSON error body names, in either shape both dialects
+/// use: at the top level (`{"type": …, "code": …}`) or nested under `error`. A
+/// body that is not JSON, or names nothing, yields neither.
+fn body_names(body: &str) -> (Option<String>, Option<String>) {
     let Ok(value) = serde_json::from_str::<Value>(body) else {
-        return FailureClass::Transient;
+        return (None, None);
     };
     let field = |name: &str| {
         value
@@ -97,11 +108,35 @@ pub fn classify_body(body: &str) -> FailureClass {
             .and_then(|e| e.get(name))
             .or_else(|| value.get(name))
             .and_then(Value::as_str)
+            .map(str::to_string)
     };
     // The outer `type` of an envelope is `"error"`, which names nothing; the
     // nested one is the class.
-    let kind = field("type").filter(|k| *k != "error");
-    classify(kind, field("code"))
+    (field("type").filter(|k| k != "error"), field("code"))
+}
+
+/// Classify a JSON error body (see [`body_names`] for the shapes). A body that is
+/// not JSON, or names nothing, is transient.
+pub fn classify_body(body: &str) -> FailureClass {
+    let (kind, code) = body_names(body);
+    classify(kind.as_deref(), code.as_deref())
+}
+
+/// Whether the body of a 401 or 403 says the credential was refused, so a second
+/// read of its source is worth one attempt (docs/transport.md): the provider named
+/// an expiry or one of the [`CREDENTIAL`] names, or named nothing this table
+/// knows (a gateway's HTML page, a code the table has not met). A name for
+/// something else — a quota, a spend limit, a missing model — is not a refusal of
+/// the credential, and re-reading it would change nothing.
+pub fn rejects_credential(body: &str) -> bool {
+    let (kind, code) = body_names(body);
+    let (kind, code) = (kind.as_deref(), code.as_deref());
+    let named = |name: Option<&str>| name.is_some_and(|n| CREDENTIAL.contains(&n));
+    match classify(kind, code) {
+        FailureClass::CredentialExpired | FailureClass::Transient => true,
+        FailureClass::Terminal => named(kind) || named(code),
+        FailureClass::Aborted => false,
+    }
 }
 
 /// A request that failed to open a response stream (docs/transport.md): the
