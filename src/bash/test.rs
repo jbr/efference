@@ -443,3 +443,24 @@ async fn a_shell_backgrounded_grandchild_no_longer_hangs_the_call() {
         Outcome::Done(r) => panic!("expected a detach, got: {}", r.content),
     }
 }
+
+/// The result is the text the agent and the triage read, so it is stripped of
+/// terminal formatting (docs/process-monitor.md); the live sink still gets the bytes
+/// as the process wrote them.
+#[tokio::test]
+async fn the_result_is_clean_and_the_live_sink_is_raw() {
+    let mut streamed = Vec::new();
+    let result = done(
+        Bash::default()
+            .run(
+                &json!({ "command": r"printf '\033[31mred\033[0m\n 50%%\r100%%\n'; exit 3" }),
+                never(),
+                no_spawn(),
+                |chunk| streamed.extend_from_slice(chunk),
+            )
+            .await,
+    );
+    assert_eq!(result.content, "red\n100%\n[exited with status 3]");
+    assert!(result.is_error);
+    assert_eq!(streamed, b"\x1b[31mred\x1b[0m\n 50%\r100%\n");
+}

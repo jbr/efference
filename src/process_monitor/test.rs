@@ -411,3 +411,51 @@ fn the_spawning_call_id_rides_the_process_and_survives_the_handoff() {
         Some("toolu_7")
     );
 }
+
+/// Bytes a coloured, redrawing process wrote: the capture keeps them, and every
+/// agent-facing projection of it (tail, exit notification, `read_process`, watch hit)
+/// is clean (docs/process-monitor.md).
+const FORMATTED: &[u8] =
+    b"\x1b[32mPASS\x1b[0m suite\n  10%\r 100%\n\x1b]8;;https://x.test\x1b\\docs\x1b]8;;\x1b\\\n";
+
+#[test]
+fn agent_facing_reads_are_clean_and_the_capture_is_not() {
+    let mut s = ProcessMonitor::new();
+    let id = s.register_background("vitest".into(), None, None);
+    s.push_chunk(id, FORMATTED);
+
+    let tail = &s.views()[0].tail;
+    assert_eq!(tail, "PASS suite\n 100%\ndocs", "the ambient tail");
+    let pinned = s.pin_snapshot(id).unwrap().1;
+    assert!(pinned.ends_with("PASS suite\n 100%\ndocs"), "{pinned}");
+
+    let read = s.read_since(id, None).unwrap();
+    assert!(read.contains("PASS suite\n 100%\ndocs\n"), "{read}");
+    assert!(!read.contains('\x1b') && !read.contains('\r'), "{read:?}");
+
+    let raw = s.read_output(id, None).unwrap().content;
+    assert_eq!(
+        raw.as_bytes(),
+        FORMATTED,
+        "the output route keeps the bytes"
+    );
+
+    let finished = s.finish(id, None).unwrap();
+    assert!(
+        finished
+            .body
+            .ends_with("final output:\nPASS suite\n 100%\ndocs"),
+        "{}",
+        finished.body
+    );
+}
+
+#[test]
+fn a_watch_matches_and_quotes_the_clean_line() {
+    let mut s = ProcessMonitor::new();
+    let id = s.register_background("vitest".into(), None, None);
+    assert!(s.watch(id, "1 passed".into()));
+    let hits = s.push_chunk(id, b"\x1b[1m\x1b[32m1\x1b[39m passed\x1b[22m (1)\n");
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].line, "1 passed (1)");
+}

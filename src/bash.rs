@@ -288,7 +288,7 @@ impl Bash {
                 if let Some(pgid) = pgid {
                     kill_group(pgid);
                 }
-                let mut content = String::from_utf8_lossy(&combined).into_owned();
+                let mut content = decode(&combined);
                 push_line_break(&mut content);
                 content.push_str(KILLED);
                 RawResult::error(content).into()
@@ -384,10 +384,17 @@ pub(crate) fn reported_exit_status(content: &str) -> Option<&str> {
         .map(|(status, _)| status)
 }
 
+/// The text of accumulated output: decoded whole, with terminal formatting removed
+/// (docs/process-monitor.md). The result is what the agent and the triage read; the
+/// bytes as written went out through `on_output` as they arrived.
+fn decode(combined: &[u8]) -> String {
+    crate::process_monitor::strip_formatting(&String::from_utf8_lossy(combined))
+}
+
 /// Decode the accumulated (arrival-interleaved) output and mark `is_error` on a
 /// non-zero exit, annotating the status (a code, or `signal` when killed by one).
 fn render(combined: Vec<u8>, status: ExitStatus) -> RawResult {
-    let mut content = String::from_utf8_lossy(&combined).into_owned();
+    let mut content = decode(&combined);
 
     let is_error = !status.success();
     if is_error {

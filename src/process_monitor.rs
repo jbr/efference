@@ -22,6 +22,9 @@ use serde::Serialize;
 mod record;
 pub use record::{ProcessRecord, from_log};
 
+mod terminal;
+pub use terminal::strip_formatting;
+
 mod tools;
 pub use tools::{brief, tool_definitions};
 
@@ -290,9 +293,10 @@ fn scan_watches(p: &mut Process) -> Vec<WatchHit> {
             .rposition(|b| *b == b'\n')
             .map_or(0, |i| i + 1);
         // Only decoded when something is waiting on it: this runs per chunk of
-        // every process, watched or not.
+        // every process, watched or not. Patterns match the text the agent reads, so
+        // a colour escape inside a line cannot split a match.
         let text = match watching {
-            true => String::from_utf8_lossy(unscanned).into_owned(),
+            true => strip_formatting(&String::from_utf8_lossy(unscanned)),
             false => String::new(),
         };
         (complete, text)
@@ -336,6 +340,7 @@ fn cap_line(line: &str) -> String {
 /// `GET /processes/:id/output` (docs/control-api.md).
 pub struct OutputRead {
     /// The retained bytes from the caller's cursor to the end, lossily decoded.
+    /// Escapes and carriage returns are kept; `read_since` strips them for the model.
     /// Empty when the cursor is already at the end.
     pub content: String,
     /// The logical start of `content` — the caller's cursor, clamped forward past
@@ -743,7 +748,7 @@ impl ProcessMonitor {
         out.push_str(&format!(
             "{handle} output [bytes {from}–{cursor}] ({status}):\n"
         ));
-        out.push_str(&content);
+        out.push_str(&strip_formatting(&content));
         out.push_str(&format!("\ncursor: {cursor}"));
         Some(out)
     }
@@ -789,11 +794,12 @@ fn state_of(p: &Process) -> ProcessState {
     }
 }
 
-/// The last [`TAIL_LINES`] lines of a capture, lossily decoded, with a leading
+/// The last [`TAIL_LINES`] lines of a capture, lossily decoded and stripped of
+/// terminal formatting ([`strip_formatting`]), with a leading
 /// breadcrumb when content was dropped (off the front at the cap, or just older
 /// than the tail window) — no silent truncation (docs/process-monitor.md).
 fn tail_text(buffer: &[u8], dropped: usize) -> String {
-    let decoded = String::from_utf8_lossy(buffer);
+    let decoded = strip_formatting(&String::from_utf8_lossy(buffer));
     let lines: Vec<&str> = decoded.lines().collect();
     let start = lines.len().saturating_sub(TAIL_LINES);
     let mut out = String::new();

@@ -508,3 +508,21 @@ cursor is a byte offset into the *logical* stream (total bytes ever received,
 including dropped). `read_since` clamps reads to what is still retained, reports any
 bytes lost before the cursor, and returns a new cursor so the model pays only for
 the delta on subsequent reads.
+
+## Terminal formatting
+
+A process that believes it writes to a terminal emits colour and cursor escapes,
+hyperlinks, and carriage-return redraws. The capture keeps the bytes as written, and
+the routes that serve it to clients (`GET /processes/:id/output`, the `process_output`
+deltas) return them unchanged; the clients clean them for display themselves.
+
+Every text the agent reads is made by `process_monitor::strip_formatting`, a pure
+`&str -> String`: a synchronous `bash` result (the `RawResult` that is logged and that
+triage reads), the `read_process` body, the tail in the ambient triage and in a pin,
+the exit notification's final output, and the line a watch hit quotes. Watch patterns
+match the cleaned line. The function removes CSI sequences, OSC strings (an OSC 8
+hyperlink keeps its visible text and drops the target), other `ESC` sequences, and, in
+each line, everything before the last non-empty carriage-return segment. A `\r\n`
+ending is a line ending. It does not emulate a terminal: nothing is positioned or
+overdrawn. Text without escapes or carriage returns passes through byte-identical.
+Results logged before the function existed are not rewritten.
