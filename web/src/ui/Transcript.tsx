@@ -26,6 +26,7 @@ import type { CallId } from "../api/types.ts";
 import { askMarkText, askStanding } from "./askMark.ts";
 import { Markdown } from "./Markdown.tsx";
 import { Ambient } from "./Ambient.tsx";
+import { interruptFrom } from "./interrupt.ts";
 import { resumedLine } from "./resumed.ts";
 import { cleanWorktreeOutput, setupNote } from "./worktree.ts";
 import { SentAttachments } from "./Attachments.tsx";
@@ -295,7 +296,7 @@ function Leaf({
               ? "Empty response — recorded, not in context, asked again"
               : record !== undefined &&
                   upstreamFailureWhy(record) === "generation interrupted"
-                ? "Generation interrupted — recorded, not in context"
+                ? `Generation interrupted${node.interrupt === undefined ? "" : ` from ${interruptFrom(node.interrupt)}`} — recorded, not in context`
                 : "Incomplete response — recorded, not in context"}
           </div>
         </Entry>

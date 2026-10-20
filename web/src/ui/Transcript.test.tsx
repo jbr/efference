@@ -287,3 +287,45 @@ test("shows the exact working span and counts only entries in that range", () =>
   expect(html).toContain("2 entries");
   expect(html).toContain("account");
 });
+
+test.each([
+  [{ source: "web", control: "stop-button" }, "the web stop button"],
+  [
+    { source: "web", control: "status-bar-stop" },
+    "the web status-bar stop button",
+  ],
+  [{ control: "esc" }, "TUI Esc"],
+  [{ control: "control-cli" }, "the command line"],
+  [{ source: "session[calm-finch]" }, "session calm-finch"],
+  [{ source: "mcp[Claude Code]" }, "MCP client Claude Code"],
+  [{}, "the command line or TUI"],
+  [{ source: "web" }, "web"],
+  [{ source: "other", control: "custom" }, "other (custom)"],
+  [{ control: "custom" }, "the command line or TUI (custom)"],
+])("names an interrupt origin %j", (origin, label) => {
+  const html = render([
+    entry(1, { Telemetry: { Interrupt: origin } }),
+    entry(2, {
+      Assistant: {
+        ...messagesAssistant([], [], []),
+        excluded: { Upstream: "generation interrupted" },
+      },
+    }),
+  ]);
+  expect(html).toContain(
+    `Generation interrupted from ${label} — recorded, not in context`,
+  );
+});
+
+test("does not attribute an interrupt without an origin record", () => {
+  const html = render([
+    entry(1, {
+      Assistant: {
+        ...messagesAssistant([], [], []),
+        excluded: { Upstream: "generation interrupted" },
+      },
+    }),
+  ]);
+  expect(html).toContain("Generation interrupted — recorded, not in context");
+  expect(html).not.toContain("interrupted from");
+});

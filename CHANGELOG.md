@@ -9,6 +9,8 @@ behind a change, see [`journal/`](journal/).
 
 ### Added
 
+- Web interrupted-generation markers name the recorded client and stop control, when available.
+
 - Web approval gates show the latest escalator and note; a noted escalation replaces the spotter explanation, with an attributed spotter fallback when no note was supplied.
 
 - A supervised session does not push the operator: its `ask`s and settles go to its live supervisor alone, its gates push only when routed to the operator (the dial turned to `spotter_human`, or an escalation that reached the operator), a held gate that comes to rest with the operator later (supervisor ended or cleared, dial turned, the session an escalation reached ended) is pushed then, and each moment not pushed is recorded as `telemetry.push` `not_sent {to}` (docs/web-push.md).

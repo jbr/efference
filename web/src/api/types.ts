@@ -132,7 +132,7 @@ export type Telemetry =
   | { CompactionFailed: { error: string } }
   | { InboxExpired: { seq: Seq; shows: number } }
   | { SupervisorSet: { supervisor: string | null } }
-  | { Interrupt: { source?: string; control?: string } }
+  | { Interrupt: InterruptOrigin }
   | {
       GateDecision: {
         call_id: string;
@@ -154,6 +154,12 @@ export type Telemetry =
         account_bytes: number;
       };
     };
+
+/** Client-asserted interrupt sender and affordance (docs/control-api.md). */
+export interface InterruptOrigin {
+  source?: string;
+  control?: string;
+}
 
 /** One stage of one upstream request (docs/log-and-projection.md). Telemetry:
  * the transcript does not draw it; the `current_operations` topic folds it. */

@@ -554,3 +554,71 @@ describe("ask", () => {
     expect(onlyCall(nodes).result?.seq).toBe(2);
   });
 });
+
+describe("interrupt origin association", () => {
+  const signal = (seq: number, source = "web") =>
+    entry(seq, {
+      Telemetry: { Interrupt: { source, control: "stop-button" } },
+    });
+  const interrupted = (seq: number) =>
+    entry(seq, {
+      Assistant: {
+        ...messagesAssistant([], [{ Text: "Partial response" }], []),
+        excluded: { Upstream: { why: "generation interrupted", stream: {} } },
+      },
+    });
+  const stage = (
+    seq: number,
+    origin: "turn" | "title",
+    value: "sent" | { failed: { reason: string } } = "sent",
+  ) =>
+    entry(seq, {
+      Telemetry: { RequestStage: { request: seq, origin, stage: value } },
+    });
+  const origins = (entries: LogEntry[]) =>
+    buildTree(entries)
+      .filter((n) => n.kind === "leaf" && n.key.endsWith(":excluded"))
+      .map((n) => (n.kind === "leaf" ? n.interrupt : undefined));
+
+  it("keeps the latest signal across failure and side-request telemetry", () => {
+    expect(
+      origins([
+        signal(1),
+        signal(2, "session[finch]"),
+        stage(3, "turn", { failed: { reason: "interrupted" } }),
+        stage(4, "title"),
+        interrupted(5),
+        interrupted(6),
+      ]),
+    ).toEqual([
+      { source: "session[finch]", control: "stop-button" },
+      undefined,
+    ]);
+  });
+
+  it("does not carry an idle signal into a later turn request", () => {
+    expect(origins([signal(1), stage(2, "turn"), interrupted(3)])).toEqual([
+      undefined,
+    ]);
+  });
+
+  it("clears a signal at a user turn even without request telemetry", () => {
+    expect(
+      origins([
+        signal(1),
+        entry(2, { User: [{ Text: "Continue" }] }),
+        interrupted(3),
+      ]),
+    ).toEqual([undefined]);
+  });
+
+  it("consumes a signal at a finalized assistant rather than attributing a later failure", () => {
+    expect(
+      origins([
+        signal(1),
+        entry(2, { Assistant: messagesAssistant([], [{ Text: "Done" }], []) }),
+        interrupted(3),
+      ]),
+    ).toEqual([undefined]);
+  });
+});

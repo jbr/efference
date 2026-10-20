@@ -1,0 +1,25 @@
+import type { InterruptOrigin } from "../api/types.ts";
+
+/** Client-asserted origin of a recorded interrupt (docs/control-api.md). */
+export function interruptFrom({ source, control }: InterruptOrigin): string {
+  if (source === "web") {
+    if (control === "stop-button") return "the web stop button";
+    if (control === "status-bar-stop") return "the web status-bar stop button";
+    return control ? `web (${control})` : "web";
+  }
+  if (source === undefined) {
+    if (control === "esc") return "TUI Esc";
+    if (control === "control-cli") return "the command line";
+    return control
+      ? `the command line or TUI (${control})`
+      : "the command line or TUI";
+  }
+  const session = /^(?:session|agent)\[(.*)\]$/.exec(source);
+  const mcp = /^mcp\[(.*)\]$/.exec(source);
+  const sender = session
+    ? `session ${session[1]}`
+    : mcp
+      ? `MCP client ${mcp[1]}`
+      : source;
+  return control ? `${sender} (${control})` : sender;
+}

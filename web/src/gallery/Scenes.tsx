@@ -117,6 +117,7 @@ const push = {
 };
 const modes = [
   "Finished",
+  "Interrupted",
   "Input arriving",
   "Working",
   "Answer needed",
@@ -193,52 +194,76 @@ export function GalleryScenes() {
   const [gateSlot, setGateSlot] = useState<HTMLDivElement | null>(null);
   const [decision, setDecision] = useState("");
   const [steer, setSteer] = useState("");
-  const running = mode !== "Finished";
+  const running = mode !== "Finished" && mode !== "Interrupted";
   const entries = useMemo(
     () =>
-      mode === "Finished"
-        ? [...common, result, finished]
-        : mode === "Answer needed"
-          ? [
-              ...common,
-              result,
-              asking,
-              ...(answerSecond
-                ? [
+      mode === "Interrupted"
+        ? [
+            ...common,
+            result,
+            entry(6, {
+              Telemetry: {
+                Interrupt: { source: "web", control: "stop-button" },
+              },
+            }),
+            entry(7, {
+              Assistant: {
+                ...messagesAssistant(
+                  [],
+                  [
                     {
-                      ...entry(6, {
-                        ToolResult: {
-                          call_id: ask.call_id,
-                          raw: {
-                            content:
-                              "Leave it uncommitted for another design pass.",
-                            is_error: false,
-                          },
-                          wire: "Raw",
-                        },
-                      }),
-                      submission_id: "gallery-answer-first",
+                      Text: "The checks passed. I’ll review the remaining changes",
                     },
-                  ]
-                : []),
-            ]
-          : mode === "Approval needed" || mode.startsWith("Escalated")
+                  ],
+                  [],
+                ),
+                excluded: { Upstream: "generation interrupted" },
+              },
+            }),
+          ]
+        : mode === "Finished"
+          ? [...common, result, finished]
+          : mode === "Answer needed"
             ? [
                 ...common,
                 result,
-                finished,
-                entry(6, { Assistant: messagesAssistant([], [], [push]) }),
-                entry(7, {
-                  Spot: {
-                    call_id: push.id,
-                    stance: "gate",
-                    reason:
-                      "Publishing this branch changes the remote repository. This command needs your approval.",
-                    origin: "Model",
-                  },
-                }),
+                asking,
+                ...(answerSecond
+                  ? [
+                      {
+                        ...entry(6, {
+                          ToolResult: {
+                            call_id: ask.call_id,
+                            raw: {
+                              content:
+                                "Leave it uncommitted for another design pass.",
+                              is_error: false,
+                            },
+                            wire: "Raw",
+                          },
+                        }),
+                        submission_id: "gallery-answer-first",
+                      },
+                    ]
+                  : []),
               ]
-            : common,
+            : mode === "Approval needed" || mode.startsWith("Escalated")
+              ? [
+                  ...common,
+                  result,
+                  finished,
+                  entry(6, { Assistant: messagesAssistant([], [], [push]) }),
+                  entry(7, {
+                    Spot: {
+                      call_id: push.id,
+                      stance: "gate",
+                      reason:
+                        "Publishing this branch changes the remote repository. This command needs your approval.",
+                      origin: "Model",
+                    },
+                  }),
+                ]
+              : common,
     [mode, answerSecond],
   );
   const streaming: Streaming =

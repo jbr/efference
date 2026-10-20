@@ -860,8 +860,14 @@ An assistant entry carrying `excluded` is record-only: `project` skips it
 thinking leads with *Empty response — recorded, not in context, asked again*. Empty failed attempts produce no transcript
 nodes; their current explanation belongs to transport chrome instead. Partial
 thinking, prose and tool calls still render, led by an *Incomplete response —
-recorded, not in context* marker without the raw failure body. Deliberate operator
-interruptions retain a *Generation interrupted* marker, including when empty.
+recorded, not in context* marker without the raw failure body. Interrupted generations
+retain a *Generation interrupted* marker, including when empty. When preceding
+`Telemetry::Interrupt` records an origin, the marker names its client and affordance
+(for example, *from the web stop button*). The fold uses the latest interrupt and
+consumes it at the next assistant entry; user turns and new main request starts
+clear it so an idle interrupt cannot name a later generation. Side-request telemetry
+does not clear it. Logs without an origin keep the plain marker. Origins are
+client-asserted, not authenticated identities.
 `upstreamFailureWhy` reads either the string or object serialization of the mark.
 
 

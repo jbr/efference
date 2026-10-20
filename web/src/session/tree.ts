@@ -26,6 +26,7 @@ import {
   type CallId,
   type Exclusion,
   type LogEntry,
+  type InterruptOrigin,
   type Seq,
   type Spot,
   type ToolCall,
@@ -64,6 +65,8 @@ export interface LeafNode {
   /** The result of an `ask`: the operator's reply when a submission produced
    * it, or a note that nothing did. The entry is the `ToolResult`. */
   reply?: "answered" | "unanswered";
+  /** Origin recorded before this interrupted generation (docs/control-api.md). */
+  interrupt?: InterruptOrigin;
 }
 
 /** A question put to the operator, and its place among the asks of one
@@ -171,9 +174,11 @@ export function buildTree(entries: LogEntry[]): TranscriptNode[] {
   const turns: Seq[] = [];
   const marks: { at: number; node: LeafNode }[] = [];
   let previous: Seq | null = null;
+  let interrupt: InterruptOrigin | undefined;
 
   for (const entry of entries) {
     const p = entry.payload;
+    if ("User" in p) interrupt = undefined;
     seqs.push(entry.seq);
     if (previous !== null) endOf.set(previous, nodes.length);
     previous = entry.seq;
@@ -214,16 +219,24 @@ export function buildTree(entries: LogEntry[]): TranscriptNode[] {
       // Keep record-only content marked apart from finalized turns. Empty failed
       // attempts belong to transport chrome, not the conversation.
       const upstream = upstreamOf(excluded);
+      const interrupted =
+        upstream !== undefined &&
+        upstreamFailureWhy(upstream) === "generation interrupted";
       if (
         excluded !== undefined &&
-        ((upstream !== undefined &&
-          upstreamFailureWhy(upstream) === "generation interrupted") ||
+        (interrupted ||
           thinking.length > 0 ||
           text.length > 0 ||
           calls.length > 0)
       ) {
-        nodes.push({ kind: "leaf", key: `${entry.seq}:excluded`, entry });
+        nodes.push({
+          kind: "leaf",
+          key: `${entry.seq}:excluded`,
+          entry,
+          ...(interrupted && interrupt !== undefined ? { interrupt } : {}),
+        });
       }
+      interrupt = undefined;
       if (thinking.length > 0) {
         nodes.push({ kind: "leaf", key: `${entry.seq}:thinking`, entry });
       }
@@ -327,6 +340,16 @@ export function buildTree(entries: LogEntry[]): TranscriptNode[] {
     // is the one the client shows, on the call it names.
     if ("Telemetry" in p) {
       const t = p.Telemetry;
+      if ("Interrupt" in t) interrupt = t.Interrupt;
+      // An idle interrupt must not name a later generation. Side requests can
+      // run between the signal and its assistant record, so only turn starts
+      // clear it (docs/control-api.md).
+      if (
+        "RequestStage" in t &&
+        t.RequestStage.origin === "turn" &&
+        t.RequestStage.stage === "sent"
+      )
+        interrupt = undefined;
       if ("Tool" in t) {
         const owner = byCall.get(t.Tool.call_id);
         if (owner !== undefined) owner.telemetry = t.Tool;

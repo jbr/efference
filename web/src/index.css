@@ -830,12 +830,11 @@ input[type="checkbox"]:disabled {
 }
 
 /* A record-only assistant entry (docs/transport.md): the stream never stood
-   behind it, so nothing below it is in the model's context. Styled as an
-   annotation — warn-toned, bordered, mono — because it is the harness's
-   statement *about* the entry, not part of what the model produced, which
-   still renders underneath it. */
+   behind it, so nothing below it is in the model's context. The border marks
+   the annotation separately from the model's output underneath it. */
 .record-only {
-  color: var(--warn);
+  font-family: var(--font-prose);
+  color: var(--fg-muted);
   border-left: 2px solid var(--warn);
   padding-left: 0.6rem;
   overflow-wrap: break-word;
