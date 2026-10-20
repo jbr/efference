@@ -78,36 +78,24 @@ async fn allow_with_a_note_sends_the_note_after_the_result() {
          arrives with its result"
     );
     assert_eq!(gate.await, Ok(Approval::Approve));
-    let noted = || {
-        child.queued_turns().iter().any(|turn| {
-            turn.text == "use read for this next time"
-                && turn.source.as_deref() == Some("session[parent]")
-        }) || child
-            .snapshot()
-            .iter()
-            .any(|e| e.source.as_deref() == Some("session[parent]"))
-    };
-    wait_for("the note reached the child", noted).await;
     // The decision names the note's turn, so a reader of the log can tell it from any
-    // other message the parent sends.
-    let recorded = decisions(&child);
-    let named = recorded[0]
+    // other message the parent sends. The decision entry carries the parent as its
+    // source too, so the note is found by its submission id, not by sender.
+    let named = decisions(&child)[0]
         .note_submission
         .clone()
         .expect("the note is named");
-    let sent = child
-        .queued_turns()
-        .iter()
-        .find(|turn| turn.text == "use read for this next time")
-        .map(|turn| turn.submission_id.clone())
-        .or_else(|| {
-            child
-                .snapshot()
-                .iter()
-                .find(|e| e.source.as_deref() == Some("session[parent]"))
-                .and_then(|e| e.submission_id.clone())
-        });
-    assert_eq!(sent, Some(named));
+    let noted = || {
+        child.queued_turns().iter().any(|turn| {
+            turn.submission_id == named
+                && turn.text == "use read for this next time"
+                && turn.source.as_deref() == Some("session[parent]")
+        }) || child.snapshot().iter().any(|e| {
+            e.submission_id.as_deref() == Some(named.as_str())
+                && e.source.as_deref() == Some("session[parent]")
+        })
+    };
+    wait_for("the note reached the child", noted).await;
 
     fixture.host.swansong().shut_down().await;
 }
