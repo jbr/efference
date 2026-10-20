@@ -89,13 +89,36 @@ where
         let tool: ToolEnum = match serde_json::from_value(envelope) {
             Ok(tool) => tool,
             Err(e) => {
-                return RawResult::error(format!("invalid input for {name}: {e}"));
+                return RawResult::error(format!(
+                    "invalid input for {name}: {e} (received: {})",
+                    received(input)
+                ));
             }
         };
         match tool.call(self.state.clone(), request_context()).await {
             Ok(result) => crate::mcp::render_result(result),
             Err(e) => RawResult::error(e.to_string()),
         }
+    }
+}
+
+/// What a rejected input carried, for the rejection text (docs/tools.md): an
+/// object's top-level keys, sorted, or what the value was when it is not an
+/// object. The deserializer's message says what was expected; this says what was
+/// sent, so a call that misnamed a field reads against its own keys.
+fn received(input: &Value) -> String {
+    match input {
+        Value::Object(map) if map.is_empty() => "no keys".to_string(),
+        Value::Object(map) => {
+            let mut keys: Vec<&str> = map.keys().map(String::as_str).collect();
+            keys.sort_unstable();
+            keys.join(", ")
+        }
+        Value::String(_) => "a string".to_string(),
+        Value::Number(_) => "a number".to_string(),
+        Value::Bool(_) => "a boolean".to_string(),
+        Value::Array(_) => "an array".to_string(),
+        Value::Null => "null".to_string(),
     }
 }
 

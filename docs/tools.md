@@ -652,8 +652,12 @@ Nothing validates a call's arguments against the tool's schema before dispatch.
 The in-process servers get strict checking for free — `run_call` deserializes the
 `{name, arguments}` envelope into the generated tool enum, and a mismatch becomes
 an `is_error` result naming it (`invalid input for read: invalid type: string
-…, expected a sequence`). A connected server's arguments are passed through as
-written and the server decides.
+…, expected a sequence (received: paths)`). The deserializer's message says what was
+expected, so the result appends what was sent: the call's top-level keys, sorted
+(``invalid input for write: missing field `contents` (received: content, intent,
+path)``), or what the input was when it is not an object (`received: a string`). A
+model that misnamed a field then reads its own keys against the missing one. A
+connected server's arguments are passed through as written and the server decides.
 
 That asymmetry is deliberate rather than pending. Three checks already stand
 between a model's call and a server: the provider constrains decoding to the

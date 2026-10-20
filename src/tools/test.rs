@@ -317,6 +317,83 @@ async fn fs_read_and_list_roundtrip() {
     std::fs::remove_dir_all(&dir).unwrap();
 }
 
+/// A rejected input names the top-level keys the call carried (docs/tools.md), so a
+/// field the model misnamed reads against what it sent: `content` for `contents`
+/// is visible in the rejection rather than only the missing field.
+#[tokio::test]
+async fn a_rejected_input_names_the_keys_it_received() {
+    let dir = std::env::temp_dir().join(format!("eff-rejkeys-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let server = fs_server(dir.clone());
+
+    let misnamed = server
+        .run_call(
+            "write",
+            &json!({ "path": "a.txt", "content": "x", "intent": "make a" }),
+        )
+        .await;
+    assert!(misnamed.is_error);
+    assert!(
+        misnamed.content.starts_with("invalid input for write: "),
+        "{}",
+        misnamed.content
+    );
+    assert!(
+        misnamed.content.contains("missing field `contents`"),
+        "{}",
+        misnamed.content
+    );
+    assert!(
+        misnamed
+            .content
+            .ends_with("(received: content, intent, path)"),
+        "{}",
+        misnamed.content
+    );
+
+    // No `path`: what the call did have is listed, sorted.
+    let no_path = server
+        .run_call("write", &json!({ "contents": "x", "intent": "make a" }))
+        .await;
+    assert!(
+        no_path.content.contains("missing field `path`")
+            && no_path.content.ends_with("(received: contents, intent)"),
+        "{}",
+        no_path.content
+    );
+    let empty = server.run_call("write", &json!({})).await;
+    assert!(
+        empty.content.ends_with("(received: no keys)"),
+        "{}",
+        empty.content
+    );
+
+    // Not an object: say what it was.
+    for (input, what) in [
+        (json!("path"), "a string"),
+        (json!(3), "a number"),
+        (json!(true), "a boolean"),
+        (json!(["a.txt"]), "an array"),
+        (Value::Null, "null"),
+    ] {
+        let result = server.run_call("write", &input).await;
+        assert!(result.is_error);
+        assert!(
+            result.content.ends_with(&format!("(received: {what})")),
+            "{what}: {}",
+            result.content
+        );
+    }
+
+    // A valid call carries no such suffix.
+    let ok = server
+        .run_call("write", &json!({ "path": "a.txt", "contents": "x" }))
+        .await;
+    assert!(!ok.content.contains("received:"), "{}", ok.content);
+
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
 /// A refused write reaches the model as an **error** result carrying the refusal
 /// verbatim (docs/tools.md). The two halves are separable and both matter: the flag
 /// says a write did not happen — a success-shaped refusal read as a success, and

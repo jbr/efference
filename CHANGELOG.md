@@ -9,6 +9,7 @@ behind a change, see [`journal/`](journal/).
 
 ### Added
 
+- A rejected embedded-tool input appends the top-level keys the call carried, sorted, or what the input was when it is not an object: ``invalid input for write: missing field `contents` (received: content, intent, path)`` (docs/tools.md).
 - A window overflow a provider refuses as an `error` event inside a 200 stream is resent at half the reservation, as an HTTP 400 at open is, and `is_window_overflow` matches DeepInfra's "you requested N output tokens" wording (docs/transport.md).
 - A host's `/sessions/<id>/files` takes the cookie only, as a session bind's `/files` does; a valid bearer gets `403` (docs/web-bind.md).
 - `GET /sessions/:id` for a dormant session answers its recorded `selections` (in the shapes `PATCH` takes) and `context_tokens`, the last main-loop prompt a cold read would pay; the archived listing is unchanged (docs/control-api.md).
