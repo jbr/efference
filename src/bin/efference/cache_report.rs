@@ -11,9 +11,7 @@
 use super::*;
 
 use efference::api::{CacheMiss, CacheMissReason};
-use efference::daemon::{CacheRead, ColdStart, ColdStreak, RequestOrigin, UsageLine};
-
-pub(crate) const USAGE_NAME: &str = "usage.jsonl";
+use efference::daemon::{CacheRead, ColdStart, ColdStreak, RequestOrigin, USAGE_NAME, UsageLine};
 
 /// Per-origin counts for the table: how many requests of this shape, how many of
 /// them read a cached prefix, and what they cost.
@@ -207,20 +205,6 @@ pub(crate) fn fold_sessions(sessions: &[(String, Vec<UsageLine>)]) -> CacheRepor
     report
 }
 
-/// Read one session's usage record. A missing file is an empty record rather than an
-/// error — a session that made no requests, or one from before the record existed.
-pub(crate) fn read_usage(path: &Path) -> std::io::Result<Vec<UsageLine>> {
-    let text = match std::fs::read_to_string(path) {
-        Ok(text) => text,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(e) => return Err(e),
-    };
-    Ok(text
-        .lines()
-        .filter_map(|line| serde_json::from_str::<UsageLine>(line).ok())
-        .collect())
-}
-
 /// Which usage records the report reads: `--all` sweeps every session under
 /// `.efference/`, an explicit target resolves like the other reader verbs (a path to
 /// a `usage.jsonl`, a session dir, or a session id), and neither takes the most
@@ -282,7 +266,7 @@ pub(crate) fn cache(session: Option<String>, name: Option<String>, all: bool) ->
     let targets = resolve_usage_targets(target.as_deref(), all)?;
     let mut sessions = Vec::new();
     for (id, path) in &targets {
-        match read_usage(path) {
+        match UsageLine::read(path) {
             Ok(lines) => sessions.push((id.clone(), lines)),
             Err(e) => eprintln!("skipping {}: {e}", path.display()),
         }

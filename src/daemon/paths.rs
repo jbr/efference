@@ -65,7 +65,7 @@ impl SessionPaths {
     }
 
     pub(crate) fn usage_log(&self) -> PathBuf {
-        self.storage.join("usage.jsonl")
+        self.storage.join(crate::daemon::USAGE_NAME)
     }
 
     pub(crate) fn attachments(&self) -> PathBuf {

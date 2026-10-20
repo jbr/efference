@@ -1,7 +1,8 @@
-//! `GET /sessions?state=archived`: the dormant listing and its filter
-//! (docs/control-api.md). The scan itself is `crate::inventory`'s to test; these
-//! cover what the route adds — the filter word, the live exclusion, the
-//! remembered roots, and the row's `state`.
+//! `GET /sessions?state=archived` and `GET /sessions/:id`: the dormant listing, its
+//! filter, and the single read (docs/control-api.md). The scan itself is
+//! `crate::inventory`'s to test; these cover what the routes add — the filter word,
+//! the live exclusion, the remembered roots, the row's `state`, and the single read's
+//! recorded selections and context size.
 
 use super::*;
 use crate::log::{ContentBlock, Payload, Title, TitleAuthor};
@@ -260,6 +261,151 @@ async fn a_dormant_session_is_found_under_a_remembered_root() {
     let response = server.get("/sessions/b").await;
     response.assert_status(200);
     assert_eq!(json(response.body())["title"], "B");
+
+    host.swansong().shut_down().await;
+}
+
+/// A resumable log for session `id` under `root` whose header records its roles,
+/// main `c/main` and spotter `c/spot` with separate triage on `c/tri`, followed by a
+/// preamble that switched the spotter to `c/spot-2` at a resume.
+fn write_recorded_session(root: &Path, id: &str) -> PathBuf {
+    use crate::log::{LoggedInference, RecordedRoles};
+    use crate::persist::{SessionMetadata, TriageModel};
+    let inference = |model: &str| LoggedInference::new("c", crate::api::Provider::Anthropic, model);
+    let dir = root.join(".efference").join(id);
+    std::fs::create_dir_all(&dir).unwrap();
+    let metadata = SessionMetadata::new(
+        id,
+        root,
+        inference("main"),
+        inference("spot"),
+        TriageModel::separate(inference("tri")),
+    );
+    let mut log = Log::create(dir.join("log.jsonl"), Some(metadata)).unwrap();
+    let preamble = Payload::preamble("", "system", Default::default(), Some(inference("main")));
+    log.append(0, preamble.clone()).unwrap();
+    log.append(0, Payload::User(vec![ContentBlock::Text("hi".into())]))
+        .unwrap();
+    let switched = preamble.with_roles(RecordedRoles {
+        spotter: inference("spot-2"),
+        triage: TriageModel::separate(inference("tri")),
+    });
+    log.append(0, switched).unwrap();
+    dir
+}
+
+/// Append usage lines for `requests`, each an origin and its uncached input tokens,
+/// with 1000 tokens read from the cache and 10 written.
+fn write_usage(dir: &Path, requests: &[(crate::log::RequestOrigin, u64)]) {
+    use std::io::Write;
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(dir.join(crate::daemon::USAGE_NAME))
+        .unwrap();
+    for (at, (origin, input)) in requests.iter().enumerate() {
+        let usage = crate::api::RequestUsage::new(crate::api::Usage {
+            input_tokens: *input,
+            output_tokens: 7,
+            cache_read_input_tokens: 1000,
+            cache_creation_input_tokens: 10,
+        });
+        let line = crate::daemon::UsageLine::new(*origin, at as u128, false, &usage);
+        writeln!(file, "{}", serde_json::to_string(&line).unwrap()).unwrap();
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_dormant_row_carries_its_recorded_selections_and_context_size() {
+    use crate::log::RequestOrigin;
+    let roots = Roots::new();
+    let host = Host::new(one_connection_registry(), baseline_env());
+    let server = host_server(&host).await;
+    let root = roots.0.join("one");
+    let dir = write_recorded_session(&root, "recorded");
+    write_usage(
+        &dir,
+        &[
+            (RequestOrigin::Turn, 1),
+            (RequestOrigin::Turn, 2),
+            (RequestOrigin::Triage, 3),
+            (RequestOrigin::Keepalive, 4),
+        ],
+    );
+
+    let response = server
+        .get(&format!("/sessions/recorded?cwd={}", encode(&root)))
+        .await;
+    response.assert_status(200);
+    let row = json(response.body());
+    // The main from the header, the spotter from the preamble a resume switched it in,
+    // the triage from the header: the selections a resume without a switch reopens on.
+    assert_eq!(
+        row["selections"],
+        serde_json::json!({
+            "connection": "c",
+            "model": "main",
+            "spotter_connection": "c",
+            "spotter_model": "spot-2",
+            "triage": {
+                "mode": "separate",
+                "connection": "c",
+                "model": "tri",
+                "thinking": false,
+                "auto_choice": false,
+                "effort": null,
+            },
+        })
+    );
+    // The last `turn` line's prompt: 2 uncached + 1000 read + 10 written.
+    assert_eq!(row["context_tokens"], 1012);
+    let read: crate::daemon::DormantSession = serde_json::from_str(response.body()).unwrap();
+    assert_eq!(read.archived.row.id, "recorded");
+    assert_eq!(read.context_tokens, Some(1012));
+
+    // The listing's row is the single read's without the two fields.
+    let listing = server
+        .get(&format!("/sessions?state=archived&cwd={}", encode(&root)))
+        .await;
+    listing.assert_status(200);
+    let mut expected = row.as_object().unwrap().clone();
+    expected.remove("selections");
+    expected.remove("context_tokens");
+    assert_eq!(json(listing.body())[0], serde_json::Value::Object(expected));
+
+    host.swansong().shut_down().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_dormant_row_without_a_turn_or_recorded_roles_leaves_them_out() {
+    use crate::log::RequestOrigin;
+    let roots = Roots::new();
+    let host = Host::new(one_connection_registry(), baseline_env());
+    let server = host_server(&host).await;
+    let root = roots.0.join("one");
+    // No usage record at all.
+    let dir = write_recorded_session(&root, "unused");
+    // A usage record with no main-loop request in it, under a header that records nothing.
+    write_session(&root, "bare", "Bare");
+    write_usage(&root.join(".efference/bare"), &[(RequestOrigin::Title, 5)]);
+
+    let unused = server
+        .get(&format!("/sessions/unused?cwd={}", encode(&root)))
+        .await;
+    unused.assert_status(200);
+    let row = json(unused.body());
+    assert!(row.get("context_tokens").is_none(), "{row}");
+    assert_eq!(row["selections"]["model"], "main");
+    assert!(!dir.join(crate::daemon::USAGE_NAME).exists());
+
+    let bare = server
+        .get(&format!("/sessions/bare?cwd={}", encode(&root)))
+        .await;
+    bare.assert_status(200);
+    let row = json(bare.body());
+    assert_eq!(row["title"], "Bare");
+    assert!(row.get("context_tokens").is_none(), "{row}");
+    assert!(row.get("selections").is_none(), "{row}");
 
     host.swansong().shut_down().await;
 }

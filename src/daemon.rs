@@ -681,7 +681,9 @@ use entry_view::{EntryView, result_raw};
 use errors::{ErrorBody, ErrorCode, fail, respond};
 use frames::{Frame, Topic};
 pub use identity::SessionIdentity;
-pub use metrics::{COLD_STREAK_WARN, CacheRead, ColdStart, ColdStreak, UsageLine};
+pub use metrics::{
+    COLD_STREAK_WARN, CacheRead, ColdStart, ColdStreak, USAGE_NAME, UsageLine, last_turn_usage,
+};
 use metrics::{CostCell, Metrics};
 use notifications::Inbox;
 use pace::Pace;
@@ -710,8 +712,8 @@ mod runtime;
 pub mod slug;
 mod starting;
 pub use host::{
-    ArchivedSession, CreateSession, Host, ListedSession, PatchSession, SessionOptionsRequest,
-    SessionState, serve_host,
+    ArchivedSession, CreateSession, DormantSession, Host, ListedSession, PatchSession,
+    SessionOptionsRequest, SessionState, serve_host,
 };
 pub use paths::SessionPaths;
 pub use runtime::{SessionBoot, SessionRuntime};

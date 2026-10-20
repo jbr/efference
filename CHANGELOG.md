@@ -9,6 +9,7 @@ behind a change, see [`journal/`](journal/).
 
 ### Added
 
+- `GET /sessions/:id` for a dormant session answers its recorded `selections` (in the shapes `PATCH` takes) and `context_tokens`, the last main-loop prompt a cold read would pay; the archived listing is unchanged (docs/control-api.md).
 - Triage shows a result's lines in a `12 │ text` margin, and the result header says that numbers after the margin are part of the text and `keep` uses the margin's, so a `read` or `grep -n` result's own line numbers are not mistaken for the view's; `EFFERENCE_TRIAGE_LINES` is gone (docs/triage.md).
 - `--name` is `tui`'s flag (attach, or the new session's id) and the `dev` readers'; `--socket` is `host`'s bind path; `control` and `mcp` take neither, `agent` is required on the MCP tools that act on an agent, and a named session resolves through the host alone (the per-session `control.sock` lookup is gone).
 - Agent-facing texts name only what the reader can use: refusals say what would work instead of citing a doc, the empty overview names its mount's own `create`, an agent's transcript read of one entry in full drops the `GET /log` routes (the command line keeps them) and no text says "zoom", and a pinned status notification no longer repeats the session's id (docs/tools.md, docs/control-api.md).

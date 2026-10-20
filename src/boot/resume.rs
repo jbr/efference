@@ -27,9 +27,9 @@ use super::mint::Minted;
 use super::{BASE_DIR, CONFIG_NAME, LOG_NAME, env, model, parts, scaffold};
 use crate::api::Error;
 use crate::daemon::SessionBoot;
-use crate::inference::{InferenceRegistry, ResumeSwitch, SessionOptions, TriageChoice};
-use crate::log::{LogEntry, LoggedInference, Payload, RecordedRoles, Resumed, Timestamp};
-use crate::persist::{LoadedRecording, Log, SessionMetadata, TriageModel};
+use crate::inference::{InferenceRegistry, ResumeSwitch, SessionOptions};
+use crate::log::{LogEntry, LoggedInference, Payload, Resumed, Timestamp};
+use crate::persist::{LoadedRecording, Log, SessionMetadata};
 use crate::recovery::{Resumption, resume_point};
 use crate::spotter::MountedSpotter;
 
@@ -342,20 +342,6 @@ fn session_directories(
     }
 }
 
-/// The spotter and triage the session last ran on: the latest preamble's roles when it
-/// records any (a resume switched them), else the header's. `None` for a log with
-/// neither.
-fn recorded_roles(recording: &LoadedRecording) -> Option<RecordedRoles> {
-    if let Some(roles) = crate::log::recorded_roles(&recording.entries) {
-        return Some(roles.clone());
-    }
-    let metadata = recording.header.metadata()?;
-    Some(RecordedRoles {
-        spotter: metadata.spotter.clone(),
-        triage: metadata.triage.clone(),
-    })
-}
-
 /// The role selections the log recorded, as the options the registry resolves, with
 /// `switch` laid over them. A log with no header metadata names only its main inference
 /// (from the boot `Preamble`); the other roles and the effort level resolve as a create
@@ -376,29 +362,7 @@ fn options_from_log(
             ..SessionOptions::default()
         },
     };
-    if let Some(main) = recorded_main(recording) {
-        options.connection = Some(main.connection);
-        options.model = Some(main.model);
-    }
-    if let Some(RecordedRoles { spotter, triage }) = recorded_roles(recording) {
-        options.spotter_connection = Some(spotter.connection);
-        options.spotter_model = Some(spotter.model);
-        options.triage = Some(match triage {
-            TriageModel::Shared => TriageChoice::Shared,
-            TriageModel::Separate {
-                selection,
-                thinking,
-                auto_choice,
-                effort,
-            } => TriageChoice::Separate {
-                connection: Some(selection.connection),
-                model: selection.model,
-                thinking,
-                auto_choice,
-                effort,
-            },
-        });
-    }
+    recorded_selections(recording).apply(&mut options);
     switch.apply(&mut options);
     options
 }
@@ -424,14 +388,6 @@ fn frozen_preamble(entries: &[LogEntry]) -> Option<(String, String, Option<Strin
         } => Some((identity.clone(), body.clone(), context.render())),
         _ => None,
     })
-}
-
-/// The main inference the session last ran on: the latest preamble's identity, else the
-/// header's.
-fn recorded_main(recording: &LoadedRecording) -> Option<LoggedInference> {
-    crate::log::recorded_inference(&recording.entries)
-        .cloned()
-        .or_else(|| recording.header.metadata().map(|m| m.main.clone()))
 }
 
 /// Why `target` cannot take over this log's main model, or `Ok` when it can: the log's
@@ -499,6 +455,10 @@ fn resumed_entry(entries: &[LogEntry], resumption: Resumption) -> (crate::log::T
         },
     )
 }
+
+mod recorded;
+pub use recorded::recorded_selections;
+use recorded::{recorded_main, recorded_roles};
 
 #[cfg(test)]
 mod test;

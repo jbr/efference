@@ -32,7 +32,7 @@ use resume::patch_session;
 pub use resume::{PatchSession, SessionState};
 
 mod archived;
-pub use archived::ArchivedSession;
+pub use archived::{ArchivedSession, DormantSession};
 use archived::{archived_listing, read_session};
 
 mod catalog;

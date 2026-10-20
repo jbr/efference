@@ -220,6 +220,16 @@ found. `QUERY /sessions` runs that resolution on the same fields, so a client pr
 switch's issues before sending it; the preview takes the full selection, since it has
 no session to read the unnamed ones from.
 
+A client offering the switches reads what to prefill and what a main switch would cost
+from the dormant session's own row (`GET /sessions/:id`, [control-api.md](control-api.md)).
+Its `selections` are the recorded ones in the patch's shapes, read as the resume reads
+them (`boot::recorded_selections`: the latest preamble's `inference` and `roles`, else
+the header's), and its `context_tokens` is the prompt size of the last `turn` line in
+the session's `usage.jsonl` (`last_turn_usage`), the number the `cold` topic reports for a
+hosted session and the size of the uncached read a main switch begins with. The archived
+listing carries neither, so a scan over every root reads no log whole and no usage
+record.
+
 When a switch changes what the session runs, the resume appends a `Preamble` that
 repeats the frozen one with the new `roles` ([log-and-projection.md](log-and-projection.md)),
 after the `Resumed` entry; a switch that names what is already recorded appends nothing.

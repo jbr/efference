@@ -269,7 +269,16 @@ sessions from one process. Its own routes are the listener's, not a session's:
   `state: "archived"` and a `problem` when the directory is unreadable), looked up
   under `cwd` when the query names one and under the remembered roots when it does
   not, the most recently active when several hold the id. `404` when neither does,
-  `400` for a relative `cwd`.
+  `400` for a relative `cwd`. The dormant row adds two fields the listing does not
+  carry, each left out when the session's files cannot answer it: `selections`, the
+  main, spotter and triage selections a resume without a switch reopens on, in the
+  shapes `PATCH` below takes (`{"connection", "model", "spotter_connection",
+  "spotter_model", "triage": {"mode": "shared"} | {"mode": "separate", "connection",
+  "model", "thinking", "auto_choice", "effort"}}`), and `context_tokens`, the prompt
+  tokens of the session's last main-loop request in its `usage.jsonl` — what the
+  `cold` topic reports for a hosted session, and what a main switch reads uncached
+  ([resumption.md](resumption.md)). A hosted row carries neither: a hosted session
+  takes no switch.
 - `PATCH /sessions/:id` — change one session's state, the session resource
   carrying the change: `{"state": "active"}` reopens a dormant session under its
   own id, reading its model, effort and configuration from its own header rather

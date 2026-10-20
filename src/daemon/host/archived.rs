@@ -5,9 +5,12 @@
 //! [`SessionState`] already names. The rows come from [`crate::inventory`]'s
 //! filesystem scan, held on the [`Host`] so an unchanged log is not read again.
 //! The row is its own type: [`ListedSession`] is also the `sessions` tool's
-//! schema, and an archived row has no status or processes to report.
+//! schema, and an archived row has no status or processes to report. The
+//! single read answers a [`DormantSession`], which adds what reading the whole log
+//! and the usage record learns; the listing reads neither.
 
 use super::*;
+use crate::inference::ResumeSwitch;
 use crate::inventory::{InventoryRow, sort_rows};
 use std::collections::HashSet;
 
@@ -23,6 +26,48 @@ pub struct ArchivedSession {
     /// resumable: this is what the last try met, not what the directory is.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resume_failure: Option<String>,
+}
+
+/// One dormant session as `GET /sessions/:session` answers it: the listing's row,
+/// and what a client offering the model switches at resume reads
+/// (docs/resumption.md). A field the session's files cannot answer is left out.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct DormantSession {
+    #[serde(flatten)]
+    pub archived: ArchivedSession,
+    /// The main, spotter and triage selections the session last ran on, in the
+    /// shapes an `active` patch takes, read as a resume reads them
+    /// ([`crate::boot::recorded_selections`]). Absent when the log cannot be read or
+    /// records none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub selections: Option<ResumeSwitch>,
+    /// The prompt tokens of the session's last main-loop request: what reading the
+    /// context uncached would cost, the number the `cold` topic reports as
+    /// `context_tokens` for a hosted session. Absent when the usage record holds no
+    /// `turn` line.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_tokens: Option<u64>,
+}
+
+impl DormantSession {
+    /// `archived`, with what its log and usage record say. Blocking: reads the log
+    /// whole, since a resume's switch can record selections anywhere in it.
+    fn read(archived: ArchivedSession) -> Self {
+        let dir = archived.row.cwd.join(SESSION_BASE).join(&archived.row.id);
+        let selections = crate::persist::load_recording(dir.join(crate::boot::LOG_NAME))
+            .ok()
+            .map(|recording| crate::boot::recorded_selections(&recording))
+            .filter(|selections| !selections.is_empty());
+        let context_tokens = UsageLine::read(&dir.join(USAGE_NAME))
+            .ok()
+            .and_then(|lines| last_turn_usage(&lines))
+            .map(|usage| usage.prompt_tokens());
+        Self {
+            archived,
+            selections,
+            context_tokens,
+        }
+    }
 }
 
 impl Host {
@@ -78,8 +123,8 @@ fn scan_roots(host: &Host, query: &str) -> Result<Vec<PathBuf>, &'static str> {
 /// `GET /sessions/:session`: one session's row. A hosted session answers its
 /// [`ListedSession`]; otherwise the dormant row for the id under `cwd` or the
 /// remembered roots (the same roots, and the same row, as
-/// `GET /sessions?state=archived`), and `404` when neither holds it. An id kept
-/// under several roots answers the most recently active one.
+/// `GET /sessions?state=archived`) as a [`DormantSession`], and `404` when neither
+/// holds it. An id kept under several roots answers the most recently active one.
 pub(super) async fn read_session(conn: Conn) -> Conn {
     // `/sessions/:session/` is the session's web shell, which the router also
     // offers this route; it belongs to the wildcard below.
@@ -105,6 +150,7 @@ pub(super) async fn read_session(conn: Conn) -> Conn {
         host.archived(&roots)
             .into_iter()
             .find(|archived| archived.row.id == wanted)
+            .map(DormantSession::read)
     })
     .await;
     match found {
