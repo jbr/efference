@@ -100,7 +100,7 @@ fn curl() -> ToolCall {
 /// A message from the caller to `agent`.
 fn message(agent: &str, text: &str, reply_to: Option<&str>) -> Message {
     Message {
-        agent: Some(agent.into()),
+        agent: agent.into(),
         text: text.into(),
         words: Vec::new(),
         reply_to: reply_to.map(str::to_string),
@@ -123,7 +123,7 @@ async fn self_target_is_refused() {
     let fixture = Fixture::new();
     let control = fixture.control("parent");
     let err = Interrupt {
-        agent: Some("parent".into()),
+        agent: "parent".into(),
     }
     .execute(control.clone(), RequestContext::default())
     .await
@@ -131,16 +131,12 @@ async fn self_target_is_refused() {
     .to_string();
     assert!(err.contains("a session cannot address itself"), "{err}");
 
-    // A message naming no agent defaults to the caller, which the same rule refuses
-    // rather than silently messaging itself.
-    let err = Message {
-        agent: None,
-        ..message("x", "hello", None)
-    }
-    .execute(control.clone(), RequestContext::default())
-    .await
-    .unwrap_err()
-    .to_string();
+    // A message to the caller itself is refused on the same rule.
+    let err = message("parent", "hello", None)
+        .execute(control.clone(), RequestContext::default())
+        .await
+        .unwrap_err()
+        .to_string();
     assert!(err.contains("a session cannot address itself"), "{err}");
 
     fixture.host.swansong().shut_down().await;

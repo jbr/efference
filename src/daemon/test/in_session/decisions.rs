@@ -8,7 +8,7 @@ use crate::log::Telemetry;
 
 fn decide(seq: &str, decision: Decision, message: Option<&str>) -> Decide {
     Decide {
-        agent: Some("child".into()),
+        agent: "child".into(),
         seq: seq.into(),
         decision,
         message: message.map(str::to_string),
@@ -213,7 +213,7 @@ async fn a_driver_that_does_not_supervise_cannot_decide() {
         let agent = agent.to_string();
         async move {
             Decide {
-                agent: Some(agent),
+                agent,
                 ..decide(&seq, decision, None)
             }
             .execute(control, RequestContext::default())
@@ -236,7 +236,7 @@ async fn a_driver_that_does_not_supervise_cannot_decide() {
     assert!(grandchild.pending_gate().is_some());
     assert!(decisions(&grandchild).is_empty(), "nothing was decided");
     Interrupt {
-        agent: Some("grandchild".into()),
+        agent: "grandchild".into(),
     }
     .execute(fixture.control("parent"), RequestContext::default())
     .await

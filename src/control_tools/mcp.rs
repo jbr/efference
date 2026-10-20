@@ -25,9 +25,8 @@ mcplease::tools!(
 /// waiting on.
 pub const INSTRUCTIONS: &str = "\
 Drive the agents on one efference host. Each agent is a session on this host running \
-its own agent loop; its id names both, and every tool but `create` takes it as `agent` \
-(a server started with --name drives that session when a call names none). `create` \
-starts one in a working directory.
+its own agent loop; its id names both. `create` starts one in a working directory; \
+every other tool takes the id as `agent`, which only `status` and `wait` leave out.
 
 `status` says where an agent stands; with no agent, one line per agent. A status that \
 waits on you ends with the exact call that answers it, its seq filled in.

@@ -22,13 +22,15 @@ fn message_takes_words_and_an_agent() {
     else {
         panic!("message")
     };
-    assert_eq!(message.agent.as_deref(), Some("child"));
+    assert_eq!(message.agent, "child");
     assert_eq!(message.words, ["do", "the", "thing"]);
     let Tools::Message(empty) = parse(&["message", "--agent", "child"]).unwrap() else {
         panic!("message")
     };
     assert!(empty.words.is_empty() && empty.text.is_empty());
-    let Tools::Message(reply) = parse(&["message", "--reply-to", "3.1", "yes"]).unwrap() else {
+    let Tools::Message(reply) =
+        parse(&["message", "--agent", "child", "--reply-to", "3.1", "yes"]).unwrap()
+    else {
         panic!("message")
     };
     assert_eq!(reply.reply_to.as_deref(), Some("3.1"));
@@ -68,11 +70,55 @@ fn status_and_transcript_parse() {
         panic!("transcript")
     };
     assert!(audit.audit);
-    let Tools::Transcript(zoom) = parse(&["transcript", "--seq", "8.2"]).unwrap() else {
+    let Tools::Transcript(zoom) =
+        parse(&["transcript", "--agent", "child", "--seq", "8.2"]).unwrap()
+    else {
         panic!("transcript")
     };
     assert_eq!(zoom.seq.as_deref(), Some("8.2"));
-    assert!(parse(&["transcript", "--seq", "8", "--tail", "3"]).is_err());
+    assert!(
+        parse(&[
+            "transcript",
+            "--agent",
+            "child",
+            "--seq",
+            "8",
+            "--tail",
+            "3"
+        ])
+        .is_err()
+    );
+}
+
+/// The verbs that act on an agent name it, as the same verbs do over MCP; `status` is
+/// the one that reads without.
+#[test]
+fn the_acting_verbs_require_an_agent() {
+    for argv in [
+        &["message", "hello"][..],
+        &["decide", "8", "allow"],
+        &["interrupt"],
+        &["transcript"],
+        &["archive"],
+    ] {
+        assert!(parse(argv).is_err(), "{argv:?} names no agent");
+    }
+    assert!(parse(&["status"]).is_ok());
+}
+
+/// `control` has no `--name` or `--socket`: a verb names its agent with `--agent`, and
+/// `--host-socket` addresses a host.
+#[test]
+fn control_takes_neither_name_nor_socket() {
+    for flag in ["--name", "--socket"] {
+        for argv in [
+            &["efference", flag, "x", "control", "state"][..],
+            &["efference", "control", flag, "x", "state"],
+            &["efference", "control", "state", flag, "x"],
+        ] {
+            assert!(Cli::try_parse_from(argv).is_err(), "{argv:?}");
+        }
+    }
 }
 
 /// The operator's route verbs stay on the command line, and the retired verbs are gone.

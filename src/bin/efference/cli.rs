@@ -3,10 +3,8 @@
 use super::*;
 
 /// The base directory for all session dirs (gitignored). Each session is `.efference/<id>/`,
-/// holding its standard-named socket, log, and config (docs/permissions.md).
+/// holding its standard-named log and config (docs/permissions.md).
 pub(crate) const BASE_DIR: &str = efference::daemon::SESSION_BASE;
-
-pub(crate) const SOCKET_NAME: &str = efference::daemon::SOCKET_NAME;
 
 #[cfg(any(feature = "dev", test))]
 pub(crate) const LOG_NAME: &str = efference::boot::LOG_NAME;
@@ -14,12 +12,6 @@ pub(crate) const LOG_NAME: &str = efference::boot::LOG_NAME;
 #[derive(Parser)]
 #[command(name = "efference", about = "An API-backed agentic coding harness.")]
 pub(crate) struct Cli {
-    /// Session name. Defaults to a timestamp (`tui --new`) or the session running at this path.
-    #[arg(long, global = true)]
-    pub(crate) name: Option<String>,
-    /// Explicit control-socket path; overrides `--name` and discovery.
-    #[arg(long, global = true)]
-    pub(crate) socket: Option<PathBuf>,
     /// Listen on a TCP address as well: the web client's front door. A port
     /// (`8080`), an address (`127.0.0.1:8000`, `0` for one the kernel picks), or
     /// `host:port`; a bare port means loopback, and a cleartext bind is
@@ -84,35 +76,25 @@ pub(crate) fn mount_host() -> PathBuf {
         .unwrap_or_else(project_host_socket)
 }
 
-/// Where a *client* verb's session lives: a socket, and the prefix under it when
-/// the session is one of several a host serves (docs/control-channel.md).
+/// Where a *client* verb's session lives: a host's socket and the session's
+/// prefix under it (docs/control-channel.md).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ClientTarget {
     pub(crate) socket: PathBuf,
-    /// `/sessions/<id>` on a host socket; `None` for a socket that is one session.
-    pub(crate) prefix: Option<String>,
+    /// `/sessions/<id>` on the host socket.
+    pub(crate) prefix: String,
 }
 
 impl ClientTarget {
-    fn socket(socket: PathBuf) -> Self {
-        Self {
-            socket,
-            prefix: None,
-        }
-    }
-
     pub(crate) fn hosted(socket: PathBuf, id: &str) -> Self {
         Self {
             socket,
-            prefix: Some(format!("/sessions/{id}")),
+            prefix: format!("/sessions/{id}"),
         }
     }
 
     pub(crate) fn client(&self) -> ControlClient {
-        match &self.prefix {
-            Some(prefix) => ControlClient::at(&self.socket, prefix),
-            None => ControlClient::new(&self.socket),
-        }
+        ControlClient::at(&self.socket, &self.prefix)
     }
 }
 
@@ -151,29 +133,21 @@ pub(crate) fn hosted_here(
         .collect()
 }
 
-/// Resolve the session a *client* verb should talk to: an explicit `--socket`; else
-/// the named session — its own live socket, or a host that lists that id in this
-/// directory; else the single live session found by scanning the session dirs and
-/// asking every live host for its sessions here (docs/permissions.md). The hosts
-/// are [`host_candidates`]: this project's, then the user's. Anything that is not
-/// live is an error here, before a UI opens or a call is made.
-pub(crate) async fn resolve_client_target(
-    name: Option<&str>,
-    socket: Option<PathBuf>,
-) -> Result<ClientTarget, CliError> {
-    resolve_client_target_at(host_candidates(), name, socket).await
+/// Resolve the session a *client* verb should talk to: the named session, as a
+/// host lists it in this directory; else the single session the live hosts list
+/// here (docs/control-channel.md). The hosts are [`host_candidates`]: this
+/// project's, then the user's. Anything that is not live is an error here, before
+/// a UI opens or a call is made.
+pub(crate) async fn resolve_client_target(name: Option<&str>) -> Result<ClientTarget, CliError> {
+    resolve_client_target_at(host_candidates(), name).await
 }
 
 /// [`resolve_client_target`] against the given hosts rather than the default
-/// candidates — what `efference mcp --host-socket` resolves through.
+/// candidates.
 pub(crate) async fn resolve_client_target_at(
     hosts: Vec<PathBuf>,
     name: Option<&str>,
-    socket: Option<PathBuf>,
 ) -> Result<ClientTarget, CliError> {
-    if let Some(socket) = socket {
-        return Ok(ClientTarget::socket(socket));
-    }
     let here = std::env::current_dir()?;
     // (host, ids it serves in this directory), live hosts only.
     let mut hosted: Vec<(PathBuf, Vec<String>)> = Vec::new();
@@ -190,52 +164,35 @@ pub(crate) async fn resolve_client_target_at(
         hosted.push((host, hosted_here(&listings, &here)));
     }
     if let Some(name) = name {
-        let own = session_dir(name).join(SOCKET_NAME);
-        if is_live(&own) {
-            return Ok(ClientTarget::socket(own));
-        }
         if let Some((host, _)) = hosted
             .iter()
             .find(|(_, ids)| ids.iter().any(|id| id == name))
         {
             return Ok(ClientTarget::hosted(host.clone(), name));
         }
-        return Err(format!(
-            "no live session {name:?}: nothing listens at {}{}{}",
-            own.display(),
-            if hosted.is_empty() {
-                String::new()
-            } else {
-                " and no host lists it here".to_string()
-            },
-            if down.is_empty() {
-                String::new()
-            } else {
-                format!("; the host at {} is not running", down.join(" or "))
-            }
-        )
-        .into());
+        let mut why = Vec::new();
+        if !hosted.is_empty() {
+            why.push("no host lists it here".to_string());
+        }
+        if !down.is_empty() {
+            why.push(format!("the host at {} is not running", down.join(" or ")));
+        }
+        return Err(format!("no live session {name:?}: {}", why.join("; ")).into());
     }
-    let mut live: Vec<ClientTarget> = discover_live_sockets()?
-        .into_iter()
-        .map(ClientTarget::socket)
-        .collect();
+    let mut live: Vec<ClientTarget> = Vec::new();
     for (host, ids) in &hosted {
         live.extend(ids.iter().map(|id| ClientTarget::hosted(host.clone(), id)));
     }
     match live.len() {
         0 => Err(
-            "no live efference session found here — create one with `tui --new`, or pass --name/--socket"
+            "no live efference session found here — create one with `tui --new`, or pass --name"
                 .into(),
         ),
         1 => Ok(live.pop().unwrap()),
         _ => {
             let names: Vec<String> = live
                 .iter()
-                .map(|target| match &target.prefix {
-                    Some(prefix) => format!("{} ({})", target.socket.display(), prefix),
-                    None => target.socket.display().to_string(),
-                })
+                .map(|target| format!("{} ({})", target.socket.display(), target.prefix))
                 .collect();
             Err(format!(
                 "multiple live sessions ({}); pass --name to choose",
@@ -244,22 +201,6 @@ pub(crate) async fn resolve_client_target_at(
             .into())
         }
     }
-}
-
-/// Every `.efference/*/control.sock` with a listener bound, sorted.
-fn discover_live_sockets() -> Result<Vec<PathBuf>, CliError> {
-    let base = Path::new(BASE_DIR);
-    let mut live = Vec::new();
-    if base.is_dir() {
-        for entry in std::fs::read_dir(base)? {
-            let sock = entry?.path().join(SOCKET_NAME);
-            if is_live(&sock) {
-                live.push(sock);
-            }
-        }
-    }
-    live.sort();
-    Ok(live)
 }
 
 #[cfg(feature = "dev")]
@@ -489,6 +430,11 @@ pub(crate) enum Command {
     /// carries its working directory and environment; each session's control API is
     /// then at `/sessions/<id>/`.
     Host {
+        /// Bind the host's control socket here. Defaults to `~/.efference/host.sock`,
+        /// which every project's clients look for after their own directory; a
+        /// project-local host is `.efference/host.sock`.
+        #[arg(long, value_name = "PATH")]
+        socket: Option<PathBuf>,
         /// The address browsers open, `https://name[:port]` — the printed link and
         /// the Host allowlist. Defaults to `http://localhost:<port>` on a loopback
         /// bind; required with TLS; differs from the bind behind a proxy that
@@ -519,7 +465,7 @@ pub(crate) enum Command {
     /// `notify`, `entries`, `image`). `efference control --help` lists them.
     Control {
         /// The host's control socket every verb addresses; a named session resolves
-        /// through it first. Defaults to the first live of `.efference/host.sock`
+        /// through it. Defaults to the first live of `.efference/host.sock`
         /// here and `~/.efference/host.sock`, else the latter.
         #[arg(long, value_name = "PATH", global = true)]
         host_socket: Option<PathBuf>,
@@ -532,8 +478,7 @@ pub(crate) enum Command {
     /// `message`, `decide`, `interrupt`, `archive`, `status`, `transcript`, and
     /// `wait`. Speaks newline-delimited JSON-RPC and blocks until stdin closes.
     /// Connects to the host: nothing needs to be running when it starts, and each
-    /// call names its agent (`status` lists them, `create` makes one). With
-    /// `--name` or `--socket`, a call that names no agent drives that one.
+    /// call names its agent (`status` lists them, `create` makes one).
     Mcp {
         /// The host's control socket. Defaults to the first live of
         /// `.efference/host.sock` here and `~/.efference/host.sock`, else the latter.
@@ -562,6 +507,10 @@ pub(crate) enum Command {
     /// as its id — and attaches to it. Quitting
     /// detaches; the session keeps running on the host.
     Tui {
+        /// The session to attach to, by id; with `--new`, the id the new session
+        /// takes (a minted word pair when omitted).
+        #[arg(long)]
+        name: Option<String>,
         /// Create a session on the host at --host-socket, then attach to it. With
         /// no host running, starts one owned by this terminal, which ends with it.
         #[arg(long)]

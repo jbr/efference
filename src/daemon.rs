@@ -613,11 +613,6 @@ const SETTLE_TIMEOUT: Duration = Duration::from_secs(300);
 /// `<SESSION_BASE>/<id>/`, holding standard-named files.
 pub const SESSION_BASE: &str = ".efference";
 
-/// The control socket's name inside a session dir. The layout is named here rather
-/// than in each reader because two of them share it: the host and the CLI's socket
-/// resolution.
-pub const SOCKET_NAME: &str = "control.sock";
-
 mod approvals;
 mod ask;
 mod attachments;

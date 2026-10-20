@@ -187,8 +187,7 @@ async fn output_json_is_the_status_view() {
 }
 
 /// A named session resolves through the host that holds it, from a directory that is
-/// not the session's: no `.efference/<id>/control.sock` is looked for first. One the
-/// host does not hold, and nothing else serves, says so.
+/// not the session's. One the host does not hold says so.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_named_session_resolves_through_the_host() {
     let roots = Roots::new();

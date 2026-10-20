@@ -37,7 +37,7 @@ pub use resume::{ResumeRequest, resume};
 pub use scaffold::CONFIG_SCAFFOLD;
 
 /// The base directory for all session dirs (gitignored). Each session is
-/// `.efference/<id>/`, holding its standard-named socket, log, and config
+/// `.efference/<id>/`, holding its standard-named log and config
 /// (docs/permissions.md).
 pub const BASE_DIR: &str = crate::daemon::SESSION_BASE;
 

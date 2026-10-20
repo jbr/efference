@@ -26,7 +26,7 @@ pub struct Notify {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[arg(long)]
     pub slot: Option<String>,
-    /// The agent's id. Defaults to the session `--name` names, or the one live here.
+    /// The agent's id. Defaults to the one session live here.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[arg(long)]
     pub agent: Option<String>,

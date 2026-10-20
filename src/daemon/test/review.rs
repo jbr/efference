@@ -252,7 +252,7 @@ async fn the_reviewer_resolves_the_routed_gate_through_decide() {
 
     let reviewer = fixture.control("root");
     Decide {
-        agent: Some("child".into()),
+        agent: "child".into(),
         seq: issued.to_string(),
         decision: Decision::Allow,
         message: None,

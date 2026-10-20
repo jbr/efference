@@ -49,9 +49,8 @@ auth = { kind = "env", key = "EFFERENCE_ISLAND_TEST_KEY" }
         let log = std::fs::File::create(self.dir().join(ISLAND_LOG)).unwrap();
         let mut command = Command::new(env!("CARGO_BIN_EXE_efference"));
         command
-            .arg("--socket")
+            .args(["host", "--island", "--socket"])
             .arg(self.socket())
-            .args(["host", "--island"])
             .current_dir(&self.root)
             .env("HOME", &self.root)
             .env("EFFERENCE_ISLAND_TEST_KEY", "not-a-real-credential")

@@ -145,11 +145,6 @@ pub(crate) async fn run(
     let here = std::env::current_dir()?;
     let listings = live_listings().await?;
     if listings.is_empty() {
-        // A session on its own socket needs no host, so the discovery path
-        // still gets its chance before the message about binding one.
-        if let Ok(target) = resolve_client_target(None, None).await {
-            return tui(target, theme, images, frame_cost).await;
-        }
         // Nothing live to pick from: the archived sessions here, read from disk
         // since there is no host to ask, are all the menu can hold.
         let archived = scan_archived(&here).await;
@@ -190,7 +185,7 @@ pub(crate) async fn run(
     // way an explicit target resolves instead.
     if !inline::interactive() {
         return tui(
-            resolve_client_target(None, None).await?,
+            resolve_client_target(None).await?,
             theme,
             images,
             frame_cost,

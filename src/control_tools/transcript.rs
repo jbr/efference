@@ -17,9 +17,8 @@ use serde::{Deserialize, Serialize};
 #[serde(rename = "transcript")]
 pub struct Transcript {
     /// The agent's id.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[arg(long)]
-    pub agent: Option<String>,
+    pub agent: String,
     /// One entry in full, by its seq (`8`, or `8.2` for one of several calls).
     #[serde(
         default,
@@ -94,7 +93,7 @@ impl Tool<Control> for Transcript {
         let zoom = self.zoom()?;
         match &control.executor {
             Executor::Client(state) => {
-                let client = state.client(self.agent.as_deref()).await?;
+                let client = state.client(Some(&self.agent)).await?;
                 // The reader, spelled as its turns' `source` is, so its own turns and
                 // decisions read "you" (docs/control-api.md).
                 let me = turn_source(&context);
@@ -124,8 +123,7 @@ impl Tool<Control> for Transcript {
                 let id = state_now["session_identity"]["id"]
                     .as_str()
                     .map(str::to_string)
-                    .or(self.agent.clone())
-                    .unwrap_or_default();
+                    .unwrap_or_else(|| self.agent.clone());
                 let last = state_now["last_seq"].as_u64();
                 let cursor = state.cursor(&id);
                 let plan = ReadPlan::new(cursor, self.since, self.tail, last);
@@ -143,7 +141,7 @@ impl Tool<Control> for Transcript {
                 Ok(plan.framed(&title(&id), text))
             }
             Executor::Host(state) => {
-                let (target, id) = state.resolve(self.agent.as_deref())?;
+                let (target, id) = state.resolve(Some(&self.agent))?;
                 let caller = state.caller();
                 if let Some(handle) = zoom {
                     return target

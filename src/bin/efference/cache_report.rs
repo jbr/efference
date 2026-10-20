@@ -276,7 +276,7 @@ pub(crate) fn cache(session: Option<String>, name: Option<String>, all: bool) ->
     use efference::daemon::COLD_STREAK_WARN;
     use std::io::IsTerminal;
 
-    // The positional wins, then the global `--name` (as `view` reads it), then the
+    // The positional wins, then `--name` (as `view` reads it), then the
     // most recently written session.
     let target = session.or(name);
     let targets = resolve_usage_targets(target.as_deref(), all)?;

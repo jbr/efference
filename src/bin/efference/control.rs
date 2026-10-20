@@ -6,16 +6,10 @@ use efference::control_tools::{Control, Executor, Fallback, cli, mcp};
 
 use super::CliResult;
 
-/// Run `efference control <tool>` and print what it returned. A call that names no
-/// agent resolves one from `--name`/`--socket`/discovery, as the other client
-/// verbs do.
-pub(crate) async fn run_cli(
-    tools: cli::Tools,
-    host: PathBuf,
-    name: Option<String>,
-    socket: Option<PathBuf>,
-) -> CliResult {
-    let executor = Executor::client(host, Fallback::Resolve { name, socket });
+/// Run `efference control <tool>` and print what it returned. A verb that takes an
+/// optional `--agent` and gets none drives the one session the host lists here.
+pub(crate) async fn run_cli(tools: cli::Tools, host: PathBuf) -> CliResult {
+    let executor = Executor::client(host, Fallback::Discover);
     let state = Control::new(executor, true);
     let text = mcplease::traits::Dispatch::call_to_text(
         tools,
@@ -33,22 +27,12 @@ pub(crate) async fn run_cli(
 /// Run `efference mcp`: the agent verbs over newline-delimited JSON-RPC on
 /// stdin/stdout, the transport a harness mounting this server speaks
 /// (docs/operating.md). Nothing is resolved at startup: the host need not be
-/// running yet, and each call names its agent — unless `--name`/`--socket`
-/// was given, which a call that names none then drives. Every call is spawned,
+/// running yet, and each call names its agent. Every call is spawned,
 /// so a `wait` leaves the others free; the agents the mount watches for `wait`
 /// are this process's, kept until it exits. Returns once stdin closes and every
 /// call has been answered.
-pub(crate) async fn run_stdio(
-    host: PathBuf,
-    name: Option<String>,
-    socket: Option<PathBuf>,
-) -> CliResult {
-    let fallback = if name.is_some() || socket.is_some() {
-        Fallback::Resolve { name, socket }
-    } else {
-        Fallback::None
-    };
-    let state = Control::new(Executor::client(host, fallback), false);
+pub(crate) async fn run_stdio(host: PathBuf) -> CliResult {
+    let state = Control::new(Executor::client(host, Fallback::None), false);
     let config =
         mcplease::ServerConfig::new(mcplease::server_info!()).with_instructions(mcp::INSTRUCTIONS);
     let stdin = async_compat::Compat::new(tokio::io::stdin());

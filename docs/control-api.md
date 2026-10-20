@@ -19,9 +19,10 @@
 
 ## Transport & addressing
 
-The daemon speaks **HTTP/1.1 over a Unix domain socket**. Each session owns a
-directory `.efference/<id>/` (the id is `--name <id>`, or a generated
-timestamp) holding `control.sock`, `log.jsonl`, and `config.toml`.
+The host speaks **HTTP/1.1 over a Unix domain socket**. Each session owns a
+directory `.efference/<id>/` (the id is `tui --name <id>`, or a generated word pair)
+holding `log.jsonl` and `config.toml`; the session itself is served at
+`/sessions/<id>/` on its host's socket.
 
 With `host --bind`, the same routes are also served on a TCP listener behind a
 hardening + auth gate — cookie or bearer, plus `401 unauthorized` /
@@ -32,12 +33,10 @@ version prefix because it is a human surface rather than a control one. Both are
 [web-bind.md](web-bind.md); the UDS stays auth-exempt and everything below is
 unchanged on it.
 
-A client finds the socket by:
-
-1. `--socket <path>` — explicit override, or
-2. `--name <id>` — resolve `.efference/<id>/control.sock`, or
-3. **liveness scan** — pick the single *connectable* socket among the session
-   dirs (a stale dir from a dead daemon is skipped — liveness, not existence).
+A client finds the host by `--host-socket <path>`, else the first live of
+`.efference/host.sock` here and `~/.efference/host.sock`, and the session on it by id
+(`tui --name <id>`, `control --agent <id>`), or as the single session the host lists in
+this directory ([control-channel.md](control-channel.md)).
 
 Requests dial the fixed socket path; the request URL's host is a placeholder
 (`http://localhost/`) supplying only the `Host` header. Path and headers are all

@@ -22,11 +22,12 @@ fn child() -> Arc<Session> {
     shared
 }
 
-/// The tools over `shared`'s own router, as an MCP mount bound to it.
+/// The tools over `shared`'s own router, served at `/sessions/child` as a host serves
+/// it, with `child` their default session.
 async fn mounted(shared: &Arc<Session>) -> Control {
-    let client = test_client(shared).await;
+    let client = test_client_at(shared, "child").await;
     Control::new(
-        Executor::Client(ClientExecutor::defaulting_to(client)),
+        Executor::Client(ClientExecutor::defaulting_to(client, "child")),
         false,
     )
 }
@@ -61,7 +62,7 @@ fn issue(shared: &Session, call: &ToolCall) -> String {
 
 fn message(text: &str, reply_to: Option<&str>) -> Message {
     Message {
-        agent: None,
+        agent: "child".into(),
         text: text.into(),
         words: Vec::new(),
         reply_to: reply_to.map(str::to_string),
@@ -83,7 +84,7 @@ async fn decide_maps_the_seq_and_records_the_client() {
     let control = mounted(&shared).await;
 
     let err = Decide {
-        agent: None,
+        agent: "child".into(),
         seq: "99".into(),
         decision: Decision::Allow,
         message: None,
@@ -101,7 +102,7 @@ async fn decide_maps_the_seq_and_records_the_client() {
     );
 
     let said = Decide {
-        agent: None,
+        agent: "child".into(),
         seq: seq.clone(),
         decision: Decision::Allow,
         message: None,

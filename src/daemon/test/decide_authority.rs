@@ -123,7 +123,7 @@ fn hold(c: &Session) -> (String, tokio::sync::oneshot::Receiver<Approval>) {
 
 fn decide(seq: &str, decision: Decision) -> Decide {
     Decide {
-        agent: Some("c".into()),
+        agent: "c".into(),
         seq: seq.into(),
         decision,
         message: None,
@@ -271,7 +271,7 @@ async fn a_moved_pointer_moves_decide_to_the_new_supervisor() {
 
     // Driving is unchanged: `p`'s message is `c`'s next turn, not a note in its inbox.
     let said = Message {
-        agent: Some("c".into()),
+        agent: "c".into(),
         text: "after this, stop".into(),
         words: Vec::new(),
         reply_to: None,

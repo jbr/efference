@@ -19,9 +19,8 @@ use serde::{Deserialize, Serialize};
 #[serde(rename = "decide")]
 pub struct Decide {
     /// The agent's id.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[arg(long)]
-    pub agent: Option<String>,
+    pub agent: String,
     /// The held call's seq, as the agent's status gives it (`8`, or `8.2` for one of
     /// several calls).
     #[serde(deserialize_with = "handle")]
@@ -98,7 +97,7 @@ impl Tool<Control> for Decide {
         let now = super::now();
         match &control.executor {
             Executor::Client(state) => {
-                let client = state.client(self.agent.as_deref()).await?;
+                let client = state.client(Some(&self.agent)).await?;
                 let me = reader_name(&context);
                 let moved = |view: &StatusView| {
                     let reader = Reader::read(operator_relation(view), &Moves::MCP, me.as_deref());
@@ -141,7 +140,7 @@ impl Tool<Control> for Decide {
             }
             Executor::Host(state) => {
                 // Only the target's supervisor decides in-session (docs/permissions.md).
-                let (target, id) = state.resolve_decided(self.agent.as_deref())?;
+                let (target, id) = state.resolve_decided(Some(&self.agent))?;
                 let caller = state.caller();
                 let moved = |view: &StatusView| {
                     let relation = session_relation(state, view, true);

@@ -11,7 +11,8 @@ use std::time::Duration;
 /// A live [`router`](crate::daemon::router) for one session on `trillium_testing`'s
 /// in-memory transport — the whole request/response cycle, with no socket bound
 /// (`daemon/test.rs` explains why the tests never bind one). The session is named
-/// `child`.
+/// `child` and served at `/sessions/child`, as a host serves it; the client is at the
+/// root.
 async fn session_over(log: Log) -> (Arc<crate::daemon::Session>, Client) {
     let (shared, _turns) = crate::daemon::Session::new(std::env::current_dir().unwrap(), log);
     shared.set_identity(crate::daemon::SessionIdentity {
@@ -30,9 +31,14 @@ async fn session_over(log: Log) -> (Arc<crate::daemon::Session>, Client) {
                 async move { info.with_shared_state(shared) }
             }
         }),
-        crate::daemon::handler(
-            crate::daemon::Transport::Socket { auth: None },
-            crate::daemon::App::session(std::env::current_dir().unwrap()),
+        // Under the path a host serves the session at, so a client re-based on
+        // `/sessions/child` reaches it.
+        trillium_router::Router::new().all(
+            "/sessions/child/*",
+            crate::daemon::handler(
+                crate::daemon::Transport::Socket { auth: None },
+                crate::daemon::App::session(std::env::current_dir().unwrap()),
+            ),
         ),
     );
     let context = trillium_testing::init(&mut handler).await;
@@ -42,10 +48,13 @@ async fn session_over(log: Log) -> (Arc<crate::daemon::Session>, Client) {
     (shared, client)
 }
 
-/// Tools bound to `client` as their default session: `cli` picks the command line's
-/// presentation.
-fn mounted(client: Client, cli: bool) -> Control {
-    Control::new(Executor::Client(ClientExecutor::defaulting_to(client)), cli)
+/// Tools over `host` — [`session_over`]'s client, standing in for a host — with
+/// `child` as their default session: `cli` picks the command line's presentation.
+fn mounted(host: Client, cli: bool) -> Control {
+    Control::new(
+        Executor::Client(ClientExecutor::defaulting_to(host, "child")),
+        cli,
+    )
 }
 
 /// The context a call over MCP carries from a client named `name`.
@@ -99,6 +108,65 @@ async fn tools_call_status_reaches_the_daemon() {
     );
 }
 
+/// One JSON-RPC request through mcplease's dispatch against the MCP tool set, mounted
+/// against a host with no session: the schema and the argument parse are what answer.
+async fn mcp_call(method: &str, params: serde_json::Value) -> JsonRpcResponse {
+    let request: JsonRpcRequest = serde_json::from_value(serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": method,
+        "params": params,
+    }))
+    .unwrap();
+    let config = mcplease::ServerConfig::new(mcplease::server_info!());
+    let context = RequestContext::from_request(&request);
+    let state = Control::new(
+        Executor::client(
+            std::path::PathBuf::from("/nonexistent/efference/host.sock"),
+            Fallback::None,
+        ),
+        false,
+    );
+    mcplease::handle_request::<mcp::Tools, Control>(request, state, context, &config)
+        .await
+        .expect("nothing here cancels")
+}
+
+/// The MCP mount names its agent on every call but `create`, `status` and `wait`: a
+/// call without it is refused before any tool runs (docs/operating.md). The schema
+/// that says so is pinned in `surfaces`.
+#[tokio::test]
+async fn an_mcp_call_without_agent_is_refused() {
+    for (name, arguments) in [
+        ("message", serde_json::json!({ "text": "hi" })),
+        (
+            "decide",
+            serde_json::json!({ "seq": "1", "decision": "allow" }),
+        ),
+        ("interrupt", serde_json::json!({})),
+        ("archive", serde_json::json!({})),
+        ("transcript", serde_json::json!({})),
+    ] {
+        let response = mcp_call(
+            "tools/call",
+            serde_json::json!({ "name": name, "arguments": arguments }),
+        )
+        .await;
+        let refused = response.error.is_some()
+            || response
+                .result
+                .as_ref()
+                .is_some_and(|result| result["isError"] == true);
+        assert!(refused, "{name} ran without an agent: {response:?}");
+        let text = format!("{response:?}");
+        assert!(text.contains("agent"), "{name}: {text}");
+        assert!(
+            !text.contains("no host at"),
+            "{name} reached the host: {text}"
+        );
+    }
+}
+
 /// The MCP mount holds its own cursor per agent: a first read is the tail and says so,
 /// a second has nothing new, a zoom leaves the cursor where it was, and a later read is
 /// what landed since. Another mount reads from its own first read.
@@ -117,7 +185,7 @@ async fn the_mcp_mount_reads_what_is_new_with_its_own_cursor() {
     let (shared, client) = session_over(log).await;
     let control = mounted(client.clone(), false);
     let read = |seq: Option<&str>| Transcript {
-        agent: None,
+        agent: "child".into(),
         seq: seq.map(str::to_string),
         since: None,
         tail: None,
@@ -176,7 +244,7 @@ async fn the_command_line_reads_the_audit_grain_on_request() {
     let (_shared, client) = session_over(log).await;
     let control = mounted(client, true);
     let text = Transcript {
-        agent: None,
+        agent: "child".into(),
         seq: None,
         since: None,
         tail: None,
@@ -264,10 +332,10 @@ async fn proposal_commits_and_cancels_through_the_client_executor() {
     assert!(err.to_string().contains("999"), "{err}");
 }
 
-/// Mounted against the host with no `--name`/`--socket`, a call that names no agent
-/// is an error naming the argument, not a discovery of whatever is live: the mount's
-/// session selection is explicit per call (docs/operating.md). The host path here has
-/// no listener, so the error also says the host is not up.
+/// Mounted against the host, a call that names no agent is an error naming the
+/// argument, not a discovery of whatever is live: the mount's session selection is
+/// explicit per call (docs/operating.md). The host path here has no listener, so the
+/// error also says the host is not up.
 #[tokio::test]
 async fn an_unbound_mount_requires_agent() {
     let executor = ClientExecutor::new(
@@ -324,7 +392,11 @@ fn waiting_executor(
         }
     };
     let client = Client::with_connector(trillium_testing::ServerConnector::new(handler));
-    (ClientExecutor::defaulting_to(client.clone()), client, waits)
+    (
+        ClientExecutor::defaulting_to(client.clone(), "child"),
+        client,
+        waits,
+    )
 }
 
 /// A capped answer is polled again; the call ends on the first settled one.

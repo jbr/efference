@@ -25,7 +25,7 @@ pub struct Pace {
     #[serde(default)]
     #[arg(long)]
     pub resume: bool,
-    /// The agent's id. Defaults to the session `--name` names, or the one live here.
+    /// The agent's id. Defaults to the one session live here.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[arg(long)]
     pub agent: Option<String>,

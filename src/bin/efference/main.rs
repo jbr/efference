@@ -33,12 +33,6 @@ type CliError = Box<dyn std::error::Error + Send + Sync>;
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let cli = Cli::parse();
-    // The `control`/`mcp` groups and the client verbs talk to a daemon over a socket resolved
-    // from `--name`/`--socket`/discovery; the daemon and the offline `dev` verbs don't. Resolve
-    // lazily, per arm, so an offline verb never triggers discovery.
-    let name = cli.name.clone();
-    let socket_override = cli.socket.clone();
-    let client_target = || resolve_client_target(name.as_deref(), socket_override.clone());
     let command = match cli.command {
         Some(command) => command,
         None => return setup::default_verb(cli.bind.as_deref()).await,
@@ -46,6 +40,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     match command {
         Command::Setup { config } => setup::run(config, cli.bind.as_deref()).await,
         Command::Host {
+            socket,
             public_url,
             tls_cert,
             tls_key,
@@ -60,30 +55,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     tls_key,
                     open,
                 },
-                socket_override.clone(),
+                socket,
                 island,
             )
             .await
         }
         Command::Control { host_socket, tools } => {
-            control::run_cli(
-                tools,
-                host_socket.unwrap_or_else(cli::mount_host),
-                name.clone(),
-                socket_override.clone(),
-            )
-            .await
+            control::run_cli(tools, host_socket.unwrap_or_else(cli::mount_host)).await
         }
         Command::Mcp { host_socket } => {
-            control::run_stdio(
-                host_socket.unwrap_or_else(cli::mount_host),
-                name.clone(),
-                socket_override.clone(),
-            )
-            .await
+            control::run_stdio(host_socket.unwrap_or_else(cli::mount_host)).await
         }
         #[cfg(feature = "dev")]
-        Command::Dev(command) => dev::run(command, name.clone(), client_target).await,
+        Command::Dev(command) => dev::run(command).await,
         Command::Check { path } => check(path).await,
         Command::Auth {
             command: AuthCommand::Rotate,
@@ -99,6 +83,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             Ok(())
         }
         Command::Tui {
+            name,
             new: true,
             host_socket,
             session,
@@ -108,7 +93,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         } => {
             let Some(host_socket) = host_socket.or_else(cli::live_host) else {
                 let creation = island::Creation::Direct {
-                    name: cli.name.clone(),
+                    name,
                     flags: session,
                 };
                 return island::run(
@@ -120,17 +105,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 )
                 .await;
             };
-            tui_new(
-                host_socket,
-                cli.name.clone(),
-                session,
-                theme,
-                images.into(),
-                frame_cost,
-            )
-            .await
+            tui_new(host_socket, name, session, theme, images.into(), frame_cost).await
         }
         Command::Tui {
+            name,
             new: false,
             session,
             theme,
@@ -143,12 +121,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                      without it `tui` attaches to a running session"
                     .into());
             }
-            // An explicit target is an answer already; the picker is for the
+            // An explicit name is an answer already; the picker is for the
             // invocation that named nothing (docs/operating.md).
-            if name.is_none() && socket_override.is_none() {
-                picker::run(theme, images.into(), frame_cost, cli.bind.as_deref()).await
-            } else {
-                tui(client_target().await?, theme, images.into(), frame_cost).await
+            match name {
+                None => picker::run(theme, images.into(), frame_cost, cli.bind.as_deref()).await,
+                Some(name) => {
+                    let target = resolve_client_target(Some(&name)).await?;
+                    tui(target, theme, images.into(), frame_cost).await
+                }
             }
         }
     }

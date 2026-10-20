@@ -51,9 +51,8 @@ impl Island {
         let log_file = std::fs::File::create(&log)?;
         let mut command = std::process::Command::new(std::env::current_exe()?);
         command
-            .arg("--socket")
+            .args(["host", "--island", "--socket"])
             .arg(&socket)
-            .args(["host", "--island"])
             .args(bind.map(|bind| ["--bind", bind]).into_iter().flatten())
             .stdin(Stdio::piped())
             .stdout(log_file.try_clone()?)

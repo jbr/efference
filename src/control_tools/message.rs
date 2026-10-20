@@ -17,9 +17,8 @@ use serde::{Deserialize, Serialize};
 #[serde(rename = "message")]
 pub struct Message {
     /// The agent's id.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[arg(long)]
-    pub agent: Option<String>,
+    pub agent: String,
     /// The message. Empty continues an agent you drive.
     #[arg(skip)]
     pub text: String,
@@ -76,13 +75,12 @@ impl Tool<Control> for Message {
         match &control.executor {
             Executor::Client(state) => {
                 // An operator client drives every session (docs/tools.md).
-                let client = state.client(self.agent.as_deref()).await?;
+                let client = state.client(Some(&self.agent)).await?;
                 let view = status_in(&state_of(&client).await?).ok();
                 let id = view
                     .as_ref()
                     .map(|view| view.id.clone())
-                    .or(self.agent.clone())
-                    .unwrap_or_else(|| "the session".to_string());
+                    .unwrap_or_else(|| self.agent.clone());
                 if blank && self.reply_to.is_none() {
                     return match client
                         .continue_loop(turn_source(&context).as_deref())
@@ -105,7 +103,7 @@ impl Tool<Control> for Message {
                 }
             }
             Executor::Host(state) => {
-                let (target, id) = state.resolve(self.agent.as_deref())?;
+                let (target, id) = state.resolve(Some(&self.agent))?;
                 if !state.drives(&id)? {
                     if self.reply_to.is_some() {
                         return Err(anyhow!(answers::reply_from_a_peer(&id)));

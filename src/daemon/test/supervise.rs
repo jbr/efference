@@ -144,7 +144,7 @@ fn issue(session: &Session) -> String {
 
 fn allow(agent: &str, seq: &str) -> Decide {
     Decide {
-        agent: Some(agent.into()),
+        agent: agent.into(),
         seq: seq.into(),
         decision: Decision::Allow,
         message: None,
@@ -153,7 +153,7 @@ fn allow(agent: &str, seq: &str) -> Decide {
 
 fn steer(agent: &str) -> Message {
     Message {
-        agent: Some(agent.into()),
+        agent: agent.into(),
         text: "steer".into(),
         words: Vec::new(),
         reply_to: None,
@@ -257,12 +257,10 @@ async fn a_supervisor_may_turn_and_interrupt_and_reaches_no_further() {
             .any(|entry| entry.source.as_deref() == Some("session[b]"))
     })
     .await;
-    Interrupt {
-        agent: Some("a".into()),
-    }
-    .execute(b.clone(), RequestContext::default())
-    .await
-    .expect("the supervisor may interrupt");
+    Interrupt { agent: "a".into() }
+        .execute(b.clone(), RequestContext::default())
+        .await
+        .expect("the supervisor may interrupt");
     assert_eq!(
         interrupt_origins(&fixture.session("a")),
         [InterruptOrigin {
@@ -287,7 +285,7 @@ async fn a_supervisor_may_turn_and_interrupt_and_reaches_no_further() {
         .unwrap();
     assert!(said.starts_with("left in kid's inbox"), "{said}");
     let err = Interrupt {
-        agent: Some("kid".into()),
+        agent: "kid".into(),
     }
     .execute(b.clone(), RequestContext::default())
     .await

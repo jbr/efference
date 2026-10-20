@@ -11,6 +11,15 @@
 
 use super::*;
 
+/// The recorded session a reader verb opens, as its positional names it: the flag
+/// is the same answer spelled `--name`, for the id of a session this project ran.
+#[derive(clap::Args)]
+pub(crate) struct ReadName {
+    /// The session to read, by id; what the positional would name.
+    #[arg(long)]
+    name: Option<String>,
+}
+
 #[derive(Subcommand)]
 pub(crate) enum DevCommand {
     /// Fixed-data new-session form; no host, credentials, or session creation.
@@ -45,9 +54,11 @@ pub(crate) enum DevCommand {
         /// session directory, or a path to a `usage.jsonl`. Omit for the most
         /// recently written session.
         session: Option<String>,
+        #[command(flatten)]
+        read: ReadName,
         /// Sweep every session under `.efference/` instead of one — the corpus view,
         /// which is where a rate is worth comparing against.
-        #[arg(long, conflicts_with = "session")]
+        #[arg(long, conflicts_with_all = ["session", "name"])]
         all: bool,
     },
     /// Report what a session's turn endings bought
@@ -62,9 +73,11 @@ pub(crate) enum DevCommand {
         /// session directory, or a path to a `log.jsonl`. Omit for the most
         /// recently written session.
         session: Option<String>,
+        #[command(flatten)]
+        read: ReadName,
         /// Sweep every session under `.efference/` instead of one — the corpus view,
         /// which is where a rate is worth comparing against.
-        #[arg(long, conflicts_with = "session")]
+        #[arg(long, conflicts_with_all = ["session", "name"])]
         all: bool,
     },
     /// Print a session's trajectory digest (docs/digest.md): one line per tool call —
@@ -75,6 +88,8 @@ pub(crate) enum DevCommand {
         /// Which session to read: a session name (`.efference/<name>/log.jsonl`), a
         /// session directory, or a path to a `log.jsonl`. Omit to use `--name`.
         session: Option<String>,
+        #[command(flatten)]
+        read: ReadName,
         /// Fold only entries with seq at or below this one.
         #[arg(long)]
         upto: Option<u64>,
@@ -89,6 +104,8 @@ pub(crate) enum DevCommand {
         /// Which session to read: a session name (`.efference/<name>/log.jsonl`), a
         /// session directory, or a path to a `log.jsonl`. Omit to use `--name`.
         session: Option<String>,
+        #[command(flatten)]
+        read: ReadName,
         /// Treat the log as ending at this seq, as if the session had gone cold there.
         #[arg(long)]
         upto: Option<u64>,
@@ -141,6 +158,8 @@ pub(crate) enum DevCommand {
         /// session directory, or a path to a `log.jsonl`. Omit to use `--name`;
         /// with neither, the available session names are listed.
         session: Option<String>,
+        #[command(flatten)]
+        read: ReadName,
         /// Syntax/UI theme — a built-in name or a `.tmTheme` path. Defaults to
         /// "Catppuccin Frappe".
         #[arg(long, env = "EFFERENCE_THEME")]
@@ -474,13 +493,7 @@ pub(crate) enum DevCommand {
 }
 
 /// Run one `dev` verb.
-/// `name` is the global `--name`; `client_target` resolves the session on demand,
-/// so the offline verbs never trigger discovery.
-pub(crate) async fn run<F: Future<Output = Result<ClientTarget, CliError>>>(
-    command: DevCommand,
-    name: Option<String>,
-    client_target: impl FnOnce() -> F,
-) -> CliResult {
+pub(crate) async fn run(command: DevCommand) -> CliResult {
     match command {
         DevCommand::SessionForm { embedded } => {
             if embedded {
@@ -490,16 +503,19 @@ pub(crate) async fn run<F: Future<Output = Result<ClientTarget, CliError>>>(
             }
             Ok(())
         }
-        DevCommand::Open { print, bearer } => open(client_target().await?, print, bearer).await,
-        DevCommand::Cache { session, all } => cache_report::cache(session, name, all),
-        DevCommand::Stops { session, all } => stop_report::stops_report(session, name, all),
+        DevCommand::Open { print, bearer } => open(print, bearer).await,
+        DevCommand::Cache { session, read, all } => cache_report::cache(session, read.name, all),
+        DevCommand::Stops { session, read, all } => {
+            stop_report::stops_report(session, read.name, all)
+        }
         DevCommand::Digest {
             session,
+            read,
             upto,
             seqs,
         } => {
             let target = session
-                .or(name)
+                .or(read.name)
                 .ok_or_else(|| CliError::from("name a session to digest"))?;
             let (path, _) = resolve_session_log(&target)?;
             let entries = efference::persist::load(&path)?;
@@ -511,9 +527,14 @@ pub(crate) async fn run<F: Future<Output = Result<ClientTarget, CliError>>>(
             print!("{}", efference::digest::render(&entries, options));
             Ok(())
         }
-        DevCommand::Compact { session, upto, cut } => {
+        DevCommand::Compact {
+            session,
+            read,
+            upto,
+            cut,
+        } => {
             let target = session
-                .or(name)
+                .or(read.name)
                 .ok_or_else(|| CliError::from("name a session to compact"))?;
             dev_compact::compact(&target, upto, cut).await
         }
@@ -529,9 +550,10 @@ pub(crate) async fn run<F: Future<Output = Result<ClientTarget, CliError>>>(
         } => dev_models::history(cwd, config, connection),
         DevCommand::View {
             session,
+            read,
             theme,
             images,
-        } => view(session, name, theme, images.into()).await,
+        } => view(session, read.name, theme, images.into()).await,
         DevCommand::Gallery {
             theme,
             images,
@@ -763,9 +785,10 @@ use wire::{LEGACY_WIRE_MODEL, wire_model, wire_placements};
 /// Mint and open a fresh bootstrap link against a running daemon's TCP bind
 /// (docs/web-bind.md); `--bearer` prints the program token instead. Both come over
 /// the Unix socket only.
-async fn open(target: ClientTarget, print: bool, bearer: bool) -> CliResult {
-    // The credential routes live at the socket root, whatever the session prefix.
-    let client = ControlClient::new(target.socket);
+async fn open(print: bool, bearer: bool) -> CliResult {
+    // The credential routes live at the socket root: the first live host's.
+    let host = live_host().ok_or("no host is running; start one with `efference host`")?;
+    let client = ControlClient::new(host);
     if bearer {
         println!("{}", client.auth_bearer().await?);
         return Ok(());

@@ -113,7 +113,7 @@ async fn an_empty_overview_and_a_refusal_name_what_works() {
 
 fn read(seq: Option<&str>) -> Transcript {
     Transcript {
-        agent: Some("child".into()),
+        agent: "child".into(),
         seq: seq.map(str::to_string),
         since: None,
         tail: None,
@@ -178,7 +178,7 @@ async fn interrupt_says_what_it_stopped() {
     let fixture = Fixture::new();
     let child = fixture.session("child");
     let interrupt = || Interrupt {
-        agent: Some("child".into()),
+        agent: "child".into(),
     };
     let interrupts = |session: &Session| {
         session

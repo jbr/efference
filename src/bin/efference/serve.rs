@@ -344,7 +344,7 @@ pub(crate) async fn spotter_check(
 
 /// `efference host`: a hosting process with no sessions until `POST /sessions`.
 /// Binds the user's host socket, `~/.efference/host.sock`, which every project's
-/// clients look for after their own directory; `socket` (the global `--socket`)
+/// clients look for after their own directory; `socket` (`host --socket`)
 /// binds elsewhere — `.efference/host.sock` for a project-local host
 /// (docs/control-channel.md).
 ///

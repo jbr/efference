@@ -42,16 +42,13 @@ pub struct ClientExecutor {
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone)]
 pub enum Fallback {
-    /// One already reached: a resolved `--name`/`--socket`, or a test's in-memory
-    /// transport.
+    /// One already reached: a test's in-memory transport.
     Client(Client),
-    /// Resolve from `--name`/`--socket`/discovery on first use, then keep it. The
-    /// command line's default, so `efference control state` in a directory with
-    /// one session needs no name and a host-only verb never triggers discovery.
-    Resolve {
-        name: Option<String>,
-        socket: Option<PathBuf>,
-    },
+    /// The one session the host lists in this directory, found on first use and
+    /// then kept. The command line's default, so `efference control state` in a
+    /// directory with one session needs no `--agent` and a host-only verb never
+    /// triggers discovery.
+    Discover,
     /// Nothing: the server was mounted against the host, and every call names its
     /// agent. `efference mcp`'s default.
     None,
@@ -90,38 +87,35 @@ impl ClientExecutor {
         }
     }
 
-    /// An executor whose default session is `session`, with no host behind it.
+    /// An executor over `host` whose default session is `id` on it, for the verbs
+    /// that may name no agent.
     #[cfg(test)]
-    pub(crate) fn defaulting_to(session: Client) -> Self {
-        Self::new(
-            PathBuf::from(".efference/host.sock"),
-            Fallback::Client(session),
-        )
+    pub(crate) fn defaulting_to(host: Client, id: &str) -> Self {
+        let session = Client::clone(&host).with_prefix(&format!("/sessions/{id}"));
+        Self {
+            fallback: Arc::new(Mutex::new(Fallback::Client(session))),
+            ..Self::over(host)
+        }
     }
 
     /// Whether a call that names no agent reads the host as a whole rather than one
     /// session: nothing names a session for this mount.
     pub(super) fn host_wide(&self) -> bool {
-        matches!(
+        !matches!(
             &*self.fallback.lock().unwrap_or_else(|e| e.into_inner()),
-            Fallback::None
-                | Fallback::Resolve {
-                    name: None,
-                    socket: None
-                }
+            Fallback::Client(_)
         )
     }
 
     /// The client for one call: the `agent` id if given — a session the host
-    /// lists, or one with its own live socket under `.efference/` — else the
-    /// fallback. Without a fallback, a call that names no agent is an error that
-    /// says what the host holds.
+    /// lists — else the fallback. Without a fallback, a call that names no agent
+    /// is an error that says what the host holds.
     pub(super) async fn client(&self, agent: Option<&str>) -> Result<Client> {
         if let Some(name) = agent {
             if let Some(host) = &self.host_client {
                 return Ok(Client::clone(host).with_prefix(&format!("/sessions/{name}")));
             }
-            return self.resolve(Some(name), None).await;
+            return named(self.host_client().ok(), &self.host, name).await;
         }
         // Cloned out rather than held: resolving awaits, and the lock is sync.
         // Two calls racing to resolve both reach the same answer.
@@ -132,8 +126,8 @@ impl ClientExecutor {
             .clone();
         match fallback {
             Fallback::Client(client) => Ok(client),
-            Fallback::Resolve { name, socket } => {
-                let client = self.resolve(name.as_deref(), socket).await?;
+            Fallback::Discover => {
+                let client = self.discover().await?;
                 *self.fallback.lock().unwrap_or_else(|e| e.into_inner()) =
                     Fallback::Client(client.clone());
                 Ok(client)
@@ -156,17 +150,11 @@ impl ClientExecutor {
         }
     }
 
-    async fn resolve(&self, name: Option<&str>, socket: Option<PathBuf>) -> Result<Client> {
-        if let Some(socket) = socket {
-            return Ok(Client::new(socket));
-        }
-        if let Some(name) = name {
-            return named(self.host_client().ok(), &self.host, name).await;
-        }
-        // The host's listing, scoped to this directory: one host serves many
-        // projects, and a verb run here means a session here
-        // (docs/control-channel.md). A listing without a cwd is kept.
-        let hosted: Vec<String> = if Self::is_live(&self.host) {
+    /// The one session the host lists in this directory. The listing is scoped to
+    /// it: one host serves many projects, and a verb run here means a session here
+    /// (docs/control-channel.md). A listing without a cwd is kept.
+    async fn discover(&self) -> Result<Client> {
+        let mut hosted: Vec<String> = if Self::is_live(&self.host) {
             let here = std::env::current_dir()?;
             Client::new(&self.host)
                 .sessions()
@@ -183,48 +171,23 @@ impl ClientExecutor {
         } else {
             Vec::new()
         };
-        let mut live: Vec<(String, Client)> = Self::discover_live_sockets()?
-            .into_iter()
-            .map(|socket| (socket.display().to_string(), Client::new(socket)))
-            .collect();
-        live.extend(hosted.iter().map(|id| {
-            (
-                format!("{} (/sessions/{id})", self.host.display()),
-                Client::at(&self.host, &format!("/sessions/{id}")),
-            )
-        }));
-        match live.len() {
+        match hosted.len() {
             0 => Err(anyhow!(
-                "no live efference session found — create one with `tui --new`, or pass --name/--socket"
+                "no live efference session found here — create one with `tui --new`, or pass --agent"
             )),
-            1 => Ok(live.pop().unwrap().1),
+            1 => Ok(Client::at(
+                &self.host,
+                &format!("/sessions/{}", hosted.pop().unwrap()),
+            )),
             _ => Err(anyhow!(
-                "multiple live sessions ({}); pass --name to choose",
-                live.into_iter()
-                    .map(|(description, _)| description)
-                    .collect::<Vec<_>>()
-                    .join(", ")
+                "multiple live sessions ({}); pass --agent to choose",
+                hosted.join(", ")
             )),
         }
     }
 
     fn is_live(socket: &Path) -> bool {
         std::os::unix::net::UnixStream::connect(socket).is_ok()
-    }
-
-    fn discover_live_sockets() -> Result<Vec<PathBuf>> {
-        let mut sockets = Vec::new();
-        let base = Path::new(crate::daemon::SESSION_BASE);
-        if base.is_dir() {
-            for entry in std::fs::read_dir(base)? {
-                let socket = entry?.path().join(crate::daemon::SOCKET_NAME);
-                if Self::is_live(&socket) {
-                    sockets.push(socket);
-                }
-            }
-        }
-        sockets.sort();
-        Ok(sockets)
     }
 
     /// A client at the host's socket root, for the listener's own routes. Checked
@@ -336,11 +299,9 @@ impl ClientExecutor {
     }
 }
 
-/// The session `name`, resolved through `host` first — a client at the host's socket
-/// root, `None` when none is running — wherever this process runs; only a name the host
-/// does not hold is looked for as a session's own socket under this directory's
-/// `.efference/` (docs/control-channel.md). `host_socket` is the host's path, for the
-/// error.
+/// The session `name`, resolved through `host` — a client at the host's socket root,
+/// `None` when none is running — wherever this process runs (docs/control-channel.md).
+/// `host_socket` is the host's path, for the error.
 pub(crate) async fn named(host: Option<Client>, host_socket: &Path, name: &str) -> Result<Client> {
     let mut listed = None;
     if let Some(host) = &host {
@@ -352,12 +313,6 @@ pub(crate) async fn named(host: Option<Client>, host_socket: &Path, name: &str) 
             Err(e) => listed = Some(format!("{e:#}")),
         }
     }
-    let own = PathBuf::from(crate::daemon::SESSION_BASE)
-        .join(name)
-        .join(crate::daemon::SOCKET_NAME);
-    if ClientExecutor::is_live(&own) {
-        return Ok(Client::new(own));
-    }
     let host_says = match (host, listed) {
         (None, _) => format!("no host is running at {}", host_socket.display()),
         (Some(_), Some(why)) => format!(
@@ -366,10 +321,7 @@ pub(crate) async fn named(host: Option<Client>, host_socket: &Path, name: &str) 
         ),
         (Some(_), None) => format!("the host at {} does not list it", host_socket.display()),
     };
-    Err(anyhow!(
-        "no live session {name:?}: {host_says}, and nothing listens at {}",
-        own.display()
-    ))
+    Err(anyhow!("no live session {name:?}: {host_says}"))
 }
 
 /// A `/state` body's status view (docs/control-api.md).

@@ -2,21 +2,11 @@ use super::*;
 use efference::boot::CONFIG_SCAFFOLD;
 use efference::persist::Log;
 
-/// Target resolution (docs/permissions.md): an explicit `--socket` wins over
-/// everything and needs no listener; a `--name` with neither its own live socket nor
-/// a host listing it is an error, not a blank UI. (Live discovery is exercised live.)
-#[tokio::test]
-async fn socket_override_beats_name() {
-    let got = resolve_client_target(Some("foo"), Some(PathBuf::from("/tmp/x.sock")))
-        .await
-        .unwrap();
-    assert_eq!(got.socket, PathBuf::from("/tmp/x.sock"));
-    assert_eq!(got.prefix, None);
-}
-
+/// Target resolution (docs/control-channel.md): a `--name` no host lists here is an
+/// error, not a blank UI. (Live discovery is exercised live.)
 #[tokio::test]
 async fn a_name_nothing_serves_is_an_error() {
-    let err = resolve_client_target(Some("definitely-not-live"), None)
+    let err = resolve_client_target(Some("definitely-not-live"))
         .await
         .unwrap_err()
         .to_string();
@@ -24,14 +14,12 @@ async fn a_name_nothing_serves_is_an_error() {
     assert!(err.contains("definitely-not-live"), "{err}");
 }
 
-/// A name resolves against the host path it is given, not only the default one:
-/// the socket in the error is the one `efference mcp --host-socket` named.
+/// A name resolves against the host path it is given, not only the default one.
 #[tokio::test]
 async fn a_name_resolves_against_the_given_host() {
     let err = resolve_client_target_at(
         vec![PathBuf::from("/nonexistent/efference/host.sock")],
         Some("definitely-not-live"),
-        None,
     )
     .await
     .unwrap_err()
@@ -40,6 +28,53 @@ async fn a_name_resolves_against_the_given_host() {
         err.contains("/nonexistent/efference/host.sock is not running"),
         "{err}"
     );
+}
+
+/// `--name` is where it names a session to attach, create or read, and nowhere else;
+/// `--socket` is the host's bind path. Neither reaches the verbs that drive a session
+/// through a host (`control`, `mcp`), and neither is accepted before the verb.
+#[test]
+fn name_and_socket_are_flags_of_their_own_verbs() {
+    use clap::Parser;
+    let parse = |argv: &[&str]| Cli::try_parse_from(argv);
+
+    let Command::Tui { name, new, .. } = parse(&["efference", "tui", "--name", "amber-heron"])
+        .unwrap()
+        .command
+        .unwrap()
+    else {
+        panic!("tui")
+    };
+    assert_eq!((name.as_deref(), new), (Some("amber-heron"), false));
+    let Command::Tui { name, new, .. } = parse(&["efference", "tui", "--new", "--name", "mine"])
+        .unwrap()
+        .command
+        .unwrap()
+    else {
+        panic!("tui")
+    };
+    assert_eq!((name.as_deref(), new), (Some("mine"), true));
+    let Command::Host { socket, .. } = parse(&["efference", "host", "--socket", "./tmp/h.sock"])
+        .unwrap()
+        .command
+        .unwrap()
+    else {
+        panic!("host")
+    };
+    assert_eq!(socket, Some(PathBuf::from("./tmp/h.sock")));
+    assert!(parse(&["efference", "mcp", "--host-socket", "./tmp/h.sock"]).is_ok());
+
+    for refused in [
+        &["efference", "--name", "x", "tui"][..],
+        &["efference", "--socket", "./tmp/h.sock", "tui"],
+        &["efference", "--socket", "./tmp/h.sock", "host"],
+        &["efference", "mcp", "--name", "x"],
+        &["efference", "mcp", "--socket", "./tmp/h.sock"],
+        &["efference", "setup", "--name", "x"],
+        &["efference", "tui", "--socket", "./tmp/h.sock"],
+    ] {
+        assert!(parse(refused).is_err(), "{refused:?}");
+    }
 }
 
 /// A host's listing is scoped to this directory: sessions with another cwd are

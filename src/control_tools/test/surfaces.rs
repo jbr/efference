@@ -95,7 +95,7 @@ fn the_agent_surfaces_advertise_plaintext_and_no_retired_verbs() {
     assert_eq!(message.input_schema["properties"]["text"]["type"], "string");
     assert_eq!(
         message.input_schema["required"],
-        serde_json::json!(["text"])
+        serde_json::json!(["agent", "text"])
     );
 }
 
@@ -195,13 +195,24 @@ fn the_verbs_are_annotated() {
     }
 }
 
-/// Every verb but `create` and `hand_off` takes `agent` — `archive` requires it — the
-/// mount's whole addressing surface, pinned against a tool that forgets the field.
+/// Every verb but `create` and `hand_off` takes `agent`, the mount's whole addressing
+/// surface, pinned against a tool that forgets the field. The verbs that act on an
+/// agent require it; `status` and `wait` read without one, and the command line's
+/// route verbs fall back to the one session live here (docs/operating.md).
 #[test]
 fn every_agent_verb_takes_agent() {
+    let acting = [
+        "message",
+        "decide",
+        "interrupt",
+        "archive",
+        "transcript",
+        "supervisor",
+    ];
     for tool in cli::Tools::tools_list()
         .into_iter()
         .chain(in_session::Tools::tools_list())
+        .chain(mcp::Tools::tools_list())
     {
         let properties = tool.input_schema["properties"]
             .as_object()
@@ -211,7 +222,7 @@ fn every_agent_verb_takes_agent() {
             "create" | "hand_off" => {
                 assert!(!properties.contains_key("agent"), "{}", tool.name)
             }
-            "archive" | "supervisor" => {
+            name if acting.contains(&name) => {
                 assert!(
                     tool.input_schema["required"]
                         .as_array()

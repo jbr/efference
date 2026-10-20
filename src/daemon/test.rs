@@ -110,6 +110,30 @@ async fn test_client(shared: &Arc<Session>) -> ControlClient {
     )
 }
 
+/// [`test_client`] with the session served at `/sessions/<id>`, as a host serves it:
+/// the client is at the root, and a client re-based on the session's prefix reaches
+/// it.
+async fn test_client_at(shared: &Arc<Session>, id: &str) -> ControlClient {
+    let shared = Arc::clone(shared);
+    let mut handler = (
+        trillium::Init::new(move |info: trillium::Info| {
+            let shared = Arc::clone(&shared);
+            async move { info.with_shared_state(shared) }
+        }),
+        trillium_router::Router::new().all(
+            format!("/sessions/{id}/*"),
+            handler(
+                Transport::Socket { auth: None },
+                App::session(std::env::current_dir().unwrap()),
+            ),
+        ),
+    );
+    let context = trillium_testing::init(&mut handler).await;
+    ControlClient::with_connector(
+        trillium_testing::ServerConnector::new(handler).with_context(context),
+    )
+}
+
 /// The real [`router`] as a [`TestServer`], for reads whose *response* is under test —
 /// status, headers, JSON body — rather than the client's rendering of it.
 /// [`test_client`] is the one to use for streams; this one reads bodies eagerly, so it

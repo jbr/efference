@@ -16,9 +16,8 @@ use serde::{Deserialize, Serialize};
 #[serde(rename = "interrupt")]
 pub struct Interrupt {
     /// The agent's id.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[arg(long)]
-    pub agent: Option<String>,
+    pub agent: String,
 }
 
 impl ToolMeta for Interrupt {
@@ -45,7 +44,7 @@ impl Tool<Control> for Interrupt {
         let now = super::now();
         match &control.executor {
             Executor::Client(state) => {
-                let client = state.client(self.agent.as_deref()).await?;
+                let client = state.client(Some(&self.agent)).await?;
                 // What it stops, read just before signalling.
                 let view = status_in(&state_of(&client).await?)?;
                 let (answer, signal) = answers::interrupted(&view, now);
@@ -62,7 +61,7 @@ impl Tool<Control> for Interrupt {
                 Ok(answer)
             }
             Executor::Host(state) => {
-                let (target, id) = state.resolve_driven(self.agent.as_deref())?;
+                let (target, id) = state.resolve_driven(Some(&self.agent))?;
                 let view = target.status_view(&id, &target.status());
                 let (answer, signal) = answers::interrupted(&view, now);
                 if signal {

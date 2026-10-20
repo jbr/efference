@@ -118,7 +118,7 @@ pub(crate) fn stops_report(session: Option<String>, name: Option<String>, all: b
     use std::io::IsTerminal;
 
     // Same resolution order the other reader verbs use: the positional, then the
-    // global `--name`, then the most recently written session.
+    // `--name`, then the most recently written session.
     let targets = if all {
         let found = spot_report::resolve_spotter_logs(None)?;
         if found.is_empty() {

@@ -25,9 +25,10 @@ it creates in-session reads `efference://guide/supervising` (`assets/guide/super
   which session supervises another), `notify` (with a label and a slot, for scripts),
   `entries`, and `image`. `--host-socket <path>` names the host every verb addresses
   (as on `mcp`); without it the host is the first live of `.efference/host.sock` here and
-  `~/.efference/host.sock`. A named session (`--agent`, `--name`) resolves through that
-  host first, from any directory, and only a name the host does not hold is looked for as
-  a session's own socket under this directory's `.efference/`. `status --output json`
+  `~/.efference/host.sock`. A named session (`--agent`) resolves through that host, from
+  any directory; the verbs that act on an agent (`message`, `decide`, `interrupt`,
+  `archive`, `transcript`) require `--agent`, and a verb that takes it optionally and gets
+  none drives the one session the host lists in this directory. `status --output json`
   prints the `StatusView` instead of the rendered text: one object for an agent, an array
   for the overview. `status --follow [--agent <id>]…` prints each followed agent's status
   block as it stands, then one block per new decision point by `wait`'s rule (a working
@@ -46,8 +47,10 @@ it creates in-session reads `efference://guide/supervising` (`assets/guide/super
   web-bind bootstrap-link mint ([web-bind.md](web-bind.md)). Compiled under the `dev`
   cargo feature, which is in `default`; a release build passes `--no-default-features`.
 
-`--name` and `--socket` are global, so they sit before the group: `efference --name foo
-control state`.
+`--name` belongs to the verbs that name a session to attach, create or read: `tui`
+(attach, or the id `--new` gives), and the `dev` readers (`cache`, `stops`, `digest`,
+`compact`, `view`), where it is the positional's other spelling. `--socket` is `host`'s
+bind path. `control` and `mcp` take neither; `--host-socket` addresses a host.
 
 ### Mounting the control tools in another harness
 
@@ -71,11 +74,10 @@ host need not be running yet and the mount outlives any one session. The host is
 first live of `.efference/host.sock` in the mount's working directory and
 `~/.efference/host.sock`, else the latter, or `--host-socket <path>`.
 Every verb but `create` takes an `agent` id — what `status` lists and `create` returns —
-and a call without one is an error that names what the host currently holds; `status`
-with no agent is the overview of every session on the host. The command line resolves
-the way the other client verbs do (`--name`/`--socket`, else the single live session),
-and `efference --name my-session mcp` gives the mount that same default, which a call's
-`agent` then overrides. The server's `instructions` and each tool's description are
+and `message`, `decide`, `interrupt`, `archive` and `transcript` require it: the tool
+schema marks it required, and a call without one is refused before the tool runs.
+`status` with no agent is the overview of every session on the host, and `wait`'s `agent`
+adds one to the watched set. The mount has no default session. The server's `instructions` and each tool's description are
 written for the model reading `tools/list`; the behaviour hints say which tools read and
 which mutate, since the spec's defaults are pessimistic and a mounting harness's approval
 UX reads them. The mount is an operator client: it drives every session, so its
@@ -194,14 +196,14 @@ Creating a session mints `.efference/<id>/` and never reuses one. The id is an
 one-line title beside it in the TUI header and the session list does
 ([session-title.md](session-title.md)). The directory holds:
 
-- `control.sock` — the HTTP control channel, the only input path into the loop.
 - `log.jsonl` — the append-only record; every entry, raw.
 - `config.toml` — this session's live perimeter, copied once from the project template at
   boot and independent of it thereafter.
 
-A client verb finds the socket by `--name <id>`, or by scanning for the single
-*connectable* one, or from an explicit `--socket`. A stale directory from a dead daemon is
-skipped, so discovery finds the running session rather than the most recent one.
+The session has no socket of its own: its host serves it under `/sessions/<id>/`. A client
+verb finds a session by `--name <id>` (`tui`) or `--agent <id>` (`control`), or by asking
+the live hosts for the single session they list in this directory
+([control-channel.md](control-channel.md)).
 
 ## Reading the session
 
@@ -246,10 +248,10 @@ directory, this shell's environment, `--name`, and the session flags,
 then attaches under `/sessions/<id>/`; quitting detaches, and the session stays on the host
 ([control-api.md](control-api.md)). With no host running, it starts an island instead
 (below). Without `--new`, `tui --name <id>` attaches to that
-session whether it runs on the host or on its own socket. Without `--new`, a session flag is an error rather than
+session through the host that lists it here. Without `--new`, a session flag is an error rather than
 silently ignored.
 
-A bare `efference tui` — no `--new`, no `--name`, no `--socket` — asks first
+A bare `efference tui` — no `--new`, no `--name` — asks first
 (`src/bin/efference/picker/`): an inline ratatui prompt drawn with the same list, theme and
 keys as the new-session form ([tui.md](tui.md)). The top page is the entry that creates a
 session here, then, when the live hosts hold sessions whose cwd is this directory, a
@@ -277,8 +279,7 @@ the host's defaults without asking. Sessions the same hosts hold in other direct
 counted in a line above the menu rather than listed — attaching from here to a session
 rooted elsewhere would put the TUI's directory and the session's out of step. With no live
 or archived session here the prompt is skipped and the form opens directly — its one entry
-would be "create", and the form has its own Esc. With no host listening and no session on
-its own socket, the prompt lists only the archived sessions and the create entry; an
+would be "create", and the form has its own Esc. With no host listening, the prompt lists only the archived sessions and the create entry; an
 archived pick starts an island that resumes that session instead of creating one. With
 nothing archived there is nothing to pick: the TUI starts an island and opens the same form
 against it, so a session is configured the same way with or without a running host. The prompt's

@@ -394,7 +394,7 @@ refuses at the fast-path, so it gates for the operator. Injected keys are insert
 operator config, so a safety deny overrides an equal-specificity operator grant; an operator
 can still override by naming a *strictly deeper* path. Because bash never touches the fast-path,
 the deny layers are also rendered into the **spotter context** (`spotter.rs`), so a `curl
---unix-socket .efference/…/control.sock` or `echo >> …/log.jsonl` gates on scope grounds there
+--unix-socket .efference/host.sock` or `echo >> …/log.jsonl` gates on scope grounds there
 too. Path matching is lexical (`..`/`.` collapsed without touching the filesystem, so it works
 for not-yet-existing write targets), which means a symlink inside a grant pointing outside is
 treated as inside — acceptable under the error-not-deception model. For the same reason a path

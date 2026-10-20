@@ -16,7 +16,7 @@ pub struct Entries {
     /// The `seq`s to fetch, as `transcript` lines show them.
     #[arg(required = true, num_args = 1..)]
     pub seqs: Vec<u64>,
-    /// The agent's id. Defaults to the session `--name` names, or the one live here.
+    /// The agent's id. Defaults to the one session live here.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[arg(long)]
     pub agent: Option<String>,
