@@ -30,7 +30,7 @@ fn decisions(session: &Session) -> Vec<crate::log::GateDecision> {
 /// Hold `curl` at the child's gate; returns its handle and the gate's receiver.
 fn held(child: &Session) -> (String, tokio::sync::oneshot::Receiver<Approval>) {
     let seq = issue(child, vec![curl()]).to_string();
-    (seq, child.register_pending(&curl(), None))
+    (seq, child.register_pending(&curl(), None, None))
 }
 
 /// Allow runs the held call, the answer names it, and the decision is recorded with
@@ -194,7 +194,7 @@ async fn a_driver_that_does_not_supervise_cannot_decide() {
     let fixture = Fixture::new();
     let grandchild = fixture.session("grandchild");
     let seq = issue(&grandchild, vec![curl()]).to_string();
-    let _gate = grandchild.register_pending(&curl(), None);
+    let _gate = grandchild.register_pending(&curl(), None, None);
     let refused = |caller: &str, agent: &str, decision: Decision| {
         let control = fixture.control(caller);
         let seq = seq.clone();

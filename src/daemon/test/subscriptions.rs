@@ -151,7 +151,7 @@ async fn a_childs_gate_wakes_the_parent_and_is_pinned_whatever_the_triage_says()
         "toolu_leaf",
         serde_json::json!({ "path": "/Users/x/code", "intent": "locating siblings" }),
     );
-    let _rx = child.register_pending(&leaf, None);
+    let _rx = child.register_pending(&leaf, None, None);
     let is_gate = |source: &str, body: &str, slot: Option<&str>| {
         source == "child"
             && slot == Some("session:child")
@@ -253,7 +253,7 @@ async fn a_supervisor_reads_the_gate_as_its_reviewer_and_the_whole_closing_messa
             }),
         )
         .unwrap();
-    let _rx = child.register_pending(&curl, None);
+    let _rx = child.register_pending(&curl, None, None);
     let gate = format!(
         "waiting for your decision on bash `curl -sI https://example.com` (seq \
          {issued})\nintent: fetch only the response headers\nheld because: its reviewer is \

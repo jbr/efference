@@ -576,7 +576,8 @@ only if that call is still the pending gate.
   - `abort` — reject; the turn unwinds.
   - `redirect` — reject; `"message"` is sent to the model as steering text.
   - `config_edit` — requires `"change"` (a `ConfigChange`), plus an optional
-    `"note"`. The daemon writes the change to the session's config file, folds
+    `"note"`. The gate's offered grant (`/state`'s `gate.grant.change`) is sent
+    as `change` unchanged. The daemon writes the change to the session's config file, folds
     it into the effective policy, and **re-classifies the gated call** against
     the new policy. A failed write fails the grant.
   - While the session is believed cold (the `cold` topic), a decision that lets
@@ -942,6 +943,13 @@ not a topic — it is the log's cursor rather than control state, and sits outsi
       "cwd": "/work",              //   the leaf's working directory
       "session": "child",          //   the session the parent's call directly names
       "chain": ["child", "grand"] //   that target down to the session holding the leaf
+    },
+    "grant": {                     // optional: the one grant the gate offers (docs/permissions.md)
+      "change": { "path": { "path": "/Users/jbr/code/codex", "read": true, "write": false } },
+                                   //   a ConfigChange, sent back unchanged as `config_edit`'s `change`;
+                                   //   or {"command":{"command":"git push"}}, {"tool":{"name":"ferritin__get"}}
+      "label": "always allow reading /Users/jbr/code/codex"
+                                   //   what it allows, for the client's control; the whole rationale
     }
   },
   "ask": {                         // null unless an `ask` is pending (docs/process-monitor.md)

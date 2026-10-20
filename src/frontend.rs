@@ -234,11 +234,13 @@ pub trait Frontend {
     /// Gate a pending tool call: approve, abort, or redirect. `bound` is the leaf
     /// action a `agents__decide` authorizes, when the call is one
     /// (docs/permissions.md) — the gate view and the child's own held action, so
-    /// the operator sees the move rather than an id.
+    /// the operator sees the move rather than an id. `grant` is the one config change
+    /// the gate offers as "always allow", decided by the rung that held the call.
     fn approve(
         &mut self,
         call: &ToolCall,
         bound: Option<&BoundAction>,
+        grant: Option<crate::policy::GateGrant>,
     ) -> impl Future<Output = Approval> + Send;
 
     /// Resolve when the user interrupts a *running* tool, with the intent: kill

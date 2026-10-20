@@ -140,7 +140,7 @@ async fn supervisor_resolves_when_a_call_is_routed_not_when_the_session_is_creat
     let state: Value = serde_json::from_str(&outliver.state_json()).unwrap();
     assert_eq!(state["supervisor"], "root", "the topic names the creator");
 
-    let _gate = outliver.register_pending(&leaf(), None);
+    let _gate = outliver.register_pending(&leaf(), None, None);
     wait_until("the gate reached its supervisor", || {
         heard(&root, |body| body.contains("waiting for your decision"))
     })
@@ -193,7 +193,7 @@ async fn a_level_change_reroutes_a_pending_gate() {
     // Start with the operator holding the review, so the creator — still the
     // supervisor, which may decide the gate — is not its reviewer.
     child.set_review_level(ReviewLevel::SpotterHuman);
-    let _gate = child.register_pending(&leaf(), None);
+    let _gate = child.register_pending(&leaf(), None, None);
     wait_until("the creator observed the gate", || {
         heard(&root, |body| {
             body.starts_with("waiting for a decision from the operator or you on fs.list")
@@ -244,7 +244,7 @@ async fn the_reviewer_resolves_the_routed_gate_through_decide() {
             },
         )
         .unwrap();
-    let gate = child.register_pending(&leaf(), None);
+    let gate = child.register_pending(&leaf(), None, None);
     wait_until("the gate reached its reviewer", || {
         heard(&root, |body| body.contains("waiting for your decision"))
     })
@@ -279,7 +279,7 @@ async fn an_unsubscribed_creator_still_receives_the_gate_it_reviews() {
     assert!(fixture.host.unsubscribe("child", "root"));
     assert!(fixture.host.subscribers("child").is_empty());
 
-    let _gate = child.register_pending(&leaf(), None);
+    let _gate = child.register_pending(&leaf(), None, None);
     wait_until("the gate reached its reviewer regardless", || {
         heard(&root, |body| body.contains("waiting for your decision"))
     })

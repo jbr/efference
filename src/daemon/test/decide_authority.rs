@@ -118,7 +118,7 @@ fn hold(c: &Session) -> (String, tokio::sync::oneshot::Receiver<Approval>) {
         )
         .unwrap()
         .to_string();
-    (seq, c.register_pending(&leaf(), None))
+    (seq, c.register_pending(&leaf(), None, None))
 }
 
 fn decide(seq: &str, decision: Decision) -> Decide {

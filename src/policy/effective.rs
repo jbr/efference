@@ -37,7 +37,7 @@ pub fn effective_config(base: &Config, log: &[LogEntry]) -> Config {
 pub fn apply_config_change(role: &mut Config, change: &ConfigChange) {
     match change {
         // A `Command` change is a **clear** grant: the change vocabulary spells the grant an
-        // approval hands out (a human's approve-always, a promoted prefix), and there is no
+        // approval hands out (a gate's offered grant, a promoted prefix), and there is no
         // initiator that hands out a restriction. A non-clear stance is written in the file and
         // read at load (docs/permissions.md).
         ConfigChange::Command { command } => {

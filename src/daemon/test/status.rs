@@ -26,7 +26,7 @@ fn the_status_follows_the_loop_phase() {
         serde_json::json!({ "command": "ls ~", "intent": "look around" }),
     );
     shared.set_phase(LoopPhase::Executing);
-    let _rx = shared.register_pending(&call, None);
+    let _rx = shared.register_pending(&call, None, None);
     assert_eq!(
         shared.status(),
         SessionStatus::Gated {

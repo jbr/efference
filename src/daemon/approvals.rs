@@ -19,6 +19,10 @@ pub(super) struct Pending {
     /// `agents__decide` (docs/permissions.md). `None` for an ordinary gate.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) acting_on: Option<crate::control_tools::BoundAction>,
+    /// The one grant this gate offers, decided at the rung that held the call
+    /// (docs/permissions.md). `None` when no single change is confidently the one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) grant: Option<crate::policy::GateGrant>,
 }
 
 /// A session's held call, as its parent's `agents__decide` reads it
@@ -77,11 +81,13 @@ impl Session {
 
     /// Register an approval gate and surface it to `GET /state`. Returns the
     /// receiver the loop awaits. `bound` is the leaf action an `agents__decide`
-    /// authorizes, when the held call is one (docs/permissions.md).
+    /// authorizes, when the held call is one; `grant` is the grant the gate offers
+    /// (docs/permissions.md).
     pub(super) fn register_pending(
         &self,
         call: &ToolCall,
         bound: Option<&crate::control_tools::BoundAction>,
+        grant: Option<crate::policy::GateGrant>,
     ) -> oneshot::Receiver<Approval> {
         let (tx, rx) = oneshot::channel();
         self.approvals.lock().unwrap().insert(call.id.clone(), tx);
@@ -95,6 +101,7 @@ impl Session {
             input: call.input.clone(),
             reason,
             acting_on: bound.cloned(),
+            grant,
         });
         // A gate is a settled state: the phase wakes any `/settle` waiter (the `?wait` on
         // `/turn` returns here). Moved after the gate is stored, so a waiter it wakes reads it.

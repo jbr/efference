@@ -1917,8 +1917,9 @@ scroll event to identify a reader departure.
 The decisions ride `PUT /v1/approvals/:call_id` (`Decision` in `api/types.ts`):
 approve, abort, and redirect with steering text. The route also takes a
 `config_edit` grant, which the web client does not offer: a grant guessed from
-the call's input was a command prefix whatever the call gated on, so
-"always allow" waits for the host to propose the grant itself.
+the call's input was a command prefix whatever the call gated on. The host now
+offers one on the gate itself (`gate.grant`, [control-api.md](control-api.md)),
+which the client does not yet render.
 A `409 gate_moved` is handled in
 `session/actions.ts` by folding the response's corrective `detail` into the
 store as a synthetic state frame — no second round-trip; `resolveGate` returns

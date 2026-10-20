@@ -121,7 +121,7 @@ fn hold(host: &Host, id: &str, call: &ToolCall) -> (u64, tokio::sync::oneshot::R
         )
         .unwrap();
     session.set_phase(LoopPhase::Executing);
-    (seq, session.register_pending(call, None))
+    (seq, session.register_pending(call, None, None))
 }
 
 /// With no agent, the MCP mount reads one line per session the host holds.

@@ -23,7 +23,7 @@ fn settle_predicate_tracks_the_loop_lifecycle() {
 
     // A gate is a decision point — settled.
     let call = bash_call("npm install");
-    let _gate = shared.register_pending(&call, None);
+    let _gate = shared.register_pending(&call, None, None);
     assert!(
         shared.is_settled(),
         "a pending gate is a settled decision point"

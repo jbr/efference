@@ -67,7 +67,7 @@ fn a_gate_names_its_handle_summary_and_plain_reason() {
         )
         .unwrap();
     shared.set_phase(LoopPhase::Executing);
-    let _rx = shared.register_pending(&curl, None);
+    let _rx = shared.register_pending(&curl, None, None);
 
     let view = shared.status_view("child", &shared.status());
     assert_eq!(
@@ -168,7 +168,7 @@ fn the_status_topic_is_the_view_now() {
     assert_eq!(state["status"]["condition"]["kind"], "idle");
     let call = ToolCall::new("bash", "toolu_1", serde_json::json!({ "command": "ls" }));
     shared.set_phase(LoopPhase::Executing);
-    let _rx = shared.register_pending(&call, None);
+    let _rx = shared.register_pending(&call, None, None);
     let state: Value = serde_json::from_str(&shared.state_json()).unwrap();
     assert_eq!(state["status"]["condition"]["kind"], "gated");
     assert_eq!(state["status"]["condition"]["summary"], "ls");

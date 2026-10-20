@@ -9,6 +9,7 @@ behind a change, see [`journal/`](journal/).
 
 ### Added
 
+- A gate offers at most one grant, chosen from why the call held: a path grant for the directory a structured call reached (read-only for a read), a tool grant, or a `[commands]` prefix the probe ledger has not refuted; it rides `/state`'s `gate` topic as `grant: {change, label}` and is committed as the `config_edit` decision (docs/permissions.md, docs/control-api.md).
 - The TUI composer composes text only: at a gate an empty submit approves and any text redirects, so `.abort`/`.allow` redirect with their literal text; the `allow…` strip stager is removed and the gate strip reads `approve ⏎ · abort` (docs/tui.md).
 - The `openai` platform menu is the Codex catalog's suggested entries that `GET /v1/models` also names, with the catalog's descriptions and windows; with the catalog unreadable it is the listing minus models past their `shutdown_date` (docs/model-catalog.md).
 - The TUI says why it closed: when its event stream ends it asks the host and prints one stderr line, `efference: <id> was archived by <source>; its log stays at <dir>/` or `efference: lost the connection to the host at <socket>`; `Archived` records the archiver's `source` (`web`, `mcp[<client>]`, `session[<id>]`), skipped when absent (docs/tui.md, docs/log-and-projection.md).

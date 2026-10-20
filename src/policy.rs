@@ -76,7 +76,7 @@ pub enum ReviewLevel {
     SpotterHuman,
     /// The human takes the spotter's role **entirely** — skip the spotter (pay no tokens, log no
     /// `Spot`); every call the fast-path didn't clear goes straight to the human, who both gates it
-    /// and grows the allowlist by hand (the `approve-always-at-prefix` grant).
+    /// and grows the allowlist by committing the grant the gate offers ([`gate_grant`]).
     HumanOnly,
 }
 
@@ -345,6 +345,7 @@ mod test;
 mod commands;
 mod directories;
 mod effective;
+mod gate_grant;
 mod path_words;
 mod paths;
 mod probe;
@@ -353,6 +354,7 @@ pub use commands::promotable_command;
 pub(crate) use commands::{bash_tokens_in, simple_command_tokens, without_cd_into};
 pub use directories::Directories;
 pub use effective::{apply_config_change, effective_config};
+pub use gate_grant::{GateGrant, gate_grant};
 pub(crate) use path_words::{Decided, decide, path_words};
 pub(crate) use paths::{absolutize, governing_grant, lexical_normalize, path_spec};
 pub use probe::{ProbeLedger, probe_ledger};

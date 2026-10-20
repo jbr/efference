@@ -186,8 +186,10 @@ pub(super) async fn run_call<F: Frontend, S: Spotter>(
     // A hand-off gives this session's place to a new one (docs/tools.md): the operator's
     // decision, like a policy edit, so it takes the same route past the cascade.
     let hand_off = call.name == crate::control_tools::HAND_OFF_WIRE_NAME;
+    // Neither offers a grant: no change to the policy table would clear either, since
+    // both bypass the cascade that reads it.
     let approval = if config_write || hand_off {
-        frontend.approve(call, bound.as_ref()).await
+        frontend.approve(call, bound.as_ref(), None).await
     } else {
         judge(
             frontend,
@@ -571,18 +573,21 @@ pub(super) async fn judge<F: Frontend, S: Spotter>(
         // gates. Autonomous has no synchronous human, so it takes the same redirect a
         // spotter `Gate` takes there, carrying the reason the config gave it.
         Verdict::Deny => {
+            // No grant is offered: the operator's deny is the answer, which an offer
+            // would reverse (docs/permissions.md).
             if shared.autonomous() {
                 Ok(shared.review_redirect(&call.id, denied_gate_message(shared.config_path())))
             } else {
-                Ok(frontend.approve(call, bound).await)
+                Ok(frontend.approve(call, bound, None).await)
             }
         }
         // HumanOnly (docs/permissions.md): the human takes the spotter's role
         // *entirely* — skip the spotter (pay no tokens, log no `Spot`) and gate
         // straight to the human, who both decides this call and grows the allowlist by
-        // hand. Learning is relocated to the human, not lost.
+        // committing the grant the gate offers.
         Verdict::Gate if shared.review_level() == ReviewLevel::HumanOnly => {
-            Ok(frontend.approve(call, bound).await)
+            let grant = gate_grant(shared, &role, call, bound);
+            Ok(frontend.approve(call, bound, grant).await)
         }
         Verdict::Gate => {
             // Prefix-promotion probe (docs/permissions.md): on a bash move, observe
@@ -694,10 +699,28 @@ pub(super) async fn judge<F: Frontend, S: Spotter>(
                             },
                         ))
                     } else {
-                        Ok(frontend.approve(call, bound).await)
+                        // Asked after the `Spot` and its vote are recorded, so the probe
+                        // this very call carried is evidence for the grant it offers.
+                        let grant = gate_grant(shared, &role, call, bound);
+                        Ok(frontend.approve(call, bound, grant).await)
                     }
                 }
             }
         }
     }
+}
+
+/// The grant a gate on `call` offers (docs/permissions.md). A bound gate offers none:
+/// what a supervisor's grant should cover is not settled, and the leaf's policy is the
+/// child's, not this session's.
+fn gate_grant(
+    shared: &Session,
+    role: &crate::config::Config,
+    call: &ToolCall,
+    bound: Option<&crate::control_tools::BoundAction>,
+) -> Option<policy::GateGrant> {
+    bound
+        .is_none()
+        .then(|| shared.gate_grant(role, call))
+        .flatten()
 }

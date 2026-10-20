@@ -112,7 +112,7 @@ fn asking_is_a_status_and_a_decision_point() {
     assert!(shared.is_settled(), "a question is a decision point");
 
     let call = ToolCall::new("bash", "toolu_1", serde_json::json!({ "command": "ls" }));
-    let _rx = shared.register_pending(&call, None);
+    let _rx = shared.register_pending(&call, None, None);
     assert!(matches!(shared.status(), SessionStatus::Gated { .. }));
     assert!(shared.resolve_approval(&CallId("toolu_1".into()), Approval::Abort, None, None));
 

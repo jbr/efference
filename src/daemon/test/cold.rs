@@ -233,7 +233,7 @@ async fn an_approval_releases_the_next_check_and_no_park_follows() {
     let (shared, _rx) = cold_session().await;
     let server = test_server(&shared).await;
     let call = bash_call("cargo build");
-    let _gate = shared.register_pending(&call, None);
+    let _gate = shared.register_pending(&call, None, None);
 
     let conn = server
         .put(&format!("/v1/approvals/{}", call.id.0))
@@ -314,7 +314,7 @@ async fn an_abort_does_not_release_and_a_warm_decision_records_nothing() {
     warm.set_cache_ttl(Duration::from_secs(300));
     let server = test_server(&warm).await;
     let call = bash_call("ls");
-    let _gate = warm.register_pending(&call, None);
+    let _gate = warm.register_pending(&call, None, None);
     server
         .put(&format!("/v1/approvals/{}", call.id.0))
         .with_body(r#"{"decision":"approve"}"#)
@@ -326,7 +326,7 @@ async fn an_abort_does_not_release_and_a_warm_decision_records_nothing() {
     let (shared, _rx) = cold_session().await;
     let server = test_server(&shared).await;
     let call = bash_call("ls");
-    let _gate = shared.register_pending(&call, None);
+    let _gate = shared.register_pending(&call, None, None);
     server
         .put(&format!("/v1/approvals/{}", call.id.0))
         .with_body(r#"{"decision":"abort"}"#)
@@ -335,7 +335,7 @@ async fn an_abort_does_not_release_and_a_warm_decision_records_nothing() {
     assert!(!shared.person_acted.load(Ordering::SeqCst), "abort");
 
     let call = bash_call("pwd");
-    let _gate = shared.register_pending(&call, None);
+    let _gate = shared.register_pending(&call, None, None);
     server
         .put(&format!("/v1/approvals/{}", call.id.0))
         .with_body(r#"{"decision":"redirect","message":"no"}"#)

@@ -115,7 +115,7 @@ async fn deciding_a_gate_cancels() {
             CallId("call_1".into()),
             serde_json::json!({"command": "ls"}),
         );
-        let _gate = shared.register_pending(&call, None);
+        let _gate = shared.register_pending(&call, None, None);
         assert!(shared.pending_delayed_push().is_some());
         shared.resolve_approval(&call.id, decision, None, None);
         assert_eq!(titles(&shared), None);
@@ -299,7 +299,7 @@ async fn each_cancel_cause_is_recorded() {
         CallId("call_1".into()),
         serde_json::json!({"command": "ls"}),
     );
-    let _gate = shared.register_pending(&call, None);
+    let _gate = shared.register_pending(&call, None, None);
     shared.resolve_approval(&call.id, Approval::Approve, None, None);
     assert_eq!(cancelled(&shared), vec![PushCancel::GateDecided]);
 

@@ -50,8 +50,13 @@ impl Frontend for RemoteFrontend {
         turns
     }
 
-    async fn approve(&mut self, call: &ToolCall, bound: Option<&BoundAction>) -> Approval {
-        let rx = self.shared.register_pending(call, bound);
+    async fn approve(
+        &mut self,
+        call: &ToolCall,
+        bound: Option<&BoundAction>,
+        grant: Option<crate::policy::GateGrant>,
+    ) -> Approval {
+        let rx = self.shared.register_pending(call, bound, grant);
         // A dropped sender (shouldn't happen on the live daemon) defaults to abort
         // — never run a call we couldn't get a decision for.
         let approval = rx.await.unwrap_or(Approval::Abort);

@@ -826,7 +826,8 @@ order-independent), but it stays idempotent for today's changes: re-applying a c
 in the file *and* the log lands the same value, and replace-at-key admits *narrowing* a key,
 which append couldn't.
 
-The human upgrades a gate with a fourth `Approval::ConfigEdit` decision. The loop **commits**
+The human upgrades a gate with a fourth `Approval::ConfigEdit` decision — ordinarily the grant
+the gate offers (below). The loop **commits**
 (`agent::commit_config_edit`): write the change to the session's config file (`ConfigFile::apply` —
 a format-preserving `DocumentMut` edit that sets the key while leaving every comment and unrelated
 line untouched, so auto-persist is sound for *every* slot, including a single `scope` narrowing),
@@ -859,6 +860,44 @@ commits or cancels it (referencing the proposal's `seq` via `resolves`) — over
 /proposals/:seq` directly, or the `proposal` control tool (docs/operating.md). The synchronous paths —
 the human gate, fs-watch, and an approved session edit — append `Committed` directly; the
 asynchronous proposers go `Proposed → commit/cancel`.
+
+### The grant a gate offers (`src/policy/gate_grant.rs`)
+
+A gate offers at most **one** grant beside approve and abort: the `ConfigChange` that would
+clear the held call and calls like it, with a label naming what it allows ("always allow
+reading /Users/jbr/code/codex"). It rides `/state`'s `gate` topic as `grant: { change, label }`
+([control-api.md](control-api.md)), and a client commits it by sending `change` unchanged as the
+`config_edit` decision; who may commit is the same as for any decision. The label is the whole
+rationale — there is no separate one — and nothing about the offer is logged until it is
+committed, when the decision and the `ConfigEdit` record it as any grant.
+
+The grant follows from **why the call held**, and the rung that held it decides whether one
+applies (`agent::step::judge`), so it is never re-derived from the spotter's prose:
+
+- **A structured call missing only its tool grant** offers that tool.
+- **A structured call missing only path grants** (`policy::missing_grants`) offers a `[paths]`
+  grant for the directory the call reached — the target itself when it is a directory, else its
+  parent; for a batch, the shallowest such directory when it contains the rest — read-only when
+  the call only reads. A directory already keyed is re-granted under its existing spelling. A
+  target under a no-access grant offers nothing: the deny (the operator's, or the self-surface's)
+  is an answer already given.
+- **A bash call** offers a `[commands]` prefix: the shortest token-prefix of the bare command (a
+  tolerated `cd <granted dir> &&` stripped) that no spotter probe has voted not safe
+  (`ProbeLedger::refuted`) — the program name when the ledger holds no evidence, and the next
+  token down past each refuted prefix, as the descent below does. The spotter's vote on this very
+  call is recorded before the gate registers, so it counts.
+- **Nothing confident, nothing offered.** A structured call missing both its tool and a path is
+  held for two reasons; a command stage 1 rejects (a pipe, a `cd` into an ungranted directory) has
+  no prefix that would clear it; `ConfigChange` has no command-scoped-to-a-path form. A
+  `[commands]` deny offers nothing, being the operator's answer. A config write and a hand-off
+  bypass the cascade, so no policy change would clear them. A **bound** gate (an allowing
+  `agents__decide`) offers nothing: the leaf's policy is the child's, and what a supervisor's
+  grant should cover is not settled.
+
+Every offer is checked before it is made: applied to the effective config, it must make the
+fast path clear the call. This is what keeps a `[commands]` key in force from being offered
+around — under `"git push" = "gate"`, `git push origin main` offers `git push` (replacing the
+key), never `git`, which the more specific key would still govern.
 
 **The initiators built so far:** the human upgrading a gate (`Approval::ConfigEdit`); **fs-watch**
 of the config file (the operator editing it externally takes effect live — `config_watch_loop`
@@ -1024,10 +1063,13 @@ without eliminating:
 - **`SpotterHuman`** — the supervised default: fast-path → spotter → human gate.
 - **`HumanOnly`** — the human takes the spotter's role **entirely**: the spotter is **skipped**
   (no model call, no token cost, no `Spot` entry), and every call the fast-path didn't clear goes
-  straight to the human gate. The catch the design turns on: the spotter has *two* jobs — clearing
-  residual calls **and** growing the allowlist (`clear_always` → prefix promotion) — so skipping it
-  can't just be "gate everything," or learning stops. The human inherits both jobs via the gate's
-  **`approve-always-at-prefix`** grant (a `config_edit` approval decision): a self-authorizing `ConfigChange` committed **directly** (no `Proposed` round-trip — the human *is* the reviewer). That grant works at any human gate, so it improves plain `SpotterHuman` too; `HumanOnly` just relocates the learning to the human rather than losing it.
+  straight to the human gate. The spotter has *two* jobs — clearing residual calls **and** growing
+  the allowlist (`clear_always` → prefix promotion) — so skipping it would also stop the allowlist
+  growing, were it not for the human gate's own route to a rule: the **grant the gate offers**
+  (above), which the human commits as a `config_edit` decision **directly** (no `Proposed`
+  round-trip — the human *is* the reviewer). Every human gate offers one where a single change
+  confidently fits, so the route serves plain `SpotterHuman` too; under `HumanOnly` it is the
+  only way the allowlist grows during the session.
 
 ## Prefix-promotion: the harness learns its allowlist (`src/policy.rs`, `src/agent.rs`, `src/spotter.rs`)
 

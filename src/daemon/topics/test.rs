@@ -222,7 +222,7 @@ async fn the_status_republishes_when_it_moves() {
         "toolu_1",
         serde_json::json!({ "command": "ls ~", "intent": "look around" }),
     );
-    let _rx = shared.register_pending(&call, None);
+    let _rx = shared.register_pending(&call, None, None);
     let changed = drain(&mut rx).await;
     let gated: Value = serde_json::from_str(&changed[&Topic::Status].json).unwrap();
     assert_eq!(gated["condition"]["kind"], "gated");

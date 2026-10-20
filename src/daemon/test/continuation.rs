@@ -180,7 +180,7 @@ fn a_running_or_gated_loop_declines() {
     );
 
     let call = bash_call("ls");
-    let _gate = shared.register_pending(&call, None);
+    let _gate = shared.register_pending(&call, None, None);
     assert_eq!(
         shared
             .request_continue(Default::default())

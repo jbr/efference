@@ -13,6 +13,7 @@ impl Frontend for NeverGates {
         &mut self,
         call: &ToolCall,
         _bound: Option<&crate::control_tools::BoundAction>,
+        _grant: Option<crate::policy::GateGrant>,
     ) -> Approval {
         panic!(
             "a call naming no tool reached the human gate: {}",
@@ -44,10 +45,24 @@ impl Spotter for NeverAsked {
 }
 
 /// A frontend that records what the gate was asked to decide, for the bound
-/// `agents__decide` ladder tests. It answers with a fixed decision.
-struct RecordingFrontend {
-    decisions: Vec<(String, Option<crate::control_tools::BoundAction>)>,
+/// `agents__decide` ladder tests and the gate-grant tests. It answers with a fixed
+/// decision.
+pub(super) struct RecordingFrontend {
+    pub(super) decisions: Vec<(String, Option<crate::control_tools::BoundAction>)>,
+    /// The grant each gate offered, in the order the gates were reached.
+    pub(super) grants: Vec<Option<crate::policy::GateGrant>>,
     decision: Approval,
+}
+
+impl RecordingFrontend {
+    /// A frontend that answers every gate with `decision`.
+    pub(super) fn answering(decision: Approval) -> Self {
+        Self {
+            decisions: Vec::new(),
+            grants: Vec::new(),
+            decision,
+        }
+    }
 }
 
 impl Frontend for RecordingFrontend {
@@ -58,8 +73,10 @@ impl Frontend for RecordingFrontend {
         &mut self,
         call: &ToolCall,
         bound: Option<&crate::control_tools::BoundAction>,
+        grant: Option<crate::policy::GateGrant>,
     ) -> Approval {
         self.decisions.push((call.name.clone(), bound.cloned()));
+        self.grants.push(grant);
         self.decision.clone()
     }
     async fn interrupted(&mut self) -> crate::frontend::Interrupt {
@@ -102,7 +119,7 @@ impl Spotter for RecordingSpotter {
 }
 
 /// A session whose effective policy is `role` — the parent in a bound-approve test.
-fn parent_with(role: crate::config::Config) -> Arc<Session> {
+pub(super) fn parent_with(role: crate::config::Config) -> Arc<Session> {
     let (shared, _rx) = Session::with_role(
         std::env::current_dir().unwrap(),
         crate::persist::Log::in_memory(),
@@ -125,12 +142,12 @@ fn decide_call(decision: &str) -> ToolCall {
 }
 
 /// The allowing `agents__decide` the bound-ladder tests judge.
-fn approve_call() -> ToolCall {
+pub(super) fn approve_call() -> ToolCall {
     decide_call("allow")
 }
 
 /// A leaf the child holds, bound to the parent's approval.
-fn bound_leaf(command: &str) -> crate::control_tools::BoundAction {
+pub(super) fn bound_leaf(command: &str) -> crate::control_tools::BoundAction {
     crate::control_tools::BoundAction {
         name: crate::bash::NAME.into(),
         input: serde_json::json!({ "command": command, "intent": "whatever" }),
@@ -151,10 +168,7 @@ async fn a_granted_decide_clears_blind() {
     role.tools
         .insert(crate::control_tools::DECIDE_WIRE_NAME.into());
     let shared = parent_with(role);
-    let mut frontend = RecordingFrontend {
-        decisions: Vec::new(),
-        decision: Approval::Abort,
-    };
+    let mut frontend = RecordingFrontend::answering(Approval::Abort);
     let spotter = crate::spotter::StaticSpotter {
         stance: Stance::Gate,
         reason: "would gate".into(),
@@ -186,10 +200,7 @@ async fn an_ungranted_approve_clears_on_the_leafs_fast_path() {
     role.commands
         .insert("cargo".into(), crate::config::CommandStance::Clear);
     let shared = parent_with(role);
-    let mut frontend = RecordingFrontend {
-        decisions: Vec::new(),
-        decision: Approval::Abort,
-    };
+    let mut frontend = RecordingFrontend::answering(Approval::Abort);
     let spotter = crate::spotter::StaticSpotter {
         stance: Stance::Gate,
         reason: "would gate".into(),
@@ -224,10 +235,7 @@ async fn an_ungranted_approve_clears_on_the_leafs_fast_path() {
 #[tokio::test]
 async fn a_leaf_outside_the_grants_gates_with_the_bound_action() {
     let shared = parent_with(crate::config::Config::default());
-    let mut frontend = RecordingFrontend {
-        decisions: Vec::new(),
-        decision: Approval::Approve,
-    };
+    let mut frontend = RecordingFrontend::answering(Approval::Approve);
     let spotter = crate::spotter::StaticSpotter {
         stance: Stance::Gate,
         reason: "outside the mission".into(),
@@ -272,10 +280,7 @@ async fn a_leaf_outside_the_grants_gates_with_the_bound_action() {
 #[tokio::test]
 async fn the_spotter_judges_the_leaf_with_the_chain() {
     let shared = parent_with(crate::config::Config::default());
-    let mut frontend = RecordingFrontend {
-        decisions: Vec::new(),
-        decision: Approval::Approve,
-    };
+    let mut frontend = RecordingFrontend::answering(Approval::Approve);
     let spotter = RecordingSpotter {
         seen: std::sync::Mutex::new(Vec::new()),
         stance: Stance::Gate,
@@ -355,10 +360,7 @@ async fn a_call_naming_no_tool_is_answered_ahead_of_the_cascade() {
 #[tokio::test]
 async fn an_archive_without_a_succession_goes_to_the_spotter() {
     let shared = parent_with(crate::config::Config::default());
-    let mut frontend = RecordingFrontend {
-        decisions: Vec::new(),
-        decision: Approval::Abort,
-    };
+    let mut frontend = RecordingFrontend::answering(Approval::Abort);
     let spotter = crate::spotter::StaticSpotter {
         stance: Stance::Gate,
         reason: "would gate".into(),

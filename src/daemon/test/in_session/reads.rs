@@ -18,7 +18,7 @@ async fn a_status_reads_as_the_callers_relation() {
     let fixture = Fixture::new();
     let child = fixture.session("child");
     let seq = issue(&child, vec![curl()]);
-    let _gate = child.register_pending(&curl(), None);
+    let _gate = child.register_pending(&curl(), None, None);
 
     let reviewer = status(Some("child"))
         .execute(fixture.control("parent"), RequestContext::default())
@@ -49,7 +49,7 @@ async fn a_status_reads_as_the_callers_relation() {
     // drives the grandchild through the creation chain but does not review it.
     let grandchild = fixture.session("grandchild");
     issue(&grandchild, vec![curl()]);
-    let _gate = grandchild.register_pending(&curl(), None);
+    let _gate = grandchild.register_pending(&curl(), None, None);
     let driver = status(Some("grandchild"))
         .execute(fixture.control("parent"), RequestContext::default())
         .await

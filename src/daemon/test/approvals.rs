@@ -23,7 +23,7 @@ fn the_gate_carries_the_spotter_reason() {
             }),
         )
         .unwrap();
-    let _gate = shared.register_pending(&call, None);
+    let _gate = shared.register_pending(&call, None, None);
     assert!(
         shared
             .state_json()
@@ -52,13 +52,53 @@ fn the_gate_carries_the_bound_leaf_action() {
         session: "child".into(),
         chain: vec!["child".into()],
     };
-    let _gate = shared.register_pending(&approve, Some(&bound));
+    let _gate = shared.register_pending(&approve, Some(&bound), None);
 
     let state = shared.state_json();
     assert!(state.contains("\"acting_on\""), "{state}");
     assert!(state.contains("rm -rf build"), "{state}");
     assert!(state.contains("clean the tree"), "{state}");
     assert!(state.contains("\"child\""), "{state}");
+}
+
+/// A gate surfaces the grant it offers on `/state` as the change a client commits
+/// unchanged plus its label (docs/control-api.md), and a gate offering none omits the
+/// key. The change is accepted back verbatim as the `config_edit` decision.
+#[tokio::test]
+async fn the_gate_carries_its_grant_and_takes_it_back_verbatim() {
+    let (shared, _rx) = Session::with_role(
+        std::env::current_dir().unwrap(),
+        Log::in_memory(),
+        crate::config::LoadedConfig {
+            role: crate::config::Config::from_toml("tools = [\"read\"]\n").unwrap(),
+            source: crate::config::ConfigSource::Default,
+        },
+    );
+    let call = ToolCall::new(
+        "read",
+        "toolu_x",
+        serde_json::json!({ "paths": ["/elsewhere/codex/README.md"] }),
+    );
+    let grant = shared.gate_grant(&shared.effective_config(), &call);
+    let _gate = shared.register_pending(&call, None, grant);
+
+    let state: Value = serde_json::from_str(&shared.state_json()).unwrap();
+    let offered = &state["gate"]["grant"];
+    assert_eq!(
+        offered.to_string(),
+        r#"{"change":{"path":{"path":"/elsewhere/codex","read":true,"write":false}},"label":"always allow reading /elsewhere/codex"}"#
+    );
+    let server = test_server(&shared).await;
+    let body = serde_json::json!({ "decision": "config_edit", "change": offered["change"] });
+    server
+        .put("/v1/approvals/toolu_x")
+        .with_body(body.to_string())
+        .await
+        .assert_status(200);
+
+    let _gate = shared.register_pending(&bash_call("ls"), None, None);
+    let state: Value = serde_json::from_str(&shared.state_json()).unwrap();
+    assert!(state["gate"].get("grant").is_none(), "{state}");
 }
 
 /// The `GateDecision` records in `session`'s log, in order.
@@ -81,13 +121,13 @@ async fn a_decision_over_http_is_recorded_with_its_decider() {
     let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
     let server = test_server(&shared).await;
 
-    let _gate = shared.register_pending(&bash_call("ls"), None);
+    let _gate = shared.register_pending(&bash_call("ls"), None, None);
     server
         .put("/v1/approvals/toolu_x")
         .with_body(r#"{"decision":"approve","source":"web"}"#)
         .await
         .assert_status(200);
-    let _gate = shared.register_pending(&bash_call("rm -rf tmp"), None);
+    let _gate = shared.register_pending(&bash_call("rm -rf tmp"), None, None);
     server
         .put("/v1/approvals/toolu_x")
         .with_body(r#"{"decision":"redirect","message":"use trash"}"#)
@@ -142,7 +182,7 @@ async fn the_transcript_names_who_decided() {
         )
         .unwrap();
     let server = test_server(&shared).await;
-    let _gate = shared.register_pending(&call, None);
+    let _gate = shared.register_pending(&call, None, None);
     let held = server.get("/v1/transcript").await;
     held.assert_ok();
     assert_eq!(

@@ -80,7 +80,7 @@ async fn decide_maps_the_seq_and_records_the_client() {
         serde_json::json!({ "command": "curl -sI https://example.com" }),
     );
     let seq = issue(&shared, &call);
-    let gate = shared.register_pending(&call, None);
+    let gate = shared.register_pending(&call, None, None);
     let control = mounted(&shared).await;
 
     let err = Decide {

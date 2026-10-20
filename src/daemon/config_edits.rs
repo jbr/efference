@@ -215,6 +215,18 @@ impl Session {
         probes.next_probe(role, tokens)
     }
 
+    /// The grant a gate on `call` offers under `role`, read against this session's
+    /// directories and probe ledger (docs/permissions.md). The cascade asks at the rung
+    /// that held the call, which is what knows whether a grant applies at all.
+    pub fn gate_grant(
+        &self,
+        role: &crate::config::Config,
+        call: &ToolCall,
+    ) -> Option<crate::policy::GateGrant> {
+        let probes = self.probes.lock().unwrap();
+        crate::policy::gate_grant(&self.directories(), role, &probes, call)
+    }
+
     /// Record a probe's vote (`safe` iff the spotter answered `clear_always`) and report whether the
     /// prefix has now reached the promotion threshold `K` — the loop's signal to file a
     /// `Proposed(Command)` (docs/permissions.md).

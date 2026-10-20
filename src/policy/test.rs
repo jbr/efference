@@ -103,6 +103,7 @@ use crate::log::{ConfigChange, ConfigEdit, EditState, LogEntry, Payload, Timesta
 mod commands;
 mod context_rung;
 mod effective;
+mod gate_grant;
 mod probe;
 mod tools;
 

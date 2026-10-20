@@ -56,7 +56,7 @@ fn in_phase(shared: Arc<Session>, phase: LoopPhase) -> Arc<Session> {
 fn gated(shared: Arc<Session>) -> Arc<Session> {
     shared.set_phase(LoopPhase::Executing);
     let call = bash_call("ls");
-    std::mem::forget(shared.register_pending(&call, None));
+    std::mem::forget(shared.register_pending(&call, None, None));
     shared
 }
 

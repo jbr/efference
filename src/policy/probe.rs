@@ -44,6 +44,14 @@ impl ProbeLedger {
             .is_some_and(|(safe, not_safe)| *safe >= PROMOTE_AFTER_SAFE_VOTES || *not_safe > 0)
     }
 
+    /// Whether a fresh spotter has voted `prefix` not safe for all arguments: the evidence a
+    /// gate's grant descends past to a longer prefix ([`super::gate_grant`]).
+    pub fn refuted(&self, prefix: &str) -> bool {
+        self.votes
+            .get(prefix)
+            .is_some_and(|(_, not_safe)| *not_safe > 0)
+    }
+
     /// Whether `prefix`'s safe-votes have reached the promotion threshold `K` — the loop's signal to
     /// file a `Proposed(Command)` for it.
     pub fn ready_to_promote(&self, prefix: &str) -> bool {
