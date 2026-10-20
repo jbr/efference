@@ -33,7 +33,6 @@ pub(crate) mod gallery;
 pub(crate) mod grid;
 #[cfg(test)]
 pub(crate) mod harness;
-#[cfg(feature = "dev")]
 mod host_dispatch;
 pub(crate) mod image;
 pub mod inline;

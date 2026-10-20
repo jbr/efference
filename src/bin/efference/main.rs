@@ -94,6 +94,7 @@ mod cli;
 mod control;
 #[cfg(feature = "dev")]
 mod dev;
+#[cfg(feature = "dev")]
 mod dev_compact;
 #[cfg(feature = "dev")]
 mod dev_models;
@@ -112,6 +113,7 @@ mod setup;
 mod spot_report;
 #[cfg(feature = "dev")]
 mod spotter_eval;
+#[cfg(feature = "dev")]
 mod stop_report;
 #[cfg(feature = "dev")]
 mod triage_replay;

@@ -6,7 +6,7 @@ use super::*;
 /// holding its standard-named log and config (docs/permissions.md).
 pub(crate) const BASE_DIR: &str = efference::daemon::SESSION_BASE;
 
-#[cfg(any(feature = "dev", test))]
+#[cfg(feature = "dev")]
 pub(crate) const LOG_NAME: &str = efference::boot::LOG_NAME;
 
 #[derive(Parser)]
@@ -112,6 +112,7 @@ impl HostFlags {
 }
 
 /// The directory for a session id (`.efference/<id>`).
+#[cfg(any(feature = "dev", test))]
 pub(crate) fn session_dir(id: &str) -> PathBuf {
     Path::new(BASE_DIR).join(id)
 }

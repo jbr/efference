@@ -1,5 +1,6 @@
 use super::*;
 use efference::boot::CONFIG_SCAFFOLD;
+#[cfg(feature = "dev")]
 use efference::persist::Log;
 
 /// Target resolution (docs/control-channel.md): a `--name` no host lists here is an
