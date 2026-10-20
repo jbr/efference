@@ -30,9 +30,9 @@ pub(in crate::agent) async fn judge<F: Frontend, S: Spotter>(
     }
     // A successor archiving its own predecessor is the hand-off's completion
     // (docs/permissions.md): the host wrote the link at `hand_off`, so the call clears on
-    // the fast path, before the spotter or the human is asked. A denial at a child's gate
-    // authorizes nothing, and clears the same way.
-    if bound.is_none() && (toolbox.completes_hand_off(call) || toolbox.denies_a_gate(call)) {
+    // the fast path, before the spotter or the human is asked. A denial or an escalation
+    // at a child's gate authorizes nothing, and clears the same way.
+    if bound.is_none() && (toolbox.completes_hand_off(call) || toolbox.authorizes_nothing(call)) {
         return Ok(Approval::Approve);
     }
     // The judged call: the child's leaf when bound, else the parent's own call.

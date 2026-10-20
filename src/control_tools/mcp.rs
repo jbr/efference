@@ -37,8 +37,10 @@ the answer says which. An empty message continues an agent that stopped or pause
 
 A gate is an agent holding a tool call its permission rungs did not clear: nothing runs \
 until `decide` names the call's seq with allow (a message rides with its result) or deny \
-(with a message the agent goes on under it; without one its turn ends). The agent never \
-sees an approval, only a denial and its message, so feedback names the visible tool \
+(with a message the agent goes on under it; without one its turn ends). Escalate leaves \
+it held and asks the operator, the person at efference's own clients, with your message \
+as a note to them. The agent \
+never sees an approval, only a denial and its message, so feedback names the visible tool \
 choice, not the gate.
 
 A question (its status says asking) is answered by `message` with `reply_to` set to the \

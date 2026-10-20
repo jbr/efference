@@ -155,11 +155,11 @@ impl Toolbox {
         })
     }
 
-    /// Whether `call` is an `agents__decide` that denies, which authorizes nothing
-    /// and so clears on the fast path (docs/permissions.md). False when no sessions
-    /// provider is mounted.
-    pub fn denies_a_gate(&self, call: &ToolCall) -> bool {
-        crate::control_tools::denies(call)
+    /// Whether `call` is an `agents__decide` that denies or escalates, which
+    /// authorizes nothing and so clears on the fast path (docs/permissions.md). False
+    /// when no sessions provider is mounted.
+    pub fn authorizes_nothing(&self, call: &ToolCall) -> bool {
+        crate::control_tools::authorizes_nothing(call)
             && self
                 .providers
                 .iter()

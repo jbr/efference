@@ -3,6 +3,8 @@ use super::*;
 use crate::frontend::Approval;
 use crate::log::{Keep, Notification, Stance, Summary, Triaged};
 
+mod escalation;
+
 fn child<'a>(me: Option<&'a str>) -> Reading<'a> {
     Reading {
         session: Some("child"),

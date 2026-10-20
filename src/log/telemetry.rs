@@ -77,6 +77,11 @@ pub enum Telemetry {
     /// redirect it causes. A redirect the loop's own permission review writes is
     /// recorded under `review[<level>]`; a spotter clear leaves none.
     GateDecision(GateDecision),
+    /// A held call was escalated: whoever it was routed to passed it up without deciding
+    /// it (`decide` with `escalate`, docs/permissions.md). It stays held, now routed to
+    /// `to`. Appended when the escalation is accepted, so it precedes the decision that
+    /// eventually resolves the call.
+    Escalation(Escalation),
     /// A main-model consolidation check and its disposition (docs/consolidate.md).
     Consolidation {
         from: super::Seq,
@@ -162,6 +167,41 @@ impl GateDecision {
     }
 }
 
+/// One accepted escalation of a held call ([`Telemetry::Escalation`]).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Escalation {
+    /// The held call's `tool_use` id.
+    pub call_id: CallId,
+    /// Who escalated, spelled as a turn's `source` is: `mcp[<name>]`, `session[<id>]`.
+    /// Absent for the operator's own command line.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
+    /// The session the call is routed to now; absent when it went to the operator.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub to: Option<String>,
+    /// The escalator's note to whoever decides next.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
+impl Escalation {
+    /// The record of `source` passing the call `call_id` to `to` (`None`: the
+    /// operator), with `note`.
+    pub fn new(
+        call_id: impl Into<CallId>,
+        source: Option<String>,
+        to: Option<String>,
+        note: Option<String>,
+    ) -> Self {
+        Self {
+            call_id: call_id.into(),
+            source,
+            to,
+            note,
+        }
+    }
+}
+
 impl Telemetry {
     /// The wire name of the variant — the `kind` of its log frame, under the
     /// `telemetry.` prefix so no kind collides with a state topic's name.
@@ -179,6 +219,7 @@ impl Telemetry {
             Telemetry::Interrupt(_) => "telemetry.interrupt",
             Telemetry::Continue(_) => "telemetry.continue",
             Telemetry::GateDecision(_) => "telemetry.gate_decision",
+            Telemetry::Escalation(_) => "telemetry.escalation",
             Telemetry::Consolidation { .. } => "telemetry.consolidation",
             Telemetry::Tools { .. } => "telemetry.tools",
         }

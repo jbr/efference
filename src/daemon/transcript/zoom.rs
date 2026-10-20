@@ -122,6 +122,13 @@ pub(crate) fn zoom(log: &[LogEntry], handle: Handle, reading: &Reading) -> Resul
                 )
             ));
         }
+        (Payload::Telemetry(Telemetry::Escalation(escalation)), None) => {
+            let on = out.handle_of(&escalation.call_id.0);
+            out.lines.push(format!(
+                "escalation of {on}: {}",
+                escalated(escalation, reading.me)
+            ));
+        }
         (Payload::ResultVerdict { for_result, wire }, None) => {
             let mut line = format!("verdict on the result at seq {for_result}");
             if let Some(result) = out.index.entry(*for_result)
@@ -287,6 +294,10 @@ impl<'a> Zoom<'a, '_> {
     /// Whether the gate held the call, and who decided it and how.
     fn decision(&mut self, id: &str, spot: Option<&Spot>) {
         use crate::frontend::Approval;
+        for (seq, escalation) in self.index.escalations(id) {
+            let line = escalated(escalation, self.reading.me);
+            self.lines.push(format!("{line} (seq {seq})"));
+        }
         if self.reading.held == Some(id) {
             self.lines.push("decision: pending".to_string());
             return;

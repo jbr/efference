@@ -401,16 +401,21 @@ fn with_agent_verbs(caller: &str) -> Toolbox {
     toolbox
 }
 
-/// A denial authorizes nothing, so it clears on the fast path: neither rung is asked,
-/// and nothing is classified as an action it would authorize (docs/permissions.md).
+/// A denial or an escalation authorizes nothing, so it clears on the fast path: neither
+/// rung is asked, and nothing is classified as an action it would authorize
+/// (docs/permissions.md).
 #[tokio::test]
-async fn a_deny_clears_on_the_fast_path() {
+async fn a_deny_or_an_escalate_clears_on_the_fast_path() {
     let shared = parent_with(crate::config::Config::default());
-    for call in [decide_call("deny"), {
-        let mut with_message = decide_call("deny");
-        with_message.input["message"] = "use the cached copy".into();
-        with_message
-    }] {
+    for call in [
+        decide_call("deny"),
+        {
+            let mut with_message = decide_call("deny");
+            with_message.input["message"] = "use the cached copy".into();
+            with_message
+        },
+        decide_call("escalate"),
+    ] {
         let approval = super::step::judge(
             &mut NeverGates,
             &shared,
@@ -432,7 +437,7 @@ async fn a_deny_clears_on_the_fast_path() {
         "no spotter verdict was asked for or logged"
     );
     // Without the session-control verbs mounted the name is no denial at all.
-    assert!(!Toolbox::bash_only().denies_a_gate(&decide_call("deny")));
+    assert!(!Toolbox::bash_only().authorizes_nothing(&decide_call("deny")));
 }
 
 /// Only an allow is bound to the move it authorizes: an allow whose target holds no

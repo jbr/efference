@@ -4,7 +4,8 @@ use mcplease::types::RequestContext;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 
-/// A gate decision (docs/permissions.md): `allow` runs the held call; `deny` refuses it.
+/// A gate decision (docs/permissions.md): `allow` runs the held call; `deny` refuses it;
+/// `escalate` leaves it held and passes it to whoever decides next.
 #[derive(
     Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema, clap::ValueEnum,
 )]
@@ -12,6 +13,7 @@ use serde_json::Value;
 pub enum Decision {
     Allow,
     Deny,
+    Escalate,
 }
 
 /// The decision an `agents__decide` call's input names, if it names one.

@@ -192,6 +192,7 @@ mod continuation;
 mod decide_authority;
 mod durable_inbox;
 mod empty_completion;
+mod escalate;
 mod events;
 mod http;
 mod in_session;

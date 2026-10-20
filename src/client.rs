@@ -258,6 +258,24 @@ impl Client {
         Ok(answer.is_ok())
     }
 
+    /// Escalate the pending approval gate to the operator
+    /// (`POST /approvals/{call_id}/escalate`, docs/control-api.md): it stays held, marked
+    /// with `source` as its escalator and `note` for the operator. `Ok(false)` when
+    /// `call_id` is no longer the pending gate (`409 gate_moved`).
+    pub(crate) async fn escalate(
+        &self,
+        call_id: &str,
+        source: Option<&str>,
+        note: Option<&str>,
+    ) -> Result<bool> {
+        let path = self.versioned(&format!("/approvals/{call_id}/escalate"));
+        let body = serde_json::json!({ "source": source, "note": note }).to_string();
+        let answer = self
+            .send_declinable(Method::Post, &path, Some(body))
+            .await?;
+        Ok(answer.is_ok())
+    }
+
     /// Block until the daemon next reaches a decision point — the loop phase is idle with
     /// nothing queued, gated, asking, cold-parked, or blocked — and return the `/state`
     /// snapshot (`GET /state?wait=settled`), whose `loop_phase` names which. Returns

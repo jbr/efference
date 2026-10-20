@@ -140,6 +140,13 @@ impl<'a, 'r> Out<'a, 'r> {
                 let body = self.decision_words(decision);
                 self.push(label, body);
             }
+            Payload::Telemetry(Telemetry::Escalation(escalation))
+                if !self.shown(&escalation.call_id.0) =>
+            {
+                let label = self.label(&escalation.call_id.0, entry.seq);
+                let body = escalated(escalation, self.reading.me);
+                self.push(label, body);
+            }
             Payload::Ambient(note) => {
                 let from = self.name(Some(&note.source));
                 self.push(
@@ -158,7 +165,8 @@ impl<'a, 'r> Out<'a, 'r> {
             Payload::Archived { .. } => self.push(entry.seq, "archived"),
             Payload::Resumed(_) => self.push(entry.seq, "resumed after its host restarted"),
             // On their call's line.
-            Payload::ToolResult { .. } | Payload::Telemetry(Telemetry::GateDecision(_)) => {}
+            Payload::ToolResult { .. }
+            | Payload::Telemetry(Telemetry::GateDecision(_) | Telemetry::Escalation(_)) => {}
             // The mechanism.
             Payload::Telemetry(_)
             | Payload::Preamble { .. }
@@ -244,7 +252,8 @@ impl<'a, 'r> Out<'a, 'r> {
         }
     }
 
-    /// `bash \`cmd\` — intent → allowed by you → ok, 12 lines, it saw 1`.
+    /// `bash \`cmd\` — intent → allowed by you → ok, 12 lines, it saw 1`, with each
+    /// escalation before the decision: `→ escalated by p to you: "<note>" →`.
     fn call_line(&self, call: &ToolCall) -> String {
         let id = call.id.0.as_str();
         let mut head = crate::mcp::display_name(&call.name);
@@ -255,6 +264,9 @@ impl<'a, 'r> Out<'a, 'r> {
             let _ = write!(head, " — {}", flat(intent));
         }
         let mut parts = vec![head];
+        for (_, escalation) in self.index.escalations(id) {
+            parts.push(escalated(escalation, self.reading.me));
+        }
         if self.reading.held == Some(id) {
             parts.push("waiting for a decision".to_string());
             return parts.join(" → ");

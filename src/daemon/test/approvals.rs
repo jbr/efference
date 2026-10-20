@@ -202,3 +202,44 @@ async fn the_transcript_names_who_decided() {
         "transcript, seq 0–2\n0  bash `ls` — look around → allowed by you → running\n"
     );
 }
+
+/// `POST /approvals/:call_id/escalate` keeps the call held and sends it to the operator,
+/// recording the escalator and the note; a call that is not the pending gate is `409`
+/// and records nothing (docs/control-api.md).
+#[tokio::test]
+async fn an_escalation_over_http_keeps_the_gate_and_is_recorded() {
+    let (shared, _rx) = Session::new(std::env::current_dir().unwrap(), Log::in_memory());
+    let server = test_server(&shared).await;
+
+    let mut gate = shared.register_pending(&bash_call("curl -sI x"), None, None);
+    server
+        .post("/v1/approvals/toolu_x/escalate")
+        .with_body(r#"{"source":"mcp[claude-code]","note":"your call"}"#)
+        .await
+        .assert_status(200);
+    server
+        .post("/v1/approvals/toolu_y/escalate")
+        .with_body("{}")
+        .await
+        .assert_status(409);
+    assert!(gate.try_recv().is_err(), "still held");
+    assert!(decisions(&shared).is_empty());
+
+    let records: Vec<String> = shared
+        .snapshot()
+        .into_iter()
+        .filter(|e| {
+            matches!(
+                e.payload,
+                Payload::Telemetry(crate::log::Telemetry::Escalation(_))
+            )
+        })
+        .map(|e| serde_json::to_string(&e.payload).unwrap())
+        .collect();
+    assert_eq!(
+        records,
+        [
+            r#"{"Telemetry":{"Escalation":{"call_id":"toolu_x","source":"mcp[claude-code]","note":"your call"}}}"#
+        ]
+    );
+}

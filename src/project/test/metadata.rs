@@ -288,3 +288,44 @@ fn gate_decisions_project_to_identical_bytes() {
         );
     }
 }
+
+/// An escalation record is telemetry: it projects to nothing wherever it lands
+/// (docs/log-and-projection.md).
+#[test]
+fn escalations_project_to_identical_bytes() {
+    use crate::log::Escalation;
+    let without = serde_json::to_string(&project(&sample_log())).unwrap();
+    let without_semantic = format!("{:?}", project_semantic(&sample_log()));
+    let escalations = [
+        Escalation::new(
+            "toolu_1",
+            Some("session[parent]".into()),
+            Some("grand".into()),
+            Some("is this in scope?".into()),
+        ),
+        Escalation::new("toolu_1", Some("mcp[claude-code]".into()), None, None),
+    ];
+    for at in [0, 1, 2, 3] {
+        let mut with = sample_log();
+        for (i, escalation) in escalations.iter().cloned().enumerate() {
+            with.insert(
+                at,
+                entry(
+                    90 + i as u64,
+                    1,
+                    Payload::Telemetry(Telemetry::Escalation(escalation)),
+                ),
+            );
+        }
+        assert_eq!(
+            without,
+            serde_json::to_string(&project(&with)).unwrap(),
+            "escalation records inserted at index {at} must not perturb the projected wire"
+        );
+        assert_eq!(
+            without_semantic,
+            format!("{:?}", project_semantic(&with)),
+            "nor the dialect-neutral fold"
+        );
+    }
+}

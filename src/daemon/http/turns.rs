@@ -249,3 +249,40 @@ pub(super) async fn resolve_approval(mut conn: Conn) -> Conn {
         )
     }
 }
+
+/// Escalate the pending approval gate to the operator (docs/permissions.md): the call
+/// stays held, and the gate topic, the status and a push say who escalated it and the
+/// note. The route is an operator client's, so the escalation goes to the operator. The
+/// id is a precondition, as on `PUT /approvals/:call_id`.
+pub(super) async fn escalate_approval(mut conn: Conn) -> Conn {
+    let Some(shared) = shared_of(&conn) else {
+        return missing_state(conn);
+    };
+    let id = CallId(conn.param("call_id").unwrap_or_default().to_string());
+    let body = conn.request_body_string().await.unwrap_or_default();
+    let body = match serde_json::from_str::<super::EscalationBody>(&body) {
+        Ok(body) => body,
+        Err(e) => {
+            return fail(
+                conn,
+                ErrorCode::BadRequest,
+                format!("bad escalation body: {e}"),
+            );
+        }
+    };
+    let note = body.note.filter(|note| !note.trim().is_empty());
+    if shared.escalate(&id, body.source, None, note) {
+        conn.with_status(200)
+            .with_body(r#"{"status":"escalated"}"#)
+            .halt()
+    } else {
+        respond(
+            conn,
+            ErrorBody::new(
+                ErrorCode::GateMoved,
+                "that call is not the pending approval gate",
+            )
+            .with_detail(shared.topic_json(Topic::Gate)),
+        )
+    }
+}

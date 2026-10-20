@@ -183,6 +183,20 @@ fn decided(decision: &crate::log::GateDecision, me: Option<&str>, note: Option<&
     }
 }
 
+/// `escalated by p to g: "<note>"` — one escalation of a held call, its escalator and
+/// the session it went to named for `me` (docs/permissions.md).
+fn escalated(escalation: &crate::log::Escalation, me: Option<&str>) -> String {
+    let by = sender(escalation.source.as_deref(), me);
+    let to = match escalation.to.as_deref() {
+        Some(to) => sender(Some(to), me),
+        None => "the operator".to_string(),
+    };
+    match escalation.note.as_deref().map(flat) {
+        Some(note) if !note.is_empty() => format!("escalated by {by} to {to}: \"{note}\""),
+        _ => format!("escalated by {by} to {to}"),
+    }
+}
+
 /// Whether a recorded decision refused the call: an abort or a redirect.
 fn refused(decision: &crate::log::GateDecision) -> bool {
     use crate::frontend::Approval;

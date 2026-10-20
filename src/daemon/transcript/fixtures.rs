@@ -114,6 +114,22 @@ pub(super) fn decision(id: &str, decision: Approval, source: Option<&str>) -> Pa
     )))
 }
 
+/// An escalation's record, as `Session::escalate` appends it: `source` passed the call
+/// to the session `to`, or to the operator when `None`.
+pub(super) fn escalation(
+    id: &str,
+    source: Option<&str>,
+    to: Option<&str>,
+    note: Option<&str>,
+) -> Payload {
+    Payload::Telemetry(Telemetry::Escalation(crate::log::Escalation::new(
+        id,
+        source.map(str::to_string),
+        to.map(str::to_string),
+        note.map(str::to_string),
+    )))
+}
+
 /// An allow sent with a note, whose turn was submitted under `note_submission`.
 pub(super) fn allow_noted(id: &str, source: Option<&str>, note_submission: &str) -> Payload {
     Payload::Telemetry(Telemetry::GateDecision(

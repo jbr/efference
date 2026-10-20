@@ -61,6 +61,12 @@ loop never waits on a push service.
   ([tools.md](tools.md)) — falling back to the spotter's reason (the risk, less useful
   at a glance than the purpose) and then to a plain waiting line, since no reader may
   assume `intent` is present.
+- **Escalated gate** — `Session::escalate` (`src/daemon/approvals.rs`), when a held call is
+  escalated to the operator ([permissions.md](permissions.md)). A gate moment of its own,
+  so it supersedes the gate's earlier push and is delayed and cancelled as any gate's is.
+  Body: `escalated by <escalator> ("<note>"): ` and then the gate's body above, truncated;
+  the escalator is the id or client name inside its `source`. An escalation to another
+  session sends nothing.
 - **Ask** — `begin_ask` (`src/daemon/ask.rs`). Body: the question, truncated.
 - **Settle** — `going_idle()` (`src/daemon/pace.rs`), where the loop phase it leaves
   distinguishes a turn that just ended from boot idle, or from an idle triage that pinned

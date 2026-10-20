@@ -434,6 +434,12 @@ impl Masker {
                     }
                 }
             }
+            // An escalation's escalator is a client-asserted label, and its note is text
+            // a person or an agent wrote. `to` is a session id.
+            Payload::Telemetry(Telemetry::Escalation(escalation)) => {
+                self.mask_opt(&mut escalation.source);
+                self.mask_opt(&mut escalation.note);
+            }
             // Tool definitions are what the tools advertise, the same bytes the
             // provider receives unmasked; nothing in them is read from the environment.
             Payload::Telemetry(Telemetry::Tools { .. }) => {}

@@ -126,6 +126,77 @@ async fn decide_maps_the_seq_and_records_the_client() {
     assert_eq!(decided[0].source.as_deref(), Some("mcp[claude-code]"));
 }
 
+/// `escalate` over MCP goes to the operator, whose side the mounting harness is on: the
+/// call stays held, the gate topic and the log name the client as its escalator with
+/// its note, and the status reads it as escalated to the operator.
+#[tokio::test]
+async fn escalate_over_mcp_goes_to_the_operator() {
+    let shared = child();
+    let call = ToolCall::new(
+        crate::bash::NAME,
+        "toolu_curl",
+        serde_json::json!({ "command": "curl -sI https://example.com" }),
+    );
+    let seq = issue(&shared, &call);
+    let mut gate = shared.register_pending(&call, None, None);
+    let control = mounted(&shared).await;
+
+    let said = Decide {
+        agent: "child".into(),
+        seq: seq.clone(),
+        decision: Decision::Escalate,
+        message: Some("this touches the network; your call".into()),
+    }
+    .execute(control.clone(), claude_code())
+    .await
+    .unwrap();
+    assert_eq!(
+        said,
+        "escalated to the operator: child still holds bash `curl -sI https://example.com` \
+         until the operator decides it and reads your note"
+    );
+    assert!(gate.try_recv().is_err(), "still held");
+    assert_eq!(
+        shared.topic_json(Topic::Gate)["escalations"],
+        serde_json::json!([{
+            "source": "mcp[claude-code]",
+            "to": null,
+            "note": "this touches the network; your call",
+        }])
+    );
+    let escalated: Vec<_> = shared
+        .snapshot()
+        .into_iter()
+        .filter_map(|e| match e.payload {
+            Payload::Telemetry(Telemetry::Escalation(escalation)) => Some(escalation),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        escalated,
+        [crate::log::Escalation::new(
+            "toolu_curl",
+            Some("mcp[claude-code]".into()),
+            None,
+            Some("this touches the network; your call".into()),
+        )]
+    );
+    let status = crate::control_tools::Status {
+        agent: Some("child".into()),
+    }
+    .execute(control, claude_code())
+    .await
+    .unwrap();
+    assert!(
+        status.starts_with(&format!(
+            "child: waiting for your decision on bash `curl -sI https://example.com` (seq \
+             {seq})\nescalated: by you to the operator: \"this touches the network; your \
+             call\""
+        )),
+        "{status}"
+    );
+}
+
 /// A message while the session asks is refused with the question, over MCP and from
 /// the command line alike; naming the question answers it.
 #[tokio::test]

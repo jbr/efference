@@ -467,11 +467,13 @@ session ids from the directly-targeted child down to the session holding the lea
 that is not the target's pending gate is refused before classification with a "gate
 moved" error result, and the target rules the Host executor already enforces (self never,
 supervised sessions only, project reach) apply to the binding, each hop to the previous
-session: a held decision is followed only into a session its holder supervises.
+session: a held decision is followed only into a session its holder supervises, or whose
+held call was escalated to its holder (below).
 
-**A deny authorizes nothing.** A denying `agents__decide` — a redirect or an abort of the
-child's held call — is not bound, and clears on the fast path with no spotter request and
-no `Spot` entry, the way the hand-off's completion does (`Toolbox::denies_a_gate` beside
+**A deny or an escalate authorizes nothing.** A denying `agents__decide` — a redirect or
+an abort of the child's held call — and an escalating one, which leaves the call held, are
+not bound, and clear on the fast path with no spotter request and no `Spot` entry, the way
+the hand-off's completion does (`Toolbox::authorizes_nothing` beside
 `Toolbox::completes_hand_off` in `judge`). The verb still enforces its target rules when
 it runs.
 
@@ -1042,7 +1044,8 @@ without eliminating:
 
   **Authority is the pointer's.** Who may decide a gate is a separate rule from whom it is
   routed to. The operator's surfaces — the TUI, the web client, `efference control`, and for
-  now the MCP mount — and the session's supervisor decide it, wherever the dial sends it.
+  now the MCP mount — and the session's supervisor decide it, wherever the dial sends it,
+  as does the session an escalation passed it to, for that gate alone (below).
   Creating a session or succeeding its creator does not by itself confer `decide`;
   `message`, `interrupt` and `archive` keep the drive relation ([tools.md](tools.md)). When
   the operator turns a child's dial to `spotter_human` while its creator is still its
@@ -1051,11 +1054,43 @@ without eliminating:
   the creator's rendering reads `waiting for a decision from the operator or you`, with the
   `decide` call (`Relation::MayDecide`, `daemon/status/render.rs`).
 
+  **Escalation passes one held call up.** The session a gate is routed to may answer it
+  with `decide(…, escalate, message?)` instead of deciding it (docs/tools.md). The call
+  stays held and is routed to that session's own supervisor, the next one up the pointer
+  chain, while it is hosted; with none, to the operator. A session the call reaches may
+  escalate it again, so it climbs one supervisor per escalation and ends at the operator.
+  The message rides with it as a note to whoever decides next. Only the reviewer
+  escalates in-session: a supervisor reading a gate routed elsewhere is refused, naming
+  whom it is routed to. An operator client (`efference mcp`, `efference control`) is on
+  the operator's side already, so its escalation goes to the operator, which asks the
+  person through the gate views and a push ([web-push.md](web-push.md)).
+
+  - *Routing.* The held call's escalations live on the pending gate (`Pending::escalations`,
+    `daemon/approvals.rs`), and while it has any, the last one routes it rather than the
+    dial (`Session::gate_reviewer`, `daemon/status/view.rs`): turning the dial or moving
+    the pointer leaves it with the session it went to. The status watcher re-posts it to
+    that session as its reviewer, with wake, and stops posting it to the escalator as one;
+    the escalator's subscription reads it without wake, as waiting on the new reviewer,
+    with an `escalated:` line naming whom it went to. A session it went to that has since
+    ended routes it to the operator, by the fail-safe above.
+  - *Authority.* The session an escalated call was last passed to may decide that call,
+    though it does not supervise the holder; `decide` naming any other seq of the holder,
+    and any later gate, is refused to it as to any non-supervisor
+    (`HostExecutor::may_decide_gate`). The holder's supervisor keeps its own authority
+    over the call it escalated.
+  - *Record.* Each escalation is a `telemetry.escalation` entry in the holder's log —
+    the call, the escalator as a `source`, the session it went to (absent for the
+    operator), and the note — projecting to nothing. The gate topic and the status view
+    carry the same hops ([control-api.md](control-api.md)), and the transcript prints
+    them on the call's line.
+
   **A level change re-routes a gate already held; it never drops one.** The status watcher is
   level-triggered on the status, the resolved position, *and* the live supervisor, so turning the
   dial, moving or clearing the pointer, or the supervisor ending re-posts the held call to whoever
   now answers it. Handing off future approvals is not
-  abandoning a call that is holding a child right now.
+  abandoning a call that is holding a child right now. An escalated call is the exception:
+  its escalations route it, so the watcher compares those instead of the position
+  (`Routing`, `daemon/subscriptions.rs`), and a dial change does not move it.
 
   There is deliberately no `supervisor_only` position mirroring `HumanOnly`: if a nonhuman reviewer
   is acceptable at all, the spotter takes the first shot, being cheap, purpose-briefed, and

@@ -23,7 +23,7 @@ fn a_gate_held_for_scope_with_no_precedent() {
         rendered(&gated(&spot, supervisor("parent")), &reviewer()),
         format!(
             "child: waiting for your decision on bash `curl -sI https://example.com` (seq \
-             8.2)\n{lines}\n{DECIDE}"
+             8.2)\n{lines}\n{DECIDE}\n{ESCALATE}"
         )
     );
     assert_eq!(
@@ -49,7 +49,7 @@ fn a_gate_held_with_precedents_short_of_the_requirement() {
         intent: fetch only the response headers";
     assert_eq!(
         rendered(&gated(&spot, supervisor("parent")), &reviewer()),
-        format!("child: waiting for your decision on {first}\n{reason}\n{DECIDE}")
+        format!("child: waiting for your decision on {first}\n{reason}\n{DECIDE}\n{ESCALATE}")
     );
     assert_eq!(
         rendered(&gated(&spot, supervisor("boss")), &driver()),
@@ -68,7 +68,7 @@ fn a_prose_reason_and_a_fail_closed_one() {
         rendered(&gated(&prose, supervisor("parent")), &reviewer()),
         format!(
             "child: waiting for your decision on {first}\nheld because: outside the granted \
-             paths.\n{DECIDE}"
+             paths.\n{DECIDE}\n{ESCALATE}"
         )
     );
     assert_eq!(
@@ -88,7 +88,7 @@ fn a_prose_reason_and_a_fail_closed_one() {
         rendered(&gated(&failed, supervisor("parent")), &reviewer()),
         format!(
             "child: waiting for your decision on {first}\nheld because: its reviewer could not \
-             judge it\n{DECIDE}"
+             judge it\n{DECIDE}\n{ESCALATE}"
         )
     );
     assert_eq!(
@@ -157,6 +157,7 @@ fn a_summary_with_backticks_is_one_code_span() {
         handle: Some("8".into()),
         held_because: held_because(&spot(Origin::Model, "level 2", None)),
         reviewer: Reviewer::Operator,
+        escalations: Vec::new(),
     }));
     let text = rendered(&held, &driver());
     assert!(

@@ -124,6 +124,39 @@ pub(crate) fn decided(id: &str, held: &HeldCall, allow: bool, note: Option<&str>
     }
 }
 
+/// What an escalation did: the call stays held, and who decides it now — the session
+/// `to`, or the operator when `None` (docs/permissions.md).
+pub(crate) fn escalated(id: &str, held: &HeldCall, to: Option<&str>, note: Option<&str>) -> String {
+    let to = to.unwrap_or("the operator");
+    let note = match note {
+        Some(_) => " and reads your note",
+        None => "",
+    };
+    format!(
+        "escalated to {to}: {id} still holds {} until {to} decides it{note}",
+        held_call(held)
+    )
+}
+
+/// Why an in-session escalation of `id`'s held call is refused: only the session a gate
+/// is routed to passes it on, and it is routed to `reviewer` (docs/permissions.md).
+pub(crate) fn not_yours_to_escalate(id: &str, held: &HeldCall, reviewer: &Reviewer) -> String {
+    let asked = match reviewer {
+        Reviewer::Operator => "the operator".to_string(),
+        Reviewer::Supervisor { id } => id.clone(),
+    };
+    let seq = held
+        .handle
+        .as_deref()
+        .map(|handle| format!(" (seq {handle})"))
+        .unwrap_or_default();
+    format!(
+        "refused: {id}'s {}{seq} is routed to {asked}, not to you — escalate passes on a \
+         gate routed to you; allow or deny still decide it",
+        held_call(held)
+    )
+}
+
 /// A decision naming a call that is not the pending gate: what the session is waiting
 /// on now, from its status.
 pub(crate) fn gate_moved(seq: &str, view: &StatusView, reader: &Reader, now: u64) -> String {

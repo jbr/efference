@@ -56,7 +56,7 @@ impl Out<'_, '_> {
     }
 
     /// The seq of the call whose outcome `entry` is, when it is one and the call was
-    /// issued: a result, a verdict on a result, a gate decision, the user turn that
+    /// issued: a result, a verdict on a result, a gate decision, an escalation, the user turn that
     /// carries a redirect's message or an allow's note.
     fn call_seq(&self, entry: &LogEntry) -> Option<Seq> {
         let of = |call_id: &str| self.index.call(call_id).map(|call| call.seq);
@@ -69,6 +69,7 @@ impl Out<'_, '_> {
                 }
             }
             Payload::Telemetry(Telemetry::GateDecision(decision)) => of(&decision.call_id.0),
+            Payload::Telemetry(Telemetry::Escalation(escalation)) => of(&escalation.call_id.0),
             Payload::User(_) => self
                 .index
                 .steer(entry.seq)

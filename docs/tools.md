@@ -253,7 +253,8 @@ enforceable, and they are enforced by the executor rather than by config:
 - **`decide` reaches the sessions the caller supervises.** In-session, only the session the
   host's supervisor pointer names ([permissions.md](permissions.md)) — its creator, until
   the operator sets another — decides a session's gates, wherever the review dial routes
-  them; the operator's surfaces decide any. Creating a session or succeeding its creator
+  them; the operator's surfaces decide any. A session a held call was escalated to decides
+  that call, and no other gate of its holder. Creating a session or succeeding its creator
   does not by itself confer it: a session driving a grandchild through the creation chain,
   a creator whose child the operator gave to another supervisor, and a successor driving
   its predecessor are refused. The refusal names who decides and what still reaches the
@@ -303,6 +304,15 @@ result, and the decision's record names that turn's submission id (`note_submiss
 the transcript prints the note on the call's line; `deny` with a message rejects the call and steers the turn
 (`Approval::Redirect`); a bare `deny` aborts it. The decider is recorded on the
 `GateDecision` as `session[<caller id>]`.
+
+`escalate` decides nothing: the call stays held and goes to whoever decides above the
+caller, with the message as a note to them ([permissions.md](permissions.md)). In-session
+that is the caller's own supervisor while it is hosted, else the operator, and only the
+session the gate is routed to may escalate it; a supervisor reading a gate routed elsewhere
+is refused, naming whom it is routed to. Over `efference mcp` and the command line it is
+the operator (`POST /approvals/:call_id/escalate`, docs/control-api.md). The answer names
+who decides now: ``escalated to g: c still holds bash `curl -sI https://example.com` until
+g decides it and reads your note``.
 
 `status(agent?)` is the status renderer's answer (below) for one session, read in the
 caller's relation to it; with no agent it is one line per session in the caller's
@@ -397,8 +407,12 @@ its arguments filled in. The verbs' own answers are rendered beside it
 - **Reviewer** — the session a gate is routed to (below, and docs/permissions.md), or
   an operator client for a gate routed to the operator: the held call by tool, command
   or arguments, and transcript handle (`seq`, or `seq.n` when it shared its entry), its
-  intent, why it was held in plain words, and the `decide` call that answers it with its
-  seq filled in.
+  intent, why it was held in plain words, the `decide` call that answers it with its
+  seq filled in, and the `escalate:` call that passes it up instead.
+
+  Every reader of an escalated gate reads one `escalated:` line per escalation, before
+  the intent: `escalated: by p to you: "<note>"`, the escalator and the session it went to
+  named for the reader (`the operator` when it went there).
 - **May decide** — the session's supervisor, reading a gate routed to someone else (the
   operator, under a dial that sends the gates there): the gate as a driver reads it, its
   first line `waiting for a decision from the operator or you`, and a `decide:` line saying
@@ -429,9 +443,9 @@ subscriber (docs/inbox.md — must-wake):
   a turn to act at each of the child's decision points even if it then decides
   nothing needs doing. In particular a child's turn ending — a report, a question,
   a refusal — hands control back to the parent without the child sending anything.
-  The one exception is a gate the review dial routes to the operator: the operator is
-  the one asked, so it reaches a `wake` subscriber without wake, and the supervisor
-  reads it in the may-decide form above.
+  The exceptions are a gate the review dial routes to the operator, and an escalated
+  gate: someone else is the one asked, so it reaches a `wake` subscriber without wake,
+  and the supervisor reads it in the may-decide form above.
 - **Any other, without wake.** Observation may not: the subscriber's triage may dismiss
   or leave a peer's status. The host's `subscribe` and `unsubscribe` keep both kinds;
   no agent verb makes or drops one.
@@ -495,8 +509,8 @@ tool, input, intent, cwd, and the chain of sessions down to the leaf. The parent
 fast-path, spotter brief, and human gate read that action rather than the handle, and the
 gate view carries it as `acting_on` (docs/control-api.md). A held call that is itself an
 allowing `agents__decide` is followed through the host to the leaf; a stale seq refuses
-with "gate moved" before any rung is consulted. A denying `agents__decide` authorizes
-nothing, so it is not bound and clears on the fast path.
+with "gate moved" before any rung is consulted. A denying or escalating `agents__decide`
+authorizes nothing, so it is not bound and clears on the fast path.
 
 `McpServer<State, ToolEnum>` in `src/tools.rs` is generic over the
 instantiations (fs-mcp, semantic-edit-mcp, and the session-control server). It holds

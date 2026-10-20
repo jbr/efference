@@ -17,9 +17,8 @@ pub(crate) struct Target<'a> {
 pub(crate) struct Moves {
     /// Resolve a held call, with its outcomes.
     pub(crate) decide: fn(&Target) -> String,
-    /// Hand a held call up to whoever decides next; `None` on a mount with no such
-    /// move.
-    pub(crate) hand_back: Option<fn(&Target) -> String>,
+    /// Pass a held call up undecided to whoever decides next (docs/permissions.md).
+    pub(crate) escalate: fn(&Target) -> String,
     /// Send the session its next message.
     pub(crate) message: fn(&Target) -> String,
     /// Answer the question the session is asking.
@@ -47,7 +46,7 @@ impl Moves {
     const fn spelled_as<P: Prefix>() -> Moves {
         Moves {
             decide: |target| calls::decide(P::PREFIX, target),
-            hand_back: None,
+            escalate: |target| calls::escalate(P::PREFIX, target),
             message: |target| calls::message(P::PREFIX, target),
             answer: |target| calls::answer(P::PREFIX, target),
             resume: |target| calls::resume(P::PREFIX, target),
@@ -100,6 +99,18 @@ mod calls {
             "{prefix}decide({}{seq}, decision: \"allow\" | \"deny\", message?) — allow runs it, \
              and a message rides with its result; deny with a message refuses it and the session \
              goes on under your message; a bare deny ends its turn",
+            agent(target)
+        )
+    }
+
+    pub(super) fn escalate(prefix: &str, target: &Target) -> String {
+        let seq = target
+            .handle
+            .map(|handle| format!(", seq: {}", quoted(handle)))
+            .unwrap_or_default();
+        format!(
+            "{prefix}decide({}{seq}, decision: \"escalate\", message?) — leaves it held and \
+             passes it to whoever decides above you, with your message as a note to them",
             agent(target)
         )
     }

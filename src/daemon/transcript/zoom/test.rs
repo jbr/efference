@@ -197,3 +197,36 @@ fn a_missing_entry_is_a_clear_error() {
         }
     );
 }
+
+/// An escalated call's decision trail names each escalation, with the seq recording it,
+/// before the decision; the escalation's own entry zooms to a line naming the call.
+#[test]
+fn an_escalation_is_in_the_decision_trail() {
+    let mut log = Fixture::new();
+    log.add(turn(
+        "",
+        vec![bash("toolu_1", "curl -sI x", "fetch headers")],
+    ));
+    log.add(escalation(
+        "toolu_1",
+        Some("session[parent]"),
+        Some("grand"),
+        Some("is example.com in scope?"),
+    ));
+    let reading = Reading {
+        held: Some("toolu_1"),
+        ..child(Some("grand"))
+    };
+    let text = zoom(log.entries(), handle("0"), &reading).unwrap();
+    assert!(
+        text.contains(
+            "escalated by parent to you: \"is example.com in scope?\" (seq 1)\ndecision: pending"
+        ),
+        "{text}"
+    );
+    assert_eq!(
+        zoom(log.entries(), handle("1"), &reading).unwrap(),
+        "transcript of child, seq 1\nescalation of 0: escalated by parent to you: \"is \
+         example.com in scope?\"\n"
+    );
+}

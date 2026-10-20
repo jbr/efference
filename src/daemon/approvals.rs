@@ -23,6 +23,10 @@ pub(super) struct Pending {
     /// (docs/permissions.md). `None` when no single change is confidently the one.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) grant: Option<crate::policy::GateGrant>,
+    /// Each time the call was passed up undecided, in order (`decide` with `escalate`,
+    /// docs/permissions.md); the last names whom it is routed to now.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(super) escalations: Vec<super::status::Escalated>,
 }
 
 /// A session's held call, as its parent's `agents__decide` reads it
@@ -102,6 +106,7 @@ impl Session {
             reason,
             acting_on: bound.cloned(),
             grant,
+            escalations: Vec::new(),
         });
         // A gate is a settled state: the phase wakes any `/settle` waiter (the `?wait` on
         // `/turn` returns here). Moved after the gate is stored, so a waiter it wakes reads it.
@@ -110,6 +115,72 @@ impl Session {
         // the loop reaches its `rx.await` without waiting on a push service.
         self.push(crate::log::MomentKind::Gate, push_body);
         rx
+    }
+
+    /// Pass the held call `id` up undecided (docs/permissions.md): it stays held, routed
+    /// now to the session `to`, or to the operator when `to` is `None`, with `note` for
+    /// whoever decides next. `source` is the escalator, spelled as a turn's `source` is.
+    /// `false` when `id` is not the pending gate.
+    ///
+    /// The escalation is recorded as a `Telemetry::Escalation` and carried on the gate
+    /// topic and the status view; the status watcher (`subscriptions.rs`) re-posts the
+    /// gate to its new reviewer. An escalation that reaches the operator is a gate
+    /// moment for push (docs/web-push.md), marked with who escalated it and the note.
+    pub(crate) fn escalate(
+        &self,
+        id: &CallId,
+        source: Option<String>,
+        to: Option<String>,
+        note: Option<String>,
+    ) -> bool {
+        let push_body = {
+            let mut pending = self.pending.lock().unwrap();
+            let Some(pending) = pending.as_mut().filter(|pending| pending.call_id == id.0) else {
+                return false;
+            };
+            pending.escalations.push(super::status::Escalated {
+                source: source.clone(),
+                to: to.clone(),
+                note: note.clone(),
+            });
+            let call = ToolCall::new(&pending.name, id.clone(), pending.input.clone());
+            let gate = super::push::gate_body(
+                &pending.name,
+                call.intent(),
+                pending.reason.as_deref(),
+                pending.acting_on.as_ref(),
+            );
+            super::push::escalated_body(source.as_deref(), note.as_deref(), &gate)
+        };
+        let record = crate::log::Escalation::new(id.clone(), source, to.clone(), note);
+        // The record must not stop what it describes.
+        if let Err(e) = self.append(
+            self.latest_turn(),
+            Payload::Telemetry(crate::log::Telemetry::Escalation(record)),
+        ) {
+            log::warn!("escalation record: append failed: {e}");
+        }
+        if to.is_none() {
+            self.push(crate::log::MomentKind::Gate, push_body);
+        }
+        // The gate topic and the status watchers read the new routing now.
+        self.touch_state();
+        true
+    }
+
+    /// The session the pending gate was last escalated to, with the gate's handle:
+    /// `None` when no gate is open, or it was not escalated or went to the operator.
+    /// The one gate that session may decide (docs/permissions.md).
+    pub(crate) fn escalated_to(&self) -> Option<(String, Option<String>)> {
+        let (call_id, to) = {
+            let pending = self.pending.lock().unwrap();
+            let pending = pending.as_ref()?;
+            (
+                pending.call_id.clone(),
+                pending.escalations.last()?.to.clone()?,
+            )
+        };
+        Some((to, self.handle_of(&call_id)))
     }
 
     /// Who decided the held call `id`, as its latest `Telemetry::GateDecision` names them:

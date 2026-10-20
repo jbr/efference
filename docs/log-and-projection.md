@@ -76,6 +76,7 @@ enum Telemetry {
     Interrupt(InterruptOrigin),                   // an interrupt reached the loop: who sent it, through which control (see control-api.md)
     Continue(ContinueOrigin),                     // a continue was accepted: who sent it (see control-api.md)
     GateDecision(GateDecision),                   // a decision on a held call was accepted: the call, the decision, who decided (see control-api.md)
+    Escalation(Escalation),                       // a held call passed up undecided: the call, who escalated, to whom, the note (see permissions.md)
     Consolidation { from: Seq, upto: Seq, context: Seq, tool_bytes: usize, outcome: String, account_bytes: usize },
     Tools { tools: Vec<Value> },                  // the tools[] the session advertises, as sent (below)
 }
@@ -201,6 +202,15 @@ conversation transcript reads who allowed or denied a call from it
 ([control-api.md](control-api.md)). It projects to nothing
 (`gate_decisions_project_to_identical_bytes`), and the `[env]` masker passes the
 decider, a redirect's message, and a config edit's change and note.
+
+`Escalation` records a held call passed up undecided (`decide` with `escalate`,
+[permissions.md](permissions.md)): `{call_id, source?, to?, note?}`, where `source` is the
+escalator spelled as a turn's is, `to` the session the call went to (absent for the
+operator), and `note` the escalator's note to whoever decides next. It is appended when the
+escalation is accepted, so it precedes the `GateDecision` that resolves the call. The
+conversation transcript prints it on the call's line. It projects to nothing
+(`escalations_project_to_identical_bytes`), and the `[env]` masker passes the escalator
+and the note.
 
 `Push` records one step of a moment's push (decided, held, released, cancelled, or the
 push services' per-device answers). It projects to nothing, like `RequestStage`

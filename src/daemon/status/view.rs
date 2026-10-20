@@ -102,6 +102,10 @@ pub(crate) struct HeldCall {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) held_because: Option<String>,
     pub(crate) reviewer: Reviewer,
+    /// Each time the call was passed up undecided, in order; the last names whom it is
+    /// routed to now (docs/permissions.md).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) escalations: Vec<Escalated>,
 }
 
 /// Who decides a held call (docs/permissions.md).
@@ -109,10 +113,25 @@ pub(crate) struct HeldCall {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub(crate) enum Reviewer {
     Operator,
-    /// The supervising session the gate is routed to.
+    /// The supervising session the gate is routed to: the holder's supervisor, or one
+    /// further up the supervisor chain that an escalation passed it to.
     Supervisor {
         id: String,
     },
+}
+
+/// One escalation of a held call: who passed it up, to whom, and the note it carries
+/// for whoever decides next (docs/permissions.md). The gate topic and the status view
+/// both carry these (docs/control-api.md).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct Escalated {
+    /// Who escalated, spelled as a turn's `source` is: `session[<id>]`, `mcp[<name>]`;
+    /// `null` for the operator's own command line.
+    pub(crate) source: Option<String>,
+    /// The session it went to; `null` for the operator.
+    pub(crate) to: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) note: Option<String>,
 }
 
 /// A turn's closing message, cut at [`CLOSING_CAP`].
@@ -316,10 +335,15 @@ impl Session {
         serde_json::to_value(self.status_view(&id, &self.status())).unwrap_or(Value::Null)
     }
 
-    /// The session a held call is routed to rather than reported to: the live supervisor,
-    /// while the position in force is `supervisor` (docs/permissions.md). `None` means the
-    /// operator decides.
-    fn routed_reviewer(&self) -> Option<String> {
+    /// The session a held call is routed to rather than reported to (docs/permissions.md):
+    /// the session its last escalation went to, while that session is hosted; with no
+    /// escalation, the live supervisor while the position in force is `supervisor`. `None`
+    /// means the operator decides. An escalation overrides the dial, so turning the dial
+    /// or moving the pointer does not route an escalated call back.
+    pub(in crate::daemon) fn gate_reviewer(&self, escalations: &[Escalated]) -> Option<String> {
+        if let Some(last) = escalations.last() {
+            return last.to.clone().filter(|id| self.host_holds(id));
+        }
         if self.resolved_review_level() != crate::policy::ReviewLevel::Supervisor {
             return None;
         }
@@ -327,37 +351,41 @@ impl Session {
     }
 
     fn held_call(&self, call_id: &str, name: &str, intent: Option<String>) -> HeldCall {
-        let summary = {
+        let (summary, escalations) = {
             let pending = self.pending.lock().unwrap();
-            pending
+            let pending = pending
                 .as_ref()
-                .filter(|pending| pending.call_id == call_id)
-                .and_then(|pending| match &pending.acting_on {
-                    // A bound approval decides the child's move, so that is what it does.
-                    Some(bound) => {
-                        let leaf = ToolCall::new(&bound.name, call_id, bound.input.clone());
-                        let leaf_summary = super::super::transcript::call_summary(&leaf)
-                            .map(|summary| {
-                                format!(" {}", super::super::transcript::code_span(&summary))
-                            })
-                            .unwrap_or_default();
-                        Some(format!(
-                            "{}'s {}{leaf_summary}",
-                            bound.session,
-                            crate::mcp::display_name(&bound.name)
-                        ))
-                    }
-                    None => super::super::transcript::call_summary(&ToolCall::new(
-                        &pending.name,
-                        call_id,
-                        pending.input.clone(),
-                    )),
-                })
+                .filter(|pending| pending.call_id == call_id);
+            let escalations = pending
+                .map(|pending| pending.escalations.clone())
+                .unwrap_or_default();
+            let summary = pending.and_then(|pending| match &pending.acting_on {
+                // A bound approval decides the child's move, so that is what it does.
+                Some(bound) => {
+                    let leaf = ToolCall::new(&bound.name, call_id, bound.input.clone());
+                    let leaf_summary = super::super::transcript::call_summary(&leaf)
+                        .map(|summary| {
+                            format!(" {}", super::super::transcript::code_span(&summary))
+                        })
+                        .unwrap_or_default();
+                    Some(format!(
+                        "{}'s {}{leaf_summary}",
+                        bound.session,
+                        crate::mcp::display_name(&bound.name)
+                    ))
+                }
+                None => super::super::transcript::call_summary(&ToolCall::new(
+                    &pending.name,
+                    call_id,
+                    pending.input.clone(),
+                )),
+            });
+            (summary, escalations)
         };
         let held_because = self
             .latest_spot(&CallId(call_id.to_string()))
             .and_then(|spot| held_because(&spot));
-        let reviewer = match self.routed_reviewer() {
+        let reviewer = match self.gate_reviewer(&escalations) {
             Some(id) => Reviewer::Supervisor { id },
             None => Reviewer::Operator,
         };
@@ -369,6 +397,7 @@ impl Session {
             handle: self.handle_of(call_id),
             held_because,
             reviewer,
+            escalations,
         }
     }
 

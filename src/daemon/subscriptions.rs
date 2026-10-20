@@ -87,6 +87,11 @@ impl Host {
     /// subscriber without the wake. The session's supervisor may still decide it, and
     /// its body names the `decide` call (`Relation::MayDecide`).
     ///
+    /// An escalated gate is routed by its last escalation, not the dial
+    /// (docs/permissions.md): its new reviewer is posted as any reviewer is, subscribed
+    /// or not, and the subscriber that escalated it reads it without wake, with an
+    /// `escalated:` line naming whom it went to.
+    ///
     /// A question that returned a session's queued message is that session's news as
     /// well (docs/process-monitor.md): a sender that is not subscribed is woken with the
     /// status, which tells it its message came back. Only a driver's message is queued,
@@ -134,9 +139,12 @@ impl Host {
                 inbox.notify_wake(id.to_string(), body, Some(status_slot(id)));
             }
         }
-        let to_operator = matches!(
+        // A gate the operator is asked, or one escalated past its subscribers, asks
+        // someone named: it reaches the other subscribers without waking them.
+        let asks_another = matches!(
             &view.condition,
-            Condition::Gated(held) if held.reviewer == Reviewer::Operator
+            Condition::Gated(held)
+                if held.reviewer == Reviewer::Operator || !held.escalations.is_empty()
         );
         let supervisor = self.supervisor_of(id);
         for (subscriber, terms) in subscribers {
@@ -149,7 +157,7 @@ impl Host {
             let supervises = supervisor.as_deref() == Some(subscriber.as_str());
             let relation = Relation::of_session(&view, &subscriber, supervises, terms.wake);
             let body = body(relation, &subscriber);
-            if terms.wake && !to_operator {
+            if terms.wake && !asks_another {
                 inbox.notify_wake(id.to_string(), body, Some(status_slot(id)));
             } else {
                 inbox.notify(id.to_string(), body, Some(status_slot(id)));
@@ -216,7 +224,8 @@ impl Host {
 /// (docs/permissions.md). A held call whose routing moves — the dial turned to hand the
 /// child back, the supervisor set to another session or cleared, or the supervisor
 /// ending — is re-routed rather than dropped: the status has not changed, so only the
-/// routing carries the news.
+/// routing carries the news. An escalation moves the routing the same way, and from then
+/// on the call's escalations route it rather than the dial ([`Routing`]).
 pub(super) async fn watch_status(host: std::sync::Weak<Host>, id: String, session: Arc<Session>) {
     let mut last: Option<(SessionStatus, Routing)> = None;
     // How many trajectories had ended at the last idle this watcher read: an idle is
@@ -240,7 +249,7 @@ pub(super) async fn watch_status(host: std::sync::Weak<Host>, id: String, sessio
         // Read after the status: the count moves before the phase reaches idle
         // (`going_idle`), so an idle read here already counts the turn it ended.
         let ended = session.turns_ended();
-        let routing = (session.resolved_review_level(), session.supervisor());
+        let routing = session.gate_routing();
         let notable = match (&last, &status) {
             (_, SessionStatus::Running) => false,
             (None, SessionStatus::Idle) => false,
@@ -274,10 +283,42 @@ pub(super) async fn watch_status(host: std::sync::Weak<Host>, id: String, sessio
     }
 }
 
-/// Where a gate is routed: the resolved review position and the live supervisor.
-type Routing = (crate::policy::ReviewLevel, Option<String>);
+/// Where a gate is routed (docs/permissions.md).
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum Routing {
+    /// By the dial: the resolved review position and the live supervisor.
+    Dial(crate::policy::ReviewLevel, Option<String>),
+    /// By the held call's escalations: how many there have been, and the session the
+    /// last went to while it is hosted (`None`: the operator). The dial is not read, so
+    /// turning it does not route the call back. The live supervisor is still read: it
+    /// may decide the call, and a moved pointer changes who reads it that way.
+    Escalated {
+        hops: usize,
+        reviewer: Option<String>,
+        supervisor: Option<String>,
+    },
+}
 
 impl Session {
+    /// Where this session's gate is routed now, as the status watcher compares it.
+    fn gate_routing(&self) -> Routing {
+        let escalations = self
+            .pending
+            .lock()
+            .unwrap()
+            .as_ref()
+            .map(|pending| pending.escalations.clone())
+            .unwrap_or_default();
+        match escalations.is_empty() {
+            true => Routing::Dial(self.resolved_review_level(), self.supervisor()),
+            false => Routing::Escalated {
+                hops: escalations.len(),
+                reviewer: self.gate_reviewer(&escalations),
+                supervisor: self.supervisor(),
+            },
+        }
+    }
+
     /// Whether this session is subscribed to any other (docs/tools.md) — a source
     /// that may wake it, as the `wait` tool counts them (docs/process-monitor.md).
     pub fn has_subscriptions(&self) -> bool {

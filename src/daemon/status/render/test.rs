@@ -92,6 +92,7 @@ fn gated(spot: &Spot, reviewer: Reviewer) -> StatusView {
         handle: Some("8.2".into()),
         held_because: held_because(spot),
         reviewer,
+        escalations: Vec::new(),
     }))
 }
 
@@ -102,6 +103,11 @@ fn supervisor(id: &str) -> Reviewer {
 const DECIDE: &str = "decide: agents__decide(agent: \"child\", seq: \"8.2\", decision: \"allow\" | \
     \"deny\", message?) — allow runs it, and a message rides with its result; deny with a message \
     refuses it and the session goes on under your message; a bare deny ends its turn";
+
+/// The escalate line a reviewer reads after [`DECIDE`].
+const ESCALATE: &str = "escalate: agents__decide(agent: \"child\", seq: \"8.2\", decision: \
+    \"escalate\", message?) — leaves it held and passes it to whoever decides above you, with \
+    your message as a note to them";
 
 /// A question gives its place and handle; a driver is told a message answers it.
 #[test]
@@ -501,7 +507,7 @@ fn every_later_line_opens_with_a_label() {
         assert_eq!(line, line.trim_start(), "{line:?}");
         let label = line.split(": ").next().unwrap();
         assert!(
-            ["intent", "held because", "decide", "hand back"].contains(&label),
+            ["intent", "held because", "decide", "escalate"].contains(&label),
             "{line:?}"
         );
     }

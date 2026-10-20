@@ -104,6 +104,16 @@ pub(crate) struct DecisionBody {
     pub(crate) note_submission: Option<String>,
 }
 
+/// Body of `POST /approvals/:call_id/escalate` (docs/control-api.md): who escalates,
+/// spelled as a turn's `source` is, and the note for whoever decides next.
+#[derive(Deserialize)]
+pub(crate) struct EscalationBody {
+    #[serde(default)]
+    pub(crate) source: Option<String>,
+    #[serde(default)]
+    pub(crate) note: Option<String>,
+}
+
 /// Body of `PATCH /loop` (docs/control-channel.md): the operator dials, each
 /// optional so one call can move either or both. `pace` is itself partial —
 /// `{"pace":{"speed_ms":10000}}` slows, `{"pace":{"held":true}}` pauses,
@@ -216,6 +226,7 @@ pub(crate) fn control_routes_with_heartbeat(heartbeat: Duration) -> Router {
         .post("/v1/turns", turns::submit_turn)
         .delete("/v1/turns/:submission_id", turns::withdraw_turns)
         .put("/v1/approvals/:call_id", turns::resolve_approval)
+        .post("/v1/approvals/:call_id/escalate", turns::escalate_approval)
         .post("/v1/loop/interrupt", loop_control::interrupt)
         .post("/v1/loop/continue", loop_control::continue_loop)
         .post("/v1/loop/compact", loop_control::compaction)

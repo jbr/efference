@@ -6,7 +6,7 @@
 
 use super::*;
 use crate::frontend::Approval;
-use crate::log::{ContentBlock, GateDecision, Seq, Spot, Telemetry};
+use crate::log::{ContentBlock, Escalation, GateDecision, Seq, Spot, Telemetry};
 
 /// One call, as the log issued it.
 pub(super) struct Call {
@@ -28,6 +28,8 @@ pub(super) struct Index<'a> {
     results: HashMap<String, &'a LogEntry>,
     verdicts: HashMap<Seq, &'a WireState>,
     decisions: HashMap<String, (Seq, &'a GateDecision)>,
+    /// Each call's escalations, in log order, with the entries that record them.
+    escalations: HashMap<String, Vec<(Seq, &'a Escalation)>>,
     spots: HashMap<String, &'a Spot>,
     /// The loop-appended `User` entry that carries a redirect's message, by its seq,
     /// to the redirected call's id. The decision names who wrote the message; the
@@ -90,6 +92,13 @@ impl<'a> Index<'a> {
                         .decisions
                         .insert(decision.call_id.0.clone(), (entry.seq, decision));
                 }
+                Payload::Telemetry(Telemetry::Escalation(escalation)) => {
+                    index
+                        .escalations
+                        .entry(escalation.call_id.0.clone())
+                        .or_default()
+                        .push((entry.seq, escalation));
+                }
                 // The loop appends a redirect's message as a user turn of its own, with
                 // no submission (`agent/landing.rs`).
                 Payload::User(blocks) if entry.submission_id.is_none() => {
@@ -141,6 +150,11 @@ impl<'a> Index<'a> {
     /// The gate's recorded decision on the call, with the entry that records it.
     pub(super) fn decision(&self, id: &str) -> Option<(Seq, &'a GateDecision)> {
         self.decisions.get(id).copied()
+    }
+
+    /// The call's escalations, in order, with the entries that record them.
+    pub(super) fn escalations(&self, id: &str) -> &[(Seq, &'a Escalation)] {
+        self.escalations.get(id).map_or(&[], Vec::as_slice)
     }
 
     /// The text of the note sent with the allow of call `id`, once it has landed in the

@@ -375,6 +375,11 @@ impl Host {
                     session.touch_state();
                 }
             }
+            // A gate escalated to this session goes to the operator now, by the same
+            // fail-safe; its holder's watcher re-routes it once woken.
+            for holder in host.escalated_to(&id) {
+                holder.touch_state();
+            }
         });
         Ok(())
     }
@@ -467,6 +472,21 @@ impl Host {
     /// (docs/control-api.md).
     pub fn ids(&self) -> Vec<String> {
         self.sessions.lock().unwrap().ids()
+    }
+
+    /// The hosted sessions holding a gate last escalated to `id` (docs/permissions.md).
+    pub(crate) fn escalated_to(&self, id: &str) -> Vec<Arc<Session>> {
+        let sessions: Vec<Arc<Session>> = self
+            .sessions
+            .lock()
+            .unwrap()
+            .hosted_iter()
+            .map(|(_, hosted)| Arc::clone(&hosted.session))
+            .collect();
+        sessions
+            .into_iter()
+            .filter(|session| session.escalated_to().is_some_and(|(to, _)| to == id))
+            .collect()
     }
 
     /// The running session under `id`; `None` for one still starting.

@@ -84,6 +84,7 @@ fn a_gate_names_its_handle_summary_and_plain_reason() {
                     .into()
             ),
             reviewer: Reviewer::Operator,
+            escalations: Vec::new(),
         })
     );
 }

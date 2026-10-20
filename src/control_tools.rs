@@ -157,10 +157,14 @@ pub(crate) fn allows(call: &ToolCall) -> bool {
     call.name == DECIDE_WIRE_NAME && args::decision_of(&call.input) == Some(Decision::Allow)
 }
 
-/// Whether `call` is an `agents__decide` that denies. A denial authorizes nothing, so
-/// it clears on the fast path (docs/permissions.md).
-pub(crate) fn denies(call: &ToolCall) -> bool {
-    call.name == DECIDE_WIRE_NAME && args::decision_of(&call.input) == Some(Decision::Deny)
+/// Whether `call` is an `agents__decide` that denies or escalates. Neither authorizes
+/// anything, so both clear on the fast path (docs/permissions.md).
+pub(crate) fn authorizes_nothing(call: &ToolCall) -> bool {
+    call.name == DECIDE_WIRE_NAME
+        && matches!(
+            args::decision_of(&call.input),
+            Some(Decision::Deny | Decision::Escalate)
+        )
 }
 
 /// The tool state: an executor and the presentation requested by its mount.

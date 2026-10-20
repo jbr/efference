@@ -205,6 +205,28 @@ pub(super) fn gate_body(
     }
 }
 
+/// What the notification of a gate escalated to the operator says (docs/web-push.md):
+/// who escalated it and their note, then the gate's own body ([`gate_body`]), cut to
+/// fit. `source` is the escalator as a turn's `source` spells it; the operator's own
+/// command line sends none.
+pub(super) fn escalated_body(source: Option<&str>, note: Option<&str>, gate: &str) -> String {
+    let by = source
+        .map(|source| {
+            ["session[", "mcp["]
+                .iter()
+                .find_map(|open| source.strip_prefix(open)?.strip_suffix(']'))
+                .unwrap_or(source)
+                .to_string()
+        })
+        .unwrap_or_else(|| "the operator".to_string());
+    let note = note
+        .map(str::trim)
+        .filter(|note| !note.is_empty())
+        .map(|note| format!(" (\"{note}\")"))
+        .unwrap_or_default();
+    truncate(&format!("escalated by {by}{note}: {gate}"))
+}
+
 /// What a settle's notification says: the turn's own closing prose, truncated —
 /// what the model actually said is what decides whether the settle is worth
 /// unlocking for, the same role the spotter reason plays on a gate.

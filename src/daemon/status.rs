@@ -19,7 +19,7 @@ mod view;
 pub(crate) use moves::Moves;
 pub(crate) use render::{Reader, Relation, render};
 pub(crate) use view::{
-    Activity, Block, Condition, Footer, HeldCall, Park, Returned, Reviewer, StatusView,
+    Activity, Block, Condition, Escalated, Footer, HeldCall, Park, Returned, Reviewer, StatusView,
     held_because,
 };
 

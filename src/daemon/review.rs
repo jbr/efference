@@ -54,6 +54,17 @@ impl Session {
         Some(supervisor)
     }
 
+    /// Whether the host this session lives in holds a session `id` now — what an
+    /// escalated gate's routing asks of the session it went to (`status/view.rs`).
+    /// False for a session built without a host.
+    pub(super) fn host_holds(&self, id: &str) -> bool {
+        let host = {
+            let guard = self.supervisor.lock().unwrap();
+            guard.as_ref().and_then(|link| link.host.upgrade())
+        };
+        host.is_some_and(|host| host.session(id).is_some())
+    }
+
     /// Move the dial to `supervisor` when it sits at the supervised default,
     /// `spotter_human`: what a session given a supervisor — at creation, or later —
     /// starts reviewing under. A position set explicitly away from that default

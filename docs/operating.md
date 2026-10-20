@@ -93,7 +93,8 @@ which mutate, since the spec's defaults are pessimistic and a mounting harness's
 UX reads them. The mount is an operator client: it drives every session, so its
 `message` is the target's next user message, attributed as `mcp[<clientInfo.name>]` from
 the name the client sent at initialize, and its `decide` is recorded under the same name
-(docs/control-api.md). Every answer is plain text: a status, or one sentence saying what
+(docs/control-api.md). Its `decide` with `escalate` goes to the operator: the driver is on
+the operator's side, so escalating asks the person. Every answer is plain text: a status, or one sentence saying what
 the call did.
 
 `wait(agent?, timeout_s?)` waits on the mount's **watched set**: the agents it created,
@@ -647,7 +648,10 @@ decisions resolve it:
 
 `efference control decide <seq> allow` sends the first; `deny` sends abort, and
 `deny --message <msg>` sends redirect. `<seq>` is the held call's transcript handle, which
-the status names. In the TUI, an empty composer approves and any text redirects; the
+the status names. `escalate` decides nothing: the call stays held, marked with who
+escalated it and the `--message` as a note, and the operator is pushed
+([permissions.md](permissions.md)). A supervising agent's escalation reaches the operator
+the same way once no supervisor above it is left. In the TUI, an empty composer approves and any text redirects; the
 strip's `abort` aborts.
 
 **What approving scopes: this call, and nothing else.** There is no "allow this kind of
@@ -718,7 +722,8 @@ its own.
 - **`efference control review-level <level>`** — who reviews a call the fast path did not clear.
   `spotter_human` is the supervised default (fast path → spotter → you). `supervisor` sends
   what the spotter will not clear to the session's supervisor — by default the session that
-  created it — which answers it with `decide`; it is the default for a session that has a
+  created it — which answers it with `decide`, or escalates that one call to its own
+  supervisor and, at the top of the chain, to you; it is the default for a session that has a
   supervisor, and setting a child back to `spotter_human` takes its gates back to you. A
   session with no live supervisor reviews as `spotter_human` whatever the dial says.
 - **`efference control supervisor <id> --agent <session>`** (`--clear` instead of an id to

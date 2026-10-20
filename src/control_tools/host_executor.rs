@@ -24,7 +24,8 @@ use crate::log::ToolCall;
 ///    a peer it was not given; and
 /// 3. `decide` reaches only the sessions the caller supervises, by the same pointer:
 ///    creating a session or succeeding its creator does not by itself make its gates
-///    the caller's (docs/permissions.md).
+///    the caller's (docs/permissions.md). The one exception is a gate escalated to the
+///    caller, which it may decide, and only that gate.
 #[derive(Clone)]
 pub struct HostExecutor {
     /// The host, held weakly (see [`super::Executor::host`]).
@@ -130,14 +131,16 @@ impl HostExecutor {
         Ok((session, target))
     }
 
-    /// The target for `decide`: rule 1, project scope, and rule 3. A refusal says who
-    /// decides the target's gates and which verbs still reach it.
+    /// The target for `decide` on the held call `seq`: rule 1, project scope, and rule 3.
+    /// A refusal says who decides the target's gates and which verbs still reach it.
     pub(super) fn resolve_decided(
         &self,
         requested: Option<&str>,
+        seq: &str,
     ) -> Result<(Arc<Session>, String)> {
         let (session, target) = self.resolve(requested)?;
-        if !self.supervises(&target) {
+        let host = self.host()?;
+        if !Self::may_decide_gate(&host, &self.caller, &target, seq) {
             return Err(anyhow!(not_supervised(
                 &target,
                 session.supervisor().as_deref(),
@@ -166,6 +169,17 @@ impl HostExecutor {
     /// decide them. The operator's own surfaces are not sessions and are not asked.
     fn may_decide(host: &Host, decider: &str, target: &str) -> bool {
         host.supervisor_of(target).as_deref() == Some(decider)
+    }
+
+    /// Rule 3 for one held call: `decider` supervises `target`, or `target`'s pending
+    /// gate is the call `seq` names and its last escalation went to `decider`
+    /// (docs/permissions.md). An escalation grants that gate and no other.
+    fn may_decide_gate(host: &Host, decider: &str, target: &str, seq: &str) -> bool {
+        Self::may_decide(host, decider, target)
+            || host
+                .session(target)
+                .and_then(|session| session.escalated_to())
+                .is_some_and(|(to, handle)| to == decider && names_held(handle.as_deref(), seq))
     }
 
     /// Whether `target`'s `created_by` chain reaches `ancestor`. The tree is
@@ -229,9 +243,9 @@ impl HostExecutor {
     /// previous; refuse on a moved gate or a cycle.
     pub(super) fn resolve_bound_action(&self, call: &ToolCall) -> Result<BoundAction> {
         let requested = call.input.get("agent").and_then(Value::as_str);
-        // The parent's own call: rule 1, project scope, rule 3.
-        let (mut session, direct_id) = self.resolve_decided(requested)?;
         let mut expected = Self::seq_of(call)?;
+        // The parent's own call: rule 1, project scope, rule 3.
+        let (mut session, direct_id) = self.resolve_decided(requested, &expected)?;
         let mut chain = vec![direct_id];
         let mut previous = chain[0].clone();
         let mut seen = std::collections::HashSet::new();
@@ -274,7 +288,8 @@ impl HostExecutor {
                 .and_then(Value::as_str)
                 .ok_or_else(|| anyhow!("the held `{DECIDE_WIRE_NAME}` names no agent to follow"))?
                 .to_string();
-            if !Self::may_decide(&host, &previous, &next) {
+            let next_seq = Self::seq_of(&gate.call)?;
+            if !Self::may_decide_gate(&host, &previous, &next, &next_seq) {
                 return Err(anyhow!(
                     "refused: {previous:?} does not supervise {next:?}, so the decision it \
                      holds would be refused when it ran — deny it, with a message saying why"
@@ -287,7 +302,7 @@ impl HostExecutor {
                 ));
             }
             session = self.in_project(&next)?;
-            expected = Self::seq_of(&gate.call)?;
+            expected = next_seq;
             previous = next.clone();
             chain.push(next);
         }

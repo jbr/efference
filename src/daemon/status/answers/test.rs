@@ -23,6 +23,7 @@ fn held() -> HeldCall {
         handle: Some("8.2".into()),
         held_because: None,
         reviewer: Reviewer::Operator,
+        escalations: Vec::new(),
     }
 }
 

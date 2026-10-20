@@ -613,6 +613,27 @@ only if that call is still the pending gate.
 - `400 bad_request` — bad body, or `config_edit` without a `change`
 - `400 invalid_decision` — a decision verb this daemon doesn't implement
 
+#### `POST /approvals/:call_id/escalate`
+Pass the pending gate up to the operator without deciding it
+([permissions.md](permissions.md)): the call stays held, and the escalation is added to
+`/state`'s `gate.escalations` and the status view, where it routes the call to the
+operator in place of the review dial. The route is an operator client's — `decide` with
+`escalate` over `efference mcp` and from `efference control` — so it always names the
+operator; an in-session escalation, which goes to the escalating session's supervisor, is
+made by the host directly. The id is a precondition, as above.
+
+- Body: `{ "source"?: "<string>", "note"?: "<string>" }` — `source` is the escalator,
+  spelled as a turn's `source` is (absent for the operator's own command line); `note` is
+  the escalator's note to whoever decides next.
+- The host appends a `Telemetry::Escalation` entry — `{call_id, source?, to?, note?}`,
+  `to` absent when the call went to the operator — once the id is known to be the pending
+  gate, and sends the gate's push, marked `escalated by <escalator>` with the note
+  ([web-push.md](web-push.md)). The conversation transcript prints the escalation on the
+  call's line.
+- `200 {"status":"escalated"}`
+- `409 gate_moved` — that id is not the pending gate; `detail` carries the current gate.
+- `400 bad_request` — bad body.
+
 #### `GET /loop` · `PATCH /loop`
 The turn engine's operator dials as one resource. Its fields are named for —
 and are byte-identical to — their state topics: `pace` (`{speed_ms, held}`),
@@ -950,7 +971,12 @@ not a topic — it is the log's cursor rather than control state, and sits outsi
                                    //   or {"command":{"command":"git push"}}, {"tool":{"name":"ferritin__get"}}
       "label": "always allow reading /Users/jbr/code/codex"
                                    //   what it allows, for the client's control; the whole rationale
-    }
+    },
+    "escalations": [{              // optional: each time the call was passed up undecided, in order
+      "source": "session[calm-finch]", //   who escalated, spelled as a turn's `source`; null: the operator's command line
+      "to": null,                  //   the session it went to; null: the operator
+      "note": "…"                  //   optional: the escalator's note to whoever decides next
+    }]                             //   the last entry routes the call (docs/permissions.md)
   },
   "ask": {                         // null unless an `ask` is pending (docs/process-monitor.md)
     "call_id": "toolu_…",
@@ -1148,7 +1174,8 @@ not a topic — it is the log's cursor rather than control state, and sits outsi
       "intent": "fetch only the response headers",
       "handle": "8.2",             // the transcript label: `seq`, or `seq.n` in a shared entry
       "held_because": "its reviewer is unsure this fits the session's scope; no earlier call like it was allowed",
-      "reviewer": { "kind": "supervisor", "id": "calm-finch" }  // or { "kind": "operator" }
+      "reviewer": { "kind": "supervisor", "id": "calm-finch" },  // or { "kind": "operator" }
+      "escalations": [ … ]         // optional: as the gate topic's, the last one routing it
     },
     "footer": {                    // each field absent when unknown or empty
       "model": "anthropic/claude-opus-4",
@@ -1268,7 +1295,7 @@ the inbox say the same thing. Per condition it carries:
 | `kind` | fields |
 | --- | --- |
 | `working` | `activity`: each open operation, tagged by `kind` — `tool` (`tool`, a bash `command`, `since`), `thinking` (a turn's request, `since`), `triaging` (a triage's request, `since`), `compacting` (`since`), `retrying` (`attempt`, `budget`, `next_at`), `paced` (`until`); empty when nothing is open |
-| `gated` | the held call, as above; `held_because` is the spotter's reason in plain words ([permissions.md](permissions.md)), `reviewer` who decides it |
+| `gated` | the held call, as above; `held_because` is the spotter's reason in plain words ([permissions.md](permissions.md)), `reviewer` who decides it — after an escalation, whom the last one went to — and `escalations` each time it was passed up |
 | `asking` | `question`, `n`, `of`, and the asking call's `handle` |
 | `idle` | `closing`: the last turn's closing prose (`seq`, `text` up to 4096 bytes, cut on a char boundary, and the whole message's `bytes` and `lines`), absent when the turn ended without prose |
 | `stalled` | `message`, and `held_triage` when a triage holds the results (`POST /loop/continue` retries it) |
@@ -1367,7 +1394,9 @@ whole.
   inside `session[…]` or `mcp[…]` (and an older `agent[…]`), `<id> (hand-off)` for `handoff[<id>]`, any
   other label as written, or `you`. The session's own prose is labelled with its id.
 - A call and its outcome are one line, the parts joined by ` → `: the tool, its command
-  or arguments in backticks, ` — ` and its intent; then `waiting for a decision` while it
+  or arguments in backticks, ` — ` and its intent; then each escalation (`escalated by
+  <escalator> to <next>`, with `: "<note>"` when it carried one, `the operator` when it went
+  there); then `waiting for a decision` while it
   is the pending gate; the recorded decision (`allowed by <decider>`, `allowed by
   <decider>, with "<note>"`, `denied by <decider>`, `denied by <decider>: <message>`,
   `granted by <decider>: <change>`), which a call cleared without a gate does not have; `running` while it has no result; and the
@@ -1395,7 +1424,7 @@ whole.
 What became of a call is looked up by call id across the whole log, so a call in the
 window shows an outcome that landed after the window ends. A decision, a result or a
 verdict whose call is before the window is a line of its own under the call's handle:
-`8.2  allowed by you`, `8.2  result: ok, 12 lines, it saw 1`, `8.2  verdict: it saw 1 of
+`8.2  allowed by you`, `8.2  escalated by p to you`, `8.2  result: ok, 12 lines, it saw 1`, `8.2  verdict: it saw 1 of
 12 lines: <note>`; an `ask`'s reply there reads `8.2  answered by <replier>: <text>`. A
 redirect's message read without its call or its decision is labelled with its decider; an
 allow's note is on its call's line or its decision's, and read alone is the decider's
@@ -1425,7 +1454,8 @@ notification or the triage retried; telemetry renders to nothing.
 header `transcript of child, seq 8.2`. A call shows its tool, its intent, its exact input
 as pretty JSON without the intent, and its decision trail: the spotter's verdict
 (`reviewer: cleared it`, `reviewer: held it for a decision` with `held because:` in the
-plain words the status uses, or `reviewer: not asked`), then the gate (`decision:
+plain words the status uses, or `reviewer: not asked`), each escalation with the seq
+that records it, then the gate (`decision:
 pending`, the recorded decision with how it was decided and the seq that records it, or
 `decision: none; the gate did not hold it`). Then its result: the result's seq, outcome,
 line count and bytes; what the session saw (`it saw: lines 1–3, 7 of 120: <note>`, `all
@@ -1812,7 +1842,7 @@ returning the same code cannot disagree about the status:
 | `bad_request` | 400 | malformed body, unparseable path parameter, out-of-range value |
 | `invalid_decision` | 400 | a well-formed decision verb the daemon doesn't implement — the client is version-skewed, not buggy |
 | `not_found` | 404 | no such notification id, proposal `seq`, process id, or mounted tool name |
-| `gate_moved` | 409 | `PUT /approvals/:call_id` whose id is not the pending gate; `detail` carries the current gate |
+| `gate_moved` | 409 | `PUT /approvals/:call_id` or `POST /approvals/:call_id/escalate` whose id is not the pending gate; `detail` carries the current gate |
 | `not_delivered` | 409 | `POST /turns` held to naming its question — it carries `answers` or an agent's `source` — while a question it does not name is pending, or naming one that is not pending; `detail` carries the pending `ask` |
 | `not_continuable` | 409 | `POST /loop/continue` at a moment with no continue in it — busy, gated, asking, or a wire tail that means nothing to re-prompt |
 | `starting` | 409 | a route a starting session does not serve: everything but `/state`, `/events`, and `/turns` until it has started (*A starting session*) |

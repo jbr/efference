@@ -143,6 +143,9 @@ pub(crate) fn render(view: &StatusView, reader: &Reader, now: u64) -> String {
                 }
                 _ => format!("{id}: waiting for a decision from {asked} on {call}"),
             });
+            for hop in &held.escalations {
+                out.push(escalated(hop, reader.me));
+            }
             if let Some(intent) = &held.intent {
                 out.push(format!("intent: {intent}"));
             }
@@ -152,9 +155,7 @@ pub(crate) fn render(view: &StatusView, reader: &Reader, now: u64) -> String {
             match reader.relation {
                 Relation::Reviewer => {
                     out.push(format!("decide: {}", (moves.decide)(&target)));
-                    if let Some(hand_back) = moves.hand_back {
-                        out.push(format!("hand back: {}", hand_back(&target)));
-                    }
+                    out.push(format!("escalate: {}", (moves.escalate)(&target)));
                 }
                 Relation::MayDecide => out.push(format!(
                     "decide: {asked} is asked; as {id}'s supervisor you may decide it too: {}",
@@ -292,6 +293,20 @@ pub(crate) fn render(view: &StatusView, reader: &Reader, now: u64) -> String {
         footer(&mut out, &view.footer, reader.me, now);
     }
     out.join("\n")
+}
+
+/// `escalated: by p to you: "<note>"` — one pass of a held call up the supervisor chain,
+/// its escalator and its new reviewer named for the reader (docs/permissions.md).
+fn escalated(hop: &Escalated, me: Option<&str>) -> String {
+    let by = sender(hop.source.as_deref(), me);
+    let to = match &hop.to {
+        Some(id) => name(id, me),
+        None => "the operator".to_string(),
+    };
+    match hop.note.as_deref().map(str::trim) {
+        Some(note) if !note.is_empty() => format!("escalated: by {by} to {to}: \"{note}\""),
+        _ => format!("escalated: by {by} to {to}"),
+    }
 }
 
 /// The closing message: whole for a driver up to the view's cap, its first line for an
