@@ -27,6 +27,31 @@ pub(super) struct Pending {
     /// docs/permissions.md); the last names whom it is routed to now.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub(super) escalations: Vec<super::status::Escalated>,
+    /// Whom the gate's latest push moment went to: the session that answers it, or
+    /// `None` for the operator (docs/web-push.md). A routing change that moves the
+    /// gate's reviewer away from this is a moment of its own (`Session::gate_rerouted`).
+    #[serde(skip)]
+    pub(super) moment_to: Option<String>,
+}
+
+impl Pending {
+    /// What a push about this gate says (docs/web-push.md): the gate's own body, marked
+    /// with its last escalation's escalator and note when it was escalated.
+    pub(super) fn push_body(&self) -> String {
+        let call = ToolCall::new(&self.name, self.call_id.as_str(), self.input.clone());
+        let gate = super::push::gate_body(
+            &self.name,
+            call.intent(),
+            self.reason.as_deref(),
+            self.acting_on.as_ref(),
+        );
+        match self.escalations.last() {
+            Some(last) => {
+                super::push::escalated_body(last.source.as_deref(), last.note.as_deref(), &gate)
+            }
+            None => gate,
+        }
+    }
 }
 
 /// A session's held call, as its parent's `agents__decide` reads it
@@ -96,10 +121,10 @@ impl Session {
         let (tx, rx) = oneshot::channel();
         self.approvals.lock().unwrap().insert(call.id.clone(), tx);
         let reason = self.latest_spot_reason(&call.id);
-        // Composed before the `Pending` takes ownership of the fields. A bound
-        // approval names the child's leaf action rather than the approval call.
-        let push_body = super::push::gate_body(&call.name, call.intent(), reason.as_deref(), bound);
-        *self.pending.lock().unwrap() = Some(Pending {
+        // Who answers the gate, read before it is stored: the status watcher compares
+        // the gate's routing against this, so a gate that has not moved is no new moment.
+        let reviewer = self.gate_reviewer(&[]);
+        let pending = Pending {
             call_id: call.id.0.clone(),
             name: call.name.clone(),
             input: call.input.clone(),
@@ -107,13 +132,16 @@ impl Session {
             acting_on: bound.cloned(),
             grant,
             escalations: Vec::new(),
-        });
+            moment_to: reviewer.clone(),
+        };
+        let push_body = pending.push_body();
+        *self.pending.lock().unwrap() = Some(pending);
         // A gate is a settled state: the phase wakes any `/settle` waiter (the `?wait` on
         // `/turn` returns here). Moved after the gate is stored, so a waiter it wakes reads it.
         self.set_phase(LoopPhase::Gated);
-        // …and one of the two moments worth a push (docs/web-push.md). Spawned, so
-        // the loop reaches its `rx.await` without waiting on a push service.
-        self.push(crate::log::MomentKind::Gate, push_body);
+        // …and a moment worth a push when the operator is its reviewer (docs/web-push.md).
+        // Spawned, so the loop reaches its `rx.await` without waiting on a push service.
+        self.moment(crate::log::MomentKind::Gate, reviewer, push_body);
         rx
     }
 
@@ -124,8 +152,9 @@ impl Session {
     ///
     /// The escalation is recorded as a `Telemetry::Escalation` and carried on the gate
     /// topic and the status view; the status watcher (`subscriptions.rs`) re-posts the
-    /// gate to its new reviewer. An escalation that reaches the operator is a gate
-    /// moment for push (docs/web-push.md), marked with who escalated it and the note.
+    /// gate to its new reviewer. Each escalation is a gate moment (docs/web-push.md):
+    /// one that reaches the operator is pushed, marked with who escalated it and the
+    /// note; one that reaches a session is recorded as not sent.
     pub(crate) fn escalate(
         &self,
         id: &CallId,
@@ -143,14 +172,10 @@ impl Session {
                 to: to.clone(),
                 note: note.clone(),
             });
-            let call = ToolCall::new(&pending.name, id.clone(), pending.input.clone());
-            let gate = super::push::gate_body(
-                &pending.name,
-                call.intent(),
-                pending.reason.as_deref(),
-                pending.acting_on.as_ref(),
-            );
-            super::push::escalated_body(source.as_deref(), note.as_deref(), &gate)
+            // Under the same lock as the escalation, so the status watcher never reads
+            // the new routing as a moment this escalation has not announced.
+            pending.moment_to = to.clone();
+            pending.push_body()
         };
         let record = crate::log::Escalation::new(id.clone(), source, to.clone(), note);
         // The record must not stop what it describes.
@@ -160,9 +185,7 @@ impl Session {
         ) {
             log::warn!("escalation record: append failed: {e}");
         }
-        if to.is_none() {
-            self.push(crate::log::MomentKind::Gate, push_body);
-        }
+        self.moment(crate::log::MomentKind::Gate, to, push_body);
         // The gate topic and the status watchers read the new routing now.
         self.touch_state();
         true

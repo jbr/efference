@@ -298,8 +298,10 @@ impl Session {
         // for an idle it passes straight through, as when an interrupt ends a turn with
         // a message already queued.
         if a_turn_just_ended && self.no_turn_queued_to_run() {
+            // A supervised session's settle is its supervisor's to read; only one
+            // without a live supervisor pushes the operator (docs/web-push.md).
             let body = super::push::settle_body(self.log.lock().unwrap().entries());
-            self.push(crate::log::MomentKind::Settle, body);
+            self.moment(crate::log::MomentKind::Settle, self.supervisor(), body);
         }
     }
 

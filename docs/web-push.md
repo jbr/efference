@@ -1,7 +1,9 @@
 # Web push — the daemon notifies a pocketed phone
 
-Three moments mean a session is waiting on a person: an approval gate opened, an `ask`
-was posed, and a turn settled. All happen inside a live daemon, so each session sends
+Three moments mean a session is waiting on someone: an approval gate opened, an `ask`
+was posed, and a turn settled. A push goes out for the moments the operator answers —
+a session's supervisor, when it has one, is woken through its subscription instead
+([below](#who-is-pushed)). All happen inside a live daemon, so each session sends
 push for its own events — there is no watcher process.
 Delivery is the Web Push triangle (RFC 8030): the browser's push service holds an
 opaque endpoint per subscription, and the daemon POSTs an encrypted payload to it;
@@ -50,7 +52,9 @@ would make it more timely than the next event.
 
 ## When it fires, and what it says
 
-`src/daemon/push.rs`. `Session::push` decides whether to send now or hold the
+`src/daemon/push.rs`. `Session::moment` takes each moment with the session that answers
+it, if any ([below](#who-is-pushed)); one the operator answers goes to `Session::push`,
+which decides whether to send now or hold the
 message ([below](#no-push-while-someone-is-attending)); sending short-circuits when
 no root is installed (only a binding host installs one — tests, offline verbs, and a
 socket-only host look alike) or no runtime is running, and spawns the send so the turn
@@ -62,11 +66,19 @@ loop never waits on a push service.
   at a glance than the purpose) and then to a plain waiting line, since no reader may
   assume `intent` is present.
 - **Escalated gate** — `Session::escalate` (`src/daemon/approvals.rs`), when a held call is
-  escalated to the operator ([permissions.md](permissions.md)). A gate moment of its own,
-  so it supersedes the gate's earlier push and is delayed and cancelled as any gate's is.
-  Body: `escalated by <escalator> ("<note>"): ` and then the gate's body above, truncated;
-  the escalator is the id or client name inside its `source`. An escalation to another
-  session sends nothing.
+  escalated ([permissions.md](permissions.md)). A gate moment of its own, so it supersedes
+  the gate's earlier push and is delayed and cancelled as any gate's is. Body:
+  `escalated by <escalator> ("<note>"): ` and then the gate's body above, truncated; the
+  escalator is the id or client name inside its `source`. An escalation to another session
+  is that session's to answer, so it pushes nothing.
+- **Rerouted gate** — `Session::gate_rerouted` (`src/daemon/push.rs`), called by the status
+  watcher (`src/daemon/subscriptions.rs`) when a held gate's routing changes and its
+  reviewer is no longer the one its last moment went to: the dial turned, the supervisor
+  pointer cleared or moved, the supervisor ended, or the session an escalation reached
+  ended. A gate moment again; one that comes to rest with the operator is pushed. Body: the
+  gate's, marked as an escalated gate's when it was escalated. The gate records whom its
+  last moment went to (`Pending::moment_to`), set under the same lock as an escalation, so
+  an escalation is never announced twice.
 - **Ask** — `begin_ask` (`src/daemon/ask.rs`). Body: the question, truncated.
 - **Settle** — `going_idle()` (`src/daemon/pace.rs`), where the loop phase it leaves
   distinguishes a turn that just ended from boot idle, or from an idle triage that pinned
@@ -81,6 +93,26 @@ the payload is the session's web path ([web-bind.md](web-bind.md)) — `/` on th
 session's own bind, `/sessions/<id>/` under a host — the same path the client's own
 links name, so a notification opens the session it announces. The service worker
 opens whatever path it is named.
+
+### Who is pushed
+
+Each moment goes to the session that answers it, or to the operator when none does, and
+only the operator's moments push:
+
+- **Gate** — its reviewer (`Session::gate_reviewer`, [permissions.md](permissions.md)): the
+  live supervisor under the `supervisor` dial, the session an escalation last reached while
+  it is hosted, and otherwise the operator. A supervised session whose dial the operator
+  turned to `spotter_human` or `human_only` routes its gates to the operator, who is pushed
+  for them.
+- **Ask and settle** — the session's live supervisor (`Session::supervisor`), whatever the
+  dial; the operator when there is none.
+
+A moment a session answers reaches that session's inbox ([inbox.md](inbox.md)), is
+recorded as `not_sent {to}`, and is the newest moment, so it supersedes a held push.
+"Live" is the fail-safe direction: a session whose supervisor has ended, or whose pointer
+was cleared, pushes from its next moment, and a gate it holds then is a rerouted gate
+(above). The rule is per session: a device's subscription covers every session, and one
+session stops pushing by having a supervisor, not by a device unsubscribing.
 
 ## The routes
 
@@ -121,6 +153,8 @@ session), `kind` (`gate`, `ask`, `settle`), and an `event`:
 - `released`: the delay ended with the moment still standing, and the held push went out.
 - `cancelled {cause}`: `gate_decided`, `ask_ended`, `turn_submitted`, `archived`,
   `seen {client}`, or `superseded` (a newer moment replaced it).
+- `not_sent {to}`: the moment went to the session `to` — the supervisor, or for a gate
+  its reviewer — so nothing was pushed ([above](#who-is-pushed)).
 - `delivery {devices}`: one element per stored subscription, `{host, device, outcome}`.
   `host` is the endpoint's host (`web.push.apple.com`), `device` the first eight hex
   digits of a SHA-256 of the endpoint (the endpoint's path is a secret and is not

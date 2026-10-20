@@ -3,9 +3,12 @@
 //! Three moments mean the session is waiting on a person: an approval gate opened
 //! ([`Session::register_pending`]), an `ask` was posed ([`Session::begin_ask`]), and
 //! a turn ended with the loop going idle ([`Session::going_idle`]). Each calls
-//! [`Session::push`], which sends or schedules the send and returns — the turn
-//! loop never waits on a push service, and a failed send is a log line rather
-//! than anything the session notices.
+//! [`Session::moment`] with the session that answers it — the session's supervisor,
+//! or for a gate its reviewer — and only a moment the operator answers reaches
+//! [`Session::push`], which sends or schedules the send and returns. The turn loop
+//! never waits on a push service, and a failed send is a log line rather than
+//! anything the session notices. A held gate whose reviewer moves is a moment again
+//! ([`Session::gate_rerouted`]).
 
 use super::*;
 use crate::log::Telemetry;
@@ -101,6 +104,55 @@ impl Session {
         } else {
             self.schedule_delayed_push(moment, kind, message, attentive);
         }
+    }
+
+    /// One moment, for the session `to` that answers it, or for the operator when `to`
+    /// is `None` (docs/web-push.md). The operator's is pushed ([`Session::push`]); one a
+    /// session answers reaches it through its subscription, so it is recorded as
+    /// [`PushEvent::NotSent`] and pushes nothing. Either way it is the newest moment, so
+    /// it supersedes a pending delayed push.
+    pub(super) fn moment(&self, kind: MomentKind, to: Option<String>, body: String) {
+        let Some(to) = to else {
+            return self.push(kind, body);
+        };
+        let moment = self.pushes.next.fetch_add(1, Ordering::Relaxed);
+        self.cancel_delayed_push(PushCancel::Superseded);
+        self.record_push(moment, kind, PushEvent::NotSent { to });
+    }
+
+    /// The held gate's moment, when its reviewer has moved since its last one
+    /// (docs/web-push.md). The status watcher (`subscriptions.rs`) calls this when the
+    /// gate's routing changes: a gate that comes to rest with the operator — its
+    /// supervisor ended or the pointer cleared, the dial turned to the operator, or the
+    /// session it was escalated to ended — is pushed, and one that moves to a session
+    /// is recorded as not sent. Nothing happens when the reviewer has not moved, or when
+    /// the gate or its escalations changed between the read and the check: whatever
+    /// changed them is a moment of its own or wakes the watcher again.
+    pub(super) fn gate_rerouted(&self) {
+        let read = {
+            let pending = self.pending.lock().unwrap();
+            pending
+                .as_ref()
+                .map(|pending| (pending.call_id.clone(), pending.escalations.clone()))
+        };
+        let Some((call_id, escalations)) = read else {
+            return;
+        };
+        // Read outside the gate's lock: it asks the host about other sessions.
+        let reviewer = self.gate_reviewer(&escalations);
+        let body = {
+            let mut pending = self.pending.lock().unwrap();
+            let Some(pending) = pending.as_mut().filter(|pending| {
+                pending.call_id == call_id
+                    && pending.escalations == escalations
+                    && pending.moment_to != reviewer
+            }) else {
+                return;
+            };
+            pending.moment_to = reviewer.clone();
+            pending.push_body()
+        };
+        self.moment(MomentKind::Gate, reviewer, body);
     }
 
     /// Append one step of a moment's push to the log. A failed write is

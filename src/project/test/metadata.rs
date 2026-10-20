@@ -165,6 +165,7 @@ fn push_records_project_to_identical_bytes() {
                 outcome: DeliveryOutcome::Gone { status: 410 },
             }],
         },
+        PushEvent::NotSent { to: "boss".into() },
     ];
     for at in [0, 1, 2, 3] {
         let mut with = sample_log();

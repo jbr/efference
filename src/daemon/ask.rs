@@ -97,10 +97,12 @@ impl Session {
         }
         // After the ask is stored, so a `settle` the phase wakes reads it.
         self.set_phase(LoopPhase::Asking);
-        // The session is waiting on a person, as it is when a turn ends
-        // (docs/web-push.md); the message is the question.
-        self.push(
+        // The session is waiting on someone, as it is when a turn ends: its supervisor
+        // when it has one, else the operator, who is pushed (docs/web-push.md); the
+        // message is the question.
+        self.moment(
             crate::log::MomentKind::Ask,
+            self.supervisor(),
             super::push::ask_body(&question_for_push),
         );
         AskWait {

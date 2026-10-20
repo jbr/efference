@@ -269,6 +269,26 @@ fn tools_change_names_what_moved() {
     assert!(change.reordered && change.added.is_empty());
 }
 
+/// A moment that went to a session rather than the operator is `not_sent`, naming the
+/// session (docs/web-push.md); a variant added within log version 7.
+#[test]
+fn a_not_sent_push_serializes_with_its_session() {
+    let record = PushRecord {
+        moment: 2,
+        kind: MomentKind::Ask,
+        event: PushEvent::NotSent { to: "boss".into() },
+    };
+    let json = serde_json::to_string(&Telemetry::Push(record.clone())).unwrap();
+    assert_eq!(
+        json,
+        r#"{"Push":{"moment":2,"kind":"ask","event":"not_sent","to":"boss"}}"#
+    );
+    let Telemetry::Push(back) = serde_json::from_str(&json).unwrap() else {
+        panic!("not a Push: {json}");
+    };
+    assert_eq!(back, record);
+}
+
 /// The push event written when a held push goes out is `released` (log version 7,
 /// docs/web-push.md); `scripts/migrate-log-v7.py` rewrites the earlier spelling.
 #[test]

@@ -355,7 +355,8 @@ async fn the_grandparent_decides_only_the_escalated_gate() {
 
 /// A one-level chain: `k` gates to `q`, which has no supervisor, so its escalation goes
 /// to the operator — the gate topic carries who escalated it and the note, and a push
-/// goes out marked "escalated by q" with the note.
+/// goes out marked "escalated by q" with the note. The gate itself, routed to `q`,
+/// pushed nothing (docs/web-push.md).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_one_level_chain_reaches_the_operator_with_a_push() {
     let fixture = Fixture::new().await;
@@ -384,10 +385,10 @@ async fn a_one_level_chain_reaches_the_operator_with_a_push() {
         serde_json::json!([{ "source": "session[q]", "to": null, "note": NOTE }])
     );
     wait_until("the escalation's push went out", || {
-        sent.lock().unwrap().len() == 2
+        sent.lock().unwrap().len() == 1
     })
     .await;
-    let push = sent.lock().unwrap()[1].clone();
+    let push = sent.lock().unwrap()[0].clone();
     assert_eq!(
         push.body,
         format!("escalated by q (\"{NOTE}\"): bash — fetch only the response headers")

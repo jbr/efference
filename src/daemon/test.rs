@@ -206,6 +206,7 @@ mod notifications;
 mod pace;
 mod processes;
 mod push;
+mod push_routing;
 mod redirect;
 mod resumed_batch;
 mod review;

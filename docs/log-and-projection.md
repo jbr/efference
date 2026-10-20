@@ -212,8 +212,8 @@ conversation transcript prints it on the call's line. It projects to nothing
 (`escalations_project_to_identical_bytes`), and the `[env]` masker passes the escalator
 and the note.
 
-`Push` records one step of a moment's push (decided, held, released, cancelled, or the
-push services' per-device answers). It projects to nothing, like `RequestStage`
+`Push` records one step of a moment's push (decided, held, released, cancelled, not sent
+because a session answers the moment, or the push services' per-device answers). It projects to nothing, like `RequestStage`
 (`push_records_project_to_identical_bytes`); its fields are specified in
 [web-push.md](web-push.md).
 

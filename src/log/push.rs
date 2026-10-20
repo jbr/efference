@@ -1,5 +1,5 @@
-//! The durable record of a push (docs/web-push.md): why one was sent, held, or
-//! dropped, and what each push service answered.
+//! The durable record of a push (docs/web-push.md): why one was sent, held, dropped,
+//! or not sent, and what each push service answered.
 //!
 //! A **moment** is one firing of a gate, an `ask`, or a settle. Every entry about
 //! it carries the same `moment` number (unique within the session), so the log
@@ -54,6 +54,10 @@ pub enum PushEvent {
     /// What the push services answered: one element per stored subscription.
     /// Empty means no device is subscribed.
     Delivery { devices: Vec<DeviceDelivery> },
+    /// The moment went to the session `to` rather than the operator, so nothing was
+    /// pushed: `to` is the session's supervisor, or for a gate the session it was
+    /// escalated to.
+    NotSent { to: String },
 }
 
 /// A client that was attending when the moment fired.

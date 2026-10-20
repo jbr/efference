@@ -225,7 +225,9 @@ impl Host {
 /// child back, the supervisor set to another session or cleared, or the supervisor
 /// ending — is re-routed rather than dropped: the status has not changed, so only the
 /// routing carries the news. An escalation moves the routing the same way, and from then
-/// on the call's escalations route it rather than the dial ([`Routing`]).
+/// on the call's escalations route it rather than the dial ([`Routing`]). A reviewer moved
+/// this way is a push moment too ([`Session::gate_rerouted`]): a gate that comes to rest
+/// with the operator is pushed.
 pub(super) async fn watch_status(host: std::sync::Weak<Host>, id: String, session: Arc<Session>) {
     let mut last: Option<(SessionStatus, Routing)> = None;
     // How many trajectories had ended at the last idle this watcher read: an idle is
@@ -260,6 +262,11 @@ pub(super) async fn watch_status(host: std::sync::Weak<Host>, id: String, sessio
             }
             (None, _) => true,
         };
+        // A held gate whose reviewer moved is a push moment again: one that comes to
+        // rest with the operator is pushed (docs/web-push.md).
+        if notable && matches!(status, SessionStatus::Gated { .. }) {
+            session.gate_rerouted();
+        }
         if let Some(host) = host.upgrade() {
             if notable {
                 host.post_status(&id, &session, &status);

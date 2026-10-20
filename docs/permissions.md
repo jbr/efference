@@ -1010,6 +1010,12 @@ without eliminating:
     subscribes a creator, and is told in its inbox (a must-wake notification) that it now
     supervises the session. Clearing or moving the pointer drops the previous supervisor's
     subscription.
+  - *Push.* While the pointer names a live supervisor, the session's `ask`s and settles go
+    to the supervisor alone: none of them pushes the operator's devices. Its gates push only
+    when routed to the operator — the dial turned to `spotter_human` or `human_only`, or an
+    escalation that reached the operator. Clearing the pointer, or the supervisor ending,
+    resumes pushes from the session's next moment, and a gate held at that point is pushed
+    then ([web-push.md](web-push.md)).
 
   The setting is refused when the new supervisor is not hosted, sits in another project (its
   in-session tools could not reach the session to answer it), or would make the chain cycle — the
@@ -1087,7 +1093,8 @@ without eliminating:
   **A level change re-routes a gate already held; it never drops one.** The status watcher is
   level-triggered on the status, the resolved position, *and* the live supervisor, so turning the
   dial, moving or clearing the pointer, or the supervisor ending re-posts the held call to whoever
-  now answers it. Handing off future approvals is not
+  now answers it, and a held call that comes to rest with the operator this way is pushed
+  ([web-push.md](web-push.md)). Handing off future approvals is not
   abandoning a call that is holding a child right now. An escalated call is the exception:
   its escalations route it, so the watcher compares those instead of the position
   (`Routing`, `daemon/subscriptions.rs`), and a dial change does not move it.
