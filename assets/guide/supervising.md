@@ -117,9 +117,16 @@ Every result is filtered before the agent reads it: `it saw 9` means its context
 of the 212 lines, and the text after the colon is the filter's note to it.
 
 With no other argument, it is what is new since your last read; a first read is the last
-40 entries. `since: <seq>` reads from a seq on, `tail: <n>` the last n. `seq: "14"` zooms
-into one entry: the exact input, the reviewer's verdict and reason, who decided it, the
-raw result (up to 16 KiB), and which lines the agent saw.
+40 lines. `since: <seq>` reads from a seq on, `tail: <n>` the last n lines. A line is what
+is printed under one seq: a message, a call with its outcome, a question with its reply;
+log entries that say nothing (telemetry, titles) are not lines. A read never opens on a
+result without its call, so it can run a few lines past what you asked for, and the header
+says how many lines come before it. `seq: "14"` zooms into one entry: the exact input, the
+reviewer's verdict and reason, who decided it, the raw result (up to 16 KiB), and which
+lines the agent saw.
+
+An allow you sent a note with reads on the call's line, `→ allowed by you, with "use read
+next time"`, rather than as a message of its own.
 
 ## Creating and ending agents
 

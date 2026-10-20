@@ -224,7 +224,7 @@ impl Client {
     ) -> Result<()> {
         self.put(
             &format!("/approvals/{call_id}"),
-            approval_body(decision, source),
+            approval_body(decision, source, None),
         )
         .await
         .map(drop)
@@ -237,11 +237,11 @@ impl Client {
         call_id: &str,
         decision: &Approval,
         source: Option<&str>,
+        note_submission: Option<&str>,
     ) -> Result<bool> {
         let path = self.versioned(&format!("/approvals/{call_id}"));
-        let answer = self
-            .send_declinable(Method::Put, &path, Some(approval_body(decision, source)))
-            .await?;
+        let body = approval_body(decision, source, note_submission);
+        let answer = self.send_declinable(Method::Put, &path, Some(body)).await?;
         Ok(answer.is_ok())
     }
 
@@ -630,8 +630,13 @@ impl TranscriptRead<'_> {
 }
 
 /// The JSON body for an approval decision — the four-valued [`Approval`] the loop consumes
-/// (docs/control-channel.md). Shared by `approve` and `decide`.
-fn approval_body(decision: &Approval, source: Option<&str>) -> String {
+/// (docs/control-channel.md). Shared by `approve` and `decide`; `note_submission` names
+/// the turn that carries an allow's note.
+fn approval_body(
+    decision: &Approval,
+    source: Option<&str>,
+    note_submission: Option<&str>,
+) -> String {
     let mut body = match decision {
         Approval::Approve => serde_json::json!({ "decision": "approve" }),
         Approval::Abort => serde_json::json!({ "decision": "abort" }),
@@ -646,6 +651,9 @@ fn approval_body(decision: &Approval, source: Option<&str>) -> String {
     };
     if let Some(source) = source {
         body["source"] = serde_json::json!(source);
+    }
+    if let Some(submission_id) = note_submission {
+        body["note_submission"] = serde_json::json!(submission_id);
     }
     body.to_string()
 }

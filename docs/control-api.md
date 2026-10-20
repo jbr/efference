@@ -575,13 +575,18 @@ only if that call is still the pending gate.
     check that follows does not park. `abort` makes no further request and is not
     one. A `redirect` counts because its message becomes the next user message and
     the next request reads the cache just as an approval's does.
+  - `note_submission` — with `approve`, the submission id of the turn carrying the
+    decider's note, which the decider submits after the decision lands. Recorded on the
+    decision, so the transcript can tell the note from another message the same sender
+    wrote.
   - `source` — who decides, spelled as a turn's `source` is (`web`,
     `mcp[<clientInfo.name>]`, `session[<id>]`). Client-asserted and unverified, like an
     interrupt's; absent means the operator's own command line or TUI. The web client
     sends `web`; `decide` sends the mounting harness over MCP and the calling session
     in-session; the TUI and `efference control decide` send none.
 - The host appends each decision it accepts as a `Telemetry::GateDecision` entry —
-  the call id, the decision as the loop receives it, and `source` — once the id is known
+  the call id, the decision as the loop receives it, `source`, and for an allow sent with a
+  note the `note_submission` — once the id is known
   to be the pending gate and before the decision reaches the loop, so the entry precedes
   the result or the redirect it causes ([log-and-projection.md](log-and-projection.md)).
   A `409` records nothing. A call the loop decides without a gate — a fast-path or
@@ -1305,7 +1310,10 @@ A window may be cut anywhere because references that dangle across the cut are
 #### `GET /transcript`
 The same window as `GET /log` — same `since`/`before`/`tail` query, same `400`s —
 rendered as `text/plain` (`daemon/transcript.rs`) at one of two grains, or one entry
-zoomed. A window never carries a result's body; the zoom and the routes below do.
+zoomed. A window never carries a result's body; the zoom and the routes below do. At the
+audit grain `tail` counts log entries, as `GET /log` does. At the conversation grain it
+counts the lines that grain prints (below), so the last `n` lines are the same lines
+whatever mechanism entries lie between them.
 
 - `grain` — `conversation` (the default) or `audit`. Any other value is a `400`.
 - `me` — the reader, as a `source` (`session[<id>]`, `mcp[<name>]`) or a session id. A
@@ -1321,7 +1329,19 @@ zoomed. A window never carries a result's body; the zoom and the routes below do
 naming the session and the seqs the window covers — `transcript of child, seq 2–40`, or
 `transcript of child (no entries)` — and a window holding only mechanism says `(nothing
 said or done in this range)`. Every later line opens with the handle it is addressed by, an
-entry's `seq` or a call's `seq.n` when it shared its entry, then two spaces.
+entry's `seq` or a call's `seq.n` when it shared its entry, then two spaces. A *line* is
+one of these: a message, a note, a summary, a call with everything that became of it, an
+ask and its reply together, or the one-line events below.
+
+A `tail` of `n` takes the last `n` lines of the range, whole entry by entry, and then
+extends the start back until no entry in the window is the outcome of a call before it —
+a result, a verdict, a gate decision, an ask's reply, a redirect's message, an allow's
+note — so the window can run past `n` lines and never opens on an outcome without its
+call. When it cut lines off, the header says how many it kept and how many came before:
+`transcript of child, seq 60–99: the last 43 lines; 57 lines before — since: 0 reads from
+the start`. A reader's first read (`ReadPlan` in `daemon/transcript/cursor.rs`) is a tail
+of 40 and ends its header with `(your first read)`; a session of fewer lines is shown
+whole.
 
 - Prose is whole. A user turn is labelled with its sender as a plain name for the
   reader: `operator` for no source, `operator (web)` for `web`, the id or client name
@@ -1329,9 +1349,9 @@ entry's `seq` or a call's `seq.n` when it shared its entry, then two spaces.
   other label as written, or `you`. The session's own prose is labelled with its id.
 - A call and its outcome are one line, the parts joined by ` → `: the tool, its command
   or arguments in backticks, ` — ` and its intent; then `waiting for a decision` while it
-  is the pending gate; the recorded decision (`allowed by <decider>`, `denied by
-  <decider>`, `denied by <decider>: <message>`, `granted by <decider>: <change>`), which
-  a call cleared without a gate does not have; `running` while it has no result; and the
+  is the pending gate; the recorded decision (`allowed by <decider>`, `allowed by
+  <decider>, with "<note>"`, `denied by <decider>`, `denied by <decider>: <message>`,
+  `granted by <decider>: <change>`), which a call cleared without a gate does not have; `running` while it has no result; and the
   result's outcome — `ok` or `error`, its size in lines and images (`no output` when it
   carried nothing), and what the session saw of it: `it saw all of it`, `it saw none of
   it` (a dropped result, or a verdict that kept nothing), `it saw k` for the lines a
@@ -1340,19 +1360,27 @@ entry's `seq` or a call's `seq.n` when it shared its entry, then two spaces.
 - An `ask` is `asked: <question>`, or `asked (n of m): …` when its turn put more than
   one, with its reply on the next line under the reply's seq and its replier's name. An
   ask an interrupt or a malformed call ended reads `→ not answered`.
+- A call's command or arguments are one Markdown code span. Text that itself contains
+  backticks is fenced by a backtick run one longer than the longest inside it, with a
+  space inside each fence when the text opens or closes with a backtick (CommonMark's
+  code-span rule), so the span does not end early. The status prints calls the same way
+  (`code_span` in `daemon/transcript.rs`).
 - A notification is `note from <source>: <body>`; a summary is `summarized seq a–b`;
   an archive and a restart's resume are one line each; a record-only turn is `a reply
   did not complete: <why>`.
 - The mechanism renders to nothing: the preamble, titles, the kickoff turn, spotter
   verdicts, triage records, config edits, process events, every telemetry entry, and the
-  loop's user turn carrying a redirect's message, which the call's line already shows.
+  loop's user turn carrying a redirect's message and the decider's turn carrying an
+  allow's note, which the call's line already shows.
 
 What became of a call is looked up by call id across the whole log, so a call in the
 window shows an outcome that landed after the window ends. A decision, a result or a
 verdict whose call is before the window is a line of its own under the call's handle:
 `8.2  allowed by you`, `8.2  result: ok, 12 lines, it saw 1`, `8.2  verdict: it saw 1 of
 12 lines: <note>`; an `ask`'s reply there reads `8.2  answered by <replier>: <text>`. A
-redirect's message read without its call or its decision is labelled with its decider.
+redirect's message read without its call or its decision is labelled with its decider; an
+allow's note is on its call's line or its decision's, and read alone is the decider's
+message.
 
 **The audit grain** (`grain=audit`, `daemon/transcript/audit.rs`) is one block per
 entry, `seq tag body`, with a multi-line body indented to the body column. Prose

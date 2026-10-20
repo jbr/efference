@@ -141,6 +141,7 @@ impl Session {
         }
         decision
     }
+
     /// Deliver a client's decision to the waiting loop. Clears the gate so
     /// `GET /state` reflects the resolution immediately. `false` → no such gate.
     /// The decision is a person's action (docs/control-api.md), noted once the gate is
@@ -150,17 +151,21 @@ impl Session {
     /// `source` is the decider, spelled as a turn's `source` is (`None` for the
     /// operator). The decision is recorded as a `Telemetry::GateDecision` at the same
     /// moment, so it precedes what the loop does with it (docs/log-and-projection.md).
+    /// `note_submission` is the submission id of the turn carrying an allow's note,
+    /// which the decider submits after the decision lands (`decide`, docs/tools.md).
     pub(crate) fn resolve_approval(
         &self,
         id: &CallId,
         decision: Approval,
         source: Option<String>,
+        note_submission: Option<String>,
     ) -> bool {
         let sender = self.approvals.lock().unwrap().remove(id);
         let Some(tx) = sender else { return false };
         // A loop that already moved on dropped its receiver: nothing was decided.
         if !tx.is_closed() {
-            let record = crate::log::GateDecision::new(id.clone(), decision.clone(), source);
+            let mut record = crate::log::GateDecision::new(id.clone(), decision.clone(), source);
+            record.note_submission = note_submission;
             let entry = Payload::Telemetry(crate::log::Telemetry::GateDecision(record));
             // The record must not stop what it describes.
             if let Err(e) = self.append(self.latest_turn(), entry) {

@@ -18,7 +18,7 @@ than one current meaning are listed with each sense, so a reader can tell which 
 | **reasoning summary** — a provider's account of its own reasoning (OpenAI's term); not a *summary* in the sense above | `ResponsesReasoningSummary`, `WireSummaryPart` | transport.md |
 | **session listing** — one row per hosted session in `GET /sessions` | `ListedSession`, `ListingEvent`, `Host::listing`, `src/daemon/host/listing.rs` | control-api.md |
 | **gate** — a tool call held for a permission decision | `Approval`, `/state`'s `gate`, the `gated` loop phase | permissions.md |
-| **gate decision**, **decider** — the record of one accepted decision on a held call, and who made it | `Telemetry::GateDecision` (`GateDecision { call_id, decision, source }`), `telemetry.gate_decision`, `PUT /approvals/:call_id`'s `source` | control-api.md |
+| **gate decision**, **decider** — the record of one accepted decision on a held call, and who made it | `Telemetry::GateDecision` (`GateDecision { call_id, decision, source, note_submission }`), `telemetry.gate_decision`, `PUT /approvals/:call_id`'s `source` | control-api.md |
 | **grain** — which render a transcript read answers with: the conversation (the default) or the entry-by-entry audit | `daemon::transcript::Grain`, `GET /transcript?grain=audit`, `client::TranscriptRead::audit` | control-api.md |
 | **zoom** (1) — a transcript read of one entry or call in full | `GET /transcript?seq=8.2`, `daemon::transcript::zoom`, `transcript::Handle` | control-api.md |
 | **zoom** (2) — the web client's image viewer scaling and panning an image | `web/src/ui/zoom.ts` | web-client.md |

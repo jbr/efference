@@ -75,6 +75,12 @@ impl Decide {
     fn allow(&self) -> bool {
         self.decision == Decision::Allow
     }
+
+    /// The submission id of the turn that will carry an allow's note, minted before
+    /// the decision so the decision's record can name it.
+    fn note_submission(&self) -> Option<String> {
+        (self.allow() && self.note().is_some()).then(crate::daemon::mint_submission_id)
+    }
 }
 
 /// The held call `view` shows when it is the one `seq` names.
@@ -105,21 +111,23 @@ impl Tool<Control> for Decide {
                 // The decider, as a turn's sender is: the mounting harness from its
                 // clientInfo over MCP, nobody (the operator) from the command line.
                 let source = turn_source(&context);
+                let note_submission = self.note_submission();
                 if !client
-                    .decide(&held.call_id, &self.approval(), source.as_deref())
+                    .decide(
+                        &held.call_id,
+                        &self.approval(),
+                        source.as_deref(),
+                        note_submission.as_deref(),
+                    )
                     .await?
                 {
                     return Err(moved(&status_in(&state_of(&client).await?)?));
                 }
-                if self.allow()
-                    && let Some(note) = self.note()
+                if let (Some(note), Some(submission_id)) = (self.note(), note_submission)
                     && let Err(refusal) = client
                         .submit(
-                            &crate::frontend::SubmittedTurn::new(
-                                note,
-                                crate::daemon::mint_submission_id(),
-                            )
-                            .sourced(source.clone()),
+                            &crate::frontend::SubmittedTurn::new(note, submission_id)
+                                .sourced(source.clone()),
                             None,
                         )
                         .await?
@@ -149,17 +157,18 @@ impl Tool<Control> for Decide {
                 };
                 // Decided by the calling session, as its messages are sent (docs/tools.md).
                 let source = crate::frontend::session_source(caller);
-                if !target.resolve_approval(&gate.call.id, self.approval(), Some(source.clone())) {
+                let note_submission = self.note_submission();
+                if !target.resolve_approval(
+                    &gate.call.id,
+                    self.approval(),
+                    Some(source.clone()),
+                    note_submission.clone(),
+                ) {
                     return Err(moved(&target.status_view(&id, &target.status())));
                 }
-                if self.allow()
-                    && let Some(note) = self.note()
-                {
-                    let turn = crate::frontend::SubmittedTurn::new(
-                        note,
-                        crate::daemon::mint_submission_id(),
-                    )
-                    .sourced(Some(source));
+                if let (Some(note), Some(submission_id)) = (self.note(), note_submission) {
+                    let turn = crate::frontend::SubmittedTurn::new(note, submission_id)
+                        .sourced(Some(source));
                     if let Err(refusal) = target.submit_named_turn(turn, None) {
                         return Err(anyhow!(
                             "{}; your note was not delivered: {}",

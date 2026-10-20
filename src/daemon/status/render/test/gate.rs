@@ -144,3 +144,26 @@ fn a_sessions_relation_follows_the_routing_and_the_supervisor() {
         );
     }
 }
+
+/// A summary that quotes backticks is fenced by a longer run, so it stays one code span
+/// beside the intent and the seq.
+#[test]
+fn a_summary_with_backticks_is_one_code_span() {
+    let held = view(Condition::Gated(HeldCall {
+        call_id: "toolu_1".into(),
+        tool: "agents__create".into(),
+        summary: Some("message=\"check `ls ~/.ssh` first\"".into()),
+        intent: None,
+        handle: Some("8".into()),
+        held_because: held_because(&spot(Origin::Model, "level 2", None)),
+        reviewer: Reviewer::Operator,
+    }));
+    let text = rendered(&held, &driver());
+    assert!(
+        text.starts_with(
+            "child: waiting for a decision from the operator on agents__create \
+             ``message=\"check `ls ~/.ssh` first\"`` (seq 8)"
+        ),
+        "{text}"
+    );
+}

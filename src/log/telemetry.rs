@@ -131,6 +131,12 @@ pub struct GateDecision {
     /// operator's own command line or TUI.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
+    /// The submission id of the turn that carries the decider's note, for an allow
+    /// sent with one (`decide`, docs/tools.md). The note is a user turn of its own,
+    /// delivered with the call's result; this names it, so a reader of the log can tell
+    /// it from a message the same sender wrote for another reason.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note_submission: Option<String>,
 }
 
 impl GateDecision {
@@ -144,7 +150,15 @@ impl GateDecision {
             call_id: call_id.into(),
             decision,
             source,
+            note_submission: None,
         }
+    }
+
+    /// This decision, with the note its decider sent beside it: the submission id of
+    /// the note's turn.
+    pub fn with_note_submission(mut self, submission_id: impl Into<String>) -> Self {
+        self.note_submission = Some(submission_id.into());
+        self
     }
 }
 

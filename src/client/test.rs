@@ -223,3 +223,25 @@ async fn a_prefixed_client_joins_v1_only() {
 
     let _ = std::fs::remove_file(&socket);
 }
+
+/// An allow's body names the turn that carries its note, beside the decider.
+#[test]
+fn an_allows_body_names_its_notes_turn() {
+    let body: serde_json::Value = serde_json::from_str(&approval_body(
+        &Approval::Approve,
+        Some("mcp[claude-code]"),
+        Some("sub-1"),
+    ))
+    .unwrap();
+    assert_eq!(
+        body,
+        serde_json::json!({
+            "decision": "approve",
+            "source": "mcp[claude-code]",
+            "note_submission": "sub-1",
+        })
+    );
+    let bare: serde_json::Value =
+        serde_json::from_str(&approval_body(&Approval::Approve, None, None)).unwrap();
+    assert_eq!(bare, serde_json::json!({ "decision": "approve" }));
+}

@@ -2,8 +2,9 @@ use super::*;
 
 const RENDERED: &str = "transcript of child, seq 5–9\n5  child: done\n";
 
-/// A reader with no cursor gets the tail, and the header says so and how to read what
-/// came before; the cursor lands on the last seq.
+/// A reader with no cursor gets the tail of the conversation; the render's header says
+/// what was cut and the plan adds that it is the first read. The cursor lands on the last
+/// seq.
 #[test]
 fn a_first_read_is_the_tail() {
     let plan = ReadPlan::new(None, None, None, Some(99));
@@ -12,16 +13,18 @@ fn a_first_read_is_the_tail() {
         (None, Some(100), Some(FIRST_READ_TAIL))
     );
     assert_eq!(plan.cursor_after(None), Some(99));
+    let cut = "transcript of child, seq 60–99: the last 40 lines; 12 lines before \
+               — since: 0 reads from the start\n5  child: done\n";
     assert_eq!(
-        plan.framed("transcript of child", RENDERED.into()),
-        "transcript of child, seq 60–99: the last 40 entries, as this is your first read; \
-         seq 0–59 come before (since: 0 reads from the start)\n5  child: done\n"
+        plan.framed("transcript of child", cut.into()),
+        "transcript of child, seq 60–99: the last 40 lines; 12 lines before \
+         — since: 0 reads from the start (your first read)\n5  child: done\n"
     );
 
     let short = ReadPlan::new(None, None, None, Some(9));
     assert_eq!(
         short.framed("transcript of child", RENDERED.into()),
-        "transcript of child, seq 0–9 (your first read)\n5  child: done\n"
+        "transcript of child, seq 5–9 (your first read)\n5  child: done\n"
     );
 }
 

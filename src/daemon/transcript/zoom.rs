@@ -114,7 +114,11 @@ pub(crate) fn zoom(log: &[LogEntry], handle: Handle, reading: &Reading) -> Resul
             let on = out.handle_of(&decision.call_id.0);
             out.lines.push(format!(
                 "decision on {on}: {}",
-                decided(decision, reading.me)
+                decided(
+                    decision,
+                    reading.me,
+                    out.index.note(&decision.call_id.0).as_deref()
+                )
             ));
         }
         (Payload::ResultVerdict { for_result, wire }, None) => {
@@ -207,7 +211,7 @@ impl<'a> Zoom<'a, '_> {
             calls => {
                 for (i, call) in calls.iter().enumerate() {
                     let summary = call_summary(call)
-                        .map(|s| format!(" `{s}`"))
+                        .map(|s| format!(" {}", code_span(&s)))
                         .unwrap_or_default();
                     self.lines.push(format!(
                         "{}  {}{summary}",
@@ -296,7 +300,10 @@ impl<'a> Zoom<'a, '_> {
         };
         let by = sender(decision.source.as_deref(), self.reading.me);
         let line = match &decision.decision {
-            Approval::Approve => format!("decision: allowed by {by}"),
+            Approval::Approve => match self.index.note(id) {
+                Some(note) => format!("decision: allowed by {by}, with \"{}\"", flat(&note)),
+                None => format!("decision: allowed by {by}"),
+            },
             Approval::Abort => format!("decision: denied by {by}, which ended the turn"),
             Approval::Redirect(message) => format!(
                 "decision: denied by {by}; the session went on under the message: {}",

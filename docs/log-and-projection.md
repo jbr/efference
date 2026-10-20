@@ -174,10 +174,12 @@ precedes the `failed: interrupted` stage of the request the signal ends, and it 
 appended when nothing was running too. The `[env]` masker passes both labels.
 
 `GateDecision` records a decision on a held call as `PUT /approvals/:call_id` or the
-in-session approve accepted it: `{call_id, decision, source?}`, where `decision` is the
+in-session approve accepted it: `{call_id, decision, source?, note_submission?}`, where `decision` is the
 `Approval` the loop receives (`"Approve"`, `"Abort"`, `{"Redirect": "<message>"}`,
 `{"ConfigEdit": {change, note}}`) and `source` is the client-asserted decider, spelled as
-a turn's is and absent for the operator. It is appended once the call is known to be the
+a turn's is and absent for the operator; `note_submission` is the submission id of the
+user turn carrying the note an allow was sent with, which the transcript reads to show the
+note on the call's line. It is appended once the call is known to be the
 pending gate and before the decision reaches the loop, so it precedes the result or the
 redirect's user turn it causes. A redirect the loop's own permission review writes (the
 autonomous redirect, a `[commands]` deny under `autonomous`, a config edit's outcome) is

@@ -7,6 +7,7 @@
 use super::render::{Reader, Relation, activity_text, duration, render};
 use super::view::*;
 use crate::daemon::Landing;
+use crate::daemon::transcript::code_span;
 
 /// The first line of `view`, as `reader` reads it.
 pub(crate) fn first_line(view: &StatusView, reader: &Reader, now: u64) -> String {
@@ -20,7 +21,7 @@ pub(crate) fn first_line(view: &StatusView, reader: &Reader, now: u64) -> String
 /// A held call by tool and what it does: ``bash `curl -sI …` ``.
 fn held_call(held: &HeldCall) -> String {
     match &held.summary {
-        Some(summary) => format!("{} `{summary}`", held.tool),
+        Some(summary) => format!("{} {}", held.tool, code_span(summary)),
         None => held.tool.clone(),
     }
 }
@@ -144,7 +145,7 @@ pub(crate) fn interrupted(view: &StatusView, now: u64) -> (String, bool) {
                 since,
             }) => {
                 let call = match command {
-                    Some(command) => format!("{tool} `{command}`"),
+                    Some(command) => format!("{tool} {}", code_span(command)),
                     None => tool.clone(),
                 };
                 let after = duration(now.saturating_sub(*since));

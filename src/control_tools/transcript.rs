@@ -32,7 +32,9 @@ pub struct Transcript {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[arg(long, conflicts_with = "tail")]
     pub since: Option<u64>,
-    /// Read only the last this many entries.
+    /// Read only the last this many conversation lines (a call and its outcome are one
+    /// line), extended back so no result shows without its call. `audit` counts log
+    /// entries.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[arg(long)]
     pub tail: Option<u64>,

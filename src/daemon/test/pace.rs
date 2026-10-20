@@ -30,7 +30,7 @@ fn settle_predicate_tracks_the_loop_lifecycle() {
     );
 
     // Resolving the gate while the turn continues — busy again.
-    shared.resolve_approval(&call.id, Approval::Approve, None);
+    shared.resolve_approval(&call.id, Approval::Approve, None, None);
     assert!(!shared.is_settled(), "post-gate, mid-turn is busy");
 
     // The loop parks — idle, settled.

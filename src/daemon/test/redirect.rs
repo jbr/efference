@@ -50,6 +50,7 @@ async fn a_supervisors_deny_names_the_supervisor() {
         &crate::log::CallId("toolu_1".into()),
         Approval::Redirect("use trash instead".into()),
         Some("session[parent]".into()),
+        None,
     ));
     wait_until("the redirect has landed", || {
         stub_and_steer(&session).is_some()

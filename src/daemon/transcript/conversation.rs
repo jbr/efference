@@ -8,49 +8,96 @@
 
 use super::index::Index;
 use super::*;
-use crate::log::{ContentBlock, Exclusion, Seq, Telemetry};
+use crate::log::{ContentBlock, Exclusion, GateDecision, Seq, Telemetry};
 use std::ops::RangeInclusive;
+
+mod tail;
 
 /// `window`, a contiguous slice of `log`, as `reading` reads it.
 pub(crate) fn render(log: &[LogEntry], window: &[LogEntry], reading: &Reading) -> String {
-    let title = reading.title();
+    finish(Out::run(log, window, reading), window, 0)
+}
+
+/// The last `tail` conversation lines of `range`, a contiguous slice of `log`, as
+/// `reading` reads them (`tail.rs`).
+pub(crate) fn render_tail(
+    log: &[LogEntry],
+    range: &[LogEntry],
+    tail: u64,
+    reading: &Reading,
+) -> String {
+    if tail == 0 {
+        return render(log, &[], reading);
+    }
+    let Some(cut) = tail::cut(log, range, tail, reading) else {
+        return render(log, range, reading);
+    };
+    let window = &range[cut.start..];
+    finish(Out::run(log, window, reading), window, cut.earlier)
+}
+
+/// The header and the lines of a window run through [`Out::run`]. `earlier` is how many
+/// lines come before the window in its range, when a tail cut it short.
+fn finish(out: Out, window: &[LogEntry], earlier: usize) -> String {
+    let title = out.reading.title();
     let (Some(first), Some(last)) = (window.first(), window.last()) else {
         return format!("{title} (no entries)\n");
     };
-    let range = if first.seq == last.seq {
-        format!("seq {}", first.seq)
-    } else {
-        format!("seq {}–{}", first.seq, last.seq)
+    let mut header = match first.seq == last.seq {
+        true => format!("{title}, seq {}", first.seq),
+        false => format!("{title}, seq {}–{}", first.seq, last.seq),
     };
-    let mut out = Out {
-        lines: vec![format!("{title}, {range}")],
-        index: Index::new(log),
-        window: first.seq..=last.seq,
-        reading,
-    };
-    for entry in window {
-        out.entry(entry);
+    if earlier > 0 {
+        let _ = write!(
+            header,
+            ": the last {}; {} before — since: 0 reads from the start",
+            count(out.lines.len(), "line"),
+            count(earlier, "line")
+        );
     }
-    if out.lines.len() == 1 {
-        out.lines
-            .push("(nothing said or done in this range)".to_string());
+    let mut lines = vec![header];
+    lines.extend(out.lines.into_iter().map(|(_, line)| line));
+    if lines.len() == 1 {
+        lines.push("(nothing said or done in this range)".to_string());
     }
-    let mut text = out.lines.join("\n");
+    let mut text = lines.join("\n");
     text.push('\n');
     text
 }
 
 struct Out<'a, 'r> {
-    lines: Vec<String>,
+    /// The rendered lines, each with the seq of the entry that produced it.
+    lines: Vec<(Seq, String)>,
     index: Index<'a>,
     /// The seqs the window covers.
     window: RangeInclusive<Seq>,
     reading: &'r Reading<'r>,
+    /// The entry being rendered.
+    at: Seq,
 }
 
-impl<'a> Out<'a, '_> {
+impl<'a, 'r> Out<'a, 'r> {
+    /// Every entry of `window`, rendered. An empty window renders nothing.
+    fn run(log: &'a [LogEntry], window: &'a [LogEntry], reading: &'r Reading<'r>) -> Self {
+        let (first, last) = match (window.first(), window.last()) {
+            (Some(first), Some(last)) => (first.seq, last.seq),
+            _ => (0, 0),
+        };
+        let mut out = Self {
+            lines: Vec::new(),
+            index: Index::new(log),
+            window: first..=last,
+            reading,
+            at: first,
+        };
+        for entry in window {
+            out.entry(entry);
+        }
+        out
+    }
+
     fn push(&mut self, label: impl std::fmt::Display, body: impl std::fmt::Display) {
-        self.lines.push(format!("{label}  {body}"));
+        self.lines.push((self.at, format!("{label}  {body}")));
     }
 
     /// Whether the call `id` is issued inside the window, where its line carries
@@ -66,6 +113,7 @@ impl<'a> Out<'a, '_> {
     }
 
     fn entry(&mut self, entry: &'a LogEntry) {
+        self.at = entry.seq;
         match &entry.payload {
             Payload::User(blocks) => self.user(entry, blocks),
             Payload::Assistant { output, excluded } => match excluded {
@@ -89,7 +137,7 @@ impl<'a> Out<'a, '_> {
                 if !self.shown(&decision.call_id.0) =>
             {
                 let label = self.label(&decision.call_id.0, entry.seq);
-                let body = decided(decision, self.reading.me);
+                let body = self.decision_words(decision);
                 self.push(label, body);
             }
             Payload::Ambient(note) => {
@@ -124,6 +172,12 @@ impl<'a> Out<'a, '_> {
         }
     }
 
+    /// The recorded decision in words, with the note an allow was sent with.
+    fn decision_words(&self, decision: &GateDecision) -> String {
+        let note = self.index.note(&decision.call_id.0);
+        decided(decision, self.reading.me, note.as_deref())
+    }
+
     /// A call's handle, or `seq` when no assistant entry issued the call.
     fn label(&self, call_id: &str, seq: Seq) -> String {
         self.index
@@ -136,6 +190,16 @@ impl<'a> Out<'a, '_> {
         // (docs/context.md).
         if entry.source.as_deref() == Some(crate::frontend::KICKOFF_SOURCE) {
             return;
+        }
+        // An allow's note is on its call's line, or on the decision's.
+        if let Some(call_id) = self.index.note_for(entry.seq).map(str::to_string) {
+            let decision_shown = self
+                .index
+                .decision(&call_id)
+                .is_some_and(|(seq, _)| self.window.contains(&seq));
+            if self.shown(&call_id) || decision_shown {
+                return;
+            }
         }
         // A redirect's message is on its call's line, or on the decision's.
         if let Some(call_id) = self.index.steer(entry.seq).map(str::to_string) {
@@ -185,7 +249,7 @@ impl<'a> Out<'a, '_> {
         let id = call.id.0.as_str();
         let mut head = crate::mcp::display_name(&call.name);
         if let Some(summary) = call_summary(call) {
-            let _ = write!(head, " `{summary}`");
+            let _ = write!(head, " {}", code_span(&summary));
         }
         if let Some(intent) = call.intent() {
             let _ = write!(head, " — {}", flat(intent));
@@ -196,7 +260,7 @@ impl<'a> Out<'a, '_> {
             return parts.join(" → ");
         }
         if let Some((_, decision)) = self.index.decision(id) {
-            parts.push(decided(decision, self.reading.me));
+            parts.push(self.decision_words(decision));
         }
         // A refused call's result is the harness's stand-in, not a run.
         if !self.index.refused(id) {
@@ -271,19 +335,6 @@ impl<'a> Out<'a, '_> {
         let body = saw(raw, Some(wire), true);
         self.push(label, format!("verdict: {body}"));
     }
-}
-
-/// A user entry's text blocks, joined; its attachments are lines of their own.
-fn text_of(blocks: &[ContentBlock]) -> String {
-    blocks
-        .iter()
-        .filter_map(|block| match block {
-            ContentBlock::Text(text) => Some(text.trim_end()),
-            _ => None,
-        })
-        .filter(|text| !text.is_empty())
-        .collect::<Vec<_>>()
-        .join("\n\n")
 }
 
 /// A result entry's text: what an `ask`'s reply carries.

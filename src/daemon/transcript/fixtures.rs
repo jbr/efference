@@ -33,6 +33,19 @@ impl Fixture {
             .unwrap()
     }
 
+    /// A user turn submitted under the id `submission_id`, which a decision's note
+    /// names.
+    pub(super) fn user_as(&mut self, text: &str, source: Option<&str>, submission_id: &str) -> Seq {
+        self.0
+            .append_submission(
+                1,
+                Payload::User(vec![ContentBlock::Text(text.into())]),
+                Some(submission_id.to_string()),
+                source.map(str::to_string),
+            )
+            .unwrap()
+    }
+
     /// A redirect's message as the loop appends it: no submission, under its decider's
     /// `source` (`agent/landing.rs`).
     pub(super) fn steer(&mut self, text: &str, source: Option<&str>) -> Seq {
@@ -99,6 +112,14 @@ pub(super) fn decision(id: &str, decision: Approval, source: Option<&str>) -> Pa
         decision,
         source.map(str::to_string),
     )))
+}
+
+/// An allow sent with a note, whose turn was submitted under `note_submission`.
+pub(super) fn allow_noted(id: &str, source: Option<&str>, note_submission: &str) -> Payload {
+    Payload::Telemetry(Telemetry::GateDecision(
+        GateDecision::new(id, Approval::Approve, source.map(str::to_string))
+            .with_note_submission(note_submission),
+    ))
 }
 
 /// `n` numbered lines.

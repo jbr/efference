@@ -98,6 +98,10 @@ pub(crate) struct DecisionBody {
     /// absent means the operator (docs/control-api.md).
     #[serde(default)]
     pub(crate) source: Option<String>,
+    /// The submission id of the turn carrying the decider's note, for an `approve` sent
+    /// with one; the host records it on the decision (docs/control-api.md).
+    #[serde(default)]
+    pub(crate) note_submission: Option<String>,
 }
 
 /// Body of `PATCH /loop` (docs/control-channel.md): the operator dials, each
@@ -291,7 +295,8 @@ impl LogSelect {
 }
 
 /// What a `GET /transcript` read wants (docs/control-api.md): a window at a grain, or
-/// one entry zoomed, for a named reader.
+/// one entry zoomed, for a named reader. At the conversation grain the select's `tail`
+/// counts rendered lines, not entries.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct TranscriptQuery {
     pub(crate) select: LogSelect,

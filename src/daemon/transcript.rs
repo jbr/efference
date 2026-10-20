@@ -14,9 +14,9 @@
 //! it is read. The TUI keeps its own tree (docs/tui.md), which shows the bodies.
 
 use crate::log::{
-    AssistantOutput, CallId, ConfigChange, EditState, LogEntry, MessagesOutputBlock, Payload,
-    ProcessEventKind, RawResult, ResponsesMessageContent, ResponsesOutputItem, Stance, ToolCall,
-    WireState,
+    AssistantOutput, CallId, ConfigChange, ContentBlock, EditState, LogEntry, MessagesOutputBlock,
+    Payload, ProcessEventKind, RawResult, ResponsesMessageContent, ResponsesOutputItem, Stance,
+    ToolCall, WireState,
 };
 use crate::project::selection;
 use serde_json::Value;
@@ -156,12 +156,17 @@ fn kept_of(raw: &RawResult, verdict: &crate::log::Triaged) -> (usize, usize) {
     (kept, d.shown.len() + d.dropped)
 }
 
-/// `allowed by parent` — a gate's recorded decision, its decider named for `me`.
-fn decided(decision: &crate::log::GateDecision, me: Option<&str>) -> String {
+/// `allowed by parent` — a gate's recorded decision, its decider named for `me`. An
+/// allow carries the decider's note when one was sent with it (`note`, from
+/// `index.rs`): `allowed by you, with "use read next time"`.
+fn decided(decision: &crate::log::GateDecision, me: Option<&str>, note: Option<&str>) -> String {
     use crate::frontend::Approval;
     let by = sender(decision.source.as_deref(), me);
     match &decision.decision {
-        Approval::Approve => format!("allowed by {by}"),
+        Approval::Approve => match note {
+            Some(note) => format!("allowed by {by}, with \"{}\"", flat(note)),
+            None => format!("allowed by {by}"),
+        },
         Approval::Abort => format!("denied by {by}"),
         Approval::Redirect(message) if message.trim().is_empty() => format!("denied by {by}"),
         Approval::Redirect(message) => format!("denied by {by}: {}", flat(message)),
@@ -180,17 +185,49 @@ fn refused(decision: &crate::log::GateDecision) -> bool {
 /// A config change in plain words, such as command `grep -n` or write access to `src`.
 fn change_words(change: &ConfigChange) -> String {
     match change {
-        ConfigChange::Command { command } => format!("command `{command}`"),
+        ConfigChange::Command { command } => format!("command {}", code_span(command)),
         ConfigChange::Path {
             path, write: true, ..
-        } => format!("write access to `{path}`"),
+        } => format!("write access to {}", code_span(path)),
         ConfigChange::Path {
             path, read: true, ..
-        } => format!("read access to `{path}`"),
-        ConfigChange::Path { path, .. } => format!("no access to `{path}`"),
-        ConfigChange::Tool { name } => format!("the tool `{}`", crate::mcp::display_name(name)),
+        } => format!("read access to {}", code_span(path)),
+        ConfigChange::Path { path, .. } => format!("no access to {}", code_span(path)),
+        ConfigChange::Tool { name } => {
+            format!("the tool {}", code_span(&crate::mcp::display_name(name)))
+        }
         ConfigChange::Scope { .. } => "a new scope".to_string(),
     }
+}
+
+/// `text` as one Markdown code span: fenced by a backtick run one longer than the
+/// longest run `text` contains, with a space inside each fence when `text` opens or
+/// closes with a backtick (the CommonMark code-span rule). Text with no backtick is
+/// fenced by a single one.
+pub(crate) fn code_span(text: &str) -> String {
+    let longest = text
+        .split(|c| c != '`')
+        .map(str::len)
+        .max()
+        .unwrap_or_default();
+    let fence = "`".repeat(longest + 1);
+    match text.starts_with('`') || text.ends_with('`') {
+        true => format!("{fence} {text} {fence}"),
+        false => format!("{fence}{text}{fence}"),
+    }
+}
+
+/// A user entry's text blocks, joined; its attachments are lines of their own.
+fn text_of(blocks: &[ContentBlock]) -> String {
+    blocks
+        .iter()
+        .filter_map(|block| match block {
+            ContentBlock::Text(text) => Some(text.trim_end()),
+            _ => None,
+        })
+        .filter(|text| !text.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n\n")
 }
 
 /// `1 line`, `12 lines`.
@@ -373,3 +410,6 @@ pub(crate) fn size(bytes: usize) -> String {
         format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
     }
 }
+
+#[cfg(test)]
+mod test;

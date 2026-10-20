@@ -337,7 +337,9 @@ impl Session {
                     Some(bound) => {
                         let leaf = ToolCall::new(&bound.name, call_id, bound.input.clone());
                         let leaf_summary = super::super::transcript::call_summary(&leaf)
-                            .map(|summary| format!(" `{summary}`"))
+                            .map(|summary| {
+                                format!(" {}", super::super::transcript::code_span(&summary))
+                            })
                             .unwrap_or_default();
                         Some(format!(
                             "{}'s {}{leaf_summary}",

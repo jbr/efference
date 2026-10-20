@@ -9,6 +9,7 @@ behind a change, see [`journal/`](journal/).
 
 ### Added
 
+- A transcript's first read and `tail: <n>` count conversation lines (last 40 on a first read), extended back so no result, verdict or answer shows without its call; an allow's note prints on the call's line, and a call whose input contains backticks is fenced by a longer run in both the transcript and the status (docs/control-api.md).
 - Web link-styled buttons underline on hover and press instead of inheriting a square button halo; the gallery shows their interaction states beside ordinary links.
 
 - The web composer footer unifies startup, connection, action-error, and turn status with inline recovery actions; the design gallery includes these states and a fixture-backed transcript header.

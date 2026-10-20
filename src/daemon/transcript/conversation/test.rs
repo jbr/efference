@@ -430,3 +430,80 @@ fn a_continue_reads_as_its_sender() {
     )));
     assert!(whole(&log, &child(None)).contains("2  claude-code continued it\n"));
 }
+
+/// An allow's note is on its call's line, and the user turn that carries it is not a
+/// line of its own, wherever the window cuts; read alone, the note is an ordinary
+/// message from its sender.
+#[test]
+fn an_allows_note_is_on_the_calls_line() {
+    let mut log = Fixture::new();
+    log.add(turn(
+        "",
+        vec![bash("toolu_1", "curl -sI x", "fetch headers")],
+    ));
+    log.add(allow_noted("toolu_1", Some("session[parent]"), "note-1"));
+    log.add(Payload::tool_result(
+        "toolu_1",
+        RawResult::text(lines(3)),
+        WireState::Raw,
+    ));
+    log.user_as("use read next time", Some("session[parent]"), "note-1");
+    let parent = child(Some("parent"));
+    assert_eq!(
+        whole(&log, &parent),
+        "transcript of child, seq 0–3\n\
+         0  bash `curl -sI x` — fetch headers → allowed by you, with \"use read next time\" → ok, 3 lines, it saw all of it\n"
+    );
+    // The decision in view without its call: the note rides on the decision's line.
+    assert_eq!(
+        read(&log, 1, 3, &parent),
+        "transcript of child, seq 1–3\n\
+         0  allowed by you, with \"use read next time\"\n\
+         0  result: ok, 3 lines, it saw all of it\n"
+    );
+    // The note in view alone: nothing on the wire says it is the allow's.
+    assert_eq!(
+        read(&log, 3, 3, &parent),
+        "transcript of child, seq 3\n3  you: use read next time\n"
+    );
+    // A message from the same sender that no decision names stays its own line.
+    let mut other = Fixture::new();
+    other.add(turn("", vec![bash("toolu_1", "ls", "look")]));
+    other.add(decision(
+        "toolu_1",
+        Approval::Approve,
+        Some("session[parent]"),
+    ));
+    other.add(Payload::tool_result(
+        "toolu_1",
+        RawResult::text("a"),
+        WireState::Raw,
+    ));
+    other.user("also, a different thing", Some("session[parent]"));
+    assert_eq!(
+        whole(&other, &parent),
+        "transcript of child, seq 0–3\n\
+         0  bash `ls` — look → allowed by you → ok, 1 line, it saw all of it\n\
+         3  you: also, a different thing\n"
+    );
+}
+
+/// A call whose input contains backticks is fenced by a longer run, so the summary is one
+/// code span; the status renders it the same way.
+#[test]
+fn a_summary_with_backticks_is_one_code_span() {
+    let mut log = Fixture::new();
+    log.add(turn(
+        "",
+        vec![bash(
+            "toolu_1",
+            "echo `date` && echo ``x``",
+            "show the time",
+        )],
+    ));
+    assert_eq!(
+        whole(&log, &child(None)),
+        "transcript of child, seq 0\n\
+         0  bash ``` echo `date` && echo ``x`` ``` — show the time → running\n"
+    );
+}

@@ -397,11 +397,23 @@ impl Session {
         };
         let log = self.log.lock().unwrap();
         let entries = log.entries();
-        let window = window(entries, select);
         match grain {
-            Grain::Audit => super::transcript::audit::render(window),
+            Grain::Audit => super::transcript::audit::render(window(entries, select)),
+            // A tail of the conversation counts its rendered lines, not log entries.
             Grain::Conversation => {
-                super::transcript::conversation::render(entries, window, &reading)
+                let bounded = window(
+                    entries,
+                    &LogSelect {
+                        tail: None,
+                        ..*select
+                    },
+                );
+                match select.tail {
+                    Some(tail) => super::transcript::conversation::render_tail(
+                        entries, bounded, tail, &reading,
+                    ),
+                    None => super::transcript::conversation::render(entries, bounded, &reading),
+                }
             }
         }
     }

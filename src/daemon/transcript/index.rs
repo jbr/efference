@@ -34,6 +34,12 @@ pub(super) struct Index<'a> {
     /// entry carries no submission, and carries its decider's source when that is an
     /// agent's or a client's.
     steers: HashMap<Seq, String>,
+    /// The `User` entry that carries an allow's note, by its seq, to the allowed
+    /// call's id: the entry whose submission id the decision records
+    /// (`GateDecision::note_submission`).
+    notes: HashMap<Seq, String>,
+    /// The `User` entry each decision's note is, by the call it allowed.
+    note_entries: HashMap<String, &'a LogEntry>,
 }
 
 impl<'a> Index<'a> {
@@ -44,7 +50,11 @@ impl<'a> Index<'a> {
         };
         // Redirects whose message has not yet landed as its user turn, in order.
         let mut redirects: Vec<(&'a str, String)> = Vec::new();
+        let mut submitted: HashMap<&'a str, &'a LogEntry> = HashMap::new();
         for entry in log {
+            if let (Payload::User(_), Some(id)) = (&entry.payload, &entry.submission_id) {
+                submitted.insert(id, entry);
+            }
             match &entry.payload {
                 // A record-only turn was never dispatched; its calls have no outcome.
                 Payload::Assistant {
@@ -93,6 +103,17 @@ impl<'a> Index<'a> {
                 _ => {}
             }
         }
+        // A note lands after its decision, so the entries are matched once the log is read.
+        for (call_id, (_, decision)) in &index.decisions {
+            if let Some(entry) = decision
+                .note_submission
+                .as_deref()
+                .and_then(|id| submitted.get(id))
+            {
+                index.notes.insert(entry.seq, call_id.clone());
+                index.note_entries.insert(call_id.clone(), entry);
+            }
+        }
         index
     }
 
@@ -120,6 +141,22 @@ impl<'a> Index<'a> {
     /// The gate's recorded decision on the call, with the entry that records it.
     pub(super) fn decision(&self, id: &str) -> Option<(Seq, &'a GateDecision)> {
         self.decisions.get(id).copied()
+    }
+
+    /// The text of the note sent with the allow of call `id`, once it has landed in the
+    /// log: what a call's line shows beside the decision.
+    pub(super) fn note(&self, id: &str) -> Option<String> {
+        let entry = self.note_entries.get(id)?;
+        let Payload::User(blocks) = &entry.payload else {
+            return None;
+        };
+        let text = text_of(blocks);
+        (!text.is_empty()).then_some(text)
+    }
+
+    /// The allowed call whose note the user entry at `seq` carries.
+    pub(super) fn note_for(&self, seq: Seq) -> Option<&str> {
+        self.notes.get(&seq).map(String::as_str)
     }
 
     /// Whether the call's recorded decision refused it.

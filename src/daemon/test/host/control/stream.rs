@@ -107,7 +107,7 @@ async fn a_stream_sends_the_status_then_each_decision_point_then_the_end() {
     );
 
     let session = host.session("child").unwrap();
-    assert!(session.resolve_approval(&CallId("toolu_1".into()), Approval::Approve, None));
+    assert!(session.resolve_approval(&CallId("toolu_1".into()), Approval::Approve, None, None));
     let (_, _second) = hold(&host, "child", &bash("toolu_2", "pwd"));
     let gate = frame(&mut ws).await;
     assert!(

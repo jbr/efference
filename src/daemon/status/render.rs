@@ -8,6 +8,7 @@
 //! it left out and which call reads the rest; senders are plain names.
 
 use super::super::starting::Stage;
+use super::super::transcript::code_span;
 use super::moves::{Moves, Target};
 use super::view::*;
 use std::fmt::Write as _;
@@ -125,7 +126,7 @@ pub(crate) fn render(view: &StatusView, reader: &Reader, now: u64) -> String {
             target.handle = held.handle.as_deref();
             let mut call = held.tool.clone();
             if let Some(summary) = &held.summary {
-                let _ = write!(call, " `{summary}`");
+                let _ = write!(call, " {}", code_span(summary));
             }
             if let Some(handle) = &held.handle {
                 let _ = write!(call, " (seq {handle})");
@@ -351,9 +352,9 @@ fn footer(out: &mut Vec<String>, footer: &Footer, me: Option<&str>, now: u64) {
             .iter()
             .map(|p| {
                 format!(
-                    "p#{} `{}` for {}",
+                    "p#{} {} for {}",
                     p.id,
-                    p.command,
+                    code_span(&p.command),
                     duration(now.saturating_sub(p.since))
                 )
             })
@@ -388,7 +389,7 @@ pub(super) fn activity_text(activity: &Activity, now: u64) -> String {
             tool,
             command: Some(command),
             since: at,
-        } => format!("running {tool} `{command}` for {}", since(at)),
+        } => format!("running {tool} {} for {}", code_span(command), since(at)),
         Activity::Tool {
             tool, since: at, ..
         } => format!("running {tool} for {}", since(at)),

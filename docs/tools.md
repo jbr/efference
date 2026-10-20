@@ -294,7 +294,8 @@ between them.
 the held call's handle, mapped to its call id, and a handle that is not the pending gate
 is refused with what the session holds now (`gate moved: …`). `allow` approves, and a
 message is then sent as the decider's own turn, which the target reads with the call's
-result; `deny` with a message rejects the call and steers the turn
+result, and the decision's record names that turn's submission id (`note_submission`), so
+the transcript prints the note on the call's line; `deny` with a message rejects the call and steers the turn
 (`Approval::Redirect`); a bare `deny` aborts it. The decider is recorded on the
 `GateDecision` as `session[<caller id>]`.
 
@@ -306,7 +307,9 @@ project — each status's first line — the sessions the caller drives marked `
 is what is new since this reader's last read. The host holds that read cursor per reader
 and target as control state on the target's hosted entry, never logged
 (`src/daemon/host/agents.rs`); a reader with no cursor — a first read, or any read
-after a host restart — gets the last 40 entries, and the header says so. `since`/`tail`
+after a host restart — gets the last 40 conversation lines, and the header says so.
+`tail` counts conversation lines as the transcript prints them, not log entries
+(docs/control-api.md). `since`/`tail`
 reads move the cursor to the end of what they returned; a zoom does not
 (`src/daemon/transcript/cursor.rs`). `interrupt` answers with what it stopped, read from
 the status just before it signals, and signals nothing at an idle session. `archive`
