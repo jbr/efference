@@ -9,6 +9,7 @@ behind a change, see [`journal/`](journal/).
 
 ### Added
 
+- A window overflow a provider refuses as an `error` event inside a 200 stream is resent at half the reservation, as an HTTP 400 at open is, and `is_window_overflow` matches DeepInfra's "you requested N output tokens" wording (docs/transport.md).
 - A host's `/sessions/<id>/files` takes the cookie only, as a session bind's `/files` does; a valid bearer gets `403` (docs/web-bind.md).
 - `GET /sessions/:id` for a dormant session answers its recorded `selections` (in the shapes `PATCH` takes) and `context_tokens`, the last main-loop prompt a cold read would pay; the archived listing is unchanged (docs/control-api.md).
 - Triage shows a result's lines in a `12 │ text` margin, and the result header says that numbers after the margin are part of the text and `keep` uses the margin's, so a `read` or `grep -n` result's own line numbers are not mistaken for the view's; `EFFERENCE_TRIAGE_LINES` is gone (docs/triage.md).

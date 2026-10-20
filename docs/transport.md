@@ -1643,7 +1643,13 @@ counted, the whole body is estimated at that ratio. Far from the wall the
 value sent is the cap; near it, the reservation shrinks each turn. A 400 in
 either provider's overflow phrasing is the backstop: the reservation is halved
 and the request retried, once per halving down to the floor, and any other
-open failure stays terminal. Turns, triages, and triage all share the one
+open failure stays terminal. The refusal can also arrive as an `error` event on a
+stream that opened 200 (DeepInfra through OpenRouter: "maximum context length is N
+tokens. However, you requested M output tokens and your prompt contains at least P
+input tokens"); a completion whose failure text matches the same phrasings is
+resent at half the reservation too, whatever class its error type earned, and the
+refused attempt's partial is dropped. The interrupt and a fixed `cap` are never
+resent. Turns, triages, and triage all share the one
 client and so the one calibration; the keepalive's `max_tokens: 0` ping and
 the spotter's own client (no window set) are outside it.
 

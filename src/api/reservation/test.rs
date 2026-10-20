@@ -67,8 +67,12 @@ fn window_overflow_is_recognized_by_phrasing() {
     let openrouter = r#"{"type":"error","error":{"type":"invalid_request_error","message":"This endpoint's maximum context length is 1048576 tokens. However, you requested about 1067113 tokens (110149 of text input, 13246 of tool input, 943718 in the output). Please reduce the length of either one, or use the context-compression plugin to compress your prompt automatically."}}"#;
     let anthropic = r#"{"type":"error","error":{"type":"invalid_request_error","message":"input length and `max_tokens` exceed context limit: 190000 + 20000 > 200000, decrease input length or `max_tokens` and try again"}}"#;
     let too_long = r#"{"type":"error","error":{"type":"invalid_request_error","message":"prompt is too long: 210000 tokens > 200000 maximum"}}"#;
+    // DeepInfra's wording, as it arrives in an in-stream `error` event.
+    let deepinfra = r#"upstream stream error: {"error":{"message":"This model's maximum context length is 131072 tokens. However, you requested 65536 output tokens and your prompt contains at least 65537 input tokens, for a total of at least 131073 tokens. Please reduce the length of the prompt or completion.","code":400}}"#;
     assert!(is_window_overflow(openrouter));
     assert!(is_window_overflow(anthropic));
+    assert!(is_window_overflow(deepinfra));
+    assert_eq!(output_cap_rejection(deepinfra), None);
     assert!(!is_window_overflow(too_long));
     assert!(!is_window_overflow(
         "{\"error\":\"max_tokens must be at least 1\"}"

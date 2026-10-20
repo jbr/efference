@@ -83,7 +83,7 @@ impl Client {
         // (`api/reservation.rs`), estimated from these bytes against the last
         // response's exact count.
         let body_bytes = encoded.body_bytes(&self.system, tools)?;
-        let max_tokens = cap.unwrap_or_else(|| self.reserve(body_bytes));
+        let mut max_tokens = cap.unwrap_or_else(|| self.reserve(body_bytes));
         // The operator's interrupt (docs/control-channel.md) is armed before the
         // request is sent, not once its stream opens: `notify_waiters` stores no
         // permit, so a press that lands after the request reaches the upstream but
@@ -105,9 +105,23 @@ impl Client {
             tool_choice,
             cap,
         };
-        let events = self.open_stream(open, max_tokens).await?;
-        let completion = self.read_stream(trace, events, abort, on_delta).await;
-        Ok(self.settle(completion?, turns, tools, body_bytes))
+        // `Sent` is reported once per request: a reservation retry, at open or
+        // in-stream, goes round this loop again.
+        let mut sent_reported = false;
+        let mut on_delta = on_delta;
+        loop {
+            let events = self
+                .open_stream(&open, max_tokens, &mut sent_reported)
+                .await?;
+            let completion = self
+                .read_stream(trace, events, abort.as_mut(), &mut on_delta)
+                .await?;
+            if let Some(retry) = self.in_stream_reservation_retry(cap, &completion, max_tokens) {
+                max_tokens = retry;
+                continue;
+            }
+            return Ok(self.settle(completion, turns, tools, body_bytes));
+        }
     }
 
     /// Encode the turns once per dialect (docs/transport.md). The encoded form is
@@ -204,16 +218,18 @@ impl Client {
     /// POST the request and open its event stream. A refused reservation or an
     /// expired credential is repaired and sent again; any other open failure is the
     /// `Err` this returns.
-    async fn open_stream(&self, open: Open<'_>, mut max_tokens: u32) -> Result<EventStream, Error> {
+    async fn open_stream(
+        &self,
+        open: &Open<'_>,
+        mut max_tokens: u32,
+        sent_reported: &mut bool,
+    ) -> Result<EventStream, Error> {
         // The credential re-read below happens at most once per call: a source
         // that yields a working token yields it the first time, and a second
         // pass would only re-read the same bytes.
         let mut reloaded_auth = false;
-        // `Sent` is reported once per request; a reservation or credential retry
-        // loops back through the open below.
-        let mut sent_reported = false;
         loop {
-            let body = self.request_body(&open, max_tokens)?;
+            let body = self.request_body(open, max_tokens)?;
             log::debug!(
                 "POST {}: {} turns, {} request bytes, max_tokens {max_tokens}",
                 self.url(),
@@ -228,9 +244,9 @@ impl Client {
             let sent_auth = self.endpoint.auth_value.current().await;
             let conn = self.post();
             if let Some(trace) = open.trace
-                && !sent_reported
+                && !*sent_reported
             {
-                sent_reported = true;
+                *sent_reported = true;
                 trace.sent();
             }
             let (status, detail) = match conn.with_body(body).into_sse().await {
@@ -352,6 +368,38 @@ impl Client {
                 self.endpoint.provider
             );
         }
+        Some(u32::try_from(retry).unwrap_or(u32::MAX))
+    }
+
+    /// The `max_tokens` to resend at when a stream that opened 200 carried the
+    /// window-overflow refusal as an `error` event (DeepInfra through OpenRouter);
+    /// `None` leaves the completion as it is. The same halving as the open-time
+    /// 400 in [`Self::reservation_retry`], once per halving down to the floor, and
+    /// the failed attempt's partial is dropped: nothing generated before the
+    /// provider refused the request. An operator's interrupt is not a refusal, and
+    /// a fixed `cap` was the caller's choice.
+    ///
+    /// Matched on the failure's text whatever its class: the provider may name the
+    /// refusal as a type the classifier treats as transient, and a resend at the
+    /// same size would meet the same refusal.
+    fn in_stream_reservation_retry(
+        &self,
+        cap: Option<u32>,
+        completion: &Completion,
+        max_tokens: u32,
+    ) -> Option<u32> {
+        if cap.is_some() || completion.operator_abort() {
+            return None;
+        }
+        let why = completion.upstream_failure()?;
+        if !is_window_overflow(why) {
+            return None;
+        }
+        let retry = self.reservation.lock().unwrap().halve()?;
+        log::warn!(
+            "prompt plus max_tokens {max_tokens} overran the window (refused in-stream); \
+             retrying with max_tokens {retry}"
+        );
         Some(u32::try_from(retry).unwrap_or(u32::MAX))
     }
 

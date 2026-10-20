@@ -6,8 +6,10 @@
 //! rejects a request whose prompt plus reservation does not fit. So the value
 //! sent is the model's per-turn output cap, shrunk to whatever the window can
 //! spare after the prompt. The prompt is estimated from the last response's
-//! exact usage plus the bytes appended since, and a 400 naming the window is
-//! the backstop: the reservation is halved and the request retried once.
+//! exact usage plus the bytes appended since, and a refusal naming the window —
+//! a 400 at open, or an `error` event inside a 200 stream — is the backstop: the
+//! reservation is halved and the request retried, once per halving down to
+//! [`RESERVATION_MIN`].
 
 use std::sync::{Arc, Mutex};
 
@@ -171,17 +173,21 @@ fn fit(cap: u64, window: u64, prompt: u64) -> u64 {
     cap.min(spare).max(RESERVATION_MIN)
 }
 
-/// Whether a 4xx body is the provider refusing the request because prompt plus
-/// `max_tokens` overran the window — the failure a smaller reservation fixes.
-/// Matched on the two known phrasings: Anthropic's "input length and
-/// `max_tokens` exceed context limit" and OpenRouter's "maximum context length
-/// is N tokens. However, you requested about M tokens". A prompt that is too
-/// long on its own says so differently ("prompt is too long") and is not
-/// matched: no reservation fixes that.
+/// Whether a refusal's body is the provider saying prompt plus `max_tokens`
+/// overran the window — the failure a smaller reservation fixes. The body is a
+/// 4xx's, or the text of an in-stream `error` event on a 200
+/// (`Client::in_stream_reservation_retry`).
+///
+/// Matched on the known phrasings: Anthropic's "input length and `max_tokens`
+/// exceed context limit", OpenRouter's "maximum context length is N tokens.
+/// However, you requested about M tokens", and DeepInfra's (through OpenRouter)
+/// "maximum context length is N tokens. However, you requested M output tokens
+/// and your prompt contains at least P input tokens". A prompt that is too long
+/// on its own says so differently ("prompt is too long") and is not matched: no
+/// reservation fixes that.
 pub fn is_window_overflow(body: &str) -> bool {
     let body = body.to_ascii_lowercase();
-    body.contains("context")
-        && (body.contains("max_tokens") || body.contains("you requested about"))
+    body.contains("context") && (body.contains("max_tokens") || body.contains("you requested"))
 }
 
 /// Why a 4xx says the **output reservation** is too large, as distinct from the
