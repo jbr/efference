@@ -28,7 +28,7 @@ async fn left(
         .unwrap();
     extra(&mut boot.log);
     if archived {
-        boot.log.append(1, Payload::Archived {}).unwrap();
+        boot.log.append(1, Payload::archived(None)).unwrap();
     }
     drop_boot(boot);
 }

@@ -60,6 +60,11 @@ pub struct InventoryRow {
     /// it counts as open too (docs/resumption.md).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub interrupted: bool,
+    /// Who archived the session, from the `source` of the `Archived` entry that is the
+    /// last lifecycle entry; absent when it records none or the last lifecycle entry is
+    /// not `Archived` (docs/log-and-projection.md).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub archived_by: Option<String>,
     /// Why this directory is not a readable session, when it is not. A row with
     /// a problem keeps whatever the scan did learn.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -75,6 +80,7 @@ impl InventoryRow {
             created_at: None,
             last_active_at: None,
             interrupted: false,
+            archived_by: None,
             problem: None,
         }
     }
@@ -286,7 +292,10 @@ fn scan_log(log: &Path, id: &str, root: &Path) -> io::Result<(InventoryRow, u64)
         }
         match parse_entry(&line).map(|entry| entry.payload) {
             Ok(Payload::Title(title)) if titled => row.title = Some(title.text),
-            Ok(Payload::Archived {}) => lifecycle = lifecycle.or(Some(false)),
+            Ok(Payload::Archived { source }) if lifecycle.is_none() => {
+                lifecycle = Some(false);
+                row.archived_by = source;
+            }
             Ok(Payload::Resumed(_)) => lifecycle = lifecycle.or(Some(true)),
             _ => {}
         }

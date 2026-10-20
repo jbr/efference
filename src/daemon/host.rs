@@ -534,9 +534,22 @@ impl Host {
         self: &Arc<Self>,
         id: &str,
     ) -> Option<Pin<Box<dyn std::future::Future<Output = Ended> + Send>>> {
+        self.end_by(id, None)
+    }
+
+    /// [`end`](Self::end) for a caller that names itself: `source` is recorded on the
+    /// session's `Archived` entry, spelled as a turn's `source` is (docs/log-and-projection.md).
+    /// A session cancelled while it is still starting records none.
+    pub fn end_by(
+        self: &Arc<Self>,
+        id: &str,
+        source: Option<String>,
+    ) -> Option<Pin<Box<dyn std::future::Future<Output = Ended> + Send>>> {
         Some(match self.entry(id)? {
-            Entry::Hosted(hosted) => Box::pin(self.end_hosted(hosted, id.to_string())),
-            Entry::Starting(starting) => Box::pin(Arc::clone(self).archive_starting(starting)),
+            Entry::Hosted(hosted) => Box::pin(self.end_hosted(hosted, id.to_string(), source)),
+            Entry::Starting(starting) => {
+                Box::pin(Arc::clone(self).archive_starting(starting, source))
+            }
         })
     }
 
@@ -545,6 +558,7 @@ impl Host {
         &self,
         hosted: Hosted,
         id: String,
+        archived_by: Option<String>,
     ) -> impl std::future::Future<Output = Ended> + use<> {
         let archiving = self.swansong.state().is_running();
         let ids = self.session_ids.clone();
@@ -578,7 +592,7 @@ impl Host {
             }
             // A deliberate archive is recorded last, so a restarted host leaves the
             // session dormant (docs/resumption.md); a host shutdown records nothing.
-            if archiving && let Err(e) = hosted.session.append_archived() {
+            if archiving && let Err(e) = hosted.session.append_archived(archived_by) {
                 log::warn!("session {id}: could not log the archive: {e}");
             }
             // The archive record is the last append. Closing here rather than at

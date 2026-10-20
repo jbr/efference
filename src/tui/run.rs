@@ -32,6 +32,11 @@ pub async fn run(
         .await?
         {
             Exit::Quit => return Ok(()),
+            // The terminal is restored by now, so the line lands on the shell.
+            Exit::Closed => {
+                eprintln!("{}", super::closed::ask(&client).await.line());
+                return Ok(());
+            }
             Exit::Switch { id } => {
                 client = client.with_prefix(&format!("/sessions/{id}"));
                 attached.draft = None;

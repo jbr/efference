@@ -28,6 +28,7 @@ use crate::inference::{ConnectionInventory, ResolvedOptions};
 mod host;
 mod transport;
 
+pub use host::SessionRead;
 pub use transport::Waited;
 use transport::{json_field, read_2xx};
 use trillium_client::Method;
@@ -41,13 +42,24 @@ pub struct Client {
     /// The path the session's `/v1` routes sit under: empty at a session bind's
     /// root, `/sessions/<id>` on a host (docs/control-api.md).
     prefix: String,
+    /// The socket the client dials, when it dials one (not a test's in-memory
+    /// connector): what a client names when the host stops answering.
+    socket: Option<PathBuf>,
 }
 
 impl Client {
     /// Bind a client to the daemon's Unix socket. Dialing happens per request via
     /// the [`UnixClientConfig`] connector; nothing connects until a verb is called.
     pub fn new(socket: impl Into<PathBuf>) -> Self {
-        Self::with_connector(UnixClientConfig::new(socket))
+        let socket = socket.into();
+        let mut client = Self::with_connector(UnixClientConfig::new(socket.clone()));
+        client.socket = Some(socket);
+        client
+    }
+
+    /// The socket this client dials, or `None` for a client built on a connector.
+    pub fn socket(&self) -> Option<&std::path::Path> {
+        self.socket.as_deref()
     }
 
     /// Bind a client to one session hosted behind a prefix — `/sessions/<id>` on
@@ -56,7 +68,7 @@ impl Client {
     /// listener's, not a session's. The prefix is normalized to a leading slash
     /// and no trailing one, so `sessions/x/` and `/sessions/x` are the same base.
     pub fn at(socket: impl Into<PathBuf>, prefix: &str) -> Self {
-        Self::with_connector(UnixClientConfig::new(socket)).with_prefix(prefix)
+        Self::new(socket).with_prefix(prefix)
     }
 
     /// The id of the session this client is bound to (`/sessions/<id>`), or
@@ -94,6 +106,7 @@ impl Client {
         Self {
             http,
             prefix: String::new(),
+            socket: None,
         }
     }
 

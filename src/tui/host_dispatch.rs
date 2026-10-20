@@ -125,7 +125,7 @@ pub(super) async fn serve(
             // only once teardown has run, so the listing that comes back is the
             // finished state.
             HostCmd::Archive(id) => {
-                if let Err(e) = client.archive_session(&id).await {
+                if let Err(e) = client.archive_session(&id, None).await {
                     let _ = events.send(TuiEvent::Sessions(Err(format!("ending {id}: {e}"))));
                     continue;
                 }

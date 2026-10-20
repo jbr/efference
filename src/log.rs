@@ -202,8 +202,16 @@ pub enum Payload {
     /// deliberate archive from a session interrupted by the host's loss
     /// (docs/resumption.md). Projects to nothing, like [`Telemetry`].
     ///
+    /// `source` is who archived it, spelled as a turn's `source` is (`web`,
+    /// `mcp[<name>]`, `session[<id>]`); client-asserted and unverified, and absent when
+    /// the caller named none, as for the operator's own command line or TUI, and for the
+    /// end of a creator (docs/log-and-projection.md).
+    ///
     /// [`Telemetry`]: Payload::Telemetry
-    Archived {},
+    Archived {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        source: Option<String>,
+    },
     /// Text that replaces a range of the transcript, made by the agent's
     /// `consolidate` call or by the harness's compaction (docs/summary.md).
     /// Projects the text where the range ends and elides the range
@@ -397,6 +405,11 @@ pub fn latest_title(entries: &[LogEntry]) -> Option<&str> {
 }
 
 impl Payload {
+    /// The record of a deliberate archive, by `source` when the caller named one.
+    pub fn archived(source: Option<String>) -> Self {
+        Self::Archived { source }
+    }
+
     /// A tool result payload for `call_id`. The one construction site in production
     /// and in tests, so a field added to the result shape lands in one place.
     pub fn tool_result(call_id: impl Into<CallId>, raw: RawResult, wire: WireState) -> Self {

@@ -9,6 +9,7 @@ behind a change, see [`journal/`](journal/).
 
 ### Added
 
+- The TUI says why it closed: when its event stream ends it asks the host and prints one stderr line, `efference: <id> was archived by <source>; its log stays at <dir>/` or `efference: lost the connection to the host at <socket>`; `Archived` records the archiver's `source` (`web`, `mcp[<client>]`, `session[<id>]`), skipped when absent (docs/tui.md, docs/log-and-projection.md).
 - A rejected credential (a 401 or 403 naming `invalid_api_key`, `authentication_error`, `permission_error`, an expiry, or nothing known) re-reads its source once and retries, so re-authorizing in `efference setup` repairs a running host; a quota or other non-credential refusal reads nothing (docs/transport.md).
 - Process output reaches the agent without terminal formatting: a synchronous `bash` result, `read_process`, the ambient tail, exit and watch notifications drop CSI and OSC sequences (an OSC 8 hyperlink keeps its text) and keep the last state of a carriage-return redraw; the capture and the output route keep the bytes (docs/process-monitor.md).
 - A rejected embedded-tool input appends the top-level keys the call carried, sorted, or what the input was when it is not an object: ``invalid input for write: missing field `contents` (received: content, intent, path)`` (docs/tools.md).

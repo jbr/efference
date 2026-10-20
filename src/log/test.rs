@@ -213,12 +213,41 @@ fn an_archived_entry_has_a_stable_json_shape() {
         at: Timestamp(1_782_260_379_694),
         submission_id: None,
         source: None,
-        payload: Payload::Archived {},
+        payload: Payload::Archived { source: None },
     };
     assert_eq!(
         serde_json::to_string(&entry).unwrap(),
         r#"{"seq":8,"turn":2,"at":1782260379694,"payload":{"Archived":{}}}"#
     );
+}
+
+/// An archive that records who made it writes `source` inside the payload, and reads it
+/// back; the entries written before the field existed read with none.
+#[test]
+fn an_archived_entry_round_trips_its_source() {
+    let entry = LogEntry {
+        seq: 8,
+        turn: 2,
+        at: Timestamp(1_782_260_379_694),
+        submission_id: None,
+        source: None,
+        payload: Payload::archived(Some("mcp[claude-code]".into())),
+    };
+    let line = serde_json::to_string(&entry).unwrap();
+    assert_eq!(
+        line,
+        r#"{"seq":8,"turn":2,"at":1782260379694,"payload":{"Archived":{"source":"mcp[claude-code]"}}}"#
+    );
+    let back: LogEntry = serde_json::from_str(&line).unwrap();
+    assert!(matches!(
+        back.payload,
+        Payload::Archived { source: Some(ref source) } if source == "mcp[claude-code]"
+    ));
+
+    let old: LogEntry =
+        serde_json::from_str(r#"{"seq":8,"turn":2,"at":1782260379694,"payload":{"Archived":{}}}"#)
+            .unwrap();
+    assert!(matches!(old.payload, Payload::Archived { source: None }));
 }
 
 /// A `tools[]` difference is named by tool: added, removed, changed, or only reordered.

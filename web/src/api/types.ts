@@ -102,7 +102,7 @@ export type Payload =
   | { Preamble: { identity: string; body: string; context: unknown } }
   | { Title: Title }
   | { Resumed: Resumed }
-  | { Archived: Record<string, never> }
+  | { Archived: { source?: string } }
   | { Worktree: WorktreeEvent };
 
 /** One step of the cold check (docs/control-api.md). Not drawn: the `park`

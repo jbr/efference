@@ -231,3 +231,39 @@ async fn archive_names_what_ended_with_it() {
 
     fixture.host.swansong().shut_down().await;
 }
+
+/// A session's `archive` records the caller on the target's `Archived` entry, spelled
+/// as the caller's messages are (docs/log-and-projection.md); the child that ends with
+/// it records none.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn archive_records_the_calling_session() {
+    use crate::log::{ContentBlock, Payload};
+
+    let fixture = Fixture::new();
+    let child = fixture.host.session("child").unwrap();
+    let grandchild = fixture.host.session("grandchild").unwrap();
+    for session in [&child, &grandchild] {
+        session
+            .append(1, Payload::User(vec![ContentBlock::Text("hi".into())]))
+            .unwrap();
+    }
+    Archive {
+        agent: "child".into(),
+    }
+    .execute(fixture.control("parent"), RequestContext::default())
+    .await
+    .unwrap();
+    wait_for("the cascade", || {
+        fixture.host.session("grandchild").is_none()
+    })
+    .await;
+
+    let archived = |session: &Arc<Session>| match session.snapshot().last().unwrap().payload {
+        Payload::Archived { ref source } => source.clone(),
+        ref other => panic!("the log ends in {other:?}"),
+    };
+    assert_eq!(archived(&child).as_deref(), Some("session[parent]"));
+    assert_eq!(archived(&grandchild), None);
+
+    fixture.host.swansong().shut_down().await;
+}

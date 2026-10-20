@@ -279,12 +279,13 @@ pub(super) fn ui_loop(
         send_report(report, &mut attender);
 
         if exit || state.ui.quit_requested {
-            // The switcher is the only thing that sets a destination; every
-            // other way out of the loop is a plain quit (`sessions.rs`).
+            // The switcher and a closed stream are the only things that set a
+            // destination; every other way out of the loop is a plain quit
+            // (`sessions.rs`).
             let exit = state.switch_to.take().unwrap_or(Exit::Quit);
             // Quitting says so at once; a switch leaves it to the next attach's
             // first report, which would otherwise race this one.
-            if exit == Exit::Quit {
+            if matches!(exit, Exit::Quit | Exit::Closed) {
                 let report = attender.as_mut().and_then(|a| a.leaving());
                 send_report(report, &mut attender);
             }

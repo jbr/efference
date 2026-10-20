@@ -84,6 +84,11 @@ pub struct PatchSession {
         skip_serializing_if = "Option::is_none"
     )]
     pub supervisor: Option<Option<String>>,
+    /// Who is asking, spelled as a turn's `source` is (`web`, `mcp[<name>]`,
+    /// `session[<id>]`); recorded on the `Archived` entry of an `archived` patch and
+    /// read by nothing else (docs/log-and-projection.md).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
 }
 
 /// Read a field whose `null` means something: absent is `None` (by `default`), and a
@@ -106,6 +111,7 @@ impl PatchSession {
             env: None,
             switch: ResumeSwitch::default(),
             supervisor: None,
+            source: None,
         }
     }
 
@@ -119,6 +125,7 @@ impl PatchSession {
             env: None,
             switch: ResumeSwitch::default(),
             supervisor: Some(supervisor),
+            source: None,
         }
     }
 }
@@ -424,7 +431,7 @@ pub(super) async fn patch_session(mut conn: Conn) -> Conn {
         // Archiving is what `DELETE` does, spelled as the state change it is. It
         // reads the session the host is already running, so the 404 is the
         // not-hosted one rather than a bad request.
-        SessionState::Archived => match host.end(&id) {
+        SessionState::Archived => match host.end_by(&id, body.source) {
             Some(completion) => {
                 let ended = completion.await;
                 let mut body = serde_json::json!({

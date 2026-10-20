@@ -303,7 +303,11 @@ impl<'a> InteractiveState<'a> {
             // stays, with the reason and the retry (`starting.rs`).
             TuiEvent::Disconnected => {
                 self.dirty = true;
-                return !self.start_failed();
+                if self.start_failed() {
+                    return false;
+                }
+                self.switch_to.get_or_insert(super::Exit::Closed);
+                return true;
             }
         }
         false

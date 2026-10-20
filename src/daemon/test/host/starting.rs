@@ -317,7 +317,7 @@ async fn a_failed_resume_is_listed_dormant_with_its_reason() {
     assert!(
         matches!(
             entries.last().map(|e| &e.payload),
-            Some(Payload::Archived {})
+            Some(Payload::Archived { .. })
         ),
         "the archive is the log's last entry"
     );

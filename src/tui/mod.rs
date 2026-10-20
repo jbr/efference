@@ -21,6 +21,7 @@
 pub(crate) mod attention;
 pub(crate) mod block_menu;
 pub(crate) mod clipboard;
+pub(crate) mod closed;
 pub(crate) mod color_scheme;
 pub(crate) mod composer;
 pub(crate) mod control_strip;
@@ -341,6 +342,9 @@ pub(crate) enum HostCmd {
 pub(crate) enum Exit {
     /// The client is done.
     Quit,
+    /// The session's event stream ended. The entry point asks the host why and says so
+    /// on stderr once the terminal is restored (`closed.rs`).
+    Closed,
     /// Attach to a different session on the same host.
     Switch { id: String },
     /// Attach to `id` with `draft` in the composer: the turns a failed start handed

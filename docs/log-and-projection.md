@@ -47,7 +47,7 @@ enum Payload {
     ToolResult { call_id: CallId, raw: RawResult, wire: WireState },
     ResultVerdict { for_result: Seq, wire: WireState },  // the final wire for a `Pending` result (see triage.md)
     Resumed(Resumed),  // the session was reopened by a later host process — projects a restart notice
-    Archived {},       // the session was archived on purpose — never projected (see resumption.md)
+    Archived { source: Option<String> },  // the session was archived on purpose, by `source` when named — never projected (see resumption.md)
     Summary(Summary),  // text replacing a range of the transcript — consolidation or compaction (see summary.md)
     Ambient(Notification),  // an out-of-band notification (see inbox.md)
     Triage(Triage),    // a triage verdict — the audit record (see triage.md)
@@ -129,7 +129,15 @@ before. Each `Resumed` entry skips its own range.
 
 `Archived` is appended when a session is archived on purpose (`DELETE /sessions/:id`,
 `PATCH {"state": "archived"}`, or a non-detached child ending with its creator), under
-the turn of the log's last entry. It projects to nothing. The later of `Resumed` and
+the turn of the log's last entry. It projects to nothing. `source` records who
+archived it, spelled as a turn's `source` is: `web` from the web client, `mcp[<client>]`
+from a call over MCP, `session[<id>]` from a session archiving one it drives. It is
+client-asserted and unverified, skipped when `None` (the operator's own command line or
+TUI, a child ending with its creator, a session cancelled while starting), and absent
+from every log written before the field existed, which read back with `None`; adding it
+needed no version bump. The dormant inventory reads it as the row's `archived_by`,
+and a client whose stream ended reads it to say who archived the session
+([tui.md](tui.md)). The later of `Resumed` and
 `Archived` is the session's lifecycle, which tells a deliberate archive from a session
 that was open when its host stopped; a host shutdown appends neither
 ([resumption.md](resumption.md)).

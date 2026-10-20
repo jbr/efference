@@ -591,7 +591,8 @@ pub(super) struct InteractiveState<'a> {
     pub host_tx: UnboundedSender<HostCmd>,
     /// Set by the switcher when the operator picked another session: the loop
     /// ends and the entry point re-attaches there, closing this stream
-    /// (docs/tui.md). `None` means the loop ended for any other reason.
+    /// (docs/tui.md); set to [`Exit::Closed`] when the event stream ends.
+    /// `None` means the loop ended for any other reason.
     pub switch_to: Option<Exit>,
     /// Dispatches a focused sidebar row's verb to the tokio side, which issues the
     /// matching control-channel call (docs/tui.md). Fire-and-forget: a stale row

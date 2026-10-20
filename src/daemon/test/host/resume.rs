@@ -424,7 +424,7 @@ async fn an_archive_and_a_cascaded_child_end_log_archived() {
     for path in [&creator, &child] {
         let recording = crate::persist::load_recording(path).unwrap();
         let last = recording.entries.last().unwrap();
-        assert!(matches!(last.payload, crate::log::Payload::Archived {}));
+        assert!(matches!(last.payload, crate::log::Payload::Archived { .. }));
     }
     let recording = crate::persist::load_recording(&creator).unwrap();
     let last = recording.entries.last().unwrap();

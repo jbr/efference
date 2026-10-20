@@ -409,3 +409,101 @@ async fn a_dormant_row_without_a_turn_or_recorded_roles_leaves_them_out() {
 
     host.swansong().shut_down().await;
 }
+
+/// Host `id` over a file log under `root`'s `.efference/<id>/`, with one user turn so
+/// the archive records rather than discards the session.
+fn adopt_in_root(host: &Arc<Host>, root: &Path, id: &str) {
+    let dir = root.join(".efference").join(id);
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut boot = runtime::boot(root);
+    boot.log = Log::create(dir.join("log.jsonl"), None).expect("a fresh log");
+    host.adopt(id.into(), SessionRuntime::start(boot, host.swansong()))
+        .expect("the id is free in this test");
+    host.session(id)
+        .unwrap()
+        .append(1, Payload::User(vec![ContentBlock::Text("hi".into())]))
+        .unwrap();
+}
+
+/// A client's `source` on `DELETE /sessions/:id` is recorded on the `Archived` entry,
+/// the dormant row reads it back as `archived_by`, and the TUI's question after the
+/// stream ends is answered with the archiver and the log's directory
+/// (docs/log-and-projection.md, docs/tui.md).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn an_archive_records_who_asked_and_the_tui_can_read_it_back() {
+    use crate::tui::closed::{Closure, ask};
+
+    let roots = Roots::new();
+    let root = roots.0.join("one");
+    let host = Host::new(
+        one_connection_registry()
+            .with_history(crate::history::History::at(roots.0.join("state.db"))),
+        baseline_env(),
+    );
+    crate::remembered::Projects::at(roots.0.join("state.db")).record(&crate::remembered::Project {
+        last_used_at: 1,
+        cwd: root.clone(),
+        config_key: "k".into(),
+        config: None,
+    });
+    adopt_in_root(&host, &root, "hold-probe");
+    adopt_in_root(&host, &root, "anonymous");
+    adopt_in_root(&host, &root, "patched");
+    let client = host_client(&host, "hold-probe").await;
+
+    client
+        .archive_session("hold-probe", Some("mcp[claude-code]"))
+        .await
+        .unwrap();
+    client.archive_session("anonymous", None).await.unwrap();
+    let server = host_server(&host).await;
+    server
+        .patch("/sessions/patched")
+        .with_json_body(&serde_json::json!({"state": "archived", "source": "web"}))
+        .await
+        .assert_status(200);
+
+    let last = |id: &str| {
+        let path = root.join(".efference").join(id).join("log.jsonl");
+        crate::persist::load_recording(path)
+            .unwrap()
+            .entries
+            .last()
+            .unwrap()
+            .payload
+            .clone()
+    };
+    assert!(matches!(
+        last("hold-probe"),
+        Payload::Archived { source: Some(ref source) } if source == "mcp[claude-code]"
+    ));
+    assert!(matches!(
+        last("anonymous"),
+        Payload::Archived { source: None }
+    ));
+    assert!(matches!(
+        last("patched"),
+        Payload::Archived { source: Some(ref source) } if source == "web"
+    ));
+
+    let closure = ask(&client).await;
+    assert_eq!(
+        closure,
+        Closure::Archived {
+            id: "hold-probe".into(),
+            by: Some("mcp[claude-code]".into()),
+            log: root.join(".efference/hold-probe"),
+        }
+    );
+    assert_eq!(
+        closure.line(),
+        format!(
+            "efference: hold-probe was archived by mcp[claude-code]; its log stays at {}/",
+            root.join(".efference/hold-probe").display()
+        )
+    );
+    let anonymous = ask(&host_client(&host, "anonymous").await).await;
+    assert!(matches!(anonymous, Closure::Archived { by: None, .. }));
+
+    host.swansong().shut_down().await;
+}

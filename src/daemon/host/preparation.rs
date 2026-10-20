@@ -157,12 +157,18 @@ impl Host {
     /// Archive a starting session: cancel its preparation and wait for what that
     /// leaves. One that started before the cancel landed is archived as a hosted
     /// session is.
-    pub(super) async fn archive_starting(self: Arc<Self>, starting: Arc<Starting>) -> super::Ended {
+    pub(super) async fn archive_starting(
+        self: Arc<Self>,
+        starting: Arc<Starting>,
+        source: Option<String>,
+    ) -> super::Ended {
         starting.cancel();
         if starting.finished().await.is_ok()
             && let Some(Entry::Hosted(hosted)) = self.entry(starting.id())
         {
-            return self.end_hosted(hosted, starting.id().to_string()).await;
+            return self
+                .end_hosted(hosted, starting.id().to_string(), source)
+                .await;
         }
         super::Ended {
             retired: None,
@@ -192,18 +198,19 @@ fn append_archived(session_dir: &std::path::Path) -> std::io::Result<()> {
     let mut opened = crate::persist::Log::open(session_dir.join(crate::boot::LOG_NAME))
         .map_err(|e| std::io::Error::other(e.to_string()))?;
     let log = &mut opened.log;
-    let last_lifecycle = log
-        .entries()
-        .iter()
-        .rev()
-        .find(|entry| matches!(entry.payload, Payload::Archived {} | Payload::Resumed(_)));
+    let last_lifecycle = log.entries().iter().rev().find(|entry| {
+        matches!(
+            entry.payload,
+            Payload::Archived { .. } | Payload::Resumed(_)
+        )
+    });
     if matches!(
         last_lifecycle.map(|entry| &entry.payload),
-        Some(Payload::Archived {})
+        Some(Payload::Archived { .. })
     ) {
         return Ok(());
     }
     let turn = log.entries().last().map_or(0, |entry| entry.turn);
-    log.append(turn, Payload::Archived {})?;
+    log.append(turn, Payload::archived(None))?;
     Ok(())
 }

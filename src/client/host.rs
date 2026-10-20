@@ -163,6 +163,29 @@ impl Client {
         self.get_root(&format!("/sessions?{query}")).await
     }
 
+    /// One session as the host reads it (`GET /sessions/:session`, docs/control-api.md):
+    /// hosted, or dormant on disk, or neither (`404`). An error means the host did not
+    /// answer, or answered something this cannot read.
+    pub async fn read_session(&self, id: &str) -> Result<SessionRead> {
+        let path = format!("/sessions/{id}");
+        let conn = self.exchange(Method::Get, &path, None).await?;
+        if conn.status() == Some(trillium_client::Status::NotFound) {
+            return Ok(SessionRead::Unknown);
+        }
+        let body = read_2xx(conn, Method::Get, &path).await?;
+        let value: serde_json::Value =
+            serde_json::from_str(&body).with_context(|| format!("decoding GET {path}"))?;
+        Ok(if value["state"] == "archived" {
+            SessionRead::Dormant(Box::new(
+                serde_json::from_value(value).with_context(|| format!("decoding GET {path}"))?,
+            ))
+        } else {
+            SessionRead::Hosted(
+                serde_json::from_value(value).with_context(|| format!("decoding GET {path}"))?,
+            )
+        })
+    }
+
     /// Subscribe to the host's session listing (`GET /sessions` with
     /// `Accept: text/event-stream`, docs/control-api.md). Each event carries the
     /// whole listing — the same array [`sessions`](Self::sessions) returns — so a
@@ -189,10 +212,13 @@ impl Client {
 
     /// End a hosted session (`DELETE /sessions/:id`, docs/control-api.md):
     /// answers once its teardown has run, with the sessions that ended with it.
-    /// `404` for an id the host does not hold.
-    pub async fn archive_session(&self, id: &str) -> Result<Vec<String>> {
+    /// `404` for an id the host does not hold. `source` names the caller as a turn's
+    /// `source` does, and the host records it on the session's `Archived` entry;
+    /// `None` is the operator's own command line or TUI.
+    pub async fn archive_session(&self, id: &str, source: Option<&str>) -> Result<Vec<String>> {
+        let request = source.map(|source| serde_json::json!({ "source": source }).to_string());
         let body = self
-            .send_at(Method::Delete, &format!("/sessions/{id}"), None)
+            .send_at(Method::Delete, &format!("/sessions/{id}"), request)
             .await?;
         let answer: serde_json::Value = serde_json::from_str(&body).unwrap_or_default();
         Ok(answer["ended_with"]
@@ -252,4 +278,15 @@ impl Client {
     async fn auth_field(&self, path: &str, field: &str) -> Result<String> {
         json_field(&self.send_at(Method::Get, path, None).await?, field)
     }
+}
+
+/// What `GET /sessions/:session` found ([`Client::read_session`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SessionRead {
+    /// The host is running it.
+    Hosted(ListedSession),
+    /// It is on disk and nothing is running it.
+    Dormant(Box<crate::daemon::DormantSession>),
+    /// The host holds no such session and finds none on disk.
+    Unknown,
 }

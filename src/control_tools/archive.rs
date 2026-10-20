@@ -36,11 +36,14 @@ impl ToolMeta for Archive {
 impl Tool<Control> for Archive {
     type Output = String;
 
-    async fn execute(self, control: Control, _context: RequestContext) -> Result<String> {
+    async fn execute(self, control: Control, context: RequestContext) -> Result<String> {
         match &control.executor {
             Executor::Client(state) => {
                 let host = state.host_client()?;
-                let ended_with = host.archive_session(&self.agent).await?;
+                // A call over MCP names the mounting harness from its clientInfo; the
+                // command line's empty context is the operator's own.
+                let source = super::args::turn_source(&context);
+                let ended_with = host.archive_session(&self.agent, source.as_deref()).await?;
                 Ok(answers::archived(&self.agent, &ended_with))
             }
             Executor::Host(state) => {
@@ -51,8 +54,10 @@ impl Tool<Control> for Archive {
                 // Read before the end starts, while the children it cascades to are
                 // still listed.
                 let ended_with = host.ending_with(&id);
+                // Attributed to the calling session, as its messages are (docs/tools.md).
+                let source = crate::frontend::session_source(state.caller());
                 let done = host
-                    .end(&id)
+                    .end_by(&id, Some(source))
                     .ok_or_else(|| anyhow!("no agent {id:?} to archive"))?;
                 done.await;
                 Ok(answers::archived(&id, &ended_with))

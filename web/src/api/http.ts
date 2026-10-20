@@ -355,10 +355,12 @@ export const fetchSessions = () =>
 // Archive a hosted session (docs/control-api.md). The host answers once teardown has
 // run — background processes reaped, scratch removed — so the listing that
 // follows shows the finished state rather than a session on its way out.
+// The body names this client, as its turns do, so the log records who archived.
 export const archiveSession = (id: string) =>
   requestAt<{ id: string; state: string }>(
     "DELETE",
     `/sessions/${encodeURIComponent(id)}`,
+    { source: "web" },
   );
 
 // Fetch archived sessions from the host (docs/control-api.md). When cwd is provided,

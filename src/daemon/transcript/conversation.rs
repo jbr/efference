@@ -155,7 +155,7 @@ impl<'a, 'r> Out<'a, 'r> {
                 let from = self.name(origin.source.as_deref());
                 self.push(entry.seq, format!("{from} continued it"));
             }
-            Payload::Archived {} => self.push(entry.seq, "archived"),
+            Payload::Archived { .. } => self.push(entry.seq, "archived"),
             Payload::Resumed(_) => self.push(entry.seq, "resumed after its host restarted"),
             // On their call's line.
             Payload::ToolResult { .. } | Payload::Telemetry(Telemetry::GateDecision(_)) => {}

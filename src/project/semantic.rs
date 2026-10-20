@@ -424,7 +424,7 @@ pub fn project_semantic_for(log: &[LogEntry], reader: Reader) -> Vec<WireTurn> {
             // the entry itself is the audit record.
             Payload::ImagesRefused { .. } => {}
             // The lifecycle record (docs/resumption.md) is audit only.
-            Payload::Archived {} => {}
+            Payload::Archived { .. } => {}
             // A grant (docs/permissions.md) is audit-only too — its *effect* reaches
             // the model through the classifier (the policy fold), never the
             // transcript. So it projects to nothing, and appending one cannot perturb

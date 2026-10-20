@@ -135,7 +135,7 @@ async fn archiving_a_session_with_a_turn_keeps_it() {
     let recording = crate::persist::load_recording(&path).unwrap();
     assert!(matches!(
         recording.entries.last().unwrap().payload,
-        Payload::Archived {}
+        Payload::Archived { .. }
     ));
     assert!(register.holder("talked").is_some());
     host.swansong().shut_down().await;

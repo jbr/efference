@@ -29,7 +29,7 @@ fn stored(root: &Path, id: &str, with_turn: bool) -> PathBuf {
     let dir = root.join(".efference").join(id);
     std::fs::create_dir_all(&dir).unwrap();
     let mut log = crate::persist::Log::create(dir.join(crate::boot::LOG_NAME), None).unwrap();
-    log.append(0, Payload::Archived {}).unwrap();
+    log.append(0, Payload::archived(None)).unwrap();
     if with_turn {
         log.append(1, Payload::User(vec![])).unwrap();
     }

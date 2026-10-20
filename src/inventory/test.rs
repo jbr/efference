@@ -306,15 +306,19 @@ fn the_last_lifecycle_entry_says_whether_a_session_was_interrupted() {
     title(&mut never, "never");
     let mut archived = root.session("archived");
     tick();
-    archived.append(0, Payload::Archived {}).unwrap();
+    archived.append(0, Payload::archived(None)).unwrap();
     let mut reopened = root.session("reopened");
     tick();
-    reopened.append(0, Payload::Archived {}).unwrap();
+    reopened
+        .append(0, Payload::archived(Some("web".into())))
+        .unwrap();
     resumed(&mut reopened);
     let mut again = root.session("again");
     resumed(&mut again);
     tick();
-    again.append(0, Payload::Archived {}).unwrap();
+    again
+        .append(0, Payload::archived(Some("mcp[claude-code]".into())))
+        .unwrap();
     // A title after the archive does not hide it.
     title(&mut again, "late title");
     drop((never, archived, reopened, again));
@@ -323,8 +327,15 @@ fn the_last_lifecycle_entry_says_whether_a_session_was_interrupted() {
     assert!(row(&rows, "never").interrupted);
     assert!(!row(&rows, "archived").interrupted);
     assert!(row(&rows, "reopened").interrupted);
+    assert_eq!(row(&rows, "archived").archived_by, None);
+    assert_eq!(
+        row(&rows, "reopened").archived_by,
+        None,
+        "a resume after the archive leaves nobody archiving it"
+    );
     let again = row(&rows, "again");
     assert!(!again.interrupted);
+    assert_eq!(again.archived_by.as_deref(), Some("mcp[claude-code]"));
     assert_eq!(again.title.as_deref(), Some("late title"));
 }
 

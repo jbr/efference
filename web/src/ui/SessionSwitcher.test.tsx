@@ -189,7 +189,10 @@ test("an idle session archives once and replaces the current route only after su
   expect(fetchMock).toHaveBeenCalledTimes(1);
   expect(fetchMock).toHaveBeenCalledWith(
     "/sessions/alpha",
-    expect.objectContaining({ method: "DELETE" }),
+    expect.objectContaining({
+      method: "DELETE",
+      body: JSON.stringify({ source: "web" }),
+    }),
   );
   expect(action("Archiving…").disabled).toBe(true);
   click(action("Archiving…"));

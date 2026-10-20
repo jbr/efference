@@ -158,20 +158,46 @@ async fn resolve_session(conn: Conn, web: bool) -> Conn {
 /// Archiving rather than ending is what it does: the runtime stops, and the
 /// directory and log stay, so the session is resumable by patching it `active`
 /// again (docs/log-and-projection.md).
-async fn end_session(conn: Conn) -> Conn {
+async fn end_session(mut conn: Conn) -> Conn {
     let Some(host) = host_of(&conn) else {
         return missing_host(conn);
     };
     let id = conn.param("session").unwrap_or_default().to_string();
+    // The body is optional: a client that says nothing about itself archives as the
+    // operator, and the entry records no source (docs/control-api.md).
+    let body = conn.request_body_string().await.unwrap_or_default();
+    let source = if body.trim().is_empty() {
+        None
+    } else {
+        match serde_json::from_str::<ArchiveOrigin>(&body) {
+            Ok(origin) => origin.source,
+            Err(error) => {
+                return fail(
+                    conn,
+                    ErrorCode::BadRequest,
+                    format!("bad DELETE /sessions/:session body: {error}"),
+                );
+            }
+        }
+    };
     // Read before the end starts, while the children it cascades to are still listed.
     let ending_with = host.ending_with(&id);
-    match host.end(&id) {
+    match host.end_by(&id, source) {
         Some(completion) => {
             let ended = completion.await;
             archived(conn, &id, ended, &ending_with)
         }
         None => no_such_session(conn, &id),
     }
+}
+
+/// The optional body of `DELETE /sessions/:session`: who is archiving, spelled as a
+/// turn's `source` is (`web`, `mcp[<name>]`, `session[<id>]`) and recorded on the
+/// `Archived` entry (docs/log-and-projection.md).
+#[derive(Debug, Default, Serialize, Deserialize)]
+pub struct ArchiveOrigin {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
 }
 
 /// The `200` an archive answers with, carrying `worktree` when the session had its own

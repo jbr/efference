@@ -102,7 +102,8 @@ sessions from one process. Its own routes are the listener's, not a session's:
   ([log-and-projection.md](log-and-projection.md), "Inventory of dormant sessions").
   `created_at` and `last_active_at` are epoch milliseconds from entries; `interrupted` is
   present, as `true`, when the log's last lifecycle entry is not `Archived` (the session
-  was open when its host stopped, not archived on purpose). A row
+  was open when its host stopped, not archived on purpose); `archived_by` is present when
+  that `Archived` entry records a `source`. A row
   carrying a `problem` is a directory that could not be read as a session (no log,
   an empty one, a header this build does not read, an entry line that does not
   parse); it keeps whatever was learned and sorts last. A row carrying a
@@ -318,7 +319,9 @@ sessions from one process. Its own routes are the listener's, not a session's:
   `telemetry.supervisor_set` entry to the session's log, which projects to nothing;
   the pointer is not persisted, so a resumed session starts again from its creator.
 - `DELETE /sessions/:id` — archive the session, which is the same transition as
-  `PATCH {"state": "archived"}`. Answers `200 {"id", "state": "archived"}` once
+  `PATCH {"state": "archived"}`. The optional body `{"source"}` (and the same field on
+  the patch) names the caller as a turn's `source` is spelled; it is recorded on the
+  `Archived` entry and absent for the operator's own command line or TUI. Answers `200 {"id", "state": "archived"}` once
   its teardown has run (background children reaped, scratch removed), with
   `ended_with` naming the sessions that end with it — its non-detached descendants,
   read before the end starts — when there are any; the id leaves

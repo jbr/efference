@@ -200,7 +200,7 @@ pub(super) fn lines(
             "images",
             format!("withheld from here on: the endpoint refused them ({refusal})"),
         )],
-        Payload::Archived {} => vec![line("archived", "archived on purpose".to_string())],
+        Payload::Archived { .. } => vec![line("archived", "archived on purpose".to_string())],
         Payload::Resumed(resumed) => vec![line(
             "resumed",
             crate::project::render_resumed(resumed, entry.seq),
