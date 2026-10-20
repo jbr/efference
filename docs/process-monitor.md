@@ -511,8 +511,10 @@ the delta on subsequent reads.
 
 ## Terminal formatting
 
-A process that believes it writes to a terminal emits colour and cursor escapes,
-hyperlinks, and carriage-return redraws. The capture keeps the bytes as written, and
+Processes write to pipes, not a terminal. A program that emits colour and cursor
+escapes, hyperlinks, or carriage-return redraws anyway (one that forces colour, or
+misreads its output as a terminal) produces bytes that format nothing for a reader of
+its output, so the text the agent reads drops them. The capture keeps the bytes as written, and
 the routes that serve it to clients (`GET /processes/:id/output`, the `process_output`
 deltas) return them unchanged; the clients clean them for display themselves.
 
@@ -525,4 +527,5 @@ hyperlink keeps its visible text and drops the target), other `ESC` sequences, a
 each line, everything before the last non-empty carriage-return segment. A `\r\n`
 ending is a line ending. It does not emulate a terminal: nothing is positioned or
 overdrawn. Text without escapes or carriage returns passes through byte-identical.
-Results logged before the function existed are not rewritten.
+A synchronous `bash` call has no capture
+beside its result, so its escapes are kept nowhere. Results logged before the function existed are not rewritten.
