@@ -1,6 +1,6 @@
 //! `POST /attention`: clients report whether a person is attending, and an active
 //! report from a client viewing a session cancels that session's pending
-//! escalation (docs/web-push.md).
+//! delayed push (docs/web-push.md).
 
 use super::*;
 use crate::log::MomentKind;
@@ -42,7 +42,7 @@ async fn the_route_accepts_a_report_and_rejects_a_malformed_one() {
 /// client viewing that session, and by nothing else: not an inactive report, not a
 /// report about another session.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn only_an_active_report_viewing_the_session_cancels_its_escalation() {
+async fn only_an_active_report_viewing_the_session_cancels_its_delayed_push() {
     use std::hash::{BuildHasher, Hasher, RandomState};
     let nonce = RandomState::new().build_hasher().finish();
     let root = std::env::temp_dir().join(format!("efference-attention-{nonce:016x}"));
@@ -70,17 +70,20 @@ async fn only_an_active_report_viewing_the_session_cancels_its_escalation() {
     // Attended, so the moment is held.
     report(None, true).await;
     session.push(MomentKind::Gate, "body".into());
-    assert!(session.pending_escalation().is_some());
+    assert!(session.pending_delayed_push().is_some());
 
     report(Some("one"), false).await;
-    assert!(session.pending_escalation().is_some(), "inactive does not");
+    assert!(
+        session.pending_delayed_push().is_some(),
+        "inactive does not"
+    );
     report(Some("two"), true).await;
-    assert!(session.pending_escalation().is_some(), "another session");
+    assert!(session.pending_delayed_push().is_some(), "another session");
     report(None, true).await;
-    assert!(session.pending_escalation().is_some(), "no session open");
+    assert!(session.pending_delayed_push().is_some(), "no session open");
 
     report(Some("one"), true).await;
-    assert!(session.pending_escalation().is_none(), "seen");
+    assert!(session.pending_delayed_push().is_none(), "seen");
     let seen = session.log.lock().unwrap().entries().iter().any(|e| {
         matches!(
             &e.payload,
@@ -97,7 +100,7 @@ async fn only_an_active_report_viewing_the_session_cancels_its_escalation() {
     // A report that predates a moment does not cancel the next one: nothing is
     // remembered, only what is pending is cancelled.
     session.push(MomentKind::Gate, "again".into());
-    assert!(session.pending_escalation().is_some());
+    assert!(session.pending_delayed_push().is_some());
 
     host.swansong().shut_down().await;
     let _ = std::fs::remove_dir_all(&root);

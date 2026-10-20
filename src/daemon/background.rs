@@ -375,9 +375,9 @@ impl Session {
     /// and no window where scratch cleanup runs against a process still holding
     /// a file open under it.
     ///
-    /// SIGKILL has already been sent, so there is no further escalation to
+    /// SIGKILL has already been sent, so there is no further signal to
     /// offer: a group that never leaves the table is blocked in the kernel, and
-    /// no second signal from anywhere can move it. The operator's own escalation
+    /// no second signal from anywhere can move it. The operator's own recourse
     /// is the host's — a second shutdown signal ends the process outright.
     pub async fn reap_all_bg(&self) {
         loop {

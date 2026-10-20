@@ -354,7 +354,7 @@ impl Host {
             // session's own subscriptions and its non-detached children go
             // with it (docs/tools.md).
             // An archived session has nothing left to announce.
-            session.cancel_escalation(crate::log::PushCancel::Archived);
+            session.cancel_delayed_push(crate::log::PushCancel::Archived);
             host.post_status(&id, &session, &status);
             host.drop_subscriptions_of(&id);
             for child in host.cascade_of(&id) {

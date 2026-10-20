@@ -259,7 +259,7 @@ impl Session {
     }
 
     /// The idle loop woke for an inbox triage (docs/inbox.md): a request on the main
-    /// prefix, so the loop is `requesting` until it either escalates to a trajectory
+    /// prefix, so the loop is `requesting` until it either starts a trajectory
     /// or returns to idle with nothing pinned ([`Self::idle_triage_settled`]).
     pub(crate) fn idle_triage_started(&self) {
         self.set_phase(LoopPhase::Requesting);

@@ -740,7 +740,7 @@ fn render_block(block: &ContentBlock, images: &mut Vec<crate::log::ResultImage>)
 /// resolution it likes; the same cap `read_image` defaults to is what keeps an
 /// unsolicited screenshot from costing native-tier tokens. There is no
 /// re-request knob here — the model cannot re-call an MCP tool "larger" — so
-/// the header reports the downscale without an escalation hint.
+/// the header reports the downscale without a hint to re-read.
 fn realize_image(
     data: &str,
     images: &mut Vec<crate::log::ResultImage>,

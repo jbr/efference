@@ -58,7 +58,7 @@ impl Drop for AskWait<'_> {
         // However the ask ended, its push has nothing left to announce
         // (docs/web-push.md).
         self.session
-            .cancel_escalation(crate::log::PushCancel::AskEnded);
+            .cancel_delayed_push(crate::log::PushCancel::AskEnded);
         // A reply that landed as the ask ended (an interrupt won the race) is not lost:
         // it opens the next turn, as a submission with nothing pending would.
         if let Ok(turn) = self.rx.try_recv() {

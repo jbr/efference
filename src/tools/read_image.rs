@@ -148,7 +148,7 @@ impl ReadImage {
                 Some(_) => String::new(),
                 None => format!(" from {read_w}×{read_h}"),
             };
-            let escalation = match prepared.crop {
+            let hint = match prepared.crop {
                 Some(_) => "read a smaller region for more detail",
                 None => "read a region for more detail",
             };
@@ -159,11 +159,11 @@ impl ReadImage {
                 Bound::TokenBudget => format!(
                     "downscaled {scale:.2}×{from} by the visual-token budget \
                      ({HIGH_RES_MAX_TOKENS} tokens); this is the maximum resolution for \
-                     this rectangle, no long_edge beats the cap — {escalation}"
+                     this rectangle, no long_edge beats the cap — {hint}"
                 ),
                 Bound::EdgeCeiling => format!(
                     "downscaled {scale:.2}×{from} by the {HIGH_RES_MAX_EDGE}-px long_edge \
-                     ceiling; this is the maximum resolution for this rectangle — {escalation}"
+                     ceiling; this is the maximum resolution for this rectangle — {hint}"
                 ),
             });
         } else if prepared.crop.is_some() {

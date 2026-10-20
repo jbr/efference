@@ -218,7 +218,7 @@ impl Session {
             detach_note: Mutex::new(None),
             appended: Notify::new(),
             attention: std::sync::OnceLock::new(),
-            escalation: Arc::default(),
+            delayed_push: Arc::default(),
             phase: Mutex::new(phase::LoopPhase::Idle),
             turns_ended: std::sync::atomic::AtomicU64::new(0),
             #[cfg(test)]

@@ -269,7 +269,7 @@ pace_at_juncture (interruptible sleep) → drain queued user turns → project �
 → repeat
 ```
 
-The between-step juncture — top of the inner loop, after a step's results land, before the next model call — is where the participation affordances act (below): the pace sleep (`pace_at_juncture`), the mid-trajectory turn drain (`drain_queued_turns`), and the soft-Esc hold. Both are skipped on the first step so a fresh user turn / escalated event gets a prompt first response; pacing is a *between-turns* delay.
+The between-step juncture — top of the inner loop, after a step's results land, before the next model call — is where the participation affordances act (below): the pace sleep (`pace_at_juncture`), the mid-trajectory turn drain (`drain_queued_turns`), and the soft-Esc hold. Both are skipped on the first step so a fresh user turn / pinned-event wake gets a prompt first response; pacing is a *between-turns* delay.
 
 ## Operator participation — the intervention points
 
@@ -282,7 +282,7 @@ Four points where an operator intent can take effect:
 3. **Turn boundary** — the assistant finished its calls; about to loop or go idle.
 4. **Idle** — the outer `select!`, between trajectories.
 
-These are one continuum. Pace moves *continuously* along the between-turns part of it (points 2/3); Esc is the *discrete* escalation that also reaches the one point pace can't (point 1). That is what "Esc is graduated by intervention point, not a menu" means — the rungs answer *"is my input for the **next** step, or about **this** one?"*
+These are one continuum. Pace moves *continuously* along the between-turns part of it (points 2/3); Esc is the *discrete* step that also reaches the one point pace can't (point 1). That is what "Esc is graduated by intervention point, not a menu" means — the rungs answer *"is my input for the **next** step, or about **this** one?"*
 
 Three commitments hold across all of them:
 

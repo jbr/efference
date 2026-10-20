@@ -34,7 +34,7 @@ pub(super) enum IdleWake {
     Event,
     /// `POST /loop/continue` (docs/control-api.md): control handed back with no
     /// input. Re-enter the trajectory with nothing appended — the same shape the
-    /// escalated event takes, minus the pinned entry that woke it.
+    /// pinned-event wake takes, minus the pinned entry that woke it.
     Continue,
     Shutdown,
 }
@@ -53,7 +53,7 @@ impl IdleWake {
 /// (every unresolved notification, queued slot ones logged first-show) alongside the
 /// running background tails, runs the tool-result-free triage peek, applies the
 /// dispositions, and logs the verdict as a `Triage` with `for_result: None`. Returns
-/// **true** iff it pinned something — the escalation contract: a pin grows the wire, so
+/// **true** iff it pinned something — the trajectory rule: a pin grows the wire, so
 /// the caller runs a real turn to act on it; nothing pinned leaves the projection
 /// byte-identical (audit-only), so the agent returns to idle with its cache still hot.
 pub(super) async fn run_idle_triage(
@@ -166,12 +166,12 @@ pub(super) async fn triage_and_record(
         shared.record_request(RequestOrigin::Triage, u);
     }
 
-    // Apply dispositions; escalate iff anything was pinned (the wire grew, docs/inbox.md).
+    // Apply dispositions; start a trajectory iff anything was pinned (the wire grew, docs/inbox.md).
     // A must-wake item is pinned whatever the triage said — that is what makes the
     // wake declared rather than judged, so a dismiss cannot swallow it.
     let mut inbox = triage.inbox;
     force_pins(&mut inbox, forced);
-    let mut escalate = inbox.iter().any(|(_, d)| matches!(d, Disposition::Pin));
+    let mut starts_trajectory = inbox.iter().any(|(_, d)| matches!(d, Disposition::Pin));
     for (handle, verdict) in triage.background {
         match verdict {
             BgVerdict::Mute => shared.mute_bg(&handle),
@@ -182,7 +182,7 @@ pub(super) async fn triage_and_record(
                         Payload::Ambient(Notification::new(source, body, Some(handle))),
                     )?;
                     inbox.push((seq, Disposition::Pin));
-                    escalate = true;
+                    starts_trajectory = true;
                 }
             }
         }
@@ -204,7 +204,7 @@ pub(super) async fn triage_and_record(
         }),
     )?;
     expire_unmentioned(shared, *turn)?;
-    Ok(escalate)
+    Ok(starts_trajectory)
 }
 
 /// Dismiss the notifications that [`MAX_UNMENTIONED_SHOWS`](crate::inbox::MAX_UNMENTIONED_SHOWS)

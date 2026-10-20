@@ -154,7 +154,7 @@ fn push_records_project_to_identical_bytes() {
             delay_secs: 120,
             attentive: vec![],
         },
-        PushEvent::Escalated,
+        PushEvent::Released,
         PushEvent::Cancelled {
             cause: PushCancel::Superseded,
         },

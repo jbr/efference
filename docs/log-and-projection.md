@@ -194,7 +194,7 @@ conversation transcript reads who allowed or denied a call from it
 (`gate_decisions_project_to_identical_bytes`), and the `[env]` masker passes the
 decider, a redirect's message, and a config edit's change and note.
 
-`Push` records one step of a moment's push (decided, held, escalated, cancelled, or the
+`Push` records one step of a moment's push (decided, held, released, cancelled, or the
 push services' per-device answers). It projects to nothing, like `RequestStage`
 (`push_records_project_to_identical_bytes`); its fields are specified in
 [web-push.md](web-push.md).
@@ -517,19 +517,21 @@ so a newer file's incompatible metadata reports as the unsupported version it
 is rather than as a field this build happens not to know. There is no
 importer for an unheadered log and no serializer kept for an old shape.
 
-The reader accepts exactly one version, the current one: 6. Version 2 nested the telemetry
+The reader accepts exactly one version, the current one: 7. Version 2 nested the telemetry
 payloads under `Telemetry`; version 3 renamed `WireState::Distilled` to `Triaged` and the
 `peek` request origin to `triage`; version 4 replaced the `Mark` entry with `Summary`
 (`kind` and `note` became `from`, `upto` and `text`; `writer` became `made_by`) and renamed
 the `narrate` request origin to `compaction`; version 5 split `Preamble.system` into
 `identity` and `body`; version 6 renamed `Assistant.upstream_failure` to `excluded`
-and gave it a kind (`{"Upstream": <record>}`, or `"Empty"`). An incompatible change to the entries, including a change of
+and gave it a kind (`{"Upstream": <record>}`, or `"Empty"`); version 7 renamed the
+`Push` event `escalated` to `released` (docs/web-push.md). An incompatible change to the entries, including a change of
 meaning that leaves their shape intact, increments the version. Before launch there is no
 in-harness migration: the existing logs are converted once, outside the harness, with the
 host stopped — the 1→2 pass is `scripts/migrate-log-v2.py`, the 2→3 pass (which also
 rewrites `usage.jsonl`) is `scripts/migrate-log-v3.py`, and the 3→4 pass (likewise) is
 `scripts/migrate-log-v4.py`, the 4→5 pass is `scripts/migrate-log-v5.py`, and the
-5→6 pass is `scripts/migrate-log-v6.py`; the
+5→6 pass is `scripts/migrate-log-v6.py`, and the 6→7 pass is
+`scripts/migrate-log-v7.py`; the
 unheadered→1 pass was the
 2026-10-02 corpus migration (journal/2026-10-02-resumption-foundation-and-corpus-migration.md)
 — and a file a pass missed is refused as the unsupported version it is.

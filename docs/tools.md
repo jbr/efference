@@ -147,7 +147,7 @@ tells the budget apart from the 2576-px edge ceiling. Naming the budget matters
 because the alternative — advising a larger `long_edge` at the ceiling — costs a
 read to learn that no such value exists.
 
-**The region read is the escalation once a ceiling limit binds.** `region`
+**The region read is the way to more detail once a ceiling limit binds.** `region`
 (`x`, `y`, `w`, `h`, in source pixels — the header reports the source frame's
 dimensions to address into) crops **before** the sizing pass, so `long_edge` and
 the budget bound the crop rather than the frame: a region small enough to fit is

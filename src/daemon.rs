@@ -211,10 +211,10 @@ pub struct Session {
     /// docs/web-push.md). Unset for a session outside a host, which treats nobody
     /// as attentive.
     attention: std::sync::OnceLock<Arc<attention::Attention>>,
-    /// The push waiting out [`escalation::ESCALATION_DELAY`] because a client was
-    /// attending when its moment fired (`escalation.rs`, docs/web-push.md). At most
+    /// The push waiting out [`delayed_push::PUSH_DELAY`] because a client was
+    /// attending when its moment fired (`delayed_push.rs`, docs/web-push.md). At most
     /// one; resolution and sightings of the moment empty it.
-    escalation: escalation::EscalationSlot,
+    delayed_push: delayed_push::DelayedPushSlot,
     /// The push bookkeeping (`push.rs`): the session's own handle for the tasks
     /// that append push records, the moment counter, and the test stand-in for
     /// the push services.
@@ -652,7 +652,7 @@ mod subscriptions;
 // Whether any client is attending the host (docs/web-push.md), and how a moment's
 // push waits on it.
 pub(crate) mod attention;
-mod escalation;
+mod delayed_push;
 mod push;
 mod stream;
 pub(crate) mod tcp;

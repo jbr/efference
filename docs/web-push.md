@@ -112,7 +112,7 @@ session), `kind` (`gate`, `ask`, `settle`), and an `event`:
 - `sent`: nobody was attending, so the push went out at once.
 - `held {delay_secs, attentive}`: someone was attending; `attentive` lists up to eight
   `{client, session}` pairs, the reason it was held.
-- `escalated`: the delay ended with the moment still standing.
+- `released`: the delay ended with the moment still standing, and the held push went out.
 - `cancelled {cause}`: `gate_decided`, `ask_ended`, `turn_submitted`, `archived`,
   `seen {client}`, or `superseded` (a newer moment replaced it).
 - `delivery {devices}`: one element per stored subscription, `{host, device, outcome}`.
@@ -124,12 +124,12 @@ session), `kind` (`gate`, `ask`, `settle`), and an `event`:
 
 `crate::push::send` returns the per-device answers; the spawned send task appends them
 through a weak handle on the session. The same answers go to the host's log
-(`log::debug!`, with `warn!` for prune failures). A `sent` or `escalated` with no
+(`log::debug!`, with `warn!` for prune failures). A `sent` or `released` with no
 `delivery` after it means the host had no root installed (no binding), so it could not
 send.
 
 To answer "why did I get this": find the moment's `held`/`sent` entry (who was
-attending, or that nobody was), then `escalated` and `delivery`. "Why didn't I": a
+attending, or that nobody was), then `released` and `delivery`. "Why didn't I": a
 `held` followed by `cancelled` names the cause; a `delivery` with `devices: []` means
 no device was subscribed, and a `failed` or `gone` names the device that did not
 receive it. In tests, a session's `set_push_transport` stands in for the push services.
@@ -175,9 +175,9 @@ last report was active. The table is host-wide: the host hands one `Arc` to ever
 session it adopts, so a push for any session reads what every client has said. A
 session outside a host has no table and nobody is attentive.
 
-**Escalation.** `Session::push` sends at once when nobody is attentive. Otherwise it
-holds the message for `ESCALATION_DELAY` (two minutes, one value for every moment) on
-a task on the host's runtime (`src/daemon/escalation.rs`), and sends it if the moment
+**The delayed push.** `Session::push` sends at once when nobody is attentive. Otherwise it
+holds the message for `PUSH_DELAY` (two minutes, one value for every moment) on
+a task on the host's runtime (`src/daemon/delayed_push.rs`), and sends it if the moment
 is still standing when the delay ends. A moment stops standing when it
 **resolves** or is **seen**:
 
@@ -191,7 +191,7 @@ is still standing when the delay ends. A moment stops standing when it
   session, an inactive report, and a report that arrived before the moment do not
   cancel it.
 
-Each session holds one pending escalation. A newer moment replaces an older one (the
+Each session holds one pending delayed push. A newer moment replaces an older one (the
 older timer is aborted), and a moment that sends at once drops a held one: the newer
 push names the same session. A timer claims its own slot entry by task identity, so a
 cancel that races the delay leaves nothing to fire. A push that fires is therefore one
@@ -199,7 +199,7 @@ nobody attended to, and the service worker shows every push it receives.
 
 What breaks if this changes: reading *connected* or *visible* as *attending* silences a
 desktop window nobody is at, and any one attentive device silences every device; with
-escalation, a wrong attention report costs a two-minute delay and never a missed
+the delayed push, a wrong attention report costs a two-minute delay and never a missed
 notification.
 
 **The web client** (`web/src/attention.ts`) reports `active` when the page is visible,
@@ -217,7 +217,7 @@ per-process id as `client` and the session it is attached to as `session` (`null
 lone session bind). It is `active` while its terminal is focused (focus reporting,
 `CSI ?1004h`) and a key or mouse event, `Moved` included, arrived within 5 minutes
 (`INPUT_WINDOW`): a person reading output without touching anything for longer lapses
-to the escalation, which costs a delayed push at worst. Focus starts as focused, and
+to the delayed push, which costs a delay at worst. Focus starts as focused, and
 starting counts as input, since the operator has just launched or attached it; a
 terminal or multiplexer that never sends focus events (tmux without `focus-events on`)
 leaves it reading focused, so input recency alone decides there. It reports on a change

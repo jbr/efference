@@ -1,7 +1,7 @@
 //! A person acted on a session's turn (docs/control-api.md): the one entry point
 //! the routes call, which feeds both mechanisms waiting on a person — the cold
 //! check's park ([`Session::release_cold`]) and a held push
-//! ([`Session::cancel_escalation`], docs/web-push.md). A new kind of action is
+//! ([`Session::cancel_delayed_push`], docs/web-push.md). A new kind of action is
 //! taught here what it releases and what it cancels.
 
 use super::*;
@@ -56,7 +56,7 @@ impl Session {
             self.release_cold(by);
         }
         if let Some(cause) = cancel {
-            self.cancel_escalation(cause);
+            self.cancel_delayed_push(cause);
         }
     }
 }

@@ -710,8 +710,8 @@ need. Implemented in `src/triage.rs` (the roster + verdict) and `src/project.rs`
 - **Surfaced-once dedup.** The fold excludes any name already in a prior
   `Triage.surfaced`, so an item is offered at most once per session — the same
   shape as the inbox's `active_shown`, `Triage`-only, no path-load tracking. It
-  suppresses on *surfaced*, not *read*; closing that gap is the pin-until-read
-  escalation, which is the only part that would need path tracking.
+  suppresses on *surfaced*, not *read*; closing that gap is pinning until read,
+  which is the only part that would need path tracking.
 - **Verdict is the stored form.** The chosen names ride on `Triage.surfaced`
   (`src/log.rs`); `project` re-renders each as a `⟢ context · <name> …: <desc> —
   read <path>` reminder **at the Triage position**, folding name→(path,

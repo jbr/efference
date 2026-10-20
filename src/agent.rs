@@ -185,7 +185,7 @@ pub async fn run<F: Frontend, S: Spotter>(
     loop {
         // Idle: race the next user turn against a notification wake (docs/process-monitor.md —
         // wake-on-notification, which replaced a blocking `wait`). A user turn drives a
-        // normal trajectory; an event wakes a standalone triage that escalates to a
+        // normal trajectory; an event wakes a standalone triage that starts a
         // trajectory only if it pins something. The first turn arrives here too.
         log::debug!("idle — awaiting a user turn or an event on the control socket");
         // A resumed session's unfinished batch, derived from the log each time
@@ -206,7 +206,7 @@ pub async fn run<F: Frontend, S: Spotter>(
             IdleWake::Shutdown => break, // daemon tearing down.
             IdleWake::Blank => continue, // blank turn: keep idling.
             IdleWake::Event => {
-                // Standalone triage. Escalate to a trajectory only if it changed the
+                // Standalone triage. Start a trajectory only if it changed the
                 // wire (pinned something); otherwise back to idle, the prefix still hot.
                 // A request either way, so the loop reads `requesting` throughout
                 // (docs/control-api.md).
@@ -215,7 +215,7 @@ pub async fn run<F: Frontend, S: Spotter>(
                     shared.idle_triage_settled();
                     continue;
                 }
-                // Escalated: fall into the trajectory with no new user turn — the model
+                // Triage pinned something: fall into the trajectory with no new user turn — the model
                 // responds to the pinned event at the wire tail.
             }
             IdleWake::Continue => {
@@ -258,7 +258,7 @@ pub async fn run<F: Frontend, S: Spotter>(
         shared.take_interrupt();
 
         // Inner loop: keep round-tripping while the model calls tools. `first_step` skips the
-        // pace sleep on the turn that responds to the just-read user message / escalated event —
+        // pace sleep on the turn that responds to the just-read user message / pinned event —
         // pacing is a *between-turns* delay, so it applies to the tool round-trips that follow,
         // not the first response (docs/control-channel.md).
         let mut first_step = true;

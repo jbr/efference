@@ -80,11 +80,11 @@ impl Session {
     /// Notify about one moment, in the background (docs/web-push.md).
     ///
     /// When no client is attending the host ([`Session::attentive_clients`]) the
-    /// push is sent now. Otherwise it is held for [`ESCALATION_DELAY`] and sent
+    /// push is sent now. Otherwise it is held for [`PUSH_DELAY`] and sent
     /// only if neither resolution nor a sighting cancelled it
-    /// ([`Session::cancel_escalation`]) — a push that fires is one nobody
+    /// ([`Session::cancel_delayed_push`]) — a push that fires is one nobody
     /// attended to. The decision lives here rather than at the call sites, so a
-    /// gate, an `ask`, and a settle escalate identically. Each step is appended
+    /// gate, an `ask`, and a settle are delayed identically. Each step is appended
     /// to the log as a [`Telemetry::Push`].
     pub(super) fn push(&self, kind: MomentKind, body: String) {
         let moment = self.pushes.next.fetch_add(1, Ordering::Relaxed);
@@ -95,11 +95,11 @@ impl Session {
         let attentive = self.attentive_clients();
         if attentive.is_empty() {
             // A newer moment supersedes a pending older one, sent or not.
-            self.cancel_escalation(PushCancel::Superseded);
+            self.cancel_delayed_push(PushCancel::Superseded);
             self.record_push(moment, kind, PushEvent::Sent);
             self.send_in_background(moment, kind, message);
         } else {
-            self.schedule_escalation(moment, kind, message, attentive);
+            self.schedule_delayed_push(moment, kind, message, attentive);
         }
     }
 
@@ -122,7 +122,7 @@ impl Session {
     /// no root is installed (push credentials derive from it, and only a binding
     /// host installs one — tests, offline verbs, and a socket-only host look
     /// alike here), and no tokio runtime is running. Both checks happen before
-    /// the store is touched. A [`PushEvent::Sent`] or [`PushEvent::Escalated`]
+    /// the store is touched. A [`PushEvent::Sent`] or [`PushEvent::Released`]
     /// with no [`PushEvent::Delivery`] after it is the first case.
     pub(super) fn send_in_background(
         &self,

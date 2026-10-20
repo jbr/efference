@@ -228,19 +228,19 @@ fn rejects_an_unknown_future_version() {
     std::fs::write(
         &path,
         format!(
-            "{{\"format\":\"{}\",\"version\":7,\"metadata\":null}}\n",
+            "{{\"format\":\"{}\",\"version\":8,\"metadata\":null}}\n",
             LogHeader::FORMAT
         ),
     )
     .unwrap();
 
     match load_error(&path) {
-        LoadError::UnsupportedVersion { version, .. } => assert_eq!(version, 7),
+        LoadError::UnsupportedVersion { version, .. } => assert_eq!(version, 8),
         other => panic!("expected an unsupported version, got {other:?}"),
     }
     let message = load_error(&path).to_string();
-    assert!(message.contains("unsupported log version 7"), "{message}");
-    assert!(message.contains("reads version 6"), "{message}");
+    assert!(message.contains("unsupported log version 8"), "{message}");
+    assert!(message.contains("reads version 7"), "{message}");
 
     std::fs::remove_file(&path).unwrap();
 }

@@ -36,7 +36,7 @@ pub enum Telemetry {
     /// of the `current_operations` topic (docs/control-api.md); the entry's `at` is the
     /// stage's time.
     RequestStage(RequestStage),
-    /// One step of a moment's push: decided, held, escalated, cancelled, or the push
+    /// One step of a moment's push: decided, held, released, cancelled, or the push
     /// services' answers (docs/web-push.md). The entry's `at` is the step's time.
     Push(PushRecord),
     /// One step of the cold check: the loop parked, a person released it, the park

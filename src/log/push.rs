@@ -3,7 +3,7 @@
 //!
 //! A **moment** is one firing of a gate, an `ask`, or a settle. Every entry about
 //! it carries the same `moment` number (unique within the session), so the log
-//! reads as a short story: decided, then escalated or cancelled, then the
+//! reads as a short story: decided, then released or cancelled, then the
 //! per-device delivery. None of it reaches the wire: [`Telemetry::Push`] projects to
 //! nothing, like [`Telemetry::RequestStage`], and the entry's own `at` is the
 //! time of each step.
@@ -48,7 +48,7 @@ pub enum PushEvent {
         attentive: Vec<AttentiveClient>,
     },
     /// The wait ran out with the moment still standing; the push went out.
-    Escalated,
+    Released,
     /// The held push was dropped.
     Cancelled { cause: PushCancel },
     /// What the push services answered: one element per stored subscription.

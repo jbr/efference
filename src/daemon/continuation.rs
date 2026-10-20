@@ -4,7 +4,7 @@
 //! `POST /loop/continue` asks the idle loop to take another turn on the wire it
 //! already has: no `User` entry and no projection change. The signal is a flag plus
 //! a wake, read by the agent loop's idle `select!` beside the user turn and the
-//! notification wake — the same escalation shape the pinned-event path uses
+//! notification wake — the same wake shape the pinned-event path uses
 //! (docs/process-monitor.md), which also enters a trajectory with no new user turn.
 //!
 //! The one thing written is a `Telemetry::Continue` naming who sent it, which

@@ -239,3 +239,23 @@ fn tools_change_names_what_moved() {
     let change = ToolsChange::between(&before, &swapped);
     assert!(change.reordered && change.added.is_empty());
 }
+
+/// The push event written when a held push goes out is `released` (log version 7,
+/// docs/web-push.md); `scripts/migrate-log-v7.py` rewrites the earlier spelling.
+#[test]
+fn a_released_push_serializes_as_released() {
+    let record = PushRecord {
+        moment: 4,
+        kind: MomentKind::Settle,
+        event: PushEvent::Released,
+    };
+    let json = serde_json::to_string(&Telemetry::Push(record.clone())).unwrap();
+    assert_eq!(
+        json,
+        r#"{"Push":{"moment":4,"kind":"settle","event":"released"}}"#
+    );
+    let Telemetry::Push(back) = serde_json::from_str(&json).unwrap() else {
+        panic!("not a Push: {json}");
+    };
+    assert_eq!(back, record);
+}

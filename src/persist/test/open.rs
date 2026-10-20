@@ -307,7 +307,7 @@ fn an_unreadable_log_is_refused_with_its_bytes_untouched() {
         (
             "future",
             format!(
-                "{{\"format\":\"{}\",\"version\":7,\"metadata\":null}}\n",
+                "{{\"format\":\"{}\",\"version\":8,\"metadata\":null}}\n",
                 LogHeader::FORMAT
             ),
         ),

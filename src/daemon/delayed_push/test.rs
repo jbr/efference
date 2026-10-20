@@ -1,4 +1,4 @@
-//! Tests for `escalation.rs`: whether a moment sends now or waits, and what ends
+//! Tests for `delayed_push.rs`: whether a moment sends now or waits, and what ends
 //! the wait. The send itself is not observable (no root is installed in tests), so
 //! what is asserted is the pending slot: a message in it is a push that has not
 //! gone out, and an empty slot after the delay is one that fired.
@@ -36,7 +36,7 @@ fn set_active(attention: &Attention, active: bool) {
 }
 
 fn titles(shared: &Session) -> Option<String> {
-    shared.pending_escalation().map(|m| m.title)
+    shared.pending_delayed_push().map(|m| m.title)
 }
 
 /// A session outside any host, and a host with nobody attentive, send at once:
@@ -54,19 +54,19 @@ async fn an_unattended_moment_is_not_held() {
 }
 
 /// An attended moment is held, carrying the session's web path, and goes out
-/// after [`ESCALATION_DELAY`] if nothing cancelled it.
+/// after [`PUSH_DELAY`] if nothing cancelled it.
 #[tokio::test(start_paused = true)]
 async fn an_attended_moment_is_held_then_fires() {
     let (shared, _attention) = attended_session();
     shared.set_web_path("/sessions/hardy-hawk/".into());
     shared.push(MomentKind::Gate, "body".into());
-    let held = shared.pending_escalation().expect("held");
+    let held = shared.pending_delayed_push().expect("held");
     assert!(held.title.starts_with("Gate"));
     assert_eq!(held.path, "/sessions/hardy-hawk/");
 
-    tokio::time::sleep(ESCALATION_DELAY - Duration::from_secs(1)).await;
+    tokio::time::sleep(PUSH_DELAY - Duration::from_secs(1)).await;
     assert!(
-        shared.pending_escalation().is_some(),
+        shared.pending_delayed_push().is_some(),
         "not before the delay"
     );
 
@@ -74,7 +74,7 @@ async fn an_attended_moment_is_held_then_fires() {
     assert_eq!(titles(&shared), None, "fired and cleared");
 }
 
-/// One escalation per session: a newer moment replaces the older, and the older
+/// One delayed push per session: a newer moment replaces the older, and the older
 /// timer does not fire the newer one early.
 #[tokio::test(start_paused = true)]
 async fn a_newer_moment_supersedes_the_older() {
@@ -86,7 +86,7 @@ async fn a_newer_moment_supersedes_the_older() {
 
     // The first timer would have fired here.
     tokio::time::sleep(Duration::from_secs(61)).await;
-    assert!(shared.pending_escalation().is_some());
+    assert!(shared.pending_delayed_push().is_some());
     tokio::time::sleep(Duration::from_secs(60)).await;
     assert_eq!(titles(&shared), None);
 }
@@ -101,7 +101,7 @@ async fn an_unattended_moment_supersedes_a_held_one() {
     assert_eq!(titles(&shared), None);
 }
 
-/// A decided gate cancels its escalation, whichever way it was decided.
+/// A decided gate cancels its delayed push, whichever way it was decided.
 #[tokio::test(start_paused = true)]
 async fn deciding_a_gate_cancels() {
     for decision in [
@@ -116,7 +116,7 @@ async fn deciding_a_gate_cancels() {
             serde_json::json!({"command": "ls"}),
         );
         let _gate = shared.register_pending(&call, None);
-        assert!(shared.pending_escalation().is_some());
+        assert!(shared.pending_delayed_push().is_some());
         shared.resolve_approval(&call.id, decision, None, None);
         assert_eq!(titles(&shared), None);
     }
@@ -127,7 +127,7 @@ async fn deciding_a_gate_cancels() {
 async fn answering_an_ask_cancels() {
     let (shared, _attention) = attended_session();
     let _wait = shared.begin_ask("ask_1", "Sure?".into(), 1, 1);
-    let held = shared.pending_escalation().expect("the ask is held");
+    let held = shared.pending_delayed_push().expect("the ask is held");
     assert_eq!(held.body, "Sure?");
     shared.submit_client_turn(crate::frontend::SubmittedTurn::new("yes", "sub_1"));
     assert_eq!(titles(&shared), None);
@@ -138,7 +138,7 @@ async fn answering_an_ask_cancels() {
 async fn an_ask_that_ends_cancels() {
     let (shared, _attention) = attended_session();
     let wait = shared.begin_ask("ask_1", "Sure?".into(), 1, 1);
-    assert!(shared.pending_escalation().is_some());
+    assert!(shared.pending_delayed_push().is_some());
     drop(wait);
     assert_eq!(titles(&shared), None);
 }
@@ -148,7 +148,7 @@ async fn an_ask_that_ends_cancels() {
 async fn submitting_a_turn_cancels_a_settle() {
     let (shared, _attention) = attended_session();
     shared.push(MomentKind::Settle, "done".into());
-    assert!(shared.pending_escalation().is_some());
+    assert!(shared.pending_delayed_push().is_some());
     shared.submit_client_turn(crate::frontend::SubmittedTurn::new("next", "sub_1"));
     assert_eq!(titles(&shared), None);
 }
@@ -252,10 +252,10 @@ async fn failed_and_gone_devices_are_recorded() {
     assert_eq!(events(&shared)[1], PushEvent::Delivery { devices });
 }
 
-/// An attended moment records `held` with who was attending, then `escalated`
+/// An attended moment records `held` with who was attending, then `released`
 /// and the delivery once the delay passes.
 #[tokio::test(start_paused = true)]
-async fn a_held_moment_records_held_escalated_delivery() {
+async fn a_held_moment_records_held_released_delivery() {
     let (shared, _attention) = attended_session();
     stub(
         &shared,
@@ -265,17 +265,17 @@ async fn a_held_moment_records_held_escalated_delivery() {
     assert_eq!(
         events(&shared),
         vec![PushEvent::Held {
-            delay_secs: ESCALATION_DELAY.as_secs(),
+            delay_secs: PUSH_DELAY.as_secs(),
             attentive: vec![AttentiveClient {
                 client: "c1".into(),
                 session: None
             }],
         }]
     );
-    tokio::time::sleep(ESCALATION_DELAY + Duration::from_secs(1)).await;
+    tokio::time::sleep(PUSH_DELAY + Duration::from_secs(1)).await;
     let events = events(&shared);
     assert_eq!(events.len(), 3);
-    assert_eq!(events[1], PushEvent::Escalated);
+    assert_eq!(events[1], PushEvent::Released);
     assert!(matches!(events[2], PushEvent::Delivery { .. }));
 }
 
@@ -323,7 +323,7 @@ async fn each_cancel_cause_is_recorded() {
     ] {
         let (shared, _attention) = attended_session();
         shared.push(MomentKind::Gate, "body".into());
-        shared.cancel_escalation(cause.clone());
+        shared.cancel_delayed_push(cause.clone());
         assert_eq!(cancelled(&shared), vec![cause]);
     }
 
@@ -350,6 +350,6 @@ async fn each_cancel_cause_is_recorded() {
 #[tokio::test(start_paused = true)]
 async fn a_cancel_with_nothing_pending_records_nothing() {
     let shared = session();
-    shared.cancel_escalation(PushCancel::Archived);
+    shared.cancel_delayed_push(PushCancel::Archived);
     assert!(records(&shared).is_empty());
 }

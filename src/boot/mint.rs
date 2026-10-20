@@ -49,7 +49,7 @@ impl Minted {
     }
 
     /// Remove what this attempt minted, naming anything that resists on the log
-    /// (`warn`). A failed removal is not escalated: the
+    /// (`warn`). A failed removal is not raised further: the
     /// preparation error the caller is already returning is the one that matters.
     fn roll_back(&mut self) {
         if let Some(w) = self.worktree.take() {

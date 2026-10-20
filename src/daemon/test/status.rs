@@ -98,7 +98,7 @@ fn the_status_follows_the_loop_phase() {
 }
 
 /// An idle triage reads as running — to the status watcher and to `/settle` — until it
-/// escalates into a trajectory that ends, or returns to idle with nothing pinned; only
+/// starts a trajectory that ends, or returns to idle with nothing pinned; only
 /// the trajectory counts as a turn ended.
 #[test]
 fn an_idle_triage_reads_as_running_until_it_settles() {
@@ -122,6 +122,6 @@ fn an_idle_triage_reads_as_running_until_it_settles() {
     assert_eq!(
         shared.turns_ended(),
         1,
-        "an escalated triage ran a trajectory"
+        "a triage that started a trajectory ran one"
     );
 }

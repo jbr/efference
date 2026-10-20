@@ -111,10 +111,10 @@ already awaiting `child.wait()` on every background child and clears it from the
 running set when that returns, so teardown re-checks on a notify fired there.
 There is no interval to tune.
 
-There is deliberately no escalation behind it. SIGKILL has already been sent, so
+There is deliberately no further signal behind it. SIGKILL has already been sent, so
 a group that never leaves the table is blocked in the kernel and no second signal
 can move it — a bounded timer would only choose how long to wait before removing
-scratch out from under a live process. The operator's escalation is the host's:
+scratch out from under a live process. The operator's remaining move is the host's:
 a second shutdown signal ends the process outright.
 
 ## Spawns are serialized
@@ -368,7 +368,7 @@ ask rides the tail instruction, never a forced `tool_choice`
 fork: it logs `Ambient` + `Triage` (audit grows) but **projects to nothing unless
 it pins** — the prefix stays byte-identical and cache-hot.
 
-**Escalation contract: a main-trajectory turn runs if and only if the triage changed
+**The trajectory rule: a main-trajectory turn runs if and only if the triage changed
 the projection — i.e., pinned something.** A clean exit that gets dismissed or left
 produces no wire change; the loop returns to idle. A failed exit that gets pinned
 lands the `⟢ …` block on the wire; a real turn runs so the model acts. A pin with

@@ -40,7 +40,7 @@ fn reads_a_fitting_png_by_relative_path() {
 }
 
 /// `long_edge` caps the realized size; the header names the source dimensions
-/// and the escalation path.
+/// and the advice to read more.
 #[test]
 fn long_edge_downscales_and_the_header_says_so() {
     let cwd = workspace("cap");
@@ -72,7 +72,7 @@ fn constraint_that_bound_names_the_limit() {
 }
 
 /// At the ceiling the header names the token budget rather than advising a
-/// larger `long_edge`, and points at the region read as the escalation.
+/// larger `long_edge`, and points at the region read.
 #[test]
 fn a_budget_bound_read_says_so_and_points_at_a_region() {
     let cwd = workspace("budget");

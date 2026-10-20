@@ -13,7 +13,7 @@ use crate::daemon::attention::AttentionReport;
 
 /// How recent an input event must be for the person to count as attending. A
 /// person reading output without touching anything for longer lapses to the
-/// host's 2-minute push escalation, which costs a delayed push at worst; a window
+/// host's 2-minute delayed push, which costs a delayed push at worst; a window
 /// this long keeps someone following a long turn from being reported away.
 pub(crate) const INPUT_WINDOW: Duration = Duration::from_secs(5 * 60);
 

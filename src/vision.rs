@@ -25,7 +25,7 @@ pub const HIGH_RES_MAX_TOKENS: u32 = 4784;
 /// The default long-edge cap for images entering the transcript. Deliberately
 /// below the high-resolution tier's native 2576: at 1568 a screenshot stays
 /// broadly legible at roughly a third of the native-cap token cost, and the
-/// escalation path is a re-read at a larger edge when fine detail matters.
+/// way to more detail is a re-read at a larger edge when fine detail matters.
 pub const DEFAULT_LONG_EDGE: u32 = 1568;
 
 /// Visual tokens for an image at `width × height`: one per 28×28-pixel patch,
@@ -179,7 +179,7 @@ pub fn prepare(bytes: &[u8], max_edge: u32, max_tokens: u32) -> Result<Prepared,
 ///
 /// The crop precedes the sizing pass, so `max_edge` and `max_tokens` bound the
 /// region: a region that already fits is encoded at 1:1 source resolution,
-/// which is the escalation path once the token budget bounds the whole frame
+/// which is how to get more detail once the token budget bounds the whole frame
 /// (docs/tools.md). A region running off the frame is clamped; one that does
 /// not overlap the frame at all is [`Error::RegionOutsideFrame`].
 pub fn prepare_region(

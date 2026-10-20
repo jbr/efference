@@ -19,7 +19,7 @@ use crate::log::{AttentiveClient, PushCancel};
 /// long enough that one slow request does not read as inattention, short enough
 /// that a closed laptop or a killed tab stops suppressing the immediate push
 /// within the minute. A lapse only costs a push that would otherwise have been
-/// held back for the escalation delay.
+/// held back for the push delay.
 pub(crate) const LAPSE: Duration = Duration::from_secs(45);
 
 /// The longest client id or session id a report may carry. Both are short
@@ -120,14 +120,14 @@ impl Attention {
 impl Host {
     /// Take a client's report: record it, and when it is an active report from a
     /// client with a hosted session open, tell that session its pending moment has
-    /// been seen ([`Session::cancel_escalation`]).
+    /// been seen ([`Session::cancel_delayed_push`]).
     pub(crate) fn report_attention(&self, report: &AttentionReport) {
         self.attention.report_at(report, Instant::now());
         if report.active
             && let Some(id) = &report.session
             && let Some(session) = self.session(id)
         {
-            session.cancel_escalation(PushCancel::Seen {
+            session.cancel_delayed_push(PushCancel::Seen {
                 client: report.client.clone(),
             });
         }

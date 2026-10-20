@@ -578,7 +578,7 @@ impl Triager {
     /// The standalone idle triage (docs/process-monitor.md, docs/inbox.md): fork off
     /// the cached prefix, show the inbox + background with no tool result, and ask for
     /// the `triage` tool via the tail instruction (no `keep` — there is no tool
-    /// output). The caller wakes this when an event arrives while idle and escalates to
+    /// output). The caller wakes this when an event arrives while idle and starts
     /// a real turn iff it pins something. On any failure it pins/dismisses nothing —
     /// the agent simply goes back to idle, losing no data.
     pub async fn triage(
